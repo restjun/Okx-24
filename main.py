@@ -110,30 +110,26 @@ def calculate_1h_volume(inst_id):
         return 0
     return df["volCcyQuote"].sum()
 
-
 def calculate_daily_change(inst_id):
-    # 1분봉 데이터 2일치 가져오기 (2회 호출 or limit=2880 지원 시 한 번)
-    df1 = get_ohlcv_okx(inst_id, bar="1m", limit=1440)  # 최근 24시간
-    time.sleep(0.2)
-    df2 = get_ohlcv_okx(inst_id, bar="1m", limit=1440)  # 그 전 24시간 (이 부분은 시작시간 설정 가능 시 보완 필요)
-
-    if df1 is None or df2 is None:
+    # 1시간봉 데이터 (예: limit=48이면 2일치 데이터)
+    df = get_ohlcv_okx(inst_id, bar="1H", limit=48)  
+    if df is None or len(df) < 24:  # 24시간 이상 데이터 있어야 함
         return None
-
-    df = pd.concat([df2, df1]).drop_duplicates()
-
     try:
         df['datetime'] = pd.to_datetime(df['ts'], unit='ms')
         df['datetime_kst'] = df['datetime'] + pd.Timedelta(hours=9)
         df.set_index('datetime_kst', inplace=True)
 
+        # KST 9시 기준으로 일봉 리샘플링
         daily = df.resample('1D', offset='9h').agg({
             'o': 'first',
             'h': 'max',
             'l': 'min',
             'c': 'last',
             'vol': 'sum'
-        }).dropna().sort_index(ascending=False).reset_index()
+        }).dropna()
+
+        daily = daily.sort_index(ascending=False).reset_index()
 
         if len(daily) < 2:
             return None
@@ -142,6 +138,7 @@ def calculate_daily_change(inst_id):
         yesterday_close = daily.loc[1, 'c']
         change = ((today_close - yesterday_close) / yesterday_close) * 100
         return round(change, 2)
+
     except Exception as e:
         logging.error(f"{inst_id} 상승률 계산 오류: {e}")
         return None
