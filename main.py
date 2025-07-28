@@ -110,14 +110,27 @@ def calculate_1h_volume(inst_id):
         return 0
     return df["volCcyQuote"].sum()
 
+
 def calculate_daily_change(inst_id):
-    df = get_ohlcv_okx(inst_id, bar="1D", limit=2)
+    df = get_ohlcv_okx(inst_id, bar="1D", limit=3)
     if df is None or len(df) < 2:
         return None
     try:
-        open_price = df.iloc[-1]['o']
-        close_price = df.iloc[-1]['c']
-        return round(((close_price - open_price) / open_price) * 100, 2)
+        # ts 컬럼이 타임스탬프(밀리초)라고 가정, datetime 변환 및 KST(UTC+9)로 변환
+        df['datetime'] = pd.to_datetime(df['ts'], unit='ms') + pd.Timedelta(hours=9)
+
+        # datetime 기준 내림차순 정렬 (최신이 위로)
+        df = df.sort_values('datetime', ascending=False).reset_index(drop=True)
+
+        # 최신 일봉과 바로 전 일봉 선택
+        today = df.loc[0]
+        yesterday = df.loc[1]
+
+        # 상승률 계산: (오늘 종가 - 어제 종가) / 어제 종가 * 100
+        open_price = yesterday['o']
+        close_price = today['c']
+        change = ((close_price - open_price) / open_price) * 100
+        return round(change, 2)
     except Exception as e:
         logging.error(f"{inst_id} 상승률 계산 오류: {e}")
         return None
