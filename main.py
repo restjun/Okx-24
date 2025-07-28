@@ -172,12 +172,12 @@ def get_ema_status_text(df, timeframe="1H"):
 # ✅ 변경된 조건: 10-20 역배열, 20-50 정배열
 def check_ema_mixed_condition(df):
     close = df['c'].values
-    ema_10 = get_ema_with_retry(close, 10)
+    ema_1 = get_ema_with_retry(close, 1)
     ema_20 = get_ema_with_retry(close, 20)
     ema_50 = get_ema_with_retry(close, 50)
     if None in [ema_10, ema_20, ema_50]:
         return False
-    return ema_10 < ema_20 and ema_20 > ema_50
+    return ema_1 < ema_20 and ema_20 > ema_50
 
 
 def get_btc_ema_status_1h_only():
