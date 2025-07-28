@@ -220,7 +220,7 @@ def send_ranked_volume_message(bullish_ids):
 
     message_lines = [
         "📊 *OKX 정배열 매물대 분석*",
-        "📅 *[1D + 4H EMA 정배열] + [24H 거래대금 Top10 중 1H 거래대금 1억 이상 필터]*",
+        "📅 *[1D + 4H EMA 정배열] + [24H 거래대금 Top10 ]*",
         "━━━━━━━━━━━━━━━━━━━",
         f"💰 *BTC* {btc_change_str} / 거래대금: {btc_volume_str}",
         f"    {btc_ema_status}",
@@ -254,7 +254,7 @@ def send_ranked_volume_message(bullish_ids):
         message_lines.append("⚠️ 조건을 만족하는 종목이 없습니다.")
     else:
         message_lines.append("━━━━━━━━━━━━━━━━━━━")
-        message_lines.append("📡 *조건: 24H 거래대금 Top10 → 1H 거래대금 1억 이상 종목만 정렬*")
+        message_lines.append("📡 *작은 파동보다는 큰 파동을 보자*")
 
     send_telegram_message("\n".join(message_lines))
 
