@@ -112,25 +112,34 @@ def calculate_1h_volume(inst_id):
 
 
 def calculate_daily_change(inst_id):
-    df = get_ohlcv_okx(inst_id, bar="1D", limit=3)
-    if df is None or len(df) < 2:
+    # 1시간봉 데이터 (예: limit=48이면 2일치 데이터)
+    df = get_ohlcv_okx(inst_id, bar="1H", limit=48)  
+    if df is None or len(df) < 24:  # 24시간 이상 데이터 있어야 함
         return None
     try:
-        # ts 컬럼이 타임스탬프(밀리초)라고 가정, datetime 변환 및 KST(UTC+9)로 변환
-        df['datetime'] = pd.to_datetime(df['ts'], unit='ms') + pd.Timedelta(hours=9)
+        df['datetime'] = pd.to_datetime(df['ts'], unit='ms')
+        df['datetime_kst'] = df['datetime'] + pd.Timedelta(hours=9)
+        df.set_index('datetime_kst', inplace=True)
 
-        # datetime 기준 내림차순 정렬 (최신이 위로)
-        df = df.sort_values('datetime', ascending=False).reset_index(drop=True)
+        # KST 9시 기준으로 일봉 리샘플링
+        daily = df.resample('1D', offset='9h').agg({
+            'o': 'first',
+            'h': 'max',
+            'l': 'min',
+            'c': 'last',
+            'vol': 'sum'
+        }).dropna()
 
-        # 최신 일봉과 바로 전 일봉 선택
-        today = df.loc[0]
-        yesterday = df.loc[1]
+        daily = daily.sort_index(ascending=False).reset_index()
 
-        # 상승률 계산: (오늘 종가 - 어제 종가) / 어제 종가 * 100
-        open_price = yesterday['o']
-        close_price = today['c']
-        change = ((close_price - open_price) / open_price) * 100
+        if len(daily) < 2:
+            return None
+
+        today_close = daily.loc[0, 'c']
+        yesterday_close = daily.loc[1, 'c']
+        change = ((today_close - yesterday_close) / yesterday_close) * 100
         return round(change, 2)
+
     except Exception as e:
         logging.error(f"{inst_id} 상승률 계산 오류: {e}")
         return None
