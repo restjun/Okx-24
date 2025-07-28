@@ -177,7 +177,7 @@ def check_ema_mixed_condition(df):
     ema_200 = get_ema_with_retry(close, 200)
     if None in [ema_10, ema_20, ema_50, ema_200]:
         return False
-    return ema_10 > ema_20 and ema_20 < ema_50 and ema_50 > ema_200
+    return ema_10 < ema_20 and ema_20 > ema_50 and ema_50 > ema_200
 
 
 def get_btc_ema_status_1h_only():
