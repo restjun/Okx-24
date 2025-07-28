@@ -18,7 +18,6 @@ bot = telepot.Bot(telegram_bot_token)
 logging.basicConfig(level=logging.INFO)
 
 
-# 📩 텔레그램 메시지 전송 함수
 def send_telegram_message(message):
     for retry_count in range(1, 11):
         try:
@@ -31,7 +30,6 @@ def send_telegram_message(message):
     logging.error("텔레그램 메시지 전송 실패: 최대 재시도 횟수 초과")
 
 
-# 📡 API 재시도 유틸
 def retry_request(func, *args, **kwargs):
     for attempt in range(10):
         try:
@@ -47,7 +45,6 @@ def retry_request(func, *args, **kwargs):
     return None
 
 
-# 📈 EMA 계산
 def calculate_ema(close, period):
     if len(close) < period:
         return None
@@ -64,7 +61,6 @@ def get_ema_with_retry(close, period):
     return None
 
 
-# 📊 종목 목록 조회
 def get_all_okx_swap_symbols():
     url = "https://www.okx.com/api/v5/public/instruments?instType=SWAP"
     response = retry_request(requests.get, url)
@@ -74,7 +70,6 @@ def get_all_okx_swap_symbols():
     return [item["instId"] for item in data if "USDT" in item["instId"]]
 
 
-# 📊 OHLCV 조회
 def get_ohlcv_okx(instId, bar='1H', limit=200):
     logging.info(f"📊 {instId} - {bar} 캔들 데이터 요청 중...")
     url = f"https://www.okx.com/api/v5/market/candles?instId={instId}&bar={bar}&limit={limit}"
@@ -95,7 +90,6 @@ def get_ohlcv_okx(instId, bar='1H', limit=200):
         return None
 
 
-# 🔎 EMA 정배열 여부
 def is_ema_bullish(df):
     close = df['c'].values
     ema_20 = get_ema_with_retry(close, 20)
@@ -106,21 +100,19 @@ def is_ema_bullish(df):
     return ema_20 > ema_50 > ema_200
 
 
-# 📋 EMA 정배열 필터링 - 일봉 + 4시간봉
-def filter_by_1d_and_4h_ema_alignment(inst_ids):
+# ✅ 수정된 4H 정배열 필터만 적용
+def filter_by_4h_ema_alignment(inst_ids):
     bullish_ids = []
     for inst_id in inst_ids:
-        df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=200)
         df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=200)
-        if df_1d is None or df_4h is None:
+        if df_4h is None:
             continue
-        if is_ema_bullish(df_1d) and is_ema_bullish(df_4h):
+        if is_ema_bullish(df_4h):
             bullish_ids.append(inst_id)
         time.sleep(random.uniform(0.2, 0.4))
     return bullish_ids
 
 
-# 📊 거래대금 / 변동률 계산
 def calculate_1h_volume(inst_id):
     df = get_ohlcv_okx(inst_id, bar="1H", limit=24)
     if df is None or len(df) < 1:
@@ -141,7 +133,6 @@ def calculate_daily_change(inst_id):
         return None
 
 
-# 🧮 EMA 상태 텍스트 출력
 def format_volume_in_eok(volume):
     try:
         return f"{int(volume // 100_000)}억"
@@ -177,7 +168,18 @@ def get_ema_status_text(df, timeframe="1H"):
     )
 
 
-# 📈 BTC EMA 상태 (1시간봉만)
+# ✅ 혼합 조건 체크 함수
+def check_ema_mixed_condition(df):
+    close = df['c'].values
+    ema_10 = get_ema_with_retry(close, 10)
+    ema_20 = get_ema_with_retry(close, 20)
+    ema_50 = get_ema_with_retry(close, 50)
+    ema_200 = get_ema_with_retry(close, 200)
+    if None in [ema_10, ema_20, ema_50, ema_200]:
+        return False
+    return ema_10 > ema_20 and ema_20 < ema_50 and ema_50 > ema_200
+
+
 def get_btc_ema_status_1h_only():
     btc_id = "BTC-USDT-SWAP"
     df = get_ohlcv_okx(btc_id, bar='1H', limit=200)
@@ -186,7 +188,6 @@ def get_btc_ema_status_1h_only():
     return "[1H] EMA 📊: ❌ 불러오기 실패"
 
 
-# 📬 최종 메시지 생성 및 전송
 def send_ranked_volume_message(bullish_ids):
     volume_24h_data = {}
     volume_1h_data = {}
@@ -219,7 +220,7 @@ def send_ranked_volume_message(bullish_ids):
     ]
 
     message_lines = [
-        "📅 *[1D + 4H 정배열] + [24H 거래대금 Top10]*",
+        "📅 *[4H 정배열] + [24H 거래대금 Top10]*",
         "━━━━━━━━━━━━━━━━━━━",
         f"💰 *BTC* {btc_change_str} / 거래대금: {btc_volume_str}",
         f"    {btc_ema_status}",
@@ -238,9 +239,10 @@ def send_ranked_volume_message(bullish_ids):
             name = inst_id.replace("-USDT-SWAP", "")
             vol_1h_text = format_volume_in_eok(vol_1h)
             change_str = format_change_with_emoji(change)
+            condition_tag = "🔍 조건 만족" if check_ema_mixed_condition(df_1h) else ""
 
             message_lines.append(
-                f"*{rank}. {name}* {change_str} | 💰 {vol_1h_text}\n   {ema_status}"
+                f"*{rank}. {name}* {change_str} | 💰 {vol_1h_text} {condition_tag}\n   {ema_status}"
             )
             message_lines.append("─────")
             rank += 1
@@ -258,18 +260,16 @@ def send_ranked_volume_message(bullish_ids):
     send_telegram_message("\n".join(message_lines))
 
 
-# 📌 메인 루프
 def main():
-    logging.info("📥 전체 종목 기준 정배열 + 거래대금 분석 시작")
+    logging.info("📥 전체 종목 기준 4H 정배열 + 거래대금 분석 시작")
     all_ids = get_all_okx_swap_symbols()
-    bullish_ids = filter_by_1d_and_4h_ema_alignment(all_ids)
+    bullish_ids = filter_by_4h_ema_alignment(all_ids)
     if not bullish_ids:
-        send_telegram_message("🔴 1D + 4H 정배열 종목 없음.")
+        send_telegram_message("🔴 4H 정배열 종목 없음.")
         return
     send_ranked_volume_message(bullish_ids)
 
 
-# ⏱️ 스케줄러 시작
 @app.on_event("startup")
 def start_scheduler():
     schedule.every(3).minutes.do(main)
