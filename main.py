@@ -191,26 +191,29 @@ def send_ranked_volume_message(bullish_ids):
     btc_volume = calculate_1h_volume(btc_id)
     btc_volume_str = format_volume_in_eok(btc_volume)
 
+    # Step 1: 24H 거래대금 수집
     for inst_id in bullish_ids:
         df_24h = get_ohlcv_okx(inst_id, bar="1D", limit=2)
         vol_24h = df_24h['volCcyQuote'].sum() if df_24h is not None else 0
         volume_24h_data[inst_id] = vol_24h
         time.sleep(random.uniform(0.2, 0.4))
 
+    # Step 2: 24H 거래대금 TOP 10
     top_10_24h = sorted(volume_24h_data.items(), key=lambda x: x[1], reverse=True)[:10]
     top_10_24h_ids = [item[0] for item in top_10_24h]
 
+    # Step 3: 1H 거래대금 수집 (24H top10 내에서만)
     for inst_id in top_10_24h_ids:
         vol_1h = calculate_1h_volume(inst_id)
         volume_1h_data[inst_id] = vol_1h
         time.sleep(random.uniform(0.2, 0.4))
 
-    top_10_1h = sorted(volume_1h_data.items(), key=lambda x: x[1], reverse=True)[:10]
-    top_10_1h_ids = set([item[0] for item in top_10_1h])
-
+    # ✅ Step 4: 1H 거래대금 기준으로 재정렬
+    filtered_and_sorted = sorted(volume_1h_data.items(), key=lambda x: x[1], reverse=True)
+    
     message_lines = [
         "📊 *OKX 정배열 매물대 분석*",
-        "📅 *1H + 4H EMA 정배열 & 거래대금 TOP 10 (24H 기준, 단 1H 거래대금도 상위 10위 포함 조건)*",
+        "📅 *1H + 4H EMA 정배열 & 거래대금 TOP (24H 기준 필터 + 1H 기준 정렬)*",
         "━━━━━━━━━━━━━━━━━━━",
         f"💰 *BTC* {btc_change_str} / 거래대금: {btc_volume_str}",
         btc_ema_status_all,
@@ -218,16 +221,13 @@ def send_ranked_volume_message(bullish_ids):
     ]
 
     rank = 1
-    for inst_id in top_10_24h_ids:
-        if inst_id not in top_10_1h_ids:
-            continue
-
+    for inst_id, vol_1h in filtered_and_sorted:
         change = calculate_daily_change(inst_id)
         change_str = format_change_with_emoji(change)
         df_15m = get_ohlcv_okx(inst_id, bar="15m", limit=200)
         ema_status = get_ema_status_text(df_15m, timeframe="15m") if df_15m is not None else "[15m] EMA 📊: ❌ 정보 없음"
         name = inst_id.replace("-USDT-SWAP", "")
-        vol_1h_text = format_volume_in_eok(volume_1h_data[inst_id])
+        vol_1h_text = format_volume_in_eok(vol_1h)
         star = "  🎯🎯🎯 차트확인" if change and change > 0 and df_15m is not None and is_15m_check_condition(df_15m) else ""
 
         message_lines.append(
@@ -237,9 +237,11 @@ def send_ranked_volume_message(bullish_ids):
         rank += 1
 
     message_lines.append("━━━━━━━━━━━━━━━━━━━")
-    message_lines.append("📡 *조건: 24H 거래대금 상위 10 중 1H 거래대금도 TOP10인 종목만 표시*")
+    message_lines.append("📡 *조건: 24H 거래대금 상위 10 → 그 중 1H 거래대금 기준으로 재정렬*")
 
     send_telegram_message("\n".join(message_lines))
+
+
 
 def main():
     logging.info("📥 전체 종목 기준 정배열 + 거래대금 분석 시작")
