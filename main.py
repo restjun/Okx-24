@@ -90,17 +90,19 @@ def get_ohlcv_okx(instId, bar='1H', limit=200):
         return None
 
 
-def is_ema_bullish(df):
+def is_ema_bullish_with_10_20(df):
     close = df['c'].values
+    ema_10 = get_ema_with_retry(close, 10)
     ema_20 = get_ema_with_retry(close, 20)
     ema_50 = get_ema_with_retry(close, 50)
     ema_200 = get_ema_with_retry(close, 200)
-    if None in [ema_20, ema_50, ema_200]:
+
+    if None in [ema_10, ema_20, ema_50, ema_200]:
         return False
-    return ema_20 > ema_50 > ema_200
+
+    return ema_10 > ema_20 > ema_50 > ema_200
 
 
-# ✅ 4H + 1H 정배열 필터링
 def filter_by_4h_and_1h_ema_alignment(inst_ids):
     bullish_ids = []
     for inst_id in inst_ids:
@@ -108,7 +110,7 @@ def filter_by_4h_and_1h_ema_alignment(inst_ids):
         df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=200)
         if df_4h is None or df_1h is None:
             continue
-        if is_ema_bullish(df_4h) and is_ema_bullish(df_1h):
+        if is_ema_bullish_with_10_20(df_4h) and is_ema_bullish_with_10_20(df_1h):
             bullish_ids.append(inst_id)
         time.sleep(random.uniform(0.2, 0.4))
     return bullish_ids
@@ -224,7 +226,7 @@ def send_ranked_volume_message(bullish_ids):
     ]
 
     message_lines = [
-        "📅 *[4H + 1H 정배열] + [24H 거래대금 Top10]*",
+        "📅 *[4H + 1H 정배열 (10>20>50>200)] + [24H 거래대금 Top10]*",
         "━━━━━━━━━━━━━━━━━━━",
         f"💰 *BTC* {btc_change_str} / 거래대금: {btc_volume_str}",
         f"    {btc_ema_status}",
