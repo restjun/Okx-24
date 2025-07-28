@@ -226,7 +226,7 @@ def send_ranked_volume_message(bullish_ids):
     ]
 
     message_lines = [
-        "📅 *[4H + 1H 정배열 (10>20>50>200)] + [24H 거래대금 Top10]*",
+        "📅 *[정배열 (10>20>50>200)] + [거래대금 Top10]*",
         "━━━━━━━━━━━━━━━━━━━",
         f"💰 *BTC* {btc_change_str} / 거래대금: {btc_volume_str}",
         f"    {btc_ema_status}",
@@ -245,7 +245,7 @@ def send_ranked_volume_message(bullish_ids):
             name = inst_id.replace("-USDT-SWAP", "")
             vol_1h_text = format_volume_in_eok(vol_1h)
             change_str = format_change_with_emoji(change)
-            condition_tag = "🔍 조건 만족" if check_ema_mixed_condition(df_1h) else ""
+            condition_tag = "🔍" if check_ema_mixed_condition(df_1h) else ""
 
             message_lines.append(
                 f"*{rank}. {name}* {change_str} | 💰 {vol_1h_text} {condition_tag}\n   {ema_status}"
