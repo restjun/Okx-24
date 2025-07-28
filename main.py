@@ -135,10 +135,9 @@ def calculate_daily_change(inst_id):
         logging.error(f"{inst_id} 상승률 계산 오류: {e}")
         return None
 
-
 def format_volume_in_eok(volume):
     try:
-        return f"{int(volume // 100_000)}억"
+        return f"{int(volume // 100_000)}💲"
     except:
         return "N/A"
 
@@ -147,7 +146,7 @@ def format_change_with_emoji(change):
     if change is None:
         return "(N/A)"
     if change >= 5:
-        return f"🚀🚀🚀 (+{change:.2f}%)"
+        return f"☀️☀️☀️ (+{change:.2f}%)"
     elif change > 0:
         return f"🟢 (+{change:.2f}%)"
     else:
