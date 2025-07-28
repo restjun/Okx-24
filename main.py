@@ -218,7 +218,7 @@ def send_ranked_volume_message(bullish_ids):
     ]
 
     message_lines = [
-        "📅 *[정배열] + [거래대금 Top10]*",
+        "📅 *[정배열 5/20/50] + [거래대금 Top3]*",
         "━━━━━━━━━━━━━━━━━━━",
         f"💰 *BTC* {btc_change_str} / 거래대금: {btc_volume_str}",
         f"    {btc_ema_status}",
