@@ -1,4 +1,3 @@
-
 from fastapi import FastAPI
 import telepot
 import schedule
@@ -17,7 +16,6 @@ telegram_user_id = 6596886700
 bot = telepot.Bot(telegram_bot_token)
 
 logging.basicConfig(level=logging.INFO)
-
 
 
 def send_telegram_message(message):
@@ -102,13 +100,15 @@ def is_ema_bullish(df):
     return ema_20 > ema_50 > ema_200
 
 
-def filter_by_4h_ema_alignment(inst_ids):
+# ✅ 4H + 1H 정배열 필터링
+def filter_by_4h_and_1h_ema_alignment(inst_ids):
     bullish_ids = []
     for inst_id in inst_ids:
         df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=200)
-        if df_4h is None:
+        df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=200)
+        if df_4h is None or df_1h is None:
             continue
-        if is_ema_bullish(df_4h):
+        if is_ema_bullish(df_4h) and is_ema_bullish(df_1h):
             bullish_ids.append(inst_id)
         time.sleep(random.uniform(0.2, 0.4))
     return bullish_ids
@@ -165,18 +165,15 @@ def get_ema_status_text(df, timeframe="1H"):
 
     def check(cond): return "✅" if cond else "❌"
 
-    # [10-20], [20-50], [50-200] 정배열 상태 + 1-20 추가
-    status = (
+    return (
         f"[{timeframe}] EMA 📊: "
         f"{check(ema_10 > ema_20)}"
         f"{check(ema_20 > ema_50)}"
         f"{check(ema_50 > ema_200)} "
         f"[1-20: {check(ema_1 > ema_20)}]"
     )
-    return status
 
 
-# ✅ 변경된 조건: EMA10 > EMA20, EMA20 > EMA50
 def check_ema_mixed_condition(df):
     close = df['c'].values
     ema_10 = get_ema_with_retry(close, 10)
@@ -185,6 +182,7 @@ def check_ema_mixed_condition(df):
     if None in [ema_10, ema_20, ema_50]:
         return False
     return ema_10 > ema_20 and ema_20 > ema_50
+
 
 def get_btc_ema_status_1h_only():
     btc_id = "BTC-USDT-SWAP"
@@ -226,7 +224,7 @@ def send_ranked_volume_message(bullish_ids):
     ]
 
     message_lines = [
-        "📅 *[4H 정배열] + [24H 거래대금 Top10]*",
+        "📅 *[4H + 1H 정배열] + [24H 거래대금 Top10]*",
         "━━━━━━━━━━━━━━━━━━━",
         f"💰 *BTC* {btc_change_str} / 거래대금: {btc_volume_str}",
         f"    {btc_ema_status}",
@@ -267,11 +265,11 @@ def send_ranked_volume_message(bullish_ids):
 
 
 def main():
-    logging.info("📥 전체 종목 기준 4H 정배열 + 거래대금 분석 시작")
+    logging.info("📥 전체 종목 기준 4H + 1H 정배열 + 거래대금 분석 시작")
     all_ids = get_all_okx_swap_symbols()
-    bullish_ids = filter_by_4h_ema_alignment(all_ids)
+    bullish_ids = filter_by_4h_and_1h_ema_alignment(all_ids)
     if not bullish_ids:
-        send_telegram_message("🔴 4H 정배열 종목 없음.")
+        send_telegram_message("🔴 4H + 1H 정배열 종목 없음.")
         return
     send_ranked_volume_message(bullish_ids)
 
