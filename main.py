@@ -154,31 +154,37 @@ def format_change_with_emoji(change):
 
 def get_ema_status_text(df, timeframe="1H"):
     close = df['c'].values
+    ema_1 = get_ema_with_retry(close, 1)
     ema_10 = get_ema_with_retry(close, 10)
     ema_20 = get_ema_with_retry(close, 20)
     ema_50 = get_ema_with_retry(close, 50)
     ema_200 = get_ema_with_retry(close, 200)
-    if None in [ema_10, ema_20, ema_50, ema_200]:
+
+    if None in [ema_1, ema_10, ema_20, ema_50, ema_200]:
         return f"[{timeframe}] EMA 📊: ❌ 데이터 부족"
+
     def check(cond): return "✅" if cond else "❌"
-    return (
+
+    # [10-20], [20-50], [50-200] 정배열 상태 + 1-20 추가
+    status = (
         f"[{timeframe}] EMA 📊: "
         f"{check(ema_10 > ema_20)}"
         f"{check(ema_20 > ema_50)}"
-        f"{check(ema_50 > ema_200)}"
+        f"{check(ema_50 > ema_200)} "
+        f"[1-20: {check(ema_1 > ema_20)}]"
     )
+    return status
 
 
-# ✅ 변경된 조건: 10-20 역배열, 20-50 정배열
+# ✅ 변경된 조건: EMA10 > EMA20, EMA20 > EMA50
 def check_ema_mixed_condition(df):
     close = df['c'].values
-    ema_1 = get_ema_with_retry(close, 1)
+    ema_10 = get_ema_with_retry(close, 10)
     ema_20 = get_ema_with_retry(close, 20)
     ema_50 = get_ema_with_retry(close, 50)
     if None in [ema_10, ema_20, ema_50]:
         return False
-    return ema_1 < ema_20 and ema_20 > ema_50
-
+    return ema_10 > ema_20 and ema_20 > ema_50
 
 def get_btc_ema_status_1h_only():
     btc_id = "BTC-USDT-SWAP"
