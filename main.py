@@ -148,13 +148,13 @@ def get_ema_status_text(df, timeframe="1H"):
     if None in [ema_5, ema_10, ema_20, ema_50]:
         return f"[{timeframe}] EMA 📊: ❌ 데이터 부족"
 
-    def check(cond): return "[✅]" if cond else "[❌]"
+    def check(cond): return "[✅] " if cond else "[❌] "
 
     return (
-        f"[{timeframe}] EMA 📊: "
+        f"[{timeframe}] EMA 📊:  "
         f"{check(ema_5 > ema_20)}"
         f"{check(ema_20 > ema_50)} "
-        f"[[5-10]: {check(ema_5 > ema_10)}]"
+        f" [[5-10]: {check(ema_5 > ema_10)}]"
     )
 
 def check_ema_mixed_condition(df):
@@ -171,7 +171,7 @@ def get_btc_ema_status_1h_only():
     df = get_ohlcv_okx(btc_id, bar='1H', limit=200)
     if df is not None:
         return get_ema_status_text(df, timeframe="1H")
-    return "[1H] EMA 📊: ❌ 불러오기 실패"
+    return "[1H] EMA 📊:  ❌ 불러오기 실패"
 
 def send_ranked_volume_message(bullish_ids):
     volume_24h_data = {}
