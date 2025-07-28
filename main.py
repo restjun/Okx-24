@@ -219,8 +219,7 @@ def send_ranked_volume_message(bullish_ids):
     ]
 
     message_lines = [
-        "📊 *OKX 정배열 매물대 분석*",
-        "📅 *[1D + 4H EMA 정배열] + [24H 거래대금 Top10 ]*",
+        "📅 *[1D + 4H 정배열] + [24H 거래대금 Top10]*",
         "━━━━━━━━━━━━━━━━━━━",
         f"💰 *BTC* {btc_change_str} / 거래대금: {btc_volume_str}",
         f"    {btc_ema_status}",
