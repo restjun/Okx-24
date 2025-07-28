@@ -219,7 +219,7 @@ def send_ranked_volume_message(bullish_ids):
         volume_1h_data[inst_id] = vol_1h
         time.sleep(random.uniform(0.2, 0.4))
 
-    MIN_1H_VOLUME = 100_000_000
+    MIN_1H_VOLUME = 100_000
     filtered_and_sorted = [
         (inst_id, vol) for inst_id, vol in sorted(volume_1h_data.items(), key=lambda x: x[1], reverse=True)
         if vol >= MIN_1H_VOLUME
