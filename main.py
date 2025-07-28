@@ -105,7 +105,7 @@ def filter_by_4h_and_1h_ema_alignment(inst_ids):
     return bullish_ids
 
 def calculate_1h_volume(inst_id):
-    df = get_ohlcv_okx(inst_id, bar="1H", limit=1)
+    df = get_ohlcv_okx(inst_id, bar="1H", limit=24)
     if df is None or len(df) < 1:
         return 0
     return df["volCcyQuote"].sum()
@@ -224,7 +224,7 @@ def send_ranked_volume_message(bullish_ids):
             name = inst_id.replace("-USDT-SWAP", "")
             vol_1h_text = format_volume_in_eok(vol_1h)
             change_str = format_change_with_emoji(change)
-            condition_tag = "🔍" if check_ema_mixed_condition(df_1h) else ""
+            condition_tag = ""
 
             message_lines.append(
                 f"*{rank}. {name}* {change_str} | 💰 {vol_1h_text} {condition_tag}\n   {ema_status}"
