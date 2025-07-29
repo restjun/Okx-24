@@ -177,7 +177,7 @@ def get_ema_status_text(df, timeframe="1H"):
         f"{check(ema_5 > ema_20)} "
         f"{check(ema_20 > ema_50)} "
         f"{check(ema_50 > ema_200)}"
-        f"   [1-2: {check(ema_1 > ema_2)[1:-1]}]"
+        f"   [ ❌={check(ema_1 > ema_2)[1:-1]}]"
     )
 
 def get_btc_ema_status_1h_only():
