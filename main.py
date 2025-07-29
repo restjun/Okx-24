@@ -176,11 +176,11 @@ def get_ema_status_text(df, timeframe="1H"):
         f"{check(ema_5 > ema_20)} "
         f"{check(ema_20 > ema_50)} "
         f"{check(ema_50 > ema_200)}"
-        f"   [🟩🟥=🟩{check(ema_1 > ema_2)[1:-1]}]"
+        f"   [ ☆☆☆ 🟩🟥=🟩{check(ema_1 > ema_2)[1:-1]}]"
     )
 
 def get_all_timeframe_ema_status(inst_id):
-    timeframes = ['1D', '4H', '1H', '15m']
+    timeframes = ['  1D', '  4H', '  1H', '15m']
     status_lines = []
     for tf in timeframes:
         df = get_ohlcv_okx(inst_id, bar=tf, limit=200)
