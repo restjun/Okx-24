@@ -242,12 +242,21 @@ def send_ranked_volume_message(bullish_ids):
         try:
             change = calculate_daily_change(inst_id)
             df_1h = get_ohlcv_okx(inst_id, bar="1H", limit=200)
-            if change is None or df_1h is None:
+            df_4h = get_ohlcv_okx(inst_id, bar="4H", limit=2)
+
+            if change is None or df_1h is None or df_4h is None:
                 continue
 
             ema_status = get_ema_status_text(df_1h, timeframe="1H")
-            is_consistent = is_ema_consistently_bullish(df_1h, count=10)
-            fire_icon = "🔥🔥🔥" if is_consistent else ""
+            is_consistent = is_ema_consistently_bullish(df_1h, count=15)
+            last_candle_4h = df_4h.iloc[-1]
+            is_bullish_last_candle = last_candle_4h['c'] > last_candle_4h['o']
+
+            fire_icon = ""
+            if is_consistent:
+                fire_icon += "🔥🔥🔥"
+            if is_bullish_last_candle:
+                fire_icon += " 🔥"
 
             name = inst_id.replace("-USDT-SWAP", "")
             vol_1h_text = format_volume_in_eok(vol_1h)
