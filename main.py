@@ -143,7 +143,7 @@ def calculate_daily_change(inst_id):
 
 def format_volume_in_eok(volume):
     try:
-        return f"{int(volume // 100_000_000)}"
+        return f"{int(volume // 100_000)}"
     except:
         return "N/A"
 
