@@ -92,6 +92,21 @@ def is_ema_bullish_5_20_50(df):
         return False
     return ema_5 > ema_20 > ema_50
 
+def is_ema_consistently_bullish(df, count=15):
+    closes = df['c'].values
+    if len(closes) < count + 50:
+        return False
+
+    series = pd.Series(closes)
+    ema_5 = series.ewm(span=5, adjust=False).mean()
+    ema_20 = series.ewm(span=20, adjust=False).mean()
+    ema_50 = series.ewm(span=50, adjust=False).mean()
+
+    for i in range(-count, 0):
+        if not (ema_5[i] > ema_20[i] > ema_50[i]):
+            return False
+    return True
+
 def filter_by_4h_and_1h_ema_alignment(inst_ids):
     bullish_ids = []
     for inst_id in inst_ids:
@@ -200,7 +215,7 @@ def send_ranked_volume_message(bullish_ids):
         volume_24h_data[inst_id] = vol_24h
         time.sleep(random.uniform(0.2, 0.4))
 
-    top_3_ids = sorted(volume_24h_data.items(), key=lambda x: x[1], reverse=True)[:10]
+    top_3_ids = sorted(volume_24h_data.items(), key=lambda x: x[1], reverse=True)[:20]
     top_3_ids = [item[0] for item in top_3_ids]
 
     for inst_id in top_3_ids:
@@ -231,12 +246,15 @@ def send_ranked_volume_message(bullish_ids):
                 continue
 
             ema_status = get_ema_status_text(df_1h, timeframe="1H")
+            is_consistent = is_ema_consistently_bullish(df_1h, count=15)
+            fire_icon = "🔥🔥🔥" if is_consistent else ""
+
             name = inst_id.replace("-USDT-SWAP", "")
             vol_1h_text = format_volume_in_eok(vol_1h)
             change_str = format_change_with_emoji(change)
 
             message_lines.append(
-                f"*{rank}. {name}* {change_str} | 💰 {vol_1h_text}\n   {ema_status}"
+                f"*{rank}. {name}* {change_str} | 💰 {vol_1h_text} {fire_icon}\n   {ema_status}"
             )
             message_lines.append("─────")
             rank += 1
