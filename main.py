@@ -271,7 +271,7 @@ def main():
 def run_scheduler():
     while True:
         schedule.run_pending()
-        time.sleep(1)
+        time.sleep(3)
 
 @app.on_event("startup")
 def start_scheduler():
