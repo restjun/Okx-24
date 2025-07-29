@@ -176,18 +176,18 @@ def get_ema_status_text(df, timeframe="1H"):
         f"{check(ema_5 > ema_20)} "
         f"{check(ema_20 > ema_50)} "
         f"{check(ema_50 > ema_200)}"
-        f"   [ ☆☆☆ (🟩🟥)=🟩{check(ema_1 > ema_2)[1:-1]}]"
+        f"   [(🟩🟥)=🟩{check(ema_1 > ema_2)[1:-1]}]"
     )
 
 def get_all_timeframe_ema_status(inst_id):
-    timeframes = ['  1D', '  4H', '  1H', '15m']
+    timeframes = ['   1D', '   4H', '   1H', '15m']
     status_lines = []
     for tf in timeframes:
         df = get_ohlcv_okx(inst_id, bar=tf, limit=200)
         if df is not None:
             status = get_ema_status_text(df, timeframe=tf)
         else:
-            status = f"[{tf}] EMA 📊: ❌ 불러오기 실패"
+            status = f"[{tf}] 📊: ❌ 불러오기 실패"
         status_lines.append(status)
         time.sleep(0.2)
     return "\n".join(status_lines)
@@ -224,7 +224,7 @@ def send_ranked_volume_message(bullish_ids):
     ]
 
     message_lines = [
-        "📅 *[정배열 5/20/50] + [거래대금 Top3]*",
+        "📅 *[정배열] + [거래대금 Top3]*",
         "━━━━━━━━━━━━━━━━━━━",
         f"💰 *BTC* {btc_change_str} / 거래대금: {btc_volume_str}",
         f"{btc_ema_status}",
