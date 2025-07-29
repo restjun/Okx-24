@@ -246,7 +246,7 @@ def send_ranked_volume_message(bullish_ids):
                 continue
 
             ema_status = get_ema_status_text(df_1h, timeframe="1H")
-            is_consistent = is_ema_consistently_bullish(df_1h, count=15)
+            is_consistent = is_ema_consistently_bullish(df_1h, count=10)
             fire_icon = "🔥🔥🔥" if is_consistent else ""
 
             name = inst_id.replace("-USDT-SWAP", "")
