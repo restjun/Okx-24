@@ -15,6 +15,8 @@ telegram_bot_token = "8451481398:AAHHg2wVDKphMruKsjN2b6NFKJ50jhxEe-g"
 telegram_user_id = 6596886700
 bot = telepot.Bot(telegram_bot_token)
 
+
+
 logging.basicConfig(level=logging.INFO)
 
 def send_telegram_message(message):
@@ -157,7 +159,6 @@ def format_change_with_emoji(change):
     else:
         return f"🔴 ({change:.2f}%)"
 
-# ✅ 수정된 이평 상태 함수 (1시간선 vs 2시간선 포함)
 def get_ema_status_text(df, timeframe="1H"):
     close = df['c'].values
     ema_1 = get_ema_with_retry(close, 1)
@@ -180,19 +181,25 @@ def get_ema_status_text(df, timeframe="1H"):
         f"   [ ❌={check(ema_1 > ema_2)[1:-1]}]"
     )
 
-def get_btc_ema_status_1h_only():
-    btc_id = "BTC-USDT-SWAP"
-    df = get_ohlcv_okx(btc_id, bar='1H', limit=200)
-    if df is not None:
-        return get_ema_status_text(df, timeframe="1H")
-    return "[1H] EMA 📊:  ❌ 불러오기 실패"
+def get_all_timeframe_ema_status(inst_id):
+    timeframes = ['1D', '4H', '1H']
+    status_lines = []
+    for tf in timeframes:
+        df = get_ohlcv_okx(inst_id, bar=tf, limit=200)
+        if df is not None:
+            status = get_ema_status_text(df, timeframe=tf)
+        else:
+            status = f"[{tf}] EMA 📊: ❌ 불러오기 실패"
+        status_lines.append(status)
+        time.sleep(0.2)
+    return "\n".join(status_lines)
 
 def send_ranked_volume_message(bullish_ids):
     volume_24h_data = {}
     volume_1h_data = {}
 
     btc_id = "BTC-USDT-SWAP"
-    btc_ema_status = get_btc_ema_status_1h_only()
+    btc_ema_status = get_all_timeframe_ema_status(btc_id)
     btc_change = calculate_daily_change(btc_id)
     btc_change_str = format_change_with_emoji(btc_change)
     btc_volume = calculate_1h_volume(btc_id)
@@ -222,7 +229,7 @@ def send_ranked_volume_message(bullish_ids):
         "📅 *[정배열 5/20/50] + [거래대금 Top3]*",
         "━━━━━━━━━━━━━━━━━━━",
         f"💰 *BTC* {btc_change_str} / 거래대금: {btc_volume_str}",
-        f"    {btc_ema_status}",
+        f"{btc_ema_status}",
         "━━━━━━━━━━━━━━━━━━━"
     ]
 
@@ -230,21 +237,18 @@ def send_ranked_volume_message(bullish_ids):
     for inst_id, vol_1h in filtered_and_sorted:
         try:
             change = calculate_daily_change(inst_id)
-            df_1h = get_ohlcv_okx(inst_id, bar="1H", limit=200)
-            if change is None or df_1h is None:
+            if change is None:
                 continue
-
-            ema_status = get_ema_status_text(df_1h, timeframe="1H")
+            ema_status = get_all_timeframe_ema_status(inst_id)
             name = inst_id.replace("-USDT-SWAP", "")
             vol_1h_text = format_volume_in_eok(vol_1h)
             change_str = format_change_with_emoji(change)
 
             message_lines.append(
-                f"*{rank}. {name}* {change_str} | 💰 {vol_1h_text}\n   {ema_status}"
+                f"*{rank}. {name}* {change_str} | 💰 {vol_1h_text}\n{ema_status}"
             )
             message_lines.append("─────")
             rank += 1
-
         except Exception as e:
             logging.error(f"{inst_id} 메시지 생성 오류: {e}")
             continue
@@ -277,4 +281,4 @@ def start_scheduler():
     threading.Thread(target=run_scheduler, daemon=True).start()
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8000)            
