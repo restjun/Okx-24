@@ -11,7 +11,7 @@ import random
 
 app = FastAPI()
 
-telegram_bot_token = "6389499820:AAHMY1ZMeeEa1ySl7osQ6s2LY0Psq_IuyWY7"
+telegram_bot_token = "8170040373:AAFaEM789kB8aemN69BWwSjZ74HEVOQXP5s"
 telegram_user_id = 6596886700
 bot = telepot.Bot(telegram_bot_token)
 
