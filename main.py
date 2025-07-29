@@ -157,15 +157,17 @@ def format_change_with_emoji(change):
     else:
         return f"🔴 ({change:.2f}%)"
 
-# ✅ 수정된 함수
+# ✅ 수정된 이평 상태 함수 (1시간선 vs 2시간선 포함)
 def get_ema_status_text(df, timeframe="1H"):
     close = df['c'].values
+    ema_1 = get_ema_with_retry(close, 1)
+    ema_2 = get_ema_with_retry(close, 2)
     ema_5 = get_ema_with_retry(close, 5)
     ema_20 = get_ema_with_retry(close, 20)
     ema_50 = get_ema_with_retry(close, 50)
     ema_200 = get_ema_with_retry(close, 200)
 
-    if None in [ema_5, ema_20, ema_50, ema_200]:
+    if None in [ema_1, ema_2, ema_5, ema_20, ema_50, ema_200]:
         return f"[{timeframe}] EMA 📊: ❌ 데이터 부족"
 
     def check(cond): return "[✅]" if cond else "[❌]"
@@ -175,6 +177,7 @@ def get_ema_status_text(df, timeframe="1H"):
         f"{check(ema_5 > ema_20)} "
         f"{check(ema_20 > ema_50)} "
         f"{check(ema_50 > ema_200)}"
+        f"   [1-2: {check(ema_1 > ema_2)[1:-1]}]"
     )
 
 def get_btc_ema_status_1h_only():
