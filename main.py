@@ -15,8 +15,6 @@ telegram_bot_token = "8451481398:AAHHg2wVDKphMruKsjN2b6NFKJ50jhxEe-g"
 telegram_user_id = 6596886700
 bot = telepot.Bot(telegram_bot_token)
 
-
-
 logging.basicConfig(level=logging.INFO)
 
 def send_telegram_message(message):
@@ -182,7 +180,7 @@ def get_ema_status_text(df, timeframe="1H"):
     )
 
 def get_all_timeframe_ema_status(inst_id):
-    timeframes = ['1D', '4H', '1H']
+    timeframes = ['1D', '4H', '1H', '15m']
     status_lines = []
     for tf in timeframes:
         df = get_ohlcv_okx(inst_id, bar=tf, limit=200)
@@ -281,4 +279,4 @@ def start_scheduler():
     threading.Thread(target=run_scheduler, daemon=True).start()
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)            
+    uvicorn.run(app, host="0.0.0.0", port=8000)
