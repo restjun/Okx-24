@@ -153,9 +153,9 @@ def format_change_with_emoji(change):
     if change >= 5:
         return f"🎯🎯🎯 (+{change:.2f}%)"
     elif change > 0:
-        return f"🟢 (+{change:.2f}%)"
+        return f"🟢🟢🟢 (+{change:.2f}%)"
     else:
-        return f"🔴 ({change:.2f}%)"
+        return f"🔴🔴🔴 ({change:.2f}%)"
 
 def get_ema_status_text(df, timeframe="1H"):
     close = df['c'].values
@@ -200,7 +200,7 @@ def send_ranked_volume_message(bullish_ids):
         volume_24h_data[inst_id] = vol_24h
         time.sleep(random.uniform(0.2, 0.4))
 
-    top_3_ids = sorted(volume_24h_data.items(), key=lambda x: x[1], reverse=True)[:3]
+    top_3_ids = sorted(volume_24h_data.items(), key=lambda x: x[1], reverse=True)[:10]
     top_3_ids = [item[0] for item in top_3_ids]
 
     for inst_id in top_3_ids:
@@ -215,7 +215,7 @@ def send_ranked_volume_message(bullish_ids):
     ]
 
     message_lines = [
-        "📅 *[정배열 5/20/50] + [거래대금 Top3]*",
+        "📅 *[정배열 5/20/50] + [거래대금 Top10]*",
         "━━━━━━━━━━━━━━━━━━━",
         f"💰 *BTC* {btc_change_str} / 거래대금: {btc_volume_str}",
         f"    {btc_ema_status}",
