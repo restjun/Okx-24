@@ -169,14 +169,14 @@ def get_ema_status_text(df, timeframe="1H"):
     if None in [ema_1, ema_2, ema_5, ema_20, ema_50, ema_200]:
         return f"[{timeframe}] EMA 📊: ❌ 데이터 부족"
 
-    def check(cond): return "[✅]" if cond else "[❌]"
+    def check(cond): return "[🟩]" if cond else "[🟥]"
 
     return (
         f"[{timeframe}] EMA 📊: "
         f"{check(ema_5 > ema_20)} "
         f"{check(ema_20 > ema_50)} "
         f"{check(ema_50 > ema_200)}"
-        f"   [ ❌={check(ema_1 > ema_2)[1:-1]}]"
+        f"   [🟩🟥=🟩{check(ema_1 > ema_2)[1:-1]}]"
     )
 
 def get_all_timeframe_ema_status(inst_id):
