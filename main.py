@@ -201,6 +201,11 @@ def get_all_timeframe_ema_status(inst_id):
             status = get_ema_status_text(df, timeframe=tf)
         else:
             status = f"[{tf}] 📊: ❌ 불러오기 실패"
+
+        # ✅ 1시간봉에만 밑줄 한 줄 추가
+        if tf.strip() == "1H":
+            status += "\n───────────────────────────────"
+
         status_lines.append(status)
         time.sleep(0.2)
     return "\n".join(status_lines)
