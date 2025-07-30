@@ -236,7 +236,7 @@ def send_ranked_volume_message(bullish_ids):
     ]
 
     message_lines = [
-        "📅 *[정배열] + [거래대금 Top3]*",
+        "📅 *[정배열] + [거래대금 24시간 Top3]*",
         "━━━━━━━━━━━━━━━━━━━",
         f"💰 *BTC* {btc_change_str} / 거래대금: {btc_volume_str}",
         f"{btc_ema_status}",
@@ -267,7 +267,7 @@ def send_ranked_volume_message(bullish_ids):
         message_lines.append("⚠️ 조건을 만족하는 종목이 없습니다.")
     else:
         message_lines.append("━━━━━━━━━━━━━━━━━━━")
-        message_lines.append("📡 *작은 파동보다는 큰 파동을 보자*")
+        message_lines.append("📡 *큰 파동 거래대금 24시간*")
 
     send_telegram_message("\n".join(message_lines))
 
