@@ -83,14 +83,15 @@ def get_ohlcv_okx(instId, bar='1H', limit=200):
         logging.error(f"{instId} OHLCV 파싱 실패: {e}")
         return None
 
-def is_ema_bullish_5_20_50(df):
+def is_ema_bullish_5_20_50_200(df):
     close = df['c'].values
     ema_5 = get_ema_with_retry(close, 5)
     ema_20 = get_ema_with_retry(close, 20)
     ema_50 = get_ema_with_retry(close, 50)
-    if None in [ema_5, ema_20, ema_50]:
+    ema_200 = get_ema_with_retry(close, 200)
+    if None in [ema_5, ema_20, ema_50, ema_200]:
         return False
-    return ema_5 > ema_20 > ema_50
+    return ema_5 > ema_20 > ema_50 > ema_200 and ema_50 > ema_200
 
 def filter_by_4h_and_1h_ema_alignment(inst_ids):
     bullish_ids = []
@@ -99,7 +100,7 @@ def filter_by_4h_and_1h_ema_alignment(inst_ids):
         df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=300)
         if df_4h is None or df_1h is None:
             continue
-        if is_ema_bullish_5_20_50(df_4h) and is_ema_bullish_5_20_50(df_1h):
+        if is_ema_bullish_5_20_50_200(df_4h) and is_ema_bullish_5_20_50_200(df_1h):
             bullish_ids.append(inst_id)
         time.sleep(random.uniform(0.2, 0.4))
     return bullish_ids
@@ -159,7 +160,6 @@ def format_change_with_emoji(change):
 
 def get_ema_status_text(df, timeframe="1H"):
     close = df['c'].values
-
     ema_1 = get_ema_with_retry(close, 2)
     ema_2 = get_ema_with_retry(close, 3)
     ema_5 = get_ema_with_retry(close, 5)
@@ -202,7 +202,6 @@ def get_all_timeframe_ema_status(inst_id):
         else:
             status = f"[{tf}] 📊: ❌ 불러오기 실패"
 
-        # ✅ 1시간봉에만 밑줄 한 줄 추가
         if tf.strip() == "1H":
             status += "\n───────────────────"
 
