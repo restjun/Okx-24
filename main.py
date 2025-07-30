@@ -268,9 +268,10 @@ def send_ranked_volume_message(bullish_ids):
         message_lines.append("⚠️ 조건을 만족하는 종목이 없습니다.")
     else:
         message_lines.append("━━━━━━━━━━━━━━━━━━━")
-        message_lines.append("📡 *1.5시간이상 추세유지.*")
-        message_lines.append("📡 *2.직전고점을 돌파하거나 돌파전.*")
-        message_lines.append("📡 *3.거래대금 우선 / 패턴 / 추격금지*")
+        message_lines.append("✅️ *1.5시간이상 추세유지.*")
+        message_lines.append("✅️ *2.직전고점을 돌파하거나 돌파전.*")
+        message_lines.append("✅️ *3.거래대금 우선 / 패턴 / 추격금지*")
+        message_lines.append("✅️ *4.기준봉하단 / 다이버전스 자동손전*")
 
     send_telegram_message("\n".join(message_lines))
 
