@@ -143,7 +143,7 @@ def calculate_daily_change(inst_id):
 
 def format_volume_in_eok(volume):
     try:
-        return f"{int(volume // 100_000)}"
+        return f"{int(volume // 100_000_000)}"
     except:
         return "N/A"
 
@@ -256,7 +256,7 @@ def send_ranked_volume_message(bullish_ids):
             change_str = format_change_with_emoji(change)
 
             message_lines.append(
-                f"*{rank}. {name}* {change_str} | 💸 {vol_1h_text}\n{ema_status}"
+                f"*{rank}. {name}* {change_str} | 💸0원(금지)💸 {vol_1h_text}\n{ema_status}"
             )
             message_lines.append("─────")
             rank += 1
