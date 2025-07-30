@@ -262,7 +262,7 @@ def send_ranked_volume_message(bullish_ids):
             message_lines.append(
                 f"*{rank}. {name}* {change_str} | (🅾️)금지 💵 ({vol_1h_text})\n{ema_status}"
             )
-            message_lines.append("─────")
+            message_lines.append("──────────────────")
             rank += 1
         except Exception as e:
             logging.error(f"{inst_id} 메시지 생성 오류: {e}")
@@ -275,7 +275,7 @@ def send_ranked_volume_message(bullish_ids):
         message_lines.append("✅️ *1.10시간 이상 추세유지.*")
         message_lines.append("✅️ *2.직전고점을 돌파하거나 돌파전.*")
         message_lines.append("✅️ *3.거래대금 우선 / 패턴 / 추격금지*")
-        message_lines.append("✅️ *4.기준봉하단 / 다이버전스 자동손절*")
+        message_lines.append("✅️ *4.기준봉손절/ 직전고점  익절*")
 
     send_telegram_message("\n".join(message_lines))
 
