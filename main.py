@@ -95,8 +95,8 @@ def is_ema_bullish_5_20_50(df):
 def filter_by_4h_and_1h_ema_alignment(inst_ids):
     bullish_ids = []
     for inst_id in inst_ids:
-        df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=200)
-        df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=200)
+        df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=300)
+        df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=300)
         if df_4h is None or df_1h is None:
             continue
         if is_ema_bullish_5_20_50(df_4h) and is_ema_bullish_5_20_50(df_1h):
@@ -159,6 +159,7 @@ def format_change_with_emoji(change):
 
 def get_ema_status_text(df, timeframe="1H"):
     close = df['c'].values
+
     ema_1 = get_ema_with_retry(close, 1)
     ema_2 = get_ema_with_retry(close, 2)
     ema_5 = get_ema_with_retry(close, 5)
@@ -166,24 +167,35 @@ def get_ema_status_text(df, timeframe="1H"):
     ema_50 = get_ema_with_retry(close, 50)
     ema_200 = get_ema_with_retry(close, 200)
 
-    if None in [ema_1, ema_2, ema_5, ema_20, ema_50, ema_200]:
-        return f"[{timeframe}] EMA 📊: ❌ 데이터 부족"
-
     def check(cond): return "[🟩]" if cond else "[🟥]"
 
-    return (
-        f"[{timeframe}] EMA 📊: "
-        f"{check(ema_5 > ema_20)} "
-        f"{check(ema_20 > ema_50)} "
-        f"{check(ema_50 > ema_200)}"
-        f"   [(🟩🟩)=🟩{check(ema_1 > ema_2)[1:-1]}]"
-    )
+    status_parts = []
+    if None not in (ema_5, ema_20):
+        status_parts.append(f"{check(ema_5 > ema_20)}")
+    if None not in (ema_20, ema_50):
+        status_parts.append(f"{check(ema_20 > ema_50)}")
+    if None not in (ema_50, ema_200):
+        status_parts.append(f"{check(ema_50 > ema_200)}")
+
+    short_term_status = ""
+    if None not in (ema_1, ema_2):
+        short_term_status = f"[(🟩🟩)=🟩{check(ema_1 > ema_2)[1:-1]}]"
+
+    if not status_parts and not short_term_status:
+        return f"[{timeframe}] EMA 📊: ❌ 데이터 부족"
+
+    return f"[{timeframe}] EMA 📊: {' '.join(status_parts)}   {short_term_status}"
 
 def get_all_timeframe_ema_status(inst_id):
-    timeframes = ['   1D', '   4H', '   1H', '15m']
+    timeframes = {
+        '   1D': 250,
+        '   4H': 300,
+        '   1H': 300,
+        '15m': 300
+    }
     status_lines = []
-    for tf in timeframes:
-        df = get_ohlcv_okx(inst_id, bar=tf, limit=200)
+    for tf, limit in timeframes.items():
+        df = get_ohlcv_okx(inst_id, bar=tf.strip(), limit=limit)
         if df is not None:
             status = get_ema_status_text(df, timeframe=tf)
         else:
@@ -271,7 +283,7 @@ def main():
 def run_scheduler():
     while True:
         schedule.run_pending()
-        time.sleep(3)
+        time.sleep(1)
 
 @app.on_event("startup")
 def start_scheduler():
