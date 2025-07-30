@@ -202,9 +202,6 @@ def get_all_timeframe_ema_status(inst_id):
         else:
             status = f"[{tf}] 📊: ❌ 불러오기 실패"
 
-        if tf.strip() == "1H":
-            status += "\n───────────────────"
-
         status_lines.append(status)
         time.sleep(0.2)
     return "\n".join(status_lines)
