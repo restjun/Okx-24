@@ -151,7 +151,7 @@ def format_change_with_emoji(change):
     if change is None:
         return "(N/A)"
     if change >= 5:
-        return f"🎯🎯🎯 (+{change:.2f}%)"
+        return f"🚨🚨🚨 (+{change:.2f}%)"
     elif change > 0:
         return f"🟢 (+{change:.2f}%)"
     else:
