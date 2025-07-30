@@ -167,24 +167,25 @@ def get_ema_status_text(df, timeframe="1H"):
     ema_50 = get_ema_with_retry(close, 50)
     ema_200 = get_ema_with_retry(close, 200)
 
-    def check(cond): return "[🟩]" if cond else "[🟥]"
+    def check(cond):
+        if cond is None:
+            return "[❌]"
+        return "[🟩]" if cond else "[🟥]"
 
-    status_parts = []
-    if None not in (ema_5, ema_20):
-        status_parts.append(f"{check(ema_5 > ema_20)}")
-    if None not in (ema_20, ema_50):
-        status_parts.append(f"{check(ema_20 > ema_50)}")
-    if None not in (ema_50, ema_200):
-        status_parts.append(f"{check(ema_50 > ema_200)}")
+    def safe_compare(a, b):
+        if a is None or b is None:
+            return None
+        return a > b
 
-    short_term_status = ""
-    if None not in (ema_1, ema_2):
-        short_term_status = f"[(🟩🟩)=🟩{check(ema_1 > ema_2)[1:-1]}]"
+    status_parts = [
+        check(safe_compare(ema_5, ema_20)),
+        check(safe_compare(ema_20, ema_50)),
+        check(safe_compare(ema_50, ema_200))
+    ]
 
-    if not status_parts and not short_term_status:
-        return f"[{timeframe}] EMA 📊: ❌ 데이터 부족"
+    short_term_status = check(safe_compare(ema_1, ema_2))
 
-    return f"[{timeframe}] EMA 📊: {' '.join(status_parts)}   {short_term_status}"
+    return f"[{timeframe}] EMA 📊: {' '.join(status_parts)}   [(1>2): {short_term_status}]"
 
 def get_all_timeframe_ema_status(inst_id):
     timeframes = {
