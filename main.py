@@ -237,7 +237,7 @@ def send_ranked_volume_message(bullish_ids):
     ]
 
     message_lines = [
-        "📅 *[정배열] + [거래대금 24시간 Top3]*",
+        "🎯 *[정배열] + [거래대금 24시간 Top3]*",
         "━━━━━━━━━━━━━━━━━━━",
         f"💰 *BTC* {btc_change_str} / 거래대금: {btc_volume_str}",
         f"{btc_ema_status}",
@@ -256,7 +256,7 @@ def send_ranked_volume_message(bullish_ids):
             change_str = format_change_with_emoji(change)
 
             message_lines.append(
-                f"*{rank}. {name}* {change_str} | 💰 {vol_1h_text}\n{ema_status}"
+                f"*{rank}. {name}* {change_str} | 💸 {vol_1h_text}\n{ema_status}"
             )
             message_lines.append("─────")
             rank += 1
