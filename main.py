@@ -96,12 +96,15 @@ def get_combined_ema_status(inst_id):
         ema_5_4h = get_ema_with_retry(close_4h, 5)
         ema_20_4h = get_ema_with_retry(close_4h, 20)
         ema_50_4h = get_ema_with_retry(close_4h, 50)
+        ema_200_4h = get_ema_with_retry(close_4h, 200)
 
         ema_5_1h = get_ema_with_retry(close_1h, 5)
         ema_20_1h = get_ema_with_retry(close_1h, 20)
         ema_50_1h = get_ema_with_retry(close_1h, 50)
+        ema_200_1h = get_ema_with_retry(close_1h, 200)
 
-        if None in [ema_5_4h, ema_20_4h, ema_50_4h, ema_5_1h, ema_20_1h, ema_50_1h]:
+        if None in [ema_5_4h, ema_20_4h, ema_50_4h, ema_200_4h,
+                    ema_5_1h, ema_20_1h, ema_50_1h, ema_200_1h]:
             return None
 
         bullish = (
@@ -114,7 +117,14 @@ def get_combined_ema_status(inst_id):
             ema_5_1h < ema_20_1h < ema_50_1h
         )
 
-        return {"bullish": bullish, "bearish": bearish}
+        return {
+            "bullish": bullish,
+            "bearish": bearish,
+            "ema_50_4h": ema_50_4h,
+            "ema_200_4h": ema_200_4h,
+            "ema_50_1h": ema_50_1h,
+            "ema_200_1h": ema_200_1h
+        }
     except Exception as e:
         logging.error(f"{inst_id} EMA 상태 계산 실패: {e}")
         return None
@@ -191,6 +201,7 @@ def get_ema_status_text(df, timeframe="1H"):
     ema_5 = get_ema_with_retry(close, 5)
     ema_20 = get_ema_with_retry(close, 20)
     ema_50 = get_ema_with_retry(close, 50)
+    ema_200 = get_ema_with_retry(close, 200)
 
     def check(cond):
         if cond is None:
@@ -205,6 +216,7 @@ def get_ema_status_text(df, timeframe="1H"):
     status_parts = [
         check(safe_compare(ema_5, ema_20)),
         check(safe_compare(ema_20, ema_50)),
+        check(safe_compare(ema_50, ema_200)),
     ]
 
     short_term_status = check(safe_compare(ema_1, ema_2))
@@ -285,7 +297,7 @@ def send_ranked_volume_message(top_bullish, top_bearish):
         "✅️ *1.10시간 이상 추세유지.*",
         "✅️ *2.직전고점을 돌파하거나 돌파전.*",
         "✅️ *3.거래대금 우선 / 패턴 / 추격금지*",
-        "✅️ *4.기준봉손절/ 직전고점  익절*"
+        "✅️ *4.기준봉손절/ 5-20-50*"
     ]
 
     send_telegram_message("\n".join(message_lines))
