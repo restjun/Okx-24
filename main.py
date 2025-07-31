@@ -257,7 +257,7 @@ def send_ranked_volume_message(bullish_ids):
             change_str = format_change_with_emoji(change)
 
             message_lines.append(
-                f"*{rank}. {name}* {change_str} | (🅾️)금지 💵 ({vol_1h_text})\n{ema_status}"
+                f"*{rank}. {name}* {change_str} | (🅾️)금지 💵 ( {vol_1h_text} )\n{ema_status}"
             )
             message_lines.append("──────────────────")
             rank += 1
