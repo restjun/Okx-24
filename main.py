@@ -173,8 +173,8 @@ def format_change_with_emoji(change):
 
 def get_ema_status_text(df, timeframe="1H"):
     close = df['c'].values
-    ema_1 = get_ema_with_retry(close, 2)
-    ema_2 = get_ema_with_retry(close, 3)
+    ema_1 = get_ema_with_retry(close, 1)
+    ema_2 = get_ema_with_retry(close, 2)
     ema_5 = get_ema_with_retry(close, 5)
     ema_20 = get_ema_with_retry(close, 20)
     ema_50 = get_ema_with_retry(close, 50)
