@@ -246,7 +246,7 @@ def send_ranked_volume_message(top_bullish, top_bearish):
         volume_1h = calculate_1h_volume(inst_id)
         message_lines += [
             "📉 *[역배열] + [24H 거래대금 Top1]*",
-            f"*1. {name}* {format_change_with_emoji(change)} | 💵 {format_volume_in_eok(volume_1h)}\n{ema_status}",
+            f"*1. {name}* {format_change_with_emoji(change)} | 💵 ({format_volume_in_eok(volume_1h)})\n{ema_status}",
             "━━━━━━━━━━━━━━━━━━━"
         ]
     else:
