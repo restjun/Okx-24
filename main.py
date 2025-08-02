@@ -232,7 +232,7 @@ def send_ranked_volume_message(top_bullish, top_bearish):
             ema_status = get_all_timeframe_ema_status(inst_id)
             volume_1h = calculate_1h_volume(inst_id)
             message_lines += [
-                f"*{i}. {name}* {format_change_with_emoji(change)} | 💵 {format_volume_in_eok(volume_1h)}\n{ema_status}",
+                f"*{i}. {name}* {format_change_with_emoji(change)} | 💵 ({format_volume_in_eok(volume_1h)})\n{ema_status}",
                 "━━━━━━━━━━━━━━━━━━━"
             ]
     else:
