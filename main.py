@@ -189,7 +189,7 @@ def get_ema_status_text(df, timeframe="1H"):
     ]
 
     short_term_status = check(safe_compare(ema_1, ema_2))
-    return f"[{timeframe}] EMA 📊: {' '.join(status_parts)}   [(🟩): {short_term_status}]"
+    return f"[{timeframe}] EMA 📊: {' '.join(status_parts)}   [{short_term_status}]"
 
 def get_all_timeframe_ema_status(inst_id):
     timeframes = {
