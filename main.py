@@ -254,10 +254,10 @@ def send_ranked_volume_message(top_bullish, top_bearish):
         message_lines.append("⚠️ 역배열 종목 없음.")
 
     message_lines += [
-        "✅️ *1. 10시간 이상 추세유지*",
-        "✅️ *2. 직전 고점 돌파 여부*",
-        "✅️ *3. 거래대금 필수 / 추격금지*",
-        "✅️ *4. 기준봉 손절 / 5-20-50 사용*"
+        "✅️ *1. 거래대금 TOP / 정배열 5-20-50-200 *",
+        "✅️ *2. 정배열 / A(관심)- B(매수) - C(매도)  *",
+        "✅️ *3. 기준봉 손절 / RSI 과매도 매도*" 
+        "✅️ *4. 직전 고점 매도*",
     ]
 
     send_telegram_message("\n".join(message_lines))
