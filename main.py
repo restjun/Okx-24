@@ -17,7 +17,6 @@ bot = telepot.Bot(telegram_bot_token)
 
 logging.basicConfig(level=logging.INFO)
 
-
 # ✅ 텔레그램 메시지 전송
 def send_telegram_message(message):
     for retry_count in range(1, 11):
@@ -180,7 +179,7 @@ def format_change_with_emoji(change):
     else:
         return f"🔴 ({change:.2f}%)"
 
-# ✅ EMA 상태 텍스트
+# ✅ EMA 상태 텍스트 (100 → 200으로 수정됨)
 def get_ema_status_text(df, timeframe="1H"):
     close = df['c'].values
     ema_1 = get_ema_with_retry(close, 1)
@@ -188,7 +187,7 @@ def get_ema_status_text(df, timeframe="1H"):
     ema_5 = get_ema_with_retry(close, 5)
     ema_20 = get_ema_with_retry(close, 20)
     ema_50 = get_ema_with_retry(close, 50)
-    ema_100 = get_ema_with_retry(close, 100)
+    ema_200 = get_ema_with_retry(close, 200)
 
     def check(cond):
         if cond is None:
@@ -203,7 +202,7 @@ def get_ema_status_text(df, timeframe="1H"):
     status_parts = [
         check(safe_compare(ema_5, ema_20)),
         check(safe_compare(ema_20, ema_50)),
-        check(safe_compare(ema_50, ema_100))
+        check(safe_compare(ema_50, ema_200))
     ]
 
     short_term_status = check(safe_compare(ema_1, ema_2))
@@ -259,7 +258,7 @@ def send_ranked_volume_message(top_bullish, top_bearish):
             volume_1h = calculate_1h_volume(inst_id)
             volume_str = format_volume_in_eok(volume_1h)
             if not volume_str:
-                continue  # 거래대금이 1억 미만이면 제외
+                continue
             message_lines += [
                 f"*{i}. {name}* {format_change_with_emoji(change)} | 💵 ({volume_str})\n{ema_status}",
                 "━━━━━━━━━━━━━━━━━━━"
@@ -286,7 +285,7 @@ def send_ranked_volume_message(top_bullish, top_bearish):
         message_lines.append("⚠️ 역배열 종목 없음.")
 
     message_lines += [
-        "✅️ *1. 거래대금 TOP / 정배열 20-50-100*",
+        "✅️ *1. 거래대금 TOP / 정배열 20-50-200*",
         "✅️ *2. 정배열 / A(관심)- B(매수) - C(매도)*",
         "✅️ *3. 기준봉(손절) / RSI 과매수(매도)*",
         "✅️ *4. 직전고점(매도)*",
