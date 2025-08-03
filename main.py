@@ -234,7 +234,7 @@ def send_ranked_volume_message(top_bullish):
 
     if top_bullish:
         message_lines.append("📈 *[5-20-50-200] + [거래대금 Top1]*")
-        for i, (inst_id, _) in enumerate(top_bullish, 1):
+        for i, (inst_id, _) in enumerate(top_bullish, 3):
             name = inst_id.replace("-USDT-SWAP", "")
             change = calculate_daily_change(inst_id)
             ema_status = get_all_timeframe_ema_status(inst_id)
