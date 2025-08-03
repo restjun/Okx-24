@@ -260,7 +260,7 @@ def send_ranked_volume_message(top_bullish, top_bearish):
             if not volume_str:
                 continue
             message_lines += [
-                f"*{i}. {name}* {format_change_with_emoji(change)} | 💵 ({volume_str})\n{ema_status}",
+                f"*{i}. {name}* {format_change_with_emoji(change)} / 거래대금: ({volume_str})\n{ema_status}",
                 "━━━━━━━━━━━━━━━━━━━"
             ]
     else:
@@ -276,7 +276,7 @@ def send_ranked_volume_message(top_bullish, top_bearish):
         if volume_str:
             message_lines += [
                 "📉 *[역배열] + [24H 거래대금 Top1]*",
-                f"*1. {name}* {format_change_with_emoji(change)} | 💵 ({volume_str})\n{ema_status}",
+                f"*1. {name}* {format_change_with_emoji(change)} / 거래대금: ({volume_str})\n{ema_status}",
                 "━━━━━━━━━━━━━━━━━━━"
             ]
         else:
