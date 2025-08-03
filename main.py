@@ -17,10 +17,6 @@ bot = telepot.Bot(telegram_bot_token)
 
 logging.basicConfig(level=logging.INFO)
 
-
-
-logging.basicConfig(level=logging.INFO)
-
 def send_telegram_message(message):
     for retry_count in range(1, 11):
         try:
@@ -127,7 +123,7 @@ def get_top_bullish(inst_ids):
         candidates.append((inst_id, vol_24h))
         time.sleep(random.uniform(0.2, 0.4))
     sorted_by_volume = sorted(candidates, key=lambda x: x[1], reverse=True)
-    return sorted_by_volume[:1]
+    return sorted_by_volume[:3]  # ⬅️ 상위 3개 반환
 
 def calculate_daily_change(inst_id):
     df = get_ohlcv_okx(inst_id, bar="1H", limit=48)
@@ -233,8 +229,8 @@ def send_ranked_volume_message(top_bullish):
     ]
 
     if top_bullish:
-        message_lines.append("📈 *[5-20-50-200] + [거래대금 Top1]*")
-        for i, (inst_id, _) in enumerate(top_bullish, 1):
+        message_lines.append("📈 *[5-20-50-200] + [거래대금 Top3]*")
+        for i, (inst_id, _) in enumerate(top_bullish[:3], 1):  # Top 3
             name = inst_id.replace("-USDT-SWAP", "")
             change = calculate_daily_change(inst_id)
             ema_status = get_all_timeframe_ema_status(inst_id)
