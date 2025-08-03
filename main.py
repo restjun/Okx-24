@@ -86,7 +86,7 @@ def get_ohlcv_okx(instId, bar='1H', limit=200):
         logging.error(f"{instId} OHLCV 파싱 실패: {e}")
         return None
 
-# ✅ 5-20-50 정배열/역배열 판단
+# ✅ 5-20-50-200 정배열/역배열 판단
 def get_combined_ema_status(inst_id):
     try:
         df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=300)
@@ -96,10 +96,11 @@ def get_combined_ema_status(inst_id):
         ema_5 = get_ema_with_retry(close_1h, 5)
         ema_20 = get_ema_with_retry(close_1h, 20)
         ema_50 = get_ema_with_retry(close_1h, 50)
-        if None in [ema_5, ema_20, ema_50]:
+        ema_200 = get_ema_with_retry(close_1h, 200)
+        if None in [ema_5, ema_20, ema_50, ema_200]:
             return None
-        bullish = ema_5 > ema_20 > ema_50
-        bearish = ema_5 < ema_20 < ema_50
+        bullish = ema_5 > ema_20 > ema_50 > ema_200
+        bearish = ema_5 < ema_20 < ema_50 < ema_200
         return {"bullish": bullish, "bearish": bearish}
     except Exception as e:
         logging.error(f"{inst_id} EMA 상태 계산 실패: {e}")
