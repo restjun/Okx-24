@@ -87,21 +87,36 @@ def get_ohlcv_okx(instId, bar='1H', limit=200):
         logging.error(f"{instId} OHLCV 파싱 실패: {e}")
         return None
 
-# ✅ EMA 정배열/역배열 판단
+# ✅ EMA 정배열/역배열 판단 (1H + 4H) - 20-50-200 기준
 def get_combined_ema_status(inst_id):
     try:
+        # 1시간봉 데이터
         df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=300)
         if df_1h is None:
             return None
         close_1h = df_1h['c'].values
-        ema_5 = get_ema_with_retry(close_1h, 5)
-        ema_20 = get_ema_with_retry(close_1h, 20)
-        ema_50 = get_ema_with_retry(close_1h, 50)
-        ema_100 = get_ema_with_retry(close_1h, 100)
-        if None in [ema_5, ema_20, ema_50, ema_100]:
+        ema_1h_20 = get_ema_with_retry(close_1h, 20)
+        ema_1h_50 = get_ema_with_retry(close_1h, 50)
+        ema_1h_200 = get_ema_with_retry(close_1h, 200)
+
+        # 4시간봉 데이터
+        df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=300)
+        if df_4h is None:
             return None
-        bullish = ema_5 > ema_20 > ema_50 > ema_100
-        bearish = ema_5 < ema_20 < ema_50 < ema_100
+        close_4h = df_4h['c'].values
+        ema_4h_20 = get_ema_with_retry(close_4h, 20)
+        ema_4h_50 = get_ema_with_retry(close_4h, 50)
+        ema_4h_200 = get_ema_with_retry(close_4h, 200)
+
+        if None in [ema_1h_20, ema_1h_50, ema_1h_200,
+                    ema_4h_20, ema_4h_50, ema_4h_200]:
+            return None
+
+        bullish = (ema_1h_20 > ema_1h_50 > ema_1h_200) and \
+                  (ema_4h_20 > ema_4h_50 > ema_4h_200)
+        bearish = (ema_1h_20 < ema_1h_50 < ema_1h_200) and \
+                  (ema_4h_20 < ema_4h_50 < ema_4h_200)
+
         return {"bullish": bullish, "bearish": bearish}
     except Exception as e:
         logging.error(f"{inst_id} EMA 상태 계산 실패: {e}")
@@ -271,7 +286,7 @@ def send_ranked_volume_message(top_bullish, top_bearish):
         message_lines.append("⚠️ 역배열 종목 없음.")
 
     message_lines += [
-        "✅️ *1. 거래대금 TOP / 정배열 5-20-50-100*",
+        "✅️ *1. 거래대금 TOP / 정배열 20-50-100*",
         "✅️ *2. 정배열 / A(관심)- B(매수) - C(매도)*",
         "✅️ *3. 기준봉(손절) / RSI 과매수(매도)*",
         "✅️ *4. 직전고점(매도)*",
