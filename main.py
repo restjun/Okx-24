@@ -86,7 +86,7 @@ def get_ohlcv_okx(instId, bar='1H', limit=200):
         logging.error(f"{instId} OHLCV 파싱 실패: {e}")
         return None
 
-# ✅ 5-20-50-200 정배열/역배열 판단
+# ✅ 5-20-50-100 정배열/역배열 판단
 def get_combined_ema_status(inst_id):
     try:
         df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=300)
@@ -96,11 +96,11 @@ def get_combined_ema_status(inst_id):
         ema_5 = get_ema_with_retry(close_1h, 5)
         ema_20 = get_ema_with_retry(close_1h, 20)
         ema_50 = get_ema_with_retry(close_1h, 50)
-        ema_200 = get_ema_with_retry(close_1h, 200)
-        if None in [ema_5, ema_20, ema_50, ema_200]:
+        ema_100 = get_ema_with_retry(close_1h, 100)
+        if None in [ema_5, ema_20, ema_50, ema_100]:
             return None
-        bullish = ema_5 > ema_20 > ema_50 > ema_200
-        bearish = ema_5 < ema_20 < ema_50 < ema_200
+        bullish = ema_5 > ema_20 > ema_50 > ema_100
+        bearish = ema_5 < ema_20 < ema_50 < ema_100
         return {"bullish": bullish, "bearish": bearish}
     except Exception as e:
         logging.error(f"{inst_id} EMA 상태 계산 실패: {e}")
@@ -171,7 +171,7 @@ def get_ema_status_text(df, timeframe="1H"):
     ema_5 = get_ema_with_retry(close, 5)
     ema_20 = get_ema_with_retry(close, 20)
     ema_50 = get_ema_with_retry(close, 50)
-    ema_200 = get_ema_with_retry(close, 200)
+    ema_100 = get_ema_with_retry(close, 100)
 
     def check(cond):
         if cond is None:
@@ -186,7 +186,7 @@ def get_ema_status_text(df, timeframe="1H"):
     status_parts = [
         check(safe_compare(ema_5, ema_20)),
         check(safe_compare(ema_20, ema_50)),
-        check(safe_compare(ema_50, ema_200))
+        check(safe_compare(ema_50, ema_100))
     ]
 
     short_term_status = check(safe_compare(ema_1, ema_2))
@@ -209,6 +209,13 @@ def get_all_timeframe_ema_status(inst_id):
         status_lines.append(status)
         time.sleep(0.2)
     return "\n".join(status_lines)
+
+# ✅ 거래대금 계산
+def calculate_1h_volume(inst_id):
+    df = get_ohlcv_okx(inst_id, bar="1H", limit=24)
+    if df is None or len(df) < 1:
+        return 0
+    return df["volCcyQuote"].sum()
 
 # ✅ 메시지 생성 및 텔레그램 전송
 def send_ranked_volume_message(top_bullish, top_bearish):
@@ -254,20 +261,13 @@ def send_ranked_volume_message(top_bullish, top_bearish):
         message_lines.append("⚠️ 역배열 종목 없음.")
 
     message_lines += [
-        "✅️ *1. 거래대금 TOP / 정배열 5-20-50-200 *",
+        "✅️ *1. 거래대금 TOP / 정배열 5-20-50-100 *",
         "✅️ *2. 정배열 / A(관심)- B(매수) - C(매도)  *",
-        "✅️ *3. 기준봉 손절 / RSI 과매도 매도*" 
+        "✅️ *3. 기준봉 손절 / RSI 과매도 매도*",
         "✅️ *4. 직전 고점 매도*",
     ]
 
     send_telegram_message("\n".join(message_lines))
-
-# ✅ 거래대금 계산
-def calculate_1h_volume(inst_id):
-    df = get_ohlcv_okx(inst_id, bar="1H", limit=24)
-    if df is None or len(df) < 1:
-        return 0
-    return df["volCcyQuote"].sum()
 
 # ✅ 메인 실행 루틴
 def main():
