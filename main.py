@@ -17,6 +17,7 @@ bot = telepot.Bot(telegram_bot_token)
 
 logging.basicConfig(level=logging.INFO)
 
+
 # ✅ 텔레그램 메시지 전송
 def send_telegram_message(message):
     for retry_count in range(1, 11):
@@ -86,7 +87,7 @@ def get_ohlcv_okx(instId, bar='1H', limit=200):
         logging.error(f"{instId} OHLCV 파싱 실패: {e}")
         return None
 
-# ✅ 5-20-50-100 정배열/역배열 판단
+# ✅ EMA 정배열/역배열 판단
 def get_combined_ema_status(inst_id):
     try:
         df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=300)
@@ -146,12 +147,13 @@ def calculate_daily_change(inst_id):
         logging.error(f"{inst_id} 상승률 계산 오류: {e}")
         return None
 
-# ✅ 거래대금 포맷
+# ✅ 거래대금 포맷 (1억 원 미만 제외)
 def format_volume_in_eok(volume):
     try:
-        return f"{int(volume // 100_000_000)}"
+        eok = int(volume // 100_000_000)
+        return str(eok) if eok >= 1 else None
     except:
-        return "N/A"
+        return None
 
 def format_change_with_emoji(change):
     if change is None:
@@ -163,7 +165,7 @@ def format_change_with_emoji(change):
     else:
         return f"🔴 ({change:.2f}%)"
 
-# ✅ 여러 시간프레임 EMA 상태 확인
+# ✅ EMA 상태 텍스트
 def get_ema_status_text(df, timeframe="1H"):
     close = df['c'].values
     ema_1 = get_ema_with_retry(close, 1)
@@ -210,24 +212,25 @@ def get_all_timeframe_ema_status(inst_id):
         time.sleep(0.2)
     return "\n".join(status_lines)
 
-# ✅ 거래대금 계산
+# ✅ 1시간 거래대금 계산
 def calculate_1h_volume(inst_id):
     df = get_ohlcv_okx(inst_id, bar="1H", limit=24)
     if df is None or len(df) < 1:
         return 0
     return df["volCcyQuote"].sum()
 
-# ✅ 메시지 생성 및 텔레그램 전송
+# ✅ 텔레그램 메시지 전송 (정배열/역배열)
 def send_ranked_volume_message(top_bullish, top_bearish):
     btc_id = "BTC-USDT-SWAP"
     btc_ema_status = get_all_timeframe_ema_status(btc_id)
     btc_change = calculate_daily_change(btc_id)
     btc_volume = calculate_1h_volume(btc_id)
+    btc_volume_str = format_volume_in_eok(btc_volume) or "🚫 거래대금 부족"
 
     message_lines = [
         "🎯 *코인지수 비트코인*",
         "━━━━━━━━━━━━━━━━━━━",
-        f"💰 *BTC* {format_change_with_emoji(btc_change)} / 거래대금: ({format_volume_in_eok(btc_volume)})",
+        f"💰 *BTC* {format_change_with_emoji(btc_change)} / 거래대금: ({btc_volume_str})",
         f"{btc_ema_status}",
         "━━━━━━━━━━━━━━━━━━━"
     ]
@@ -239,8 +242,11 @@ def send_ranked_volume_message(top_bullish, top_bearish):
             change = calculate_daily_change(inst_id)
             ema_status = get_all_timeframe_ema_status(inst_id)
             volume_1h = calculate_1h_volume(inst_id)
+            volume_str = format_volume_in_eok(volume_1h)
+            if not volume_str:
+                continue  # 거래대금이 1억 미만이면 제외
             message_lines += [
-                f"*{i}. {name}* {format_change_with_emoji(change)} | 💵 ({format_volume_in_eok(volume_1h)})\n{ema_status}",
+                f"*{i}. {name}* {format_change_with_emoji(change)} | 💵 ({volume_str})\n{ema_status}",
                 "━━━━━━━━━━━━━━━━━━━"
             ]
     else:
@@ -252,11 +258,15 @@ def send_ranked_volume_message(top_bullish, top_bearish):
         change = calculate_daily_change(inst_id)
         ema_status = get_all_timeframe_ema_status(inst_id)
         volume_1h = calculate_1h_volume(inst_id)
-        message_lines += [
-            "📉 *[역배열] + [24H 거래대금 Top1]*",
-            f"*1. {name}* {format_change_with_emoji(change)} | 💵 ({format_volume_in_eok(volume_1h)})\n{ema_status}",
-            "━━━━━━━━━━━━━━━━━━━"
-        ]
+        volume_str = format_volume_in_eok(volume_1h)
+        if volume_str:
+            message_lines += [
+                "📉 *[역배열] + [24H 거래대금 Top1]*",
+                f"*1. {name}* {format_change_with_emoji(change)} | 💵 ({volume_str})\n{ema_status}",
+                "━━━━━━━━━━━━━━━━━━━"
+            ]
+        else:
+            message_lines.append("⚠️ 역배열 종목 거래대금 부족.")
     else:
         message_lines.append("⚠️ 역배열 종목 없음.")
 
@@ -265,7 +275,7 @@ def send_ranked_volume_message(top_bullish, top_bearish):
         "✅️ *2. 정배열 / A(관심)- B(매수) - C(매도)*",
         "✅️ *3. 기준봉(손절) / RSI 과매수(매도)*",
         "✅️ *4. 직전고점(매도)*",
-         ]
+    ]
 
     send_telegram_message("\n".join(message_lines))
 
