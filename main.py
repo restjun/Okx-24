@@ -263,8 +263,8 @@ def send_ranked_volume_message(top_bullish, top_bearish):
     message_lines += [
         "✅️ *1. 거래대금 TOP / 정배열 5-20-50-100*",
         "✅️ *2. 정배열 / A(관심)- B(매수) - C(매도)*",
-        "✅️ *3. 기준봉 손절 / RSI 과매도 매도*",
-        "✅️ *4. 직전 고점 매도*",
+        "✅️ *3. 기준봉(손절) / RSI 과매수(매도)*",
+        "✅️ *4. 직전고점(매도)*",
          ]
 
     send_telegram_message("\n".join(message_lines))
