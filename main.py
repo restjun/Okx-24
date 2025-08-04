@@ -7,13 +7,13 @@ import threading
 import uvicorn
 import logging
 import pandas as pd
-import random
 
 app = FastAPI()
 
 telegram_bot_token = "8451481398:AAHHg2wVDKphMruKsjN2b6NFKJ50jhxEe-g"
 telegram_user_id = 6596886700
 bot = telepot.Bot(telegram_bot_token)
+
 
 logging.basicConfig(level=logging.INFO)
 
@@ -44,8 +44,7 @@ def retry_request(func, *args, **kwargs):
 def calculate_ema(close, period):
     if len(close) < period:
         return None
-    close_series = pd.Series(close)
-    return close_series.ewm(span=period, adjust=False).mean().iloc[-1]
+    return pd.Series(close).ewm(span=period, adjust=False).mean().iloc[-1]
 
 def get_ema_with_retry(close, period):
     for _ in range(5):
@@ -130,30 +129,28 @@ def calculate_daily_change(inst_id):
         logging.error(f"{inst_id} 상승률 계산 오류: {e}")
         return None
 
+# ✅ 수정된 함수
 def get_top_bullish(inst_ids):
-    volume_data = []
+    filtered = []
+
     for inst_id in inst_ids:
+        is_bullish = get_ema_bullish_status(inst_id)
+        if not is_bullish:
+            continue
+
+        daily_change = calculate_daily_change(inst_id)
+        if daily_change is None or daily_change <= 0:
+            continue
+
         df_24h = get_ohlcv_okx(inst_id, bar="1D", limit=2)
         if df_24h is None:
             continue
         vol_24h = df_24h['volCcyQuote'].sum()
-        volume_data.append((inst_id, vol_24h))
+
+        filtered.append((inst_id, vol_24h))
         time.sleep(0.1)
 
-    # 거래대금 상위 10개
-    top10_by_volume = sorted(volume_data, key=lambda x: x[1], reverse=True)[:10]
-
-    candidates = []
-    for inst_id, vol in top10_by_volume:
-        is_bullish = get_ema_bullish_status(inst_id)
-        if not is_bullish:
-            continue
-        daily_change = calculate_daily_change(inst_id)
-        if daily_change is not None and daily_change > 0:
-            candidates.append((inst_id, vol))
-        time.sleep(0.1)
-
-    return sorted(candidates, key=lambda x: x[1], reverse=True)[:3]
+    return sorted(filtered, key=lambda x: x[1], reverse=True)[:3]
 
 def format_volume_in_eok(volume):
     try:
