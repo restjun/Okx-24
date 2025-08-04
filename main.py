@@ -110,24 +110,6 @@ def get_ema_bullish_status(inst_id):
         logging.error(f"{inst_id} EMA 상태 계산 실패: {e}")
         return None
 
-# 🔧 수정된 함수: 상승률이 0 이하인 종목은 제외
-def get_top_bullish(inst_ids):
-    candidates = []
-    for inst_id in inst_ids:
-        is_bullish = get_ema_bullish_status(inst_id)
-        if not is_bullish:
-            continue
-        df_24h = get_ohlcv_okx(inst_id, bar="1D", limit=2)
-        if df_24h is None:
-            continue
-        vol_24h = df_24h['volCcyQuote'].sum()
-        daily_change = calculate_daily_change(inst_id)
-        if daily_change is not None and daily_change > 0:  # 상승률이 양수일 때만 추가
-            candidates.append((inst_id, vol_24h))
-        time.sleep(random.uniform(0.2, 0.4))
-    sorted_by_volume = sorted(candidates, key=lambda x: x[1], reverse=True)
-    return sorted_by_volume[:3]
-
 def calculate_daily_change(inst_id):
     df = get_ohlcv_okx(inst_id, bar="1H", limit=48)
     if df is None or len(df) < 24:
@@ -147,6 +129,31 @@ def calculate_daily_change(inst_id):
     except Exception as e:
         logging.error(f"{inst_id} 상승률 계산 오류: {e}")
         return None
+
+def get_top_bullish(inst_ids):
+    volume_data = []
+    for inst_id in inst_ids:
+        df_24h = get_ohlcv_okx(inst_id, bar="1D", limit=2)
+        if df_24h is None:
+            continue
+        vol_24h = df_24h['volCcyQuote'].sum()
+        volume_data.append((inst_id, vol_24h))
+        time.sleep(0.1)
+
+    # 거래대금 상위 10개
+    top10_by_volume = sorted(volume_data, key=lambda x: x[1], reverse=True)[:10]
+
+    candidates = []
+    for inst_id, vol in top10_by_volume:
+        is_bullish = get_ema_bullish_status(inst_id)
+        if not is_bullish:
+            continue
+        daily_change = calculate_daily_change(inst_id)
+        if daily_change is not None and daily_change > 0:
+            candidates.append((inst_id, vol))
+        time.sleep(0.1)
+
+    return sorted(candidates, key=lambda x: x[1], reverse=True)[:3]
 
 def format_volume_in_eok(volume):
     try:
@@ -246,7 +253,7 @@ def send_ranked_volume_message(top_bullish):
                 "━━━━━━━━━━━━━━━━━━━"
             ]
     else:
-        message_lines.append("⚠️ 정배열 종목 없음.")
+        message_lines.append("📉 *상승률이 플러스인 정배열 종목이 없습니다.*")
 
     message_lines += [
         "✅️ *1. 거래대금 TOP / 정배열 5-20-50-200*",
