@@ -147,8 +147,6 @@ def format_change_with_emoji(change):
 
 def get_ema_status_text(df, timeframe="1H"):
     close = df['c'].values
-    ema_1 = get_ema_with_retry(close, 2)
-    ema_2 = get_ema_with_retry(close, 3)
     ema_5 = get_ema_with_retry(close, 5)
     ema_20 = get_ema_with_retry(close, 20)
     ema_50 = get_ema_with_retry(close, 50)
@@ -169,11 +167,10 @@ def get_ema_status_text(df, timeframe="1H"):
         check(safe_compare(ema_20, ema_50)),
         check(safe_compare(ema_50, ema_200))
     ]
-    short_term_status = check(safe_compare(ema_1, ema_2))
-    return f"[{timeframe}] EMA 📊: {' '.join(status_parts)}   [[[{short_term_status}]]]"
+    return f"[{timeframe}] EMA 📊: {' '.join(status_parts)}"
 
 def get_all_timeframe_ema_status(inst_id):
-    timeframes = {   '1D': 250,    '4H': 300,    '1H': 300, '15m': 300}
+    timeframes = {'1D': 250, '4H': 300, '1H': 300, '15m': 300}
     status_lines = []
     for tf, limit in timeframes.items():
         df = get_ohlcv_okx(inst_id, bar=tf, limit=limit)
@@ -223,7 +220,6 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count):
             volume_1h = calculate_1h_volume(inst_id)
             volume_str = format_volume_in_eok(volume_1h) or "🚫 거래대금 부족"
 
-            # ⬇️ 누락 없이 메시지 출력
             message_lines += [
                 f"*{i}. {name}* {format_change_with_emoji(change)} / 거래대금: ({volume_str})\n{ema_status}",
                 "━━━━━━━━━━━━━━━━━━━"
