@@ -173,7 +173,7 @@ def get_ema_status_text(df, timeframe="1H"):
     return f"[{timeframe}] EMA 📊: {' '.join(status_parts)}   [[[{short_term_status}]]]"
 
 def get_all_timeframe_ema_status(inst_id):
-    timeframes = {'  1D': 250, '  4H': 300, '  1H': 300, '15m': 300}
+    timeframes = {   '1D': 250,    '4H': 300,    '1H': 300, '15m': 300}
     status_lines = []
     for tf, limit in timeframes.items():
         df = get_ohlcv_okx(inst_id, bar=tf, limit=limit)
