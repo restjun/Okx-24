@@ -110,6 +110,7 @@ def get_ema_bullish_status(inst_id):
         logging.error(f"{inst_id} EMA 상태 계산 실패: {e}")
         return None
 
+# 🔧 수정된 함수: 상승률이 0 이하인 종목은 제외
 def get_top_bullish(inst_ids):
     candidates = []
     for inst_id in inst_ids:
@@ -120,10 +121,12 @@ def get_top_bullish(inst_ids):
         if df_24h is None:
             continue
         vol_24h = df_24h['volCcyQuote'].sum()
-        candidates.append((inst_id, vol_24h))
+        daily_change = calculate_daily_change(inst_id)
+        if daily_change is not None and daily_change > 0:  # 상승률이 양수일 때만 추가
+            candidates.append((inst_id, vol_24h))
         time.sleep(random.uniform(0.2, 0.4))
     sorted_by_volume = sorted(candidates, key=lambda x: x[1], reverse=True)
-    return sorted_by_volume[:3]  # ⬅️ 상위 3개 반환
+    return sorted_by_volume[:3]
 
 def calculate_daily_change(inst_id):
     df = get_ohlcv_okx(inst_id, bar="1H", limit=48)
@@ -230,7 +233,7 @@ def send_ranked_volume_message(top_bullish):
 
     if top_bullish:
         message_lines.append("📈 *[5-20-50-200] + [거래대금 Top3]*")
-        for i, (inst_id, _) in enumerate(top_bullish[:3], 1):  # Top 3
+        for i, (inst_id, _) in enumerate(top_bullish[:3], 1):
             name = inst_id.replace("-USDT-SWAP", "")
             change = calculate_daily_change(inst_id)
             ema_status = get_all_timeframe_ema_status(inst_id)
