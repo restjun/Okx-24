@@ -170,7 +170,7 @@ def get_ema_status_text(df, timeframe="1H"):
         check(safe_compare(ema_50, ema_200))
     ]
     short_term_status = check(safe_compare(ema_1, ema_2))
-    return f"[{timeframe}] EMA 📊: {' '.join(status_parts)}   [{short_term_status}]"
+    return f"[{timeframe}] EMA 📊: {' '.join(status_parts)}   [[[{short_term_status}]]]"
 
 def get_all_timeframe_ema_status(inst_id):
     timeframes = {'1D': 250, '4H': 300, '1H': 300, '15m': 300}
@@ -197,7 +197,7 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count):
     message_lines = [
         f"📊 *전체 조회 코인 수:* {total_count}개",
         f"🟢 *EMA 정배열:* {bullish_count}개",
-        f"🔴 *비정배열:* {bearish_count}개",
+        f"🔴 *EMA 역배열:* {bearish_count}개",
         "━━━━━━━━━━━━━━━━━━━"
     ]
 
@@ -256,7 +256,7 @@ def main():
         bullish_list.append((inst_id, vol_24h, daily_change))
         time.sleep(0.1)
 
-    top_bullish = sorted(bullish_list, key=lambda x: x[1], reverse=True)[:2]
+    top_bullish = sorted(bullish_list, key=lambda x: x[1], reverse=True)[:3]
     send_ranked_volume_message(top_bullish, total_count, len(bullish_list))
 
 def run_scheduler():
