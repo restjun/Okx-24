@@ -10,12 +10,9 @@ import pandas as pd
 
 app = FastAPI()
 
-
 telegram_bot_token = "8451481398:AAHHg2wVDKphMruKsjN2b6NFKJ50jhxEe-g"
 telegram_user_id = 6596886700
 bot = telepot.Bot(telegram_bot_token)
-
-
 
 logging.basicConfig(level=logging.INFO)
 
@@ -224,9 +221,9 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count):
             name = inst_id.replace("-USDT-SWAP", "")
             ema_status = get_all_timeframe_ema_status(inst_id)
             volume_1h = calculate_1h_volume(inst_id)
-            volume_str = format_volume_in_eok(volume_1h)
-            if not volume_str:
-                continue
+            volume_str = format_volume_in_eok(volume_1h) or "🚫 거래대금 부족"
+
+            # ⬇️ 누락 없이 메시지 출력
             message_lines += [
                 f"*{i}. {name}* {format_change_with_emoji(change)} / 거래대금: ({volume_str})\n{ema_status}",
                 "━━━━━━━━━━━━━━━━━━━"
