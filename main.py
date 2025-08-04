@@ -14,7 +14,6 @@ telegram_bot_token = "8451481398:AAHHg2wVDKphMruKsjN2b6NFKJ50jhxEe-g"
 telegram_user_id = 6596886700
 bot = telepot.Bot(telegram_bot_token)
 
-
 logging.basicConfig(level=logging.INFO)
 
 def send_telegram_message(message):
@@ -129,7 +128,6 @@ def calculate_daily_change(inst_id):
         logging.error(f"{inst_id} 상승률 계산 오류: {e}")
         return None
 
-# ✅ 수정된 함수
 def get_top_bullish(inst_ids):
     filtered = []
 
@@ -139,18 +137,18 @@ def get_top_bullish(inst_ids):
             continue
 
         daily_change = calculate_daily_change(inst_id)
-        if daily_change is None or daily_change <= 0:
-            continue
+        if daily_change is None:
+            continue  # 상승률 제한 제거
 
         df_24h = get_ohlcv_okx(inst_id, bar="1D", limit=2)
         if df_24h is None:
             continue
         vol_24h = df_24h['volCcyQuote'].sum()
 
-        filtered.append((inst_id, vol_24h))
+        filtered.append((inst_id, vol_24h, daily_change))
         time.sleep(0.1)
 
-    return sorted(filtered, key=lambda x: x[1], reverse=True)[:3]
+    return sorted(filtered, key=lambda x: x[1], reverse=True)[:10]
 
 def format_volume_in_eok(volume):
     try:
@@ -236,10 +234,9 @@ def send_ranked_volume_message(top_bullish):
     ]
 
     if top_bullish:
-        message_lines.append("📈 *[5-20-50-200] + [거래대금 Top3]*")
-        for i, (inst_id, _) in enumerate(top_bullish[:3], 1):
+        message_lines.append("📈 *[5-20-50-200] + [거래대금 Top]*")
+        for i, (inst_id, _, change) in enumerate(top_bullish, 1):
             name = inst_id.replace("-USDT-SWAP", "")
-            change = calculate_daily_change(inst_id)
             ema_status = get_all_timeframe_ema_status(inst_id)
             volume_1h = calculate_1h_volume(inst_id)
             volume_str = format_volume_in_eok(volume_1h)
@@ -250,7 +247,7 @@ def send_ranked_volume_message(top_bullish):
                 "━━━━━━━━━━━━━━━━━━━"
             ]
     else:
-        message_lines.append("📉 *상승률이 플러스인 정배열 종목이 없습니다.*")
+        message_lines.append("📉 *정배열 종목이 없습니다.*")
 
     message_lines += [
         "✅️ *1. 거래대금 TOP / 정배열 5-20-50-200*",
