@@ -256,7 +256,7 @@ def main():
         bullish_list.append((inst_id, vol_24h, daily_change))
         time.sleep(0.1)
 
-    top_bullish = sorted(bullish_list, key=lambda x: x[1], reverse=True)[:1]
+    top_bullish = sorted(bullish_list, key=lambda x: x[1], reverse=True)[:2]
     send_ranked_volume_message(top_bullish, total_count, len(bullish_list))
 
 def run_scheduler():
