@@ -253,7 +253,7 @@ def main():
         time.sleep(0.1)
 
     # 거래대금 → 상승률 순으로 내림차순 정렬
-    top_bullish = sorted(bullish_list, key=lambda x: (x[1], x[2]), reverse=True)[:10]
+    top_bullish = sorted(bullish_list, key=lambda x: (x[1], x[2]), reverse=True)[:3]
 
     send_ranked_volume_message(top_bullish, total_count, len(bullish_list))
 
