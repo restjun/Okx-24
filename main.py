@@ -89,21 +89,19 @@ def get_ema_bullish_status(inst_id):
         close_1h = df_1h['c'].values
         close_4h = df_4h['c'].values
 
-        ema_1h_5 = get_ema_with_retry(close_1h, 5)
+        ema_1h_10 = get_ema_with_retry(close_1h, 10)
         ema_1h_20 = get_ema_with_retry(close_1h, 20)
         ema_1h_50 = get_ema_with_retry(close_1h, 50)
-        ema_1h_200 = get_ema_with_retry(close_1h, 200)
 
-        ema_4h_5 = get_ema_with_retry(close_4h, 5)
+        ema_4h_10 = get_ema_with_retry(close_4h, 10)
         ema_4h_20 = get_ema_with_retry(close_4h, 20)
         ema_4h_50 = get_ema_with_retry(close_4h, 50)
-        ema_4h_200 = get_ema_with_retry(close_4h, 200)
 
-        if None in [ema_1h_5, ema_1h_20, ema_1h_50, ema_1h_200, ema_4h_5, ema_4h_20, ema_4h_50, ema_4h_200]:
+        if None in [ema_1h_10, ema_1h_20, ema_1h_50, ema_4h_10, ema_4h_20, ema_4h_50]:
             return None
 
-        return (ema_1h_5 > ema_1h_20 > ema_1h_50 > ema_1h_200) and \
-               (ema_4h_5 > ema_4h_20 > ema_4h_50 > ema_4h_200)
+        return (ema_1h_10 > ema_1h_20 > ema_1h_50) and \
+               (ema_4h_10 > ema_4h_20 > ema_4h_50)
     except Exception as e:
         logging.error(f"{inst_id} EMA 상태 계산 실패: {e}")
         return None
@@ -147,10 +145,9 @@ def format_change_with_emoji(change):
 
 def get_ema_status_text(df, timeframe="1H"):
     close = df['c'].values
-    ema_5 = get_ema_with_retry(close, 5)
+    ema_10 = get_ema_with_retry(close, 10)
     ema_20 = get_ema_with_retry(close, 20)
     ema_50 = get_ema_with_retry(close, 50)
-    ema_200 = get_ema_with_retry(close, 200)
 
     def check(cond):
         if cond is None:
@@ -163,9 +160,8 @@ def get_ema_status_text(df, timeframe="1H"):
         return a > b
 
     status_parts = [
-        check(safe_compare(ema_5, ema_20)),
-        check(safe_compare(ema_20, ema_50)),
-        check(safe_compare(ema_50, ema_200))
+        check(safe_compare(ema_10, ema_20)),
+        check(safe_compare(ema_20, ema_50))
     ]
     return f"[{timeframe}] EMA 📊: {' '.join(status_parts)}"
 
@@ -242,7 +238,7 @@ def main():
 
         daily_change = calculate_daily_change(inst_id)
         if daily_change is None or daily_change <= 0:
-            continue  # 상승률이 0 이하인 경우 제외
+            continue
 
         df_24h = get_ohlcv_okx(inst_id, bar="1D", limit=2)
         if df_24h is None:
@@ -252,9 +248,7 @@ def main():
         bullish_list.append((inst_id, vol_24h, daily_change))
         time.sleep(0.1)
 
-    # 거래대금 → 상승률 순으로 내림차순 정렬
     top_bullish = sorted(bullish_list, key=lambda x: (x[1], x[2]), reverse=True)[:3]
-
     send_ranked_volume_message(top_bullish, total_count, len(bullish_list))
 
 def run_scheduler():
