@@ -131,7 +131,7 @@ def calculate_daily_change(inst_id):
 def format_volume_in_eok(volume):
     try:
         eok = int(volume // 1_000_000)
-        return str(eok) if eok >= 1 else None
+        return str(eok) if eok >= 100 else None
     except:
         return None
 
