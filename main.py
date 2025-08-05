@@ -202,7 +202,7 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count):
     btc_ema_status = get_all_timeframe_ema_status(btc_id)
     btc_change = calculate_daily_change(btc_id)
     btc_volume = calculate_1h_volume(btc_id)
-    btc_volume_str = format_volume_in_eok(btc_volume) or "🚫 거래대금 부족"
+    btc_volume_str = format_volume_in_eok(btc_volume) or "🚫"
 
     message_lines += [
         "🎯 *코인지수 비트코인*",
