@@ -278,7 +278,7 @@ def root():
     return {"message": "OKX EMA & RSI 분석 API"}
 
 def run_schedule():
-    schedule.every(20).minutes.do(job)
+    schedule.every(1).minutes.do(job)
     while True:
         schedule.run_pending()
         time.sleep(1)
