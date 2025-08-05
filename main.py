@@ -241,8 +241,8 @@ def main():
             continue
 
         daily_change = calculate_daily_change(inst_id)
-        if daily_change is None:
-            continue
+        if daily_change is None or daily_change <= 0:
+            continue  # 상승률이 0 이하인 경우 제외
 
         df_24h = get_ohlcv_okx(inst_id, bar="1D", limit=2)
         if df_24h is None:
@@ -252,7 +252,9 @@ def main():
         bullish_list.append((inst_id, vol_24h, daily_change))
         time.sleep(0.1)
 
-    top_bullish = sorted(bullish_list, key=lambda x: x[1], reverse=True)[:10]
+    # 거래대금 → 상승률 순으로 내림차순 정렬
+    top_bullish = sorted(bullish_list, key=lambda x: (x[1], x[2]), reverse=True)[:10]
+
     send_ranked_volume_message(top_bullish, total_count, len(bullish_list))
 
 def run_scheduler():
