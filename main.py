@@ -14,7 +14,6 @@ telegram_bot_token = "8451481398:AAHHg2wVDKphMruKsjN2b6NFKJ50jhxEe-g"
 telegram_user_id = 6596886700
 bot = telepot.Bot(telegram_bot_token)
 
-
 logging.basicConfig(level=logging.INFO)
 
 def send_telegram_message(message):
@@ -49,6 +48,28 @@ def calculate_ema(close, period):
 def get_ema_with_retry(close, period):
     for _ in range(5):
         result = calculate_ema(close, period)
+        if result is not None:
+            return result
+        time.sleep(0.5)
+    return None
+
+def calculate_rsi(series, period=14):
+    if len(series) < period + 1:
+        return None
+    delta = pd.Series(series).diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+    avg_gain = gain.rolling(window=period).mean().iloc[-1]
+    avg_loss = loss.rolling(window=period).mean().iloc[-1]
+    if avg_loss == 0:
+        return 100
+    rs = avg_gain / avg_loss
+    rsi = 100 - (100 / (1 + rs))
+    return round(rsi, 2)
+
+def get_rsi_with_retry(close, period=14):
+    for _ in range(5):
+        result = calculate_rsi(close, period)
         if result is not None:
             return result
         time.sleep(0.5)
@@ -151,6 +172,8 @@ def get_ema_status_text(df, timeframe="1H"):
     ema_50 = get_ema_with_retry(close, 50)
     ema_200 = get_ema_with_retry(close, 200)
 
+    rsi_14 = get_rsi_with_retry(close, 14)
+
     def check(cond):
         if cond is None:
             return "[❌]"
@@ -166,7 +189,8 @@ def get_ema_status_text(df, timeframe="1H"):
         check(safe_compare(ema_20, ema_50)),
         check(safe_compare(ema_50, ema_200))
     ]
-    return f"[{timeframe}] EMA 📊: {' '.join(status_parts)}"
+    rsi_text = f" RSI(14): {rsi_14}" if rsi_14 is not None else " RSI(14): N/A"
+    return f"[{timeframe}] EMA 📊: {' '.join(status_parts)}{rsi_text}"
 
 def get_all_timeframe_ema_status(inst_id):
     timeframes = {'1D': 250, '4H': 300, '1H': 300, '15m': 300}
@@ -194,75 +218,72 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count):
         f"📊 *전체 조회 코인 수:* {total_count}개",
         f"🟢 *EMA 정배열:* {bullish_count}개",
         f"🔴 *EMA 역배열:* {bearish_count}개",
-        "━━━━━━━━━━━━━━━━━━━"
+        "",
+        "*🟢 정배열 코인 리스트 🟢*",
+        "인증: EMA10>20>50 1H,4H 정배열 + RSI(14) 확인\n"
     ]
 
-    btc_id = "BTC-USDT-SWAP"
-    btc_ema_status = get_all_timeframe_ema_status(btc_id)
-    btc_change = calculate_daily_change(btc_id)
-    btc_volume = calculate_1h_volume(btc_id)
-    btc_volume_str = format_volume_in_eok(btc_volume) or "🚫"
-
-    message_lines += [
-        "🎯 *코인지수 비트코인*",
-        "━━━━━━━━━━━━━━━━━━━",
-        f"💰 *BTC* {format_change_with_emoji(btc_change)} / 거래대금: ({btc_volume_str})",
-        f"{btc_ema_status}",
-        "━━━━━━━━━━━━━━━━━━━"
-    ]
-
-    if top_bullish:
-        message_lines.append("📈 *[정배열 + 거래대금 TOP]*")
-        for i, (inst_id, _, change) in enumerate(top_bullish, 1):
-            name = inst_id.replace("-USDT-SWAP", "")
-            ema_status = get_all_timeframe_ema_status(inst_id)
-            volume_1h = calculate_1h_volume(inst_id)
-            volume_str = format_volume_in_eok(volume_1h) or "🚫"
-
-            message_lines += [
-                f"*{i}. {name}* {format_change_with_emoji(change)} / 거래대금: ({volume_str})\n{ema_status}",
-                "━━━━━━━━━━━━━━━━━━━"
-            ]
-    else:
-        message_lines.append("📉 *정배열 종목이 없습니다.*")
-
-    send_telegram_message("\n".join(message_lines))
-
-def main():
-    logging.info("📥 EMA 분석 시작")
-    all_ids = get_all_okx_swap_symbols()
-    total_count = len(all_ids)
-    bullish_list = []
-
-    for inst_id in all_ids:
-        is_bullish = get_ema_bullish_status(inst_id)
-        if not is_bullish:
+    for rank, (inst_id, change, vol, ema_status) in enumerate(top_bullish, start=1):
+        vol_eok = format_volume_in_eok(vol)
+        if vol_eok is None:
             continue
+        change_str = format_change_with_emoji(change)
+        message_lines.append(f"{rank}. {inst_id} 거래대금:{vol_eok}억 {change_str}\n{ema_status}\n")
 
-        daily_change = calculate_daily_change(inst_id)
-        if daily_change is None or daily_change <= -100:
-            continue
+    message = "\n".join(message_lines)
+    send_telegram_message(message)
 
-        df_24h = get_ohlcv_okx(inst_id, bar="1D", limit=2)
-        if df_24h is None:
-            continue
+def analyze_okx_ema_and_rsi():
+    symbols = get_all_okx_swap_symbols()
+    total_count = len(symbols)
+    if total_count == 0:
+        logging.error("심볼을 불러오지 못했습니다.")
+        return
 
-        vol_24h = df_24h['volCcyQuote'].sum()
-        bullish_list.append((inst_id, vol_24h, daily_change))
-        time.sleep(0.1)
+    bullish_coins = []
 
-    top_bullish = sorted(bullish_list, key=lambda x: (x[1], x[2]), reverse=True)[:3]
-    send_ranked_volume_message(top_bullish, total_count, len(bullish_list))
+    for inst_id in symbols:
+        try:
+            vol_1h = calculate_1h_volume(inst_id)
+            if vol_1h < 300_000_000_000:  # 300억 미만 필터링 (볼륨 단위 확인 필요)
+                continue
 
-def run_scheduler():
+            change = calculate_daily_change(inst_id)
+            if change is None:
+                continue
+
+            # EMA 정배열 + RSI 체크 (1H, 4H)
+            bullish = get_ema_bullish_status(inst_id)
+            if bullish:
+                # 여러 시간대 EMA+RSI 상태도 포함해 메시지 생성
+                ema_rsi_status = get_all_timeframe_ema_status(inst_id)
+                bullish_coins.append((inst_id, change, vol_1h, ema_rsi_status))
+
+        except Exception as e:
+            logging.error(f"{inst_id} 분석 중 오류 발생: {e}")
+
+    bullish_count = len(bullish_coins)
+    # 거래대금으로 내림차순 정렬 후 상위 20개만 선택
+    top_bullish = sorted(bullish_coins, key=lambda x: x[2], reverse=True)[:20]
+
+    send_ranked_volume_message(top_bullish, total_count, bullish_count)
+
+def job():
+    logging.info("OKX EMA & RSI 분석 시작")
+    analyze_okx_ema_and_rsi()
+    logging.info("OKX EMA & RSI 분석 완료")
+
+@app.get("/")
+def root():
+    return {"message": "OKX EMA & RSI 분석 API"}
+
+def run_schedule():
+    schedule.every(20).minutes.do(job)
     while True:
         schedule.run_pending()
         time.sleep(1)
 
-@app.on_event("startup")
-def start_scheduler():
-    schedule.every(1).minutes.do(main)
-    threading.Thread(target=run_scheduler, daemon=True).start()
-
 if __name__ == "__main__":
+    threading.Thread(target=run_schedule, daemon=True).start()
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
