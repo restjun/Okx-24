@@ -10,8 +10,8 @@ import pandas as pd
 
 app = FastAPI()
 
-telegram_bot_token = "8451481398:AAHHg2wVDKphMruKsjN2b6NFKJ50jhxEe-g"
-telegram_user_id = 6596886700
+telegram_bot_token = "YOUR_TELEGRAM_BOT_TOKEN"
+telegram_user_id = YOUR_TELEGRAM_USER_ID
 bot = telepot.Bot(telegram_bot_token)
 
 logging.basicConfig(level=logging.INFO)
@@ -148,6 +148,7 @@ def get_ema_status_text(df, timeframe="1H"):
     ema_10 = get_ema_with_retry(close, 10)
     ema_20 = get_ema_with_retry(close, 20)
     ema_50 = get_ema_with_retry(close, 50)
+    ema_200 = get_ema_with_retry(close, 200)
 
     def check(cond):
         if cond is None:
@@ -161,7 +162,8 @@ def get_ema_status_text(df, timeframe="1H"):
 
     status_parts = [
         check(safe_compare(ema_10, ema_20)),
-        check(safe_compare(ema_20, ema_50))
+        check(safe_compare(ema_20, ema_50)),
+        check(safe_compare(ema_50, ema_200))
     ]
     return f"[{timeframe}] EMA 📊: {' '.join(status_parts)}"
 
