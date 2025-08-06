@@ -130,7 +130,7 @@ def calculate_daily_change(inst_id):
 def format_volume_in_eok(volume):
     try:
         eok = int(volume // 1_000_000)
-        return str(eok) if eok >= 1000 else None
+        return str(eok) if eok >= 100 else None
     except:
         return None
 
@@ -217,19 +217,26 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count):
         "━━━━━━━━━━━━━━━━━━━"
     ]
 
-    if top_bullish:
-        message_lines.append("📈 [정배열 + 거래대금 TOP]")
-        for i, (inst_id, _, change) in enumerate(top_bullish, 1):
+    filtered_top_bullish = []
+    for item in top_bullish:
+        inst_id = item[0]
+        volume_1h = calculate_1h_volume(inst_id)
+        if volume_1h < 1_000_000:
+            continue
+        filtered_top_bullish.append((inst_id, item[1], item[2], volume_1h))
+
+    if filtered_top_bullish:
+        message_lines.append("📈 [정배열 + 거래대금 TOP (1000만 이상)]")
+        for i, (inst_id, _, change, volume_1h) in enumerate(filtered_top_bullish, 1):
             name = inst_id.replace("-USDT-SWAP", "")
             ema_status = get_all_timeframe_ema_status(inst_id)
-            volume_1h = calculate_1h_volume(inst_id)
             volume_str = format_volume_in_eok(volume_1h) or "🚫"
             message_lines += [
                 f"*{i}. {name}* {format_change_with_emoji(change)} / 거래대금: ({volume_str})\n{ema_status}",
                 "━━━━━━━━━━━━━━━━━━━"
             ]
     else:
-        message_lines.append("📉 정배열 종목이 없습니다.")
+        message_lines.append("📉 거래대금 1000만 이상인 정배열 종목이 없습니다.")
 
     send_telegram_message("\n".join(message_lines))
 
