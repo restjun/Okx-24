@@ -153,7 +153,6 @@ def get_ema_status_text(df, timeframe="1H"):
     ema_50 = get_ema_with_retry(close, 50)
     ema_200 = get_ema_with_retry(close, 200)
 
-    # RSI 계산
     def calculate_rsi(prices, period=14):
         delta = prices.diff()
         gain = delta.where(delta > 0, 0).rolling(window=period).mean()
@@ -229,9 +228,14 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count):
         "━━━━━━━━━━━━━━━━━━━"
     ]
 
-    if top_bullish:
+    filtered_top_bullish = []
+    for inst_id, vol, change in top_bullish:
+        if vol >= 1_000_000_000:  # 1000억 이상
+            filtered_top_bullish.append((inst_id, vol, change))
+
+    if filtered_top_bullish:
         message_lines.append("📈 [정배열 + 거래대금 TOP]")
-        for i, (inst_id, _, change) in enumerate(top_bullish, 1):
+        for i, (inst_id, _, change) in enumerate(filtered_top_bullish, 1):
             name = inst_id.replace("-USDT-SWAP", "")
             ema_status = get_all_timeframe_ema_status(inst_id)
             volume_1h = calculate_1h_volume(inst_id)
@@ -241,7 +245,7 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count):
                 "━━━━━━━━━━━━━━━━━━━"
             ]
     else:
-        message_lines.append("📉 정배열 종목이 없습니다.")
+        message_lines.append("📉 1000억 이상 정배열 종목이 없습니다.")
 
     send_telegram_message("\n".join(message_lines))
 
