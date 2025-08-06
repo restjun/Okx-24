@@ -148,6 +148,11 @@ def get_ema_status_text(df, timeframe="1H"):
     close = df['c'].astype(float).values
     close_series = pd.Series(close)
 
+    ema_10 = get_ema_with_retry(close, 10)
+    ema_20 = get_ema_with_retry(close, 20)
+    ema_50 = get_ema_with_retry(close, 50)
+    ema_200 = get_ema_with_retry(close, 200)
+
     # RSI 계산
     def calculate_rsi(prices, period=14):
         delta = prices.diff()
@@ -160,12 +165,25 @@ def get_ema_status_text(df, timeframe="1H"):
     try:
         rsi = calculate_rsi(close_series).iloc[-1]
         rsi_str = f"{rsi:.2f}"
-        rsi_emoji = "🟢" if rsi >= 70 else "🔴"
     except:
         rsi_str = "N/A"
-        rsi_emoji = "❌"
 
-    return f"[{timeframe}] RSI(14): {rsi_str} {rsi_emoji}"
+    def check(cond):
+        if cond is None:
+            return "[❌]"
+        return "[🟩]" if cond else "[🟥]"
+
+    def safe_compare(a, b):
+        if a is None or b is None:
+            return None
+        return a > b
+
+    status_parts = [
+        check(safe_compare(ema_10, ema_20)),
+        check(safe_compare(ema_20, ema_50)),
+        check(safe_compare(ema_50, ema_200))
+    ]
+    return f"[{timeframe}] EMA 📊: {' '.join(status_parts)} / RSI(14): {rsi_str}"
 
 def get_all_timeframe_ema_status(inst_id):
     timeframes = {'1D': 250, '4H': 300, '1H': 300, '15m': 300}
@@ -175,7 +193,7 @@ def get_all_timeframe_ema_status(inst_id):
         if df is not None:
             status = get_ema_status_text(df, timeframe=tf)
         else:
-            status = f"[{tf}] RSI: ❌ 불러오기 실패"
+            status = f"[{tf}] 📊: ❌ 불러오기 실패"
         status_lines.append(status)
         time.sleep(0.2)
     return "\n".join(status_lines)
