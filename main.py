@@ -164,7 +164,8 @@ def get_ema_status_text(df, timeframe="1H"):
 
     try:
         rsi = calculate_rsi(close_series).iloc[-1]
-        rsi_str = f"{rsi:.2f}"
+        rsi_emoji = "🟢" if rsi >= 70 else "🔴"
+        rsi_str = f"{rsi_emoji} {rsi:.2f}"
     except:
         rsi_str = "N/A"
 
