@@ -146,28 +146,13 @@ def format_change_with_emoji(change):
 
 def get_ema_status_text(df, timeframe="1H"):
     close = df['c'].astype(float).values
-    close_series = pd.Series(close)
 
     ema_10 = get_ema_with_retry(close, 10)
     ema_20 = get_ema_with_retry(close, 20)
     ema_50 = get_ema_with_retry(close, 50)
     ema_200 = get_ema_with_retry(close, 200)
-
-    # RSI 계산
-    def calculate_rsi(prices, period=14):
-        delta = prices.diff()
-        gain = delta.where(delta > 0, 0).rolling(window=period).mean()
-        loss = -delta.where(delta < 0, 0).rolling(window=period).mean()
-        rs = gain / loss
-        rsi = 100 - (100 / (1 + rs))
-        return rsi
-
-    try:
-        rsi = calculate_rsi(close_series).iloc[-1]
-        rsi_emoji = "🟢" if rsi >= 70 else "🔴"
-        rsi_str = f"{rsi_emoji} {rsi:.2f}"
-    except:
-        rsi_str = "N/A"
+    ema_2 = get_ema_with_retry(close, 2)
+    ema_3 = get_ema_with_retry(close, 3)
 
     def check(cond):
         if cond is None:
@@ -184,7 +169,10 @@ def get_ema_status_text(df, timeframe="1H"):
         check(safe_compare(ema_20, ema_50)),
         check(safe_compare(ema_50, ema_200))
     ]
-    return f"[{timeframe}] 📊: {' '.join(status_parts)} / RSI(14): {rsi_str}"
+
+    short_term_status = check(safe_compare(ema_2, ema_3))
+
+    return f"[{timeframe}] 📊: {' '.join(status_parts)} / 📆 2일선>3일선: {short_term_status}"
 
 def get_all_timeframe_ema_status(inst_id):
     timeframes = {'1D': 250, '4H': 300, '1H': 300, '15m': 300}
@@ -283,4 +271,3 @@ def start_scheduler():
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
-
