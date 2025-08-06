@@ -184,7 +184,7 @@ def get_ema_status_text(df, timeframe="1H"):
         check(safe_compare(ema_20, ema_50)),
         check(safe_compare(ema_50, ema_200))
     ]
-    return f"[{timeframe}] EMA 📊: {' '.join(status_parts)} / RSI(14): {rsi_str}"
+    return f"[{timeframe}] 📊: {' '.join(status_parts)} / RSI(14): {rsi_str}"
 
 def get_all_timeframe_ema_status(inst_id):
     timeframes = {'1D': 250, '4H': 300, '1H': 300, '15m': 300}
