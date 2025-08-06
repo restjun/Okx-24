@@ -92,16 +92,19 @@ def get_ema_bullish_status(inst_id):
         ema_1h_10 = get_ema_with_retry(close_1h, 10)
         ema_1h_20 = get_ema_with_retry(close_1h, 20)
         ema_1h_50 = get_ema_with_retry(close_1h, 50)
+        ema_1h_200 = get_ema_with_retry(close_1h, 200)
 
         ema_4h_10 = get_ema_with_retry(close_4h, 10)
         ema_4h_20 = get_ema_with_retry(close_4h, 20)
         ema_4h_50 = get_ema_with_retry(close_4h, 50)
+        ema_4h_200 = get_ema_with_retry(close_4h, 200)
 
-        if None in [ema_1h_10, ema_1h_20, ema_1h_50, ema_4h_10, ema_4h_20, ema_4h_50]:
+        if None in [ema_1h_10, ema_1h_20, ema_1h_50, ema_1h_200,
+                    ema_4h_10, ema_4h_20, ema_4h_50, ema_4h_200]:
             return None
 
-        return (ema_1h_10 > ema_1h_20 > ema_1h_50) and \
-               (ema_4h_10 > ema_4h_20 > ema_4h_50)
+        return (ema_1h_10 > ema_1h_20 > ema_1h_50 > ema_1h_200) and \
+               (ema_4h_10 > ema_4h_20 > ema_4h_50 > ema_4h_200)
 
     except Exception as e:
         logging.error(f"{inst_id} EMA 상태 계산 실패: {e}")
