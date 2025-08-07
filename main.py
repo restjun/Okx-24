@@ -79,7 +79,6 @@ def get_ohlcv_okx(instId, bar='1H', limit=200):
         logging.error(f"{instId} OHLCV 파싱 실패: {e}")
         return None
 
-# ✅ 정배열 기준 5-20-50 적용된 함수
 def get_ema_bullish_status(inst_id):
     try:
         df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=300)
@@ -152,13 +151,14 @@ def format_change_with_emoji(change):
     else:
         return f"🔴 ({change:.2f}%)"
 
-# ✅ EMA 상태표시도 5-20-50으로 변경
+# ✅ 50 > 200 비교 추가한 상태 출력
 def get_ema_status_text(df, timeframe="1H"):
     close = df['c'].astype(float).values
 
     ema_5 = get_ema_with_retry(close, 5)
     ema_20 = get_ema_with_retry(close, 20)
     ema_50 = get_ema_with_retry(close, 50)
+    ema_200 = get_ema_with_retry(close, 200)
     ema_2 = get_ema_with_retry(close, 2)
     ema_3 = get_ema_with_retry(close, 3)
 
@@ -174,7 +174,8 @@ def get_ema_status_text(df, timeframe="1H"):
 
     status_parts = [
         check(safe_compare(ema_5, ema_20)),
-        check(safe_compare(ema_20, ema_50))
+        check(safe_compare(ema_20, ema_50)),
+        check(safe_compare(ema_50, ema_200))  # 추가됨
     ]
 
     short_term_status = check(safe_compare(ema_2, ema_3))
