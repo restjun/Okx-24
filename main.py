@@ -79,32 +79,37 @@ def get_ohlcv_okx(instId, bar='1H', limit=200):
         logging.error(f"{instId} OHLCV 파싱 실패: {e}")
         return None
 
+# ✅ 정배열 기준 5-20-50 적용된 함수
 def get_ema_bullish_status(inst_id):
     try:
         df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=300)
         df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=300)
-        if df_1h is None or df_4h is None:
+        df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=300)
+        if df_1h is None or df_4h is None or df_1d is None:
             return None
 
         close_1h = df_1h['c'].values
         close_4h = df_4h['c'].values
+        close_1d = df_1d['c'].values
 
-        ema_1h_10 = get_ema_with_retry(close_1h, 10)
-        ema_1h_20 = get_ema_with_retry(close_1h, 20)
-        ema_1h_50 = get_ema_with_retry(close_1h, 50)
-        ema_1h_200 = get_ema_with_retry(close_1h, 200)
+        def get_emas(close):
+            return (
+                get_ema_with_retry(close, 5),
+                get_ema_with_retry(close, 20),
+                get_ema_with_retry(close, 50)
+            )
 
-        ema_4h_10 = get_ema_with_retry(close_4h, 10)
-        ema_4h_20 = get_ema_with_retry(close_4h, 20)
-        ema_4h_50 = get_ema_with_retry(close_4h, 50)
-        ema_4h_200 = get_ema_with_retry(close_4h, 200)
+        ema_1h = get_emas(close_1h)
+        ema_4h = get_emas(close_4h)
+        ema_1d = get_emas(close_1d)
 
-        if None in [ema_1h_10, ema_1h_20, ema_1h_50, ema_1h_200,
-                    ema_4h_10, ema_4h_20, ema_4h_50, ema_4h_200]:
+        if None in ema_1h + ema_4h + ema_1d:
             return None
 
-        return (ema_1h_10 > ema_1h_20 > ema_1h_50 > ema_1h_200) and \
-               (ema_4h_10 > ema_4h_20 > ema_4h_50 > ema_4h_200)
+        def is_bullish(ema):
+            return ema[0] > ema[1] > ema[2]
+
+        return is_bullish(ema_1h) and is_bullish(ema_4h) and is_bullish(ema_1d)
 
     except Exception as e:
         logging.error(f"{inst_id} EMA 상태 계산 실패: {e}")
@@ -147,13 +152,13 @@ def format_change_with_emoji(change):
     else:
         return f"🔴 ({change:.2f}%)"
 
+# ✅ EMA 상태표시도 5-20-50으로 변경
 def get_ema_status_text(df, timeframe="1H"):
     close = df['c'].astype(float).values
 
-    ema_10 = get_ema_with_retry(close, 10)
+    ema_5 = get_ema_with_retry(close, 5)
     ema_20 = get_ema_with_retry(close, 20)
     ema_50 = get_ema_with_retry(close, 50)
-    ema_200 = get_ema_with_retry(close, 200)
     ema_2 = get_ema_with_retry(close, 2)
     ema_3 = get_ema_with_retry(close, 3)
 
@@ -168,9 +173,8 @@ def get_ema_status_text(df, timeframe="1H"):
         return a > b
 
     status_parts = [
-        check(safe_compare(ema_10, ema_20)),
-        check(safe_compare(ema_20, ema_50)),
-        check(safe_compare(ema_50, ema_200))
+        check(safe_compare(ema_5, ema_20)),
+        check(safe_compare(ema_20, ema_50))
     ]
 
     short_term_status = check(safe_compare(ema_2, ema_3))
