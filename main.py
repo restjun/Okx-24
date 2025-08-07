@@ -53,6 +53,19 @@ def get_ema_with_retry(close, period):
         time.sleep(0.5)
     return None
 
+def calculate_rsi(close, period=14):
+    if len(close) < period:
+        return None
+    series = pd.Series(close)
+    delta = series.diff()
+    gain = delta.where(delta > 0, 0)
+    loss = -delta.where(delta < 0, 0)
+    avg_gain = gain.rolling(window=period).mean()
+    avg_loss = loss.rolling(window=period).mean()
+    rs = avg_gain / avg_loss
+    rsi = 100 - (100 / (1 + rs))
+    return rsi.iloc[-1] if not rsi.empty else None
+
 def get_all_okx_swap_symbols():
     url = "https://www.okx.com/api/v5/public/instruments?instType=SWAP"
     response = retry_request(requests.get, url)
@@ -114,6 +127,50 @@ def get_ema_bullish_status(inst_id):
         logging.error(f"{inst_id} EMA 상태 계산 실패: {e}")
         return None
 
+def get_ema_status_text(df, timeframe="1H"):
+    close = df['c'].astype(float).values
+
+    ema_5 = get_ema_with_retry(close, 5)
+    ema_20 = get_ema_with_retry(close, 20)
+    ema_50 = get_ema_with_retry(close, 50)
+    ema_200 = get_ema_with_retry(close, 200)
+    ema_2 = get_ema_with_retry(close, 2)
+    ema_3 = get_ema_with_retry(close, 3)
+    rsi_14 = calculate_rsi(close, 14)
+
+    def check(cond):
+        if cond is None:
+            return "[❌]"
+        return "[🟩]" if cond else "[🟥]"
+
+    def safe_compare(a, b):
+        if a is None or b is None:
+            return None
+        return a > b
+
+    trend_status = [
+        check(safe_compare(ema_5, ema_20)),
+        check(safe_compare(ema_20, ema_50)),
+        check(safe_compare(ema_50, ema_200))
+    ]
+    short_term_status = check(safe_compare(ema_2, ema_3))
+    rsi_text = f"{rsi_14:.2f}" if rsi_14 is not None else "N/A"
+
+    return f"[{timeframe}] 📊: {' '.join(trend_status)} / 🔄 {short_term_status} / RSI: {rsi_text}"
+
+def get_all_timeframe_ema_status(inst_id):
+    timeframes = {'1D': 250, '4H': 300, '1H': 300, '15m': 300}
+    status_lines = []
+    for tf, limit in timeframes.items():
+        df = get_ohlcv_okx(inst_id, bar=tf, limit=limit)
+        if df is not None:
+            status = get_ema_status_text(df, timeframe=tf)
+        else:
+            status = f"[{tf}] 📊: ❌ 불러오기 실패"
+        status_lines.append(status)
+        time.sleep(0.2)
+    return "\n".join(status_lines)
+
 def calculate_daily_change(inst_id):
     df = get_ohlcv_okx(inst_id, bar="1H", limit=48)
     if df is None or len(df) < 24:
@@ -150,50 +207,6 @@ def format_change_with_emoji(change):
         return f"🟢 (+{change:.2f}%)"
     else:
         return f"🔴 ({change:.2f}%)"
-
-# ✅ 50 > 200 비교 추가한 상태 출력
-def get_ema_status_text(df, timeframe="1H"):
-    close = df['c'].astype(float).values
-
-    ema_5 = get_ema_with_retry(close, 5)
-    ema_20 = get_ema_with_retry(close, 20)
-    ema_50 = get_ema_with_retry(close, 50)
-    ema_200 = get_ema_with_retry(close, 200)
-    ema_2 = get_ema_with_retry(close, 2)
-    ema_3 = get_ema_with_retry(close, 3)
-
-    def check(cond):
-        if cond is None:
-            return "[❌]"
-        return "[🟩]" if cond else "[🟥]"
-
-    def safe_compare(a, b):
-        if a is None or b is None:
-            return None
-        return a > b
-
-    status_parts = [
-        check(safe_compare(ema_5, ema_20)),
-        check(safe_compare(ema_20, ema_50)),
-        check(safe_compare(ema_50, ema_200))  # 추가됨
-    ]
-
-    short_term_status = check(safe_compare(ema_2, ema_3))
-
-    return f"[{timeframe}] 📊: {' '.join(status_parts)} / 📆 2일선>3일선: {short_term_status}"
-
-def get_all_timeframe_ema_status(inst_id):
-    timeframes = {'1D': 250, '4H': 300, '1H': 300, '15m': 300}
-    status_lines = []
-    for tf, limit in timeframes.items():
-        df = get_ohlcv_okx(inst_id, bar=tf, limit=limit)
-        if df is not None:
-            status = get_ema_status_text(df, timeframe=tf)
-        else:
-            status = f"[{tf}] 📊: ❌ 불러오기 실패"
-        status_lines.append(status)
-        time.sleep(0.2)
-    return "\n".join(status_lines)
 
 def calculate_1h_volume(inst_id):
     df = get_ohlcv_okx(inst_id, bar="1H", limit=24)
