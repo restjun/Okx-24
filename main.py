@@ -227,20 +227,6 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count):
         "━━━━━━━━━━━━━━━━━━━"
     ]
 
-    btc_id = "BTC-USDT-SWAP"
-    btc_ema_status = get_all_timeframe_ema_status(btc_id)
-    btc_change = calculate_daily_change(btc_id)
-    btc_volume = calculate_1h_volume(btc_id)
-    btc_volume_str = format_volume_in_eok(btc_volume) or "🚫"
-
-    message_lines += [
-        "🎯 코인지수 비트코인",
-        "━━━━━━━━━━━━━━━━━━━",
-        f"💰 BTC {format_change_with_emoji(btc_change)} / 거래대금: ({btc_volume_str})",
-        f"{btc_ema_status}",
-        "━━━━━━━━━━━━━━━━━━━"
-    ]
-
     # 전체 거래대금 기준 랭킹 계산
     all_volume_data = []
     for inst_id in get_all_okx_swap_symbols():
@@ -251,6 +237,28 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count):
     all_volume_data.sort(key=lambda x: x[1], reverse=True)
     volume_rank_map = {inst_id: rank + 1 for rank, (inst_id, _) in enumerate(all_volume_data)}
 
+    # 비트코인 상태 및 랭킹 포함
+    btc_id = "BTC-USDT-SWAP"
+    btc_ema_status = get_all_timeframe_ema_status(btc_id)
+    btc_change = calculate_daily_change(btc_id)
+    btc_volume = calculate_1h_volume(btc_id)
+    btc_volume_str = format_volume_in_eok(btc_volume) or "🚫"
+    btc_rank = volume_rank_map.get(btc_id, "N/A")
+
+    if isinstance(btc_rank, int) and btc_rank <= 10:
+        btc_rank_display = f"⭐ **{btc_rank}위**"
+    else:
+        btc_rank_display = f"{btc_rank}위"
+
+    message_lines += [
+        "🎯 코인지수 비트코인",
+        "━━━━━━━━━━━━━━━━━━━",
+        f"💰 BTC {format_change_with_emoji(btc_change)} / 거래대금: ({btc_volume_str}) / 🔢 랭킹: {btc_rank_display}",
+        f"{btc_ema_status}",
+        "━━━━━━━━━━━━━━━━━━━"
+    ]
+
+    # 거래대금 기준 TOP 정배열 필터
     filtered_top_bullish = []
     for item in top_bullish:
         inst_id = item[0]
