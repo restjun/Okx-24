@@ -53,19 +53,6 @@ def get_ema_with_retry(close, period):
         time.sleep(0.5)
     return None
 
-def calculate_rsi(close, period=14):
-    if len(close) < period:
-        return None
-    series = pd.Series(close)
-    delta = series.diff()
-    gain = delta.where(delta > 0, 0)
-    loss = -delta.where(delta < 0, 0)
-    avg_gain = gain.rolling(window=period).mean()
-    avg_loss = loss.rolling(window=period).mean()
-    rs = avg_gain / avg_loss
-    rsi = 100 - (100 / (1 + rs))
-    return rsi.iloc[-1] if not rsi.empty else None
-
 def get_all_okx_swap_symbols():
     url = "https://www.okx.com/api/v5/public/instruments?instType=SWAP"
     response = retry_request(requests.get, url)
@@ -154,10 +141,8 @@ def get_ema_status_text(df, timeframe="1H"):
     if timeframe == "1H":
         ema_2 = get_ema_with_retry(close, 2)
         ema_3 = get_ema_with_retry(close, 3)
-        rsi_14 = calculate_rsi(close, 14)
         short_term_status = check(safe_compare(ema_2, ema_3))
-        rsi_text = f"{rsi_14:.2f}" if rsi_14 is not None else "N/A"
-        return f"[{timeframe}] 📊: {' '.join(trend_status)} / 🔄 {short_term_status} / RSI: {rsi_text}"
+        return f"[{timeframe}] 📊: {' '.join(trend_status)} / 🔄 {short_term_status}"
     else:
         return f"[{timeframe}] 📊: {' '.join(trend_status)}"
 
@@ -296,7 +281,7 @@ def main():
             continue
 
         daily_change = calculate_daily_change(inst_id)
-        if daily_change is None or daily_change <= 0:
+        if daily_change is None or daily_change <= 1:
             continue
 
         df_24h = get_ohlcv_okx(inst_id, bar="1D", limit=2)
