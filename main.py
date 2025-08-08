@@ -234,7 +234,7 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count):
         btc_rank_display = f"{btc_rank}위"
 
     message_lines += [
-        "🎯 코인지수 비트코인 실시간 거래대금 1,2,3위",
+        "🎯 코인지수 비트코인 / 1등만 기억한다",
         "━━━━━━━━━━━━━━━━━━━",
         f"💰 BTC {format_change_with_emoji(btc_change)} / 거래대금: ({btc_volume_str}) / 🔢 랭킹: {btc_rank_display}",
         f"{btc_ema_status}",
@@ -251,7 +251,7 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count):
         filtered_top_bullish.append((inst_id, item[1], item[2], volume_1h, rank))
 
     if filtered_top_bullish:
-        message_lines.append("📈 [정배열 + 거래대금 TOP10 (1000만 이상)]")
+        message_lines.append("📈 [정배열 + 실시간 1위]")
         for i, (inst_id, _, change, volume_1h, rank) in enumerate(filtered_top_bullish, 1):
             name = inst_id.replace("-USDT-SWAP", "")
             ema_status = get_all_timeframe_ema_status(inst_id)
