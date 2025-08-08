@@ -19,7 +19,8 @@ logging.basicConfig(level=logging.INFO)
 def send_telegram_message(message):
     for retry_count in range(1, 11):
         try:
-            bot.sendMessage(chat_id=telegram_user_id, text=message, parse_mode="Markdown")
+            # ✅ parse_mode 제거 (Markdown 파싱 오류 방지)
+            bot.sendMessage(chat_id=telegram_user_id, text=message)
             logging.info("텔레그램 메시지 전송 성공: %s", message)
             return
         except Exception as e:
@@ -79,7 +80,6 @@ def get_ohlcv_okx(instId, bar='1H', limit=200):
         logging.error(f"{instId} OHLCV 파싱 실패: {e}")
         return None
 
-# ✅ 수정: 일봉 제외, 1H+4H만 정배열 체크
 def get_ema_bullish_status(inst_id):
     try:
         df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=300)
@@ -144,7 +144,7 @@ def get_ema_status_text(df, timeframe="1H"):
         return f"[{timeframe}] 📊: {' '.join(trend_status)}"
 
 def get_all_timeframe_ema_status(inst_id):
-    timeframes = {'4H': 300, '1H': 300}  # ✅ 일봉 제외
+    timeframes = {'4H': 300, '1H': 300}
     status_lines = []
     for tf, limit in timeframes.items():
         df = get_ohlcv_okx(inst_id, bar=tf, limit=limit)
@@ -221,12 +221,10 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count):
     btc_volume = calculate_1h_volume(btc_id)
     btc_volume_str = format_volume_in_eok(btc_volume) or "🚫"
     btc_rank = volume_rank_map.get(btc_id, "N/A")
-    if isinstance(btc_rank, int) and btc_rank <= 3:
-        btc_rank_display = f"⭐ **{btc_rank}위**"
-    else:
-        btc_rank_display = f"{btc_rank}위"
+    btc_rank_display = f"⭐ {btc_rank}위" if isinstance(btc_rank, int) and btc_rank <= 3 else f"{btc_rank}위"
+
     message_lines += [
-        "🎯 코인지수 비트코인  ",
+        "🎯 코인지수 비트코인",
         "━━━━━━━━━━━━━━━━━━━",
         f"💰 BTC {format_change_with_emoji(btc_change)} / 거래대금: ({btc_volume_str}) / 🔢 랭킹: {btc_rank_display}",
         f"{btc_ema_status}",
@@ -239,7 +237,7 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count):
         top_name = top_inst_id.replace("-USDT-SWAP", "")
         top_vol_str = format_volume_in_eok(top_vol) or "🚫"
         message_lines += [
-            f"🏆 **실시간 거래대금 ⭐1위**\n  *1.{top_name} {format_change_with_emoji(top_change)} / 거래대금: ({top_vol_str})",
+            f"🏆 실시간 거래대금 1위\n  1.{top_name} {format_change_with_emoji(top_change)} / 거래대금: ({top_vol_str})",
             f"{top_ema_status}",
             "━━━━━━━━━━━━━━━━━━━"
         ]
@@ -252,14 +250,14 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count):
             continue
         filtered_top_bullish.append((inst_id, item[1], item[2], volume_1h, rank))
     if filtered_top_bullish:
-        message_lines.append("📈 [정배열 + 실시간 눌림 1위")
+        message_lines.append("📈 [정배열 + 실시간 눌림 상위]")
         for i, (inst_id, _, change, volume_1h, rank) in enumerate(filtered_top_bullish, 1):
             name = inst_id.replace("-USDT-SWAP", "")
             ema_status = get_all_timeframe_ema_status(inst_id)
             volume_str = format_volume_in_eok(volume_1h) or "🚫"
-            rank_display = f"⭐ **{rank}위**" if rank <= 10 else f"{rank}위"
+            rank_display = f"⭐ {rank}위" if rank <= 10 else f"{rank}위"
             message_lines += [
-                f"*{i}. {name}* {format_change_with_emoji(change)} / 거래대금: ({volume_str})",
+                f"{i}. {name} {format_change_with_emoji(change)} / 거래대금: ({volume_str})",
                 f"{ema_status}",
                 f"🔢 랭킹: {rank_display}",
                 "━━━━━━━━━━━━━━━━━━━"
