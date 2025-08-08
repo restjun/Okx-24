@@ -241,6 +241,16 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count):
         "━━━━━━━━━━━━━━━━━━━"
     ]
 
+    # 전체 거래대금 기준 랭킹 계산
+    all_volume_data = []
+    for inst_id in get_all_okx_swap_symbols():
+        vol = calculate_1h_volume(inst_id)
+        all_volume_data.append((inst_id, vol))
+        time.sleep(0.05)
+
+    all_volume_data.sort(key=lambda x: x[1], reverse=True)
+    volume_rank_map = {inst_id: rank + 1 for rank, (inst_id, _) in enumerate(all_volume_data)}
+
     filtered_top_bullish = []
     for item in top_bullish:
         inst_id = item[0]
@@ -255,8 +265,17 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count):
             name = inst_id.replace("-USDT-SWAP", "")
             ema_status = get_all_timeframe_ema_status(inst_id)
             volume_str = format_volume_in_eok(volume_1h) or "🚫"
+            rank = volume_rank_map.get(inst_id, "N/A")
+
+            if isinstance(rank, int) and rank <= 10:
+                rank_display = f"⭐ **{rank}위**"
+            else:
+                rank_display = f"{rank}위"
+
             message_lines += [
-                f"*{i}. {name}* {format_change_with_emoji(change)} / 거래대금: ({volume_str})\n{ema_status}",
+                f"*{i}. {name}* {format_change_with_emoji(change)} / 거래대금: ({volume_str})",
+                f"{ema_status}",
+                f"🔢 랭킹: {rank_display}",
                 "━━━━━━━━━━━━━━━━━━━"
             ]
     else:
