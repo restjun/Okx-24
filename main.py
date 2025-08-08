@@ -228,7 +228,7 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count):
     btc_volume_str = format_volume_in_eok(btc_volume) or "🚫"
     btc_rank = volume_rank_map.get(btc_id, "N/A")
 
-    if isinstance(btc_rank, int) and btc_rank <= 10:
+    if isinstance(btc_rank, int) and btc_rank <= 3:
         btc_rank_display = f"⭐ **{btc_rank}위**"
     else:
         btc_rank_display = f"{btc_rank}위"
@@ -246,7 +246,7 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count):
         inst_id = item[0]
         volume_1h = calculate_1h_volume(inst_id)
         rank = volume_rank_map.get(inst_id)
-        if volume_1h < 1_000_000 or rank is None or rank > 20:
+        if volume_1h < 1_000_000 or rank is None or rank > 10:
             continue
         filtered_top_bullish.append((inst_id, item[1], item[2], volume_1h, rank))
 
