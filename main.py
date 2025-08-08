@@ -227,7 +227,6 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count):
         "━━━━━━━━━━━━━━━━━━━"
     ]
 
-    # 전체 거래대금 기준 랭킹 계산
     all_volume_data = []
     for inst_id in get_all_okx_swap_symbols():
         vol = calculate_1h_volume(inst_id)
@@ -237,7 +236,6 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count):
     all_volume_data.sort(key=lambda x: x[1], reverse=True)
     volume_rank_map = {inst_id: rank + 1 for rank, (inst_id, _) in enumerate(all_volume_data)}
 
-    # 비트코인 상태 및 랭킹 포함
     btc_id = "BTC-USDT-SWAP"
     btc_ema_status = get_all_timeframe_ema_status(btc_id)
     btc_change = calculate_daily_change(btc_id)
@@ -258,27 +256,22 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count):
         "━━━━━━━━━━━━━━━━━━━"
     ]
 
-    # 거래대금 기준 TOP 정배열 필터
     filtered_top_bullish = []
     for item in top_bullish:
         inst_id = item[0]
         volume_1h = calculate_1h_volume(inst_id)
-        if volume_1h < 1_000_000:
+        rank = volume_rank_map.get(inst_id)
+        if volume_1h < 1_000_000 or rank is None or rank > 10:
             continue
-        filtered_top_bullish.append((inst_id, item[1], item[2], volume_1h))
+        filtered_top_bullish.append((inst_id, item[1], item[2], volume_1h, rank))
 
     if filtered_top_bullish:
-        message_lines.append("📈 [정배열 + 거래대금 TOP (1000만 이상)]")
-        for i, (inst_id, _, change, volume_1h) in enumerate(filtered_top_bullish, 1):
+        message_lines.append("📈 [정배열 + 거래대금 TOP10 (1000만 이상)]")
+        for i, (inst_id, _, change, volume_1h, rank) in enumerate(filtered_top_bullish, 1):
             name = inst_id.replace("-USDT-SWAP", "")
             ema_status = get_all_timeframe_ema_status(inst_id)
             volume_str = format_volume_in_eok(volume_1h) or "🚫"
-            rank = volume_rank_map.get(inst_id, "N/A")
-
-            if isinstance(rank, int) and rank <= 10:
-                rank_display = f"⭐ **{rank}위**"
-            else:
-                rank_display = f"{rank}위"
+            rank_display = f"⭐ **{rank}위**" if rank <= 10 else f"{rank}위"
 
             message_lines += [
                 f"*{i}. {name}* {format_change_with_emoji(change)} / 거래대금: ({volume_str})",
