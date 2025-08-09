@@ -19,7 +19,6 @@ logging.basicConfig(level=logging.INFO)
 def send_telegram_message(message):
     for retry_count in range(1, 11):
         try:
-            # ✅ parse_mode 제거 (Markdown 파싱 오류 방지)
             bot.sendMessage(chat_id=telegram_user_id, text=message)
             logging.info("텔레그램 메시지 전송 성공: %s", message)
             return
@@ -114,7 +113,10 @@ def get_ema_bullish_status(inst_id):
 
 def get_ema_status_text(df, timeframe="1H"):
     close = df['c'].astype(float).values
+    ema_2 = get_ema_with_retry(close, 2)
+    ema_3 = get_ema_with_retry(close, 3)
     ema_5 = get_ema_with_retry(close, 5)
+    ema_10 = get_ema_with_retry(close, 10)  # ✅ 추가
     ema_20 = get_ema_with_retry(close, 20)
     ema_50 = get_ema_with_retry(close, 50)
     ema_200 = get_ema_with_retry(close, 200)
@@ -129,15 +131,15 @@ def get_ema_status_text(df, timeframe="1H"):
             return None
         return a > b
 
+    # ✅ 앞에 5-10 EMA 상태 추가
     trend_status = [
-        check(safe_compare(ema_5, ema_20)),
-        check(safe_compare(ema_20, ema_50)),
-        check(safe_compare(ema_50, ema_200))
+        check(safe_compare(ema_5, ema_10)),  # 5-10
+        check(safe_compare(ema_5, ema_20)),  # 5-20
+        check(safe_compare(ema_20, ema_50)), # 20-50
+        check(safe_compare(ema_50, ema_200)) # 50-200
     ]
 
     if timeframe == "1H":
-        ema_2 = get_ema_with_retry(close, 2)
-        ema_3 = get_ema_with_retry(close, 3)
         short_term_status = check(safe_compare(ema_2, ema_3))
         return f"[{timeframe}] 📊: {' '.join(trend_status)} / 🔄 {short_term_status}"
     else:
@@ -202,11 +204,13 @@ def calculate_1h_volume(inst_id):
 def send_ranked_volume_message(top_bullish, total_count, bullish_count):
     bearish_count = total_count - bullish_count
     message_lines = [
-        f"📊 전체 조회 코인 수: {total_count}개",
         f"🟢 EMA 정배열: {bullish_count}개",
         f"🔴 EMA 역배열: {bearish_count}개",
-        "━━━━━━━━━━━━━━━━━━━"
+        "━━━━━━━━━━━━━━━━━━━",
+        "🎯 코인지수 비트코인",
+        "━━━━━━━━━━━━━━━━━━━",
     ]
+
     all_volume_data = []
     for inst_id in get_all_okx_swap_symbols():
         vol = calculate_1h_volume(inst_id)
@@ -224,23 +228,29 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count):
     btc_rank_display = f"⭐ {btc_rank}위" if isinstance(btc_rank, int) and btc_rank <= 3 else f"{btc_rank}위"
 
     message_lines += [
-        "🎯 코인지수 비트코인",
-        "━━━━━━━━━━━━━━━━━━━",
-        f"💰 BTC {format_change_with_emoji(btc_change)} / 거래대금: ({btc_volume_str}) / 🔢 랭킹: {btc_rank_display}",
-        f"{btc_ema_status}",
+        f"💰 BTC {format_change_with_emoji(btc_change)} / 거래대금: ({btc_volume_str})",
+        btc_ema_status,
+        f"🔢 랭킹: {btc_rank_display}",
         "━━━━━━━━━━━━━━━━━━━"
     ]
+
     if all_volume_data:
         top_inst_id, top_vol = all_volume_data[0]
         top_change = calculate_daily_change(top_inst_id)
         top_ema_status = get_all_timeframe_ema_status(top_inst_id)
         top_name = top_inst_id.replace("-USDT-SWAP", "")
         top_vol_str = format_volume_in_eok(top_vol) or "🚫"
+        top_rank = volume_rank_map.get(top_inst_id, "N/A")
+        top_rank_display = f"⭐ {top_rank}위" if isinstance(top_rank, int) and top_rank <= 3 else f"{top_rank}위"
+
         message_lines += [
-            f"🏆 실시간 거래대금 1위\n  1.{top_name} {format_change_with_emoji(top_change)} / 거래대금: ({top_vol_str})",
-            f"{top_ema_status}",
+            "🏆 실시간 거래대금 1위",
+            f"1. {top_name} {format_change_with_emoji(top_change)} / 거래대금: ({top_vol_str})",
+            top_ema_status,
+            f"🔢 랭킹: {top_rank_display}",
             "━━━━━━━━━━━━━━━━━━━"
         ]
+
     filtered_top_bullish = []
     for item in top_bullish:
         inst_id = item[0]
@@ -249,6 +259,7 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count):
         if volume_1h < 1_000_000 or rank is None or rank > 30:
             continue
         filtered_top_bullish.append((inst_id, item[1], item[2], volume_1h, rank))
+
     if filtered_top_bullish:
         message_lines.append("📈 [정배열 + 실시간 눌림 상위]")
         for i, (inst_id, _, change, volume_1h, rank) in enumerate(filtered_top_bullish, 1):
@@ -256,14 +267,17 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count):
             ema_status = get_all_timeframe_ema_status(inst_id)
             volume_str = format_volume_in_eok(volume_1h) or "🚫"
             rank_display = f"⭐ {rank}위" if rank <= 10 else f"{rank}위"
+            ema_lines = ema_status.split("\n")
             message_lines += [
                 f"{i}. {name} {format_change_with_emoji(change)} / 거래대금: ({volume_str})",
-                f"{ema_status}",
+                ema_lines[0],
+                ema_lines[1] if len(ema_lines) > 1 else "",
                 f"🔢 랭킹: {rank_display}",
                 "━━━━━━━━━━━━━━━━━━━"
             ]
     else:
         message_lines.append("📉 정배열 종목이 없습니다.")
+
     send_telegram_message("\n".join(message_lines))
 
 def is_recent_20_50_golden_cross(inst_id, max_hours=20):
