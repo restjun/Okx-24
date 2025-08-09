@@ -71,10 +71,12 @@ def get_ohlcv_okx(instId, bar='1H', limit=200):
         logging.error(f"{instId} OHLCV 파싱 실패: {e}")
         return None
 
-# ==== 정배열 기준 변경 (4H, EMA 5-10-15-20) ====
+# ==== 정배열 기준 변경 (4H, EMA 1-2-5-10-15-20) ====
 def get_ema_status_text_partial(df):
     close = df['c'].astype(float).values
 
+    ema_1 = get_ema_with_retry(close, 1)
+    ema_2 = get_ema_with_retry(close, 2)
     ema_5 = get_ema_with_retry(close, 5)
     ema_10 = get_ema_with_retry(close, 10)
     ema_15 = get_ema_with_retry(close, 15)
@@ -90,11 +92,12 @@ def get_ema_status_text_partial(df):
             return None
         return a > b
 
+    status_1_2 = check(safe_compare(ema_1, ema_2))
     status_5_10 = check(safe_compare(ema_5, ema_10))
     status_10_15 = check(safe_compare(ema_10, ema_15))
     status_15_20 = check(safe_compare(ema_15, ema_20))
 
-    return f"[4H]  📊:  {status_5_10}  {status_10_15}  {status_15_20}"
+    return f"[4H]  📊:  {status_1_2}  {status_5_10}  {status_10_15}  {status_15_20}"
 # =================================================
 
 def get_all_timeframe_ema_status(inst_id):
@@ -243,15 +246,17 @@ def get_ema_bullish_status(inst_id):
 
         close_4h = df_4h['c'].values
 
+        ema_1 = get_ema_with_retry(close_4h, 1)
+        ema_2 = get_ema_with_retry(close_4h, 2)
         ema_5 = get_ema_with_retry(close_4h, 5)
         ema_10 = get_ema_with_retry(close_4h, 10)
         ema_15 = get_ema_with_retry(close_4h, 15)
         ema_20 = get_ema_with_retry(close_4h, 20)
 
-        if None in [ema_5, ema_10, ema_15, ema_20]:
+        if None in [ema_1, ema_2, ema_5, ema_10, ema_15, ema_20]:
             return False
 
-        return ema_5 > ema_10 > ema_15 > ema_20
+        return ema_1 > ema_2 > ema_5 > ema_10 > ema_15 > ema_20
 
     except Exception as e:
         logging.error(f"{inst_id} EMA 상태 계산 실패: {e}")
@@ -286,14 +291,16 @@ def main():
         if daily_change is None or daily_change <= 0:
             continue
 
+        ema_1 = get_ema_with_retry(df_4h['c'].values, 1)
+        ema_2 = get_ema_with_retry(df_4h['c'].values, 2)
         ema_5 = get_ema_with_retry(df_4h['c'].values, 5)
         ema_10 = get_ema_with_retry(df_4h['c'].values, 10)
         ema_15 = get_ema_with_retry(df_4h['c'].values, 15)
         ema_20 = get_ema_with_retry(df_4h['c'].values, 20)
-        if None in [ema_5, ema_10, ema_15, ema_20]:
+        if None in [ema_1, ema_2, ema_5, ema_10, ema_15, ema_20]:
             continue
 
-        if ema_5 > ema_10 > ema_15 > ema_20 and vol_1h >= 1_000_000:
+        if ema_1 > ema_2 > ema_5 > ema_10 > ema_15 > ema_20 and vol_1h >= 1_000_000:
             bullish_list.append((inst_id, vol_1h, daily_change))
 
     top_bullish = sorted(bullish_list, key=lambda x: (x[1], x[2]), reverse=True)[:3]
