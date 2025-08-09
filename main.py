@@ -71,9 +71,12 @@ def get_ohlcv_okx(instId, bar='1H', limit=200):
         logging.error(f"{instId} OHLCV 파싱 실패: {e}")
         return None
 
+# ==== 여기 수정됨 ====
 def get_ema_status_text_partial(df):
     close = df['c'].astype(float).values
 
+    ema_1 = get_ema_with_retry(close, 1)
+    ema_2 = get_ema_with_retry(close, 2)
     ema_5 = get_ema_with_retry(close, 5)
     ema_20 = get_ema_with_retry(close, 20)
     ema_50 = get_ema_with_retry(close, 50)
@@ -89,11 +92,13 @@ def get_ema_status_text_partial(df):
             return None
         return a > b
 
+    status_1_2 = check(safe_compare(ema_1, ema_2))
     status_5_20 = check(safe_compare(ema_5, ema_20))
     status_20_50 = check(safe_compare(ema_20, ema_50))
     status_50_200 = check(safe_compare(ema_50, ema_200))
 
-    return f"[4H]  📊:  {status_5_20}  {status_20_50}  {status_50_200}"
+    return f"[4H]  📊:  {status_1_2}  {status_5_20}  {status_20_50}  {status_50_200}"
+# ===================
 
 def get_all_timeframe_ema_status(inst_id):
     df = get_ohlcv_okx(inst_id, bar='4H', limit=300)
@@ -148,7 +153,6 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count, volume_r
     bearish_count = total_count - bullish_count
     bullish_ratio = bullish_count / total_count if total_count > 0 else 0
 
-    # 장 상태 텍스트
     if bullish_ratio >= 0.7:
         market_status = "📈 장이 좋음 (강세장)"
     elif bullish_ratio >= 0.4:
