@@ -71,10 +71,12 @@ def get_ohlcv_okx(instId, bar='1H', limit=200):
         logging.error(f"{instId} OHLCV 파싱 실패: {e}")
         return None
 
-# ==== 정배열 기준 변경 (4H, EMA 5-10-15-20) ====
+# ==== 정배열 기준 및 눌림 상태 변경 (4H, EMA 2-3 + 5-10-15-20) ====
 def get_ema_status_text_partial(df):
     close = df['c'].astype(float).values
 
+    ema_2 = get_ema_with_retry(close, 2)
+    ema_3 = get_ema_with_retry(close, 3)
     ema_5 = get_ema_with_retry(close, 5)
     ema_10 = get_ema_with_retry(close, 10)
     ema_15 = get_ema_with_retry(close, 15)
@@ -90,11 +92,12 @@ def get_ema_status_text_partial(df):
             return None
         return a > b
 
+    status_2_3 = check(safe_compare(ema_2, ema_3))
     status_5_10 = check(safe_compare(ema_5, ema_10))
     status_10_15 = check(safe_compare(ema_10, ema_15))
     status_15_20 = check(safe_compare(ema_15, ema_20))
 
-    return f"[4H]  📊:  {status_5_10}  {status_10_15}  {status_15_20}"
+    return f"[4H]  📊:  2-3 {status_2_3}  5-10 {status_5_10}  10-15 {status_10_15}  15-20 {status_15_20}"
 # =================================================
 
 def get_all_timeframe_ema_status(inst_id):
