@@ -280,7 +280,7 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count):
 
     send_telegram_message("\n".join(message_lines))
 
-def is_recent_20_50_golden_cross(inst_id, max_hours=20):
+def is_recent_20_50_golden_cross(inst_id, max_hours=24):
     df = get_ohlcv_okx(inst_id, bar='1H', limit=300)
     if df is None or len(df) < 50:
         return False
@@ -324,7 +324,7 @@ def main():
         bullish_list.append((inst_id, vol_24h, daily_change))
         time.sleep(0.1)
 
-    top_bullish = sorted(bullish_list, key=lambda x: (x[1], x[2]), reverse=True)[:1]
+    top_bullish = sorted(bullish_list, key=lambda x: (x[1], x[2]), reverse=True)[:3]
     send_ranked_volume_message(top_bullish, total_count, bullish_count_only)
 
 def run_scheduler():
