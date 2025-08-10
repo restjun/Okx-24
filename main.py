@@ -288,7 +288,7 @@ def main():
 
         vol_1h = volume_map.get(inst_id, 0)
         daily_change = calculate_daily_change(inst_id)
-        if daily_change is None or daily_change <= 0:
+        if daily_change is None or daily_change <= -100:
             continue
 
         ema_5 = get_ema_with_retry(df_4h['c'].values, 5)
@@ -301,7 +301,7 @@ def main():
         if ema_5 > ema_10 > ema_15 > ema_20 and vol_1h >= 1_000_000:
             bullish_list.append((inst_id, vol_1h, daily_change))
 
-    top_bullish = sorted(bullish_list, key=lambda x: (x[1], x[2]), reverse=True)[:3]
+    top_bullish = sorted(bullish_list, key=lambda x: (x[1], x[2]), reverse=True)[:5]
 
     all_volume_data = sorted(volume_map.items(), key=lambda x: x[1], reverse=True)
     volume_rank_map = {inst_id: rank + 1 for rank, (inst_id, _) in enumerate(all_volume_data)}
