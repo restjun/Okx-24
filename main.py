@@ -97,7 +97,7 @@ def get_ema_status_text_partial(df):
     status_10_15 = check(safe_compare(ema_10, ema_15))
     status_15_20 = check(safe_compare(ema_15, ema_20))
 
-    return f"[4H]  📊:  2-3 {status_2_3}  5-10 {status_5_10}  10-15 {status_10_15}  15-20 {status_15_20}"
+    return f"[4H]  📊:  {status_2_3}  {status_5_10}  {status_10_15}  {status_15_20}"
 # =================================================
 
 def get_all_timeframe_ema_status(inst_id):
