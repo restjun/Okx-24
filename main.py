@@ -208,12 +208,12 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count, volume_r
         inst_id = item[0]
         volume_1h = dict(all_volume_data).get(inst_id, 0)
         rank = volume_rank_map.get(inst_id)
-        if volume_1h < 1_000_000 or rank is None or rank > 10:
+        if volume_1h < 1_000_000 or rank is None or rank > 5:
             continue
         filtered_top_bullish.append((inst_id, item[1], item[2], volume_1h, rank))
 
     if filtered_top_bullish:
-        message_lines.append("📈 [정배열 + 거래대금]")
+        message_lines.append("📈 정배열 + 실시간 거래대금 1위")
         for i, (inst_id, _, change, volume_1h, rank) in enumerate(filtered_top_bullish, 1):
             name = inst_id.replace("-USDT-SWAP", "")
             ema_status = get_all_timeframe_ema_status(inst_id).strip()
