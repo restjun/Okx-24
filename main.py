@@ -233,14 +233,15 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count, volume_r
         top_rank = volume_rank_map.get(top_inst_id, "N/A")
         top_rank_display = f"⭐ {top_rank}위" if isinstance(top_rank, int) and top_rank <= 3 else f"{top_rank}위"
 
-        message_lines += [
-            "🏆 실시간 거래대금 1위",
-            f"1. {top_name} {format_change_with_emoji(top_change)} / 거래대금: ({top_vol_str})",
-            top_ema_status.strip(),
-            top_ema_status_1h.strip(),
-            f"🔢 랭킹: {top_rank_display}",
-            "━━━━━━━━━━━━━━━━━━━"
-        ]
+        # 🏆 실시간 거래대금 1위 부분 삭제됨
+        # message_lines += [
+        #     "🏆 실시간 거래대금 1위",
+        #     f"1. {top_name} {format_change_with_emoji(top_change)} / 거래대금: ({top_vol_str})",
+        #     top_ema_status.strip(),
+        #     top_ema_status_1h.strip(),
+        #     f"🔢 랭킹: {top_rank_display}",
+        #     "━━━━━━━━━━━━━━━━━━━"
+        # ]
 
     filtered_top_bullish = []
     for item in top_bullish:
@@ -338,7 +339,7 @@ def main():
         if ema_5 > ema_10 > ema_15 > ema_20 and vol_1h >= 1_000_000:
             bullish_list.append((inst_id, vol_1h, daily_change))
 
-    top_bullish = sorted(bullish_list, key=lambda x: (x[1], x[2]), reverse=True)[:5]
+    top_bullish = sorted(bullish_list, key=lambda x: (x[1], x[2]), reverse=True)[:1]
 
     all_volume_data = sorted(volume_map.items(), key=lambda x: x[1], reverse=True)
     volume_rank_map = {inst_id: rank + 1 for rank, (inst_id, _) in enumerate(all_volume_data)}
