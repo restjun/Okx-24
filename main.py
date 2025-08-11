@@ -93,13 +93,13 @@ def get_ema_status_text_partial(df):
             return None
         return a > b
 
-    status_1_2 = check(safe_compare(ema_1, ema_2))
+    # status_1_2 제거됨
     status_2_3 = check(safe_compare(ema_2, ema_3))
     status_5_10 = check(safe_compare(ema_5, ema_10))
     status_10_15 = check(safe_compare(ema_10, ema_15))
     status_15_20 = check(safe_compare(ema_15, ema_20))
 
-    return f"[4H]  📊:  {status_1_2}  {status_2_3}   {status_5_10}{status_10_15}{status_15_20}"
+    return f"[4H]  📊:  {status_2_3}   {status_5_10}{status_10_15}{status_15_20}"
 
 # ==== EMA 상태 메시지: 1H ====
 def get_ema_status_text_partial_1h(df):
@@ -123,13 +123,13 @@ def get_ema_status_text_partial_1h(df):
             return None
         return a > b
 
-    status_1_2 = check(safe_compare(ema_1, ema_2))
+    # status_1_2 제거됨
     status_2_3 = check(safe_compare(ema_2, ema_3))
     status_5_10 = check(safe_compare(ema_5, ema_10))
     status_10_15 = check(safe_compare(ema_10, ema_15))
     status_15_20 = check(safe_compare(ema_15, ema_20))
 
-    return f"[1H]  📊:  {status_1_2}  {status_2_3}   {status_5_10}{status_10_15}{status_15_20}"
+    return f"[1H]  📊:  {status_2_3}   {status_5_10}{status_10_15}{status_15_20}"
 
 def get_all_timeframe_ema_status(inst_id):
     df = get_ohlcv_okx(inst_id, bar='4H', limit=300)
@@ -232,16 +232,6 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count, volume_r
         top_vol_str = format_volume_in_eok(top_vol) or "🚫"
         top_rank = volume_rank_map.get(top_inst_id, "N/A")
         top_rank_display = f"⭐ {top_rank}위" if isinstance(top_rank, int) and top_rank <= 3 else f"{top_rank}위"
-
-        # 🏆 실시간 거래대금 1위 부분 삭제됨
-        # message_lines += [
-        #     "🏆 실시간 거래대금 1위",
-        #     f"1. {top_name} {format_change_with_emoji(top_change)} / 거래대금: ({top_vol_str})",
-        #     top_ema_status.strip(),
-        #     top_ema_status_1h.strip(),
-        #     f"🔢 랭킹: {top_rank_display}",
-        #     "━━━━━━━━━━━━━━━━━━━"
-        # ]
 
     filtered_top_bullish = []
     for item in top_bullish:
