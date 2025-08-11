@@ -129,7 +129,7 @@ def get_ema_status_text_partial_1h(df):
     status_10_15 = check(safe_compare(ema_10, ema_15))
     status_15_20 = check(safe_compare(ema_15, ema_20))
 
-    return f"[1H]  📊:  {status_5_10}{status_10_15}{status_15_20}      {status_2_3}"
+    return f"[1H]  📊:  {status_5_10}{status_10_15}{status_15_20}"
 
 def get_all_timeframe_ema_status(inst_id):
     df = get_ohlcv_okx(inst_id, bar='4H', limit=300)
