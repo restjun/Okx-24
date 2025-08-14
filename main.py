@@ -71,15 +71,9 @@ def get_ohlcv_okx(instId, bar='1H', limit=200):
         logging.error(f"{instId} OHLCV 파싱 실패: {e}")
         return None
 
-# ===== 거래대금 계산 =====
-def calculate_1h_volume(inst_id):
+# ===== 거래대금 계산 (24시간 단일 기준) =====
+def calculate_24h_volume(inst_id):
     df = get_ohlcv_okx(inst_id, bar="1H", limit=24)
-    if df is None or len(df) < 1:
-        return 0
-    return df["volCcyQuote"].sum()
-
-def calculate_4h_volume_from_1h(inst_id):
-    df = get_ohlcv_okx(inst_id, bar="1H", limit=4)  # 최근 1H 캔들 4개 합산
     if df is None or len(df) < 1:
         return 0
     return df["volCcyQuote"].sum()
@@ -157,7 +151,7 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count, volume_r
     ]
 
     if top_bullish:
-        message_lines.append("📈 1H 24시간 & 4H 4시간 거래대금 순위 10위 내 정배열")
+        message_lines.append("📈 1H 24시간 거래대금 순위 10위 내 정배열")
         for i, (inst_id, vol, change) in enumerate(top_bullish, 1):
             name = inst_id.replace("-USDT-SWAP", "")
             message_lines.append(f"{i}. {name} / 상승률: {change:.2f}% / 거래대금: {int(vol//1_000_000)}M")
@@ -175,12 +169,10 @@ def main():
     bullish_count_only = 0
     bullish_list = []
 
-    # ===== 거래대금 계산 =====
-    volume_map_1h = {}
-    volume_map_4h = {}
+    # ===== 거래대금 계산 (24시간 기준) =====
+    volume_map_24h = {}
     for inst_id in all_ids:
-        volume_map_1h[inst_id] = calculate_1h_volume(inst_id)
-        volume_map_4h[inst_id] = calculate_4h_volume_from_1h(inst_id)
+        volume_map_24h[inst_id] = calculate_24h_volume(inst_id)
         time.sleep(0.05)
 
     # ===== EMA 정배열 체크 =====
@@ -194,26 +186,23 @@ def main():
     for inst_id in all_ids:
         if not get_ema_bullish_status(inst_id):
             continue
-        vol_1h = volume_map_1h.get(inst_id, 0)
-        vol_4h = volume_map_4h.get(inst_id, 0)
-        if vol_1h == 0 or vol_4h == 0:
+        vol_24h = volume_map_24h.get(inst_id, 0)
+        if vol_24h == 0:
             continue
-        bullish_candidates.append((inst_id, vol_1h, vol_4h))
+        bullish_candidates.append((inst_id, vol_24h))
 
     # ===== 거래대금 랭킹 계산 =====
-    rank_1h = sorted(bullish_candidates, key=lambda x: x[1], reverse=True)
-    volume_rank_map_1h = {inst_id: idx+1 for idx, (inst_id, _, _) in enumerate(rank_1h)}
-    rank_4h = sorted(bullish_candidates, key=lambda x: x[2], reverse=True)
-    volume_rank_map_4h = {inst_id: idx+1 for idx, (inst_id, _, _) in enumerate(rank_4h)}
+    rank_24h = sorted(bullish_candidates, key=lambda x: x[1], reverse=True)
+    volume_rank_map_24h = {inst_id: idx+1 for idx, (inst_id, _) in enumerate(rank_24h)}
 
     # ===== 랭킹 10위 내 조건 적용 =====
     top_bullish = []
-    for inst_id, vol_1h, vol_4h in bullish_candidates:
-        if volume_rank_map_1h[inst_id] <= 10 and volume_rank_map_4h[inst_id] <= 10:
+    for inst_id, vol_24h in bullish_candidates:
+        if volume_rank_map_24h[inst_id] <= 10:
             change = calculate_daily_change(inst_id) or 0
-            top_bullish.append((inst_id, vol_1h, change))
+            top_bullish.append((inst_id, vol_24h, change))
 
-    send_ranked_volume_message(top_bullish, total_count, bullish_count_only, volume_rank_map_1h, rank_1h)
+    send_ranked_volume_message(top_bullish, total_count, bullish_count_only, volume_rank_map_24h, rank_24h)
 
 # ===== 스케줄러 =====
 def run_scheduler():
