@@ -191,7 +191,7 @@ def main():
             continue
         bullish_candidates.append((inst_id, vol_24h))
 
-    # ===== 거래대금 랭킹 계산 =====
+    # ===== 거래대금 랭킹 계산 (24시간 기준) =====
     rank_24h = sorted(bullish_candidates, key=lambda x: x[1], reverse=True)
     volume_rank_map_24h = {inst_id: idx+1 for idx, (inst_id, _) in enumerate(rank_24h)}
 
