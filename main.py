@@ -246,26 +246,33 @@ def get_ema_bullish_status(inst_id):
         logging.error(f"{inst_id} EMA 상태 계산 실패: {e}")
         return False
 
+# ===== 수정된 main() =====
 def main():
     logging.info("📥 EMA 분석 시작")
     all_ids = get_all_okx_swap_symbols()
     total_count = len(all_ids)
 
-    bullish_count_only = 0
-    bullish_list = []
     volume_map = {}
 
+    # 거래대금 먼저 계산
     for inst_id in all_ids:
         vol_1h = calculate_1h_volume(inst_id)
         volume_map[inst_id] = vol_1h
         time.sleep(0.05)
 
-    for inst_id in all_ids:
+    # 거래대금 TOP 10 추출
+    top_10_ids = [inst_id for inst_id, _ in sorted(volume_map.items(), key=lambda x: x[1], reverse=True)[:10]]
+
+    bullish_count_only = 0
+    bullish_list = []
+
+    # 상위 10개만 EMA 체크
+    for inst_id in top_10_ids:
         if get_ema_bullish_status(inst_id):
             bullish_count_only += 1
         time.sleep(0.05)
 
-    for inst_id in all_ids:
+    for inst_id in top_10_ids:
         df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=300)
         if df_1d is None:
             continue
@@ -276,10 +283,10 @@ def main():
         if get_ema_bullish_status(inst_id) and vol_1h >= 1_000_000:
             bullish_list.append((inst_id, vol_1h, daily_change))
 
-    top_bullish = sorted(bullish_list, key=lambda x: (x[1], x[2]), reverse=True)[:3]
     all_volume_data = sorted(volume_map.items(), key=lambda x: x[1], reverse=True)
     volume_rank_map = {inst_id: rank + 1 for rank, (inst_id, _) in enumerate(all_volume_data)}
 
+    top_bullish = sorted(bullish_list, key=lambda x: (x[1], x[2]), reverse=True)[:3]
     send_ranked_volume_message(top_bullish, total_count, bullish_count_only, volume_rank_map, all_volume_data)
 
 def run_scheduler():
