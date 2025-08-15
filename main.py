@@ -175,7 +175,7 @@ def format_change_with_emoji(change):
         return f"🔴 ({change:.2f}%)"
 
 def calculate_1h_volume(inst_id):
-    df = get_ohlcv_okx(inst_id, bar="1H", limit=1)
+    df = get_ohlcv_okx(inst_id, bar="1H", limit=24)
     if df is None or len(df) < 1:
         return 0
     return df["volCcyQuote"].sum()
@@ -196,7 +196,7 @@ def send_ranked_volume_message(top_bullish, total_count, bullish_count, volume_r
         f"🔴 EMA 역배열: {bearish_count}개",
         f"💡 시장 상태: {market_status}",
         "━━━━━━━━━━━━━━━━━━━",
-        "🎯 코인지수 비트코인 + [2_3/5_10/10_15/15_20]",
+        "🎯 코인지수 비트코인 + [일봉 정배열 5-20]",
         "━━━━━━━━━━━━━━━━━━━",
     ]
 
@@ -302,7 +302,7 @@ def main():
         if ema_5 > ema_20 and vol_1h >= 1_000_000:
             bullish_list.append((inst_id, vol_1h, daily_change))
 
-    top_bullish = sorted(bullish_list, key=lambda x: (x[1], x[2]), reverse=True)[:5]
+    top_bullish = sorted(bullish_list, key=lambda x: (x[1], x[2]), reverse=True)[:3]
     all_volume_data = sorted(volume_map.items(), key=lambda x: x[1], reverse=True)
     volume_rank_map = {inst_id: rank + 1 for rank, (inst_id, _) in enumerate(all_volume_data)}
 
