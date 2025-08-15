@@ -94,7 +94,7 @@ def get_ema_status_text_partial_daily(inst_id):
         status_10_15 = "🟩" if ema_10 > ema_15 else "🟥"
         status_15_20 = "🟩" if ema_15 > ema_20 else "🟥"
 
-        return f"[1D] 📊: {status_1_3}/{status_5_10}/{status_10_15}/{status_15_20}"
+        return f"[1D] 📊: {status_5_10}{status_10_15}{status_15_20}"
     except Exception as e:
         logging.error(f"{inst_id} EMA 상태 계산 실패: {e}")
         return "[1D] ❌ 오류"
@@ -125,7 +125,7 @@ def get_ema_status_text_partial_4h(inst_id):
         status_10_15 = "🟩" if ema_10 > ema_15 else "🟥"
         status_15_20 = "🟩" if ema_15 > ema_20 else "🟥"
 
-        return f"[4H] 📊: {status_1_3}/{status_5_10}/{status_10_15}/{status_15_20}"
+        return f"[4H] 📊: {status_5_10}{status_10_15}{status_15_20}     {status_1_3}"
     except Exception as e:
         logging.error(f"{inst_id} EMA 상태 계산 실패: {e}")
         return "[4H] ❌ 오류"
