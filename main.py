@@ -79,7 +79,7 @@ def get_ema_status_text_partial_daily(inst_id):
             return "[1D] ❌ 불러오기 실패"
 
         close_prices = df['c'].values
-        ema_2 = get_ema_with_retry(close_prices, 2)
+        ema_1 = get_ema_with_retry(close_prices, 1)
         ema_3 = get_ema_with_retry(close_prices, 3)
         ema_5 = get_ema_with_retry(close_prices, 5)
         ema_10 = get_ema_with_retry(close_prices, 10)
@@ -89,12 +89,12 @@ def get_ema_status_text_partial_daily(inst_id):
         if None in [ema_2, ema_3, ema_5, ema_10, ema_15, ema_20]:
             return "[1D] ❌ 데이터 부족"
 
-        status_2_3 = "🟩" if ema_2 > ema_3 else "🟥"
+        status_1_3 = "🟩" if ema_1 > ema_3 else "🟥"
         status_5_10 = "🟩" if ema_5 > ema_10 else "🟥"
         status_10_15 = "🟩" if ema_10 > ema_15 else "🟥"
         status_15_20 = "🟩" if ema_15 > ema_20 else "🟥"
 
-        return f"[1D] 📊: {status_2_3}/{status_5_10}/{status_10_15}/{status_15_20}"
+        return f"[1D] 📊: {status_1_3}/{status_5_10}/{status_10_15}/{status_15_20}"
     except Exception as e:
         logging.error(f"{inst_id} EMA 상태 계산 실패: {e}")
         return "[1D] ❌ 오류"
@@ -110,7 +110,7 @@ def get_ema_status_text_partial_4h(inst_id):
             return "[4H] ❌ 불러오기 실패"
 
         close_prices = df['c'].values
-        ema_2 = get_ema_with_retry(close_prices, 2)
+        ema_1 = get_ema_with_retry(close_prices, 1)
         ema_3 = get_ema_with_retry(close_prices, 3)
         ema_5 = get_ema_with_retry(close_prices, 5)
         ema_10 = get_ema_with_retry(close_prices, 10)
@@ -120,12 +120,12 @@ def get_ema_status_text_partial_4h(inst_id):
         if None in [ema_2, ema_3, ema_5, ema_10, ema_15, ema_20]:
             return "[4H] ❌ 데이터 부족"
             
-        status_2_3 = "🟩" if ema_2 > ema_3 else "🟥"
+        status_1_3 = "🟩" if ema_1 > ema_3 else "🟥"
         status_5_10 = "🟩" if ema_5 > ema_10 else "🟥"
         status_10_15 = "🟩" if ema_10 > ema_15 else "🟥"
         status_15_20 = "🟩" if ema_15 > ema_20 else "🟥"
 
-        return f"[4H] 📊: {status_2_3}/{status_5_10}/{status_10_15}/{status_15_20}"
+        return f"[4H] 📊: {status_1_3}/{status_5_10}/{status_10_15}/{status_15_20}"
     except Exception as e:
         logging.error(f"{inst_id} EMA 상태 계산 실패: {e}")
         return "[4H] ❌ 오류"
