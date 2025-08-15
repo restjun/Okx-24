@@ -86,7 +86,7 @@ def get_ema_status_text_partial_daily(inst_id):
         ema_15 = get_ema_with_retry(close_prices, 15)
         ema_20 = get_ema_with_retry(close_prices, 20)
 
-        if None in [ema_2, ema_3, ema_5, ema_10, ema_15, ema_20]:
+        if None in [ema_1, ema_3, ema_5, ema_10, ema_15, ema_20]:
             return "[1D] ❌ 데이터 부족"
 
         status_1_3 = "🟩" if ema_1 > ema_3 else "🟥"
@@ -117,7 +117,7 @@ def get_ema_status_text_partial_4h(inst_id):
         ema_15 = get_ema_with_retry(close_prices, 15)
         ema_20 = get_ema_with_retry(close_prices, 20)
 
-        if None in [ema_2, ema_3, ema_5, ema_10, ema_15, ema_20]:
+        if None in [ema_1, ema_3, ema_5, ema_10, ema_15, ema_20]:
             return "[4H] ❌ 데이터 부족"
             
         status_1_3 = "🟩" if ema_1 > ema_3 else "🟥"
