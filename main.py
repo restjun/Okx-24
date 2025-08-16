@@ -81,7 +81,7 @@ def get_ema_status_line(inst_id):
             condition_1d = False
         else:
             ema_5_1d = get_ema_with_retry(df_1d['c'].values, 5)
-            ema_10_1d = get_ema_with_retry(df_1d['c'].values, 10)
+            ema_10_1d = get_ema_with_retry(df_1d['c'].values, 10)  # 수정됨
             if None in [ema_5_1d, ema_10_1d]:
                 daily_status = "[1D] ❌"
                 condition_1d = False
@@ -90,30 +90,30 @@ def get_ema_status_line(inst_id):
                 status_5_10_1d = "🟩" if condition_1d else "🟥"
                 daily_status = f"[1D] 📊: {status_5_10_1d}"
 
-        # --- 4H EMA (5-10, 2-3) ---
+        # --- 4H EMA (5-10, 1-3) ---
         df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=300)
         if df_4h is None:
             fourh_status = "[4H] ❌"
             condition_5_10_4h = False
-            condition_2_3_4h = False
+            condition_1_3_4h = False
         else:
-            ema_2_4h = get_ema_with_retry(df_4h['c'].values, 2)
+            ema_1_4h = get_ema_with_retry(df_4h['c'].values, 1)
             ema_3_4h = get_ema_with_retry(df_4h['c'].values, 3)
             ema_5_4h = get_ema_with_retry(df_4h['c'].values, 5)
-            ema_10_4h = get_ema_with_retry(df_4h['c'].values, 10)
-            if None in [ema_2_4h, ema_3_4h, ema_5_4h, ema_10_4h]:
+            ema_10_4h = get_ema_with_retry(df_4h['c'].values, 10)  # 수정됨
+            if None in [ema_1_4h, ema_3_4h, ema_5_4h, ema_10_4h]:
                 fourh_status = "[4H] ❌"
                 condition_5_10_4h = False
-                condition_2_3_4h = False
+                condition_1_3_4h = False
             else:
                 condition_5_10_4h = ema_5_4h > ema_10_4h
-                condition_2_3_4h = ema_2_4h < ema_3_4h  # 역배열 조건
+                condition_1_3_4h = ema_1_4h < ema_3_4h  # 역배열 조건
                 status_5_10_4h = "🟩" if condition_5_10_4h else "🟥"
-                status_2_3_4h = "🟩" if ema_2_4h > ema_3_4h else "🟥"
-                fourh_status = f"[4H] 📊: {status_5_10_4h} {status_2_3_4h}"
+                status_1_3_4h = "🟩" if ema_1_4h > ema_3_4h else "🟥"
+                fourh_status = f"[4H] 📊: {status_5_10_4h} {status_1_3_4h}"
 
         # --- 조건 체크 후 🚀 붙이기 ---
-        rocket = " 🚀" if (condition_1d and condition_5_10_4h and condition_2_3_4h) else ""
+        rocket = " 🚀" if (condition_1d and condition_5_10_4h and condition_1_3_4h) else ""
 
         return f"{daily_status} | {fourh_status}{rocket}"
     except Exception as e:
@@ -162,7 +162,7 @@ def format_change_with_emoji(change):
         return f"🔴 ({change:.2f}%)"
 
 def calculate_1h_volume(inst_id):
-    df = get_ohlcv_okx(inst_id, bar="1H", limit=4)
+    df = get_ohlcv_okx(inst_id, bar="1H", limit=24)
     if df is None or len(df) < 1:
         return 0
     return df["volCcyQuote"].sum()
@@ -223,4 +223,4 @@ def start_scheduler():
     threading.Thread(target=run_scheduler, daemon=True).start()
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8000)  
