@@ -78,19 +78,24 @@ def get_ema_status_line(inst_id):
         df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=300)
         if df_1d is None:
             daily_status = "[1D] ❌"
+            condition_1d = False
         else:
             ema_5_1d = get_ema_with_retry(df_1d['c'].values, 5)
             ema_20_1d = get_ema_with_retry(df_1d['c'].values, 20)
             if None in [ema_5_1d, ema_20_1d]:
                 daily_status = "[1D] ❌"
+                condition_1d = False
             else:
-                status_5_20_1d = "🟩" if ema_5_1d > ema_20_1d else "🟥"
+                condition_1d = ema_5_1d > ema_20_1d
+                status_5_20_1d = "🟩" if condition_1d else "🟥"
                 daily_status = f"[1D] 📊: {status_5_20_1d}"
 
         # --- 4H EMA (5-20, 1-3) ---
         df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=300)
         if df_4h is None:
             fourh_status = "[4H] ❌"
+            condition_5_20_4h = False
+            condition_1_3_4h = False
         else:
             ema_1_4h = get_ema_with_retry(df_4h['c'].values, 1)
             ema_3_4h = get_ema_with_retry(df_4h['c'].values, 3)
@@ -98,12 +103,19 @@ def get_ema_status_line(inst_id):
             ema_20_4h = get_ema_with_retry(df_4h['c'].values, 20)
             if None in [ema_1_4h, ema_3_4h, ema_5_4h, ema_20_4h]:
                 fourh_status = "[4H] ❌"
+                condition_5_20_4h = False
+                condition_1_3_4h = False
             else:
-                status_5_20_4h = "🟩" if ema_5_4h > ema_20_4h else "🟥"
+                condition_5_20_4h = ema_5_4h > ema_20_4h
+                condition_1_3_4h = ema_1_4h < ema_3_4h  # 역배열 조건
+                status_5_20_4h = "🟩" if condition_5_20_4h else "🟥"
                 status_1_3_4h = "🟩" if ema_1_4h > ema_3_4h else "🟥"
                 fourh_status = f"[4H] 📊: {status_5_20_4h} {status_1_3_4h}"
 
-        return f"{daily_status} | {fourh_status}"
+        # --- 조건 체크 후 🚀 붙이기 ---
+        rocket = " 🚀" if (condition_1d and condition_5_20_4h and condition_1_3_4h) else ""
+
+        return f"{daily_status} | {fourh_status}{rocket}"
     except Exception as e:
         logging.error(f"{inst_id} EMA 상태 계산 실패: {e}")
         return "[1D/4H] ❌"
@@ -182,7 +194,7 @@ def get_all_okx_swap_symbols():
     data = response.json().get("data", [])
     return [item["instId"] for item in data if "USDT" in item["instId"]]
 
-# ===== 수정된 main() =====
+# ===== main() =====
 def main():
     logging.info("📥 거래대금 분석 시작")
     all_ids = get_all_okx_swap_symbols()
