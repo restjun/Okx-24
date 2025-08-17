@@ -89,26 +89,29 @@ def get_ema_status_line(inst_id):
 
         # --- 1H EMA (1-3, 5-20) ---
         df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=300)
-        if df_1h is None:
-            oneh_status = "[1H] ❌"
-            ema_1_1h = ema_3_1h = None
-        else:
-            ema_1_1h = get_ema_with_retry(df_1h['c'].values, 1)
-            ema_3_1h = get_ema_with_retry(df_1h['c'].values, 3)
-            ema_5_1h = get_ema_with_retry(df_1h['c'].values, 5)
-            ema_20_1h = get_ema_with_retry(df_1h['c'].values, 20)
-            if None in [ema_1_1h, ema_3_1h, ema_5_1h, ema_20_1h]:
-                oneh_status = "[1H] ❌"
-            else:
-                status_5_20_1h = "🟩" if ema_5_1h > ema_20_1h else "🟥"
-                status_1_3_1h = "🟩" if ema_1_1h > ema_3_1h else "🟥"
-                oneh_status = f"[1H] 📊: {status_5_20_1h} {status_1_3_1h}"
+        if df_1h is None or len(df_1h) < 4:
+            return f"{daily_status} | [1H] ❌"
 
-        # --- 🚀 조건: 1H 1-3 골든크로스 발생 ---
-        rocket = ""
-        if ema_1_1h is not None and ema_3_1h is not None:
-            if ema_1_1h > ema_3_1h:
-                rocket = " 🚀🚀🚀"
+        closes = df_1h['c'].values
+
+        ema_1_now = get_ema_with_retry(closes, 1)
+        ema_3_now = get_ema_with_retry(closes, 3)
+        ema_5_now = get_ema_with_retry(closes, 5)
+        ema_20_now = get_ema_with_retry(closes, 20)
+
+        ema_1_prev = get_ema_with_retry(closes[:-1], 1)
+        ema_3_prev = get_ema_with_retry(closes[:-1], 3)
+
+        if None in [ema_1_now, ema_3_now, ema_5_now, ema_20_now, ema_1_prev, ema_3_prev]:
+            oneh_status = "[1H] ❌"
+            rocket = ""
+        else:
+            status_5_20_1h = "🟩" if ema_5_now > ema_20_now else "🟥"
+            status_1_3_1h = "🟩" if ema_1_now > ema_3_now else "🟥"
+            oneh_status = f"[1H] 📊: {status_5_20_1h} {status_1_3_1h}"
+
+            # 🚀 조건: 직전에는 1 <= 3, 현재는 1 > 3 인 경우 (골든크로스 발생 시)
+            rocket = " 🚀🚀🚀" if ema_1_prev <= ema_3_prev and ema_1_now > ema_3_now else ""
 
         return f"{daily_status} | {oneh_status}{rocket}"
     except Exception as e:
