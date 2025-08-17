@@ -74,60 +74,41 @@ def get_ohlcv_okx(instId, bar='1H', limit=200):
 # === 1D + 1H EMA 상태 한 줄 출력 ===
 def get_ema_status_line(inst_id):
     try:
-        # --- 1D EMA (5-10, 5-20) ---
+        # --- 1D EMA (5-20) ---
         df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=300)
         if df_1d is None:
             daily_status = "[1D] ❌"
-            condition_1d_5_10 = False
-            condition_1d_5_20 = False
         else:
             ema_5_1d = get_ema_with_retry(df_1d['c'].values, 5)
-            ema_10_1d = get_ema_with_retry(df_1d['c'].values, 10)
             ema_20_1d = get_ema_with_retry(df_1d['c'].values, 20)
-            if None in [ema_5_1d, ema_10_1d, ema_20_1d]:
+            if None in [ema_5_1d, ema_20_1d]:
                 daily_status = "[1D] ❌"
-                condition_1d_5_10 = False
-                condition_1d_5_20 = False
             else:
-                condition_1d_5_10 = ema_5_1d > ema_10_1d
-                condition_1d_5_20 = ema_5_1d > ema_20_1d
-                status_5_10_1d = "🟩" if condition_1d_5_10 else "🟥"
-                status_5_20_1d = "🟩" if condition_1d_5_20 else "🟥"
+                status_5_20_1d = "🟩" if ema_5_1d > ema_20_1d else "🟥"
                 daily_status = f"[1D] 📊: {status_5_20_1d}"
 
-        # --- 1H EMA (5-10, 1-3, 5-20) ---
+        # --- 1H EMA (1-3, 5-20) ---
         df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=300)
         if df_1h is None:
             oneh_status = "[1H] ❌"
-            condition_5_10_1h = False
-            condition_1_3_1h = False
-            condition_5_20_1h = False
+            ema_1_1h = ema_3_1h = None
         else:
             ema_1_1h = get_ema_with_retry(df_1h['c'].values, 1)
             ema_3_1h = get_ema_with_retry(df_1h['c'].values, 3)
             ema_5_1h = get_ema_with_retry(df_1h['c'].values, 5)
-            ema_10_1h = get_ema_with_retry(df_1h['c'].values, 10)
             ema_20_1h = get_ema_with_retry(df_1h['c'].values, 20)
-            if None in [ema_1_1h, ema_3_1h, ema_5_1h, ema_10_1h, ema_20_1h]:
+            if None in [ema_1_1h, ema_3_1h, ema_5_1h, ema_20_1h]:
                 oneh_status = "[1H] ❌"
-                condition_5_10_1h = False
-                condition_1_3_1h = False
-                condition_5_20_1h = False
             else:
-                condition_5_10_1h = ema_5_1h > ema_10_1h
-                condition_1_3_1h = ema_1_1h < ema_3_1h  # 역배열 조건
-                condition_5_20_1h = ema_5_1h > ema_20_1h
-                status_5_10_1h = "🟩" if condition_5_10_1h else "🟥"
+                status_5_20_1h = "🟩" if ema_5_1h > ema_20_1h else "🟥"
                 status_1_3_1h = "🟩" if ema_1_1h > ema_3_1h else "🟥"
-                status_5_20_1h = "🟩" if condition_5_20_1h else "🟥"
                 oneh_status = f"[1H] 📊: {status_5_20_1h} {status_1_3_1h}"
 
-        # --- 조건 체크 후 🚀 붙이기 ---
+        # --- 🚀 조건: 1H 1-3 골든크로스 발생 ---
         rocket = ""
-        if condition_1d_5_20 and condition_5_20_1h and condition_1_3_1h:
-            rocket = " 🚀🚀🚀"   # 기존 조건
-        elif condition_1d_5_20 and condition_5_20_1h:
-            rocket = " "     # 새로운 조건
+        if ema_1_1h is not None and ema_3_1h is not None:
+            if ema_1_1h > ema_3_1h:
+                rocket = " 🚀🚀🚀"
 
         return f"{daily_status} | {oneh_status}{rocket}"
     except Exception as e:
