@@ -71,7 +71,7 @@ def get_ohlcv_okx(instId, bar='1H', limit=200):
         logging.error(f"{instId} OHLCV 파싱 실패: {e}")
         return None
 
-# === 1D + 4H EMA 상태 한 줄 출력 ===
+# === 1D + 1H EMA 상태 한 줄 출력 ===
 def get_ema_status_line(inst_id):
     try:
         # --- 1D EMA (5-10, 5-20) ---
@@ -95,44 +95,44 @@ def get_ema_status_line(inst_id):
                 status_5_20_1d = "🟩" if condition_1d_5_20 else "🟥"
                 daily_status = f"[1D] 📊: {status_5_20_1d}"
 
-        # --- 4H EMA (5-10, 1-3, 5-20) ---
-        df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=300)
-        if df_4h is None:
-            fourh_status = "[4H] ❌"
-            condition_5_10_4h = False
-            condition_1_3_4h = False
-            condition_5_20_4h = False
+        # --- 1H EMA (5-10, 1-3, 5-20) ---
+        df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=300)
+        if df_1h is None:
+            oneh_status = "[1H] ❌"
+            condition_5_10_1h = False
+            condition_1_3_1h = False
+            condition_5_20_1h = False
         else:
-            ema_1_4h = get_ema_with_retry(df_4h['c'].values, 1)
-            ema_3_4h = get_ema_with_retry(df_4h['c'].values, 3)
-            ema_5_4h = get_ema_with_retry(df_4h['c'].values, 5)
-            ema_10_4h = get_ema_with_retry(df_4h['c'].values, 10)
-            ema_20_4h = get_ema_with_retry(df_4h['c'].values, 20)
-            if None in [ema_1_4h, ema_3_4h, ema_5_4h, ema_10_4h, ema_20_4h]:
-                fourh_status = "[4H] ❌"
-                condition_5_10_4h = False
-                condition_1_3_4h = False
-                condition_5_20_4h = False
+            ema_1_1h = get_ema_with_retry(df_1h['c'].values, 1)
+            ema_3_1h = get_ema_with_retry(df_1h['c'].values, 3)
+            ema_5_1h = get_ema_with_retry(df_1h['c'].values, 5)
+            ema_10_1h = get_ema_with_retry(df_1h['c'].values, 10)
+            ema_20_1h = get_ema_with_retry(df_1h['c'].values, 20)
+            if None in [ema_1_1h, ema_3_1h, ema_5_1h, ema_10_1h, ema_20_1h]:
+                oneh_status = "[1H] ❌"
+                condition_5_10_1h = False
+                condition_1_3_1h = False
+                condition_5_20_1h = False
             else:
-                condition_5_10_4h = ema_5_4h > ema_10_4h
-                condition_1_3_4h = ema_1_4h < ema_3_4h  # 역배열 조건
-                condition_5_20_4h = ema_5_4h > ema_20_4h
-                status_5_10_4h = "🟩" if condition_5_10_4h else "🟥"
-                status_1_3_4h = "🟩" if ema_1_4h > ema_3_4h else "🟥"
-                status_5_20_4h = "🟩" if condition_5_20_4h else "🟥"
-                fourh_status = f"[4H] 📊: {status_5_20_4h} {status_1_3_4h}"
+                condition_5_10_1h = ema_5_1h > ema_10_1h
+                condition_1_3_1h = ema_1_1h < ema_3_1h  # 역배열 조건
+                condition_5_20_1h = ema_5_1h > ema_20_1h
+                status_5_10_1h = "🟩" if condition_5_10_1h else "🟥"
+                status_1_3_1h = "🟩" if ema_1_1h > ema_3_1h else "🟥"
+                status_5_20_1h = "🟩" if condition_5_20_1h else "🟥"
+                oneh_status = f"[1H] 📊: {status_5_20_1h} {status_1_3_1h}"
 
         # --- 조건 체크 후 🚀 붙이기 ---
         rocket = ""
-        if condition_1d_5_20 and condition_5_20_4h and condition_1_3_4h:
+        if condition_1d_5_20 and condition_5_20_1h and condition_1_3_1h:
             rocket = " 🚀🚀"   # 기존 조건
-        elif condition_1d_5_20 and condition_5_20_4h:
+        elif condition_1d_5_20 and condition_5_20_1h:
             rocket = " 🚀"     # 새로운 조건
 
-        return f"{daily_status} | {fourh_status}{rocket}"
+        return f"{daily_status} | {oneh_status}{rocket}"
     except Exception as e:
         logging.error(f"{inst_id} EMA 상태 계산 실패: {e}")
-        return "[1D/4H] ❌"
+        return "[1D/1H] ❌"
 
 def calculate_daily_change(inst_id):
     df = get_ohlcv_okx(inst_id, bar="1H", limit=48)
