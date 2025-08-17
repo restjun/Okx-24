@@ -125,9 +125,9 @@ def get_ema_status_line(inst_id):
         # --- 조건 체크 후 🚀 붙이기 ---
         rocket = ""
         if condition_1d_5_20 and condition_5_20_1h and condition_1_3_1h:
-            rocket = " 🚀🚀"   # 기존 조건
+            rocket = " 🚀🚀🚀"   # 기존 조건
         elif condition_1d_5_20 and condition_5_20_1h:
-            rocket = " 🚀"     # 새로운 조건
+            rocket = " "     # 새로운 조건
 
         return f"{daily_status} | {oneh_status}{rocket}"
     except Exception as e:
