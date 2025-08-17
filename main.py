@@ -78,14 +78,17 @@ def get_ema_status_line(inst_id):
         df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=300)
         if df_1d is None:
             daily_status = "[1D] ❌"
+            daily_ok = False
         else:
             ema_5_1d = get_ema_with_retry(df_1d['c'].values, 5)
             ema_20_1d = get_ema_with_retry(df_1d['c'].values, 20)
             if None in [ema_5_1d, ema_20_1d]:
                 daily_status = "[1D] ❌"
+                daily_ok = False
             else:
                 status_5_20_1d = "🟩" if ema_5_1d > ema_20_1d else "🟥"
                 daily_status = f"[1D] 📊: {status_5_20_1d}"
+                daily_ok = ema_5_1d > ema_20_1d
 
         # --- 1H EMA (1-3, 5-20) ---
         df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=300)
@@ -110,8 +113,11 @@ def get_ema_status_line(inst_id):
             status_1_3_1h = "🟩" if ema_1_now > ema_3_now else "🟥"
             oneh_status = f"[1H] 📊: {status_5_20_1h} {status_1_3_1h}"
 
-            # 🚀 조건: 직전에는 1 <= 3, 현재는 1 > 3 인 경우 (골든크로스 발생 시)
-            rocket = " 🚀🚀🚀" if ema_1_prev <= ema_3_prev and ema_1_now > ema_3_now else ""
+            # 🚀 조건: (직전 1<=3, 현재 1>3) AND (1D 5>20) AND (1H 5>20)
+            if ema_1_prev <= ema_3_prev and ema_1_now > ema_3_now and daily_ok and (ema_5_now > ema_20_now):
+                rocket = " 🚀🚀🚀"
+            else:
+                rocket = ""
 
         return f"{daily_status} | {oneh_status}{rocket}"
     except Exception as e:
