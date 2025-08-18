@@ -112,33 +112,34 @@ def get_ema_status_line(inst_id):
                 fourh_ok_long = ema_5_4h > ema_10_4h
                 fourh_ok_short = ema_5_4h < ema_10_4h
 
-        # --- 1H EMA (3-5, 5-10) ---
+        # --- 1H EMA (1-3, 5-10) ---
         df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=300)
-        if df_1h is None or len(df_1h) < 5:
+        if df_1h is None or len(df_1h) < 4:
             return f"{daily_status} | {fourh_status} | [1H] ❌", None
 
         closes = df_1h['c'].values
+        ema_1_now = get_ema_with_retry(closes, 1)
         ema_3_now = get_ema_with_retry(closes, 3)
         ema_5_now = get_ema_with_retry(closes, 5)
         ema_10_now = get_ema_with_retry(closes, 10)
-        ema_5_prev = get_ema_with_retry(closes[:-1], 5)
-        ema_10_prev = get_ema_with_retry(closes[:-1], 10)
+        ema_1_prev = get_ema_with_retry(closes[:-1], 1)
+        ema_3_prev = get_ema_with_retry(closes[:-1], 3)
 
-        if None in [ema_3_now, ema_5_now, ema_10_now, ema_3_prev, ema_5_prev]:
+        if None in [ema_1_now, ema_3_now, ema_5_now, ema_10_now, ema_1_prev, ema_3_prev]:
             return f"{daily_status} | {fourh_status} | [1H] ❌", None
         else:
             status_5_10_1h = "🟩" if ema_5_now > ema_10_now else "🟥"
-            status_3_5_1h = "🟩" if ema_3_now > ema_5_now else "🟥"
-            oneh_status = f"[1H] 📊: {status_5_10_1h}"
+            status_1_3_1h = "🟩" if ema_1_now > ema_3_now else "🟥"
+            oneh_status = f"[1H] 📊: {status_5_10_1h} {status_1_3_1h}"
 
             # 🚀 롱 조건
             rocket_condition = (
-                ema_5_prev <= ema_10_prev and ema_5_now > ema_10_now
+                ema_1_prev <= ema_3_prev and ema_1_now > ema_3_now
                 and fourh_ok_long and (ema_5_now > ema_10_now)
             )
             # ⚡ 숏 조건
             short_condition = (
-                ema_5_prev >= ema_10_prev and ema_5_now < ema_10_now
+                ema_1_prev >= ema_3_prev and ema_1_now < ema_3_now
                 and fourh_ok_short and (ema_5_now < ema_10_now)
             )
 
