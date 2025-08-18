@@ -10,7 +10,7 @@ import pandas as pd
 
 app = FastAPI()
 
-telegram_bot_token = "8451481398:AAHHg2wVDKphMruKsjN2b6NFKJ50jhxEe-g"
+telegram_bot_token = "YOUR_TOKEN"
 telegram_user_id = 6596886700
 bot = telepot.Bot(telegram_bot_token)
 
@@ -75,7 +75,7 @@ def get_ohlcv_okx(instId, bar='1H', limit=200):
 def get_ema_status_line(inst_id):
     try:
         # --- 1D EMA (5-10) ---
-        df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=300)
+        df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=10)
         if df_1d is None:
             daily_status = "[1D] ❌"
         else:
@@ -88,7 +88,7 @@ def get_ema_status_line(inst_id):
                 daily_status = f"[1D] 📊: {status_5_10_1d}"
 
         # --- 4H EMA (5-10) ---
-        df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=300)
+        df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=10)
         if df_4h is None:
             fourh_status = "[4H] ❌"
             fourh_ok_long = False
@@ -107,7 +107,7 @@ def get_ema_status_line(inst_id):
                 fourh_ok_short = ema_5_4h < ema_10_4h
 
         # --- 1H EMA (1-3, 5-10) ---
-        df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=300)
+        df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=11)
         if df_1h is None or len(df_1h) < 4:
             return f"{daily_status} | {fourh_status} | [1H] ❌", None
 
@@ -205,7 +205,7 @@ def send_top10_volume_message(top_10_ids, volume_map):
         "━━━━━━━━━━━━━━━━━━━",
     ]
 
-    signal_found = False  # ✅ 신호 발생 여부 체크
+    signal_found = False
 
     for i, inst_id in enumerate(top_10_ids, 1):
         name = inst_id.replace("-USDT-SWAP", "")
@@ -214,13 +214,10 @@ def send_top10_volume_message(top_10_ids, volume_map):
             continue
 
         daily_change = calculate_daily_change(inst_id)
-
-        # 📌 조건 추가: 당일 상승률이 양수일 때만 메시지 포함
         if daily_change is None or daily_change <= 0:
             continue
 
-        signal_found = True  # ✅ 신호 발생 시 True
-
+        signal_found = True
         volume_1h = volume_map.get(inst_id, 0)
         volume_str = format_volume_in_eok(volume_1h) or "🚫"
 
@@ -229,7 +226,6 @@ def send_top10_volume_message(top_10_ids, volume_map):
         message_lines.append("━━━━━━━━━━━━━━━━━━━")
 
     if signal_found:
-        # ✅ BTC 정보는 신호 있을 때만 같이 보냄
         btc_id = "BTC-USDT-SWAP"
         btc_change = calculate_daily_change(btc_id)
         btc_volume = volume_map.get(btc_id, 0)
