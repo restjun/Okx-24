@@ -10,7 +10,7 @@ import pandas as pd
 
 app = FastAPI()
 
-telegram_bot_token = "8451481398:AAHHg2wVDKphMruKsjN2b6NFKJ50jhxEe-g"
+telegram_bot_token = "YOUR_TELEGRAM_BOT_TOKEN"
 telegram_user_id = 6596886700
 bot = telepot.Bot(telegram_bot_token)
 
@@ -84,14 +84,20 @@ def get_ema_status_line(inst_id):
         df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=300)
         if df_1d is None:
             daily_status = "[1D] ❌"
+            daily_ok_long = False
+            daily_ok_short = False
         else:
             ema_5_1d = get_ema_with_retry(df_1d['c'].values, 5)
             ema_10_1d = get_ema_with_retry(df_1d['c'].values, 10)
             if None in [ema_5_1d, ema_10_1d]:
                 daily_status = "[1D] ❌"
+                daily_ok_long = False
+                daily_ok_short = False
             else:
                 status_5_10_1d = "🟩" if ema_5_1d > ema_10_1d else "🟥"
                 daily_status = f"[1D] 📊: {status_5_10_1d}"
+                daily_ok_long = ema_5_1d > ema_10_1d
+                daily_ok_short = ema_5_1d < ema_10_1d
 
         # --- 4H EMA (5-10) ---
         df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=300)
@@ -112,35 +118,30 @@ def get_ema_status_line(inst_id):
                 fourh_ok_long = ema_5_4h > ema_10_4h
                 fourh_ok_short = ema_5_4h < ema_10_4h
 
-        # --- 1H EMA (1-3, 5-10) ---
+        # --- 1H EMA (3-5, 5-10) ---
         df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=300)
-        if df_1h is None or len(df_1h) < 4:
+        if df_1h is None or len(df_1h) < 10:
             return f"{daily_status} | {fourh_status} | [1H] ❌", None
 
         closes = df_1h['c'].values
-        ema_1_now = get_ema_with_retry(closes, 1)
         ema_3_now = get_ema_with_retry(closes, 3)
         ema_5_now = get_ema_with_retry(closes, 5)
         ema_10_now = get_ema_with_retry(closes, 10)
-        ema_1_prev = get_ema_with_retry(closes[:-1], 1)
-        ema_3_prev = get_ema_with_retry(closes[:-1], 3)
 
-        if None in [ema_1_now, ema_3_now, ema_5_now, ema_10_now, ema_1_prev, ema_3_prev]:
+        if None in [ema_3_now, ema_5_now, ema_10_now]:
             return f"{daily_status} | {fourh_status} | [1H] ❌", None
         else:
             status_5_10_1h = "🟩" if ema_5_now > ema_10_now else "🟥"
-            status_1_3_1h = "🟩" if ema_1_now > ema_3_now else "🟥"
-            oneh_status = f"[1H] 📊: {status_5_10_1h} {status_1_3_1h}"
+            status_3_5_1h = "🟩" if ema_3_now > ema_5_now else "🟥"
+            oneh_status = f"[1H] 📊: {status_5_10_1h} {status_3_5_1h}"
 
             # 🚀 롱 조건
             rocket_condition = (
-                ema_1_prev <= ema_3_prev and ema_1_now > ema_3_now
-                and fourh_ok_long and (ema_5_now > ema_10_now)
+                daily_ok_long and fourh_ok_long and (ema_5_now > ema_10_now) and (ema_3_now < ema_5_now)
             )
             # ⚡ 숏 조건
             short_condition = (
-                ema_1_prev >= ema_3_prev and ema_1_now < ema_3_now
-                and fourh_ok_short and (ema_5_now < ema_10_now)
+                daily_ok_short and fourh_ok_short and (ema_5_now < ema_10_now) and (ema_3_now > ema_5_now)
             )
 
             if rocket_condition:
