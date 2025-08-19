@@ -16,6 +16,8 @@ bot = telepot.Bot(telegram_bot_token)
 
 logging.basicConfig(level=logging.INFO)
 
+# ===== 각 코인별 마지막 신호 상태 저장 =====
+last_signal_state = {}
 
 def send_telegram_message(message):
     for retry_count in range(1, 11):
@@ -77,45 +79,37 @@ def get_ohlcv_okx(instId, bar='1H', limit=200):
         return None
 
 
-# === EMA 상태 계산 ===
+# === EMA 상태 계산 (숏만) ===
 def get_ema_status_line(inst_id):
     try:
         # --- 1D EMA (5-20) ---
         df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=300)
         if df_1d is None:
             daily_status = "[1D] ❌"
-            daily_ok_long = False
             daily_ok_short = False
         else:
             ema_5_1d = get_ema_with_retry(df_1d['c'].values, 5)
             ema_20_1d = get_ema_with_retry(df_1d['c'].values, 20)
             if None in [ema_5_1d, ema_20_1d]:
                 daily_status = "[1D] ❌"
-                daily_ok_long = False
                 daily_ok_short = False
             else:
-                status_5_20_1d = "🟩" if ema_5_1d > ema_20_1d else "🟥"
-                daily_status = f"[1D] 📊: {status_5_20_1d}"
-                daily_ok_long = ema_5_1d > ema_20_1d
+                daily_status = f"[1D] 📊: {'🟥' if ema_5_1d < ema_20_1d else '🟩'}"
                 daily_ok_short = ema_5_1d < ema_20_1d
 
         # --- 4H EMA (5-20) ---
         df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=300)
         if df_4h is None:
             fourh_status = "[4H] ❌"
-            fourh_ok_long = False
             fourh_ok_short = False
         else:
             ema_5_4h = get_ema_with_retry(df_4h['c'].values, 5)
             ema_20_4h = get_ema_with_retry(df_4h['c'].values, 20)
             if None in [ema_5_4h, ema_20_4h]:
                 fourh_status = "[4H] ❌"
-                fourh_ok_long = False
                 fourh_ok_short = False
             else:
-                status_5_20_4h = "🟩" if ema_5_4h > ema_20_4h else "🟥"
-                fourh_status = f"[4H] 📊: {status_5_20_4h}"
-                fourh_ok_long = ema_5_4h > ema_20_4h
+                fourh_status = f"[4H] 📊: {'🟥' if ema_5_4h < ema_20_4h else '🟩'}"
                 fourh_ok_short = ema_5_4h < ema_20_4h
 
         # --- 1H EMA (3-5, 5-20) ---
@@ -137,25 +131,15 @@ def get_ema_status_line(inst_id):
             status_3_5_1h = "🟩" if ema_3_now > ema_5_now else "🟥"
             oneh_status = f"[1H] 📊: {status_5_20_1h} {status_3_5_1h}"
 
-            # 🚀 롱 조건 (일봉+4시간봉+1시간봉)
-            rocket_condition = (
-                ema_3_prev >= ema_5_prev and ema_3_now < ema_5_now
-                and fourh_ok_long 
-                and (ema_5_now > ema_20_now)   # ✅ 1시간 EMA 5-20 정배열 조건
-                and daily_ok_long              # ✅ 일봉 조건
-            )
             # ⚡ 숏 조건 (일봉+4시간봉+1시간봉)
             short_condition = (
                 ema_3_prev <= ema_5_prev and ema_3_now > ema_5_now
                 and fourh_ok_short 
-                and (ema_5_now < ema_20_now)   # ✅ 1시간 EMA 5-20 역배열 조건
-                and daily_ok_short             # ✅ 일봉 조건
+                and (ema_5_now < ema_20_now)
+                and daily_ok_short
             )
 
-            if rocket_condition:
-                signal = " 🚀🚀🚀(롱)"
-                signal_type = "long"
-            elif short_condition:
+            if short_condition:
                 signal = " ⚡⚡⚡(숏)"
                 signal_type = "short"
             else:
@@ -222,25 +206,27 @@ def calculate_1h_volume(inst_id):
 
 def send_top10_volume_message(top_10_ids, volume_map):
     message_lines = [
-        "🚀/⚡  5-20",
+        "⚡  5-20 (숏만)",
         "━━━━━━━━━━━━━━━━━━━",
     ]
 
-    signal_found = False  # ✅ 신호 발생 여부 체크
+    signal_found = False
 
     for i, inst_id in enumerate(top_10_ids, 1):
         name = inst_id.replace("-USDT-SWAP", "")
         ema_status_line, signal_type = get_ema_status_line(inst_id)
-        if signal_type not in ["long", "short"]:
+
+        # === 이전 상태 확인 필요 없음, 조건 유지 시 계속 발송 ===
+        if signal_type != "short":
+            last_signal_state[inst_id] = None
             continue
+
+        last_signal_state[inst_id] = "short"
+        signal_found = True
 
         daily_change = calculate_daily_change(inst_id)
-
-        # 📌 조건 추가: 당일 상승률이 양수일 때만 메시지 포함
         if daily_change is None or daily_change <= -100:
             continue
-
-        signal_found = True  # ✅ 신호 발생 시 True
 
         volume_1h = volume_map.get(inst_id, 0)
         volume_str = format_volume_in_eok(volume_1h) or "🚫"
@@ -250,7 +236,6 @@ def send_top10_volume_message(top_10_ids, volume_map):
         message_lines.append("━━━━━━━━━━━━━━━━━━━")
 
     if signal_found:
-        # ✅ BTC 정보는 신호 있을 때만 같이 보냄
         btc_id = "BTC-USDT-SWAP"
         btc_change = calculate_daily_change(btc_id)
         btc_volume = volume_map.get(btc_id, 0)
@@ -266,7 +251,7 @@ def send_top10_volume_message(top_10_ids, volume_map):
         full_message = "\n".join(btc_lines + message_lines)
         send_telegram_message(full_message)
     else:
-        logging.info("🚀/⚡ 조건 만족 코인 없음 → 메시지 전송 안 함")
+        logging.info("⚡ 조건 만족 코인 없음 → 메시지 전송 안 함")
 
 
 def get_all_okx_swap_symbols():
