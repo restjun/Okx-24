@@ -237,7 +237,7 @@ def send_top10_volume_message(top_10_ids, volume_map):
         daily_change = calculate_daily_change(inst_id)
 
         # 📌 조건 추가: 당일 상승률이 양수일 때만 메시지 포함
-        if daily_change is None or daily_change <= 0:
+        if daily_change is None or daily_change <= -100:
             continue
 
         signal_found = True  # ✅ 신호 발생 시 True
