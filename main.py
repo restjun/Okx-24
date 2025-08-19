@@ -222,7 +222,7 @@ def calculate_1h_volume(inst_id):
 
 def send_top10_volume_message(top_10_ids, volume_map):
     message_lines = [
-        "🚀/⚡",
+        "🚀/⚡  5-10",
         "━━━━━━━━━━━━━━━━━━━",
     ]
 
