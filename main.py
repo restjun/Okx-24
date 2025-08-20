@@ -79,25 +79,28 @@ def get_ohlcv_okx(instId, bar='1H', limit=200):
         return None
 
 
-# === EMA 상태 계산 (숏 조건) ===
+# === EMA 상태 계산 (숏 조건 수정) ===
 def get_ema_status_line(inst_id):
     try:
-        # --- 1D EMA (5-20) ---
+        # --- 1D EMA (3-5만 체크) ---
         df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=300)
         if df_1d is None:
             daily_status = "[1D] ❌"
             daily_ok_short = False
+            ema_3_1d = ema_5_1d = None
         else:
-            ema_5_1d = get_ema_with_retry(df_1d['c'].values, 5)
-            ema_20_1d = get_ema_with_retry(df_1d['c'].values, 20)
-            if None in [ema_5_1d, ema_20_1d]:
+            closes_1d = df_1d['c'].values
+            ema_3_1d = get_ema_with_retry(closes_1d, 3)
+            ema_5_1d = get_ema_with_retry(closes_1d, 5)
+            if None in [ema_3_1d, ema_5_1d]:
                 daily_status = "[1D] ❌"
                 daily_ok_short = False
             else:
-                daily_status = f"[1D] 📊: {'🟥' if ema_5_1d < ema_20_1d else '🟩'}"
-                daily_ok_short = ema_5_1d < ema_20_1d
+                status_3_5_1d = "🟥" if ema_3_1d < ema_5_1d else "🟩"
+                daily_status = f"[1D] 📊: {status_3_5_1d}"
+                daily_ok_short = ema_3_1d < ema_5_1d   # 1D 3-5 역배열
 
-        # --- 4H EMA (5-20 + 3-5) ---
+        # --- 4H EMA (3-5만 체크) ---
         df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=300)
         if df_4h is None:
             fourh_status = "[4H] ❌"
@@ -107,22 +110,16 @@ def get_ema_status_line(inst_id):
             closes_4h = df_4h['c'].values
             ema_3_4h = get_ema_with_retry(closes_4h, 3)
             ema_5_4h = get_ema_with_retry(closes_4h, 5)
-            ema_20_4h = get_ema_with_retry(closes_4h, 20)
-            if None in [ema_3_4h, ema_5_4h, ema_20_4h]:
+            if None in [ema_3_4h, ema_5_4h]:
                 fourh_status = "[4H] ❌"
                 fourh_ok_short = False
             else:
-                status_5_20_4h = "🟥" if ema_5_4h < ema_20_4h else "🟩"
                 status_3_5_4h = "🟩" if ema_3_4h > ema_5_4h else "🟥"
-                fourh_status = f"[4H] 📊: {status_5_20_4h} {status_3_5_4h}"
-                fourh_ok_short = ema_5_4h < ema_20_4h
+                fourh_status = f"[4H] 📊: {status_3_5_4h}"
+                fourh_ok_short = ema_3_4h > ema_5_4h   # 4H 3-5 정배열
 
-        # ⚡ 숏 조건: (1D 5-20 역배열) + (4H 5-20 역배열) + (4H 3-5 정배열)
-        short_condition = (
-            daily_ok_short and
-            fourh_ok_short and
-            (ema_3_4h is not None and ema_5_4h is not None and ema_3_4h > ema_5_4h)
-        )
+        # ⚡ 숏 조건: (1D 3-5 역배열) + (4H 3-5 정배열)
+        short_condition = daily_ok_short and fourh_ok_short
 
         if short_condition:
             signal = " ⚡⚡⚡(숏)"
@@ -191,7 +188,7 @@ def calculate_1h_volume(inst_id):
 
 def send_top10_volume_message(top_10_ids, volume_map):
     message_lines = [
-        "⚡  5-20 (숏 조건)",
+        "⚡  3-5 조건 기반 숏 감지",
         "━━━━━━━━━━━━━━━━━━━",
     ]
 
