@@ -79,15 +79,14 @@ def get_ohlcv_okx(instId, bar='1H', limit=200):
         return None
 
 
-# === EMA 상태 계산 (숏 조건 수정) ===
+# === EMA 상태 계산 (숏: 1D 역배열 + 4H 데드크로스) ===
 def get_ema_status_line(inst_id):
     try:
-        # --- 1D EMA (3-5만 체크) ---
+        # --- 1D EMA (3-5) ---
         df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=300)
         if df_1d is None:
             daily_status = "[1D] ❌"
             daily_ok_short = False
-            ema_3_1d = ema_5_1d = None
         else:
             closes_1d = df_1d['c'].values
             ema_3_1d = get_ema_with_retry(closes_1d, 3)
@@ -96,32 +95,26 @@ def get_ema_status_line(inst_id):
                 daily_status = "[1D] ❌"
                 daily_ok_short = False
             else:
-                status_3_5_1d = "🟥" if ema_3_1d < ema_5_1d else "🟩"
-                daily_status = f"[1D] 📊: {status_3_5_1d}"
+                daily_status = f"[1D] 📊: {'🟥' if ema_3_1d < ema_5_1d else '🟩'}"
                 daily_ok_short = ema_3_1d < ema_5_1d   # 1D 3-5 역배열
 
-        # --- 4H EMA (3-5만 체크) ---
-        df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=300)
-        if df_4h is None:
+        # --- 4H EMA (3-5) ---
+        df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=50)
+        if df_4h is None or len(df_4h) < 2:
             fourh_status = "[4H] ❌"
-            fourh_ok_short = False
-            ema_3_4h = ema_5_4h = None
+            dead_cross = False
         else:
             closes_4h = df_4h['c'].values
-            ema_3_4h = get_ema_with_retry(closes_4h, 3)
-            ema_5_4h = get_ema_with_retry(closes_4h, 5)
-            if None in [ema_3_4h, ema_5_4h]:
-                fourh_status = "[4H] ❌"
-                fourh_ok_short = False
-            else:
-                status_3_5_4h = "🟩" if ema_3_4h > ema_5_4h else "🟥"
-                fourh_status = f"[4H] 📊: {status_3_5_4h}"
-                fourh_ok_short = ema_3_4h > ema_5_4h   # 4H 3-5 정배열
+            ema_3_series = pd.Series(closes_4h).ewm(span=3, adjust=False).mean()
+            ema_5_series = pd.Series(closes_4h).ewm(span=5, adjust=False).mean()
 
-        # ⚡ 숏 조건: (1D 3-5 역배열) + (4H 3-5 정배열)
-        short_condition = daily_ok_short and fourh_ok_short
+            # 데드크로스 발생 여부 (직전 캔들과 비교)
+            dead_cross = ema_3_series.iloc[-2] >= ema_5_series.iloc[-2] and ema_3_series.iloc[-1] < ema_5_series.iloc[-1]
 
-        if short_condition:
+            fourh_status = f"[4H] 📊: {'🟩' if ema_3_series.iloc[-1] > ema_5_series.iloc[-1] else '🟥'}"
+
+        # ⚡ 숏 조건: 1D 3-5 역배열 + 4H 3-5 데드크로스 발생
+        if daily_ok_short and dead_cross:
             signal = " ⚡⚡⚡(숏)"
             signal_type = "short"
         else:
@@ -202,6 +195,9 @@ def send_top10_volume_message(top_10_ids, volume_map):
             last_signal_state[inst_id] = None
             continue
 
+        # 신호 발생 시 1회만 메시지 전송
+        if last_signal_state.get(inst_id) == "short":
+            continue
         last_signal_state[inst_id] = "short"
         signal_found = True
 
