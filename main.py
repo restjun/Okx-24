@@ -79,7 +79,7 @@ def get_ohlcv_okx(instId, bar='1H', limit=200):
         return None
 
 
-# === EMA 상태 계산 (숏만) ===
+# === EMA 상태 계산 (숏 조건) ===
 def get_ema_status_line(inst_id):
     try:
         # --- 1D EMA (5-20) ---
@@ -97,60 +97,45 @@ def get_ema_status_line(inst_id):
                 daily_status = f"[1D] 📊: {'🟥' if ema_5_1d < ema_20_1d else '🟩'}"
                 daily_ok_short = ema_5_1d < ema_20_1d
 
-        # --- 4H EMA (5-20) ---
+        # --- 4H EMA (5-20 + 3-5) ---
         df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=300)
         if df_4h is None:
             fourh_status = "[4H] ❌"
             fourh_ok_short = False
+            ema_3_4h = ema_5_4h = None
         else:
-            ema_5_4h = get_ema_with_retry(df_4h['c'].values, 5)
-            ema_20_4h = get_ema_with_retry(df_4h['c'].values, 20)
-            if None in [ema_5_4h, ema_20_4h]:
+            closes_4h = df_4h['c'].values
+            ema_3_4h = get_ema_with_retry(closes_4h, 3)
+            ema_5_4h = get_ema_with_retry(closes_4h, 5)
+            ema_20_4h = get_ema_with_retry(closes_4h, 20)
+            if None in [ema_3_4h, ema_5_4h, ema_20_4h]:
                 fourh_status = "[4H] ❌"
                 fourh_ok_short = False
             else:
-                fourh_status = f"[4H] 📊: {'🟥' if ema_5_4h < ema_20_4h else '🟩'}"
+                status_5_20_4h = "🟥" if ema_5_4h < ema_20_4h else "🟩"
+                status_3_5_4h = "🟩" if ema_3_4h > ema_5_4h else "🟥"
+                fourh_status = f"[4H] 📊: {status_5_20_4h} {status_3_5_4h}"
                 fourh_ok_short = ema_5_4h < ema_20_4h
 
-        # --- 1H EMA (3-5, 5-20) ---
-        df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=300)
-        if df_1h is None or len(df_1h) < 5:
-            return f"{daily_status} | {fourh_status} | [1H] ❌", None
+        # ⚡ 숏 조건: (1D 5-20 역배열) + (4H 5-20 역배열) + (4H 3-5 정배열)
+        short_condition = (
+            daily_ok_short and
+            fourh_ok_short and
+            (ema_3_4h is not None and ema_5_4h is not None and ema_3_4h > ema_5_4h)
+        )
 
-        closes = df_1h['c'].values
-        ema_3_now = get_ema_with_retry(closes, 3)
-        ema_5_now = get_ema_with_retry(closes, 5)
-        ema_20_now = get_ema_with_retry(closes, 20)
-        ema_3_prev = get_ema_with_retry(closes[:-1], 3)
-        ema_5_prev = get_ema_with_retry(closes[:-1], 5)
-
-        if None in [ema_3_now, ema_5_now, ema_20_now, ema_3_prev, ema_5_prev]:
-            return f"{daily_status} | {fourh_status} | [1H] ❌", None
+        if short_condition:
+            signal = " ⚡⚡⚡(숏)"
+            signal_type = "short"
         else:
-            status_5_20_1h = "🟩" if ema_5_now > ema_20_now else "🟥"
-            status_3_5_1h = "🟩" if ema_3_now > ema_5_now else "🟥"
-            oneh_status = f"[1H] 📊: {status_5_20_1h} {status_3_5_1h}"
+            signal = ""
+            signal_type = None
 
-            # ⚡ 숏 조건 (일봉+4시간봉+1시간봉)
-            short_condition = (
-                ema_3_prev <= ema_5_prev and ema_3_now > ema_5_now
-                and fourh_ok_short 
-                and (ema_5_now < ema_20_now)
-                and daily_ok_short
-            )
-
-            if short_condition:
-                signal = " ⚡⚡⚡(숏)"
-                signal_type = "short"
-            else:
-                signal = ""
-                signal_type = None
-
-        return f"{daily_status} | {fourh_status} | {oneh_status}{signal}", signal_type
+        return f"{daily_status} | {fourh_status}{signal}", signal_type
 
     except Exception as e:
         logging.error(f"{inst_id} EMA 상태 계산 실패: {e}")
-        return "[1D/4H/1H] ❌", None
+        return "[1D/4H] ❌", None
 
 
 def calculate_daily_change(inst_id):
@@ -206,7 +191,7 @@ def calculate_1h_volume(inst_id):
 
 def send_top10_volume_message(top_10_ids, volume_map):
     message_lines = [
-        "⚡  5-20 (숏만)",
+        "⚡  5-20 (숏 조건)",
         "━━━━━━━━━━━━━━━━━━━",
     ]
 
@@ -216,7 +201,6 @@ def send_top10_volume_message(top_10_ids, volume_map):
         name = inst_id.replace("-USDT-SWAP", "")
         ema_status_line, signal_type = get_ema_status_line(inst_id)
 
-        # === 이전 상태 확인 필요 없음, 조건 유지 시 계속 발송 ===
         if signal_type != "short":
             last_signal_state[inst_id] = None
             continue
@@ -273,7 +257,7 @@ def main():
         volume_map[inst_id] = vol_1h
         time.sleep(0.05)
 
-    top_10_ids = [inst_id for inst_id, _ in sorted(volume_map.items(), key=lambda x: x[1], reverse=True)[:10]]
+    top_10_ids = [inst_id for inst_id, _ in sorted(volume_map.items(), key=lambda x: x[1], reverse=True)[:20]]
     send_top10_volume_message(top_10_ids, volume_map)
 
 
