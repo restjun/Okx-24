@@ -1,3 +1,12 @@
+
+
+
+
+
+
+
+
+
 from fastapi import FastAPI
 import telepot
 import schedule
@@ -16,8 +25,6 @@ bot = telepot.Bot(telegram_bot_token)
 
 logging.basicConfig(level=logging.INFO)
 
-# ===== 각 코인별 마지막 신호 상태 저장 =====
-last_signal_state = {}
 
 def send_telegram_message(message):
     for retry_count in range(1, 11):
@@ -79,44 +86,44 @@ def get_ohlcv_okx(instId, bar='1H', limit=200):
         return None
 
 
-# === EMA 상태 계산 (숏: 1D 역배열 + 4H 데드크로스) ===
+# === EMA 상태 계산 (1D 3-5 + 4H 3-5 골든크로스) ===
 def get_ema_status_line(inst_id):
     try:
         # --- 1D EMA (3-5) ---
         df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=300)
         if df_1d is None:
             daily_status = "[1D] ❌"
-            daily_ok_short = False
+            daily_ok_long = False
         else:
             closes_1d = df_1d['c'].values
             ema_3_1d = get_ema_with_retry(closes_1d, 3)
             ema_5_1d = get_ema_with_retry(closes_1d, 5)
             if None in [ema_3_1d, ema_5_1d]:
                 daily_status = "[1D] ❌"
-                daily_ok_short = False
+                daily_ok_long = False
             else:
-                daily_status = f"[1D] 📊: {'🟥' if ema_3_1d < ema_5_1d else '🟩'}"
-                daily_ok_short = ema_3_1d < ema_5_1d   # 1D 3-5 역배열
+                daily_status = f"[1D] 📊: {'🟩' if ema_3_1d > ema_5_1d else '🟥'}"
+                daily_ok_long = ema_3_1d > ema_5_1d
 
         # --- 4H EMA (3-5) ---
         df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=50)
         if df_4h is None or len(df_4h) < 2:
             fourh_status = "[4H] ❌"
-            dead_cross = False
+            prev_cross = False
         else:
             closes_4h = df_4h['c'].values
             ema_3_series = pd.Series(closes_4h).ewm(span=3, adjust=False).mean()
             ema_5_series = pd.Series(closes_4h).ewm(span=5, adjust=False).mean()
 
-            # 데드크로스 발생 여부 (직전 캔들과 비교)
-            dead_cross = ema_3_series.iloc[-2] >= ema_5_series.iloc[-2] and ema_3_series.iloc[-1] < ema_5_series.iloc[-1]
+            # 골든크로스 발생 여부 (직전 캔들과 비교)
+            prev_cross = ema_3_series.iloc[-2] <= ema_5_series.iloc[-2] and ema_3_series.iloc[-1] > ema_5_series.iloc[-1]
 
             fourh_status = f"[4H] 📊: {'🟩' if ema_3_series.iloc[-1] > ema_5_series.iloc[-1] else '🟥'}"
 
-        # ⚡ 숏 조건: 1D 3-5 역배열 + 4H 3-5 데드크로스 발생
-        if daily_ok_short and dead_cross:
-            signal = " ⚡⚡⚡(숏)"
-            signal_type = "short"
+        # 🚀 롱 조건: 1D 3-5 정배열 + 4H 3-5 골든크로스 발생
+        if daily_ok_long and prev_cross:
+            signal = " 🚀🚀🚀(롱)"
+            signal_type = "long"
         else:
             signal = ""
             signal_type = None
@@ -173,7 +180,7 @@ def format_change_with_emoji(change):
 
 
 def calculate_1h_volume(inst_id):
-    df = get_ohlcv_okx(inst_id, bar="1H", limit=1)
+    df = get_ohlcv_okx(inst_id, bar="1H", limit=4)
     if df is None or len(df) < 1:
         return 0
     return df["volCcyQuote"].sum()
@@ -181,7 +188,7 @@ def calculate_1h_volume(inst_id):
 
 def send_top10_volume_message(top_10_ids, volume_map):
     message_lines = [
-        "⚡  3-5 조건 기반 숏 감지",
+        "🚀 3-5 (롱만)",
         "━━━━━━━━━━━━━━━━━━━",
     ]
 
@@ -190,20 +197,14 @@ def send_top10_volume_message(top_10_ids, volume_map):
     for i, inst_id in enumerate(top_10_ids, 1):
         name = inst_id.replace("-USDT-SWAP", "")
         ema_status_line, signal_type = get_ema_status_line(inst_id)
-
-        if signal_type != "short":
-            last_signal_state[inst_id] = None
+        if signal_type != "long":
             continue
-
-        # 신호 발생 시 1회만 메시지 전송
-        if last_signal_state.get(inst_id) == "short":
-            continue
-        last_signal_state[inst_id] = "short"
-        signal_found = True
 
         daily_change = calculate_daily_change(inst_id)
         if daily_change is None or daily_change <= -100:
             continue
+
+        signal_found = True
 
         volume_1h = volume_map.get(inst_id, 0)
         volume_str = format_volume_in_eok(volume_1h) or "🚫"
@@ -228,7 +229,7 @@ def send_top10_volume_message(top_10_ids, volume_map):
         full_message = "\n".join(btc_lines + message_lines)
         send_telegram_message(full_message)
     else:
-        logging.info("⚡ 조건 만족 코인 없음 → 메시지 전송 안 함")
+        logging.info("🚀 조건 만족 코인 없음 → 메시지 전송 안 함")
 
 
 def get_all_okx_swap_symbols():
