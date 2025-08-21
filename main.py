@@ -16,7 +16,7 @@ bot = telepot.Bot(telegram_bot_token)
 
 logging.basicConfig(level=logging.INFO)
 
-# ===== 각 코인별 마지막 신호 발생 캔들 timestamp 저장 =====
+# ===== 각 코인별 마지막 신호 상태 저장 =====
 last_signal_state = {}
 
 def send_telegram_message(message):
@@ -103,7 +103,6 @@ def get_ema_status_line(inst_id):
         if df_4h is None or len(df_4h) < 2:
             fourh_status = "[4H] ❌"
             dead_cross = False
-            last_candle_ts = None
         else:
             closes_4h = df_4h['c'].values
             ema_3_series = pd.Series(closes_4h).ewm(span=3, adjust=False).mean()
@@ -111,7 +110,6 @@ def get_ema_status_line(inst_id):
 
             # 데드크로스 발생 여부 (직전 캔들과 비교)
             dead_cross = ema_3_series.iloc[-2] >= ema_5_series.iloc[-2] and ema_3_series.iloc[-1] < ema_5_series.iloc[-1]
-            last_candle_ts = df_4h['ts'].iloc[-1]
 
             fourh_status = f"[4H] 📊: {'🟩' if ema_3_series.iloc[-1] > ema_5_series.iloc[-1] else '🟥'}"
 
@@ -122,13 +120,12 @@ def get_ema_status_line(inst_id):
         else:
             signal = ""
             signal_type = None
-            last_candle_ts = None
 
-        return f"{daily_status} | {fourh_status}{signal}", signal_type, last_candle_ts
+        return f"{daily_status} | {fourh_status}{signal}", signal_type
 
     except Exception as e:
         logging.error(f"{inst_id} EMA 상태 계산 실패: {e}")
-        return "[1D/4H] ❌", None, None
+        return "[1D/4H] ❌", None
 
 
 def calculate_daily_change(inst_id):
@@ -192,14 +189,16 @@ def send_top10_volume_message(top_10_ids, volume_map):
 
     for i, inst_id in enumerate(top_10_ids, 1):
         name = inst_id.replace("-USDT-SWAP", "")
-        ema_status_line, signal_type, last_candle_ts = get_ema_status_line(inst_id)
+        ema_status_line, signal_type = get_ema_status_line(inst_id)
 
         if signal_type != "short":
-            last_signal_state.pop(inst_id, None)
+            last_signal_state[inst_id] = None
             continue
 
-        # 캔들 timestamp가 다르면 새로운 신호로 업데이트
-        last_signal_state[inst_id] = last_candle_ts
+        # 신호 발생 시 1회만 메시지 전송
+        if last_signal_state.get(inst_id) == "short":
+            continue
+        last_signal_state[inst_id] = "short"
         signal_found = True
 
         daily_change = calculate_daily_change(inst_id)
@@ -218,7 +217,7 @@ def send_top10_volume_message(top_10_ids, volume_map):
         btc_change = calculate_daily_change(btc_id)
         btc_volume = volume_map.get(btc_id, 0)
         btc_volume_str = format_volume_in_eok(btc_volume) or "🚫"
-        btc_status_line, _, _ = get_ema_status_line(btc_id)
+        btc_status_line, _ = get_ema_status_line(btc_id)
 
         btc_lines = [
             "📌 BTC 현황",
@@ -263,7 +262,7 @@ def run_scheduler():
 
 @app.on_event("startup")
 def start_scheduler():
-    schedule.every(1).minutes.do(main)  # 1분마다 실행
+    schedule.every(1).minutes.do(main)
     threading.Thread(target=run_scheduler, daemon=True).start()
 
 
