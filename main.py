@@ -17,9 +17,6 @@ bot = telepot.Bot(telegram_bot_token)
 logging.basicConfig(level=logging.INFO)
 
 
-# ===== 각 코인별 마지막 신호 상태 저장 =====
-last_signal_state = {}
-
 def send_telegram_message(message):
     for retry_count in range(1, 11):
         try:
@@ -83,7 +80,7 @@ def get_ohlcv_okx(instId, bar='1H', limit=200):
 # === EMA 상태 계산 (롱: 1D 정배열 + 4H 골든크로스, 숏: 1D 역배열 + 4H 데드크로스) ===
 def get_ema_status_line(inst_id):
     try:
-        # --- 1D EMA (3-5) ---
+        # --- 1D EMA (2-3) ---
         df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=300)
         if df_1d is None:
             daily_status = "[1D] ❌"
@@ -91,13 +88,13 @@ def get_ema_status_line(inst_id):
             daily_ok_short = False
         else:
             closes_1d = df_1d['c'].values
+            ema_2_1d = get_ema_with_retry(closes_1d, 2)
             ema_3_1d = get_ema_with_retry(closes_1d, 3)
-            ema_5_1d = get_ema_with_retry(closes_1d, 5)
-            if None in [ema_3_1d, ema_5_1d]:
+            if None in [ema_2_1d, ema_3_1d]:
                 daily_status = "[1D] ❌"
                 daily_ok_long = daily_ok_short = False
             else:
-                if ema_3_1d > ema_5_1d:
+                if ema_2_1d > ema_3_1d:
                     daily_status = "[1D] 📊: 🟩"
                     daily_ok_long = True
                     daily_ok_short = False
@@ -106,7 +103,7 @@ def get_ema_status_line(inst_id):
                     daily_ok_long = False
                     daily_ok_short = True
 
-        # --- 4H EMA (3-5) ---
+        # --- 4H EMA (2-3) ---
         df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=50)
         if df_4h is None or len(df_4h) < 2:
             fourh_status = "[4H] ❌"
@@ -114,13 +111,13 @@ def get_ema_status_line(inst_id):
             dead_cross = False
         else:
             closes_4h = df_4h['c'].values
+            ema_2_series = pd.Series(closes_4h).ewm(span=2, adjust=False).mean()
             ema_3_series = pd.Series(closes_4h).ewm(span=3, adjust=False).mean()
-            ema_5_series = pd.Series(closes_4h).ewm(span=5, adjust=False).mean()
 
-            golden_cross = ema_3_series.iloc[-2] <= ema_5_series.iloc[-2] and ema_3_series.iloc[-1] > ema_5_series.iloc[-1]
-            dead_cross = ema_3_series.iloc[-2] >= ema_5_series.iloc[-2] and ema_3_series.iloc[-1] < ema_5_series.iloc[-1]
+            golden_cross = ema_2_series.iloc[-2] <= ema_3_series.iloc[-2] and ema_2_series.iloc[-1] > ema_3_series.iloc[-1]
+            dead_cross = ema_2_series.iloc[-2] >= ema_3_series.iloc[-2] and ema_2_series.iloc[-1] < ema_3_series.iloc[-1]
 
-            fourh_status = f"[4H] 📊: {'🟩' if ema_3_series.iloc[-1] > ema_5_series.iloc[-1] else '🟥'}"
+            fourh_status = f"[4H] 📊: {'🟩' if ema_2_series.iloc[-1] > ema_3_series.iloc[-1] else '🟥'}"
 
         # ⚡ 조건 판별
         if daily_ok_long and golden_cross:
@@ -193,7 +190,7 @@ def calculate_1h_volume(inst_id):
 
 def send_top_volume_message(top_ids, volume_map):
     message_lines = [
-        "⚡  3-5 조건 기반 롱·숏 감지",
+        "⚡  2-3 조건 기반 롱·숏 감지",
         "━━━━━━━━━━━━━━━━━━━",
     ]
 
@@ -204,13 +201,9 @@ def send_top_volume_message(top_ids, volume_map):
         ema_status_line, signal_type = get_ema_status_line(inst_id)
 
         if signal_type is None:
-            last_signal_state[inst_id] = None
             continue
 
-        # 신호 발생 시 1회만 메시지 전송
-        if last_signal_state.get(inst_id) == signal_type:
-            continue
-        last_signal_state[inst_id] = signal_type
+        # 신호가 유지되어도 계속 메시지 전송
         signal_found = True
 
         daily_change = calculate_daily_change(inst_id)
