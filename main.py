@@ -16,6 +16,7 @@ bot = telepot.Bot(telegram_bot_token)
 
 logging.basicConfig(level=logging.INFO)
 
+
 # ===== 각 코인별 마지막 신호 상태 저장 =====
 last_signal_state = {}
 
@@ -79,13 +80,14 @@ def get_ohlcv_okx(instId, bar='1H', limit=200):
         return None
 
 
-# === EMA 상태 계산 (숏: 1D 역배열 + 4H 데드크로스) ===
+# === EMA 상태 계산 (롱: 1D 정배열 + 4H 골든크로스, 숏: 1D 역배열 + 4H 데드크로스) ===
 def get_ema_status_line(inst_id):
     try:
         # --- 1D EMA (3-5) ---
         df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=300)
         if df_1d is None:
             daily_status = "[1D] ❌"
+            daily_ok_long = False
             daily_ok_short = False
         else:
             closes_1d = df_1d['c'].values
@@ -93,28 +95,38 @@ def get_ema_status_line(inst_id):
             ema_5_1d = get_ema_with_retry(closes_1d, 5)
             if None in [ema_3_1d, ema_5_1d]:
                 daily_status = "[1D] ❌"
-                daily_ok_short = False
+                daily_ok_long = daily_ok_short = False
             else:
-                daily_status = f"[1D] 📊: {'🟥' if ema_3_1d < ema_5_1d else '🟩'}"
-                daily_ok_short = ema_3_1d < ema_5_1d   # 1D 3-5 역배열
+                if ema_3_1d > ema_5_1d:
+                    daily_status = "[1D] 📊: 🟩"
+                    daily_ok_long = True
+                    daily_ok_short = False
+                else:
+                    daily_status = "[1D] 📊: 🟥"
+                    daily_ok_long = False
+                    daily_ok_short = True
 
         # --- 4H EMA (3-5) ---
         df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=50)
         if df_4h is None or len(df_4h) < 2:
             fourh_status = "[4H] ❌"
+            golden_cross = False
             dead_cross = False
         else:
             closes_4h = df_4h['c'].values
             ema_3_series = pd.Series(closes_4h).ewm(span=3, adjust=False).mean()
             ema_5_series = pd.Series(closes_4h).ewm(span=5, adjust=False).mean()
 
-            # 데드크로스 발생 여부 (직전 캔들과 비교)
+            golden_cross = ema_3_series.iloc[-2] <= ema_5_series.iloc[-2] and ema_3_series.iloc[-1] > ema_5_series.iloc[-1]
             dead_cross = ema_3_series.iloc[-2] >= ema_5_series.iloc[-2] and ema_3_series.iloc[-1] < ema_5_series.iloc[-1]
 
             fourh_status = f"[4H] 📊: {'🟩' if ema_3_series.iloc[-1] > ema_5_series.iloc[-1] else '🟥'}"
 
-        # ⚡ 숏 조건: 1D 3-5 역배열 + 4H 3-5 데드크로스 발생
-        if daily_ok_short and dead_cross:
+        # ⚡ 조건 판별
+        if daily_ok_long and golden_cross:
+            signal = " ⚡⚡⚡(롱)"
+            signal_type = "long"
+        elif daily_ok_short and dead_cross:
             signal = " ⚡⚡⚡(숏)"
             signal_type = "short"
         else:
@@ -179,26 +191,26 @@ def calculate_1h_volume(inst_id):
     return df["volCcyQuote"].sum()
 
 
-def send_top10_volume_message(top_10_ids, volume_map):
+def send_top_volume_message(top_ids, volume_map):
     message_lines = [
-        "⚡  3-5 조건 기반 숏 감지",
+        "⚡  3-5 조건 기반 롱·숏 감지",
         "━━━━━━━━━━━━━━━━━━━",
     ]
 
     signal_found = False
 
-    for i, inst_id in enumerate(top_10_ids, 1):
+    for i, inst_id in enumerate(top_ids, 1):
         name = inst_id.replace("-USDT-SWAP", "")
         ema_status_line, signal_type = get_ema_status_line(inst_id)
 
-        if signal_type != "short":
+        if signal_type is None:
             last_signal_state[inst_id] = None
             continue
 
         # 신호 발생 시 1회만 메시지 전송
-        if last_signal_state.get(inst_id) == "short":
+        if last_signal_state.get(inst_id) == signal_type:
             continue
-        last_signal_state[inst_id] = "short"
+        last_signal_state[inst_id] = signal_type
         signal_found = True
 
         daily_change = calculate_daily_change(inst_id)
@@ -250,8 +262,8 @@ def main():
         volume_map[inst_id] = vol_1h
         time.sleep(0.05)
 
-    top_10_ids = [inst_id for inst_id, _ in sorted(volume_map.items(), key=lambda x: x[1], reverse=True)[:20]]
-    send_top10_volume_message(top_10_ids, volume_map)
+    top_ids = [inst_id for inst_id, _ in sorted(volume_map.items(), key=lambda x: x[1], reverse=True)[:20]]
+    send_top_volume_message(top_ids, volume_map)
 
 
 def run_scheduler():
