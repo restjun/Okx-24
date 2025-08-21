@@ -16,6 +16,9 @@ bot = telepot.Bot(telegram_bot_token)
 
 logging.basicConfig(level=logging.INFO)
 
+# 이전 상위 10 거래대금 코인 저장
+previous_top_vol_ids = []
+
 def send_telegram_message(message):
     for retry_count in range(1, 11):
         try:
@@ -116,7 +119,7 @@ def format_change_with_emoji(change):
     else:
         return f"🔴 ({change:.2f}%)"
 
-# ✅ 트레이딩뷰 RSI(Wilder 방식)
+# 트레이딩뷰 RSI(Wilder 방식)
 def calculate_rsi(close, period=5):
     close = pd.Series(close)
     delta = close.diff().dropna()
@@ -133,7 +136,6 @@ def calculate_rsi(close, period=5):
     rsi = 100 - (100 / (1 + rs))
     return rsi
 
-# ✅ 3-5 EMA 비교 아이콘
 def get_ema_icon(close):
     ema_3 = get_ema_with_retry(close, 3)
     ema_5 = get_ema_with_retry(close, 5)
@@ -170,6 +172,7 @@ def calculate_1h_volume(inst_id):
     return df["volCcyQuote"].sum()
 
 def main():
+    global previous_top_vol_ids
     logging.info("📥 EMA 분석 시작")
     all_ids = get_all_okx_swap_symbols()
     total_count = len(all_ids)
@@ -184,7 +187,15 @@ def main():
         time.sleep(0.1)
 
     top_vol = sorted(vol_list, key=lambda x: x[1], reverse=True)[:10]
+    current_top_vol_ids = [inst_id for inst_id, _ in top_vol]
 
+    # 이전 랭킹과 비교해서 변동 없으면 메시지 전송 생략
+    if previous_top_vol_ids == current_top_vol_ids:
+        logging.info("🔄 상위 10 거래대금 변동 없음, 메시지 전송 생략")
+        return
+    previous_top_vol_ids = current_top_vol_ids
+
+    # 메시지 작성
     message_lines = [
         f"📊 전체 조회 코인 수: {total_count}개",
         "━━━━━━━━━━━━━━━━━━━"
