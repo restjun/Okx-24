@@ -116,37 +116,30 @@ def format_change_with_emoji(change):
     else:
         return f"🔴 ({change:.2f}%)"
 
-# ✅ 트레이딩뷰 RSI(Wilder 방식) 적용
+# ✅ 트레이딩뷰 RSI(Wilder 방식)
 def calculate_rsi(close, period=5):
     close = pd.Series(close)
     delta = close.diff().dropna()
-
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
-
-    # 초기 평균
     avg_gain = gain.rolling(window=period, min_periods=period).mean().iloc[period-1]
     avg_loss = loss.rolling(window=period, min_periods=period).mean().iloc[period-1]
-
-    # Wilder 방식 EMA
     for i in range(period, len(gain)):
         avg_gain = (avg_gain * (period - 1) + gain.iloc[i]) / period
         avg_loss = (avg_loss * (period - 1) + loss.iloc[i]) / period
-
     if avg_loss == 0:
         return 100
     rs = avg_gain / avg_loss
     rsi = 100 - (100 / (1 + rs))
     return rsi
 
-# ✅ 2-3 이평 비교 아이콘
+# ✅ 3-5 EMA 비교 아이콘
 def get_ema_icon(close):
-    ema_2 = get_ema_with_retry(close, 2)
     ema_3 = get_ema_with_retry(close, 3)
-
-    if ema_2 is None or ema_3 is None:
+    ema_5 = get_ema_with_retry(close, 5)
+    if ema_3 is None or ema_5 is None:
         return "[❌]"
-    return "[🟩]" if ema_2 > ema_3 else "[🟥]"
+    return "[🟩]" if ema_3 > ema_5 else "[🟥]"
 
 def get_all_timeframe_ema_status(inst_id):
     try:
@@ -182,7 +175,6 @@ def main():
     total_count = len(all_ids)
 
     vol_list = []
-
     for inst_id in all_ids:
         df_24h = get_ohlcv_okx(inst_id, bar="1H", limit=4)
         if df_24h is None:
