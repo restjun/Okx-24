@@ -186,7 +186,7 @@ def main():
         vol_list.append((inst_id, vol_24h))
         time.sleep(0.1)
 
-    top_vol = sorted(vol_list, key=lambda x: x[1], reverse=True)[:20]
+    top_vol = sorted(vol_list, key=lambda x: x[1], reverse=True)[:10]
     current_top_vol_ids = [inst_id for inst_id, _ in top_vol]
 
     # 이전 랭킹과 비교해서 변동 없으면 메시지 전송 생략
