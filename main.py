@@ -166,7 +166,7 @@ def get_all_timeframe_ema_status(inst_id):
         return "❌ 상태 계산 실패"
 
 def calculate_1h_volume(inst_id):
-    df = get_ohlcv_okx(inst_id, bar="1H", limit=24)
+    df = get_ohlcv_okx(inst_id, bar="1H", limit=4)
     if df is None or len(df) < 1:
         return 0
     return df["volCcyQuote"].sum()
@@ -179,7 +179,7 @@ def main():
 
     vol_list = []
     for inst_id in all_ids:
-        df_24h = get_ohlcv_okx(inst_id, bar="1H", limit=24)
+        df_24h = get_ohlcv_okx(inst_id, bar="1H", limit=4)
         if df_24h is None:
             continue
         vol_24h = df_24h['volCcyQuote'].sum()
