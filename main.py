@@ -179,7 +179,7 @@ def main():
 
     vol_list = []
     for inst_id in all_ids:
-        df_24h = get_ohlcv_okx(inst_id, bar="1H", limit=14)
+        df_24h = get_ohlcv_okx(inst_id, bar="1H", limit=24)
         if df_24h is None:
             continue
         vol_24h = df_24h['volCcyQuote'].sum()
