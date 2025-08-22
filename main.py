@@ -166,7 +166,7 @@ def get_all_timeframe_ema_status(inst_id):
         return "❌ 상태 계산 실패"
 
 def calculate_1h_volume(inst_id):
-    df = get_ohlcv_okx(inst_id, bar="1H", limit=1)
+    df = get_ohlcv_okx(inst_id, bar="1H", limit=24)
     if df is None or len(df) < 1:
         return 0
     return df["volCcyQuote"].sum()
@@ -186,7 +186,7 @@ def main():
         vol_list.append((inst_id, vol_24h))
         time.sleep(0.1)
 
-    top_vol = sorted(vol_list, key=lambda x: x[1], reverse=True)[:10]
+    top_vol = sorted(vol_list, key=lambda x: x[1], reverse=True)[:20]
     current_top_vol_ids = [inst_id for inst_id, _ in top_vol]
 
     # 이전 랭킹과 비교해서 변동 없으면 메시지 전송 생략
