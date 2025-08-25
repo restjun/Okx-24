@@ -189,7 +189,7 @@ def get_all_okx_swap_symbols():
     return [item["instId"] for item in data if "USDT" in item["instId"]]
 
 
-# 🔹 텔레그램 메시지 전송 (1H 조건 제거, 일봉 조건만 체크)
+# 🔹 텔레그램 메시지 전송 (신규 조건 코인만)
 def send_daily_condition_message(top_ids, volume_map):
     global sent_signal_coins
     message_lines = [
@@ -201,6 +201,10 @@ def send_daily_condition_message(top_ids, volume_map):
     current_signal_coins = []
 
     for inst_id in top_ids:
+        # 🔹 이미 메시지 보낸 코인은 스킵
+        if inst_id in sent_signal_coins:
+            continue
+
         # 🔹 일봉 5일선 MFI & RSI ≥ 70 조건만 체크
         if not check_daily_mfi_rsi(inst_id, period=5, threshold=70):
             continue
@@ -213,36 +217,39 @@ def send_daily_condition_message(top_ids, volume_map):
         actual_rank = rank_map.get(inst_id, "🚫")
         current_signal_coins.append((inst_id, daily_change, volume_1h, actual_rank))
 
-    if current_signal_coins:
-        sent_signal_coins.update([c[0] for c in current_signal_coins])
+    # 🔹 신규 조건 코인이 없으면 메시지 전송 안 함
+    if not current_signal_coins:
+        logging.info("⚡ 신규 조건 만족 코인 없음 → 메시지 전송 안 함")
+        return
 
-        btc_id = "BTC-USDT-SWAP"
-        btc_change = calculate_daily_change(btc_id)
-        btc_volume = volume_map.get(btc_id, 0)
-        btc_volume_str = format_volume_in_eok(btc_volume) or "🚫"
+    # 🔹 메시지 전송 후, 전송한 코인을 저장
+    sent_signal_coins.update([c[0] for c in current_signal_coins])
 
-        btc_lines = [
-            "📌 BTC 현황",
-            f"BTC {format_change_with_emoji(btc_change)} / 거래대금: ({btc_volume_str})",
-            "━━━━━━━━━━━━━━━━━━━"
-        ]
-        message_lines += btc_lines
+    btc_id = "BTC-USDT-SWAP"
+    btc_change = calculate_daily_change(btc_id)
+    btc_volume = volume_map.get(btc_id, 0)
+    btc_volume_str = format_volume_in_eok(btc_volume) or "🚫"
 
-        # 거래대금 기준 내림차순 정렬
-        current_signal_coins.sort(key=lambda x: x[2], reverse=True)
+    btc_lines = [
+        "📌 BTC 현황",
+        f"BTC {format_change_with_emoji(btc_change)} / 거래대금: ({btc_volume_str})",
+        "━━━━━━━━━━━━━━━━━━━"
+    ]
+    message_lines += btc_lines
 
-        for rank, (inst_id, daily_change, volume_1h, actual_rank) in enumerate(current_signal_coins, start=1):
-            name = inst_id.replace("-USDT-SWAP", "")
-            volume_str = format_volume_in_eok(volume_1h) or "🚫"
-            message_lines.append(
-                f"{rank}. {name} {format_change_with_emoji(daily_change)} / 거래대금: ({volume_str}) {actual_rank}위"
-            )
-            message_lines.append("━━━━━━━━━━━━━━━━━━━")
+    # 거래대금 기준 내림차순 정렬
+    current_signal_coins.sort(key=lambda x: x[2], reverse=True)
 
-        full_message = "\n".join(message_lines)
-        send_telegram_message(full_message)
-    else:
-        logging.info("⚡ 조건 만족 코인 없음 → 메시지 전송 안 함")
+    for rank, (inst_id, daily_change, volume_1h, actual_rank) in enumerate(current_signal_coins, start=1):
+        name = inst_id.replace("-USDT-SWAP", "")
+        volume_str = format_volume_in_eok(volume_1h) or "🚫"
+        message_lines.append(
+            f"{rank}. {name} {format_change_with_emoji(daily_change)} / 거래대금: ({volume_str}) {actual_rank}위"
+        )
+        message_lines.append("━━━━━━━━━━━━━━━━━━━")
+
+    full_message = "\n".join(message_lines)
+    send_telegram_message(full_message)
 
 
 def main():
