@@ -111,6 +111,18 @@ def calc_rsi(df, period=5):
     return rsi
 
 
+# 🔹 일봉 MFI/RSI 조건 체크 함수 (추가)
+def check_daily_mfi_rsi(inst_id, period=5, threshold=70):
+    df_1d = get_ohlcv_okx(inst_id, bar="1D", limit=100)
+    if df_1d is None or len(df_1d) < period:
+        return False
+    mfi_val = calc_mfi(df_1d, period).iloc[-1]
+    rsi_val = calc_rsi(df_1d, period).iloc[-1]
+    if pd.isna(mfi_val) or pd.isna(rsi_val):
+        return False
+    return mfi_val >= threshold and rsi_val >= threshold
+
+
 # 🔹 MFI 상태 라인
 def get_mfi_status_line(inst_id, period=5, mfi_threshold=70, return_raw=False):
     df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=100)
@@ -245,7 +257,7 @@ def get_all_okx_swap_symbols():
 def send_top_volume_message(top_ids, volume_map):
     global sent_signal_coins
     message_lines = [
-        "⚡  1H MFI/RSI(5) 70 돌파 필터",
+        "⚡  1H MFI/RSI(5) 70 돌파 + 일봉 5일선 MFI/RSI≥70 필터",
         "━━━━━━━━━━━━━━━━━━━",
     ]
 
@@ -255,6 +267,10 @@ def send_top_volume_message(top_ids, volume_map):
     for inst_id in top_ids:
         signal_status_line, signal_flag = get_signal_status_line(inst_id, mfi_period=5, rsi_period=5, threshold=70)
         if not signal_flag:
+            continue
+
+        # 🔹 추가된 조건: 일봉 5일선 MFI & RSI ≥ 70
+        if not check_daily_mfi_rsi(inst_id, period=5, threshold=70):
             continue
 
         daily_change = calculate_daily_change(inst_id)
@@ -332,3 +348,10 @@ def start_scheduler():
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+
+
+
+
+
+
