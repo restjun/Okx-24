@@ -71,7 +71,7 @@ def get_ohlcv_okx(instId, bar='1H', limit=200):
 
 
 # 🔹 MFI 계산 함수
-def calc_mfi(df, period=5):
+def calc_mfi(df, period=3):
     tp = (df['h'] + df['l'] + df['c']) / 3
     rmf = tp * df['vol']
 
@@ -99,7 +99,7 @@ def calc_mfi(df, period=5):
 
 
 # 🔹 RSI 계산 함수
-def calc_rsi(df, period=5):
+def calc_rsi(df, period=3):
     delta = df['c'].diff()
     gain = delta.where(delta > 0, 0.0)
     loss = -delta.where(delta < 0, 0.0)
