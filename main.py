@@ -97,30 +97,15 @@ def calc_mfi(df, period=5):
     return mfi
 
 
-# 🔹 RSI 계산 함수
-def calc_rsi(df, period=5):
-    delta = df['c'].diff()
-    gain = delta.where(delta > 0, 0.0)
-    loss = -delta.where(delta < 0, 0.0)
-
-    avg_gain = gain.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
-    avg_loss = loss.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
-
-    rs = avg_gain / avg_loss
-    rsi = 100 - (100 / (1 + rs))
-    return rsi
-
-
-# 🔹 일봉 MFI/RSI 조건 체크 함수
-def check_daily_mfi_rsi(inst_id, period=5, threshold=70):
+# 🔹 일봉 MFI 조건 체크 함수 (RSI 제거)
+def check_daily_mfi(inst_id, period=5, threshold=70):
     df_1d = get_ohlcv_okx(inst_id, bar="1D", limit=100)
     if df_1d is None or len(df_1d) < period:
         return False
     mfi_val = calc_mfi(df_1d, period).iloc[-1]
-    rsi_val = calc_rsi(df_1d, period).iloc[-1]
-    if pd.isna(mfi_val) or pd.isna(rsi_val):
+    if pd.isna(mfi_val):
         return False
-    return mfi_val >= threshold and rsi_val >= threshold
+    return mfi_val >= threshold
 
 
 # 🔹 1시간 거래대금 계산
@@ -193,7 +178,7 @@ def get_all_okx_swap_symbols():
 def send_daily_condition_message(top_ids, volume_map):
     global sent_signal_coins
     message_lines = [
-        "⚡ 일봉 5일선 MFI/RSI ≥ 70 필터",
+        "⚡ 일봉 5일선 MFI ≥ 70 필터",
         "━━━━━━━━━━━━━━━━━━━",
     ]
 
@@ -201,12 +186,11 @@ def send_daily_condition_message(top_ids, volume_map):
     current_signal_coins = []
 
     for inst_id in top_ids:
-        # 🔹 이미 메시지 보낸 코인은 스킵
         if inst_id in sent_signal_coins:
             continue
 
-        # 🔹 일봉 5일선 MFI & RSI ≥ 70 조건만 체크
-        if not check_daily_mfi_rsi(inst_id, period=5, threshold=70):
+        # 🔹 일봉 MFI ≥ 70 조건만 체크
+        if not check_daily_mfi(inst_id, period=5, threshold=70):
             continue
 
         daily_change = calculate_daily_change(inst_id)
@@ -217,12 +201,10 @@ def send_daily_condition_message(top_ids, volume_map):
         actual_rank = rank_map.get(inst_id, "🚫")
         current_signal_coins.append((inst_id, daily_change, volume_1h, actual_rank))
 
-    # 🔹 신규 조건 코인이 없으면 메시지 전송 안 함
     if not current_signal_coins:
         logging.info("⚡ 신규 조건 만족 코인 없음 → 메시지 전송 안 함")
         return
 
-    # 🔹 메시지 전송 후, 전송한 코인을 저장
     sent_signal_coins.update([c[0] for c in current_signal_coins])
 
     btc_id = "BTC-USDT-SWAP"
@@ -237,7 +219,6 @@ def send_daily_condition_message(top_ids, volume_map):
     ]
     message_lines += btc_lines
 
-    # 거래대금 기준 내림차순 정렬
     current_signal_coins.sort(key=lambda x: x[2], reverse=True)
 
     for rank, (inst_id, daily_change, volume_1h, actual_rank) in enumerate(current_signal_coins, start=1):
