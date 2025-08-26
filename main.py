@@ -111,7 +111,7 @@ def calc_rsi(df, period=5):
     return rsi
 
 
-# 🔹 일봉 MFI/RSI 조건 체크 함수 (추가)
+# 🔹 일봉 MFI/RSI 조건 체크 함수
 def check_daily_mfi_rsi(inst_id, period=5, threshold=70):
     df_1d = get_ohlcv_okx(inst_id, bar="1D", limit=100)
     if df_1d is None or len(df_1d) < period:
@@ -157,7 +157,7 @@ def get_rsi_status_line(inst_id, period=5, threshold=70, return_raw=False):
     return line, signal
 
 
-# 🔹 통합 조건 함수
+# 🔹 통합 조건 함수 (1H 기준, RSI/MFI 둘 중 하나라도 70 이상 시 발동)
 def get_signal_status_line(inst_id, mfi_period=5, rsi_period=5, threshold=70):
     mfi_line, _, mfi_last, mfi_prev = get_mfi_status_line(inst_id, period=mfi_period, mfi_threshold=threshold, return_raw=True)
     rsi_line, _, rsi_last, rsi_prev = get_rsi_status_line(inst_id, period=rsi_period, threshold=threshold, return_raw=True)
@@ -171,15 +171,16 @@ def get_signal_status_line(inst_id, mfi_period=5, rsi_period=5, threshold=70):
     signal_triggered = False
     extra_msg = ""
 
-    if mfi_last >= threshold and rsi_prev < threshold <= rsi_last:
+    # 🔹 수정: MFI 또는 RSI 둘 중 하나라도 70 이상이면 발동
+    if mfi_prev < threshold <= mfi_last:
         signal_triggered = True
-        extra_msg = "🚨 RSI 70 돌파 (MFI≥70)"
-    elif rsi_last >= threshold and mfi_prev < threshold <= mfi_last:
+        extra_msg = "🚨 1H MFI 70 돌파"
+    if rsi_prev < threshold <= rsi_last:
         signal_triggered = True
-        extra_msg = "🚨 MFI 70 돌파 (RSI≥70)"
-    elif (mfi_prev < threshold <= mfi_last) and (rsi_prev < threshold <= rsi_last):
-        signal_triggered = True
-        extra_msg = "🚨🚨🚨 MFI & RSI 동시 돌파"
+        if extra_msg:
+            extra_msg += " & RSI 70 돌파"
+        else:
+            extra_msg = "🚨 1H RSI 70 돌파"
 
     if signal_triggered:
         return f"{mfi_line}\n{rsi_line}\n{extra_msg}", True
@@ -348,10 +349,3 @@ def start_scheduler():
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
-
-
-
-
-
-
-
