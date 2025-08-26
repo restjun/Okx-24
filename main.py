@@ -17,7 +17,6 @@ bot = telepot.Bot(telegram_bot_token)
 
 logging.basicConfig(level=logging.INFO)
 
-
 # 🔹 전역 변수: 이미 메시지 전송한 코인 저장
 sent_signal_coins = set()
 
@@ -182,7 +181,15 @@ def get_all_okx_swap_symbols():
     return [item["instId"] for item in data if "USDT" in item["instId"]]
 
 
-# 🔹 텔레그램 메시지 전송 (1H 돌파 조건 제거 버전)
+# 🔹 24시간 거래대금 계산
+def get_24h_volume(inst_id):
+    df = get_ohlcv_okx(inst_id, bar="1H", limit=24)
+    if df is None or len(df) < 24:
+        return 0
+    return df['volCcyQuote'].sum()
+
+
+# 🔹 텔레그램 메시지 전송
 def send_top_volume_message(top_ids, volume_map):
     global sent_signal_coins
     message_lines = [
@@ -202,9 +209,9 @@ def send_top_volume_message(top_ids, volume_map):
         if daily_change is None or daily_change <= 0:
             continue
 
-        volume_1h = volume_map.get(inst_id, 0)
+        volume_24h = volume_map.get(inst_id, 0)
         actual_rank = rank_map.get(inst_id, "🚫")
-        current_signal_coins.append((inst_id, daily_change, volume_1h, actual_rank))
+        current_signal_coins.append((inst_id, daily_change, volume_24h, actual_rank))
 
     if current_signal_coins:
         new_coins = [c[0] for c in current_signal_coins if c[0] not in sent_signal_coins]
@@ -231,9 +238,9 @@ def send_top_volume_message(top_ids, volume_map):
         all_coins_to_send.sort(key=lambda x: x[2], reverse=True)  # 거래대금 기준 정렬
         all_coins_to_send = all_coins_to_send[:10]
 
-        for rank, (inst_id, daily_change, volume_1h, actual_rank) in enumerate(all_coins_to_send, start=1):
+        for rank, (inst_id, daily_change, volume_24h, actual_rank) in enumerate(all_coins_to_send, start=1):
             name = inst_id.replace("-USDT-SWAP", "")
-            volume_str = format_volume_in_eok(volume_1h) or "🚫"
+            volume_str = format_volume_in_eok(volume_24h) or "🚫"
             message_lines.append(
                 f"{rank}. {name} {format_change_with_emoji(daily_change)} / 거래대금: ({volume_str}) {actual_rank}위"
             )
@@ -249,13 +256,14 @@ def main():
     logging.info("📥 거래대금 분석 시작")
     all_ids = get_all_okx_swap_symbols()
     volume_map = {}
+
     for inst_id in all_ids:
-        vol_1h = 0  # 🔹 1시간 거래대금 필터 삭제 → 그냥 0 저장
-        volume_map[inst_id] = vol_1h
+        vol_24h = get_24h_volume(inst_id)   # 🔹 24시간 거래대금 계산
+        volume_map[inst_id] = vol_24h
         time.sleep(0.05)
 
-    # 🔹 전체 심볼 중 100개까지만 확인
-    top_ids = all_ids[:100]
+    # 🔹 거래대금 기준 상위 100개만 확인
+    top_ids = sorted(volume_map, key=volume_map.get, reverse=True)[:100]
     send_top_volume_message(top_ids, volume_map)
 
 
@@ -273,4 +281,3 @@ def start_scheduler():
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
-
