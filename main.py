@@ -307,4 +307,45 @@ def send_top_volume_message(top_ids, volume_map):
         all_coins_to_send = [c for c in current_signal_coins if c[0] in sent_signal_coins]
         all_coins_to_send.sort(key=lambda x: x[3], reverse=True)
 
-        for rank, (inst_id, signal_line, daily_change, volume_1h, actual_rank) in enumerate(all_coins_to
+        for rank, (inst_id, signal_line, daily_change, volume_1h, actual_rank) in enumerate(all_coins_to_send, start=1):
+            name = inst_id.replace("-USDT-SWAP", "")
+            volume_str = format_volume_in_eok(volume_1h) or "🚫"
+            message_lines.append(
+                f"{rank}. {name} {format_change_with_emoji(daily_change)} / 거래대금: ({volume_str}) {actual_rank}위"
+            )
+            message_lines.append(signal_line)
+            message_lines.append("━━━━━━━━━━━━━━━━━━━")
+
+        full_message = "\n".join(message_lines)
+        send_telegram_message(full_message)
+    else:
+        logging.info("⚡ 신규 조건 만족 코인 없음 → 메시지 전송 안 함")
+
+
+def main():
+    logging.info("📥 거래대금 분석 시작")
+    all_ids = get_all_okx_swap_symbols()
+    volume_map = {}
+    for inst_id in all_ids:
+        vol_1h = calculate_1h_volume(inst_id)
+        volume_map[inst_id] = vol_1h
+        time.sleep(0.05)
+
+    top_ids = [inst_id for inst_id, _ in sorted(volume_map.items(), key=lambda x: x[1], reverse=True)[:100]]
+    send_top_volume_message(top_ids, volume_map)
+
+
+def run_scheduler():
+    while True:
+        schedule.run_pending()
+        time.sleep(1)
+
+
+@app.on_event("startup")
+def start_scheduler():
+    schedule.every(1).minutes.do(main)
+    threading.Thread(target=run_scheduler, daemon=True).start()
+
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8000)
