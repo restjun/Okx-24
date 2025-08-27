@@ -17,9 +17,9 @@ bot = telepot.Bot(telegram_bot_token)
 
 logging.basicConfig(level=logging.INFO)
 
-# 🔹 전역 변수: 이미 메시지 전송한 코인 저장
+# 🔹 전역 변수
 sent_signal_coins = set()
-
+prev_positive_coins = set()  # 이전 양수 상승 코인 저장
 
 def send_telegram_message(message):
     for retry_count in range(1, 11):
@@ -31,7 +31,6 @@ def send_telegram_message(message):
             logging.error(f"텔레그램 메시지 전송 실패 (재시도 {retry_count}/10): {e}")
             time.sleep(5)
     logging.error("텔레그램 메시지 전송 실패: 최대 재시도 초과")
-
 
 def retry_request(func, *args, **kwargs):
     for attempt in range(10):
@@ -46,30 +45,22 @@ def retry_request(func, *args, **kwargs):
             time.sleep(5)
     return None
 
-
 def get_ohlcv_okx(instId, bar='1H', limit=200):
     url = f"https://www.okx.com/api/v5/market/candles?instId={instId}&bar={bar}&limit={limit}"
     response = retry_request(requests.get, url)
     if response is None:
         return None
-
     try:
         df = pd.DataFrame(response.json()['data'], columns=[
             'ts', 'o', 'h', 'l', 'c', 'vol', 'volCcy', 'volCcyQuote', 'confirm'
         ])
-        df['c'] = df['c'].astype(float)
-        df['o'] = df['o'].astype(float)
-        df['h'] = df['h'].astype(float)
-        df['l'] = df['l'].astype(float)
-        df['vol'] = df['vol'].astype(float)
-        df['volCcyQuote'] = df['volCcyQuote'].astype(float)
+        df[['c','o','h','l','vol','volCcyQuote']] = df[['c','o','h','l','vol','volCcyQuote']].astype(float)
         return df.iloc[::-1]
     except Exception as e:
         logging.error(f"{instId} OHLCV 파싱 실패: {e}")
         return None
 
-
-# 🔹 MFI 계산 함수
+# 🔹 MFI 계산
 def calc_mfi(df, period=3):
     tp = (df['h'] + df['l'] + df['c']) / 3
     rmf = tp * df['vol']
@@ -96,8 +87,7 @@ def calc_mfi(df, period=3):
     mfi = 100 * (pos_mf_sum / (pos_mf_sum + neg_mf_sum))
     return mfi
 
-
-# 🔹 RSI 계산 함수
+# 🔹 RSI 계산
 def calc_rsi(df, period=3):
     delta = df['c'].diff()
     gain = delta.where(delta > 0, 0.0)
@@ -110,8 +100,7 @@ def calc_rsi(df, period=3):
     rsi = 100 - (100 / (1 + rs))
     return rsi
 
-
-# 🔹 일봉 MFI/RSI 조건 체크 함수 (3일)
+# 🔹 일봉 MFI/RSI 조건 체크 (3일)
 def check_daily_mfi_rsi(inst_id, period=3, threshold=70):
     df_1d = get_ohlcv_okx(inst_id, bar="1D", limit=100)
     if df_1d is None or len(df_1d) < period:
@@ -121,7 +110,6 @@ def check_daily_mfi_rsi(inst_id, period=3, threshold=70):
     if pd.isna(mfi_val) or pd.isna(rsi_val):
         return False
     return mfi_val >= threshold and rsi_val >= threshold
-
 
 # 🔹 상승률 계산
 def calculate_daily_change(inst_id):
@@ -151,14 +139,12 @@ def calculate_daily_change(inst_id):
         logging.error(f"{inst_id} 상승률 계산 오류: {e}")
         return None
 
-
 def format_volume_in_eok(volume):
     try:
         eok = int(volume // 1_000_000)
         return str(eok) if eok >= 1 else None
     except:
         return None
-
 
 def format_change_with_emoji(change):
     if change is None:
@@ -170,8 +156,7 @@ def format_change_with_emoji(change):
     else:
         return f"🔴 ({change:.2f}%)"
 
-
-# 🔹 OKX USDT-SWAP 심볼 가져오기
+# 🔹 OKX USDT-SWAP 심볼
 def get_all_okx_swap_symbols():
     url = "https://www.okx.com/api/v5/public/instruments?instType=SWAP"
     response = retry_request(requests.get, url)
@@ -180,20 +165,18 @@ def get_all_okx_swap_symbols():
     data = response.json().get("data", [])
     return [item["instId"] for item in data if "USDT" in item["instId"]]
 
-
-# 🔹 24시간 거래대금 계산
+# 🔹 24시간 거래대금
 def get_24h_volume(inst_id):
     df = get_ohlcv_okx(inst_id, bar="1H", limit=24)
     if df is None or len(df) < 24:
         return 0
     return df['volCcyQuote'].sum()
 
-
 # 🔹 텔레그램 메시지 전송
 def send_top_volume_message(top_ids, volume_map):
-    global sent_signal_coins
+    global sent_signal_coins, prev_positive_coins
     message_lines = [
-        "⚡ 일봉 3일선 MFI/RSI≥70 필터",
+        "⚡ 일봉 3일선 MFI/RSI≥70 필터 (음수→양수 전환 포함)",
         "━━━━━━━━━━━━━━━━━━━",
     ]
 
@@ -201,17 +184,25 @@ def send_top_volume_message(top_ids, volume_map):
     current_signal_coins = []
 
     for inst_id in top_ids:
-        # 🔹 조건: 일봉 3일선 MFI & RSI ≥ 70
         if not check_daily_mfi_rsi(inst_id, period=3, threshold=70):
             continue
 
         daily_change = calculate_daily_change(inst_id)
-        if daily_change is None or daily_change <= 0:
+        if daily_change is None:
             continue
 
-        volume_24h = volume_map.get(inst_id, 0)
-        actual_rank = rank_map.get(inst_id, "🚫")
-        current_signal_coins.append((inst_id, daily_change, volume_24h, actual_rank))
+        is_positive = daily_change > 0
+        was_positive = inst_id in prev_positive_coins
+        if is_positive:
+            prev_positive_coins.add(inst_id)
+        else:
+            prev_positive_coins.discard(inst_id)
+
+        # 음수->양수 전환 포함
+        if not is_positive and not was_positive:
+            continue
+
+        current_signal_coins.append((inst_id, daily_change, volume_map.get(inst_id, 0), rank_map.get(inst_id, "🚫")))
 
     if current_signal_coins:
         new_coins = [c[0] for c in current_signal_coins if c[0] not in sent_signal_coins]
@@ -233,9 +224,8 @@ def send_top_volume_message(top_ids, volume_map):
         ]
         message_lines += btc_lines
 
-        # 🔹 조건 만족 코인 중 10개까지만 전송
         all_coins_to_send = [c for c in current_signal_coins if c[0] in sent_signal_coins]
-        all_coins_to_send.sort(key=lambda x: x[2], reverse=True)  # 거래대금 기준 정렬
+        all_coins_to_send.sort(key=lambda x: x[2], reverse=True)
         all_coins_to_send = all_coins_to_send[:10]
 
         for rank, (inst_id, daily_change, volume_24h, actual_rank) in enumerate(all_coins_to_send, start=1):
@@ -251,33 +241,27 @@ def send_top_volume_message(top_ids, volume_map):
     else:
         logging.info("⚡ 신규 조건 만족 코인 없음 → 메시지 전송 안 함")
 
-
+# 🔹 메인
 def main():
     logging.info("📥 거래대금 분석 시작")
     all_ids = get_all_okx_swap_symbols()
     volume_map = {}
-
     for inst_id in all_ids:
-        vol_24h = get_24h_volume(inst_id)   # 🔹 24시간 거래대금 계산
-        volume_map[inst_id] = vol_24h
+        volume_map[inst_id] = get_24h_volume(inst_id)
         time.sleep(0.05)
 
-    # 🔹 거래대금 기준 상위 100개만 확인
     top_ids = sorted(volume_map, key=volume_map.get, reverse=True)[:100]
     send_top_volume_message(top_ids, volume_map)
-
 
 def run_scheduler():
     while True:
         schedule.run_pending()
         time.sleep(1)
 
-
 @app.on_event("startup")
 def start_scheduler():
     schedule.every(1).minutes.do(main)
     threading.Thread(target=run_scheduler, daemon=True).start()
-
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
