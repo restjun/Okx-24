@@ -100,41 +100,26 @@ def calc_rsi(df, period=3):
     rsi = 100 - (100 / (1 + rs))
     return rsi
 
-# 🔹 일봉 MFI/RSI 조건 체크 (3일)
-def check_daily_mfi_rsi(inst_id, period=3, threshold=70):
-    df_1d = get_ohlcv_okx(inst_id, bar="1D", limit=100)
-    if df_1d is None or len(df_1d) < period:
+# 🔹 4시간봉 MFI/RSI 조건 체크 (3개봉)
+def check_4h_mfi_rsi(inst_id, period=3, threshold=70):
+    df_4h = get_ohlcv_okx(inst_id, bar="4H", limit=100)
+    if df_4h is None or len(df_4h) < period:
         return False
-    mfi_val = calc_mfi(df_1d, period).iloc[-1]
-    rsi_val = calc_rsi(df_1d, period).iloc[-1]
+    mfi_val = calc_mfi(df_4h, period).iloc[-1]
+    rsi_val = calc_rsi(df_4h, period).iloc[-1]
     if pd.isna(mfi_val) or pd.isna(rsi_val):
         return False
     return mfi_val >= threshold and rsi_val >= threshold
 
-# 🔹 상승률 계산
-def calculate_daily_change(inst_id):
-    df = get_ohlcv_okx(inst_id, bar="1H", limit=48)
-    if df is None or len(df) < 24:
+# 🔹 상승률 계산 (4시간 기준 하루변동률 환산)
+def calculate_4h_change(inst_id):
+    df = get_ohlcv_okx(inst_id, bar="4H", limit=48)
+    if df is None or len(df) < 6:
         return None
     try:
-        df['datetime'] = pd.to_datetime(df['ts'], unit='ms')
-        df['datetime_kst'] = df['datetime'] + pd.Timedelta(hours=9)
-        df.set_index('datetime_kst', inplace=True)
-
-        daily = df.resample('1D', offset='9h').agg({
-            'o': 'first',
-            'h': 'max',
-            'l': 'min',
-            'c': 'last',
-            'vol': 'sum'
-        }).dropna().sort_index(ascending=False).reset_index()
-
-        if len(daily) < 2:
-            return None
-
-        today_close = daily.loc[0, 'c']
-        yesterday_close = daily.loc[1, 'c']
-        return round(((today_close - yesterday_close) / yesterday_close) * 100, 2)
+        today_close = df['c'].iloc[-1]
+        prev_close = df['c'].iloc[-7]  # 약 하루 전(6개 4H = 24H)
+        return round(((today_close - prev_close) / prev_close) * 100, 2)
     except Exception as e:
         logging.error(f"{inst_id} 상승률 계산 오류: {e}")
         return None
@@ -176,7 +161,7 @@ def get_24h_volume(inst_id):
 def send_top_volume_message(top_ids, volume_map):
     global sent_signal_coins, prev_positive_coins
     message_lines = [
-        "⚡ 일봉 3일선 MFI/RSI≥70 필터 (음수→양수 전환 포함)",
+        "⚡ 4시간봉 3개 MFI/RSI≥70 필터 (음수→양수 전환 포함)",
         "━━━━━━━━━━━━━━━━━━━",
     ]
 
@@ -184,14 +169,14 @@ def send_top_volume_message(top_ids, volume_map):
     current_signal_coins = []
 
     for inst_id in top_ids:
-        if not check_daily_mfi_rsi(inst_id, period=3, threshold=70):
+        if not check_4h_mfi_rsi(inst_id, period=3, threshold=70):
             continue
 
-        daily_change = calculate_daily_change(inst_id)
-        if daily_change is None:
+        change_val = calculate_4h_change(inst_id)
+        if change_val is None:
             continue
 
-        is_positive = daily_change > 0
+        is_positive = change_val > 0
         was_positive = inst_id in prev_positive_coins
         if is_positive:
             prev_positive_coins.add(inst_id)
@@ -202,7 +187,7 @@ def send_top_volume_message(top_ids, volume_map):
         if not is_positive and not was_positive:
             continue
 
-        current_signal_coins.append((inst_id, daily_change, volume_map.get(inst_id, 0), rank_map.get(inst_id, "🚫")))
+        current_signal_coins.append((inst_id, change_val, volume_map.get(inst_id, 0), rank_map.get(inst_id, "🚫")))
 
     if current_signal_coins:
         new_coins = [c[0] for c in current_signal_coins if c[0] not in sent_signal_coins]
@@ -213,7 +198,7 @@ def send_top_volume_message(top_ids, volume_map):
         sent_signal_coins.update(new_coins)
 
         btc_id = "BTC-USDT-SWAP"
-        btc_change = calculate_daily_change(btc_id)
+        btc_change = calculate_4h_change(btc_id)
         btc_volume = volume_map.get(btc_id, 0)
         btc_volume_str = format_volume_in_eok(btc_volume) or "🚫"
 
@@ -228,11 +213,11 @@ def send_top_volume_message(top_ids, volume_map):
         all_coins_to_send.sort(key=lambda x: x[2], reverse=True)
         all_coins_to_send = all_coins_to_send[:10]
 
-        for rank, (inst_id, daily_change, volume_24h, actual_rank) in enumerate(all_coins_to_send, start=1):
+        for rank, (inst_id, change_val, volume_24h, actual_rank) in enumerate(all_coins_to_send, start=1):
             name = inst_id.replace("-USDT-SWAP", "")
             volume_str = format_volume_in_eok(volume_24h) or "🚫"
             message_lines.append(
-                f"{rank}. {name} {format_change_with_emoji(daily_change)} / 거래대금: ({volume_str}) {actual_rank}위"
+                f"{rank}. {name} {format_change_with_emoji(change_val)} / 거래대금: ({volume_str}) {actual_rank}위"
             )
             message_lines.append("━━━━━━━━━━━━━━━━━━━")
 
