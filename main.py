@@ -165,7 +165,7 @@ def get_24h_volume(inst_id):
 def send_top_volume_message(top_ids, volume_map):
     global sent_signal_coins, prev_positive_coins
     message_lines = [
-        "⚡ 4H·1D MFI/RSI≥70 필터 (음수→양수 전환 포함)",  
+        "⚡ 4H·1D MFI/RSI≥70 필터",  
         "━━━━━━━━━━━━━━━━━━━",
     ]
     rank_map = {inst_id: rank + 1 for rank, inst_id in enumerate(top_ids)}
