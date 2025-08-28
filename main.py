@@ -63,28 +63,37 @@ def get_ohlcv_okx(instId, bar='1H', limit=200):
         logging.error(f"{instId} OHLCV 파싱 실패: {e}")
         return None
 
-# 🔹 MFI 계산 (5일선)
-def calc_mfi(df, period=5):
-    tp = (df['h'] + df['l'] + df['c']) / 3
-    mf = tp * df['vol']
-    mf_diff = tp.diff()
-    positive_mf = mf.where(mf_diff > 0, 0.0)
-    negative_mf = mf.where(mf_diff < 0, 0.0)
-    pos_ema = positive_mf.ewm(span=period, adjust=False).mean()
-    neg_ema = negative_mf.ewm(span=period, adjust=False).mean()
-    mfi = 100 * pos_ema / (pos_ema + neg_ema)
-    return mfi
+# 🔹 Wilder's RMA (TradingView RSI/MFI와 동일)
+def rma(series, period):
+    return series.ewm(alpha=1/period, adjust=False).mean()
 
-# 🔹 RSI 계산 (5일선)
+# 🔹 RSI 계산 (TradingView 기본)
 def calc_rsi(df, period=5):
     delta = df['c'].diff()
-    gain = delta.where(delta > 0, 0.0)
-    loss = -delta.where(delta < 0, 0.0)
-    avg_gain = gain.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
-    avg_loss = loss.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+
+    avg_gain = rma(gain, period)
+    avg_loss = rma(loss, period)
+
     rs = avg_gain / avg_loss
     rsi = 100 - (100 / (1 + rs))
     return rsi
+
+# 🔹 MFI 계산 (TradingView 기본)
+def calc_mfi(df, period=5):
+    tp = (df['h'] + df['l'] + df['c']) / 3
+    mf = tp * df['vol']
+
+    delta_tp = tp.diff()
+    positive_mf = mf.where(delta_tp > 0, 0.0)
+    negative_mf = mf.where(delta_tp < 0, 0.0)
+
+    pos_rma = rma(positive_mf, period)
+    neg_rma = rma(negative_mf, period)
+
+    mfi = 100 * pos_rma / (pos_rma + neg_rma)
+    return mfi
 
 # 🔹 RSI/MFI 포맷
 def format_rsi_mfi(value):
