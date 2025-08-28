@@ -1,3 +1,4 @@
+
 from fastapi import FastAPI
 import telepot
 import schedule
@@ -103,7 +104,6 @@ def check_4h_mfi_rsi_cross(inst_id, period=3, threshold=70):
     prev_rsi, curr_rsi = rsi.iloc[-2], rsi.iloc[-1]
     if pd.isna(curr_mfi) or pd.isna(curr_rsi):
         return False
-    # 🔹 이전 캔들 미달 → 현재 캔들 달성
     return (curr_mfi >= threshold and curr_rsi >= threshold and (prev_mfi < threshold or prev_rsi < threshold))
 
 # 🔹 상승률 계산
@@ -162,7 +162,7 @@ def get_24h_volume(inst_id):
         return 0
     return df['volCcyQuote'].sum()
 
-# 🔹 신규 돌파 메시지 (TOP10 삭제)
+# 🔹 신규 돌파 메시지 (상위 3개만)
 def send_new_entry_message(all_ids):
     global sent_signal_coins
     volume_map = {inst_id:get_24h_volume(inst_id) for inst_id in all_ids}
@@ -180,7 +180,6 @@ def send_new_entry_message(all_ids):
         h4_mfi = calc_mfi(df_4h,3).iloc[-1]
         h4_rsi = calc_rsi(df_4h,3).iloc[-1]
 
-        # 일봉+4H 필터
         if pd.isna(daily_mfi) or daily_mfi<70 or pd.isna(daily_rsi) or daily_rsi<70:
             continue
         if pd.isna(h4_mfi) or h4_mfi<70 or pd.isna(h4_rsi) or h4_rsi<70:
@@ -198,8 +197,11 @@ def send_new_entry_message(all_ids):
         sent_signal_coins[inst_id] = is_cross
 
     if new_entry_coins:
+        # 거래대금 내림차순 정렬 후 상위 3개만
+        new_entry_coins.sort(key=lambda x: x[2], reverse=True)
+        new_entry_coins = new_entry_coins[:3]
+
         message_lines = ["⚡ 4H + 일봉 MFI·RSI 3일선 ≥ 70 필터", "━━━━━━━━━━━━━━━━━━━"]
-        # BTC 현황
         btc_id = "BTC-USDT-SWAP"
         btc_change = calculate_daily_change(btc_id)
         btc_volume = volume_map.get(btc_id,0)
@@ -207,11 +209,10 @@ def send_new_entry_message(all_ids):
         message_lines += [
             "📌 BTC 현황",
             f"BTC\n거래대금: {btc_volume_str}\n상승률: {format_change_with_emoji(btc_change)}",
-            "━━━━━━━━━━━━━━━━━━━"
+            "━━━━━━━━━━━━━━━━━━━",
+            "🆕 신규 진입 코인 (상위 3개)"
         ]
 
-        # 신규 진입 코인
-        message_lines.append("🆕 신규 진입 코인")
         for inst_id,daily_change,volume_24h,daily_mfi,daily_rsi,h4_mfi,h4_rsi in new_entry_coins:
             name = inst_id.replace("-USDT-SWAP","")
             volume_str = format_volume_in_eok(volume_24h)
