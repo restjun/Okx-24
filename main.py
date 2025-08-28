@@ -192,7 +192,13 @@ def send_top_volume_message(top_ids, volume_map):
         h4_mfi = calc_mfi(df_4h, period=3).iloc[-1]
         h4_rsi = calc_rsi(df_4h, period=3).iloc[-1]
 
+        # 일봉 조건 체크
         if pd.isna(daily_mfi) or pd.isna(daily_rsi) or daily_mfi < 70 or daily_rsi < 70:
+            sent_signal_coins[inst_id] = is_cross
+            continue
+
+        # 4H 조건 체크 추가
+        if pd.isna(h4_mfi) or pd.isna(h4_rsi) or h4_mfi < 70 or h4_rsi < 70:
             sent_signal_coins[inst_id] = is_cross
             continue
 
@@ -202,7 +208,7 @@ def send_top_volume_message(top_ids, volume_map):
             continue
 
         volume_24h = volume_map.get(inst_id, 0)
-        volume_percent = (volume_24h / total_volume_all * 100) if total_volume_all > 0 else 0  # 비중
+        volume_percent = (volume_24h / total_volume_all * 100) if total_volume_all > 0 else 0
         actual_rank = rank_map.get(inst_id, "🚫")
         coin_tuple = (inst_id, daily_change, volume_24h, actual_rank, volume_percent, daily_mfi, daily_rsi, h4_mfi, h4_rsi)
 
