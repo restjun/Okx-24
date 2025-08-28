@@ -1,4 +1,3 @@
-
 from fastapi import FastAPI
 import telepot
 import schedule
@@ -162,10 +161,12 @@ def get_24h_volume(inst_id):
         return 0
     return df['volCcyQuote'].sum()
 
-# 🔹 신규 돌파 메시지 (상위 3개만)
+# 🔹 신규 돌파 메시지 (상위 3개만, 거래대금 순위 포함)
 def send_new_entry_message(all_ids):
     global sent_signal_coins
     volume_map = {inst_id:get_24h_volume(inst_id) for inst_id in all_ids}
+    rank_map = {inst_id: rank+1 for rank, inst_id in enumerate(sorted(volume_map, key=volume_map.get, reverse=True))}
+
     new_entry_coins = []
 
     for inst_id in all_ids:
@@ -192,12 +193,12 @@ def send_new_entry_message(all_ids):
         last_status = sent_signal_coins.get(inst_id, False)
         if not last_status and is_cross:
             volume_24h = volume_map.get(inst_id,0)
-            new_entry_coins.append((inst_id, daily_change, volume_24h, daily_mfi, daily_rsi, h4_mfi, h4_rsi))
+            coin_rank = rank_map.get(inst_id,"🚫")
+            new_entry_coins.append((inst_id, daily_change, volume_24h, daily_mfi, daily_rsi, h4_mfi, h4_rsi, coin_rank))
 
         sent_signal_coins[inst_id] = is_cross
 
     if new_entry_coins:
-        # 거래대금 내림차순 정렬 후 상위 3개만
         new_entry_coins.sort(key=lambda x: x[2], reverse=True)
         new_entry_coins = new_entry_coins[:3]
 
@@ -213,11 +214,11 @@ def send_new_entry_message(all_ids):
             "🆕 신규 진입 코인 (상위 3개)"
         ]
 
-        for inst_id,daily_change,volume_24h,daily_mfi,daily_rsi,h4_mfi,h4_rsi in new_entry_coins:
+        for inst_id,daily_change,volume_24h,daily_mfi,daily_rsi,h4_mfi,h4_rsi,coin_rank in new_entry_coins:
             name = inst_id.replace("-USDT-SWAP","")
             volume_str = format_volume_in_eok(volume_24h)
             message_lines.append(
-                f"{name}\n거래대금: {volume_str}\n상승률: {format_change_with_emoji(daily_change)}\n"
+                f"{name}\n거래대금: {volume_str}\n순위: {coin_rank}위\n상승률: {format_change_with_emoji(daily_change)}\n"
                 f"📊 일봉 RSI: {format_rsi_mfi(daily_rsi)} / MFI: {format_rsi_mfi(daily_mfi)}\n"
                 f"📊 4H   RSI: {format_rsi_mfi(h4_rsi)} / MFI: {format_rsi_mfi(h4_mfi)}"
             )
