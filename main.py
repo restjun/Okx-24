@@ -63,8 +63,8 @@ def get_ohlcv_okx(instId, bar='1H', limit=200):
         logging.error(f"{instId} OHLCV 파싱 실패: {e}")
         return None
 
-# 🔹 MFI 계산
-def calc_mfi(df, period=3):
+# 🔹 MFI 계산 (5일선)
+def calc_mfi(df, period=5):
     tp = (df['h'] + df['l'] + df['c']) / 3
     mf = tp * df['vol']
     mf_diff = tp.diff()
@@ -75,8 +75,8 @@ def calc_mfi(df, period=3):
     mfi = 100 * pos_ema / (pos_ema + neg_ema)
     return mfi
 
-# 🔹 RSI 계산
-def calc_rsi(df, period=3):
+# 🔹 RSI 계산 (5일선)
+def calc_rsi(df, period=5):
     delta = df['c'].diff()
     gain = delta.where(delta > 0, 0.0)
     loss = -delta.where(delta < 0, 0.0)
@@ -92,8 +92,8 @@ def format_rsi_mfi(value):
         return "(N/A)"
     return f"🟢 {value:.1f}" if value >= 70 else f"🔴 {value:.1f}"
 
-# 🔹 4H MFI & RSI 돌파 체크
-def check_4h_mfi_rsi_cross(inst_id, period=3, threshold=70):
+# 🔹 4H MFI & RSI 돌파 체크 (5일선 기준)
+def check_4h_mfi_rsi_cross(inst_id, period=5, threshold=70):
     df = get_ohlcv_okx(inst_id, bar='4H', limit=100)
     if df is None or len(df) < period + 1:
         return False
@@ -173,13 +173,13 @@ def send_new_entry_message(all_ids):
         is_cross = check_4h_mfi_rsi_cross(inst_id)
         df_daily = get_ohlcv_okx(inst_id, bar="1D", limit=100)
         df_4h = get_ohlcv_okx(inst_id, bar="4H", limit=100)
-        if df_daily is None or len(df_daily)<3 or df_4h is None or len(df_4h)<3:
+        if df_daily is None or len(df_daily)<5 or df_4h is None or len(df_4h)<5:
             continue
 
-        daily_mfi = calc_mfi(df_daily,3).iloc[-1]
-        daily_rsi = calc_rsi(df_daily,3).iloc[-1]
-        h4_mfi = calc_mfi(df_4h,3).iloc[-1]
-        h4_rsi = calc_rsi(df_4h,3).iloc[-1]
+        daily_mfi = calc_mfi(df_daily,5).iloc[-1]
+        daily_rsi = calc_rsi(df_daily,5).iloc[-1]
+        h4_mfi = calc_mfi(df_4h,5).iloc[-1]
+        h4_rsi = calc_rsi(df_4h,5).iloc[-1]
 
         if pd.isna(daily_mfi) or daily_mfi<70 or pd.isna(daily_rsi) or daily_rsi<70:
             continue
@@ -202,7 +202,7 @@ def send_new_entry_message(all_ids):
         new_entry_coins.sort(key=lambda x: x[2], reverse=True)
         new_entry_coins = new_entry_coins[:3]
 
-        message_lines = ["⚡ 4H + 일봉 MFI·RSI 3일선 ≥ 70 필터", "━━━━━━━━━━━━━━━━━━━"]
+        message_lines = ["⚡ 4H + 일봉 MFI·RSI 5일선 ≥ 70 필터", "━━━━━━━━━━━━━━━━━━━"]
         btc_id = "BTC-USDT-SWAP"
         btc_change = calculate_daily_change(btc_id)
         btc_volume = volume_map.get(btc_id,0)
