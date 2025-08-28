@@ -162,15 +162,13 @@ def get_24h_volume(inst_id):
         return 0
     return df['volCcyQuote'].sum()
 
-# 🔹 신규 돌파 TOP10 메시지
-def send_top_volume_message(top_ids, volume_map):
+# 🔹 신규 돌파 메시지 (TOP10 삭제)
+def send_new_entry_message(all_ids):
     global sent_signal_coins
-    message_lines = []
-    rank_map = {inst_id: rank+1 for rank, inst_id in enumerate(top_ids)}
-    all_signal_coins = []
+    volume_map = {inst_id:get_24h_volume(inst_id) for inst_id in all_ids}
     new_entry_coins = []
 
-    for inst_id in top_ids:
+    for inst_id in all_ids:
         is_cross = check_4h_mfi_rsi_cross(inst_id)
         df_daily = get_ohlcv_okx(inst_id, bar="1D", limit=100)
         df_4h = get_ohlcv_okx(inst_id, bar="4H", limit=100)
@@ -192,57 +190,36 @@ def send_top_volume_message(top_ids, volume_map):
         if daily_change is None or daily_change<=0:
             continue
 
-        volume_24h = volume_map.get(inst_id,0)
-        actual_rank = rank_map.get(inst_id,"🚫")
-        coin_tuple = (inst_id,daily_change,volume_24h,actual_rank,daily_mfi,daily_rsi,h4_mfi,h4_rsi)
-        all_signal_coins.append(coin_tuple)
-
         last_status = sent_signal_coins.get(inst_id, False)
         if not last_status and is_cross:
-            new_entry_coins.append(coin_tuple)
+            volume_24h = volume_map.get(inst_id,0)
+            new_entry_coins.append((inst_id, daily_change, volume_24h, daily_mfi, daily_rsi, h4_mfi, h4_rsi))
 
         sent_signal_coins[inst_id] = is_cross
 
-    if all_signal_coins or new_entry_coins:
-        message_lines.append("⚡ 4H + 일봉 MFI·RSI 3일선 ≥ 70 필터")
-        message_lines.append("━━━━━━━━━━━━━━━━━━━")
-
+    if new_entry_coins:
+        message_lines = ["⚡ 4H + 일봉 MFI·RSI 3일선 ≥ 70 필터", "━━━━━━━━━━━━━━━━━━━"]
         # BTC 현황
         btc_id = "BTC-USDT-SWAP"
         btc_change = calculate_daily_change(btc_id)
         btc_volume = volume_map.get(btc_id,0)
         btc_volume_str = format_volume_in_eok(btc_volume)
-
         message_lines += [
             "📌 BTC 현황",
             f"BTC\n거래대금: {btc_volume_str}\n상승률: {format_change_with_emoji(btc_change)}",
             "━━━━━━━━━━━━━━━━━━━"
         ]
 
-        # TOP10
-        message_lines.append("📊 전체 조건 만족 코인 TOP 10")
-        all_signal_coins.sort(key=lambda x:x[2], reverse=True)
-        for rank,(inst_id,daily_change,volume_24h,actual_rank,daily_mfi,daily_rsi,h4_mfi,h4_rsi) in enumerate(all_signal_coins[:10],start=1):
+        # 신규 진입 코인
+        message_lines.append("🆕 신규 진입 코인")
+        for inst_id,daily_change,volume_24h,daily_mfi,daily_rsi,h4_mfi,h4_rsi in new_entry_coins:
             name = inst_id.replace("-USDT-SWAP","")
             volume_str = format_volume_in_eok(volume_24h)
             message_lines.append(
-                f"{rank}. {name}\n거래대금: {volume_str}\n순위: {actual_rank}위\n상승률: {format_change_with_emoji(daily_change)}\n"
+                f"{name}\n거래대금: {volume_str}\n상승률: {format_change_with_emoji(daily_change)}\n"
                 f"📊 일봉 RSI: {format_rsi_mfi(daily_rsi)} / MFI: {format_rsi_mfi(daily_mfi)}\n"
                 f"📊 4H   RSI: {format_rsi_mfi(h4_rsi)} / MFI: {format_rsi_mfi(h4_mfi)}"
             )
-
-        # 신규 진입
-        if new_entry_coins:
-            message_lines.append("━━━━━━━━━━━━━━━━━━━")
-            message_lines.append("🆕 신규 진입 코인")
-            for inst_id,daily_change,volume_24h,actual_rank,daily_mfi,daily_rsi,h4_mfi,h4_rsi in new_entry_coins:
-                name = inst_id.replace("-USDT-SWAP","")
-                volume_str = format_volume_in_eok(volume_24h)
-                message_lines.append(
-                    f"{name}\n거래대금: {volume_str}\n순위: {actual_rank}위\n상승률: {format_change_with_emoji(daily_change)}\n"
-                    f"📊 일봉 RSI: {format_rsi_mfi(daily_rsi)} / MFI: {format_rsi_mfi(daily_mfi)}\n"
-                    f"📊 4H   RSI: {format_rsi_mfi(h4_rsi)} / MFI: {format_rsi_mfi(h4_mfi)}"
-                )
 
         message_lines.append("━━━━━━━━━━━━━━━━━━━")
         send_telegram_message("\n".join(message_lines))
@@ -253,9 +230,7 @@ def send_top_volume_message(top_ids, volume_map):
 def main():
     logging.info("📥 거래대금 분석 시작")
     all_ids = get_all_okx_swap_symbols()
-    volume_map = {inst_id:get_24h_volume(inst_id) for inst_id in all_ids}
-    top_ids = sorted(volume_map,key=volume_map.get,reverse=True)[:20]
-    send_top_volume_message(top_ids,volume_map)
+    send_new_entry_message(all_ids)
 
 # 🔹 스케줄러
 def run_scheduler():
