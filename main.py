@@ -64,24 +64,19 @@ def get_ohlcv_okx(instId, bar='1H', limit=200):
         logging.error(f"{instId} OHLCV 파싱 실패: {e}")
         return None
 
+# 🔹 MFI 계산 (TradingView와 유사)
 def calc_mfi(df, period=3):
     tp = (df['h'] + df['l'] + df['c']) / 3
-    rmf = tp * df['vol']
-    positive_mf, negative_mf = [], []
-    for i in range(1, len(df)):
-        if tp.iloc[i] > tp.iloc[i-1]:
-            positive_mf.append(rmf.iloc[i]); negative_mf.append(0)
-        elif tp.iloc[i] < tp.iloc[i-1]:
-            positive_mf.append(0); negative_mf.append(rmf.iloc[i])
-        else:
-            positive_mf.append(0); negative_mf.append(0)
-    positive_mf = pd.Series([np.nan] + positive_mf, index=df.index)
-    negative_mf = pd.Series([np.nan] + negative_mf, index=df.index)
-    pos_mf_sum = positive_mf.rolling(window=period, min_periods=period).sum()
-    neg_mf_sum = negative_mf.rolling(window=period, min_periods=period).sum()
-    mfi = 100 * (pos_mf_sum / (pos_mf_sum + neg_mf_sum))
+    mf = tp * df['vol']
+    mf_diff = tp.diff()
+    positive_mf = mf.where(mf_diff > 0, 0.0)
+    negative_mf = mf.where(mf_diff < 0, 0.0)
+    pos_ema = positive_mf.ewm(span=period, adjust=False).mean()
+    neg_ema = negative_mf.ewm(span=period, adjust=False).mean()
+    mfi = 100 * pos_ema / (pos_ema + neg_ema)
     return mfi
 
+# 🔹 RSI 계산
 def calc_rsi(df, period=3):
     delta = df['c'].diff()
     gain = delta.where(delta > 0, 0.0)
@@ -92,6 +87,13 @@ def calc_rsi(df, period=3):
     rsi = 100 - (100 / (1 + rs))
     return rsi
 
+# 🔹 RSI/MFI 수치 포맷 (70 이상 녹색, 이하 적색)
+def format_rsi_mfi(value):
+    if pd.isna(value):
+        return "(N/A)"
+    return f"🟢 {value:.1f}" if value >= 70 else f"🔴 {value:.1f}"
+
+# 🔹 4H MFI & RSI 동시 돌파 체크
 def check_4h_mfi_rsi_cross(inst_id, period=3, threshold=70):
     df = get_ohlcv_okx(inst_id, bar='4H', limit=100)
     if df is None or len(df) < period + 1:
@@ -104,6 +106,7 @@ def check_4h_mfi_rsi_cross(inst_id, period=3, threshold=70):
         return False
     return (curr_mfi >= threshold and curr_rsi >= threshold and (prev_mfi < threshold or prev_rsi < threshold))
 
+# 🔹 상승률 계산
 def calculate_daily_change(inst_id):
     df = get_ohlcv_okx(inst_id, bar="1H", limit=48)
     if df is None or len(df) < 24:
@@ -124,13 +127,15 @@ def calculate_daily_change(inst_id):
         logging.error(f"{inst_id} 상승률 계산 오류: {e}")
         return None
 
+# 🔹 거래대금 1E 단위
 def format_volume_in_eok(volume):
     try:
         eok = int(volume // 1_000_000)
-        return str(eok) if eok >= 1 else None
+        return str(eok) if eok >= 1 else "🚫"
     except:
-        return None
+        return "🚫"
 
+# 🔹 상승률 이모지
 def format_change_with_emoji(change):
     if change is None:
         return "(N/A)"
@@ -141,6 +146,7 @@ def format_change_with_emoji(change):
     else:
         return f"🔴 ({change:.2f}%)"
 
+# 🔹 OKX USDT-SWAP 심볼
 def get_all_okx_swap_symbols():
     url = "https://www.okx.com/api/v5/public/instruments?instType=SWAP"
     response = retry_request(requests.get, url)
@@ -149,12 +155,14 @@ def get_all_okx_swap_symbols():
     data = response.json().get("data", [])
     return [item["instId"] for item in data if "USDT" in item["instId"]]
 
+# 🔹 24시간 거래대금
 def get_24h_volume(inst_id):
     df = get_ohlcv_okx(inst_id, bar="1H", limit=24)
     if df is None or len(df) < 24:
         return 0
     return df['volCcyQuote'].sum()
 
+# 🔹 텔레그램 메시지 전송
 def send_top_volume_message(top_ids, volume_map):
     global sent_signal_coins
     message_lines = [
@@ -204,11 +212,11 @@ def send_top_volume_message(top_ids, volume_map):
         btc_id = "BTC-USDT-SWAP"
         btc_change = calculate_daily_change(btc_id)
         btc_volume = volume_map.get(btc_id, 0)
-        btc_volume_str = format_volume_in_eok(btc_volume) or "🚫"
+        btc_volume_str = format_volume_in_eok(btc_volume)
 
         message_lines += [
             "📌 BTC 현황",
-            f"BTC\n상승률: {format_change_with_emoji(btc_change)} / 거래대금: ({btc_volume_str})",
+            f"BTC\n거래대금: {btc_volume_str}\n상승률: {format_change_with_emoji(btc_change)}",
             "━━━━━━━━━━━━━━━━━━━"
         ]
 
@@ -216,12 +224,14 @@ def send_top_volume_message(top_ids, volume_map):
         all_signal_coins.sort(key=lambda x: x[2], reverse=True)
         for rank, (inst_id, daily_change, volume_24h, actual_rank, daily_mfi, daily_rsi, h4_mfi, h4_rsi) in enumerate(all_signal_coins[:10], start=1):
             name = inst_id.replace("-USDT-SWAP", "")
-            volume_str = format_volume_in_eok(volume_24h) or "🚫"
+            volume_str = format_volume_in_eok(volume_24h)
             message_lines.append(
                 f"{rank}. {name}\n"
-                f"상승률: {format_change_with_emoji(daily_change)} / 거래대금: ({volume_str}) / {actual_rank}위\n"
-                f"📊 일봉 RSI:{daily_rsi:.1f} / MFI:{daily_mfi:.1f}\n"
-                f"📊 4H   RSI:{h4_rsi:.1f} / MFI:{h4_mfi:.1f}"
+                f"거래대금: {volume_str}\n"
+                f"순위: {actual_rank}위\n"
+                f"상승률: {format_change_with_emoji(daily_change)}\n"
+                f"📊 일봉 RSI: {format_rsi_mfi(daily_rsi)} / MFI: {format_rsi_mfi(daily_mfi)}\n"
+                f"📊 4H   RSI: {format_rsi_mfi(h4_rsi)} / MFI: {format_rsi_mfi(h4_mfi)}"
             )
 
         if new_entry_coins:
@@ -229,12 +239,14 @@ def send_top_volume_message(top_ids, volume_map):
             message_lines.append("🆕 신규 진입 코인")
             for inst_id, daily_change, volume_24h, actual_rank, daily_mfi, daily_rsi, h4_mfi, h4_rsi in new_entry_coins:
                 name = inst_id.replace("-USDT-SWAP", "")
-                volume_str = format_volume_in_eok(volume_24h) or "🚫"
+                volume_str = format_volume_in_eok(volume_24h)
                 message_lines.append(
                     f"{name}\n"
-                    f"상승률: {format_change_with_emoji(daily_change)} / 거래대금: ({volume_str}) / {actual_rank}위\n"
-                    f"📊 일봉 RSI:{daily_rsi:.1f} / MFI:{daily_mfi:.1f}\n"
-                    f"📊 4H   RSI:{h4_rsi:.1f} / MFI:{h4_mfi:.1f}"
+                    f"거래대금: {volume_str}\n"
+                    f"순위: {actual_rank}위\n"
+                    f"상승률: {format_change_with_emoji(daily_change)}\n"
+                    f"📊 일봉 RSI: {format_rsi_mfi(daily_rsi)} / MFI: {format_rsi_mfi(daily_mfi)}\n"
+                    f"📊 4H   RSI: {format_rsi_mfi(h4_rsi)} / MFI: {format_rsi_mfi(h4_mfi)}"
                 )
 
         message_lines.append("━━━━━━━━━━━━━━━━━━━")
@@ -250,7 +262,7 @@ def main():
         vol_24h = get_24h_volume(inst_id)
         volume_map[inst_id] = vol_24h
         time.sleep(0.05)
-    top_ids = sorted(volume_map, key=volume_map.get, reverse=True)[:20]
+    top_ids = sorted(volume_map, key=volume_map.get, reverse=True)[:100]
     send_top_volume_message(top_ids, volume_map)
 
 def run_scheduler():
