@@ -17,8 +17,8 @@ bot = telepot.Bot(telegram_bot_token)
 
 logging.basicConfig(level=logging.INFO)
 
-# 🔹 4H 돌파 상태 저장 (코인 + BTC)
-sent_signal_coins = {}
+# 🔹 4H 돌파 상태 및 일시 저장
+sent_signal_coins = {}  # {symbol: {"crossed": bool, "time": timestamp}}
 
 # 🔹 텔레그램 메시지
 def send_telegram_message(message):
@@ -58,7 +58,7 @@ def get_ohlcv_okx(inst_id, bar='1H', limit=200):
         ])
         for col in ['o','h','l','c','vol','volCcyQuote']:
             df[col] = df[col].astype(float)
-        df = df.iloc[::-1].reset_index(drop=True)  # 과거 → 최신 순
+        df = df.iloc[::-1].reset_index(drop=True)
         return df
     except Exception as e:
         logging.error(f"{inst_id} OHLCV 파싱 실패: {e}")
@@ -69,7 +69,7 @@ def rma(series, period):
     series = series.copy()
     alpha = 1 / period
     r = series.ewm(alpha=alpha, adjust=False).mean()
-    r.iloc[:period] = series.iloc[:period].expanding().mean()[:period]  # 초기값 단순평균
+    r.iloc[:period] = series.iloc[:period].expanding().mean()[:period]
     return r
 
 # 🔹 RSI
@@ -86,7 +86,7 @@ def calc_rsi(df, period=3):
 # 🔹 MFI
 def calc_mfi(df, period=3):
     tp = (df['h'] + df['l'] + df['c']) / 3
-    mf = tp * df['volCcyQuote']  # 기준 통화
+    mf = tp * df['volCcyQuote']
     delta_tp = tp.diff()
     positive_mf = mf.where(delta_tp > 0, 0.0)
     negative_mf = mf.where(delta_tp < 0, 0.0)
@@ -105,15 +105,16 @@ def format_rsi_mfi(value):
 def check_4h_mfi_rsi_cross(inst_id, period=3, threshold=70):
     df = get_ohlcv_okx(inst_id, bar='4H', limit=100)
     if df is None or len(df) < period+1:
-        return False
+        return False, None
     mfi = calc_mfi(df, period)
     rsi = calc_rsi(df, period)
     prev_mfi, curr_mfi = mfi.iloc[-2], mfi.iloc[-1]
     prev_rsi, curr_rsi = rsi.iloc[-2], rsi.iloc[-1]
+    cross_time = pd.to_datetime(df['ts'].iloc[-1], unit='ms') + pd.Timedelta(hours=9)
     if pd.isna(curr_mfi) or pd.isna(curr_rsi):
-        return False
-    return (curr_mfi >= threshold and curr_rsi >= threshold
-            and (prev_mfi < threshold or prev_rsi < threshold))
+        return False, None
+    crossed = curr_mfi >= threshold and curr_rsi >= threshold and (prev_mfi < threshold or prev_rsi < threshold)
+    return crossed, cross_time if crossed else None
 
 # 🔹 일일 상승률
 def calculate_daily_change(inst_id):
@@ -179,16 +180,15 @@ def send_new_entry_message(all_ids):
     # BTC 포함 상태 초기화
     for inst_id in ["BTC-USDT-SWAP"] + top_ids:
         if inst_id not in sent_signal_coins:
-            sent_signal_coins[inst_id] = False
+            sent_signal_coins[inst_id] = {"crossed": False, "time": None}
 
     for inst_id in top_ids:
-        # 🔹 4H 돌파 체크
-        is_cross_4h = check_4h_mfi_rsi_cross(inst_id, period=3, threshold=70)
+        is_cross_4h, cross_time = check_4h_mfi_rsi_cross(inst_id, period=3, threshold=70)
         if not is_cross_4h:
-            sent_signal_coins[inst_id] = False
+            sent_signal_coins[inst_id]["crossed"] = False
+            sent_signal_coins[inst_id]["time"] = None
             continue
 
-        # 🔹 1D 조건 체크
         df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=100)
         if df_1d is None or len(df_1d) < 3:
             continue
@@ -202,12 +202,15 @@ def send_new_entry_message(all_ids):
             continue
 
         # 🔹 신규 돌파 코인만
-        if not sent_signal_coins.get(inst_id, False):
+        if not sent_signal_coins[inst_id]["crossed"]:
             new_entry_coins.append(
-                (inst_id, daily_change, volume_map.get(inst_id, 0), d1_mfi, d1_rsi, rank_map.get(inst_id))
+                (inst_id, daily_change, volume_map.get(inst_id, 0),
+                 d1_mfi, d1_rsi, cross_time, rank_map.get(inst_id))
             )
 
-        sent_signal_coins[inst_id] = True
+        # 상태 업데이트
+        sent_signal_coins[inst_id]["crossed"] = True
+        sent_signal_coins[inst_id]["time"] = cross_time
 
     if new_entry_coins:
         new_entry_coins.sort(key=lambda x: x[2], reverse=True)
@@ -220,18 +223,25 @@ def send_new_entry_message(all_ids):
         btc_change = calculate_daily_change(btc_id)
         btc_volume = volume_map.get(btc_id, 0)
         btc_volume_str = format_volume_in_eok(btc_volume)
+        btc_state = sent_signal_coins[btc_id]["crossed"]
+        btc_time = sent_signal_coins[btc_id]["time"]
+        btc_time_str = btc_time.strftime("%Y-%m-%d %H:%M") if btc_time else "(N/A)"
+
         message_lines += [
             "📌 BTC 현황",
-            f"BTC\n거래대금: {btc_volume_str}\n상승률: {format_change_with_emoji(btc_change)}",
+            f"BTC\n거래대금: {btc_volume_str}\n상승률: {format_change_with_emoji(btc_change)}\n"
+            f"4H 돌파 상태: {'✅' if btc_state else '❌'}\n4H 돌파 시간: {btc_time_str}",
             "━━━━━━━━━━━━━━━━━━━",
             "🆕 신규 진입 코인 (상위 3개)"
         ]
 
-        for inst_id, daily_change, volume_24h, d1_mfi, d1_rsi, coin_rank in new_entry_coins:
+        for inst_id, daily_change, volume_24h, d1_mfi, d1_rsi, cross_time, coin_rank in new_entry_coins:
             name = inst_id.replace("-USDT-SWAP","")
             volume_str = format_volume_in_eok(volume_24h)
+            cross_time_str = cross_time.strftime("%Y-%m-%d %H:%M") if cross_time else "(N/A)"
             message_lines.append(
                 f"{name}\n거래대금: {volume_str}\n순위: {coin_rank}위\n상승률: {format_change_with_emoji(daily_change)}\n"
+                f"4H 돌파 상태: ✅\n4H 돌파 시간: {cross_time_str}\n"
                 f"📊 1D RSI: {format_rsi_mfi(d1_rsi)} / MFI: {format_rsi_mfi(d1_mfi)}"
             )
 
