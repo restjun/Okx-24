@@ -131,16 +131,6 @@ def format_volume_in_eok(volume):
     except:
         return "🚫"
 
-def format_change_with_emoji(change):
-    if change is None:
-        return "(N/A)"
-    if change >= 5:
-        return f"🚨🚨🚨 (+{change:.2f}%)"
-    elif change > 0:
-        return f"🟢 (+{change:.2f}%)"
-    else:
-        return f"🔴 ({change:.2f}%)"
-
 def get_all_okx_swap_symbols():
     url = "https://www.okx.com/api/v5/public/instruments?instType=SWAP"
     response = retry_request(requests.get, url)
@@ -205,7 +195,7 @@ def send_new_entry_message(all_ids):
         btc_volume = volume_map.get(btc_id, 0)
         btc_volume_str = format_volume_in_eok(btc_volume)
 
-        # BTC 현황: 현재 상태만 표시
+        # BTC 현황
         if btc_change is None:
             btc_status = "(N/A)"
         elif btc_change > 0:
@@ -215,9 +205,32 @@ def send_new_entry_message(all_ids):
         else:
             btc_status = f"{btc_change:.2f}%"
 
-        message_lines += [
+        message_lines.append(
             f"📌 BTC 현황: BTC {btc_status}\n거래대금: {btc_volume_str}"
-        ]
+        )
+
+        # 거래대금 1위 코인 현황 (BTC 제외)
+        if top_ids:
+            top1_id = top_ids[0]
+            if top1_id != btc_id:
+                top1_change = calculate_daily_change(top1_id)
+                top1_volume = volume_map.get(top1_id, 0)
+                top1_volume_str = format_volume_in_eok(top1_volume)
+                top1_name = top1_id.replace("-USDT-SWAP", "")
+
+                if top1_change is None:
+                    top1_status = "(N/A)"
+                elif top1_change > 0:
+                    top1_status = f"🟢 +{top1_change:.2f}%"
+                elif top1_change < 0:
+                    top1_status = f"🔴 {top1_change:.2f}%"
+                else:
+                    top1_status = f"{top1_change:.2f}%"
+
+                message_lines.append(
+                    f"\n📌 거래대금 1위: {top1_name} {top1_status}\n거래대금: {top1_volume_str}"
+                )
+
         message_lines.append("━━━━━━━━━━━━━━━━━━━")
         message_lines.append("🆕 신규 진입 코인 (상위 3개)")
 
