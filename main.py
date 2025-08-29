@@ -15,7 +15,6 @@ telegram_bot_token = "8451481398:AAHHg2wVDKphMruKsjN2b6NFKJ50jhxEe-g"
 telegram_user_id = 6596886700
 bot = telepot.Bot(telegram_bot_token)
 
-
 logging.basicConfig(level=logging.INFO)
 
 # 🔹 전역 변수: 마지막 4H 돌파 상태 저장
@@ -103,7 +102,7 @@ def format_rsi_mfi(value):
     return f"🟢 {value:.1f}" if value >= 60 else f"🔴 {value:.1f}"
 
 # 🔹 4H MFI & RSI 돌파 체크 (3일선 기준)
-def check_4h_mfi_rsi_cross(inst_id, period=3, threshold=60):
+def check_4h_mfi_rsi_cross(inst_id, period=3, threshold=70):  # 60 → 70
     df = get_ohlcv_okx(inst_id, bar='4H', limit=100)
     if df is None or len(df) < period + 1:
         return False
@@ -183,13 +182,13 @@ def send_new_entry_message(all_ids):
 
     for inst_id in top_100_ids:
         # 🔹 4시간봉 돌파 체크
-        is_cross = check_4h_mfi_rsi_cross(inst_id, period=3, threshold=60)
+        is_cross = check_4h_mfi_rsi_cross(inst_id, period=3, threshold=70)
         df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=100)
         if df_4h is None or len(df_4h)<3:
             continue
         h4_mfi = calc_mfi(df_4h,3).iloc[-1]
         h4_rsi = calc_rsi(df_4h,3).iloc[-1]
-        if pd.isna(h4_mfi) or h4_mfi<60 or pd.isna(h4_rsi) or h4_rsi<60:
+        if pd.isna(h4_mfi) or h4_mfi<70 or pd.isna(h4_rsi) or h4_rsi<70:  # 60 → 70
             continue
 
         # 🔹 일봉 조건 체크
@@ -198,7 +197,7 @@ def send_new_entry_message(all_ids):
             continue
         d1_mfi = calc_mfi(df_1d,3).iloc[-1]
         d1_rsi = calc_rsi(df_1d,3).iloc[-1]
-        if pd.isna(d1_mfi) or d1_mfi<60 or pd.isna(d1_rsi) or d1_rsi<60:
+        if pd.isna(d1_mfi) or d1_mfi<70 or pd.isna(d1_rsi) or d1_rsi<70:  # 60 → 70
             continue
 
         daily_change = calculate_daily_change(inst_id)
@@ -217,7 +216,7 @@ def send_new_entry_message(all_ids):
         new_entry_coins.sort(key=lambda x: x[2], reverse=True)
         new_entry_coins = new_entry_coins[:3]
 
-        message_lines = ["⚡ 4H MFI·RSI 3일선 돌파 + 1D MFI·RSI ≥ 60 필터", "━━━━━━━━━━━━━━━━━━━"]
+        message_lines = ["⚡ 4H MFI·RSI 3일선 돌파 + 1D MFI·RSI ≥ 70 필터", "━━━━━━━━━━━━━━━━━━━"]
         btc_id = "BTC-USDT-SWAP"
         btc_change = calculate_daily_change(btc_id)
         btc_volume = volume_map.get(btc_id,0)
