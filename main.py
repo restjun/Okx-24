@@ -72,10 +72,8 @@ def calc_rsi(df, period=14):
     delta = df['c'].diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
-
     avg_gain = rma(gain, period)
     avg_loss = rma(loss, period)
-
     rs = avg_gain / avg_loss
     rsi = 100 - (100 / (1 + rs))
     return rsi
@@ -84,14 +82,11 @@ def calc_rsi(df, period=14):
 def calc_mfi(df, period=14):
     tp = (df['h'] + df['l'] + df['c']) / 3
     mf = tp * df['vol']
-
     delta_tp = tp.diff()
     positive_mf = mf.where(delta_tp > 0, 0.0)
     negative_mf = mf.where(delta_tp < 0, 0.0)
-
     pos_rma = rma(positive_mf, period)
     neg_rma = rma(negative_mf, period)
-
     mfi = 100 * pos_rma / (pos_rma + neg_rma)
     return mfi
 
@@ -235,7 +230,12 @@ def send_new_entry_message(all_ids):
 def main():
     logging.info("📥 거래대금 분석 시작")
     all_ids = get_all_okx_swap_symbols()
-    send_new_entry_message(all_ids)
+
+    # 🔹 거래대금 기준 상위 100개만 진행
+    volume_map = {inst_id: get_24h_volume(inst_id) for inst_id in all_ids}
+    top100_ids = sorted(all_ids, key=lambda x: volume_map[x], reverse=True)[:100]
+
+    send_new_entry_message(top100_ids)
 
 # 🔹 스케줄러
 def run_scheduler():
