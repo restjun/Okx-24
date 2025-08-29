@@ -17,7 +17,8 @@ bot = telepot.Bot(telegram_bot_token)
 
 logging.basicConfig(level=logging.INFO)
 
-sent_signal_coins = {}  # 4H 돌파 상태 저장
+# 🔹 4H 돌파 상태 저장 (코인 + BTC)
+sent_signal_coins = {}
 
 # 🔹 텔레그램 메시지
 def send_telegram_message(message):
@@ -175,6 +176,11 @@ def send_new_entry_message(all_ids):
     rank_map = {inst_id: rank+1 for rank, inst_id in enumerate(top_ids)}
     new_entry_coins = []
 
+    # BTC 포함 상태 초기화
+    for inst_id in ["BTC-USDT-SWAP"] + top_ids:
+        if inst_id not in sent_signal_coins:
+            sent_signal_coins[inst_id] = False
+
     for inst_id in top_ids:
         # 🔹 4H 돌파 체크
         is_cross_4h = check_4h_mfi_rsi_cross(inst_id, period=3, threshold=70)
@@ -208,6 +214,8 @@ def send_new_entry_message(all_ids):
         new_entry_coins = new_entry_coins[:3]
 
         message_lines = ["⚡ 4H MFI·RSI 3일선 돌파 + 1D MFI·RSI ≥ 70 필터", "━━━━━━━━━━━━━━━━━━━"]
+
+        # BTC 상태 포함
         btc_id = "BTC-USDT-SWAP"
         btc_change = calculate_daily_change(btc_id)
         btc_volume = volume_map.get(btc_id, 0)
