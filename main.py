@@ -198,15 +198,25 @@ def send_new_entry_message(all_ids):
         new_entry_coins.sort(key=lambda x: x[2], reverse=True)
         new_entry_coins = new_entry_coins[:3]
 
-        message_lines = ["⚡ 4H MFI·RSI 3일선 돌파 + 1D MFI·RSI ≥ 70 필터", "━━━━━━━━━━━━━━━━━━━"]
+        message_lines = ["⚡ 4H·1D MFI·RSI 필터", "━━━━━━━━━━━━━━━━━━━"]
 
         btc_id = "BTC-USDT-SWAP"
         btc_change = calculate_daily_change(btc_id)
         btc_volume = volume_map.get(btc_id, 0)
         btc_volume_str = format_volume_in_eok(btc_volume)
 
+        # BTC 현황: 현재 상태만 표시
+        if btc_change is None:
+            btc_status = "(N/A)"
+        elif btc_change > 0:
+            btc_status = f"🟢 +{btc_change:.2f}%"
+        elif btc_change < 0:
+            btc_status = f"🔴 {btc_change:.2f}%"
+        else:
+            btc_status = f"{btc_change:.2f}%"
+
         message_lines += [
-            f"📌 BTC 현황: BTC (+{btc_change:.2f}%)\n거래대금: {btc_volume_str}"
+            f"📌 BTC 현황: BTC {btc_status}\n거래대금: {btc_volume_str}"
         ]
         message_lines.append("━━━━━━━━━━━━━━━━━━━")
         message_lines.append("🆕 신규 진입 코인 (상위 3개)")
