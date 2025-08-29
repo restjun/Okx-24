@@ -15,11 +15,11 @@ telegram_bot_token = "8451481398:AAHHg2wVDKphMruKsjN2b6NFKJ50jhxEe-g"
 telegram_user_id = 6596886700
 bot = telepot.Bot(telegram_bot_token)
 
+
 logging.basicConfig(level=logging.INFO)
 
-# 🔹 전역 변수
+# 🔹 전역 변수: 마지막 4H 돌파 상태 저장
 sent_signal_coins = {}
-last_usdt_dom = None
 
 # 🔹 텔레그램 메시지 전송
 def send_telegram_message(message):
@@ -73,8 +73,10 @@ def calc_rsi(df, period=3):
     delta = df['c'].diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
+
     avg_gain = rma(gain, period)
     avg_loss = rma(loss, period)
+
     rs = avg_gain / avg_loss
     rsi = 100 - (100 / (1 + rs))
     return rsi
@@ -83,11 +85,14 @@ def calc_rsi(df, period=3):
 def calc_mfi(df, period=3):
     tp = (df['h'] + df['l'] + df['c']) / 3
     mf = tp * df['vol']
+
     delta_tp = tp.diff()
     positive_mf = mf.where(delta_tp > 0, 0.0)
     negative_mf = mf.where(delta_tp < 0, 0.0)
+
     pos_rma = rma(positive_mf, period)
     neg_rma = rma(negative_mf, period)
+
     mfi = 100 * pos_rma / (pos_rma + neg_rma)
     return mfi
 
@@ -150,44 +155,6 @@ def format_change_with_emoji(change):
     else:
         return f"🔴 ({change:.2f}%)"
 
-# 🔹 USDT 도미넌스 계산 (CoinGecko)
-def get_usdt_dominance():
-    url = "https://api.coingecko.com/api/v3/global"
-    response = retry_request(requests.get, url)
-    if response is None:
-        return None
-    try:
-        data = response.json()['data']['market_cap_percentage']
-        usdt_dom = data.get('usdt', None)
-        return round(usdt_dom, 2) if usdt_dom else None
-    except Exception as e:
-        logging.error(f"USDT 도미넌스 파싱 오류: {e}")
-        return None
-
-# 🔹 USDT 도미넌스 상승률 계산
-def calculate_usdt_dom_change():
-    global last_usdt_dom
-    current_dom = get_usdt_dominance()
-    if current_dom is None:
-        return None
-    if last_usdt_dom is None:
-        last_usdt_dom = current_dom
-        return 0.0
-    change = round(current_dom - last_usdt_dom, 2)
-    last_usdt_dom = current_dom
-    return change
-
-# 🔹 USDT 도미넌스 이모지
-def format_usdt_dom_change(change):
-    if change is None:
-        return "(N/A)"
-    if change > 0:
-        return f"🔴 (+{change:.2f}%)"  # USDT 상승 → 시장 약세
-    elif change < 0:
-        return f"🟢 ({change:.2f}%)"  # USDT 하락 → 시장 강세
-    else:
-        return "(0.00%)"
-
 # 🔹 OKX USDT-SWAP 심볼 가져오기
 def get_all_okx_swap_symbols():
     url = "https://www.okx.com/api/v5/public/instruments?instType=SWAP"
@@ -204,46 +171,53 @@ def get_24h_volume(inst_id):
         return 0
     return df['volCcyQuote'].sum()
 
-# 🔹 신규 돌파 메시지 (상위 3개만)
+# 🔹 신규 돌파 메시지 (상위 3개만, 4H 돌파 + 1D 조건)
 def send_new_entry_message(all_ids):
     global sent_signal_coins
     volume_map = {inst_id:get_24h_volume(inst_id) for inst_id in all_ids}
 
-    # 🔹 상위 100개만 필터링
     top_100_ids = sorted(volume_map, key=volume_map.get, reverse=True)[:100]
     rank_map = {inst_id: rank+1 for rank, inst_id in enumerate(top_100_ids)}
 
     new_entry_coins = []
 
     for inst_id in top_100_ids:
+        # 🔹 4시간봉 돌파 체크
         is_cross = check_4h_mfi_rsi_cross(inst_id, period=3, threshold=60)
         df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=100)
         if df_4h is None or len(df_4h)<3:
             continue
-
         h4_mfi = calc_mfi(df_4h,3).iloc[-1]
         h4_rsi = calc_rsi(df_4h,3).iloc[-1]
-
         if pd.isna(h4_mfi) or h4_mfi<60 or pd.isna(h4_rsi) or h4_rsi<60:
             continue
 
+        # 🔹 일봉 조건 체크
+        df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=100)
+        if df_1d is None or len(df_1d)<3:
+            continue
+        d1_mfi = calc_mfi(df_1d,3).iloc[-1]
+        d1_rsi = calc_rsi(df_1d,3).iloc[-1]
+        if pd.isna(d1_mfi) or d1_mfi<60 or pd.isna(d1_rsi) or d1_rsi<60:
+            continue
+
         daily_change = calculate_daily_change(inst_id)
-        if daily_change is None or daily_change<=0:
+        if daily_change is None or daily_change<=-100:
             continue
 
         last_status = sent_signal_coins.get(inst_id, False)
-        if not last_status and is_cross:
+        if not last_status and is_cross:  # 돌파 기준은 여전히 4H
             volume_24h = volume_map.get(inst_id,0)
             coin_rank = rank_map.get(inst_id,"🚫")
-            new_entry_coins.append((inst_id, daily_change, volume_24h, h4_mfi, h4_rsi, coin_rank))
+            new_entry_coins.append((inst_id, daily_change, volume_24h, h4_mfi, h4_rsi, d1_mfi, d1_rsi, coin_rank))
 
         sent_signal_coins[inst_id] = is_cross
 
-    if new_entry_coins or True:
-        # 🔹 메시지 구성
-        message_lines = ["⚡ 4H MFI·RSI 3일선 ≥ 60 필터", "━━━━━━━━━━━━━━━━━━━"]
+    if new_entry_coins:
+        new_entry_coins.sort(key=lambda x: x[2], reverse=True)
+        new_entry_coins = new_entry_coins[:3]
 
-        # 🔹 BTC 현황
+        message_lines = ["⚡ 4H MFI·RSI 3일선 돌파 + 1D MFI·RSI ≥ 60 필터", "━━━━━━━━━━━━━━━━━━━"]
         btc_id = "BTC-USDT-SWAP"
         btc_change = calculate_daily_change(btc_id)
         btc_volume = volume_map.get(btc_id,0)
@@ -252,31 +226,17 @@ def send_new_entry_message(all_ids):
             "📌 BTC 현황",
             f"BTC\n거래대금: {btc_volume_str}\n상승률: {format_change_with_emoji(btc_change)}",
             "━━━━━━━━━━━━━━━━━━━",
+            "🆕 신규 진입 코인 (상위 3개)"
         ]
 
-        # 🔹 USDT 도미넌스 현황
-        usdt_change = calculate_usdt_dom_change()
-        usdt_dom = last_usdt_dom
-        message_lines += [
-            "📌 USDT Dominance",
-            f"{usdt_dom}% / 변화: {format_usdt_dom_change(usdt_change)}",
-            "━━━━━━━━━━━━━━━━━━━",
-        ]
-
-        # 🔹 신규 진입 코인
-        if new_entry_coins:
-            new_entry_coins.sort(key=lambda x: x[2], reverse=True)
-            new_entry_coins = new_entry_coins[:3]
-            message_lines.append("🆕 신규 진입 코인 (상위 3개)")
-            for inst_id,daily_change,volume_24h,h4_mfi,h4_rsi,coin_rank in new_entry_coins:
-                name = inst_id.replace("-USDT-SWAP","")
-                volume_str = format_volume_in_eok(volume_24h)
-                message_lines.append(
-                    f"{name}\n거래대금: {volume_str}\n순위: {coin_rank}위\n상승률: {format_change_with_emoji(daily_change)}\n"
-                    f"📊 4H RSI: {format_rsi_mfi(h4_rsi)} / MFI: {format_rsi_mfi(h4_mfi)}"
-                )
-        else:
-            message_lines.append("⚡ 신규 진입 없음")
+        for inst_id,daily_change,volume_24h,h4_mfi,h4_rsi,d1_mfi,d1_rsi,coin_rank in new_entry_coins:
+            name = inst_id.replace("-USDT-SWAP","")
+            volume_str = format_volume_in_eok(volume_24h)
+            message_lines.append(
+                f"{name}\n거래대금: {volume_str}\n순위: {coin_rank}위\n상승률: {format_change_with_emoji(daily_change)}\n"
+                f"📊 4H RSI: {format_rsi_mfi(h4_rsi)} / MFI: {format_rsi_mfi(h4_mfi)}\n"
+                f"📊 1D RSI: {format_rsi_mfi(d1_rsi)} / MFI: {format_rsi_mfi(d1_mfi)}"
+            )
 
         message_lines.append("━━━━━━━━━━━━━━━━━━━")
         send_telegram_message("\n".join(message_lines))
