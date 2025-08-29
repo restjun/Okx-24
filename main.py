@@ -158,7 +158,7 @@ def get_24h_volume(inst_id):
 def send_new_entry_message(all_ids):
     global sent_signal_coins
     volume_map = {inst_id: get_24h_volume(inst_id) for inst_id in all_ids}
-    top_ids = sorted(volume_map, key=volume_map.get, reverse=True)[:20]
+    top_ids = sorted(volume_map, key=volume_map.get, reverse=True)[:30]
     rank_map = {inst_id: rank+1 for rank, inst_id in enumerate(top_ids)}
     new_entry_coins = []
 
@@ -167,7 +167,7 @@ def send_new_entry_message(all_ids):
             sent_signal_coins[inst_id] = {"crossed": False, "time": None}
 
     for inst_id in top_ids:
-        is_cross_4h, _ = check_4h_mfi_rsi_cross(inst_id, period=3, threshold=70)
+        is_cross_4h, cross_time = check_4h_mfi_rsi_cross(inst_id, period=3, threshold=70)
         if not is_cross_4h:
             sent_signal_coins[inst_id]["crossed"] = False
             sent_signal_coins[inst_id]["time"] = None
@@ -188,11 +188,11 @@ def send_new_entry_message(all_ids):
         if not sent_signal_coins[inst_id]["crossed"]:
             new_entry_coins.append(
                 (inst_id, daily_change, volume_map.get(inst_id, 0),
-                 d1_mfi, d1_rsi, rank_map.get(inst_id))
+                 d1_mfi, d1_rsi, rank_map.get(inst_id), cross_time)
             )
 
         sent_signal_coins[inst_id]["crossed"] = True
-        sent_signal_coins[inst_id]["time"] = None
+        sent_signal_coins[inst_id]["time"] = cross_time
 
     if new_entry_coins:
         new_entry_coins.sort(key=lambda x: x[2], reverse=True)
@@ -204,22 +204,27 @@ def send_new_entry_message(all_ids):
         btc_change = calculate_daily_change(btc_id)
         btc_volume = volume_map.get(btc_id, 0)
         btc_volume_str = format_volume_in_eok(btc_volume)
-        btc_state = sent_signal_coins[btc_id]["crossed"]
 
         message_lines += [
-            "📌 BTC 현황",
-            f"BTC\n거래대금: {btc_volume_str}\n상승률: {format_change_with_emoji(btc_change)}\n"
-            f"4H 돌파 상태: {'✅' if btc_state else '❌'}",
-            "━━━━━━━━━━━━━━━━━━━",
-            "🆕 신규 진입 코인 (상위 3개)"
+            f"📌 BTC 현황: BTC (+{btc_change:.2f}%)\n거래대금: {btc_volume_str}"
         ]
+        message_lines.append("━━━━━━━━━━━━━━━━━━━")
+        message_lines.append("🆕 신규 진입 코인 (상위 3개)")
 
-        for inst_id, daily_change, volume_24h, d1_mfi, d1_rsi, coin_rank in new_entry_coins:
+        for inst_id, daily_change, volume_24h, d1_mfi, d1_rsi, coin_rank, cross_time in new_entry_coins:
             name = inst_id.replace("-USDT-SWAP", "")
             volume_str = format_volume_in_eok(volume_24h)
+            df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=100)
+            if df_4h is not None and len(df_4h) >= 3:
+                mfi_4h = calc_mfi(df_4h, 3).iloc[-1]
+                rsi_4h = calc_rsi(df_4h, 3).iloc[-1]
+            else:
+                mfi_4h, rsi_4h = None, None
+
             message_lines.append(
-                f"{name}\n거래대금: {volume_str}\n순위: {coin_rank}위\n상승률: {format_change_with_emoji(daily_change)}\n"
-                f"📊 1D RSI: {format_rsi_mfi(d1_rsi)} / MFI: {format_rsi_mfi(d1_mfi)}"
+                f"{name} (+{daily_change:.2f}%)\n거래대금: {volume_str} (순위: {coin_rank}위)\n"
+                f"📊 1D RSI: {format_rsi_mfi(d1_rsi)} / MFI: {format_rsi_mfi(d1_mfi)}\n"
+                f"📊 4H RSI: {format_rsi_mfi(rsi_4h)} / MFI: {format_rsi_mfi(mfi_4h)}"
             )
 
         message_lines.append("━━━━━━━━━━━━━━━━━━━")
