@@ -11,17 +11,15 @@ import numpy as np
 
 app = FastAPI()
 
-# 🔹 텔레그램 설정
 telegram_bot_token = "8451481398:AAHHg2wVDKphMruKsjN2b6NFKJ50jhxEe-g"
 telegram_user_id = 6596886700
 bot = telepot.Bot(telegram_bot_token)
 
 logging.basicConfig(level=logging.INFO)
 
-# 🔹 전역 변수: 마지막 4H 돌파 상태 저장
-sent_signal_coins = {}
+sent_signal_coins = {}  # 4H 돌파 상태 저장
 
-# 🔹 텔레그램 메시지 전송
+# 🔹 텔레그램 메시지
 def send_telegram_message(message):
     for retry_count in range(1, 11):
         try:
@@ -33,7 +31,7 @@ def send_telegram_message(message):
             time.sleep(5)
     logging.error("텔레그램 메시지 전송 실패: 최대 재시도 초과")
 
-# 🔹 API 재시도 함수
+# 🔹 API 재시도
 def retry_request(func, *args, **kwargs):
     for attempt in range(10):
         try:
@@ -47,7 +45,7 @@ def retry_request(func, *args, **kwargs):
             time.sleep(5)
     return None
 
-# 🔹 OKX OHLCV 가져오기
+# 🔹 OHLCV 가져오기
 def get_ohlcv_okx(inst_id, bar='1H', limit=200):
     url = f"https://www.okx.com/api/v5/market/candles?instId={inst_id}&bar={bar}&limit={limit}"
     response = retry_request(requests.get, url)
@@ -55,7 +53,7 @@ def get_ohlcv_okx(inst_id, bar='1H', limit=200):
         return None
     try:
         df = pd.DataFrame(response.json()['data'], columns=[
-            'ts', 'o', 'h', 'l', 'c', 'vol', 'volCcy', 'volCcyQuote', 'confirm'
+            'ts','o','h','l','c','vol','volCcy','volCcyQuote','confirm'
         ])
         for col in ['o','h','l','c','vol','volCcyQuote']:
             df[col] = df[col].astype(float)
@@ -65,7 +63,7 @@ def get_ohlcv_okx(inst_id, bar='1H', limit=200):
         logging.error(f"{inst_id} OHLCV 파싱 실패: {e}")
         return None
 
-# 🔹 Wilder's RMA (트레이딩뷰와 동일)
+# 🔹 Wilder's RMA (트레이딩뷰 방식)
 def rma(series, period):
     series = series.copy()
     alpha = 1 / period
@@ -73,7 +71,7 @@ def rma(series, period):
     r.iloc[:period] = series.iloc[:period].expanding().mean()[:period]  # 초기값 단순평균
     return r
 
-# 🔹 RSI 계산
+# 🔹 RSI
 def calc_rsi(df, period=3):
     delta = df['c'].diff()
     gain = delta.clip(lower=0)
@@ -84,10 +82,10 @@ def calc_rsi(df, period=3):
     rsi = 100 - (100 / (1 + rs))
     return rsi
 
-# 🔹 MFI 계산
+# 🔹 MFI
 def calc_mfi(df, period=3):
     tp = (df['h'] + df['l'] + df['c']) / 3
-    mf = tp * df['volCcyQuote']  # 기준 통화 기준
+    mf = tp * df['volCcyQuote']  # 기준 통화
     delta_tp = tp.diff()
     positive_mf = mf.where(delta_tp > 0, 0.0)
     negative_mf = mf.where(delta_tp < 0, 0.0)
@@ -102,10 +100,10 @@ def format_rsi_mfi(value):
         return "(N/A)"
     return f"🟢 {value:.1f}" if value >= 60 else f"🔴 {value:.1f}"
 
-# 🔹 4H MFI & RSI 돌파 체크
+# 🔹 4H MFI·RSI 돌파 체크
 def check_4h_mfi_rsi_cross(inst_id, period=3, threshold=70):
     df = get_ohlcv_okx(inst_id, bar='4H', limit=100)
-    if df is None or len(df) < period + 1:
+    if df is None or len(df) < period+1:
         return False
     mfi = calc_mfi(df, period)
     rsi = calc_rsi(df, period)
@@ -153,7 +151,7 @@ def format_change_with_emoji(change):
     else:
         return f"🔴 ({change:.2f}%)"
 
-# 🔹 OKX USDT-SWAP 심볼 가져오기
+# 🔹 OKX USDT-SWAP 심볼
 def get_all_okx_swap_symbols():
     url = "https://www.okx.com/api/v5/public/instruments?instType=SWAP"
     response = retry_request(requests.get, url)
@@ -169,20 +167,22 @@ def get_24h_volume(inst_id):
         return 0
     return df['volCcyQuote'].sum()
 
-# 🔹 신규 돌파 메시지 전송
+# 🔹 신규 돌파 메시지
 def send_new_entry_message(all_ids):
     global sent_signal_coins
     volume_map = {inst_id: get_24h_volume(inst_id) for inst_id in all_ids}
     top_ids = sorted(volume_map, key=volume_map.get, reverse=True)[:200]
-    rank_map = {inst_id: rank + 1 for rank, inst_id in enumerate(top_ids)}
+    rank_map = {inst_id: rank+1 for rank, inst_id in enumerate(top_ids)}
     new_entry_coins = []
 
     for inst_id in top_ids:
-        is_cross = check_4h_mfi_rsi_cross(inst_id, period=3, threshold=70)
-        if not is_cross:
+        # 🔹 4H 돌파 체크
+        is_cross_4h = check_4h_mfi_rsi_cross(inst_id, period=3, threshold=70)
+        if not is_cross_4h:
             sent_signal_coins[inst_id] = False
             continue
 
+        # 🔹 1D 조건 체크
         df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=100)
         if df_1d is None or len(df_1d) < 3:
             continue
@@ -195,8 +195,11 @@ def send_new_entry_message(all_ids):
         if daily_change is None or daily_change <= 0:
             continue
 
+        # 🔹 신규 돌파 코인만
         if not sent_signal_coins.get(inst_id, False):
-            new_entry_coins.append((inst_id, daily_change, volume_map.get(inst_id, 0), d1_mfi, d1_rsi, rank_map.get(inst_id)))
+            new_entry_coins.append(
+                (inst_id, daily_change, volume_map.get(inst_id, 0), d1_mfi, d1_rsi, rank_map.get(inst_id))
+            )
 
         sent_signal_coins[inst_id] = True
 
@@ -217,7 +220,7 @@ def send_new_entry_message(all_ids):
         ]
 
         for inst_id, daily_change, volume_24h, d1_mfi, d1_rsi, coin_rank in new_entry_coins:
-            name = inst_id.replace("-USDT-SWAP", "")
+            name = inst_id.replace("-USDT-SWAP","")
             volume_str = format_volume_in_eok(volume_24h)
             message_lines.append(
                 f"{name}\n거래대금: {volume_str}\n순위: {coin_rank}위\n상승률: {format_change_with_emoji(daily_change)}\n"
