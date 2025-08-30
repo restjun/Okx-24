@@ -12,6 +12,7 @@ import numpy as np
 app = FastAPI()
 
 # Telegram 설정
+
 telegram_bot_token = "8451481398:AAHHg2wVDKphMruKsjN2b6NFKJ50jhxEe-g"
 telegram_user_id = 6596886700
 bot = telepot.Bot(telegram_bot_token)
@@ -21,7 +22,7 @@ sent_signal_coins = {}
 
 # Telegram 메시지 전송
 def send_telegram_message(message):
-    for retry_count in range(1, 11):
+    for retry_count in range(1, 10+1):
         try:
             bot.sendMessage(chat_id=telegram_user_id, text=message)
             logging.info("텔레그램 메시지 전송 성공")
@@ -41,7 +42,7 @@ def retry_request(func, *args, **kwargs):
                 continue
             return result
         except Exception as e:
-            logging.error(f"API 호출 실패 (재시도 {attempt + 1}/10): {e}")
+            logging.error(f"API 호출 실패 (재시도 {attempt+1}/10): {e}")
             time.sleep(5)
     return None
 
@@ -71,8 +72,8 @@ def rma(series, period):
     r.iloc[:period] = series.iloc[:period].expanding().mean()[:period]
     return r
 
-# RSI 계산
-def calc_rsi(df, period=3):
+# RSI 계산 (5일선)
+def calc_rsi(df, period=5):
     delta = df['c'].diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
@@ -82,8 +83,8 @@ def calc_rsi(df, period=3):
     rsi = 100 - (100 / (1 + rs))
     return rsi
 
-# MFI 계산
-def calc_mfi(df, period=3):
+# MFI 계산 (5일선)
+def calc_mfi(df, period=5):
     tp = (df['h'] + df['l'] + df['c']) / 3
     mf = tp * df['volCcyQuote']
     delta_tp = tp.diff()
@@ -99,8 +100,8 @@ def format_rsi_mfi(value):
         return "(N/A)"
     return f"🟢 {value:.1f}" if value >= 60 else f"🔴 {value:.1f}"
 
-# 4H RSI/MFI 크로스 확인
-def check_4h_mfi_rsi_cross(inst_id, period=3, threshold=70):
+# 4H RSI/MFI 크로스 확인 (5일선)
+def check_4h_mfi_rsi_cross(inst_id, period=5, threshold=70):
     df = get_ohlcv_okx(inst_id, bar='4H', limit=100)
     if df is None or len(df) < period+1:
         return False, None
@@ -159,7 +160,7 @@ def get_24h_volume(inst_id):
 def send_new_entry_message(all_ids):
     global sent_signal_coins
     volume_map = {inst_id: get_24h_volume(inst_id) for inst_id in all_ids}
-    top_ids = sorted(volume_map, key=volume_map.get, reverse=True)[:15]
+    top_ids = sorted(volume_map, key=volume_map.get, reverse=True)[:100]
     rank_map = {inst_id: rank+1 for rank, inst_id in enumerate(top_ids)}
     new_entry_coins = []
 
@@ -168,7 +169,7 @@ def send_new_entry_message(all_ids):
             sent_signal_coins[inst_id] = {"crossed": False, "time": None}
 
     for inst_id in top_ids:
-        is_cross_4h, cross_time = check_4h_mfi_rsi_cross(inst_id, period=3, threshold=70)
+        is_cross_4h, cross_time = check_4h_mfi_rsi_cross(inst_id, period=5, threshold=70)
         if not is_cross_4h:
             sent_signal_coins[inst_id]["crossed"] = False
             sent_signal_coins[inst_id]["time"] = None
@@ -191,7 +192,7 @@ def send_new_entry_message(all_ids):
         new_entry_coins.sort(key=lambda x: x[2], reverse=True)
         new_entry_coins = new_entry_coins[:3]
 
-        message_lines = ["⚡ 4H·RSI·MFI 필터", "━━━━━━━━━━━━━━━━━━━\n"]
+        message_lines = ["⚡ 4H·RSI·MFI 필터 (5일선)", "━━━━━━━━━━━━━━━━━━━\n"]
 
         # BTC 현황
         btc_id = "BTC-USDT-SWAP"
@@ -208,16 +209,16 @@ def send_new_entry_message(all_ids):
                 btc_status = f"🔴 {btc_change:.2f}%"
 
         df_btc_4h = get_ohlcv_okx(btc_id, bar='4H', limit=100)
-        if df_btc_4h is not None and len(df_btc_4h) >= 3:
-            mfi_btc_4h = calc_mfi(df_btc_4h, 3).iloc[-1]
-            rsi_btc_4h = calc_rsi(df_btc_4h, 3).iloc[-1]
+        if df_btc_4h is not None and len(df_btc_4h) >= 5:
+            mfi_btc_4h = calc_mfi(df_btc_4h, 5).iloc[-1]
+            rsi_btc_4h = calc_rsi(df_btc_4h, 5).iloc[-1]
         else:
             mfi_btc_4h, rsi_btc_4h = None, None
 
         df_btc_1d = get_ohlcv_okx(btc_id, bar='1D', limit=30)
-        if df_btc_1d is not None and len(df_btc_1d) >= 3:
-            mfi_btc_1d = calc_mfi(df_btc_1d, 3).iloc[-1]
-            rsi_btc_1d = calc_rsi(df_btc_1d, 3).iloc[-1]
+        if df_btc_1d is not None and len(df_btc_1d) >= 5:
+            mfi_btc_1d = calc_mfi(df_btc_1d, 5).iloc[-1]
+            rsi_btc_1d = calc_rsi(df_btc_1d, 5).iloc[-1]
         else:
             mfi_btc_1d, rsi_btc_1d = None, None
 
@@ -249,16 +250,16 @@ def send_new_entry_message(all_ids):
                 status = "(N/A)"
 
             df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=100)
-            if df_4h is not None and len(df_4h) >= 3:
-                mfi_4h = calc_mfi(df_4h, 3).iloc[-1]
-                rsi_4h = calc_rsi(df_4h, 3).iloc[-1]
+            if df_4h is not None and len(df_4h) >= 5:
+                mfi_4h = calc_mfi(df_4h, 5).iloc[-1]
+                rsi_4h = calc_rsi(df_4h, 5).iloc[-1]
             else:
                 mfi_4h, rsi_4h = None, None
 
             df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=30)
-            if df_1d is not None and len(df_1d) >= 3:
-                mfi_1d = calc_mfi(df_1d, 3).iloc[-1]
-                rsi_1d = calc_rsi(df_1d, 3).iloc[-1]
+            if df_1d is not None and len(df_1d) >= 5:
+                mfi_1d = calc_mfi(df_1d, 5).iloc[-1]
+                rsi_1d = calc_rsi(df_1d, 5).iloc[-1]
             else:
                 mfi_1d, rsi_1d = None, None
 
@@ -277,16 +278,16 @@ def send_new_entry_message(all_ids):
             volume_str = format_volume_in_eok(volume_24h)
 
             df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=100)
-            if df_4h is not None and len(df_4h) >= 3:
-                mfi_4h = calc_mfi(df_4h, 3).iloc[-1]
-                rsi_4h = calc_rsi(df_4h, 3).iloc[-1]
+            if df_4h is not None and len(df_4h) >= 5:
+                mfi_4h = calc_mfi(df_4h, 5).iloc[-1]
+                rsi_4h = calc_rsi(df_4h, 5).iloc[-1]
             else:
                 mfi_4h, rsi_4h = None, None
 
             df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=30)
-            if df_1d is not None and len(df_1d) >= 3:
-                mfi_1d = calc_mfi(df_1d, 3).iloc[-1]
-                rsi_1d = calc_rsi(df_1d, 3).iloc[-1]
+            if df_1d is not None and len(df_1d) >= 5:
+                mfi_1d = calc_mfi(df_1d, 5).iloc[-1]
+                rsi_1d = calc_rsi(df_1d, 5).iloc[-1]
             else:
                 mfi_1d, rsi_1d = None, None
 
