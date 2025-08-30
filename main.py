@@ -168,12 +168,25 @@ def send_new_entry_message(all_ids):
             sent_signal_coins[inst_id] = {"crossed": False, "time": None}
 
     for inst_id in top_ids:
+        # 4H 조건 체크
         is_cross_4h, cross_time = check_4h_mfi_rsi_cross(inst_id, period=5, threshold=70)
         if not is_cross_4h:
             sent_signal_coins[inst_id]["crossed"] = False
             sent_signal_coins[inst_id]["time"] = None
             continue
 
+        # ✅ 추가된 조건: 1D RSI/MFI도 70 이상
+        df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=30)
+        if df_1d is None or len(df_1d) < 5:
+            continue
+        mfi_1d = calc_mfi(df_1d, 5).iloc[-1]
+        rsi_1d = calc_rsi(df_1d, 5).iloc[-1]
+        if pd.isna(mfi_1d) or pd.isna(rsi_1d):
+            continue
+        if not (mfi_1d >= 70 and rsi_1d >= 70):
+            continue
+
+        # 일간 상승률 확인
         daily_change = calculate_daily_change(inst_id)
         if daily_change is None or daily_change <= 0:
             continue
@@ -187,11 +200,12 @@ def send_new_entry_message(all_ids):
         sent_signal_coins[inst_id]["crossed"] = True
         sent_signal_coins[inst_id]["time"] = cross_time
 
+    # 메시지 작성 부분 (원본 유지)
     if new_entry_coins:
         new_entry_coins.sort(key=lambda x: x[2], reverse=True)
         new_entry_coins = new_entry_coins[:3]
 
-        message_lines = ["⚡ 4H·RSI·MFI 필터 (5일선)", "━━━━━━━━━━━━━━━━━━━\n"]
+        message_lines = ["⚡ 4H·1D RSI·MFI 필터 (5일선)", "━━━━━━━━━━━━━━━━━━━\n"]
 
         # BTC 현황
         btc_id = "BTC-USDT-SWAP"
@@ -228,7 +242,7 @@ def send_new_entry_message(all_ids):
             f"📊 1D → RSI: {format_rsi_mfi(rsi_btc_1d)} | MFI: {format_rsi_mfi(mfi_btc_1d)}\n"
         )
 
-        # 거래대금 TOP 10 (줄간격 제거)
+        # 거래대금 TOP 10
         message_lines.append("━━━━━━━━━━━━━━━━━━━\n")
         message_lines.append("🏆 실시간 거래대금 TOP 10\n")
 
@@ -262,7 +276,6 @@ def send_new_entry_message(all_ids):
             else:
                 mfi_1d, rsi_1d = None, None
 
-            # 🔽 줄간격 제거 (앞에 \n 삭제)
             message_lines.append(
                 f"{rank}위 {name}\n"
                 f"{status} | 💰 거래대금: {volume_str}M\n"
