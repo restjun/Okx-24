@@ -168,7 +168,6 @@ def send_new_entry_message(all_ids):
             sent_signal_coins[inst_id] = {"crossed": False, "time": None}
 
     for inst_id in top_ids:
-        # 4H RSI/MFI 신규 조건
         is_cross_4h, cross_time = check_4h_mfi_rsi_cross(inst_id, period=3, threshold=70)
         if not is_cross_4h:
             sent_signal_coins[inst_id]["crossed"] = False
@@ -207,7 +206,7 @@ def send_new_entry_message(all_ids):
                 btc_status = f"🟢 +{btc_change:.2f}%"
             else:
                 btc_status = f"🔴 {btc_change:.2f}%"
-        message_lines.append(f"📌 BTC 현황: BTC {btc_status}\n거래대금: {btc_volume_str}")
+        message_lines.append(f"📌 BTC 현황: BTC\n{btc_status} | 거래대금: {btc_volume_str}")
 
         # 거래대금 1위 현황
         top1_id = top_ids[0]
@@ -224,7 +223,7 @@ def send_new_entry_message(all_ids):
                 top1_status = f"🔴 {top1_change:.2f}%"
         else:
             top1_status = "(N/A)"
-        message_lines.append(f"📌 거래대금 1위: {top1_name} {top1_status}\n거래대금: {top1_volume_str}")
+        message_lines.append(f"📌 거래대금 1위: {top1_name}\n{top1_status} | 거래대금: {top1_volume_str}")
 
         message_lines.append("━━━━━━━━━━━━━━━━━━━")
         message_lines.append("🆕 신규 진입 코인 (상위 3개)")
@@ -254,7 +253,8 @@ def send_new_entry_message(all_ids):
                 daily_str = f"🔥 {daily_str}"
 
             message_lines.append(
-                f"{coin_rank}위 {name} ({daily_str})\n거래대금: {volume_str}\n"
+                f"{coin_rank}위 {name}\n"
+                f"{daily_str} | 거래대금: {volume_str}\n"
                 f"📊 4H RSI: {format_rsi_mfi(rsi_4h)} / MFI: {format_rsi_mfi(mfi_4h)}\n"
                 f"📊 1D RSI: {format_rsi_mfi(rsi_1d)} / MFI: {format_rsi_mfi(mfi_1d)}"
             )
