@@ -12,7 +12,6 @@ import numpy as np
 app = FastAPI()
 
 # Telegram 설정
-
 telegram_bot_token = "8451481398:AAHHg2wVDKphMruKsjN2b6NFKJ50jhxEe-g"
 telegram_user_id = 6596886700
 bot = telepot.Bot(telegram_bot_token)
@@ -229,7 +228,7 @@ def send_new_entry_message(all_ids):
             f"📊 1D → RSI: {format_rsi_mfi(rsi_btc_1d)} | MFI: {format_rsi_mfi(mfi_btc_1d)}\n"
         )
 
-        # 거래대금 TOP 10
+        # 거래대금 TOP 10 (줄간격 제거)
         message_lines.append("━━━━━━━━━━━━━━━━━━━\n")
         message_lines.append("🏆 실시간 거래대금 TOP 10\n")
 
@@ -263,8 +262,9 @@ def send_new_entry_message(all_ids):
             else:
                 mfi_1d, rsi_1d = None, None
 
+            # 🔽 줄간격 제거 (앞에 \n 삭제)
             message_lines.append(
-                f"\n{rank}위 {name}\n"
+                f"{rank}위 {name}\n"
                 f"{status} | 💰 거래대금: {volume_str}M\n"
                 f"📊 4H → RSI: {format_rsi_mfi(rsi_4h)} | MFI: {format_rsi_mfi(mfi_4h)}\n"
                 f"📊 1D → RSI: {format_rsi_mfi(rsi_1d)} | MFI: {format_rsi_mfi(mfi_1d)}"
