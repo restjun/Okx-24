@@ -206,9 +206,30 @@ def send_new_entry_message(all_ids):
                 btc_status = f"🟢 +{btc_change:.2f}%"
             else:
                 btc_status = f"🔴 {btc_change:.2f}%"
-        message_lines.append(f"📌 BTC 현황: BTC\n{btc_status} | 거래대금: {btc_volume_str}")
 
-        # 거래대금 1위 현황
+        # BTC 4H & 1D RSI/MFI
+        df_btc_4h = get_ohlcv_okx(btc_id, bar='4H', limit=100)
+        if df_btc_4h is not None and len(df_btc_4h) >= 3:
+            mfi_btc_4h = calc_mfi(df_btc_4h, 3).iloc[-1]
+            rsi_btc_4h = calc_rsi(df_btc_4h, 3).iloc[-1]
+        else:
+            mfi_btc_4h, rsi_btc_4h = None, None
+
+        df_btc_1d = get_ohlcv_okx(btc_id, bar='1D', limit=30)
+        if df_btc_1d is not None and len(df_btc_1d) >= 3:
+            mfi_btc_1d = calc_mfi(df_btc_1d, 3).iloc[-1]
+            rsi_btc_1d = calc_rsi(df_btc_1d, 3).iloc[-1]
+        else:
+            mfi_btc_1d, rsi_btc_1d = None, None
+
+        message_lines.append(
+            f"💎 BTC 현황\n"
+            f"{btc_status} | 💰 거래대금: {btc_volume_str}M\n"
+            f"📊 4H → RSI: {format_rsi_mfi(rsi_btc_4h)} | MFI: {format_rsi_mfi(mfi_btc_4h)}\n"
+            f"📊 1D → RSI: {format_rsi_mfi(rsi_btc_1d)} | MFI: {format_rsi_mfi(mfi_btc_1d)}"
+        )
+
+        # 거래대금 1위
         top1_id = top_ids[0]
         top1_change = calculate_daily_change(top1_id)
         top1_volume = volume_map.get(top1_id, 0)
@@ -223,15 +244,36 @@ def send_new_entry_message(all_ids):
                 top1_status = f"🔴 {top1_change:.2f}%"
         else:
             top1_status = "(N/A)"
-        message_lines.append(f"📌 거래대금 1위: {top1_name}\n{top1_status} | 거래대금: {top1_volume_str}")
 
+        # top1 4H & 1D RSI/MFI
+        df_top1_4h = get_ohlcv_okx(top1_id, bar='4H', limit=100)
+        if df_top1_4h is not None and len(df_top1_4h) >= 3:
+            mfi_top1_4h = calc_mfi(df_top1_4h, 3).iloc[-1]
+            rsi_top1_4h = calc_rsi(df_top1_4h, 3).iloc[-1]
+        else:
+            mfi_top1_4h, rsi_top1_4h = None, None
+
+        df_top1_1d = get_ohlcv_okx(top1_id, bar='1D', limit=30)
+        if df_top1_1d is not None and len(df_top1_1d) >= 3:
+            mfi_top1_1d = calc_mfi(df_top1_1d, 3).iloc[-1]
+            rsi_top1_1d = calc_rsi(df_top1_1d, 3).iloc[-1]
+        else:
+            mfi_top1_1d, rsi_top1_1d = None, None
+
+        message_lines.append(
+            f"🏆 거래대금 1위: {top1_name}\n"
+            f"{top1_status} | 💰 거래대금: {top1_volume_str}M\n"
+            f"📊 4H → RSI: {format_rsi_mfi(rsi_top1_4h)} | MFI: {format_rsi_mfi(mfi_top1_4h)}\n"
+            f"📊 1D → RSI: {format_rsi_mfi(rsi_top1_1d)} | MFI: {format_rsi_mfi(mfi_top1_1d)}"
+        )
+
+        # 신규 진입 코인
         message_lines.append("━━━━━━━━━━━━━━━━━━━")
         message_lines.append("🆕 신규 진입 코인 (상위 3개)")
-
         for inst_id, daily_change, volume_24h, coin_rank, cross_time in new_entry_coins:
             name = inst_id.replace("-USDT-SWAP", "")
             volume_str = format_volume_in_eok(volume_24h)
-            
+
             # 4H RSI/MFI
             df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=100)
             if df_4h is not None and len(df_4h) >= 3:
@@ -240,7 +282,7 @@ def send_new_entry_message(all_ids):
             else:
                 mfi_4h, rsi_4h = None, None
 
-            # 1D RSI/MFI (상태만 표시)
+            # 1D RSI/MFI
             df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=30)
             if df_1d is not None and len(df_1d) >= 3:
                 mfi_1d = calc_mfi(df_1d, 3).iloc[-1]
@@ -254,9 +296,9 @@ def send_new_entry_message(all_ids):
 
             message_lines.append(
                 f"{coin_rank}위 {name}\n"
-                f"{daily_str} | 거래대금: {volume_str}\n"
-                f"📊 4H RSI: {format_rsi_mfi(rsi_4h)} / MFI: {format_rsi_mfi(mfi_4h)}\n"
-                f"📊 1D RSI: {format_rsi_mfi(rsi_1d)} / MFI: {format_rsi_mfi(mfi_1d)}"
+                f"{daily_str} | 💰 거래대금: {volume_str}M\n"
+                f"📊 4H → RSI: {format_rsi_mfi(rsi_4h)} | MFI: {format_rsi_mfi(mfi_4h)}\n"
+                f"📊 1D → RSI: {format_rsi_mfi(rsi_1d)} | MFI: {format_rsi_mfi(mfi_1d)}"
             )
 
         message_lines.append("━━━━━━━━━━━━━━━━━━━")
