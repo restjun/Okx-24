@@ -209,12 +209,23 @@ def send_new_entry_message(all_ids):
             f"📌 BTC 현황: BTC {btc_status}\n거래대금: {btc_volume_str}"
         )
 
-        # TOP 10 표시
+        # TOP 10 표시 (RSI/MFI 추가)
         message_lines.append("\n🏆 거래대금 TOP 10")
         for rank, inst_id in enumerate(top_ids, start=1):
             name = inst_id.replace("-USDT-SWAP", "")
             vol_str = format_volume_in_eok(volume_map.get(inst_id, 0))
-            message_lines.append(f"{rank}위: {name} ({vol_str})")
+
+            df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=100)
+            if df_4h is not None and len(df_4h) >= 3:
+                mfi_4h = calc_mfi(df_4h, 3).iloc[-1]
+                rsi_4h = calc_rsi(df_4h, 3).iloc[-1]
+            else:
+                mfi_4h, rsi_4h = None, None
+
+            message_lines.append(
+                f"{rank}위: {name} ({vol_str})\n"
+                f"📊 RSI: {format_rsi_mfi(rsi_4h)} / MFI: {format_rsi_mfi(mfi_4h)}"
+            )
 
         message_lines.append("━━━━━━━━━━━━━━━━━━━")
 
