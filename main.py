@@ -188,7 +188,6 @@ def send_new_entry_message(all_ids):
         sent_signal_coins[inst_id]["time"] = cross_time
 
     if new_entry_coins:
-        # 거래대금 순으로 정렬
         new_entry_coins.sort(key=lambda x: x[2], reverse=True)
         new_entry_coins = new_entry_coins[:3]
 
@@ -199,7 +198,14 @@ def send_new_entry_message(all_ids):
         btc_change = calculate_daily_change(btc_id)
         btc_volume = volume_map.get(btc_id, 0)
         btc_volume_str = format_volume_in_eok(btc_volume)
-        btc_status = "(N/A)" if btc_change is None else f"🟢 +{btc_change:.2f}%" if btc_change > 0 else f"🔴 {btc_change:.2f}%" if btc_change < 0 else f"{btc_change:.2f}%"
+        btc_status = "(N/A)"
+        if btc_change is not None:
+            if btc_change >= 5:
+                btc_status = f"🟢🔥 +{btc_change:.2f}%"
+            elif btc_change > 0:
+                btc_status = f"🟢 +{btc_change:.2f}%"
+            else:
+                btc_status = f"🔴 {btc_change:.2f}%"
         message_lines.append(f"📌 BTC 현황: BTC {btc_status}\n거래대금: {btc_volume_str}")
 
         # 거래대금 1위 현황
@@ -208,7 +214,15 @@ def send_new_entry_message(all_ids):
         top1_volume = volume_map.get(top1_id, 0)
         top1_volume_str = format_volume_in_eok(top1_volume)
         top1_name = top1_id.replace("-USDT-SWAP", "")
-        top1_status = "(N/A)" if top1_change is None else f"🟢 +{top1_change:.2f}%" if top1_change > 0 else f"🔴 {top1_change:.2f}%" if top1_change < 0 else f"{top1_change:.2f}%"
+        if top1_change is not None:
+            if top1_change >= 5:
+                top1_status = f"🟢🔥 +{top1_change:.2f}%"
+            elif top1_change > 0:
+                top1_status = f"🟢 +{top1_change:.2f}%"
+            else:
+                top1_status = f"🔴 {top1_change:.2f}%"
+        else:
+            top1_status = "(N/A)"
         message_lines.append(f"📌 거래대금 1위: {top1_name} {top1_status}\n거래대금: {top1_volume_str}")
 
         message_lines.append("━━━━━━━━━━━━━━━━━━━")
@@ -224,8 +238,12 @@ def send_new_entry_message(all_ids):
             else:
                 mfi_4h, rsi_4h = None, None
 
+            daily_str = f"+{daily_change:.2f}%"
+            if daily_change >= 5:
+                daily_str = f"🔥 {daily_str}"
+
             message_lines.append(
-                f"{coin_rank}위 {name} (+{daily_change:.2f}%)\n거래대금: {volume_str}\n"
+                f"{coin_rank}위 {name} ({daily_str})\n거래대금: {volume_str}\n"
                 f"📊 4H RSI: {format_rsi_mfi(rsi_4h)} / MFI: {format_rsi_mfi(mfi_4h)}"
             )
 
