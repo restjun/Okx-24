@@ -92,7 +92,7 @@ def calc_mfi(df, period=3):
 def format_rsi_mfi(value):
     if pd.isna(value):
         return "(N/A)"
-    return f"🟢 {value:.1f}" if value >= 60 else f"🔴 {value:.1f}"
+    return f"🟢 {value:.1f}" if value >= 70 else f"🔴 {value:.1f}"
 
 def check_4h_mfi_rsi_cross(inst_id, period=3, threshold=70):
     df = get_ohlcv_okx(inst_id, bar='4H', limit=100)
