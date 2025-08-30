@@ -228,45 +228,49 @@ def send_new_entry_message(all_ids):
             f"📊 1D → RSI: {format_rsi_mfi(rsi_btc_1d)} | MFI: {format_rsi_mfi(mfi_btc_1d)}\n"
         )
 
-        # 거래대금 1위
-        top1_id = top_ids[0]
-        top1_change = calculate_daily_change(top1_id)
-        top1_volume = volume_map.get(top1_id, 0)
-        top1_volume_str = format_volume_in_eok(top1_volume)
-        top1_name = top1_id.replace("-USDT-SWAP", "")
-        if top1_change is not None:
-            if top1_change >= 5:
-                top1_status = f"🟢🔥 +{top1_change:.2f}%"
-            elif top1_change > 0:
-                top1_status = f"🟢 +{top1_change:.2f}%"
-            else:
-                top1_status = f"🔴 {top1_change:.2f}%"
-        else:
-            top1_status = "(N/A)"
-
-        df_top1_4h = get_ohlcv_okx(top1_id, bar='4H', limit=100)
-        if df_top1_4h is not None and len(df_top1_4h) >= 3:
-            mfi_top1_4h = calc_mfi(df_top1_4h, 3).iloc[-1]
-            rsi_top1_4h = calc_rsi(df_top1_4h, 3).iloc[-1]
-        else:
-            mfi_top1_4h, rsi_top1_4h = None, None
-
-        df_top1_1d = get_ohlcv_okx(top1_id, bar='1D', limit=30)
-        if df_top1_1d is not None and len(df_top1_1d) >= 3:
-            mfi_top1_1d = calc_mfi(df_top1_1d, 3).iloc[-1]
-            rsi_top1_1d = calc_rsi(df_top1_1d, 3).iloc[-1]
-        else:
-            mfi_top1_1d, rsi_top1_1d = None, None
-
-        message_lines.append(
-            f"🏆 거래대금 1위: {top1_name}\n"
-            f"{top1_status} | 💰 거래대금: {top1_volume_str}M\n"
-            f"📊 4H → RSI: {format_rsi_mfi(rsi_top1_4h)} | MFI: {format_rsi_mfi(mfi_top1_4h)}\n"
-            f"📊 1D → RSI: {format_rsi_mfi(rsi_top1_1d)} | MFI: {format_rsi_mfi(mfi_top1_1d)}\n"
-        )
-
-        # 신규 진입 코인 강조
+        # 거래대금 TOP 10
         message_lines.append("━━━━━━━━━━━━━━━━━━━\n")
+        message_lines.append("🏆 실시간 거래대금 TOP 10\n")
+
+        for rank, inst_id in enumerate(top_ids[:10], start=1):
+            change = calculate_daily_change(inst_id)
+            volume = volume_map.get(inst_id, 0)
+            volume_str = format_volume_in_eok(volume)
+            name = inst_id.replace("-USDT-SWAP", "")
+
+            if change is not None:
+                if change >= 5:
+                    status = f"🟢🔥 +{change:.2f}%"
+                elif change > 0:
+                    status = f"🟢 +{change:.2f}%"
+                else:
+                    status = f"🔴 {change:.2f}%"
+            else:
+                status = "(N/A)"
+
+            df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=100)
+            if df_4h is not None and len(df_4h) >= 3:
+                mfi_4h = calc_mfi(df_4h, 3).iloc[-1]
+                rsi_4h = calc_rsi(df_4h, 3).iloc[-1]
+            else:
+                mfi_4h, rsi_4h = None, None
+
+            df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=30)
+            if df_1d is not None and len(df_1d) >= 3:
+                mfi_1d = calc_mfi(df_1d, 3).iloc[-1]
+                rsi_1d = calc_rsi(df_1d, 3).iloc[-1]
+            else:
+                mfi_1d, rsi_1d = None, None
+
+            message_lines.append(
+                f"\n{rank}위 {name}\n"
+                f"{status} | 💰 거래대금: {volume_str}M\n"
+                f"📊 4H → RSI: {format_rsi_mfi(rsi_4h)} | MFI: {format_rsi_mfi(mfi_4h)}\n"
+                f"📊 1D → RSI: {format_rsi_mfi(rsi_1d)} | MFI: {format_rsi_mfi(mfi_1d)}"
+            )
+
+        # 신규 진입 코인
+        message_lines.append("\n━━━━━━━━━━━━━━━━━━━")
         message_lines.append("🆕 신규 진입 코인 (상위 3개) 👀")
         for inst_id, daily_change, volume_24h, coin_rank, cross_time in new_entry_coins:
             name = inst_id.replace("-USDT-SWAP", "")
