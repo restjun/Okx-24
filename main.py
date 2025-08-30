@@ -97,7 +97,7 @@ def calc_mfi(df, period=5):
 def format_rsi_mfi(value):
     if pd.isna(value):
         return "(N/A)"
-    return f"🟢 {value:.1f}" if value >= 60 else f"🔴 {value:.1f}"
+    return f"🟢 {value:.1f}" if value >= 70 else f"🔴 {value:.1f}"
 
 # 4H RSI/MFI 크로스 확인 (5일선)
 def check_4h_mfi_rsi_cross(inst_id, period=5, threshold=70):
