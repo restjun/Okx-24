@@ -111,12 +111,12 @@ def calc_mfi(df, period=5):
 def format_rsi_mfi(value):
     if pd.isna(value):
         return "(N/A)"
-    return f"🟢 {value:.1f}" if value >= 80 else f"🔴 {value:.1f}"   # ← 기준선도 80 반영
+    return f"🟢 {value:.1f}" if value >= 75 else f"🔴 {value:.1f}"   # ← 기준선도 80 반영
 
 # =========================
 # 4H RSI/MFI 크로스 확인 (5일선, 기준 80)
 # =========================
-def check_4h_mfi_rsi_cross(inst_id, period=5, threshold=80):
+def check_4h_mfi_rsi_cross(inst_id, period=5, threshold=75):
     df = get_ohlcv_okx(inst_id, bar='4H', limit=100)
     if df is None or len(df) < period + 1:
         return False, None
