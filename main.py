@@ -84,7 +84,7 @@ def rma(series, period):
 # =========================
 # RSI 계산 (3일선)
 # =========================
-def calc_rsi(df, period=3):
+def calc_rsi(df, period=5):
     delta = df['c'].diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
@@ -97,7 +97,7 @@ def calc_rsi(df, period=3):
 # =========================
 # MFI 계산 (트레이딩뷰 동일 방식, 3일선)
 # =========================
-def calc_mfi(df, period=3):
+def calc_mfi(df, period=5):
     tp = (df['h'] + df['l'] + df['c']) / 3
     mf = tp * df['volCcyQuote']
     delta_tp = tp.diff()
@@ -122,7 +122,7 @@ def format_rsi_mfi(value):
 # =========================
 # 4H RSI/MFI 크로스 확인 (3일선)
 # =========================
-def check_4h_mfi_rsi_cross(inst_id, period=3, threshold=70):
+def check_4h_mfi_rsi_cross(inst_id, period=5, threshold=70):
     df = get_ohlcv_okx(inst_id, bar='4H', limit=100)
     if df is None or len(df) < period + 1:
         return False, None
