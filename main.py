@@ -81,9 +81,9 @@ def rma(series, period):
     return r
 
 # =========================
-# RSI 계산 (3일선)
+# RSI 계산 (5일선)
 # =========================
-def calc_rsi(df, period=3):
+def calc_rsi(df, period=5):
     delta = df['c'].diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
@@ -94,9 +94,9 @@ def calc_rsi(df, period=3):
     return rsi
 
 # =========================
-# MFI 계산 (3일선)
+# MFI 계산 (5일선)
 # =========================
-def calc_mfi(df, period=3):
+def calc_mfi(df, period=5):
     tp = (df['h'] + df['l'] + df['c']) / 3
     mf = tp * df['volCcyQuote']
     delta_tp = tp.diff()
@@ -155,7 +155,7 @@ def get_24h_volume(inst_id):
     return df['volCcyQuote'].sum()
 
 # =========================
-# 신규 진입 알림
+# 신규 진입 알림 (4H 조건 삭제 후, 일봉 기준만)
 # =========================
 def send_new_entry_message(all_ids):
     global sent_signal_coins
@@ -169,12 +169,12 @@ def send_new_entry_message(all_ids):
             sent_signal_coins[inst_id] = {"crossed": False, "time": None}
 
     for inst_id in top_ids:
-        # ✅ 일봉 3일선 RSI/MFI 체크
         df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=30)
-        if df_1d is None or len(df_1d) < 3:
+        if df_1d is None or len(df_1d) < 5:
             continue
-        mfi_1d = calc_mfi(df_1d, 3).iloc[-1]
-        rsi_1d = calc_rsi(df_1d, 3).iloc[-1]
+
+        mfi_1d = calc_mfi(df_1d, 5).iloc[-1]
+        rsi_1d = calc_rsi(df_1d, 5).iloc[-1]
         if pd.isna(mfi_1d) or pd.isna(rsi_1d):
             continue
         if not (mfi_1d >= 70 and rsi_1d >= 70):
@@ -196,11 +196,13 @@ def send_new_entry_message(all_ids):
     if new_entry_coins:
         new_entry_coins.sort(key=lambda x: x[2], reverse=True)
         new_entry_coins = new_entry_coins[:3]
-        message_lines = ["⚡ 1D RSI·MFI 필터 (3일선)", "━━━━━━━━━━━━━━━━━━━\n"]
+        message_lines = ["⚡ 1D RSI·MFI 필터 (5일선)", "━━━━━━━━━━━━━━━━━━━\n"]
+
         for inst_id, daily_change, volume, rank in new_entry_coins:
             message_lines.append(
-                f"{inst_id} | 📈 {daily_change}% | 💰 {format_volume_in_eok(volume)}억 | #{rank}"
+                f"{inst_id} | Rank {rank} | {format_volume_in_eok(volume)}억 | 📈 {daily_change}%"
             )
+
         send_telegram_message("\n".join(message_lines))
     else:
         logging.info("⚡ 신규 진입 없음 → 메시지 전송 안 함")
