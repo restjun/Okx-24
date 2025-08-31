@@ -116,7 +116,7 @@ def format_rsi_mfi(value):
 # =========================
 # 4H RSI/MFI 크로스 확인 (5일선)
 # =========================
-def check_4h_mfi_rsi_cross(inst_id, period=5, threshold=80):  # ✅ 70 → 80으로 수정
+def check_4h_mfi_rsi_cross(inst_id, period=5, threshold=70):  # ✅ 70으로 수정
     df = get_ohlcv_okx(inst_id, bar='4H', limit=100)
     if df is None or len(df) < period + 1:
         return False, None
@@ -192,14 +192,23 @@ def send_new_entry_message(all_ids):
             sent_signal_coins[inst_id] = {"crossed": False, "time": None}
 
     for inst_id in top_ids:
-        # 4H 조건 체크 (80 기준)
-        is_cross_4h, cross_time = check_4h_mfi_rsi_cross(inst_id, period=5, threshold=80)
+        # ✅ 4H 조건 체크 (70 기준)
+        is_cross_4h, cross_time = check_4h_mfi_rsi_cross(inst_id, period=5, threshold=70)
         if not is_cross_4h:
             sent_signal_coins[inst_id]["crossed"] = False
             sent_signal_coins[inst_id]["time"] = None
             continue
 
-        # ❌ 일봉 조건 제거됨 (원래 1D ≥ 70 체크 부분)
+        # ✅ 일봉 조건 (RSI·MFI ≥ 70)
+        df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=30)
+        if df_1d is None or len(df_1d) < 5:
+            continue
+        mfi_1d = calc_mfi(df_1d, 5).iloc[-1]
+        rsi_1d = calc_rsi(df_1d, 5).iloc[-1]
+        if pd.isna(mfi_1d) or pd.isna(rsi_1d):
+            continue
+        if mfi_1d < 70 or rsi_1d < 70:
+            continue
 
         # 일간 상승률 확인
         daily_change = calculate_daily_change(inst_id)
@@ -215,12 +224,12 @@ def send_new_entry_message(all_ids):
         sent_signal_coins[inst_id]["crossed"] = True
         sent_signal_coins[inst_id]["time"] = cross_time
 
-    # 메시지 전송
+    # (메시지 전송 부분 동일 - 생략하지 않고 유지)
     if new_entry_coins:
         new_entry_coins.sort(key=lambda x: x[2], reverse=True)
         new_entry_coins = new_entry_coins[:3]
 
-        message_lines = ["⚡ 4H RSI·MFI 필터 (≥80)", "━━━━━━━━━━━━━━━━━━━\n"]
+        message_lines = ["⚡ 4H RSI·MFI 필터 (≥70)", "━━━━━━━━━━━━━━━━━━━\n"]
 
         # BTC 현황
         btc_id = "BTC-USDT-SWAP"
