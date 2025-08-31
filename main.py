@@ -81,9 +81,9 @@ def rma(series, period):
     return r
 
 # =========================
-# RSI 계산 (5일선)
+# RSI 계산 (3일선)
 # =========================
-def calc_rsi(df, period=5):
+def calc_rsi(df, period=3):
     delta = df['c'].diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
@@ -94,9 +94,9 @@ def calc_rsi(df, period=5):
     return rsi
 
 # =========================
-# MFI 계산 (5일선)
+# MFI 계산 (3일선)
 # =========================
-def calc_mfi(df, period=5):
+def calc_mfi(df, period=3):
     tp = (df['h'] + df['l'] + df['c']) / 3
     mf = tp * df['volCcyQuote']
     delta_tp = tp.diff()
@@ -106,28 +106,6 @@ def calc_mfi(df, period=5):
     neg_rma = rma(negative_mf, period)
     mfi = 100 * pos_rma / (pos_rma + neg_rma)
     return mfi
-
-def format_rsi_mfi(value):
-    if pd.isna(value):
-        return "(N/A)"
-    return f"🟢 {value:.1f}" if value >= 70 else f"🔴 {value:.1f}"
-
-# =========================
-# 4H RSI/MFI 크로스 확인 (5일선)
-# =========================
-def check_4h_mfi_rsi_cross(inst_id, period=5, threshold=70):
-    df = get_ohlcv_okx(inst_id, bar='4H', limit=100)
-    if df is None or len(df) < period + 1:
-        return False, None
-    mfi = calc_mfi(df, period)
-    rsi = calc_rsi(df, period)
-    prev_mfi, curr_mfi = mfi.iloc[-2], mfi.iloc[-1]
-    prev_rsi, curr_rsi = rsi.iloc[-2], rsi.iloc[-1]
-    cross_time = pd.to_datetime(df['ts'].iloc[-1], unit='ms') + pd.Timedelta(hours=9)
-    if pd.isna(curr_mfi) or pd.isna(curr_rsi):
-        return False, None
-    crossed = curr_mfi >= threshold and curr_rsi >= threshold and (prev_mfi < threshold or prev_rsi < threshold)
-    return crossed, cross_time if crossed else None
 
 # =========================
 # 일간 상승률 계산
@@ -191,17 +169,12 @@ def send_new_entry_message(all_ids):
             sent_signal_coins[inst_id] = {"crossed": False, "time": None}
 
     for inst_id in top_ids:
-        is_cross_4h, cross_time = check_4h_mfi_rsi_cross(inst_id, period=5, threshold=70)
-        if not is_cross_4h:
-            sent_signal_coins[inst_id]["crossed"] = False
-            sent_signal_coins[inst_id]["time"] = None
-            continue
-
+        # ✅ 일봉 3일선 RSI/MFI 체크
         df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=30)
-        if df_1d is None or len(df_1d) < 5:
+        if df_1d is None or len(df_1d) < 3:
             continue
-        mfi_1d = calc_mfi(df_1d, 5).iloc[-1]
-        rsi_1d = calc_rsi(df_1d, 5).iloc[-1]
+        mfi_1d = calc_mfi(df_1d, 3).iloc[-1]
+        rsi_1d = calc_rsi(df_1d, 3).iloc[-1]
         if pd.isna(mfi_1d) or pd.isna(rsi_1d):
             continue
         if not (mfi_1d >= 70 and rsi_1d >= 70):
@@ -214,18 +187,20 @@ def send_new_entry_message(all_ids):
         if not sent_signal_coins[inst_id]["crossed"]:
             new_entry_coins.append(
                 (inst_id, daily_change, volume_map.get(inst_id, 0),
-                 rank_map.get(inst_id), cross_time)
+                 rank_map.get(inst_id))
             )
 
         sent_signal_coins[inst_id]["crossed"] = True
-        sent_signal_coins[inst_id]["time"] = cross_time
 
     # 메시지 전송
     if new_entry_coins:
         new_entry_coins.sort(key=lambda x: x[2], reverse=True)
         new_entry_coins = new_entry_coins[:3]
-        message_lines = ["⚡ 4H·1D RSI·MFI 필터 (5일선)", "━━━━━━━━━━━━━━━━━━━\n"]
-        # 메시지 작성 (생략, 기존 코드 그대로 사용)
+        message_lines = ["⚡ 1D RSI·MFI 필터 (3일선)", "━━━━━━━━━━━━━━━━━━━\n"]
+        for inst_id, daily_change, volume, rank in new_entry_coins:
+            message_lines.append(
+                f"{inst_id} | 📈 {daily_change}% | 💰 {format_volume_in_eok(volume)}억 | #{rank}"
+            )
         send_telegram_message("\n".join(message_lines))
     else:
         logging.info("⚡ 신규 진입 없음 → 메시지 전송 안 함")
