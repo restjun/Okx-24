@@ -116,7 +116,7 @@ def format_rsi_mfi(value):
 # =========================
 # 4H RSI/MFI 크로스 확인 (5일선)
 # =========================
-def check_4h_mfi_rsi_cross(inst_id, period=5, threshold=70):  # ✅ 80 → 70으로 수정
+def check_4h_mfi_rsi_cross(inst_id, period=5, threshold=80):  # ✅ 70 → 80으로 수정
     df = get_ohlcv_okx(inst_id, bar='4H', limit=100)
     if df is None or len(df) < period + 1:
         return False, None
@@ -193,7 +193,7 @@ def send_new_entry_message(all_ids):
 
     for inst_id in top_ids:
         # 4H 조건 체크 (80 기준)
-        is_cross_4h, cross_time = check_4h_mfi_rsi_cross(inst_id, period=5, threshold=70)
+        is_cross_4h, cross_time = check_4h_mfi_rsi_cross(inst_id, period=5, threshold=80)
         if not is_cross_4h:
             sent_signal_coins[inst_id]["crossed"] = False
             sent_signal_coins[inst_id]["time"] = None
