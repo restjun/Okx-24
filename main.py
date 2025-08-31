@@ -95,17 +95,23 @@ def calc_rsi(df, period=5):
     return rsi
 
 # =========================
-# MFI 계산 (5일선)
+# MFI 계산 (트레이딩뷰 동일 방식, 5일선)
 # =========================
 def calc_mfi(df, period=5):
     tp = (df['h'] + df['l'] + df['c']) / 3
     mf = tp * df['volCcyQuote']
     delta_tp = tp.diff()
+
     positive_mf = mf.where(delta_tp > 0, 0.0)
     negative_mf = mf.where(delta_tp < 0, 0.0)
-    pos_rma = rma(positive_mf, period)
-    neg_rma = rma(negative_mf, period)
-    mfi = 100 * pos_rma / (pos_rma + neg_rma)
+
+    # 트레이딩뷰 방식: 단순 합
+    pos_sum = positive_mf.rolling(period).sum()
+    neg_sum = negative_mf.rolling(period).sum()
+
+    with np.errstate(divide='ignore', invalid='ignore'):
+        mfi = 100 * pos_sum / (pos_sum + neg_sum)
+
     return mfi
 
 def format_rsi_mfi(value):
@@ -116,7 +122,7 @@ def format_rsi_mfi(value):
 # =========================
 # 4H RSI/MFI 크로스 확인 (5일선)
 # =========================
-def check_4h_mfi_rsi_cross(inst_id, period=5, threshold=70):  # ✅ 70으로 수정
+def check_4h_mfi_rsi_cross(inst_id, period=5, threshold=70):
     df = get_ohlcv_okx(inst_id, bar='4H', limit=100)
     if df is None or len(df) < period + 1:
         return False, None
@@ -192,14 +198,12 @@ def send_new_entry_message(all_ids):
             sent_signal_coins[inst_id] = {"crossed": False, "time": None}
 
     for inst_id in top_ids:
-        # ✅ 4H 조건 체크 (70 기준)
         is_cross_4h, cross_time = check_4h_mfi_rsi_cross(inst_id, period=5, threshold=70)
         if not is_cross_4h:
             sent_signal_coins[inst_id]["crossed"] = False
             sent_signal_coins[inst_id]["time"] = None
             continue
 
-        # ✅ 일봉 조건 (RSI·MFI ≥ 70)
         df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=30)
         if df_1d is None or len(df_1d) < 5:
             continue
@@ -210,7 +214,6 @@ def send_new_entry_message(all_ids):
         if mfi_1d < 70 or rsi_1d < 70:
             continue
 
-        # 일간 상승률 확인
         daily_change = calculate_daily_change(inst_id)
         if daily_change is None or daily_change <= 0:
             continue
@@ -224,14 +227,12 @@ def send_new_entry_message(all_ids):
         sent_signal_coins[inst_id]["crossed"] = True
         sent_signal_coins[inst_id]["time"] = cross_time
 
-    # (메시지 전송 부분 동일 - 생략하지 않고 유지)
     if new_entry_coins:
         new_entry_coins.sort(key=lambda x: x[2], reverse=True)
         new_entry_coins = new_entry_coins[:3]
 
         message_lines = ["⚡ 4H RSI·MFI 필터 (≥70)", "━━━━━━━━━━━━━━━━━━━\n"]
 
-        # BTC 현황
         btc_id = "BTC-USDT-SWAP"
         btc_change = calculate_daily_change(btc_id)
         btc_volume = volume_map.get(btc_id, 0)
@@ -266,7 +267,6 @@ def send_new_entry_message(all_ids):
             f"📊 1D → RSI: {format_rsi_mfi(rsi_btc_1d)} | MFI: {format_rsi_mfi(mfi_btc_1d)}\n"
         )
 
-        # 거래대금 TOP 10
         message_lines.append("━━━━━━━━━━━━━━━━━━━\n")
         message_lines.append("🏆 실시간 거래대금 TOP 10\n")
 
@@ -307,7 +307,6 @@ def send_new_entry_message(all_ids):
                 f"📊 1D → RSI: {format_rsi_mfi(rsi_1d)} | MFI: {format_rsi_mfi(mfi_1d)}"
             )
 
-        # 신규 진입 코인
         message_lines.append("\n━━━━━━━━━━━━━━━━━━━")
         message_lines.append("🆕 신규 진입 코인 (상위 3개) 👀")
         for inst_id, daily_change, volume_24h, coin_rank, cross_time in new_entry_coins:
