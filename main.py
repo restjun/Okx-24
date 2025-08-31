@@ -116,7 +116,7 @@ def format_rsi_mfi(value):
 # =========================
 # 4H RSI/MFI 크로스 확인 (5일선)
 # =========================
-def check_4h_mfi_rsi_cross(inst_id, period=5, threshold=70):
+def check_4h_mfi_rsi_cross(inst_id, period=5, threshold=80):  # ✅ 70 → 80으로 수정
     df = get_ohlcv_okx(inst_id, bar='4H', limit=100)
     if df is None or len(df) < period + 1:
         return False, None
@@ -192,14 +192,14 @@ def send_new_entry_message(all_ids):
             sent_signal_coins[inst_id] = {"crossed": False, "time": None}
 
     for inst_id in top_ids:
-        # 4H 조건 체크
-        is_cross_4h, cross_time = check_4h_mfi_rsi_cross(inst_id, period=5, threshold=70)
+        # 4H 조건 체크 (80 기준)
+        is_cross_4h, cross_time = check_4h_mfi_rsi_cross(inst_id, period=5, threshold=80)
         if not is_cross_4h:
             sent_signal_coins[inst_id]["crossed"] = False
             sent_signal_coins[inst_id]["time"] = None
             continue
 
-        # ✅ 1D RSI/MFI 조건 체크
+        # ✅ 1D RSI/MFI 조건 체크 (70 유지)
         df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=30)
         if df_1d is None or len(df_1d) < 5:
             continue
@@ -229,7 +229,7 @@ def send_new_entry_message(all_ids):
         new_entry_coins.sort(key=lambda x: x[2], reverse=True)
         new_entry_coins = new_entry_coins[:3]
 
-        message_lines = ["⚡ 4H·1D RSI·MFI 필터 (5일선)", "━━━━━━━━━━━━━━━━━━━\n"]
+        message_lines = ["⚡ 4H·1D RSI·MFI 필터 (4H≥80 / 1D≥70)", "━━━━━━━━━━━━━━━━━━━\n"]
 
         # BTC 현황
         btc_id = "BTC-USDT-SWAP"
