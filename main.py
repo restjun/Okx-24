@@ -199,16 +199,7 @@ def send_new_entry_message(all_ids):
             sent_signal_coins[inst_id]["time"] = None
             continue
 
-        # ✅ 1D RSI/MFI 조건 체크 (70 유지)
-        df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=30)
-        if df_1d is None or len(df_1d) < 5:
-            continue
-        mfi_1d = calc_mfi(df_1d, 5).iloc[-1]
-        rsi_1d = calc_rsi(df_1d, 5).iloc[-1]
-        if pd.isna(mfi_1d) or pd.isna(rsi_1d):
-            continue
-        if not (mfi_1d >= 70 and rsi_1d >= 70):
-            continue
+        # ❌ 일봉 조건 제거됨 (원래 1D ≥ 70 체크 부분)
 
         # 일간 상승률 확인
         daily_change = calculate_daily_change(inst_id)
@@ -229,7 +220,7 @@ def send_new_entry_message(all_ids):
         new_entry_coins.sort(key=lambda x: x[2], reverse=True)
         new_entry_coins = new_entry_coins[:3]
 
-        message_lines = ["⚡ 4H·1D RSI·MFI 필터 (4H≥80 / 1D≥70)", "━━━━━━━━━━━━━━━━━━━\n"]
+        message_lines = ["⚡ 4H RSI·MFI 필터 (≥80)", "━━━━━━━━━━━━━━━━━━━\n"]
 
         # BTC 현황
         btc_id = "BTC-USDT-SWAP"
