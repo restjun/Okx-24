@@ -189,7 +189,7 @@ def get_24h_volume(inst_id):
 def send_new_entry_message(all_ids):
     global sent_signal_coins
     volume_map = {inst_id: get_24h_volume(inst_id) for inst_id in all_ids}
-    top_ids = sorted(volume_map, key=volume_map.get, reverse=True)[:100]
+    top_ids = sorted(volume_map, key=volume_map.get, reverse=True)[:50]
     rank_map = {inst_id: rank+1 for rank, inst_id in enumerate(top_ids)}
     new_entry_coins = []
 
@@ -204,7 +204,7 @@ def send_new_entry_message(all_ids):
             sent_signal_coins[inst_id]["time"] = None
             continue
 
-        df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=30)
+        df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=100)
         if df_1d is None or len(df_1d) < 5:
             continue
         mfi_1d = calc_mfi(df_1d, 5).iloc[-1]
@@ -246,14 +246,14 @@ def send_new_entry_message(all_ids):
             else:
                 btc_status = f"🔴 {btc_change:.2f}%"
 
-        df_btc_4h = get_ohlcv_okx(btc_id, bar='4H', limit=100)
+        df_btc_4h = get_ohlcv_okx(btc_id, bar='4H', limit=200)
         if df_btc_4h is not None and len(df_btc_4h) >= 5:
             mfi_btc_4h = calc_mfi(df_btc_4h, 5).iloc[-1]
             rsi_btc_4h = calc_rsi(df_btc_4h, 5).iloc[-1]
         else:
             mfi_btc_4h, rsi_btc_4h = None, None
 
-        df_btc_1d = get_ohlcv_okx(btc_id, bar='1D', limit=30)
+        df_btc_1d = get_ohlcv_okx(btc_id, bar='1D', limit=100)
         if df_btc_1d is not None and len(df_btc_1d) >= 5:
             mfi_btc_1d = calc_mfi(df_btc_1d, 5).iloc[-1]
             rsi_btc_1d = calc_rsi(df_btc_1d, 5).iloc[-1]
@@ -286,14 +286,14 @@ def send_new_entry_message(all_ids):
             else:
                 status = "(N/A)"
 
-            df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=100)
+            df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=200)
             if df_4h is not None and len(df_4h) >= 5:
                 mfi_4h = calc_mfi(df_4h, 5).iloc[-1]
                 rsi_4h = calc_rsi(df_4h, 5).iloc[-1]
             else:
                 mfi_4h, rsi_4h = None, None
 
-            df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=30)
+            df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=100)
             if df_1d is not None and len(df_1d) >= 5:
                 mfi_1d = calc_mfi(df_1d, 5).iloc[-1]
                 rsi_1d = calc_rsi(df_1d, 5).iloc[-1]
