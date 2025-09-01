@@ -133,7 +133,7 @@ def check_daily_ema_alignment(inst_id):
         return False
     ema20 = calc_ema(df, 20).iloc[-1]
     ema50 = calc_ema(df, 50).iloc[-1]
-    return ema5 > ema10
+    return ema20 > ema50
 
 # =========================
 # 4H RSI/MFI 크로스 확인 (3일선)
