@@ -125,7 +125,9 @@ def calc_ema(df, period):
     return df['c'].ewm(span=period, adjust=False).mean()
 
 # =========================
-# 4H RSI/MFI 크로스 확인 (5일선, 임계값=30)
+# 4H RSI/MFI 상향 돌파 확인 (5일선, 임계값=30)
+#   조건: 이전 < 30  이고  현재 ≥ 30
+#   (둘 다 현재 30 이상이며, 직전 봉에서 둘 중 하나라도 30 미만이었으면 신호)
 # =========================
 def check_4h_mfi_rsi_cross(inst_id, period=5, threshold=30):
     df = get_ohlcv_okx(inst_id, bar='4H', limit=200)
@@ -138,7 +140,11 @@ def check_4h_mfi_rsi_cross(inst_id, period=5, threshold=30):
     cross_time = pd.to_datetime(df['ts'].iloc[-1], unit='ms') + pd.Timedelta(hours=9)
     if pd.isna(curr_mfi) or pd.isna(curr_rsi):
         return False, None
-    crossed = curr_mfi <= threshold and curr_rsi <= threshold and (prev_mfi > threshold or prev_rsi > threshold)
+
+    # 🔼 상향 돌파: 현재 둘 다 ≥ 30 이고, 직전엔 둘 중 하나라도 < 30
+    crossed = (curr_mfi >= threshold and curr_rsi >= threshold) and \
+              (prev_mfi < threshold or prev_rsi < threshold)
+
     return crossed, cross_time if crossed else None
 
 # =========================
@@ -226,7 +232,8 @@ def send_new_entry_message(all_ids):
         new_entry_coins.sort(key=lambda x: x[2], reverse=True)
         new_entry_coins = new_entry_coins[:3]
 
-        message_lines = ["⚡ 4H RSI·MFI 필터 (≤30, 5일선)", "━━━━━━━━━━━━━━━━━━━\n"]
+        # 문구를 상향 돌파 기준으로 수정
+        message_lines = ["⚡ 4H RSI·MFI 필터 (≥30 상향 돌파, 5일선)", "━━━━━━━━━━━━━━━━━━━\n"]
 
         message_lines.append("🏆 실시간 거래대금 TOP 10\n")
 
