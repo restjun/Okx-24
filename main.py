@@ -15,143 +15,277 @@ app = FastAPI()
 # Telegram 설정
 # =========================
 telegram_bot_token = "8451481398:AAHHg2wVDKphMruKsjN2b6NFKJ50jhxEe-g"
-telegram_user_id = 659688670
+telegram_user_id = 6596886700
 bot = telepot.Bot(telegram_bot_token)
 
+logging.basicConfig(level=logging.INFO)
+sent_signal_coins = {}
+
 # =========================
-# OKX API
+# Telegram 메시지 전송
+# =========================
+def send_telegram_message(message):
+    for retry_count in range(1, 10 + 1):
+        try:
+            bot.sendMessage(chat_id=telegram_user_id, text=message)
+            logging.info("텔레그램 메시지 전송 성공")
+            return
+        except Exception as e:
+            logging.error(f"텔레그램 메시지 전송 실패 (재시도 {retry_count}/10): {e}")
+            time.sleep(5)
+    logging.error("텔레그램 메시지 전송 실패: 최대 재시도 초과")
+
+# =========================
+# API 호출 재시도
+# =========================
+def retry_request(func, *args, **kwargs):
+    for attempt in range(10):
+        try:
+            result = func(*args, **kwargs)
+            if hasattr(result, 'status_code') and result.status_code == 429:
+                time.sleep(1)
+                continue
+            return result
+        except Exception as e:
+            logging.error(f"API 호출 실패 (재시도 {attempt+1}/10): {e}")
+            time.sleep(5)
+    return None
+
+# =========================
+# OKX OHLCV 가져오기
+# =========================
+def get_ohlcv_okx(inst_id, bar='1H', limit=200):
+    url = f"https://www.okx.com/api/v5/market/candles?instId={inst_id}&bar={bar}&limit={limit}"
+    response = retry_request(requests.get, url)
+    if response is None:
+        return None
+    try:
+        df = pd.DataFrame(response.json()['data'], columns=[
+            'ts','o','h','l','c','vol','volCcy','volCcyQuote','confirm'
+        ])
+        for col in ['o','h','l','c','vol','volCcyQuote']:
+            df[col] = df[col].astype(float)
+        df = df.iloc[::-1].reset_index(drop=True)
+        return df
+    except Exception as e:
+        logging.error(f"{inst_id} OHLCV 파싱 실패: {e}")
+        return None
+
+# =========================
+# RMA 계산
+# =========================
+def rma(series, period):
+    series = series.copy()
+    alpha = 1 / period
+    r = series.ewm(alpha=alpha, adjust=False).mean()
+    r.iloc[:period] = series.iloc[:period].expanding().mean()[:period]
+    return r
+
+# =========================
+# RSI 계산 (14일선)
+# =========================
+def calc_rsi(df, period=14):
+    delta = df['c'].diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+    avg_gain = rma(gain, period)
+    avg_loss = rma(loss, period)
+    rs = avg_gain / avg_loss
+    rsi = 100 - (100 / (1 + rs))
+    return rsi
+
+# =========================
+# MFI 계산 (트레이딩뷰 동일 방식, 14일선)
+# =========================
+def calc_mfi(df, period=14):
+    tp = (df['h'] + df['l'] + df['c']) / 3
+    mf = tp * df['volCcyQuote']
+    delta_tp = tp.diff()
+
+    positive_mf = mf.where(delta_tp > 0, 0.0)
+    negative_mf = mf.where(delta_tp < 0, 0.0)
+
+    pos_sum = positive_mf.rolling(period).sum()
+    neg_sum = negative_mf.rolling(period).sum()
+
+    with np.errstate(divide='ignore', invalid='ignore'):
+        mfi = 100 * pos_sum / (pos_sum + neg_sum)
+
+    return mfi
+
+def format_rsi_mfi(value):
+    if pd.isna(value):
+        return "(N/A)"
+    return f"🟢 {value:.1f}" if value >= 70 else f"🔴 {value:.1f}"
+
+# =========================
+# EMA 계산
+# =========================
+def calc_ema(df, period):
+    return df['c'].ewm(span=period, adjust=False).mean()
+
+# =========================
+# 4H RSI/MFI 크로스 확인 (14일선)
+# =========================
+def check_4h_mfi_rsi_cross(inst_id, period=14, threshold=70):
+    df = get_ohlcv_okx(inst_id, bar='4H', limit=200)
+    if df is None or len(df) < period + 1:
+        return False, None
+    mfi = calc_mfi(df, period)
+    rsi = calc_rsi(df, period)
+    prev_mfi, curr_mfi = mfi.iloc[-2], mfi.iloc[-1]
+    prev_rsi, curr_rsi = rsi.iloc[-2], rsi.iloc[-1]
+    cross_time = pd.to_datetime(df['ts'].iloc[-1], unit='ms') + pd.Timedelta(hours=9)
+    if pd.isna(curr_mfi) or pd.isna(curr_rsi):
+        return False, None
+    crossed = curr_mfi >= threshold and curr_rsi >= threshold and (prev_mfi < threshold or prev_rsi < threshold)
+    return crossed, cross_time if crossed else None
+
+# =========================
+# 일간 상승률 계산
+# =========================
+def calculate_daily_change(inst_id):
+    df = get_ohlcv_okx(inst_id, bar="1H", limit=48)
+    if df is None or len(df) < 24:
+        return None
+    try:
+        df['datetime'] = pd.to_datetime(df['ts'], unit='ms') + pd.Timedelta(hours=9)
+        df.set_index('datetime', inplace=True)
+        daily = df['c'].resample('1D', offset='9h').last()
+        if len(daily) < 2:
+            return None
+        today_close = daily.iloc[-1]
+        yesterday_close = daily.iloc[-2]
+        return round((today_close - yesterday_close) / yesterday_close * 100, 2)
+    except Exception as e:
+        logging.error(f"{inst_id} 상승률 계산 오류: {e}")
+        return None
+
+def format_volume_in_eok(volume):
+    try:
+        eok = int(volume // 1_000_000)
+        return str(eok) if eok >= 1 else "🚫"
+    except:
+        return "🚫"
+
+# =========================
+# 모든 USDT-SWAP 심볼
 # =========================
 def get_all_okx_swap_symbols():
     url = "https://www.okx.com/api/v5/public/instruments?instType=SWAP"
-    try:
-        r = requests.get(url, timeout=10)
-        data = r.json()
-        return [d["instId"] for d in data["data"]]
-    except Exception as e:
-        logging.error(f"심볼 조회 오류: {e}")
+    response = retry_request(requests.get, url)
+    if response is None:
         return []
+    data = response.json().get("data", [])
+    return [item["instId"] for item in data if "USDT" in item["instId"]]
 
-def get_ohlcv_okx(inst_id, bar="4H", limit=100):
-    url = f"https://www.okx.com/api/v5/market/candles?instId={inst_id}&bar={bar}&limit={limit}"
-    try:
-        r = requests.get(url, timeout=10)
-        data = r.json()
-        if "data" not in data:
-            return None
-        df = pd.DataFrame(data["data"], columns=[
-            "ts","o","h","l","c","vol","volCcy","volCcyQuote","confirm"
-        ])
-        df = df.astype(float)
-        df = df.iloc[::-1].reset_index(drop=True)  # 시간 순 정렬
-        return df
-    except Exception as e:
-        logging.error(f"{inst_id} OHLCV 조회 오류: {e}")
-        return None
-
+# =========================
+# 24시간 거래대금
+# =========================
 def get_24h_volume(inst_id):
-    url = f"https://www.okx.com/api/v5/market/ticker?instId={inst_id}"
-    try:
-        r = requests.get(url, timeout=10)
-        data = r.json()
-        return float(data["data"][0]["volCcyQuote"])  # 24h 거래대금 (USDT 기준)
-    except Exception as e:
-        logging.error(f"{inst_id} 거래대금 조회 오류: {e}")
+    df = get_ohlcv_okx(inst_id, bar="1H", limit=24)
+    if df is None or len(df) < 24:
         return 0
+    return df['volCcyQuote'].sum()
 
 # =========================
-# 지표 계산
-# =========================
-def calc_rsi(df, period=14):
-    delta = df["c"].diff()
-    gain = np.where(delta > 0, delta, 0)
-    loss = np.where(delta < 0, -delta, 0)
-    avg_gain = pd.Series(gain).rolling(period).mean()
-    avg_loss = pd.Series(loss).rolling(period).mean()
-    rs = avg_gain / avg_loss
-    return 100 - (100 / (1 + rs))
-
-def calc_mfi(df, period=14):
-    tp = (df["h"] + df["l"] + df["c"]) / 3
-    mf = tp * df["vol"]
-    positive_flow = []
-    negative_flow = []
-    for i in range(1, len(tp)):
-        if tp[i] > tp[i-1]:
-            positive_flow.append(mf.iloc[i])
-            negative_flow.append(0)
-        else:
-            positive_flow.append(0)
-            negative_flow.append(mf.iloc[i])
-    positive_mf = pd.Series(positive_flow).rolling(period).sum()
-    negative_mf = pd.Series(negative_flow).rolling(period).sum()
-    mfi = 100 - (100 / (1 + (positive_mf / negative_mf)))
-    return mfi.reindex(df.index, method="bfill")
-
-# =========================
-# 텔레그램 전송
-# =========================
-def send_telegram_message(message):
-    try:
-        bot.sendMessage(telegram_user_id, message)
-    except Exception as e:
-        logging.error(f"텔레그램 전송 오류: {e}")
-
-# =========================
-# 신규 진입 알림 (원본 유지)
+# 신규 진입 알림
 # =========================
 def send_new_entry_message(all_ids):
-    message = "📥 신규 진입 코인 알림 (기존 기능 유지)\n"
-    message += "━━━━━━━━━━━━━━━━━━━\n"
-    for inst_id in all_ids[:5]:  # 예시: 상위 5개만 출력
-        message += f"✅ {inst_id}\n"
-    send_telegram_message(message)
-
-# =========================
-# 시장 MFI/RSI 통계 (TOP 100)
-# =========================
-def market_mfi_rsi_statistics(all_ids, top_n=100):
+    global sent_signal_coins
     volume_map = {inst_id: get_24h_volume(inst_id) for inst_id in all_ids}
-    top_ids = sorted(volume_map, key=volume_map.get, reverse=True)[:top_n]
+    top_ids = sorted(volume_map, key=volume_map.get, reverse=True)[:200]
+    rank_map = {inst_id: rank+1 for rank, inst_id in enumerate(top_ids)}
+    new_entry_coins = []
 
-    stats = []
+    for inst_id in ["BTC-USDT-SWAP"] + top_ids:
+        if inst_id not in sent_signal_coins:
+            sent_signal_coins[inst_id] = {"crossed": False, "time": None}
+
     for inst_id in top_ids:
-        df = get_ohlcv_okx(inst_id, bar="4H", limit=100)
-        if df is None or len(df) < 3:
+        is_cross_4h, cross_time = check_4h_mfi_rsi_cross(inst_id, period=14, threshold=70)
+        if not is_cross_4h:
+            sent_signal_coins[inst_id]["crossed"] = False
+            sent_signal_coins[inst_id]["time"] = None
             continue
-        mfi_4h = calc_mfi(df, 3).iloc[-1]
-        rsi_4h = calc_rsi(df, 3).iloc[-1]
-        stats.append((inst_id, mfi_4h, rsi_4h))
 
-    if not stats:
-        return "📊 시장 통계 계산 실패 (데이터 부족)"
+        daily_change = calculate_daily_change(inst_id)
+        if daily_change is None or daily_change <= 0:
+            continue
 
-    avg_mfi = np.nanmean([m for _, m, _ in stats])
-    avg_rsi = np.nanmean([r for _, _, r in stats])
+        if not sent_signal_coins[inst_id]["crossed"]:
+            new_entry_coins.append(
+                (inst_id, daily_change, volume_map.get(inst_id, 0),
+                 rank_map.get(inst_id), cross_time)
+            )
 
-    overbought = sum(1 for _, m, r in stats if (m >= 70 and r >= 70))
-    oversold = sum(1 for _, m, r in stats if (m <= 30 and r <= 30))
-    neutral = len(stats) - overbought - oversold
+        sent_signal_coins[inst_id]["crossed"] = True
+        sent_signal_coins[inst_id]["time"] = cross_time
 
-    if overbought / len(stats) >= 0.4:
-        market_trend = "🚀 상승장 경고 (과매수 집중)"
-    elif oversold / len(stats) >= 0.4:
-        market_trend = "📉 하락장 (과매도 집중)"
+    if new_entry_coins:
+        new_entry_coins.sort(key=lambda x: x[2], reverse=True)
+        new_entry_coins = new_entry_coins[:3]
+
+        message_lines = ["⚡ 4H RSI·MFI 필터 (≥70, 14일선)", "━━━━━━━━━━━━━━━━━━━\n"]
+
+        message_lines.append("🏆 실시간 거래대금 TOP 10\n")
+
+        for rank, inst_id in enumerate(top_ids[:10], start=1):
+            change = calculate_daily_change(inst_id)
+            volume = volume_map.get(inst_id, 0)
+            volume_str = format_volume_in_eok(volume)
+            name = inst_id.replace("-USDT-SWAP", "")
+
+            if change is not None:
+                if change >= 5:
+                    status = f"🟢🔥 +{change:.2f}%"
+                elif change > 0:
+                    status = f"🟢 +{change:.2f}%"
+                else:
+                    status = f"🔴 {change:.2f}%"
+            else:
+                status = "(N/A)"
+
+            df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=200)
+            if df_4h is not None and len(df_4h) >= 14:
+                mfi_4h = calc_mfi(df_4h, 14).iloc[-1]
+                rsi_4h = calc_rsi(df_4h, 14).iloc[-1]
+            else:
+                mfi_4h, rsi_4h = None, None
+
+            message_lines.append(
+                f"{rank}위 {name}\n"
+                f"{status} | 💰 거래대금: {volume_str}M\n"
+                f"📊 4H → RSI: {format_rsi_mfi(rsi_4h)} | MFI: {format_rsi_mfi(mfi_4h)}"
+            )
+
+        message_lines.append("\n━━━━━━━━━━━━━━━━━━━")
+        message_lines.append("🆕 신규 진입 코인 (상위 3개) 👀")
+        for inst_id, daily_change, volume_24h, coin_rank, cross_time in new_entry_coins:
+            name = inst_id.replace("-USDT-SWAP", "")
+            volume_str = format_volume_in_eok(volume_24h)
+
+            df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=100)
+            if df_4h is not None and len(df_4h) >= 14:
+                mfi_4h = calc_mfi(df_4h, 14).iloc[-1]
+                rsi_4h = calc_rsi(df_4h, 14).iloc[-1]
+            else:
+                mfi_4h, rsi_4h = None, None
+
+            daily_str = f"+{daily_change:.2f}%"
+            if daily_change >= 5:
+                daily_str = f"🔥 {daily_str}"
+
+            message_lines.append(
+                f"\n{coin_rank}위 {name}\n"
+                f"{daily_str} | 💰 거래대금: {volume_str}M\n"
+                f"📊 4H → RSI: {format_rsi_mfi(rsi_4h)} | MFI: {format_rsi_mfi(mfi_4h)}"
+            )
+
+        message_lines.append("\n━━━━━━━━━━━━━━━━━━━")
+        send_telegram_message("\n".join(message_lines))
     else:
-        market_trend = "⚖️ 중립 구간"
-
-    message = (
-        "📊 시장 RSI·MFI 통계 (Top 100)\n"
-        "━━━━━━━━━━━━━━━━━━━\n"
-        f"📈 평균 RSI: {avg_rsi:.1f}\n"
-        f"💵 평균 MFI: {avg_mfi:.1f}\n\n"
-        f"🟢 과매수 코인: {overbought}개\n"
-        f"🔴 과매도 코인: {oversold}개\n"
-        f"⚪ 중립: {neutral}개\n"
-        "━━━━━━━━━━━━━━━━━━━\n"
-        f"📌 시장 판단 → {market_trend}"
-    )
-
-    return message
+        logging.info("⚡ 신규 진입 없음 → 메시지 전송 안 함")
 
 # =========================
 # 메인 실행
@@ -161,19 +295,18 @@ def main():
     all_ids = get_all_okx_swap_symbols()
     send_new_entry_message(all_ids)
 
-    stats_message = market_mfi_rsi_statistics(all_ids, top_n=100)
-    send_telegram_message(stats_message)
-
 # =========================
 # 스케줄러
 # =========================
 def run_scheduler():
-    schedule.every(30).minutes.do(main)
     while True:
         schedule.run_pending()
         time.sleep(1)
 
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
+@app.on_event("startup")
+def start_scheduler():
+    schedule.every(1).minutes.do(main)
     threading.Thread(target=run_scheduler, daemon=True).start()
+
+if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
