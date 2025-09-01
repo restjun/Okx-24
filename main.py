@@ -131,8 +131,8 @@ def check_daily_ema_alignment(inst_id):
     df = get_ohlcv_okx(inst_id, bar="1D", limit=100)
     if df is None or len(df) < 20:
         return False
-    ema5 = calc_ema(df, 5).iloc[-1]
-    ema10 = calc_ema(df, 10).iloc[-1]
+    ema20 = calc_ema(df, 20).iloc[-1]
+    ema50 = calc_ema(df, 50).iloc[-1]
     return ema5 > ema10
 
 # =========================
@@ -230,7 +230,7 @@ def send_new_entry_message(all_ids):
         if mfi_1d < 70 or rsi_1d < 70:
             continue
 
-        # ✅ EMA 필터 추가 (일봉 5 > 10)
+        # ✅ EMA 필터 추가 (일봉 20 > 50)
         if not check_daily_ema_alignment(inst_id):
             continue
 
