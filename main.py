@@ -105,7 +105,6 @@ def calc_mfi(df, period=5):
     positive_mf = mf.where(delta_tp > 0, 0.0)
     negative_mf = mf.where(delta_tp < 0, 0.0)
 
-    # 트레이딩뷰 방식: 단순 합
     pos_sum = positive_mf.rolling(period).sum()
     neg_sum = negative_mf.rolling(period).sum()
 
@@ -118,6 +117,23 @@ def format_rsi_mfi(value):
     if pd.isna(value):
         return "(N/A)"
     return f"🟢 {value:.1f}" if value >= 70 else f"🔴 {value:.1f}"
+
+# =========================
+# EMA 계산
+# =========================
+def calc_ema(df, period):
+    return df['c'].ewm(span=period, adjust=False).mean()
+
+# =========================
+# 일봉 EMA 5-20 정배열 체크
+# =========================
+def check_daily_ema_alignment(inst_id):
+    df = get_ohlcv_okx(inst_id, bar="1D", limit=100)
+    if df is None or len(df) < 20:
+        return False
+    ema5 = calc_ema(df, 5).iloc[-1]
+    ema20 = calc_ema(df, 20).iloc[-1]
+    return ema5 > ema20
 
 # =========================
 # 4H RSI/MFI 크로스 확인 (3일선)
@@ -214,6 +230,10 @@ def send_new_entry_message(all_ids):
         if mfi_1d < 70 or rsi_1d < 70:
             continue
 
+        # ✅ EMA 필터 추가 (일봉 5 > 20)
+        if not check_daily_ema_alignment(inst_id):
+            continue
+
         daily_change = calculate_daily_change(inst_id)
         if daily_change is None or daily_change <= 0:
             continue
@@ -231,7 +251,7 @@ def send_new_entry_message(all_ids):
         new_entry_coins.sort(key=lambda x: x[2], reverse=True)
         new_entry_coins = new_entry_coins[:3]
 
-        message_lines = ["⚡ 4H RSI·MFI 필터 (≥70)", "━━━━━━━━━━━━━━━━━━━\n"]
+        message_lines = ["⚡ 4H RSI·MFI 필터 (≥70) + EMA(5>20)", "━━━━━━━━━━━━━━━━━━━\n"]
 
         # ✅ BTC 현황 부분 삭제 완료
 
