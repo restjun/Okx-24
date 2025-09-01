@@ -125,17 +125,6 @@ def calc_ema(df, period):
     return df['c'].ewm(span=period, adjust=False).mean()
 
 # =========================
-# 4H EMA 20-50 정배열 체크 (수정됨)
-# =========================
-def check_4h_ema_alignment(inst_id):
-    df = get_ohlcv_okx(inst_id, bar="4H", limit=200)
-    if df is None or len(df) < 50:
-        return False
-    ema20 = calc_ema(df, 20).iloc[-1]
-    ema50 = calc_ema(df, 50).iloc[-1]
-    return ema20 > ema50
-
-# =========================
 # 4H RSI/MFI 크로스 확인 (3일선)
 # =========================
 def check_4h_mfi_rsi_cross(inst_id, period=5, threshold=70):
@@ -230,9 +219,7 @@ def send_new_entry_message(all_ids):
         if mfi_1d < 70 or rsi_1d < 70:
             continue
 
-        # ✅ EMA 필터 추가 (4H 20 > 50)
-        if not check_4h_ema_alignment(inst_id):
-            continue
+        # ❌ EMA 필터 제거됨
 
         daily_change = calculate_daily_change(inst_id)
         if daily_change is None or daily_change <= 0:
@@ -251,7 +238,7 @@ def send_new_entry_message(all_ids):
         new_entry_coins.sort(key=lambda x: x[2], reverse=True)
         new_entry_coins = new_entry_coins[:3]
 
-        message_lines = ["⚡ 4H RSI·MFI 필터 (≥70) + EMA(5>10)", "━━━━━━━━━━━━━━━━━━━\n"]
+        message_lines = ["⚡ 4H RSI·MFI 필터 (≥70)", "━━━━━━━━━━━━━━━━━━━\n"]
 
         # ✅ BTC 현황 부분 삭제 완료
 
