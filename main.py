@@ -209,8 +209,7 @@ def send_new_entry_message(all_ids):
             sent_signal_coins[inst_id]["time"] = None
             continue
 
-        # ❌ 일봉 MFI/RSI 조건 제거됨
-
+        # ❌ 일봉 MFI/RSI 필터 제거
         daily_change = calculate_daily_change(inst_id)
         if daily_change is None or daily_change <= 0:
             continue
@@ -255,18 +254,10 @@ def send_new_entry_message(all_ids):
             else:
                 mfi_4h, rsi_4h = None, None
 
-            df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=100)
-            if df_1d is not None and len(df_1d) >= 5:
-                mfi_1d = calc_mfi(df_1d, 5).iloc[-1]
-                rsi_1d = calc_rsi(df_1d, 5).iloc[-1]
-            else:
-                mfi_1d, rsi_1d = None, None
-
             message_lines.append(
                 f"{rank}위 {name}\n"
                 f"{status} | 💰 거래대금: {volume_str}M\n"
-                f"📊 4H → RSI: {format_rsi_mfi(rsi_4h)} | MFI: {format_rsi_mfi(mfi_4h)}\n"
-                f"📊 1D → RSI: {format_rsi_mfi(rsi_1d)} | MFI: {format_rsi_mfi(mfi_1d)}"
+                f"📊 4H → RSI: {format_rsi_mfi(rsi_4h)} | MFI: {format_rsi_mfi(mfi_4h)}"
             )
 
         message_lines.append("\n━━━━━━━━━━━━━━━━━━━")
@@ -282,13 +273,6 @@ def send_new_entry_message(all_ids):
             else:
                 mfi_4h, rsi_4h = None, None
 
-            df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=30)
-            if df_1d is not None and len(df_1d) >= 5:
-                mfi_1d = calc_mfi(df_1d, 5).iloc[-1]
-                rsi_1d = calc_rsi(df_1d, 5).iloc[-1]
-            else:
-                mfi_1d, rsi_1d = None, None
-
             daily_str = f"+{daily_change:.2f}%"
             if daily_change >= 5:
                 daily_str = f"🔥 {daily_str}"
@@ -296,8 +280,7 @@ def send_new_entry_message(all_ids):
             message_lines.append(
                 f"\n{coin_rank}위 {name}\n"
                 f"{daily_str} | 💰 거래대금: {volume_str}M\n"
-                f"📊 4H → RSI: {format_rsi_mfi(rsi_4h)} | MFI: {format_rsi_mfi(mfi_4h)}\n"
-                f"📊 1D → RSI: {format_rsi_mfi(rsi_1d)} | MFI: {format_rsi_mfi(mfi_1d)}"
+                f"📊 4H → RSI: {format_rsi_mfi(rsi_4h)} | MFI: {format_rsi_mfi(mfi_4h)}"
             )
 
         message_lines.append("\n━━━━━━━━━━━━━━━━━━━")
