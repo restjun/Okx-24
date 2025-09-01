@@ -209,17 +209,7 @@ def send_new_entry_message(all_ids):
             sent_signal_coins[inst_id]["time"] = None
             continue
 
-        df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=100)
-        if df_1d is None or len(df_1d) < 5:
-            continue
-        mfi_1d = calc_mfi(df_1d, 5).iloc[-1]
-        rsi_1d = calc_rsi(df_1d, 5).iloc[-1]
-        if pd.isna(mfi_1d) or pd.isna(rsi_1d):
-            continue
-        if mfi_1d < 70 or rsi_1d < 70:
-            continue
-
-        # ❌ EMA 필터 제거됨
+        # ❌ 일봉 MFI/RSI 조건 제거됨
 
         daily_change = calculate_daily_change(inst_id)
         if daily_change is None or daily_change <= 0:
@@ -239,8 +229,6 @@ def send_new_entry_message(all_ids):
         new_entry_coins = new_entry_coins[:3]
 
         message_lines = ["⚡ 4H RSI·MFI 필터 (≥70)", "━━━━━━━━━━━━━━━━━━━\n"]
-
-        # ✅ BTC 현황 부분 삭제 완료
 
         message_lines.append("🏆 실시간 거래대금 TOP 10\n")
 
