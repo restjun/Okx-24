@@ -233,41 +233,8 @@ def send_new_entry_message(all_ids):
 
         message_lines = ["⚡ 4H RSI·MFI 필터 (≥70)", "━━━━━━━━━━━━━━━━━━━\n"]
 
-        btc_id = "BTC-USDT-SWAP"
-        btc_change = calculate_daily_change(btc_id)
-        btc_volume = volume_map.get(btc_id, 0)
-        btc_volume_str = format_volume_in_eok(btc_volume)
-        btc_status = "(N/A)"
-        if btc_change is not None:
-            if btc_change >= 5:
-                btc_status = f"🟢🔥 +{btc_change:.2f}%"
-            elif btc_change > 0:
-                btc_status = f"🟢 +{btc_change:.2f}%"
-            else:
-                btc_status = f"🔴 {btc_change:.2f}%"
+        # ✅ BTC 현황 부분 삭제 완료
 
-        df_btc_4h = get_ohlcv_okx(btc_id, bar='4H', limit=200)
-        if df_btc_4h is not None and len(df_btc_4h) >= 5:
-            mfi_btc_4h = calc_mfi(df_btc_4h, 5).iloc[-1]
-            rsi_btc_4h = calc_rsi(df_btc_4h, 5).iloc[-1]
-        else:
-            mfi_btc_4h, rsi_btc_4h = None, None
-
-        df_btc_1d = get_ohlcv_okx(btc_id, bar='1D', limit=100)
-        if df_btc_1d is not None and len(df_btc_1d) >= 5:
-            mfi_btc_1d = calc_mfi(df_btc_1d, 5).iloc[-1]
-            rsi_btc_1d = calc_rsi(df_btc_1d, 5).iloc[-1]
-        else:
-            mfi_btc_1d, rsi_btc_1d = None, None
-
-        message_lines.append(
-            f"💎 BTC 현황 (실시간)\n"
-            f"{btc_status} | 💰 거래대금: {btc_volume_str}M\n"
-            f"📊 4H → RSI: {format_rsi_mfi(rsi_btc_4h)} | MFI: {format_rsi_mfi(mfi_btc_4h)}\n"
-            f"📊 1D → RSI: {format_rsi_mfi(rsi_btc_1d)} | MFI: {format_rsi_mfi(mfi_btc_1d)}\n"
-        )
-
-        message_lines.append("━━━━━━━━━━━━━━━━━━━\n")
         message_lines.append("🏆 실시간 거래대금 TOP 10\n")
 
         for rank, inst_id in enumerate(top_ids[:10], start=1):
