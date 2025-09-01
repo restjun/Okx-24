@@ -84,7 +84,7 @@ def rma(series, period):
 # =========================
 # RSI 계산 (3일선)
 # =========================
-def calc_rsi(df, period=5):
+def calc_rsi(df, period=3):
     delta = df['c'].diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
@@ -97,7 +97,7 @@ def calc_rsi(df, period=5):
 # =========================
 # MFI 계산 (트레이딩뷰 동일 방식, 3일선)
 # =========================
-def calc_mfi(df, period=5):
+def calc_mfi(df, period=3):
     tp = (df['h'] + df['l'] + df['c']) / 3
     mf = tp * df['volCcyQuote']
     delta_tp = tp.diff()
@@ -127,7 +127,7 @@ def calc_ema(df, period):
 # =========================
 # 4H RSI/MFI 크로스 확인 (3일선)
 # =========================
-def check_4h_mfi_rsi_cross(inst_id, period=5, threshold=70):
+def check_4h_mfi_rsi_cross(inst_id, period=3, threshold=70):
     df = get_ohlcv_okx(inst_id, bar='4H', limit=100)
     if df is None or len(df) < period + 1:
         return False, None
@@ -203,13 +203,12 @@ def send_new_entry_message(all_ids):
             sent_signal_coins[inst_id] = {"crossed": False, "time": None}
 
     for inst_id in top_ids:
-        is_cross_4h, cross_time = check_4h_mfi_rsi_cross(inst_id, period=5, threshold=70)
+        is_cross_4h, cross_time = check_4h_mfi_rsi_cross(inst_id, period=3, threshold=70)
         if not is_cross_4h:
             sent_signal_coins[inst_id]["crossed"] = False
             sent_signal_coins[inst_id]["time"] = None
             continue
 
-        # ❌ 일봉 MFI/RSI 필터 제거
         daily_change = calculate_daily_change(inst_id)
         if daily_change is None or daily_change <= 0:
             continue
@@ -248,9 +247,9 @@ def send_new_entry_message(all_ids):
                 status = "(N/A)"
 
             df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=200)
-            if df_4h is not None and len(df_4h) >= 5:
-                mfi_4h = calc_mfi(df_4h, 5).iloc[-1]
-                rsi_4h = calc_rsi(df_4h, 5).iloc[-1]
+            if df_4h is not None and len(df_4h) >= 3:
+                mfi_4h = calc_mfi(df_4h, 3).iloc[-1]
+                rsi_4h = calc_rsi(df_4h, 3).iloc[-1]
             else:
                 mfi_4h, rsi_4h = None, None
 
@@ -267,9 +266,9 @@ def send_new_entry_message(all_ids):
             volume_str = format_volume_in_eok(volume_24h)
 
             df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=100)
-            if df_4h is not None and len(df_4h) >= 5:
-                mfi_4h = calc_mfi(df_4h, 5).iloc[-1]
-                rsi_4h = calc_rsi(df_4h, 5).iloc[-1]
+            if df_4h is not None and len(df_4h) >= 3:
+                mfi_4h = calc_mfi(df_4h, 3).iloc[-1]
+                rsi_4h = calc_rsi(df_4h, 3).iloc[-1]
             else:
                 mfi_4h, rsi_4h = None, None
 
