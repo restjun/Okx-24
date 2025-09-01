@@ -132,8 +132,8 @@ def check_daily_ema_alignment(inst_id):
     if df is None or len(df) < 20:
         return False
     ema5 = calc_ema(df, 5).iloc[-1]
-    ema20 = calc_ema(df, 20).iloc[-1]
-    return ema5 > ema20
+    ema10 = calc_ema(df, 10).iloc[-1]
+    return ema5 > ema10
 
 # =========================
 # 4H RSI/MFI 크로스 확인 (3일선)
@@ -230,7 +230,7 @@ def send_new_entry_message(all_ids):
         if mfi_1d < 70 or rsi_1d < 70:
             continue
 
-        # ✅ EMA 필터 추가 (일봉 5 > 20)
+        # ✅ EMA 필터 추가 (일봉 5 > 10)
         if not check_daily_ema_alignment(inst_id):
             continue
 
@@ -251,7 +251,7 @@ def send_new_entry_message(all_ids):
         new_entry_coins.sort(key=lambda x: x[2], reverse=True)
         new_entry_coins = new_entry_coins[:3]
 
-        message_lines = ["⚡ 4H RSI·MFI 필터 (≥70) + EMA(5>20)", "━━━━━━━━━━━━━━━━━━━\n"]
+        message_lines = ["⚡ 4H RSI·MFI 필터 (≥70) + EMA(5>10)", "━━━━━━━━━━━━━━━━━━━\n"]
 
         # ✅ BTC 현황 부분 삭제 완료
 
