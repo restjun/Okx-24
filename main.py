@@ -191,7 +191,7 @@ def get_24h_volume(inst_id):
 def send_new_entry_message(all_ids):
     global sent_signal_coins
     volume_map = {inst_id: get_24h_volume(inst_id) for inst_id in all_ids}
-    top_ids = sorted(volume_map, key=volume_map.get, reverse=True)[:50]
+    top_ids = sorted(volume_map, key=volume_map.get, reverse=True)[:30]
     rank_map = {inst_id: rank+1 for rank, inst_id in enumerate(top_ids)}
     new_entry_coins = []
 
