@@ -82,9 +82,9 @@ def rma(series, period):
     return r
 
 # =========================
-# RSI 계산 (3일선)
+# RSI 계산 (5일선)
 # =========================
-def calc_rsi(df, period=3):
+def calc_rsi(df, period=5):
     delta = df['c'].diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
@@ -95,9 +95,9 @@ def calc_rsi(df, period=3):
     return rsi
 
 # =========================
-# MFI 계산 (3일선)
+# MFI 계산 (5일선)
 # =========================
-def calc_mfi(df, period=3):
+def calc_mfi(df, period=5):
     tp = (df['h'] + df['l'] + df['c']) / 3
     mf = tp * df['volCcyQuote']
     delta_tp = tp.diff()
@@ -135,9 +135,9 @@ def check_ema_alignment(inst_id, short=50, long=200):
     return ema_short > ema_long
 
 # =========================
-# 1H RSI/MFI 상향 돌파 확인 (임계값 70, 기간 3일)
+# 1H RSI/MFI 상향 돌파 확인 (임계값 70, 기간 5일)
 # =========================
-def check_1h_mfi_rsi_cross(inst_id, period=3, threshold=70):
+def check_1h_mfi_rsi_cross(inst_id, period=5, threshold=70):
     df = get_ohlcv_okx(inst_id, bar='1H', limit=200)
     if df is None or len(df) < period + 1:
         return False, None
@@ -214,7 +214,7 @@ def send_new_entry_message(all_ids):
             sent_signal_coins[inst_id] = {"crossed": False, "time": None}
 
     for inst_id in top_ids:
-        is_cross_1h, cross_time = check_1h_mfi_rsi_cross(inst_id, period=3, threshold=70)
+        is_cross_1h, cross_time = check_1h_mfi_rsi_cross(inst_id, period=5, threshold=70)
         if not is_cross_1h:
             sent_signal_coins[inst_id]["crossed"] = False
             sent_signal_coins[inst_id]["time"] = None
@@ -240,7 +240,7 @@ def send_new_entry_message(all_ids):
         new_entry_coins.sort(key=lambda x: x[2], reverse=True)
         new_entry_coins = new_entry_coins[:3]
 
-        message_lines = ["⚡ 1H RSI·MFI 필터 (≥70 상향 돌파, 3일선, EMA50>200)", "━━━━━━━━━━━━━━━━━━━\n"]
+        message_lines = ["⚡ 1H RSI·MFI 필터 (≥70 상향 돌파, 5일선, EMA50>200)", "━━━━━━━━━━━━━━━━━━━\n"]
         message_lines.append("🏆 실시간 거래대금 TOP 3\n")
 
         for rank, inst_id in enumerate(top_ids[:3], start=1):
@@ -260,9 +260,9 @@ def send_new_entry_message(all_ids):
                 status = "(N/A)"
 
             df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=200)
-            if df_1h is not None and len(df_1h) >= 3:
-                mfi_1h = calc_mfi(df_1h, 3).iloc[-1]
-                rsi_1h = calc_rsi(df_1h, 3).iloc[-1]
+            if df_1h is not None and len(df_1h) >= 5:
+                mfi_1h = calc_mfi(df_1h, 5).iloc[-1]
+                rsi_1h = calc_rsi(df_1h, 5).iloc[-1]
             else:
                 mfi_1h, rsi_1h = None, None
 
@@ -279,9 +279,9 @@ def send_new_entry_message(all_ids):
             volume_str = format_volume_in_eok(volume_24h)
 
             df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=100)
-            if df_1h is not None and len(df_1h) >= 3:
-                mfi_1h = calc_mfi(df_1h, 3).iloc[-1]
-                rsi_1h = calc_rsi(df_1h, 3).iloc[-1]
+            if df_1h is not None and len(df_1h) >= 5:
+                mfi_1h = calc_mfi(df_1h, 5).iloc[-1]
+                rsi_1h = calc_rsi(df_1h, 5).iloc[-1]
             else:
                 mfi_1h, rsi_1h = None, None
 
