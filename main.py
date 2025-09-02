@@ -121,6 +121,17 @@ def calc_ema(df, period):
     return df['c'].ewm(span=period, adjust=False).mean()
 
 # =========================
+# 1H EMA 20-50 정배열 확인
+# =========================
+def check_ema_alignment(inst_id, short=20, long=50):
+    df = get_ohlcv_okx(inst_id, bar='1H', limit=200)
+    if df is None or len(df) < long:
+        return False
+    ema_short = calc_ema(df, short).iloc[-1]
+    ema_long = calc_ema(df, long).iloc[-1]
+    return ema_short > ema_long
+
+# =========================
 # 1H RSI/MFI 상향 돌파 확인
 # =========================
 def check_1h_mfi_rsi_cross(inst_id, period=5, threshold=30):
@@ -180,18 +191,18 @@ def get_all_okx_swap_symbols():
 # 24시간 거래대금
 # =========================
 def get_24h_volume(inst_id):
-    df = get_ohlcv_okx(inst_id, bar="1H", limit=1)
+    df = get_ohlcv_okx(inst_id, bar="1H", limit=24)
     if df is None or len(df) < 24:
         return 0
     return df['volCcyQuote'].sum()
 
 # =========================
-# 신규 진입 알림 (TOP 3 거래대금, 상승률 ≥ 0)
+# 신규 진입 알림 (TOP 3 거래대금, 상승률 ≥ 0, EMA 20-50 정배열)
 # =========================
 def send_new_entry_message(all_ids):
     global sent_signal_coins
     volume_map = {inst_id: get_24h_volume(inst_id) for inst_id in all_ids}
-    top_ids = sorted(volume_map, key=volume_map.get, reverse=True)[:30]
+    top_ids = sorted(volume_map, key=volume_map.get, reverse=True)[:100]
     rank_map = {inst_id: rank+1 for rank, inst_id in enumerate(top_ids)}
     new_entry_coins = []
 
@@ -210,6 +221,10 @@ def send_new_entry_message(all_ids):
         if daily_change is None or daily_change < 0:
             continue
 
+        # ✅ 1H EMA 20 > EMA 50 정배열 조건 추가
+        if not check_ema_alignment(inst_id, short=20, long=50):
+            continue
+
         if not sent_signal_coins[inst_id]["crossed"]:
             new_entry_coins.append(
                 (inst_id, daily_change, volume_map.get(inst_id, 0),
@@ -223,7 +238,7 @@ def send_new_entry_message(all_ids):
         new_entry_coins.sort(key=lambda x: x[2], reverse=True)
         new_entry_coins = new_entry_coins[:3]
 
-        message_lines = ["⚡ 1H RSI·MFI 필터 (≥30 상향 돌파, 5일선)", "━━━━━━━━━━━━━━━━━━━\n"]
+        message_lines = ["⚡ 1H RSI·MFI 필터 (≥30 상향 돌파, 5일선, EMA20>50)", "━━━━━━━━━━━━━━━━━━━\n"]
         message_lines.append("🏆 실시간 거래대금 TOP 3\n")
 
         for rank, inst_id in enumerate(top_ids[:3], start=1):
@@ -256,7 +271,7 @@ def send_new_entry_message(all_ids):
             )
 
         message_lines.append("\n━━━━━━━━━━━━━━━━━━━")
-        message_lines.append("🆕 신규 진입 코인 (상위 3개, 상승률 ≥ 0) 👀")
+        message_lines.append("🆕 신규 진입 코인 (상위 3개, 상승률 ≥ 0, EMA20>50) 👀")
         for inst_id, daily_change, volume_24h, coin_rank, cross_time in new_entry_coins:
             name = inst_id.replace("-USDT-SWAP", "")
             volume_str = format_volume_in_eok(volume_24h)
