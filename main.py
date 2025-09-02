@@ -95,22 +95,18 @@ def calc_rsi(df, period=5):
     return rsi
 
 # =========================
-# MFI 계산 (트레이딩뷰 동일 방식, 5일선)
+# MFI 계산 (5일선)
 # =========================
 def calc_mfi(df, period=5):
     tp = (df['h'] + df['l'] + df['c']) / 3
     mf = tp * df['volCcyQuote']
     delta_tp = tp.diff()
-
     positive_mf = mf.where(delta_tp > 0, 0.0)
     negative_mf = mf.where(delta_tp < 0, 0.0)
-
     pos_sum = positive_mf.rolling(period).sum()
     neg_sum = negative_mf.rolling(period).sum()
-
     with np.errstate(divide='ignore', invalid='ignore'):
         mfi = 100 * pos_sum / (pos_sum + neg_sum)
-
     return mfi
 
 def format_rsi_mfi(value, threshold=30):
@@ -125,7 +121,7 @@ def calc_ema(df, period):
     return df['c'].ewm(span=period, adjust=False).mean()
 
 # =========================
-# 1H RSI/MFI 상향 돌파 확인 (5일선, 임계값=30)
+# 1H RSI/MFI 상향 돌파 확인
 # =========================
 def check_1h_mfi_rsi_cross(inst_id, period=5, threshold=30):
     df = get_ohlcv_okx(inst_id, bar='1H', limit=200)
@@ -138,10 +134,8 @@ def check_1h_mfi_rsi_cross(inst_id, period=5, threshold=30):
     cross_time = pd.to_datetime(df['ts'].iloc[-1], unit='ms') + pd.Timedelta(hours=9)
     if pd.isna(curr_mfi) or pd.isna(curr_rsi):
         return False, None
-
     crossed = (curr_mfi >= threshold and curr_rsi >= threshold) and \
               (prev_mfi < threshold or prev_rsi < threshold)
-
     return crossed, cross_time if crossed else None
 
 # =========================
@@ -192,7 +186,7 @@ def get_24h_volume(inst_id):
     return df['volCcyQuote'].sum()
 
 # =========================
-# 신규 진입 알림 (수정)
+# 신규 진입 알림 (TOP 3 거래대금, 상승률 ≥ 0)
 # =========================
 def send_new_entry_message(all_ids):
     global sent_signal_coins
@@ -213,7 +207,7 @@ def send_new_entry_message(all_ids):
             continue
 
         daily_change = calculate_daily_change(inst_id)
-        if daily_change is None or daily_change < 0:  # 상승률 음수 제외
+        if daily_change is None or daily_change < 0:
             continue
 
         if not sent_signal_coins[inst_id]["crossed"]:
@@ -230,10 +224,10 @@ def send_new_entry_message(all_ids):
         new_entry_coins = new_entry_coins[:3]
 
         message_lines = ["⚡ 1H RSI·MFI 필터 (≥30 상향 돌파, 5일선)", "━━━━━━━━━━━━━━━━━━━\n"]
-        message_lines.append("🏆 실시간 거래대금 TOP 10\n")
+        message_lines.append("🏆 실시간 거래대금 TOP 3\n")
 
-        for rank, inst_id in enumerate(top_ids[:10], start=1):
-            change = calculate_daily_change(inst_id)  # 마이너스도 표시
+        for rank, inst_id in enumerate(top_ids[:3], start=1):
+            change = calculate_daily_change(inst_id)
             volume = volume_map.get(inst_id, 0)
             volume_str = format_volume_in_eok(volume)
             name = inst_id.replace("-USDT-SWAP", "")
@@ -312,5 +306,8 @@ def start_scheduler():
     schedule.every(1).minutes.do(main)
     threading.Thread(target=run_scheduler, daemon=True).start()
 
+# =========================
+# FastAPI 실행
+# =========================
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
