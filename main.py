@@ -95,7 +95,7 @@ def calc_rsi(df, period=5):
     return rsi
 
 # =========================
-# MFI 계산 (5일선)
+# MFI 계산 (트레이딩뷰 동일 방식, 5일선)
 # =========================
 def calc_mfi(df, period=5):
     tp = (df['h'] + df['l'] + df['c']) / 3
@@ -192,12 +192,12 @@ def get_24h_volume(inst_id):
     return df['volCcyQuote'].sum()
 
 # =========================
-# 신규 진입 알림 (상승률 마이너스 제외)
+# 신규 진입 알림 (수정)
 # =========================
 def send_new_entry_message(all_ids):
     global sent_signal_coins
     volume_map = {inst_id: get_24h_volume(inst_id) for inst_id in all_ids}
-    top_ids = sorted(volume_map, key=volume_map.get, reverse=True)[:100]
+    top_ids = sorted(volume_map, key=volume_map.get, reverse=True)[:20]
     rank_map = {inst_id: rank+1 for rank, inst_id in enumerate(top_ids)}
     new_entry_coins = []
 
@@ -213,7 +213,7 @@ def send_new_entry_message(all_ids):
             continue
 
         daily_change = calculate_daily_change(inst_id)
-        if daily_change is None or daily_change < 0:  # 상승률 마이너스 제외
+        if daily_change is None or daily_change < 0:  # 상승률 음수 제외
             continue
 
         if not sent_signal_coins[inst_id]["crossed"]:
@@ -233,9 +233,7 @@ def send_new_entry_message(all_ids):
         message_lines.append("🏆 실시간 거래대금 TOP 10\n")
 
         for rank, inst_id in enumerate(top_ids[:10], start=1):
-            change = calculate_daily_change(inst_id)
-            if change is not None and change < 0:  # 마이너스 코인은 표시 안 함
-                continue
+            change = calculate_daily_change(inst_id)  # 마이너스도 표시
             volume = volume_map.get(inst_id, 0)
             volume_str = format_volume_in_eok(volume)
             name = inst_id.replace("-USDT-SWAP", "")
@@ -246,7 +244,7 @@ def send_new_entry_message(all_ids):
                 elif change > 0:
                     status = f"🟢 +{change:.2f}%"
                 else:
-                    status = "(N/A)"
+                    status = f"🔴 {change:.2f}%"
             else:
                 status = "(N/A)"
 
@@ -264,7 +262,7 @@ def send_new_entry_message(all_ids):
             )
 
         message_lines.append("\n━━━━━━━━━━━━━━━━━━━")
-        message_lines.append("🆕 신규 진입 코인 (상위 3개) 👀")
+        message_lines.append("🆕 신규 진입 코인 (상위 3개, 상승률 ≥ 0) 👀")
         for inst_id, daily_change, volume_24h, coin_rank, cross_time in new_entry_coins:
             name = inst_id.replace("-USDT-SWAP", "")
             volume_str = format_volume_in_eok(volume_24h)
@@ -277,6 +275,11 @@ def send_new_entry_message(all_ids):
                 mfi_1h, rsi_1h = None, None
 
             daily_str = f"{daily_change:.2f}%"
+            if daily_change >= 5:
+                daily_str = f"🟢🔥 {daily_str}"
+            elif daily_change > 0:
+                daily_str = f"🟢 {daily_str}"
+
             message_lines.append(
                 f"\n{coin_rank}위 {name}\n"
                 f"{daily_str} | 💰 거래대금: {volume_str}M\n"
