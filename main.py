@@ -131,9 +131,9 @@ def check_ema_alignment(inst_id):
     if df is None or len(df) < 200:
         return False
     ema5 = calc_ema(df, 5).iloc[-1]
-    ema20 = calc_ema(df, 20).iloc[-1]
-    ema50 = calc_ema(df, 50).iloc[-1]
-    ema200 = calc_ema(df, 200).iloc[-1]
+    ema20 = calc_ema(df, 10).iloc[-1]
+    ema50 = calc_ema(df, 15).iloc[-1]
+    ema200 = calc_ema(df, 20).iloc[-1]
     return ema5 > ema20 > ema50 > ema200
 
 # =========================
