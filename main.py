@@ -25,7 +25,7 @@ sent_signal_coins = {}
 # Telegram 메시지 전송
 # =========================
 def send_telegram_message(message):
-    for retry_count in range(1, 10 + 1):
+    for retry_count in range(1, 11):
         try:
             bot.sendMessage(chat_id=telegram_user_id, text=message)
             logging.info("텔레그램 메시지 전송 성공")
@@ -95,7 +95,7 @@ def calc_rsi(df, period=5):
     return rsi
 
 # =========================
-# MFI 계산 (트레이딩뷰 동일 방식, 5일선)
+# MFI 계산 (5일선)
 # =========================
 def calc_mfi(df, period=5):
     tp = (df['h'] + df['l'] + df['c']) / 3
@@ -126,8 +126,6 @@ def calc_ema(df, period):
 
 # =========================
 # 1H RSI/MFI 상향 돌파 확인 (5일선, 임계값=30)
-#   조건: 이전 < 30  이고  현재 ≥ 30
-#   (둘 다 현재 30 이상이며, 직전 봉에서 둘 중 하나라도 30 미만이었으면 신호)
 # =========================
 def check_1h_mfi_rsi_cross(inst_id, period=5, threshold=30):
     df = get_ohlcv_okx(inst_id, bar='1H', limit=200)
@@ -194,12 +192,12 @@ def get_24h_volume(inst_id):
     return df['volCcyQuote'].sum()
 
 # =========================
-# 신규 진입 알림
+# 신규 진입 알림 (상승률 마이너스 제외)
 # =========================
 def send_new_entry_message(all_ids):
     global sent_signal_coins
     volume_map = {inst_id: get_24h_volume(inst_id) for inst_id in all_ids}
-    top_ids = sorted(volume_map, key=volume_map.get, reverse=True)[:20]
+    top_ids = sorted(volume_map, key=volume_map.get, reverse=True)[:100]
     rank_map = {inst_id: rank+1 for rank, inst_id in enumerate(top_ids)}
     new_entry_coins = []
 
@@ -215,7 +213,7 @@ def send_new_entry_message(all_ids):
             continue
 
         daily_change = calculate_daily_change(inst_id)
-        if daily_change is None:
+        if daily_change is None or daily_change < 0:  # 상승률 마이너스 제외
             continue
 
         if not sent_signal_coins[inst_id]["crossed"]:
@@ -236,6 +234,8 @@ def send_new_entry_message(all_ids):
 
         for rank, inst_id in enumerate(top_ids[:10], start=1):
             change = calculate_daily_change(inst_id)
+            if change is not None and change < 0:  # 마이너스 코인은 표시 안 함
+                continue
             volume = volume_map.get(inst_id, 0)
             volume_str = format_volume_in_eok(volume)
             name = inst_id.replace("-USDT-SWAP", "")
@@ -246,7 +246,7 @@ def send_new_entry_message(all_ids):
                 elif change > 0:
                     status = f"🟢 +{change:.2f}%"
                 else:
-                    status = f"🔴 {change:.2f}%"
+                    status = "(N/A)"
             else:
                 status = "(N/A)"
 
@@ -277,9 +277,6 @@ def send_new_entry_message(all_ids):
                 mfi_1h, rsi_1h = None, None
 
             daily_str = f"{daily_change:.2f}%"
-            if daily_change <= -5:
-                daily_str = f"🔥 {daily_str}"
-
             message_lines.append(
                 f"\n{coin_rank}위 {name}\n"
                 f"{daily_str} | 💰 거래대금: {volume_str}M\n"
