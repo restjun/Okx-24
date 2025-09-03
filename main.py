@@ -54,7 +54,7 @@ def retry_request(func, *args, **kwargs):
 # =========================
 # OKX OHLCV 가져오기
 # =========================
-def get_ohlcv_okx(inst_id, bar='4H', limit=300):
+def get_ohlcv_okx(inst_id, bar='1D', limit=300):
     url = f"https://www.okx.com/api/v5/market/candles?instId={inst_id}&bar={bar}&limit={limit}"
     response = retry_request(requests.get, url)
     if response is None:
@@ -72,39 +72,42 @@ def get_ohlcv_okx(inst_id, bar='4H', limit=300):
         return None
 
 # =========================
-# RMA 계산
+# Wilder RSI (TradingView 동일)
 # =========================
-def rma(series, period):
-    series = series.copy()
-    alpha = 1 / period
-    r = series.ewm(alpha=alpha, adjust=False).mean()
-    r.iloc[:period] = series.iloc[:period].expanding().mean()[:period]
-    return r
-
-# =========================
-# RSI 계산 (3일선)
-# =========================
-def calc_rsi(df, period=3):
-    delta = df['c'].diff()
+def wilder_rsi(series, period=3):
+    delta = series.diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
-    avg_gain = rma(gain, period)
-    avg_loss = rma(loss, period)
-    rs = avg_gain / avg_loss
-    rsi = 100 - (100 / (1 + rs))
-    return rsi
+
+    avg_gain = gain.rolling(period).mean().iloc[period-1]
+    avg_loss = loss.rolling(period).mean().iloc[period-1]
+
+    rsi_values = [np.nan]*(period-1)
+    rsi_values.append(100 - 100 / (1 + avg_gain/avg_loss))
+
+    for i in range(period, len(series)):
+        avg_gain = (avg_gain*(period-1) + gain.iloc[i])/period
+        avg_loss = (avg_loss*(period-1) + loss.iloc[i])/period
+        rs = avg_gain / avg_loss if avg_loss != 0 else 0
+        rsi = 100 - 100 / (1 + rs)
+        rsi_values.append(rsi)
+
+    return pd.Series(rsi_values, index=series.index)
 
 # =========================
-# MFI 계산 (3일선)
+# TradingView 동일 MFI
 # =========================
-def calc_mfi(df, period=3):
+def tv_mfi(df, period=3):
     tp = (df['h'] + df['l'] + df['c']) / 3
     mf = tp * df['volCcyQuote']
     delta_tp = tp.diff()
+
     positive_mf = mf.where(delta_tp > 0, 0.0)
     negative_mf = mf.where(delta_tp < 0, 0.0)
-    pos_sum = positive_mf.rolling(period).sum()
-    neg_sum = negative_mf.rolling(period).sum()
+
+    pos_sum = positive_mf.rolling(period, min_periods=period).sum()
+    neg_sum = negative_mf.rolling(period, min_periods=period).sum()
+
     with np.errstate(divide='ignore', invalid='ignore'):
         mfi = 100 * pos_sum / (pos_sum + neg_sum)
     return mfi
@@ -123,19 +126,23 @@ def format_rsi_mfi(value, threshold_low=50, threshold_high=70):
         return f"🟡 {value:.1f}"
 
 # =========================
-# 1D RSI/MFI 상향 돌파 확인 (임계값 50/70, 3일선)
+# 1D RSI/MFI 70 이상 상향 돌파 체크
 # =========================
 def check_1d_mfi_rsi_cross(inst_id, period=3, threshold_low=50, threshold_high=70):
     df = get_ohlcv_okx(inst_id, bar='1D', limit=200)
     if df is None or len(df) < period + 1:
         return False, None
-    mfi = calc_mfi(df, period)
-    rsi = calc_rsi(df, period)
+
+    mfi = tv_mfi(df, period)
+    rsi = wilder_rsi(df['c'], period)
+
     prev_mfi, curr_mfi = mfi.iloc[-2], mfi.iloc[-1]
     prev_rsi, curr_rsi = rsi.iloc[-2], rsi.iloc[-1]
     cross_time = pd.to_datetime(df['ts'].iloc[-1], unit='ms') + pd.Timedelta(hours=9)
+
     if pd.isna(curr_mfi) or pd.isna(curr_rsi):
         return False, None
+
     crossed = (curr_mfi >= threshold_high and curr_rsi >= threshold_high) and \
               (prev_mfi < threshold_high or prev_rsi < threshold_high)
     return crossed, cross_time if crossed else None
@@ -144,15 +151,13 @@ def check_1d_mfi_rsi_cross(inst_id, period=3, threshold_low=50, threshold_high=7
 # 일간 상승률 계산
 # =========================
 def calculate_daily_change(inst_id):
-    df = get_ohlcv_okx(inst_id, bar="4H", limit=60)
-    if df is None or len(df) < 6:
+    df = get_ohlcv_okx(inst_id, bar="1D", limit=60)
+    if df is None or len(df) < 2:
         return None
     try:
         df['datetime'] = pd.to_datetime(df['ts'], unit='ms') + pd.Timedelta(hours=9)
         df.set_index('datetime', inplace=True)
-        daily = df['c'].resample('1D', offset='9h').last()
-        if len(daily) < 2:
-            return None
+        daily = df['c']
         today_close = daily.iloc[-1]
         yesterday_close = daily.iloc[-2]
         return round((today_close - yesterday_close) / yesterday_close * 100, 2)
@@ -188,7 +193,7 @@ def get_24h_volume(inst_id):
     return df['volCcyQuote'].sum()
 
 # =========================
-# 신규 진입 알림 (TOP 3 거래대금, 1D RSI·MFI 돌파 체크)
+# 신규 진입 알림 (TOP 3 거래대금, 1D RSI·MFI 70 돌파)
 # =========================
 def send_new_entry_message(all_ids):
     global sent_signal_coins
@@ -202,7 +207,6 @@ def send_new_entry_message(all_ids):
             sent_signal_coins[inst_id] = {"crossed": False, "time": None}
 
     for inst_id in top_ids:
-        # ✅ 1D 조건만 사용
         is_cross_1d, cross_time_1d = check_1d_mfi_rsi_cross(inst_id)
 
         if not is_cross_1d:
@@ -227,7 +231,7 @@ def send_new_entry_message(all_ids):
         new_entry_coins.sort(key=lambda x: x[2], reverse=True)
         new_entry_coins = new_entry_coins[:3]
 
-        message_lines = ["⚡ 1D RSI·MFI 필터 (≥50/70 상향 돌파, 3일선)", "━━━━━━━━━━━━━━━━━━━\n"]
+        message_lines = ["⚡ 1D RSI·MFI 필터 (≥70 상향 돌파, 3일선)", "━━━━━━━━━━━━━━━━━━━\n"]
         message_lines.append("🏆 실시간 거래대금 TOP 3\n")
 
         for rank, inst_id in enumerate(top_ids[:3], start=1):
@@ -247,7 +251,7 @@ def send_new_entry_message(all_ids):
                 status = "(N/A)"
 
             df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=50)
-            mfi_1d, rsi_1d = (calc_mfi(df_1d, 3).iloc[-1], calc_rsi(df_1d, 3).iloc[-1]) if df_1d is not None else (None, None)
+            mfi_1d, rsi_1d = (tv_mfi(df_1d, 3).iloc[-1], wilder_rsi(df_1d['c'], 3).iloc[-1]) if df_1d is not None else (None, None)
 
             message_lines.append(
                 f"{rank}위 {name}\n"
@@ -260,10 +264,8 @@ def send_new_entry_message(all_ids):
         for inst_id, daily_change, volume_24h, coin_rank, cross_time in new_entry_coins:
             name = inst_id.replace("-USDT-SWAP", "")
             volume_str = format_volume_in_eok(volume_24h)
-
             df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=50)
-            mfi_1d, rsi_1d = (calc_mfi(df_1d, 3).iloc[-1], calc_rsi(df_1d, 3).iloc[-1]) if df_1d is not None else (None, None)
-
+            mfi_1d, rsi_1d = (tv_mfi(df_1d, 3).iloc[-1], wilder_rsi(df_1d['c'], 3).iloc[-1]) if df_1d is not None else (None, None)
             daily_str = f"{daily_change:.2f}%"
             if daily_change >= 5:
                 daily_str = f"🟢🔥 {daily_str}"
