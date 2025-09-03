@@ -221,9 +221,9 @@ def send_new_entry_message(all_ids):
         new_entry_coins = new_entry_coins[:3]
 
         message_lines = ["⚡ 1D RSI·MFI 필터 (≥70 상향 돌파, 5일선)", "━━━━━━━━━━━━━━━━━━━\n"]
-        message_lines.append("🏆 실시간 거래대금 TOP 3\n")
+        message_lines.append("🏆 실시간 거래대금 TOP 10\n")
 
-        for rank, inst_id in enumerate(top_ids[:3], start=1):
+        for rank, inst_id in enumerate(top_ids[:10], start=1):
             change = calculate_daily_change(inst_id)
             volume = volume_map.get(inst_id, 0)
             volume_str = format_volume_in_eok(volume)
