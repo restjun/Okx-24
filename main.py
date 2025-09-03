@@ -130,7 +130,7 @@ def check_ema_alignment(inst_id):
     ema20 = calc_ema(df, 20).iloc[-1]
     ema50 = calc_ema(df, 50).iloc[-1]
     ema200 = calc_ema(df, 200).iloc[-1]
-    return ema20 > ema50 > ema200
+    return ema20 > ema50 
 
 # =========================
 # 일간 상승률 계산
