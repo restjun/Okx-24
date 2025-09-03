@@ -151,31 +151,33 @@ def get_24h_volume(inst_id):
     return df['volCcyQuote'].sum()
 
 # =========================
-# 신규 진입 알림 (일봉 RSI 3일선 ≥70, 거래대금 상위, 중복 방지)
+# 신규 돌파 종목 알림 (일봉 RSI 3일선 ≥70, 중복 방지)
 # =========================
 def send_new_entry_message(all_ids, top_n=10):
     global sent_signal_coins
-    volume_map = {inst_id: get_24h_volume(inst_id) for inst_id in all_ids}
-
-    # RSI 3일선 ≥70 종목 필터링
     new_entry_coins = []
+
     for inst_id in all_ids:
         df = get_ohlcv_okx(inst_id, bar='1D', limit=10)
         if df is None or len(df) < 3:
             continue
+
         rsi_val = calc_rsi(df, period=3).iloc[-1]
+
+        # RSI 3일선 ≥70 신규 돌파 종목만
         if pd.isna(rsi_val) or rsi_val < 70:
             continue
 
-        # 중복 방지: 이미 알림 발송했으면 스킵
+        # 중복 방지
         if inst_id in sent_signal_coins and sent_signal_coins[inst_id]:
             continue
 
         daily_change = calculate_daily_change(inst_id)
-        new_entry_coins.append((inst_id, daily_change, volume_map.get(inst_id, 0), rsi_val))
+        volume = get_24h_volume(inst_id)
+        new_entry_coins.append((inst_id, daily_change, volume, rsi_val))
 
     if not new_entry_coins:
-        logging.info("⚡ 신규 진입 없음 → 메시지 전송 안 함")
+        logging.info("⚡ 신규 돌파 종목 없음 → 메시지 전송 안 함")
         return
 
     # 거래대금 상위 정렬
@@ -183,7 +185,7 @@ def send_new_entry_message(all_ids, top_n=10):
     new_entry_coins = new_entry_coins[:top_n]
 
     # 메시지 생성
-    message_lines = ["⚡ 일봉 RSI 3일선 ≥70, 거래대금 상위 종목", "━━━━━━━━━━━━━━━━━━━\n"]
+    message_lines = ["⚡ 신규 돌파 종목 (일봉 RSI 3일선 ≥70)", "━━━━━━━━━━━━━━━━━━━\n"]
     for rank, (inst_id, daily_change, volume, rsi_val) in enumerate(new_entry_coins, start=1):
         volume_str = format_volume_in_eok(volume)
         name = inst_id.replace("-USDT-SWAP", "")
@@ -191,9 +193,9 @@ def send_new_entry_message(all_ids, top_n=10):
         message_lines.append(
             f"{rank}위 {name}\n"
             f"{daily_str} | 💰 거래대금: {volume_str}M\n"
-            f"📊 일봉 → RSI: {format_rsi(rsi_val)}"
+            f"📊 일봉 → RSI: 🔵 {rsi_val:.1f}"
         )
-        # 발송 후 중복 방지 표시
+        # 알림 발송 후 중복 방지 기록
         sent_signal_coins[inst_id] = True
 
     message_lines.append("\n━━━━━━━━━━━━━━━━━━━")
