@@ -110,15 +110,15 @@ def calc_mfi(df, period=5):
     return mfi
 
 # =========================
-# RSI/MFI 포맷팅 (임계값 70)
+# RSI/MFI 포맷팅
 # =========================
 def format_rsi_mfi(value, threshold=70):
     if pd.isna(value):
         return "(N/A)"
-    return f"🔴 {value:.1f}" if value <= threshold else f"🟢 {value:.1f}"
+    return f"🔴 {value:.1f}" if value < threshold else f"🟢 {value:.1f}"
 
 # =========================
-# 1D RSI/MFI 상향 돌파 확인 (임계값 70, 기간 5일)
+# 1D RSI/MFI 돌파 확인
 # =========================
 def check_1d_mfi_rsi_cross(inst_id, period=5, threshold=70):
     df = get_ohlcv_okx(inst_id, bar='1D', limit=200)
@@ -183,7 +183,7 @@ def get_24h_volume(inst_id):
     return df['volCcyQuote'].sum()
 
 # =========================
-# 신규 진입 알림 (TOP 거래대금, 1D RSI/MFI 돌파, 상승률 ≥5%)
+# 신규 메시지 처리
 # =========================
 def send_new_entry_message(all_ids):
     global sent_signal_coins
@@ -194,8 +194,9 @@ def send_new_entry_message(all_ids):
 
     for inst_id in ["BTC-USDT-SWAP"] + top_ids:
         if inst_id not in sent_signal_coins:
-            sent_signal_coins[inst_id] = {"crossed": False, "time": None}
+            sent_signal_coins[inst_id] = {"crossed": False, "time": None, "top10": False}
 
+    # === 신규 돌파 코인 확인 ===
     for inst_id in top_ids:
         is_cross_1d, cross_time = check_1d_mfi_rsi_cross(inst_id, period=5, threshold=70)
         if not is_cross_1d:
@@ -204,7 +205,7 @@ def send_new_entry_message(all_ids):
             continue
 
         daily_change = calculate_daily_change(inst_id)
-        if daily_change is None or daily_change < 5:  # 5% 이상 필터
+        if daily_change is None or daily_change < 5:
             continue
 
         if not sent_signal_coins[inst_id]["crossed"]:
@@ -216,70 +217,64 @@ def send_new_entry_message(all_ids):
         sent_signal_coins[inst_id]["crossed"] = True
         sent_signal_coins[inst_id]["time"] = cross_time
 
-    # 거래대금 상위 10개 (조건 필터링)
-    message_lines = ["⚡ 1D RSI·MFI 필터 (≥70 상향 돌파, 5일선, 상승률 ≥5%)", "━━━━━━━━━━━━━━━━━━━\n"]
-    message_lines.append("🏆 실시간 거래대금 TOP 10 (RSI·MFI ≥70)\n")
-
+    # === TOP 10 필터링 (음수 제외) ===
     filtered_top = []
     for inst_id in top_ids:
         df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=200)
-        if df_1d is not None and len(df_1d) >= 5:
-            mfi_1d = calc_mfi(df_1d, 5).iloc[-1]
-            rsi_1d = calc_rsi(df_1d, 5).iloc[-1]
-        else:
+        if df_1d is None or len(df_1d) < 5:
             continue
+        mfi_1d = calc_mfi(df_1d, 5).iloc[-1]
+        rsi_1d = calc_rsi(df_1d, 5).iloc[-1]
+        change = calculate_daily_change(inst_id)
 
-        if mfi_1d is not None and rsi_1d is not None and mfi_1d >= 70 and rsi_1d >= 70:
-            filtered_top.append((inst_id, mfi_1d, rsi_1d))
+        if (mfi_1d is not None and rsi_1d is not None 
+            and mfi_1d >= 70 and rsi_1d >= 70 
+            and change is not None and change >= 0):
+            filtered_top.append((inst_id, mfi_1d, rsi_1d, change))
 
         if len(filtered_top) >= 10:
             break
 
-    for rank, (inst_id, mfi_1d, rsi_1d) in enumerate(filtered_top, start=1):
-        change = calculate_daily_change(inst_id)
-        volume = volume_map.get(inst_id, 0)
-        volume_str = format_volume_in_eok(volume)
-        name = inst_id.replace("-USDT-SWAP", "")
+    # === 신규 TOP 10 진입 체크 ===
+    new_top10_coins = []
+    current_top10_set = set([coin[0] for coin in filtered_top])
+    for inst_id in current_top10_set:
+        if not sent_signal_coins[inst_id]["top10"]:
+            new_top10_coins.append(inst_id)
+        sent_signal_coins[inst_id]["top10"] = True
 
-        if change is not None:
-            if change >= 5:
-                status = f"🟢🔥 +{change:.2f}%"
-            elif change > 0:
-                status = f"🟢 +{change:.2f}%"
-            else:
-                status = f"🔴 {change:.2f}%"
-        else:
-            status = "(N/A)"
+    # === 메시지 생성 조건 ===
+    if not new_entry_coins and not new_top10_coins:
+        return  # 변화 없으면 전송 안 함
 
-        message_lines.append(
-            f"{rank}위 {name}\n"
-            f"{status} | 💰 거래대금: {volume_str}M\n"
-            f"📊 1D → RSI: {format_rsi_mfi(rsi_1d, 70)} | MFI: {format_rsi_mfi(mfi_1d, 70)}"
-        )
+    message_lines = []
 
+    # 신규 TOP10 진입
+    if new_top10_coins:
+        message_lines.append("🏆 신규 TOP 10 진입 코인 🌟")
+        for rank, (inst_id, mfi_1d, rsi_1d, change) in enumerate(filtered_top, start=1):
+            volume = volume_map.get(inst_id, 0)
+            volume_str = format_volume_in_eok(volume)
+            name = inst_id.replace("-USDT-SWAP", "")
+            highlight = "🌟" if inst_id in new_top10_coins else ""
+            status = f"🟢🔥 +{change:.2f}%" if change >= 5 else f"🟢 +{change:.2f}%"
+            message_lines.append(
+                f"{rank}위 {name}{highlight}\n"
+                f"{status} | 💰 {volume_str}M\n"
+                f"📊 RSI: {format_rsi_mfi(rsi_1d)} | MFI: {format_rsi_mfi(mfi_1d)}"
+            )
+
+    # 신규 돌파 코인
     if new_entry_coins:
         new_entry_coins.sort(key=lambda x: x[2], reverse=True)
         new_entry_coins = new_entry_coins[:3]
-
-        message_lines.append("\n━━━━━━━━━━━━━━━━━━━")
-        message_lines.append("🆕 신규 진입 코인 (상위 3개) 👀")
+        message_lines.append("\n🆕 신규 돌파 코인 👀")
         for inst_id, daily_change, volume_24h, coin_rank, cross_time in new_entry_coins:
             name = inst_id.replace("-USDT-SWAP", "")
             volume_str = format_volume_in_eok(volume_24h)
-
-            df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=100)
-            if df_1d is not None and len(df_1d) >= 5:
-                mfi_1d = calc_mfi(df_1d, 5).iloc[-1]
-                rsi_1d = calc_rsi(df_1d, 5).iloc[-1]
-            else:
-                mfi_1d, rsi_1d = None, None
-
-            daily_str = f"🟢🔥 {daily_change:.2f}%"
-
             message_lines.append(
-                f"\n{coin_rank}위 {name}\n"
-                f"{daily_str} | 💰 거래대금: {volume_str}M\n"
-                f"📊 1D → RSI: {format_rsi_mfi(rsi_1d, 70)} | MFI: {format_rsi_mfi(mfi_1d, 70)}"
+                f"{coin_rank}위 {name}\n"
+                f"🟢🔥 {daily_change:.2f}% | 💰 {volume_str}M"
             )
 
     send_telegram_message("\n".join(message_lines))
