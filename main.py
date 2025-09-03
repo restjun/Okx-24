@@ -19,7 +19,7 @@ telegram_user_id = 6596886700
 bot = telepot.Bot(telegram_bot_token)
 
 logging.basicConfig(level=logging.INFO)
-sent_rsi70_coins = {}  # RSI 70 이상 코인과 이전 랭크 저장
+sent_signal_coins = {}  # 알림 발송 기록
 
 # =========================
 # Telegram 메시지 전송
@@ -72,69 +72,57 @@ def get_ohlcv_okx(inst_id, bar='1D', limit=300):
         return None
 
 # =========================
-# Wilder RSI (TradingView 동일)
+# RMA 계산
 # =========================
-def wilder_rsi(series, period=3):
-    delta = series.diff()
+def rma(series, period):
+    series = series.copy()
+    alpha = 1 / period
+    r = series.ewm(alpha=alpha, adjust=False).mean()
+    r.iloc[:period] = series.iloc[:period].expanding().mean()[:period]
+    return r
+
+# =========================
+# RSI 계산
+# =========================
+def calc_rsi(df, period=3):
+    delta = df['c'].diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
-
-    avg_gain = gain.rolling(period).mean().iloc[period-1]
-    avg_loss = loss.rolling(period).mean().iloc[period-1]
-
-    rsi_values = [np.nan]*(period-1)
-    rsi_values.append(100 - 100 / (1 + avg_gain/avg_loss))
-
-    for i in range(period, len(series)):
-        avg_gain = (avg_gain*(period-1) + gain.iloc[i])/period
-        avg_loss = (avg_loss*(period-1) + loss.iloc[i])/period
-        rs = avg_gain / avg_loss if avg_loss != 0 else 0
-        rsi = 100 - 100 / (1 + rs)
-        rsi_values.append(rsi)
-
-    return pd.Series(rsi_values, index=series.index)
+    avg_gain = rma(gain, period)
+    avg_loss = rma(loss, period)
+    rs = avg_gain / avg_loss
+    rsi = 100 - (100 / (1 + rs))
+    return rsi
 
 # =========================
 # RSI 포맷팅
 # =========================
-def format_rsi(value, threshold=70):
+def format_rsi(value):
     if pd.isna(value):
         return "(N/A)"
-    if value >= threshold:
-        return f"🟢 {value:.1f}"
-    else:
-        return f"🔴 {value:.1f}"
-
-# =========================
-# RSI 70 이상 체크
-# =========================
-def check_rsi70(inst_id, period=3, threshold=70):
-    df = get_ohlcv_okx(inst_id, bar='1D', limit=200)
-    if df is None or len(df) < period:
-        return None
-    rsi = wilder_rsi(df['c'], period).iloc[-1]
-    if rsi >= threshold:
-        return rsi
-    return None
+    return f"🔵 {value:.1f}"
 
 # =========================
 # 일간 상승률 계산
 # =========================
 def calculate_daily_change(inst_id):
-    df = get_ohlcv_okx(inst_id, bar="1D", limit=60)
+    df = get_ohlcv_okx(inst_id, bar="1D", limit=10)
     if df is None or len(df) < 2:
         return None
     try:
         df['datetime'] = pd.to_datetime(df['ts'], unit='ms') + pd.Timedelta(hours=9)
         df.set_index('datetime', inplace=True)
-        daily = df['c']
-        today_close = daily.iloc[-1]
-        yesterday_close = daily.iloc[-2]
+        daily_close = df['c']
+        today_close = daily_close.iloc[-1]
+        yesterday_close = daily_close.iloc[-2]
         return round((today_close - yesterday_close) / yesterday_close * 100, 2)
     except Exception as e:
         logging.error(f"{inst_id} 상승률 계산 오류: {e}")
         return None
 
+# =========================
+# 거래대금 포맷팅
+# =========================
 def format_volume_in_eok(volume):
     try:
         eok = int(volume // 1_000_000)
@@ -163,55 +151,51 @@ def get_24h_volume(inst_id):
     return df['volCcyQuote'].sum()
 
 # =========================
-# RSI70 종목 상위 10 표시, 랭킹 변경 시만 메시지 전송
+# 신규 진입 알림 (일봉 RSI 3일선 ≥70, 거래대금 상위, 중복 방지)
 # =========================
-def send_rsi70_top10_message(all_ids):
-    global sent_rsi70_coins
-    rsi70_map = {}
+def send_new_entry_message(all_ids, top_n=10):
+    global sent_signal_coins
+    volume_map = {inst_id: get_24h_volume(inst_id) for inst_id in all_ids}
+
+    # RSI 3일선 ≥70 종목 필터링
+    new_entry_coins = []
     for inst_id in all_ids:
-        rsi_val = check_rsi70(inst_id)
-        if rsi_val is not None:
-            rsi70_map[inst_id] = rsi_val
+        df = get_ohlcv_okx(inst_id, bar='1D', limit=10)
+        if df is None or len(df) < 3:
+            continue
+        rsi_val = calc_rsi(df, period=3).iloc[-1]
+        if pd.isna(rsi_val) or rsi_val < 70:
+            continue
 
-    if not rsi70_map:
-        logging.info("RSI70 이상 코인 없음")
+        # 중복 방지: 이미 알림 발송했으면 스킵
+        if inst_id in sent_signal_coins and sent_signal_coins[inst_id]:
+            continue
+
+        daily_change = calculate_daily_change(inst_id)
+        new_entry_coins.append((inst_id, daily_change, volume_map.get(inst_id, 0), rsi_val))
+
+    if not new_entry_coins:
+        logging.info("⚡ 신규 진입 없음 → 메시지 전송 안 함")
         return
 
-    # 거래대금 계산 후 상위 10 선정
-    volume_map = {inst_id: get_24h_volume(inst_id) for inst_id in rsi70_map.keys()}
-    top_ids = sorted(volume_map, key=volume_map.get, reverse=True)[:10]
-
-    # 랭킹 변경 체크
-    prev_rank = {k: sent_rsi70_coins.get(k, -1) for k in top_ids}
-    rank_changed = False
-    for i, inst_id in enumerate(top_ids):
-        if prev_rank.get(inst_id, -1) != i:
-            rank_changed = True
-        sent_rsi70_coins[inst_id] = i
-
-    if not rank_changed:
-        logging.info("랭킹 변동 없음 → 메시지 전송 안 함")
-        return
+    # 거래대금 상위 정렬
+    new_entry_coins.sort(key=lambda x: x[2], reverse=True)
+    new_entry_coins = new_entry_coins[:top_n]
 
     # 메시지 생성
-    message_lines = ["⚡ RSI ≥70 거래대금 TOP 10", "━━━━━━━━━━━━━━━━━━━\n"]
-    for rank, inst_id in enumerate(top_ids, start=1):
-        rsi_val = rsi70_map[inst_id]
-        volume_str = format_volume_in_eok(volume_map[inst_id])
+    message_lines = ["⚡ 일봉 RSI 3일선 ≥70, 거래대금 상위 종목", "━━━━━━━━━━━━━━━━━━━\n"]
+    for rank, (inst_id, daily_change, volume, rsi_val) in enumerate(new_entry_coins, start=1):
+        volume_str = format_volume_in_eok(volume)
         name = inst_id.replace("-USDT-SWAP", "")
-        daily_change = calculate_daily_change(inst_id)
         daily_str = f"{daily_change:.2f}%" if daily_change is not None else "(N/A)"
-        if daily_change is not None:
-            if daily_change >= 5:
-                daily_str = f"🟢🔥 {daily_str}"
-            elif daily_change > 0:
-                daily_str = f"🟢 {daily_str}"
-            else:
-                daily_str = f"🔴 {daily_str}"
-
         message_lines.append(
-            f"{rank}위 {name} | 💰 거래대금: {volume_str}M | 📊 RSI: {format_rsi(rsi_val)} | 일간: {daily_str}"
+            f"{rank}위 {name}\n"
+            f"{daily_str} | 💰 거래대금: {volume_str}M\n"
+            f"📊 일봉 → RSI: {format_rsi(rsi_val)}"
         )
+        # 발송 후 중복 방지 표시
+        sent_signal_coins[inst_id] = True
+
     message_lines.append("\n━━━━━━━━━━━━━━━━━━━")
     send_telegram_message("\n".join(message_lines))
 
@@ -219,9 +203,9 @@ def send_rsi70_top10_message(all_ids):
 # 메인 실행
 # =========================
 def main():
-    logging.info("📥 RSI70 거래대금 분석 시작")
+    logging.info("📥 거래대금 분석 시작")
     all_ids = get_all_okx_swap_symbols()
-    send_rsi70_top10_message(all_ids)
+    send_new_entry_message(all_ids)
 
 # =========================
 # 스케줄러
