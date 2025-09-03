@@ -225,7 +225,7 @@ def send_new_entry_message(all_ids):
         sent_signal_coins[inst_id]["crossed"] = True
         sent_signal_coins[inst_id]["time"] = cross_time
 
-    # === TOP 10 필터링 (음수 제외) ===
+    # === TOP 10 필터링 (일간 상승률 5% 이상 + RSI/MFI 70 이상) ===
     filtered_top = []
     for inst_id in top_ids:
         df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=200)
@@ -238,7 +238,7 @@ def send_new_entry_message(all_ids):
 
         if (mfi_1d is not None and rsi_1d is not None
                 and mfi_1d >= 70 and rsi_1d >= 70
-                and change is not None and change >= 0):
+                and change is not None and change >= 5):  # ✅ 조건 추가
             filtered_top.append((inst_id, mfi_1d, rsi_1d, change, cross_time))
 
         if len(filtered_top) >= 10:
