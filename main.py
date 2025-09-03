@@ -118,7 +118,7 @@ def check_4h_rsi_cross(inst_id, period=5, threshold=60):
     return crossed, cross_time if crossed else None
 
 # =========================
-# EMA 계산 및 정배열 확인
+# EMA 계산 및 정배열 확인 (20-50-200)
 # =========================
 def calc_ema(df, period):
     return df['c'].ewm(span=period, adjust=False).mean()
@@ -127,11 +127,10 @@ def check_ema_alignment(inst_id):
     df = get_ohlcv_okx(inst_id, bar='4H', limit=300)
     if df is None or len(df) < 200:
         return False
-    ema5 = calc_ema(df, 5).iloc[-1]
     ema20 = calc_ema(df, 20).iloc[-1]
     ema50 = calc_ema(df, 50).iloc[-1]
     ema200 = calc_ema(df, 200).iloc[-1]
-    return ema5 > ema20 > ema50 > ema200
+    return ema20 > ema50 > ema200
 
 # =========================
 # 일간 상승률 계산
@@ -186,7 +185,7 @@ def get_24h_volume(inst_id):
 def send_new_entry_message(all_ids):
     global sent_signal_coins
     volume_map = {inst_id: get_24h_volume(inst_id) for inst_id in all_ids}
-    top_ids = sorted(volume_map, key=volume_map.get, reverse=True)[:20]
+    top_ids = sorted(volume_map, key=volume_map.get, reverse=True)[:30]
     rank_map = {inst_id: rank+1 for rank, inst_id in enumerate(top_ids)}
     new_entry_coins = []
 
@@ -201,7 +200,7 @@ def send_new_entry_message(all_ids):
             sent_signal_coins[inst_id]["time"] = None
             continue
 
-        # ✅ EMA 정배열 필터 추가
+        # ✅ EMA 20-50-200 정배열 필터
         if not check_ema_alignment(inst_id):
             continue
 
@@ -222,7 +221,7 @@ def send_new_entry_message(all_ids):
         new_entry_coins.sort(key=lambda x: x[2], reverse=True)
         new_entry_coins = new_entry_coins[:3]
 
-        message_lines = ["⚡ 4H RSI & EMA 필터 (RSI ≥60 상향 돌파, EMA 정배열)", "━━━━━━━━━━━━━━━━━━━\n"]
+        message_lines = ["⚡ 4H RSI & EMA 필터 (RSI ≥60 상향 돌파, EMA 20-50-200 정배열)", "━━━━━━━━━━━━━━━━━━━\n"]
         message_lines.append("🏆 실시간 거래대금 TOP 3\n")
 
         for rank, inst_id in enumerate(top_ids[:3], start=1):
