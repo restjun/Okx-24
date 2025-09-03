@@ -183,7 +183,7 @@ def get_24h_volume(inst_id):
     return df['volCcyQuote'].sum()
 
 # =========================
-# 신규 진입 알림 (TOP 3 거래대금, 1D RSI/MFI 돌파)
+# 신규 진입 알림 (TOP 거래대금, 1D RSI/MFI 돌파, 상승률 ≥5%)
 # =========================
 def send_new_entry_message(all_ids):
     global sent_signal_coins
@@ -204,7 +204,7 @@ def send_new_entry_message(all_ids):
             continue
 
         daily_change = calculate_daily_change(inst_id)
-        if daily_change is None:
+        if daily_change is None or daily_change < 5:  # 5% 이상 필터
             continue
 
         if not sent_signal_coins[inst_id]["crossed"]:
@@ -216,11 +216,12 @@ def send_new_entry_message(all_ids):
         sent_signal_coins[inst_id]["crossed"] = True
         sent_signal_coins[inst_id]["time"] = cross_time
 
+    # 거래대금 상위 3개만 선택
     if new_entry_coins:
         new_entry_coins.sort(key=lambda x: x[2], reverse=True)
         new_entry_coins = new_entry_coins[:3]
 
-        message_lines = ["⚡ 1D RSI·MFI 필터 (≥70 상향 돌파, 5일선)", "━━━━━━━━━━━━━━━━━━━\n"]
+        message_lines = ["⚡ 1D RSI·MFI 필터 (≥70 상향 돌파, 5일선, 상승률 ≥5%)", "━━━━━━━━━━━━━━━━━━━\n"]
         message_lines.append("🏆 실시간 거래대금 TOP 10\n")
 
         for rank, inst_id in enumerate(top_ids[:10], start=1):
@@ -265,11 +266,7 @@ def send_new_entry_message(all_ids):
             else:
                 mfi_1d, rsi_1d = None, None
 
-            daily_str = f"{daily_change:.2f}%"
-            if daily_change >= 5:
-                daily_str = f"🟢🔥 {daily_str}"
-            elif daily_change > 0:
-                daily_str = f"🟢 {daily_str}"
+            daily_str = f"🟢🔥 {daily_change:.2f}%"
 
             message_lines.append(
                 f"\n{coin_rank}위 {name}\n"
