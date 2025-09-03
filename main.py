@@ -159,7 +159,7 @@ def get_all_okx_swap_symbols():
 # 24시간 거래대금
 # =========================
 def get_24h_volume(inst_id):
-    df = get_ohlcv_okx(inst_id, bar="1H", limit=4)
+    df = get_ohlcv_okx(inst_id, bar="1H", limit=1)
     if df is None or len(df) < 24:
         return 0
     return df['volCcyQuote'].sum()
