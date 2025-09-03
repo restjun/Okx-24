@@ -151,7 +151,7 @@ def get_24h_volume(inst_id):
     return df['volCcyQuote'].sum()
 
 # =========================
-# 신규 돌파 종목 알림 (일봉 RSI 3일선 ≥70, 중복 방지)
+# 신규 돌파 종목 알림 (일봉 RSI 3일선 ≥70, 상승률 ≥0, 중복 방지)
 # =========================
 def send_new_entry_message(all_ids, top_n=10):
     global sent_signal_coins
@@ -164,7 +164,7 @@ def send_new_entry_message(all_ids, top_n=10):
 
         rsi_val = calc_rsi(df, period=3).iloc[-1]
 
-        # RSI 3일선 ≥70 신규 돌파 종목만
+        # RSI 3일선 ≥70
         if pd.isna(rsi_val) or rsi_val < 70:
             continue
 
@@ -173,6 +173,11 @@ def send_new_entry_message(all_ids, top_n=10):
             continue
 
         daily_change = calculate_daily_change(inst_id)
+
+        # 상승률 ≥0 종목만
+        if daily_change is None or daily_change < 0:
+            continue
+
         volume = get_24h_volume(inst_id)
         new_entry_coins.append((inst_id, daily_change, volume, rsi_val))
 
@@ -185,7 +190,7 @@ def send_new_entry_message(all_ids, top_n=10):
     new_entry_coins = new_entry_coins[:top_n]
 
     # 메시지 생성
-    message_lines = ["⚡ 신규 돌파 종목 (일봉 RSI 3일선 ≥70)", "━━━━━━━━━━━━━━━━━━━\n"]
+    message_lines = ["⚡ 신규 돌파 종목 (일봉 RSI 3일선 ≥70, 상승 종목)", "━━━━━━━━━━━━━━━━━━━\n"]
     for rank, (inst_id, daily_change, volume, rsi_val) in enumerate(new_entry_coins, start=1):
         volume_str = format_volume_in_eok(volume)
         name = inst_id.replace("-USDT-SWAP", "")
