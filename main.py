@@ -124,15 +124,21 @@ def check_1d_mfi_rsi_cross(inst_id, period=5, threshold=70):
     df = get_ohlcv_okx(inst_id, bar='1D', limit=200)
     if df is None or len(df) < period + 1:
         return False, None
+
     mfi = calc_mfi(df, period)
     rsi = calc_rsi(df, period)
+
     prev_mfi, curr_mfi = mfi.iloc[-2], mfi.iloc[-1]
     prev_rsi, curr_rsi = rsi.iloc[-2], rsi.iloc[-1]
-    cross_time = pd.to_datetime(df['ts'].iloc[-1], unit='ms') + pd.Timedelta(hours=9)
+    cross_time = pd.to_datetime(df['ts'].iloc[-1], unit='ms') + pd.Timedelta(hours=9)  # 한국시간
+
     if pd.isna(curr_mfi) or pd.isna(curr_rsi):
         return False, None
-    crossed = (curr_mfi >= threshold and curr_rsi >= threshold) and \
-              (prev_mfi < threshold or prev_rsi < threshold)
+
+    crossed = (
+        (curr_mfi >= threshold and curr_rsi >= threshold) and
+        (prev_mfi < threshold or prev_rsi < threshold)
+    )
     return crossed, cross_time if crossed else None
 
 # =========================
@@ -187,11 +193,13 @@ def get_24h_volume(inst_id):
 # =========================
 def send_new_entry_message(all_ids):
     global sent_signal_coins
+
     volume_map = {inst_id: get_24h_volume(inst_id) for inst_id in all_ids}
     top_ids = sorted(volume_map, key=volume_map.get, reverse=True)[:200]
     rank_map = {inst_id: rank+1 for rank, inst_id in enumerate(top_ids)}
     new_entry_coins = []
 
+    # 초기화
     for inst_id in ["BTC-USDT-SWAP"] + top_ids:
         if inst_id not in sent_signal_coins:
             sent_signal_coins[inst_id] = {"crossed": False, "time": None, "top10": False}
@@ -226,11 +234,12 @@ def send_new_entry_message(all_ids):
         mfi_1d = calc_mfi(df_1d, 5).iloc[-1]
         rsi_1d = calc_rsi(df_1d, 5).iloc[-1]
         change = calculate_daily_change(inst_id)
+        is_cross, cross_time = check_1d_mfi_rsi_cross(inst_id, 5, 70)
 
-        if (mfi_1d is not None and rsi_1d is not None 
-            and mfi_1d >= 70 and rsi_1d >= 70 
-            and change is not None and change >= 0):
-            filtered_top.append((inst_id, mfi_1d, rsi_1d, change))
+        if (mfi_1d is not None and rsi_1d is not None
+                and mfi_1d >= 70 and rsi_1d >= 70
+                and change is not None and change >= 0):
+            filtered_top.append((inst_id, mfi_1d, rsi_1d, change, cross_time))
 
         if len(filtered_top) >= 10:
             break
@@ -252,16 +261,18 @@ def send_new_entry_message(all_ids):
     # 신규 TOP10 진입
     if new_top10_coins:
         message_lines.append("🏆 신규 TOP 10 진입 코인 🌟")
-        for rank, (inst_id, mfi_1d, rsi_1d, change) in enumerate(filtered_top, start=1):
+        for rank, (inst_id, mfi_1d, rsi_1d, change, cross_time) in enumerate(filtered_top, start=1):
             volume = volume_map.get(inst_id, 0)
             volume_str = format_volume_in_eok(volume)
             name = inst_id.replace("-USDT-SWAP", "")
             highlight = "🌟" if inst_id in new_top10_coins else ""
             status = f"🟢🔥 +{change:.2f}%" if change >= 5 else f"🟢 +{change:.2f}%"
+            cross_str = cross_time.strftime("%Y-%m-%d %H:%M") if cross_time else "N/A"
             message_lines.append(
                 f"{rank}위 {name}{highlight}\n"
                 f"{status} | 💰 {volume_str}M\n"
-                f"📊 RSI: {format_rsi_mfi(rsi_1d)} | MFI: {format_rsi_mfi(mfi_1d)}"
+                f"📊 RSI: {format_rsi_mfi(rsi_1d)} | MFI: {format_rsi_mfi(mfi_1d)}\n"
+                f"⏰ RSI/MFI 70 돌파: {cross_str}"
             )
 
     # 신규 돌파 코인
@@ -272,9 +283,11 @@ def send_new_entry_message(all_ids):
         for inst_id, daily_change, volume_24h, coin_rank, cross_time in new_entry_coins:
             name = inst_id.replace("-USDT-SWAP", "")
             volume_str = format_volume_in_eok(volume_24h)
+            cross_str = cross_time.strftime("%Y-%m-%d %H:%M") if cross_time else "N/A"
             message_lines.append(
                 f"{coin_rank}위 {name}\n"
-                f"🟢🔥 {daily_change:.2f}% | 💰 {volume_str}M"
+                f"🟢🔥 {daily_change:.2f}% | 💰 {volume_str}M\n"
+                f"⏰ RSI/MFI 70 돌파: {cross_str}"
             )
 
     send_telegram_message("\n".join(message_lines))
