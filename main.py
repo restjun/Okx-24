@@ -238,8 +238,11 @@ def send_new_entry_message(all_ids):
 
         if (mfi_1d is not None and rsi_1d is not None
                 and mfi_1d >= 70 and rsi_1d >= 70
-                and change is not None and change >= 5):  # ✅ 조건 추가
-            filtered_top.append((inst_id, mfi_1d, rsi_1d, change, cross_time))
+                and change is not None and change >= 5):
+            # ✅ 거래대금 순위 계산
+            volume = volume_map.get(inst_id, 0)
+            volume_rank = sorted(volume_map.values(), reverse=True).index(volume) + 1
+            filtered_top.append((inst_id, mfi_1d, rsi_1d, change, cross_time, volume_rank))
 
         if len(filtered_top) >= 10:
             break
@@ -261,7 +264,7 @@ def send_new_entry_message(all_ids):
     # 신규 TOP10 진입
     if new_top10_coins:
         message_lines.append("🏆 신규 TOP 10 진입 코인 🌟")
-        for rank, (inst_id, mfi_1d, rsi_1d, change, cross_time) in enumerate(filtered_top, start=1):
+        for rank, (inst_id, mfi_1d, rsi_1d, change, cross_time, volume_rank) in enumerate(filtered_top, start=1):
             volume = volume_map.get(inst_id, 0)
             volume_str = format_volume_in_eok(volume)
             name = inst_id.replace("-USDT-SWAP", "")
@@ -270,7 +273,7 @@ def send_new_entry_message(all_ids):
             cross_str = cross_time.strftime("%Y-%m-%d %H:%M") if cross_time else "N/A"
             message_lines.append(
                 f"{rank}위 {name}{highlight}\n"
-                f"{status} | 💰 {volume_str}M\n"
+                f"{status} | 💰 {volume_str}M (실거래대금 순위: {volume_rank})\n"
                 f"📊 RSI: {format_rsi_mfi(rsi_1d)} | MFI: {format_rsi_mfi(mfi_1d)}\n"
                 f"⏰ RSI/MFI 70 돌파: {cross_str}"
             )
