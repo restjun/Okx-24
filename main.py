@@ -82,7 +82,7 @@ def rma(series, period):
     return r
 
 # =========================
-# RSI 계산
+# RSI 계산 (3일선)
 # =========================
 def calc_rsi(df, period=3):
     delta = df['c'].diff()
@@ -151,11 +151,13 @@ def get_24h_volume(inst_id):
     return df['volCcyQuote'].sum()
 
 # =========================
-# 신규 돌파 종목 알림 (일봉 RSI 3일선 ≥70, 상승률 ≥0, 중복 방지)
+# 신규 돌파 종목 알림 (RSI 3일선 ≥70, 상승률 ≥0, 거래대금 순위 표시, RSI 지수)
 # =========================
 def send_new_entry_message(all_ids, top_n=10):
     global sent_signal_coins
     new_entry_coins = []
+    rsi_70_up_count = 0
+    rsi_70_down_count = 0
 
     for inst_id in all_ids:
         df = get_ohlcv_okx(inst_id, bar='1D', limit=10)
@@ -163,23 +165,30 @@ def send_new_entry_message(all_ids, top_n=10):
             continue
 
         rsi_val = calc_rsi(df, period=3).iloc[-1]
-
-        # RSI 3일선 ≥70
-        if pd.isna(rsi_val) or rsi_val < 70:
+        if pd.isna(rsi_val):
             continue
 
-        # 중복 방지
+        # RSI 70 이상/미만 카운트
+        if rsi_val >= 70:
+            rsi_70_up_count += 1
+        else:
+            rsi_70_down_count += 1
+
+        # 신규 돌파 조건
+        if rsi_val < 70:
+            continue
         if inst_id in sent_signal_coins and sent_signal_coins[inst_id]:
             continue
-
         daily_change = calculate_daily_change(inst_id)
-
-        # 상승률 ≥0 종목만
         if daily_change is None or daily_change < 0:
             continue
 
         volume = get_24h_volume(inst_id)
         new_entry_coins.append((inst_id, daily_change, volume, rsi_val))
+
+    total_checked = rsi_70_up_count + rsi_70_down_count
+    ratio_up = f"{rsi_70_up_count}/{total_checked}" if total_checked > 0 else "N/A"
+    ratio_down = f"{rsi_70_down_count}/{total_checked}" if total_checked > 0 else "N/A"
 
     if not new_entry_coins:
         logging.info("⚡ 신규 돌파 종목 없음 → 메시지 전송 안 함")
@@ -190,7 +199,13 @@ def send_new_entry_message(all_ids, top_n=10):
     new_entry_coins = new_entry_coins[:top_n]
 
     # 메시지 생성
-    message_lines = ["⚡ 신규 돌파 종목 (일봉 RSI 3일선 ≥70, 상승 종목)", "━━━━━━━━━━━━━━━━━━━\n"]
+    message_lines = [
+        "⚡ 신규 돌파 종목 (일봉 RSI 3일선 ≥70, 상승 종목)",
+        "━━━━━━━━━━━━━━━━━━━\n",
+        f"📊 거래대금 기준 상위 {top_n}종목",
+        f"RSI 70 이상/미만 지수: {ratio_up} / {ratio_down}\n"
+    ]
+
     for rank, (inst_id, daily_change, volume, rsi_val) in enumerate(new_entry_coins, start=1):
         volume_str = format_volume_in_eok(volume)
         name = inst_id.replace("-USDT-SWAP", "")
@@ -200,7 +215,7 @@ def send_new_entry_message(all_ids, top_n=10):
             f"{daily_str} | 💰 거래대금: {volume_str}M\n"
             f"📊 일봉 → RSI: 🔵 {rsi_val:.1f}"
         )
-        # 알림 발송 후 중복 방지 기록
+        # 중복 방지 기록
         sent_signal_coins[inst_id] = True
 
     message_lines.append("\n━━━━━━━━━━━━━━━━━━━")
