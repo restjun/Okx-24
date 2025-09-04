@@ -238,7 +238,7 @@ def send_new_entry_message(all_ids):
 
         if (mfi_1d is not None and rsi_1d is not None
                 and mfi_1d >= 70 and rsi_1d >= 70
-                and change is not None and change >= 0):  # 상승률 0% 이상
+                and change is not None and change >= -10):  # 상승률 0% 이상
             volume = volume_map.get(inst_id, 0)
             volume_rank = sorted(volume_map.values(), reverse=True).index(volume) + 1
             filtered_top.append((inst_id, mfi_1d, rsi_1d, change, cross_time, volume_rank))
