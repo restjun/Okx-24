@@ -111,10 +111,10 @@ def calc_mfi(df, period=5):
     return mfi
 
 # =========================
-# 1H RSI/MFI 돌파 확인
+# 4H RSI/MFI 돌파 확인 (기존 1H 대신)
 # =========================
-def check_1h_mfi_rsi_cross(inst_id, period=5, threshold=70):
-    df = get_ohlcv_okx(inst_id, bar='1H', limit=48)
+def check_4h_mfi_rsi_cross(inst_id, period=5, threshold=70):
+    df = get_ohlcv_okx(inst_id, bar='4H', limit=48)
     if df is None or len(df) < period + 1:
         return False, None
 
@@ -182,7 +182,7 @@ def get_24h_volume(inst_id):
     return df['volCcyQuote'].sum()
 
 # =========================
-# 신규 메시지 처리 (일봉 70 이상 + 1H 돌파)
+# 신규 메시지 처리 (일봉 70 이상 + 4H 돌파)
 # =========================
 def send_new_entry_message(all_ids):
     global sent_signal_coins
@@ -205,9 +205,9 @@ def send_new_entry_message(all_ids):
         if daily_rsi < 70 or daily_mfi < 70:
             continue
 
-        # 2️⃣ 1시간봉 RSI/MFI 돌파
-        is_cross_1h, cross_time = check_1h_mfi_rsi_cross(inst_id, period=5, threshold=70)
-        if not is_cross_1h or cross_time is None:
+        # 2️⃣ 4시간봉 RSI/MFI 돌파
+        is_cross_4h, cross_time = check_4h_mfi_rsi_cross(inst_id, period=5, threshold=70)
+        if not is_cross_4h or cross_time is None:
             continue
 
         daily_change = calculate_daily_change(inst_id)
@@ -228,7 +228,7 @@ def send_new_entry_message(all_ids):
         return
 
     new_entry_coins.sort(key=lambda x: x[2], reverse=True)
-    message_lines = ["🆕 일봉 70 이상 + 1H 신규 돌파 코인 👀"]
+    message_lines = ["🆕 일봉 70 이상 + 4H 신규 돌파 코인 👀"]
     for inst_id, daily_change, volume_24h, coin_rank, cross_time in new_entry_coins:
         name = inst_id.replace("-USDT-SWAP", "")
         volume_str = format_volume_in_eok(volume_24h)
@@ -236,7 +236,7 @@ def send_new_entry_message(all_ids):
         message_lines.append(
             f"{coin_rank}위 {name}\n"
             f"🟢🔥 {daily_change:.2f}% | 💰 {volume_str}M\n"
-            f"⏰ 1H RSI/MFI 70 돌파: {cross_str}"
+            f"⏰ 4H RSI/MFI 70 돌파: {cross_str}"
         )
 
     send_telegram_message("\n".join(message_lines))
