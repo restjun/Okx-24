@@ -85,7 +85,7 @@ def rma(series, period):
 # =========================
 # RSI 계산
 # =========================
-def calc_rsi(df, period=5):
+def calc_rsi(df, period=3):  # 기본값 3일선으로 수정
     delta = df['c'].diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
@@ -98,7 +98,7 @@ def calc_rsi(df, period=5):
 # =========================
 # MFI 계산
 # =========================
-def calc_mfi(df, period=5):
+def calc_mfi(df, period=3):  # 기본값 3일선으로 수정
     tp = (df['h'] + df['l'] + df['c']) / 3
     mf = tp * df['volCcyQuote']
     delta_tp = tp.diff()
@@ -111,9 +111,9 @@ def calc_mfi(df, period=5):
     return mfi
 
 # =========================
-# 4H RSI/MFI 돌파 확인 (기존 1H 대신)
+# 4H RSI/MFI 돌파 확인 (3일선, 기준치 60)
 # =========================
-def check_4h_mfi_rsi_cross(inst_id, period=5, threshold=70):
+def check_4h_mfi_rsi_cross(inst_id, period=3, threshold=60):
     df = get_ohlcv_okx(inst_id, bar='4H', limit=48)
     if df is None or len(df) < period + 1:
         return False, None
@@ -182,7 +182,7 @@ def get_24h_volume(inst_id):
     return df['volCcyQuote'].sum()
 
 # =========================
-# 신규 메시지 처리 (일봉 70 이상 + 4H 돌파)
+# 신규 메시지 처리 (일봉 60 이상 + 4H 돌파)
 # =========================
 def send_new_entry_message(all_ids):
     global sent_signal_coins
@@ -196,17 +196,17 @@ def send_new_entry_message(all_ids):
     new_entry_coins = []
 
     for inst_id in all_ids:
-        # 1️⃣ 일봉 RSI/MFI 70 이상
+        # 1️⃣ 일봉 RSI/MFI 60 이상
         df_daily = get_ohlcv_okx(inst_id, bar='1D', limit=10)
-        if df_daily is None or len(df_daily) < 5:
+        if df_daily is None or len(df_daily) < 3:
             continue
-        daily_rsi = calc_rsi(df_daily, period=5).iloc[-1]
-        daily_mfi = calc_mfi(df_daily, period=5).iloc[-1]
-        if daily_rsi < 70 or daily_mfi < 70:
+        daily_rsi = calc_rsi(df_daily, period=3).iloc[-1]
+        daily_mfi = calc_mfi(df_daily, period=3).iloc[-1]
+        if daily_rsi < 60 or daily_mfi < 60:
             continue
 
         # 2️⃣ 4시간봉 RSI/MFI 돌파
-        is_cross_4h, cross_time = check_4h_mfi_rsi_cross(inst_id, period=5, threshold=70)
+        is_cross_4h, cross_time = check_4h_mfi_rsi_cross(inst_id, period=3, threshold=60)
         if not is_cross_4h or cross_time is None:
             continue
 
@@ -228,7 +228,7 @@ def send_new_entry_message(all_ids):
         return
 
     new_entry_coins.sort(key=lambda x: x[2], reverse=True)
-    message_lines = ["🆕 일봉 70 이상 + 4H 신규 돌파 코인 👀"]
+    message_lines = ["🆕 일봉 60 이상 + 4H 신규 돌파 코인 👀"]
     for inst_id, daily_change, volume_24h, coin_rank, cross_time in new_entry_coins:
         name = inst_id.replace("-USDT-SWAP", "")
         volume_str = format_volume_in_eok(volume_24h)
@@ -236,7 +236,7 @@ def send_new_entry_message(all_ids):
         message_lines.append(
             f"{coin_rank}위 {name}\n"
             f"🟢🔥 {daily_change:.2f}% | 💰 {volume_str}M\n"
-            f"⏰ 4H RSI/MFI 70 돌파: {cross_str}"
+            f"⏰ 4H RSI/MFI 60 돌파: {cross_str}"
         )
 
     send_telegram_message("\n".join(message_lines))
