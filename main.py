@@ -202,7 +202,7 @@ def send_new_entry_message(all_ids):
     # 초기화
     for inst_id in ["BTC-USDT-SWAP"] + top_ids:
         if inst_id not in sent_signal_coins:
-            sent_signal_coins[inst_id] = {"crossed": False, "time": None, "top3": False}
+            sent_signal_coins[inst_id] = {"crossed": False, "time": None, "top10": False}
 
     # === 신규 돌파 코인 확인 ===
     for inst_id in top_ids:
@@ -213,7 +213,7 @@ def send_new_entry_message(all_ids):
             continue
 
         daily_change = calculate_daily_change(inst_id)
-        if daily_change is None or daily_change < 0:
+        if daily_change is None or daily_change < 5:
             continue
 
         if not sent_signal_coins[inst_id]["crossed"]:
@@ -225,8 +225,8 @@ def send_new_entry_message(all_ids):
         sent_signal_coins[inst_id]["crossed"] = True
         sent_signal_coins[inst_id]["time"] = cross_time
 
-    # === TOP 3 필터링 (일간 상승률 0% 이상 + RSI/MFI 70 이상) ===
-    filtered_top = []
+    # === TOP 10 필터링 (일간 상승률 기준 + RSI/MFI 70 이상) ===
+    top_candidates = []
     for inst_id in top_ids:
         df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=200)
         if df_1d is None or len(df_1d) < 5:
@@ -238,41 +238,38 @@ def send_new_entry_message(all_ids):
 
         if (mfi_1d is not None and rsi_1d is not None
                 and mfi_1d >= 70 and rsi_1d >= 70
-                and change is not None and change >= -10):  # 상승률 0% 이상
-            volume = volume_map.get(inst_id, 0)
-            volume_rank = sorted(volume_map.values(), reverse=True).index(volume) + 1
-            filtered_top.append((inst_id, mfi_1d, rsi_1d, change, cross_time, volume_rank))
+                and change is not None and change >= 5):
+            top_candidates.append((inst_id, mfi_1d, rsi_1d, change, cross_time, volume_map.get(inst_id, 0)))
 
-        if len(filtered_top) >= 3:  # TOP 3
-            break
+    # 상승률 기준 내림차순 정렬
+    top_candidates = sorted(top_candidates, key=lambda x: x[3], reverse=True)[:10]
 
-    # === 신규 TOP 3 진입 체크 ===
-    new_top3_coins = []
-    current_top3_set = set([coin[0] for coin in filtered_top])
-    for inst_id in current_top3_set:
-        if not sent_signal_coins[inst_id]["top3"]:
-            new_top3_coins.append(inst_id)
-        sent_signal_coins[inst_id]["top3"] = True
+    # === 신규 TOP 10 진입 체크 ===
+    new_top10_coins = []
+    current_top10_set = set([coin[0] for coin in top_candidates])
+    for inst_id in current_top10_set:
+        if not sent_signal_coins[inst_id]["top10"]:
+            new_top10_coins.append(inst_id)
+        sent_signal_coins[inst_id]["top10"] = True
 
     # === 메시지 생성 조건 ===
-    if not new_entry_coins and not new_top3_coins:
-        return  # 변화 없으면 전송 안 함
+    if not new_entry_coins and not new_top10_coins:
+        return
 
     message_lines = []
 
-    # 신규 TOP3 진입
-    if new_top3_coins:
-        message_lines.append("🏆 신규 TOP 3 진입 코인 🌟")
-        for rank, (inst_id, mfi_1d, rsi_1d, change, cross_time, volume_rank) in enumerate(filtered_top, start=1):
-            volume = volume_map.get(inst_id, 0)
+    # TOP 10
+    if top_candidates:
+        message_lines.append("🏆 TOP 10 상승률 코인 🌟")
+        for rank, (inst_id, mfi_1d, rsi_1d, change, cross_time, volume) in enumerate(top_candidates, start=1):
             volume_str = format_volume_in_eok(volume)
             name = inst_id.replace("-USDT-SWAP", "")
-            highlight = "🌟" if inst_id in new_top3_coins else ""
+            highlight = "🌟" if inst_id in new_top10_coins else ""
             status = f"🟢🔥 +{change:.2f}%" if change >= 5 else f"🟢 +{change:.2f}%"
             cross_str = cross_time.strftime("%Y-%m-%d %H:%M") if cross_time else "N/A"
             message_lines.append(
                 f"{rank}위 {name}{highlight}\n"
-                f"{status} | 💰 {volume_str}M (실거래대금 순위: {volume_rank})\n"
+                f"{status} | 💰 {volume_str}M\n"
                 f"📊 RSI: {format_rsi_mfi(rsi_1d)} | MFI: {format_rsi_mfi(mfi_1d)}\n"
                 f"⏰ RSI/MFI 70 돌파: {cross_str}"
             )
