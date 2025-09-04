@@ -85,7 +85,7 @@ def rma(series, period):
 # =========================
 # RSI 계산
 # =========================
-def calc_rsi(df, period=3):  # 기본값 3일선으로 수정
+def calc_rsi(df, period=3):  # 기본값 3일선
     delta = df['c'].diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
@@ -98,7 +98,7 @@ def calc_rsi(df, period=3):  # 기본값 3일선으로 수정
 # =========================
 # MFI 계산
 # =========================
-def calc_mfi(df, period=3):  # 기본값 3일선으로 수정
+def calc_mfi(df, period=3):  # 기본값 3일선
     tp = (df['h'] + df['l'] + df['c']) / 3
     mf = tp * df['volCcyQuote']
     delta_tp = tp.diff()
@@ -182,7 +182,7 @@ def get_24h_volume(inst_id):
     return df['volCcyQuote'].sum()
 
 # =========================
-# 신규 메시지 처리 (일봉 60 이상 + 4H 돌파)
+# 신규 메시지 처리 (일봉 60 이상 + 4H 돌파, 거래대금 상위 100개만)
 # =========================
 def send_new_entry_message(all_ids):
     global sent_signal_coins
@@ -190,12 +190,12 @@ def send_new_entry_message(all_ids):
 
     # 거래대금
     volume_map = {inst_id: get_24h_volume(inst_id) for inst_id in all_ids}
-    sorted_by_volume = sorted(volume_map, key=volume_map.get, reverse=True)
+    sorted_by_volume = sorted(volume_map, key=volume_map.get, reverse=True)[:100]  # 🔥 상위 100개만
     rank_map = {inst_id: rank+1 for rank, inst_id in enumerate(sorted_by_volume)}
 
     new_entry_coins = []
 
-    for inst_id in all_ids:
+    for inst_id in sorted_by_volume:  # 🔥 상위 100개만 검사
         # 1️⃣ 일봉 RSI/MFI 60 이상
         df_daily = get_ohlcv_okx(inst_id, bar='1D', limit=10)
         if df_daily is None or len(df_daily) < 3:
@@ -228,7 +228,7 @@ def send_new_entry_message(all_ids):
         return
 
     new_entry_coins.sort(key=lambda x: x[2], reverse=True)
-    message_lines = ["🆕 일봉 60 이상 + 4H 신규 돌파 코인 👀"]
+    message_lines = ["🆕 일봉 60 이상 + 4H 신규 돌파 코인 (거래대금 Top 100) 👀"]
     for inst_id, daily_change, volume_24h, coin_rank, cross_time in new_entry_coins:
         name = inst_id.replace("-USDT-SWAP", "")
         volume_str = format_volume_in_eok(volume_24h)
