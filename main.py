@@ -53,9 +53,9 @@ def retry_request(func, *args, **kwargs):
     return None
 
 # =========================
-# OKX OHLCV 가져오기
+# OKX OHLCV 가져오기 (1시간봉)
 # =========================
-def get_ohlcv_okx(inst_id, bar='4H', limit=300):
+def get_ohlcv_okx(inst_id, bar='1H', limit=300):
     url = f"https://www.okx.com/api/v5/market/candles?instId={inst_id}&bar={bar}&limit={limit}"
     response = retry_request(requests.get, url)
     if response is None:
@@ -111,9 +111,9 @@ def calc_mfi(df, period=5):
     return mfi
 
 # =========================
-# RSI/MFI 돌파 확인 (1H / 4H)
+# RSI/MFI 돌파 확인 (1H)
 # =========================
-def check_mfi_rsi_cross(inst_id, bar="4H", period=5, threshold=70):
+def check_mfi_rsi_cross(inst_id, bar="1H", period=5, threshold=70):
     df = get_ohlcv_okx(inst_id, bar=bar, limit=200)
     if df is None or len(df) < period + 1:
         return False, None
@@ -138,7 +138,7 @@ def check_mfi_rsi_cross(inst_id, bar="4H", period=5, threshold=70):
 # 일간 상승률 계산
 # =========================
 def calculate_daily_change(inst_id):
-    df = get_ohlcv_okx(inst_id, bar="4H", limit=48)
+    df = get_ohlcv_okx(inst_id, bar="1H", limit=48)
     if df is None or len(df) < 24:
         return None
     try:
@@ -176,13 +176,13 @@ def get_all_okx_swap_symbols():
 # 24시간 거래대금
 # =========================
 def get_24h_volume(inst_id):
-    df = get_ohlcv_okx(inst_id, bar="4H", limit=24)
+    df = get_ohlcv_okx(inst_id, bar="1H", limit=24)
     if df is None or len(df) < 24:
         return 0
     return df['volCcyQuote'].sum()
 
 # =========================
-# 신규 메시지 처리 (1H & 4H 기준)
+# 신규 메시지 처리 (1H 기준)
 # =========================
 def send_new_entry_message(all_ids):
     global sent_signal_coins
@@ -204,39 +204,38 @@ def send_new_entry_message(all_ids):
     new_entry_coins = []
 
     for inst_id in top_ids:
-        for bar in ["1H", "4H"]:
-            is_cross, cross_time = check_mfi_rsi_cross(inst_id, bar=bar, period=5, threshold=70)
-            if not is_cross or cross_time is None:
-                continue
+        is_cross, cross_time = check_mfi_rsi_cross(inst_id, bar="1H", period=5, threshold=70)
+        if not is_cross or cross_time is None:
+            continue
 
-            cross_date_str = cross_time.strftime("%Y-%m-%d")
-            if cross_date_str != today_str:
-                continue
+        cross_date_str = cross_time.strftime("%Y-%m-%d")
+        if cross_date_str != today_str:
+            continue
 
-            daily_change = calculate_daily_change(inst_id)
-            if daily_change is None or daily_change < 0:
-                continue
+        daily_change = calculate_daily_change(inst_id)
+        if daily_change is None or daily_change < 0:
+            continue
 
-            key = f"{inst_id}_{bar}"
-            if sent_signal_coins.get(key, {}).get("crossed_date") != today_str:
-                new_entry_coins.append(
-                    (inst_id, bar, daily_change, volume_map.get(inst_id, 0),
-                     rank_map.get(inst_id), cross_time)
-                )
-                sent_signal_coins[key] = {"crossed_date": today_str}
+        key = f"{inst_id}_1H"
+        if sent_signal_coins.get(key, {}).get("crossed_date") != today_str:
+            new_entry_coins.append(
+                (inst_id, daily_change, volume_map.get(inst_id, 0),
+                 rank_map.get(inst_id), cross_time)
+            )
+            sent_signal_coins[key] = {"crossed_date": today_str}
 
     if not new_entry_coins:
         return
 
-    new_entry_coins.sort(key=lambda x: x[3], reverse=True)
-    message_lines = ["🆕 당일 신규 돌파 코인 👀 (1H & 4H 기준)"]
-    for inst_id, bar, daily_change, volume_24h, coin_rank, cross_time in new_entry_coins:
+    new_entry_coins.sort(key=lambda x: x[2], reverse=True)
+    message_lines = ["🆕 당일 신규 돌파 코인 👀 (1H 기준)"]
+    for inst_id, daily_change, volume_24h, coin_rank, cross_time in new_entry_coins:
         name = inst_id.replace("-USDT-SWAP", "")
         volume_str = format_volume_in_eok(volume_24h)
         cross_str = cross_time.strftime("%Y-%m-%d %H:%M") if cross_time else "N/A"
         volume_rank = volume_rank_map.get(inst_id, "N/A")
         message_lines.append(
-            f"{coin_rank}위 {name} [{bar}] (거래대금 Rank: {volume_rank})\n"
+            f"{coin_rank}위 {name} [1H] (거래대금 Rank: {volume_rank})\n"
             f"🟢🔥 {daily_change:.2f}% | 💰 {volume_str}M\n"
             f"⏰ RSI/MFI 70 돌파: {cross_str}"
         )
