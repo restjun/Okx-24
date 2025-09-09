@@ -111,14 +111,6 @@ def calc_mfi(df, period=5):
     return mfi
 
 # =========================
-# RSI/MFI 포맷팅 (임계값 70)
-# =========================
-def format_rsi_mfi(value, threshold=70):
-    if pd.isna(value):
-        return "(N/A)"
-    return f"🔴 {value:.1f}" if value < threshold else f"🟢 {value:.1f}"
-
-# =========================
 # 4H RSI/MFI 돌파 확인 (임계값 70, 5기간)
 # =========================
 def check_4h_mfi_rsi_cross(inst_id, period=5, threshold=70):
@@ -190,35 +182,26 @@ def get_24h_volume(inst_id):
     return df['volCcyQuote'].sum()
 
 # =========================
-# 신규 메시지 처리 (당일 4H 기준 돌파, 임계값 70)
+# 신규 메시지 처리 (거래대금 TOP10, RSI/MFI 70 돌파, 상승률 포함)
 # =========================
 def send_new_entry_message(all_ids):
     global sent_signal_coins
     today_str = datetime.now().strftime("%Y-%m-%d")  # 오늘 날짜
 
-    # 거래대금 (표시용)
+    # 거래대금 TOP10 가져오기
     volume_map = {inst_id: get_24h_volume(inst_id) for inst_id in all_ids}
-    sorted_by_volume = sorted(volume_map, key=volume_map.get, reverse=True)[:30]
+    sorted_by_volume = sorted(volume_map, key=volume_map.get, reverse=True)[:10]
     volume_rank_map = {inst_id: rank+1 for rank, inst_id in enumerate(sorted_by_volume)}
-
-    # 상승률 기준 TOP10 (조건용)
-    change_map = {}
-    for inst_id in sorted_by_volume:
-        change = calculate_daily_change(inst_id)
-        if change is not None:
-            change_map[inst_id] = change
-    top_ids = sorted(change_map, key=change_map.get, reverse=True)[:10]
-    rank_map = {inst_id: rank+1 for rank, inst_id in enumerate(top_ids)}
 
     new_entry_coins = []
 
     # 초기화
-    for inst_id in top_ids:
+    for inst_id in sorted_by_volume:
         if inst_id not in sent_signal_coins:
             sent_signal_coins[inst_id] = {"crossed_date": None}
 
-    # === 당일 신규 4H 돌파 코인 확인 ===
-    for inst_id in top_ids:
+    # === 거래대금 TOP10 중 RSI/MFI 70 돌파 확인 ===
+    for inst_id in sorted_by_volume:
         is_cross_4h, cross_time = check_4h_mfi_rsi_cross(inst_id, period=5, threshold=70)
         if not is_cross_4h or cross_time is None:
             continue
@@ -233,23 +216,22 @@ def send_new_entry_message(all_ids):
 
         if sent_signal_coins[inst_id]["crossed_date"] != today_str:
             new_entry_coins.append(
-                (inst_id, daily_change, volume_map.get(inst_id, 0), rank_map.get(inst_id), cross_time)
+                (inst_id, daily_change, volume_map.get(inst_id, 0), volume_rank_map.get(inst_id), cross_time)
             )
             sent_signal_coins[inst_id]["crossed_date"] = today_str
 
-    # === 메세지 발송 ===
+    # === 메시지 발송 ===
     if not new_entry_coins:
         return
 
     new_entry_coins.sort(key=lambda x: x[2], reverse=True)
-    message_lines = ["🆕 당일 신규 돌파 코인 👀 \n(4시간봉 기준, RSI/MFI 70 돌파, 5일선)"]
-    for inst_id, daily_change, volume_24h, coin_rank, cross_time in new_entry_coins:
+    message_lines = ["🆕 거래대금 TOP10 RSI/MFI 70 돌파 코인 👀 \n(4시간봉 기준, 5기간)"]
+    for inst_id, daily_change, volume_24h, volume_rank, cross_time in new_entry_coins:
         name = inst_id.replace("-USDT-SWAP", "")
         volume_str = format_volume_in_eok(volume_24h)
         cross_str = cross_time.strftime("%Y-%m-%d %H:%M") if cross_time else "N/A"
-        volume_rank = volume_rank_map.get(inst_id, "N/A")
         message_lines.append(
-            f"{coin_rank}위 {name} (거래대금 Rank: {volume_rank})\n"
+            f"{name} (거래대금 Rank: {volume_rank})\n"
             f"🟢🔥 {daily_change:.2f}% | 💰 {volume_str}M\n"
             f"⏰ RSI/MFI 70 돌파: {cross_str}"
         )
