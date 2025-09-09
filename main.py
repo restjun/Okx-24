@@ -188,7 +188,7 @@ def get_all_okx_swap_symbols():
 
 
 # =========================
-# 메시지 발송
+# 메시지 발송 (조건: 랭킹 변경 or 10분봉 RSI/MFI <= 30)
 # =========================
 def send_new_entry_message(all_ids):
     global last_sent_top10
@@ -213,19 +213,30 @@ def send_new_entry_message(all_ids):
         daily_change = calculate_daily_change(inst_id)
 
         if mfi_4h >= 70 and rsi_4h >= 70 and daily_change is not None and daily_change > 0:
-            rank = sorted_by_volume.index(inst_id) + 1  # 실제 거래대금 순위
+            rank = sorted_by_volume.index(inst_id) + 1
             top_positive_coins.append(
                 (inst_id, mfi_10m, rsi_10m, daily_change, volume_map[inst_id], rank)
             )
 
-    if top_positive_coins == last_sent_top10:
+    # ✅ 메시지 전송 조건: (1) 랭킹 변경 OR (2) 10분 RSI/MFI 중 하나라도 30 이하
+    should_send = False
+
+    if [coin[0] for coin in top_positive_coins] != [coin[0] for coin in last_sent_top10]:
+        should_send = True
+    else:
+        for _, mfi_10m, rsi_10m, _, _, _ in top_positive_coins:
+            if (mfi_10m is not None and mfi_10m <= 30) or (rsi_10m is not None and rsi_10m <= 30):
+                should_send = True
+                break
+
+    if not should_send:
         return
 
     last_sent_top10 = top_positive_coins.copy()
     if not top_positive_coins:
         return
 
-    message_lines = ["🆕 거래대금 TOP10 RSI/MFI 70 이상 코인 👀 (4시간봉 기준, 5기간)"]
+    message_lines = ["🆕 거래대금 TOP10 RSI/MFI 조건 충족 코인 👀 (4시간봉 기준, 5기간)"]
 
     for idx, (inst_id, mfi_10m, rsi_10m, daily_change, vol, rank) in enumerate(top_positive_coins, start=1):
         name = inst_id.replace("-USDT-SWAP", "")
