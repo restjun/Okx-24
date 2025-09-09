@@ -257,4 +257,10 @@ def run_scheduler():
 @app.on_event("startup")
 def start_scheduler():
     schedule.every(1).minutes.do(main)
-    threading.Thread(target=run
+    threading.Thread(target=run_scheduler, daemon=True).start()
+
+# =========================
+# FastAPI 실행
+# =========================
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8000)
