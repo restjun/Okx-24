@@ -205,7 +205,7 @@ def send_new_entry_message(all_ids):
         message_lines.append(
             f"{volume_rank}위 {name} (거래대금 Rank: {volume_rank})\n"
             f"🟢🔥 {daily_change:.2f}% | 💰 {volume_str}M\n"
-            f"⏰ RSI/MFI 현재 값 70 이상"
+            f""
         )
 
     send_telegram_message("\n".join(message_lines))
