@@ -165,7 +165,7 @@ def send_new_entry_message(all_ids):
     today_str = datetime.now().strftime("%Y-%m-%d")
 
     volume_map = {inst_id: get_24h_volume(inst_id) for inst_id in all_ids}
-    sorted_by_volume = sorted(volume_map, key=volume_map.get, reverse=True)[:30]
+    sorted_by_volume = sorted(volume_map, key=volume_map.get, reverse=True)[:10]
     volume_rank_map = {inst_id: rank+1 for rank, inst_id in enumerate(sorted_by_volume)}
 
     top_positive_coins = []
