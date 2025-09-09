@@ -53,7 +53,7 @@ def retry_request(func, *args, **kwargs):
     return None
 
 # =========================
-# OKX OHLCV 가져오기 (4시간봉)
+# OKX OHLCV 가져오기
 # =========================
 def get_ohlcv_okx(inst_id, bar='4H', limit=300):
     url = f"https://www.okx.com/api/v5/market/candles?instId={inst_id}&bar={bar}&limit={limit}"
@@ -138,6 +138,17 @@ def format_volume_in_eok(volume):
         return "🚫"
 
 # =========================
+# 색상 포맷 (RSI/MFI 시각화)
+# =========================
+def format_indicator_color(value):
+    if value <= 30:
+        return f"🟢{value:.1f}"
+    elif value >= 70:
+        return f"🔴{value:.1f}"
+    else:
+        return f"{value:.1f}"
+
+# =========================
 # 모든 USDT-SWAP 심볼
 # =========================
 def get_all_okx_swap_symbols():
@@ -158,17 +169,17 @@ def get_24h_volume(inst_id):
     return df['volCcyQuote'].sum()
 
 # =========================
-# 메시지 발송 (현재 RSI/MFI 70 이상, 거래대금 TOP10, 상승률 양수)
+# 메시지 발송
 # =========================
 def send_new_entry_message(all_ids):
     global last_sent_top10
-    today_str = datetime.now().strftime("%Y-%m-%d")
 
     volume_map = {inst_id: get_24h_volume(inst_id) for inst_id in all_ids}
     sorted_by_volume = sorted(volume_map, key=volume_map.get, reverse=True)[:20]
     volume_rank_map = {inst_id: rank+1 for rank, inst_id in enumerate(sorted_by_volume)}
 
     top_positive_coins = []
+    force_send = False  # 10분봉 조건에 의해 메시지 강제 전송 여부
 
     for inst_id in sorted_by_volume:
         if len(top_positive_coins) >= 10:
@@ -184,28 +195,51 @@ def send_new_entry_message(all_ids):
         if mfi >= 70 and rsi >= 70 and daily_change is not None and daily_change > 0:
             top_positive_coins.append(inst_id)
 
-    if top_positive_coins == last_sent_top10:
-        return
-
-    last_sent_top10 = top_positive_coins.copy()
     if not top_positive_coins:
         return
 
+    # =============================
+    # 10분봉 MFI/RSI 체크 (30 이하 발견 시 강제 전송)
+    # =============================
+    for inst_id in top_positive_coins:
+        df_10m = get_ohlcv_okx(inst_id, bar='10m', limit=50)
+        if df_10m is not None and len(df_10m) >= 5:
+            mfi_10m_val = calc_mfi(df_10m, period=5).iloc[-1]
+            rsi_10m_val = calc_rsi(df_10m, period=5).iloc[-1]
+            if mfi_10m_val <= 30 or rsi_10m_val <= 30:
+                force_send = True
+                break
+
+    # =============================
+    # 기존 동일 로직 + 강제 전송 조건 추가
+    # =============================
+    if top_positive_coins == last_sent_top10 and not force_send:
+        return
+
+    last_sent_top10 = top_positive_coins.copy()
+
     message_lines = ["🆕 거래대금 TOP10 RSI/MFI 70 이상 코인 👀 \n(4시간봉 기준, 5기간)"]
+
     for inst_id in top_positive_coins:
         daily_change = calculate_daily_change(inst_id)
         volume_24h = volume_map.get(inst_id, 0)
         volume_rank = volume_rank_map.get(inst_id, 0)
-        df = get_ohlcv_okx(inst_id)
-        cross_time = pd.to_datetime(df['ts'].iloc[-1], unit='ms') + pd.Timedelta(hours=9) if df is not None else None
+
+        # 10분봉 지표 계산
+        df_10m = get_ohlcv_okx(inst_id, bar='10m', limit=50)
+        if df_10m is not None and len(df_10m) >= 5:
+            mfi_10m = format_indicator_color(calc_mfi(df_10m, period=5).iloc[-1])
+            rsi_10m = format_indicator_color(calc_rsi(df_10m, period=5).iloc[-1])
+        else:
+            mfi_10m = rsi_10m = "N/A"
+
         name = inst_id.replace("-USDT-SWAP", "")
         volume_str = format_volume_in_eok(volume_24h)
-        cross_str = cross_time.strftime("%Y-%m-%d %H:%M") if cross_time else "N/A"
 
         message_lines.append(
-            f"{volume_rank}위 {name} (거래대금 Rank: {volume_rank})\n"
+            f"{volume_rank}위 {name}\n"
             f"🟢🔥 {daily_change:.2f}% | 💰 {volume_str}M\n"
-            f""
+            f"10분봉 MFI: {mfi_10m} | RSI: {rsi_10m}"
         )
 
     send_telegram_message("\n".join(message_lines))
