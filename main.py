@@ -83,7 +83,7 @@ def rma(series, period):
     return r
 
 # =========================
-# RSI 계산 (5기간)
+# RSI 계산
 # =========================
 def calc_rsi(df, period=5):
     delta = df['c'].diff()
@@ -96,7 +96,7 @@ def calc_rsi(df, period=5):
     return rsi
 
 # =========================
-# MFI 계산 (5기간)
+# MFI 계산
 # =========================
 def calc_mfi(df, period=5):
     tp = (df['h'] + df['l'] + df['c']) / 3
@@ -109,6 +109,30 @@ def calc_mfi(df, period=5):
     with np.errstate(divide='ignore', invalid='ignore'):
         mfi = 100 * pos_sum / (pos_sum + neg_sum)
     return mfi
+
+# =========================
+# 10분봉 변환 (5분봉 리샘플링)
+# =========================
+def get_10m_ohlcv(inst_id, limit=100):
+    df_5m = get_ohlcv_okx(inst_id, bar='5m', limit=limit)
+    if df_5m is None or len(df_5m) < 10:
+        return None
+    try:
+        df_5m['datetime'] = pd.to_datetime(df_5m['ts'], unit='ms') + pd.Timedelta(hours=9)
+        df_5m.set_index('datetime', inplace=True)
+
+        df_10m = pd.DataFrame()
+        df_10m['o'] = df_5m['o'].resample('10T').first()
+        df_10m['h'] = df_5m['h'].resample('10T').max()
+        df_10m['l'] = df_5m['l'].resample('10T').min()
+        df_10m['c'] = df_5m['c'].resample('10T').last()
+        df_10m['volCcyQuote'] = df_5m['volCcyQuote'].resample('10T').sum()
+
+        df_10m.dropna(inplace=True)
+        return df_10m
+    except Exception as e:
+        logging.error(f"10분봉 변환 실패: {e}")
+        return None
 
 # =========================
 # 일간 상승률 계산
@@ -130,23 +154,14 @@ def calculate_daily_change(inst_id):
         logging.error(f"{inst_id} 상승률 계산 오류: {e}")
         return None
 
-def format_volume_in_eok(volume):
-    try:
-        eok = int(volume // 1_000_000)
-        return str(eok) if eok >= 1 else "🚫"
-    except:
-        return "🚫"
-
 # =========================
-# 색상 포맷 (RSI/MFI 시각화)
+# 24시간 거래대금
 # =========================
-def format_indicator_color(value):
-    if value <= 30:
-        return f"🟢{value:.1f}"
-    elif value >= 70:
-        return f"🔴{value:.1f}"
-    else:
-        return f"{value:.1f}"
+def get_24h_volume(inst_id):
+    df = get_ohlcv_okx(inst_id, bar="4H", limit=24)
+    if df is None or len(df) < 24:
+        return 0
+    return df['volCcyQuote'].sum()
 
 # =========================
 # 모든 USDT-SWAP 심볼
@@ -160,15 +175,6 @@ def get_all_okx_swap_symbols():
     return [item["instId"] for item in data if "USDT" in item["instId"]]
 
 # =========================
-# 24시간 거래대금
-# =========================
-def get_24h_volume(inst_id):
-    df = get_ohlcv_okx(inst_id, bar="4H", limit=24)
-    if df is None or len(df) < 24:
-        return 0
-    return df['volCcyQuote'].sum()
-
-# =========================
 # 메시지 발송
 # =========================
 def send_new_entry_message(all_ids):
@@ -176,70 +182,50 @@ def send_new_entry_message(all_ids):
 
     volume_map = {inst_id: get_24h_volume(inst_id) for inst_id in all_ids}
     sorted_by_volume = sorted(volume_map, key=volume_map.get, reverse=True)[:20]
-    volume_rank_map = {inst_id: rank+1 for rank, inst_id in enumerate(sorted_by_volume)}
 
     top_positive_coins = []
-    force_send = False  # 10분봉 조건에 의해 메시지 강제 전송 여부
 
     for inst_id in sorted_by_volume:
-        if len(top_positive_coins) >= 10:
-            break
-        df = get_ohlcv_okx(inst_id, bar='4H', limit=10)
-        if df is None or len(df) < 5:
+        df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=10)
+        df_10m = get_10m_ohlcv(inst_id, limit=100)
+
+        if df_4h is None or len(df_4h) < 5 or df_10m is None or len(df_10m) < 5:
             continue
 
-        mfi = calc_mfi(df, period=5).iloc[-1]
-        rsi = calc_rsi(df, period=5).iloc[-1]
+        mfi_4h = calc_mfi(df_4h, period=5).iloc[-1]
+        rsi_4h = calc_rsi(df_4h, period=5).iloc[-1]
+        mfi_10m = calc_mfi(df_10m, period=5).iloc[-1]
+        rsi_10m = calc_rsi(df_10m, period=5).iloc[-1]
+
         daily_change = calculate_daily_change(inst_id)
 
-        if mfi >= 70 and rsi >= 70 and daily_change is not None and daily_change > 0:
-            top_positive_coins.append(inst_id)
+        if mfi_4h >= 70 and rsi_4h >= 70 and daily_change is not None and daily_change > 0:
+            top_positive_coins.append((inst_id, mfi_10m, rsi_10m, daily_change, volume_map[inst_id]))
 
-    if not top_positive_coins:
-        return
-
-    # =============================
-    # 10분봉 MFI/RSI 체크 (30 이하 발견 시 강제 전송)
-    # =============================
-    for inst_id in top_positive_coins:
-        df_10m = get_ohlcv_okx(inst_id, bar='10m', limit=50)
-        if df_10m is not None and len(df_10m) >= 5:
-            mfi_10m_val = calc_mfi(df_10m, period=5).iloc[-1]
-            rsi_10m_val = calc_rsi(df_10m, period=5).iloc[-1]
-            if mfi_10m_val <= 30 or rsi_10m_val <= 30:
-                force_send = True
-                break
-
-    # =============================
-    # 기존 동일 로직 + 강제 전송 조건 추가
-    # =============================
-    if top_positive_coins == last_sent_top10 and not force_send:
+    if top_positive_coins == last_sent_top10:
         return
 
     last_sent_top10 = top_positive_coins.copy()
+    if not top_positive_coins:
+        return
 
-    message_lines = ["🆕 거래대금 TOP10 RSI/MFI 70 이상 코인 👀 \n(4시간봉 기준, 5기간)"]
-
-    for inst_id in top_positive_coins:
-        daily_change = calculate_daily_change(inst_id)
-        volume_24h = volume_map.get(inst_id, 0)
-        volume_rank = volume_rank_map.get(inst_id, 0)
-
-        # 10분봉 지표 계산
-        df_10m = get_ohlcv_okx(inst_id, bar='10m', limit=50)
-        if df_10m is not None and len(df_10m) >= 5:
-            mfi_10m = format_indicator_color(calc_mfi(df_10m, period=5).iloc[-1])
-            rsi_10m = format_indicator_color(calc_rsi(df_10m, period=5).iloc[-1])
-        else:
-            mfi_10m = rsi_10m = "N/A"
-
+    message_lines = ["🆕 거래대금 TOP10 RSI/MFI 70 이상 코인 👀 (4시간봉 기준, 5기간)"]
+    for inst_id, mfi_10m, rsi_10m, daily_change, vol in top_positive_coins:
         name = inst_id.replace("-USDT-SWAP", "")
-        volume_str = format_volume_in_eok(volume_24h)
+
+        def fmt_val(val):
+            if val is None:
+                return "N/A"
+            if val <= 30:
+                return f"🟢{val:.2f}"
+            elif val >= 70:
+                return f"🔴{val:.2f}"
+            return f"{val:.2f}"
 
         message_lines.append(
-            f"{volume_rank}위 {name}\n"
-            f"🟢🔥 {daily_change:.2f}% | 💰 {volume_str}M\n"
-            f"10분봉 MFI: {mfi_10m} | RSI: {rsi_10m}"
+            f"{name}\n"
+            f"📊 10m MFI: {fmt_val(mfi_10m)} | RSI: {fmt_val(rsi_10m)}\n"
+            f"📈 {daily_change:.2f}% | 💰 {int(vol//1_000_000)}M"
         )
 
     send_telegram_message("\n".join(message_lines))
