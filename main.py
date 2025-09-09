@@ -12,6 +12,9 @@ from datetime import datetime
 
 app = FastAPI()
 
+# =========================
+# Telegram 설정
+# =========================
 telegram_bot_token = "8451481398:AAHHg2wVDKphMruKsjN2b6NFKJ50jhxEe-g"
 telegram_user_id = 6596886700
 bot = telepot.Bot(telegram_bot_token)
@@ -50,9 +53,9 @@ def retry_request(func, *args, **kwargs):
     return None
 
 # =========================
-# OKX OHLCV 가져오기 (일봉)
+# OKX OHLCV 가져오기
 # =========================
-def get_ohlcv_okx(inst_id, bar='1D', limit=200):
+def get_ohlcv_okx(inst_id, bar='4H', limit=300):
     url = f"https://www.okx.com/api/v5/market/candles?instId={inst_id}&bar={bar}&limit={limit}"
     response = retry_request(requests.get, url)
     if response is None:
@@ -70,7 +73,7 @@ def get_ohlcv_okx(inst_id, bar='1D', limit=200):
         return None
 
 # =========================
-# RMA / RSI / MFI 계산 (5일)
+# RMA 계산
 # =========================
 def rma(series, period):
     series = series.copy()
@@ -79,6 +82,9 @@ def rma(series, period):
     r.iloc[:period] = series.iloc[:period].expanding().mean()[:period]
     return r
 
+# =========================
+# RSI 계산
+# =========================
 def calc_rsi(df, period=5):
     delta = df['c'].diff()
     gain = delta.clip(lower=0)
@@ -89,6 +95,9 @@ def calc_rsi(df, period=5):
     rsi = 100 - (100 / (1 + rs))
     return rsi
 
+# =========================
+# MFI 계산
+# =========================
 def calc_mfi(df, period=5):
     tp = (df['h'] + df['l'] + df['c']) / 3
     mf = tp * df['volCcyQuote']
@@ -102,23 +111,27 @@ def calc_mfi(df, period=5):
     return mfi
 
 # =========================
-# 일봉 RSI/MFI 돌파 확인
+# RSI/MFI 포맷팅
 # =========================
-def check_daily_mfi_rsi_cross(inst_id, period=5, threshold=70):
-    df = get_ohlcv_okx(inst_id, bar='1D', limit=200)
+def format_rsi_mfi(value, threshold=70):
+    if pd.isna(value):
+        return "(N/A)"
+    return f"🔴 {value:.1f}" if value < threshold else f"🟢 {value:.1f}"
+
+# =========================
+# 4H RSI/MFI 돌파 확인
+# =========================
+def check_4h_mfi_rsi_cross(inst_id, period=5, threshold=70):
+    df = get_ohlcv_okx(inst_id, bar='4H', limit=200)
     if df is None or len(df) < period + 1:
         return False, None
-
     mfi = calc_mfi(df, period)
     rsi = calc_rsi(df, period)
-
     prev_mfi, curr_mfi = mfi.iloc[-2], mfi.iloc[-1]
     prev_rsi, curr_rsi = rsi.iloc[-2], rsi.iloc[-1]
     cross_time = pd.to_datetime(df['ts'].iloc[-1], unit='ms') + pd.Timedelta(hours=9)
-
     if pd.isna(curr_mfi) or pd.isna(curr_rsi):
         return False, None
-
     crossed = (
         (curr_mfi >= threshold and curr_rsi >= threshold) and
         (prev_mfi < threshold or prev_rsi < threshold)
@@ -126,13 +139,51 @@ def check_daily_mfi_rsi_cross(inst_id, period=5, threshold=70):
     return crossed, cross_time if crossed else None
 
 # =========================
-# 24시간 거래대금
+# 1D RSI/MFI 돌파 확인
 # =========================
-def get_24h_volume(inst_id):
-    df = get_ohlcv_okx(inst_id, bar="1D", limit=1)
-    if df is None or len(df) < 1:
-        return 0
-    return df['volCcyQuote'].iloc[-1]
+def check_1d_mfi_rsi_cross(inst_id, period=5, threshold=70):
+    df = get_ohlcv_okx(inst_id, bar='1D', limit=200)
+    if df is None or len(df) < period + 1:
+        return False, None
+    mfi = calc_mfi(df, period)
+    rsi = calc_rsi(df, period)
+    prev_mfi, curr_mfi = mfi.iloc[-2], mfi.iloc[-1]
+    prev_rsi, curr_rsi = rsi.iloc[-2], rsi.iloc[-1]
+    cross_time = pd.to_datetime(df['ts'].iloc[-1], unit='ms') + pd.Timedelta(hours=9)
+    if pd.isna(curr_mfi) or pd.isna(curr_rsi):
+        return False, None
+    crossed = (
+        (curr_mfi >= threshold and curr_rsi >= threshold) and
+        (prev_mfi < threshold or prev_rsi < threshold)
+    )
+    return crossed, cross_time if crossed else None
+
+# =========================
+# 일간 상승률 계산
+# =========================
+def calculate_daily_change(inst_id):
+    df = get_ohlcv_okx(inst_id, bar="4H", limit=48)
+    if df is None or len(df) < 24:
+        return None
+    try:
+        df['datetime'] = pd.to_datetime(df['ts'], unit='ms') + pd.Timedelta(hours=9)
+        df.set_index('datetime', inplace=True)
+        daily = df['c'].resample('1D', offset='9h').last()
+        if len(daily) < 2:
+            return None
+        today_close = daily.iloc[-1]
+        yesterday_close = daily.iloc[-2]
+        return round((today_close - yesterday_close) / yesterday_close * 100, 2)
+    except Exception as e:
+        logging.error(f"{inst_id} 상승률 계산 오류: {e}")
+        return None
+
+def format_volume_in_eok(volume):
+    try:
+        eok = int(volume // 1_000_000)
+        return str(eok) if eok >= 1 else "🚫"
+    except:
+        return "🚫"
 
 # =========================
 # 모든 USDT-SWAP 심볼
@@ -146,31 +197,82 @@ def get_all_okx_swap_symbols():
     return [item["instId"] for item in data if "USDT" in item["instId"]]
 
 # =========================
-# 메시지 생성 및 전송
+# 24시간 거래대금
 # =========================
-def send_new_entry_message(all_ids):
-    today_str = datetime.now().strftime("%Y-%m-%d")
-    volume_map = {inst_id: get_24h_volume(inst_id) for inst_id in all_ids}
-    sorted_by_volume = sorted(volume_map, key=volume_map.get, reverse=True)[:50]
+def get_24h_volume(inst_id):
+    df = get_ohlcv_okx(inst_id, bar="4H", limit=24)
+    if df is None or len(df) < 24:
+        return 0
+    return df['volCcyQuote'].sum()
 
+# =========================
+# 신규 메시지 처리
+# =========================
+def send_new_entry_message(all_ids, timeframe='4H'):
+    global sent_signal_coins
+    today_str = datetime.now().strftime("%Y-%m-%d")
+
+    # 거래대금 (표시용)
+    volume_map = {inst_id: get_24h_volume(inst_id) for inst_id in all_ids}
+    sorted_by_volume = sorted(volume_map, key=volume_map.get, reverse=True)[:20]
+    volume_rank_map = {inst_id: rank+1 for rank, inst_id in enumerate(sorted_by_volume)}
+
+    # 상승률 기준 TOP10 (조건용)
     change_map = {}
     for inst_id in sorted_by_volume:
-        df = get_ohlcv_okx(inst_id, bar='1D', limit=2)
-        if df is not None and len(df) >= 2:
-            today_close, yesterday_close = df['c'].iloc[-1], df['c'].iloc[-2]
-            change_map[inst_id] = round((today_close - yesterday_close) / yesterday_close * 100, 2)
-
+        change = calculate_daily_change(inst_id)
+        if change is not None:
+            change_map[inst_id] = change
     top_ids = sorted(change_map, key=change_map.get, reverse=True)[:10]
+    rank_map = {inst_id: rank+1 for rank, inst_id in enumerate(top_ids)}
 
-    message_lines = ["📊 일봉 TOP10 코인 (RSI/MFI 70 돌파 여부)"]
-    for rank, inst_id in enumerate(top_ids, start=1):
-        crossed, cross_time = check_daily_mfi_rsi_cross(inst_id)
+    new_entry_coins = []
+
+    # 초기화
+    for inst_id in top_ids:
+        if inst_id not in sent_signal_coins:
+            sent_signal_coins[inst_id] = {"crossed_date": None}
+
+    # === 신규 돌파 코인 확인 ===
+    for inst_id in top_ids:
+        if timeframe == '4H':
+            is_cross, cross_time = check_4h_mfi_rsi_cross(inst_id, period=5, threshold=70)
+        else:
+            is_cross, cross_time = check_1d_mfi_rsi_cross(inst_id, period=5, threshold=70)
+        if not is_cross or cross_time is None:
+            continue
+
+        cross_date_str = cross_time.strftime("%Y-%m-%d")
+        if cross_date_str != today_str:
+            continue
+
+        daily_change = calculate_daily_change(inst_id)
+        if daily_change is None or daily_change < -100:
+            continue
+
+        if sent_signal_coins[inst_id]["crossed_date"] != today_str:
+            new_entry_coins.append(
+                (inst_id, daily_change, volume_map.get(inst_id, 0),
+                 rank_map.get(inst_id), cross_time)
+            )
+            sent_signal_coins[inst_id]["crossed_date"] = today_str
+
+    # === 메세지 발송 ===
+    if not new_entry_coins:
+        return
+
+    new_entry_coins.sort(key=lambda x: x[2], reverse=True)
+    message_lines = [f"🆕 당일 신규 돌파 코인 ({timeframe}) 👀 \n(RSI/MFI 70 돌파, 5일선)"]
+    for inst_id, daily_change, volume_24h, coin_rank, cross_time in new_entry_coins:
         name = inst_id.replace("-USDT-SWAP", "")
-        volume_str = f"{volume_map.get(inst_id,0)/1_000_000:.1f}M"
-        change = change_map.get(inst_id, 0)
-        cross_str = cross_time.strftime("%Y-%m-%d") if cross_time else "-"
-        status = "✅ 돌파" if crossed else "❌"
-        message_lines.append(f"{rank}위 {name} | {change:.2f}% | 💰 {volume_str} | {status} ({cross_str})")
+        volume_str = format_volume_in_eok(volume_24h)
+        cross_str = cross_time.strftime("%Y-%m-%d %H:%M") if cross_time else "N/A"
+        volume_rank = volume_rank_map.get(inst_id, "N/A")
+        message_lines.append(
+            f"{coin_rank}위 {name} (거래대금 Rank: {volume_rank})\n"
+            f"🟢🔥 {daily_change:.2f}% | 💰 {volume_str}M\n"
+            f"⏰ RSI/MFI 70 돌파: {cross_str}"
+        )
 
     send_telegram_message("\n".join(message_lines))
 
@@ -178,9 +280,12 @@ def send_new_entry_message(all_ids):
 # 메인 실행
 # =========================
 def main():
-    logging.info("📥 일봉 거래대금 분석 시작")
+    logging.info("📥 거래대금 분석 시작")
     all_ids = get_all_okx_swap_symbols()
-    send_new_entry_message(all_ids)
+    # 4H 돌파 체크
+    send_new_entry_message(all_ids, timeframe='4H')
+    # 1D 돌파 체크
+    send_new_entry_message(all_ids, timeframe='1D')
 
 # =========================
 # 스케줄러
@@ -195,5 +300,8 @@ def start_scheduler():
     schedule.every(1).minutes.do(main)
     threading.Thread(target=run_scheduler, daemon=True).start()
 
+# =========================
+# FastAPI 실행
+# =========================
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
