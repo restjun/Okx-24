@@ -182,7 +182,7 @@ def get_24h_volume(inst_id):
     return df['volCcyQuote'].sum()
 
 # =========================
-# 신규 메시지 처리 (거래대금 TOP10, RSI/MFI 70 돌파, 상승률 포함)
+# 신규 메시지 처리 (거래대금 TOP10, RSI/MFI 70 돌파, 상승률 표시, 상승률 음수 제외)
 # =========================
 def send_new_entry_message(all_ids):
     global sent_signal_coins
@@ -200,7 +200,7 @@ def send_new_entry_message(all_ids):
         if inst_id not in sent_signal_coins:
             sent_signal_coins[inst_id] = {"crossed_date": None}
 
-    # === 거래대금 TOP10 중 RSI/MFI 70 돌파 확인 ===
+    # 거래대금 TOP10 중 RSI/MFI 70 돌파 및 상승률 양수만 필터
     for inst_id in sorted_by_volume:
         is_cross_4h, cross_time = check_4h_mfi_rsi_cross(inst_id, period=5, threshold=70)
         if not is_cross_4h or cross_time is None:
@@ -211,7 +211,7 @@ def send_new_entry_message(all_ids):
             continue
 
         daily_change = calculate_daily_change(inst_id)
-        if daily_change is None or daily_change < -100:
+        if daily_change is None or daily_change < 0:  # ✅ 상승률 음수 제외
             continue
 
         if sent_signal_coins[inst_id]["crossed_date"] != today_str:
@@ -220,7 +220,7 @@ def send_new_entry_message(all_ids):
             )
             sent_signal_coins[inst_id]["crossed_date"] = today_str
 
-    # === 메시지 발송 ===
+    # 메시지 발송
     if not new_entry_coins:
         return
 
@@ -231,7 +231,7 @@ def send_new_entry_message(all_ids):
         volume_str = format_volume_in_eok(volume_24h)
         cross_str = cross_time.strftime("%Y-%m-%d %H:%M") if cross_time else "N/A"
         message_lines.append(
-            f"{name} (거래대금 Rank: {volume_rank})\n"
+            f"{volume_rank}위 {name} (거래대금 Rank: {volume_rank})\n"
             f"🟢🔥 {daily_change:.2f}% | 💰 {volume_str}M\n"
             f"⏰ RSI/MFI 70 돌파: {cross_str}"
         )
@@ -257,10 +257,4 @@ def run_scheduler():
 @app.on_event("startup")
 def start_scheduler():
     schedule.every(1).minutes.do(main)
-    threading.Thread(target=run_scheduler, daemon=True).start()
-
-# =========================
-# FastAPI 실행
-# =========================
-if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    threading.Thread(target=run
