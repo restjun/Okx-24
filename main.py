@@ -20,7 +20,6 @@ telegram_user_id = 6596886700
 bot = telepot.Bot(telegram_bot_token)
 
 logging.basicConfig(level=logging.INFO)
-sent_signal_coins = {}
 last_sent_top10 = []
 
 # =========================
@@ -112,30 +111,6 @@ def calc_mfi(df, period=5):
     return mfi
 
 # =========================
-# 4H RSI/MFI 돌파 확인 (임계값 70, 5기간)
-# =========================
-def check_4h_mfi_rsi_cross(inst_id, period=5, threshold=70):
-    df = get_ohlcv_okx(inst_id, bar='4H', limit=200)
-    if df is None or len(df) < period + 1:
-        return False, None
-
-    mfi = calc_mfi(df, period)
-    rsi = calc_rsi(df, period)
-    prev_mfi, curr_mfi = mfi.iloc[-2], mfi.iloc[-1]
-    prev_rsi, curr_rsi = rsi.iloc[-2], rsi.iloc[-1]
-    cross_time = pd.to_datetime(df['ts'].iloc[-1], unit='ms') + pd.Timedelta(hours=9)  # 한국시간
-
-    if pd.isna(curr_mfi) or pd.isna(curr_rsi):
-        return False, None
-
-    crossed = (
-        (curr_mfi >= threshold and curr_rsi >= threshold) and
-        (prev_mfi < threshold or prev_rsi < threshold)
-    )
-
-    return (crossed, cross_time if crossed else None)
-
-# =========================
 # 일간 상승률 계산
 # =========================
 def calculate_daily_change(inst_id):
@@ -183,31 +158,32 @@ def get_24h_volume(inst_id):
     return df['volCcyQuote'].sum()
 
 # =========================
-# 신규 메시지 처리 (거래대금 TOP10, RSI/MFI 70 이상, 상승률 양수만)
+# 메시지 발송 (현재 RSI/MFI 70 이상, 거래대금 TOP10, 상승률 양수)
 # =========================
 def send_new_entry_message(all_ids):
     global last_sent_top10
-    today_str = datetime.now().strftime("%Y-%m-%d")  # 오늘 날짜
+    today_str = datetime.now().strftime("%Y-%m-%d")
 
-    # 거래대금 상위 30위 가져오기
     volume_map = {inst_id: get_24h_volume(inst_id) for inst_id in all_ids}
     sorted_by_volume = sorted(volume_map, key=volume_map.get, reverse=True)[:30]
     volume_rank_map = {inst_id: rank+1 for rank, inst_id in enumerate(sorted_by_volume)}
 
-    # 거래대금 TOP10 + 상승률 양수 + RSI/MFI 70 이상 필터
     top_positive_coins = []
+
     for inst_id in sorted_by_volume:
         if len(top_positive_coins) >= 10:
-            break  # 최대 10개
-        is_cross_4h, cross_time = check_4h_mfi_rsi_cross(inst_id, period=5, threshold=70)
-        if not is_cross_4h or cross_time is None:
+            break
+        df = get_ohlcv_okx(inst_id, bar='4H', limit=10)
+        if df is None or len(df) < 5:
             continue
-        daily_change = calculate_daily_change(inst_id)
-        if daily_change is None or daily_change <= 0:  # 상승률 양수만
-            continue
-        top_positive_coins.append(inst_id)
 
-    # 이전 발송과 동일하면 전송 금지
+        mfi = calc_mfi(df, period=5).iloc[-1]
+        rsi = calc_rsi(df, period=5).iloc[-1]
+        daily_change = calculate_daily_change(inst_id)
+
+        if mfi >= 70 and rsi >= 70 and daily_change is not None and daily_change > 0:
+            top_positive_coins.append(inst_id)
+
     if top_positive_coins == last_sent_top10:
         return
 
@@ -215,8 +191,7 @@ def send_new_entry_message(all_ids):
     if not top_positive_coins:
         return
 
-    # 메시지 구성
-    message_lines = ["🆕 거래대금 TOP10 RSI/MFI 70 돌파 코인 👀 \n(4시간봉 기준, 5기간)"]
+    message_lines = ["🆕 거래대금 TOP10 RSI/MFI 70 이상 코인 👀 \n(4시간봉 기준, 5기간)"]
     for inst_id in top_positive_coins:
         daily_change = calculate_daily_change(inst_id)
         volume_24h = volume_map.get(inst_id, 0)
@@ -230,7 +205,7 @@ def send_new_entry_message(all_ids):
         message_lines.append(
             f"{volume_rank}위 {name} (거래대금 Rank: {volume_rank})\n"
             f"🟢🔥 {daily_change:.2f}% | 💰 {volume_str}M\n"
-            f"⏰ RSI/MFI 70 돌파: {cross_str}"
+            f"⏰ RSI/MFI 현재 값 70 이상"
         )
 
     send_telegram_message("\n".join(message_lines))
