@@ -21,6 +21,7 @@ bot = telepot.Bot(telegram_bot_token)
 
 logging.basicConfig(level=logging.INFO)
 sent_signal_coins = {}
+last_sent_top10 = []
 
 # =========================
 # Telegram 메시지 전송
@@ -182,54 +183,50 @@ def get_24h_volume(inst_id):
     return df['volCcyQuote'].sum()
 
 # =========================
-# 신규 메시지 처리 (거래대금 TOP10, RSI/MFI 70 돌파, 상승률 표시, 상승률 음수 제외)
+# 신규 메시지 처리 (거래대금 TOP10, RSI/MFI 70 이상, 상승률 양수만)
 # =========================
 def send_new_entry_message(all_ids):
-    global sent_signal_coins
+    global last_sent_top10
     today_str = datetime.now().strftime("%Y-%m-%d")  # 오늘 날짜
 
-    # 거래대금 TOP10 가져오기
+    # 거래대금 상위 30위 가져오기
     volume_map = {inst_id: get_24h_volume(inst_id) for inst_id in all_ids}
     sorted_by_volume = sorted(volume_map, key=volume_map.get, reverse=True)[:30]
     volume_rank_map = {inst_id: rank+1 for rank, inst_id in enumerate(sorted_by_volume)}
 
-    new_entry_coins = []
-
-    # 초기화
+    # 거래대금 TOP10 + 상승률 양수 + RSI/MFI 70 이상 필터
+    top_positive_coins = []
     for inst_id in sorted_by_volume:
-        if inst_id not in sent_signal_coins:
-            sent_signal_coins[inst_id] = {"crossed_date": None}
-
-    # 거래대금 TOP10 중 RSI/MFI 70 돌파 및 상승률 양수만 필터
-    for inst_id in sorted_by_volume:
+        if len(top_positive_coins) >= 10:
+            break  # 최대 10개
         is_cross_4h, cross_time = check_4h_mfi_rsi_cross(inst_id, period=5, threshold=70)
         if not is_cross_4h or cross_time is None:
             continue
-
-        cross_date_str = cross_time.strftime("%Y-%m-%d")
-        if cross_date_str != today_str:
-            continue
-
         daily_change = calculate_daily_change(inst_id)
-        if daily_change is None or daily_change < 0:  # ✅ 상승률 음수 제외
+        if daily_change is None or daily_change <= 0:  # 상승률 양수만
             continue
+        top_positive_coins.append(inst_id)
 
-        if sent_signal_coins[inst_id]["crossed_date"] != today_str:
-            new_entry_coins.append(
-                (inst_id, daily_change, volume_map.get(inst_id, 0), volume_rank_map.get(inst_id), cross_time)
-            )
-            sent_signal_coins[inst_id]["crossed_date"] = today_str
-
-    # 메시지 발송
-    if not new_entry_coins:
+    # 이전 발송과 동일하면 전송 금지
+    if top_positive_coins == last_sent_top10:
         return
 
-    new_entry_coins.sort(key=lambda x: x[2], reverse=True)
+    last_sent_top10 = top_positive_coins.copy()
+    if not top_positive_coins:
+        return
+
+    # 메시지 구성
     message_lines = ["🆕 거래대금 TOP10 RSI/MFI 70 돌파 코인 👀 \n(4시간봉 기준, 5기간)"]
-    for inst_id, daily_change, volume_24h, volume_rank, cross_time in new_entry_coins:
+    for inst_id in top_positive_coins:
+        daily_change = calculate_daily_change(inst_id)
+        volume_24h = volume_map.get(inst_id, 0)
+        volume_rank = volume_rank_map.get(inst_id, 0)
+        df = get_ohlcv_okx(inst_id)
+        cross_time = pd.to_datetime(df['ts'].iloc[-1], unit='ms') + pd.Timedelta(hours=9) if df is not None else None
         name = inst_id.replace("-USDT-SWAP", "")
         volume_str = format_volume_in_eok(volume_24h)
         cross_str = cross_time.strftime("%Y-%m-%d %H:%M") if cross_time else "N/A"
+
         message_lines.append(
             f"{volume_rank}위 {name} (거래대금 Rank: {volume_rank})\n"
             f"🟢🔥 {daily_change:.2f}% | 💰 {volume_str}M\n"
