@@ -182,7 +182,7 @@ def send_new_entry_message(all_ids):
     global last_sent_top10
 
     volume_map = {inst_id: get_24h_volume(inst_id) for inst_id in all_ids}
-    sorted_by_volume = sorted(volume_map, key=volume_map.get, reverse=True)[:20]
+    sorted_by_volume = sorted(volume_map, key=volume_map.get, reverse=True)[:100]
 
     alert_coins = []
 
@@ -204,7 +204,7 @@ def send_new_entry_message(all_ids):
         daily_change = calculate_daily_change(inst_id)
 
         # ✅ 조건: 4H RSI/MFI 둘 다 >= 70
-        if mfi_4h >= 70 and rsi_4h >= 70 and daily_change is not None and daily_change > 0:
+        if mfi_4h >= 70 and rsi_4h >= 70 and daily_change is not None and daily_change > 10:
             # 추가 조건: 15분봉 RSI/MFI 중 하나라도 <= 30 → 전송 대상
             if (mfi_15m is not None and mfi_15m <= 30) or (rsi_15m is not None and rsi_15m <= 30):
                 rank = sorted_by_volume.index(inst_id) + 1
