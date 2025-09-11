@@ -22,7 +22,6 @@ bot = telepot.Bot(telegram_bot_token)
 logging.basicConfig(level=logging.INFO)
 last_sent_top10 = []
 
-
 # =========================
 # Telegram 메시지 전송
 # =========================
@@ -36,7 +35,6 @@ def send_telegram_message(message):
             logging.error(f"텔레그램 메시지 전송 실패 (재시도 {retry_count}/10): {e}")
             time.sleep(5)
     logging.error("텔레그램 메시지 전송 실패: 최대 재시도 초과")
-
 
 # =========================
 # API 호출 재시도
@@ -53,7 +51,6 @@ def retry_request(func, *args, **kwargs):
             logging.error(f"API 호출 실패 (재시도 {attempt+1}/10): {e}")
             time.sleep(5)
     return None
-
 
 # =========================
 # OKX OHLCV 가져오기
@@ -76,7 +73,6 @@ def get_ohlcv_okx(inst_id, bar='4H', limit=300):
         logging.error(f"{inst_id} OHLCV 파싱 실패: {e}")
         return None
 
-
 # =========================
 # RMA 계산
 # =========================
@@ -86,7 +82,6 @@ def rma(series, period):
     r = series.ewm(alpha=alpha, adjust=False).mean()
     r.iloc[:period] = series.iloc[:period].expanding().mean()[:period]
     return r
-
 
 # =========================
 # RSI 계산
@@ -100,7 +95,6 @@ def calc_rsi(df, period=5):
     rs = avg_gain / avg_loss
     rsi = 100 - (100 / (1 + rs))
     return rsi
-
 
 # =========================
 # MFI 계산
@@ -116,7 +110,6 @@ def calc_mfi(df, period=5):
     with np.errstate(divide='ignore', invalid='ignore'):
         mfi = 100 * pos_sum / (pos_sum + neg_sum)
     return mfi
-
 
 # =========================
 # 15분봉 변환 (5분봉 리샘플링)
@@ -142,7 +135,6 @@ def get_15m_ohlcv(inst_id, limit=100):
         logging.error(f"15분봉 변환 실패: {e}")
         return None
 
-
 # =========================
 # 일간 상승률 계산
 # =========================
@@ -163,7 +155,6 @@ def calculate_daily_change(inst_id):
         logging.error(f"{inst_id} 상승률 계산 오류: {e}")
         return None
 
-
 # =========================
 # 24시간 거래대금
 # =========================
@@ -172,7 +163,6 @@ def get_24h_volume(inst_id):
     if df is None or len(df) < 24:
         return 0
     return df['volCcyQuote'].sum()
-
 
 # =========================
 # 모든 USDT-SWAP 심볼
@@ -184,7 +174,6 @@ def get_all_okx_swap_symbols():
         return []
     data = response.json().get("data", [])
     return [item["instId"] for item in data if "USDT" in item["instId"]]
-
 
 # =========================
 # 메시지 발송 (조건: 4H RSI/MFI >= 70 + 15m RSI/MFI <= 30)
@@ -220,7 +209,7 @@ def send_new_entry_message(all_ids):
             if (mfi_15m is not None and mfi_15m <= 30) or (rsi_15m is not None and rsi_15m <= 30):
                 rank = sorted_by_volume.index(inst_id) + 1
                 alert_coins.append(
-                    (inst_id, mfi_15m, rsi_15m, daily_change, volume_map[inst_id], rank)
+                    (inst_id, mfi_4h, rsi_4h, mfi_15m, rsi_15m, daily_change, volume_map[inst_id], rank)
                 )
 
     if not alert_coins:
@@ -234,7 +223,7 @@ def send_new_entry_message(all_ids):
 
     message_lines = ["⚠️ 4H 과매수 + 15m 과매도 신호 감지 👀 (RSI/MFI 5 기준)"]
 
-    for idx, (inst_id, mfi_15m, rsi_15m, daily_change, vol, rank) in enumerate(alert_coins, start=1):
+    for idx, (inst_id, mfi_4h, rsi_4h, mfi_15m, rsi_15m, daily_change, vol, rank) in enumerate(alert_coins, start=1):
         name = inst_id.replace("-USDT-SWAP", "")
 
         def fmt_val(val):
@@ -248,12 +237,12 @@ def send_new_entry_message(all_ids):
 
         message_lines.append(
             f"{idx}. {name}\n"
+            f"🕒 4H MFI: {fmt_val(mfi_4h)} | RSI: {fmt_val(rsi_4h)}\n"
             f"📊 15m MFI: {fmt_val(mfi_15m)} | RSI: {fmt_val(rsi_15m)}\n"
             f"📈 {daily_change:.2f}% | 💰 {int(vol // 1_000_000)}M (#{rank})"
         )
 
     send_telegram_message("\n".join(message_lines))
-
 
 # =========================
 # 메인 실행
@@ -263,7 +252,6 @@ def main():
     all_ids = get_all_okx_swap_symbols()
     send_new_entry_message(all_ids)
 
-
 # =========================
 # 스케줄러
 # =========================
@@ -272,12 +260,10 @@ def run_scheduler():
         schedule.run_pending()
         time.sleep(1)
 
-
 @app.on_event("startup")
 def start_scheduler():
     schedule.every(1).minutes.do(main)
     threading.Thread(target=run_scheduler, daemon=True).start()
-
 
 # =========================
 # FastAPI 실행
