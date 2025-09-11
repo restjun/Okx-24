@@ -190,7 +190,7 @@ def send_new_entry_message(all_ids):
         df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=10)
         df_15m = get_15m_ohlcv(inst_id, limit=100)
 
-        if df_4h is None or len(df_4h) < 5 or df_15m is None or len(df_15m) < 5:
+        if df_4h is None or len(df_4h) < 5 or df_15m is None or len(df_15m) < 0:
             continue
 
         # 4시간봉 RSI/MFI
