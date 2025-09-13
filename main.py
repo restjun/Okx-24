@@ -182,7 +182,7 @@ def send_new_entry_message(all_ids):
     global last_sent_top10
 
     volume_map = {inst_id: get_24h_volume(inst_id) for inst_id in all_ids}
-    sorted_by_volume = sorted(volume_map, key=volume_map.get, reverse=True)[:20]
+    sorted_by_volume = sorted(volume_map, key=volume_map.get, reverse=True)[:30]
 
     alert_coins = []
 
