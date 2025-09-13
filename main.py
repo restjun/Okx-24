@@ -112,30 +112,6 @@ def calc_mfi(df, period=5):
     return mfi
 
 # =========================
-# 15분봉 변환 (5분봉 리샘플링)
-# =========================
-def get_15m_ohlcv(inst_id, limit=100):
-    df_5m = get_ohlcv_okx(inst_id, bar='5m', limit=limit)
-    if df_5m is None or len(df_5m) < 15:
-        return None
-    try:
-        df_5m['datetime'] = pd.to_datetime(df_5m['ts'], unit='ms') + pd.Timedelta(hours=9)
-        df_5m.set_index('datetime', inplace=True)
-
-        df_15m = pd.DataFrame()
-        df_15m['o'] = df_5m['o'].resample('15T').first()
-        df_15m['h'] = df_5m['h'].resample('15T').max()
-        df_15m['l'] = df_5m['l'].resample('15T').min()
-        df_15m['c'] = df_5m['c'].resample('15T').last()
-        df_15m['volCcyQuote'] = df_5m['volCcyQuote'].resample('15T').sum()
-
-        df_15m.dropna(inplace=True)
-        return df_15m
-    except Exception as e:
-        logging.error(f"15분봉 변환 실패: {e}")
-        return None
-
-# =========================
 # 일간 상승률 계산
 # =========================
 def calculate_daily_change(inst_id):
@@ -176,7 +152,7 @@ def get_all_okx_swap_symbols():
     return [item["instId"] for item in data if "USDT" in item["instId"]]
 
 # =========================
-# 메시지 발송 (조건: 4H RSI/MFI >= 70 + 15m RSI/MFI <= 30 + 일간 상승률 > 0)
+# 메시지 발송 (조건: 4H RSI/MFI >= 70 + 일간 상승률 > 0)
 # =========================
 def send_new_entry_message(all_ids):
     global last_sent_top10
@@ -188,29 +164,22 @@ def send_new_entry_message(all_ids):
 
     for inst_id in sorted_by_volume:
         df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=10)
-        df_15m = get_15m_ohlcv(inst_id, limit=100)
 
-        if df_4h is None or len(df_4h) < 5 or df_15m is None or len(df_15m) < 0:
+        if df_4h is None or len(df_4h) < 5:
             continue
 
         # 4시간봉 RSI/MFI
         mfi_4h = calc_mfi(df_4h, period=5).iloc[-1]
         rsi_4h = calc_rsi(df_4h, period=5).iloc[-1]
 
-        # 15분봉 RSI/MFI
-        mfi_15m = calc_mfi(df_15m, period=5).iloc[-1]
-        rsi_15m = calc_rsi(df_15m, period=5).iloc[-1]
-
         daily_change = calculate_daily_change(inst_id)
 
         # ✅ 조건: 4H RSI/MFI 둘 다 >= 70 + 일간 상승률 > 0%
         if mfi_4h >= 70 and rsi_4h >= 70 and daily_change is not None and daily_change > 0:
-            # 추가 조건: 15분봉 RSI/MFI 중 하나라도 <= 30 → 전송 대상
-            if (mfi_15m is not None and mfi_15m <= 30) or (rsi_15m is not None and rsi_15m <= 30):
-                rank = sorted_by_volume.index(inst_id) + 1
-                alert_coins.append(
-                    (inst_id, mfi_4h, rsi_4h, mfi_15m, rsi_15m, daily_change, volume_map[inst_id], rank)
-                )
+            rank = sorted_by_volume.index(inst_id) + 1
+            alert_coins.append(
+                (inst_id, mfi_4h, rsi_4h, daily_change, volume_map[inst_id], rank)
+            )
 
     if not alert_coins:
         return
@@ -221,9 +190,9 @@ def send_new_entry_message(all_ids):
 
     last_sent_top10 = alert_coins.copy()
 
-    message_lines = ["⚠️ 4H 과매수 + 15m 과매도 신호 감지 👀 (RSI/MFI 5 기준)"]
+    message_lines = ["⚠️ 4H 과매수 신호 감지 👀 (RSI/MFI 5 기준)"]
 
-    for idx, (inst_id, mfi_4h, rsi_4h, mfi_15m, rsi_15m, daily_change, vol, rank) in enumerate(alert_coins, start=1):
+    for idx, (inst_id, mfi_4h, rsi_4h, daily_change, vol, rank) in enumerate(alert_coins, start=1):
         name = inst_id.replace("-USDT-SWAP", "")
 
         def fmt_val(val):
@@ -238,7 +207,6 @@ def send_new_entry_message(all_ids):
         message_lines.append(
             f"{idx}. {name}\n"
             f"🕒 4H MFI: {fmt_val(mfi_4h)} | RSI: {fmt_val(rsi_4h)}\n"
-            f"📊 15m MFI: {fmt_val(mfi_15m)} | RSI: {fmt_val(rsi_15m)}\n"
             f"📈 {daily_change:.2f}% | 💰 {int(vol // 1_000_000)}M (#{rank})"
         )
 
