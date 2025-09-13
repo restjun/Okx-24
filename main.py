@@ -169,8 +169,16 @@ def send_new_entry_message(all_ids):
             continue
 
         # 4시간봉 RSI/MFI
-        mfi_4h = calc_mfi(df_4h, period=5).iloc[-1]
-        rsi_4h = calc_rsi(df_4h, period=5).iloc[-1]
+        rsi_series = calc_rsi(df_4h, period=5)
+        mfi_series = calc_mfi(df_4h, period=5)
+
+        rsi_4h = rsi_series.iloc[-1]
+        mfi_4h = mfi_series.iloc[-1]
+
+        # 몇 캔들 연속 과매수인지
+        overbought_rsi = rsi_series >= 70
+        overbought_mfi = mfi_series >= 70
+        consecutive_overbought = (overbought_rsi & overbought_mfi).sum()
 
         daily_change = calculate_daily_change(inst_id)
 
@@ -178,7 +186,7 @@ def send_new_entry_message(all_ids):
         if mfi_4h >= 70 and rsi_4h >= 70 and daily_change is not None and daily_change > 0:
             rank = sorted_by_volume.index(inst_id) + 1
             alert_coins.append(
-                (inst_id, mfi_4h, rsi_4h, daily_change, volume_map[inst_id], rank)
+                (inst_id, mfi_4h, rsi_4h, daily_change, volume_map[inst_id], rank, consecutive_overbought)
             )
 
     if not alert_coins:
@@ -192,7 +200,7 @@ def send_new_entry_message(all_ids):
 
     message_lines = ["⚠️ 4H 과매수 신호 감지 👀 (RSI/MFI 5 기준)"]
 
-    for idx, (inst_id, mfi_4h, rsi_4h, daily_change, vol, rank) in enumerate(alert_coins, start=1):
+    for idx, (inst_id, mfi_4h, rsi_4h, daily_change, vol, rank, consecutive_overbought) in enumerate(alert_coins, start=1):
         name = inst_id.replace("-USDT-SWAP", "")
 
         def fmt_val(val):
@@ -207,7 +215,8 @@ def send_new_entry_message(all_ids):
         message_lines.append(
             f"{idx}. {name}\n"
             f"🕒 4H MFI: {fmt_val(mfi_4h)} | RSI: {fmt_val(rsi_4h)}\n"
-            f"📈 {daily_change:.2f}% | 💰 {int(vol // 1_000_000)}M (#{rank})"
+            f"📈 {daily_change:.2f}% | 💰 {int(vol // 1_000_000)}M (#{rank})\n"
+            f"🔥 과매수 지속 캔들: {consecutive_overbought}개"
         )
 
     send_telegram_message("\n".join(message_lines))
