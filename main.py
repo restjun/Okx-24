@@ -55,7 +55,7 @@ def retry_request(func, *args, **kwargs):
 # =========================
 # OKX OHLCV 가져오기
 # =========================
-def get_ohlcv_okx(inst_id, bar='15m', limit=300):   # ← 1H → 15m 변경
+def get_ohlcv_okx(inst_id, bar='15m', limit=300):
     url = f"https://www.okx.com/api/v5/market/candles?instId={inst_id}&bar={bar}&limit={limit}"
     response = retry_request(requests.get, url)
     if response is None:
@@ -115,7 +115,7 @@ def calc_mfi(df, period=5):
 # 일간 상승률 계산
 # =========================
 def calculate_daily_change(inst_id):
-    df = get_ohlcv_okx(inst_id, bar="15m", limit=96)   # ← 1H 48개 → 15m 96개 (24시간)
+    df = get_ohlcv_okx(inst_id, bar="15m", limit=96)
     if df is None or len(df) < 96:
         return None
     try:
@@ -135,7 +135,7 @@ def calculate_daily_change(inst_id):
 # 24시간 거래대금
 # =========================
 def get_24h_volume(inst_id):
-    df = get_ohlcv_okx(inst_id, bar="15m", limit=96)   # ← 1H 24개 → 15m 96개
+    df = get_ohlcv_okx(inst_id, bar="15m", limit=96)
     if df is None or len(df) < 96:
         return 0
     return df['volCcyQuote'].sum()
@@ -152,7 +152,7 @@ def get_all_okx_swap_symbols():
     return [item["instId"] for item in data if "USDT" in item["instId"]]
 
 # =========================
-# 메시지 발송 (조건: RSI/MFI 모두 30 아래 -> 둘 다 30 이상 돌파 시)
+# 메시지 발송 (조건: RSI/MFI 둘 다 30 이하일 때)
 # =========================
 def send_new_entry_message(all_ids):
     global last_sent_top10
@@ -163,7 +163,7 @@ def send_new_entry_message(all_ids):
     alert_coins = []
 
     for inst_id in sorted_by_volume:
-        df_15m = get_ohlcv_okx(inst_id, bar='15m', limit=10)   # ← 1H → 15m
+        df_15m = get_ohlcv_okx(inst_id, bar='15m', limit=10)
         if df_15m is None or len(df_15m) < 6:
             continue
 
@@ -171,16 +171,16 @@ def send_new_entry_message(all_ids):
         rsi_series = calc_rsi(df_15m, period=5)
         mfi_series = calc_mfi(df_15m, period=5)
 
-        rsi_prev, rsi_now = rsi_series.iloc[-2], rsi_series.iloc[-1]
-        mfi_prev, mfi_now = mfi_series.iloc[-2], mfi_series.iloc[-1]
+        rsi_now = rsi_series.iloc[-1]
+        mfi_now = mfi_series.iloc[-1]
 
         daily_change = calculate_daily_change(inst_id)
 
         # --- 조건 체크 ---
-        cross_both = (rsi_prev < 30 and mfi_prev < 30) and (rsi_now >= 30 and mfi_now >= 30)
+        below_both = (rsi_now < 30 and mfi_now < 30)
 
-        # ✅ 최종적으로 둘 다 30 이상 돌파했을 때만 신호
-        if cross_both and daily_change is not None and daily_change > 0:
+        # ✅ 둘 다 30 이하일 때 신호
+        if below_both and daily_change is not None and daily_change > 0:
             if inst_id not in [coin[0] for coin in last_sent_top10]:
                 rank = sorted_by_volume.index(inst_id) + 1
                 alert_coins.append(
@@ -193,7 +193,7 @@ def send_new_entry_message(all_ids):
     # 새로운 알림만 기록
     last_sent_top10.extend(alert_coins)
 
-    message_lines = ["⚠️ 15m RSI/MFI 30 동시 돌파 신호 👀"]
+    message_lines = ["⚠️ 15m RSI/MFI 30 이하 신호 👀"]
 
     for idx, (inst_id, mfi_15m, rsi_15m, daily_change, vol, rank) in enumerate(alert_coins, start=1):
         name = inst_id.replace("-USDT-SWAP", "")
