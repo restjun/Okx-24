@@ -55,7 +55,7 @@ def retry_request(func, *args, **kwargs):
 # =========================
 # OKX OHLCV 가져오기
 # =========================
-def get_ohlcv_okx(inst_id, bar='4H', limit=300):
+def get_ohlcv_okx(inst_id, bar='1H', limit=300):   # ✅ 1시간봉으로 변경
     url = f"https://www.okx.com/api/v5/market/candles?instId={inst_id}&bar={bar}&limit={limit}"
     response = retry_request(requests.get, url)
     if response is None:
@@ -115,7 +115,7 @@ def calc_mfi(df, period=5):
 # 일간 상승률 계산
 # =========================
 def calculate_daily_change(inst_id):
-    df = get_ohlcv_okx(inst_id, bar="4H", limit=48)
+    df = get_ohlcv_okx(inst_id, bar="1H", limit=48)   # ✅ 1시간봉으로 변경
     if df is None or len(df) < 24:
         return None
     try:
@@ -135,7 +135,7 @@ def calculate_daily_change(inst_id):
 # 24시간 거래대금
 # =========================
 def get_24h_volume(inst_id):
-    df = get_ohlcv_okx(inst_id, bar="4H", limit=24)
+    df = get_ohlcv_okx(inst_id, bar="1H", limit=24)   # ✅ 1시간봉으로 변경
     if df is None or len(df) < 24:
         return 0
     return df['volCcyQuote'].sum()
@@ -152,7 +152,7 @@ def get_all_okx_swap_symbols():
     return [item["instId"] for item in data if "USDT" in item["instId"]]
 
 # =========================
-# 메시지 발송 (조건: 4H RSI/MFI >= 70 + 일간 상승률 > 0)
+# 메시지 발송 (조건: 1H RSI/MFI >= 70 + 일간 상승률 > 0)
 # =========================
 def send_new_entry_message(all_ids):
     global last_sent_top10
@@ -163,17 +163,17 @@ def send_new_entry_message(all_ids):
     alert_coins = []
 
     for inst_id in sorted_by_volume:
-        df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=10)
+        df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=10)   # ✅ 1시간봉으로 변경
 
-        if df_4h is None or len(df_4h) < 5:
+        if df_1h is None or len(df_1h) < 5:
             continue
 
-        # 4시간봉 RSI/MFI
-        rsi_series = calc_rsi(df_4h, period=5)
-        mfi_series = calc_mfi(df_4h, period=5)
+        # 1시간봉 RSI/MFI
+        rsi_series = calc_rsi(df_1h, period=5)
+        mfi_series = calc_mfi(df_1h, period=5)
 
-        rsi_4h = rsi_series.iloc[-1]
-        mfi_4h = mfi_series.iloc[-1]
+        rsi_1h = rsi_series.iloc[-1]
+        mfi_1h = mfi_series.iloc[-1]
 
         # 몇 캔들 연속 과매수인지
         overbought_rsi = rsi_series >= 70
@@ -182,11 +182,11 @@ def send_new_entry_message(all_ids):
 
         daily_change = calculate_daily_change(inst_id)
 
-        # ✅ 조건: 4H RSI/MFI 둘 다 >= 70 + 일간 상승률 > 0%
-        if mfi_4h >= 70 and rsi_4h >= 70 and daily_change is not None and daily_change > 0:
+        # ✅ 조건: 1H RSI/MFI 둘 다 >= 70 + 일간 상승률 > 0%
+        if mfi_1h >= 70 and rsi_1h >= 70 and daily_change is not None and daily_change > 0:
             rank = sorted_by_volume.index(inst_id) + 1
             alert_coins.append(
-                (inst_id, mfi_4h, rsi_4h, daily_change, volume_map[inst_id], rank, consecutive_overbought)
+                (inst_id, mfi_1h, rsi_1h, daily_change, volume_map[inst_id], rank, consecutive_overbought)
             )
 
     if not alert_coins:
@@ -198,9 +198,9 @@ def send_new_entry_message(all_ids):
 
     last_sent_top10 = alert_coins.copy()
 
-    message_lines = ["⚠️ 4H 과매수 신호 감지 👀 (RSI/MFI 5 기준)"]
+    message_lines = ["⚠️ 1H 과매수 신호 감지 👀 (RSI/MFI 5 기준)"]   # ✅ 메시지 수정
 
-    for idx, (inst_id, mfi_4h, rsi_4h, daily_change, vol, rank, consecutive_overbought) in enumerate(alert_coins, start=1):
+    for idx, (inst_id, mfi_1h, rsi_1h, daily_change, vol, rank, consecutive_overbought) in enumerate(alert_coins, start=1):
         name = inst_id.replace("-USDT-SWAP", "")
 
         def fmt_val(val):
@@ -214,7 +214,7 @@ def send_new_entry_message(all_ids):
 
         message_lines.append(
             f"{idx}. {name}\n"
-            f"🕒 4H MFI: {fmt_val(mfi_4h)} | RSI: {fmt_val(rsi_4h)}\n"
+            f"🕒 1H MFI: {fmt_val(mfi_1h)} | RSI: {fmt_val(rsi_1h)}\n"
             f"📈 {daily_change:.2f}% | 💰 {int(vol // 1_000_000)}M (#{rank})\n"
             f"🔥 과매수 지속 캔들: {consecutive_overbought}개"
         )
