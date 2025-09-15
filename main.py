@@ -152,7 +152,7 @@ def get_all_okx_swap_symbols():
     return [item["instId"] for item in data if "USDT" in item["instId"]]
 
 # =========================
-# 메시지 발송 (조건: RSI/MFI 30 돌파)
+# 메시지 발송 (조건: RSI/MFI 30 돌파, 첫 돌파 캔들만)
 # =========================
 def send_new_entry_message(all_ids):
     global last_sent_top10
@@ -183,21 +183,21 @@ def send_new_entry_message(all_ids):
         cond1 = cross_rsi and cross_mfi
         cond2 = (cross_rsi and mfi_now >= 30) or (cross_mfi and rsi_now >= 30)
 
+        # ✅ 첫 돌파 캔들만 알림 (last_sent_top10에 이미 있으면 스킵)
         if (cond1 or cond2) and daily_change is not None and daily_change > 0:
-            rank = sorted_by_volume.index(inst_id) + 1
-            alert_coins.append(
-                (inst_id, mfi_now, rsi_now, daily_change, volume_map[inst_id], rank)
-            )
+            if inst_id not in [coin[0] for coin in last_sent_top10]:
+                rank = sorted_by_volume.index(inst_id) + 1
+                alert_coins.append(
+                    (inst_id, mfi_now, rsi_now, daily_change, volume_map[inst_id], rank)
+                )
 
     if not alert_coins:
         return
 
-    if [coin[0] for coin in alert_coins] == [coin[0] for coin in last_sent_top10]:
-        return
+    # 새로운 알림만 기록
+    last_sent_top10.extend(alert_coins)
 
-    last_sent_top10 = alert_coins.copy()
-
-    message_lines = ["⚠️ 1H RSI/MFI 30 돌파 신호 👀"]
+    message_lines = ["⚠️ 1H RSI/MFI 30 돌파 신호 👀 (첫 돌파 캔들)"]
 
     for idx, (inst_id, mfi_1h, rsi_1h, daily_change, vol, rank) in enumerate(alert_coins, start=1):
         name = inst_id.replace("-USDT-SWAP", "")
