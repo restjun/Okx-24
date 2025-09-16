@@ -152,7 +152,7 @@ def get_all_okx_swap_symbols():
     return [item["instId"] for item in data if "USDT" in item["instId"]]
 
 # =========================
-# 메시지 발송 (조건: RSI/MFI 둘 다 30 이하일 때)
+# 메시지 발송 (조건: RSI/MFI 둘 중 하나라도 30 이하일 때)
 # =========================
 def send_new_entry_message(all_ids):
     global last_sent_top10
@@ -177,10 +177,10 @@ def send_new_entry_message(all_ids):
         daily_change = calculate_daily_change(inst_id)
 
         # --- 조건 체크 ---
-        below_both = (rsi_now < 30 and mfi_now < 30)
+        below_either = (rsi_now < 30 or mfi_now < 30)
 
-        # ✅ 둘 다 30 이하일 때 신호
-        if below_both and daily_change is not None and daily_change > 0:
+        # ✅ RSI 또는 MFI 중 하나라도 30 이하일 때 신호
+        if below_either and daily_change is not None and daily_change > 0:
             if inst_id not in [coin[0] for coin in last_sent_top10]:
                 rank = sorted_by_volume.index(inst_id) + 1
                 alert_coins.append(
