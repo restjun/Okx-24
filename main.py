@@ -162,7 +162,7 @@ def get_all_okx_swap_symbols():
     return [item["instId"] for item in data if "USDT" in item["instId"]]
 
 # =========================
-# 메시지 발송 (조건: RSI/MFI 둘 중 하나라도 30 이하일 때)
+# 메시지 발송 (조건: RSI와 MFI 둘 다 70 이상일 때)
 # =========================
 def send_new_entry_message(all_ids):
     global last_sent_top10
@@ -185,9 +185,10 @@ def send_new_entry_message(all_ids):
 
         daily_change = calculate_daily_change(inst_id)  
 
-        below_either = (rsi_now < 30 or mfi_now < 30)  
+        # ✅ RSI와 MFI 둘 다 70 이상일 때 신호
+        both_above_70 = (rsi_now >= 70 and mfi_now >= 70)  
 
-        if below_either and daily_change is not None and daily_change > 0:  
+        if both_above_70 and daily_change is not None and daily_change > 0:  
             if inst_id not in [coin[0] for coin in last_sent_top10]:  
                 rank = sorted_by_volume.index(inst_id) + 1  
                 alert_coins.append(  
@@ -199,7 +200,7 @@ def send_new_entry_message(all_ids):
 
     last_sent_top10.extend(alert_coins)  
 
-    message_lines = ["⚠️ 15m RSI/MFI 30 이하 신호 👀"]  
+    message_lines = ["⚠️ 15m RSI/MFI 둘 다 70 이상 신호 👀"]  
 
     for idx, (inst_id, mfi_15m, rsi_15m, daily_change, vol, rank) in enumerate(alert_coins, start=1):  
         name = inst_id.replace("-USDT-SWAP", "")  
@@ -207,10 +208,10 @@ def send_new_entry_message(all_ids):
         def fmt_val(val):  
             if val is None:  
                 return "N/A"  
-            if val <= 30:  
-                return f"🟢{val:.2f}"  
-            elif val >= 70:  
+            if val >= 70:  
                 return f"🔴{val:.2f}"  
+            elif val <= 30:  
+                return f"🟢{val:.2f}"  
             return f"{val:.2f}"  
 
         message_lines.append(  
