@@ -12,9 +12,12 @@ from datetime import datetime
 
 app = FastAPI()
 
-# =========================
-# Telegram 설정
-# =========================
+=========================
+
+Telegram 설정
+
+=========================
+
 telegram_bot_token = "8451481398:AAHHg2wVDKphMruKsjN2b6NFKJ50jhxEe-g"
 telegram_user_id = 6596886700
 bot = telepot.Bot(telegram_bot_token)
@@ -22,9 +25,12 @@ bot = telepot.Bot(telegram_bot_token)
 logging.basicConfig(level=logging.INFO)
 last_sent_top10 = []
 
-# =========================
-# Telegram 메시지 전송
-# =========================
+=========================
+
+Telegram 메시지 전송
+
+=========================
+
 def send_telegram_message(message):
     for retry_count in range(1, 11):
         try:
@@ -36,9 +42,12 @@ def send_telegram_message(message):
             time.sleep(5)
     logging.error("텔레그램 메시지 전송 실패: 최대 재시도 초과")
 
-# =========================
-# API 호출 재시도
-# =========================
+=========================
+
+API 호출 재시도
+
+=========================
+
 def retry_request(func, *args, **kwargs):
     for attempt in range(10):
         try:
@@ -52,10 +61,13 @@ def retry_request(func, *args, **kwargs):
             time.sleep(5)
     return None
 
-# =========================
-# OKX OHLCV 가져오기
-# =========================
-def get_ohlcv_okx(inst_id, bar='1D', limit=300):
+=========================
+
+OKX OHLCV 가져오기
+
+=========================
+
+def get_ohlcv_okx(inst_id, bar='1H', limit=300):   # ✅ 1시간봉으로 변경
     url = f"https://www.okx.com/api/v5/market/candles?instId={inst_id}&bar={bar}&limit={limit}"
     response = retry_request(requests.get, url)
     if response is None:
@@ -73,9 +85,12 @@ def get_ohlcv_okx(inst_id, bar='1D', limit=300):
         logging.error(f"{inst_id} OHLCV 파싱 실패: {e}")
         return None
 
-# =========================
-# RMA 계산
-# =========================
+=========================
+
+RMA 계산
+
+=========================
+
 def rma(series, period):
     series = series.copy()
     alpha = 1 / period
@@ -83,9 +98,12 @@ def rma(series, period):
     r.iloc[:period] = series.iloc[:period].expanding().mean()[:period]
     return r
 
-# =========================
-# RSI 계산
-# =========================
+=========================
+
+RSI 계산
+
+=========================
+
 def calc_rsi(df, period=5):
     delta = df['c'].diff()
     gain = delta.clip(lower=0)
@@ -96,9 +114,12 @@ def calc_rsi(df, period=5):
     rsi = 100 - (100 / (1 + rs))
     return rsi
 
-# =========================
-# MFI 계산
-# =========================
+=========================
+
+MFI 계산
+
+=========================
+
 def calc_mfi(df, period=5):
     tp = (df['h'] + df['l'] + df['c']) / 3
     mf = tp * df['volCcyQuote']
@@ -111,12 +132,15 @@ def calc_mfi(df, period=5):
         mfi = 100 * pos_sum / (pos_sum + neg_sum)
     return mfi
 
-# =========================
-# 일간 상승률 계산
-# =========================
+=========================
+
+일간 상승률 계산
+
+=========================
+
 def calculate_daily_change(inst_id):
-    df = get_ohlcv_okx(inst_id, bar="1D", limit=10)
-    if df is None or len(df) < 2:
+    df = get_ohlcv_okx(inst_id, bar="1H", limit=48)   # ✅ 1시간봉으로 변경
+    if df is None or len(df) < 24:
         return None
     try:
         df['datetime'] = pd.to_datetime(df['ts'], unit='ms') + pd.Timedelta(hours=9)
@@ -131,18 +155,24 @@ def calculate_daily_change(inst_id):
         logging.error(f"{inst_id} 상승률 계산 오류: {e}")
         return None
 
-# =========================
-# 24시간 거래대금
-# =========================
+=========================
+
+24시간 거래대금
+
+=========================
+
 def get_24h_volume(inst_id):
-    df = get_ohlcv_okx(inst_id, bar="1D", limit=1)
-    if df is None or len(df) < 1:
+    df = get_ohlcv_okx(inst_id, bar="1H", limit=24)   # ✅ 1시간봉으로 변경
+    if df is None or len(df) < 24:
         return 0
     return df['volCcyQuote'].sum()
 
-# =========================
-# 모든 USDT-SWAP 심볼
-# =========================
+=========================
+
+모든 USDT-SWAP 심볼
+
+=========================
+
 def get_all_okx_swap_symbols():
     url = "https://www.okx.com/api/v5/public/instruments?instType=SWAP"
     response = retry_request(requests.get, url)
@@ -151,9 +181,12 @@ def get_all_okx_swap_symbols():
     data = response.json().get("data", [])
     return [item["instId"] for item in data if "USDT" in item["instId"]]
 
-# =========================
-# 메시지 발송 (조건: RSI/MFI 둘 다 70 이상일 때)
-# =========================
+=========================
+
+메시지 발송 (조건: 1H RSI/MFI >= 70 + 일간 상승률 > 0)
+
+=========================
+
 def send_new_entry_message(all_ids):
     global last_sent_top10
 
@@ -163,69 +196,81 @@ def send_new_entry_message(all_ids):
     alert_coins = []
 
     for inst_id in sorted_by_volume:
-        df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=10)
-        if df_1d is None or len(df_1d) < 6:
+        df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=10)   # ✅ 1시간봉으로 변경
+
+        if df_1h is None or len(df_1h) < 5:
             continue
 
-        # RSI/MFI 계산
-        rsi_series = calc_rsi(df_1d, period=5)
-        mfi_series = calc_mfi(df_1d, period=5)
+        # 1시간봉 RSI/MFI
+        rsi_series = calc_rsi(df_1h, period=5)
+        mfi_series = calc_mfi(df_1h, period=5)
 
-        rsi_now = rsi_series.iloc[-1]
-        mfi_now = mfi_series.iloc[-1]
+        rsi_1h = rsi_series.iloc[-1]
+        mfi_1h = mfi_series.iloc[-1]
+
+        # 몇 캔들 연속 과매수인지
+        overbought_rsi = rsi_series >= 70
+        overbought_mfi = mfi_series >= 70
+        consecutive_overbought = (overbought_rsi & overbought_mfi).sum()
 
         daily_change = calculate_daily_change(inst_id)
 
-        # --- 조건 체크 ---
-        above_both = (rsi_now >= 70 and mfi_now >= 70)
-
-        # ✅ RSI & MFI 둘 다 70 이상일 때 신호
-        if above_both and daily_change is not None and daily_change > 0:
-            if inst_id not in [coin[0] for coin in last_sent_top10]:
-                rank = sorted_by_volume.index(inst_id) + 1
-                alert_coins.append(
-                    (inst_id, mfi_now, rsi_now, daily_change, volume_map[inst_id], rank)
-                )
+        # ✅ 조건: 1H RSI/MFI 둘 다 >= 70 + 일간 상승률 > 0%
+        if mfi_1h >= 70 and rsi_1h >= 70 and daily_change is not None and daily_change > 0:
+            rank = sorted_by_volume.index(inst_id) + 1
+            alert_coins.append(
+                (inst_id, mfi_1h, rsi_1h, daily_change, volume_map[inst_id], rank, consecutive_overbought)
+            )
 
     if not alert_coins:
         return
 
-    # 새로운 알림만 기록
-    last_sent_top10.extend(alert_coins)
+    # ✅ 중복 전송 방지
+    if [coin[0] for coin in alert_coins] == [coin[0] for coin in last_sent_top10]:
+        return
 
-    message_lines = ["⚠️ 1D RSI/MFI 70 이상 신호 🔴"]
+    last_sent_top10 = alert_coins.copy()
 
-    for idx, (inst_id, mfi_1d, rsi_1d, daily_change, vol, rank) in enumerate(alert_coins, start=1):
+    message_lines = ["⚠️ 1H 과매수 신호 감지 👀 (RSI/MFI 5 기준)"]   # ✅ 메시지 수정
+
+    for idx, (inst_id, mfi_1h, rsi_1h, daily_change, vol, rank, consecutive_overbought) in enumerate(alert_coins, start=1):
         name = inst_id.replace("-USDT-SWAP", "")
 
         def fmt_val(val):
             if val is None:
                 return "N/A"
-            if val >= 70:
-                return f"🔴{val:.2f}"
-            elif val <= 30:
+            if val <= 30:
                 return f"🟢{val:.2f}"
+            elif val >= 70:
+                return f"🔴{val:.2f}"
             return f"{val:.2f}"
 
         message_lines.append(
             f"{idx}. {name}\n"
-            f"🕒 1D MFI: {fmt_val(mfi_1d)} | RSI: {fmt_val(rsi_1d)}\n"
-            f"📈 {daily_change:.2f}% | 💰 {int(vol // 1_000_000)}M (#{rank})"
+            f"🕒 1H MFI: {fmt_val(mfi_1h)} | RSI: {fmt_val(rsi_1h)}\n"
+            f"📈 {daily_change:.2f}% | 💰 {int(vol // 1_000_000)}M (#{rank})\n"
+            f"🔥 과매수 지속 캔들: {consecutive_overbought}개"
         )
 
     send_telegram_message("\n".join(message_lines))
 
-# =========================
-# 메인 실행
-# =========================
+=========================
+
+메인 실행
+
+=========================
+
 def main():
     logging.info("📥 거래대금 분석 시작")
     all_ids = get_all_okx_swap_symbols()
     send_new_entry_message(all_ids)
 
-# =========================
-# 스케줄러
-# =========================
+=========================
+
+스케줄러
+
+=========================
+
 def run_scheduler():
     while True:
         schedule.run_pending()
@@ -236,8 +281,11 @@ def start_scheduler():
     schedule.every(1).minutes.do(main)
     threading.Thread(target=run_scheduler, daemon=True).start()
 
-# =========================
-# FastAPI 실행
-# =========================
+=========================
+
+FastAPI 실행
+
+=========================
+
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
