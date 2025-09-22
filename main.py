@@ -52,7 +52,7 @@ def retry_request(func, *args, **kwargs):
     return None
 
 # =========================
-# OKX OHLCV 가져오기 (4H)
+# OKX OHLCV 가져오기
 # =========================
 def get_ohlcv_okx(inst_id, bar='4H', limit=300):
     url = f"https://www.okx.com/api/v5/market/candles?instId={inst_id}&bar={bar}&limit={limit}"
@@ -95,7 +95,7 @@ def calc_rsi(df, period=5):
     return rsi
 
 # =========================
-# RSI 포맷팅 (임계값 70)
+# RSI 포맷팅
 # =========================
 def format_rsi(value, threshold=70):
     if pd.isna(value):
@@ -123,10 +123,10 @@ def check_4h_rsi_cross(inst_id, period=5, threshold=70):
     return crossed, cross_time if crossed else None
 
 # =========================
-# 일간 상승률 계산 (4H 데이터 활용)
+# 일간 상승률 계산 (1H 데이터 기반)
 # =========================
 def calculate_daily_change(inst_id):
-    df = get_ohlcv_okx(inst_id, bar="4H", limit=48)
+    df = get_ohlcv_okx(inst_id, bar="1H", limit=48)  # 최근 48시간, 1시간봉
     if df is None or len(df) < 6:
         return None
     try:
@@ -164,16 +164,16 @@ def get_all_okx_swap_symbols():
     return [item["instId"] for item in data if "USDT" in item["instId"]]
 
 # =========================
-# 24시간 거래대금
+# 24시간 거래대금 계산 (1H 데이터 기반)
 # =========================
 def get_24h_volume(inst_id):
-    df = get_ohlcv_okx(inst_id, bar="4H", limit=6)
-    if df is None or len(df) < 6:
+    df = get_ohlcv_okx(inst_id, bar="1H", limit=24)  # 최근 24시간, 1시간봉
+    if df is None or len(df) < 24:
         return 0
     return df['volCcyQuote'].sum()
 
 # =========================
-# 신규 진입 알림 (RSI만, 4H 기준)
+# 신규 진입 알림
 # =========================
 def send_new_entry_message(all_ids):
     global sent_signal_coins
@@ -192,7 +192,6 @@ def send_new_entry_message(all_ids):
         if df_4h is None or len(df_4h) < 200:
             continue
 
-        # 4H RSI 돌파 확인
         is_cross_4h, cross_time = check_4h_rsi_cross(inst_id, period=5, threshold=70)
         if not is_cross_4h:
             sent_signal_coins[inst_id]["crossed"] = False
