@@ -54,7 +54,7 @@ def retry_request(func, *args, **kwargs):
 # =========================
 # OKX OHLCV 가져오기
 # =========================
-def get_ohlcv_okx(inst_id, bar='4H', limit=300):
+def get_ohlcv_okx(inst_id, bar='1D', limit=300):
     url = f"https://www.okx.com/api/v5/market/candles?instId={inst_id}&bar={bar}&limit={limit}"
     response = retry_request(requests.get, url)
     if response is None:
@@ -95,48 +95,30 @@ def calc_rsi(df, period=5):
     return rsi
 
 # =========================
-# MFI 계산 (5일선)
+# RSI 포맷팅 (임계값 70)
 # =========================
-def calc_mfi(df, period=5):
-    tp = (df['h'] + df['l'] + df['c']) / 3
-    mf = tp * df['volCcyQuote']
-    delta_tp = tp.diff()
-    positive_mf = mf.where(delta_tp > 0, 0.0)
-    negative_mf = mf.where(delta_tp < 0, 0.0)
-    pos_sum = positive_mf.rolling(period).sum()
-    neg_sum = negative_mf.rolling(period).sum()
-    with np.errstate(divide='ignore', invalid='ignore'):
-        mfi = 100 * pos_sum / (pos_sum + neg_sum)
-    return mfi
-
-# =========================
-# RSI/MFI 포맷팅 (임계값 70)
-# =========================
-def format_rsi_mfi(value, threshold=70):
+def format_rsi(value, threshold=70):
     if pd.isna(value):
         return "(N/A)"
     return f"🔴 {value:.1f}" if value <= threshold else f"🟢 {value:.1f}"
 
 # =========================
-# 4H RSI/MFI 상향 돌파 확인
+# 1D RSI 상향 돌파 확인
 # =========================
-def check_4h_mfi_rsi_cross(inst_id, period=5, threshold=70):
-    df = get_ohlcv_okx(inst_id, bar='4H', limit=200)
+def check_1d_rsi_cross(inst_id, period=5, threshold=70):
+    df = get_ohlcv_okx(inst_id, bar='1D', limit=200)
     if df is None or len(df) < period + 1:
         return False, None
 
-    mfi = calc_mfi(df, period)
     rsi = calc_rsi(df, period)
 
-    prev_mfi, curr_mfi = mfi.iloc[-2], mfi.iloc[-1]
     prev_rsi, curr_rsi = rsi.iloc[-2], rsi.iloc[-1]
     cross_time = pd.to_datetime(df['ts'].iloc[-1], unit='ms') + pd.Timedelta(hours=9)
 
-    if pd.isna(curr_mfi) or pd.isna(curr_rsi):
+    if pd.isna(curr_rsi):
         return False, None
 
-    crossed = (curr_mfi >= threshold and curr_rsi >= threshold) and \
-              (prev_mfi < threshold or prev_rsi < threshold)
+    crossed = (curr_rsi >= threshold) and (prev_rsi < threshold)
 
     return crossed, cross_time if crossed else None
 
@@ -144,22 +126,20 @@ def check_4h_mfi_rsi_cross(inst_id, period=5, threshold=70):
 # 일간 상승률 계산
 # =========================
 def calculate_daily_change(inst_id):
-    df = get_ohlcv_okx(inst_id, bar="4H", limit=48)
-    if df is None or len(df) < 6:
+    df = get_ohlcv_okx(inst_id, bar="1D", limit=3)
+    if df is None or len(df) < 2:
         return None
     try:
-        df['datetime'] = pd.to_datetime(df['ts'], unit='ms') + pd.Timedelta(hours=9)
-        df.set_index('datetime', inplace=True)
-        daily = df['c'].resample('1D', offset='9h').last()
-        if len(daily) < 2:
-            return None
-        today_close = daily.iloc[-1]
-        yesterday_close = daily.iloc[-2]
+        today_close = df['c'].iloc[-1]
+        yesterday_close = df['c'].iloc[-2]
         return round((today_close - yesterday_close) / yesterday_close * 100, 2)
     except Exception as e:
         logging.error(f"{inst_id} 상승률 계산 오류: {e}")
         return None
 
+# =========================
+# 거래대금 포맷
+# =========================
 def format_volume_in_eok(volume):
     try:
         eok = int(volume // 1_000_000)
@@ -182,13 +162,13 @@ def get_all_okx_swap_symbols():
 # 24시간 거래대금
 # =========================
 def get_24h_volume(inst_id):
-    df = get_ohlcv_okx(inst_id, bar="4H", limit=6)
-    if df is None or len(df) < 6:
+    df = get_ohlcv_okx(inst_id, bar="1D", limit=1)
+    if df is None or len(df) < 1:
         return 0
     return df['volCcyQuote'].sum()
 
 # =========================
-# 신규 진입 알림
+# 신규 진입 알림 (RSI만, 1D 기준)
 # =========================
 def send_new_entry_message(all_ids):
     global sent_signal_coins
@@ -203,13 +183,13 @@ def send_new_entry_message(all_ids):
             sent_signal_coins[inst_id] = {"crossed": False, "time": None}
 
     for inst_id in top_ids:
-        df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=200)
-        if df_4h is None or len(df_4h) < 200:
+        df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=200)
+        if df_1d is None or len(df_1d) < 200:
             continue
 
-        # 4H RSI/MFI 돌파 확인
-        is_cross_4h, cross_time = check_4h_mfi_rsi_cross(inst_id, period=5, threshold=70)
-        if not is_cross_4h:
+        # 1D RSI 돌파 확인
+        is_cross_1d, cross_time = check_1d_rsi_cross(inst_id, period=5, threshold=70)
+        if not is_cross_1d:
             sent_signal_coins[inst_id]["crossed"] = False
             sent_signal_coins[inst_id]["time"] = None
             continue
@@ -232,7 +212,7 @@ def send_new_entry_message(all_ids):
         new_entry_coins = new_entry_coins[:3]
 
         message_lines = [
-            "⚡ 4H RSI·MFI 필터 (≥70 상향 돌파, 5일선)",
+            "⚡ 1D RSI 필터 (≥70 상향 돌파, 5일선)",
             "━━━━━━━━━━━━━━━━━━━\n",
             "🏆 실시간 거래대금 TOP 3\n"
         ]
@@ -252,17 +232,16 @@ def send_new_entry_message(all_ids):
             else:
                 status = "(N/A)"
 
-            df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=200)
-            if df_4h is not None and len(df_4h) >= 5:
-                mfi_4h = calc_mfi(df_4h, 5).iloc[-1]
-                rsi_4h = calc_rsi(df_4h, 5).iloc[-1]
+            df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=200)
+            if df_1d is not None and len(df_1d) >= 5:
+                rsi_1d = calc_rsi(df_1d, 5).iloc[-1]
             else:
-                mfi_4h, rsi_4h = None, None
+                rsi_1d = None
 
             message_lines.append(
                 f"{rank}위 {name}\n"
                 f"{status} | 💰 거래대금: {volume_str}M\n"
-                f"📊 4H → RSI: {format_rsi_mfi(rsi_4h, 70)} | MFI: {format_rsi_mfi(mfi_4h, 70)}"
+                f"📊 1D → RSI: {format_rsi(rsi_1d, 70)}"
             )
 
         message_lines.append("\n━━━━━━━━━━━━━━━━━━━")
@@ -271,12 +250,11 @@ def send_new_entry_message(all_ids):
         for inst_id, daily_change, volume_24h, coin_rank, cross_time in new_entry_coins:
             name = inst_id.replace("-USDT-SWAP", "")
             volume_str = format_volume_in_eok(volume_24h)
-            df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=100)
-            if df_4h is not None and len(df_4h) >= 5:
-                mfi_4h = calc_mfi(df_4h, 5).iloc[-1]
-                rsi_4h = calc_rsi(df_4h, 5).iloc[-1]
+            df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=100)
+            if df_1d is not None and len(df_1d) >= 5:
+                rsi_1d = calc_rsi(df_1d, 5).iloc[-1]
             else:
-                mfi_4h, rsi_4h = None, None
+                rsi_1d = None
 
             daily_str = f"{daily_change:.2f}%"
             if daily_change >= 5:
@@ -287,7 +265,7 @@ def send_new_entry_message(all_ids):
             message_lines.append(
                 f"\n{coin_rank}위 {name}\n"
                 f"{daily_str} | 💰 거래대금: {volume_str}M\n"
-                f"📊 4H → RSI: {format_rsi_mfi(rsi_4h, 70)} | MFI: {format_rsi_mfi(mfi_4h, 70)}"
+                f"📊 1D → RSI: {format_rsi(rsi_1d, 70)}"
             )
 
         message_lines.append("\n━━━━━━━━━━━━━━━━━━━")
