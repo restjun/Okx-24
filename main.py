@@ -110,17 +110,17 @@ def calc_mfi(df, period=5):
     return mfi
 
 # =========================
-# RSI/MFI 포맷팅 (임계값 50)
+# RSI/MFI 포맷팅 (임계값 70)
 # =========================
-def format_rsi_mfi(value, threshold=50):
+def format_rsi_mfi(value, threshold=70):
     if pd.isna(value):
         return "(N/A)"
     return f"🔴 {value:.1f}" if value <= threshold else f"🟢 {value:.1f}"
 
 # =========================
-# 4H RSI/MFI 상향 돌파 확인 (임계값 50)
+# 4H RSI/MFI 상향 돌파 확인
 # =========================
-def check_4h_mfi_rsi_cross(inst_id, period=5, threshold=50):
+def check_4h_mfi_rsi_cross(inst_id, period=5, threshold=70):
     df = get_ohlcv_okx(inst_id, bar='4H', limit=200)
     if df is None or len(df) < period + 1:
         return False, None
@@ -193,7 +193,7 @@ def get_24h_volume(inst_id):
 def send_new_entry_message(all_ids):
     global sent_signal_coins
     volume_map = {inst_id: get_24h_volume(inst_id) for inst_id in all_ids}
-    top_ids = sorted(volume_map, key=volume_map.get, reverse=True)[:100]
+    top_ids = sorted(volume_map, key=volume_map.get, reverse=True)[:20]
     rank_map = {inst_id: rank + 1 for rank, inst_id in enumerate(top_ids)}
 
     new_entry_coins = []
@@ -207,8 +207,8 @@ def send_new_entry_message(all_ids):
         if df_4h is None or len(df_4h) < 200:
             continue
 
-        # 4H RSI/MFI 돌파 확인 (임계값 50)
-        is_cross_4h, cross_time = check_4h_mfi_rsi_cross(inst_id, period=5, threshold=50)
+        # 4H RSI/MFI 돌파 확인
+        is_cross_4h, cross_time = check_4h_mfi_rsi_cross(inst_id, period=5, threshold=70)
         if not is_cross_4h:
             sent_signal_coins[inst_id]["crossed"] = False
             sent_signal_coins[inst_id]["time"] = None
@@ -232,7 +232,7 @@ def send_new_entry_message(all_ids):
         new_entry_coins = new_entry_coins[:3]
 
         message_lines = [
-            "⚡ 4H RSI·MFI 필터 (≥50 상향 돌파, 5일선)",
+            "⚡ 4H RSI·MFI 필터 (≥70 상향 돌파, 5일선)",
             "━━━━━━━━━━━━━━━━━━━\n",
             "🏆 실시간 거래대금 TOP 3\n"
         ]
@@ -262,7 +262,7 @@ def send_new_entry_message(all_ids):
             message_lines.append(
                 f"{rank}위 {name}\n"
                 f"{status} | 💰 거래대금: {volume_str}M\n"
-                f"📊 4H → RSI: {format_rsi_mfi(rsi_4h, 50)} | MFI: {format_rsi_mfi(mfi_4h, 50)}"
+                f"📊 4H → RSI: {format_rsi_mfi(rsi_4h, 70)} | MFI: {format_rsi_mfi(mfi_4h, 70)}"
             )
 
         message_lines.append("\n━━━━━━━━━━━━━━━━━━━")
@@ -287,7 +287,7 @@ def send_new_entry_message(all_ids):
             message_lines.append(
                 f"\n{coin_rank}위 {name}\n"
                 f"{daily_str} | 💰 거래대금: {volume_str}M\n"
-                f"📊 4H → RSI: {format_rsi_mfi(rsi_4h, 50)} | MFI: {format_rsi_mfi(mfi_4h, 50)}"
+                f"📊 4H → RSI: {format_rsi_mfi(rsi_4h, 70)} | MFI: {format_rsi_mfi(mfi_4h, 70)}"
             )
 
         message_lines.append("\n━━━━━━━━━━━━━━━━━━━")
