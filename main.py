@@ -105,7 +105,7 @@ def format_rsi(value, threshold=70):
 # =========================
 # 1D RSI 상향 돌파 확인
 # =========================
-def check_1d_rsi_cross(inst_id, period=5, threshold=70):
+def check_1d_rsi_cross(inst_id, period=5, threshold=30):
     df = get_ohlcv_okx(inst_id, bar='1D', limit=200)
     if df is None or len(df) < period + 1:
         return False, None
