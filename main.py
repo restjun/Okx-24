@@ -95,48 +95,25 @@ def calc_rsi(df, period=5):
     return rsi
 
 # =========================
-# RSI 포맷팅
+# 최근 N개 캔들 내 RSI 하향 돌파 여부 확인
 # =========================
-def format_rsi(value, threshold=70):
-    if pd.isna(value):
-        return "(N/A)"
-    return f"🔴 {value:.1f}" if value <= threshold else f"🟢 {value:.1f}"
-
-# =========================
-# 1H RSI 상향 돌파 확인
-# =========================
-def check_1h_rsi_cross_up(inst_id, period=5, threshold=70):
+def check_1h_rsi_cross_down_last_n(inst_id, period=5, threshold=70, lookback=10):
     df = get_ohlcv_okx(inst_id, bar='1H', limit=200)
-    if df is None or len(df) < period + 1:
+    if df is None or len(df) < period + lookback:
         return False, None
 
     rsi = calc_rsi(df, period)
-    prev_rsi, curr_rsi = rsi.iloc[-2], rsi.iloc[-1]
-    cross_time = pd.to_datetime(df['ts'].iloc[-1], unit='ms') + pd.Timedelta(hours=9)
 
-    if pd.isna(curr_rsi):
-        return False, None
+    # 최근 lookback 구간 확인
+    for i in range(lookback, 0, -1):
+        prev_rsi, curr_rsi = rsi.iloc[-i-1], rsi.iloc[-i]
+        if pd.isna(curr_rsi) or pd.isna(prev_rsi):
+            continue
+        if (curr_rsi <= threshold) and (prev_rsi > threshold):
+            cross_time = pd.to_datetime(df['ts'].iloc[-i], unit='ms') + pd.Timedelta(hours=9)
+            return True, cross_time
 
-    crossed = (curr_rsi >= threshold) and (prev_rsi < threshold)
-    return crossed, cross_time if crossed else None
-
-# =========================
-# 1H RSI 하향 돌파 확인
-# =========================
-def check_1h_rsi_cross_down(inst_id, period=5, threshold=70):
-    df = get_ohlcv_okx(inst_id, bar='1H', limit=200)
-    if df is None or len(df) < period + 1:
-        return False, None
-
-    rsi = calc_rsi(df, period)
-    prev_rsi, curr_rsi = rsi.iloc[-2], rsi.iloc[-1]
-    cross_time = pd.to_datetime(df['ts'].iloc[-1], unit='ms') + pd.Timedelta(hours=9)
-
-    if pd.isna(curr_rsi):
-        return False, None
-
-    crossed = (curr_rsi <= threshold) and (prev_rsi > threshold)
-    return crossed, cross_time if crossed else None
+    return False, None
 
 # =========================
 # 일간 상승률 계산 (1H 데이터 기반)
@@ -197,52 +174,35 @@ def send_new_entry_message(all_ids):
     top_ids = sorted(volume_map, key=volume_map.get, reverse=True)[:20]
     rank_map = {inst_id: rank + 1 for rank, inst_id in enumerate(top_ids)}
 
-    new_entry_up = []
     new_entry_down = []
 
     for inst_id in ["BTC-USDT-SWAP"] + top_ids:
         if inst_id not in sent_signal_coins:
-            sent_signal_coins[inst_id] = {"crossed_up": False, "crossed_down": False}
+            sent_signal_coins[inst_id] = {"crossed_down": False}
 
     for inst_id in top_ids:
-        # 상향 돌파
-        is_cross_up, cross_time_up = check_1h_rsi_cross_up(inst_id, period=5, threshold=70)
-        if is_cross_up and not sent_signal_coins[inst_id]["crossed_up"]:
-            daily_change = calculate_daily_change(inst_id)
-            if daily_change is not None:
-                new_entry_up.append((inst_id, daily_change, volume_map[inst_id], rank_map[inst_id], cross_time_up))
-            sent_signal_coins[inst_id]["crossed_up"] = True
-        elif not is_cross_up:
-            sent_signal_coins[inst_id]["crossed_up"] = False
-
-        # 하향 돌파
-        is_cross_down, cross_time_down = check_1h_rsi_cross_down(inst_id, period=5, threshold=70)
+        # 최근 10개 캔들 내 하향 돌파
+        is_cross_down, cross_time_down = check_1h_rsi_cross_down_last_n(
+            inst_id, period=5, threshold=70, lookback=10
+        )
         if is_cross_down and not sent_signal_coins[inst_id]["crossed_down"]:
             daily_change = calculate_daily_change(inst_id)
             if daily_change is not None:
-                new_entry_down.append((inst_id, daily_change, volume_map[inst_id], rank_map[inst_id], cross_time_down))
+                new_entry_down.append(
+                    (inst_id, daily_change, volume_map[inst_id], rank_map[inst_id], cross_time_down)
+                )
             sent_signal_coins[inst_id]["crossed_down"] = True
         elif not is_cross_down:
             sent_signal_coins[inst_id]["crossed_down"] = False
 
     # 메시지 전송
-    if new_entry_up or new_entry_down:
+    if new_entry_down:
         message_lines = ["⚡ 1H RSI 필터 (5기간)", "━━━━━━━━━━━━━━━━━━━\n"]
-
-        if new_entry_up:
-            message_lines.append("🆕 신규 상향 돌파 코인 👆")
-            for inst_id, daily_change, volume_24h, coin_rank, cross_time in new_entry_up:
-                name = inst_id.replace("-USDT-SWAP", "")
-                vol_str = format_volume_in_eok(volume_24h)
-                message_lines.append(f"{coin_rank}위 {name} | +{daily_change:.2f}% | 💰 {vol_str}M")
-
-        if new_entry_down:
-            message_lines.append("\n🆕 신규 하향 돌파 코인 👇")
-            for inst_id, daily_change, volume_24h, coin_rank, cross_time in new_entry_down:
-                name = inst_id.replace("-USDT-SWAP", "")
-                vol_str = format_volume_in_eok(volume_24h)
-                message_lines.append(f"{coin_rank}위 {name} | {daily_change:.2f}% | 💰 {vol_str}M")
-
+        message_lines.append("🆕 최근 10캔들 내 하향 돌파 코인 👇")
+        for inst_id, daily_change, volume_24h, coin_rank, cross_time in new_entry_down:
+            name = inst_id.replace("-USDT-SWAP", "")
+            vol_str = format_volume_in_eok(volume_24h)
+            message_lines.append(f"{coin_rank}위 {name} | {daily_change:.2f}% | 💰 {vol_str}M")
         message_lines.append("\n━━━━━━━━━━━━━━━━━━━")
         send_telegram_message("\n".join(message_lines))
     else:
