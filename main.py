@@ -103,17 +103,22 @@ def format_rsi(value, threshold=70):
     return f"🔴 {value:.1f}" if value <= threshold else f"🟢 {value:.1f}"
 
 # =========================
-# 1H RSI 상향 돌파 확인
+# 1H RSI 10캔들 이전 돌파 확인
 # =========================
-def check_1h_rsi_cross(inst_id, period=5, threshold=70):
+def check_1h_rsi_cross_10candles_ago(inst_id, period=5, threshold=70, lookback=10):
+    """
+    현재 기준으로 lookback 이전 캔들에서 RSI가 threshold 이상 돌파했는지 확인
+    """
     df = get_ohlcv_okx(inst_id, bar='1H', limit=200)
-    if df is None or len(df) < period + 1:
+    if df is None or len(df) < period + lookback + 1:
         return False, None
 
     rsi = calc_rsi(df, period)
 
-    prev_rsi, curr_rsi = rsi.iloc[-2], rsi.iloc[-1]
-    cross_time = pd.to_datetime(df['ts'].iloc[-1], unit='ms') + pd.Timedelta(hours=9)
+    prev_rsi = rsi.iloc[-lookback-1]
+    curr_rsi = rsi.iloc[-lookback]
+
+    cross_time = pd.to_datetime(df['ts'].iloc[-lookback], unit='ms') + pd.Timedelta(hours=9)
 
     if pd.isna(curr_rsi):
         return False, None
@@ -188,11 +193,7 @@ def send_new_entry_message(all_ids):
             sent_signal_coins[inst_id] = {"crossed": False, "time": None}
 
     for inst_id in top_ids:
-        df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=200)
-        if df_1h is None or len(df_1h) < 200:
-            continue
-
-        is_cross_1h, cross_time = check_1h_rsi_cross(inst_id, period=5, threshold=70)
+        is_cross_1h, cross_time = check_1h_rsi_cross_10candles_ago(inst_id, period=5, threshold=70, lookback=10)
         if not is_cross_1h:
             sent_signal_coins[inst_id]["crossed"] = False
             sent_signal_coins[inst_id]["time"] = None
@@ -216,7 +217,7 @@ def send_new_entry_message(all_ids):
         new_entry_coins = new_entry_coins[:3]
 
         message_lines = [
-            "⚡ 1H RSI 필터 (≥70 상향 돌파, 5기간)",
+            "⚡ 1H RSI 필터 (≥70 상향 돌파, 5기간, 10캔들 이전 기준)",
             "━━━━━━━━━━━━━━━━━━━\n",
             "🏆 실시간 거래대금 TOP 3\n"
         ]
