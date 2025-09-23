@@ -117,14 +117,11 @@ def check_1h_rsi_cross_up(inst_id, period=5, threshold=70):
     df = get_ohlcv_okx(inst_id, bar='1H', limit=200)
     if df is None or len(df) < period + 1:
         return False, None
-
     rsi = calc_rsi(df, period)
     prev_rsi, curr_rsi = rsi.iloc[-2], rsi.iloc[-1]
     cross_time = pd.to_datetime(df['ts'].iloc[-1], unit='ms') + pd.Timedelta(hours=9)
-
     if pd.isna(curr_rsi):
         return False, None
-
     crossed = (curr_rsi >= threshold) and (prev_rsi < threshold)
     return crossed, cross_time if crossed else None
 
@@ -134,17 +131,14 @@ def check_1h_rsi_cross_up(inst_id, period=5, threshold=70):
 
 def check_1h_rsi_cross_down(inst_id, period=5, threshold=70):
     df = get_ohlcv_okx(inst_id, bar='1H', limit=200)
-    if df is None or len(df) < period + 11:  # 최소 11개 필요
+    if df is None or len(df) < period + 11:
         return False, None
-
     rsi = calc_rsi(df, period)
-    prev_rsi = rsi.iloc[-11]  # 10개 전 이전 값
-    curr_rsi = rsi.iloc[-10]  # 10개 전 값
+    prev_rsi = rsi.iloc[-11]
+    curr_rsi = rsi.iloc[-10]
     cross_time = pd.to_datetime(df['ts'].iloc[-10], unit='ms') + pd.Timedelta(hours=9)
-
     if pd.isna(curr_rsi):
         return False, None
-
     crossed = (curr_rsi <= threshold) and (prev_rsi > threshold)
     return crossed, cross_time if crossed else None
 
@@ -220,22 +214,28 @@ def send_new_entry_message(all_ids):
             sent_signal_coins[inst_id] = {"crossed_up": False, "crossed_down": False}
 
     for inst_id in top_ids:
-        # 상향 돌파
+        df = get_ohlcv_okx(inst_id, bar="1H", limit=200)
+        if df is None:
+            continue
+        rsi = calc_rsi(df, period=5)
+        curr_rsi = rsi.iloc[-1]
+
+        # 상향 돌파 (양수 코인만)
         is_cross_up, cross_time_up = check_1h_rsi_cross_up(inst_id, period=5, threshold=70)
         if is_cross_up and not sent_signal_coins[inst_id]["crossed_up"]:
             daily_change = calculate_daily_change(inst_id)
-            if daily_change is not None:
-                new_entry_up.append((inst_id, daily_change, volume_map[inst_id], rank_map[inst_id], cross_time_up))
+            if daily_change is not None and daily_change > 0:
+                new_entry_up.append((inst_id, daily_change, volume_map[inst_id], rank_map[inst_id], cross_time_up, curr_rsi))
             sent_signal_coins[inst_id]["crossed_up"] = True
         elif not is_cross_up:
             sent_signal_coins[inst_id]["crossed_up"] = False
 
-        # 하향 돌파 (10개 캔들 전 조건)
+        # 하향 돌파 (양수 코인만)
         is_cross_down, cross_time_down = check_1h_rsi_cross_down(inst_id, period=5, threshold=70)
         if is_cross_down and not sent_signal_coins[inst_id]["crossed_down"]:
             daily_change = calculate_daily_change(inst_id)
-            if daily_change is not None:
-                new_entry_down.append((inst_id, daily_change, volume_map[inst_id], rank_map[inst_id], cross_time_down))
+            if daily_change is not None and daily_change > 0:
+                new_entry_down.append((inst_id, daily_change, volume_map[inst_id], rank_map[inst_id], cross_time_down, curr_rsi))
             sent_signal_coins[inst_id]["crossed_down"] = True
         elif not is_cross_down:
             sent_signal_coins[inst_id]["crossed_down"] = False
@@ -246,17 +246,19 @@ def send_new_entry_message(all_ids):
 
         if new_entry_up:
             message_lines.append("🆕 신규 상향 돌파 코인 👆")
-            for inst_id, daily_change, volume_24h, coin_rank, cross_time in new_entry_up:
+            for inst_id, daily_change, volume_24h, coin_rank, cross_time, curr_rsi in new_entry_up:
                 name = inst_id.replace("-USDT-SWAP", "")
                 vol_str = format_volume_in_eok(volume_24h)
-                message_lines.append(f"{coin_rank}위 {name} | +{daily_change:.2f}% | 💰 {vol_str}M")
+                rsi_str = format_rsi(curr_rsi, threshold=70)
+                message_lines.append(f"{coin_rank}위 {name} | +{daily_change:.2f}% | 💰 {vol_str}M | RSI {rsi_str}")
 
         if new_entry_down:
             message_lines.append("\n🆕 신규 하향 돌파 코인 👇")
-            for inst_id, daily_change, volume_24h, coin_rank, cross_time in new_entry_down:
+            for inst_id, daily_change, volume_24h, coin_rank, cross_time, curr_rsi in new_entry_down:
                 name = inst_id.replace("-USDT-SWAP", "")
                 vol_str = format_volume_in_eok(volume_24h)
-                message_lines.append(f"{coin_rank}위 {name} | {daily_change:.2f}% | 💰 {vol_str}M")
+                rsi_str = format_rsi(curr_rsi, threshold=70)
+                message_lines.append(f"{coin_rank}위 {name} | +{daily_change:.2f}% | 💰 {vol_str}M | RSI {rsi_str}")
 
         message_lines.append("\n━━━━━━━━━━━━━━━━━━━")
         send_telegram_message("\n".join(message_lines))
@@ -290,5 +292,4 @@ def start_scheduler():
 # FastAPI 실행
 # =========================
 
-if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+if __name__ == "__main
