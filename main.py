@@ -82,7 +82,7 @@ def rma(series, period):
     return r
 
 # =========================
-# RSI 계산 (5기간)
+# RSI 계산
 # =========================
 def calc_rsi(df, period=5):
     delta = df['c'].diff()
@@ -94,36 +94,28 @@ def calc_rsi(df, period=5):
     rsi = 100 - (100 / (1 + rs))
     return rsi
 
-# =========================
-# RSI 포맷팅
-# =========================
 def format_rsi(value, threshold=70):
     if pd.isna(value):
         return "(N/A)"
     return f"🔴 {value:.1f}" if value <= threshold else f"🟢 {value:.1f}"
 
 # =========================
-# 4H RSI 상향 돌파 확인 (기존 1H → 4H 변경)
+# 4H RSI 상향 돌파 확인
 # =========================
-def check_1h_rsi_cross(inst_id, period=5, threshold=70):
+def check_4h_rsi_cross(inst_id, period=5, threshold=70):
     df = get_ohlcv_okx(inst_id, bar='4H', limit=200)
     if df is None or len(df) < period + 1:
         return False, None
-
     rsi = calc_rsi(df, period)
-
     prev_rsi, curr_rsi = rsi.iloc[-2], rsi.iloc[-1]
     cross_time = pd.to_datetime(df['ts'].iloc[-1], unit='ms') + pd.Timedelta(hours=9)
-
     if pd.isna(curr_rsi):
         return False, None
-
     crossed = (curr_rsi >= threshold) and (prev_rsi < threshold)
-
     return crossed, cross_time if crossed else None
 
 # =========================
-# 일간 상승률 계산 (1H 데이터 기반)
+# 일간 상승률 계산 (1H)
 # =========================
 def calculate_daily_change(inst_id):
     df = get_ohlcv_okx(inst_id, bar="1H", limit=48)
@@ -164,7 +156,7 @@ def get_all_okx_swap_symbols():
     return [item["instId"] for item in data if "USDT" in item["instId"]]
 
 # =========================
-# 24시간 거래대금 계산 (1H 데이터 기반)
+# 24시간 거래대금 계산
 # =========================
 def get_24h_volume(inst_id):
     df = get_ohlcv_okx(inst_id, bar="1H", limit=24)
@@ -173,7 +165,7 @@ def get_24h_volume(inst_id):
     return df['volCcyQuote'].sum()
 
 # =========================
-# 신규 진입 알림
+# 신규 진입 및 RSI 70 이상 코인 알림
 # =========================
 def send_new_entry_message(all_ids):
     global sent_signal_coins
@@ -181,101 +173,71 @@ def send_new_entry_message(all_ids):
     top_ids = sorted(volume_map, key=volume_map.get, reverse=True)[:20]
     rank_map = {inst_id: rank + 1 for rank, inst_id in enumerate(top_ids)}
 
-    new_entry_coins = []
+    new_entry_coins = []  
+    rsi_over_70_coins = []  # 현재 RSI 70 이상 유지 종목
 
-    for inst_id in ["BTC-USDT-SWAP"] + top_ids:
-        if inst_id not in sent_signal_coins:
-            sent_signal_coins[inst_id] = {"crossed": False, "time": None}
+    for inst_id in ["BTC-USDT-SWAP"] + top_ids:  
+        if inst_id not in sent_signal_coins:  
+            sent_signal_coins[inst_id] = {"crossed": False, "time": None}  
 
-    for inst_id in top_ids:
-        df_1h = get_ohlcv_okx(inst_id, bar='4H', limit=200)
-        if df_1h is None or len(df_1h) < 200:
-            continue
+    for inst_id in top_ids:  
+        df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=200)  
+        if df_4h is None or len(df_4h) < 200:  
+            continue  
 
-        is_cross_1h, cross_time = check_1h_rsi_cross(inst_id, period=5, threshold=70)
-        if not is_cross_1h:
-            sent_signal_coins[inst_id]["crossed"] = False
-            sent_signal_coins[inst_id]["time"] = None
-            continue
+        is_cross_4h, cross_time = check_4h_rsi_cross(inst_id, period=5, threshold=70)  
+        rsi_4h = calc_rsi(df_4h, 5).iloc[-1] if df_4h is not None else None
 
-        daily_change = calculate_daily_change(inst_id)
-        if daily_change is None:
-            continue
+        # 신규 진입 알림
+        if is_cross_4h and not sent_signal_coins[inst_id]["crossed"]:  
+            daily_change = calculate_daily_change(inst_id)  
+            if daily_change is not None:
+                new_entry_coins.append(  
+                    (inst_id, daily_change, volume_map.get(inst_id, 0), rank_map.get(inst_id), cross_time)  
+                )  
 
-        if not sent_signal_coins[inst_id]["crossed"]:
-            new_entry_coins.append(
-                (inst_id, daily_change, volume_map.get(inst_id, 0),
-                 rank_map.get(inst_id), cross_time)
-            )
+        # 현재 RSI 70 이상 유지 종목
+        if rsi_4h is not None and rsi_4h >= 70:
+            rsi_over_70_coins.append((inst_id, rsi_4h, volume_map.get(inst_id, 0), rank_map.get(inst_id)))
 
-        sent_signal_coins[inst_id]["crossed"] = True
-        sent_signal_coins[inst_id]["time"] = cross_time
+        # 상태 업데이트
+        sent_signal_coins[inst_id]["crossed"] = is_cross_4h
+        sent_signal_coins[inst_id]["time"] = cross_time if is_cross_4h else None
+
+    # 메시지 작성
+    message_lines = ["⚡ 4H RSI 필터 (≥70 상향 돌파 / 현재 유지)"]
+    message_lines.append("━━━━━━━━━━━━━━━━━━━\n")
 
     if new_entry_coins:
         new_entry_coins.sort(key=lambda x: x[2], reverse=True)
-        new_entry_coins = new_entry_coins[:3]
-
-        message_lines = [
-            "⚡ 4H RSI 필터 (≥70 상향 돌파, 5기간)",
-            "━━━━━━━━━━━━━━━━━━━\n",
-            "🏆 실시간 거래대금 TOP 3\n"
-        ]
-
-        for rank, inst_id in enumerate(top_ids[:3], start=1):
-            change = calculate_daily_change(inst_id)
-            volume = volume_map.get(inst_id, 0)
-            volume_str = format_volume_in_eok(volume)
-            name = inst_id.replace("-USDT-SWAP", "")
-            if change is not None:
-                if change >= 5:
-                    status = f"🟢🔥 +{change:.2f}%"
-                elif change > 0:
-                    status = f"🟢 +{change:.2f}%"
-                else:
-                    status = f"🔴 {change:.2f}%"
-            else:
-                status = "(N/A)"
-
-            df_1h = get_ohlcv_okx(inst_id, bar='4H', limit=200)
-            if df_1h is not None and len(df_1h) >= 5:
-                rsi_1h = calc_rsi(df_1h, 5).iloc[-1]
-            else:
-                rsi_1h = None
-
-            message_lines.append(
-                f"{rank}위 {name}\n"
-                f"{status} | 💰 거래대금: {volume_str}M\n"
-                f"📊 4H → RSI: {format_rsi(rsi_1h, 70)}"
-            )
-
-        message_lines.append("\n━━━━━━━━━━━━━━━━━━━")
         message_lines.append("🆕 신규 진입 코인 (상위 3개) 👀")
-
-        for inst_id, daily_change, volume_24h, coin_rank, cross_time in new_entry_coins:
+        for inst_id, daily_change, volume_24h, coin_rank, cross_time in new_entry_coins[:3]:
             name = inst_id.replace("-USDT-SWAP", "")
             volume_str = format_volume_in_eok(volume_24h)
-            df_1h = get_ohlcv_okx(inst_id, bar='4H', limit=100)
-            if df_1h is not None and len(df_1h) >= 5:
-                rsi_1h = calc_rsi(df_1h, 5).iloc[-1]
-            else:
-                rsi_1h = None
-
             daily_str = f"{daily_change:.2f}%"
             if daily_change >= 5:
                 daily_str = f"🟢🔥 {daily_str}"
             elif daily_change > 0:
                 daily_str = f"🟢 {daily_str}"
+            rsi_val = calc_rsi(get_ohlcv_okx(inst_id, '4H', 100), 5).iloc[-1]
+            rsi_str = format_rsi(rsi_val, 70)
+            message_lines.append(f"\n{coin_rank}위 {name}\n{daily_str} | 💰 거래대금: {volume_str}M\n📊 4H → RSI: {rsi_str}")
 
-            message_lines.append(
-                f"\n{coin_rank}위 {name}\n"
-                f"{daily_str} | 💰 거래대금: {volume_str}M\n"
-                f"📊 4H → RSI: {format_rsi(rsi_1h, 70)}"
-            )
-
+    if rsi_over_70_coins:
         message_lines.append("\n━━━━━━━━━━━━━━━━━━━")
+        message_lines.append("🔥 현재 4H RSI 70 이상 유지 종목")
+        rsi_over_70_coins.sort(key=lambda x: x[2], reverse=True)
+        for inst_id, rsi_val, volume_24h, coin_rank in rsi_over_70_coins[:3]:
+            name = inst_id.replace("-USDT-SWAP", "")
+            volume_str = format_volume_in_eok(volume_24h)
+            rsi_str = format_rsi(rsi_val, 70)
+            message_lines.append(f"{coin_rank}위 {name} | 💰 거래대금: {volume_str}M | 📊 4H RSI: {rsi_str}")
+
+    message_lines.append("\n━━━━━━━━━━━━━━━━━━━")
+    if new_entry_coins or rsi_over_70_coins:
         send_telegram_message("\n".join(message_lines))
     else:
-        logging.info("⚡ 신규 진입 없음 → 메시지 전송 안 함")
+        logging.info("⚡ 신규 진입/RSI 70 이상 코인 없음 → 메시지 전송 안 함")
 
 # =========================
 # 메인 실행
