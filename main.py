@@ -103,10 +103,10 @@ def format_rsi(value, threshold=70):
     return f"🔴 {value:.1f}" if value <= threshold else f"🟢 {value:.1f}"
 
 # =========================
-# 4H RSI 상향 돌파 확인
+# 1H RSI 상향 돌파 확인
 # =========================
-def check_4h_rsi_cross(inst_id, period=5, threshold=70):
-    df = get_ohlcv_okx(inst_id, bar='4H', limit=200)
+def check_1h_rsi_cross(inst_id, period=5, threshold=70):
+    df = get_ohlcv_okx(inst_id, bar='1H', limit=200)
     if df is None or len(df) < period + 1:
         return False, None
 
@@ -126,7 +126,7 @@ def check_4h_rsi_cross(inst_id, period=5, threshold=70):
 # 일간 상승률 계산 (1H 데이터 기반)
 # =========================
 def calculate_daily_change(inst_id):
-    df = get_ohlcv_okx(inst_id, bar="1H", limit=48)  # 최근 48시간, 1시간봉
+    df = get_ohlcv_okx(inst_id, bar="1H", limit=48)
     if df is None or len(df) < 6:
         return None
     try:
@@ -167,7 +167,7 @@ def get_all_okx_swap_symbols():
 # 24시간 거래대금 계산 (1H 데이터 기반)
 # =========================
 def get_24h_volume(inst_id):
-    df = get_ohlcv_okx(inst_id, bar="1H", limit=24)  # 최근 24시간, 1시간봉
+    df = get_ohlcv_okx(inst_id, bar="1H", limit=24)
     if df is None or len(df) < 24:
         return 0
     return df['volCcyQuote'].sum()
@@ -188,12 +188,12 @@ def send_new_entry_message(all_ids):
             sent_signal_coins[inst_id] = {"crossed": False, "time": None}
 
     for inst_id in top_ids:
-        df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=200)
-        if df_4h is None or len(df_4h) < 200:
+        df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=200)
+        if df_1h is None or len(df_1h) < 200:
             continue
 
-        is_cross_4h, cross_time = check_4h_rsi_cross(inst_id, period=5, threshold=70)
-        if not is_cross_4h:
+        is_cross_1h, cross_time = check_1h_rsi_cross(inst_id, period=5, threshold=70)
+        if not is_cross_1h:
             sent_signal_coins[inst_id]["crossed"] = False
             sent_signal_coins[inst_id]["time"] = None
             continue
@@ -216,7 +216,7 @@ def send_new_entry_message(all_ids):
         new_entry_coins = new_entry_coins[:3]
 
         message_lines = [
-            "⚡ 4H RSI 필터 (≥70 상향 돌파, 5기간)",
+            "⚡ 1H RSI 필터 (≥70 상향 돌파, 5기간)",
             "━━━━━━━━━━━━━━━━━━━\n",
             "🏆 실시간 거래대금 TOP 3\n"
         ]
@@ -236,16 +236,16 @@ def send_new_entry_message(all_ids):
             else:
                 status = "(N/A)"
 
-            df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=200)
-            if df_4h is not None and len(df_4h) >= 5:
-                rsi_4h = calc_rsi(df_4h, 5).iloc[-1]
+            df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=200)
+            if df_1h is not None and len(df_1h) >= 5:
+                rsi_1h = calc_rsi(df_1h, 5).iloc[-1]
             else:
-                rsi_4h = None
+                rsi_1h = None
 
             message_lines.append(
                 f"{rank}위 {name}\n"
                 f"{status} | 💰 거래대금: {volume_str}M\n"
-                f"📊 4H → RSI: {format_rsi(rsi_4h, 70)}"
+                f"📊 1H → RSI: {format_rsi(rsi_1h, 70)}"
             )
 
         message_lines.append("\n━━━━━━━━━━━━━━━━━━━")
@@ -254,11 +254,11 @@ def send_new_entry_message(all_ids):
         for inst_id, daily_change, volume_24h, coin_rank, cross_time in new_entry_coins:
             name = inst_id.replace("-USDT-SWAP", "")
             volume_str = format_volume_in_eok(volume_24h)
-            df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=100)
-            if df_4h is not None and len(df_4h) >= 5:
-                rsi_4h = calc_rsi(df_4h, 5).iloc[-1]
+            df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=100)
+            if df_1h is not None and len(df_1h) >= 5:
+                rsi_1h = calc_rsi(df_1h, 5).iloc[-1]
             else:
-                rsi_4h = None
+                rsi_1h = None
 
             daily_str = f"{daily_change:.2f}%"
             if daily_change >= 5:
@@ -269,7 +269,7 @@ def send_new_entry_message(all_ids):
             message_lines.append(
                 f"\n{coin_rank}위 {name}\n"
                 f"{daily_str} | 💰 거래대금: {volume_str}M\n"
-                f"📊 4H → RSI: {format_rsi(rsi_4h, 70)}"
+                f"📊 1H → RSI: {format_rsi(rsi_1h, 70)}"
             )
 
         message_lines.append("\n━━━━━━━━━━━━━━━━━━━")
