@@ -153,7 +153,7 @@ def get_24h_volume(inst_id):
     return df['volCcyQuote'].sum()
 
 # =========================
-# 신규 진입 알림 (수정된 조건: RSI 50~70 유지 + 상승률 양수)
+# 신규 진입 알림 (RSI 60~70 유지 + 상승률 양수, TOP3 별도, 나머지 전체)
 # =========================
 def send_new_entry_message(all_ids):
     global sent_signal_coins
@@ -167,6 +167,7 @@ def send_new_entry_message(all_ids):
         if inst_id not in sent_signal_coins:
             sent_signal_coins[inst_id] = {"crossed": False, "time": None}
 
+    # 조건 만족 코인 필터링
     for inst_id in top_ids:
         df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=200)
         if df_1h is None or len(df_1h) < 200:
@@ -177,63 +178,51 @@ def send_new_entry_message(all_ids):
         if rsi_1h is None or daily_change is None:
             continue
 
-        if 50 <= rsi_1h <= 70 and daily_change > 0:
-            if not sent_signal_coins[inst_id]["crossed"]:
-                new_entry_coins.append(
-                    (inst_id, daily_change, volume_map.get(inst_id, 0), rank_map.get(inst_id))
-                )
+        # RSI 60~70 유지 + 상승률 양수 조건
+        if 60 <= rsi_1h <= 70 and daily_change > 0:
+            new_entry_coins.append(
+                (inst_id, daily_change, volume_map.get(inst_id, 0), rank_map.get(inst_id))
+            )
             sent_signal_coins[inst_id]["crossed"] = True
         else:
             sent_signal_coins[inst_id]["crossed"] = False
 
     if new_entry_coins:
         new_entry_coins.sort(key=lambda x: x[2], reverse=True)
-        new_entry_coins = new_entry_coins[:3]
 
         message_lines = [
-            "⚡ 1H RSI 필터 (50~70 유지, 상승률 양수)",
+            "⚡ 1H RSI 필터 (60~70 유지, 상승률 양수)",
             "━━━━━━━━━━━━━━━━━━━\n",
-            "🏆 실시간 거래대금 TOP 3\n"
+            "🏆 실거래대금 TOP 3\n"
         ]
 
-        for rank, inst_id in enumerate(top_ids[:3], start=1):
-            change = calculate_daily_change(inst_id)
-            volume = volume_map.get(inst_id, 0)
-            volume_str = format_volume_in_eok(volume)
+        # 거래대금 TOP3
+        for rank, (inst_id, daily_change, volume_24h, coin_rank) in enumerate(new_entry_coins[:3], start=1):
             name = inst_id.replace("-USDT-SWAP", "")
-            if change is not None:
-                if change >= 5:
-                    status = f"🟢🔥 +{change:.2f}%"
-                elif change > 0:
-                    status = f"🟢 +{change:.2f}%"
-                else:
-                    status = "(N/A)"
-            else:
-                status = "(N/A)"
+            volume_str = format_volume_in_eok(volume_24h)
+            daily_str = f"{daily_change:.2f}%"
+            if daily_change >= 5:
+                daily_str = f"🟢🔥 {daily_str}"
+            elif daily_change > 0:
+                daily_str = f"🟢 {daily_str}"
 
-            df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=200)
-            if df_1h is not None and len(df_1h) >= 5:
-                rsi_1h = calc_rsi(df_1h, 5).iloc[-1]
-            else:
-                rsi_1h = None
+            df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=100)
+            rsi_1h = calc_rsi(df_1h, 5).iloc[-1] if df_1h is not None and len(df_1h) >= 5 else None
 
             message_lines.append(
                 f"{rank}위 {name}\n"
-                f"{status} | 💰 거래대금: {volume_str}M\n"
+                f"{daily_str} | 💰 거래대금: {volume_str}M\n"
                 f"📊 1H → RSI: {format_rsi(rsi_1h, 70)}"
             )
 
+        # 나머지 코인 전체
         message_lines.append("\n━━━━━━━━━━━━━━━━━━━")
-        message_lines.append("🆕 신규 진입 코인 (상위 3개) 👀")
-
-        for inst_id, daily_change, volume_24h, coin_rank in new_entry_coins:
+        message_lines.append("🆕 조건 만족 나머지 코인 👀")
+        for inst_id, daily_change, volume_24h, coin_rank in new_entry_coins[3:]:
             name = inst_id.replace("-USDT-SWAP", "")
             volume_str = format_volume_in_eok(volume_24h)
             df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=100)
-            if df_1h is not None and len(df_1h) >= 5:
-                rsi_1h = calc_rsi(df_1h, 5).iloc[-1]
-            else:
-                rsi_1h = None
+            rsi_1h = calc_rsi(df_1h, 5).iloc[-1] if df_1h is not None and len(df_1h) >= 5 else None
 
             daily_str = f"{daily_change:.2f}%"
             if daily_change >= 5:
@@ -250,7 +239,7 @@ def send_new_entry_message(all_ids):
         message_lines.append("\n━━━━━━━━━━━━━━━━━━━")
         send_telegram_message("\n".join(message_lines))
     else:
-        logging.info("⚡ 신규 진입 없음 → 메시지 전송 안 함")
+        logging.info("⚡ 조건 만족 코인 없음 → 메시지 전송 안 함")
 
 # =========================
 # 메인 실행
