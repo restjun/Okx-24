@@ -186,8 +186,11 @@ def send_new_entry_message(all_ids):
 
         ema5 = calc_ema(df_1h['c'], 5).iloc[-1]
         ema20 = calc_ema(df_1h['c'], 20).iloc[-1]
+        ema50 = calc_ema(df_1h['c'], 50).iloc[-1]
+        ema200 = calc_ema(df_1h['c'], 200).iloc[-1]
 
-        if 60 <= rsi_1h <= 70 and daily_change > 0 and ema5 > ema20:
+        # ✅ 정배열 조건 5 > 20 > 50 > 200 적용
+        if 60 <= rsi_1h <= 70 and daily_change > 0 and ema5 > ema20 > ema50 > ema200:
             new_entry_coins.append(
                 (inst_id, daily_change, volume_map.get(inst_id, 0), rank_map.get(inst_id))
             )
@@ -199,7 +202,7 @@ def send_new_entry_message(all_ids):
         new_entry_coins.sort(key=lambda x: x[2], reverse=True)
 
         message_lines = [
-            "⚡ 1H RSI + EMA 필터 (RSI 60~70, 상승률 양수, EMA 5>20)",
+            "⚡ 1H RSI + EMA 필터 (RSI 60~70, 상승률 양수, 5>20>50>200 정배열)",
             "━━━━━━━━━━━━━━━━━━━\n",
             "🏆 실거래대금 TOP 10\n"
         ]
