@@ -209,7 +209,7 @@ def send_new_entry_message(all_ids):
             volume_str = format_volume_in_eok(volume_24h)
             daily_str = f"{daily_change:.2f}%"
             if daily_change >= 5:
-                daily_str = f"🟢🔥 {daily_str}"
+                daily_str = f"🟢🚨🚨🚨 {daily_str}"
             elif daily_change > 0:
                 daily_str = f"🟢 {daily_str}"
 
