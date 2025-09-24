@@ -153,7 +153,7 @@ def get_24h_volume(inst_id):
     return df['volCcyQuote'].sum()
 
 # =========================
-# 신규 진입 알림 (RSI 60~70 유지 + 상승률 양수, TOP3 별도, 나머지 전체)
+# 신규 진입 알림 (RSI 60~70 유지 + 상승률 양수, TOP10 + 실거래대금 순위)
 # =========================
 def send_new_entry_message(all_ids):
     global sent_signal_coins
@@ -188,16 +188,17 @@ def send_new_entry_message(all_ids):
             sent_signal_coins[inst_id]["crossed"] = False
 
     if new_entry_coins:
+        # 실거래대금 기준 내림차순 정렬
         new_entry_coins.sort(key=lambda x: x[2], reverse=True)
 
         message_lines = [
             "⚡ 1H RSI 필터 (60~70 유지, 상승률 양수)",
             "━━━━━━━━━━━━━━━━━━━\n",
-            "🏆 실거래대금 TOP 3\n"
+            "🏆 실거래대금 TOP 10\n"
         ]
 
-        # 거래대금 TOP3
-        for rank, (inst_id, daily_change, volume_24h, coin_rank) in enumerate(new_entry_coins[:3], start=1):
+        # 거래대금 TOP10
+        for rank, (inst_id, daily_change, volume_24h, coin_rank) in enumerate(new_entry_coins[:10], start=1):
             name = inst_id.replace("-USDT-SWAP", "")
             volume_str = format_volume_in_eok(volume_24h)
             daily_str = f"{daily_change:.2f}%"
@@ -209,8 +210,9 @@ def send_new_entry_message(all_ids):
             df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=100)
             rsi_1h = calc_rsi(df_1h, 5).iloc[-1] if df_1h is not None and len(df_1h) >= 5 else None
 
+            # 실거래대금 순위 표시
             message_lines.append(
-                f"{rank}위 {name}\n"
+                f"{rank}위 {name} | 실거래대금 순위: {coin_rank}\n"
                 f"{daily_str} | 💰 거래대금: {volume_str}M\n"
                 f"📊 1H → RSI: {format_rsi(rsi_1h, 70)}"
             )
@@ -218,7 +220,7 @@ def send_new_entry_message(all_ids):
         # 나머지 코인 전체
         message_lines.append("\n━━━━━━━━━━━━━━━━━━━")
         message_lines.append("🆕 조건 만족 나머지 코인 👀")
-        for inst_id, daily_change, volume_24h, coin_rank in new_entry_coins[3:]:
+        for inst_id, daily_change, volume_24h, coin_rank in new_entry_coins[10:]:
             name = inst_id.replace("-USDT-SWAP", "")
             volume_str = format_volume_in_eok(volume_24h)
             df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=100)
@@ -231,7 +233,7 @@ def send_new_entry_message(all_ids):
                 daily_str = f"🟢 {daily_str}"
 
             message_lines.append(
-                f"\n{coin_rank}위 {name}\n"
+                f"\n{coin_rank}위 {name} | 실거래대금 순위: {coin_rank}\n"
                 f"{daily_str} | 💰 거래대금: {volume_str}M\n"
                 f"📊 1H → RSI: {format_rsi(rsi_1h, 70)}"
             )
