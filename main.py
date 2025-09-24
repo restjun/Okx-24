@@ -159,7 +159,7 @@ def get_24h_volume(inst_id):
     return df['volCcyQuote'].sum()
 
 # =========================
-# 신규 진입 알림 (TOP10만 표시)
+# 신규 진입 알림 (TOP10만 표시) → 4시간 기준
 # =========================
 def send_new_entry_message(all_ids):
     global sent_signal_coins
@@ -175,22 +175,22 @@ def send_new_entry_message(all_ids):
 
     # 조건 만족 코인 필터링
     for inst_id in top_ids:
-        df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=200)
-        if df_1h is None or len(df_1h) < 200:
+        df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=200)
+        if df_4h is None or len(df_4h) < 200:
             continue
 
-        rsi_1h = calc_rsi(df_1h, 5).iloc[-1]
+        rsi_4h = calc_rsi(df_4h, 5).iloc[-1]
         daily_change = calculate_daily_change(inst_id)
-        if rsi_1h is None or daily_change is None:
+        if rsi_4h is None or daily_change is None:
             continue
 
-        ema5 = calc_ema(df_1h['c'], 5).iloc[-1]
-        ema20 = calc_ema(df_1h['c'], 20).iloc[-1]
-        ema50 = calc_ema(df_1h['c'], 50).iloc[-1]
-        ema200 = calc_ema(df_1h['c'], 200).iloc[-1]
+        ema5 = calc_ema(df_4h['c'], 5).iloc[-1]
+        ema20 = calc_ema(df_4h['c'], 20).iloc[-1]
+        ema50 = calc_ema(df_4h['c'], 50).iloc[-1]
+        ema200 = calc_ema(df_4h['c'], 200).iloc[-1]
 
         # ✅ 정배열 조건 5 > 20 > 50 > 200 적용
-        if 60 <= rsi_1h <= 70 and daily_change > 0 and ema5 > ema20 > ema50 > ema200:
+        if 60 <= rsi_4h <= 70 and daily_change > 0 and ema5 > ema20 > ema50 > ema200:
             new_entry_coins.append(
                 (inst_id, daily_change, volume_map.get(inst_id, 0), rank_map.get(inst_id))
             )
@@ -202,7 +202,7 @@ def send_new_entry_message(all_ids):
         new_entry_coins.sort(key=lambda x: x[2], reverse=True)
 
         message_lines = [
-            "⚡ 1H RSI + EMA 필터 (RSI 60~70, 상승률 양수, 5>20>50>200 정배열)",
+            "⚡ 4H RSI + EMA 필터 (RSI 60~70, 상승률 양수, 5>20>50>200 정배열)",
             "━━━━━━━━━━━━━━━━━━━\n",
             "🏆 실거래대금 TOP 10\n"
         ]
@@ -216,13 +216,13 @@ def send_new_entry_message(all_ids):
             elif daily_change > 0:
                 daily_str = f"🟢 {daily_str}"
 
-            df_1h = get_ohlcv_okx(inst_id, bar='1H', limit=100)
-            rsi_1h = calc_rsi(df_1h, 5).iloc[-1] if df_1h is not None and len(df_1h) >= 5 else None
+            df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=100)
+            rsi_4h = calc_rsi(df_4h, 5).iloc[-1] if df_4h is not None and len(df_4h) >= 5 else None
 
             message_lines.append(
                 f"{rank}위 {name} | 실거래대금 순위: {coin_rank}\n"
                 f"{daily_str} | 💰 거래대금: {volume_str}M\n"
-                f"📊 1H → RSI: {format_rsi(rsi_1h, 70)}"
+                f"📊 4H → RSI: {format_rsi(rsi_4h, 70)}"
             )
 
         message_lines.append("\n━━━━━━━━━━━━━━━━━━━")
