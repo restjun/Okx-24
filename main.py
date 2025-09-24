@@ -16,7 +16,7 @@ telegram_user_id = 6596886700
 bot = telepot.Bot(telegram_bot_token)
 
 logging.basicConfig(level=logging.INFO)
-sent_signal_coins = {}
+last_top10 = []  # ✅ 이전 TOP10 저장
 
 # =========================
 # Telegram 메시지 전송
@@ -97,13 +97,6 @@ def calc_rsi(df, period=5):
     return rsi
 
 # =========================
-# EMA 계산
-# =========================
-
-def calc_ema(series, period):
-    return series.ewm(span=period, adjust=False).mean()
-
-# =========================
 # RSI 포맷팅
 # =========================
 
@@ -167,15 +160,24 @@ def get_24h_volume(inst_id):
     return df['volCcyQuote'].sum()
 
 # =========================
-# 거래대금 TOP10 알림
+# 거래대금 TOP10 알림 (변경 시만 발송)
 # =========================
 
 def send_new_entry_message(all_ids):
+    global last_top10
+
     volume_map = {inst_id: get_24h_volume(inst_id) for inst_id in all_ids}
     top_ids = sorted(volume_map, key=volume_map.get, reverse=True)[:10]
 
+    # ✅ 이전 TOP10과 비교
+    if last_top10 == top_ids:
+        logging.info("TOP10 변화 없음 → 메시지 전송 안 함")
+        return
+
+    last_top10 = top_ids  # ✅ 새로운 TOP10 저장
+
     message_lines = [
-        "💰 실시간 24H 거래대금 TOP 10",
+        "💰 실시간 24H 거래대금 TOP 10 (변경됨)",
         "━━━━━━━━━━━━━━━━━━━\n"
     ]
 
