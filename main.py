@@ -95,6 +95,12 @@ def calc_rsi(df, period=5):
     return rsi
 
 # =========================
+# EMA 계산
+# =========================
+def calc_ema(series, period):
+    return series.ewm(span=period, adjust=False).mean()
+
+# =========================
 # RSI 포맷팅
 # =========================
 def format_rsi(value, threshold=70):
@@ -153,7 +159,7 @@ def get_24h_volume(inst_id):
     return df['volCcyQuote'].sum()
 
 # =========================
-# 신규 진입 알림 (RSI 60~70 유지 + 상승률 양수, TOP10 + 실거래대금 순위)
+# 신규 진입 알림 (RSI 60~70 유지 + 상승률 양수 + EMA 5-20 정배열)
 # =========================
 def send_new_entry_message(all_ids):
     global sent_signal_coins
@@ -178,8 +184,12 @@ def send_new_entry_message(all_ids):
         if rsi_1h is None or daily_change is None:
             continue
 
-        # RSI 60~70 유지 + 상승률 양수 조건
-        if 60 <= rsi_1h <= 70 and daily_change > 0:
+        # EMA 5, EMA 20 계산
+        ema5 = calc_ema(df_1h['c'], 5).iloc[-1]
+        ema20 = calc_ema(df_1h['c'], 20).iloc[-1]
+
+        # 조건: RSI 60~70 유지 + 상승률 양수 + EMA 5 > EMA 20 (정배열)
+        if 60 <= rsi_1h <= 70 and daily_change > 0 and ema5 > ema20:
             new_entry_coins.append(
                 (inst_id, daily_change, volume_map.get(inst_id, 0), rank_map.get(inst_id))
             )
@@ -192,7 +202,7 @@ def send_new_entry_message(all_ids):
         new_entry_coins.sort(key=lambda x: x[2], reverse=True)
 
         message_lines = [
-            "⚡ 1H RSI 필터 (60~70 유지, 상승률 양수)",
+            "⚡ 1H RSI + EMA 필터 (RSI 60~70, 상승률 양수, EMA 5>20)",
             "━━━━━━━━━━━━━━━━━━━\n",
             "🏆 실거래대금 TOP 10\n"
         ]
