@@ -79,7 +79,7 @@ def rma(series, period):
     return r
 
 # =========================
-# RSI 계산 (기본 함수)
+# RSI 계산
 # =========================
 def calc_rsi(df, period=25):
     delta = df['c'].diff()
@@ -90,12 +90,6 @@ def calc_rsi(df, period=25):
     rs = avg_gain / avg_loss
     rsi = 100 - (100 / (1 + rs))
     return rsi
-
-# =========================
-# EMA 계산
-# =========================
-def calc_ema(series, period):
-    return series.ewm(span=period, adjust=False).mean()
 
 # =========================
 # RSI 포맷팅
@@ -156,12 +150,12 @@ def get_24h_volume(inst_id):
     return df['volCcyQuote'].sum()
 
 # =========================
-# 신규 진입 알림 (TOP10만 표시)
+# 신규 진입 알림 (RSI 60 돌파 감지)
 # =========================
 def send_new_entry_message(all_ids):
     global sent_signal_coins
     volume_map = {inst_id: get_24h_volume(inst_id) for inst_id in all_ids}
-    top_ids = sorted(volume_map, key=volume_map.get, reverse=True)[:10]
+    top_ids = sorted(volume_map, key=volume_map.get, reverse=True)[:100]
     rank_map = {inst_id: rank + 1 for rank, inst_id in enumerate(top_ids)}
 
     new_entry_coins = []
@@ -170,20 +164,21 @@ def send_new_entry_message(all_ids):
         if inst_id not in sent_signal_coins:
             sent_signal_coins[inst_id] = {"crossed": False, "time": None}
 
-    # 조건 필터링
     for inst_id in top_ids:
         df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=200)
-        if df_1d is None or len(df_1d) < 25:
+        if df_1d is None or len(df_1d) < 26:
             continue
 
-        rsi_1d = calc_rsi(df_1d, 25).iloc[-1]
+        rsi_series = calc_rsi(df_1d, 25)
+        prev_rsi = rsi_series.iloc[-2]
+        curr_rsi = rsi_series.iloc[-1]
+
         daily_change = calculate_daily_change(inst_id)
-
-        if rsi_1d is None or daily_change is None:
+        if prev_rsi is None or curr_rsi is None or daily_change is None:
             continue
 
-        # ✅ 조건: RSI(25, 1D) > 60, 상승률 > 0
-        if rsi_1d > 60 and daily_change > 0:
+        # ✅ 조건: RSI(25, 1D) 직전 <= 60, 현재 > 60, 상승률 > 0
+        if prev_rsi <= 60 and curr_rsi > 60 and daily_change > 0:
             new_entry_coins.append(
                 (inst_id, daily_change, volume_map.get(inst_id, 0), rank_map.get(inst_id))
             )
@@ -195,7 +190,7 @@ def send_new_entry_message(all_ids):
         new_entry_coins.sort(key=lambda x: x[2], reverse=True)
 
         message_lines = [
-            "⚡ 일봉 RSI 필터 (RSI 25 > 60, 상승률 양수)",
+            "⚡ 일봉 RSI 25 → 60 돌파 감지",
             "━━━━━━━━━━━━━━━━━━━\n",
             "🏆 실거래대금 TOP 10\n"
         ]
