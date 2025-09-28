@@ -10,7 +10,6 @@ import pandas as pd
 import numpy as np
 
 app = FastAPI()
-
 telegram_bot_token = "8451481398:AAHHg2wVDKphMruKsjN2b6NFKJ50jhxEe-g"
 telegram_user_id = 6596886700
 bot = telepot.Bot(telegram_bot_token)
@@ -81,7 +80,7 @@ def rma(series, period):
 # =========================
 # RSI 계산
 # =========================
-def calc_rsi(df, period=25):
+def calc_rsi(df, period=5):
     delta = df['c'].diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
@@ -92,12 +91,18 @@ def calc_rsi(df, period=25):
     return rsi
 
 # =========================
+# EMA 계산
+# =========================
+def calc_ema(series, period):
+    return series.ewm(span=period, adjust=False).mean()
+
+# =========================
 # RSI 포맷팅
 # =========================
-def format_rsi(value, threshold=60):
+def format_rsi(value, threshold=70):
     if pd.isna(value):
         return "(N/A)"
-    return f"🟢 {value:.1f}" if value > threshold else f"🔴 {value:.1f}"
+    return f"🔴 {value:.1f}" if value <= threshold else f"🟢 {value:.1f}"
 
 # =========================
 # 일간 상승률 계산 (1H 데이터 기반)
@@ -150,12 +155,12 @@ def get_24h_volume(inst_id):
     return df['volCcyQuote'].sum()
 
 # =========================
-# 신규 진입 알림 (RSI 60 돌파 감지)
+# 신규 진입 알림 (RSI 4H 70 돌파 조건)
 # =========================
 def send_new_entry_message(all_ids):
     global sent_signal_coins
     volume_map = {inst_id: get_24h_volume(inst_id) for inst_id in all_ids}
-    top_ids = sorted(volume_map, key=volume_map.get, reverse=True)[:100]
+    top_ids = sorted(volume_map, key=volume_map.get, reverse=True)[:10]
     rank_map = {inst_id: rank + 1 for rank, inst_id in enumerate(top_ids)}
 
     new_entry_coins = []
@@ -164,23 +169,26 @@ def send_new_entry_message(all_ids):
         if inst_id not in sent_signal_coins:
             sent_signal_coins[inst_id] = {"crossed": False, "time": None}
 
+    # RSI 조건 (4시간, 70 돌파)
     for inst_id in top_ids:
-        df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=200)
-        if df_1d is None or len(df_1d) < 26:
+        df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=200)
+        if df_4h is None or len(df_4h) < 200:
             continue
 
-        rsi_series = calc_rsi(df_1d, 25)
-        prev_rsi = rsi_series.iloc[-2]
-        curr_rsi = rsi_series.iloc[-1]
+        rsi_4h = calc_rsi(df_4h, 5)
+        if rsi_4h is None or len(rsi_4h) < 2:
+            continue
+
+        prev_rsi = rsi_4h.iloc[-2]
+        current_rsi = rsi_4h.iloc[-1]
 
         daily_change = calculate_daily_change(inst_id)
-        if prev_rsi is None or curr_rsi is None or daily_change is None:
+        if daily_change is None:
             continue
 
-        # ✅ 조건: RSI(25, 1D) 직전 <= 60, 현재 > 60, 상승률 > 0
-        if prev_rsi <= 60 and curr_rsi > 60 and daily_change > 0:
+        if prev_rsi < 70 and current_rsi >= 70:
             new_entry_coins.append(
-                (inst_id, daily_change, volume_map.get(inst_id, 0), rank_map.get(inst_id))
+                (inst_id, daily_change, volume_map.get(inst_id, 0), rank_map.get(inst_id), current_rsi)
             )
             sent_signal_coins[inst_id]["crossed"] = True
         else:
@@ -190,12 +198,12 @@ def send_new_entry_message(all_ids):
         new_entry_coins.sort(key=lambda x: x[2], reverse=True)
 
         message_lines = [
-            "⚡ 일봉 RSI 25 → 60 돌파 감지",
+            "⚡ 4H RSI 돌파 신호 (RSI 70 상향 돌파 발생)",
             "━━━━━━━━━━━━━━━━━━━\n",
             "🏆 실거래대금 TOP 10\n"
         ]
 
-        for rank, (inst_id, daily_change, volume_24h, coin_rank) in enumerate(new_entry_coins[:10], start=1):
+        for rank, (inst_id, daily_change, volume_24h, coin_rank, current_rsi) in enumerate(new_entry_coins[:10], start=1):
             name = inst_id.replace("-USDT-SWAP", "")
             volume_str = format_volume_in_eok(volume_24h)
             daily_str = f"{daily_change:.2f}%"
@@ -204,13 +212,10 @@ def send_new_entry_message(all_ids):
             elif daily_change > 0:
                 daily_str = f"🟢 {daily_str}"
 
-            df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=100)
-            rsi_1d = calc_rsi(df_1d, 25).iloc[-1] if df_1d is not None and len(df_1d) >= 25 else None
-
             message_lines.append(
                 f"{rank}위 {name} | 실거래대금 순위: {coin_rank}\n"
                 f"{daily_str} | 💰 거래대금: {volume_str}M\n"
-                f"📊 1D → RSI(25): {format_rsi(rsi_1d, 60)}"
+                f"📊 4H → RSI: 🟢 {current_rsi:.1f}"
             )
 
         message_lines.append("\n━━━━━━━━━━━━━━━━━━━")
