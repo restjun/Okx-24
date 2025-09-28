@@ -155,7 +155,7 @@ def get_24h_volume(inst_id):
     return df['volCcyQuote'].sum()
 
 # =========================
-# 신규 진입 알림 (RSI 4H 70 돌파 조건)
+# 신규 진입 알림 (일봉 RSI 10 돌파 + 정배열 조건)
 # =========================
 def send_new_entry_message(all_ids):
     global sent_signal_coins
@@ -169,18 +169,28 @@ def send_new_entry_message(all_ids):
         if inst_id not in sent_signal_coins:
             sent_signal_coins[inst_id] = {"crossed": False, "time": None}
 
-    # RSI 조건 (4시간, 70 돌파)
+    # RSI 조건 (일봉 RSI 10, 70 돌파)
     for inst_id in top_ids:
-        df_4h = get_ohlcv_okx(inst_id, bar='4H', limit=200)
-        if df_4h is None or len(df_4h) < 200:
+        df_1d = get_ohlcv_okx(inst_id, bar='1D', limit=300)
+        if df_1d is None or len(df_1d) < 200:
             continue
 
-        rsi_4h = calc_rsi(df_4h, 5)
-        if rsi_4h is None or len(rsi_4h) < 2:
+        rsi_1d = calc_rsi(df_1d, 10)
+        if rsi_1d is None or len(rsi_1d) < 2:
             continue
 
-        prev_rsi = rsi_4h.iloc[-2]
-        current_rsi = rsi_4h.iloc[-1]
+        prev_rsi = rsi_1d.iloc[-2]
+        current_rsi = rsi_1d.iloc[-1]
+
+        # 정배열 조건 확인 (EMA 10 > EMA 20 > EMA 50 > EMA 200)
+        ema10 = calc_ema(df_1d['c'], 10).iloc[-1]
+        ema20 = calc_ema(df_1d['c'], 20).iloc[-1]
+        ema50 = calc_ema(df_1d['c'], 50).iloc[-1]
+        ema200 = calc_ema(df_1d['c'], 200).iloc[-1]
+
+        is_bullish = ema10 > ema20 > ema50 > ema200
+        if not is_bullish:
+            continue
 
         daily_change = calculate_daily_change(inst_id)
         if daily_change is None:
@@ -198,7 +208,7 @@ def send_new_entry_message(all_ids):
         new_entry_coins.sort(key=lambda x: x[2], reverse=True)
 
         message_lines = [
-            "⚡ 4H RSI 돌파 신호 (RSI 70 상향 돌파 발생)",
+            "⚡ 일봉 RSI 10 돌파 신호 (RSI 70 상향 돌파 + 정배열 조건)",
             "━━━━━━━━━━━━━━━━━━━\n",
             "🏆 실거래대금 TOP 10\n"
         ]
@@ -215,7 +225,7 @@ def send_new_entry_message(all_ids):
             message_lines.append(
                 f"{rank}위 {name} | 실거래대금 순위: {coin_rank}\n"
                 f"{daily_str} | 💰 거래대금: {volume_str}M\n"
-                f"📊 4H → RSI: 🟢 {current_rsi:.1f}"
+                f"📊 1D → RSI: 🟢 {current_rsi:.1f}"
             )
 
         message_lines.append("\n━━━━━━━━━━━━━━━━━━━")
