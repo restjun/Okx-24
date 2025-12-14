@@ -69,6 +69,7 @@ def get_ohlcv_okx(inst_id, bar="1H", limit=48):
         )
         for col in ["c", "volCcyQuote"]:
             df[col] = df[col].astype(float)
+
         df = df.iloc[::-1].reset_index(drop=True)
         return df
     except Exception as e:
@@ -100,8 +101,8 @@ def calculate_daily_change(inst_id):
 # =========================
 def format_volume_in_eok(volume):
     try:
-        eok = int(volume // 1_000_000)
-        return f"{eok}M" if eok >= 1 else "🚫"
+        m = int(volume // 1_000_000)
+        return f"{m}M" if m >= 1 else "🚫"
     except:
         return "🚫"
 
@@ -127,28 +128,23 @@ def get_24h_volume(inst_id):
     return df["volCcyQuote"].sum()
 
 # =========================
-# 거래대금 TOP 신규진입 감지
+# 거래대금 TOP10 알림
 # =========================
 def send_volume_rank_message(all_ids):
     global previous_top10
 
     volume_map = {inst_id: get_24h_volume(inst_id) for inst_id in all_ids}
     top_ids = sorted(volume_map, key=volume_map.get, reverse=True)[:10]
-    current_top10 = set(top_ids)
 
+    current_top10 = set(top_ids)
     new_entries = current_top10 - previous_top10
 
-    if not new_entries:
-        logging.info("🔕 TOP10 신규 진입 없음 → 알림 미전송")
-        previous_top10 = current_top10
-        return
-
     message_lines = [
-        "🚨 실거래대금 TOP10 신규 진입 감지",
+        "🏆 OKX 실거래대금 TOP10",
         "━━━━━━━━━━━━━━━━━━━"
     ]
 
-    for inst_id in sorted(new_entries, key=lambda x: volume_map[x], reverse=True):
+    for rank, inst_id in enumerate(top_ids, start=1):
         name = inst_id.replace("-USDT-SWAP", "")
         volume_str = format_volume_in_eok(volume_map[inst_id])
 
@@ -162,8 +158,10 @@ def send_volume_rank_message(all_ids):
         else:
             daily_str = f"🔴 {daily_change:.2f}%"
 
+        new_mark = " 🚨NEW" if inst_id in new_entries else ""
+
         message_lines.append(
-            f"{name}\n"
+            f"🏅 {rank}위 | {name}{new_mark}\n"
             f"{daily_str} | 💰 거래대금: {volume_str}"
         )
 
@@ -176,7 +174,7 @@ def send_volume_rank_message(all_ids):
 # 메인
 # =========================
 def main():
-    logging.info("📥 실거래대금 TOP 신규진입 분석")
+    logging.info("📥 OKX 실거래대금 TOP10 분석")
     all_ids = get_all_okx_swap_symbols()
     send_volume_rank_message(all_ids)
 
