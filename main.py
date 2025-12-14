@@ -20,6 +20,11 @@ bot = telepot.Bot(telegram_bot_token)
 logging.basicConfig(level=logging.INFO)
 
 # =========================
+# 거래대금 TOP10 상태 저장
+# =========================
+previous_top10 = set()
+
+# =========================
 # Telegram 메시지 전송
 # =========================
 def send_telegram_message(message):
@@ -122,21 +127,30 @@ def get_24h_volume(inst_id):
     return df["volCcyQuote"].sum()
 
 # =========================
-# 거래대금 TOP 알림
+# 거래대금 TOP 신규진입 감지
 # =========================
 def send_volume_rank_message(all_ids):
+    global previous_top10
+
     volume_map = {inst_id: get_24h_volume(inst_id) for inst_id in all_ids}
     top_ids = sorted(volume_map, key=volume_map.get, reverse=True)[:10]
+    current_top10 = set(top_ids)
+
+    new_entries = current_top10 - previous_top10
+
+    if not new_entries:
+        logging.info("🔕 TOP10 신규 진입 없음 → 알림 미전송")
+        previous_top10 = current_top10
+        return
 
     message_lines = [
-        "💰 OKX USDT-SWAP 실거래대금 TOP 10",
+        "🚨 실거래대금 TOP10 신규 진입 감지",
         "━━━━━━━━━━━━━━━━━━━"
     ]
 
-    for rank, inst_id in enumerate(top_ids, start=1):
+    for inst_id in sorted(new_entries, key=lambda x: volume_map[x], reverse=True):
         name = inst_id.replace("-USDT-SWAP", "")
-        volume = volume_map.get(inst_id, 0)
-        volume_str = format_volume_in_eok(volume)
+        volume_str = format_volume_in_eok(volume_map[inst_id])
 
         daily_change = calculate_daily_change(inst_id)
         if daily_change is None:
@@ -149,18 +163,20 @@ def send_volume_rank_message(all_ids):
             daily_str = f"🔴 {daily_change:.2f}%"
 
         message_lines.append(
-            f"{rank}위 {name}\n"
+            f"{name}\n"
             f"{daily_str} | 💰 거래대금: {volume_str}"
         )
 
     message_lines.append("━━━━━━━━━━━━━━━━━━━")
     send_telegram_message("\n".join(message_lines))
 
+    previous_top10 = current_top10
+
 # =========================
 # 메인
 # =========================
 def main():
-    logging.info("📥 실거래대금 TOP 분석 시작")
+    logging.info("📥 실거래대금 TOP 신규진입 분석")
     all_ids = get_all_okx_swap_symbols()
     send_volume_rank_message(all_ids)
 
