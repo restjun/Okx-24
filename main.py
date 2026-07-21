@@ -152,8 +152,14 @@ def get_24h_volume(inst_id):
 def send_volume_rank_message(all_ids):
     global previous_top10
 
-    volume_map = {inst_id: get_24h_volume(inst_id) for inst_id in all_ids}
-    top_ids = sorted(volume_map, key=volume_map.get, reverse=True)[:20]
+    volume_map = {}
+
+for inst_id in all_ids:
+    # 4시간봉 EMA50 > EMA200인 종목만
+    if check_4h_ema_alignment(inst_id):
+        volume_map[inst_id] = get_24h_volume(inst_id)
+
+    top_ids = sorted(volume_map, key=volume_map.get, reverse=True)[:30]
 
     current_top10 = set(top_ids)
     new_entries = current_top10 - previous_top10
