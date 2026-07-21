@@ -173,9 +173,9 @@ def send_volume_rank_message(all_ids):
         if ema_alignment is None:
             ema_str = "EMA N/A"
         elif ema_alignment:
-            ema_str = "📈 EMA50 > EMA200"
+            ema_str = " 📈 정배열"
         else:
-            ema_str = "📉 EMA50 < EMA200"
+            ema_str = " 📉 역배열"
         if daily_change is None:
             daily_str = "N/A"
         elif daily_change >= 5:
