@@ -13,8 +13,8 @@ app = FastAPI()
 # =========================
 # Telegram 설정
 # =========================
-telegram_bot_token = "YOUR_BOT_TOKEN"
-telegram_user_id = YOUR_CHAT_ID
+telegram_bot_token = "6389499820:AAFjTTrRgNjhoKPSZ-bWB5RMhPLlWQ0lnGU"
+telegram_user_id = 6596886700
 bot = telepot.Bot(telegram_bot_token)
 
 logging.basicConfig(level=logging.INFO)
@@ -305,3 +305,4 @@ if __name__ == "__main__":
         host="0.0.0.0",
         port=8000
     )
+    
