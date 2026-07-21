@@ -190,8 +190,8 @@ def send_volume_rank_message(all_ids):
         message_lines.append(
             f"🏅 {rank}위 | {name}{new_mark}\n"
             f"{daily_str} "
-            f"{ema_str}\n"
-            f"💰 거래대금: {volume_str}\n"
+            f"{ema_str} "
+            f"💰 {volume_str}\n"
         )
     message_lines.append("━━━━━━━━━━━━━━━━━━━")
     send_telegram_message("\n".join(message_lines))
