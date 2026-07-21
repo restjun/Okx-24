@@ -75,7 +75,26 @@ def get_ohlcv_okx(inst_id, bar="1H", limit=48):
     except Exception as e:
         logging.error(f"{inst_id} OHLCV 파싱 실패: {e}")
         return None
+# =========================
+# 4시간봉 EMA50 > EMA200 확인
+# =========================
+def check_4h_ema_alignment(inst_id):
+    df = get_ohlcv_okx(inst_id, bar="4H", limit=250)
 
+    if df is None or len(df) < 200:
+        return None
+
+    try:
+        close = df["c"]
+
+        ema50 = close.ewm(span=50, adjust=False).mean().iloc[-1]
+        ema200 = close.ewm(span=200, adjust=False).mean().iloc[-1]
+
+        return ema50 > ema200
+
+    except Exception as e:
+        logging.error(f"{inst_id} EMA 계산 실패: {e}")
+        return None
 # =========================
 # 일간 상승률 계산
 # =========================
@@ -149,6 +168,14 @@ def send_volume_rank_message(all_ids):
         volume_str = format_volume_in_eok(volume_map[inst_id])
 
         daily_change = calculate_daily_change(inst_id)
+        ema_alignment = check_4h_ema_alignment(inst_id)
+
+        if ema_alignment is None:
+            ema_str = "EMA N/A"
+        elif ema_alignment:
+            ema_str = "📈 EMA50 > EMA200"
+        else:
+            ema_str = "📉 EMA50 < EMA200"
         if daily_change is None:
             daily_str = "N/A"
         elif daily_change >= 5:
