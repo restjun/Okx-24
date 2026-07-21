@@ -153,13 +153,13 @@ def send_volume_rank_message(all_ids):
     global previous_top10
 
     volume_map = {inst_id: get_24h_volume(inst_id) for inst_id in all_ids}
-    top_ids = sorted(volume_map, key=volume_map.get, reverse=True)[:10]
+    top_ids = sorted(volume_map, key=volume_map.get, reverse=True)[:20]
 
     current_top10 = set(top_ids)
     new_entries = current_top10 - previous_top10
 
     message_lines = [
-        "🏆 OKX 실거래대금 TOP10",
+        "🏆 OKX 실거래대금 TOP20",
         "━━━━━━━━━━━━━━━━━━━"
     ]
 
@@ -175,7 +175,7 @@ def send_volume_rank_message(all_ids):
         elif ema_alignment:
             ema_str = " 📈 정배열"
         else:
-            ema_str = " 📉 역배열"
+            ema_str = " "
         if daily_change is None:
             daily_str = "N/A"
         elif daily_change >= 5:
