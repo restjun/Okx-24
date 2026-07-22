@@ -101,7 +101,7 @@ def get_ohlcv_okx(inst_id, bar="1H", limit=48):
 # =========================
 def check_4h_ema_alignment(inst_id):
 
-    df = get_ohlcv_okx(inst_id, bar="15m", limit=250)
+    df = get_ohlcv_okx(inst_id, bar="4H", limit=250)
 
     if df is None or len(df) < 200:
         return None
@@ -217,7 +217,7 @@ def send_volume_rank_message(all_ids):
 
     message_lines = [
         "🏆 OKX 실거래대금 TOP10",
-        "📈 15분 EMA50 > EMA200",
+        "📈 4시간 EMA50 > EMA200",
         "━━━━━━━━━━━━━━━━━━━"
     ]
 
