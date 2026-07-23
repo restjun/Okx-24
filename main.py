@@ -109,8 +109,8 @@ def check_4h_ema_alignment(inst_id):
     try:
         close = df["c"]
 
-        ema50 = close.ewm(span=20, adjust=False).mean().iloc[-1]
-        ema200 = close.ewm(span=50, adjust=False).mean().iloc[-1]
+        ema50 = close.ewm(span=50, adjust=False).mean().iloc[-1]
+        ema200 = close.ewm(span=200, adjust=False).mean().iloc[-1]
 
         return ema50 > ema200
 
@@ -217,7 +217,7 @@ def send_volume_rank_message(all_ids):
 
     message_lines = [
         "🏆 OKX 실거래대금 TOP10",
-        "📈 4시간 EMA20 > EMA50",
+        "📈 4시간 EMA50 > EMA200",
         "━━━━━━━━━━━━━━━━━━━"
     ]
 
