@@ -210,13 +210,13 @@ def send_volume_rank_message(all_ids):
         volume_map,
         key=volume_map.get,
         reverse=True
-    )[:10]
+    )[:20]
 
     current_top30 = set(top_ids)
     new_entries = current_top30 - previous_top30
 
     message_lines = [
-        "🏆 OKX 실거래대금 TOP10",
+        "🏆 OKX 실거래대금 TOP20",
         "📈 4시간 EMA50 > EMA200",
         "━━━━━━━━━━━━━━━━━━━"
     ]
