@@ -17,10 +17,8 @@ telegram_bot_token = "6389499820:AAFjTTrRgNjhoKPSZ-bWB5RMhPLlWQ0lnGU"
 telegram_user_id = 6596886700
 bot = telepot.Bot(telegram_bot_token)
 
-logging.basicConfig(level=logging.INFO)
-
 # =========================
-# 거래대금 TOP30 상태 저장
+# 거래대금 TOP20 상태 저장
 # =========================
 previous_top30 = set()
 
@@ -73,19 +71,12 @@ def get_ohlcv_okx(inst_id, bar="1H", limit=48):
         df = pd.DataFrame(
             response.json()["data"],
             columns=[
-                "ts",
-                "o",
-                "h",
-                "l",
-                "c",
-                "vol",
-                "volCcy",
-                "volCcyQuote",
-                "confirm",
-            ],
+                "ts","o","h","l","c","vol",
+                "volCcy","volCcyQuote","confirm"
+            ]
         )
 
-        for col in ["c", "volCcyQuote"]:
+        for col in ["c","volCcyQuote"]:
             df[col] = df[col].astype(float)
 
         df = df.iloc[::-1].reset_index(drop=True)
@@ -106,19 +97,15 @@ def check_4h_ema_alignment(inst_id):
     if df is None or len(df) < 200:
         return None
 
-    try:
-        close = df["c"]
+    close = df["c"]
 
-        ema50 = close.ewm(span=50, adjust=False).mean().iloc[-1]
-        ema200 = close.ewm(span=200, adjust=False).mean().iloc[-1]
+    ema50 = close.ewm(span=50, adjust=False).mean().iloc[-1]
+    ema200 = close.ewm(span=200, adjust=False).mean().iloc[-1]
 
-        return ema50 > ema200
+    return ema50 > ema200
 
-    except Exception as e:
-        logging.error(f"{inst_id} EMA 계산 실패: {e}")
-        return None
-     # =========================
-# 일간 상승률 계산
+# =========================
+# 일간 상승률
 # =========================
 def calculate_daily_change(inst_id):
 
@@ -127,23 +114,19 @@ def calculate_daily_change(inst_id):
     if df is None or len(df) < 24:
         return None
 
-    try:
-        df["datetime"] = pd.to_datetime(df["ts"], unit="ms") + pd.Timedelta(hours=9)
-        df.set_index("datetime", inplace=True)
+    df["datetime"] = pd.to_datetime(df["ts"], unit="ms") + pd.Timedelta(hours=9)
+    df.set_index("datetime", inplace=True)
 
-        daily = df["c"].resample("1D", offset="9h").last()
+    daily = df["c"].resample("1D", offset="9h").last()
 
-        if len(daily) < 2:
-            return None
-
-        return round(
-            (daily.iloc[-1] - daily.iloc[-2]) / daily.iloc[-2] * 100,
-            2
-        )
-
-    except:
+    if len(daily) < 2:
         return None
 
+    return round(
+        (daily.iloc[-1]-daily.iloc[-2])
+        /daily.iloc[-2]*100,
+        2
+    )
 
 # =========================
 # 거래대금 포맷
@@ -157,9 +140,8 @@ def format_volume_in_eok(volume):
     except:
         return "🚫"
 
-
 # =========================
-# OKX USDT-SWAP 전체 심볼
+# 전체 심볼
 # =========================
 def get_all_okx_swap_symbols():
 
@@ -170,14 +152,13 @@ def get_all_okx_swap_symbols():
     if response is None:
         return []
 
-    data = response.json().get("data", [])
+    data = response.json()["data"]
 
     return [
         item["instId"]
         for item in data
         if "USDT" in item["instId"]
     ]
-
 
 # =========================
 # 24시간 거래대금
@@ -190,27 +171,33 @@ def get_24h_volume(inst_id):
         return 0
 
     return df["volCcyQuote"].sum()
- # =========================
-# 거래대금 TOP30 알림 (정배열만)
+
+# =========================
+# 거래대금 TOP20 알림
 # =========================
 def send_volume_rank_message(all_ids):
+
     global previous_top30
 
     volume_map = {}
 
-    # 4시간봉 EMA50 > EMA200 종목만
+    # 먼저 모든 종목 거래대금 계산
     for inst_id in all_ids:
+        volume_map[inst_id] = get_24h_volume(inst_id)
 
-        if check_4h_ema_alignment(inst_id):
-
-            volume_map[inst_id] = get_24h_volume(inst_id)
-
-    # 거래대금 TOP30
+    # 거래대금 TOP20 선정
     top_ids = sorted(
         volume_map,
         key=volume_map.get,
         reverse=True
     )[:20]
+    
+    # TOP20만 EMA 검사
+    top_ids = [
+        inst_id
+        for inst_id in top_ids
+        if check_4h_ema_alignment(inst_id)
+    ]
 
     current_top30 = set(top_ids)
     new_entries = current_top30 - previous_top30
@@ -257,11 +244,13 @@ def send_volume_rank_message(all_ids):
     )
 
     previous_top30 = current_top30
- # =========================
+
+
+# =========================
 # 메인
 # =========================
 def main():
-    logging.info("📥 OKX 실거래대금 TOP30 분석 (4H EMA20 > EMA50)")
+    logging.info("📥 OKX 실거래대금 TOP20 분석 (거래대금 → EMA50 > EMA200)")
 
     all_ids = get_all_okx_swap_symbols()
 
@@ -304,5 +293,5 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-    )
+        )
     
