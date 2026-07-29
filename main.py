@@ -23,6 +23,10 @@ logging.basicConfig(
 
 latest_data = []
 
+long_candidates = []
+
+short_candidates = []
+
 
 
 # =========================
@@ -46,6 +50,7 @@ def retry_request(func, *args, **kwargs):
                 if result.status_code == 429:
 
                     time.sleep(1)
+
                     continue
 
 
@@ -66,7 +71,6 @@ def retry_request(func, *args, **kwargs):
 
 
 
-
 # =========================
 # OKX 캔들 데이터
 # =========================
@@ -77,12 +81,14 @@ def get_ohlcv_okx(
     limit=48
 ):
 
+
     url = (
         "https://www.okx.com/api/v5/market/candles"
         f"?instId={inst_id}"
         f"&bar={bar}"
         f"&limit={limit}"
     )
+
 
 
     response = retry_request(
@@ -98,6 +104,7 @@ def get_ohlcv_okx(
 
 
     try:
+
 
         df = pd.DataFrame(
             response.json()["data"],
@@ -127,20 +134,25 @@ def get_ohlcv_okx(
         )
 
 
+
         df = (
             df.iloc[::-1]
             .reset_index(drop=True)
         )
 
 
+
         return df
+
 
 
     except Exception as e:
 
+
         logging.error(
-            f"{inst_id} 캔들 오류 : {e}"
+            f"{inst_id} 데이터 오류 : {e}"
         )
+
 
         return None
 
@@ -161,6 +173,7 @@ def get_all_okx_swap_symbols():
     )
 
 
+
     response = retry_request(
         requests.get,
         url
@@ -172,19 +185,21 @@ def get_all_okx_swap_symbols():
         return []
 
 
+
     data = response.json().get(
         "data",
         []
     )
 
 
+
     return [
 
-        x["instId"]
+        item["instId"]
 
-        for x in data
+        for item in data
 
-        if "USDT" in x["instId"]
+        if "USDT" in item["instId"]
 
     ]
 
@@ -193,7 +208,7 @@ def get_all_okx_swap_symbols():
 
 
 # =========================
-# 업비트 상장 목록
+# 업비트 KRW 상장 목록
 # =========================
 
 def get_upbit_symbols():
@@ -204,10 +219,12 @@ def get_upbit_symbols():
     )
 
 
+
     response = retry_request(
         requests.get,
         url
     )
+
 
 
     if response is None:
@@ -222,15 +239,15 @@ def get_upbit_symbols():
 
     return {
 
-        x["market"]
+        item["market"]
         .replace(
             "KRW-",
             ""
         )
 
-        for x in data
+        for item in data
 
-        if x["market"].startswith(
+        if item["market"].startswith(
             "KRW-"
         )
 
@@ -260,6 +277,7 @@ def get_24h_volume(inst_id):
         return 0
 
 
+
     return (
         df["volCcyQuote"]
         .sum()
@@ -278,19 +296,24 @@ def format_volume(volume):
 
     if volume >= 100_000_000_000:
 
+
         return (
             f"{volume / 100_000_000_000:.2f}조"
         )
 
 
+
     elif volume >= 100_000_000:
+
 
         return (
             f"{volume / 100_000_000:,.0f}억"
         )
 
 
+
     else:
+
 
         return (
             f"{volume / 10_000:,.0f}만"
@@ -315,6 +338,7 @@ def check_ema_status(
         bar=bar,
         limit=220
     )
+
 
 
     if df is None or len(df) < 200:
@@ -353,6 +377,7 @@ def check_ema_status(
     ):
 
         return "🟢정배열"
+
 
 
     else:
@@ -433,37 +458,32 @@ def calculate_daily_change(inst_id):
 
 
 # =========================
-# TOP30 업데이트
+# TOP20 업데이트
 # =========================
 
 def update_dashboard():
 
-
     global latest_data
+    global long_candidates
+    global short_candidates
 
 
     logging.info(
-        "OKX TOP30 검색 시작"
+        "OKX TOP20 검색 시작"
     )
 
 
 
-    okx_symbols = (
-        get_all_okx_swap_symbols()
-    )
+    symbols = get_all_okx_swap_symbols()
 
 
-    if not okx_symbols:
+    if not symbols:
 
         return
 
 
 
-    # 업비트 목록
-
-    upbit_list = (
-        get_upbit_symbols()
-    )
+    upbit_list = get_upbit_symbols()
 
 
 
@@ -471,33 +491,37 @@ def update_dashboard():
 
 
 
-    for inst_id in okx_symbols:
+    # 거래대금 계산
+
+    for inst_id in symbols:
 
 
         volume_map[inst_id] = (
-            get_24h_volume(
-                inst_id
-            )
+            get_24h_volume(inst_id)
         )
 
 
 
-    # 거래대금 TOP30
+    # 거래대금 TOP20
 
-    top30 = sorted(
+    top20 = sorted(
         volume_map,
         key=volume_map.get,
         reverse=True
-    )[:30]
+    )[:20]
 
 
 
     rows = []
 
+    long_candidates = []
+
+    short_candidates = []
+
 
 
     for rank, inst_id in enumerate(
-        top30,
+        top20,
         start=1
     ):
 
@@ -511,11 +535,13 @@ def update_dashboard():
         )
 
 
-        # 업비트 상장 표시
+        display_name = coin
+
+
 
         if coin in upbit_list:
 
-            coin += "(업비트)"
+            display_name += "(업비트)"
 
 
 
@@ -562,10 +588,52 @@ def update_dashboard():
 
 
 
+        # =========================
+        # 매매 후보
+        # 거래대금 순서 유지
+        # =========================
+
+
+        if (
+            ema4h == "🟢정배열"
+            and
+            ema15m == "🔴역배열"
+        ):
+
+
+            long_candidates.append(
+                {
+                    "name": display_name,
+                    "volume": volume,
+                    "ema4h": ema4h,
+                    "ema15m": ema15m
+                }
+            )
+
+
+
+        elif (
+            ema4h == "🔴역배열"
+            and
+            ema15m == "🟢역배열"
+        ):
+
+
+            short_candidates.append(
+                {
+                    "name": display_name,
+                    "volume": volume,
+                    "ema4h": ema4h,
+                    "ema15m": ema15m
+                }
+            )
+
+
+
         rows.append(
             {
                 "rank": rank,
-                "name": coin,
+                "name": display_name,
                 "change": change_text,
                 "volume": volume,
                 "ema4h": ema4h,
@@ -580,7 +648,7 @@ def update_dashboard():
 
 
     logging.info(
-        "TOP30 업데이트 완료"
+        "TOP20 업데이트 완료"
     )
 
 
@@ -609,7 +677,7 @@ def dashboard():
 
 
 <title>
-OKX TOP30
+OKX TOP20
 </title>
 
 
@@ -655,7 +723,7 @@ padding:12px;
 
 td{
 
-padding:12px;
+padding:10px;
 
 border-bottom:1px solid #444;
 
@@ -665,6 +733,18 @@ font-size:17px;
 
 }
 
+
+.box{
+
+margin-top:25px;
+
+padding:15px;
+
+background:#222;
+
+font-size:17px;
+
+}
 
 </style>
 
@@ -676,39 +756,21 @@ font-size:17px;
 
 
 <h2>
-🏆 OKX 실거래대금 TOP30
+🏆 OKX 실거래대금 TOP20
 </h2>
+
 
 
 <table>
 
-
 <tr>
 
-<th>
-순위
-</th>
-
-<th>
-코인
-</th>
-
-<th>
-변동
-</th>
-
-<th>
-거래대금
-</th>
-
-<th>
-4H EMA
-</th>
-
-<th>
-15M EMA
-</th>
-
+<th>순위</th>
+<th>코인</th>
+<th>변동</th>
+<th>거래대금</th>
+<th>4H EMA</th>
+<th>15M EMA</th>
 
 </tr>
 
@@ -723,35 +785,17 @@ font-size:17px;
 
 <tr>
 
-<td>
-{item['rank']}
-</td>
+<td>{item['rank']}</td>
 
+<td>{item['name']}</td>
 
-<td>
-{item['name']}
-</td>
+<td>{item['change']}</td>
 
+<td>{item['volume']}</td>
 
-<td>
-{item['change']}
-</td>
+<td>{item['ema4h']}</td>
 
-
-<td>
-{item['volume']}
-</td>
-
-
-<td>
-{item['ema4h']}
-</td>
-
-
-<td>
-{item['ema15m']}
-</td>
-
+<td>{item['ema15m']}</td>
 
 </tr>
 
@@ -762,6 +806,83 @@ font-size:17px;
     html += """
 
 </table>
+
+
+<div class="box">
+
+
+📌 롱 추천 (거래대금 순)
+
+<br><br>
+
+"""
+
+
+
+    if long_candidates:
+
+
+        for i, item in enumerate(
+            long_candidates,
+            start=1
+        ):
+
+
+            html += (
+                f"{i} "
+                f"{item['name']} "
+                f"{item['volume']} "
+                f"4H{item['ema4h']} "
+                f"15M{item['ema15m']}<br>"
+            )
+
+
+    else:
+
+        html += "없음"
+
+
+
+    html += """
+
+<br><br>
+
+
+📌 숏 추천 (거래대금 순)
+
+<br><br>
+
+"""
+
+
+
+    if short_candidates:
+
+
+        for i, item in enumerate(
+            short_candidates,
+            start=1
+        ):
+
+
+            html += (
+                f"{i} "
+                f"{item['name']} "
+                f"{item['volume']} "
+                f"4H{item['ema4h']} "
+                f"15M{item['ema15m']}<br>"
+            )
+
+
+    else:
+
+        html += "없음"
+
+
+
+    html += """
+
+</div>
 
 
 </body>
@@ -792,6 +913,7 @@ def scheduler():
 
 
 
+
 @app.on_event("startup")
 def startup():
 
@@ -799,8 +921,6 @@ def startup():
     update_dashboard()
 
 
-
-    # 5분마다 갱신
 
     schedule.every(
         5
@@ -830,4 +950,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-)
+        )
