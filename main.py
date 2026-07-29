@@ -12,14 +12,14 @@ import pandas as pd
 app = FastAPI()
 
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO
+)
 
 
 # =========================
-# 전역 저장 데이터
+# 전역 데이터
 # =========================
-
-previous_top10 = set()
 
 latest_data = []
 
@@ -36,11 +36,15 @@ def retry_request(func, *args, **kwargs):
 
             result = func(*args, **kwargs)
 
+
             if hasattr(result, "status_code"):
 
                 if result.status_code == 429:
+
                     time.sleep(1)
+
                     continue
+
 
             return result
 
@@ -48,7 +52,7 @@ def retry_request(func, *args, **kwargs):
         except Exception as e:
 
             logging.error(
-                f"API 실패 ({attempt+1}/10): {e}"
+                f"API 실패 {attempt+1}/10 : {e}"
             )
 
             time.sleep(3)
@@ -70,7 +74,9 @@ def get_ohlcv_okx(
 
     url = (
         "https://www.okx.com/api/v5/market/candles"
-        f"?instId={inst_id}&bar={bar}&limit={limit}"
+        f"?instId={inst_id}"
+        f"&bar={bar}"
+        f"&limit={limit}"
     )
 
 
@@ -81,7 +87,9 @@ def get_ohlcv_okx(
 
 
     if response is None:
+
         return None
+
 
 
     try:
@@ -97,18 +105,17 @@ def get_ohlcv_okx(
                 "vol",
                 "volCcy",
                 "volCcyQuote",
-                "confirm",
-            ],
+                "confirm"
+            ]
         )
 
 
-        for col in [
-            "c",
-            "volCcyQuote"
-        ]:
+        df["c"] = df["c"].astype(float)
 
-            df[col] = df[col].astype(float)
-
+        df["volCcyQuote"] = (
+            df["volCcyQuote"]
+            .astype(float)
+        )
 
 
         df = (
@@ -122,13 +129,174 @@ def get_ohlcv_okx(
 
     except Exception as e:
 
+
         logging.error(
-            f"{inst_id} 데이터 오류 : {e}"
+            f"{inst_id} 캔들 오류 : {e}"
         )
+
 
         return None
 
 
+
+# =========================
+# OKX USDT-SWAP 목록
+# =========================
+
+def get_all_okx_swap_symbols():
+
+
+    url = (
+        "https://www.okx.com/api/v5/public/"
+        "instruments?instType=SWAP"
+    )
+
+
+    response = retry_request(
+        requests.get,
+        url
+    )
+
+
+    if response is None:
+
+        return []
+
+
+
+    data = response.json().get(
+        "data",
+        []
+    )
+
+
+    return [
+
+        x["instId"]
+
+        for x in data
+
+        if "USDT" in x["instId"]
+
+    ]
+
+
+
+# =========================
+# 24시간 거래대금
+# =========================
+
+def get_24h_volume(inst_id):
+
+
+    df = get_ohlcv_okx(
+        inst_id,
+        bar="1H",
+        limit=24
+    )
+
+
+    if df is None:
+
+        return 0
+
+
+
+    return (
+        df["volCcyQuote"]
+        .sum()
+    )
+
+
+
+# =========================
+# 거래대금 표시
+# =========================
+
+def format_volume(volume):
+
+
+    if volume >= 1_000_000_000:
+
+        return (
+            f"{volume/1_000_000_000:.1f}B"
+        )
+
+
+    elif volume >= 100_000_000:
+
+
+        return (
+            f"{volume/100_000_000:.0f}M"
+        )
+
+
+    else:
+
+        return (
+            f"{volume/1_000_000:.1f}M"
+        )
+
+
+
+# =========================
+# EMA50 / EMA200 체크
+# =========================
+
+def check_ema_status(
+    inst_id,
+    bar
+):
+
+
+    df = get_ohlcv_okx(
+        inst_id,
+        bar=bar,
+        limit=220
+    )
+
+
+    if df is None or len(df) < 200:
+
+        return "N/A"
+
+
+
+    df["ema50"] = (
+        df["c"]
+        .ewm(
+            span=50,
+            adjust=False
+        )
+        .mean()
+    )
+
+
+    df["ema200"] = (
+        df["c"]
+        .ewm(
+            span=200,
+            adjust=False
+        )
+        .mean()
+    )
+
+
+
+    ema50 = df["ema50"].iloc[-1]
+
+    ema200 = df["ema200"].iloc[-1]
+
+
+
+    if ema50 > ema200:
+
+        return "🟢정배열"
+
+
+    else:
+
+        return "🔴역배열"
 
 # =========================
 # 일봉 변동률
@@ -155,7 +323,8 @@ def calculate_daily_change(inst_id):
                 df["ts"],
                 unit="ms"
             )
-            + pd.Timedelta(hours=9)
+            +
+            pd.Timedelta(hours=9)
         )
 
 
@@ -180,7 +349,6 @@ def calculate_daily_change(inst_id):
             return None
 
 
-
         return round(
             (
                 daily.iloc[-1]
@@ -201,199 +369,19 @@ def calculate_daily_change(inst_id):
 
 
 
-# =========================
-# 거래대금 표시
-# =========================
-
-def format_volume_in_eok(volume):
-
-    try:
-
-        m = int(
-            volume
-            /
-            1_000_000
-        )
-
-        return f"{m}M"
-
-
-    except:
-
-        return "0"
-# =========================
-# OKX USDT-SWAP 목록
-# =========================
-
-def get_all_okx_swap_symbols():
-
-    url = (
-        "https://www.okx.com/api/v5/public/"
-        "instruments?instType=SWAP"
-    )
-
-
-    response = retry_request(
-        requests.get,
-        url
-    )
-
-
-    if response is None:
-
-        return []
-
-
-    data = response.json().get(
-        "data",
-        []
-    )
-
-
-    return [
-        item["instId"]
-        for item in data
-        if "USDT" in item["instId"]
-    ]
-
-
 
 # =========================
-# 24시간 거래대금
+# TOP30 데이터 생성
 # =========================
 
-def get_24h_volume(inst_id):
+def update_dashboard():
 
-    df = get_ohlcv_okx(
-        inst_id,
-        bar="1H",
-        limit=24
-    )
-
-
-    if df is None or len(df) < 24:
-
-        return 0
-
-
-    return df["volCcyQuote"].sum()
-
-
-
-# =========================
-# TOP10 데이터 저장
-# =========================
-
-def save_dashboard_data(all_ids):
 
     global latest_data
-    global previous_top10
-
-
-    volume_map = {}
-
-
-    for inst_id in all_ids:
-
-        volume_map[inst_id] = (
-            get_24h_volume(inst_id)
-        )
-
-
-
-    top_ids = sorted(
-        volume_map,
-        key=volume_map.get,
-        reverse=True
-    )[:10]
-
-
-
-    current_top10 = set(top_ids)
-
-
-
-    rows = []
-
-
-
-    for rank, inst_id in enumerate(
-        top_ids,
-        start=1
-    ):
-
-
-        name = (
-            inst_id
-            .replace(
-                "-USDT-SWAP",
-                ""
-            )
-        )
-
-
-        volume = format_volume_in_eok(
-            volume_map[inst_id]
-        )
-
-
-        change = calculate_daily_change(
-            inst_id
-        )
-
-
-
-        if change is None:
-
-            change_text = "N/A"
-
-
-        elif change > 0:
-
-            change_text = (
-                f"🟢 +{change}%"
-            )
-
-
-        else:
-
-            change_text = (
-                f"🔴 {change}%"
-            )
-
-
-
-        rows.append(
-            {
-                "rank": rank,
-                "name": name,
-                "change": change_text,
-                "volume": volume
-            }
-        )
-
-
-
-    latest_data = rows
-
-
-    previous_top10 = current_top10
 
 
     logging.info(
-        "대시보드 데이터 업데이트 완료"
-    )
-
-
-
-# =========================
-# 메인 실행
-# =========================
-
-def main():
-
-    logging.info(
-        "OKX TOP10 검색 시작"
+        "OKX TOP30 검색 시작"
     )
 
 
@@ -412,9 +400,117 @@ def main():
 
 
 
-    save_dashboard_data(
-        all_ids
+    volume_map = {}
+
+
+
+    for inst_id in all_ids:
+
+
+        volume_map[inst_id] = (
+            get_24h_volume(
+                inst_id
+            )
+        )
+
+
+
+    # 거래대금 TOP30
+
+    top30 = sorted(
+        volume_map,
+        key=volume_map.get,
+        reverse=True
+    )[:30]
+
+
+
+    rows = []
+
+
+
+    for rank, inst_id in enumerate(
+        top30,
+        start=1
+    ):
+
+
+        name = (
+            inst_id
+            .replace(
+                "-USDT-SWAP",
+                ""
+            )
+        )
+
+
+
+        volume = format_volume(
+            volume_map[inst_id]
+        )
+
+
+
+        change = calculate_daily_change(
+            inst_id
+        )
+
+
+        if change is None:
+
+            change_text = "N/A"
+
+        elif change > 0:
+
+            change_text = (
+                f"🟢+{change}%"
+            )
+
+        else:
+
+            change_text = (
+                f"🔴{change}%"
+            )
+
+
+
+        # EMA 체크
+
+        ema4h = check_ema_status(
+            inst_id,
+            "4H"
+        )
+
+
+        ema15m = check_ema_status(
+            inst_id,
+            "15m"
+        )
+
+
+
+        rows.append(
+            {
+                "rank": rank,
+                "name": name,
+                "change": change_text,
+                "volume": volume,
+                "ema4h": ema4h,
+                "ema15m": ema15m
+            }
+        )
+
+
+
+    latest_data = rows
+
+
+
+    logging.info(
+        "TOP30 업데이트 완료"
     )
+
+
 
 
 
@@ -435,11 +531,11 @@ def dashboard():
 
 <head>
 
-<meta http-equiv="refresh" content="10">
+<meta http-equiv="refresh" content="60">
 
 
 <title>
-OKX Dashboard
+OKX TOP30
 </title>
 
 
@@ -485,13 +581,13 @@ padding:12px;
 
 td{
 
-padding:12px;
+padding:10px;
 
 border-bottom:1px solid #444;
 
 text-align:center;
 
-font-size:18px;
+font-size:17px;
 
 }
 
@@ -506,13 +602,8 @@ font-size:18px;
 
 
 <h2>
-🏆 OKX 실거래대금 TOP10
+🏆 OKX 실거래대금 TOP30
 </h2>
-
-
-<p>
-자동 업데이트 : 1분
-</p>
 
 
 <table>
@@ -524,16 +615,29 @@ font-size:18px;
 순위
 </th>
 
+
 <th>
 코인
 </th>
 
+
 <th>
-24시간 변동
+변동
 </th>
+
 
 <th>
 거래대금
+</th>
+
+
+<th>
+4H EMA
+</th>
+
+
+<th>
+15M EMA
 </th>
 
 
@@ -548,6 +652,7 @@ font-size:18px;
         html += f"""
 
 <tr>
+
 
 <td>
 {item['rank']}
@@ -569,6 +674,16 @@ font-size:18px;
 </td>
 
 
+<td>
+{item['ema4h']}
+</td>
+
+
+<td>
+{item['ema15m']}
+</td>
+
+
 </tr>
 
 """
@@ -581,7 +696,6 @@ font-size:18px;
 
 </body>
 
-
 </html>
 
 """
@@ -591,11 +705,13 @@ font-size:18px;
 
 
 
+
+
 # =========================
 # 스케줄러
 # =========================
 
-def run_scheduler():
+def scheduler():
 
     while True:
 
@@ -605,24 +721,30 @@ def run_scheduler():
 
 
 
+
+
 @app.on_event("startup")
-def start_scheduler():
+def startup():
 
 
-    main()
+    update_dashboard()
+
 
 
     schedule.every(
         1
     ).minutes.do(
-        main
+        update_dashboard
     )
 
 
+
     threading.Thread(
-        target=run_scheduler,
+        target=scheduler,
         daemon=True
     ).start()
+
+
 
 
 
