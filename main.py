@@ -24,6 +24,7 @@ logging.basicConfig(
 latest_data = []
 
 
+
 # =========================
 # API 재시도
 # =========================
@@ -34,7 +35,10 @@ def retry_request(func, *args, **kwargs):
 
         try:
 
-            result = func(*args, **kwargs)
+            result = func(
+                *args,
+                **kwargs
+            )
 
 
             if hasattr(result, "status_code"):
@@ -42,7 +46,6 @@ def retry_request(func, *args, **kwargs):
                 if result.status_code == 429:
 
                     time.sleep(1)
-
                     continue
 
 
@@ -59,6 +62,8 @@ def retry_request(func, *args, **kwargs):
 
 
     return None
+
+
 
 
 
@@ -110,7 +115,11 @@ def get_ohlcv_okx(
         )
 
 
-        df["c"] = df["c"].astype(float)
+        df["c"] = (
+            df["c"]
+            .astype(float)
+        )
+
 
         df["volCcyQuote"] = (
             df["volCcyQuote"]
@@ -129,13 +138,13 @@ def get_ohlcv_okx(
 
     except Exception as e:
 
-
         logging.error(
             f"{inst_id} 캔들 오류 : {e}"
         )
 
-
         return None
+
+
 
 
 
@@ -163,7 +172,6 @@ def get_all_okx_swap_symbols():
         return []
 
 
-
     data = response.json().get(
         "data",
         []
@@ -179,6 +187,57 @@ def get_all_okx_swap_symbols():
         if "USDT" in x["instId"]
 
     ]
+
+
+
+
+
+# =========================
+# 업비트 상장 목록
+# =========================
+
+def get_upbit_symbols():
+
+
+    url = (
+        "https://api.upbit.com/v1/market/all"
+    )
+
+
+    response = retry_request(
+        requests.get,
+        url
+    )
+
+
+    if response is None:
+
+        return set()
+
+
+
+    data = response.json()
+
+
+
+    return {
+
+        x["market"]
+        .replace(
+            "KRW-",
+            ""
+        )
+
+        for x in data
+
+        if x["market"].startswith(
+            "KRW-"
+        )
+
+    }
+
+
+
 
 
 
@@ -201,19 +260,22 @@ def get_24h_volume(inst_id):
         return 0
 
 
-
     return (
         df["volCcyQuote"]
         .sum()
     )
 
+
+
+
+
 # =========================
-# 거래대금 표시 (억/조)
+# 거래대금 표시
 # =========================
 
 def format_volume(volume):
 
-    # 1조 이상
+
     if volume >= 100_000_000_000:
 
         return (
@@ -221,7 +283,6 @@ def format_volume(volume):
         )
 
 
-    # 1억 이상
     elif volume >= 100_000_000:
 
         return (
@@ -229,12 +290,12 @@ def format_volume(volume):
         )
 
 
-    # 1억 미만
     else:
 
         return (
             f"{volume / 10_000:,.0f}만"
         )
+
 
 
 
@@ -262,6 +323,7 @@ def check_ema_status(
 
 
 
+
     df["ema50"] = (
         df["c"]
         .ewm(
@@ -270,6 +332,7 @@ def check_ema_status(
         )
         .mean()
     )
+
 
 
     df["ema200"] = (
@@ -283,13 +346,11 @@ def check_ema_status(
 
 
 
-    ema50 = df["ema50"].iloc[-1]
-
-    ema200 = df["ema200"].iloc[-1]
-
-
-
-    if ema50 > ema200:
+    if (
+        df["ema50"].iloc[-1]
+        >
+        df["ema200"].iloc[-1]
+    ):
 
         return "🟢정배열"
 
@@ -370,8 +431,9 @@ def calculate_daily_change(inst_id):
 
 
 
+
 # =========================
-# TOP30 데이터 생성
+# TOP30 업데이트
 # =========================
 
 def update_dashboard():
@@ -385,18 +447,23 @@ def update_dashboard():
     )
 
 
-    all_ids = (
+
+    okx_symbols = (
         get_all_okx_swap_symbols()
     )
 
 
-    if not all_ids:
-
-        logging.error(
-            "심볼 조회 실패"
-        )
+    if not okx_symbols:
 
         return
+
+
+
+    # 업비트 목록
+
+    upbit_list = (
+        get_upbit_symbols()
+    )
 
 
 
@@ -404,7 +471,7 @@ def update_dashboard():
 
 
 
-    for inst_id in all_ids:
+    for inst_id in okx_symbols:
 
 
         volume_map[inst_id] = (
@@ -435,13 +502,20 @@ def update_dashboard():
     ):
 
 
-        name = (
+        coin = (
             inst_id
             .replace(
                 "-USDT-SWAP",
                 ""
             )
         )
+
+
+        # 업비트 상장 표시
+
+        if coin in upbit_list:
+
+            coin += "(업비트)"
 
 
 
@@ -454,6 +528,7 @@ def update_dashboard():
         change = calculate_daily_change(
             inst_id
         )
+
 
 
         if change is None:
@@ -474,8 +549,6 @@ def update_dashboard():
 
 
 
-        # EMA 체크
-
         ema4h = check_ema_status(
             inst_id,
             "4H"
@@ -492,7 +565,7 @@ def update_dashboard():
         rows.append(
             {
                 "rank": rank,
-                "name": name,
+                "name": coin,
                 "change": change_text,
                 "volume": volume,
                 "ema4h": ema4h,
@@ -509,6 +582,7 @@ def update_dashboard():
     logging.info(
         "TOP30 업데이트 완료"
     )
+
 
 
 
@@ -531,7 +605,7 @@ def dashboard():
 
 <head>
 
-<meta http-equiv="refresh" content="60">
+<meta http-equiv="refresh" content="300">
 
 
 <title>
@@ -581,7 +655,7 @@ padding:12px;
 
 td{
 
-padding:10px;
+padding:12px;
 
 border-bottom:1px solid #444;
 
@@ -615,26 +689,21 @@ font-size:17px;
 순위
 </th>
 
-
 <th>
 코인
 </th>
-
 
 <th>
 변동
 </th>
 
-
 <th>
 거래대금
 </th>
 
-
 <th>
 4H EMA
 </th>
-
 
 <th>
 15M EMA
@@ -646,13 +715,13 @@ font-size:17px;
 """
 
 
+
     for item in latest_data:
 
 
         html += f"""
 
 <tr>
-
 
 <td>
 {item['rank']}
@@ -689,6 +758,7 @@ font-size:17px;
 """
 
 
+
     html += """
 
 </table>
@@ -722,7 +792,6 @@ def scheduler():
 
 
 
-
 @app.on_event("startup")
 def startup():
 
@@ -731,8 +800,10 @@ def startup():
 
 
 
+    # 5분마다 갱신
+
     schedule.every(
-        1
+        5
     ).minutes.do(
         update_dashboard
     )
@@ -759,4 +830,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-    )
+)
