@@ -7,6 +7,7 @@ import threading
 import uvicorn
 import logging
 import pandas as pd
+from datetime import datetime
 
 
 app = FastAPI()
@@ -23,6 +24,8 @@ latest_data = []
 long_candidates = []
 
 short_candidates = []
+
+last_update_time = ""
 
 
 
@@ -61,13 +64,13 @@ def retry_request(func, *args, **kwargs):
 
 
 # =========================
-# OKX 캔들
+# OKX 캔들 조회
 # =========================
 
 def get_ohlcv_okx(
-    inst_id,
-    bar="1H",
-    limit=48
+        inst_id,
+        bar="1H",
+        limit=48
 ):
 
     url = (
@@ -114,19 +117,16 @@ def get_ohlcv_okx(
         )
 
 
-        df = (
+        return (
             df.iloc[::-1]
             .reset_index(drop=True)
         )
 
 
-        return df
-
-
     except Exception as e:
 
         logging.error(
-            f"{inst_id} 오류 : {e}"
+            f"{inst_id} 캔들 오류 : {e}"
         )
 
         return None
@@ -155,17 +155,11 @@ def get_all_okx_swap_symbols():
         return []
 
 
-    data = response.json().get(
-        "data",
-        []
-    )
-
-
     return [
 
         x["instId"]
 
-        for x in data
+        for x in response.json()["data"]
 
         if "USDT" in x["instId"]
 
@@ -212,6 +206,59 @@ def get_upbit_symbols():
 
 
 # =========================
+# 종목 종류 표시
+# =========================
+
+def get_asset_type(inst_id):
+
+    # 현재 데이터는 OKX 선물이므로 전부 암호화폐
+
+    if "-USDT-SWAP" in inst_id:
+
+        return "암호화폐"
+
+
+    return "기타"
+
+
+
+# =========================
+# 코인명 표시
+# =========================
+
+def format_name(
+        inst_id,
+        upbit_list
+):
+
+    coin = (
+        inst_id
+        .replace(
+            "-USDT-SWAP",
+            ""
+        )
+    )
+
+
+    asset_type = get_asset_type(
+        inst_id
+    )
+
+
+    if coin in upbit_list:
+
+        return (
+            f"{coin} | {asset_type} | 업비트"
+        )
+
+
+    return (
+        f"{coin} | {asset_type}"
+    )
+
+
+
+# =========================
 # 24시간 거래대금
 # =========================
 
@@ -225,10 +272,14 @@ def get_24h_volume(inst_id):
 
 
     if df is None:
+
         return 0
 
 
-    return df["volCcyQuote"].sum()
+    return (
+        df["volCcyQuote"]
+        .sum()
+    )
 
 
 
@@ -241,21 +292,21 @@ def format_volume(volume):
     if volume >= 100_000_000_000:
 
         return (
-            f"{volume / 100_000_000_000:.2f}조USDT"
+            f"{volume/100_000_000_000:.2f}조 USDT"
         )
 
 
     elif volume >= 100_000_000:
 
         return (
-            f"{volume / 100_000_000:,.0f}억USDT"
+            f"{volume/100_000_000:.0f}억 USDT"
         )
 
 
     else:
 
         return (
-            f"{volume / 10_000:,.0f}만USDT"
+            f"{volume/10_000:.0f}만 USDT"
         )
 
 # =========================
@@ -297,6 +348,7 @@ def check_ema_status(inst_id, bar):
     )
 
 
+
     if (
         df["ema50"].iloc[-1]
         >
@@ -305,6 +357,7 @@ def check_ema_status(inst_id, bar):
 
         return "🟢정배열"
 
+
     else:
 
         return "🔴역배열"
@@ -312,9 +365,8 @@ def check_ema_status(inst_id, bar):
 
 
 
-
 # =========================
-# 변동률
+# 일봉 변동률
 # =========================
 
 def calculate_daily_change(inst_id):
@@ -326,7 +378,7 @@ def calculate_daily_change(inst_id):
     )
 
 
-    if df is None or len(df) < 24:
+    if df is None:
 
         return None
 
@@ -363,6 +415,7 @@ def calculate_daily_change(inst_id):
         return None
 
 
+
     return round(
         (
             daily.iloc[-1]
@@ -379,7 +432,6 @@ def calculate_daily_change(inst_id):
 
 
 
-
 # =========================
 # TOP10 업데이트
 # =========================
@@ -389,10 +441,12 @@ def update_dashboard():
     global latest_data
     global long_candidates
     global short_candidates
+    global last_update_time
+
 
 
     logging.info(
-        "OKX TOP10 검색 시작"
+        "OKX TOP10 업데이트 시작"
     )
 
 
@@ -404,10 +458,13 @@ def update_dashboard():
         return
 
 
+
     upbit_list = get_upbit_symbols()
 
 
+
     volume_map = {}
+
 
 
     for inst_id in symbols:
@@ -417,8 +474,6 @@ def update_dashboard():
         )
 
 
-
-    # 실제 거래대금 TOP10
 
     top10 = sorted(
         volume_map,
@@ -438,31 +493,21 @@ def update_dashboard():
 
     for rank, inst_id in enumerate(
         top10,
-        start=1
+        1
     ):
 
 
-        coin = (
-            inst_id
-            .replace(
-                "-USDT-SWAP",
-                ""
-            )
+        name = format_name(
+            inst_id,
+            upbit_list
         )
-
-
-        name = coin
-
-
-        if coin in upbit_list:
-
-            name += "(업비트)"
 
 
 
         volume = format_volume(
             volume_map[inst_id]
         )
+
 
 
         change = calculate_daily_change(
@@ -474,13 +519,19 @@ def update_dashboard():
 
             change_text = "N/A"
 
+
         elif change > 0:
 
-            change_text = f"🟢+{change}%"
+            change_text = (
+                f"🟢+{change}%"
+            )
+
 
         else:
 
-            change_text = f"🔴{change}%"
+            change_text = (
+                f"🔴{change}%"
+            )
 
 
 
@@ -503,6 +554,8 @@ def update_dashboard():
 
 
 
+        # 롱 후보
+
         if (
             ema4h == "🟢정배열"
             and
@@ -519,6 +572,9 @@ def update_dashboard():
                 }
             )
 
+
+
+        # 숏 후보
 
         elif (
             ema4h == "🔴역배열"
@@ -551,12 +607,22 @@ def update_dashboard():
         )
 
 
+
     latest_data = rows
+
+
+    last_update_time = (
+        datetime.now()
+        .strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+    )
 
 
     logging.info(
         "OKX TOP10 업데이트 완료"
     )
+
 
 
 
@@ -571,8 +637,9 @@ def update_dashboard():
 
 def dashboard():
 
-    html = """
+    html = f"""
 <html>
+
 <head>
 
 <meta http-equiv="refresh" content="300">
@@ -584,38 +651,39 @@ OKX TOP10
 
 <style>
 
-body{
+body{{
 background:#111;
 color:white;
 font-family:Arial;
 padding:20px;
-}
+}}
 
-table{
+table{{
 width:100%;
 border-collapse:collapse;
-}
+}}
 
-th{
+th{{
 background:#333;
-padding:12px;
-}
+padding:10px;
+}}
 
-td{
+td{{
 padding:10px;
 border-bottom:1px solid #444;
 text-align:center;
-}
+}}
 
-.box{
-margin-top:20px;
+.box{{
 background:#222;
 padding:15px;
-}
+margin-top:20px;
+}}
 
 </style>
 
 </head>
+
 
 <body>
 
@@ -625,16 +693,25 @@ padding:15px;
 </h2>
 
 
+<p>
+조회시간 : {last_update_time}
+</p>
+
+
+
 <table>
 
+
 <tr>
+
 <th>순위</th>
-<th>코인</th>
+<th>종목</th>
 <th>변동</th>
 <th>거래대금</th>
 <th>1D EMA</th>
 <th>4H EMA</th>
 <th>15M EMA</th>
+
 </tr>
 
 """
@@ -732,16 +809,13 @@ padding:15px;
 </div>
 
 </body>
+
 </html>
 
 """
 
 
     return html
-
-
-
-
 
 # =========================
 # 스케줄러
@@ -758,14 +832,21 @@ def scheduler():
 
 
 
+# =========================
+# 서버 시작
+# =========================
 
 @app.on_event("startup")
-
 def startup():
 
 
+    # 최초 1회 실행
+
     update_dashboard()
 
+
+
+    # 5분마다 갱신
 
     schedule.every(
         5
@@ -774,11 +855,11 @@ def startup():
     )
 
 
+
     threading.Thread(
         target=scheduler,
         daemon=True
     ).start()
-
 
 
 
@@ -794,4 +875,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-                    )
+    )
