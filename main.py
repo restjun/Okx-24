@@ -38,13 +38,11 @@ def retry_request(func, *args, **kwargs):
 
             result = func(*args, **kwargs)
 
-
             if hasattr(result, "status_code"):
 
                 if result.status_code == 429:
                     time.sleep(1)
                     continue
-
 
             return result
 
@@ -59,8 +57,6 @@ def retry_request(func, *args, **kwargs):
 
 
     return None
-
-
 
 
 
@@ -89,9 +85,7 @@ def get_ohlcv_okx(
 
 
     if response is None:
-
         return None
-
 
 
     try:
@@ -112,11 +106,7 @@ def get_ohlcv_okx(
         )
 
 
-        df["c"] = (
-            df["c"]
-            .astype(float)
-        )
-
+        df["c"] = df["c"].astype(float)
 
         df["volCcyQuote"] = (
             df["volCcyQuote"]
@@ -133,7 +123,6 @@ def get_ohlcv_okx(
         return df
 
 
-
     except Exception as e:
 
         logging.error(
@@ -141,8 +130,6 @@ def get_ohlcv_okx(
         )
 
         return None
-
-
 
 
 
@@ -165,7 +152,6 @@ def get_all_okx_swap_symbols():
 
 
     if response is None:
-
         return []
 
 
@@ -187,10 +173,8 @@ def get_all_okx_swap_symbols():
 
 
 
-
-
 # =========================
-# 업비트 상장 목록
+# 업비트 목록
 # =========================
 
 def get_upbit_symbols():
@@ -207,7 +191,6 @@ def get_upbit_symbols():
 
 
     if response is None:
-
         return set()
 
 
@@ -228,8 +211,6 @@ def get_upbit_symbols():
 
 
 
-
-
 # =========================
 # 24시간 거래대금
 # =========================
@@ -238,22 +219,16 @@ def get_24h_volume(inst_id):
 
     df = get_ohlcv_okx(
         inst_id,
-        bar="1H",
-        limit=24
+        "1H",
+        24
     )
 
 
     if df is None:
-
         return 0
 
 
-    return (
-        df["volCcyQuote"]
-        .sum()
-    )
-
-
+    return df["volCcyQuote"].sum()
 
 
 
@@ -263,9 +238,7 @@ def get_24h_volume(inst_id):
 
 def format_volume(volume):
 
-
     if volume >= 100_000_000_000:
-
 
         return (
             f"{volume / 100_000_000_000:.2f}조USDT"
@@ -274,7 +247,6 @@ def format_volume(volume):
 
     elif volume >= 100_000_000:
 
-
         return (
             f"{volume / 100_000_000:,.0f}억USDT"
         )
@@ -282,29 +254,20 @@ def format_volume(volume):
 
     else:
 
-
         return (
             f"{volume / 10_000:,.0f}만USDT"
         )
-
-
-
-
 
 # =========================
 # EMA 상태
 # =========================
 
-def check_ema_status(
-    inst_id,
-    bar
-):
-
+def check_ema_status(inst_id, bar):
 
     df = get_ohlcv_okx(
         inst_id,
-        bar=bar,
-        limit=220
+        bar,
+        220
     )
 
 
@@ -334,7 +297,6 @@ def check_ema_status(
     )
 
 
-
     if (
         df["ema50"].iloc[-1]
         >
@@ -342,7 +304,6 @@ def check_ema_status(
     ):
 
         return "🟢정배열"
-
 
     else:
 
@@ -360,8 +321,8 @@ def calculate_daily_change(inst_id):
 
     df = get_ohlcv_okx(
         inst_id,
-        bar="1H",
-        limit=48
+        "1H",
+        48
     )
 
 
@@ -414,8 +375,13 @@ def calculate_daily_change(inst_id):
         100,
         2
     )
-    # =========================
-# TOP20 업데이트
+
+
+
+
+
+# =========================
+# TOP10 업데이트
 # =========================
 
 def update_dashboard():
@@ -426,7 +392,7 @@ def update_dashboard():
 
 
     logging.info(
-        "OKX TOP20 검색 시작"
+        "OKX TOP10 검색 시작"
     )
 
 
@@ -438,16 +404,11 @@ def update_dashboard():
         return
 
 
-
     upbit_list = get_upbit_symbols()
-
 
 
     volume_map = {}
 
-
-
-    # 전체 거래대금 계산
 
     for inst_id in symbols:
 
@@ -457,13 +418,13 @@ def update_dashboard():
 
 
 
-    # 거래대금 TOP20
+    # 실제 거래대금 TOP10
 
-    top20 = sorted(
+    top10 = sorted(
         volume_map,
         key=volume_map.get,
         reverse=True
-    )[:20]
+    )[:10]
 
 
 
@@ -476,10 +437,9 @@ def update_dashboard():
 
 
     for rank, inst_id in enumerate(
-        top20,
+        top10,
         start=1
     ):
-
 
 
         coin = (
@@ -491,9 +451,7 @@ def update_dashboard():
         )
 
 
-
         name = coin
-
 
 
         if coin in upbit_list:
@@ -507,34 +465,24 @@ def update_dashboard():
         )
 
 
-
         change = calculate_daily_change(
             inst_id
         )
-
 
 
         if change is None:
 
             change_text = "N/A"
 
-
         elif change > 0:
 
-            change_text = (
-                f"🟢+{change}%"
-            )
-
+            change_text = f"🟢+{change}%"
 
         else:
 
-            change_text = (
-                f"🔴{change}%"
-            )
+            change_text = f"🔴{change}%"
 
 
-
-        # EMA 확인
 
         ema1d = check_ema_status(
             inst_id,
@@ -555,29 +503,21 @@ def update_dashboard():
 
 
 
-        # =====================
-        # 후보 조건
-        # 일봉 제외
-        # =====================
-
-
         if (
             ema4h == "🟢정배열"
             and
             ema15m == "🔴역배열"
         ):
 
-
             long_candidates.append(
                 {
-                    "name": name,
-                    "volume": volume,
-                    "ema1d": ema1d,
-                    "ema4h": ema4h,
-                    "ema15m": ema15m
+                    "name":name,
+                    "volume":volume,
+                    "ema1d":ema1d,
+                    "ema4h":ema4h,
+                    "ema15m":ema15m
                 }
             )
-
 
 
         elif (
@@ -586,14 +526,13 @@ def update_dashboard():
             ema15m == "🟢정배열"
         ):
 
-
             short_candidates.append(
                 {
-                    "name": name,
-                    "volume": volume,
-                    "ema1d": ema1d,
-                    "ema4h": ema4h,
-                    "ema15m": ema15m
+                    "name":name,
+                    "volume":volume,
+                    "ema1d":ema1d,
+                    "ema4h":ema4h,
+                    "ema15m":ema15m
                 }
             )
 
@@ -601,28 +540,23 @@ def update_dashboard():
 
         rows.append(
             {
-                "rank": rank,
-                "name": name,
-                "change": change_text,
-                "volume": volume,
-                "ema1d": ema1d,
-                "ema4h": ema4h,
-                "ema15m": ema15m
+                "rank":rank,
+                "name":name,
+                "change":change_text,
+                "volume":volume,
+                "ema1d":ema1d,
+                "ema4h":ema4h,
+                "ema15m":ema15m
             }
         )
-
 
 
     latest_data = rows
 
 
     logging.info(
-        "TOP20 업데이트 완료"
+        "OKX TOP10 업데이트 완료"
     )
-
-
-
-
 
 
 
@@ -634,108 +568,66 @@ def update_dashboard():
     "/",
     response_class=HTMLResponse
 )
+
 def dashboard():
 
-
     html = """
-
 <html>
-
 <head>
 
 <meta http-equiv="refresh" content="300">
 
-
 <title>
-OKX TOP20
+OKX TOP10
 </title>
 
 
 <style>
 
 body{
-
 background:#111;
-
 color:white;
-
 font-family:Arial;
-
 padding:20px;
-
 }
-
-
-h2{
-
-color:#00ff99;
-
-}
-
 
 table{
-
 width:100%;
-
 border-collapse:collapse;
-
 }
-
 
 th{
-
 background:#333;
-
 padding:12px;
-
 }
-
 
 td{
-
 padding:10px;
-
 border-bottom:1px solid #444;
-
 text-align:center;
-
-font-size:16px;
-
 }
 
-
 .box{
-
-margin-top:25px;
-
+margin-top:20px;
 background:#222;
-
 padding:15px;
-
-font-size:16px;
-
 }
 
 </style>
 
 </head>
 
-
-
 <body>
 
 
 <h2>
-🏆 OKX 실거래대금 TOP20
+🏆 OKX 실거래대금 TOP10
 </h2>
-
 
 
 <table>
 
-
 <tr>
-
 <th>순위</th>
 <th>코인</th>
 <th>변동</th>
@@ -743,32 +635,23 @@ font-size:16px;
 <th>1D EMA</th>
 <th>4H EMA</th>
 <th>15M EMA</th>
-
 </tr>
 
 """
 
 
-
     for item in latest_data:
-
 
         html += f"""
 
 <tr>
 
 <td>{item['rank']}</td>
-
 <td>{item['name']}</td>
-
 <td>{item['change']}</td>
-
 <td>{item['volume']}</td>
-
 <td>{item['ema1d']}</td>
-
 <td>{item['ema4h']}</td>
-
 <td>{item['ema15m']}</td>
 
 </tr>
@@ -785,33 +668,28 @@ font-size:16px;
 <div class="box">
 
 
-📌 롱 추천 (거래대금 순)
+📌 롱 추천
+
 
 <br><br>
 
 """
 
 
-
     if long_candidates:
 
-
-        for i, item in enumerate(
+        for i,item in enumerate(
             long_candidates,
-            start=1
+            1
         ):
 
-
             html += (
-
-                f"{i} {item['name']} "
+                f"{i}. {item['name']} "
                 f"{item['volume']}<br>"
-                f"  1D{item['ema1d']} "
-                f"4H{item['ema4h']} "
-                f"15M{item['ema15m']}<br><br>"
-
+                f"1D {item['ema1d']} "
+                f"4H {item['ema4h']} "
+                f"15M {item['ema15m']}<br><br>"
             )
-
 
     else:
 
@@ -821,33 +699,27 @@ font-size:16px;
 
     html += """
 
-📌 숏 추천 (거래대금 순)
+📌 숏 추천
 
 <br><br>
 
 """
 
 
-
     if short_candidates:
 
-
-        for i, item in enumerate(
+        for i,item in enumerate(
             short_candidates,
-            start=1
+            1
         ):
 
-
             html += (
-
-                f"{i} {item['name']} "
+                f"{i}. {item['name']} "
                 f"{item['volume']}<br>"
-                f"  1D{item['ema1d']} "
-                f"4H{item['ema4h']} "
-                f"15M{item['ema15m']}<br><br>"
-
+                f"1D {item['ema1d']} "
+                f"4H {item['ema4h']} "
+                f"15M {item['ema15m']}<br><br>"
             )
-
 
     else:
 
@@ -859,16 +731,13 @@ font-size:16px;
 
 </div>
 
-
 </body>
-
 </html>
 
 """
 
 
     return html
-
 
 
 
@@ -891,11 +760,11 @@ def scheduler():
 
 
 @app.on_event("startup")
+
 def startup():
 
 
     update_dashboard()
-
 
 
     schedule.every(
@@ -903,7 +772,6 @@ def startup():
     ).minutes.do(
         update_dashboard
     )
-
 
 
     threading.Thread(
@@ -926,4 +794,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-    )
+                    )
