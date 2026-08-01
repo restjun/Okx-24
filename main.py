@@ -365,7 +365,7 @@ def check_ema_status(inst_id, bar):
     df["ema50"] = (
         df["c"]
         .ewm(
-            span=50,
+            span=20,
             adjust=False
         )
         .mean()
@@ -375,7 +375,7 @@ def check_ema_status(inst_id, bar):
     df["ema200"] = (
         df["c"]
         .ewm(
-            span=200,
+            span=50,
             adjust=False
         )
         .mean()
