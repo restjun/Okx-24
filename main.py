@@ -243,6 +243,45 @@ def get_upbit_symbols():
 
 
 # =========================
+# USDT → KRW 환율
+# =========================
+
+def get_usdt_krw():
+
+
+    url = (
+        "https://api.upbit.com/v1/ticker"
+        "?markets=KRW-USDT"
+    )
+
+
+    response = retry_request(
+        requests.get,
+        url
+    )
+
+
+    if response is None:
+
+        return 1400
+
+
+
+    try:
+
+        return response.json()[0]["trade_price"]
+
+
+    except Exception:
+
+
+        return 1400
+
+
+
+
+
+# =========================
 # 24시간 거래대금
 # =========================
 
@@ -268,36 +307,47 @@ def get_24h_volume(inst_id):
     )
 
 
+
+
+
 # =========================
-# 거래대금 표시
+# 거래대금 표시 (KRW)
 # =========================
+
 def format_volume(volume):
 
-    # 1조 이상
+
     if volume >= 1_000_000_000_000:
-        return f"{volume / 1_000_000_000_000:.2f}조"
 
-    # 1000억 이상
-    elif volume >= 100_000_000_000:
-        return f"{volume / 100_000_000:.0f}억"
 
-    # 100억 이상
-    elif volume >= 10_000_000_000:
-        return f"{volume / 100_000_000:.1f}억"
+        return (
+            f"{volume / 1_000_000_000_000:.2f}조"
+        )
 
-    # 1억 이상
+
+
     elif volume >= 100_000_000:
-        return f"{volume / 100_000_000:.2f}억"
 
-    # 1억 미만
+
+        return (
+            f"{volume / 100_000_000:,.0f}억"
+        )
+
+
+
     else:
-        return f"{volume / 10_000:.0f}만원"
+
+
+        return (
+            f"{volume / 10_000:,.0f}만원"
+        )
 
 # =========================
 # EMA 상태
 # =========================
 
 def check_ema_status(inst_id, bar):
+
 
     df = get_ohlcv_okx(
         inst_id,
@@ -332,10 +382,15 @@ def check_ema_status(inst_id, bar):
     )
 
 
+
     if (
+
         df["ema50"].iloc[-1]
+
         >
+
         df["ema200"].iloc[-1]
+
     ):
 
         return "🟢정배열"
@@ -439,6 +494,7 @@ def calculate_daily_change(inst_id):
 
 
 
+
 # =========================
 # TOP10 업데이트
 # =========================
@@ -474,6 +530,14 @@ def update_dashboard():
 
 
 
+    # =========================
+    # USDT → KRW 환산
+    # =========================
+
+    usdt_krw = get_usdt_krw()
+
+
+
     volume_map = {}
 
 
@@ -481,9 +545,19 @@ def update_dashboard():
     for inst_id in symbols:
 
 
+        usdt_volume = get_24h_volume(
+            inst_id
+        )
+
+
+        # USDT 거래대금 → KRW
         volume_map[inst_id] = (
 
-            get_24h_volume(inst_id)
+            usdt_volume
+
+            *
+
+            usdt_krw
 
         )
 
@@ -491,7 +565,9 @@ def update_dashboard():
 
 
 
-    # 실제 거래대금 TOP10
+    # =========================
+    # 실거래대금 TOP10
+    # =========================
 
     top10 = sorted(
 
@@ -631,30 +707,44 @@ def update_dashboard():
 
             "15m"
 
-    )
+        )
+
+
 
         # =========================
         # 롱 후보
         # =========================
 
         if (
+
             ema4h == "🟢정배열"
+
             and
+
             ema15m == "🔴역배열"
+
         ):
 
 
             long_candidates.append(
 
                 {
+
                     "name": name,
+
                     "volume": volume,
+
                     "ema1d": ema1d,
+
                     "ema4h": ema4h,
+
                     "ema15m": ema15m
+
                 }
 
             )
+
+
 
 
 
@@ -665,7 +755,9 @@ def update_dashboard():
         elif (
 
             ema4h == "🔴역배열"
+
             and
+
             ema15m == "🟢정배열"
 
         ):
@@ -674,14 +766,21 @@ def update_dashboard():
             short_candidates.append(
 
                 {
+
                     "name": name,
+
                     "volume": volume,
+
                     "ema1d": ema1d,
+
                     "ema4h": ema4h,
+
                     "ema15m": ema15m
+
                 }
 
             )
+
 
 
 
@@ -716,12 +815,7 @@ def update_dashboard():
 
     logging.info(
         "OKX TOP10 업데이트 완료"
-    )
-
-
-
-
-
+        )
 
 # =========================
 # 웹 대시보드
@@ -746,9 +840,7 @@ def dashboard():
 
 
 <title>
-
 OKX TOP10
-
 </title>
 
 
@@ -827,7 +919,7 @@ padding:15px;
 
 <h2>
 
-🏆 OKX 실거래대금 TOP10
+🏆 OKX 실거래대금 TOP10 (KRW)
 
 </h2>
 
@@ -941,6 +1033,8 @@ padding:15px;
 
     html += """
 
+<br>
+
 📌 숏 추천
 
 <br><br>
@@ -1024,9 +1118,13 @@ def scheduler():
 def startup():
 
 
+    # 최초 실행
+
     update_dashboard()
 
 
+
+    # 5분마다 갱신
 
     schedule.every(
         5
