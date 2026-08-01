@@ -282,7 +282,7 @@ def format_volume(volume):
 
 
         return (
-            f"{volume / 100_000_000_000:.2f}조USDT"
+            f"{volume / 100_000_000_000:.2f}조"
         )
 
 
@@ -291,7 +291,7 @@ def format_volume(volume):
 
 
         return (
-            f"{volume / 100_000_000:,.0f}억USDT"
+            f"{volume / 100_000_000:,.0f},000억"
         )
 
 
@@ -300,7 +300,7 @@ def format_volume(volume):
 
 
         return (
-            f"{volume / 10_000:,.0f}만USDT"
+            f"0.{volume / 10_000:,.0f}억"
         )
 
 # =========================
