@@ -268,40 +268,30 @@ def get_24h_volume(inst_id):
     )
 
 
-
-
-
 # =========================
 # 거래대금 표시
 # =========================
-
 def format_volume(volume):
 
+    # 1조 이상
+    if volume >= 1_000_000_000_000:
+        return f"{volume / 1_000_000_000_000:.2f}조"
 
-    if volume >= 100_000_000_000:
+    # 1000억 이상
+    elif volume >= 100_000_000_000:
+        return f"{volume / 100_000_000:.0f}억"
 
+    # 100억 이상
+    elif volume >= 10_000_000_000:
+        return f"{volume / 100_000_000:.1f}억"
 
-        return (
-            f"{volume / 100_000_000_000:.2f}조"
-        )
-
-
-
+    # 1억 이상
     elif volume >= 100_000_000:
+        return f"{volume / 100_000_000:.2f}억"
 
-
-        return (
-            f"{volume / 100_000_000:,.0f},000억"
-        )
-
-
-
+    # 1억 미만
     else:
-
-
-        return (
-            f"0.{volume / 10_000:,.0f}억"
-        )
+        return f"{volume / 10_000:.0f}만원"
 
 # =========================
 # EMA 상태
