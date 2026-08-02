@@ -711,77 +711,47 @@ def update_dashboard():
 
 
 
+    
+                
         # =========================
-        # 롱 후보
+        # 롱 후보 (1일봉 정배열 + 4시간봉 역배열)
         # =========================
 
         if (
-
-            ema4h == "🟢정배열"
-
+            ema1d == "🟢정배열"
             and
-
-            ema15m == "🔴역배열"
-
+            ema4h == "🔴역배열"
         ):
 
-
             long_candidates.append(
-
                 {
-
                     "name": name,
-
                     "volume": volume,
-
                     "ema1d": ema1d,
-
                     "ema4h": ema4h,
-
                     "ema15m": ema15m
-
                 }
-
             )
 
-
-
-
-
         # =========================
-        # 숏 후보
+        # 숏 후보 (1일봉 역배열 + 4시간봉 정배열)
         # =========================
 
         elif (
-
-            ema4h == "🔴역배열"
-
+            ema1d == "🔴역배열"
             and
-
-            ema15m == "🟢정배열"
-
+            ema4h == "🟢정배열"
         ):
 
-
             short_candidates.append(
-
                 {
-
                     "name": name,
-
                     "volume": volume,
-
                     "ema1d": ema1d,
-
                     "ema4h": ema4h,
-
                     "ema15m": ema15m
-
                 }
-
             )
-
-
 
 
 
