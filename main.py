@@ -1295,10 +1295,6 @@ def update_upbit():
 
         if (
 
-            ema1d == "🟢정배열"
-
-            and
-
             ema4h == "🟢정배열"
 
             and
