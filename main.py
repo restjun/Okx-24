@@ -447,7 +447,7 @@ def get_upbit_ema_status(
     df = get_upbit_ohlcv(
         market,
         unit,
-        220
+        200
     )
 
 
