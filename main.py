@@ -718,9 +718,9 @@ def update_dashboard():
         # =========================
 
         if (
-            ema1d == "🟢정배열"
+            ema4h == "🟢정배열"
             and
-            ema4h == "🔴역배열"
+            ema15m == "🔴역배열"
         ):
 
             long_candidates.append(
@@ -738,9 +738,9 @@ def update_dashboard():
         # =========================
 
         elif (
-            ema1d == "🔴역배열"
+            ema4h == "🔴역배열"
             and
-            ema4h == "🟢정배열"
+            ema15m == "🟢정배열"
         ):
 
             short_candidates.append(
