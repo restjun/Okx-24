@@ -42,7 +42,6 @@ upbit_buy_candidates = []
 
 
 
-
 # =========================
 # API 재시도
 # =========================
@@ -65,7 +64,6 @@ def retry_request(
             )
 
 
-
             if hasattr(
                 result,
                 "status_code"
@@ -77,7 +75,6 @@ def retry_request(
                     time.sleep(1)
 
                     continue
-
 
 
             return result
@@ -135,7 +132,6 @@ def get_okx_ohlcv(
     )
 
 
-
     if response is None:
 
         return None
@@ -166,7 +162,6 @@ def get_okx_ohlcv(
         )
 
 
-
         df["c"] = (
 
             df["c"]
@@ -181,7 +176,6 @@ def get_okx_ohlcv(
             .astype(float)
 
         )
-
 
 
         df = (
@@ -207,6 +201,13 @@ def get_okx_ohlcv(
 
         return None
 
+
+
+
+
+
+
+
 # =========================
 # 업비트 분봉 캔들
 # =========================
@@ -216,6 +217,7 @@ def get_upbit_ohlcv(
         unit=60,
         count=200
 ):
+
 
     url = (
 
@@ -241,14 +243,18 @@ def get_upbit_ohlcv(
 
     try:
 
+
         df = pd.DataFrame(
             response.json()
         )
 
 
         df = (
+
             df.iloc[::-1]
+
             .reset_index(drop=True)
+
         )
 
 
@@ -278,6 +284,8 @@ def get_upbit_ohlcv(
 
 
 
+
+
 # =========================
 # 업비트 일봉
 # =========================
@@ -291,7 +299,9 @@ def get_upbit_day_ohlcv(
     url = (
 
         "https://api.upbit.com/v1/candles/days"
+
         f"?market={market}"
+
         f"&count={count}"
 
     )
@@ -349,10 +359,6 @@ def get_upbit_day_ohlcv(
         return None
 
 
-
-
-
-
 # =========================
 # OKX 목록
 # =========================
@@ -380,15 +386,55 @@ def get_all_okx_swap_symbols():
 
 
 
-    return [
+    try:
 
-        x["instId"]
+        return [
 
-        for x in response.json()["data"]
+            x["instId"]
 
-        if "USDT" in x["instId"]
+            for x in response.json()["data"]
 
-    ]
+            if "USDT" in x["instId"]
+
+        ]
+
+
+    except Exception as e:
+
+
+        logging.error(
+            f"OKX 목록 오류 : {e}"
+        )
+
+
+        return []
+
+
+
+
+
+
+# =========================
+# OKX 선물 코인명 목록
+# =========================
+
+def get_okx_swap_coin_set():
+
+
+    symbols = get_all_okx_swap_symbols()
+
+
+
+    return {
+
+        x.replace(
+            "-USDT-SWAP",
+            ""
+        )
+
+        for x in symbols
+
+    }
 
 
 
@@ -414,17 +460,32 @@ def get_upbit_markets():
 
 
 
-    return [
+    try:
 
-        x["market"]
 
-        for x in response.json()
+        return [
 
-        if x["market"].startswith(
-            "KRW-"
+            x["market"]
+
+            for x in response.json()
+
+            if x["market"].startswith(
+                "KRW-"
+            )
+
+        ]
+
+
+    except Exception as e:
+
+
+        logging.error(
+            f"업비트 목록 오류 : {e}"
         )
 
-    ]
+
+        return []
+
 
 
 
@@ -440,8 +501,11 @@ def get_usdt_krw():
 
 
     response = retry_request(
+
         requests.get,
+
         "https://api.upbit.com/v1/ticker?markets=KRW-USDT"
+
     )
 
 
@@ -453,7 +517,9 @@ def get_usdt_krw():
 
     try:
 
+
         return response.json()[0]["trade_price"]
+
 
 
     except:
@@ -479,7 +545,9 @@ def format_volume(volume):
 
 
         return (
+
             f"{volume/1_000_000_000_000:.2f}조"
+
         )
 
 
@@ -487,7 +555,9 @@ def format_volume(volume):
 
 
         return (
+
             f"{volume/100_000_000:,.0f}억"
+
         )
 
 
@@ -495,8 +565,11 @@ def format_volume(volume):
 
 
         return (
+
             f"{volume/10_000:,.0f}만원"
+
         )
+
 
 
 
@@ -577,7 +650,7 @@ def check_ema(
 
 
 # =========================
-# OKX EMA
+# OKX EMA 상태
 # =========================
 
 def get_okx_ema_status(
@@ -587,9 +660,13 @@ def get_okx_ema_status(
 
 
     df = get_okx_ohlcv(
+
         inst_id,
+
         bar,
+
         200
+
     )
 
 
@@ -603,8 +680,10 @@ def get_okx_ema_status(
 
 
 
+
+
 # =========================
-# 업비트 EMA
+# 업비트 EMA 상태
 # =========================
 
 def get_upbit_ema_status(
@@ -617,8 +696,11 @@ def get_upbit_ema_status(
 
 
         df = get_upbit_day_ohlcv(
+
             market,
+
             200
+
         )
 
 
@@ -626,18 +708,24 @@ def get_upbit_ema_status(
 
 
         df = get_upbit_ohlcv(
+
             market,
+
             unit,
+
             200
+
         )
 
 
 
     return check_ema(
-        df,
-        "trade_price"
-)
 
+        df,
+
+        "trade_price"
+
+        )
 
 # =========================
 # OKX 24시간 거래대금
@@ -647,9 +735,13 @@ def get_okx_volume(inst_id):
 
 
     df = get_okx_ohlcv(
+
         inst_id,
+
         "1H",
+
         24
+
     )
 
 
@@ -662,9 +754,11 @@ def get_okx_volume(inst_id):
     return (
 
         df["volCcyQuote"]
+
         .sum()
 
     )
+
 
 
 
@@ -722,15 +816,90 @@ def get_upbit_volume_map():
         }
 
 
+
     except Exception as e:
 
 
         logging.error(
+
             f"업비트 거래대금 오류 : {e}"
+
         )
 
 
         return {}
+
+
+
+
+
+
+
+
+# =========================
+# 업비트 OKX 상장 필터 TOP10
+# =========================
+
+def get_upbit_okx_top10():
+
+
+    volume_map = get_upbit_volume_map()
+
+
+
+    if not volume_map:
+
+        return []
+
+
+
+    okx_coin_set = get_okx_swap_coin_set()
+
+
+
+    filtered = {}
+
+
+
+    for market, volume in volume_map.items():
+
+
+        coin = market.replace(
+
+            "KRW-",
+
+            ""
+
+        )
+
+
+
+        if coin in okx_coin_set:
+
+
+            filtered[market] = volume
+
+
+
+
+
+
+    top10 = sorted(
+
+        filtered,
+
+        key=filtered.get,
+
+        reverse=True
+
+    )[:10]
+
+
+
+    return top10, filtered
+
+
+
 
 
 
@@ -845,6 +1014,7 @@ def get_okx_change(inst_id):
 
 
 
+
 # =========================
 # 업비트 09시 기준 변동률
 # =========================
@@ -935,13 +1105,6 @@ def get_upbit_change(market):
 
     )
 
-
-
-
-
-
-
-
 # =========================
 # OKX TOP10 업데이트
 # =========================
@@ -991,7 +1154,6 @@ def update_okx():
 
 
 
-
     top10 = sorted(
 
         volume_map,
@@ -1005,7 +1167,6 @@ def update_okx():
 
 
 
-
     rows = []
 
     okx_long_candidates = []
@@ -1014,15 +1175,14 @@ def update_okx():
 
 
 
-
-
-    for rank,symbol in enumerate(
+    for rank, symbol in enumerate(
 
         top10,
 
         1
 
     ):
+
 
 
         coin = symbol.replace(
@@ -1047,11 +1207,9 @@ def update_okx():
 
             change_text = "N/A"
 
-
         elif change > 0:
 
             change_text = f"🟢+{change}%"
-
 
         else:
 
@@ -1065,12 +1223,10 @@ def update_okx():
             "1D"
         )
 
-
         ema4h = get_okx_ema_status(
             symbol,
             "4H"
         )
-
 
         ema15m = get_okx_ema_status(
             symbol,
@@ -1094,23 +1250,22 @@ def update_okx():
 
                 {
 
-                    "name":coin,
+                "name":coin,
 
-                    "volume":
-                    format_volume(
-                        volume_map[symbol]
-                    ),
+                "volume":
+                format_volume(
+                    volume_map[symbol]
+                ),
 
-                    "ema1d":ema1d,
+                "ema1d":ema1d,
 
-                    "ema4h":ema4h,
+                "ema4h":ema4h,
 
-                    "ema15m":ema15m
+                "ema15m":ema15m
 
                 }
 
             )
-
 
 
 
@@ -1129,36 +1284,7 @@ def update_okx():
 
                 {
 
-                    "name":coin,
-
-                    "volume":
-                    format_volume(
-                        volume_map[symbol]
-                    ),
-
-                    "ema1d":ema1d,
-
-                    "ema4h":ema4h,
-
-                    "ema15m":ema15m
-
-                }
-
-            )
-
-
-
-
-
-        rows.append(
-
-            {
-
-                "rank":rank,
-
                 "name":coin,
-
-                "change":change_text,
 
                 "volume":
                 format_volume(
@@ -1170,6 +1296,34 @@ def update_okx():
                 "ema4h":ema4h,
 
                 "ema15m":ema15m
+
+                }
+
+            )
+
+
+
+
+        rows.append(
+
+            {
+
+            "rank":rank,
+
+            "name":coin,
+
+            "change":change_text,
+
+            "volume":
+            format_volume(
+                volume_map[symbol]
+            ),
+
+            "ema1d":ema1d,
+
+            "ema4h":ema4h,
+
+            "ema15m":ema15m
 
             }
 
@@ -1184,6 +1338,12 @@ def update_okx():
     logging.info(
         "OKX 완료"
     )
+
+
+
+
+
+
 
 # =========================
 # 업비트 TOP10 업데이트
@@ -1204,25 +1364,17 @@ def update_upbit():
 
 
 
-    volume_map = get_upbit_volume_map()
+    result = get_upbit_okx_top10()
 
 
 
-    if not volume_map:
+    if not result:
 
         return
 
 
 
-    top10 = sorted(
-
-        volume_map,
-
-        key=volume_map.get,
-
-        reverse=True
-
-    )[:10]
+    top10, filtered_volume = result
 
 
 
@@ -1241,15 +1393,21 @@ def update_upbit():
     ):
 
 
+
         coin = market.replace(
+
             "KRW-",
+
             ""
+
         )
 
 
 
         change = get_upbit_change(
+
             market
+
         )
 
 
@@ -1263,7 +1421,6 @@ def update_upbit():
 
             change_text = f"🟢+{change}%"
 
-
         else:
 
             change_text = f"🔴{change}%"
@@ -1272,26 +1429,33 @@ def update_upbit():
 
 
         ema1d = get_upbit_ema_status(
+
             market,
+
             "DAY"
+
         )
 
 
         ema4h = get_upbit_ema_status(
+
             market,
+
             240
+
         )
 
 
         ema15m = get_upbit_ema_status(
+
             market,
+
             15
+
         )
 
 
 
-
-        # 업비트 매수 후보
 
         if (
 
@@ -1308,18 +1472,18 @@ def update_upbit():
 
                 {
 
-                    "name":coin,
+                "name":coin,
 
-                    "volume":
-                    format_volume(
-                        volume_map[market]
-                    ),
+                "volume":
+                format_volume(
+                    filtered_volume[market]
+                ),
 
-                    "ema1d":ema1d,
+                "ema1d":ema1d,
 
-                    "ema4h":ema4h,
+                "ema4h":ema4h,
 
-                    "ema15m":ema15m
+                "ema15m":ema15m
 
                 }
 
@@ -1328,26 +1492,27 @@ def update_upbit():
 
 
 
+
         rows.append(
 
             {
 
-                "rank":rank,
+            "rank":rank,
 
-                "name":coin,
+            "name":coin,
 
-                "change":change_text,
+            "change":change_text,
 
-                "volume":
-                format_volume(
-                    volume_map[market]
-                ),
+            "volume":
+            format_volume(
+                filtered_volume[market]
+            ),
 
-                "ema1d":ema1d,
+            "ema1d":ema1d,
 
-                "ema4h":ema4h,
+            "ema4h":ema4h,
 
-                "ema15m":ema15m
+            "ema15m":ema15m
 
             }
 
@@ -1362,13 +1527,6 @@ def update_upbit():
     logging.info(
         "업비트 완료"
     )
-
-
-
-
-
-
-
 
 # =========================
 # 전체 업데이트
@@ -1391,7 +1549,6 @@ def update_dashboard():
     logging.info(
         "전체 업데이트 완료"
     )
-
 
 
 
@@ -1485,8 +1642,6 @@ margin-top:20px;
 </h2>
 
 
-
-
 <h2>
 🏆 OKX 선물 실거래대금 TOP10
 </h2>
@@ -1536,7 +1691,6 @@ margin-top:20px;
 </table>
 
 
-
 <div class="box">
 
 
@@ -1547,7 +1701,6 @@ margin-top:20px;
 """
 
 
-
     if okx_long_candidates:
 
 
@@ -1555,6 +1708,7 @@ margin-top:20px;
             okx_long_candidates,
             1
         ):
+
 
             html += (
 
@@ -1568,10 +1722,10 @@ margin-top:20px;
 
             )
 
+
     else:
 
         html += "없음"
-
 
 
 
@@ -1624,7 +1778,8 @@ margin-top:20px;
 
 
 <h2>
-🏆 업비트 현물 실거래대금 TOP10
+🏆 업비트 현물 TOP10
+(OKX 선물 상장 코인만)
 </h2>
 
 
@@ -1684,7 +1839,6 @@ margin-top:20px;
 """
 
 
-
     if upbit_buy_candidates:
 
 
@@ -1727,12 +1881,6 @@ margin-top:20px;
 
     return html
 
-
-
-
-
-
-
 # =========================
 # 스케줄러
 # =========================
@@ -1747,6 +1895,7 @@ def scheduler():
 
 
         time.sleep(1)
+
 
 
 
