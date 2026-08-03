@@ -26,17 +26,11 @@ logging.basicConfig(
 
 latest_okx_data = []
 
-okx_long_candidates = []
-
-okx_short_candidates = []
-
 
 
 # 업비트
 
 latest_upbit_data = []
-
-upbit_buy_candidates = []
 
 
 
@@ -52,9 +46,11 @@ def retry_request(
         **kwargs
 ):
 
+
     for attempt in range(10):
 
         try:
+
 
             result = func(
                 *args,
@@ -66,6 +62,7 @@ def retry_request(
                 result,
                 "status_code"
             ):
+
 
                 if result.status_code == 429:
 
@@ -79,6 +76,7 @@ def retry_request(
 
 
         except Exception as e:
+
 
             logging.error(
                 f"API 실패 {attempt+1}/10 : {e}"
@@ -96,6 +94,7 @@ def retry_request(
 
 
 
+
 # =========================
 # OKX 캔들
 # =========================
@@ -105,6 +104,7 @@ def get_okx_ohlcv(
         bar="1H",
         limit=200
 ):
+
 
     url = (
 
@@ -117,6 +117,7 @@ def get_okx_ohlcv(
         f"&limit={limit}"
 
     )
+
 
 
     response = retry_request(
@@ -132,6 +133,7 @@ def get_okx_ohlcv(
 
 
     try:
+
 
         df = pd.DataFrame(
 
@@ -185,6 +187,7 @@ def get_okx_ohlcv(
 
     except Exception as e:
 
+
         logging.error(
             f"OKX 오류 {inst_id}: {e}"
         )
@@ -209,6 +212,7 @@ def get_upbit_ohlcv(
         count=200
 ):
 
+
     url = (
 
         "https://api.upbit.com/v1/candles/minutes/"
@@ -232,6 +236,7 @@ def get_upbit_ohlcv(
 
 
     try:
+
 
         df = pd.DataFrame(
             response.json()
@@ -261,6 +266,7 @@ def get_upbit_ohlcv(
 
     except Exception as e:
 
+
         logging.error(
             f"업비트 캔들 오류 {market}: {e}"
         )
@@ -276,6 +282,7 @@ def get_upbit_day_ohlcv(
         market,
         count=200
 ):
+
 
     url = (
 
@@ -302,6 +309,7 @@ def get_upbit_day_ohlcv(
 
     try:
 
+
         df = pd.DataFrame(
             response.json()
         )
@@ -330,6 +338,7 @@ def get_upbit_day_ohlcv(
 
     except Exception as e:
 
+
         logging.error(
             f"업비트 일봉 오류 {market}: {e}"
         )
@@ -343,11 +352,13 @@ def get_upbit_day_ohlcv(
 
 
 
+
 # =========================
 # OKX 목록
 # =========================
 
 def get_all_okx_swap_symbols():
+
 
     url = (
 
@@ -384,6 +395,7 @@ def get_all_okx_swap_symbols():
 
     except Exception as e:
 
+
         logging.error(
             f"OKX 목록 오류 : {e}"
         )
@@ -404,6 +416,7 @@ def get_all_okx_swap_symbols():
 
 def get_upbit_markets():
 
+
     response = retry_request(
         requests.get,
         "https://api.upbit.com/v1/market/all"
@@ -417,6 +430,7 @@ def get_upbit_markets():
 
 
     try:
+
 
         return [
 
@@ -433,6 +447,7 @@ def get_upbit_markets():
 
     except Exception as e:
 
+
         logging.error(
             f"업비트 목록 오류 : {e}"
         )
@@ -446,11 +461,13 @@ def get_upbit_markets():
 
 
 
+
 # =========================
 # USDT/KRW
 # =========================
 
 def get_usdt_krw():
+
 
     response = retry_request(
 
@@ -469,11 +486,13 @@ def get_usdt_krw():
 
     try:
 
+
         return response.json()[0]["trade_price"]
 
 
 
     except:
+
 
         return 1400
 
@@ -490,7 +509,9 @@ def get_usdt_krw():
 
 def format_volume(volume):
 
+
     if volume >= 1_000_000_000_000:
+
 
         return (
 
@@ -501,6 +522,7 @@ def format_volume(volume):
 
     elif volume >= 100_000_000:
 
+
         return (
 
             f"{volume/100_000_000:,.0f}억"
@@ -509,6 +531,7 @@ def format_volume(volume):
 
 
     else:
+
 
         return (
 
@@ -531,6 +554,7 @@ def check_ema(
         df,
         column
 ):
+
 
     if df is None or len(df) < 200:
 
@@ -578,11 +602,13 @@ def check_ema(
 
     ):
 
+
         return "🟢정배열"
 
 
 
     else:
+
 
         return "🔴역배열"
 
@@ -594,6 +620,7 @@ def get_okx_ema_status(
         inst_id,
         bar
 ):
+
 
     df = get_okx_ohlcv(
 
@@ -607,8 +634,11 @@ def get_okx_ema_status(
 
 
     return check_ema(
+
         df,
+
         "c"
+
     )
 
 
@@ -627,7 +657,9 @@ def get_upbit_ema_status(
         unit
 ):
 
+
     if unit == "DAY":
+
 
         df = get_upbit_day_ohlcv(
 
@@ -639,6 +671,7 @@ def get_upbit_ema_status(
 
 
     else:
+
 
         df = get_upbit_ohlcv(
 
@@ -672,6 +705,7 @@ def get_upbit_ema_status(
 # =========================
 
 def get_okx_volume(inst_id):
+
 
     df = get_okx_ohlcv(
 
@@ -711,6 +745,7 @@ def get_okx_volume(inst_id):
 
 def get_upbit_volume_map():
 
+
     markets = get_upbit_markets()
 
 
@@ -739,19 +774,24 @@ def get_upbit_volume_map():
 
     try:
 
+
         return {
+
 
             x["market"]:
 
             x["acc_trade_price_24h"]
 
+
             for x in response.json()
+
 
         }
 
 
 
     except Exception as e:
+
 
         logging.error(
 
@@ -771,7 +811,6 @@ def get_upbit_volume_map():
 
 # =========================
 # 업비트 거래대금 TOP10
-# (OKX 상장 필터 제거)
 # =========================
 
 def get_upbit_top10():
@@ -800,6 +839,8 @@ def get_upbit_top10():
 
 
     return top10, volume_map
+
+
 
 
 
@@ -1003,7 +1044,7 @@ def get_upbit_change(market):
 
         2
 
-    )
+        )
 
 # =========================
 # OKX TOP10 업데이트
@@ -1013,10 +1054,6 @@ def update_okx():
 
 
     global latest_okx_data
-
-    global okx_long_candidates
-
-    global okx_short_candidates
 
 
 
@@ -1065,12 +1102,7 @@ def update_okx():
 
 
 
-
     rows = []
-
-    okx_long_candidates = []
-
-    okx_short_candidates = []
 
 
 
@@ -1102,9 +1134,11 @@ def update_okx():
 
             change_text = "N/A"
 
+
         elif change > 0:
 
             change_text = f"🟢+{change}%"
+
 
         else:
 
@@ -1112,73 +1146,38 @@ def update_okx():
 
 
 
-        ema1d = get_okx_ema_status(symbol,"1D")
 
-        ema4h = get_okx_ema_status(symbol,"4H")
+        ema1d = get_okx_ema_status(
 
-        ema15m = get_okx_ema_status(symbol,"15m")
+            symbol,
 
+            "1D"
 
-
-        if (
-
-            ema4h == "🔴역배열"
-
-            and
-
-            ema15m == "🟢정배열"
-
-        ):
+        )
 
 
-            okx_long_candidates.append({
+        ema4h = get_okx_ema_status(
 
-                "name":coin,
+            symbol,
 
-                "volume":format_volume(
-                    volume_map[symbol]
-                ),
+            "4H"
 
-                "ema1d":ema1d,
+        )
 
-                "ema4h":ema4h,
 
-                "ema15m":ema15m
+        ema15m = get_okx_ema_status(
 
-            })
+            symbol,
+
+            "15m"
+
+        )
 
 
 
-        elif (
+        rows.append(
 
-            ema4h == "🟢정배열"
-
-            and
-
-            ema15m == "🔴역배열"
-
-        ):
-
-
-            okx_short_candidates.append({
-
-                "name":coin,
-
-                "volume":format_volume(
-                    volume_map[symbol]
-                ),
-
-                "ema1d":ema1d,
-
-                "ema4h":ema4h,
-
-                "ema15m":ema15m
-
-            })
-
-
-
-        rows.append({
+            {
 
             "rank":rank,
 
@@ -1186,7 +1185,8 @@ def update_okx():
 
             "change":change_text,
 
-            "volume":format_volume(
+            "volume":
+            format_volume(
                 volume_map[symbol]
             ),
 
@@ -1196,7 +1196,9 @@ def update_okx():
 
             "ema15m":ema15m
 
-        })
+            }
+
+        )
 
 
 
@@ -1224,8 +1226,6 @@ def update_upbit():
 
     global latest_upbit_data
 
-    global upbit_buy_candidates
-
 
 
     logging.info(
@@ -1244,13 +1244,11 @@ def update_upbit():
 
 
 
-    top10, filtered_volume = result
+    top10, volume_map = result
 
 
 
     rows = []
-
-    upbit_buy_candidates = []
 
 
 
@@ -1282,13 +1280,16 @@ def update_upbit():
 
             change_text = "N/A"
 
+
         elif change > 0:
 
             change_text = f"🟢+{change}%"
 
+
         else:
 
             change_text = f"🔴{change}%"
+
 
 
 
@@ -1320,36 +1321,9 @@ def update_upbit():
 
 
 
-        if (
+        rows.append(
 
-            ema4h == "🔴역배열"
-
-            and
-
-            ema15m == "🟢정배열"
-
-        ):
-
-
-            upbit_buy_candidates.append({
-
-                "name":coin,
-
-                "volume":format_volume(
-                    filtered_volume[market]
-                ),
-
-                "ema1d":ema1d,
-
-                "ema4h":ema4h,
-
-                "ema15m":ema15m
-
-            })
-
-
-
-        rows.append({
+            {
 
             "rank":rank,
 
@@ -1357,8 +1331,9 @@ def update_upbit():
 
             "change":change_text,
 
-            "volume":format_volume(
-                filtered_volume[market]
+            "volume":
+            format_volume(
+                volume_map[market]
             ),
 
             "ema1d":ema1d,
@@ -1367,7 +1342,9 @@ def update_upbit():
 
             "ema15m":ema15m
 
-        })
+            }
+
+        )
 
 
 
@@ -1378,6 +1355,7 @@ def update_upbit():
     logging.info(
         "업비트 완료"
     )
+
 
 
 
@@ -1398,6 +1376,7 @@ def update_dashboard():
 
 
     update_okx()
+
 
     update_upbit()
 
@@ -1469,14 +1448,6 @@ text-align:center;
 }
 
 
-.box{
-
-background:#222;
-padding:15px;
-margin-top:20px;
-
-}
-
 </style>
 
 
@@ -1521,11 +1492,17 @@ margin-top:20px;
 <tr>
 
 <td>{item['rank']}</td>
+
 <td>{item['name']}</td>
+
 <td>{item['change']}</td>
+
 <td>{item['volume']}</td>
+
 <td>{item['ema1d']}</td>
+
 <td>{item['ema4h']}</td>
+
 <td>{item['ema15m']}</td>
 
 </tr>
@@ -1533,91 +1510,10 @@ margin-top:20px;
 """
 
 
+
     html += """
 
 </table>
-
-
-<div class="box">
-
-
-📌 OKX 롱 추천
-
-<br><br>
-
-"""
-
-
-    if okx_long_candidates:
-
-
-        for i,item in enumerate(
-            okx_long_candidates,
-            1
-        ):
-
-
-            html += (
-
-                f"{i}. {item['name']} "
-                f"{item['volume']}<br>"
-                f"1D {item['ema1d']} "
-                f"4H {item['ema4h']} "
-                f"15M {item['ema15m']}"
-
-                "<br><br>"
-
-            )
-
-
-    else:
-
-        html += "없음"
-
-
-
-    html += """
-
-<br>
-
-📌 OKX 숏 추천
-
-<br><br>
-
-"""
-
-
-    if okx_short_candidates:
-
-
-        for i,item in enumerate(
-            okx_short_candidates,
-            1
-        ):
-
-
-            html += (
-
-                f"{i}. {item['name']} "
-                f"{item['volume']}<br>"
-                f"1D {item['ema1d']} "
-                f"4H {item['ema4h']} "
-                f"15M {item['ema15m']}"
-
-                "<br><br>"
-
-            )
-
-
-    else:
-
-        html += "없음"
-
-
-
-    html += """
-
-</div>
 
 
 <hr>
@@ -1654,11 +1550,17 @@ margin-top:20px;
 <tr>
 
 <td>{item['rank']}</td>
+
 <td>{item['name']}</td>
+
 <td>{item['change']}</td>
+
 <td>{item['volume']}</td>
+
 <td>{item['ema1d']}</td>
+
 <td>{item['ema4h']}</td>
+
 <td>{item['ema15m']}</td>
 
 </tr>
@@ -1670,51 +1572,6 @@ margin-top:20px;
     html += """
 
 </table>
-
-
-
-<div class="box">
-
-
-📌 업비트 매수 후보
-
-
-<br><br>
-
-"""
-
-
-    if upbit_buy_candidates:
-
-
-        for i,item in enumerate(
-            upbit_buy_candidates,
-            1
-        ):
-
-
-            html += (
-
-                f"{i}. {item['name']} "
-                f"{item['volume']}<br>"
-                f"1D {item['ema1d']} "
-                f"4H {item['ema4h']} "
-                f"15M {item['ema15m']}"
-
-                "<br><br>"
-
-            )
-
-
-    else:
-
-        html += "없음"
-
-
-
-    html += """
-
-</div>
 
 
 </body>
@@ -1754,7 +1611,6 @@ def scheduler():
 
 
 
-
 # =========================
 # 시작
 # =========================
@@ -1783,7 +1639,6 @@ def startup():
         daemon=True
 
     ).start()
-
 
 
 
