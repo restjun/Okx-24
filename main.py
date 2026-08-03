@@ -598,7 +598,7 @@ def check_ema(
         df[column]
 
         .ewm(
-            span=50,
+            span=20,
             adjust=False
         )
 
@@ -613,7 +613,7 @@ def check_ema(
         df[column]
 
         .ewm(
-            span=200,
+            span=50,
             adjust=False
         )
 
