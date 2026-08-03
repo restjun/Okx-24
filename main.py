@@ -1237,11 +1237,11 @@ def update_okx():
 
         if (
 
-            ema4h == "🟢정배열"
+            ema4h == "🔴역배열"
 
             and
 
-            ema15m == "🔴역배열"
+            ema15m == "🟢정배열"
 
         ):
 
@@ -1271,11 +1271,11 @@ def update_okx():
 
         elif (
 
-            ema4h == "🔴역배열"
+            ema4h == "🟢정배열"
 
             and
 
-            ema15m == "🟢정배열"
+            ema15m == "🔴역배열"
 
         ):
 
@@ -1459,11 +1459,11 @@ def update_upbit():
 
         if (
 
-            ema4h == "🟢정배열"
+            ema4h == "🔴역배열"
 
             and
 
-            ema15m == "🔴역배열"
+            ema15m == "🟢정배열"
 
         ):
 
