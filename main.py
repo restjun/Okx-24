@@ -17,22 +17,13 @@ logging.basicConfig(
 )
 
 
-
 # =========================
 # 전역 데이터
 # =========================
 
-# OKX
-
 latest_okx_data = []
 
-
-
-# 업비트
-
 latest_upbit_data = []
-
-
 
 
 
@@ -46,11 +37,9 @@ def retry_request(
         **kwargs
 ):
 
-
     for attempt in range(10):
 
         try:
-
 
             result = func(
                 *args,
@@ -58,11 +47,7 @@ def retry_request(
             )
 
 
-            if hasattr(
-                result,
-                "status_code"
-            ):
-
+            if hasattr(result, "status_code"):
 
                 if result.status_code == 429:
 
@@ -74,23 +59,16 @@ def retry_request(
             return result
 
 
-
         except Exception as e:
-
 
             logging.error(
                 f"API 실패 {attempt+1}/10 : {e}"
             )
 
-
             time.sleep(3)
 
 
-
     return None
-
-
-
 
 
 
@@ -105,19 +83,14 @@ def get_okx_ohlcv(
         limit=200
 ):
 
-
     url = (
 
         "https://www.okx.com/api/v5/market/candles"
-
         f"?instId={inst_id}"
-
         f"&bar={bar}"
-
         f"&limit={limit}"
 
     )
-
 
 
     response = retry_request(
@@ -131,9 +104,7 @@ def get_okx_ohlcv(
         return None
 
 
-
     try:
-
 
         df = pd.DataFrame(
 
@@ -157,10 +128,8 @@ def get_okx_ohlcv(
 
 
         df["c"] = (
-
             df["c"]
             .astype(float)
-
         )
 
 
@@ -175,14 +144,12 @@ def get_okx_ohlcv(
         df = (
 
             df.iloc[::-1]
-
             .reset_index(drop=True)
 
         )
 
 
         return df
-
 
 
     except Exception as e:
@@ -200,8 +167,6 @@ def get_okx_ohlcv(
 
 
 
-
-
 # =========================
 # 업비트 분봉 캔들
 # =========================
@@ -211,7 +176,6 @@ def get_upbit_ohlcv(
         unit=60,
         count=200
 ):
-
 
     url = (
 
@@ -234,9 +198,7 @@ def get_upbit_ohlcv(
         return None
 
 
-
     try:
-
 
         df = pd.DataFrame(
             response.json()
@@ -246,7 +208,6 @@ def get_upbit_ohlcv(
         df = (
 
             df.iloc[::-1]
-
             .reset_index(drop=True)
 
         )
@@ -261,7 +222,6 @@ def get_upbit_ohlcv(
 
 
         return df
-
 
 
     except Exception as e:
@@ -283,13 +243,10 @@ def get_upbit_day_ohlcv(
         count=200
 ):
 
-
     url = (
 
         "https://api.upbit.com/v1/candles/days"
-
         f"?market={market}"
-
         f"&count={count}"
 
     )
@@ -306,9 +263,7 @@ def get_upbit_day_ohlcv(
         return None
 
 
-
     try:
-
 
         df = pd.DataFrame(
             response.json()
@@ -318,7 +273,6 @@ def get_upbit_day_ohlcv(
         df = (
 
             df.iloc[::-1]
-
             .reset_index(drop=True)
 
         )
@@ -335,7 +289,6 @@ def get_upbit_day_ohlcv(
         return df
 
 
-
     except Exception as e:
 
 
@@ -345,9 +298,6 @@ def get_upbit_day_ohlcv(
 
 
         return None
-
-
-
 
 
 
@@ -379,7 +329,6 @@ def get_all_okx_swap_symbols():
         return []
 
 
-
     try:
 
         return [
@@ -407,9 +356,6 @@ def get_all_okx_swap_symbols():
 
 
 
-
-
-
 # =========================
 # 업비트 목록
 # =========================
@@ -426,7 +372,6 @@ def get_upbit_markets():
     if response is None:
 
         return []
-
 
 
     try:
@@ -459,9 +404,6 @@ def get_upbit_markets():
 
 
 
-
-
-
 # =========================
 # USDT/KRW
 # =========================
@@ -483,21 +425,14 @@ def get_usdt_krw():
         return 1400
 
 
-
     try:
-
 
         return response.json()[0]["trade_price"]
 
 
-
     except:
 
-
         return 1400
-
-
-
 
 
 
@@ -536,10 +471,8 @@ def format_volume(volume):
         return (
 
             f"{volume/10_000:,.0f}만원"
+
         )
-
-
-
 
 
 
@@ -605,11 +538,14 @@ def check_ema(
         return "🟢정배열"
 
 
-
     else:
 
 
         return "🔴역배열"
+
+
+
+
 
 # =========================
 # OKX EMA 상태
@@ -639,9 +575,6 @@ def get_okx_ema_status(
         "c"
 
     )
-
-
-
 
 
 
@@ -683,21 +616,13 @@ def get_upbit_ema_status(
         )
 
 
-
     return check_ema(
 
         df,
 
         "trade_price"
 
-    )
-
-
-
-
-
-
-
+        )
 
 # =========================
 # OKX 24시간 거래대금
@@ -730,9 +655,6 @@ def get_okx_volume(inst_id):
         .sum()
 
     )
-
-
-
 
 
 
@@ -805,14 +727,11 @@ def get_upbit_volume_map():
 
 
 
-
-
-
 # =========================
-# 업비트 거래대금 TOP10
+# 업비트 거래대금 TOP20
 # =========================
 
-def get_upbit_top10():
+def get_upbit_top20():
 
 
     volume_map = get_upbit_volume_map()
@@ -825,7 +744,7 @@ def get_upbit_top10():
 
 
 
-    top10 = sorted(
+    top20 = sorted(
 
         volume_map,
 
@@ -837,11 +756,7 @@ def get_upbit_top10():
 
 
 
-    return top10, volume_map
-
-
-
-
+    return top20, volume_map
 
 
 
@@ -953,8 +868,6 @@ def get_okx_change(inst_id):
 
 
 
-
-
 # =========================
 # 업비트 09시 기준 변동률
 # =========================
@@ -1043,10 +956,10 @@ def get_upbit_change(market):
 
         2
 
-        )
+    )
 
 # =========================
-# OKX TOP10 업데이트
+# OKX TOP20 업데이트
 # =========================
 
 def update_okx():
@@ -1055,19 +968,15 @@ def update_okx():
     global latest_okx_data
 
 
-
     logging.info(
-        "OKX TOP10 시작"
+        "OKX TOP20 시작"
     )
-
 
 
     symbols = get_all_okx_swap_symbols()
 
 
-
     usdt_krw = get_usdt_krw()
-
 
 
     volume_map = {}
@@ -1089,7 +998,7 @@ def update_okx():
 
 
 
-    top10 = sorted(
+    top20 = sorted(
 
         volume_map,
 
@@ -1103,15 +1012,11 @@ def update_okx():
 
     rows = []
 
+    rank = 1
 
 
-    for rank, symbol in enumerate(
 
-        top10,
-
-        1
-
-    ):
+    for symbol in top20:
 
 
 
@@ -1164,6 +1069,14 @@ def update_okx():
         )
 
 
+        # ★ 4시간 EMA50 > EMA200 정배열만 표시
+
+        if ema4h != "🟢정배열":
+
+            continue
+
+
+
         ema15m = get_okx_ema_status(
 
             symbol,
@@ -1200,6 +1113,9 @@ def update_okx():
         )
 
 
+        rank += 1
+
+
 
     latest_okx_data = rows
 
@@ -1215,9 +1131,8 @@ def update_okx():
 
 
 
-
 # =========================
-# 업비트 TOP10 업데이트
+# 업비트 TOP20 업데이트
 # =========================
 
 def update_upbit():
@@ -1228,12 +1143,12 @@ def update_upbit():
 
 
     logging.info(
-        "업비트 TOP10 시작"
+        "업비트 TOP20 시작"
     )
 
 
 
-    result = get_upbit_top10()
+    result = get_upbit_top20()
 
 
 
@@ -1243,21 +1158,17 @@ def update_upbit():
 
 
 
-    top10, volume_map = result
+    top20, volume_map = result
 
 
 
     rows = []
 
+    rank = 1
 
 
-    for rank, market in enumerate(
 
-        top10,
-
-        1
-
-    ):
+    for market in top20:
 
 
 
@@ -1301,6 +1212,7 @@ def update_upbit():
         )
 
 
+
         ema4h = get_upbit_ema_status(
 
             market,
@@ -1308,6 +1220,15 @@ def update_upbit():
             240
 
         )
+
+
+
+        # ★ 4시간 EMA50 > EMA200 정배열만 표시
+
+        if ema4h != "🟢정배열":
+
+            continue
+
 
 
         ema15m = get_upbit_ema_status(
@@ -1346,6 +1267,9 @@ def update_upbit():
         )
 
 
+        rank += 1
+
+
 
     latest_upbit_data = rows
 
@@ -1353,14 +1277,7 @@ def update_upbit():
 
     logging.info(
         "업비트 완료"
-    )
-
-
-
-
-
-
-
+        )
 
 # =========================
 # 전체 업데이트
@@ -1383,6 +1300,11 @@ def update_dashboard():
     logging.info(
         "전체 업데이트 완료"
     )
+
+
+
+
+
 
 # =========================
 # 웹 대시보드
@@ -1462,7 +1384,7 @@ text-align:center;
 
 
 <h2>
-🏆 OKX 선물 실거래대금 TOP10
+🏆 OKX 선물 4H 정배열 TOP20
 </h2>
 
 
@@ -1519,7 +1441,7 @@ text-align:center;
 
 
 <h2>
-🏆 업비트 현물 거래대금 TOP10
+🏆 업비트 현물 4H 정배열 TOP20
 </h2>
 
 
@@ -1581,8 +1503,6 @@ text-align:center;
 
 
     return html
-
-
 
 
 
