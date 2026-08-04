@@ -834,7 +834,7 @@ def get_upbit_top10():
 
         reverse=True
 
-    )[:10]
+    )[:20]
 
 
 
@@ -1098,7 +1098,7 @@ def update_okx():
 
         reverse=True
 
-    )[:10]
+    )[:20]
 
 
 
