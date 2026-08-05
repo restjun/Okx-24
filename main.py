@@ -1384,7 +1384,7 @@ text-align:center;
 
 
 <h2>
-🏆 OKX 선물 4H 정배열 TOP10
+🏆 OKX 선물 4H 정배열 TOP30
 </h2>
 
 
@@ -1441,7 +1441,7 @@ text-align:center;
 
 
 <h2>
-🏆 업비트 현물 4H 정배열 TOP10
+🏆 업비트 현물 4H 정배열 TOP30
 </h2>
 
 
