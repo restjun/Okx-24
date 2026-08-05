@@ -1217,11 +1217,6 @@ def update_upbit():
 
 
 
-        # ★ 4시간 EMA50 > EMA200 정배열만 표시
-
-        if ema4h != "🟢정배열":
-
-            continue
 
 
 
