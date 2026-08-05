@@ -752,7 +752,7 @@ def get_upbit_top20():
 
         reverse=True
 
-    )[:30]
+    )[:10]
 
 
 
@@ -1006,7 +1006,7 @@ def update_okx():
 
         reverse=True
 
-    )[:30]
+    )[:10]
 
 
 
@@ -1068,12 +1068,6 @@ def update_okx():
 
         )
 
-
-        # ★ 4시간 EMA50 > EMA200 정배열만 표시
-
-        if ema4h != "🟢정배열":
-
-            continue
 
 
 
@@ -1384,7 +1378,7 @@ text-align:center;
 
 
 <h2>
-🏆 OKX 선물 4H 정배열 TOP30
+🏆 OKX 선물 4H 정배열 TOP10
 </h2>
 
 
@@ -1441,7 +1435,7 @@ text-align:center;
 
 
 <h2>
-🏆 업비트 현물 4H 정배열 TOP30
+🏆 업비트 현물 4H 정배열 TOP10
 </h2>
 
 
