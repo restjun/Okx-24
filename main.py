@@ -752,7 +752,7 @@ def get_upbit_top20():
 
         reverse=True
 
-    )[:20]
+    )[:10]
 
 
 
@@ -1006,7 +1006,7 @@ def update_okx():
 
         reverse=True
 
-    )[:20]
+    )[:10]
 
 
 
@@ -1384,7 +1384,7 @@ text-align:center;
 
 
 <h2>
-🏆 OKX 선물 4H 정배열 TOP20
+🏆 OKX 선물 4H 정배열 TOP10
 </h2>
 
 
@@ -1441,7 +1441,7 @@ text-align:center;
 
 
 <h2>
-🏆 업비트 현물 4H 정배열 TOP20
+🏆 업비트 현물 4H 정배열 TOP10
 </h2>
 
 
