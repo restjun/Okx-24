@@ -1222,7 +1222,80 @@ def update_okx():
 
 
 
+# =========================
+# 업비트 TOP20 업데이트
+# =========================
 
+def update_upbit():
+
+    global latest_upbit_data
+
+    logging.info(
+        "업비트 TOP20 시작"
+    )
+
+    top20, volume_map = get_upbit_top20()
+
+    rows = []
+
+    rank = 1
+
+    for market in top20:
+
+        coin = market.replace(
+            "KRW-",
+            ""
+        )
+
+        change = get_upbit_change(
+            market
+        )
+
+        if change is None:
+            change_text = "N/A"
+
+        elif change > 0:
+            change_text = f"🟢+{change}%"
+
+        else:
+            change_text = f"🔴{change}%"
+
+        ema1d = get_upbit_ema_status(
+            market,
+            "DAY"
+        )
+
+        ema4h = get_upbit_ema_status(
+            market,
+            240
+        )
+
+        ema15m = get_upbit_ema_status(
+            market,
+            15
+        )
+
+        rows.append(
+            {
+                "rank": rank,
+                "name": coin,
+                "change": change_text,
+                "volume": format_volume(
+                    volume_map[market]
+                ),
+                "ema1d": ema1d,
+                "ema4h": ema4h,
+                "ema15m": ema15m
+            }
+        )
+
+        rank += 1
+
+    latest_upbit_data = rows
+
+    logging.info(
+        "업비트 완료"
+    )
 
 
 # =========================
