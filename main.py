@@ -1120,153 +1120,110 @@ def update_okx():
     )
 
 
-
-
-
-
-
 # =========================
-# 업비트 TOP20 업데이트
+# OKX TOP20 업데이트
 # =========================
 
-def update_upbit():
+def update_okx():
 
-
-    global latest_upbit_data
-
-
+    global latest_okx_data
 
     logging.info(
-        "업비트 TOP20 시작"
+        "OKX TOP20 시작"
     )
 
+    symbols = get_all_okx_swap_symbols()
 
+    usdt_krw = get_usdt_krw()
 
-    result = get_upbit_top20()
+    # 업비트 상장 코인 목록
+    upbit_coin_set = {
+        market.replace("KRW-", "")
+        for market in get_upbit_markets()
+    }
 
+    volume_map = {}
 
+    for symbol in symbols:
 
-    if not result:
+        volume_map[symbol] = (
+            get_okx_volume(symbol)
+            * usdt_krw
+        )
 
-        return
-
-
-
-    top20, volume_map = result
-
-
+    top20 = sorted(
+        volume_map,
+        key=volume_map.get,
+        reverse=True
+    )[:20]
 
     rows = []
 
     rank = 1
 
+    for symbol in top20:
 
-
-    for market in top20:
-
-
-
-        coin = market.replace(
-
-            "KRW-",
-
+        coin = symbol.replace(
+            "-USDT-SWAP",
             ""
-
         )
 
+        # 업비트 상장 여부 표시
+        if coin in upbit_coin_set:
+            coin = f"{coin}(업비트)"
 
-
-        change = get_upbit_change(market)
-
-
+        change = get_okx_change(symbol)
 
         if change is None:
-
             change_text = "N/A"
 
-
         elif change > 0:
-
             change_text = f"🟢+{change}%"
 
-
         else:
-
             change_text = f"🔴{change}%"
 
-
-
-
-        ema1d = get_upbit_ema_status(
-
-            market,
-
-            "DAY"
-
+        ema1d = get_okx_ema_status(
+            symbol,
+            "1D"
         )
 
-
-
-        ema4h = get_upbit_ema_status(
-
-            market,
-
-            240
-
+        ema4h = get_okx_ema_status(
+            symbol,
+            "4H"
         )
 
-
-
-
-
-
-        ema15m = get_upbit_ema_status(
-
-            market,
-
-            15
-
+        ema15m = get_okx_ema_status(
+            symbol,
+            "15m"
         )
-
-
 
         rows.append(
-
             {
-
-            "rank":rank,
-
-            "name":coin,
-
-            "change":change_text,
-
-            "volume":
-            format_volume(
-                volume_map[market]
-            ),
-
-            "ema1d":ema1d,
-
-            "ema4h":ema4h,
-
-            "ema15m":ema15m
-
+                "rank": rank,
+                "name": coin,
+                "change": change_text,
+                "volume": format_volume(
+                    volume_map[symbol]
+                ),
+                "ema1d": ema1d,
+                "ema4h": ema4h,
+                "ema15m": ema15m
             }
-
         )
-
 
         rank += 1
 
-
-
-    latest_upbit_data = rows
-
-
+    latest_okx_data = rows
 
     logging.info(
-        "업비트 완료"
-        )
+        "OKX 완료"
+    )
+
+
+
+
+
 
 # =========================
 # 전체 업데이트
