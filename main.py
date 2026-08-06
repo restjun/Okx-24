@@ -241,9 +241,9 @@ def check_ema(df,column):
     )
 
     if df["ema50"].iloc[-1]>df["ema200"].iloc[-1]:
-        return "🟢정배열"
+        return "🟢"
 
-    return "🔴역배열"
+    return "🔴"
 
 # =========================
 # OKX EMA 상태
