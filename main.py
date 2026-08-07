@@ -245,6 +245,7 @@ def get_upbit_day_ohlcv(
 
 
     if response is None:
+
         return None
 
 
@@ -298,6 +299,7 @@ def get_all_okx_swap_symbols():
 
 
     if response is None:
+
         return []
 
 
@@ -337,6 +339,7 @@ def get_upbit_markets():
 
 
     if response is None:
+
         return []
 
 
@@ -419,6 +422,8 @@ def format_volume(volume):
             f"{volume/10_000:,.0f}만원"
         )
 
+
+
 # =========================
 # EMA 계산
 # =========================
@@ -460,8 +465,6 @@ def check_ema(df,column):
 
 
     return "🔴"
-
-
 
 # =========================
 # OKX EMA 상태
@@ -587,7 +590,7 @@ def get_upbit_volume_map():
 
 # =========================
 # OKX 변동률
-# -2일 / -1일 / 오늘
+# -3일 / -2일 / -1일 / 오늘
 # =========================
 
 def get_okx_change(inst_id):
@@ -595,7 +598,7 @@ def get_okx_change(inst_id):
     df=get_okx_ohlcv(
         inst_id,
         "1H",
-        72
+        120
     )
 
 
@@ -633,7 +636,7 @@ def get_okx_change(inst_id):
     )
 
 
-    if len(daily)<4:
+    if len(daily)<5:
 
         return None
 
@@ -642,7 +645,7 @@ def get_okx_change(inst_id):
     result=[]
 
 
-    for i in [-3,-2,-1]:
+    for i in [-4,-3,-2,-1]:
 
 
         if daily.iloc[i-1]==0:
@@ -677,7 +680,7 @@ def get_okx_change(inst_id):
 
 # =========================
 # 업비트 변동률
-# -2일 / -1일 / 오늘
+# -3일 / -2일 / -1일 / 오늘
 # =========================
 
 def get_upbit_change(market):
@@ -685,7 +688,7 @@ def get_upbit_change(market):
     df=get_upbit_ohlcv(
         market,
         60,
-        72
+        120
     )
 
 
@@ -718,7 +721,7 @@ def get_upbit_change(market):
     )
 
 
-    if len(daily)<4:
+    if len(daily)<5:
 
         return None
 
@@ -727,7 +730,7 @@ def get_upbit_change(market):
     result=[]
 
 
-    for i in [-3,-2,-1]:
+    for i in [-4,-3,-2,-1]:
 
 
         if daily.iloc[i-1]==0:
@@ -764,6 +767,7 @@ def get_upbit_change(market):
 
 # =========================
 # 변동률 표시
+# 자리 고정
 # =========================
 
 def format_change(changes):
@@ -782,29 +786,26 @@ def format_change(changes):
 
         if x>0:
 
-            result.append(
-                f"🟢+{x}%"
-            )
-
+            text=f"+{x:.2f}%"
 
         elif x<0:
 
-            result.append(
-                f"🔴{x}%"
-            )
-
+            text=f"{x:.2f}%"
 
         else:
 
-            result.append(
-                f"⚪{x}%"
-            )
+            text="0.00%"
+
+
+
+        # 10자리 고정
+        result.append(
+            text.rjust(10)
+        )
 
 
 
     return " / ".join(result)
-
-
 
 # =========================
 # OKX TOP20 업데이트
@@ -841,6 +842,7 @@ def update_okx():
 
 
     volume_map={}
+
 
 
     for symbol in symbols:
@@ -953,6 +955,8 @@ def update_okx():
         "OKX 완료"
     )
 
+
+
 # =========================
 # 업비트 TOP20 업데이트
 # =========================
@@ -967,7 +971,9 @@ def update_upbit():
     )
 
 
+
     volume_map=get_upbit_volume_map()
+
 
 
     if not volume_map:
@@ -1067,8 +1073,6 @@ def update_upbit():
         "업비트 완료"
     )
 
-
-
 # =========================
 # 전체 업데이트
 # =========================
@@ -1120,7 +1124,10 @@ def dashboard():
 
 <meta http-equiv="refresh" content="300">
 
-<title>OKX+UPBIT</title>
+
+<title>
+OKX+UPBIT
+</title>
 
 
 <style>
@@ -1164,7 +1171,13 @@ border-bottom:1px solid #444;
 
 text-align:center;
 
+white-space:pre;
+
+font-family:monospace;
+
 }
+
+
 
 </style>
 
@@ -1175,16 +1188,20 @@ text-align:center;
 <body>
 
 
-<h2>📊 암호화폐 실시간 분석</h2>
+<h2>
+📊 암호화폐 실시간 분석
+</h2>
 
 
 <p>
-변동률 : -2일 / -1일 / 오늘
+변동률 : -3일 / -2일 / -1일 / 오늘
 </p>
 
 
 
-<h2>🏆 OKX 선물 거래대금 TOP20</h2>
+<h2>
+🏆 OKX 선물 거래대금 TOP20
+</h2>
 
 
 <table>
@@ -1192,11 +1209,17 @@ text-align:center;
 <tr>
 
 <th>순위</th>
+
 <th>코인</th>
-<th>-2일/-1일/오늘</th>
+
+<th>-3일/-2일/-1일/오늘</th>
+
 <th>거래대금</th>
+
 <th>1D</th>
+
 <th>4H</th>
+
 <th>15M</th>
 
 </tr>
@@ -1204,23 +1227,33 @@ text-align:center;
 """
 
 
+
     for item in latest_okx_data:
+
 
         html+=f"""
 
 <tr>
 
 <td>{item['rank']}</td>
+
 <td>{item['name']}</td>
+
 <td>{item['change']}</td>
+
 <td>{item['volume']}</td>
+
 <td>{item['ema1d']}</td>
+
 <td>{item['ema4h']}</td>
+
 <td>{item['ema15m']}</td>
+
 
 </tr>
 
 """
+
 
 
     html+="""
@@ -1231,43 +1264,67 @@ text-align:center;
 <hr>
 
 
-<h2>🏆 업비트 현물 거래대금 TOP20</h2>
+
+<h2>
+🏆 업비트 현물 거래대금 TOP20
+</h2>
+
 
 
 <table>
 
+
 <tr>
 
+
 <th>순위</th>
+
 <th>코인</th>
-<th>-2일/-1일/오늘</th>
+
+<th>-3일/-2일/-1일/오늘</th>
+
 <th>거래대금</th>
+
 <th>1D</th>
+
 <th>4H</th>
+
 <th>15M</th>
 
+
 </tr>
+
 
 """
 
 
+
     for item in latest_upbit_data:
+
 
         html+=f"""
 
 <tr>
 
 <td>{item['rank']}</td>
+
 <td>{item['name']}</td>
+
 <td>{item['change']}</td>
+
 <td>{item['volume']}</td>
+
 <td>{item['ema1d']}</td>
+
 <td>{item['ema4h']}</td>
+
 <td>{item['ema15m']}</td>
+
 
 </tr>
 
 """
+
 
 
     html+="""
@@ -1277,12 +1334,14 @@ text-align:center;
 
 </body>
 
+
 </html>
 
 """
 
 
     return html
+
 
 
 
@@ -1328,5 +1387,4 @@ if __name__=="__main__":
         port=8000
 
     )
-
-
+    
