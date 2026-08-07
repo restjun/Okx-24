@@ -1210,9 +1210,9 @@ font-family:monospace;
 
 <th>코인</th>
 
-<th>-3일/-2일/-1일/오늘</th>
-
 <th>거래대금</th>
+
+<th>-3일/-2일/-1일/오늘</th>
 
 <th>1D</th>
 
@@ -1237,9 +1237,9 @@ font-family:monospace;
 
 <td>{item['name']}</td>
 
-<td>{item['change']}</td>
-
 <td>{item['volume']}</td>
+
+<td>{item['change']}</td>
 
 <td>{item['ema1d']}</td>
 
@@ -1279,9 +1279,9 @@ font-family:monospace;
 
 <th>코인</th>
 
-<th>-2일/-1일/오늘</th>
-
 <th>거래대금</th>
+
+<th>-2일/-1일/오늘</th>
 
 <th>1D</th>
 
@@ -1308,9 +1308,9 @@ font-family:monospace;
 
 <td>{item['name']}</td>
 
-<td>{item['change']}</td>
-
 <td>{item['volume']}</td>
+
+<td>{item['change']}</td>
 
 <td>{item['ema1d']}</td>
 
