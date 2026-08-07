@@ -767,7 +767,7 @@ def get_upbit_change(market):
 
 # =========================
 # 변동률 표시
-# 자리 고정
+# 자리 고정 + 색상볼
 # =========================
 
 def format_change(changes):
@@ -775,7 +775,6 @@ def format_change(changes):
     if changes is None:
 
         return "N/A"
-
 
 
     result=[]
@@ -786,23 +785,22 @@ def format_change(changes):
 
         if x>0:
 
-            text=f"+{x:.2f}%"
+            text=f"🟢+{x:.2f}%"
 
         elif x<0:
 
-            text=f"{x:.2f}%"
+            text=f"🔴{x:.2f}%"
 
         else:
 
-            text="0.00%"
+            text=f"⚪0.00%"
 
 
 
-        # 10자리 고정
+        # 자리 고정
         result.append(
-            text.rjust(10)
+            text.rjust(11)
         )
-
 
 
     return " / ".join(result)
