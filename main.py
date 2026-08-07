@@ -864,7 +864,7 @@ def update_okx():
 
         reverse=True
 
-    )[:20]
+    )[:10]
 
 
 
@@ -988,7 +988,7 @@ def update_upbit():
 
         reverse=True
 
-    )[:20]
+    )[:10]
 
 
 
