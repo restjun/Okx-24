@@ -599,7 +599,7 @@ def get_okx_change(inst_id):
     )
 
 
-    if df is None or len(df)<48:
+    if df is None or len(df)<50:
 
         return None
 
@@ -622,16 +622,18 @@ def get_okx_change(inst_id):
 
 
     daily=(
+
         df["c"]
         .resample(
             "1D",
             offset="9h"
         )
         .last()
+
     )
 
 
-    if len(daily)<3:
+    if len(daily)<4:
 
         return None
 
@@ -641,6 +643,15 @@ def get_okx_change(inst_id):
 
 
     for i in [-3,-2,-1]:
+
+
+        if daily.iloc[i-1]==0:
+
+            result.append(0)
+
+            continue
+
+
 
         change=(
 
@@ -678,7 +689,7 @@ def get_upbit_change(market):
     )
 
 
-    if df is None or len(df)<48:
+    if df is None or len(df)<50:
 
         return None
 
@@ -707,7 +718,7 @@ def get_upbit_change(market):
     )
 
 
-    if len(daily)<3:
+    if len(daily)<4:
 
         return None
 
@@ -717,6 +728,14 @@ def get_upbit_change(market):
 
 
     for i in [-3,-2,-1]:
+
+
+        if daily.iloc[i-1]==0:
+
+            result.append(0)
+
+            continue
+
 
 
         change=(
