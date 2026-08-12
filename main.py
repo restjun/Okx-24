@@ -645,7 +645,7 @@ def get_okx_change(inst_id):
     result=[]
 
 
-    for i in [-3,-2,-1]:
+    for i in [-4,-3,-2,-1]:
 
 
         if daily.iloc[i-1]==0:
@@ -730,7 +730,7 @@ def get_upbit_change(market):
     result=[]
 
 
-    for i in [-3,-2,-1]:
+    for i in [-4,-3,-2,-1]:
 
 
         if daily.iloc[i-1]==0:
