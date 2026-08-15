@@ -645,7 +645,7 @@ def get_okx_change(inst_id):
     result=[]
 
 
-    for i in [-4,-3,-2,-1]:
+    for i in [-3,-2,-1]:
 
 
         if daily.iloc[i-1]==0:
@@ -730,7 +730,7 @@ def get_upbit_change(market):
     result=[]
 
 
-    for i in [-4,-3,-2,-1]:
+    for i in [-3,-2,-1]:
 
 
         if daily.iloc[i-1]==0:
@@ -914,9 +914,9 @@ def update_okx():
         )
 
 
-        ema15m=get_okx_ema_status(
+        ema30m=get_okx_ema_status(
             symbol,
-            "15m"
+            "30m"
         )
 
 
@@ -937,7 +937,7 @@ def update_okx():
 
             "ema4h":ema4h,
 
-            "ema15m":ema15m
+            "ema30m":ema30m
 
         })
 
@@ -1032,9 +1032,9 @@ def update_upbit():
         )
 
 
-        ema15m=get_upbit_ema_status(
+        ema30m=get_upbit_ema_status(
             market,
-            15
+            30
         )
 
 
@@ -1055,7 +1055,7 @@ def update_upbit():
 
             "ema4h":ema4h,
 
-            "ema15m":ema15m
+            "ema30m":ema30m
 
         })
 
@@ -1214,7 +1214,7 @@ font-family:monospace;
 
 <th>-3일/-2일/-1일/오늘</th>
 
-<th>15M</th>
+<th>30M</th>
 
 <th>4H</th>
 
@@ -1241,7 +1241,7 @@ font-family:monospace;
 
 <td>{item['change']}</td>
 
-<td>{item['ema15m']}</td>
+<td>{item['ema30m']}</td>
 
 <td>{item['ema4h']}</td>
 
@@ -1283,7 +1283,7 @@ font-family:monospace;
 
 <th>-2일/-1일/오늘</th>
 
-<th>15M</th>
+<th>30M</th>
 
 <th>4H</th>
 
@@ -1312,7 +1312,7 @@ font-family:monospace;
 
 <td>{item['change']}</td>
 
-<td>{item['ema15m']}</td>
+<td>{item['ema30m']}</td>
 
 <td>{item['ema4h']}</td>
 
