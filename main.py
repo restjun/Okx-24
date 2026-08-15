@@ -1214,11 +1214,11 @@ font-family:monospace;
 
 <th>-3일/-2일/-1일/오늘</th>
 
-<th>1D</th>
+<th>15M</th>
 
 <th>4H</th>
 
-<th>15M</th>
+<th>1D</th>
 
 </tr>
 
@@ -1241,11 +1241,11 @@ font-family:monospace;
 
 <td>{item['change']}</td>
 
-<td>{item['ema1d']}</td>
+<td>{item['ema15m']}</td>
 
 <td>{item['ema4h']}</td>
 
-<td>{item['ema15m']}</td>
+<td>{item['ema1d']}</td>
 
 
 </tr>
@@ -1283,11 +1283,11 @@ font-family:monospace;
 
 <th>-2일/-1일/오늘</th>
 
-<th>1D</th>
+<th>15M</th>
 
 <th>4H</th>
 
-<th>15M</th>
+<th>1D</th>
 
 
 </tr>
@@ -1312,11 +1312,11 @@ font-family:monospace;
 
 <td>{item['change']}</td>
 
-<td>{item['ema1d']}</td>
+<td>{item['ema15m']}</td>
 
 <td>{item['ema4h']}</td>
 
-<td>{item['ema15m']}</td>
+<td>{item['ema1d']}</td>
 
 
 </tr>
