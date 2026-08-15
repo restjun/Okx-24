@@ -743,7 +743,7 @@ def get_okx_change(inst_id):
     result=[]
 
 
-    for i in [-3,-2,-1]:
+    for i in [-1,-2,-3]:
 
         if daily.iloc[i-1]==0:
 
@@ -826,7 +826,7 @@ def get_upbit_change(market):
     result=[]
 
 
-    for i in [-3,-2,-1]:
+    for i in [-1,-2,-3]:
 
         if daily.iloc[i-1]==0:
 
@@ -1270,7 +1270,7 @@ font-family:monospace;
 
 
 <p>
-변동률 : -2일 / -1일 / 오늘
+변동률 : 오늘 / 전일 / -2일
 
 </p>
 
@@ -1291,13 +1291,13 @@ font-family:monospace;
 
 <th>거래대금</th>
 
-<th>-2일/ -1일/ 오늘</th>
-
 <th>4H</th>
 
 <th>1D</th>
 
 <th>1W</th>
+
+<th>오늘/ 전일/ -2일</th>
 
 </tr>
 
@@ -1316,13 +1316,13 @@ font-family:monospace;
 
 <td>{item['volume']}</td>
 
-<td>{item['change']}</td>
-
 <td>{item['ema4h']}</td>
 
 <td>{item['ema1d']}</td>
 
 <td>{item['ema1w']}</td>
+
+<td>{item['change']}</td>
 
 </tr>
 
@@ -1355,13 +1355,13 @@ font-family:monospace;
 
 <th>거래대금</th>
 
-<th>-2일/ -1일/ 오늘</th>
-
 <th>4H</th>
 
 <th>1D</th>
 
 <th>1W</th>
+
+<th>오늘/ 전일/ -2일</th>
 
 </tr>
 
@@ -1381,13 +1381,14 @@ font-family:monospace;
 
 <td>{item['volume']}</td>
 
-<td>{item['change']}</td>
-
 <td>{item['ema4h']}</td>
 
 <td>{item['ema1d']}</td>
 
 <td>{item['ema1w']}</td>
+
+<td>{item['change']}</td>
+
 
 </tr>
 
