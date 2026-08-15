@@ -430,41 +430,62 @@ def format_volume(volume):
 
 def check_ema(df,column):
 
-    if df is None or len(df)<200:
+    if df is None or len(df)<120:
 
-        return "N/A"
+        return "⚪"
 
 
-    df["ema50"]=(
+    df["ema20"]=(
         df[column]
         .ewm(
-            span=50,
+            span=20,
             adjust=False
         )
         .mean()
     )
 
 
-    df["ema200"]=(
+    df["ema60"]=(
         df[column]
         .ewm(
-            span=200,
+            span=60,
             adjust=False
         )
         .mean()
     )
 
 
-    if (
-        df["ema50"].iloc[-1]
-        >
-        df["ema200"].iloc[-1]
-    ):
+    df["ema120"]=(
+        df[column]
+        .ewm(
+            span=120,
+            adjust=False
+        )
+        .mean()
+    )
+
+
+    ema20=df["ema20"].iloc[-1]
+    ema60=df["ema60"].iloc[-1]
+    ema120=df["ema120"].iloc[-1]
+
+
+    # 정배열
+    if ema20 > ema60 > ema120:
 
         return "🟢"
 
 
-    return "🔴"
+    # 역배열
+    elif ema20 < ema60 < ema120:
+
+        return "🔴"
+
+
+    # 둘 다 아니면
+    else:
+
+        return "⚪"
 
 # =========================
 # OKX EMA 상태
