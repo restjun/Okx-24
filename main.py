@@ -1270,7 +1270,8 @@ font-family:monospace;
 
 
 <p>
-변동률 : -3일 / -2일 / -1일
+변동률 : -2일 / -1일 / 오늘
+
 </p>
 
 
@@ -1290,7 +1291,7 @@ font-family:monospace;
 
 <th>거래대금</th>
 
-<th>-3일/-2일/-1일</th>
+<th>-2일/ -1일/ 오늘</th>
 
 <th>4H</th>
 
@@ -1354,7 +1355,7 @@ font-family:monospace;
 
 <th>거래대금</th>
 
-<th>-3일/-2일/-1일</th>
+<th>-2일/ -1일/ 오늘</th>
 
 <th>4H</th>
 
