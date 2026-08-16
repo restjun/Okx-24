@@ -26,7 +26,6 @@ latest_okx_data=[]
 latest_upbit_data=[]
 
 
-
 # =========================
 # API 재시도
 # =========================
@@ -42,7 +41,6 @@ def retry_request(func,*args,**kwargs):
                 **kwargs
             )
 
-
             if hasattr(result,"status_code"):
 
                 if result.status_code==429:
@@ -51,9 +49,7 @@ def retry_request(func,*args,**kwargs):
 
                     continue
 
-
             return result
-
 
         except Exception as e:
 
@@ -63,9 +59,7 @@ def retry_request(func,*args,**kwargs):
 
             time.sleep(3)
 
-
     return None
-
 
 
 # =========================
@@ -79,34 +73,26 @@ def get_okx_ohlcv(
 ):
 
     url=(
-
         "https://www.okx.com/api/v5/market/candles"
         f"?instId={inst_id}"
         f"&bar={bar}"
         f"&limit={limit}"
-
     )
-
 
     response=retry_request(
         requests.get,
         url
     )
 
-
     if response is None:
 
         return None
 
-
     try:
 
         df=pd.DataFrame(
-
             response.json()["data"],
-
             columns=[
-
                 "ts",
                 "o",
                 "h",
@@ -116,31 +102,24 @@ def get_okx_ohlcv(
                 "volCcy",
                 "volCcyQuote",
                 "confirm"
-
             ]
-
         )
-
 
         df["c"]=(
             df["c"]
             .astype(float)
         )
 
-
         df["volCcyQuote"]=(
             df["volCcyQuote"]
             .astype(float)
         )
 
-
         df=df.iloc[::-1].reset_index(
             drop=True
         )
 
-
         return df
-
 
     except Exception as e:
 
@@ -149,7 +128,6 @@ def get_okx_ohlcv(
         )
 
         return None
-
 
 
 # =========================
@@ -163,25 +141,20 @@ def get_upbit_ohlcv(
 ):
 
     url=(
-
         "https://api.upbit.com/v1/candles/minutes/"
         f"{unit}"
         f"?market={market}"
         f"&count={count}"
-
     )
-
 
     response=retry_request(
         requests.get,
         url
     )
 
-
     if response is None:
 
         return None
-
 
     try:
 
@@ -189,20 +162,16 @@ def get_upbit_ohlcv(
             response.json()
         )
 
-
         df=df.iloc[::-1].reset_index(
             drop=True
         )
-
 
         df["trade_price"]=(
             df["trade_price"]
             .astype(float)
         )
 
-
         return df
-
 
     except Exception as e:
 
@@ -211,7 +180,6 @@ def get_upbit_ohlcv(
         )
 
         return None
-
 
 
 # =========================
@@ -224,24 +192,19 @@ def get_upbit_day_ohlcv(
 ):
 
     url=(
-
         "https://api.upbit.com/v1/candles/days"
         f"?market={market}"
         f"&count={count}"
-
     )
-
 
     response=retry_request(
         requests.get,
         url
     )
 
-
     if response is None:
 
         return None
-
 
     try:
 
@@ -249,20 +212,16 @@ def get_upbit_day_ohlcv(
             response.json()
         )
 
-
         df=df.iloc[::-1].reset_index(
             drop=True
         )
-
 
         df["trade_price"]=(
             df["trade_price"]
             .astype(float)
         )
 
-
         return df
-
 
     except Exception as e:
 
@@ -271,7 +230,6 @@ def get_upbit_day_ohlcv(
         )
 
         return None
-
 
 
 # =========================
@@ -284,24 +242,19 @@ def get_upbit_week_ohlcv(
 ):
 
     url=(
-
         "https://api.upbit.com/v1/candles/weeks"
         f"?market={market}"
         f"&count={count}"
-
     )
-
 
     response=retry_request(
         requests.get,
         url
     )
 
-
     if response is None:
 
         return None
-
 
     try:
 
@@ -309,20 +262,16 @@ def get_upbit_week_ohlcv(
             response.json()
         )
 
-
         df=df.iloc[::-1].reset_index(
             drop=True
         )
-
 
         df["trade_price"]=(
             df["trade_price"]
             .astype(float)
         )
 
-
         return df
-
 
     except Exception as e:
 
@@ -331,7 +280,6 @@ def get_upbit_week_ohlcv(
         )
 
         return None
-
 
 
 # =========================
@@ -345,30 +293,22 @@ def get_all_okx_swap_symbols():
         "public/instruments?instType=SWAP"
     )
 
-
     response=retry_request(
         requests.get,
         url
     )
 
-
     if response is None:
 
         return []
 
-
     try:
 
         return [
-
             x["instId"]
-
             for x in response.json()["data"]
-
             if "USDT" in x["instId"]
-
         ]
-
 
     except Exception as e:
 
@@ -377,7 +317,6 @@ def get_all_okx_swap_symbols():
         )
 
         return []
-
 
 
 # =========================
@@ -391,26 +330,17 @@ def get_upbit_markets():
         "https://api.upbit.com/v1/market/all"
     )
 
-
     if response is None:
 
         return []
 
-
     try:
 
         return [
-
             x["market"]
-
             for x in response.json()
-
-            if x["market"].startswith(
-                "KRW-"
-            )
-
+            if x["market"].startswith("KRW-")
         ]
-
 
     except Exception as e:
 
@@ -419,7 +349,6 @@ def get_upbit_markets():
         )
 
         return []
-
 
 
 # =========================
@@ -433,21 +362,17 @@ def get_usdt_krw():
         "https://api.upbit.com/v1/ticker?markets=KRW-USDT"
     )
 
-
     if response is None:
 
         return 1400
-
 
     try:
 
         return response.json()[0]["trade_price"]
 
-
     except:
 
         return 1400
-
 
 
 # =========================
@@ -462,13 +387,11 @@ def format_volume(volume):
             f"{volume/1_000_000_000_000:.2f}조"
         )
 
-
     elif volume>=100_000_000:
 
         return (
             f"{volume/100_000_000:,.0f}억"
         )
-
 
     else:
 
@@ -477,17 +400,22 @@ def format_volume(volume):
         )
 
 
-
 # =========================
-# EMA 계산
-# EMA20 / EMA60 / EMA120
+# EMA 상태 + 유지 캔들수
+#
+# 🟢(N) = 정배열 N개 연속
+# 🔴(N) = 역배열 N개 연속
+# ⚪(0) = 현재 비배열
 # =========================
 
 def check_ema(df,column):
 
     if df is None or len(df)<120:
 
-        return "⚪"
+        return "⚪(0)"
+
+
+    df=df.copy()
 
 
     df["ema20"]=(
@@ -520,42 +448,97 @@ def check_ema(df,column):
     )
 
 
-    ema20=df["ema20"].iloc[-1]
+    # =========================
+    # 각 캔들의 배열 상태 계산
+    # =========================
 
-    ema60=df["ema60"].iloc[-1]
-
-    ema120=df["ema120"].iloc[-1]
-
-
-    # 정배열
-    if (
-        ema20
-        >
-        ema60
-        >
-        ema120
-    ):
-
-        return "🟢"
+    states=[]
 
 
-    # 역배열
-    elif (
-        ema20
-        <
-        ema60
-        <
-        ema120
-    ):
+    for _,row in df.iterrows():
 
-        return "🔴"
+        ema20=row["ema20"]
+
+        ema60=row["ema60"]
+
+        ema120=row["ema120"]
 
 
-    # 정배열/역배열 아님
-    else:
+        if (
+            ema20
+            >
+            ema60
+            >
+            ema120
+        ):
 
-        return "⚪"
+            states.append("long")
 
+
+        elif (
+            ema20
+            <
+            ema60
+            <
+            ema120
+        ):
+
+            states.append("short")
+
+
+        else:
+
+            states.append("none")
+
+
+    # =========================
+    # 현재 상태
+    # =========================
+
+    current_state=states[-1]
+
+
+    # 정배열/역배열이 아니면
+    # 무조건 ⚪(0)
+    if current_state=="none":
+
+        return "⚪(0)"
+
+
+    # =========================
+    # 현재 배열이 몇 캔들째
+    # 연속 유지되고 있는지 계산
+    # =========================
+
+    count=0
+
+
+    for state in reversed(states):
+
+        if state==current_state:
+
+            count+=1
+
+        else:
+
+            break
+
+
+    # =========================
+    # 표시
+    # =========================
+
+    if current_state=="long":
+
+        return f"🟢({count})"
+
+
+    elif current_state=="short":
+
+        return f"🔴({count})"
+
+
+    return "⚪(0)"
 
 
 # =========================
@@ -573,12 +556,10 @@ def get_okx_ema_status(
         200
     )
 
-
     return check_ema(
         df,
         "c"
     )
-
 
 
 # =========================
@@ -597,14 +578,12 @@ def get_upbit_ema_status(
             200
         )
 
-
     elif unit=="WEEK":
 
         df=get_upbit_week_ohlcv(
             market,
             200
         )
-
 
     else:
 
@@ -614,12 +593,10 @@ def get_upbit_ema_status(
             200
         )
 
-
     return check_ema(
         df,
         "trade_price"
     )
-
 
 
 # =========================
@@ -634,14 +611,11 @@ def get_okx_volume(inst_id):
         24
     )
 
-
     if df is None:
 
         return 0
 
-
     return df["volCcyQuote"].sum()
-
 
 
 # =========================
@@ -652,14 +626,12 @@ def get_upbit_volume_map():
 
     markets=get_upbit_markets()
 
-
     response=retry_request(
         requests.get,
         "https://api.upbit.com/v1/ticker?markets="
         +
         ",".join(markets)
     )
-
 
     if response is None:
 
@@ -669,14 +641,10 @@ def get_upbit_volume_map():
     try:
 
         return {
-
             x["market"]:
             x["acc_trade_price_24h"]
-
             for x in response.json()
-
         }
-
 
     except Exception as e:
 
@@ -685,7 +653,6 @@ def get_upbit_volume_map():
         )
 
         return {}
-
 
 
 # =========================
@@ -700,7 +667,6 @@ def get_okx_change(inst_id):
         "1H",
         120
     )
-
 
     if df is None or len(df)<50:
 
@@ -724,14 +690,12 @@ def get_okx_change(inst_id):
 
 
     daily=(
-
         df["c"]
         .resample(
             "1D",
             offset="9h"
         )
         .last()
-
     )
 
 
@@ -753,7 +717,6 @@ def get_okx_change(inst_id):
 
 
         change=(
-
             (
                 daily.iloc[i]
                 -
@@ -763,7 +726,6 @@ def get_okx_change(inst_id):
             daily.iloc[i-1]
             *
             100
-
         )
 
 
@@ -773,7 +735,6 @@ def get_okx_change(inst_id):
 
 
     return result
-
 
 
 # =========================
@@ -807,14 +768,12 @@ def get_upbit_change(market):
 
 
     daily=(
-
         df["trade_price"]
         .resample(
             "1D",
             offset="9h"
         )
         .last()
-
     )
 
 
@@ -836,7 +795,6 @@ def get_upbit_change(market):
 
 
         change=(
-
             (
                 daily.iloc[i]
                 -
@@ -846,7 +804,6 @@ def get_upbit_change(market):
             daily.iloc[i-1]
             *
             100
-
         )
 
 
@@ -856,7 +813,6 @@ def get_upbit_change(market):
 
 
     return result
-
 
 
 # =========================
@@ -897,7 +853,6 @@ def format_change(changes):
     return " / ".join(result)
 
 
-
 # =========================
 # OKX TOP10 업데이트
 # =========================
@@ -936,22 +891,16 @@ def update_okx():
     for symbol in symbols:
 
         volume_map[symbol]=(
-
             get_okx_volume(symbol)
             *
             usdt_krw
-
         )
 
 
     top20=sorted(
-
         volume_map,
-
         key=volume_map.get,
-
         reverse=True
-
     )[:10]
 
 
@@ -1037,7 +986,6 @@ def update_okx():
     )
 
 
-
 # =========================
 # 업비트 TOP10 업데이트
 # =========================
@@ -1061,13 +1009,9 @@ def update_upbit():
 
 
     top20=sorted(
-
         volume_map,
-
         key=volume_map.get,
-
         reverse=True
-
     )[:10]
 
 
@@ -1148,7 +1092,6 @@ def update_upbit():
     )
 
 
-
 # =========================
 # 전체 업데이트
 # =========================
@@ -1170,7 +1113,6 @@ def update_dashboard():
     )
 
 
-
 # =========================
 # 스케줄러
 # =========================
@@ -1182,7 +1124,6 @@ def scheduler():
         schedule.run_pending()
 
         time.sleep(1)
-
 
 
 # =========================
@@ -1200,11 +1141,9 @@ def dashboard():
 
 <meta http-equiv="refresh" content="300">
 
-
 <title>
 OKX+UPBIT
 </title>
-
 
 <style>
 
@@ -1254,9 +1193,7 @@ font-family:monospace;
 }
 
 
-
 </style>
-
 
 </head>
 
@@ -1271,9 +1208,7 @@ font-family:monospace;
 
 <p>
 변동률 : 오늘 / 전일 / -2일
-
 </p>
-
 
 
 <h2>
@@ -1282,6 +1217,7 @@ font-family:monospace;
 
 
 <table>
+
 
 <tr>
 
@@ -1337,11 +1273,9 @@ font-family:monospace;
 <hr>
 
 
-
 <h2>
 🏆 업비트 현물 거래대금 TOP10
 </h2>
-
 
 
 <table>
@@ -1364,7 +1298,6 @@ font-family:monospace;
 <th>오늘/ 전일/ -2일</th>
 
 </tr>
-
 
 """
 
@@ -1389,7 +1322,6 @@ font-family:monospace;
 
 <td>{item['change']}</td>
 
-
 </tr>
 
 """
@@ -1411,7 +1343,6 @@ font-family:monospace;
     return html
 
 
-
 # =========================
 # 시작
 # =========================
@@ -1428,13 +1359,9 @@ def startup():
 
 
     threading.Thread(
-
         target=scheduler,
-
         daemon=True
-
     ).start()
-
 
 
 # =========================
@@ -1451,4 +1378,4 @@ if __name__=="__main__":
 
         port=8000
 
-        )
+    )
