@@ -456,24 +456,24 @@ def get_usdt_krw():
 
 def format_volume(volume):
 
-    if volume>=1_000_000_000_000:
+    if volume>=1_000_000_000_000_000:
 
         return (
-            f"{volume/1_000_000_000_000:.2f}조"
+            f"{volume/1_000_000_000_000_000:.2f}조"
         )
 
 
-    elif volume>=100_000_000:
+    elif volume>=100_000_000_000:
 
         return (
-            f"{volume/100_000_000:,.0f}억"
+            f"{volume/100_000_000_000:,.0f}억"
         )
 
 
     else:
 
         return (
-            f"{volume/10_000:,.0f}만원"
+            f"{volume/10_000_000:,.0f}만원"
         )
 
 
