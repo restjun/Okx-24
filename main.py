@@ -952,7 +952,7 @@ def update_okx():
 
         reverse=True
 
-    )[:20]
+    )[:10]
 
 
     rows=[]
@@ -1068,7 +1068,7 @@ def update_upbit():
 
         reverse=True
 
-    )[:20]
+    )[:10]
 
 
     rows=[]
