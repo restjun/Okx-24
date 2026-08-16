@@ -1223,7 +1223,7 @@ padding:20px;
 
 table{
 
-width:100%;
+width:auto;
 
 border-collapse:collapse;
 
