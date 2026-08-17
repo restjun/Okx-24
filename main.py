@@ -758,6 +758,44 @@ def check_ema_warning(
 
 
 # =========================================================
+# OKX 30M
+# =========================================================
+
+def get_okx_30m_ema(
+    inst_id
+):
+
+    df = get_okx_ohlcv(
+        inst_id,
+        "30m",
+        200
+    )
+
+
+    return {
+
+        "short":
+            check_ema_10_20(
+                df,
+                "c"
+            ),
+
+        "long":
+            check_ema(
+                df,
+                "c"
+            ),
+
+        "warning":
+            check_ema_warning(
+                df,
+                "c"
+            )
+
+    }
+
+
+# =========================================================
 # OKX 4H
 # =========================================================
 
@@ -828,6 +866,44 @@ def get_okx_1d_ema(
             check_ema_warning(
                 df,
                 "c"
+            )
+
+    }
+
+
+# =========================================================
+# 업비트 30M
+# =========================================================
+
+def get_upbit_30m_ema(
+    market
+):
+
+    df = get_upbit_ohlcv(
+        market,
+        30,
+        200
+    )
+
+
+    return {
+
+        "short":
+            check_ema_10_20(
+                df,
+                "trade_price"
+            ),
+
+        "long":
+            check_ema(
+                df,
+                "trade_price"
+            ),
+
+        "warning":
+            check_ema_warning(
+                df,
+                "trade_price"
             )
 
     }
@@ -1145,7 +1221,6 @@ def get_upbit_change(
 
 # =========================================================
 # 변동률 표시
-# 숫자 위치를 고정해서 정렬
 # =========================================================
 
 def format_change(
@@ -1285,6 +1360,11 @@ def update_okx():
         )
 
 
+        ema30m = get_okx_30m_ema(
+            symbol
+        )
+
+
         ema4h = get_okx_4h_ema(
             symbol
         )
@@ -1310,6 +1390,9 @@ def update_okx():
                 format_volume(
                     volume_map[symbol]
                 ),
+
+            "ema30m":
+                ema30m,
 
             "ema4h":
                 ema4h,
@@ -1384,6 +1467,11 @@ def update_upbit():
         )
 
 
+        ema30m = get_upbit_30m_ema(
+            market
+        )
+
+
         ema4h = get_upbit_4h_ema(
             market
         )
@@ -1409,6 +1497,9 @@ def update_upbit():
                 format_volume(
                     volume_map[market]
                 ),
+
+            "ema30m":
+                ema30m,
 
             "ema4h":
                 ema4h,
@@ -1466,12 +1557,35 @@ def scheduler():
 
 # =========================================================
 # EMA 한 줄 표시
+# 30M / 4H / 1D
 # =========================================================
 
 def ema_html(
+    ema30m,
     ema4h,
     ema1d
 ):
+
+    # -------------------------
+    # 30M 경고
+    # -------------------------
+
+    if ema30m["warning"] == "long_warning":
+
+        warning30m = "🌧"
+
+    elif ema30m["warning"] == "short_warning":
+
+        warning30m = "🚀"
+
+    else:
+
+        warning30m = ""
+
+
+    # -------------------------
+    # 4H 경고
+    # -------------------------
 
     if ema4h["warning"] == "long_warning":
 
@@ -1485,6 +1599,10 @@ def ema_html(
 
         warning4h = ""
 
+
+    # -------------------------
+    # 1D 경고
+    # -------------------------
 
     if ema1d["warning"] == "long_warning":
 
@@ -1504,6 +1622,28 @@ def ema_html(
 <div class="ema-display">
 
     <span class="ema-time">
+        30M
+    </span>
+
+    <span class="ema-status">
+        {ema30m["short"]}
+    </span>
+
+    <span class="ema-status">
+        {ema30m["long"]}
+    </span>
+
+    <span class="ema-warning">
+        {warning30m}
+    </span>
+
+
+    <span class="ema-divider">
+        |
+    </span>
+
+
+    <span class="ema-time">
         4H
     </span>
 
@@ -1519,9 +1659,11 @@ def ema_html(
         {warning4h}
     </span>
 
+
     <span class="ema-divider">
         |
     </span>
+
 
     <span class="ema-time">
         1D
@@ -1664,9 +1806,9 @@ td{
 
     display:inline-block;
 
-    width:40px;
+    width:45px;
 
-    min-width:40px;
+    min-width:45px;
 
     text-align:left;
 
@@ -1710,7 +1852,7 @@ td{
 
 
 /* =========================
-   4H / 1D 구분
+   30M / 4H / 1D 구분
    ========================= */
 
 .ema-divider{
@@ -1881,6 +2023,7 @@ EMA 배열
 <td>
 
 {ema_html(
+    item["ema30m"],
     item["ema4h"],
     item["ema1d"]
 )}
@@ -1960,6 +2103,7 @@ EMA 배열
 <td>
 
 {ema_html(
+    item["ema30m"],
     item["ema4h"],
     item["ema1d"]
 )}
@@ -2026,4 +2170,4 @@ if __name__ == "__main__":
 
         port=8000
 
-    )
+            )
