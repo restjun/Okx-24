@@ -677,15 +677,16 @@ def get_upbit_ema_status(
 
 
 # =========================================================
-# OKX 4H + 1D 통합 표시
-#
-# 4H 🟢(5-10) 🟢(20-60-120)
-# 1D 🔴(5-10) 🟢(20-60-120)
+# OKX EMA 통합 표시
 # =========================================================
 
 def get_okx_ema_display(
     inst_id
 ):
+
+    # -------------------------
+    # 4시간봉
+    # -------------------------
 
     ema5_10_4h = get_okx_ema_5_10_status(
         inst_id,
@@ -698,6 +699,10 @@ def get_okx_ema_display(
     )
 
 
+    # -------------------------
+    # 일봉
+    # -------------------------
+
     ema5_10_1d = get_okx_ema_5_10_status(
         inst_id,
         "1D"
@@ -709,20 +714,34 @@ def get_okx_ema_display(
     )
 
 
-    return (
-        f"4H {ema5_10_4h} {ema20_60_120_4h}"
-        f"  |  "
-        f"1D {ema5_10_1d} {ema20_60_120_1d}"
-    )
+    return {
+
+        "4h_5_10":
+            ema5_10_4h,
+
+        "4h_20_60_120":
+            ema20_60_120_4h,
+
+        "1d_5_10":
+            ema5_10_1d,
+
+        "1d_20_60_120":
+            ema20_60_120_1d
+
+    }
 
 
 # =========================================================
-# 업비트 4H + 1D 통합 표시
+# 업비트 EMA 통합 표시
 # =========================================================
 
 def get_upbit_ema_display(
     market
 ):
+
+    # -------------------------
+    # 4시간봉
+    # -------------------------
 
     ema5_10_4h = get_upbit_ema_5_10_status(
         market,
@@ -735,6 +754,10 @@ def get_upbit_ema_display(
     )
 
 
+    # -------------------------
+    # 일봉
+    # -------------------------
+
     ema5_10_1d = get_upbit_ema_5_10_status(
         market,
         "DAY"
@@ -746,11 +769,21 @@ def get_upbit_ema_display(
     )
 
 
-    return (
-        f"4H {ema5_10_4h} {ema20_60_120_4h}"
-        f"  |  "
-        f"1D {ema5_10_1d} {ema20_60_120_1d}"
-    )
+    return {
+
+        "4h_5_10":
+            ema5_10_4h,
+
+        "4h_20_60_120":
+            ema20_60_120_4h,
+
+        "1d_5_10":
+            ema5_10_1d,
+
+        "1d_20_60_120":
+            ema20_60_120_1d
+
+    }
 
 
 # =========================
@@ -799,9 +832,12 @@ def get_upbit_volume_map():
     try:
 
         return {
+
             x["market"]:
             x["acc_trade_price_24h"]
+
             for x in response.json()
+
         }
 
     except Exception as e:
@@ -1018,9 +1054,9 @@ def format_change(
     return " / ".join(result)
 
 
-# =========================
+# =========================================================
 # OKX TOP20 업데이트
-# =========================
+# =========================================================
 
 def update_okx():
 
@@ -1098,24 +1134,29 @@ def update_okx():
         )
 
 
-        ema_display = get_okx_ema_display(
+        ema = get_okx_ema_display(
             symbol
         )
 
 
         rows.append({
 
-            "rank": rank,
+            "rank":
+                rank,
 
-            "name": coin,
+            "name":
+                coin,
 
-            "change": change_text,
+            "change":
+                change_text,
 
-            "volume": format_volume(
-                volume_map[symbol]
-            ),
+            "volume":
+                format_volume(
+                    volume_map[symbol]
+                ),
 
-            "ema": ema_display
+            "ema":
+                ema
 
         })
 
@@ -1131,9 +1172,9 @@ def update_okx():
     )
 
 
-# =========================
+# =========================================================
 # 업비트 TOP20 업데이트
-# =========================
+# =========================================================
 
 def update_upbit():
 
@@ -1184,24 +1225,29 @@ def update_upbit():
         )
 
 
-        ema_display = get_upbit_ema_display(
+        ema = get_upbit_ema_display(
             market
         )
 
 
         rows.append({
 
-            "rank": rank,
+            "rank":
+                rank,
 
-            "name": coin,
+            "name":
+                coin,
 
-            "change": change_text,
+            "change":
+                change_text,
 
-            "volume": format_volume(
-                volume_map[market]
-            ),
+            "volume":
+                format_volume(
+                    volume_map[market]
+                ),
 
-            "ema": ema_display
+            "ema":
+                ema
 
         })
 
@@ -1251,6 +1297,56 @@ def scheduler():
         time.sleep(1)
 
 
+# =========================================================
+# EMA 화면 HTML
+#
+# 각 영역을 고정 폭으로 설정
+# → 4H 위치 고정
+# → 컬러볼 위치 고정
+# → | 위치 고정
+# → 1D 위치 고정
+# → 컬러볼 위치 고정
+# =========================================================
+
+def ema_html(ema):
+
+    return f"""
+
+<div class="ema-display">
+
+    <span class="ema-time">
+        4H
+    </span>
+
+    <span class="ema-status">
+        {ema['4h_5_10']}
+    </span>
+
+    <span class="ema-status">
+        {ema['4h_20_60_120']}
+    </span>
+
+    <span class="ema-divider">
+        |
+    </span>
+
+    <span class="ema-time">
+        1D
+    </span>
+
+    <span class="ema-status">
+        {ema['1d_5_10']}
+    </span>
+
+    <span class="ema-status">
+        {ema['1d_20_60_120']}
+    </span>
+
+</div>
+
+"""
+
+
 # =========================
 # 웹 대시보드
 # =========================
@@ -1267,7 +1363,11 @@ def dashboard():
 
 <head>
 
-<meta http-equiv="refresh" content="300">
+<meta
+    http-equiv="refresh"
+    content="300"
+>
+
 
 <title>
 OKX+UPBIT
@@ -1276,48 +1376,119 @@ OKX+UPBIT
 
 <style>
 
+
 body{
 
-background:#111;
+    background:#111;
 
-color:white;
+    color:white;
 
-font-family:Arial;
+    font-family:Arial;
 
-padding:20px;
+    padding:20px;
 
 }
 
 
 table{
 
-width:auto;
+    width:auto;
 
-border-collapse:collapse;
+    border-collapse:collapse;
 
 }
 
 
 th{
 
-background:#333;
+    background:#333;
 
-padding:10px;
+    padding:10px;
 
 }
 
 
 td{
 
-padding:8px;
+    padding:8px;
 
-border-bottom:1px solid #444;
+    border-bottom:1px solid #444;
 
-text-align:center;
+    text-align:center;
 
-white-space:pre;
+    white-space:nowrap;
 
-font-family:monospace;
+}
+
+
+/* =========================
+   EMA 전체 영역
+   ========================= */
+
+.ema-display{
+
+    display:flex;
+
+    align-items:center;
+
+    height:28px;
+
+    font-family:monospace;
+
+    white-space:nowrap;
+
+}
+
+
+/* =========================
+   4H / 1D
+   위치 고정
+   ========================= */
+
+.ema-time{
+
+    display:inline-block;
+
+    width:35px;
+
+    min-width:35px;
+
+    text-align:left;
+
+}
+
+
+/* =========================
+   EMA 상태
+   위치 및 간격 고정
+   ========================= */
+
+.ema-status{
+
+    display:inline-block;
+
+    width:75px;
+
+    min-width:75px;
+
+    text-align:left;
+
+}
+
+
+/* =========================
+   구분선
+   ========================= */
+
+.ema-divider{
+
+    display:inline-block;
+
+    width:35px;
+
+    min-width:35px;
+
+    text-align:center;
 
 }
 
@@ -1350,15 +1521,25 @@ font-family:monospace;
 
 <tr>
 
-<th>순위</th>
+<th>
+순위
+</th>
 
-<th>코인</th>
+<th>
+코인
+</th>
 
-<th>거래대금</th>
+<th>
+거래대금
+</th>
 
-<th>EMA 배열</th>
+<th>
+EMA 배열
+</th>
 
-<th>오늘/ 전일/ -2일</th>
+<th>
+오늘 / 전일 / -2일
+</th>
 
 </tr>
 
@@ -1371,15 +1552,25 @@ font-family:monospace;
 
 <tr>
 
-<td>{item['rank']}</td>
+<td>
+{item['rank']}
+</td>
 
-<td>{item['name']}</td>
+<td>
+{item['name']}
+</td>
 
-<td>{item['volume']}</td>
+<td>
+{item['volume']}
+</td>
 
-<td>{item['ema']}</td>
+<td>
+{ema_html(item['ema'])}
+</td>
 
-<td>{item['change']}</td>
+<td>
+{item['change']}
+</td>
 
 </tr>
 
@@ -1404,15 +1595,25 @@ font-family:monospace;
 
 <tr>
 
-<th>순위</th>
+<th>
+순위
+</th>
 
-<th>코인</th>
+<th>
+코인
+</th>
 
-<th>거래대금</th>
+<th>
+거래대금
+</th>
 
-<th>EMA 배열</th>
+<th>
+EMA 배열
+</th>
 
-<th>오늘/ 전일/ -2일</th>
+<th>
+오늘 / 전일 / -2일
+</th>
 
 </tr>
 
@@ -1425,15 +1626,25 @@ font-family:monospace;
 
 <tr>
 
-<td>{item['rank']}</td>
+<td>
+{item['rank']}
+</td>
 
-<td>{item['name']}</td>
+<td>
+{item['name']}
+</td>
 
-<td>{item['volume']}</td>
+<td>
+{item['volume']}
+</td>
 
-<td>{item['ema']}</td>
+<td>
+{ema_html(item['ema'])}
+</td>
 
-<td>{item['change']}</td>
+<td>
+{item['change']}
+</td>
 
 </tr>
 
