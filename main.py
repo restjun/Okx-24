@@ -474,10 +474,6 @@ def check_ema_10_20(
 
 # =========================================================
 # EMA 20-60-120 상태
-#
-# 🟢(N) = EMA20 > EMA60 > EMA120 N개 연속
-# 🔴(N) = EMA20 < EMA60 < EMA120 N개 연속
-# ⚪(0) = 현재 비배열
 # =========================================================
 
 def check_ema(
@@ -598,10 +594,7 @@ def check_ema(
 
 
 # =========================================================
-# 배열 방향만 확인
-#
-# 10 > 20 = long
-# 10 < 20 = short
+# EMA 10-20 방향
 # =========================================================
 
 def get_ema_10_20_direction(
@@ -651,10 +644,7 @@ def get_ema_10_20_direction(
 
 
 # =========================================================
-# 장기 배열 방향 확인
-#
-# 20 > 60 > 120 = long
-# 20 < 60 < 120 = short
+# EMA 20-60-120 방향
 # =========================================================
 
 def get_ema_20_60_120_direction(
@@ -726,12 +716,15 @@ def get_ema_20_60_120_direction(
 
 
 # =========================================================
-# 경고 여부
+# 경고 방향
 #
-# 단기와 장기 배열 방향이 반대이면 ⚠️
+# 10-20 정배열
+# 20-60-120 역배열
+# → 🚀 롱
 #
-# long + short
-# short + long
+# 10-20 역배열
+# 20-60-120 정배열
+# → 🧊 숏
 # =========================================================
 
 def check_ema_warning(
@@ -755,14 +748,22 @@ def check_ema_warning(
     )
 
 
+    # =========================
+    # 롱 경고
+    # =========================
+
     if (
         short_direction == "long"
         and
         long_direction == "short"
     ):
 
-        return True
+        return "long_warning"
 
+
+    # =========================
+    # 숏 경고
+    # =========================
 
     if (
         short_direction == "short"
@@ -770,14 +771,14 @@ def check_ema_warning(
         long_direction == "long"
     ):
 
-        return True
+        return "short_warning"
 
 
-    return False
+    return "none"
 
 
 # =========================================================
-# OKX 4H EMA 전체
+# OKX 4H
 # =========================================================
 
 def get_okx_4h_ema(
@@ -791,40 +792,31 @@ def get_okx_4h_ema(
     )
 
 
-    ema10_20 = check_ema_10_20(
-        df,
-        "c"
-    )
-
-
-    ema20_60_120 = check_ema(
-        df,
-        "c"
-    )
-
-
-    warning = check_ema_warning(
-        df,
-        "c"
-    )
-
-
     return {
 
         "short":
-            ema10_20,
+            check_ema_10_20(
+                df,
+                "c"
+            ),
 
         "long":
-            ema20_60_120,
+            check_ema(
+                df,
+                "c"
+            ),
 
         "warning":
-            warning
+            check_ema_warning(
+                df,
+                "c"
+            )
 
     }
 
 
 # =========================================================
-# OKX 1D EMA 전체
+# OKX 1D
 # =========================================================
 
 def get_okx_1d_ema(
@@ -838,40 +830,31 @@ def get_okx_1d_ema(
     )
 
 
-    ema10_20 = check_ema_10_20(
-        df,
-        "c"
-    )
-
-
-    ema20_60_120 = check_ema(
-        df,
-        "c"
-    )
-
-
-    warning = check_ema_warning(
-        df,
-        "c"
-    )
-
-
     return {
 
         "short":
-            ema10_20,
+            check_ema_10_20(
+                df,
+                "c"
+            ),
 
         "long":
-            ema20_60_120,
+            check_ema(
+                df,
+                "c"
+            ),
 
         "warning":
-            warning
+            check_ema_warning(
+                df,
+                "c"
+            )
 
     }
 
 
 # =========================================================
-# 업비트 4H EMA 전체
+# 업비트 4H
 # =========================================================
 
 def get_upbit_4h_ema(
@@ -885,40 +868,31 @@ def get_upbit_4h_ema(
     )
 
 
-    ema10_20 = check_ema_10_20(
-        df,
-        "trade_price"
-    )
-
-
-    ema20_60_120 = check_ema(
-        df,
-        "trade_price"
-    )
-
-
-    warning = check_ema_warning(
-        df,
-        "trade_price"
-    )
-
-
     return {
 
         "short":
-            ema10_20,
+            check_ema_10_20(
+                df,
+                "trade_price"
+            ),
 
         "long":
-            ema20_60_120,
+            check_ema(
+                df,
+                "trade_price"
+            ),
 
         "warning":
-            warning
+            check_ema_warning(
+                df,
+                "trade_price"
+            )
 
     }
 
 
 # =========================================================
-# 업비트 1D EMA 전체
+# 업비트 1D
 # =========================================================
 
 def get_upbit_1d_ema(
@@ -931,34 +905,25 @@ def get_upbit_1d_ema(
     )
 
 
-    ema10_20 = check_ema_10_20(
-        df,
-        "trade_price"
-    )
-
-
-    ema20_60_120 = check_ema(
-        df,
-        "trade_price"
-    )
-
-
-    warning = check_ema_warning(
-        df,
-        "trade_price"
-    )
-
-
     return {
 
         "short":
-            ema10_20,
+            check_ema_10_20(
+                df,
+                "trade_price"
+            ),
 
         "long":
-            ema20_60_120,
+            check_ema(
+                df,
+                "trade_price"
+            ),
 
         "warning":
-            warning
+            check_ema_warning(
+                df,
+                "trade_price"
+            )
 
     }
 
@@ -977,11 +942,15 @@ def get_okx_volume(
         24
     )
 
+
     if df is None:
 
         return 0
 
-    return df["volCcyQuote"].sum()
+
+    return df[
+        "volCcyQuote"
+    ].sum()
 
 
 # =========================
@@ -1033,7 +1002,6 @@ def get_upbit_volume_map():
 
 # =========================
 # OKX 변동률
-# -3일 / -2일 / -1일
 # =========================
 
 def get_okx_change(
@@ -1118,7 +1086,6 @@ def get_okx_change(
 
 # =========================
 # 업비트 변동률
-# -3일 / -2일 / -1일
 # =========================
 
 def get_upbit_change(
@@ -1236,7 +1203,7 @@ def format_change(
 
 
 # =========================================================
-# OKX TOP20 업데이트
+# OKX TOP20
 # =========================================================
 
 def update_okx():
@@ -1362,7 +1329,7 @@ def update_okx():
 
 
 # =========================================================
-# 업비트 TOP20 업데이트
+# 업비트 TOP20
 # =========================================================
 
 def update_upbit():
@@ -1495,7 +1462,7 @@ def scheduler():
 
 
 # =========================================================
-# EMA 한 줄 HTML
+# EMA 한 줄 표시
 # =========================================================
 
 def ema_html(
@@ -1503,18 +1470,38 @@ def ema_html(
     ema1d
 ):
 
-    warning4h = (
-        "⚠️"
-        if ema4h["warning"]
-        else ""
-    )
+    # =========================
+    # 4H 경고
+    # =========================
+
+    if ema4h["warning"] == "long_warning":
+
+        warning4h = "🚀"
+
+    elif ema4h["warning"] == "short_warning":
+
+        warning4h = "🧊"
+
+    else:
+
+        warning4h = ""
 
 
-    warning1d = (
-        "⚠️"
-        if ema1d["warning"]
-        else ""
-    )
+    # =========================
+    # 1D 경고
+    # =========================
+
+    if ema1d["warning"] == "long_warning":
+
+        warning1d = "🚀"
+
+    elif ema1d["warning"] == "short_warning":
+
+        warning1d = "🧊"
+
+    else:
+
+        warning1d = ""
 
 
     return f"""
@@ -1637,7 +1624,7 @@ td{
 
 
 /* =========================
-   EMA 전체
+   EMA 한 줄
    ========================= */
 
 .ema-display{
@@ -1656,8 +1643,7 @@ td{
 
 
 /* =========================
-   시간
-   4H / 1D 위치 고정
+   시간 위치 고정
    ========================= */
 
 .ema-time{
@@ -1674,9 +1660,7 @@ td{
 
 
 /* =========================
-   EMA 상태
-   10-20
-   20-60-120
+   EMA 위치 고정
    ========================= */
 
 .ema-status{
@@ -1693,8 +1677,7 @@ td{
 
 
 /* =========================
-   경고
-   위치 고정
+   로켓 / 얼음 위치 고정
    ========================= */
 
 .ema-warning{
@@ -1711,7 +1694,7 @@ td{
 
 
 /* =========================
-   구분선
+   4H / 1D 구분
    ========================= */
 
 .ema-divider{
@@ -1946,4 +1929,4 @@ if __name__ == "__main__":
 
         port=8000
 
-    )
+        )
