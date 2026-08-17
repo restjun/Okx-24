@@ -928,10 +928,6 @@ def get_okx_volume(
         return 0
 
 
-    # =========================
-    # OKX volCcyQuote 합산
-    # =========================
-
     return df[
         "volCcyQuote"
     ].sum()
@@ -1225,8 +1221,7 @@ def update_okx():
 
         # =========================
         # OKX 거래대금
-        #
-        # 기존 계산값의 1/10로 보정
+        # 기존값의 1/10
         # =========================
 
         volume_map[symbol] = (
@@ -1616,6 +1611,23 @@ td{
 
 
 /* =========================
+   거래대금
+   ========================= */
+
+.volume-cell{
+
+    padding-left:10px;
+
+    padding-right:45px;
+
+    text-align:right;
+
+    white-space:nowrap;
+
+}
+
+
+/* =========================
    EMA 한 줄
    ========================= */
 
@@ -1631,28 +1643,32 @@ td{
 
     white-space:nowrap;
 
+    padding-left:10px;
+
 }
 
 
 /* =========================
-   시간 위치 고정
+   시간 위치
    ========================= */
 
 .ema-time{
 
     display:inline-block;
 
-    width:35px;
+    width:40px;
 
-    min-width:35px;
+    min-width:40px;
 
     text-align:left;
+
+    font-weight:bold;
 
 }
 
 
 /* =========================
-   EMA 위치 고정
+   EMA 상태
    ========================= */
 
 .ema-status{
@@ -1669,16 +1685,16 @@ td{
 
 
 /* =========================
-   로켓 / 얼음 위치 고정
+   로켓 / 얼음 위치
    ========================= */
 
 .ema-warning{
 
     display:inline-block;
 
-    width:35px;
+    width:40px;
 
-    min-width:35px;
+    min-width:40px;
 
     text-align:center;
 
@@ -1693,11 +1709,26 @@ td{
 
     display:inline-block;
 
-    width:35px;
+    width:50px;
 
-    min-width:35px;
+    min-width:50px;
 
     text-align:center;
+
+    color:#888;
+
+}
+
+
+/* =========================
+   변동률
+   ========================= */
+
+.change-cell{
+
+    padding-left:35px;
+
+    white-space:nowrap;
 
 }
 
@@ -1769,7 +1800,7 @@ EMA 배열
 {item['name']}
 </td>
 
-<td>
+<td class="volume-cell">
 {item['volume']}
 </td>
 
@@ -1782,7 +1813,7 @@ EMA 배열
 
 </td>
 
-<td>
+<td class="change-cell">
 {item['change']}
 </td>
 
@@ -1848,7 +1879,7 @@ EMA 배열
 {item['name']}
 </td>
 
-<td>
+<td class="volume-cell">
 {item['volume']}
 </td>
 
@@ -1861,7 +1892,7 @@ EMA 배열
 
 </td>
 
-<td>
+<td class="change-cell">
 {item['change']}
 </td>
 
