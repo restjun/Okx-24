@@ -1143,9 +1143,10 @@ def get_upbit_change(
     return result
 
 
-# =========================
+# =========================================================
 # 변동률 표시
-# =========================
+# 숫자 위치를 고정해서 정렬
+# =========================================================
 
 def format_change(
     changes
@@ -1163,23 +1164,43 @@ def format_change(
 
         if x > 0:
 
-            text = f"🟩+{x:.2f}%"
+            color = "🟩"
+
+            sign = "+"
 
         elif x < 0:
 
-            text = f"🟥{x:.2f}%"
+            color = "🟥"
+
+            sign = ""
 
         else:
 
-            text = f"⬜️0.00%"
+            color = "⬜️"
+
+            sign = ""
 
 
         result.append(
-            text.rjust(11)
+
+            f'''
+            <span class="change-item">
+
+                <span class="change-icon">
+                    {color}
+                </span>
+
+                <span class="change-value">
+                    {sign}{x:.2f}%
+                </span>
+
+            </span>
+            '''
+
         )
 
 
-    return " / ".join(result)
+    return "".join(result)
 
 
 # =========================================================
@@ -1218,11 +1239,6 @@ def update_okx():
 
 
     for symbol in symbols:
-
-        # =========================
-        # OKX 거래대금
-        # 기존값의 1/10
-        # =========================
 
         volume_map[symbol] = (
             get_okx_volume(symbol)
@@ -1457,10 +1473,6 @@ def ema_html(
     ema1d
 ):
 
-    # =========================
-    # 4H 경고
-    # =========================
-
     if ema4h["warning"] == "long_warning":
 
         warning4h = "🌧"
@@ -1473,10 +1485,6 @@ def ema_html(
 
         warning4h = ""
 
-
-    # =========================
-    # 1D 경고
-    # =========================
 
     if ema1d["warning"] == "long_warning":
 
@@ -1721,7 +1729,7 @@ td{
 
 
 /* =========================
-   변동률
+   변동률 셀
    ========================= */
 
 .change-cell{
@@ -1729,6 +1737,72 @@ td{
     padding-left:35px;
 
     white-space:nowrap;
+
+}
+
+
+/* =========================
+   변동률 개별 영역
+   ========================= */
+
+.change-item{
+
+    display:inline-flex;
+
+    align-items:center;
+
+    width:95px;
+
+    min-width:95px;
+
+    box-sizing:border-box;
+
+}
+
+
+/* =========================
+   변동률 아이콘
+   ========================= */
+
+.change-icon{
+
+    display:inline-block;
+
+    width:28px;
+
+    min-width:28px;
+
+    text-align:center;
+
+}
+
+
+/* =========================
+   변동률 숫자
+   ========================= */
+
+.change-value{
+
+    display:inline-block;
+
+    width:67px;
+
+    min-width:67px;
+
+    text-align:right;
+
+    font-family:monospace;
+
+}
+
+
+/* =========================
+   구분
+   ========================= */
+
+.change-item + .change-item{
+
+    margin-left:4px;
 
 }
 
@@ -1952,4 +2026,4 @@ if __name__ == "__main__":
 
         port=8000
 
-        )
+    )
