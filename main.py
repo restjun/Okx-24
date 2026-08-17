@@ -1493,11 +1493,11 @@ def ema_html(
 
     if ema1d["warning"] == "long_warning":
 
-        warning1d = "🚀"
+        warning1d = "🌧🌧"
 
     elif ema1d["warning"] == "short_warning":
 
-        warning1d = "🌧"
+        warning1d = "🚀🚀"
 
     else:
 
