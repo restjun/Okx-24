@@ -1163,15 +1163,15 @@ def format_change(
 
         if x > 0:
 
-            text = f"🟢+{x:.2f}%"
+            text = f"🟩+{x:.2f}%"
 
         elif x < 0:
 
-            text = f"🔴{x:.2f}%"
+            text = f"🟥{x:.2f}%"
 
         else:
 
-            text = f"⚪0.00%"
+            text = f"⬜️0.00%"
 
 
         result.append(
