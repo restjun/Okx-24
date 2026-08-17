@@ -116,6 +116,16 @@ def get_okx_ohlcv(
             .astype(float)
         )
 
+        df["vol"] = (
+            df["vol"]
+            .astype(float)
+        )
+
+        df["volCcy"] = (
+            df["volCcy"]
+            .astype(float)
+        )
+
         df["volCcyQuote"] = (
             df["volCcyQuote"]
             .astype(float)
@@ -134,6 +144,77 @@ def get_okx_ohlcv(
         )
 
         return None
+
+
+# =========================================================
+# OKX 계약정보
+#
+# 거래대금 계산에 필요한 ctVal / ctValCcy 확인
+# =========================================================
+
+def get_okx_contract_info():
+
+    url = (
+        "https://www.okx.com/api/v5/"
+        "public/instruments?instType=SWAP"
+    )
+
+    response = retry_request(
+        requests.get,
+        url
+    )
+
+    if response is None:
+
+        return {}
+
+    try:
+
+        data = response.json()["data"]
+
+        result = {}
+
+        for x in data:
+
+            inst_id = x.get("instId", "")
+
+            if not inst_id.endswith(
+                "-USDT-SWAP"
+            ):
+
+                continue
+
+            if x.get("state") != "live":
+
+                continue
+
+            result[inst_id] = {
+
+                "ctVal":
+                    float(
+                        x.get(
+                            "ctVal",
+                            0
+                        )
+                    ),
+
+                "ctValCcy":
+                    x.get(
+                        "ctValCcy",
+                        ""
+                    )
+
+            }
+
+        return result
+
+    except Exception as e:
+
+        logging.error(
+            f"OKX 계약정보 오류:{e}"
+        )
+
+        return {}
 
 
 # =========================
@@ -276,8 +357,11 @@ def get_all_okx_swap_symbols():
             x["instId"]
             for x in response.json()["data"]
             if (
-                x["instId"].endswith("-USDT-SWAP")
-                and x.get("state") == "live"
+                x["instId"].endswith(
+                    "-USDT-SWAP"
+                )
+                and
+                x.get("state") == "live"
             )
         ]
 
@@ -375,10 +459,6 @@ def format_volume(volume):
 
 # =========================================================
 # EMA 10-20 상태
-#
-# 🟢(N) = EMA10 > EMA20 N개 연속
-# 🔴(N) = EMA10 < EMA20 N개 연속
-# ⚪(0) = 현재 비배열
 # =========================================================
 
 def check_ema_10_20(
@@ -541,7 +621,6 @@ def check_ema(
 
             states.append("long")
 
-
         elif (
             ema20
             <
@@ -551,7 +630,6 @@ def check_ema(
         ):
 
             states.append("short")
-
 
         else:
 
@@ -583,7 +661,6 @@ def check_ema(
     if current_state == "long":
 
         return f"🟢({count})"
-
 
     elif current_state == "short":
 
@@ -633,7 +710,6 @@ def get_ema_10_20_direction(
     if ema10.iloc[-1] > ema20.iloc[-1]:
 
         return "long"
-
 
     elif ema10.iloc[-1] < ema20.iloc[-1]:
 
@@ -700,7 +776,6 @@ def get_ema_20_60_120_direction(
 
         return "long"
 
-
     elif (
         ema20.iloc[-1]
         <
@@ -717,14 +792,6 @@ def get_ema_20_60_120_direction(
 
 # =========================================================
 # 경고 방향
-#
-# 10-20 정배열
-# 20-60-120 역배열
-# → 🚀 롱
-#
-# 10-20 역배열
-# 20-60-120 정배열
-# → 🧊 숏
 # =========================================================
 
 def check_ema_warning(
@@ -748,10 +815,6 @@ def check_ema_warning(
     )
 
 
-    # =========================
-    # 롱 경고
-    # =========================
-
     if (
         short_direction == "long"
         and
@@ -760,10 +823,6 @@ def check_ema_warning(
 
         return "long_warning"
 
-
-    # =========================
-    # 숏 경고
-    # =========================
 
     if (
         short_direction == "short"
@@ -928,12 +987,19 @@ def get_upbit_1d_ema(
     }
 
 
-# =========================
+# =========================================================
 # OKX 24시간 거래대금
-# =========================
+#
+# 계약수 × 계약가치 × 가격
+#
+# USDT-SWAP의 경우
+# ctValCcy가 BTC 같은 기초자산이면
+# 계약가치 × 가격으로 USDT 거래대금 계산
+# =========================================================
 
 def get_okx_volume(
-    inst_id
+    inst_id,
+    contract_info
 ):
 
     df = get_okx_ohlcv(
@@ -948,9 +1014,98 @@ def get_okx_volume(
         return 0
 
 
-    return df[
-        "volCcyQuote"
-    ].sum()
+    info = contract_info.get(
+        inst_id
+    )
+
+
+    if info is None:
+
+        return 0
+
+
+    ct_val = info.get(
+        "ctVal",
+        0
+    )
+
+
+    ct_val_ccy = info.get(
+        "ctValCcy",
+        ""
+    )
+
+
+    if ct_val <= 0:
+
+        return 0
+
+
+    # =========================
+    # 완성된 캔들만 사용
+    # =========================
+
+    if "confirm" in df.columns:
+
+        completed = (
+            df[
+                df["confirm"].astype(str) == "1"
+            ]
+        )
+
+    else:
+
+        completed = df
+
+
+    if completed.empty:
+
+        return 0
+
+
+    # =========================
+    # 계약수 × 계약가치
+    # =========================
+
+    base_volume = (
+        completed["vol"]
+        *
+        ct_val
+    )
+
+
+    # =========================
+    # 계약가치가 기초자산이면
+    # 가격을 곱해 USDT로 변환
+    # =========================
+
+    if ct_val_ccy:
+
+        prices = (
+            completed["c"]
+        )
+
+
+        usdt_volume = (
+            base_volume
+            *
+            prices
+        )
+
+
+    else:
+
+        usdt_volume = (
+            completed["volCcyQuote"]
+        )
+
+
+    total_usdt = (
+        usdt_volume.sum()
+    )
+
+
+    return total_usdt
 
 
 # =========================
@@ -1222,6 +1377,11 @@ def update_okx():
     usdt_krw = get_usdt_krw()
 
 
+    contract_info = (
+        get_okx_contract_info()
+    )
+
+
     upbit_coin_set = {
 
         market.replace(
@@ -1239,8 +1399,16 @@ def update_okx():
 
     for symbol in symbols:
 
+        usdt_volume = (
+            get_okx_volume(
+                symbol,
+                contract_info
+            )
+        )
+
+
         volume_map[symbol] = (
-            get_okx_volume(symbol)
+            usdt_volume
             *
             usdt_krw
         )
@@ -1470,10 +1638,6 @@ def ema_html(
     ema1d
 ):
 
-    # =========================
-    # 4H 경고
-    # =========================
-
     if ema4h["warning"] == "long_warning":
 
         warning4h = "🌧"
@@ -1486,10 +1650,6 @@ def ema_html(
 
         warning4h = ""
 
-
-    # =========================
-    # 1D 경고
-    # =========================
 
     if ema1d["warning"] == "long_warning":
 
@@ -1570,14 +1730,11 @@ def dashboard():
     content="300"
 >
 
-
 <title>
 OKX+UPBIT
 </title>
 
-
 <style>
-
 
 body{
 
@@ -1591,7 +1748,6 @@ body{
 
 }
 
-
 table{
 
     width:auto;
@@ -1600,7 +1756,6 @@ table{
 
 }
 
-
 th{
 
     background:#333;
@@ -1608,7 +1763,6 @@ th{
     padding:10px;
 
 }
-
 
 td{
 
@@ -1621,11 +1775,6 @@ td{
     white-space:nowrap;
 
 }
-
-
-/* =========================
-   EMA 한 줄
-   ========================= */
 
 .ema-display{
 
@@ -1641,11 +1790,6 @@ td{
 
 }
 
-
-/* =========================
-   시간 위치 고정
-   ========================= */
-
 .ema-time{
 
     display:inline-block;
@@ -1657,11 +1801,6 @@ td{
     text-align:left;
 
 }
-
-
-/* =========================
-   EMA 위치 고정
-   ========================= */
 
 .ema-status{
 
@@ -1675,11 +1814,6 @@ td{
 
 }
 
-
-/* =========================
-   로켓 / 얼음 위치 고정
-   ========================= */
-
 .ema-warning{
 
     display:inline-block;
@@ -1691,11 +1825,6 @@ td{
     text-align:center;
 
 }
-
-
-/* =========================
-   4H / 1D 구분
-   ========================= */
 
 .ema-divider{
 
@@ -1709,32 +1838,25 @@ td{
 
 }
 
-
 </style>
 
 </head>
 
-
 <body>
-
 
 <h2>
 📊 암호화폐 실시간 분석
 </h2>
 
-
 <p>
 변동률 : 오늘 / 전일 / -2일
 </p>
-
 
 <h2>
 🏆 OKX 선물 거래대금 TOP20
 </h2>
 
-
 <table>
-
 
 <tr>
 
@@ -1803,17 +1925,13 @@ EMA 배열
 
 </table>
 
-
 <hr>
-
 
 <h2>
 🏆 업비트 현물 거래대금 TOP20
 </h2>
 
-
 <table>
-
 
 <tr>
 
@@ -1882,9 +2000,7 @@ EMA 배열
 
 </table>
 
-
 </body>
-
 
 </html>
 
@@ -1929,4 +2045,4 @@ if __name__ == "__main__":
 
         port=8000
 
-        )
+)
