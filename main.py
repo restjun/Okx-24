@@ -1562,6 +1562,7 @@ def scheduler():
 
 # =========================================================
 # EMA 한 줄 표시
+# 경고를 시간봉 앞에 표시
 # =========================================================
 
 def ema_html(
@@ -1611,6 +1612,10 @@ def ema_html(
 
     <div class="ema-period">
 
+        <span class="ema-warning">
+            {warning4h}
+        </span>
+
         <span class="ema-time">
             4H
         </span>
@@ -1623,14 +1628,14 @@ def ema_html(
             {ema4h["long"]}
         </span>
 
-        <span class="ema-warning">
-            {warning4h}
-        </span>
-
     </div>
 
 
     <div class="ema-period">
+
+        <span class="ema-warning">
+            {warning1d}
+        </span>
 
         <span class="ema-time">
             1D
@@ -1644,14 +1649,14 @@ def ema_html(
             {ema1d["long"]}
         </span>
 
-        <span class="ema-warning">
-            {warning1d}
-        </span>
-
     </div>
 
 
     <div class="ema-period last">
+
+        <span class="ema-warning">
+            {warning1w}
+        </span>
 
         <span class="ema-time">
             1W
@@ -1938,6 +1943,24 @@ td:last-child{
 
 
 /* =====================================================
+   경고
+   시간봉 앞
+   ===================================================== */
+
+.ema-warning{
+
+    display:inline-block;
+
+    width:55px;
+
+    min-width:55px;
+
+    text-align:center;
+
+}
+
+
+/* =====================================================
    시간봉
    ===================================================== */
 
@@ -1969,23 +1992,6 @@ td:last-child{
     min-width:70px;
 
     text-align:left;
-
-}
-
-
-/* =====================================================
-   경고
-   ===================================================== */
-
-.ema-warning{
-
-    display:inline-block;
-
-    width:45px;
-
-    min-width:45px;
-
-    text-align:center;
 
 }
 
