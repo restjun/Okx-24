@@ -17,18 +17,18 @@ logging.basicConfig(
 )
 
 
-# =========================
+# =========================================================
 # 전역 데이터
-# =========================
+# =========================================================
 
 latest_okx_data = []
 
 latest_upbit_data = []
 
 
-# =========================
+# =========================================================
 # API 재시도
-# =========================
+# =========================================================
 
 def retry_request(func, *args, **kwargs):
 
@@ -62,9 +62,9 @@ def retry_request(func, *args, **kwargs):
     return None
 
 
-# =========================
+# =========================================================
 # OKX 캔들
-# =========================
+# =========================================================
 
 def get_okx_ohlcv(
     inst_id,
@@ -136,9 +136,9 @@ def get_okx_ohlcv(
         return None
 
 
-# =========================
+# =========================================================
 # 업비트 분봉
-# =========================
+# =========================================================
 
 def get_upbit_ohlcv(
     market,
@@ -194,9 +194,9 @@ def get_upbit_ohlcv(
         return None
 
 
-# =========================
+# =========================================================
 # 업비트 일봉
-# =========================
+# =========================================================
 
 def get_upbit_day_ohlcv(
     market,
@@ -250,9 +250,65 @@ def get_upbit_day_ohlcv(
         return None
 
 
-# =========================
+# =========================================================
+# 업비트 주봉
+# =========================================================
+
+def get_upbit_week_ohlcv(
+    market,
+    count=200
+):
+
+    url = (
+        "https://api.upbit.com/v1/candles/weeks"
+        f"?market={market}"
+        f"&count={count}"
+    )
+
+    response = retry_request(
+        requests.get,
+        url
+    )
+
+    if response is None:
+
+        return None
+
+    try:
+
+        data = response.json()
+
+        if not data:
+
+            return None
+
+        df = pd.DataFrame(
+            data
+        )
+
+        df = df.iloc[::-1].reset_index(
+            drop=True
+        )
+
+        df["trade_price"] = (
+            df["trade_price"]
+            .astype(float)
+        )
+
+        return df
+
+    except Exception as e:
+
+        logging.error(
+            f"업비트 주봉 오류 {market}:{e}"
+        )
+
+        return None
+
+
+# =========================================================
 # OKX 목록
-# =========================
+# =========================================================
 
 def get_all_okx_swap_symbols():
 
@@ -290,9 +346,9 @@ def get_all_okx_swap_symbols():
         return []
 
 
-# =========================
+# =========================================================
 # 업비트 목록
-# =========================
+# =========================================================
 
 def get_upbit_markets():
 
@@ -322,9 +378,9 @@ def get_upbit_markets():
         return []
 
 
-# =========================
+# =========================================================
 # USDT/KRW
-# =========================
+# =========================================================
 
 def get_usdt_krw():
 
@@ -348,9 +404,9 @@ def get_usdt_krw():
         return 1400
 
 
-# =========================
+# =========================================================
 # 거래대금 표시
-# =========================
+# =========================================================
 
 def format_volume(volume):
 
@@ -374,6 +430,51 @@ def format_volume(volume):
 
 
 # =========================================================
+# EMA 5-10 방향
+# 경고 확인용
+# =========================================================
+
+def get_ema_5_10_direction(
+    df,
+    column
+):
+
+    if df is None or len(df) < 10:
+
+        return "none"
+
+    df = df.copy()
+
+    df["ema5"] = (
+        df[column]
+        .ewm(
+            span=5,
+            adjust=False
+        )
+        .mean()
+    )
+
+    df["ema10"] = (
+        df[column]
+        .ewm(
+            span=10,
+            adjust=False
+        )
+        .mean()
+    )
+
+    if df["ema5"].iloc[-1] > df["ema10"].iloc[-1]:
+
+        return "long"
+
+    elif df["ema5"].iloc[-1] < df["ema10"].iloc[-1]:
+
+        return "short"
+
+    return "none"
+
+
+# =========================================================
 # EMA 10-20 상태
 # =========================================================
 
@@ -386,9 +487,7 @@ def check_ema_10_20(
 
         return "⚪(0)"
 
-
     df = df.copy()
-
 
     df["ema10"] = (
         df[column]
@@ -399,7 +498,6 @@ def check_ema_10_20(
         .mean()
     )
 
-
     df["ema20"] = (
         df[column]
         .ewm(
@@ -409,16 +507,13 @@ def check_ema_10_20(
         .mean()
     )
 
-
     states = []
-
 
     for _, row in df.iterrows():
 
         ema10 = row["ema10"]
 
         ema20 = row["ema20"]
-
 
         if ema10 > ema20:
 
@@ -432,17 +527,13 @@ def check_ema_10_20(
 
             states.append("none")
 
-
     current_state = states[-1]
-
 
     if current_state == "none":
 
         return "⚪(0)"
 
-
     count = 0
-
 
     for state in reversed(states):
 
@@ -454,16 +545,13 @@ def check_ema_10_20(
 
             break
 
-
     if current_state == "long":
 
         return f"🟢({count})"
 
-
     elif current_state == "short":
 
         return f"🔴({count})"
-
 
     return "⚪(0)"
 
@@ -481,9 +569,7 @@ def check_ema(
 
         return "⚪(0)"
 
-
     df = df.copy()
-
 
     df["ema20"] = (
         df[column]
@@ -494,7 +580,6 @@ def check_ema(
         .mean()
     )
 
-
     df["ema60"] = (
         df[column]
         .ewm(
@@ -503,7 +588,6 @@ def check_ema(
         )
         .mean()
     )
-
 
     df["ema120"] = (
         df[column]
@@ -514,9 +598,7 @@ def check_ema(
         .mean()
     )
 
-
     states = []
-
 
     for _, row in df.iterrows():
 
@@ -525,7 +607,6 @@ def check_ema(
         ema60 = row["ema60"]
 
         ema120 = row["ema120"]
-
 
         if (
             ema20
@@ -537,7 +618,6 @@ def check_ema(
 
             states.append("long")
 
-
         elif (
             ema20
             <
@@ -548,22 +628,17 @@ def check_ema(
 
             states.append("short")
 
-
         else:
 
             states.append("none")
 
-
     current_state = states[-1]
-
 
     if current_state == "none":
 
         return "⚪(0)"
 
-
     count = 0
-
 
     for state in reversed(states):
 
@@ -575,16 +650,13 @@ def check_ema(
 
             break
 
-
     if current_state == "long":
 
         return f"🟢({count})"
 
-
     elif current_state == "short":
 
         return f"🔴({count})"
-
 
     return "⚪(0)"
 
@@ -602,9 +674,7 @@ def get_ema_10_20_direction(
 
         return "none"
 
-
     df = df.copy()
-
 
     ema10 = (
         df[column]
@@ -615,7 +685,6 @@ def get_ema_10_20_direction(
         .mean()
     )
 
-
     ema20 = (
         df[column]
         .ewm(
@@ -625,16 +694,13 @@ def get_ema_10_20_direction(
         .mean()
     )
 
-
     if ema10.iloc[-1] > ema20.iloc[-1]:
 
         return "long"
 
-
     elif ema10.iloc[-1] < ema20.iloc[-1]:
 
         return "short"
-
 
     return "none"
 
@@ -652,9 +718,7 @@ def get_ema_20_60_120_direction(
 
         return "none"
 
-
     df = df.copy()
-
 
     ema20 = (
         df[column]
@@ -665,7 +729,6 @@ def get_ema_20_60_120_direction(
         .mean()
     )
 
-
     ema60 = (
         df[column]
         .ewm(
@@ -675,7 +738,6 @@ def get_ema_20_60_120_direction(
         .mean()
     )
 
-
     ema120 = (
         df[column]
         .ewm(
@@ -684,7 +746,6 @@ def get_ema_20_60_120_direction(
         )
         .mean()
     )
-
 
     if (
         ema20.iloc[-1]
@@ -696,7 +757,6 @@ def get_ema_20_60_120_direction(
 
         return "long"
 
-
     elif (
         ema20.iloc[-1]
         <
@@ -707,12 +767,14 @@ def get_ema_20_60_120_direction(
 
         return "short"
 
-
     return "none"
 
 
 # =========================================================
-# 경고 방향
+# 기존 경고 방향
+#
+# short_warning = 🚀 조건
+# long_warning  = 🌧 조건
 # =========================================================
 
 def check_ema_warning(
@@ -727,7 +789,6 @@ def check_ema_warning(
         )
     )
 
-
     long_direction = (
         get_ema_20_60_120_direction(
             df,
@@ -735,24 +796,83 @@ def check_ema_warning(
         )
     )
 
-
+    # 10-20 정배열
+    # 20-60-120 역배열
+    # → 🚀 후보
     if (
         short_direction == "long"
         and
         long_direction == "short"
     ):
 
-        return "long_warning"
+        return "short_warning"
 
-
+    # 10-20 역배열
+    # 20-60-120 정배열
+    # → 🌧 후보
     if (
         short_direction == "short"
         and
         long_direction == "long"
     ):
 
+        return "long_warning"
+
+    return "none"
+
+
+# =========================================================
+# 상위 시간봉 확인
+#
+# 🚀 :
+# 현재 시간봉 기존 🚀 조건
+# +
+# 상위 시간봉 EMA 5-10 정배열
+#
+# 🌧 :
+# 현재 시간봉 기존 🌧 조건
+# +
+# 상위 시간봉 EMA 5-10 역배열
+# =========================================================
+
+def check_confirmed_warning(
+    current_df,
+    current_column,
+    higher_df,
+    higher_column
+):
+
+    current_warning = (
+        check_ema_warning(
+            current_df,
+            current_column
+        )
+    )
+
+    higher_5_10 = (
+        get_ema_5_10_direction(
+            higher_df,
+            higher_column
+        )
+    )
+
+    # 🚀
+    if (
+        current_warning == "short_warning"
+        and
+        higher_5_10 == "long"
+    ):
+
         return "short_warning"
 
+    # 🌧
+    if (
+        current_warning == "long_warning"
+        and
+        higher_5_10 == "short"
+    ):
+
+        return "long_warning"
 
     return "none"
 
@@ -765,30 +885,37 @@ def get_okx_4h_ema(
     inst_id
 ):
 
-    df = get_okx_ohlcv(
+    df4h = get_okx_ohlcv(
         inst_id,
         "4H",
         200
     )
 
+    df1d = get_okx_ohlcv(
+        inst_id,
+        "1D",
+        200
+    )
 
     return {
 
         "short":
             check_ema_10_20(
-                df,
+                df4h,
                 "c"
             ),
 
         "long":
             check_ema(
-                df,
+                df4h,
                 "c"
             ),
 
         "warning":
-            check_ema_warning(
-                df,
+            check_confirmed_warning(
+                df4h,
+                "c",
+                df1d,
                 "c"
             )
 
@@ -803,30 +930,74 @@ def get_okx_1d_ema(
     inst_id
 ):
 
-    df = get_okx_ohlcv(
+    df1d = get_okx_ohlcv(
         inst_id,
         "1D",
         200
     )
 
+    df1w = get_okx_ohlcv(
+        inst_id,
+        "1W",
+        200
+    )
 
     return {
 
         "short":
             check_ema_10_20(
-                df,
+                df1d,
                 "c"
             ),
 
         "long":
             check_ema(
-                df,
+                df1d,
+                "c"
+            ),
+
+        "warning":
+            check_confirmed_warning(
+                df1d,
+                "c",
+                df1w,
+                "c"
+            )
+
+    }
+
+
+# =========================================================
+# OKX 1W
+# =========================================================
+
+def get_okx_1w_ema(
+    inst_id
+):
+
+    df1w = get_okx_ohlcv(
+        inst_id,
+        "1W",
+        200
+    )
+
+    return {
+
+        "short":
+            check_ema_10_20(
+                df1w,
+                "c"
+            ),
+
+        "long":
+            check_ema(
+                df1w,
                 "c"
             ),
 
         "warning":
             check_ema_warning(
-                df,
+                df1w,
                 "c"
             )
 
@@ -841,30 +1012,36 @@ def get_upbit_4h_ema(
     market
 ):
 
-    df = get_upbit_ohlcv(
+    df4h = get_upbit_ohlcv(
         market,
         240,
         200
     )
 
+    df1d = get_upbit_day_ohlcv(
+        market,
+        200
+    )
 
     return {
 
         "short":
             check_ema_10_20(
-                df,
+                df4h,
                 "trade_price"
             ),
 
         "long":
             check_ema(
-                df,
+                df4h,
                 "trade_price"
             ),
 
         "warning":
-            check_ema_warning(
-                df,
+            check_confirmed_warning(
+                df4h,
+                "trade_price",
+                df1d,
                 "trade_price"
             )
 
@@ -879,29 +1056,71 @@ def get_upbit_1d_ema(
     market
 ):
 
-    df = get_upbit_day_ohlcv(
+    df1d = get_upbit_day_ohlcv(
         market,
         200
     )
 
+    df1w = get_upbit_week_ohlcv(
+        market,
+        200
+    )
 
     return {
 
         "short":
             check_ema_10_20(
-                df,
+                df1d,
                 "trade_price"
             ),
 
         "long":
             check_ema(
-                df,
+                df1d,
+                "trade_price"
+            ),
+
+        "warning":
+            check_confirmed_warning(
+                df1d,
+                "trade_price",
+                df1w,
+                "trade_price"
+            )
+
+    }
+
+
+# =========================================================
+# 업비트 1W
+# =========================================================
+
+def get_upbit_1w_ema(
+    market
+):
+
+    df1w = get_upbit_week_ohlcv(
+        market,
+        200
+    )
+
+    return {
+
+        "short":
+            check_ema_10_20(
+                df1w,
+                "trade_price"
+            ),
+
+        "long":
+            check_ema(
+                df1w,
                 "trade_price"
             ),
 
         "warning":
             check_ema_warning(
-                df,
+                df1w,
                 "trade_price"
             )
 
@@ -922,30 +1141,26 @@ def get_okx_volume(
         24
     )
 
-
     if df is None:
 
         return 0
-
 
     return df[
         "volCcyQuote"
     ].sum()
 
 
-# =========================
+# =========================================================
 # 업비트 24시간 거래대금
-# =========================
+# =========================================================
 
 def get_upbit_volume_map():
 
     markets = get_upbit_markets()
 
-
     if not markets:
 
         return {}
-
 
     response = retry_request(
         requests.get,
@@ -954,11 +1169,9 @@ def get_upbit_volume_map():
         ",".join(markets)
     )
 
-
     if response is None:
 
         return {}
-
 
     try:
 
@@ -980,9 +1193,9 @@ def get_upbit_volume_map():
         return {}
 
 
-# =========================
+# =========================================================
 # OKX 변동률
-# =========================
+# =========================================================
 
 def get_okx_change(
     inst_id
@@ -994,11 +1207,9 @@ def get_okx_change(
         120
     )
 
-
     if df is None or len(df) < 50:
 
         return None
-
 
     df["datetime"] = (
         pd.to_datetime(
@@ -1009,12 +1220,10 @@ def get_okx_change(
         pd.Timedelta(hours=9)
     )
 
-
     df.set_index(
         "datetime",
         inplace=True
     )
-
 
     daily = (
         df["c"]
@@ -1025,14 +1234,11 @@ def get_okx_change(
         .last()
     )
 
-
     if len(daily) < 5:
 
         return None
 
-
     result = []
-
 
     for i in [-1, -2, -3]:
 
@@ -1041,7 +1247,6 @@ def get_okx_change(
             result.append(0)
 
             continue
-
 
         change = (
             (
@@ -1055,18 +1260,16 @@ def get_okx_change(
             100
         )
 
-
         result.append(
             round(change, 2)
         )
 
-
     return result
 
 
-# =========================
+# =========================================================
 # 업비트 변동률
-# =========================
+# =========================================================
 
 def get_upbit_change(
     market
@@ -1078,22 +1281,18 @@ def get_upbit_change(
         120
     )
 
-
     if df is None or len(df) < 50:
 
         return None
-
 
     df["datetime"] = pd.to_datetime(
         df["candle_date_time_kst"]
     )
 
-
     df.set_index(
         "datetime",
         inplace=True
     )
-
 
     daily = (
         df["trade_price"]
@@ -1104,14 +1303,11 @@ def get_upbit_change(
         .last()
     )
 
-
     if len(daily) < 5:
 
         return None
 
-
     result = []
-
 
     for i in [-1, -2, -3]:
 
@@ -1120,7 +1316,6 @@ def get_upbit_change(
             result.append(0)
 
             continue
-
 
         change = (
             (
@@ -1134,11 +1329,9 @@ def get_upbit_change(
             100
         )
 
-
         result.append(
             round(change, 2)
         )
-
 
     return result
 
@@ -1155,30 +1348,24 @@ def format_change(
 
         return "N/A"
 
-
     result = []
-
 
     for x in changes:
 
         if x > 0:
 
             color = "🟩"
-
             sign = "+"
 
         elif x < 0:
 
             color = "🟥"
-
             sign = ""
 
         else:
 
             color = "⬜️"
-
             sign = ""
-
 
         result.append(
 
@@ -1198,7 +1385,6 @@ def format_change(
 
         )
 
-
     return "".join(result)
 
 
@@ -1210,17 +1396,13 @@ def update_okx():
 
     global latest_okx_data
 
-
     logging.info(
         "OKX TOP20 시작"
     )
 
-
     symbols = get_all_okx_swap_symbols()
 
-
     usdt_krw = get_usdt_krw()
-
 
     upbit_coin_set = {
 
@@ -1233,9 +1415,7 @@ def update_okx():
 
     }
 
-
     volume_map = {}
-
 
     for symbol in symbols:
 
@@ -1247,19 +1427,15 @@ def update_okx():
             10
         )
 
-
     top20 = sorted(
         volume_map,
         key=volume_map.get,
         reverse=True
     )[:20]
 
-
     rows = []
 
-
     rank = 1
-
 
     for symbol in top20:
 
@@ -1268,31 +1444,29 @@ def update_okx():
             ""
         )
 
-
         if coin in upbit_coin_set:
 
             coin = f"{coin}(업비트)"
-
 
         changes = get_okx_change(
             symbol
         )
 
-
         change_text = format_change(
             changes
         )
-
 
         ema4h = get_okx_4h_ema(
             symbol
         )
 
-
         ema1d = get_okx_1d_ema(
             symbol
         )
 
+        ema1w = get_okx_1w_ema(
+            symbol
+        )
 
         rows.append({
 
@@ -1314,16 +1488,16 @@ def update_okx():
                 ema4h,
 
             "ema1d":
-                ema1d
+                ema1d,
+
+            "ema1w":
+                ema1w
 
         })
 
-
         rank += 1
 
-
     latest_okx_data = rows
-
 
     logging.info(
         "OKX 완료"
@@ -1338,19 +1512,15 @@ def update_upbit():
 
     global latest_upbit_data
 
-
     logging.info(
         "업비트 TOP20 시작"
     )
 
-
     volume_map = get_upbit_volume_map()
-
 
     if not volume_map:
 
         return
-
 
     top20 = sorted(
         volume_map,
@@ -1358,12 +1528,9 @@ def update_upbit():
         reverse=True
     )[:20]
 
-
     rows = []
 
-
     rank = 1
-
 
     for market in top20:
 
@@ -1372,26 +1539,25 @@ def update_upbit():
             ""
         )
 
-
         changes = get_upbit_change(
             market
         )
-
 
         change_text = format_change(
             changes
         )
 
-
         ema4h = get_upbit_4h_ema(
             market
         )
-
 
         ema1d = get_upbit_1d_ema(
             market
         )
 
+        ema1w = get_upbit_1w_ema(
+            market
+        )
 
         rows.append({
 
@@ -1413,25 +1579,25 @@ def update_upbit():
                 ema4h,
 
             "ema1d":
-                ema1d
+                ema1d,
+
+            "ema1w":
+                ema1w
 
         })
 
-
         rank += 1
 
-
     latest_upbit_data = rows
-
 
     logging.info(
         "업비트 완료"
     )
 
 
-# =========================
+# =========================================================
 # 전체 업데이트
-# =========================
+# =========================================================
 
 def update_dashboard():
 
@@ -1439,20 +1605,18 @@ def update_dashboard():
         "전체 조회 시작"
     )
 
-
     update_okx()
 
     update_upbit()
-
 
     logging.info(
         "전체 업데이트 완료"
     )
 
 
-# =========================
+# =========================================================
 # 스케줄러
-# =========================
+# =========================================================
 
 def scheduler():
 
@@ -1465,13 +1629,18 @@ def scheduler():
 
 # =========================================================
 # EMA 한 줄 표시
-# 4H / 1D
+# 4H / 1D / 1W
 # =========================================================
 
 def ema_html(
     ema4h,
-    ema1d
+    ema1d,
+    ema1w
 ):
+
+    # =====================================================
+    # 4H
+    # =====================================================
 
     if ema4h["warning"] == "long_warning":
 
@@ -1486,6 +1655,10 @@ def ema_html(
         warning4h = ""
 
 
+    # =====================================================
+    # 1D
+    # =====================================================
+
     if ema1d["warning"] == "long_warning":
 
         warning1d = "🌧🌧"
@@ -1497,6 +1670,23 @@ def ema_html(
     else:
 
         warning1d = ""
+
+
+    # =====================================================
+    # 1W
+    # =====================================================
+
+    if ema1w["warning"] == "long_warning":
+
+        warning1w = "🌧🌧🌧"
+
+    elif ema1w["warning"] == "short_warning":
+
+        warning1w = "🚀🚀🚀"
+
+    else:
+
+        warning1w = ""
 
 
     return f"""
@@ -1519,9 +1709,11 @@ def ema_html(
         {warning4h}
     </span>
 
+
     <span class="ema-divider">
         |
     </span>
+
 
     <span class="ema-time">
         1D
@@ -1539,14 +1731,36 @@ def ema_html(
         {warning1d}
     </span>
 
+
+    <span class="ema-divider">
+        |
+    </span>
+
+
+    <span class="ema-time">
+        1W
+    </span>
+
+    <span class="ema-status">
+        {ema1w["short"]}
+    </span>
+
+    <span class="ema-status">
+        {ema1w["long"]}
+    </span>
+
+    <span class="ema-warning">
+        {warning1w}
+    </span>
+
 </div>
 
 """
 
 
-# =========================
+# =========================================================
 # 웹 대시보드
-# =========================
+# =========================================================
 
 @app.get(
     "/",
@@ -1565,14 +1779,11 @@ def dashboard():
     content="300"
 >
 
-
 <title>
 OKX+UPBIT
 </title>
 
-
 <style>
-
 
 body{
 
@@ -1586,7 +1797,6 @@ body{
 
 }
 
-
 table{
 
     width:auto;
@@ -1595,7 +1805,6 @@ table{
 
 }
 
-
 th{
 
     background:#333;
@@ -1603,7 +1812,6 @@ th{
     padding:10px;
 
 }
-
 
 td{
 
@@ -1693,16 +1901,16 @@ td{
 
 
 /* =========================
-   로켓 / 얼음 위치
+   로켓 / 구름 위치
    ========================= */
 
 .ema-warning{
 
     display:inline-block;
 
-    width:40px;
+    width:55px;
 
-    min-width:40px;
+    min-width:55px;
 
     text-align:center;
 
@@ -1710,16 +1918,16 @@ td{
 
 
 /* =========================
-   4H / 1D 구분
+   시간봉 구분
    ========================= */
 
 .ema-divider{
 
     display:inline-block;
 
-    width:50px;
+    width:35px;
 
-    min-width:50px;
+    min-width:35px;
 
     text-align:center;
 
@@ -1806,7 +2014,6 @@ td{
 
 }
 
-
 </style>
 
 </head>
@@ -1831,7 +2038,6 @@ td{
 
 
 <table>
-
 
 <tr>
 
@@ -1882,7 +2088,8 @@ EMA 배열
 
 {ema_html(
     item["ema4h"],
-    item["ema1d"]
+    item["ema1d"],
+    item["ema1w"]
 )}
 
 </td>
@@ -1910,7 +2117,6 @@ EMA 배열
 
 
 <table>
-
 
 <tr>
 
@@ -1961,7 +2167,8 @@ EMA 배열
 
 {ema_html(
     item["ema4h"],
-    item["ema1d"]
+    item["ema1d"],
+    item["ema1w"]
 )}
 
 </td>
@@ -1982,7 +2189,6 @@ EMA 배열
 
 </body>
 
-
 </html>
 
 """
@@ -1991,20 +2197,18 @@ EMA 배열
     return html
 
 
-# =========================
+# =========================================================
 # 시작
-# =========================
+# =========================================================
 
 @app.on_event("startup")
 def startup():
 
     update_dashboard()
 
-
     schedule.every(5).minutes.do(
         update_dashboard
     )
-
 
     threading.Thread(
         target=scheduler,
@@ -2012,9 +2216,9 @@ def startup():
     ).start()
 
 
-# =========================
+# =========================================================
 # 실행
-# =========================
+# =========================================================
 
 if __name__ == "__main__":
 
@@ -2026,4 +2230,4 @@ if __name__ == "__main__":
 
         port=8000
 
-        )
+    )
