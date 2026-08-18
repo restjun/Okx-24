@@ -22,7 +22,6 @@ logging.basicConfig(
 # =========================================================
 
 latest_okx_data = []
-
 latest_upbit_data = []
 
 
@@ -413,6 +412,47 @@ def format_volume(volume):
 
 
 # =========================================================
+# EMA 10-20 방향
+# =========================================================
+
+def get_ema_10_20_direction(
+    df,
+    column
+):
+
+    if df is None or len(df) < 20:
+        return "none"
+
+    df = df.copy()
+
+    ema10 = (
+        df[column]
+        .ewm(
+            span=10,
+            adjust=False
+        )
+        .mean()
+    )
+
+    ema20 = (
+        df[column]
+        .ewm(
+            span=20,
+            adjust=False
+        )
+        .mean()
+    )
+
+    if ema10.iloc[-1] > ema20.iloc[-1]:
+        return "long"
+
+    elif ema10.iloc[-1] < ema20.iloc[-1]:
+        return "short"
+
+    return "none"
+
+
+# =========================================================
 # EMA 5-10 방향
 # =========================================================
 
@@ -426,7 +466,7 @@ def get_ema_5_10_direction(
 
     df = df.copy()
 
-    df["ema5"] = (
+    ema5 = (
         df[column]
         .ewm(
             span=5,
@@ -435,7 +475,7 @@ def get_ema_5_10_direction(
         .mean()
     )
 
-    df["ema10"] = (
+    ema10 = (
         df[column]
         .ewm(
             span=10,
@@ -444,10 +484,74 @@ def get_ema_5_10_direction(
         .mean()
     )
 
-    if df["ema5"].iloc[-1] > df["ema10"].iloc[-1]:
+    if ema5.iloc[-1] > ema10.iloc[-1]:
         return "long"
 
-    elif df["ema5"].iloc[-1] < df["ema10"].iloc[-1]:
+    elif ema5.iloc[-1] < ema10.iloc[-1]:
+        return "short"
+
+    return "none"
+
+
+# =========================================================
+# EMA 20-60-120 방향
+# =========================================================
+
+def get_ema_20_60_120_direction(
+    df,
+    column
+):
+
+    if df is None or len(df) < 120:
+        return "none"
+
+    df = df.copy()
+
+    ema20 = (
+        df[column]
+        .ewm(
+            span=20,
+            adjust=False
+        )
+        .mean()
+    )
+
+    ema60 = (
+        df[column]
+        .ewm(
+            span=60,
+            adjust=False
+        )
+        .mean()
+    )
+
+    ema120 = (
+        df[column]
+        .ewm(
+            span=120,
+            adjust=False
+        )
+        .mean()
+    )
+
+    if (
+        ema20.iloc[-1]
+        >
+        ema60.iloc[-1]
+        >
+        ema120.iloc[-1]
+    ):
+
+        return "long"
+
+    elif (
+        ema20.iloc[-1]
+        <
+        ema60.iloc[-1]
+        <
+        ema120.iloc[-1]
+    ):
+
         return "short"
 
     return "none"
@@ -489,16 +593,16 @@ def check_ema_10_20(
 
     for _, row in df.iterrows():
 
-        ema10 = row["ema10"]
-        ema20 = row["ema20"]
+        if row["ema10"] > row["ema20"]:
 
-        if ema10 > ema20:
             states.append("long")
 
-        elif ema10 < ema20:
+        elif row["ema10"] < row["ema20"]:
+
             states.append("short")
 
         else:
+
             states.append("none")
 
     current_state = states[-1]
@@ -512,6 +616,7 @@ def check_ema_10_20(
 
         if state == current_state:
             count += 1
+
         else:
             break
 
@@ -569,21 +674,28 @@ def check_ema(
 
     for _, row in df.iterrows():
 
-        ema20 = row["ema20"]
-        ema60 = row["ema60"]
-        ema120 = row["ema120"]
-
         if (
-            ema20 > ema60 > ema120
+            row["ema20"]
+            >
+            row["ema60"]
+            >
+            row["ema120"]
         ):
+
             states.append("long")
 
         elif (
-            ema20 < ema60 < ema120
+            row["ema20"]
+            <
+            row["ema60"]
+            <
+            row["ema120"]
         ):
+
             states.append("short")
 
         else:
+
             states.append("none")
 
     current_state = states[-1]
@@ -597,6 +709,7 @@ def check_ema(
 
         if state == current_state:
             count += 1
+
         else:
             break
 
@@ -607,109 +720,6 @@ def check_ema(
         return f"🔴({count})"
 
     return "⚪(0)"
-
-
-# =========================================================
-# EMA 10-20 방향
-# =========================================================
-
-def get_ema_10_20_direction(
-    df,
-    column
-):
-
-    if df is None or len(df) < 20:
-        return "none"
-
-    df = df.copy()
-
-    ema10 = (
-        df[column]
-        .ewm(
-            span=10,
-            adjust=False
-        )
-        .mean()
-    )
-
-    ema20 = (
-        df[column]
-        .ewm(
-            span=20,
-            adjust=False
-        )
-        .mean()
-    )
-
-    if ema10.iloc[-1] > ema20.iloc[-1]:
-        return "long"
-
-    elif ema10.iloc[-1] < ema20.iloc[-1]:
-        return "short"
-
-    return "none"
-
-
-# =========================================================
-# EMA 20-60-120 방향
-# =========================================================
-
-def get_ema_20_60_120_direction(
-    df,
-    column
-):
-
-    if df is None or len(df) < 120:
-        return "none"
-
-    df = df.copy()
-
-    ema20 = (
-        df[column]
-        .ewm(
-            span=20,
-            adjust=False
-        )
-        .mean()
-    )
-
-    ema60 = (
-        df[column]
-        .ewm(
-            span=60,
-            adjust=False
-        )
-        .mean()
-    )
-
-    ema120 = (
-        df[column]
-        .ewm(
-            span=120,
-            adjust=False
-        )
-        .mean()
-    )
-
-    if (
-        ema20.iloc[-1]
-        >
-        ema60.iloc[-1]
-        >
-        ema120.iloc[-1]
-    ):
-        return "long"
-
-    elif (
-        ema20.iloc[-1]
-        <
-        ema60.iloc[-1]
-        <
-        ema120.iloc[-1]
-    ):
-        return "short"
-
-    return "none"
 
 
 # =========================================================
@@ -739,6 +749,7 @@ def check_4h_warning(
         or len(df4h) < 120
         or len(df1d) < 20
     ):
+
         return "none"
 
     ema4h_10_20 = get_ema_10_20_direction(
@@ -756,9 +767,8 @@ def check_4h_warning(
         column1d
     )
 
-    # -----------------------------------------------------
+
     # 🚨 숏
-    # -----------------------------------------------------
 
     if (
         ema4h_10_20 == "long"
@@ -767,11 +777,11 @@ def check_4h_warning(
         and
         ema1d_10_20 == "short"
     ):
+
         return "short_warning"
 
-    # -----------------------------------------------------
+
     # 🏔 롱
-    # -----------------------------------------------------
 
     if (
         ema4h_10_20 == "short"
@@ -780,7 +790,9 @@ def check_4h_warning(
         and
         ema1d_10_20 == "long"
     ):
+
         return "long_warning"
+
 
     return "none"
 
@@ -815,27 +827,28 @@ def check_1d_warning(
         column1d
     )
 
-    # -----------------------------------------------------
+
     # 🚨 숏
-    # -----------------------------------------------------
 
     if (
         ema1d_10_20 == "long"
         and
         ema1d_20_60_120 == "short"
     ):
+
         return "short_warning"
 
-    # -----------------------------------------------------
+
     # 🏔 롱
-    # -----------------------------------------------------
 
     if (
         ema1d_10_20 == "short"
         and
         ema1d_20_60_120 == "long"
     ):
+
         return "long_warning"
+
 
     return "none"
 
@@ -924,8 +937,7 @@ def get_okx_1d_ema(
 
 # =========================================================
 # OKX 1W
-#
-# 주봉은 경고 표시하지 않음
+# 주봉 경고 없음
 # =========================================================
 
 def get_okx_1w_ema(
@@ -1040,8 +1052,7 @@ def get_upbit_1d_ema(
 
 # =========================================================
 # 업비트 1W
-#
-# 주봉은 경고 표시하지 않음
+# 주봉 경고 없음
 # =========================================================
 
 def get_upbit_1w_ema(
@@ -1277,7 +1288,7 @@ def get_upbit_change(
 
 # =========================================================
 # 변동률 표시
-# 당일만 표시
+# 당일만
 # =========================================================
 
 def format_change(
@@ -1383,10 +1394,6 @@ def update_okx():
             symbol
         )
 
-        change_text = format_change(
-            changes
-        )
-
         ema4h = get_okx_4h_ema(
             symbol
         )
@@ -1408,7 +1415,7 @@ def update_okx():
                 coin,
 
             "change":
-                change_text,
+                format_change(changes),
 
             "volume":
                 format_volume(
@@ -1473,10 +1480,6 @@ def update_upbit():
             market
         )
 
-        change_text = format_change(
-            changes
-        )
-
         ema4h = get_upbit_4h_ema(
             market
         )
@@ -1498,7 +1501,7 @@ def update_upbit():
                 coin,
 
             "change":
-                change_text,
+                format_change(changes),
 
             "volume":
                 format_volume(
@@ -1559,7 +1562,6 @@ def scheduler():
 
 # =========================================================
 # EMA 한 줄 표시
-# 4H / 1D / 1W
 # =========================================================
 
 def ema_html(
@@ -1568,9 +1570,7 @@ def ema_html(
     ema1w
 ):
 
-    # =====================================================
     # 4H 경고
-    # =====================================================
 
     if ema4h["warning"] == "long_warning":
 
@@ -1585,9 +1585,7 @@ def ema_html(
         warning4h = ""
 
 
-    # =====================================================
     # 1D 경고
-    # =====================================================
 
     if ema1d["warning"] == "long_warning":
 
@@ -1602,10 +1600,7 @@ def ema_html(
         warning1d = ""
 
 
-    # =====================================================
-    # 1W
-    # 경고 표시 없음
-    # =====================================================
+    # 1W 경고 없음
 
     warning1w = ""
 
@@ -1614,65 +1609,63 @@ def ema_html(
 
 <div class="ema-display">
 
-    <span class="ema-time">
-        4H
-    </span>
+    <div class="ema-period">
 
-    <span class="ema-status">
-        {ema4h["short"]}
-    </span>
+        <span class="ema-time">
+            4H
+        </span>
 
-    <span class="ema-status">
-        {ema4h["long"]}
-    </span>
+        <span class="ema-status">
+            {ema4h["short"]}
+        </span>
 
-    <span class="ema-warning">
-        {warning4h}
-    </span>
+        <span class="ema-status">
+            {ema4h["long"]}
+        </span>
 
+        <span class="ema-warning">
+            {warning4h}
+        </span>
 
-    <span class="ema-divider">
-        |
-    </span>
-
-
-    <span class="ema-time">
-        1D
-    </span>
-
-    <span class="ema-status">
-        {ema1d["short"]}
-    </span>
-
-    <span class="ema-status">
-        {ema1d["long"]}
-    </span>
-
-    <span class="ema-warning">
-        {warning1d}
-    </span>
+    </div>
 
 
-    <span class="ema-divider">
-        |
-    </span>
+    <div class="ema-period">
+
+        <span class="ema-time">
+            1D
+        </span>
+
+        <span class="ema-status">
+            {ema1d["short"]}
+        </span>
+
+        <span class="ema-status">
+            {ema1d["long"]}
+        </span>
+
+        <span class="ema-warning">
+            {warning1d}
+        </span>
+
+    </div>
 
 
-    <span class="ema-time">
-        1W
-    </span>
+    <div class="ema-period last">
 
-    <span class="ema-status">
-        {ema1w["short"]}
-    </span>
+        <span class="ema-time">
+            1W
+        </span>
 
-    <span class="ema-status">
-        {ema1w["long"]}
-    </span>
+        <span class="ema-status">
+            {ema1w["short"]}
+        </span>
 
-    <span class="ema-warning">
-        {warning1w}
-    </span>
+        <span class="ema-status">
+            {ema1w["long"]}
+        </span>
+
+    </div>
 
 </div>
 
@@ -1704,7 +1697,12 @@ def dashboard():
 OKX+UPBIT
 </title>
 
+
 <style>
+
+/* =====================================================
+   전체
+   ===================================================== */
 
 body{
 
@@ -1718,6 +1716,11 @@ body{
 
 }
 
+
+/* =====================================================
+   테이블
+   ===================================================== */
+
 table{
 
     width:auto;
@@ -1726,19 +1729,42 @@ table{
 
 }
 
+
+/* =====================================================
+   헤더
+   ===================================================== */
+
 th{
 
     background:#333;
 
-    padding:10px;
+    padding:10px 12px;
+
+    border-right:2px solid #555;
+
+    white-space:nowrap;
 
 }
 
+
+th:last-child{
+
+    border-right:none;
+
+}
+
+
+/* =====================================================
+   일반 셀
+   ===================================================== */
+
 td{
 
-    padding:8px;
+    padding:8px 12px;
 
     border-bottom:1px solid #444;
+
+    border-right:2px solid #333;
 
     text-align:center;
 
@@ -1747,55 +1773,33 @@ td{
 }
 
 
-/* =========================
-   거래대금
-   ========================= */
+td:last-child{
 
-.volume-cell{
-
-    padding-left:10px;
-
-    padding-right:10px;
-
-    text-align:right;
-
-    white-space:nowrap;
+    border-right:none;
 
 }
 
 
-/* =========================
-   EMA 한 줄
-   ========================= */
+/* =====================================================
+   순위
+   ===================================================== */
 
-.ema-display{
+.rank-cell{
 
-    display:flex;
+    width:45px;
 
-    align-items:center;
-
-    height:28px;
-
-    font-family:monospace;
-
-    white-space:nowrap;
-
-    padding-left:10px;
+    min-width:45px;
 
 }
 
 
-/* =========================
-   시간 위치
-   ========================= */
+/* =====================================================
+   코인
+   ===================================================== */
 
-.ema-time{
+.coin-cell{
 
-    display:inline-block;
-
-    width:40px;
-
-    min-width:40px;
+    min-width:90px;
 
     text-align:left;
 
@@ -1804,77 +1808,46 @@ td{
 }
 
 
-/* =========================
-   EMA 상태
-   ========================= */
+/* =====================================================
+   거래대금
+   ===================================================== */
 
-.ema-status{
+.volume-cell{
 
-    display:inline-block;
+    min-width:100px;
 
-    width:75px;
+    padding-left:15px;
 
-    min-width:75px;
+    padding-right:15px;
 
-    text-align:left;
-
-}
-
-
-/* =========================
-   경고 위치
-   ========================= */
-
-.ema-warning{
-
-    display:inline-block;
-
-    width:55px;
-
-    min-width:55px;
-
-    text-align:center;
-
-}
-
-
-/* =========================
-   시간봉 구분
-   ========================= */
-
-.ema-divider{
-
-    display:inline-block;
-
-    width:35px;
-
-    min-width:35px;
-
-    text-align:center;
-
-    color:#888;
-
-}
-
-
-/* =========================
-   변동률 셀
-   ========================= */
-
-.change-cell{
-
-    padding-left:5px;
-
-    padding-right:10px;
+    text-align:right;
 
     white-space:nowrap;
 
 }
 
 
-/* =========================
-   당일 변동률
-   ========================= */
+/* =====================================================
+   변동률
+   거래대금 바로 오른쪽
+   ===================================================== */
+
+.change-cell{
+
+    min-width:105px;
+
+    padding-left:12px;
+
+    padding-right:12px;
+
+    white-space:nowrap;
+
+}
+
+
+/* =====================================================
+   변동률
+   ===================================================== */
 
 .change-item{
 
@@ -1891,10 +1864,6 @@ td{
 }
 
 
-/* =========================
-   변동률 아이콘
-   ========================= */
-
 .change-icon{
 
     display:inline-block;
@@ -1908,10 +1877,6 @@ td{
 }
 
 
-/* =========================
-   변동률 숫자
-   ========================= */
-
 .change-value{
 
     display:inline-block;
@@ -1923,6 +1888,143 @@ td{
     text-align:right;
 
     font-family:monospace;
+
+}
+
+
+/* =====================================================
+   EMA 전체
+   ===================================================== */
+
+.ema-display{
+
+    display:flex;
+
+    align-items:center;
+
+    height:28px;
+
+    white-space:nowrap;
+
+    font-family:monospace;
+
+    padding:0 5px;
+
+}
+
+
+/* =====================================================
+   EMA 시간봉 그룹
+   ===================================================== */
+
+.ema-period{
+
+    display:flex;
+
+    align-items:center;
+
+    padding:0 10px;
+
+    border-right:2px solid #555;
+
+}
+
+
+.ema-period.last{
+
+    border-right:none;
+
+}
+
+
+/* =====================================================
+   시간봉
+   ===================================================== */
+
+.ema-time{
+
+    display:inline-block;
+
+    width:35px;
+
+    min-width:35px;
+
+    text-align:left;
+
+    font-weight:bold;
+
+}
+
+
+/* =====================================================
+   EMA 상태
+   ===================================================== */
+
+.ema-status{
+
+    display:inline-block;
+
+    width:70px;
+
+    min-width:70px;
+
+    text-align:left;
+
+}
+
+
+/* =====================================================
+   경고
+   ===================================================== */
+
+.ema-warning{
+
+    display:inline-block;
+
+    width:45px;
+
+    min-width:45px;
+
+    text-align:center;
+
+}
+
+
+/* =====================================================
+   섹션 구분
+   ===================================================== */
+
+.section-title{
+
+    margin-top:25px;
+
+    padding:10px 12px;
+
+    background:#222;
+
+    border-left:5px solid #666;
+
+}
+
+
+/* =====================================================
+   테이블 외곽
+   ===================================================== */
+
+table{
+
+    border:1px solid #444;
+
+}
+
+
+/* =====================================================
+   행 hover
+   ===================================================== */
+
+tr:hover{
+
+    background:#1d1d1d;
 
 }
 
@@ -1944,7 +2046,7 @@ td{
 </p>
 
 
-<h2>
+<h2 class="section-title">
 🏆 OKX 선물 거래대금 TOP20
 </h2>
 
@@ -1953,7 +2055,7 @@ td{
 
 <tr>
 
-<th>
+<th class="rank-cell">
 순위
 </th>
 
@@ -1970,7 +2072,7 @@ td{
 </th>
 
 <th>
-EMA 배열
+EMA 상태
 </th>
 
 </tr>
@@ -1978,17 +2080,21 @@ EMA 배열
 """
 
 
+    # =====================================================
+    # OKX
+    # =====================================================
+
     for item in latest_okx_data:
 
         html += f"""
 
 <tr>
 
-<td>
+<td class="rank-cell">
 {item['rank']}
 </td>
 
-<td>
+<td class="coin-cell">
 {item['name']}
 </td>
 
@@ -2020,10 +2126,7 @@ EMA 배열
 </table>
 
 
-<hr>
-
-
-<h2>
+<h2 class="section-title">
 🏆 업비트 현물 거래대금 TOP20
 </h2>
 
@@ -2032,7 +2135,7 @@ EMA 배열
 
 <tr>
 
-<th>
+<th class="rank-cell">
 순위
 </th>
 
@@ -2049,7 +2152,7 @@ EMA 배열
 </th>
 
 <th>
-EMA 배열
+EMA 상태
 </th>
 
 </tr>
@@ -2057,17 +2160,21 @@ EMA 배열
 """
 
 
+    # =====================================================
+    # 업비트
+    # =====================================================
+
     for item in latest_upbit_data:
 
         html += f"""
 
 <tr>
 
-<td>
+<td class="rank-cell">
 {item['rank']}
 </td>
 
-<td>
+<td class="coin-cell">
 {item['name']}
 </td>
 
