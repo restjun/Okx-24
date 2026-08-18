@@ -85,7 +85,6 @@ def get_okx_ohlcv(
     )
 
     if response is None:
-
         return None
 
     try:
@@ -93,7 +92,6 @@ def get_okx_ohlcv(
         data = response.json()["data"]
 
         if not data:
-
             return None
 
         df = pd.DataFrame(
@@ -159,7 +157,6 @@ def get_upbit_ohlcv(
     )
 
     if response is None:
-
         return None
 
     try:
@@ -167,12 +164,9 @@ def get_upbit_ohlcv(
         data = response.json()
 
         if not data:
-
             return None
 
-        df = pd.DataFrame(
-            data
-        )
+        df = pd.DataFrame(data)
 
         df = df.iloc[::-1].reset_index(
             drop=True
@@ -215,7 +209,6 @@ def get_upbit_day_ohlcv(
     )
 
     if response is None:
-
         return None
 
     try:
@@ -223,12 +216,9 @@ def get_upbit_day_ohlcv(
         data = response.json()
 
         if not data:
-
             return None
 
-        df = pd.DataFrame(
-            data
-        )
+        df = pd.DataFrame(data)
 
         df = df.iloc[::-1].reset_index(
             drop=True
@@ -271,7 +261,6 @@ def get_upbit_week_ohlcv(
     )
 
     if response is None:
-
         return None
 
     try:
@@ -279,12 +268,9 @@ def get_upbit_week_ohlcv(
         data = response.json()
 
         if not data:
-
             return None
 
-        df = pd.DataFrame(
-            data
-        )
+        df = pd.DataFrame(data)
 
         df = df.iloc[::-1].reset_index(
             drop=True
@@ -323,7 +309,6 @@ def get_all_okx_swap_symbols():
     )
 
     if response is None:
-
         return []
 
     try:
@@ -358,7 +343,6 @@ def get_upbit_markets():
     )
 
     if response is None:
-
         return []
 
     try:
@@ -390,7 +374,6 @@ def get_usdt_krw():
     )
 
     if response is None:
-
         return 1400
 
     try:
@@ -439,7 +422,6 @@ def get_ema_5_10_direction(
 ):
 
     if df is None or len(df) < 10:
-
         return "none"
 
     df = df.copy()
@@ -463,11 +445,9 @@ def get_ema_5_10_direction(
     )
 
     if df["ema5"].iloc[-1] > df["ema10"].iloc[-1]:
-
         return "long"
 
     elif df["ema5"].iloc[-1] < df["ema10"].iloc[-1]:
-
         return "short"
 
     return "none"
@@ -483,7 +463,6 @@ def check_ema_10_20(
 ):
 
     if df is None or len(df) < 20:
-
         return "⚪(0)"
 
     df = df.copy()
@@ -511,25 +490,20 @@ def check_ema_10_20(
     for _, row in df.iterrows():
 
         ema10 = row["ema10"]
-
         ema20 = row["ema20"]
 
         if ema10 > ema20:
-
             states.append("long")
 
         elif ema10 < ema20:
-
             states.append("short")
 
         else:
-
             states.append("none")
 
     current_state = states[-1]
 
     if current_state == "none":
-
         return "⚪(0)"
 
     count = 0
@@ -537,19 +511,14 @@ def check_ema_10_20(
     for state in reversed(states):
 
         if state == current_state:
-
             count += 1
-
         else:
-
             break
 
     if current_state == "long":
-
         return f"🟢({count})"
 
     elif current_state == "short":
-
         return f"🔴({count})"
 
     return "⚪(0)"
@@ -565,7 +534,6 @@ def check_ema(
 ):
 
     if df is None or len(df) < 120:
-
         return "⚪(0)"
 
     df = df.copy()
@@ -602,39 +570,25 @@ def check_ema(
     for _, row in df.iterrows():
 
         ema20 = row["ema20"]
-
         ema60 = row["ema60"]
-
         ema120 = row["ema120"]
 
         if (
-            ema20
-            >
-            ema60
-            >
-            ema120
+            ema20 > ema60 > ema120
         ):
-
             states.append("long")
 
         elif (
-            ema20
-            <
-            ema60
-            <
-            ema120
+            ema20 < ema60 < ema120
         ):
-
             states.append("short")
 
         else:
-
             states.append("none")
 
     current_state = states[-1]
 
     if current_state == "none":
-
         return "⚪(0)"
 
     count = 0
@@ -642,19 +596,14 @@ def check_ema(
     for state in reversed(states):
 
         if state == current_state:
-
             count += 1
-
         else:
-
             break
 
     if current_state == "long":
-
         return f"🟢({count})"
 
     elif current_state == "short":
-
         return f"🔴({count})"
 
     return "⚪(0)"
@@ -670,7 +619,6 @@ def get_ema_10_20_direction(
 ):
 
     if df is None or len(df) < 20:
-
         return "none"
 
     df = df.copy()
@@ -694,11 +642,9 @@ def get_ema_10_20_direction(
     )
 
     if ema10.iloc[-1] > ema20.iloc[-1]:
-
         return "long"
 
     elif ema10.iloc[-1] < ema20.iloc[-1]:
-
         return "short"
 
     return "none"
@@ -714,7 +660,6 @@ def get_ema_20_60_120_direction(
 ):
 
     if df is None or len(df) < 120:
-
         return "none"
 
     df = df.copy()
@@ -753,7 +698,6 @@ def get_ema_20_60_120_direction(
         >
         ema120.iloc[-1]
     ):
-
         return "long"
 
     elif (
@@ -763,104 +707,134 @@ def get_ema_20_60_120_direction(
         <
         ema120.iloc[-1]
     ):
-
         return "short"
 
     return "none"
 
 
 # =========================================================
-# 기존 경고 방향
+# 4H 경고
 #
-# short_warning = 🚨 조건
-# long_warning  = 🏔 조건
+# 🚨 숏
+# 4H 10-20 정배열
+# 4H 20-60-120 역배열
+# 1D 10-20 역배열
+#
+# 🏔 롱
+# 4H 10-20 역배열
+# 4H 20-60-120 정배열
+# 1D 10-20 정배열
 # =========================================================
 
-def check_ema_warning(
-    df,
-    column
+def check_4h_warning(
+    df4h,
+    column4h,
+    df1d,
+    column1d
 ):
 
-    short_direction = (
-        get_ema_10_20_direction(
-            df,
-            column
-        )
-    )
-
-    long_direction = (
-        get_ema_20_60_120_direction(
-            df,
-            column
-        )
-    )
-
-    # 10-20 정배열
-    # 20-60-120 역배열
-    # → 🚨 후보
     if (
-        short_direction == "long"
-        and
-        long_direction == "short"
+        df4h is None
+        or df1d is None
+        or len(df4h) < 120
+        or len(df1d) < 20
     ):
+        return "none"
 
+    ema4h_10_20 = get_ema_10_20_direction(
+        df4h,
+        column4h
+    )
+
+    ema4h_20_60_120 = get_ema_20_60_120_direction(
+        df4h,
+        column4h
+    )
+
+    ema1d_10_20 = get_ema_10_20_direction(
+        df1d,
+        column1d
+    )
+
+    # -----------------------------------------------------
+    # 🚨 숏
+    # -----------------------------------------------------
+
+    if (
+        ema4h_10_20 == "long"
+        and
+        ema4h_20_60_120 == "short"
+        and
+        ema1d_10_20 == "short"
+    ):
         return "short_warning"
 
-    # 10-20 역배열
-    # 20-60-120 정배열
-    # → 🏔 후보
-    if (
-        short_direction == "short"
-        and
-        long_direction == "long"
-    ):
+    # -----------------------------------------------------
+    # 🏔 롱
+    # -----------------------------------------------------
 
+    if (
+        ema4h_10_20 == "short"
+        and
+        ema4h_20_60_120 == "long"
+        and
+        ema1d_10_20 == "long"
+    ):
         return "long_warning"
 
     return "none"
 
 
 # =========================================================
-# 상위 시간봉 확인
+# 1D 경고
+#
+# 🚨 숏
+# 1D 10-20 정배열
+# 1D 20-60-120 역배열
+#
+# 🏔 롱
+# 1D 10-20 역배열
+# 1D 20-60-120 정배열
 # =========================================================
 
-def check_confirmed_warning(
-    current_df,
-    current_column,
-    higher_df,
-    higher_column
+def check_1d_warning(
+    df1d,
+    column1d
 ):
 
-    current_warning = (
-        check_ema_warning(
-            current_df,
-            current_column
-        )
+    if df1d is None or len(df1d) < 120:
+        return "none"
+
+    ema1d_10_20 = get_ema_10_20_direction(
+        df1d,
+        column1d
     )
 
-    higher_5_10 = (
-        get_ema_5_10_direction(
-            higher_df,
-            higher_column
-        )
+    ema1d_20_60_120 = get_ema_20_60_120_direction(
+        df1d,
+        column1d
     )
 
-    # 🚨
+    # -----------------------------------------------------
+    # 🚨 숏
+    # -----------------------------------------------------
+
     if (
-        current_warning == "short_warning"
+        ema1d_10_20 == "long"
         and
-        higher_5_10 == "long"
+        ema1d_20_60_120 == "short"
     ):
-
         return "short_warning"
 
-    # 🏔
-    if (
-        current_warning == "long_warning"
-        and
-        higher_5_10 == "short"
-    ):
+    # -----------------------------------------------------
+    # 🏔 롱
+    # -----------------------------------------------------
 
+    if (
+        ema1d_10_20 == "short"
+        and
+        ema1d_20_60_120 == "long"
+    ):
         return "long_warning"
 
     return "none"
@@ -901,7 +875,7 @@ def get_okx_4h_ema(
             ),
 
         "warning":
-            check_confirmed_warning(
+            check_4h_warning(
                 df4h,
                 "c",
                 df1d,
@@ -925,12 +899,6 @@ def get_okx_1d_ema(
         200
     )
 
-    df1w = get_okx_ohlcv(
-        inst_id,
-        "1W",
-        200
-    )
-
     return {
 
         "short":
@@ -946,10 +914,8 @@ def get_okx_1d_ema(
             ),
 
         "warning":
-            check_confirmed_warning(
+            check_1d_warning(
                 df1d,
-                "c",
-                df1w,
                 "c"
             )
 
@@ -958,6 +924,8 @@ def get_okx_1d_ema(
 
 # =========================================================
 # OKX 1W
+#
+# 주봉은 경고 표시하지 않음
 # =========================================================
 
 def get_okx_1w_ema(
@@ -985,10 +953,7 @@ def get_okx_1w_ema(
             ),
 
         "warning":
-            check_ema_warning(
-                df1w,
-                "c"
-            )
+            "none"
 
     }
 
@@ -1027,7 +992,7 @@ def get_upbit_4h_ema(
             ),
 
         "warning":
-            check_confirmed_warning(
+            check_4h_warning(
                 df4h,
                 "trade_price",
                 df1d,
@@ -1050,11 +1015,6 @@ def get_upbit_1d_ema(
         200
     )
 
-    df1w = get_upbit_week_ohlcv(
-        market,
-        200
-    )
-
     return {
 
         "short":
@@ -1070,10 +1030,8 @@ def get_upbit_1d_ema(
             ),
 
         "warning":
-            check_confirmed_warning(
+            check_1d_warning(
                 df1d,
-                "trade_price",
-                df1w,
                 "trade_price"
             )
 
@@ -1082,6 +1040,8 @@ def get_upbit_1d_ema(
 
 # =========================================================
 # 업비트 1W
+#
+# 주봉은 경고 표시하지 않음
 # =========================================================
 
 def get_upbit_1w_ema(
@@ -1108,10 +1068,7 @@ def get_upbit_1w_ema(
             ),
 
         "warning":
-            check_ema_warning(
-                df1w,
-                "trade_price"
-            )
+            "none"
 
     }
 
@@ -1131,7 +1088,6 @@ def get_okx_volume(
     )
 
     if df is None:
-
         return 0
 
     return df[
@@ -1148,7 +1104,6 @@ def get_upbit_volume_map():
     markets = get_upbit_markets()
 
     if not markets:
-
         return {}
 
     response = retry_request(
@@ -1159,7 +1114,6 @@ def get_upbit_volume_map():
     )
 
     if response is None:
-
         return {}
 
     try:
@@ -1197,7 +1151,6 @@ def get_okx_change(
     )
 
     if df is None or len(df) < 50:
-
         return None
 
     df["datetime"] = (
@@ -1224,7 +1177,6 @@ def get_okx_change(
     )
 
     if len(daily) < 5:
-
         return None
 
     result = []
@@ -1271,7 +1223,6 @@ def get_upbit_change(
     )
 
     if df is None or len(df) < 50:
-
         return None
 
     df["datetime"] = pd.to_datetime(
@@ -1293,7 +1244,6 @@ def get_upbit_change(
     )
 
     if len(daily) < 5:
-
         return None
 
     result = []
@@ -1335,7 +1285,6 @@ def format_change(
 ):
 
     if changes is None or len(changes) == 0:
-
         return "N/A"
 
     x = changes[0]
@@ -1501,7 +1450,6 @@ def update_upbit():
     volume_map = get_upbit_volume_map()
 
     if not volume_map:
-
         return
 
     top20 = sorted(
@@ -1621,7 +1569,7 @@ def ema_html(
 ):
 
     # =====================================================
-    # 4H
+    # 4H 경고
     # =====================================================
 
     if ema4h["warning"] == "long_warning":
@@ -1638,7 +1586,7 @@ def ema_html(
 
 
     # =====================================================
-    # 1D
+    # 1D 경고
     # =====================================================
 
     if ema1d["warning"] == "long_warning":
@@ -1656,19 +1604,10 @@ def ema_html(
 
     # =====================================================
     # 1W
+    # 경고 표시 없음
     # =====================================================
 
-    if ema1w["warning"] == "long_warning":
-
-        warning1w = "🏔🏔🏔"
-
-    elif ema1w["warning"] == "short_warning":
-
-        warning1w = "🚨🚨🚨"
-
-    else:
-
-        warning1w = ""
+    warning1w = ""
 
 
     return f"""
@@ -1816,7 +1755,7 @@ td{
 
     padding-left:10px;
 
-    padding-right:45px;
+    padding-right:10px;
 
     text-align:right;
 
@@ -1883,7 +1822,7 @@ td{
 
 
 /* =========================
-   🚨 / 🏔 위치
+   경고 위치
    ========================= */
 
 .ema-warning{
@@ -1924,7 +1863,9 @@ td{
 
 .change-cell{
 
-    padding-left:35px;
+    padding-left:5px;
+
+    padding-right:10px;
 
     white-space:nowrap;
 
@@ -1985,17 +1926,6 @@ td{
 
 }
 
-
-/* =========================
-   구분
-   ========================= */
-
-.change-item + .change-item{
-
-    margin-left:4px;
-
-}
-
 </style>
 
 </head>
@@ -2036,11 +1966,11 @@ td{
 </th>
 
 <th>
-EMA 배열
+오늘
 </th>
 
 <th>
-오늘
+EMA 배열
 </th>
 
 </tr>
@@ -2066,6 +1996,10 @@ EMA 배열
 {item['volume']}
 </td>
 
+<td class="change-cell">
+{item['change']}
+</td>
+
 <td>
 
 {ema_html(
@@ -2074,10 +2008,6 @@ EMA 배열
     item["ema1w"]
 )}
 
-</td>
-
-<td class="change-cell">
-{item['change']}
 </td>
 
 </tr>
@@ -2115,11 +2045,11 @@ EMA 배열
 </th>
 
 <th>
-EMA 배열
+오늘
 </th>
 
 <th>
-오늘
+EMA 배열
 </th>
 
 </tr>
@@ -2145,6 +2075,10 @@ EMA 배열
 {item['volume']}
 </td>
 
+<td class="change-cell">
+{item['change']}
+</td>
+
 <td>
 
 {ema_html(
@@ -2153,10 +2087,6 @@ EMA 배열
     item["ema1w"]
 )}
 
-</td>
-
-<td class="change-cell">
-{item['change']}
 </td>
 
 </tr>
@@ -2212,4 +2142,4 @@ if __name__ == "__main__":
 
         port=8000
 
-)
+    )
