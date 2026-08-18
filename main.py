@@ -431,7 +431,6 @@ def format_volume(volume):
 
 # =========================================================
 # EMA 5-10 방향
-# 경고 확인용
 # =========================================================
 
 def get_ema_5_10_direction(
@@ -773,8 +772,8 @@ def get_ema_20_60_120_direction(
 # =========================================================
 # 기존 경고 방향
 #
-# short_warning = 🚀 조건
-# long_warning  = 🌧 조건
+# short_warning = 🚨 조건
+# long_warning  = 🏔 조건
 # =========================================================
 
 def check_ema_warning(
@@ -798,7 +797,7 @@ def check_ema_warning(
 
     # 10-20 정배열
     # 20-60-120 역배열
-    # → 🚀 후보
+    # → 🚨 후보
     if (
         short_direction == "long"
         and
@@ -809,7 +808,7 @@ def check_ema_warning(
 
     # 10-20 역배열
     # 20-60-120 정배열
-    # → 🌧 후보
+    # → 🏔 후보
     if (
         short_direction == "short"
         and
@@ -823,16 +822,6 @@ def check_ema_warning(
 
 # =========================================================
 # 상위 시간봉 확인
-#
-# 🚀 :
-# 현재 시간봉 기존 🚀 조건
-# +
-# 상위 시간봉 EMA 5-10 정배열
-#
-# 🌧 :
-# 현재 시간봉 기존 🌧 조건
-# +
-# 상위 시간봉 EMA 5-10 역배열
 # =========================================================
 
 def check_confirmed_warning(
@@ -856,7 +845,7 @@ def check_confirmed_warning(
         )
     )
 
-    # 🚀
+    # 🚨
     if (
         current_warning == "short_warning"
         and
@@ -865,7 +854,7 @@ def check_confirmed_warning(
 
         return "short_warning"
 
-    # 🌧
+    # 🏔
     if (
         current_warning == "long_warning"
         and
@@ -1338,54 +1327,47 @@ def get_upbit_change(
 
 # =========================================================
 # 변동률 표시
+# 당일만 표시
 # =========================================================
 
 def format_change(
     changes
 ):
 
-    if changes is None:
+    if changes is None or len(changes) == 0:
 
         return "N/A"
 
-    result = []
+    x = changes[0]
 
-    for x in changes:
+    if x > 0:
 
-        if x > 0:
+        color = "🟩"
+        sign = "+"
 
-            color = "🟩"
-            sign = "+"
+    elif x < 0:
 
-        elif x < 0:
+        color = "🟥"
+        sign = ""
 
-            color = "🟥"
-            sign = ""
+    else:
 
-        else:
+        color = "⬜️"
+        sign = ""
 
-            color = "⬜️"
-            sign = ""
+    return f'''
+    <span class="change-item">
 
-        result.append(
+        <span class="change-icon">
+            {color}
+        </span>
 
-            f'''
-            <span class="change-item">
+        <span class="change-value">
+            {sign}{x:.2f}%
+        </span>
 
-                <span class="change-icon">
-                    {color}
-                </span>
-
-                <span class="change-value">
-                    {sign}{x:.2f}%
-                </span>
-
-            </span>
-            '''
-
-        )
-
-    return "".join(result)
+    </span>
+    '''
 
 
 # =========================================================
@@ -1644,11 +1626,11 @@ def ema_html(
 
     if ema4h["warning"] == "long_warning":
 
-        warning4h = "🌧"
+        warning4h = "🏔"
 
     elif ema4h["warning"] == "short_warning":
 
-        warning4h = "🚀"
+        warning4h = "🚨"
 
     else:
 
@@ -1661,11 +1643,11 @@ def ema_html(
 
     if ema1d["warning"] == "long_warning":
 
-        warning1d = "🌧🌧"
+        warning1d = "🏔🏔"
 
     elif ema1d["warning"] == "short_warning":
 
-        warning1d = "🚀🚀"
+        warning1d = "🚨🚨"
 
     else:
 
@@ -1678,11 +1660,11 @@ def ema_html(
 
     if ema1w["warning"] == "long_warning":
 
-        warning1w = "🌧🌧🌧"
+        warning1w = "🏔🏔🏔"
 
     elif ema1w["warning"] == "short_warning":
 
-        warning1w = "🚀🚀🚀"
+        warning1w = "🚨🚨🚨"
 
     else:
 
@@ -1901,7 +1883,7 @@ td{
 
 
 /* =========================
-   로켓 / 구름 위치
+   🚨 / 🏔 위치
    ========================= */
 
 .ema-warning{
@@ -1950,7 +1932,7 @@ td{
 
 
 /* =========================
-   변동률 개별 영역
+   당일 변동률
    ========================= */
 
 .change-item{
@@ -2028,7 +2010,7 @@ td{
 
 
 <p>
-변동률 : 오늘 / 전일 / -2일
+변동률 : 오늘
 </p>
 
 
@@ -2058,7 +2040,7 @@ EMA 배열
 </th>
 
 <th>
-오늘 / 전일 / -2일
+오늘
 </th>
 
 </tr>
@@ -2137,7 +2119,7 @@ EMA 배열
 </th>
 
 <th>
-오늘 / 전일 / -2일
+오늘
 </th>
 
 </tr>
@@ -2230,4 +2212,4 @@ if __name__ == "__main__":
 
         port=8000
 
-    )
+)
