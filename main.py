@@ -781,7 +781,7 @@ def check_4h_warning(
         return "short_warning"
 
 
-    # 🏔 롱
+    # 🚀 롱
 
     if (
         ema4h_10_20 == "short"
@@ -804,7 +804,7 @@ def check_4h_warning(
 # 1D 10-20 정배열
 # 1D 20-60-120 역배열
 #
-# 🏔 롱
+# 🚀 롱
 # 1D 10-20 역배열
 # 1D 20-60-120 정배열
 # =========================================================
@@ -839,7 +839,7 @@ def check_1d_warning(
         return "short_warning"
 
 
-    # 🏔 롱
+    # 🚀 롱
 
     if (
         ema1d_10_20 == "short"
@@ -1574,11 +1574,11 @@ def ema_html(
 
     if ema4h["warning"] == "long_warning":
 
-        warning4h = "🏔"
+        warning4h = "🚀🚀"
 
     elif ema4h["warning"] == "short_warning":
 
-        warning4h = "🚨"
+        warning4h = "🚨🚨"
 
     else:
 
@@ -1589,11 +1589,11 @@ def ema_html(
 
     if ema1d["warning"] == "long_warning":
 
-        warning1d = "🏔🏔"
+        warning1d = "🚀🚀🚀"
 
     elif ema1d["warning"] == "short_warning":
 
-        warning1d = "🚨🚨"
+        warning1d = "🚨🚨🚨"
 
     else:
 
