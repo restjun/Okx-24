@@ -135,12 +135,11 @@ def get_okx_ohlcv(
 
 # =========================================================
 # 업비트 분봉
-# 거래대금 / 변동률용
 # =========================================================
 
 def get_upbit_ohlcv(
     market,
-    unit=60,
+    unit=240,
     count=200
 ):
 
@@ -404,8 +403,71 @@ def get_ema_10_20_direction(
 
 
 # =========================================================
+# EMA 20-60-120 방향
+# =========================================================
+
+def get_ema_20_60_120_direction(
+    df,
+    column
+):
+
+    if df is None or len(df) < 120:
+        return "none"
+
+    df = df.copy()
+
+    ema20 = (
+        df[column]
+        .ewm(
+            span=20,
+            adjust=False
+        )
+        .mean()
+    )
+
+    ema60 = (
+        df[column]
+        .ewm(
+            span=60,
+            adjust=False
+        )
+        .mean()
+    )
+
+    ema120 = (
+        df[column]
+        .ewm(
+            span=120,
+            adjust=False
+        )
+        .mean()
+    )
+
+    if (
+        ema20.iloc[-1]
+        >
+        ema60.iloc[-1]
+        >
+        ema120.iloc[-1]
+    ):
+
+        return "long"
+
+    elif (
+        ema20.iloc[-1]
+        <
+        ema60.iloc[-1]
+        <
+        ema120.iloc[-1]
+    ):
+
+        return "short"
+
+    return "none"
+
+
+# =========================================================
 # EMA 10-20 상태
-# 4H / 1D 사용
 # =========================================================
 
 def check_ema_10_20(
@@ -478,70 +540,6 @@ def check_ema_10_20(
         return f"🔴({count})"
 
     return "⚪(0)"
-
-
-# =========================================================
-# EMA 20-60-120 방향
-# =========================================================
-
-def get_ema_20_60_120_direction(
-    df,
-    column
-):
-
-    if df is None or len(df) < 120:
-        return "none"
-
-    df = df.copy()
-
-    ema20 = (
-        df[column]
-        .ewm(
-            span=20,
-            adjust=False
-        )
-        .mean()
-    )
-
-    ema60 = (
-        df[column]
-        .ewm(
-            span=60,
-            adjust=False
-        )
-        .mean()
-    )
-
-    ema120 = (
-        df[column]
-        .ewm(
-            span=120,
-            adjust=False
-        )
-        .mean()
-    )
-
-    if (
-        ema20.iloc[-1]
-        >
-        ema60.iloc[-1]
-        >
-        ema120.iloc[-1]
-    ):
-
-        return "long"
-
-    elif (
-        ema20.iloc[-1]
-        <
-        ema60.iloc[-1]
-        <
-        ema120.iloc[-1]
-    ):
-
-        return "short"
-
-    return "none"
 
 
 # =========================================================
@@ -642,17 +640,28 @@ def check_ema(
 
 
 # =========================================================
-# 4H 경고
-#
-# 🚨 숏
-# 4H 10-20 정배열
-# 4H 20-60-120 역배열
-# 1D 10-20 역배열
+# 4H + 1D 경고
 #
 # 🚀 롱
+#
+# 기본:
 # 4H 10-20 역배열
 # 4H 20-60-120 정배열
-# 1D 10-20 정배열
+#
+# 추가:
+# 1D 10-20 정배열 → 🚀 추가
+# 1D 20-60-120 정배열 → 🚀 추가
+#
+#
+# 🚨 숏
+#
+# 기본:
+# 4H 10-20 정배열
+# 4H 20-60-120 역배열
+#
+# 추가:
+# 1D 10-20 역배열 → 🚨 추가
+# 1D 20-60-120 역배열 → 🚨 추가
 # =========================================================
 
 def check_4h_warning(
@@ -666,11 +675,15 @@ def check_4h_warning(
         df4h is None
         or df1d is None
         or len(df4h) < 120
-        or len(df1d) < 20
+        or len(df1d) < 120
     ):
 
         return "none"
 
+
+    # =====================================================
+    # 4H
+    # =====================================================
 
     ema4h_10_20 = get_ema_10_20_direction(
         df4h,
@@ -682,47 +695,105 @@ def check_4h_warning(
         column4h
     )
 
+
+    # =====================================================
+    # 1D
+    # =====================================================
+
     ema1d_10_20 = get_ema_10_20_direction(
+        df1d,
+        column1d
+    )
+
+    ema1d_20_60_120 = get_ema_20_60_120_direction(
         df1d,
         column1d
     )
 
 
     # =====================================================
-    # 🚨 숏
-    # =====================================================
-
-    if (
-        ema4h_10_20 == "long"
-        and
-        ema4h_20_60_120 == "short"
-        and
-        ema1d_10_20 == "short"
-    ):
-
-        return "short_warning"
-
-
-    # =====================================================
-    # 🚀 롱
+    # 🚀 롱 기본조건
+    #
+    # 4H 10-20 역배열
+    # 4H 20-60-120 정배열
     # =====================================================
 
     if (
         ema4h_10_20 == "short"
         and
         ema4h_20_60_120 == "long"
-        and
-        ema1d_10_20 == "long"
     ):
 
-        return "long_warning"
+        warning_count = 1
+
+
+        # -------------------------------------------------
+        # 1D 10-20 정배열
+        # -------------------------------------------------
+
+        if ema1d_10_20 == "long":
+
+            warning_count += 1
+
+
+        # -------------------------------------------------
+        # 1D 20-60-120 정배열
+        # -------------------------------------------------
+
+        if ema1d_20_60_120 == "long":
+
+            warning_count += 1
+
+
+        return "long_warning_" + str(
+            warning_count
+        )
+
+
+    # =====================================================
+    # 🚨 숏 기본조건
+    #
+    # 4H 10-20 정배열
+    # 4H 20-60-120 역배열
+    # =====================================================
+
+    if (
+        ema4h_10_20 == "long"
+        and
+        ema4h_20_60_120 == "short"
+    ):
+
+        warning_count = 1
+
+
+        # -------------------------------------------------
+        # 1D 10-20 역배열
+        # -------------------------------------------------
+
+        if ema1d_10_20 == "short":
+
+            warning_count += 1
+
+
+        # -------------------------------------------------
+        # 1D 20-60-120 역배열
+        # -------------------------------------------------
+
+        if ema1d_20_60_120 == "short":
+
+            warning_count += 1
+
+
+        return "short_warning_" + str(
+            warning_count
+        )
 
 
     return "none"
 
 
 # =========================================================
-# OKX 4H EMA
+# OKX 4H + 1D EMA
 # =========================================================
 
 def get_okx_4h_ema(
@@ -743,17 +814,41 @@ def get_okx_4h_ema(
 
     return {
 
-        "short":
+        # ---------------------------------------------
+        # 4H
+        # ---------------------------------------------
+
+        "4h_10_20":
             check_ema_10_20(
                 df4h,
                 "c"
             ),
 
-        "long":
+        "4h_20_60_120":
             check_ema(
                 df4h,
                 "c"
             ),
+
+        # ---------------------------------------------
+        # 1D
+        # ---------------------------------------------
+
+        "1d_10_20":
+            check_ema_10_20(
+                df1d,
+                "c"
+            ),
+
+        "1d_20_60_120":
+            check_ema(
+                df1d,
+                "c"
+            ),
+
+        # ---------------------------------------------
+        # 경고
+        # ---------------------------------------------
 
         "warning":
             check_4h_warning(
@@ -767,38 +862,7 @@ def get_okx_4h_ema(
 
 
 # =========================================================
-# OKX 1D EMA
-# =========================================================
-
-def get_okx_1d_ema(
-    inst_id
-):
-
-    df1d = get_okx_ohlcv(
-        inst_id,
-        "1D",
-        200
-    )
-
-    return {
-
-        "short":
-            check_ema_10_20(
-                df1d,
-                "c"
-            ),
-
-        "long":
-            check_ema(
-                df1d,
-                "c"
-            )
-
-    }
-
-
-# =========================================================
-# 업비트 4H EMA
+# 업비트 4H + 1D EMA
 # =========================================================
 
 def get_upbit_4h_ema(
@@ -818,52 +882,46 @@ def get_upbit_4h_ema(
 
     return {
 
-        "short":
+        # ---------------------------------------------
+        # 4H
+        # ---------------------------------------------
+
+        "4h_10_20":
             check_ema_10_20(
                 df4h,
                 "trade_price"
             ),
 
-        "long":
+        "4h_20_60_120":
             check_ema(
                 df4h,
                 "trade_price"
             ),
+
+        # ---------------------------------------------
+        # 1D
+        # ---------------------------------------------
+
+        "1d_10_20":
+            check_ema_10_20(
+                df1d,
+                "trade_price"
+            ),
+
+        "1d_20_60_120":
+            check_ema(
+                df1d,
+                "trade_price"
+            ),
+
+        # ---------------------------------------------
+        # 경고
+        # ---------------------------------------------
 
         "warning":
             check_4h_warning(
                 df4h,
                 "trade_price",
-                df1d,
-                "trade_price"
-            )
-
-    }
-
-
-# =========================================================
-# 업비트 1D EMA
-# =========================================================
-
-def get_upbit_1d_ema(
-    market
-):
-
-    df1d = get_upbit_day_ohlcv(
-        market,
-        200
-    )
-
-    return {
-
-        "short":
-            check_ema_10_20(
-                df1d,
-                "trade_price"
-            ),
-
-        "long":
-            check_ema(
                 df1d,
                 "trade_price"
             )
@@ -1117,6 +1175,115 @@ def format_change(
 
 
 # =========================================================
+# 경고 HTML
+# =========================================================
+
+def warning_html(
+    warning
+):
+
+    if warning.startswith(
+        "long_warning_"
+    ):
+
+        try:
+
+            count = int(
+                warning.split("_")[-1]
+            )
+
+        except:
+
+            count = 0
+
+        return "🚀" * count
+
+
+    elif warning.startswith(
+        "short_warning_"
+    ):
+
+        try:
+
+            count = int(
+                warning.split("_")[-1]
+            )
+
+        except:
+
+            count = 0
+
+        return "🚨" * count
+
+
+    return ""
+
+
+# =========================================================
+# EMA HTML
+# =========================================================
+
+def ema_html(
+    ema
+):
+
+    warning = warning_html(
+        ema["warning"]
+    )
+
+    return f"""
+
+<div class="ema-display">
+
+
+    <!-- 4시간 -->
+
+    <div class="ema-period">
+
+        <span class="ema-warning">
+            {warning}
+        </span>
+
+        <span class="ema-time">
+            4H
+        </span>
+
+        <span class="ema-status">
+            {ema["4h_10_20"]}
+        </span>
+
+        <span class="ema-status">
+            {ema["4h_20_60_120"]}
+        </span>
+
+    </div>
+
+
+    <!-- 일봉 -->
+
+    <div class="ema-period last">
+
+        <span class="ema-time">
+            1D
+        </span>
+
+        <span class="ema-status">
+            {ema["1d_10_20"]}
+        </span>
+
+        <span class="ema-status">
+            {ema["1d_20_60_120"]}
+        </span>
+
+    </div>
+
+
+</div>
+
+"""
+
+
+# =========================================================
 # OKX TOP15
 # =========================================================
 
@@ -1184,10 +1351,6 @@ def update_okx():
             symbol
         )
 
-        ema1d = get_okx_1d_ema(
-            symbol
-        )
-
         rows.append({
 
             "rank":
@@ -1205,10 +1368,7 @@ def update_okx():
                 ),
 
             "ema4h":
-                ema4h,
-
-            "ema1d":
-                ema1d
+                ema4h
 
         })
 
@@ -1263,10 +1423,6 @@ def update_upbit():
             market
         )
 
-        ema1d = get_upbit_1d_ema(
-            market
-        )
-
         rows.append({
 
             "rank":
@@ -1284,10 +1440,7 @@ def update_upbit():
                 ),
 
             "ema4h":
-                ema4h,
-
-            "ema1d":
-                ema1d
+                ema4h
 
         })
 
@@ -1333,95 +1486,6 @@ def scheduler():
 
 
 # =========================================================
-# EMA HTML
-#
-# 4H
-# 10-20
-# 20-60-120
-#
-# 1D
-# 10-20
-# 20-60-120
-# =========================================================
-
-def ema_html(
-    ema4h,
-    ema1d
-):
-
-    # =====================================================
-    # 4시간 경고
-    # =====================================================
-
-    if ema4h["warning"] == "long_warning":
-
-        warning4h = "🚀🚀"
-
-    elif ema4h["warning"] == "short_warning":
-
-        warning4h = "🚨🚨"
-
-    else:
-
-        warning4h = ""
-
-
-    return f"""
-
-<div class="ema-display">
-
-
-    <!-- 4시간 -->
-
-    <div class="ema-period">
-
-        <span class="ema-warning">
-            {warning4h}
-        </span>
-
-        <span class="ema-time">
-            4H
-        </span>
-
-        <span class="ema-status">
-            {ema4h["short"]}
-        </span>
-
-        <span class="ema-status">
-            {ema4h["long"]}
-        </span>
-
-    </div>
-
-
-    <!-- 일봉 -->
-
-    <div class="ema-period last">
-
-        <span class="ema-warning">
-        </span>
-
-        <span class="ema-time">
-            1D
-        </span>
-
-        <span class="ema-status">
-            {ema1d["short"]}
-        </span>
-
-        <span class="ema-status">
-            {ema1d["long"]}
-        </span>
-
-    </div>
-
-
-</div>
-
-"""
-
-
-# =========================================================
 # 웹 대시보드
 # =========================================================
 
@@ -1443,7 +1507,7 @@ def dashboard():
 >
 
 <title>
-OKX+UPBIT
+OKX + UPBIT
 </title>
 
 
@@ -1691,9 +1755,9 @@ td:last-child{
 
     display:inline-block;
 
-    width:55px;
+    width:85px;
 
-    min-width:55px;
+    min-width:85px;
 
     text-align:center;
 
@@ -1777,7 +1841,7 @@ tr:hover{
 
 
 <p>
-4시간 눌림 · EMA 10-20 / 20-60-120
+4시간 눌림 · EMA 10-20 / 20-60-120 · 일봉 추세 확인
 </p>
 
 
@@ -1844,8 +1908,7 @@ EMA 상태
 <td>
 
 {ema_html(
-    item["ema4h"],
-    item["ema1d"]
+    item["ema4h"]
 )}
 
 </td>
@@ -1923,8 +1986,7 @@ EMA 상태
 <td>
 
 {ema_html(
-    item["ema4h"],
-    item["ema1d"]
+    item["ema4h"]
 )}
 
 </td>
@@ -1982,4 +2044,4 @@ if __name__ == "__main__":
 
         port=8000
 
-    )
+)
