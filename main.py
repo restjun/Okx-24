@@ -63,6 +63,7 @@ def retry_request(func, *args, **kwargs):
 
 # =========================================================
 # OKX 캔들
+# 미완성 캔들 제외
 # =========================================================
 
 def get_okx_ohlcv(
@@ -117,6 +118,20 @@ def get_okx_ohlcv(
             df["volCcyQuote"]
             .astype(float)
         )
+
+        # =====================================================
+        # 미완성 캔들 제외
+        #
+        # confirm = 1 → 완성
+        # confirm = 0 → 미완성
+        # =====================================================
+
+        df = df[
+            df["confirm"].astype(str) == "1"
+        ]
+
+        if df.empty:
+            return None
 
         df = df.iloc[::-1].reset_index(
             drop=True
@@ -182,6 +197,107 @@ def get_upbit_ohlcv(
 
         logging.error(
             f"업비트 캔들 오류 {market}:{e}"
+        )
+
+        return None
+
+
+# =========================================================
+# 업비트 4H 캔들
+# 미완성 캔들 제외
+# =========================================================
+
+def get_upbit_4h_ohlcv(
+    market,
+    count=200
+):
+
+    url = (
+        "https://api.upbit.com/v1/candles/minutes/240"
+        f"?market={market}"
+        f"&count={count}"
+    )
+
+    response = retry_request(
+        requests.get,
+        url
+    )
+
+    if response is None:
+        return None
+
+    try:
+
+        data = response.json()
+
+        if not data:
+            return None
+
+        df = pd.DataFrame(data)
+
+        df = df.iloc[::-1].reset_index(
+            drop=True
+        )
+
+        df["trade_price"] = (
+            df["trade_price"]
+            .astype(float)
+        )
+
+        # =====================================================
+        # 현재 진행 중인 4시간봉 제외
+        #
+        # 00:00
+        # 04:00
+        # 08:00
+        # 12:00
+        # 16:00
+        # 20:00
+        # =====================================================
+
+        now = pd.Timestamp.now(
+            tz="Asia/Seoul"
+        )
+
+        current_hour = now.hour
+
+        candle_start_hour = (
+            current_hour // 4
+        ) * 4
+
+        current_candle_start = (
+            now.normalize()
+            +
+            pd.Timedelta(
+                hours=candle_start_hour
+            )
+        )
+
+        df["candle_datetime"] = pd.to_datetime(
+            df["candle_date_time_kst"]
+        ).dt.tz_localize(
+            "Asia/Seoul"
+        )
+
+        df = df[
+            df["candle_datetime"]
+            <
+            current_candle_start
+        ]
+
+        df = df.reset_index(
+            drop=True
+        )
+
+        if df.empty:
+            return None
+
+        return df
+
+    except Exception as e:
+
+        logging.error(
+            f"업비트 4H 오류 {market}:{e}"
         )
 
         return None
@@ -640,28 +756,96 @@ def check_ema(
 
 
 # =========================================================
-# 4H + 1D 경고
+# EMA 10-20 현재 방향 + 지속 캔들 수
+# =========================================================
+
+def get_ema_10_20_count(
+    df,
+    column
+):
+
+    if df is None or len(df) < 20:
+
+        return 0, "none"
+
+    df = df.copy()
+
+    df["ema10"] = (
+        df[column]
+        .ewm(
+            span=10,
+            adjust=False
+        )
+        .mean()
+    )
+
+    df["ema20"] = (
+        df[column]
+        .ewm(
+            span=20,
+            adjust=False
+        )
+        .mean()
+    )
+
+    states = []
+
+    for _, row in df.iterrows():
+
+        if row["ema10"] > row["ema20"]:
+
+            states.append("long")
+
+        elif row["ema10"] < row["ema20"]:
+
+            states.append("short")
+
+        else:
+
+            states.append("none")
+
+    current_state = states[-1]
+
+    if current_state == "none":
+
+        return 0, "none"
+
+    count = 0
+
+    for state in reversed(states):
+
+        if state == current_state:
+
+            count += 1
+
+        else:
+
+            break
+
+    return count, current_state
+
+
+# =========================================================
+# 4H + 1D 눌림 경고
 #
-# 🚀 롱
+# 🚀 롱 눌림
 #
-# 기본:
 # 4H 10-20 역배열
 # 4H 20-60-120 정배열
 #
 # 추가:
-# 1D 10-20 정배열 → 🚀 추가
-# 1D 20-60-120 정배열 → 🚀 추가
+# 1D 10-20 정배열
+# 1D 20-60-120 정배열
 #
 #
-# 🚨 숏
+# 🚨 숏 눌림
 #
-# 기본:
 # 4H 10-20 정배열
 # 4H 20-60-120 역배열
 #
 # 추가:
-# 1D 10-20 역배열 → 🚨 추가
-# 1D 20-60-120 역배열 → 🚨 추가
+# 1D 10-20 역배열
+# 1D 20-60-120 역배열
 # =========================================================
 
 def check_4h_warning(
@@ -712,10 +896,7 @@ def check_4h_warning(
 
 
     # =====================================================
-    # 🚀 롱 기본조건
-    #
-    # 4H 10-20 역배열
-    # 4H 20-60-120 정배열
+    # 롱 눌림
     # =====================================================
 
     if (
@@ -726,24 +907,13 @@ def check_4h_warning(
 
         warning_count = 1
 
-
-        # -------------------------------------------------
-        # 1D 10-20 정배열
-        # -------------------------------------------------
-
         if ema1d_10_20 == "long":
 
             warning_count += 1
 
-
-        # -------------------------------------------------
-        # 1D 20-60-120 정배열
-        # -------------------------------------------------
-
         if ema1d_20_60_120 == "long":
 
             warning_count += 1
-
 
         return "long_warning_" + str(
             warning_count
@@ -751,10 +921,7 @@ def check_4h_warning(
 
 
     # =====================================================
-    # 🚨 숏 기본조건
-    #
-    # 4H 10-20 정배열
-    # 4H 20-60-120 역배열
+    # 숏 눌림
     # =====================================================
 
     if (
@@ -765,28 +932,120 @@ def check_4h_warning(
 
         warning_count = 1
 
-
-        # -------------------------------------------------
-        # 1D 10-20 역배열
-        # -------------------------------------------------
-
         if ema1d_10_20 == "short":
 
             warning_count += 1
-
-
-        # -------------------------------------------------
-        # 1D 20-60-120 역배열
-        # -------------------------------------------------
 
         if ema1d_20_60_120 == "short":
 
             warning_count += 1
 
-
         return "short_warning_" + str(
             warning_count
         )
+
+
+    return "none"
+
+
+# =========================================================
+# 4H 돌파 경고
+#
+# ⚡ 롱 돌파
+#
+# 4H 10-20 정배열
+# 4H 20-60-120 정배열
+# 1D 10-20 정배열
+# 4H 10-20 정배열 지속 10개 이하
+#
+#
+# 💥 숏 돌파
+#
+# 4H 10-20 역배열
+# 4H 20-60-120 역배열
+# 1D 10-20 역배열
+# 4H 10-20 역배열 지속 10개 이하
+# =========================================================
+
+def check_4h_breakout_warning(
+    df4h,
+    column4h,
+    df1d,
+    column1d
+):
+
+    if (
+        df4h is None
+        or df1d is None
+        or len(df4h) < 120
+        or len(df1d) < 120
+    ):
+
+        return "none"
+
+
+    # =====================================================
+    # 4H 10-20 현재 방향 및 지속 캔들
+    # =====================================================
+
+    count4h, direction4h = get_ema_10_20_count(
+        df4h,
+        column4h
+    )
+
+
+    # =====================================================
+    # 4H 20-60-120
+    # =====================================================
+
+    ema4h_20_60_120 = get_ema_20_60_120_direction(
+        df4h,
+        column4h
+    )
+
+
+    # =====================================================
+    # 1D 10-20
+    # =====================================================
+
+    ema1d_10_20 = get_ema_10_20_direction(
+        df1d,
+        column1d
+    )
+
+
+    # =====================================================
+    # ⚡ 롱 돌파
+    # =====================================================
+
+    if (
+        direction4h == "long"
+        and
+        ema4h_20_60_120 == "long"
+        and
+        ema1d_10_20 == "long"
+        and
+        count4h <= 10
+    ):
+
+        return f"long_breakout_{count4h}"
+
+
+    # =====================================================
+    # 💥 숏 돌파
+    # =====================================================
+
+    if (
+        direction4h == "short"
+        and
+        ema4h_20_60_120 == "short"
+        and
+        ema1d_10_20 == "short"
+        and
+        count4h <= 10
+    ):
+
+        return f"short_breakout_{count4h}"
 
 
     return "none"
@@ -814,10 +1073,6 @@ def get_okx_4h_ema(
 
     return {
 
-        # ---------------------------------------------
-        # 4H
-        # ---------------------------------------------
-
         "4h_10_20":
             check_ema_10_20(
                 df4h,
@@ -829,10 +1084,6 @@ def get_okx_4h_ema(
                 df4h,
                 "c"
             ),
-
-        # ---------------------------------------------
-        # 1D
-        # ---------------------------------------------
 
         "1d_10_20":
             check_ema_10_20(
@@ -846,12 +1097,18 @@ def get_okx_4h_ema(
                 "c"
             ),
 
-        # ---------------------------------------------
-        # 경고
-        # ---------------------------------------------
-
+        # 기존 눌림
         "warning":
             check_4h_warning(
+                df4h,
+                "c",
+                df1d,
+                "c"
+            ),
+
+        # 새 돌파
+        "breakout":
+            check_4h_breakout_warning(
                 df4h,
                 "c",
                 df1d,
@@ -869,9 +1126,8 @@ def get_upbit_4h_ema(
     market
 ):
 
-    df4h = get_upbit_ohlcv(
+    df4h = get_upbit_4h_ohlcv(
         market,
-        240,
         200
     )
 
@@ -881,10 +1137,6 @@ def get_upbit_4h_ema(
     )
 
     return {
-
-        # ---------------------------------------------
-        # 4H
-        # ---------------------------------------------
 
         "4h_10_20":
             check_ema_10_20(
@@ -898,10 +1150,6 @@ def get_upbit_4h_ema(
                 "trade_price"
             ),
 
-        # ---------------------------------------------
-        # 1D
-        # ---------------------------------------------
-
         "1d_10_20":
             check_ema_10_20(
                 df1d,
@@ -914,12 +1162,18 @@ def get_upbit_4h_ema(
                 "trade_price"
             ),
 
-        # ---------------------------------------------
-        # 경고
-        # ---------------------------------------------
-
+        # 기존 눌림
         "warning":
             check_4h_warning(
+                df4h,
+                "trade_price",
+                df1d,
+                "trade_price"
+            ),
+
+        # 새 돌파
+        "breakout":
+            check_4h_breakout_warning(
                 df4h,
                 "trade_price",
                 df1d,
@@ -1175,7 +1429,7 @@ def format_change(
 
 
 # =========================================================
-# 경고 HTML
+# 기존 눌림 경고 HTML
 # =========================================================
 
 def warning_html(
@@ -1220,6 +1474,51 @@ def warning_html(
 
 
 # =========================================================
+# 돌파 경고 HTML
+# =========================================================
+
+def breakout_html(
+    breakout
+):
+
+    if breakout.startswith(
+        "long_breakout_"
+    ):
+
+        try:
+
+            count = int(
+                breakout.split("_")[-1]
+            )
+
+        except:
+
+            count = 0
+
+        return f"⚡({count})"
+
+
+    elif breakout.startswith(
+        "short_breakout_"
+    ):
+
+        try:
+
+            count = int(
+                breakout.split("_")[-1]
+            )
+
+        except:
+
+            count = 0
+
+        return f"💥({count})"
+
+
+    return ""
+
+
+# =========================================================
 # EMA HTML
 # =========================================================
 
@@ -1231,12 +1530,16 @@ def ema_html(
         ema["warning"]
     )
 
+    breakout = breakout_html(
+        ema["breakout"]
+    )
+
     return f"""
 
 <div class="ema-display">
 
 
-    <!-- 4시간 -->
+    <!-- 기존 눌림 경고 -->
 
     <div class="ema-period">
 
@@ -1254,6 +1557,21 @@ def ema_html(
 
         <span class="ema-status">
             {ema["4h_20_60_120"]}
+        </span>
+
+    </div>
+
+
+    <!-- 돌파 경고 -->
+
+    <div class="ema-period">
+
+        <span class="ema-warning">
+            {breakout}
+        </span>
+
+        <span class="ema-time">
+            돌파
         </span>
 
     </div>
@@ -1841,7 +2159,7 @@ tr:hover{
 
 
 <p>
-4시간 눌림 · EMA 10-20 / 20-60-120 · 일봉 추세 확인
+4시간 눌림 · 돌파 · EMA 10-20 / 20-60-120 · 일봉 추세 확인
 </p>
 
 
@@ -2044,4 +2362,4 @@ if __name__ == "__main__":
 
         port=8000
 
-)
+    )
