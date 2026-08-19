@@ -362,51 +362,8 @@ def format_volume(volume):
 
 
 # =========================================================
-# EMA 5-10 방향
-# =========================================================
-
-def get_ema_5_10_direction(
-    df,
-    column
-):
-
-    if df is None or len(df) < 10:
-        return "none"
-
-    df = df.copy()
-
-    ema5 = (
-        df[column]
-        .ewm(
-            span=5,
-            adjust=False
-        )
-        .mean()
-    )
-
-    ema10 = (
-        df[column]
-        .ewm(
-            span=10,
-            adjust=False
-        )
-        .mean()
-    )
-
-    if ema5.iloc[-1] > ema10.iloc[-1]:
-
-        return "long"
-
-    elif ema5.iloc[-1] < ema10.iloc[-1]:
-
-        return "short"
-
-    return "none"
-
-
-# =========================================================
 # EMA 10-20 방향
-# 4H 기존 조건용
+# 15분봉 / 4H 공통
 # =========================================================
 
 def get_ema_10_20_direction(
@@ -449,82 +406,8 @@ def get_ema_10_20_direction(
 
 
 # =========================================================
-# EMA 5-10 상태
-# =========================================================
-
-def check_ema_5_10(
-    df,
-    column
-):
-
-    if df is None or len(df) < 10:
-        return "⚪(0)"
-
-    df = df.copy()
-
-    df["ema5"] = (
-        df[column]
-        .ewm(
-            span=5,
-            adjust=False
-        )
-        .mean()
-    )
-
-    df["ema10"] = (
-        df[column]
-        .ewm(
-            span=10,
-            adjust=False
-        )
-        .mean()
-    )
-
-    states = []
-
-    for _, row in df.iterrows():
-
-        if row["ema5"] > row["ema10"]:
-
-            states.append("long")
-
-        elif row["ema5"] < row["ema10"]:
-
-            states.append("short")
-
-        else:
-
-            states.append("none")
-
-    current_state = states[-1]
-
-    if current_state == "none":
-        return "⚪(0)"
-
-    count = 0
-
-    for state in reversed(states):
-
-        if state == current_state:
-            count += 1
-
-        else:
-            break
-
-    if current_state == "long":
-
-        return f"🟢({count})"
-
-    elif current_state == "short":
-
-        return f"🔴({count})"
-
-    return "⚪(0)"
-
-
-# =========================================================
 # EMA 10-20 상태
-# 4H용
+# 15분봉 / 4H 공통
 # =========================================================
 
 def check_ema_10_20(
@@ -760,11 +643,11 @@ def check_ema(
 # 15분봉 조건
 #
 # 🚀 롱
-# 5-10 정배열
+# 10-20 정배열
 # 20-60-120 정배열
 #
 # 🚨 숏
-# 5-10 역배열
+# 10-20 역배열
 # 20-60-120 역배열
 # =========================================================
 
@@ -780,7 +663,7 @@ def check_15m_warning(
 
         return "none"
 
-    ema5_10 = get_ema_5_10_direction(
+    ema10_20 = get_ema_10_20_direction(
         df15m,
         column15m
     )
@@ -793,7 +676,7 @@ def check_15m_warning(
     # 🚀 롱
 
     if (
-        ema5_10 == "long"
+        ema10_20 == "long"
         and
         ema20_60_120 == "long"
     ):
@@ -804,7 +687,7 @@ def check_15m_warning(
     # 🚨 숏
 
     if (
-        ema5_10 == "short"
+        ema10_20 == "short"
         and
         ema20_60_120 == "short"
     ):
@@ -909,7 +792,7 @@ def get_okx_15m_ema(
     return {
 
         "short":
-            check_ema_5_10(
+            check_ema_10_20(
                 df15m,
                 "c"
             ),
@@ -992,7 +875,7 @@ def get_upbit_15m_ema(
     return {
 
         "short":
-            check_ema_5_10(
+            check_ema_10_20(
                 df15m,
                 "trade_price"
             ),
@@ -1522,7 +1405,7 @@ def scheduler():
 # EMA HTML
 #
 # 15M
-# 5-10
+# 10-20
 # 20-60-120
 #
 # 4H
@@ -2186,4 +2069,4 @@ if __name__ == "__main__":
 
         port=8000
 
-        )
+    )
