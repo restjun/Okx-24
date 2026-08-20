@@ -119,7 +119,10 @@ def get_okx_ohlcv(
             .astype(float)
         )
 
+        # =====================================================
         # 미완성 캔들 제외
+        # =====================================================
+
         df = df[
             df["confirm"].astype(str) == "1"
         ]
@@ -155,17 +158,13 @@ def get_upbit_ohlcv(
     url = (
         "https://api.upbit.com/v1/candles/minutes/"
         f"{unit}"
+        f"?market={market}"
+        f"&count={count}"
     )
-
-    params = {
-        "market": market,
-        "count": count
-    }
 
     response = retry_request(
         requests.get,
-        url,
-        params=params
+        url
     )
 
     if response is None:
@@ -202,7 +201,7 @@ def get_upbit_ohlcv(
 
 # =========================================================
 # 업비트 4H 캔들
-# 현재 진행 중인 4H 캔들 제외
+# 현재 진행 중인 캔들 제외
 # =========================================================
 
 def get_upbit_4h_ohlcv(
@@ -212,17 +211,13 @@ def get_upbit_4h_ohlcv(
 
     url = (
         "https://api.upbit.com/v1/candles/minutes/240"
+        f"?market={market}"
+        f"&count={count}"
     )
-
-    params = {
-        "market": market,
-        "count": count
-    }
 
     response = retry_request(
         requests.get,
-        url,
-        params=params
+        url
     )
 
     if response is None:
@@ -237,41 +232,30 @@ def get_upbit_4h_ohlcv(
 
         df = pd.DataFrame(data)
 
+        df = df.iloc[::-1].reset_index(
+            drop=True
+        )
+
         df["trade_price"] = (
             df["trade_price"]
             .astype(float)
         )
 
         # =====================================================
-        # KST 기준 캔들 시작시간
-        # =====================================================
-
-        df["candle_datetime"] = pd.to_datetime(
-            df["candle_date_time_kst"]
-        ).dt.tz_localize(
-            "Asia/Seoul"
-        )
-
-        # =====================================================
-        # 현재 진행 중인 4H 시작시간 계산
-        #
-        # 00:00
-        # 04:00
-        # 08:00
-        # 12:00
-        # 16:00
-        # 20:00
+        # 현재 진행 중인 4시간봉 제외
         # =====================================================
 
         now = pd.Timestamp.now(
             tz="Asia/Seoul"
         )
 
-        candle_start_hour = (
-            (now.hour // 4) * 4
-        )
+        current_hour = now.hour
 
-        current_4h_start = (
+        candle_start_hour = (
+            current_hour // 4
+        ) * 4
+
+        current_candle_start = (
             now.normalize()
             +
             pd.Timedelta(
@@ -279,21 +263,41 @@ def get_upbit_4h_ohlcv(
             )
         )
 
-        # 현재 진행 중인 4H 제외
+        candle_datetime = pd.to_datetime(
+            df["candle_date_time_kst"]
+        )
+
+        # 혹시 timezone 정보가 있는 경우도 대응
+        if candle_datetime.dt.tz is None:
+
+            candle_datetime = (
+                candle_datetime
+                .dt
+                .tz_localize("Asia/Seoul")
+            )
+
+        else:
+
+            candle_datetime = (
+                candle_datetime
+                .dt
+                .tz_convert("Asia/Seoul")
+            )
+
+        df["candle_datetime"] = candle_datetime
+
         df = df[
             df["candle_datetime"]
             <
-            current_4h_start
+            current_candle_start
         ]
+
+        df = df.reset_index(
+            drop=True
+        )
 
         if df.empty:
             return None
-
-        df = df.sort_values(
-            "candle_datetime"
-        ).reset_index(
-            drop=True
-        )
 
         return df
 
@@ -308,7 +312,6 @@ def get_upbit_4h_ohlcv(
 
 # =========================================================
 # 업비트 일봉
-# 현재 진행 중인 일봉 제외
 # =========================================================
 
 def get_upbit_day_ohlcv(
@@ -318,17 +321,13 @@ def get_upbit_day_ohlcv(
 
     url = (
         "https://api.upbit.com/v1/candles/days"
+        f"?market={market}"
+        f"&count={count}"
     )
-
-    params = {
-        "market": market,
-        "count": count
-    }
 
     response = retry_request(
         requests.get,
-        url,
-        params=params
+        url
     )
 
     if response is None:
@@ -343,52 +342,13 @@ def get_upbit_day_ohlcv(
 
         df = pd.DataFrame(data)
 
+        df = df.iloc[::-1].reset_index(
+            drop=True
+        )
+
         df["trade_price"] = (
             df["trade_price"]
             .astype(float)
-        )
-
-        # =====================================================
-        # KST 시간
-        # =====================================================
-
-        df["candle_datetime"] = pd.to_datetime(
-            df["candle_date_time_kst"]
-        ).dt.tz_localize(
-            "Asia/Seoul"
-        )
-
-        now = pd.Timestamp.now(
-            tz="Asia/Seoul"
-        )
-
-        # =====================================================
-        # 오늘 09:00 이후 진행 중인 일봉 제외
-        #
-        # 업비트 일봉은 KST 09:00 기준
-        # =====================================================
-
-        today_09 = (
-            now.normalize()
-            +
-            pd.Timedelta(
-                hours=9
-            )
-        )
-
-        df = df[
-            df["candle_datetime"]
-            <
-            today_09
-        ]
-
-        if df.empty:
-            return None
-
-        df = df.sort_values(
-            "candle_datetime"
-        ).reset_index(
-            drop=True
         )
 
         return df
@@ -428,8 +388,7 @@ def get_all_okx_swap_symbols():
             for x in response.json()["data"]
             if (
                 x["instId"].endswith("-USDT-SWAP")
-                and
-                x.get("state") == "live"
+                and x.get("state") == "live"
             )
         ]
 
@@ -866,33 +825,34 @@ def get_ema_10_20_count(
 
 
 # =========================================================
-# 4H + 1D 눌림 경고
+# 4H 눌림 경고
 #
-# OKX / 업비트 동일
+# 일봉 조건 완전 제거
+#
+# 롱:
+# 4H 10-20 역배열
+# 4H 20-60-120 정배열
+#
+# 숏:
+# 4H 10-20 정배열
+# 4H 20-60-120 역배열
 # =========================================================
 
 def check_4h_warning(
     df4h,
-    column4h,
-    df1d,
-    column1d
+    column4h
 ):
 
     if (
         df4h is None
-        or
-        df1d is None
-        or
-        len(df4h) < 120
-        or
-        len(df1d) < 120
+        or len(df4h) < 120
     ):
 
         return "none"
 
 
     # =====================================================
-    # 4H
+    # 4H EMA
     # =====================================================
 
     ema4h_10_20 = get_ema_10_20_direction(
@@ -907,28 +867,7 @@ def check_4h_warning(
 
 
     # =====================================================
-    # 1D
-    # =====================================================
-
-    ema1d_10_20 = get_ema_10_20_direction(
-        df1d,
-        column1d
-    )
-
-    ema1d_20_60_120 = get_ema_20_60_120_direction(
-        df1d,
-        column1d
-    )
-
-
-    # =====================================================
     # 롱 눌림
-    #
-    # 4H
-    # 10-20 역배열
-    # 20-60-120 정배열
-    #
-    # 일봉 조건 추가마다 +1
     # =====================================================
 
     if (
@@ -937,31 +876,11 @@ def check_4h_warning(
         ema4h_20_60_120 == "long"
     ):
 
-        warning_count = 1
-
-        if ema1d_10_20 == "long":
-
-            warning_count += 1
-
-        if ema1d_20_60_120 == "long":
-
-            warning_count += 1
-
-        return (
-            "long_warning_"
-            +
-            str(warning_count)
-        )
+        return "long_warning_1"
 
 
     # =====================================================
     # 숏 눌림
-    #
-    # 4H
-    # 10-20 정배열
-    # 20-60-120 역배열
-    #
-    # 일봉 조건 추가마다 +1
     # =====================================================
 
     if (
@@ -970,21 +889,7 @@ def check_4h_warning(
         ema4h_20_60_120 == "short"
     ):
 
-        warning_count = 1
-
-        if ema1d_10_20 == "short":
-
-            warning_count += 1
-
-        if ema1d_20_60_120 == "short":
-
-            warning_count += 1
-
-        return (
-            "short_warning_"
-            +
-            str(warning_count)
-        )
+        return "short_warning_1"
 
 
     return "none"
@@ -993,9 +898,14 @@ def check_4h_warning(
 # =========================================================
 # 4H 돌파 경고
 #
-# 중요:
-# 20-60-120 지속 봉 수는 사용하지 않음
-# 현재 정배열 / 역배열만 확인
+# 일봉 20-60-120 제외
+#
+# 사용 조건:
+#
+# 4H 10-20 방향
+# 4H 20-60-120 방향
+# 1D 10-20 방향
+# 4H 10-20 지속 <= 10봉
 # =========================================================
 
 def check_4h_breakout_warning(
@@ -1007,21 +917,16 @@ def check_4h_breakout_warning(
 
     if (
         df4h is None
-        or
-        df1d is None
-        or
-        len(df4h) < 120
-        or
-        len(df1d) < 120
+        or df1d is None
+        or len(df4h) < 120
+        or len(df1d) < 20
     ):
 
         return "none"
 
 
     # =====================================================
-    # 4H 10-20
-    #
-    # 지속 캔들 수만 사용
+    # 4H 10-20 방향 + 지속 캔들
     # =====================================================
 
     count4h, direction4h = get_ema_10_20_count(
@@ -1032,9 +937,6 @@ def check_4h_breakout_warning(
 
     # =====================================================
     # 4H 20-60-120
-    #
-    # 지속 봉 수 사용하지 않음
-    # 현재 상태만 사용
     # =====================================================
 
     ema4h_20_60_120 = get_ema_20_60_120_direction(
@@ -1045,6 +947,8 @@ def check_4h_breakout_warning(
 
     # =====================================================
     # 1D 10-20
+    #
+    # 1D 20-60-120은 사용하지 않음
     # =====================================================
 
     ema1d_10_20 = get_ema_10_20_direction(
@@ -1067,11 +971,7 @@ def check_4h_breakout_warning(
         count4h <= 10
     ):
 
-        return (
-            "long_breakout_"
-            +
-            str(count4h)
-        )
+        return f"long_breakout_{count4h}"
 
 
     # =====================================================
@@ -1088,11 +988,7 @@ def check_4h_breakout_warning(
         count4h <= 10
     ):
 
-        return (
-            "short_breakout_"
-            +
-            str(count4h)
-        )
+        return f"short_breakout_{count4h}"
 
 
     return "none"
@@ -1147,8 +1043,6 @@ def get_okx_4h_ema(
         "warning":
             check_4h_warning(
                 df4h,
-                "c",
-                df1d,
                 "c"
             ),
 
@@ -1166,7 +1060,7 @@ def get_okx_4h_ema(
 # =========================================================
 # 업비트 4H + 1D EMA
 #
-# OKX와 동일한 EMA 함수 사용
+# OKX와 완전히 동일한 경고 로직 사용
 # =========================================================
 
 def get_upbit_4h_ema(
@@ -1212,8 +1106,6 @@ def get_upbit_4h_ema(
         "warning":
             check_4h_warning(
                 df4h,
-                "trade_price",
-                df1d,
                 "trade_price"
             ),
 
@@ -1308,8 +1200,6 @@ def get_okx_change(
     if df is None or len(df) < 50:
         return None
 
-    df = df.copy()
-
     df["datetime"] = (
         pd.to_datetime(
             df["ts"],
@@ -1381,8 +1271,6 @@ def get_upbit_change(
 
     if df is None or len(df) < 50:
         return None
-
-    df = df.copy()
 
     df["datetime"] = pd.to_datetime(
         df["candle_date_time_kst"]
@@ -1588,6 +1476,8 @@ def ema_html(
 <div class="ema-display">
 
 
+    <!-- 돌파 -->
+
     <div class="ema-period breakout-period">
 
         <span class="ema-warning breakout-warning">
@@ -1596,6 +1486,8 @@ def ema_html(
 
     </div>
 
+
+    <!-- 4H -->
 
     <div class="ema-period">
 
@@ -1617,6 +1509,8 @@ def ema_html(
 
     </div>
 
+
+    <!-- 1D -->
 
     <div class="ema-period last">
 
@@ -2156,7 +2050,7 @@ tr:hover{
 
 
 <p>
-4시간 눌림 · 돌파 · EMA 10-20 / 20-60-120 · 일봉 추세 확인
+4시간 눌림 · 돌파 · EMA 10-20 / 20-60-120 · 일봉 10-20 추세 확인
 </p>
 
 
@@ -2359,4 +2253,4 @@ if __name__ == "__main__":
 
         port=8000
 
-        )
+    )
