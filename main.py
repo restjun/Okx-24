@@ -1345,7 +1345,7 @@ def warning_html(
 
             count = 0
 
-        return "🚀" * count
+        return "🚀🚀" * count
 
 
     elif warning.startswith(
@@ -1362,7 +1362,7 @@ def warning_html(
 
             count = 0
 
-        return "🚨" * count
+        return "🚨🚨" * count
 
 
     return ""
