@@ -119,10 +119,7 @@ def get_okx_ohlcv(
             .astype(float)
         )
 
-        # =====================================================
         # 미완성 캔들 제외
-        # =====================================================
-
         df = df[
             df["confirm"].astype(str) == "1"
         ]
@@ -179,40 +176,13 @@ def get_upbit_ohlcv(
 
         df = pd.DataFrame(data)
 
-        # =====================================================
-        # 시간순 정렬
-        # =====================================================
-
-        df["candle_datetime"] = pd.to_datetime(
-            df["candle_date_time_kst"],
-            errors="coerce"
-        )
-
-        df = df.dropna(
-            subset=["candle_datetime"]
-        )
-
-        df = df.sort_values(
-            "candle_datetime"
-        )
-
-        df = df.drop_duplicates(
-            subset=["candle_datetime"]
-        )
-
-        df = df.reset_index(
+        df = df.iloc[::-1].reset_index(
             drop=True
         )
 
         df["trade_price"] = (
-            pd.to_numeric(
-                df["trade_price"],
-                errors="coerce"
-            )
-        )
-
-        df = df.dropna(
-            subset=["trade_price"]
+            df["trade_price"]
+            .astype(float)
         )
 
         return df
@@ -229,12 +199,6 @@ def get_upbit_ohlcv(
 # =========================================================
 # 업비트 4H 캔들
 # 미완성 캔들 제외
-#
-# 수정:
-# - 현재 진행 중인 4H 봉만 제거
-# - 시간 정렬
-# - 중복 제거
-# - 잘못된 가격 제거
 # =========================================================
 
 def get_upbit_4h_ohlcv(
@@ -265,8 +229,22 @@ def get_upbit_4h_ohlcv(
 
         df = pd.DataFrame(data)
 
+        if df.empty:
+            return None
+
+        df = df.iloc[::-1].reset_index(
+            drop=True
+        )
+
+        df["trade_price"] = (
+            pd.to_numeric(
+                df["trade_price"],
+                errors="coerce"
+            )
+        )
+
         # =====================================================
-        # 시간 변환
+        # 업비트 4H 날짜 처리
         # =====================================================
 
         df["candle_datetime"] = pd.to_datetime(
@@ -276,37 +254,6 @@ def get_upbit_4h_ohlcv(
 
         df = df.dropna(
             subset=["candle_datetime"]
-        )
-
-        # =====================================================
-        # 시간순 정렬
-        # =====================================================
-
-        df = df.sort_values(
-            "candle_datetime"
-        )
-
-        # =====================================================
-        # 중복 제거
-        # =====================================================
-
-        df = df.drop_duplicates(
-            subset=["candle_datetime"]
-        )
-
-        # =====================================================
-        # 가격 숫자 변환
-        # =====================================================
-
-        df["trade_price"] = (
-            pd.to_numeric(
-                df["trade_price"],
-                errors="coerce"
-            )
-        )
-
-        df = df.dropna(
-            subset=["trade_price"]
         )
 
         # =====================================================
@@ -331,36 +278,29 @@ def get_upbit_4h_ohlcv(
             )
         )
 
-        # candle_datetime은 KST naive
-        current_candle_start_naive = (
-            current_candle_start
-            .tz_localize(None)
-        )
-
         df = df[
             df["candle_datetime"]
             <
-            current_candle_start_naive
+            current_candle_start.tz_localize(
+                None
+            )
         ]
-
-        # =====================================================
-        # 최종 정렬
-        # =====================================================
-
-        df = df.sort_values(
-            "candle_datetime"
-        )
 
         df = df.reset_index(
             drop=True
         )
 
         if df.empty:
+            return None
 
-            logging.warning(
-                f"업비트 4H 데이터 없음: {market}"
-            )
+        # 가격 결측 제거
+        df = df.dropna(
+            subset=["trade_price"]
+        ).reset_index(
+            drop=True
+        )
 
+        if len(df) < 20:
             return None
 
         return df
@@ -376,10 +316,6 @@ def get_upbit_4h_ohlcv(
 
 # =========================================================
 # 업비트 일봉
-# 미완성 일봉 제외
-#
-# 수정:
-# 현재 진행 중인 일봉 제거
 # =========================================================
 
 def get_upbit_day_ohlcv(
@@ -410,34 +346,12 @@ def get_upbit_day_ohlcv(
 
         df = pd.DataFrame(data)
 
-        # =====================================================
-        # 시간 변환
-        # =====================================================
+        if df.empty:
+            return None
 
-        df["candle_datetime"] = pd.to_datetime(
-            df["candle_date_time_kst"],
-            errors="coerce"
+        df = df.iloc[::-1].reset_index(
+            drop=True
         )
-
-        df = df.dropna(
-            subset=["candle_datetime"]
-        )
-
-        # =====================================================
-        # 정렬
-        # =====================================================
-
-        df = df.sort_values(
-            "candle_datetime"
-        )
-
-        df = df.drop_duplicates(
-            subset=["candle_datetime"]
-        )
-
-        # =====================================================
-        # 가격
-        # =====================================================
 
         df["trade_price"] = (
             pd.to_numeric(
@@ -448,47 +362,11 @@ def get_upbit_day_ohlcv(
 
         df = df.dropna(
             subset=["trade_price"]
-        )
-
-        # =====================================================
-        # 현재 진행 중인 일봉 제외
-        #
-        # 업비트 일봉은 KST 기준 하루 단위
-        # =====================================================
-
-        now = pd.Timestamp.now(
-            tz="Asia/Seoul"
-        )
-
-        today_start = (
-            now.normalize()
-            .tz_localize(None)
-        )
-
-        df = df[
-            df["candle_datetime"]
-            <
-            today_start
-        ]
-
-        # =====================================================
-        # 최종 정렬
-        # =====================================================
-
-        df = df.sort_values(
-            "candle_datetime"
-        )
-
-        df = df.reset_index(
+        ).reset_index(
             drop=True
         )
 
-        if df.empty:
-
-            logging.warning(
-                f"업비트 일봉 데이터 없음: {market}"
-            )
-
+        if len(df) < 20:
             return None
 
         return df
@@ -631,36 +509,61 @@ def get_ema_10_20_direction(
     column
 ):
 
-    if df is None or len(df) < 20:
+    if (
+        df is None
+        or column not in df.columns
+        or len(df) < 20
+    ):
         return "none"
 
-    df = df.copy()
+    try:
 
-    ema10 = (
-        df[column]
-        .ewm(
-            span=10,
-            adjust=False
+        values = pd.to_numeric(
+            df[column],
+            errors="coerce"
         )
-        .mean()
-    )
 
-    ema20 = (
-        df[column]
-        .ewm(
-            span=20,
-            adjust=False
+        if values.isna().all():
+            return "none"
+
+        ema10 = (
+            values
+            .ewm(
+                span=10,
+                adjust=False
+            )
+            .mean()
         )
-        .mean()
-    )
 
-    if ema10.iloc[-1] > ema20.iloc[-1]:
+        ema20 = (
+            values
+            .ewm(
+                span=20,
+                adjust=False
+            )
+            .mean()
+        )
 
-        return "long"
+        if pd.isna(
+            ema10.iloc[-1]
+        ) or pd.isna(
+            ema20.iloc[-1]
+        ):
+            return "none"
 
-    elif ema10.iloc[-1] < ema20.iloc[-1]:
+        if ema10.iloc[-1] > ema20.iloc[-1]:
 
-        return "short"
+            return "long"
+
+        elif ema10.iloc[-1] < ema20.iloc[-1]:
+
+            return "short"
+
+    except Exception as e:
+
+        logging.error(
+            f"EMA 10-20 방향 오류:{e}"
+        )
 
     return "none"
 
@@ -674,57 +577,81 @@ def get_ema_20_60_120_direction(
     column
 ):
 
-    if df is None or len(df) < 120:
+    if (
+        df is None
+        or column not in df.columns
+        or len(df) < 120
+    ):
         return "none"
 
-    df = df.copy()
+    try:
 
-    ema20 = (
-        df[column]
-        .ewm(
-            span=20,
-            adjust=False
+        values = pd.to_numeric(
+            df[column],
+            errors="coerce"
         )
-        .mean()
-    )
 
-    ema60 = (
-        df[column]
-        .ewm(
-            span=60,
-            adjust=False
+        ema20 = (
+            values
+            .ewm(
+                span=20,
+                adjust=False
+            )
+            .mean()
         )
-        .mean()
-    )
 
-    ema120 = (
-        df[column]
-        .ewm(
-            span=120,
-            adjust=False
+        ema60 = (
+            values
+            .ewm(
+                span=60,
+                adjust=False
+            )
+            .mean()
         )
-        .mean()
-    )
 
-    if (
-        ema20.iloc[-1]
-        >
-        ema60.iloc[-1]
-        >
-        ema120.iloc[-1]
-    ):
+        ema120 = (
+            values
+            .ewm(
+                span=120,
+                adjust=False
+            )
+            .mean()
+        )
 
-        return "long"
+        if (
+            pd.isna(ema20.iloc[-1])
+            or
+            pd.isna(ema60.iloc[-1])
+            or
+            pd.isna(ema120.iloc[-1])
+        ):
+            return "none"
 
-    elif (
-        ema20.iloc[-1]
-        <
-        ema60.iloc[-1]
-        <
-        ema120.iloc[-1]
-    ):
+        if (
+            ema20.iloc[-1]
+            >
+            ema60.iloc[-1]
+            >
+            ema120.iloc[-1]
+        ):
 
-        return "short"
+            return "long"
+
+        elif (
+            ema20.iloc[-1]
+            <
+            ema60.iloc[-1]
+            <
+            ema120.iloc[-1]
+        ):
+
+            return "short"
+
+    except Exception as e:
+
+        logging.error(
+            f"EMA 20-60-120 방향 오류:{e}"
+        )
 
     return "none"
 
@@ -738,69 +665,98 @@ def check_ema_10_20(
     column
 ):
 
-    if df is None or len(df) < 20:
+    if (
+        df is None
+        or column not in df.columns
+        or len(df) < 20
+    ):
         return "⚪(0)"
 
-    df = df.copy()
+    try:
 
-    df["ema10"] = (
-        df[column]
-        .ewm(
-            span=10,
-            adjust=False
+        values = pd.to_numeric(
+            df[column],
+            errors="coerce"
         )
-        .mean()
-    )
 
-    df["ema20"] = (
-        df[column]
-        .ewm(
-            span=20,
-            adjust=False
+        if values.isna().all():
+            return "⚪(0)"
+
+        ema10 = (
+            values
+            .ewm(
+                span=10,
+                adjust=False
+            )
+            .mean()
         )
-        .mean()
-    )
 
-    states = []
+        ema20 = (
+            values
+            .ewm(
+                span=20,
+                adjust=False
+            )
+            .mean()
+        )
 
-    for _, row in df.iterrows():
+        states = []
 
-        if row["ema10"] > row["ema20"]:
+        for i in range(len(values)):
 
-            states.append("long")
+            if (
+                pd.isna(ema10.iloc[i])
+                or
+                pd.isna(ema20.iloc[i])
+            ):
 
-        elif row["ema10"] < row["ema20"]:
+                states.append("none")
 
-            states.append("short")
+            elif (
+                ema10.iloc[i]
+                >
+                ema20.iloc[i]
+            ):
 
-        else:
+                states.append("long")
 
-            states.append("none")
+            elif (
+                ema10.iloc[i]
+                <
+                ema20.iloc[i]
+            ):
 
-    current_state = states[-1]
+                states.append("short")
 
-    if current_state == "none":
-        return "⚪(0)"
+            else:
 
-    count = 0
+                states.append("none")
 
-    for state in reversed(states):
+        current_state = states[-1]
 
-        if state == current_state:
+        if current_state == "none":
+            return "⚪(0)"
 
-            count += 1
+        count = 0
 
-        else:
+        for state in reversed(states):
 
-            break
+            if state == current_state:
+                count += 1
+            else:
+                break
 
-    if current_state == "long":
+        if current_state == "long":
+            return f"🟢({count})"
 
-        return f"🟢({count})"
+        if current_state == "short":
+            return f"🔴({count})"
 
-    elif current_state == "short":
+    except Exception as e:
 
-        return f"🔴({count})"
+        logging.error(
+            f"EMA 10-20 상태 오류:{e}"
+        )
 
     return "⚪(0)"
 
@@ -814,90 +770,110 @@ def check_ema(
     column
 ):
 
-    if df is None or len(df) < 120:
+    if (
+        df is None
+        or column not in df.columns
+        or len(df) < 120
+    ):
         return "⚪(0)"
 
-    df = df.copy()
+    try:
 
-    df["ema20"] = (
-        df[column]
-        .ewm(
-            span=20,
-            adjust=False
+        values = pd.to_numeric(
+            df[column],
+            errors="coerce"
         )
-        .mean()
-    )
 
-    df["ema60"] = (
-        df[column]
-        .ewm(
-            span=60,
-            adjust=False
+        ema20 = (
+            values
+            .ewm(
+                span=20,
+                adjust=False
+            )
+            .mean()
         )
-        .mean()
-    )
 
-    df["ema120"] = (
-        df[column]
-        .ewm(
-            span=120,
-            adjust=False
+        ema60 = (
+            values
+            .ewm(
+                span=60,
+                adjust=False
+            )
+            .mean()
         )
-        .mean()
-    )
 
-    states = []
+        ema120 = (
+            values
+            .ewm(
+                span=120,
+                adjust=False
+            )
+            .mean()
+        )
 
-    for _, row in df.iterrows():
+        states = []
 
-        if (
-            row["ema20"]
-            >
-            row["ema60"]
-            >
-            row["ema120"]
-        ):
+        for i in range(len(values)):
 
-            states.append("long")
+            if (
+                pd.isna(ema20.iloc[i])
+                or
+                pd.isna(ema60.iloc[i])
+                or
+                pd.isna(ema120.iloc[i])
+            ):
 
-        elif (
-            row["ema20"]
-            <
-            row["ema60"]
-            <
-            row["ema120"]
-        ):
+                states.append("none")
 
-            states.append("short")
+            elif (
+                ema20.iloc[i]
+                >
+                ema60.iloc[i]
+                >
+                ema120.iloc[i]
+            ):
 
-        else:
+                states.append("long")
 
-            states.append("none")
+            elif (
+                ema20.iloc[i]
+                <
+                ema60.iloc[i]
+                <
+                ema120.iloc[i]
+            ):
 
-    current_state = states[-1]
+                states.append("short")
 
-    if current_state == "none":
-        return "⚪(0)"
+            else:
 
-    count = 0
+                states.append("none")
 
-    for state in reversed(states):
+        current_state = states[-1]
 
-        if state == current_state:
+        if current_state == "none":
+            return "⚪(0)"
 
-            count += 1
+        count = 0
 
-        else:
+        for state in reversed(states):
 
-            break
+            if state == current_state:
+                count += 1
+            else:
+                break
 
-    if current_state == "long":
+        if current_state == "long":
+            return f"🟢({count})"
 
-        return f"🟢({count})"
+        if current_state == "short":
+            return f"🔴({count})"
 
-    elif current_state == "short":
+    except Exception as e:
 
-        return f"🔴({count})"
+        logging.error(
+            f"EMA 20-60-120 상태 오류:{e}"
+        )
 
     return "⚪(0)"
 
@@ -911,69 +887,101 @@ def get_ema_10_20_count(
     column
 ):
 
-    if df is None or len(df) < 20:
-
+    if (
+        df is None
+        or column not in df.columns
+        or len(df) < 20
+    ):
         return 0, "none"
 
-    df = df.copy()
+    try:
 
-    df["ema10"] = (
-        df[column]
-        .ewm(
-            span=10,
-            adjust=False
+        values = pd.to_numeric(
+            df[column],
+            errors="coerce"
         )
-        .mean()
-    )
 
-    df["ema20"] = (
-        df[column]
-        .ewm(
-            span=20,
-            adjust=False
+        ema10 = (
+            values
+            .ewm(
+                span=10,
+                adjust=False
+            )
+            .mean()
         )
-        .mean()
-    )
 
-    states = []
+        ema20 = (
+            values
+            .ewm(
+                span=20,
+                adjust=False
+            )
+            .mean()
+        )
 
-    for _, row in df.iterrows():
+        states = []
 
-        if row["ema10"] > row["ema20"]:
+        for i in range(len(values)):
 
-            states.append("long")
+            if (
+                pd.isna(ema10.iloc[i])
+                or
+                pd.isna(ema20.iloc[i])
+            ):
 
-        elif row["ema10"] < row["ema20"]:
+                states.append("none")
 
-            states.append("short")
+            elif ema10.iloc[i] > ema20.iloc[i]:
 
-        else:
+                states.append("long")
 
-            states.append("none")
+            elif ema10.iloc[i] < ema20.iloc[i]:
 
-    current_state = states[-1]
+                states.append("short")
 
-    if current_state == "none":
+            else:
+
+                states.append("none")
+
+        current_state = states[-1]
+
+        if current_state == "none":
+            return 0, "none"
+
+        count = 0
+
+        for state in reversed(states):
+
+            if state == current_state:
+                count += 1
+            else:
+                break
+
+        return count, current_state
+
+    except Exception as e:
+
+        logging.error(
+            f"EMA 지속 캔들 오류:{e}"
+        )
 
         return 0, "none"
-
-    count = 0
-
-    for state in reversed(states):
-
-        if state == current_state:
-
-            count += 1
-
-        else:
-
-            break
-
-    return count, current_state
 
 
 # =========================================================
 # 4H + 1D 눌림 경고
+#
+# 기존 OKX 로직 유지
+#
+# 롱:
+# 4H 10-20 역배열
+# 4H 20-60-120 정배열
+#
+# 추가 경고:
+# 1D 10-20 정배열
+# 1D 20-60-120 정배열
+#
+# 숏은 반대
 # =========================================================
 
 def check_4h_warning(
@@ -991,7 +999,6 @@ def check_4h_warning(
     ):
 
         return "none"
-
 
     ema4h_10_20 = get_ema_10_20_direction(
         df4h,
@@ -1012,7 +1019,6 @@ def check_4h_warning(
         df1d,
         column1d
     )
-
 
     # =====================================================
     # 롱 눌림
@@ -1036,7 +1042,6 @@ def check_4h_warning(
             warning_count
         )
 
-
     # =====================================================
     # 숏 눌림
     # =====================================================
@@ -1059,12 +1064,25 @@ def check_4h_warning(
             warning_count
         )
 
-
     return "none"
 
 
 # =========================================================
 # 4H 돌파 경고
+#
+# ★ 수정됨
+#
+# 돌파에서는 20-60-120 조건을 사용하지 않음
+#
+# 롱:
+# 4H 10-20 정배열
+# 1D 10-20 정배열
+# 4H 10-20 정배열 지속 10봉 이하
+#
+# 숏:
+# 4H 10-20 역배열
+# 1D 10-20 역배열
+# 4H 10-20 역배열 지속 10봉 이하
 # =========================================================
 
 def check_4h_breakout_warning(
@@ -1077,37 +1095,38 @@ def check_4h_breakout_warning(
     if (
         df4h is None
         or df1d is None
-        or len(df4h) < 120
-        or len(df1d) < 120
+        or len(df4h) < 20
+        or len(df1d) < 20
     ):
 
         return "none"
 
+    # =====================================================
+    # 4H 10-20
+    # =====================================================
 
     count4h, direction4h = get_ema_10_20_count(
         df4h,
         column4h
     )
 
-    ema4h_20_60_120 = get_ema_20_60_120_direction(
-        df4h,
-        column4h
-    )
+    # =====================================================
+    # 1D 10-20
+    # =====================================================
 
     ema1d_10_20 = get_ema_10_20_direction(
         df1d,
         column1d
     )
 
-
     # =====================================================
-    # 롱 돌파
+    # ⚡ 롱 돌파
+    #
+    # 20-60-120 조건 없음
     # =====================================================
 
     if (
         direction4h == "long"
-        and
-        ema4h_20_60_120 == "long"
         and
         ema1d_10_20 == "long"
         and
@@ -1116,15 +1135,14 @@ def check_4h_breakout_warning(
 
         return f"long_breakout_{count4h}"
 
-
     # =====================================================
-    # 숏 돌파
+    # 💥 숏 돌파
+    #
+    # 20-60-120 조건 없음
     # =====================================================
 
     if (
         direction4h == "short"
-        and
-        ema4h_20_60_120 == "short"
         and
         ema1d_10_20 == "short"
         and
@@ -1133,13 +1151,11 @@ def check_4h_breakout_warning(
 
         return f"short_breakout_{count4h}"
 
-
     return "none"
 
 
 # =========================================================
 # OKX 4H + 1D EMA
-# OKX 로직 그대로 유지
 # =========================================================
 
 def get_okx_4h_ema(
@@ -1205,132 +1221,78 @@ def get_okx_4h_ema(
 
 # =========================================================
 # 업비트 4H + 1D EMA
-#
-# 업비트 문제 수정 핵심
 # =========================================================
 
 def get_upbit_4h_ema(
     market
 ):
 
-    try:
+    df4h = get_upbit_4h_ohlcv(
+        market,
+        200
+    )
 
-        df4h = get_upbit_4h_ohlcv(
-            market,
-            200
+    df1d = get_upbit_day_ohlcv(
+        market,
+        200
+    )
+
+    # 디버깅용
+    if df4h is None:
+
+        logging.warning(
+            f"업비트 4H 데이터 없음: {market}"
         )
 
-        df1d = get_upbit_day_ohlcv(
-            market,
-            200
+    if df1d is None:
+
+        logging.warning(
+            f"업비트 1D 데이터 없음: {market}"
         )
 
-        # =====================================================
-        # 데이터 상태 로그
-        # =====================================================
+    return {
 
-        if df4h is None:
+        "4h_10_20":
+            check_ema_10_20(
+                df4h,
+                "trade_price"
+            ),
 
-            logging.warning(
-                f"{market} 업비트 4H 데이터 없음"
+        "4h_20_60_120":
+            check_ema(
+                df4h,
+                "trade_price"
+            ),
+
+        "1d_10_20":
+            check_ema_10_20(
+                df1d,
+                "trade_price"
+            ),
+
+        "1d_20_60_120":
+            check_ema(
+                df1d,
+                "trade_price"
+            ),
+
+        "warning":
+            check_4h_warning(
+                df4h,
+                "trade_price",
+                df1d,
+                "trade_price"
+            ),
+
+        "breakout":
+            check_4h_breakout_warning(
+                df4h,
+                "trade_price",
+                df1d,
+                "trade_price"
             )
 
-        else:
-
-            logging.info(
-                f"{market} 업비트 4H 캔들 {len(df4h)}개"
-            )
-
-
-        if df1d is None:
-
-            logging.warning(
-                f"{market} 업비트 1D 데이터 없음"
-            )
-
-        else:
-
-            logging.info(
-                f"{market} 업비트 1D 캔들 {len(df1d)}개"
-            )
-
-
-        return {
-
-            "4h_10_20":
-                check_ema_10_20(
-                    df4h,
-                    "trade_price"
-                ),
-
-            "4h_20_60_120":
-                check_ema(
-                    df4h,
-                    "trade_price"
-                ),
-
-            "1d_10_20":
-                check_ema_10_20(
-                    df1d,
-                    "trade_price"
-                ),
-
-            "1d_20_60_120":
-                check_ema(
-                    df1d,
-                    "trade_price"
-                ),
-
-            "warning":
-                check_4h_warning(
-                    df4h,
-                    "trade_price",
-                    df1d,
-                    "trade_price"
-                ),
-
-            "breakout":
-                check_4h_breakout_warning(
-                    df4h,
-                    "trade_price",
-                    df1d,
-                    "trade_price"
-                )
-
-        }
-
-    except Exception as e:
-
-        logging.error(
-            f"업비트 EMA 전체 오류 {market}: {e}"
-        )
-
-        # =====================================================
-        # 한 종목 오류가 전체 업데이트를
-        # 중단시키지 않도록 기본값 반환
-        # =====================================================
-
-        return {
-
-            "4h_10_20":
-                "⚪(0)",
-
-            "4h_20_60_120":
-                "⚪(0)",
-
-            "1d_10_20":
-                "⚪(0)",
-
-            "1d_20_60_120":
-                "⚪(0)",
-
-            "warning":
-                "none",
-
-            "breakout":
-                "none"
-
-        }
+    }
 
 
 # =========================================================
@@ -1602,7 +1564,6 @@ def warning_html(
 
         return "🚀" * count
 
-
     elif warning.startswith(
         "short_warning_"
     ):
@@ -1618,7 +1579,6 @@ def warning_html(
             count = 0
 
         return "🚨" * count
-
 
     return ""
 
@@ -1647,7 +1607,6 @@ def breakout_html(
 
         return f"⚡({count})"
 
-
     elif breakout.startswith(
         "short_breakout_"
     ):
@@ -1664,7 +1623,6 @@ def breakout_html(
 
         return f"💥({count})"
 
-
     return ""
 
 
@@ -1676,47 +1634,12 @@ def ema_html(
     ema
 ):
 
-    # =====================================================
-    # 안전 처리
-    # =====================================================
-
-    if not isinstance(ema, dict):
-
-        ema = {
-
-            "4h_10_20":
-                "⚪(0)",
-
-            "4h_20_60_120":
-                "⚪(0)",
-
-            "1d_10_20":
-                "⚪(0)",
-
-            "1d_20_60_120":
-                "⚪(0)",
-
-            "warning":
-                "none",
-
-            "breakout":
-                "none"
-
-        }
-
-
     warning = warning_html(
-        ema.get(
-            "warning",
-            "none"
-        )
+        ema["warning"]
     )
 
     breakout = breakout_html(
-        ema.get(
-            "breakout",
-            "none"
-        )
+        ema["breakout"]
     )
 
     return f"""
@@ -1743,17 +1666,11 @@ def ema_html(
         </span>
 
         <span class="ema-status">
-            {ema.get(
-                "4h_10_20",
-                "⚪(0)"
-            )}
+            {ema["4h_10_20"]}
         </span>
 
         <span class="ema-status">
-            {ema.get(
-                "4h_20_60_120",
-                "⚪(0)"
-            )}
+            {ema["4h_20_60_120"]}
         </span>
 
     </div>
@@ -1766,21 +1683,14 @@ def ema_html(
         </span>
 
         <span class="ema-status">
-            {ema.get(
-                "1d_10_20",
-                "⚪(0)"
-            )}
+            {ema["1d_10_20"]}
         </span>
 
         <span class="ema-status">
-            {ema.get(
-                "1d_20_60_120",
-                "⚪(0)"
-            )}
+            {ema["1d_20_60_120"]}
         </span>
 
     </div>
-
 
 </div>
 
@@ -1789,7 +1699,6 @@ def ema_html(
 
 # =========================================================
 # OKX TOP15
-# OKX 로직 그대로 유지
 # =========================================================
 
 def update_okx():
@@ -1915,96 +1824,41 @@ def update_upbit():
 
     for market in top15:
 
-        try:
+        coin = market.replace(
+            "KRW-",
+            ""
+        )
 
-            coin = market.replace(
-                "KRW-",
-                ""
-            )
+        changes = get_upbit_change(
+            market
+        )
 
-            changes = get_upbit_change(
-                market
-            )
+        ema4h = get_upbit_4h_ema(
+            market
+        )
 
-            ema4h = get_upbit_4h_ema(
-                market
-            )
+        rows.append({
 
-            rows.append({
+            "rank":
+                rank,
 
-                "rank":
-                    rank,
+            "name":
+                coin,
 
-                "name":
-                    coin,
+            "change":
+                format_change(changes),
 
-                "change":
-                    format_change(changes),
+            "volume":
+                format_volume(
+                    volume_map[market]
+                ),
 
-                "volume":
-                    format_volume(
-                        volume_map[market]
-                    ),
+            "ema4h":
+                ema4h
 
-                "ema4h":
-                    ema4h
+        })
 
-            })
-
-            rank += 1
-
-        except Exception as e:
-
-            # =================================================
-            # 한 종목 오류가 전체 TOP15를 중단시키지 않음
-            # =================================================
-
-            logging.error(
-                f"업비트 종목 처리 오류 {market}: {e}"
-            )
-
-            # 기본 EMA 표시
-            rows.append({
-
-                "rank":
-                    rank,
-
-                "name":
-                    coin,
-
-                "change":
-                    format_change(None),
-
-                "volume":
-                    format_volume(
-                        volume_map[market]
-                    ),
-
-                "ema4h": {
-
-                    "4h_10_20":
-                        "⚪(0)",
-
-                    "4h_20_60_120":
-                        "⚪(0)",
-
-                    "1d_10_20":
-                        "⚪(0)",
-
-                    "1d_20_60_120":
-                        "⚪(0)",
-
-                    "warning":
-                        "none",
-
-                    "breakout":
-                        "none"
-
-                }
-
-            })
-
-            rank += 1
+        rank += 1
 
     latest_upbit_data = rows
 
@@ -2070,7 +1924,6 @@ def dashboard():
 OKX + UPBIT
 </title>
 
-
 <style>
 
 body{
@@ -2085,7 +1938,6 @@ body{
 
 }
 
-
 table{
 
     width:auto;
@@ -2095,7 +1947,6 @@ table{
     border:1px solid #444;
 
 }
-
 
 th{
 
@@ -2109,13 +1960,11 @@ th{
 
 }
 
-
 th:last-child{
 
     border-right:none;
 
 }
-
 
 td{
 
@@ -2131,13 +1980,11 @@ td{
 
 }
 
-
 td:last-child{
 
     border-right:none;
 
 }
-
 
 .rank-cell{
 
@@ -2146,7 +1993,6 @@ td:last-child{
     min-width:45px;
 
 }
-
 
 .coin-cell{
 
@@ -2157,7 +2003,6 @@ td:last-child{
     font-weight:bold;
 
 }
-
 
 .volume-cell{
 
@@ -2173,7 +2018,6 @@ td:last-child{
 
 }
 
-
 .change-cell{
 
     min-width:105px;
@@ -2185,7 +2029,6 @@ td:last-child{
     white-space:nowrap;
 
 }
-
 
 .change-item{
 
@@ -2201,7 +2044,6 @@ td:last-child{
 
 }
 
-
 .change-icon{
 
     display:inline-block;
@@ -2213,7 +2055,6 @@ td:last-child{
     text-align:center;
 
 }
-
 
 .change-value{
 
@@ -2228,7 +2069,6 @@ td:last-child{
     font-family:monospace;
 
 }
-
 
 .ema-display{
 
@@ -2246,7 +2086,6 @@ td:last-child{
 
 }
 
-
 .ema-period{
 
     display:flex;
@@ -2259,13 +2098,11 @@ td:last-child{
 
 }
 
-
 .ema-period.last{
 
     border-right:none;
 
 }
-
 
 .breakout-period{
 
@@ -2277,13 +2114,11 @@ td:last-child{
 
 }
 
-
 .breakout-warning{
 
     font-size:18px;
 
 }
-
 
 .ema-warning{
 
@@ -2296,7 +2131,6 @@ td:last-child{
     text-align:center;
 
 }
-
 
 .ema-time{
 
@@ -2312,7 +2146,6 @@ td:last-child{
 
 }
 
-
 .ema-status{
 
     display:inline-block;
@@ -2324,7 +2157,6 @@ td:last-child{
     text-align:left;
 
 }
-
 
 .section-title{
 
@@ -2338,7 +2170,6 @@ td:last-child{
 
 }
 
-
 tr:hover{
 
     background:#1d1d1d;
@@ -2349,24 +2180,19 @@ tr:hover{
 
 </head>
 
-
 <body>
-
 
 <h2>
 📊 암호화폐 실시간 분석
 </h2>
 
-
 <p>
 4시간 눌림 · 돌파 · EMA 10-20 / 20-60-120 · 일봉 추세 확인
 </p>
 
-
 <h2 class="section-title">
 🏆 OKX 선물 거래대금 TOP15
 </h2>
-
 
 <table>
 
@@ -2393,7 +2219,6 @@ EMA 상태
 </th>
 
 </tr>
-
 """
 
 
@@ -2424,11 +2249,7 @@ EMA 상태
 </td>
 
 <td>
-
-{ema_html(
-    item["ema4h"]
-)}
-
+{ema_html(item["ema4h"])}
 </td>
 
 </tr>
@@ -2440,11 +2261,9 @@ EMA 상태
 
 </table>
 
-
 <h2 class="section-title">
 🏆 업비트 현물 거래대금 TOP15
 </h2>
-
 
 <table>
 
@@ -2502,11 +2321,7 @@ EMA 상태
 </td>
 
 <td>
-
-{ema_html(
-    item["ema4h"]
-)}
-
+{ema_html(item["ema4h"])}
 </td>
 
 </tr>
@@ -2518,13 +2333,11 @@ EMA 상태
 
 </table>
 
-
 </body>
 
 </html>
 
 """
-
 
     return html
 
@@ -2562,4 +2375,4 @@ if __name__ == "__main__":
 
         port=8000
 
-    )
+        )
