@@ -109,20 +109,14 @@ def get_okx_ohlcv(
             ]
         )
 
-        df["c"] = (
-            df["c"]
-            .astype(float)
-        )
+        df["c"] = df["c"].astype(float)
 
         df["volCcyQuote"] = (
             df["volCcyQuote"]
             .astype(float)
         )
 
-        # =====================================================
         # 미완성 캔들 제외
-        # =====================================================
-
         df = df[
             df["confirm"].astype(str) == "1"
         ]
@@ -201,7 +195,7 @@ def get_upbit_ohlcv(
 
 # =========================================================
 # 업비트 4H 캔들
-# 현재 진행 중인 캔들 제외
+# 현재 진행 중인 4H 제외
 # =========================================================
 
 def get_upbit_4h_ohlcv(
@@ -263,28 +257,11 @@ def get_upbit_4h_ohlcv(
             )
         )
 
-        candle_datetime = pd.to_datetime(
+        df["candle_datetime"] = pd.to_datetime(
             df["candle_date_time_kst"]
+        ).dt.tz_localize(
+            "Asia/Seoul"
         )
-
-        # 혹시 timezone 정보가 있는 경우도 대응
-        if candle_datetime.dt.tz is None:
-
-            candle_datetime = (
-                candle_datetime
-                .dt
-                .tz_localize("Asia/Seoul")
-            )
-
-        else:
-
-            candle_datetime = (
-                candle_datetime
-                .dt
-                .tz_convert("Asia/Seoul")
-            )
-
-        df["candle_datetime"] = candle_datetime
 
         df = df[
             df["candle_datetime"]
@@ -388,7 +365,8 @@ def get_all_okx_swap_symbols():
             for x in response.json()["data"]
             if (
                 x["instId"].endswith("-USDT-SWAP")
-                and x.get("state") == "live"
+                and
+                x.get("state") == "live"
             )
         ]
 
@@ -643,9 +621,11 @@ def check_ema_10_20(
     for state in reversed(states):
 
         if state == current_state:
+
             count += 1
 
         else:
+
             break
 
     if current_state == "long":
@@ -738,9 +718,11 @@ def check_ema(
     for state in reversed(states):
 
         if state == current_state:
+
             count += 1
 
         else:
+
             break
 
     if current_state == "long":
@@ -755,7 +737,7 @@ def check_ema(
 
 
 # =========================================================
-# EMA 10-20 현재 방향 + 지속 캔들 수
+# EMA 10-20 지속 캔들 수
 # =========================================================
 
 def get_ema_10_20_count(
@@ -827,7 +809,7 @@ def get_ema_10_20_count(
 # =========================================================
 # 4H 눌림 경고
 #
-# 일봉 조건 완전 제거
+# 일봉 조건 제거
 #
 # 롱:
 # 4H 10-20 역배열
@@ -851,18 +833,16 @@ def check_4h_warning(
         return "none"
 
 
-    # =====================================================
-    # 4H EMA
-    # =====================================================
-
     ema4h_10_20 = get_ema_10_20_direction(
         df4h,
         column4h
     )
 
-    ema4h_20_60_120 = get_ema_20_60_120_direction(
-        df4h,
-        column4h
+    ema4h_20_60_120 = (
+        get_ema_20_60_120_direction(
+            df4h,
+            column4h
+        )
     )
 
 
@@ -898,75 +878,56 @@ def check_4h_warning(
 # =========================================================
 # 4H 돌파 경고
 #
-# 일봉 20-60-120 제외
+# 일봉 20-60-120 조건 사용 안 함
 #
-# 사용 조건:
+# 롱:
+# 4H 10-20 정배열
+# 4H 20-60-120 정배열
+# 10-20 정배열 지속 10봉 이하
 #
-# 4H 10-20 방향
-# 4H 20-60-120 방향
-# 1D 10-20 방향
-# 4H 10-20 지속 <= 10봉
+# 숏:
+# 4H 10-20 역배열
+# 4H 20-60-120 역배열
+# 10-20 역배열 지속 10봉 이하
 # =========================================================
 
 def check_4h_breakout_warning(
     df4h,
-    column4h,
-    df1d,
-    column1d
+    column4h
 ):
 
     if (
         df4h is None
-        or df1d is None
         or len(df4h) < 120
-        or len(df1d) < 20
     ):
 
         return "none"
 
 
-    # =====================================================
-    # 4H 10-20 방향 + 지속 캔들
-    # =====================================================
+    count4h, direction4h = (
+        get_ema_10_20_count(
+            df4h,
+            column4h
+        )
+    )
 
-    count4h, direction4h = get_ema_10_20_count(
-        df4h,
-        column4h
+
+    ema4h_20_60_120 = (
+        get_ema_20_60_120_direction(
+            df4h,
+            column4h
+        )
     )
 
 
     # =====================================================
-    # 4H 20-60-120
-    # =====================================================
-
-    ema4h_20_60_120 = get_ema_20_60_120_direction(
-        df4h,
-        column4h
-    )
-
-
-    # =====================================================
-    # 1D 10-20
-    #
-    # 1D 20-60-120은 사용하지 않음
-    # =====================================================
-
-    ema1d_10_20 = get_ema_10_20_direction(
-        df1d,
-        column1d
-    )
-
-
-    # =====================================================
-    # ⚡ 롱 돌파
+    # 롱 돌파
     # =====================================================
 
     if (
         direction4h == "long"
         and
         ema4h_20_60_120 == "long"
-        and
-        ema1d_10_20 == "long"
         and
         count4h <= 10
     ):
@@ -975,15 +936,13 @@ def check_4h_breakout_warning(
 
 
     # =====================================================
-    # 💥 숏 돌파
+    # 숏 돌파
     # =====================================================
 
     if (
         direction4h == "short"
         and
         ema4h_20_60_120 == "short"
-        and
-        ema1d_10_20 == "short"
         and
         count4h <= 10
     ):
@@ -1049,8 +1008,6 @@ def get_okx_4h_ema(
         "breakout":
             check_4h_breakout_warning(
                 df4h,
-                "c",
-                df1d,
                 "c"
             )
 
@@ -1059,8 +1016,7 @@ def get_okx_4h_ema(
 
 # =========================================================
 # 업비트 4H + 1D EMA
-#
-# OKX와 완전히 동일한 경고 로직 사용
+# OKX와 동일한 경고 로직 사용
 # =========================================================
 
 def get_upbit_4h_ema(
@@ -1112,8 +1068,6 @@ def get_upbit_4h_ema(
         "breakout":
             check_4h_breakout_warning(
                 df4h,
-                "trade_price",
-                df1d,
                 "trade_price"
             )
 
@@ -1200,6 +1154,8 @@ def get_okx_change(
     if df is None or len(df) < 50:
         return None
 
+    df = df.copy()
+
     df["datetime"] = (
         pd.to_datetime(
             df["ts"],
@@ -1271,6 +1227,8 @@ def get_upbit_change(
 
     if df is None or len(df) < 50:
         return None
+
+    df = df.copy()
 
     df["datetime"] = pd.to_datetime(
         df["candle_date_time_kst"]
@@ -1350,7 +1308,7 @@ def format_change(
         color = "⬜️"
         sign = ""
 
-    return f'''
+    return f"""
     <span class="change-item">
 
         <span class="change-icon">
@@ -1362,7 +1320,7 @@ def format_change(
         </span>
 
     </span>
-    '''
+    """
 
 
 # =========================================================
@@ -1491,7 +1449,7 @@ def ema_html(
 
     <div class="ema-period">
 
-        <span class="ema-warning">
+        <span class="ema-warning warning-size">
             {warning}
         </span>
 
@@ -1764,6 +1722,10 @@ OKX + UPBIT
 
 <style>
 
+/* =====================================================
+   전체
+   ===================================================== */
+
 body{
 
     background:#111;
@@ -1777,6 +1739,10 @@ body{
 }
 
 
+/* =====================================================
+   테이블
+   ===================================================== */
+
 table{
 
     width:auto;
@@ -1787,6 +1753,10 @@ table{
 
 }
 
+
+/* =====================================================
+   헤더
+   ===================================================== */
 
 th{
 
@@ -1807,6 +1777,10 @@ th:last-child{
 
 }
 
+
+/* =====================================================
+   일반 셀
+   ===================================================== */
 
 td{
 
@@ -1830,6 +1804,10 @@ td:last-child{
 }
 
 
+/* =====================================================
+   순위
+   ===================================================== */
+
 .rank-cell{
 
     width:45px;
@@ -1838,6 +1816,10 @@ td:last-child{
 
 }
 
+
+/* =====================================================
+   코인
+   ===================================================== */
 
 .coin-cell{
 
@@ -1849,6 +1831,10 @@ td:last-child{
 
 }
 
+
+/* =====================================================
+   거래대금
+   ===================================================== */
 
 .volume-cell{
 
@@ -1864,6 +1850,10 @@ td:last-child{
 
 }
 
+
+/* =====================================================
+   변동률
+   ===================================================== */
 
 .change-cell{
 
@@ -1921,13 +1911,17 @@ td:last-child{
 }
 
 
+/* =====================================================
+   EMA 전체
+   ===================================================== */
+
 .ema-display{
 
     display:flex;
 
     align-items:center;
 
-    height:28px;
+    height:32px;
 
     white-space:nowrap;
 
@@ -1937,6 +1931,10 @@ td:last-child{
 
 }
 
+
+/* =====================================================
+   EMA 시간봉 그룹
+   ===================================================== */
 
 .ema-period{
 
@@ -1958,9 +1956,14 @@ td:last-child{
 }
 
 
+/* =====================================================
+   돌파 경고
+   크게 표시
+   ===================================================== */
+
 .breakout-period{
 
-    min-width:65px;
+    min-width:75px;
 
     padding-left:5px;
 
@@ -1971,10 +1974,17 @@ td:last-child{
 
 .breakout-warning{
 
-    font-size:18px;
+    font-size:24px;
+
+    line-height:28px;
 
 }
 
+
+/* =====================================================
+   눌림 경고
+   크게 표시
+   ===================================================== */
 
 .ema-warning{
 
@@ -1988,6 +1998,19 @@ td:last-child{
 
 }
 
+
+.warning-size{
+
+    font-size:24px;
+
+    line-height:28px;
+
+}
+
+
+/* =====================================================
+   시간봉
+   ===================================================== */
 
 .ema-time{
 
@@ -2004,6 +2027,10 @@ td:last-child{
 }
 
 
+/* =====================================================
+   EMA 상태
+   ===================================================== */
+
 .ema-status{
 
     display:inline-block;
@@ -2017,6 +2044,10 @@ td:last-child{
 }
 
 
+/* =====================================================
+   섹션
+   ===================================================== */
+
 .section-title{
 
     margin-top:25px;
@@ -2029,6 +2060,10 @@ td:last-child{
 
 }
 
+
+/* =====================================================
+   행 hover
+   ===================================================== */
 
 tr:hover{
 
@@ -2050,7 +2085,7 @@ tr:hover{
 
 
 <p>
-4시간 눌림 · 돌파 · EMA 10-20 / 20-60-120 · 일봉 10-20 추세 확인
+4시간 눌림 · 돌파 · EMA 10-20 / 20-60-120 · 일봉 추세 확인
 </p>
 
 
@@ -2253,4 +2288,4 @@ if __name__ == "__main__":
 
         port=8000
 
-    )
+            )
