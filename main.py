@@ -179,13 +179,40 @@ def get_upbit_ohlcv(
 
         df = pd.DataFrame(data)
 
-        df = df.iloc[::-1].reset_index(
+        # =====================================================
+        # 시간순 정렬
+        # =====================================================
+
+        df["candle_datetime"] = pd.to_datetime(
+            df["candle_date_time_kst"],
+            errors="coerce"
+        )
+
+        df = df.dropna(
+            subset=["candle_datetime"]
+        )
+
+        df = df.sort_values(
+            "candle_datetime"
+        )
+
+        df = df.drop_duplicates(
+            subset=["candle_datetime"]
+        )
+
+        df = df.reset_index(
             drop=True
         )
 
         df["trade_price"] = (
-            df["trade_price"]
-            .astype(float)
+            pd.to_numeric(
+                df["trade_price"],
+                errors="coerce"
+            )
+        )
+
+        df = df.dropna(
+            subset=["trade_price"]
         )
 
         return df
@@ -202,6 +229,12 @@ def get_upbit_ohlcv(
 # =========================================================
 # 업비트 4H 캔들
 # 미완성 캔들 제외
+#
+# 수정:
+# - 현재 진행 중인 4H 봉만 제거
+# - 시간 정렬
+# - 중복 제거
+# - 잘못된 가격 제거
 # =========================================================
 
 def get_upbit_4h_ohlcv(
@@ -232,13 +265,48 @@ def get_upbit_4h_ohlcv(
 
         df = pd.DataFrame(data)
 
-        df = df.iloc[::-1].reset_index(
-            drop=True
+        # =====================================================
+        # 시간 변환
+        # =====================================================
+
+        df["candle_datetime"] = pd.to_datetime(
+            df["candle_date_time_kst"],
+            errors="coerce"
         )
 
+        df = df.dropna(
+            subset=["candle_datetime"]
+        )
+
+        # =====================================================
+        # 시간순 정렬
+        # =====================================================
+
+        df = df.sort_values(
+            "candle_datetime"
+        )
+
+        # =====================================================
+        # 중복 제거
+        # =====================================================
+
+        df = df.drop_duplicates(
+            subset=["candle_datetime"]
+        )
+
+        # =====================================================
+        # 가격 숫자 변환
+        # =====================================================
+
         df["trade_price"] = (
-            df["trade_price"]
-            .astype(float)
+            pd.to_numeric(
+                df["trade_price"],
+                errors="coerce"
+            )
+        )
+
+        df = df.dropna(
+            subset=["trade_price"]
         )
 
         # =====================================================
@@ -263,23 +331,36 @@ def get_upbit_4h_ohlcv(
             )
         )
 
-        df["candle_datetime"] = pd.to_datetime(
-            df["candle_date_time_kst"]
-        ).dt.tz_localize(
-            "Asia/Seoul"
+        # candle_datetime은 KST naive
+        current_candle_start_naive = (
+            current_candle_start
+            .tz_localize(None)
         )
 
         df = df[
             df["candle_datetime"]
             <
-            current_candle_start
+            current_candle_start_naive
         ]
+
+        # =====================================================
+        # 최종 정렬
+        # =====================================================
+
+        df = df.sort_values(
+            "candle_datetime"
+        )
 
         df = df.reset_index(
             drop=True
         )
 
         if df.empty:
+
+            logging.warning(
+                f"업비트 4H 데이터 없음: {market}"
+            )
+
             return None
 
         return df
@@ -295,6 +376,10 @@ def get_upbit_4h_ohlcv(
 
 # =========================================================
 # 업비트 일봉
+# 미완성 일봉 제외
+#
+# 수정:
+# 현재 진행 중인 일봉 제거
 # =========================================================
 
 def get_upbit_day_ohlcv(
@@ -325,14 +410,86 @@ def get_upbit_day_ohlcv(
 
         df = pd.DataFrame(data)
 
-        df = df.iloc[::-1].reset_index(
+        # =====================================================
+        # 시간 변환
+        # =====================================================
+
+        df["candle_datetime"] = pd.to_datetime(
+            df["candle_date_time_kst"],
+            errors="coerce"
+        )
+
+        df = df.dropna(
+            subset=["candle_datetime"]
+        )
+
+        # =====================================================
+        # 정렬
+        # =====================================================
+
+        df = df.sort_values(
+            "candle_datetime"
+        )
+
+        df = df.drop_duplicates(
+            subset=["candle_datetime"]
+        )
+
+        # =====================================================
+        # 가격
+        # =====================================================
+
+        df["trade_price"] = (
+            pd.to_numeric(
+                df["trade_price"],
+                errors="coerce"
+            )
+        )
+
+        df = df.dropna(
+            subset=["trade_price"]
+        )
+
+        # =====================================================
+        # 현재 진행 중인 일봉 제외
+        #
+        # 업비트 일봉은 KST 기준 하루 단위
+        # =====================================================
+
+        now = pd.Timestamp.now(
+            tz="Asia/Seoul"
+        )
+
+        today_start = (
+            now.normalize()
+            .tz_localize(None)
+        )
+
+        df = df[
+            df["candle_datetime"]
+            <
+            today_start
+        ]
+
+        # =====================================================
+        # 최종 정렬
+        # =====================================================
+
+        df = df.sort_values(
+            "candle_datetime"
+        )
+
+        df = df.reset_index(
             drop=True
         )
 
-        df["trade_price"] = (
-            df["trade_price"]
-            .astype(float)
-        )
+        if df.empty:
+
+            logging.warning(
+                f"업비트 일봉 데이터 없음: {market}"
+            )
+
+            return None
 
         return df
 
@@ -836,10 +993,6 @@ def check_4h_warning(
         return "none"
 
 
-    # =====================================================
-    # 4H
-    # =====================================================
-
     ema4h_10_20 = get_ema_10_20_direction(
         df4h,
         column4h
@@ -849,11 +1002,6 @@ def check_4h_warning(
         df4h,
         column4h
     )
-
-
-    # =====================================================
-    # 1D
-    # =====================================================
 
     ema1d_10_20 = get_ema_10_20_direction(
         df1d,
@@ -936,29 +1084,15 @@ def check_4h_breakout_warning(
         return "none"
 
 
-    # =====================================================
-    # 4H 10-20 현재 방향 및 지속 캔들
-    # =====================================================
-
     count4h, direction4h = get_ema_10_20_count(
         df4h,
         column4h
     )
 
-
-    # =====================================================
-    # 4H 20-60-120
-    # =====================================================
-
     ema4h_20_60_120 = get_ema_20_60_120_direction(
         df4h,
         column4h
     )
-
-
-    # =====================================================
-    # 1D 10-20
-    # =====================================================
 
     ema1d_10_20 = get_ema_10_20_direction(
         df1d,
@@ -967,7 +1101,7 @@ def check_4h_breakout_warning(
 
 
     # =====================================================
-    # ⚡ 롱 돌파
+    # 롱 돌파
     # =====================================================
 
     if (
@@ -984,7 +1118,7 @@ def check_4h_breakout_warning(
 
 
     # =====================================================
-    # 💥 숏 돌파
+    # 숏 돌파
     # =====================================================
 
     if (
@@ -1005,6 +1139,7 @@ def check_4h_breakout_warning(
 
 # =========================================================
 # OKX 4H + 1D EMA
+# OKX 로직 그대로 유지
 # =========================================================
 
 def get_okx_4h_ema(
@@ -1070,65 +1205,132 @@ def get_okx_4h_ema(
 
 # =========================================================
 # 업비트 4H + 1D EMA
+#
+# 업비트 문제 수정 핵심
 # =========================================================
 
 def get_upbit_4h_ema(
     market
 ):
 
-    df4h = get_upbit_4h_ohlcv(
-        market,
-        200
-    )
+    try:
 
-    df1d = get_upbit_day_ohlcv(
-        market,
-        200
-    )
+        df4h = get_upbit_4h_ohlcv(
+            market,
+            200
+        )
 
-    return {
+        df1d = get_upbit_day_ohlcv(
+            market,
+            200
+        )
 
-        "4h_10_20":
-            check_ema_10_20(
-                df4h,
-                "trade_price"
-            ),
+        # =====================================================
+        # 데이터 상태 로그
+        # =====================================================
 
-        "4h_20_60_120":
-            check_ema(
-                df4h,
-                "trade_price"
-            ),
+        if df4h is None:
 
-        "1d_10_20":
-            check_ema_10_20(
-                df1d,
-                "trade_price"
-            ),
-
-        "1d_20_60_120":
-            check_ema(
-                df1d,
-                "trade_price"
-            ),
-
-        "warning":
-            check_4h_warning(
-                df4h,
-                "trade_price",
-                df1d,
-                "trade_price"
-            ),
-
-        "breakout":
-            check_4h_breakout_warning(
-                df4h,
-                "trade_price",
-                df1d,
-                "trade_price"
+            logging.warning(
+                f"{market} 업비트 4H 데이터 없음"
             )
 
-    }
+        else:
+
+            logging.info(
+                f"{market} 업비트 4H 캔들 {len(df4h)}개"
+            )
+
+
+        if df1d is None:
+
+            logging.warning(
+                f"{market} 업비트 1D 데이터 없음"
+            )
+
+        else:
+
+            logging.info(
+                f"{market} 업비트 1D 캔들 {len(df1d)}개"
+            )
+
+
+        return {
+
+            "4h_10_20":
+                check_ema_10_20(
+                    df4h,
+                    "trade_price"
+                ),
+
+            "4h_20_60_120":
+                check_ema(
+                    df4h,
+                    "trade_price"
+                ),
+
+            "1d_10_20":
+                check_ema_10_20(
+                    df1d,
+                    "trade_price"
+                ),
+
+            "1d_20_60_120":
+                check_ema(
+                    df1d,
+                    "trade_price"
+                ),
+
+            "warning":
+                check_4h_warning(
+                    df4h,
+                    "trade_price",
+                    df1d,
+                    "trade_price"
+                ),
+
+            "breakout":
+                check_4h_breakout_warning(
+                    df4h,
+                    "trade_price",
+                    df1d,
+                    "trade_price"
+                )
+
+        }
+
+    except Exception as e:
+
+        logging.error(
+            f"업비트 EMA 전체 오류 {market}: {e}"
+        )
+
+        # =====================================================
+        # 한 종목 오류가 전체 업데이트를
+        # 중단시키지 않도록 기본값 반환
+        # =====================================================
+
+        return {
+
+            "4h_10_20":
+                "⚪(0)",
+
+            "4h_20_60_120":
+                "⚪(0)",
+
+            "1d_10_20":
+                "⚪(0)",
+
+            "1d_20_60_120":
+                "⚪(0)",
+
+            "warning":
+                "none",
+
+            "breakout":
+                "none"
+
+        }
 
 
 # =========================================================
@@ -1423,7 +1625,6 @@ def warning_html(
 
 # =========================================================
 # 돌파 경고 HTML
-# 한글 "돌파" 제거
 # =========================================================
 
 def breakout_html(
@@ -1469,37 +1670,58 @@ def breakout_html(
 
 # =========================================================
 # EMA HTML
-#
-# 표시 순서
-#
-# 1. 돌파 경고 아이콘
-# 2. 4H 눌림 경고 + EMA
-# 3. 1D EMA
-#
-# "돌파" 한글은 표시하지 않음
 # =========================================================
 
 def ema_html(
     ema
 ):
 
+    # =====================================================
+    # 안전 처리
+    # =====================================================
+
+    if not isinstance(ema, dict):
+
+        ema = {
+
+            "4h_10_20":
+                "⚪(0)",
+
+            "4h_20_60_120":
+                "⚪(0)",
+
+            "1d_10_20":
+                "⚪(0)",
+
+            "1d_20_60_120":
+                "⚪(0)",
+
+            "warning":
+                "none",
+
+            "breakout":
+                "none"
+
+        }
+
+
     warning = warning_html(
-        ema["warning"]
+        ema.get(
+            "warning",
+            "none"
+        )
     )
 
     breakout = breakout_html(
-        ema["breakout"]
+        ema.get(
+            "breakout",
+            "none"
+        )
     )
 
     return f"""
 
 <div class="ema-display">
-
-
-    <!-- =================================================
-         돌파 경고
-         아이콘만 표시
-         ================================================= -->
 
     <div class="ema-period breakout-period">
 
@@ -1509,10 +1731,6 @@ def ema_html(
 
     </div>
 
-
-    <!-- =================================================
-         4H
-         ================================================= -->
 
     <div class="ema-period">
 
@@ -1525,19 +1743,21 @@ def ema_html(
         </span>
 
         <span class="ema-status">
-            {ema["4h_10_20"]}
+            {ema.get(
+                "4h_10_20",
+                "⚪(0)"
+            )}
         </span>
 
         <span class="ema-status">
-            {ema["4h_20_60_120"]}
+            {ema.get(
+                "4h_20_60_120",
+                "⚪(0)"
+            )}
         </span>
 
     </div>
 
-
-    <!-- =================================================
-         1D
-         ================================================= -->
 
     <div class="ema-period last">
 
@@ -1546,11 +1766,17 @@ def ema_html(
         </span>
 
         <span class="ema-status">
-            {ema["1d_10_20"]}
+            {ema.get(
+                "1d_10_20",
+                "⚪(0)"
+            )}
         </span>
 
         <span class="ema-status">
-            {ema["1d_20_60_120"]}
+            {ema.get(
+                "1d_20_60_120",
+                "⚪(0)"
+            )}
         </span>
 
     </div>
@@ -1563,6 +1789,7 @@ def ema_html(
 
 # =========================================================
 # OKX TOP15
+# OKX 로직 그대로 유지
 # =========================================================
 
 def update_okx():
@@ -1688,41 +1915,96 @@ def update_upbit():
 
     for market in top15:
 
-        coin = market.replace(
-            "KRW-",
-            ""
-        )
+        try:
 
-        changes = get_upbit_change(
-            market
-        )
+            coin = market.replace(
+                "KRW-",
+                ""
+            )
 
-        ema4h = get_upbit_4h_ema(
-            market
-        )
+            changes = get_upbit_change(
+                market
+            )
 
-        rows.append({
+            ema4h = get_upbit_4h_ema(
+                market
+            )
 
-            "rank":
-                rank,
+            rows.append({
 
-            "name":
-                coin,
+                "rank":
+                    rank,
 
-            "change":
-                format_change(changes),
+                "name":
+                    coin,
 
-            "volume":
-                format_volume(
-                    volume_map[market]
-                ),
+                "change":
+                    format_change(changes),
 
-            "ema4h":
-                ema4h
+                "volume":
+                    format_volume(
+                        volume_map[market]
+                    ),
 
-        })
+                "ema4h":
+                    ema4h
 
-        rank += 1
+            })
+
+            rank += 1
+
+        except Exception as e:
+
+            # =================================================
+            # 한 종목 오류가 전체 TOP15를 중단시키지 않음
+            # =================================================
+
+            logging.error(
+                f"업비트 종목 처리 오류 {market}: {e}"
+            )
+
+            # 기본 EMA 표시
+            rows.append({
+
+                "rank":
+                    rank,
+
+                "name":
+                    coin,
+
+                "change":
+                    format_change(None),
+
+                "volume":
+                    format_volume(
+                        volume_map[market]
+                    ),
+
+                "ema4h": {
+
+                    "4h_10_20":
+                        "⚪(0)",
+
+                    "4h_20_60_120":
+                        "⚪(0)",
+
+                    "1d_10_20":
+                        "⚪(0)",
+
+                    "1d_20_60_120":
+                        "⚪(0)",
+
+                    "warning":
+                        "none",
+
+                    "breakout":
+                        "none"
+
+                }
+
+            })
+
+            rank += 1
 
     latest_upbit_data = rows
 
@@ -1791,10 +2073,6 @@ OKX + UPBIT
 
 <style>
 
-/* =====================================================
-   전체
-   ===================================================== */
-
 body{
 
     background:#111;
@@ -1808,10 +2086,6 @@ body{
 }
 
 
-/* =====================================================
-   테이블
-   ===================================================== */
-
 table{
 
     width:auto;
@@ -1822,10 +2096,6 @@ table{
 
 }
 
-
-/* =====================================================
-   헤더
-   ===================================================== */
 
 th{
 
@@ -1846,10 +2116,6 @@ th:last-child{
 
 }
 
-
-/* =====================================================
-   일반 셀
-   ===================================================== */
 
 td{
 
@@ -1873,10 +2139,6 @@ td:last-child{
 }
 
 
-/* =====================================================
-   순위
-   ===================================================== */
-
 .rank-cell{
 
     width:45px;
@@ -1885,10 +2147,6 @@ td:last-child{
 
 }
 
-
-/* =====================================================
-   코인
-   ===================================================== */
 
 .coin-cell{
 
@@ -1900,10 +2158,6 @@ td:last-child{
 
 }
 
-
-/* =====================================================
-   거래대금
-   ===================================================== */
 
 .volume-cell{
 
@@ -1919,10 +2173,6 @@ td:last-child{
 
 }
 
-
-/* =====================================================
-   변동률
-   ===================================================== */
 
 .change-cell{
 
@@ -1980,10 +2230,6 @@ td:last-child{
 }
 
 
-/* =====================================================
-   EMA 전체
-   ===================================================== */
-
 .ema-display{
 
     display:flex;
@@ -2000,10 +2246,6 @@ td:last-child{
 
 }
 
-
-/* =====================================================
-   EMA 시간봉 그룹
-   ===================================================== */
 
 .ema-period{
 
@@ -2025,10 +2267,6 @@ td:last-child{
 }
 
 
-/* =====================================================
-   돌파 경고
-   ===================================================== */
-
 .breakout-period{
 
     min-width:65px;
@@ -2047,10 +2285,6 @@ td:last-child{
 }
 
 
-/* =====================================================
-   경고
-   ===================================================== */
-
 .ema-warning{
 
     display:inline-block;
@@ -2063,10 +2297,6 @@ td:last-child{
 
 }
 
-
-/* =====================================================
-   시간봉
-   ===================================================== */
 
 .ema-time{
 
@@ -2083,10 +2313,6 @@ td:last-child{
 }
 
 
-/* =====================================================
-   EMA 상태
-   ===================================================== */
-
 .ema-status{
 
     display:inline-block;
@@ -2100,10 +2326,6 @@ td:last-child{
 }
 
 
-/* =====================================================
-   섹션
-   ===================================================== */
-
 .section-title{
 
     margin-top:25px;
@@ -2116,10 +2338,6 @@ td:last-child{
 
 }
 
-
-/* =====================================================
-   행 hover
-   ===================================================== */
 
 tr:hover{
 
