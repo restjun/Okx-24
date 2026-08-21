@@ -1,2291 +1,2697 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
-import schedule
-import time
-import requests
-import threading
-import uvicorn
-import logging
-import pandas as pd
+from pydantic import BaseModel
 
+import requests
+import uuid
+import jwt
+import hashlib
+import logging
+import sqlite3
+import threading
+import time
+
+from datetime import datetime
+from urllib.parse import urlencode
+
+
+# =========================================================
+# FastAPI
+# =========================================================
 
 app = FastAPI()
 
 
+# =========================================================
+# 로그
+# =========================================================
+
 logging.basicConfig(
-    level=logging.INFO
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(message)s"
 )
+
+logger = logging.getLogger(__name__)
+
+
+# =========================================================
+# 업비트
+# =========================================================
+
+SERVER_URL = "https://api.upbit.com"
+
+REQUEST_TIMEOUT = 10
+
+ORDER_WAIT_TIMEOUT = 15
+
+ORDER_WAIT_INTERVAL = 0.5
+
+
+# =========================================================
+# SQLite
+# =========================================================
+
+DB_FILE = "trading.db"
+
+db_lock = threading.Lock()
 
 
 # =========================================================
 # 전역 데이터
 # =========================================================
 
-latest_okx_data = []
-latest_upbit_data = []
+latest_upbit_assets = []
+
+latest_upbit_total_krw = 0.0
+
+latest_upbit_krw = 0.0
+
+latest_upbit_available_krw = 0.0
+
+latest_upbit_update = "조회 전"
+
+latest_order_info = "주문 없음"
+
+latest_sell_result = None
+
+# 마지막 웹훅 발생 시간
+latest_webhook_time = "웹훅 없음"
 
 
 # =========================================================
-# API 재시도
+# TradingView Payload
 # =========================================================
 
-def retry_request(func, *args, **kwargs):
+class TradingViewPayload(BaseModel):
 
-    for attempt in range(10):
+    Action: str
 
-        try:
+    coin: str
 
-            result = func(
-                *args,
-                **kwargs
-            )
+    volume: float
 
-            if hasattr(result, "status_code"):
+    api_key: str
 
-                if result.status_code == 429:
-
-                    time.sleep(1)
-
-                    continue
-
-            return result
-
-        except Exception as e:
-
-            logging.error(
-                f"API 실패 {attempt + 1}/10 : {e}"
-            )
-
-            time.sleep(3)
-
-    return None
+    secret_key: str
 
 
 # =========================================================
-# OKX 캔들
-# 미완성 캔들 제외
+# DB 연결
 # =========================================================
 
-def get_okx_ohlcv(
-    inst_id,
-    bar="1H",
-    limit=200
+def get_db():
+
+    conn = sqlite3.connect(
+        DB_FILE,
+        timeout=30
+    )
+
+    conn.row_factory = sqlite3.Row
+
+    return conn
+
+
+# =========================================================
+# DB 초기화
+# =========================================================
+
+def init_db():
+
+    with db_lock:
+
+        conn = get_db()
+
+        cursor = conn.cursor()
+
+        # -------------------------------------------------
+        # 거래
+        # -------------------------------------------------
+
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS trades (
+
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+            uuid TEXT UNIQUE,
+
+            coin TEXT NOT NULL,
+
+            side TEXT NOT NULL,
+
+            order_amount REAL DEFAULT 0,
+
+            executed_funds REAL DEFAULT 0,
+
+            executed_volume REAL DEFAULT 0,
+
+            avg_price REAL DEFAULT 0,
+
+            fee REAL DEFAULT 0,
+
+            requested_ratio REAL DEFAULT 0,
+
+            created_at TEXT,
+
+            completed_at TEXT,
+
+            state TEXT,
+
+            realized_cost REAL DEFAULT 0,
+
+            realized_profit REAL DEFAULT 0,
+
+            realized_return REAL DEFAULT 0
+
+        )
+        """)
+
+        # -------------------------------------------------
+        # 매수 Lot
+        # -------------------------------------------------
+
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS buy_lots (
+
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+            trade_id INTEGER NOT NULL,
+
+            coin TEXT NOT NULL,
+
+            original_volume REAL NOT NULL,
+
+            remaining_volume REAL NOT NULL,
+
+            cost_per_unit REAL NOT NULL,
+
+            total_cost REAL NOT NULL,
+
+            fee REAL DEFAULT 0,
+
+            created_at TEXT,
+
+            FOREIGN KEY(trade_id)
+                REFERENCES trades(id)
+
+        )
+        """)
+
+        # -------------------------------------------------
+        # 매도와 매수 연결
+        # -------------------------------------------------
+
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS sell_allocations (
+
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+            sell_trade_id INTEGER NOT NULL,
+
+            buy_lot_id INTEGER NOT NULL,
+
+            volume REAL NOT NULL,
+
+            cost REAL NOT NULL,
+
+            FOREIGN KEY(sell_trade_id)
+                REFERENCES trades(id),
+
+            FOREIGN KEY(buy_lot_id)
+                REFERENCES buy_lots(id)
+
+        )
+        """)
+
+        conn.commit()
+
+        conn.close()
+
+
+# =========================================================
+# 코인명 정리
+# =========================================================
+
+def clean_coin_name(coin: str):
+
+    coin = str(coin).upper().strip()
+
+    coin = (
+        coin
+        .replace("USDT.P", "")
+        .replace("USDT", "")
+        .replace("KRW-", "")
+        .replace("KRW", "")
+        .strip()
+    )
+
+    return coin
+
+
+# =========================================================
+# 현재시간
+# =========================================================
+
+def now_string():
+
+    return datetime.now().strftime(
+        "%Y-%m-%d %H:%M:%S"
+    )
+
+
+# =========================================================
+# Query String
+# =========================================================
+
+def build_query_string(data: dict):
+
+    return urlencode(
+        data,
+        doseq=True
+    )
+
+
+# =========================================================
+# JWT
+# =========================================================
+
+def create_jwt(
+    api_key: str,
+    secret_key: str,
+    query_string: str = ""
 ):
 
-    url = (
-        "https://www.okx.com/api/v5/market/candles"
-        f"?instId={inst_id}"
-        f"&bar={bar}"
-        f"&limit={limit}"
+    payload = {
+        "access_key": api_key,
+        "nonce": str(uuid.uuid4())
+    }
+
+    if query_string:
+
+        query_hash = hashlib.sha512(
+            query_string.encode("utf-8")
+        ).hexdigest()
+
+        payload["query_hash"] = query_hash
+
+        payload["query_hash_alg"] = "SHA512"
+
+    token = jwt.encode(
+        payload,
+        secret_key,
+        algorithm="HS512"
     )
 
-    response = retry_request(
-        requests.get,
-        url
-    )
+    if isinstance(token, bytes):
 
-    if response is None:
-        return None
+        token = token.decode("utf-8")
 
-    try:
-
-        data = response.json()["data"]
-
-        if not data:
-            return None
-
-        df = pd.DataFrame(
-            data,
-            columns=[
-                "ts",
-                "o",
-                "h",
-                "l",
-                "c",
-                "vol",
-                "volCcy",
-                "volCcyQuote",
-                "confirm"
-            ]
-        )
-
-        df["c"] = df["c"].astype(float)
-
-        df["volCcyQuote"] = (
-            df["volCcyQuote"]
-            .astype(float)
-        )
-
-        # 미완성 캔들 제외
-        df = df[
-            df["confirm"].astype(str) == "1"
-        ]
-
-        if df.empty:
-            return None
-
-        df = df.iloc[::-1].reset_index(
-            drop=True
-        )
-
-        return df
-
-    except Exception as e:
-
-        logging.error(
-            f"OKX 오류 {inst_id}:{e}"
-        )
-
-        return None
+    return token
 
 
 # =========================================================
-# 업비트 분봉
+# 인증 Header
 # =========================================================
 
-def get_upbit_ohlcv(
-    market,
-    unit=240,
-    count=200
+def create_auth_headers(
+    api_key: str,
+    secret_key: str,
+    query_string: str = ""
 ):
 
-    url = (
-        "https://api.upbit.com/v1/candles/minutes/"
-        f"{unit}"
-        f"?market={market}"
-        f"&count={count}"
-    )
-
-    response = retry_request(
-        requests.get,
-        url
-    )
-
-    if response is None:
-        return None
-
-    try:
-
-        data = response.json()
-
-        if not data:
-            return None
-
-        df = pd.DataFrame(data)
-
-        df = df.iloc[::-1].reset_index(
-            drop=True
-        )
-
-        df["trade_price"] = (
-            df["trade_price"]
-            .astype(float)
-        )
-
-        return df
-
-    except Exception as e:
-
-        logging.error(
-            f"업비트 캔들 오류 {market}:{e}"
-        )
-
-        return None
-
-
-# =========================================================
-# 업비트 4H 캔들
-# 현재 진행 중인 4H 제외
-# =========================================================
-
-def get_upbit_4h_ohlcv(
-    market,
-    count=200
-):
-
-    url = (
-        "https://api.upbit.com/v1/candles/minutes/240"
-        f"?market={market}"
-        f"&count={count}"
-    )
-
-    response = retry_request(
-        requests.get,
-        url
-    )
-
-    if response is None:
-        return None
-
-    try:
-
-        data = response.json()
-
-        if not data:
-            return None
-
-        df = pd.DataFrame(data)
-
-        df = df.iloc[::-1].reset_index(
-            drop=True
-        )
-
-        df["trade_price"] = (
-            df["trade_price"]
-            .astype(float)
-        )
-
-        # =====================================================
-        # 현재 진행 중인 4시간봉 제외
-        # =====================================================
-
-        now = pd.Timestamp.now(
-            tz="Asia/Seoul"
-        )
-
-        current_hour = now.hour
-
-        candle_start_hour = (
-            current_hour // 4
-        ) * 4
-
-        current_candle_start = (
-            now.normalize()
-            +
-            pd.Timedelta(
-                hours=candle_start_hour
-            )
-        )
-
-        df["candle_datetime"] = pd.to_datetime(
-            df["candle_date_time_kst"]
-        ).dt.tz_localize(
-            "Asia/Seoul"
-        )
-
-        df = df[
-            df["candle_datetime"]
-            <
-            current_candle_start
-        ]
-
-        df = df.reset_index(
-            drop=True
-        )
-
-        if df.empty:
-            return None
-
-        return df
-
-    except Exception as e:
-
-        logging.error(
-            f"업비트 4H 오류 {market}:{e}"
-        )
-
-        return None
-
-
-# =========================================================
-# 업비트 일봉
-# =========================================================
-
-def get_upbit_day_ohlcv(
-    market,
-    count=200
-):
-
-    url = (
-        "https://api.upbit.com/v1/candles/days"
-        f"?market={market}"
-        f"&count={count}"
-    )
-
-    response = retry_request(
-        requests.get,
-        url
-    )
-
-    if response is None:
-        return None
-
-    try:
-
-        data = response.json()
-
-        if not data:
-            return None
-
-        df = pd.DataFrame(data)
-
-        df = df.iloc[::-1].reset_index(
-            drop=True
-        )
-
-        df["trade_price"] = (
-            df["trade_price"]
-            .astype(float)
-        )
-
-        return df
-
-    except Exception as e:
-
-        logging.error(
-            f"업비트 일봉 오류 {market}:{e}"
-        )
-
-        return None
-
-
-# =========================================================
-# OKX 목록
-# =========================================================
-
-def get_all_okx_swap_symbols():
-
-    url = (
-        "https://www.okx.com/api/v5/"
-        "public/instruments?instType=SWAP"
-    )
-
-    response = retry_request(
-        requests.get,
-        url
-    )
-
-    if response is None:
-        return []
-
-    try:
-
-        return [
-            x["instId"]
-            for x in response.json()["data"]
-            if (
-                x["instId"].endswith("-USDT-SWAP")
-                and
-                x.get("state") == "live"
-            )
-        ]
-
-    except Exception as e:
-
-        logging.error(
-            f"OKX 목록 오류:{e}"
-        )
-
-        return []
-
-
-# =========================================================
-# 업비트 목록
-# =========================================================
-
-def get_upbit_markets():
-
-    response = retry_request(
-        requests.get,
-        "https://api.upbit.com/v1/market/all"
-    )
-
-    if response is None:
-        return []
-
-    try:
-
-        return [
-            x["market"]
-            for x in response.json()
-            if x["market"].startswith("KRW-")
-        ]
-
-    except Exception as e:
-
-        logging.error(
-            f"업비트 목록 오류:{e}"
-        )
-
-        return []
-
-
-# =========================================================
-# USDT/KRW
-# =========================================================
-
-def get_usdt_krw():
-
-    response = retry_request(
-        requests.get,
-        "https://api.upbit.com/v1/ticker?markets=KRW-USDT"
-    )
-
-    if response is None:
-        return 1400
-
-    try:
-
-        return float(
-            response.json()[0]["trade_price"]
-        )
-
-    except:
-
-        return 1400
-
-
-# =========================================================
-# 거래대금 표시
-# =========================================================
-
-def format_volume(volume):
-
-    if volume >= 1_000_000_000_000:
-
-        return (
-            f"{volume / 1_000_000_000_000:.2f}조"
-        )
-
-    elif volume >= 100_000_000:
-
-        return (
-            f"{volume / 100_000_000:,.0f}억"
-        )
-
-    else:
-
-        return (
-            f"{volume / 10_000:,.0f}만원"
-        )
-
-
-# =========================================================
-# EMA 10-20 방향
-# =========================================================
-
-def get_ema_10_20_direction(
-    df,
-    column
-):
-
-    if df is None or len(df) < 20:
-        return "none"
-
-    ema10 = (
-        df[column]
-        .ewm(
-            span=10,
-            adjust=False
-        )
-        .mean()
-    )
-
-    ema20 = (
-        df[column]
-        .ewm(
-            span=20,
-            adjust=False
-        )
-        .mean()
-    )
-
-    if ema10.iloc[-1] > ema20.iloc[-1]:
-
-        return "long"
-
-    elif ema10.iloc[-1] < ema20.iloc[-1]:
-
-        return "short"
-
-    return "none"
-
-
-# =========================================================
-# EMA 20-60-120 방향
-# =========================================================
-
-def get_ema_20_60_120_direction(
-    df,
-    column
-):
-
-    if df is None or len(df) < 120:
-        return "none"
-
-    ema20 = (
-        df[column]
-        .ewm(
-            span=20,
-            adjust=False
-        )
-        .mean()
-    )
-
-    ema60 = (
-        df[column]
-        .ewm(
-            span=60,
-            adjust=False
-        )
-        .mean()
-    )
-
-    ema120 = (
-        df[column]
-        .ewm(
-            span=120,
-            adjust=False
-        )
-        .mean()
-    )
-
-    if (
-        ema20.iloc[-1]
-        >
-        ema60.iloc[-1]
-        >
-        ema120.iloc[-1]
-    ):
-
-        return "long"
-
-    elif (
-        ema20.iloc[-1]
-        <
-        ema60.iloc[-1]
-        <
-        ema120.iloc[-1]
-    ):
-
-        return "short"
-
-    return "none"
-
-
-# =========================================================
-# EMA 10-20 상태
-# =========================================================
-
-def check_ema_10_20(
-    df,
-    column
-):
-
-    if df is None or len(df) < 20:
-        return "⚪(0)"
-
-    df = df.copy()
-
-    df["ema10"] = (
-        df[column]
-        .ewm(
-            span=10,
-            adjust=False
-        )
-        .mean()
-    )
-
-    df["ema20"] = (
-        df[column]
-        .ewm(
-            span=20,
-            adjust=False
-        )
-        .mean()
-    )
-
-    states = []
-
-    for _, row in df.iterrows():
-
-        if row["ema10"] > row["ema20"]:
-
-            states.append("long")
-
-        elif row["ema10"] < row["ema20"]:
-
-            states.append("short")
-
-        else:
-
-            states.append("none")
-
-    current_state = states[-1]
-
-    if current_state == "none":
-        return "⚪(0)"
-
-    count = 0
-
-    for state in reversed(states):
-
-        if state == current_state:
-
-            count += 1
-
-        else:
-
-            break
-
-    if current_state == "long":
-
-        return f"🟢({count})"
-
-    elif current_state == "short":
-
-        return f"🔴({count})"
-
-    return "⚪(0)"
-
-
-# =========================================================
-# EMA 20-60-120 상태
-# =========================================================
-
-def check_ema(
-    df,
-    column
-):
-
-    if df is None or len(df) < 120:
-        return "⚪(0)"
-
-    df = df.copy()
-
-    df["ema20"] = (
-        df[column]
-        .ewm(
-            span=20,
-            adjust=False
-        )
-        .mean()
-    )
-
-    df["ema60"] = (
-        df[column]
-        .ewm(
-            span=60,
-            adjust=False
-        )
-        .mean()
-    )
-
-    df["ema120"] = (
-        df[column]
-        .ewm(
-            span=120,
-            adjust=False
-        )
-        .mean()
-    )
-
-    states = []
-
-    for _, row in df.iterrows():
-
-        if (
-            row["ema20"]
-            >
-            row["ema60"]
-            >
-            row["ema120"]
-        ):
-
-            states.append("long")
-
-        elif (
-            row["ema20"]
-            <
-            row["ema60"]
-            <
-            row["ema120"]
-        ):
-
-            states.append("short")
-
-        else:
-
-            states.append("none")
-
-    current_state = states[-1]
-
-    if current_state == "none":
-        return "⚪(0)"
-
-    count = 0
-
-    for state in reversed(states):
-
-        if state == current_state:
-
-            count += 1
-
-        else:
-
-            break
-
-    if current_state == "long":
-
-        return f"🟢({count})"
-
-    elif current_state == "short":
-
-        return f"🔴({count})"
-
-    return "⚪(0)"
-
-
-# =========================================================
-# EMA 10-20 지속 캔들 수
-# =========================================================
-
-def get_ema_10_20_count(
-    df,
-    column
-):
-
-    if df is None or len(df) < 20:
-
-        return 0, "none"
-
-    df = df.copy()
-
-    df["ema10"] = (
-        df[column]
-        .ewm(
-            span=10,
-            adjust=False
-        )
-        .mean()
-    )
-
-    df["ema20"] = (
-        df[column]
-        .ewm(
-            span=20,
-            adjust=False
-        )
-        .mean()
-    )
-
-    states = []
-
-    for _, row in df.iterrows():
-
-        if row["ema10"] > row["ema20"]:
-
-            states.append("long")
-
-        elif row["ema10"] < row["ema20"]:
-
-            states.append("short")
-
-        else:
-
-            states.append("none")
-
-    current_state = states[-1]
-
-    if current_state == "none":
-
-        return 0, "none"
-
-    count = 0
-
-    for state in reversed(states):
-
-        if state == current_state:
-
-            count += 1
-
-        else:
-
-            break
-
-    return count, current_state
-
-
-# =========================================================
-# 4H 눌림 경고
-#
-# 일봉 조건 제거
-#
-# 롱:
-# 4H 10-20 역배열
-# 4H 20-60-120 정배열
-#
-# 숏:
-# 4H 10-20 정배열
-# 4H 20-60-120 역배열
-# =========================================================
-
-def check_4h_warning(
-    df4h,
-    column4h
-):
-
-    if (
-        df4h is None
-        or len(df4h) < 120
-    ):
-
-        return "none"
-
-
-    ema4h_10_20 = get_ema_10_20_direction(
-        df4h,
-        column4h
-    )
-
-    ema4h_20_60_120 = (
-        get_ema_20_60_120_direction(
-            df4h,
-            column4h
-        )
-    )
-
-
-    # =====================================================
-    # 롱 눌림
-    # =====================================================
-
-    if (
-        ema4h_10_20 == "short"
-        and
-        ema4h_20_60_120 == "long"
-    ):
-
-        return "long_warning_1"
-
-
-    # =====================================================
-    # 숏 눌림
-    # =====================================================
-
-    if (
-        ema4h_10_20 == "long"
-        and
-        ema4h_20_60_120 == "short"
-    ):
-
-        return "short_warning_1"
-
-
-    return "none"
-
-
-# =========================================================
-# 4H 돌파 경고
-#
-# 일봉 20-60-120 조건 사용 안 함
-#
-# 롱:
-# 4H 10-20 정배열
-# 4H 20-60-120 정배열
-# 10-20 정배열 지속 10봉 이하
-#
-# 숏:
-# 4H 10-20 역배열
-# 4H 20-60-120 역배열
-# 10-20 역배열 지속 10봉 이하
-# =========================================================
-
-def check_4h_breakout_warning(
-    df4h,
-    column4h
-):
-
-    if (
-        df4h is None
-        or len(df4h) < 120
-    ):
-
-        return "none"
-
-
-    count4h, direction4h = (
-        get_ema_10_20_count(
-            df4h,
-            column4h
-        )
-    )
-
-
-    ema4h_20_60_120 = (
-        get_ema_20_60_120_direction(
-            df4h,
-            column4h
-        )
-    )
-
-
-    # =====================================================
-    # 롱 돌파
-    # =====================================================
-
-    if (
-        direction4h == "long"
-        and
-        ema4h_20_60_120 == "long"
-        and
-        count4h <= 10
-    ):
-
-        return f"long_breakout_{count4h}"
-
-
-    # =====================================================
-    # 숏 돌파
-    # =====================================================
-
-    if (
-        direction4h == "short"
-        and
-        ema4h_20_60_120 == "short"
-        and
-        count4h <= 10
-    ):
-
-        return f"short_breakout_{count4h}"
-
-
-    return "none"
-
-
-# =========================================================
-# OKX 4H + 1D EMA
-# =========================================================
-
-def get_okx_4h_ema(
-    inst_id
-):
-
-    df4h = get_okx_ohlcv(
-        inst_id,
-        "4H",
-        200
-    )
-
-    df1d = get_okx_ohlcv(
-        inst_id,
-        "1D",
-        200
+    token = create_jwt(
+        api_key,
+        secret_key,
+        query_string
     )
 
     return {
-
-        "4h_10_20":
-            check_ema_10_20(
-                df4h,
-                "c"
-            ),
-
-        "4h_20_60_120":
-            check_ema(
-                df4h,
-                "c"
-            ),
-
-        "1d_10_20":
-            check_ema_10_20(
-                df1d,
-                "c"
-            ),
-
-        "1d_20_60_120":
-            check_ema(
-                df1d,
-                "c"
-            ),
-
-        "warning":
-            check_4h_warning(
-                df4h,
-                "c"
-            ),
-
-        "breakout":
-            check_4h_breakout_warning(
-                df4h,
-                "c"
-            )
-
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json",
+        "Content-Type": "application/json"
     }
 
 
 # =========================================================
-# 업비트 4H + 1D EMA
-# OKX와 동일한 경고 로직 사용
+# 오류 응답
 # =========================================================
 
-def get_upbit_4h_ema(
-    market
-):
-
-    df4h = get_upbit_4h_ohlcv(
-        market,
-        200
-    )
-
-    df1d = get_upbit_day_ohlcv(
-        market,
-        200
-    )
-
-    return {
-
-        "4h_10_20":
-            check_ema_10_20(
-                df4h,
-                "trade_price"
-            ),
-
-        "4h_20_60_120":
-            check_ema(
-                df4h,
-                "trade_price"
-            ),
-
-        "1d_10_20":
-            check_ema_10_20(
-                df1d,
-                "trade_price"
-            ),
-
-        "1d_20_60_120":
-            check_ema(
-                df1d,
-                "trade_price"
-            ),
-
-        "warning":
-            check_4h_warning(
-                df4h,
-                "trade_price"
-            ),
-
-        "breakout":
-            check_4h_breakout_warning(
-                df4h,
-                "trade_price"
-            )
-
-    }
-
-
-# =========================================================
-# OKX 24시간 거래대금
-# =========================================================
-
-def get_okx_volume(
-    inst_id
-):
-
-    df = get_okx_ohlcv(
-        inst_id,
-        "1H",
-        24
-    )
-
-    if df is None:
-        return 0
-
-    return df[
-        "volCcyQuote"
-    ].sum()
-
-
-# =========================================================
-# 업비트 24시간 거래대금
-# =========================================================
-
-def get_upbit_volume_map():
-
-    markets = get_upbit_markets()
-
-    if not markets:
-        return {}
-
-    response = retry_request(
-        requests.get,
-        "https://api.upbit.com/v1/ticker?markets="
-        +
-        ",".join(markets)
-    )
-
-    if response is None:
-        return {}
+def get_error_detail(response):
 
     try:
+
+        return response.json()
+
+    except Exception:
 
         return {
-
-            x["market"]:
-            x["acc_trade_price_24h"]
-
-            for x in response.json()
-
+            "status_code": response.status_code,
+            "text": response.text
         }
+
+
+# =========================================================
+# 현재가
+# =========================================================
+
+def get_ticker_price(market: str):
+
+    try:
+
+        response = requests.get(
+            f"{SERVER_URL}/v1/ticker",
+            params={
+                "markets": market
+            },
+            timeout=REQUEST_TIMEOUT
+        )
+
+        if response.status_code != 200:
+
+            logger.error(
+                f"Ticker error | "
+                f"{market} | "
+                f"{response.status_code}"
+            )
+
+            return 0.0
+
+        data = response.json()
+
+        if not data:
+
+            return 0.0
+
+        return float(
+            data[0]["trade_price"]
+        )
 
     except Exception as e:
 
-        logging.error(
-            f"업비트 거래대금 오류:{e}"
+        logger.error(
+            f"Ticker exception | "
+            f"{market} | {e}"
         )
 
-        return {}
+        return 0.0
 
 
 # =========================================================
-# OKX 변동률
+# 업비트 자산조회
+#
+# 중요:
+# balance = 총 잔고
+# locked = 주문 등에 잠긴 잔고
+# available = 실제 주문 가능한 잔고
 # =========================================================
 
-def get_okx_change(
-    inst_id
+def fetch_upbit_assets(
+    api_key: str,
+    secret_key: str
 ):
 
-    df = get_okx_ohlcv(
-        inst_id,
-        "1H",
-        120
+    global latest_upbit_assets
+    global latest_upbit_total_krw
+    global latest_upbit_krw
+    global latest_upbit_available_krw
+    global latest_upbit_update
+
+    headers = create_auth_headers(
+        api_key,
+        secret_key
     )
 
-    if df is None or len(df) < 50:
-        return None
+    try:
 
-    df = df.copy()
-
-    df["datetime"] = (
-        pd.to_datetime(
-            df["ts"],
-            unit="ms"
-        )
-        +
-        pd.Timedelta(hours=9)
-    )
-
-    df.set_index(
-        "datetime",
-        inplace=True
-    )
-
-    daily = (
-        df["c"]
-        .resample(
-            "1D",
-            offset="9h"
-        )
-        .last()
-    )
-
-    if len(daily) < 5:
-        return None
-
-    result = []
-
-    for i in [-1, -2, -3]:
-
-        if daily.iloc[i - 1] == 0:
-
-            result.append(0)
-
-            continue
-
-        change = (
-            (
-                daily.iloc[i]
-                -
-                daily.iloc[i - 1]
-            )
-            /
-            daily.iloc[i - 1]
-            *
-            100
+        response = requests.get(
+            SERVER_URL + "/v1/accounts",
+            headers=headers,
+            timeout=REQUEST_TIMEOUT
         )
 
-        result.append(
-            round(change, 2)
+    except requests.RequestException as e:
+
+        logger.error(
+            f"Account request failed: {e}"
         )
 
-    return result
+        return -1
 
+    if response.status_code != 200:
 
-# =========================================================
-# 업비트 변동률
-# =========================================================
-
-def get_upbit_change(
-    market
-):
-
-    df = get_upbit_ohlcv(
-        market,
-        60,
-        120
-    )
-
-    if df is None or len(df) < 50:
-        return None
-
-    df = df.copy()
-
-    df["datetime"] = pd.to_datetime(
-        df["candle_date_time_kst"]
-    )
-
-    df.set_index(
-        "datetime",
-        inplace=True
-    )
-
-    daily = (
-        df["trade_price"]
-        .resample(
-            "1D",
-            offset="9h"
-        )
-        .last()
-    )
-
-    if len(daily) < 5:
-        return None
-
-    result = []
-
-    for i in [-1, -2, -3]:
-
-        if daily.iloc[i - 1] == 0:
-
-            result.append(0)
-
-            continue
-
-        change = (
-            (
-                daily.iloc[i]
-                -
-                daily.iloc[i - 1]
-            )
-            /
-            daily.iloc[i - 1]
-            *
-            100
+        logger.error(
+            f"Account fetch failed | "
+            f"{response.status_code} | "
+            f"{response.text}"
         )
 
-        result.append(
-            round(change, 2)
-        )
+        return -1
 
-    return result
+    accounts = response.json()
 
+    assets = []
 
-# =========================================================
-# 변동률 표시
-# =========================================================
+    total_krw = 0.0
 
-def format_change(
-    changes
-):
+    krw_balance = 0.0
 
-    if changes is None or len(changes) == 0:
-        return "N/A"
+    krw_locked = 0.0
 
-    x = changes[0]
+    for account in accounts:
 
-    if x > 0:
-
-        color = "🟩"
-        sign = "+"
-
-    elif x < 0:
-
-        color = "🟥"
-        sign = ""
-
-    else:
-
-        color = "⬜️"
-        sign = ""
-
-    return f"""
-    <span class="change-item">
-
-        <span class="change-icon">
-            {color}
-        </span>
-
-        <span class="change-value">
-            {sign}{x:.2f}%
-        </span>
-
-    </span>
-    """
-
-
-# =========================================================
-# 눌림 경고 HTML
-# =========================================================
-
-def warning_html(
-    warning
-):
-
-    if warning.startswith(
-        "long_warning_"
-    ):
-
-        try:
-
-            count = int(
-                warning.split("_")[-1]
-            )
-
-        except:
-
-            count = 0
-
-        return "🚀🚀" * count
-
-
-    elif warning.startswith(
-        "short_warning_"
-    ):
-
-        try:
-
-            count = int(
-                warning.split("_")[-1]
-            )
-
-        except:
-
-            count = 0
-
-        return "🚨🚨" * count
-
-
-    return ""
-
-
-# =========================================================
-# 돌파 경고 HTML
-# =========================================================
-
-def breakout_html(
-    breakout
-):
-
-    if breakout.startswith(
-        "long_breakout_"
-    ):
-
-        try:
-
-            count = int(
-                breakout.split("_")[-1]
-            )
-
-        except:
-
-            count = 0
-
-        return f"⚡({count})"
-
-
-    elif breakout.startswith(
-        "short_breakout_"
-    ):
-
-        try:
-
-            count = int(
-                breakout.split("_")[-1]
-            )
-
-        except:
-
-            count = 0
-
-        return f"💥({count})"
-
-
-    return ""
-
-
-# =========================================================
-# EMA HTML
-# =========================================================
-
-def ema_html(
-    ema
-):
-
-    warning = warning_html(
-        ema["warning"]
-    )
-
-    breakout = breakout_html(
-        ema["breakout"]
-    )
-
-    return f"""
-
-<div class="ema-display">
-
-
-    <!-- 돌파 -->
-
-    <div class="ema-period breakout-period">
-
-        <span class="ema-warning breakout-warning">
-            {breakout}
-        </span>
-
-    </div>
-
-
-    <!-- 4H -->
-
-    <div class="ema-period">
-
-        <span class="ema-warning warning-size">
-            {warning}
-        </span>
-
-        <span class="ema-time">
-            4H
-        </span>
-
-        <span class="ema-status">
-            {ema["4h_10_20"]}
-        </span>
-
-        <span class="ema-status">
-            {ema["4h_20_60_120"]}
-        </span>
-
-    </div>
-
-
-    <!-- 1D -->
-
-    <div class="ema-period last">
-
-        <span class="ema-time">
-            1D
-        </span>
-
-        <span class="ema-status">
-            {ema["1d_10_20"]}
-        </span>
-
-        <span class="ema-status">
-            {ema["1d_20_60_120"]}
-        </span>
-
-    </div>
-
-
-</div>
-
-"""
-
-
-# =========================================================
-# OKX TOP15
-# =========================================================
-
-def update_okx():
-
-    global latest_okx_data
-
-    logging.info(
-        "OKX TOP15 시작"
-    )
-
-    symbols = get_all_okx_swap_symbols()
-
-    usdt_krw = get_usdt_krw()
-
-    upbit_coin_set = {
-
-        market.replace(
-            "KRW-",
+        currency = account.get(
+            "currency",
             ""
         )
 
-        for market in get_upbit_markets()
+        balance = float(
+            account.get(
+                "balance",
+                0
+            )
+        )
+
+        locked = float(
+            account.get(
+                "locked",
+                0
+            )
+        )
+
+        avg_buy_price = float(
+            account.get(
+                "avg_buy_price",
+                0
+            )
+        )
+
+        # -------------------------------------------------
+        # KRW
+        # -------------------------------------------------
+
+        if currency == "KRW":
+
+            krw_balance = balance
+
+            krw_locked = locked
+
+            available_krw = max(
+                balance - locked,
+                0
+            )
+
+            total_krw += balance
+
+            assets.append({
+
+                "currency": "KRW",
+
+                "balance": balance,
+
+                "locked": locked,
+
+                "available": available_krw,
+
+                "avg_buy_price": 0,
+
+                "current_price": 1,
+
+                "evaluation_krw": balance,
+
+                "market": "KRW"
+
+            })
+
+            continue
+
+        # -------------------------------------------------
+        # 잔고 없는 코인은 제외
+        # -------------------------------------------------
+
+        if balance <= 0 and locked <= 0:
+
+            continue
+
+        market = f"KRW-{currency}"
+
+        current_price = get_ticker_price(
+            market
+        )
+
+        evaluation = 0.0
+
+        if current_price > 0:
+
+            evaluation = (
+                balance *
+                current_price
+            )
+
+            total_krw += evaluation
+
+        available = max(
+            balance - locked,
+            0
+        )
+
+        assets.append({
+
+            "currency": currency,
+
+            "balance": balance,
+
+            "locked": locked,
+
+            "available": available,
+
+            "avg_buy_price": avg_buy_price,
+
+            "current_price": current_price,
+
+            "evaluation_krw": evaluation,
+
+            "market": market
+
+        })
+
+    # -----------------------------------------------------
+    # 평가금액 순
+    # -----------------------------------------------------
+
+    assets.sort(
+        key=lambda x: (
+            0
+            if x["currency"] == "KRW"
+            else 1,
+            -x["evaluation_krw"]
+        )
+    )
+
+    latest_upbit_assets = assets
+
+    latest_upbit_total_krw = total_krw
+
+    latest_upbit_krw = krw_balance
+
+    latest_upbit_available_krw = max(
+        krw_balance - krw_locked,
+        0
+    )
+
+    latest_upbit_update = now_string()
+
+    logger.info(
+        f"Assets updated | "
+        f"Total={total_krw:,.0f} KRW | "
+        f"Available KRW="
+        f"{latest_upbit_available_krw:,.0f}"
+    )
+
+    return total_krw
+
+
+# =========================================================
+# 주문 가능한 KRW
+# =========================================================
+
+def get_available_krw(
+    api_key: str,
+    secret_key: str
+):
+
+    headers = create_auth_headers(
+        api_key,
+        secret_key
+    )
+
+    try:
+
+        response = requests.get(
+            SERVER_URL + "/v1/accounts",
+            headers=headers,
+            timeout=REQUEST_TIMEOUT
+        )
+
+    except requests.RequestException as e:
+
+        raise HTTPException(
+            status_code=502,
+            detail=str(e)
+        )
+
+    if response.status_code != 200:
+
+        raise HTTPException(
+            status_code=response.status_code,
+            detail=get_error_detail(response)
+        )
+
+    for account in response.json():
+
+        if account.get("currency") == "KRW":
+
+            balance = float(
+                account.get(
+                    "balance",
+                    0
+                )
+            )
+
+            locked = float(
+                account.get(
+                    "locked",
+                    0
+                )
+            )
+
+            return max(
+                balance - locked,
+                0
+            )
+
+    return 0.0
+
+
+# =========================================================
+# 주문 가능한 코인 잔고
+# =========================================================
+
+def get_available_coin_balance(
+    coin: str,
+    api_key: str,
+    secret_key: str
+):
+
+    coin = clean_coin_name(coin)
+
+    headers = create_auth_headers(
+        api_key,
+        secret_key
+    )
+
+    try:
+
+        response = requests.get(
+            SERVER_URL + "/v1/accounts",
+            headers=headers,
+            timeout=REQUEST_TIMEOUT
+        )
+
+    except requests.RequestException as e:
+
+        raise HTTPException(
+            status_code=502,
+            detail=str(e)
+        )
+
+    if response.status_code != 200:
+
+        raise HTTPException(
+            status_code=response.status_code,
+            detail=get_error_detail(response)
+        )
+
+    for account in response.json():
+
+        if account.get("currency") == coin:
+
+            balance = float(
+                account.get(
+                    "balance",
+                    0
+                )
+            )
+
+            locked = float(
+                account.get(
+                    "locked",
+                    0
+                )
+            )
+
+            return max(
+                balance - locked,
+                0
+            )
+
+    return 0.0
+
+
+# =========================================================
+# 주문 생성 - 매수
+# =========================================================
+
+def place_bid_order(
+    coin: str,
+    krw_amount: float,
+    api_key: str,
+    secret_key: str
+):
+
+    coin = clean_coin_name(coin)
+
+    query = {
+
+        "market": f"KRW-{coin}",
+
+        "side": "bid",
+
+        "price": str(krw_amount),
+
+        "ord_type": "price"
 
     }
 
-    volume_map = {}
-
-    for symbol in symbols:
-
-        volume_map[symbol] = (
-            get_okx_volume(symbol)
-            *
-            usdt_krw
-            /
-            10
-        )
-
-    top15 = sorted(
-        volume_map,
-        key=volume_map.get,
-        reverse=True
-    )[:20]
-
-    rows = []
-
-    rank = 1
-
-    for symbol in top15:
-
-        coin = symbol.replace(
-            "-USDT-SWAP",
-            ""
-        )
-
-        if coin in upbit_coin_set:
-
-            coin = f"{coin}(업비트)"
-
-        changes = get_okx_change(
-            symbol
-        )
-
-        ema4h = get_okx_4h_ema(
-            symbol
-        )
-
-        rows.append({
-
-            "rank":
-                rank,
-
-            "name":
-                coin,
-
-            "change":
-                format_change(changes),
-
-            "volume":
-                format_volume(
-                    volume_map[symbol]
-                ),
-
-            "ema4h":
-                ema4h
-
-        })
-
-        rank += 1
-
-    latest_okx_data = rows
-
-    logging.info(
-        "OKX 완료"
+    query_string = build_query_string(
+        query
     )
 
-
-# =========================================================
-# 업비트 TOP15
-# =========================================================
-
-def update_upbit():
-
-    global latest_upbit_data
-
-    logging.info(
-        "업비트 TOP15 시작"
+    headers = create_auth_headers(
+        api_key,
+        secret_key,
+        query_string
     )
 
-    volume_map = get_upbit_volume_map()
+    try:
 
-    if not volume_map:
-        return
+        response = requests.post(
 
-    top15 = sorted(
-        volume_map,
-        key=volume_map.get,
-        reverse=True
-    )[:20]
+            SERVER_URL + "/v1/orders",
 
-    rows = []
+            json=query,
 
-    rank = 1
+            headers=headers,
 
-    for market in top15:
+            timeout=REQUEST_TIMEOUT
 
-        coin = market.replace(
-            "KRW-",
-            ""
         )
 
-        changes = get_upbit_change(
-            market
+    except requests.RequestException as e:
+
+        raise HTTPException(
+            status_code=502,
+            detail=str(e)
         )
 
-        ema4h = get_upbit_4h_ema(
-            market
+    if response.status_code not in (200, 201):
+
+        raise HTTPException(
+
+            status_code=response.status_code,
+
+            detail=get_error_detail(response)
+
         )
 
-        rows.append({
+    return response.json()
 
-            "rank":
-                rank,
 
-            "name":
-                coin,
+# =========================================================
+# 주문 생성 - 매도
+# =========================================================
 
-            "change":
-                format_change(changes),
+def place_ask_order(
+    coin: str,
+    ratio: float,
+    api_key: str,
+    secret_key: str
+):
 
-            "volume":
-                format_volume(
-                    volume_map[market]
-                ),
+    coin = clean_coin_name(coin)
 
-            "ema4h":
-                ema4h
+    # -----------------------------------------------------
+    # 실제 현재 주문 가능한 코인 잔고 조회
+    # -----------------------------------------------------
 
-        })
+    coin_amount = get_available_coin_balance(
 
-        rank += 1
+        coin,
 
-    latest_upbit_data = rows
+        api_key,
 
-    logging.info(
-        "업비트 완료"
+        secret_key
+
     )
 
+    if coin_amount <= 0:
 
-# =========================================================
-# 전체 업데이트
-# =========================================================
+        raise HTTPException(
 
-def update_dashboard():
+            status_code=400,
 
-    logging.info(
-        "전체 조회 시작"
+            detail=f"No available balance for {coin}"
+
+        )
+
+    # -----------------------------------------------------
+    # 가용잔고 × 매도비율
+    # -----------------------------------------------------
+
+    sell_volume = (
+
+        coin_amount *
+        ratio
+
     )
 
-    update_okx()
+    if sell_volume <= 0:
 
-    update_upbit()
+        raise HTTPException(
 
-    logging.info(
-        "전체 업데이트 완료"
+            status_code=400,
+
+            detail="Sell volume is zero"
+
+        )
+
+    logger.info(
+
+        f"SELL calculation | "
+        f"{coin} | "
+        f"available={coin_amount:.12f} | "
+        f"ratio={ratio * 100:.2f}% | "
+        f"sell={sell_volume:.12f}"
+
     )
 
+    query = {
+
+        "market": f"KRW-{coin}",
+
+        "side": "ask",
+
+        "volume": str(sell_volume),
+
+        "ord_type": "market"
+
+    }
+
+    query_string = build_query_string(
+        query
+    )
+
+    headers = create_auth_headers(
+
+        api_key,
+
+        secret_key,
+
+        query_string
+
+    )
+
+    try:
+
+        response = requests.post(
+
+            SERVER_URL + "/v1/orders",
+
+            json=query,
+
+            headers=headers,
+
+            timeout=REQUEST_TIMEOUT
+
+        )
+
+    except requests.RequestException as e:
+
+        raise HTTPException(
+
+            status_code=502,
+
+            detail=str(e)
+
+        )
+
+    if response.status_code not in (200, 201):
+
+        raise HTTPException(
+
+            status_code=response.status_code,
+
+            detail=get_error_detail(response)
+
+        )
+
+    return response.json()
+
 
 # =========================================================
-# 스케줄러
+# 주문 체결 결과 조회
 # =========================================================
 
-def scheduler():
+def wait_for_order_complete(
+    order_uuid: str,
+    api_key: str,
+    secret_key: str
+):
+
+    start_time = time.time()
 
     while True:
 
-        schedule.run_pending()
+        query = {
+            "uuid": order_uuid
+        }
 
-        time.sleep(1)
+        query_string = build_query_string(
+            query
+        )
+
+        headers = create_auth_headers(
+
+            api_key,
+
+            secret_key,
+
+            query_string
+
+        )
+
+        try:
+
+            response = requests.get(
+
+                SERVER_URL + "/v1/order",
+
+                params=query,
+
+                headers=headers,
+
+                timeout=REQUEST_TIMEOUT
+
+            )
+
+        except requests.RequestException as e:
+
+            logger.error(
+                f"Order query failed: {e}"
+            )
+
+            time.sleep(
+                ORDER_WAIT_INTERVAL
+            )
+
+            continue
+
+        if response.status_code != 200:
+
+            logger.error(
+                f"Order query error | "
+                f"{response.status_code} | "
+                f"{response.text}"
+            )
+
+            time.sleep(
+                ORDER_WAIT_INTERVAL
+            )
+
+            continue
+
+        order = response.json()
+
+        state = order.get(
+            "state",
+            ""
+        )
+
+        logger.info(
+            f"Order {order_uuid} | "
+            f"state={state}"
+        )
+
+        if state in (
+            "done",
+            "cancel"
+        ):
+
+            return order
+
+        if (
+            time.time() - start_time
+            >= ORDER_WAIT_TIMEOUT
+        ):
+
+            return order
+
+        time.sleep(
+            ORDER_WAIT_INTERVAL
+        )
 
 
 # =========================================================
-# 웹 대시보드
+# 주문 체결 데이터 계산
 # =========================================================
 
-@app.get(
-    "/",
-    response_class=HTMLResponse
-)
-def dashboard():
+def parse_order_result(order):
 
-    html = """
+    executed_volume = float(
+        order.get(
+            "executed_volume",
+            0
+        )
+    )
 
-<html>
+    executed_funds = float(
+        order.get(
+            "executed_funds",
+            0
+        )
+    )
+
+    paid_fee = float(
+        order.get(
+            "paid_fee",
+            0
+        )
+    )
+
+    if executed_volume > 0:
+
+        avg_price = (
+            executed_funds /
+            executed_volume
+        )
+
+    else:
+
+        avg_price = 0.0
+
+    return {
+
+        "uuid":
+            order.get("uuid"),
+
+        "market":
+            order.get("market"),
+
+        "side":
+            order.get("side"),
+
+        "state":
+            order.get("state"),
+
+        "executed_volume":
+            executed_volume,
+
+        "executed_funds":
+            executed_funds,
+
+        "paid_fee":
+            paid_fee,
+
+        "avg_price":
+            avg_price,
+
+        "created_at":
+            order.get("created_at"),
+
+        "trades":
+            order.get("trades", [])
+
+    }
+
+
+# =========================================================
+# 매수 기록 DB 저장
+# =========================================================
+
+def save_buy_trade(
+    result,
+    requested_amount,
+    ratio
+):
+
+    coin = result["market"].replace(
+        "KRW-",
+        ""
+    )
+
+    created_at = (
+        result["created_at"]
+        or now_string()
+    )
+
+    completed_at = now_string()
+
+    with db_lock:
+
+        conn = get_db()
+
+        cursor = conn.cursor()
+
+        cursor.execute("""
+        INSERT INTO trades (
+
+            uuid,
+            coin,
+            side,
+            order_amount,
+            executed_funds,
+            executed_volume,
+            avg_price,
+            fee,
+            requested_ratio,
+            created_at,
+            completed_at,
+            state
+
+        )
+
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+
+        """, (
+
+            result["uuid"],
+
+            coin,
+
+            "buy",
+
+            requested_amount,
+
+            result["executed_funds"],
+
+            result["executed_volume"],
+
+            result["avg_price"],
+
+            result["paid_fee"],
+
+            ratio,
+
+            created_at,
+
+            completed_at,
+
+            result["state"]
+
+        ))
+
+        trade_id = cursor.lastrowid
+
+        # -------------------------------------------------
+        # 실제 매수원가
+        #
+        # 매수금액 + 매수수수료
+        # -------------------------------------------------
+
+        total_cost = (
+            result["executed_funds"]
+            + result["paid_fee"]
+        )
+
+        cost_per_unit = (
+
+            total_cost /
+            result["executed_volume"]
+
+            if result["executed_volume"] > 0
+
+            else 0
+
+        )
+
+        cursor.execute("""
+        INSERT INTO buy_lots (
+
+            trade_id,
+            coin,
+            original_volume,
+            remaining_volume,
+            cost_per_unit,
+            total_cost,
+            fee,
+            created_at
+
+        )
+
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+
+        """, (
+
+            trade_id,
+
+            coin,
+
+            result["executed_volume"],
+
+            result["executed_volume"],
+
+            cost_per_unit,
+
+            total_cost,
+
+            result["paid_fee"],
+
+            completed_at
+
+        ))
+
+        conn.commit()
+
+        conn.close()
+
+    logger.info(
+
+        f"BUY saved | "
+        f"{coin} | "
+        f"executed="
+        f"{result['executed_funds']:,.0f} KRW | "
+        f"volume="
+        f"{result['executed_volume']:.12f} | "
+        f"avg="
+        f"{result['avg_price']:,.0f}"
+
+    )
+
+
+# =========================================================
+# FIFO 매도 원가 계산
+# =========================================================
+
+def calculate_fifo_cost(
+    coin: str,
+    sell_volume: float,
+    sell_trade_id: int
+):
+
+    remaining_to_sell = sell_volume
+
+    total_cost = 0.0
+
+    allocations = []
+
+    with db_lock:
+
+        conn = get_db()
+
+        cursor = conn.cursor()
+
+        cursor.execute("""
+        SELECT *
+        FROM buy_lots
+        WHERE coin = ?
+          AND remaining_volume > 0
+        ORDER BY id ASC
+        """, (coin,))
+
+        lots = cursor.fetchall()
+
+        for lot in lots:
+
+            if remaining_to_sell <= 0:
+
+                break
+
+            available = float(
+                lot["remaining_volume"]
+            )
+
+            use_volume = min(
+                remaining_to_sell,
+                available
+            )
+
+            cost_per_unit = float(
+                lot["cost_per_unit"]
+            )
+
+            cost = (
+                use_volume *
+                cost_per_unit
+            )
+
+            total_cost += cost
+
+            allocations.append({
+
+                "lot_id":
+                    lot["id"],
+
+                "volume":
+                    use_volume,
+
+                "cost":
+                    cost
+
+            })
+
+            new_remaining = (
+                available -
+                use_volume
+            )
+
+            # 부동소수점 잔여량 보정
+            if abs(new_remaining) < 1e-15:
+
+                new_remaining = 0.0
+
+            cursor.execute("""
+            UPDATE buy_lots
+            SET remaining_volume = ?
+            WHERE id = ?
+            """, (
+
+                new_remaining,
+
+                lot["id"]
+
+            ))
+
+            remaining_to_sell -= use_volume
+
+        if remaining_to_sell > 1e-12:
+
+            logger.warning(
+
+                f"FIFO cost insufficient | "
+                f"coin={coin} | "
+                f"remaining={remaining_to_sell}"
+
+            )
+
+        for allocation in allocations:
+
+            cursor.execute("""
+            INSERT INTO sell_allocations (
+
+                sell_trade_id,
+                buy_lot_id,
+                volume,
+                cost
+
+            )
+
+            VALUES (?, ?, ?, ?)
+
+            """, (
+
+                sell_trade_id,
+
+                allocation["lot_id"],
+
+                allocation["volume"],
+
+                allocation["cost"]
+
+            ))
+
+        conn.commit()
+
+        conn.close()
+
+    return total_cost
+
+
+# =========================================================
+# 매도 기록 저장
+# =========================================================
+
+def save_sell_trade(
+    result,
+    ratio
+):
+
+    coin = result["market"].replace(
+        "KRW-",
+        ""
+    )
+
+    created_at = (
+        result["created_at"]
+        or now_string()
+    )
+
+    completed_at = now_string()
+
+    with db_lock:
+
+        conn = get_db()
+
+        cursor = conn.cursor()
+
+        cursor.execute("""
+        INSERT INTO trades (
+
+            uuid,
+            coin,
+            side,
+            order_amount,
+            executed_funds,
+            executed_volume,
+            avg_price,
+            fee,
+            requested_ratio,
+            created_at,
+            completed_at,
+            state
+
+        )
+
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+
+        """, (
+
+            result["uuid"],
+
+            coin,
+
+            "sell",
+
+            result["executed_funds"],
+
+            result["executed_funds"],
+
+            result["executed_volume"],
+
+            result["avg_price"],
+
+            result["paid_fee"],
+
+            ratio,
+
+            created_at,
+
+            completed_at,
+
+            result["state"]
+
+        ))
+
+        trade_id = cursor.lastrowid
+
+        conn.commit()
+
+        conn.close()
+
+    # -----------------------------------------------------
+    # FIFO 매수원가
+    # -----------------------------------------------------
+
+    realized_cost = calculate_fifo_cost(
+
+        coin,
+
+        result["executed_volume"],
+
+        trade_id
+
+    )
+
+    # -----------------------------------------------------
+    # 실제 매도 수령액
+    # -----------------------------------------------------
+
+    net_sell_amount = (
+
+        result["executed_funds"]
+        - result["paid_fee"]
+
+    )
+
+    # -----------------------------------------------------
+    # 실현손익
+    # -----------------------------------------------------
+
+    realized_profit = (
+
+        net_sell_amount
+        - realized_cost
+
+    )
+
+    if realized_cost > 0:
+
+        realized_return = (
+
+            realized_profit
+            / realized_cost
+            * 100
+
+        )
+
+    else:
+
+        realized_return = 0.0
+
+    with db_lock:
+
+        conn = get_db()
+
+        cursor = conn.cursor()
+
+        cursor.execute("""
+        UPDATE trades
+
+        SET
+
+            realized_cost = ?,
+
+            realized_profit = ?,
+
+            realized_return = ?
+
+        WHERE id = ?
+
+        """, (
+
+            realized_cost,
+
+            realized_profit,
+
+            realized_return,
+
+            trade_id
+
+        ))
+
+        conn.commit()
+
+        conn.close()
+
+    logger.info(
+
+        f"SELL saved | "
+        f"{coin} | "
+        f"sell={net_sell_amount:,.0f} | "
+        f"cost={realized_cost:,.0f} | "
+        f"profit={realized_profit:,.0f} | "
+        f"return={realized_return:.2f}%"
+
+    )
+
+    return {
+
+        "trade_id":
+            trade_id,
+
+        "coin":
+            coin,
+
+        "sell_volume":
+            result["executed_volume"],
+
+        "gross_sell":
+            result["executed_funds"],
+
+        "fee":
+            result["paid_fee"],
+
+        "net_sell":
+            net_sell_amount,
+
+        "cost":
+            realized_cost,
+
+        "profit":
+            realized_profit,
+
+        "return":
+            realized_return,
+
+        "avg_price":
+            result["avg_price"],
+
+        "completed_at":
+            completed_at
+
+    }
+
+
+# =========================================================
+# 현재 보유 코인의 DB 원가
+#
+# 남아 있는 BUY LOT 기준
+# =========================================================
+
+def get_open_lot_summary():
+
+    with db_lock:
+
+        conn = get_db()
+
+        rows = conn.execute("""
+        SELECT
+            coin,
+            SUM(remaining_volume) AS volume,
+            SUM(
+                remaining_volume *
+                cost_per_unit
+            ) AS cost
+        FROM buy_lots
+        WHERE remaining_volume > 0
+        GROUP BY coin
+        """).fetchall()
+
+        conn.close()
+
+    result = {}
+
+    for row in rows:
+
+        volume = float(
+            row["volume"] or 0
+        )
+
+        cost = float(
+            row["cost"] or 0
+        )
+
+        avg_cost = (
+
+            cost / volume
+
+            if volume > 0
+
+            else 0
+
+        )
+
+        result[row["coin"]] = {
+
+            "volume":
+                volume,
+
+            "cost":
+                cost,
+
+            "avg_cost":
+                avg_cost
+
+        }
+
+    return result
+
+
+# =========================================================
+# 최근 매수
+# =========================================================
+
+def get_recent_buys(limit=10):
+
+    with db_lock:
+
+        conn = get_db()
+
+        rows = conn.execute("""
+        SELECT *
+        FROM trades
+        WHERE side = 'buy'
+        ORDER BY id DESC
+        LIMIT ?
+        """, (limit,)).fetchall()
+
+        conn.close()
+
+    return [
+        dict(row)
+        for row in rows
+    ]
+
+
+# =========================================================
+# 최근 매도
+# =========================================================
+
+def get_recent_sells(limit=10):
+
+    with db_lock:
+
+        conn = get_db()
+
+        rows = conn.execute("""
+        SELECT *
+        FROM trades
+        WHERE side = 'sell'
+        ORDER BY id DESC
+        LIMIT ?
+        """, (limit,)).fetchall()
+
+        conn.close()
+
+    return [
+        dict(row)
+        for row in rows
+    ]
+
+
+# =========================================================
+# 전체 거래
+# =========================================================
+
+def get_recent_trades(limit=30):
+
+    with db_lock:
+
+        conn = get_db()
+
+        rows = conn.execute("""
+        SELECT *
+        FROM trades
+        ORDER BY id DESC
+        LIMIT ?
+        """, (limit,)).fetchall()
+
+        conn.close()
+
+    return [
+        dict(row)
+        for row in rows
+    ]
+
+
+# =========================================================
+# TradingView Webhook
+# =========================================================
+
+@app.post("/tradingview_webhook")
+async def tradingview_webhook(
+    payload: TradingViewPayload
+):
+
+    global latest_order_info
+    global latest_sell_result
+    global latest_webhook_time
+
+    action = str(
+        payload.Action
+    ).strip()
+
+    coin = clean_coin_name(
+        payload.coin
+    )
+
+    ratio = float(
+        payload.volume
+    )
+
+    api_key = payload.api_key
+
+    secret_key = payload.secret_key
+
+    if not api_key or not secret_key:
+
+        raise HTTPException(
+
+            status_code=400,
+
+            detail="API key is required"
+
+        )
+
+    if not coin:
+
+        raise HTTPException(
+
+            status_code=400,
+
+            detail="Invalid coin"
+
+        )
+
+    if not (0 < ratio <= 1):
+
+        raise HTTPException(
+
+            status_code=400,
+
+            detail=(
+                "volume must be "
+                "between 0 and 1"
+            )
+
+        )
+
+    # =====================================================
+    # BUY
+    # =====================================================
+
+    if action.lower() == "buy":
+
+        # -------------------------------------------------
+        # 중요:
+        # 총자산이 아니라 현재 주문 가능한 KRW만 조회
+        # -------------------------------------------------
+
+        available_krw = get_available_krw(
+
+            api_key,
+
+            secret_key
+
+        )
+
+        if available_krw <= 0:
+
+            raise HTTPException(
+
+                status_code=400,
+
+                detail="No available KRW balance"
+
+            )
+
+        # -------------------------------------------------
+        # 주문금액 =
+        # 현재 주문가능 KRW × volume
+        # -------------------------------------------------
+
+        amount_to_invest = (
+
+            available_krw *
+            ratio
+
+        )
+
+        if amount_to_invest < 5000:
+
+            raise HTTPException(
+
+                status_code=400,
+
+                detail={
+
+                    "message":
+                        "Amount too small. "
+                        "Minimum 5,000 KRW.",
+
+                    "available_krw":
+                        available_krw,
+
+                    "ratio":
+                        ratio,
+
+                    "calculated_amount":
+                        amount_to_invest
+
+                }
+
+            )
+
+        logger.info(
+
+            f"BUY request | "
+            f"{coin} | "
+            f"available KRW="
+            f"{available_krw:,.0f} | "
+            f"ratio="
+            f"{ratio * 100:.2f}% | "
+            f"order="
+            f"{amount_to_invest:,.0f} KRW"
+
+        )
+
+        # -------------------------------------------------
+        # 주문
+        # -------------------------------------------------
+
+        order = place_bid_order(
+
+            coin,
+
+            amount_to_invest,
+
+            api_key,
+
+            secret_key
+
+        )
+
+        order_uuid = order["uuid"]
+
+        # -------------------------------------------------
+        # 실제 체결 결과
+        # -------------------------------------------------
+
+        completed_order = wait_for_order_complete(
+
+            order_uuid,
+
+            api_key,
+
+            secret_key
+
+        )
+
+        result = parse_order_result(
+
+            completed_order
+
+        )
+
+        if result["state"] != "done":
+
+            raise HTTPException(
+
+                status_code=400,
+
+                detail={
+
+                    "message":
+                        "Order was not completed",
+
+                    "order":
+                        completed_order
+
+                }
+
+            )
+
+        # -------------------------------------------------
+        # DB 저장
+        # -------------------------------------------------
+
+        save_buy_trade(
+
+            result,
+
+            amount_to_invest,
+
+            ratio
+
+        )
+
+        latest_order_info = (
+
+            f"BUY {coin} | "
+
+            f"가용KRW "
+            f"{available_krw:,.0f}원 | "
+
+            f"{ratio * 100:.2f}% | "
+
+            f"실제체결 "
+            f"{result['executed_funds']:,.0f}원 | "
+
+            f"{result['executed_volume']:.12f} "
+            f"{coin}"
+
+        )
+
+        # -------------------------------------------------
+        # 웹훅 발생시간
+        # -------------------------------------------------
+
+        latest_webhook_time = now_string()
+
+        # -------------------------------------------------
+        # 웹훅이 발생했으므로 자산 즉시 갱신
+        # -------------------------------------------------
+
+        fetch_upbit_assets(
+
+            api_key,
+
+            secret_key
+
+        )
+
+        return {
+
+            "Action": "Buy",
+
+            "Coin": coin,
+
+            "Available KRW":
+                available_krw,
+
+            "Buy Ratio":
+                ratio,
+
+            "Requested KRW":
+                amount_to_invest,
+
+            "Actual Executed KRW":
+                result["executed_funds"],
+
+            "Executed Volume":
+                result["executed_volume"],
+
+            "Average Price":
+                result["avg_price"],
+
+            "Fee":
+                result["paid_fee"],
+
+            "Order UUID":
+                result["uuid"]
+
+        }
+
+    # =====================================================
+    # SELL
+    # =====================================================
+
+    elif action.lower() == "sell":
+
+        # -------------------------------------------------
+        # 실제 매도 가능한 코인 잔고 조회
+        # -------------------------------------------------
+
+        available_coin = get_available_coin_balance(
+
+            coin,
+
+            api_key,
+
+            secret_key
+
+        )
+
+        if available_coin <= 0:
+
+            raise HTTPException(
+
+                status_code=400,
+
+                detail=f"No available balance for {coin}"
+
+            )
+
+        # -------------------------------------------------
+        # 매도 예정 수량
+        #
+        # 코인 가용잔고 × volume
+        # -------------------------------------------------
+
+        expected_sell_volume = (
+
+            available_coin *
+            ratio
+
+        )
+
+        logger.info(
+
+            f"SELL request | "
+            f"{coin} | "
+            f"available="
+            f"{available_coin:.12f} | "
+            f"ratio="
+            f"{ratio * 100:.2f}% | "
+            f"expected="
+            f"{expected_sell_volume:.12f}"
+
+        )
+
+        # -------------------------------------------------
+        # 주문
+        # -------------------------------------------------
+
+        order = place_ask_order(
+
+            coin,
+
+            ratio,
+
+            api_key,
+
+            secret_key
+
+        )
+
+        order_uuid = order["uuid"]
+
+        # -------------------------------------------------
+        # 실제 체결
+        # -------------------------------------------------
+
+        completed_order = wait_for_order_complete(
+
+            order_uuid,
+
+            api_key,
+
+            secret_key
+
+        )
+
+        result = parse_order_result(
+
+            completed_order
+
+        )
+
+        if result["state"] != "done":
+
+            raise HTTPException(
+
+                status_code=400,
+
+                detail={
+
+                    "message":
+                        "Sell order was not completed",
+
+                    "order":
+                        completed_order
+
+                }
+
+            )
+
+        # -------------------------------------------------
+        # DB 저장 + 실제 실현손익 계산
+        # -------------------------------------------------
+
+        sell_result = save_sell_trade(
+
+            result,
+
+            ratio
+
+        )
+
+        latest_sell_result = sell_result
+
+        latest_order_info = (
+
+            f"SELL {coin} | "
+
+            f"보유가용 "
+            f"{available_coin:.12f} {coin} | "
+
+            f"{ratio * 100:.2f}% | "
+
+            f"실제매도 "
+            f"{result['executed_volume']:.12f} {coin} | "
+
+            f"{sell_result['net_sell']:,.0f}원 | "
+
+            f"손익 "
+            f"{sell_result['profit']:+,.0f}원"
+
+        )
+
+        # -------------------------------------------------
+        # 웹훅 발생시간
+        # -------------------------------------------------
+
+        latest_webhook_time = now_string()
+
+        # -------------------------------------------------
+        # 웹훅마다 잔고/자산 즉시 갱신
+        # -------------------------------------------------
+
+        fetch_upbit_assets(
+
+            api_key,
+
+            secret_key
+
+        )
+
+        return {
+
+            "Action": "Sell",
+
+            "Coin": coin,
+
+            "Available Coin":
+                available_coin,
+
+            "Sell Ratio":
+                ratio,
+
+            "Expected Sell Volume":
+                expected_sell_volume,
+
+            "Executed Volume":
+                sell_result["sell_volume"],
+
+            "Gross Sell Amount":
+                sell_result["gross_sell"],
+
+            "Fee":
+                sell_result["fee"],
+
+            "Net Sell Amount":
+                sell_result["net_sell"],
+
+            "Cost":
+                sell_result["cost"],
+
+            "Realized Profit":
+                sell_result["profit"],
+
+            "Return Percent":
+                sell_result["return"],
+
+            "Average Sell Price":
+                sell_result["avg_price"],
+
+            "Order UUID":
+                result["uuid"]
+
+        }
+
+    else:
+
+        raise HTTPException(
+
+            status_code=400,
+
+            detail="Action must be Buy or Sell"
+
+        )
+
+
+# =========================================================
+# 자산 API
+#
+# 웹훅에서 마지막으로 조회한 잔고를 반환
+# =========================================================
+
+@app.get("/api/upbit-assets")
+async def api_upbit_assets():
+
+    return {
+
+        "total_krw":
+            latest_upbit_total_krw,
+
+        "krw_balance":
+            latest_upbit_krw,
+
+        "available_krw":
+            latest_upbit_available_krw,
+
+        "updated_at":
+            latest_upbit_update,
+
+        "webhook_time":
+            latest_webhook_time,
+
+        "last_order":
+            latest_order_info,
+
+        "assets":
+            latest_upbit_assets
+
+    }
+
+
+# =========================================================
+# 실시간 현재가 API
+#
+# 잔고는 다시 조회하지 않음
+# 현재가만 5초마다 조회
+# =========================================================
+
+@app.get("/api/live-prices")
+async def api_live_prices():
+
+    open_lots = get_open_lot_summary()
+
+    result = []
+
+    for asset in latest_upbit_assets:
+
+        currency = asset["currency"]
+
+        if currency == "KRW":
+
+            result.append({
+
+                "currency":
+                    "KRW",
+
+                "current_price":
+                    1,
+
+                "db_volume":
+                    0,
+
+                "db_cost":
+                    0,
+
+                "db_avg_cost":
+                    0,
+
+                "evaluation":
+                    asset["evaluation_krw"],
+
+                "profit":
+                    0,
+
+                "return":
+                    0
+
+            })
+
+            continue
+
+        market = asset["market"]
+
+        current_price = get_ticker_price(
+            market
+        )
+
+        # -------------------------------------------------
+        # DB에 저장된 실제 매수 Lot
+        # -------------------------------------------------
+
+        lot = open_lots.get(
+
+            currency,
+
+            {
+
+                "volume": 0,
+
+                "cost": 0,
+
+                "avg_cost": 0
+
+            }
+
+        )
+
+        db_volume = float(
+            lot["volume"]
+        )
+
+        db_cost = float(
+            lot["cost"]
+        )
+
+        db_avg_cost = float(
+            lot["avg_cost"]
+        )
+
+        # -------------------------------------------------
+        # 현재 평가금액
+        #
+        # 실제 거래소 잔고 기준
+        # -------------------------------------------------
+
+        actual_balance = float(
+            asset["balance"]
+        )
+
+        evaluation = (
+
+            actual_balance *
+            current_price
+
+            if current_price > 0
+
+            else 0
+
+        )
+
+        # -------------------------------------------------
+        # 현재 수익률
+        #
+        # DB에 남아있는 매수원가 기준
+        # -------------------------------------------------
+
+        if (
+            db_volume > 0
+            and db_avg_cost > 0
+            and current_price > 0
+        ):
+
+            return_percent = (
+
+                (
+                    current_price
+                    - db_avg_cost
+                )
+                / db_avg_cost
+                * 100
+
+            )
+
+            # 현재 DB 보유수량 기준 손익
+            profit = (
+
+                (
+                    current_price
+                    * db_volume
+                )
+                - db_cost
+
+            )
+
+        else:
+
+            return_percent = 0.0
+
+            profit = 0.0
+
+        result.append({
+
+            "currency":
+                currency,
+
+            "current_price":
+                current_price,
+
+            "db_volume":
+                db_volume,
+
+            "db_cost":
+                db_cost,
+
+            "db_avg_cost":
+                db_avg_cost,
+
+            "actual_balance":
+                actual_balance,
+
+            "evaluation":
+                evaluation,
+
+            "profit":
+                profit,
+
+            "return":
+                return_percent
+
+        })
+
+    return {
+
+        "updated_at":
+            now_string(),
+
+        "assets":
+            result
+
+    }
+
+
+# =========================================================
+# 거래 기록 API
+# =========================================================
+
+@app.get("/api/trades")
+async def api_trades():
+
+    return {
+
+        "recent_buys":
+            get_recent_buys(10),
+
+        "recent_sells":
+            get_recent_sells(10),
+
+        "recent_trades":
+            get_recent_trades(30)
+
+    }
+
+
+# =========================================================
+# 대시보드
+# =========================================================
+
+@app.get("/", response_class=HTMLResponse)
+async def dashboard():
+
+    return HTMLResponse("""
+
+<!DOCTYPE html>
+
+<html lang="ko">
 
 <head>
 
+<meta charset="UTF-8">
+
 <meta
-    http-equiv="refresh"
-    content="300"
+name="viewport"
+content="width=device-width, initial-scale=1.0"
 >
 
-<title>
-OKX + UPBIT
-</title>
-
+<title>업비트 자동매매 대시보드</title>
 
 <style>
 
-/* =====================================================
-   전체
-   ===================================================== */
+* {
+    box-sizing: border-box;
+}
 
-body{
+body {
 
-    background:#111;
+    margin: 0;
 
-    color:white;
+    background: #0e1116;
 
-    font-family:Arial;
+    color: #f1f3f5;
 
-    padding:20px;
+    font-family:
+        Arial,
+        "Noto Sans KR",
+        sans-serif;
 
 }
 
+.container {
 
-/* =====================================================
-   테이블
-   ===================================================== */
+    max-width: 1400px;
 
-table{
+    margin: auto;
 
-    width:auto;
-
-    border-collapse:collapse;
-
-    border:1px solid #444;
+    padding: 20px;
 
 }
 
+h1 {
 
-/* =====================================================
-   헤더
-   ===================================================== */
+    margin: 0 0 5px 0;
 
-th{
-
-    background:#333;
-
-    padding:10px 12px;
-
-    border-right:2px solid #555;
-
-    white-space:nowrap;
+    font-size: 24px;
 
 }
 
+.subtitle {
 
-th:last-child{
+    color: #8b949e;
 
-    border-right:none;
+    font-size: 13px;
 
-}
-
-
-/* =====================================================
-   일반 셀
-   ===================================================== */
-
-td{
-
-    padding:8px 12px;
-
-    border-bottom:1px solid #444;
-
-    border-right:2px solid #333;
-
-    text-align:center;
-
-    white-space:nowrap;
+    margin-bottom: 20px;
 
 }
 
+.grid {
 
-td:last-child{
+    display: grid;
 
-    border-right:none;
+    grid-template-columns:
+        repeat(
+            4,
+            minmax(0, 1fr)
+        );
 
-}
+    gap: 12px;
 
-
-/* =====================================================
-   순위
-   ===================================================== */
-
-.rank-cell{
-
-    width:45px;
-
-    min-width:45px;
+    margin-bottom: 15px;
 
 }
 
+.card {
 
-/* =====================================================
-   코인
-   ===================================================== */
+    background: #171b22;
 
-.coin-cell{
+    border: 1px solid #292f38;
 
-    min-width:90px;
+    border-radius: 12px;
 
-    text-align:left;
-
-    font-weight:bold;
+    padding: 17px;
 
 }
 
+.title {
 
-/* =====================================================
-   거래대금
-   ===================================================== */
+    color: #8b949e;
 
-.volume-cell{
+    font-size: 13px;
 
-    min-width:100px;
-
-    padding-left:15px;
-
-    padding-right:15px;
-
-    text-align:right;
-
-    white-space:nowrap;
+    margin-bottom: 9px;
 
 }
 
+.value {
 
-/* =====================================================
-   변동률
-   ===================================================== */
+    font-size: 22px;
 
-.change-cell{
-
-    min-width:105px;
-
-    padding-left:12px;
-
-    padding-right:12px;
-
-    white-space:nowrap;
+    font-weight: 700;
 
 }
 
+.section {
 
-.change-item{
+    margin-top: 18px;
 
-    display:inline-flex;
+    margin-bottom: 10px;
 
-    align-items:center;
+    font-size: 17px;
 
-    width:95px;
-
-    min-width:95px;
-
-    box-sizing:border-box;
+    font-weight: 700;
 
 }
 
+.table-wrap {
 
-.change-icon{
+    overflow-x: auto;
 
-    display:inline-block;
+    background: #171b22;
 
-    width:28px;
+    border:
+        1px solid #292f38;
 
-    min-width:28px;
-
-    text-align:center;
-
-}
-
-
-.change-value{
-
-    display:inline-block;
-
-    width:67px;
-
-    min-width:67px;
-
-    text-align:right;
-
-    font-family:monospace;
+    border-radius: 12px;
 
 }
 
+table {
 
-/* =====================================================
-   EMA 전체
-   ===================================================== */
+    width: 100%;
 
-.ema-display{
+    border-collapse: collapse;
 
-    display:flex;
-
-    align-items:center;
-
-    height:32px;
-
-    white-space:nowrap;
-
-    font-family:monospace;
-
-    padding:0 5px;
+    min-width: 1100px;
 
 }
 
+th {
 
-/* =====================================================
-   EMA 시간봉 그룹
-   ===================================================== */
+    padding: 12px;
 
-.ema-period{
+    color: #8b949e;
 
-    display:flex;
+    background: #12151b;
 
-    align-items:center;
+    font-size: 12px;
 
-    padding:0 10px;
-
-    border-right:2px solid #555;
+    text-align: right;
 
 }
 
+td {
 
-.ema-period.last{
+    padding: 12px;
 
-    border-right:none;
+    border-top:
+        1px solid #252a32;
 
-}
+    text-align: right;
 
-
-/* =====================================================
-   돌파 경고
-   크게 표시
-   ===================================================== */
-
-.breakout-period{
-
-    min-width:75px;
-
-    padding-left:5px;
-
-    padding-right:5px;
+    font-size: 13px;
 
 }
 
+th:first-child,
+td:first-child {
 
-.breakout-warning{
-
-    font-size:24px;
-
-    line-height:28px;
+    text-align: left;
 
 }
 
+.green {
 
-/* =====================================================
-   눌림 경고
-   크게 표시
-   ===================================================== */
-
-.ema-warning{
-
-    display:inline-block;
-
-    width:85px;
-
-    min-width:85px;
-
-    text-align:center;
-
-}
-
-
-.warning-size{
-
-    font-size:24px;
-
-    line-height:28px;
-
-}
-
-
-/* =====================================================
-   시간봉
-   ===================================================== */
-
-.ema-time{
-
-    display:inline-block;
-
-    width:40px;
-
-    min-width:40px;
-
-    text-align:left;
-
-    font-weight:bold;
-
-}
-
-
-/* =====================================================
-   EMA 상태
-   ===================================================== */
-
-.ema-status{
-
-    display:inline-block;
-
-    width:70px;
-
-    min-width:70px;
-
-    text-align:left;
-
-}
-
-
-/* =====================================================
-   섹션
-   ===================================================== */
-
-.section-title{
-
-    margin-top:25px;
-
-    padding:10px 12px;
-
-    background:#222;
-
-    border-left:5px solid #666;
-
-}
-
-
-/* =====================================================
-   행 hover
-   ===================================================== */
-
-tr:hover{
-
-    background:#1d1d1d;
-
-}
-
-</style>
-
-</head>
-
-
-<body>
-
-
-<h2>
-📊 암호화폐 실시간 분석
-</h2>
-
-
-<p>
-4시간 눌림 · 돌파 · EMA 10-20 / 20-60-120 · 일봉 추세 확인
-</p>
-
-
-<h2 class="section-title">
-🏆 OKX 선물 거래대금 TOP15
-</h2>
-
-
-<table>
-
-<tr>
-
-<th class="rank-cell">
-순위
-</th>
-
-<th>
-코인
-</th>
-
-<th>
-거래대금
-</th>
-
-<th>
-오늘
-</th>
-
-<th>
-EMA 상태
-</th>
-
-</tr>
-
-"""
-
-
-    # =====================================================
-    # OKX
-    # =====================================================
-
-    for item in latest_okx_data:
-
-        html += f"""
-
-<tr>
-
-<td class="rank-cell">
-{item['rank']}
-</td>
-
-<td class="coin-cell">
-{item['name']}
-</td>
-
-<td class="volume-cell">
-{item['volume']}
-</td>
-
-<td class="change-cell">
-{item['change']}
-</td>
-
-<td>
-
-{ema_html(
-    item["ema4h"]
-)}
-
-</td>
-
-</tr>
-
-"""
-
-
-    html += """
-
-</table>
-
-
-<h2 class="section-title">
-🏆 업비트 현물 거래대금 TOP15
-</h2>
-
-
-<table>
-
-<tr>
-
-<th class="rank-cell">
-순위
-</th>
-
-<th>
-코인
-</th>
-
-<th>
-거래대금
-</th>
-
-<th>
-오늘
-</th>
-
-<th>
-EMA 상태
-</th>
-
-</tr>
-
-"""
-
-
-    # =====================================================
-    # 업비트
-    # =====================================================
-
-    for item in latest_upbit_data:
-
-        html += f"""
-
-<tr>
-
-<td class="rank-cell">
-{item['rank']}
-</td>
-
-<td class="coin-cell">
-{item['name']}
-</td>
-
-<td class="volume-cell">
-{item['volume']}
-</td>
-
-<td class="change-cell">
-{item['change']}
-</td>
-
-<td>
-
-{ema_html(
-    item["ema4h"]
-)}
-
-</td>
-
-</tr>
-
-"""
-
-
-    html += """
-
-</table>
-
-
-</body>
-
-</html>
-
-"""
-
-
-    return html
-
-
-# =========================================================
-# 시작
-# =========================================================
-
-@app.on_event("startup")
-def startup():
-
-    update_dashboard()
-
-    schedule.every(5).minutes.do(
-        update_dashboard
-    )
-
-    threading.Thread(
-        target=scheduler,
-        daemon=True
-    ).start()
-
-
-# =========================================================
-# 실행
-# =========================================================
-
-if __name__ == "__main__":
-
-    uvicorn.run(
-
-        app,
-
-        host="0.0.0.0",
-
-        port=8000
-
-            )
+    color: #3fb950;
