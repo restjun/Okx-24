@@ -235,10 +235,7 @@ def get_upbit_4h_ohlcv(
             .astype(float)
         )
 
-        # =====================================================
         # 현재 진행 중인 4시간봉 제외
-        # =====================================================
-
         now = pd.Timestamp.now(
             tz="Asia/Seoul"
         )
@@ -809,14 +806,6 @@ def get_ema_10_20_count(
 
 # =========================================================
 # 1H 눌림 경고
-#
-# 롱:
-# 1H 10-20 역배열
-# 1H 20-60-120 정배열
-#
-# 숏:
-# 1H 10-20 정배열
-# 1H 20-60-120 역배열
 # =========================================================
 
 def check_1h_warning(
@@ -845,10 +834,7 @@ def check_1h_warning(
     )
 
 
-    # =====================================================
     # 롱 눌림
-    # =====================================================
-
     if (
         ema1h_10_20 == "short"
         and
@@ -858,10 +844,7 @@ def check_1h_warning(
         return "long_warning_1"
 
 
-    # =====================================================
     # 숏 눌림
-    # =====================================================
-
     if (
         ema1h_10_20 == "long"
         and
@@ -876,16 +859,6 @@ def check_1h_warning(
 
 # =========================================================
 # 1H 돌파 경고
-#
-# 롱:
-# 1H 10-20 정배열
-# 1H 20-60-120 정배열
-# 10-20 정배열 지속 10봉 이하
-#
-# 숏:
-# 1H 10-20 역배열
-# 1H 20-60-120 역배열
-# 10-20 역배열 지속 10봉 이하
 # =========================================================
 
 def check_1h_breakout_warning(
@@ -917,10 +890,7 @@ def check_1h_breakout_warning(
     )
 
 
-    # =====================================================
     # 롱 돌파
-    # =====================================================
-
     if (
         direction1h == "long"
         and
@@ -932,10 +902,7 @@ def check_1h_breakout_warning(
         return f"long_breakout_{count1h}"
 
 
-    # =====================================================
     # 숏 돌파
-    # =====================================================
-
     if (
         direction1h == "short"
         and
@@ -951,6 +918,162 @@ def check_1h_breakout_warning(
 
 
 # =========================================================
+# 4H 최종 추세 조건
+#
+# 롱:
+# 10 > 20 > 60 > 120
+#
+# 숏:
+# 10 < 20 < 60 < 120
+# =========================================================
+
+def check_4h_trend_condition(
+    df4h,
+    column4h
+):
+
+    if (
+        df4h is None
+        or len(df4h) < 120
+    ):
+
+        return "none"
+
+
+    ema10 = (
+        df4h[column4h]
+        .ewm(
+            span=10,
+            adjust=False
+        )
+        .mean()
+    )
+
+    ema20 = (
+        df4h[column4h]
+        .ewm(
+            span=20,
+            adjust=False
+        )
+        .mean()
+    )
+
+    ema60 = (
+        df4h[column4h]
+        .ewm(
+            span=60,
+            adjust=False
+        )
+        .mean()
+    )
+
+    ema120 = (
+        df4h[column4h]
+        .ewm(
+            span=120,
+            adjust=False
+        )
+        .mean()
+    )
+
+
+    # =====================================================
+    # 롱
+    # =====================================================
+
+    if (
+        ema10.iloc[-1]
+        >
+        ema20.iloc[-1]
+        >
+        ema60.iloc[-1]
+        >
+        ema120.iloc[-1]
+    ):
+
+        return "long"
+
+
+    # =====================================================
+    # 숏
+    # =====================================================
+
+    if (
+        ema10.iloc[-1]
+        <
+        ema20.iloc[-1]
+        <
+        ema60.iloc[-1]
+        <
+        ema120.iloc[-1]
+    ):
+
+        return "short"
+
+
+    return "none"
+
+
+# =========================================================
+# 최종 LONG / SHORT
+#
+# LONG:
+# 4H 전체 정배열
+# + 기존 1H 롱 조건
+#
+# SHORT:
+# 4H 전체 역배열
+# + 기존 1H 숏 조건
+# =========================================================
+
+def get_final_position(
+    trend4h,
+    warning,
+    breakout
+):
+
+    # =====================================================
+    # LONG
+    # =====================================================
+
+    if trend4h == "long":
+
+        if (
+            warning.startswith(
+                "long_warning_"
+            )
+            or
+            breakout.startswith(
+                "long_breakout_"
+            )
+        ):
+
+            return "long"
+
+
+    # =====================================================
+    # SHORT
+    # =====================================================
+
+    if trend4h == "short":
+
+        if (
+            warning.startswith(
+                "short_warning_"
+            )
+            or
+            breakout.startswith(
+                "short_breakout_"
+            )
+        ):
+
+            return "short"
+
+
+    return "none"
+
+
+# =========================================================
 # OKX 1H + 4H EMA
 # =========================================================
 
@@ -958,19 +1081,40 @@ def get_okx_1h_4h_ema(
     inst_id
 ):
 
-    # 1H
     df1h = get_okx_ohlcv(
         inst_id,
         "1H",
         200
     )
 
-    # 4H
     df4h = get_okx_ohlcv(
         inst_id,
         "4H",
         200
     )
+
+
+    warning = check_1h_warning(
+        df1h,
+        "c"
+    )
+
+    breakout = check_1h_breakout_warning(
+        df1h,
+        "c"
+    )
+
+    trend4h = check_4h_trend_condition(
+        df4h,
+        "c"
+    )
+
+    position = get_final_position(
+        trend4h,
+        warning,
+        breakout
+    )
+
 
     return {
 
@@ -998,17 +1142,17 @@ def get_okx_1h_4h_ema(
                 "c"
             ),
 
+        "4h_trend":
+            trend4h,
+
         "warning":
-            check_1h_warning(
-                df1h,
-                "c"
-            ),
+            warning,
 
         "breakout":
-            check_1h_breakout_warning(
-                df1h,
-                "c"
-            )
+            breakout,
+
+        "position":
+            position
 
     }
 
@@ -1021,18 +1165,39 @@ def get_upbit_1h_4h_ema(
     market
 ):
 
-    # 1H
     df1h = get_upbit_ohlcv(
         market,
         60,
         200
     )
 
-    # 4H
     df4h = get_upbit_4h_ohlcv(
         market,
         200
     )
+
+
+    warning = check_1h_warning(
+        df1h,
+        "trade_price"
+    )
+
+    breakout = check_1h_breakout_warning(
+        df1h,
+        "trade_price"
+    )
+
+    trend4h = check_4h_trend_condition(
+        df4h,
+        "trade_price"
+    )
+
+    position = get_final_position(
+        trend4h,
+        warning,
+        breakout
+    )
+
 
     return {
 
@@ -1060,17 +1225,17 @@ def get_upbit_1h_4h_ema(
                 "trade_price"
             ),
 
+        "4h_trend":
+            trend4h,
+
         "warning":
-            check_1h_warning(
-                df1h,
-                "trade_price"
-            ),
+            warning,
 
         "breakout":
-            check_1h_breakout_warning(
-                df1h,
-                "trade_price"
-            )
+            breakout,
+
+        "position":
+            position
 
     }
 
@@ -1325,6 +1490,37 @@ def format_change(
 
 
 # =========================================================
+# 포지션 HTML
+# =========================================================
+
+def position_html(
+    position
+):
+
+    if position == "long":
+
+        return """
+        <span class="position-long">
+            🟢 LONG
+        </span>
+        """
+
+    elif position == "short":
+
+        return """
+        <span class="position-short">
+            🔴 SHORT
+        </span>
+        """
+
+    return """
+    <span class="position-none">
+        —
+    </span>
+    """
+
+
+# =========================================================
 # 눌림 경고 HTML
 # =========================================================
 
@@ -1557,7 +1753,7 @@ def update_okx():
             symbol
         )
 
-        ema1h4h = get_okx_1h_4h_ema(
+        ema = get_okx_1h_4h_ema(
             symbol
         )
 
@@ -1578,7 +1774,10 @@ def update_okx():
                 ),
 
             "ema":
-                ema1h4h
+                ema,
+
+            "position":
+                ema["position"]
 
         })
 
@@ -1629,7 +1828,7 @@ def update_upbit():
             market
         )
 
-        ema1h4h = get_upbit_1h_4h_ema(
+        ema = get_upbit_1h_4h_ema(
             market
         )
 
@@ -1650,7 +1849,10 @@ def update_upbit():
                 ),
 
             "ema":
-                ema1h4h
+                ema,
+
+            "position":
+                ema["position"]
 
         })
 
@@ -1913,6 +2115,64 @@ td:last-child{
 
 
 /* =====================================================
+   포지션
+   ===================================================== */
+
+.position-cell{
+
+    min-width:100px;
+
+    font-weight:bold;
+
+    white-space:nowrap;
+
+}
+
+
+.position-long{
+
+    display:inline-block;
+
+    padding:5px 9px;
+
+    border:1px solid #168f45;
+
+    border-radius:5px;
+
+    color:#42e889;
+
+    background:#12351f;
+
+}
+
+
+.position-short{
+
+    display:inline-block;
+
+    padding:5px 9px;
+
+    border:1px solid #a62b2b;
+
+    border-radius:5px;
+
+    color:#ff5c5c;
+
+    background:#3a1515;
+
+}
+
+
+.position-none{
+
+    color:#777;
+
+    font-size:18px;
+
+}
+
+
+/* =====================================================
    EMA 전체
    ===================================================== */
 
@@ -2084,7 +2344,7 @@ tr:hover{
 
 
 <p>
-1시간 눌림 · 돌파 · EMA 10-20 / 20-60-120 · 4시간 추세 확인
+1시간 눌림 · 돌파 · 4시간 추세 · EMA 10-20 / 20-60-120
 </p>
 
 
@@ -2111,6 +2371,10 @@ tr:hover{
 
 <th>
 오늘
+</th>
+
+<th>
+포지션
 </th>
 
 <th>
@@ -2146,6 +2410,10 @@ EMA 상태
 
 <td class="change-cell">
 {item['change']}
+</td>
+
+<td class="position-cell">
+{position_html(item['position'])}
 </td>
 
 <td>
@@ -2192,6 +2460,10 @@ EMA 상태
 </th>
 
 <th>
+포지션
+</th>
+
+<th>
 EMA 상태
 </th>
 
@@ -2224,6 +2496,10 @@ EMA 상태
 
 <td class="change-cell">
 {item['change']}
+</td>
+
+<td class="position-cell">
+{position_html(item['position'])}
 </td>
 
 <td>
