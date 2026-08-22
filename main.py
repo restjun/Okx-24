@@ -117,7 +117,10 @@ def get_okx_ohlcv(
             .astype(float)
         )
 
+        # =====================================================
         # 미완성 캔들 제외
+        # =====================================================
+
         df = df[
             df["confirm"].astype(str) == "1"
         ]
@@ -259,7 +262,8 @@ def get_upbit_4h_ohlcv(
         )
 
         df["candle_datetime"] = pd.to_datetime(
-            df["candle_date_time_kst"]
+            df["candle_date_time_kst"
+            ]
         ).dt.tz_localize(
             "Asia/Seoul"
         )
@@ -822,6 +826,7 @@ def get_ema_10_20_count(
 # 1H 20-60-120 정배열
 # 4H 10-20 정배열
 # 4H 20-60-120 정배열
+# 4H 10-20 정배열 지속 10봉 이하
 #
 # SHORT
 # 반대
@@ -842,6 +847,11 @@ def check_1h_warning(
 
         return "none"
 
+
+    # =====================================================
+    # 1H 조건
+    # =====================================================
+
     ema1h_10_20 = (
         get_ema_10_20_direction(
             df1h,
@@ -855,6 +865,11 @@ def check_1h_warning(
             column
         )
     )
+
+
+    # =====================================================
+    # 4H 조건
+    # =====================================================
 
     ema4h_10_20 = (
         get_ema_10_20_direction(
@@ -872,7 +887,19 @@ def check_1h_warning(
 
 
     # =====================================================
-    # LONG
+    # 4H 10-20 지속 봉 수
+    # =====================================================
+
+    count4h, direction4h = (
+        get_ema_10_20_count(
+            df4h,
+            column
+        )
+    )
+
+
+    # =====================================================
+    # LONG 눌림
     # =====================================================
 
     if (
@@ -883,13 +910,17 @@ def check_1h_warning(
         ema4h_10_20 == "long"
         and
         ema4h_20_60_120 == "long"
+        and
+        count4h >= 1
+        and
+        count4h <= 10
     ):
 
-        return "long_warning"
+        return f"long_warning_{count4h}"
 
 
     # =====================================================
-    # SHORT
+    # SHORT 눌림
     # =====================================================
 
     if (
@@ -900,9 +931,13 @@ def check_1h_warning(
         ema4h_10_20 == "short"
         and
         ema4h_20_60_120 == "short"
+        and
+        count4h >= 1
+        and
+        count4h <= 10
     ):
 
-        return "short_warning"
+        return f"short_warning_{count4h}"
 
 
     return "none"
@@ -979,6 +1014,8 @@ def check_1h_breakout_warning(
         and
         ema1h_20_60_120 == "long"
         and
+        count1h >= 1
+        and
         count1h <= 10
         and
         ema4h_10_20 == "long"
@@ -997,6 +1034,8 @@ def check_1h_breakout_warning(
         direction1h == "short"
         and
         ema1h_20_60_120 == "short"
+        and
+        count1h >= 1
         and
         count1h <= 10
         and
@@ -1022,27 +1061,42 @@ def get_trade_signal(
     breakout
 ):
 
+    # =====================================================
     # 돌파 우선
-    if breakout.startswith("long_breakout_"):
+    # =====================================================
+
+    if breakout.startswith(
+        "long_breakout_"
+    ):
 
         return "LONG"
 
-    if breakout.startswith("short_breakout_"):
+
+    if breakout.startswith(
+        "short_breakout_"
+    ):
 
         return "SHORT"
 
 
+    # =====================================================
     # 눌림
-    if warning == "long_warning":
+    # =====================================================
+
+    if warning.startswith(
+        "long_warning_"
+    ):
 
         return "LONG"
 
-    if warning == "short_warning":
+
+    if warning.startswith(
+        "short_warning_"
+    ):
 
         return "SHORT"
 
 
-    # 조건이 없으면 표시하지 않음
     return ""
 
 
@@ -1462,19 +1516,53 @@ def format_change(
 
 # =========================================================
 # 눌림 경고 HTML
+#
+# 4H 10-20 지속 봉 수 표시
+# 예:
+# 🚀(1)
+# 🚀(5)
+# 🚀(10)
+#
+# 11봉 이상은 조건 자체가 없어짐
 # =========================================================
 
 def warning_html(
     warning
 ):
 
-    if warning == "long_warning":
+    if warning.startswith(
+        "long_warning_"
+    ):
 
-        return "🚀"
+        try:
 
-    elif warning == "short_warning":
+            count = int(
+                warning.split("_")[-1]
+            )
 
-        return "🚨"
+        except:
+
+            count = 0
+
+        return f"🚀({count})"
+
+
+    elif warning.startswith(
+        "short_warning_"
+    ):
+
+        try:
+
+            count = int(
+                warning.split("_")[-1]
+            )
+
+        except:
+
+            count = 0
+
+        return f"🚨({count})"
+
 
     return ""
 
@@ -1571,6 +1659,7 @@ def ema_html(
     signal = signal_html(
         ema["signal"]
     )
+
 
     return f"""
 
@@ -1673,6 +1762,7 @@ def update_okx():
 
     volume_map = {}
 
+
     for symbol in symbols:
 
         volume_map[symbol] = (
@@ -1683,15 +1773,18 @@ def update_okx():
             10
         )
 
+
     top10 = sorted(
         volume_map,
         key=volume_map.get,
         reverse=True
     )[:10]
 
+
     rows = []
 
     rank = 1
+
 
     for symbol in top10:
 
@@ -1700,17 +1793,21 @@ def update_okx():
             ""
         )
 
+
         if coin in upbit_coin_set:
 
             coin = f"{coin}(업비트)"
+
 
         changes = get_okx_change(
             symbol
         )
 
+
         ema = get_okx_ema(
             symbol
         )
+
 
         rows.append({
 
@@ -1721,7 +1818,9 @@ def update_okx():
                 coin,
 
             "change":
-                format_change(changes),
+                format_change(
+                    changes
+                ),
 
             "volume":
                 format_volume(
@@ -1733,9 +1832,12 @@ def update_okx():
 
         })
 
+
         rank += 1
 
+
     latest_okx_data = rows
+
 
     logging.info(
         "OKX 완료"
@@ -1760,15 +1862,18 @@ def update_upbit():
 
         return
 
+
     top10 = sorted(
         volume_map,
         key=volume_map.get,
         reverse=True
     )[:10]
 
+
     rows = []
 
     rank = 1
+
 
     for market in top10:
 
@@ -1777,13 +1882,16 @@ def update_upbit():
             ""
         )
 
+
         changes = get_upbit_change(
             market
         )
 
+
         ema = get_upbit_ema(
             market
         )
+
 
         rows.append({
 
@@ -1794,7 +1902,9 @@ def update_upbit():
                 coin,
 
             "change":
-                format_change(changes),
+                format_change(
+                    changes
+                ),
 
             "volume":
                 format_volume(
@@ -1806,9 +1916,12 @@ def update_upbit():
 
         })
 
+
         rank += 1
 
+
     latest_upbit_data = rows
+
 
     logging.info(
         "업비트 완료"
@@ -2487,4 +2600,4 @@ if __name__ == "__main__":
 
         port=8000
 
-)
+            )
