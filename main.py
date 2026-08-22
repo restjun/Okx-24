@@ -289,6 +289,7 @@ def get_upbit_4h_ohlcv(
 
 # =========================================================
 # 업비트 일봉
+# 변동률 계산용
 # =========================================================
 
 def get_upbit_day_ohlcv(
@@ -807,41 +808,39 @@ def get_ema_10_20_count(
 
 
 # =========================================================
-# 4H 눌림 경고
-#
-# 일봉 조건 제거
+# 1H 눌림 경고
 #
 # 롱:
-# 4H 10-20 역배열
-# 4H 20-60-120 정배열
+# 1H 10-20 역배열
+# 1H 20-60-120 정배열
 #
 # 숏:
-# 4H 10-20 정배열
-# 4H 20-60-120 역배열
+# 1H 10-20 정배열
+# 1H 20-60-120 역배열
 # =========================================================
 
-def check_4h_warning(
-    df4h,
-    column4h
+def check_1h_warning(
+    df1h,
+    column1h
 ):
 
     if (
-        df4h is None
-        or len(df4h) < 120
+        df1h is None
+        or len(df1h) < 120
     ):
 
         return "none"
 
 
-    ema4h_10_20 = get_ema_10_20_direction(
-        df4h,
-        column4h
+    ema1h_10_20 = get_ema_10_20_direction(
+        df1h,
+        column1h
     )
 
-    ema4h_20_60_120 = (
+    ema1h_20_60_120 = (
         get_ema_20_60_120_direction(
-            df4h,
-            column4h
+            df1h,
+            column1h
         )
     )
 
@@ -851,9 +850,9 @@ def check_4h_warning(
     # =====================================================
 
     if (
-        ema4h_10_20 == "short"
+        ema1h_10_20 == "short"
         and
-        ema4h_20_60_120 == "long"
+        ema1h_20_60_120 == "long"
     ):
 
         return "long_warning_1"
@@ -864,9 +863,9 @@ def check_4h_warning(
     # =====================================================
 
     if (
-        ema4h_10_20 == "long"
+        ema1h_10_20 == "long"
         and
-        ema4h_20_60_120 == "short"
+        ema1h_20_60_120 == "short"
     ):
 
         return "short_warning_1"
@@ -876,46 +875,44 @@ def check_4h_warning(
 
 
 # =========================================================
-# 4H 돌파 경고
-#
-# 일봉 20-60-120 조건 사용 안 함
+# 1H 돌파 경고
 #
 # 롱:
-# 4H 10-20 정배열
-# 4H 20-60-120 정배열
+# 1H 10-20 정배열
+# 1H 20-60-120 정배열
 # 10-20 정배열 지속 10봉 이하
 #
 # 숏:
-# 4H 10-20 역배열
-# 4H 20-60-120 역배열
+# 1H 10-20 역배열
+# 1H 20-60-120 역배열
 # 10-20 역배열 지속 10봉 이하
 # =========================================================
 
-def check_4h_breakout_warning(
-    df4h,
-    column4h
+def check_1h_breakout_warning(
+    df1h,
+    column1h
 ):
 
     if (
-        df4h is None
-        or len(df4h) < 120
+        df1h is None
+        or len(df1h) < 120
     ):
 
         return "none"
 
 
-    count4h, direction4h = (
+    count1h, direction1h = (
         get_ema_10_20_count(
-            df4h,
-            column4h
+            df1h,
+            column1h
         )
     )
 
 
-    ema4h_20_60_120 = (
+    ema1h_20_60_120 = (
         get_ema_20_60_120_direction(
-            df4h,
-            column4h
+            df1h,
+            column1h
         )
     )
 
@@ -925,14 +922,14 @@ def check_4h_breakout_warning(
     # =====================================================
 
     if (
-        direction4h == "long"
+        direction1h == "long"
         and
-        ema4h_20_60_120 == "long"
+        ema1h_20_60_120 == "long"
         and
-        count4h <= 10
+        count1h <= 10
     ):
 
-        return f"long_breakout_{count4h}"
+        return f"long_breakout_{count1h}"
 
 
     # =====================================================
@@ -940,40 +937,54 @@ def check_4h_breakout_warning(
     # =====================================================
 
     if (
-        direction4h == "short"
+        direction1h == "short"
         and
-        ema4h_20_60_120 == "short"
+        ema1h_20_60_120 == "short"
         and
-        count4h <= 10
+        count1h <= 10
     ):
 
-        return f"short_breakout_{count4h}"
+        return f"short_breakout_{count1h}"
 
 
     return "none"
 
 
 # =========================================================
-# OKX 4H + 1D EMA
+# OKX 1H + 4H EMA
 # =========================================================
 
-def get_okx_4h_ema(
+def get_okx_1h_4h_ema(
     inst_id
 ):
 
+    # 1H
+    df1h = get_okx_ohlcv(
+        inst_id,
+        "1H",
+        200
+    )
+
+    # 4H
     df4h = get_okx_ohlcv(
         inst_id,
         "4H",
         200
     )
 
-    df1d = get_okx_ohlcv(
-        inst_id,
-        "1D",
-        200
-    )
-
     return {
+
+        "1h_10_20":
+            check_ema_10_20(
+                df1h,
+                "c"
+            ),
+
+        "1h_20_60_120":
+            check_ema(
+                df1h,
+                "c"
+            ),
 
         "4h_10_20":
             check_ema_10_20(
@@ -987,27 +998,15 @@ def get_okx_4h_ema(
                 "c"
             ),
 
-        "1d_10_20":
-            check_ema_10_20(
-                df1d,
-                "c"
-            ),
-
-        "1d_20_60_120":
-            check_ema(
-                df1d,
-                "c"
-            ),
-
         "warning":
-            check_4h_warning(
-                df4h,
+            check_1h_warning(
+                df1h,
                 "c"
             ),
 
         "breakout":
-            check_4h_breakout_warning(
-                df4h,
+            check_1h_breakout_warning(
+                df1h,
                 "c"
             )
 
@@ -1015,25 +1014,39 @@ def get_okx_4h_ema(
 
 
 # =========================================================
-# 업비트 4H + 1D EMA
-# OKX와 동일한 경고 로직 사용
+# 업비트 1H + 4H EMA
 # =========================================================
 
-def get_upbit_4h_ema(
+def get_upbit_1h_4h_ema(
     market
 ):
 
+    # 1H
+    df1h = get_upbit_ohlcv(
+        market,
+        60,
+        200
+    )
+
+    # 4H
     df4h = get_upbit_4h_ohlcv(
         market,
         200
     )
 
-    df1d = get_upbit_day_ohlcv(
-        market,
-        200
-    )
-
     return {
+
+        "1h_10_20":
+            check_ema_10_20(
+                df1h,
+                "trade_price"
+            ),
+
+        "1h_20_60_120":
+            check_ema(
+                df1h,
+                "trade_price"
+            ),
 
         "4h_10_20":
             check_ema_10_20(
@@ -1047,27 +1060,15 @@ def get_upbit_4h_ema(
                 "trade_price"
             ),
 
-        "1d_10_20":
-            check_ema_10_20(
-                df1d,
-                "trade_price"
-            ),
-
-        "1d_20_60_120":
-            check_ema(
-                df1d,
-                "trade_price"
-            ),
-
         "warning":
-            check_4h_warning(
-                df4h,
+            check_1h_warning(
+                df1h,
                 "trade_price"
             ),
 
         "breakout":
-            check_4h_breakout_warning(
-                df4h,
+            check_1h_breakout_warning(
+                df1h,
                 "trade_price"
             )
 
@@ -1445,13 +1446,32 @@ def ema_html(
     </div>
 
 
-    <!-- 4H -->
+    <!-- 1H -->
 
     <div class="ema-period">
 
         <span class="ema-warning warning-size">
             {warning}
         </span>
+
+        <span class="ema-time">
+            1H
+        </span>
+
+        <span class="ema-status">
+            {ema["1h_10_20"]}
+        </span>
+
+        <span class="ema-status">
+            {ema["1h_20_60_120"]}
+        </span>
+
+    </div>
+
+
+    <!-- 4H -->
+
+    <div class="ema-period last">
 
         <span class="ema-time">
             4H
@@ -1468,32 +1488,13 @@ def ema_html(
     </div>
 
 
-    <!-- 1D -->
-
-    <div class="ema-period last">
-
-        <span class="ema-time">
-            1D
-        </span>
-
-        <span class="ema-status">
-            {ema["1d_10_20"]}
-        </span>
-
-        <span class="ema-status">
-            {ema["1d_20_60_120"]}
-        </span>
-
-    </div>
-
-
 </div>
 
 """
 
 
 # =========================================================
-# OKX TOP15
+# OKX TOP10
 # =========================================================
 
 def update_okx():
@@ -1501,7 +1502,7 @@ def update_okx():
     global latest_okx_data
 
     logging.info(
-        "OKX TOP15 시작"
+        "OKX TOP10 시작"
     )
 
     symbols = get_all_okx_swap_symbols()
@@ -1531,17 +1532,17 @@ def update_okx():
             10
         )
 
-    top15 = sorted(
+    top10 = sorted(
         volume_map,
         key=volume_map.get,
         reverse=True
-    )[:20]
+    )[:10]
 
     rows = []
 
     rank = 1
 
-    for symbol in top15:
+    for symbol in top10:
 
         coin = symbol.replace(
             "-USDT-SWAP",
@@ -1556,7 +1557,7 @@ def update_okx():
             symbol
         )
 
-        ema4h = get_okx_4h_ema(
+        ema1h4h = get_okx_1h_4h_ema(
             symbol
         )
 
@@ -1576,8 +1577,8 @@ def update_okx():
                     volume_map[symbol]
                 ),
 
-            "ema4h":
-                ema4h
+            "ema":
+                ema1h4h
 
         })
 
@@ -1586,12 +1587,12 @@ def update_okx():
     latest_okx_data = rows
 
     logging.info(
-        "OKX 완료"
+        "OKX TOP10 완료"
     )
 
 
 # =========================================================
-# 업비트 TOP15
+# 업비트 TOP10
 # =========================================================
 
 def update_upbit():
@@ -1599,7 +1600,7 @@ def update_upbit():
     global latest_upbit_data
 
     logging.info(
-        "업비트 TOP15 시작"
+        "업비트 TOP10 시작"
     )
 
     volume_map = get_upbit_volume_map()
@@ -1607,17 +1608,17 @@ def update_upbit():
     if not volume_map:
         return
 
-    top15 = sorted(
+    top10 = sorted(
         volume_map,
         key=volume_map.get,
         reverse=True
-    )[:20]
+    )[:10]
 
     rows = []
 
     rank = 1
 
-    for market in top15:
+    for market in top10:
 
         coin = market.replace(
             "KRW-",
@@ -1628,7 +1629,7 @@ def update_upbit():
             market
         )
 
-        ema4h = get_upbit_4h_ema(
+        ema1h4h = get_upbit_1h_4h_ema(
             market
         )
 
@@ -1648,8 +1649,8 @@ def update_upbit():
                     volume_map[market]
                 ),
 
-            "ema4h":
-                ema4h
+            "ema":
+                ema1h4h
 
         })
 
@@ -1658,7 +1659,7 @@ def update_upbit():
     latest_upbit_data = rows
 
     logging.info(
-        "업비트 완료"
+        "업비트 TOP10 완료"
     )
 
 
@@ -1958,7 +1959,6 @@ td:last-child{
 
 /* =====================================================
    돌파 경고
-   크게 표시
    ===================================================== */
 
 .breakout-period{
@@ -1983,7 +1983,6 @@ td:last-child{
 
 /* =====================================================
    눌림 경고
-   크게 표시
    ===================================================== */
 
 .ema-warning{
@@ -2085,12 +2084,12 @@ tr:hover{
 
 
 <p>
-4시간 눌림 · 돌파 · EMA 10-20 / 20-60-120 · 일봉 추세 확인
+1시간 눌림 · 돌파 · EMA 10-20 / 20-60-120 · 4시간 추세 확인
 </p>
 
 
 <h2 class="section-title">
-🏆 OKX 선물 거래대금 TOP15
+🏆 OKX 선물 거래대금 TOP10
 </h2>
 
 
@@ -2152,7 +2151,7 @@ EMA 상태
 <td>
 
 {ema_html(
-    item["ema4h"]
+    item["ema"]
 )}
 
 </td>
@@ -2168,7 +2167,7 @@ EMA 상태
 
 
 <h2 class="section-title">
-🏆 업비트 현물 거래대금 TOP15
+🏆 업비트 현물 거래대금 TOP10
 </h2>
 
 
@@ -2230,7 +2229,7 @@ EMA 상태
 <td>
 
 {ema_html(
-    item["ema4h"]
+    item["ema"]
 )}
 
 </td>
