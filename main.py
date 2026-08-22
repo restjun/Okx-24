@@ -237,7 +237,9 @@ def get_upbit_4h_ohlcv(
             .astype(float)
         )
 
+        # =====================================================
         # 현재 진행 중인 4시간봉 제외
+        # =====================================================
 
         now = pd.Timestamp.now(
             tz="Asia/Seoul"
@@ -820,7 +822,7 @@ def get_ema_10_20_count(
 # 1H 20-60-120 정배열
 # 4H 10-20 정배열
 # 4H 20-60-120 정배열
-# 4H 10-20 정배열 지속 20봉 이하
+# 4H 10-20 지속 20봉 이하
 #
 # SHORT
 # 반대
@@ -1632,7 +1634,6 @@ def breakout_html(
 
 # =========================================================
 # LONG / SHORT HTML
-# 경고가 있을 때만 표시
 # =========================================================
 
 def signal_html(
@@ -1660,6 +1661,8 @@ def signal_html(
 
 # =========================================================
 # EMA HTML
+#
+# ★ 눌림과 돌파를 같은 위치에 표시
 # =========================================================
 
 def ema_html(
@@ -1679,6 +1682,21 @@ def ema_html(
     )
 
 
+    # =====================================================
+    # 눌림 또는 돌파 하나만 표시
+    # =====================================================
+
+    alert = ""
+
+    if warning:
+
+        alert = warning
+
+    elif breakout:
+
+        alert = breakout
+
+
     return f"""
 
 <div class="ema-display">
@@ -1693,12 +1711,12 @@ def ema_html(
     </div>
 
 
-    <!-- 돌파 -->
+    <!-- 눌림 + 돌파 -->
 
     <div class="ema-period breakout-period">
 
         <span class="ema-warning breakout-warning">
-            {breakout}
+            {alert}
         </span>
 
     </div>
@@ -1707,10 +1725,6 @@ def ema_html(
     <!-- 1H -->
 
     <div class="ema-period">
-
-        <span class="ema-warning warning-size">
-            {warning}
-        </span>
 
         <span class="ema-time">
             1H
@@ -2289,47 +2303,25 @@ td:last-child{
 
 
 /* =====================================================
-   돌파
+   눌림 + 돌파 경고
    ===================================================== */
 
 .breakout-period{
 
     min-width:65px;
 
+    width:65px;
+
     padding-left:5px;
 
     padding-right:5px;
-
-}
-
-
-.breakout-warning{
-
-    font-size:24px;
-
-    line-height:28px;
-
-}
-
-
-/* =====================================================
-   눌림 경고
-   ===================================================== */
-
-.ema-warning{
-
-    display:inline-block;
-
-    width:50px;
-
-    min-width:50px;
 
     text-align:center;
 
 }
 
 
-.warning-size{
+.breakout-warning{
 
     font-size:24px;
 
@@ -2618,4 +2610,4 @@ if __name__ == "__main__":
 
         port=8000
 
-    )
+            )
