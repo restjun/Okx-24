@@ -262,8 +262,7 @@ def get_upbit_4h_ohlcv(
         )
 
         df["candle_datetime"] = pd.to_datetime(
-            df["candle_date_time_kst"
-            ]
+            df["candle_date_time_kst"]
         ).dt.tz_localize(
             "Asia/Seoul"
         )
@@ -294,7 +293,6 @@ def get_upbit_4h_ohlcv(
 
 # =========================================================
 # 업비트 일봉
-# 현재 코드에서는 사용하지 않지만 기존 유지
 # =========================================================
 
 def get_upbit_day_ohlcv(
@@ -849,7 +847,7 @@ def check_1h_warning(
 
 
     # =====================================================
-    # 1H 조건
+    # 1H
     # =====================================================
 
     ema1h_10_20 = (
@@ -868,7 +866,7 @@ def check_1h_warning(
 
 
     # =====================================================
-    # 4H 조건
+    # 4H
     # =====================================================
 
     ema4h_10_20 = (
@@ -911,6 +909,8 @@ def check_1h_warning(
         and
         ema4h_20_60_120 == "long"
         and
+        direction4h == "long"
+        and
         count4h >= 1
         and
         count4h <= 10
@@ -932,6 +932,8 @@ def check_1h_warning(
         and
         ema4h_20_60_120 == "short"
         and
+        direction4h == "short"
+        and
         count4h >= 1
         and
         count4h <= 10
@@ -949,12 +951,15 @@ def check_1h_warning(
 # LONG
 # 1H 10-20 정배열
 # 1H 20-60-120 정배열
-# 1H 10-20 지속 10봉 이하
 # 4H 10-20 정배열
 # 4H 20-60-120 정배열
+# 4H 10-20 지속 10봉 이하
 #
 # SHORT
 # 반대
+#
+# ★ 돌파도 눌림과 동일하게
+#   4H 10-20 지속 캔들 수 표시
 # =========================================================
 
 def check_1h_breakout_warning(
@@ -973,13 +978,21 @@ def check_1h_breakout_warning(
         return "none"
 
 
-    count1h, direction1h = (
-        get_ema_10_20_count(
+    # =====================================================
+    # 1H 10-20 방향
+    # =====================================================
+
+    ema1h_10_20 = (
+        get_ema_10_20_direction(
             df1h,
             column
         )
     )
 
+
+    # =====================================================
+    # 1H 20-60-120 방향
+    # =====================================================
 
     ema1h_20_60_120 = (
         get_ema_20_60_120_direction(
@@ -989,6 +1002,10 @@ def check_1h_breakout_warning(
     )
 
 
+    # =====================================================
+    # 4H 10-20 방향
+    # =====================================================
+
     ema4h_10_20 = (
         get_ema_10_20_direction(
             df4h,
@@ -997,8 +1014,24 @@ def check_1h_breakout_warning(
     )
 
 
+    # =====================================================
+    # 4H 20-60-120 방향
+    # =====================================================
+
     ema4h_20_60_120 = (
         get_ema_20_60_120_direction(
+            df4h,
+            column
+        )
+    )
+
+
+    # =====================================================
+    # ★ 돌파도 4H 10-20 지속 캔들 수 사용
+    # =====================================================
+
+    count4h, direction4h = (
+        get_ema_10_20_count(
             df4h,
             column
         )
@@ -1010,20 +1043,22 @@ def check_1h_breakout_warning(
     # =====================================================
 
     if (
-        direction1h == "long"
+        ema1h_10_20 == "long"
         and
         ema1h_20_60_120 == "long"
-        and
-        count1h >= 1
-        and
-        count1h <= 10
         and
         ema4h_10_20 == "long"
         and
         ema4h_20_60_120 == "long"
+        and
+        direction4h == "long"
+        and
+        count4h >= 1
+        and
+        count4h <= 10
     ):
 
-        return f"long_breakout_{count1h}"
+        return f"long_breakout_{count4h}"
 
 
     # =====================================================
@@ -1031,20 +1066,22 @@ def check_1h_breakout_warning(
     # =====================================================
 
     if (
-        direction1h == "short"
+        ema1h_10_20 == "short"
         and
         ema1h_20_60_120 == "short"
-        and
-        count1h >= 1
-        and
-        count1h <= 10
         and
         ema4h_10_20 == "short"
         and
         ema4h_20_60_120 == "short"
+        and
+        direction4h == "short"
+        and
+        count4h >= 1
+        and
+        count4h <= 10
     ):
 
-        return f"short_breakout_{count1h}"
+        return f"short_breakout_{count4h}"
 
 
     return "none"
@@ -1516,14 +1553,6 @@ def format_change(
 
 # =========================================================
 # 눌림 경고 HTML
-#
-# 4H 10-20 지속 봉 수 표시
-# 예:
-# 🚀(1)
-# 🚀(5)
-# 🚀(10)
-#
-# 11봉 이상은 조건 자체가 없어짐
 # =========================================================
 
 def warning_html(
@@ -1569,6 +1598,8 @@ def warning_html(
 
 # =========================================================
 # 돌파 경고 HTML
+#
+# ★ 4H EMA 10-20 지속 캔들 수
 # =========================================================
 
 def breakout_html(
@@ -1734,7 +1765,7 @@ def ema_html(
 
 
 # =========================================================
-# OKX TOP10
+# OKX TOP30
 # =========================================================
 
 def update_okx():
@@ -1742,7 +1773,7 @@ def update_okx():
     global latest_okx_data
 
     logging.info(
-        "OKX TOP10 시작"
+        "OKX TOP30 시작"
     )
 
     symbols = get_all_okx_swap_symbols()
@@ -1774,7 +1805,7 @@ def update_okx():
         )
 
 
-    top10 = sorted(
+    top30 = sorted(
         volume_map,
         key=volume_map.get,
         reverse=True
@@ -1786,7 +1817,7 @@ def update_okx():
     rank = 1
 
 
-    for symbol in top10:
+    for symbol in top30:
 
         coin = symbol.replace(
             "-USDT-SWAP",
@@ -1845,7 +1876,7 @@ def update_okx():
 
 
 # =========================================================
-# 업비트 TOP10
+# 업비트 TOP30
 # =========================================================
 
 def update_upbit():
@@ -1853,7 +1884,7 @@ def update_upbit():
     global latest_upbit_data
 
     logging.info(
-        "업비트 TOP10 시작"
+        "업비트 TOP30 시작"
     )
 
     volume_map = get_upbit_volume_map()
@@ -1863,7 +1894,7 @@ def update_upbit():
         return
 
 
-    top10 = sorted(
+    top30 = sorted(
         volume_map,
         key=volume_map.get,
         reverse=True
@@ -1875,7 +1906,7 @@ def update_upbit():
     rank = 1
 
 
-    for market in top10:
+    for market in top30:
 
         coin = market.replace(
             "KRW-",
@@ -2402,7 +2433,7 @@ tr:hover{
 
 
 <h2 class="section-title">
-🏆 OKX 선물 거래대금 TOP10
+🏆 OKX 선물 거래대금 TOP30
 </h2>
 
 
@@ -2480,7 +2511,7 @@ EMA 상태
 
 
 <h2 class="section-title">
-🏆 업비트 현물 거래대금 TOP10
+🏆 업비트 현물 거래대금 TOP30
 </h2>
 
 
@@ -2600,4 +2631,4 @@ if __name__ == "__main__":
 
         port=8000
 
-            )
+)
