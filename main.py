@@ -117,9 +117,7 @@ def get_okx_ohlcv(
             .astype(float)
         )
 
-        # =====================================================
         # 미완성 캔들 제외
-        # =====================================================
 
         df = df[
             df["confirm"].astype(str) == "1"
@@ -239,9 +237,7 @@ def get_upbit_4h_ohlcv(
             .astype(float)
         )
 
-        # =====================================================
         # 현재 진행 중인 4시간봉 제외
-        # =====================================================
 
         now = pd.Timestamp.now(
             tz="Asia/Seoul"
@@ -824,7 +820,7 @@ def get_ema_10_20_count(
 # 1H 20-60-120 정배열
 # 4H 10-20 정배열
 # 4H 20-60-120 정배열
-# 4H 10-20 정배열 지속 10봉 이하
+# 4H 10-20 정배열 지속 20봉 이하
 #
 # SHORT
 # 반대
@@ -913,7 +909,7 @@ def check_1h_warning(
         and
         count4h >= 1
         and
-        count4h <= 10
+        count4h <= 20
     ):
 
         return f"long_warning_{count4h}"
@@ -936,7 +932,7 @@ def check_1h_warning(
         and
         count4h >= 1
         and
-        count4h <= 10
+        count4h <= 20
     ):
 
         return f"short_warning_{count4h}"
@@ -953,13 +949,10 @@ def check_1h_warning(
 # 1H 20-60-120 정배열
 # 4H 10-20 정배열
 # 4H 20-60-120 정배열
-# 4H 10-20 지속 10봉 이하
+# 4H 10-20 지속 20봉 이하
 #
 # SHORT
 # 반대
-#
-# ★ 돌파도 눌림과 동일하게
-#   4H 10-20 지속 캔들 수 표시
 # =========================================================
 
 def check_1h_breakout_warning(
@@ -1027,7 +1020,7 @@ def check_1h_breakout_warning(
 
 
     # =====================================================
-    # ★ 돌파도 4H 10-20 지속 캔들 수 사용
+    # 4H 10-20 지속 캔들 수
     # =====================================================
 
     count4h, direction4h = (
@@ -1055,7 +1048,7 @@ def check_1h_breakout_warning(
         and
         count4h >= 1
         and
-        count4h <= 10
+        count4h <= 20
     ):
 
         return f"long_breakout_{count4h}"
@@ -1078,7 +1071,7 @@ def check_1h_breakout_warning(
         and
         count4h >= 1
         and
-        count4h <= 10
+        count4h <= 20
     ):
 
         return f"short_breakout_{count4h}"
@@ -1098,9 +1091,7 @@ def get_trade_signal(
     breakout
 ):
 
-    # =====================================================
     # 돌파 우선
-    # =====================================================
 
     if breakout.startswith(
         "long_breakout_"
@@ -1116,9 +1107,7 @@ def get_trade_signal(
         return "SHORT"
 
 
-    # =====================================================
     # 눌림
-    # =====================================================
 
     if warning.startswith(
         "long_warning_"
@@ -1598,8 +1587,6 @@ def warning_html(
 
 # =========================================================
 # 돌파 경고 HTML
-#
-# ★ 4H EMA 10-20 지속 캔들 수
 # =========================================================
 
 def breakout_html(
@@ -2631,4 +2618,4 @@ if __name__ == "__main__":
 
         port=8000
 
-)
+    )
