@@ -1626,7 +1626,7 @@ def update_okx():
         volume_map,
         key=volume_map.get,
         reverse=True
-    )[:10]
+    )[:15]
 
     rows = []
 
@@ -1706,7 +1706,7 @@ def update_upbit():
         volume_map,
         key=volume_map.get,
         reverse=True
-    )[:10]
+    )[:15]
 
     rows = []
 
