@@ -19,6 +19,31 @@ logging.basicConfig(
 
 
 # =========================================================
+# 사용자 설정
+# =========================================================
+
+# =========================================================
+# 거래대금 계산 시간
+#
+# 24 = 최근 24시간
+# 12 = 최근 12시간
+# 6  = 최근 6시간
+# 4  = 최근 4시간
+#
+# 이 숫자 하나만 변경하면 됨
+# =========================================================
+
+VOLUME_HOURS = 24
+
+
+# =========================================================
+# 표시 개수
+# =========================================================
+
+TOP_N = 10
+
+
+# =========================================================
 # 전역 데이터
 # =========================================================
 
@@ -184,6 +209,14 @@ def get_upbit_ohlcv(
             df["trade_price"]
             .astype(float)
         )
+
+        # 업비트 거래대금
+        if "candle_acc_trade_price" in df.columns:
+
+            df["candle_acc_trade_price"] = (
+                df["candle_acc_trade_price"]
+                .astype(float)
+            )
 
         return df
 
@@ -744,34 +777,6 @@ def get_ema_20_60_120_count(
 
 # =========================================================
 # 15분 눌림 조건
-#
-# 기존 조건
-#
-# LONG
-# 15M 10-20 역배열
-# 15M 20-60-120 정배열
-# 1H 10-20 정배열
-# 1H 20-60-120 정배열
-# 1H 20-60-120 정배열 지속 10봉 이하
-#
-# SHORT
-# 반대
-#
-# ★ 추가 〽️ 조건
-#
-# LONG
-# 15M 10-20 정배열
-# 1H 10-20 역배열
-# 1H 20-60-120 정배열
-#
-# ※ 15M 20-60-120은 조건에서 제외
-#
-# SHORT
-# 15M 10-20 역배열
-# 1H 10-20 정배열
-# 1H 20-60-120 역배열
-#
-# ※ 15M 20-60-120은 조건에서 제외
 # =========================================================
 
 def check_15m_warning(
@@ -824,15 +829,8 @@ def check_15m_warning(
         )
     )
 
-
     # =====================================================
-    # ★ LONG 〽️
-    #
-    # 15M EMA10 > EMA20
-    # 1H  EMA10 < EMA20
-    # 1H  EMA20 > EMA60 > EMA120
-    #
-    # 15M 20-60-120 조건 없음
+    # LONG 특별
     # =====================================================
 
     if (
@@ -845,15 +843,8 @@ def check_15m_warning(
 
         return "long_special"
 
-
     # =====================================================
-    # ★ SHORT 〽️
-    #
-    # 15M EMA10 < EMA20
-    # 1H  EMA10 > EMA20
-    # 1H  EMA20 < EMA60 < EMA120
-    #
-    # 15M 20-60-120 조건 없음
+    # SHORT 특별
     # =====================================================
 
     if (
@@ -865,7 +856,6 @@ def check_15m_warning(
     ):
 
         return "short_special"
-
 
     # =====================================================
     # 기존 LONG 눌림
@@ -889,7 +879,6 @@ def check_15m_warning(
 
         return f"long_warning_{count1h}"
 
-
     # =====================================================
     # 기존 SHORT 눌림
     # =====================================================
@@ -912,15 +901,11 @@ def check_15m_warning(
 
         return f"short_warning_{count1h}"
 
-
     return "none"
 
 
 # =========================================================
 # 15분 돌파 조건
-#
-# 카운팅 기준
-# 1H EMA 20-60-120
 # =========================================================
 
 def check_15m_breakout_warning(
@@ -973,7 +958,6 @@ def check_15m_breakout_warning(
         )
     )
 
-
     # =====================================================
     # LONG 돌파
     # =====================================================
@@ -995,7 +979,6 @@ def check_15m_breakout_warning(
     ):
 
         return f"long_breakout_{count1h}"
-
 
     # =====================================================
     # SHORT 돌파
@@ -1019,7 +1002,6 @@ def check_15m_breakout_warning(
 
         return f"short_breakout_{count1h}"
 
-
     return "none"
 
 
@@ -1032,7 +1014,6 @@ def get_trade_signal(
     breakout
 ):
 
-    # ★ 〽️ 특별 경고
     if warning == "long_special":
 
         return "LONG"
@@ -1041,8 +1022,6 @@ def get_trade_signal(
 
         return "SHORT"
 
-
-    # 기존 돌파
     if breakout.startswith(
         "long_breakout_"
     ):
@@ -1055,8 +1034,6 @@ def get_trade_signal(
 
         return "SHORT"
 
-
-    # 기존 눌림
     if warning.startswith(
         "long_warning_"
     ):
@@ -1221,30 +1198,95 @@ def get_upbit_ema(
 
 
 # =========================================================
-# OKX 24시간 거래대금
+# OKX 거래대금
+#
+# 현재 진행 중인 1H 캔들은 제외
+#
+# VOLUME_HOURS 값에 따라 계산
 # =========================================================
 
 def get_okx_volume(
     inst_id
 ):
 
+    # 계산에 필요한 캔들 + 여유분
+    limit = max(
+        VOLUME_HOURS + 2,
+        30
+    )
+
     df = get_okx_ohlcv(
         inst_id,
         "1H",
-        24
+        limit
     )
 
     if df is None:
 
         return 0
 
-    return df[
+    if len(df) < VOLUME_HOURS:
+
+        return 0
+
+    # 최근 완료된 VOLUME_HOURS개
+    recent = df.tail(
+        VOLUME_HOURS
+    )
+
+    return recent[
         "volCcyQuote"
     ].sum()
 
 
 # =========================================================
-# 업비트 24시간 거래대금
+# 업비트 거래대금
+#
+# 최근 VOLUME_HOURS개의 완료된 1시간봉
+# candle_acc_trade_price 합산
+# =========================================================
+
+def get_upbit_volume(
+    market
+):
+
+    limit = max(
+        VOLUME_HOURS + 2,
+        30
+    )
+
+    df = get_upbit_ohlcv(
+        market,
+        60,
+        limit
+    )
+
+    if df is None:
+
+        return 0
+
+    if len(df) < VOLUME_HOURS:
+
+        return 0
+
+    if "candle_acc_trade_price" not in df.columns:
+
+        return 0
+
+    recent = df.tail(
+        VOLUME_HOURS
+    )
+
+    return recent[
+        "candle_acc_trade_price"
+    ].sum()
+
+
+# =========================================================
+# 업비트 거래대금 MAP
+#
+# 기존 24시간 ticker 방식 대신
+# VOLUME_HOURS 기준으로 직접 계산
 # =========================================================
 
 def get_upbit_volume_map():
@@ -1255,35 +1297,31 @@ def get_upbit_volume_map():
 
         return {}
 
-    response = retry_request(
-        requests.get,
-        "https://api.upbit.com/v1/ticker?markets="
-        +
-        ",".join(markets)
+    volume_map = {}
+
+    logging.info(
+        f"업비트 최근 {VOLUME_HOURS}시간 거래대금 계산 시작"
     )
 
-    if response is None:
+    for market in markets:
 
-        return {}
+        try:
 
-    try:
+            volume = get_upbit_volume(
+                market
+            )
 
-        return {
+            volume_map[market] = volume
 
-            x["market"]:
-            x["acc_trade_price_24h"]
+        except Exception as e:
 
-            for x in response.json()
+            logging.error(
+                f"업비트 거래대금 오류 {market}:{e}"
+            )
 
-        }
+            volume_map[market] = 0
 
-    except Exception as e:
-
-        logging.error(
-            f"업비트 거래대금 오류:{e}"
-        )
-
-        return {}
+    return volume_map
 
 
 # =========================================================
@@ -1485,10 +1523,6 @@ def warning_html(
     warning
 ):
 
-    # =====================================================
-    # ★ 〽️ 특별 경고
-    # =====================================================
-
     if warning == "long_special":
 
         return "〽️"
@@ -1496,11 +1530,6 @@ def warning_html(
     elif warning == "short_special":
 
         return "〽️"
-
-
-    # =====================================================
-    # 기존 LONG 눌림
-    # =====================================================
 
     if warning.startswith(
         "long_warning_"
@@ -1518,11 +1547,6 @@ def warning_html(
 
         return f"🚀({count})"
 
-
-    # =====================================================
-    # 기존 SHORT 눌림
-    # =====================================================
-
     elif warning.startswith(
         "short_warning_"
     ):
@@ -1538,7 +1562,6 @@ def warning_html(
             count = 0
 
         return f"🚨({count})"
-
 
     return ""
 
@@ -1567,7 +1590,6 @@ def breakout_html(
 
         return f"⚡({count})"
 
-
     elif breakout.startswith(
         "short_breakout_"
     ):
@@ -1583,7 +1605,6 @@ def breakout_html(
             count = 0
 
         return f"💥({count})"
-
 
     return ""
 
@@ -1657,8 +1678,6 @@ def ema_html(
 
 <div class="ema-display">
 
-    <!-- LONG / SHORT -->
-
     <div class="signal-period">
 
         {signal}
@@ -1666,16 +1685,12 @@ def ema_html(
     </div>
 
 
-    <!-- 눌림 / 돌파 -->
-
     <div class="alert-period">
 
         {alert_html}
 
     </div>
 
-
-    <!-- 15M -->
 
     <div class="ema-period">
 
@@ -1694,8 +1709,6 @@ def ema_html(
     </div>
 
 
-    <!-- 1H -->
-
     <div class="ema-period last">
 
         <span class="ema-time">
@@ -1712,14 +1725,13 @@ def ema_html(
 
     </div>
 
-
 </div>
 
 """
 
 
 # =========================================================
-# OKX TOP15
+# OKX TOP10
 # =========================================================
 
 def update_okx():
@@ -1727,7 +1739,7 @@ def update_okx():
     global latest_okx_data
 
     logging.info(
-        "OKX TOP10 시작"
+        f"OKX 최근 {VOLUME_HOURS}시간 거래대금 TOP{TOP_N} 시작"
     )
 
     symbols = get_all_okx_swap_symbols()
@@ -1757,22 +1769,21 @@ def update_okx():
             10
         )
 
-
     # =====================================================
-    # 기존 코드 유지: 실제 표시 TOP15
+    # TOP10
     # =====================================================
 
-    top10 = sorted(
+    top_symbols = sorted(
         volume_map,
         key=volume_map.get,
         reverse=True
-    )[:30]
+    )[:TOP_N]
 
     rows = []
 
     rank = 1
 
-    for symbol in top10:
+    for symbol in top_symbols:
 
         coin = symbol.replace(
             "-USDT-SWAP",
@@ -1819,12 +1830,12 @@ def update_okx():
     latest_okx_data = rows
 
     logging.info(
-        "OKX TOP10 완료"
+        f"OKX TOP{TOP_N} 완료"
     )
 
 
 # =========================================================
-# 업비트 TOP15
+# 업비트 TOP10
 # =========================================================
 
 def update_upbit():
@@ -1832,7 +1843,7 @@ def update_upbit():
     global latest_upbit_data
 
     logging.info(
-        "업비트 TOP10 시작"
+        f"업비트 최근 {VOLUME_HOURS}시간 거래대금 TOP{TOP_N} 시작"
     )
 
     volume_map = get_upbit_volume_map()
@@ -1841,22 +1852,21 @@ def update_upbit():
 
         return
 
-
     # =====================================================
-    # 기존 코드 유지: 실제 표시 TOP15
+    # TOP10
     # =====================================================
 
-    top10 = sorted(
+    top_markets = sorted(
         volume_map,
         key=volume_map.get,
         reverse=True
-    )[:30]
+    )[:TOP_N]
 
     rows = []
 
     rank = 1
 
-    for market in top10:
+    for market in top_markets:
 
         coin = market.replace(
             "KRW-",
@@ -1899,7 +1909,7 @@ def update_upbit():
     latest_upbit_data = rows
 
     logging.info(
-        "업비트 TOP10 완료"
+        f"업비트 TOP{TOP_N} 완료"
     )
 
 
@@ -1945,7 +1955,7 @@ def scheduler():
 )
 def dashboard():
 
-    html = """
+    html = f"""
 
 <html>
 
@@ -2317,12 +2327,14 @@ tr:hover{
 
 
 <p>
+거래대금 기준: 최근 <b>{VOLUME_HOURS}시간</b>
+&nbsp;|&nbsp;
 15분 EMA · 1시간 추세 · 눌림 · 돌파 · LONG / SHORT
 </p>
 
 
 <h2 class="section-title">
-🏆 OKX 선물 거래대금 TOP10
+🏆 OKX 선물 거래대금 최근 {VOLUME_HOURS}시간 TOP10
 </h2>
 
 
@@ -2356,7 +2368,7 @@ EMA 상태
 
 
     # =====================================================
-    # OKX TOP15
+    # OKX TOP10
     # =====================================================
 
     for item in latest_okx_data:
@@ -2394,13 +2406,13 @@ EMA 상태
 """
 
 
-    html += """
+    html += f"""
 
 </table>
 
 
 <h2 class="section-title">
-🏆 업비트 현물 거래대금 TOP10
+🏆 업비트 현물 거래대금 최근 {VOLUME_HOURS}시간 TOP10
 </h2>
 
 
@@ -2434,7 +2446,7 @@ EMA 상태
 
 
     # =====================================================
-    # 업비트 TOP15
+    # 업비트 TOP10
     # =====================================================
 
     for item in latest_upbit_data:
@@ -2520,4 +2532,4 @@ if __name__ == "__main__":
 
         port=8000
 
-    )
+        )
