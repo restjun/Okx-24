@@ -652,30 +652,30 @@ def check_ema(
 
 
 # =========================================================
-# 1시간 EMA 10-20 지속 캔들 수
+# ★ 변경 핵심
 #
-# 최대 표시 기준 10봉
+# 1시간 EMA 20-60-120 정배열 / 역배열
+# 지속 캔들 수 계산
+#
+# LONG
+# EMA20 > EMA60 > EMA120
+#
+# SHORT
+# EMA20 < EMA60 < EMA120
+#
+# 최대 신호 기준 10봉
 # =========================================================
 
-def get_ema_10_20_count(
+def get_ema_20_60_120_count(
     df,
     column
 ):
 
-    if df is None or len(df) < 20:
+    if df is None or len(df) < 120:
 
         return 0, "none"
 
     df = df.copy()
-
-    df["ema10"] = (
-        df[column]
-        .ewm(
-            span=10,
-            adjust=False
-        )
-        .mean()
-    )
 
     df["ema20"] = (
         df[column]
@@ -686,15 +686,45 @@ def get_ema_10_20_count(
         .mean()
     )
 
+    df["ema60"] = (
+        df[column]
+        .ewm(
+            span=60,
+            adjust=False
+        )
+        .mean()
+    )
+
+    df["ema120"] = (
+        df[column]
+        .ewm(
+            span=120,
+            adjust=False
+        )
+        .mean()
+    )
+
     states = []
 
     for _, row in df.iterrows():
 
-        if row["ema10"] > row["ema20"]:
+        if (
+            row["ema20"]
+            >
+            row["ema60"]
+            >
+            row["ema120"]
+        ):
 
             states.append("long")
 
-        elif row["ema10"] < row["ema20"]:
+        elif (
+            row["ema20"]
+            <
+            row["ema60"]
+            <
+            row["ema120"]
+        ):
 
             states.append("short")
 
@@ -731,7 +761,7 @@ def get_ema_10_20_count(
 # 15M 20-60-120 정배열
 # 1H 10-20 정배열
 # 1H 20-60-120 정배열
-# 1H 10-20 지속 10봉 이하
+# 1H 20-60-120 정배열 지속 10봉 이하
 #
 # SHORT
 # 반대
@@ -780,14 +810,19 @@ def check_15m_warning(
         )
     )
 
+    # ★ 카운팅 기준 변경
+    # 1H EMA 10-20 → 1H EMA 20-60-120
     count1h, direction1h = (
-        get_ema_10_20_count(
+        get_ema_20_60_120_count(
             df1h,
             column
         )
     )
 
+    # =====================================================
     # LONG 눌림
+    # =====================================================
+
     if (
         ema15m_10_20 == "short"
         and
@@ -806,7 +841,10 @@ def check_15m_warning(
 
         return f"long_warning_{count1h}"
 
+    # =====================================================
     # SHORT 눌림
+    # =====================================================
+
     if (
         ema15m_10_20 == "long"
         and
@@ -830,6 +868,9 @@ def check_15m_warning(
 
 # =========================================================
 # 15분 돌파 조건
+#
+# 카운팅 기준
+# ★ 1H EMA 20-60-120
 # =========================================================
 
 def check_15m_breakout_warning(
@@ -875,14 +916,18 @@ def check_15m_breakout_warning(
         )
     )
 
+    # ★ 1H EMA 20-60-120 지속 캔들 수
     count1h, direction1h = (
-        get_ema_10_20_count(
+        get_ema_20_60_120_count(
             df1h,
             column
         )
     )
 
+    # =====================================================
     # LONG 돌파
+    # =====================================================
+
     if (
         ema15m_10_20 == "long"
         and
@@ -901,7 +946,10 @@ def check_15m_breakout_warning(
 
         return f"long_breakout_{count1h}"
 
+    # =====================================================
     # SHORT 돌파
+    # =====================================================
+
     if (
         ema15m_10_20 == "short"
         and
@@ -1621,12 +1669,15 @@ def update_okx():
             10
         )
 
-    # TOP10
+    # =====================================================
+    # 실제 TOP10
+    # =====================================================
+
     top10 = sorted(
         volume_map,
         key=volume_map.get,
         reverse=True
-    )[:15]
+    )[:10]
 
     rows = []
 
@@ -1701,12 +1752,15 @@ def update_upbit():
 
         return
 
-    # TOP10
+    # =====================================================
+    # 실제 TOP10
+    # =====================================================
+
     top10 = sorted(
         volume_map,
         key=volume_map.get,
         reverse=True
-    )[:15]
+    )[:10]
 
     rows = []
 
@@ -2448,4 +2502,4 @@ if __name__ == "__main__":
 
         port=8000
 
-        )
+    )
