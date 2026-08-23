@@ -371,8 +371,6 @@ def format_volume(volume):
 
 # =========================================================
 # EMA 10-20 방향
-#
-# 15M 또는 1H에서 사용
 # =========================================================
 
 def get_ema_10_20_direction(
@@ -415,8 +413,6 @@ def get_ema_10_20_direction(
 
 # =========================================================
 # EMA 20-60-120 방향
-#
-# 15M 또는 1H에서 사용
 # =========================================================
 
 def get_ema_20_60_120_direction(
@@ -656,10 +652,9 @@ def check_ema(
 
 
 # =========================================================
-# EMA 10-20 지속 캔들 수
+# 1시간 EMA 10-20 지속 캔들 수
 #
-# ★ 1H 기준
-# ★ 최대 표시 기준 10봉
+# 최대 표시 기준 10봉
 # =========================================================
 
 def get_ema_10_20_count(
@@ -729,10 +724,9 @@ def get_ema_10_20_count(
 
 
 # =========================================================
-# 15M 눌림 조건
+# 15분 눌림 조건
 #
 # LONG
-#
 # 15M 10-20 역배열
 # 15M 20-60-120 정배열
 # 1H 10-20 정배열
@@ -793,10 +787,7 @@ def check_15m_warning(
         )
     )
 
-    # =====================================================
     # LONG 눌림
-    # =====================================================
-
     if (
         ema15m_10_20 == "short"
         and
@@ -815,10 +806,7 @@ def check_15m_warning(
 
         return f"long_warning_{count1h}"
 
-    # =====================================================
     # SHORT 눌림
-    # =====================================================
-
     if (
         ema15m_10_20 == "long"
         and
@@ -841,18 +829,7 @@ def check_15m_warning(
 
 
 # =========================================================
-# 15M 돌파 조건
-#
-# LONG
-#
-# 15M 10-20 정배열
-# 15M 20-60-120 정배열
-# 1H 10-20 정배열
-# 1H 20-60-120 정배열
-# 1H 10-20 지속 10봉 이하
-#
-# SHORT
-# 반대
+# 15분 돌파 조건
 # =========================================================
 
 def check_15m_breakout_warning(
@@ -905,10 +882,7 @@ def check_15m_breakout_warning(
         )
     )
 
-    # =====================================================
     # LONG 돌파
-    # =====================================================
-
     if (
         ema15m_10_20 == "long"
         and
@@ -927,10 +901,7 @@ def check_15m_breakout_warning(
 
         return f"long_breakout_{count1h}"
 
-    # =====================================================
     # SHORT 돌파
-    # =====================================================
-
     if (
         ema15m_10_20 == "short"
         and
@@ -998,14 +969,12 @@ def get_okx_ema(
     inst_id
 ):
 
-    # 15분봉
     df15m = get_okx_ohlcv(
         inst_id,
         "15m",
         200
     )
 
-    # 1시간봉
     df1h = get_okx_ohlcv(
         inst_id,
         "1H",
@@ -1074,14 +1043,12 @@ def get_upbit_ema(
     market
 ):
 
-    # 15분봉
     df15m = get_upbit_ohlcv(
         market,
         15,
         200
     )
 
-    # 1시간봉
     df1h = get_upbit_ohlcv(
         market,
         60,
@@ -1514,8 +1481,6 @@ def signal_html(
 
 # =========================================================
 # EMA HTML
-#
-# 15M + 1H 표시
 # =========================================================
 
 def ema_html(
@@ -1618,7 +1583,7 @@ def ema_html(
 
 
 # =========================================================
-# OKX TOP30
+# OKX TOP10
 # =========================================================
 
 def update_okx():
@@ -1626,7 +1591,7 @@ def update_okx():
     global latest_okx_data
 
     logging.info(
-        "OKX TOP30 시작"
+        "OKX TOP10 시작"
     )
 
     symbols = get_all_okx_swap_symbols()
@@ -1656,17 +1621,18 @@ def update_okx():
             10
         )
 
-    top30 = sorted(
+    # TOP10
+    top10 = sorted(
         volume_map,
         key=volume_map.get,
         reverse=True
-    )[:30]
+    )[:10]
 
     rows = []
 
     rank = 1
 
-    for symbol in top30:
+    for symbol in top10:
 
         coin = symbol.replace(
             "-USDT-SWAP",
@@ -1713,12 +1679,12 @@ def update_okx():
     latest_okx_data = rows
 
     logging.info(
-        "OKX 완료"
+        "OKX TOP10 완료"
     )
 
 
 # =========================================================
-# 업비트 TOP30
+# 업비트 TOP10
 # =========================================================
 
 def update_upbit():
@@ -1726,7 +1692,7 @@ def update_upbit():
     global latest_upbit_data
 
     logging.info(
-        "업비트 TOP30 시작"
+        "업비트 TOP10 시작"
     )
 
     volume_map = get_upbit_volume_map()
@@ -1735,17 +1701,18 @@ def update_upbit():
 
         return
 
-    top30 = sorted(
+    # TOP10
+    top10 = sorted(
         volume_map,
         key=volume_map.get,
         reverse=True
-    )[:30]
+    )[:10]
 
     rows = []
 
     rank = 1
 
-    for market in top30:
+    for market in top10:
 
         coin = market.replace(
             "KRW-",
@@ -1788,7 +1755,7 @@ def update_upbit():
     latest_upbit_data = rows
 
     logging.info(
-        "업비트 완료"
+        "업비트 TOP10 완료"
     )
 
 
@@ -2283,7 +2250,7 @@ tr:hover{
 
 
 <h2 class="section-title">
-🏆 OKX 선물 거래대금 TOP30
+🏆 OKX 선물 거래대금 TOP10
 </h2>
 
 
@@ -2317,7 +2284,7 @@ EMA 상태
 
 
     # =====================================================
-    # OKX
+    # OKX TOP10
     # =====================================================
 
     for item in latest_okx_data:
@@ -2361,7 +2328,7 @@ EMA 상태
 
 
 <h2 class="section-title">
-🏆 업비트 현물 거래대금 TOP30
+🏆 업비트 현물 거래대금 TOP10
 </h2>
 
 
@@ -2395,7 +2362,7 @@ EMA 상태
 
 
     # =====================================================
-    # 업비트
+    # 업비트 TOP10
     # =====================================================
 
     for item in latest_upbit_data:
@@ -2481,4 +2448,4 @@ if __name__ == "__main__":
 
         port=8000
 
-    )
+        )
