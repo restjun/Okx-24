@@ -883,6 +883,89 @@ def get_ema_20_60_120_count(
 
 
 # =========================================================
+# ★ 추가 정배열 / 역배열 경고
+#
+# LONG ☀️
+# 1H 10-20 정배열
+# 1H 20-60-120 정배열
+# 4H 10-20 정배열
+#
+# SHORT 🌧
+# 1H 10-20 역배열
+# 1H 20-60-120 역배열
+# 4H 10-20 역배열
+#
+# ※ 4H 20-60-120은 사용하지 않음
+# =========================================================
+
+def check_1h_alignment_warning(
+    df1h,
+    df4h,
+    column
+):
+
+    if (
+        df1h is None
+        or df4h is None
+        or len(df1h) < 120
+        or len(df4h) < 20
+    ):
+
+        return "none"
+
+    ema1h_10_20 = (
+        get_ema_10_20_direction(
+            df1h,
+            column
+        )
+    )
+
+    ema1h_20_60_120 = (
+        get_ema_20_60_120_direction(
+            df1h,
+            column
+        )
+    )
+
+    ema4h_10_20 = (
+        get_ema_10_20_direction(
+            df4h,
+            column
+        )
+    )
+
+    # =====================================================
+    # LONG ☀️
+    # =====================================================
+
+    if (
+        ema1h_10_20 == "long"
+        and
+        ema1h_20_60_120 == "long"
+        and
+        ema4h_10_20 == "long"
+    ):
+
+        return "long_alignment"
+
+    # =====================================================
+    # SHORT 🌧
+    # =====================================================
+
+    if (
+        ema1h_10_20 == "short"
+        and
+        ema1h_20_60_120 == "short"
+        and
+        ema4h_10_20 == "short"
+    ):
+
+        return "short_alignment"
+
+    return "none"
+
+
+# =========================================================
 # 1시간 눌림 조건
 #
 # 기존 15분 → 1시간
@@ -1229,6 +1312,16 @@ def get_okx_ema(
         "c"
     )
 
+    # =====================================================
+    # ★ 추가 정배열 / 역배열 경고
+    # =====================================================
+
+    alignment = check_1h_alignment_warning(
+        df1h,
+        df4h,
+        "c"
+    )
+
     signal = get_trade_signal(
         warning,
         breakout
@@ -1267,7 +1360,10 @@ def get_okx_ema(
             breakout,
 
         "signal":
-            signal
+            signal,
+
+        "alignment":
+            alignment
     }
 
 
@@ -1310,6 +1406,16 @@ def get_upbit_ema(
         "trade_price"
     )
 
+    # =====================================================
+    # ★ 추가 정배열 / 역배열 경고
+    # =====================================================
+
+    alignment = check_1h_alignment_warning(
+        df1h,
+        df4h,
+        "trade_price"
+    )
+
     signal = get_trade_signal(
         warning,
         breakout
@@ -1348,7 +1454,10 @@ def get_upbit_ema(
             breakout,
 
         "signal":
-            signal
+            signal,
+
+        "alignment":
+            alignment
     }
 
 
@@ -1820,6 +1929,25 @@ def warning_html(
 
 
 # =========================================================
+# ★ 정배열 / 역배열 추가 경고 HTML
+# =========================================================
+
+def alignment_html(
+    alignment
+):
+
+    if alignment == "long_alignment":
+
+        return "☀️"
+
+    elif alignment == "short_alignment":
+
+        return "🌧"
+
+    return ""
+
+
+# =========================================================
 # 돌파 경고 HTML
 # =========================================================
 
@@ -1905,11 +2033,19 @@ def ema_html(
         ema["breakout"]
     )
 
+    alignment = alignment_html(
+        ema["alignment"]
+    )
+
     signal = signal_html(
         ema["signal"]
     )
 
     alert_html = ""
+
+    # =====================================================
+    # 기존 눌림 경고
+    # =====================================================
 
     if warning:
 
@@ -1919,11 +2055,27 @@ def ema_html(
         </span>
         """
 
+    # =====================================================
+    # 기존 돌파 경고
+    # =====================================================
+
     if breakout:
 
         alert_html += f"""
         <span class="alert-breakout">
             {breakout}
+        </span>
+        """
+
+    # =====================================================
+    # ★ 추가 정배열 / 역배열 경고
+    # =====================================================
+
+    if alignment:
+
+        alert_html += f"""
+        <span class="alert-alignment">
+            {alignment}
         </span>
         """
 
@@ -2275,6 +2427,11 @@ def update_dashboard():
     )
 
     logging.info(
+        "추가 정배열 경고 : "
+        "1H 10-20 + 1H 20-60-120 + 4H 10-20"
+    )
+
+    logging.info(
         "========================================"
     )
 
@@ -2578,9 +2735,9 @@ td:last-child{
 
 .alert-period{
 
-    width:75px;
+    width:115px;
 
-    min-width:75px;
+    min-width:115px;
 
     height:40px;
 
@@ -2613,6 +2770,17 @@ td:last-child{
 
 
 .alert-breakout{
+
+    font-size:24px;
+
+    line-height:30px;
+
+    display:inline-block;
+
+}
+
+
+.alert-alignment{
 
     font-size:24px;
 
@@ -2964,4 +3132,4 @@ if __name__ == "__main__":
 
         port=8000
 
-    )
+        )
