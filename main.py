@@ -970,7 +970,7 @@ def check_15m_warning(
         and
         count1h >= 1
         and
-        count1h <= 10
+        count1h <= 20
     ):
 
         return f"long_warning_{count1h}"
@@ -992,7 +992,7 @@ def check_15m_warning(
         and
         count1h >= 1
         and
-        count1h <= 10
+        count1h <= 20
     ):
 
         return f"short_warning_{count1h}"
@@ -1071,7 +1071,7 @@ def check_15m_breakout_warning(
         and
         count1h >= 1
         and
-        count1h <= 10
+        count1h <= 20
     ):
 
         return f"long_breakout_{count1h}"
@@ -1093,7 +1093,7 @@ def check_15m_breakout_warning(
         and
         count1h >= 1
         and
-        count1h <= 10
+        count1h <= 20
     ):
 
         return f"short_breakout_{count1h}"
@@ -1335,7 +1335,6 @@ def get_okx_volume(
 
             return 0
 
-        # 완료된 1분봉 60개
         df = df.tail(60)
 
         volume = (
@@ -1929,7 +1928,7 @@ def ema_html(
 
 
 # =========================================================
-# OKX TOP10
+# OKX TOP15
 # =========================================================
 
 def update_okx():
@@ -1987,10 +1986,6 @@ def update_okx():
             symbol
         )
 
-        # =================================================
-        # USDT → KRW
-        # =================================================
-
         volume_krw = (
             volume_usdt
             *
@@ -2011,7 +2006,7 @@ def update_okx():
             )
 
     # =====================================================
-    # TOP10
+    # TOP15
     # =====================================================
 
     top_symbols = sorted(
@@ -2076,7 +2071,7 @@ def update_okx():
 
 
 # =========================================================
-# 업비트 TOP10
+# 업비트 TOP15
 # =========================================================
 
 def update_upbit():
@@ -2117,7 +2112,7 @@ def update_upbit():
         return
 
     # =====================================================
-    # TOP10
+    # TOP15
     # =====================================================
 
     top_markets = sorted(
@@ -2896,4 +2891,3 @@ if __name__ == "__main__":
 
         port=8000
 
-    )
