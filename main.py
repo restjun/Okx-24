@@ -30,6 +30,7 @@ logging.basicConfig(
 #
 # 2 이상
 #      → 완료된 1시간봉 N개 사용
+#
 # =========================================================
 
 VOLUME_HOURS = 24
@@ -737,12 +738,6 @@ def get_ema_20_60_120_direction(
 
 # =========================================================
 # VWMA 10-20 상태
-#
-# 정배열 → 🟢(N)
-# 역배열 → 🔴(N)
-# 공통구간 → ⚪(N)
-#
-# ★ 공통구간도 연속 카운팅
 # =========================================================
 
 def check_ema_10_20(
@@ -815,6 +810,10 @@ def check_ema_10_20(
 
     current_state = states[-1]
 
+    if current_state == "none":
+
+        return "⚪(0)"
+
     count = 0
 
     for state in reversed(states):
@@ -835,17 +834,11 @@ def check_ema_10_20(
 
         return f"🔴({count})"
 
-    return f"⚪({count})"
+    return "⚪(0)"
 
 
 # =========================================================
 # VWMA 20-60-120 상태
-#
-# 정배열 → 🟢(N)
-# 역배열 → 🔴(N)
-# 공통구간 → ⚪(N)
-#
-# ★ 공통구간도 연속 카운팅
 # =========================================================
 
 def check_ema(
@@ -931,6 +924,10 @@ def check_ema(
 
     current_state = states[-1]
 
+    if current_state == "none":
+
+        return "⚪(0)"
+
     count = 0
 
     for state in reversed(states):
@@ -951,13 +948,11 @@ def check_ema(
 
         return f"🔴({count})"
 
-    return f"⚪({count})"
+    return "⚪(0)"
 
 
 # =========================================================
 # VWMA 20-60-120 지속 캔들 수
-#
-# 공통구간(none)은 방향으로 사용하지 않음
 # =========================================================
 
 def get_ema_20_60_120_count(
@@ -1064,18 +1059,6 @@ def get_ema_20_60_120_count(
 
 # =========================================================
 # 추가 정배열 / 역배열 경고
-#
-# LONG ☀️
-# 1H 10-20 정배열
-# 1H 20-60-120 정배열
-# 4H 10-20 정배열
-#
-# SHORT 🌧
-# 1H 10-20 역배열
-# 1H 20-60-120 역배열
-# 4H 10-20 역배열
-#
-# ※ 4H 20-60-120은 사용하지 않음
 # =========================================================
 
 def check_1h_alignment_warning(
@@ -1139,16 +1122,12 @@ def check_1h_alignment_warning(
 
 # =========================================================
 # 1시간 눌림 조건
-#
-# ★ 롱 경고 → 당일 변동률 양수
-# ★ 숏 경고 → 당일 변동률 음수
 # =========================================================
 
 def check_1h_warning(
     df1h,
     df4h,
-    column,
-    daily_change=None
+    column
 ):
 
     if (
@@ -1196,38 +1175,10 @@ def check_1h_warning(
     )
 
     # =====================================================
-    # 당일 변동률 필터
-    #
-    # LONG  → > 0
-    # SHORT → < 0
-    # 0     → 둘 다 불허
-    # =====================================================
-
-    long_allowed = (
-        daily_change is not None
-        and
-        daily_change > 0
-    )
-
-    short_allowed = (
-        daily_change is not None
-        and
-        daily_change < 0
-    )
-
-    # =====================================================
-    # LONG 특별 경고 〽️
-    #
-    # 1H 10-20 정배열
-    # 4H 10-20 역배열
-    # 4H 20-60-120 정배열
-    #
-    # + 당일 변동률 양수
+    # LONG 〽️
     # =====================================================
 
     if (
-        long_allowed
-        and
         vwma1h_10_20 == "long"
         and
         vwma4h_10_20 == "short"
@@ -1238,18 +1189,10 @@ def check_1h_warning(
         return "long_special"
 
     # =====================================================
-    # SHORT 특별 경고 〽️
-    #
-    # 1H 10-20 역배열
-    # 4H 10-20 정배열
-    # 4H 20-60-120 역배열
-    #
-    # + 당일 변동률 음수
+    # SHORT 〽️
     # =====================================================
 
     if (
-        short_allowed
-        and
         vwma1h_10_20 == "short"
         and
         vwma4h_10_20 == "long"
@@ -1261,20 +1204,9 @@ def check_1h_warning(
 
     # =====================================================
     # LONG 눌림
-    #
-    # 1H 10-20 역배열
-    # 1H 20-60-120 정배열
-    # 4H 10-20 정배열
-    # 4H 20-60-120 정배열
-    #
-    # 4H 정배열 지속 1~10개
-    #
-    # + 당일 변동률 양수
     # =====================================================
 
     if (
-        long_allowed
-        and
         vwma1h_10_20 == "short"
         and
         vwma1h_20_60_120 == "long"
@@ -1294,20 +1226,9 @@ def check_1h_warning(
 
     # =====================================================
     # SHORT 눌림
-    #
-    # 1H 10-20 정배열
-    # 1H 20-60-120 역배열
-    # 4H 10-20 역배열
-    # 4H 20-60-120 역배열
-    #
-    # 4H 역배열 지속 1~10개
-    #
-    # + 당일 변동률 음수
     # =====================================================
 
     if (
-        short_allowed
-        and
         vwma1h_10_20 == "long"
         and
         vwma1h_20_60_120 == "short"
@@ -1330,8 +1251,6 @@ def check_1h_warning(
 
 # =========================================================
 # 1시간 돌파 조건
-#
-# ※ 당일 변동률 필터 적용하지 않음
 # =========================================================
 
 def check_1h_breakout_warning(
@@ -1386,10 +1305,6 @@ def check_1h_breakout_warning(
 
     # =====================================================
     # LONG 돌파
-    #
-    # 1H 정배열
-    # 4H 정배열
-    # 4H 카운트 1~10
     # =====================================================
 
     if (
@@ -1412,10 +1327,6 @@ def check_1h_breakout_warning(
 
     # =====================================================
     # SHORT 돌파
-    #
-    # 1H 역배열
-    # 4H 역배열
-    # 4H 카운트 1~10
     # =====================================================
 
     if (
@@ -1484,11 +1395,153 @@ def get_trade_signal(
 
 
 # =========================================================
+# ★ 당일 변동률 방향 필터
+#
+# LONG  → 당일 변동률 > 0
+# SHORT → 당일 변동률 < 0
+#
+# 0 또는 N/A → 경고 없음
+# =========================================================
+
+def apply_daily_change_filter(
+    warning,
+    breakout,
+    alignment,
+    signal,
+    daily_change
+):
+
+    # =====================================================
+    # 변동률을 확인할 수 없는 경우
+    # =====================================================
+
+    if daily_change is None:
+
+        return (
+            "none",
+            "none",
+            "none",
+            ""
+        )
+
+    try:
+
+        daily_change = float(
+            daily_change
+        )
+
+    except Exception:
+
+        return (
+            "none",
+            "none",
+            "none",
+            ""
+        )
+
+    # =====================================================
+    # LONG
+    #
+    # 당일 변동률이 양수일 때만 허용
+    # =====================================================
+
+    if daily_change > 0:
+
+        if (
+            warning.startswith(
+                "short_"
+            )
+        ):
+
+            warning = "none"
+
+        if (
+            breakout.startswith(
+                "short_"
+            )
+        ):
+
+            breakout = "none"
+
+        if (
+            alignment == "short_alignment"
+        ):
+
+            alignment = "none"
+
+        if signal == "SHORT":
+
+            signal = ""
+
+        return (
+            warning,
+            breakout,
+            alignment,
+            signal
+        )
+
+    # =====================================================
+    # SHORT
+    #
+    # 당일 변동률이 음수일 때만 허용
+    # =====================================================
+
+    if daily_change < 0:
+
+        if (
+            warning.startswith(
+                "long_"
+            )
+        ):
+
+            warning = "none"
+
+        if (
+            breakout.startswith(
+                "long_"
+            )
+        ):
+
+            breakout = "none"
+
+        if (
+            alignment == "long_alignment"
+        ):
+
+            alignment = "none"
+
+        if signal == "LONG":
+
+            signal = ""
+
+        return (
+            warning,
+            breakout,
+            alignment,
+            signal
+        )
+
+    # =====================================================
+    # 당일 변동률 = 0
+    #
+    # LONG / SHORT 모두 표시하지 않음
+    # =====================================================
+
+    return (
+        "none",
+        "none",
+        "none",
+        ""
+    )
+
+
+# =========================================================
 # OKX 1H + 4H VWMA
 # =========================================================
 
 def get_okx_ema(
-    inst_id
+    inst_id,
+    daily_change=None
 ):
 
     df1h = get_okx_ohlcv(
@@ -1503,28 +1556,10 @@ def get_okx_ema(
         200
     )
 
-    # =====================================================
-    # 당일 변동률
-    # =====================================================
-
-    changes = get_okx_change(
-        inst_id
-    )
-
-    daily_change = None
-
-    if (
-        changes is not None
-        and len(changes) > 0
-    ):
-
-        daily_change = changes[0]
-
     warning = check_1h_warning(
         df1h,
         df4h,
-        "c",
-        daily_change
+        "c"
     )
 
     breakout = check_1h_breakout_warning(
@@ -1542,6 +1577,23 @@ def get_okx_ema(
     signal = get_trade_signal(
         warning,
         breakout
+    )
+
+    # =====================================================
+    # ★ 당일 변동률 방향 필터 적용
+    # =====================================================
+
+    (
+        warning,
+        breakout,
+        alignment,
+        signal
+    ) = apply_daily_change_filter(
+        warning,
+        breakout,
+        alignment,
+        signal,
+        daily_change
     )
 
     return {
@@ -1580,10 +1632,7 @@ def get_okx_ema(
             signal,
 
         "alignment":
-            alignment,
-
-        "daily_change":
-            daily_change
+            alignment
     }
 
 
@@ -1592,7 +1641,8 @@ def get_okx_ema(
 # =========================================================
 
 def get_upbit_ema(
-    market
+    market,
+    daily_change=None
 ):
 
     df1h = get_upbit_ohlcv(
@@ -1607,28 +1657,10 @@ def get_upbit_ema(
         200
     )
 
-    # =====================================================
-    # 당일 변동률
-    # =====================================================
-
-    changes = get_upbit_change(
-        market
-    )
-
-    daily_change = None
-
-    if (
-        changes is not None
-        and len(changes) > 0
-    ):
-
-        daily_change = changes[0]
-
     warning = check_1h_warning(
         df1h,
         df4h,
-        "trade_price",
-        daily_change
+        "trade_price"
     )
 
     breakout = check_1h_breakout_warning(
@@ -1646,6 +1678,23 @@ def get_upbit_ema(
     signal = get_trade_signal(
         warning,
         breakout
+    )
+
+    # =====================================================
+    # ★ 당일 변동률 방향 필터 적용
+    # =====================================================
+
+    (
+        warning,
+        breakout,
+        alignment,
+        signal
+    ) = apply_daily_change_filter(
+        warning,
+        breakout,
+        alignment,
+        signal,
+        daily_change
     )
 
     return {
@@ -1684,21 +1733,12 @@ def get_upbit_ema(
             signal,
 
         "alignment":
-            alignment,
-
-        "daily_change":
-            daily_change
+            alignment
     }
 
 
 # =========================================================
 # OKX 거래대금
-#
-# VOLUME_HOURS = 1
-# → 1분봉 60개 사용
-#
-# VOLUME_HOURS >= 2
-# → 1시간봉 N개 사용
 # =========================================================
 
 def get_okx_volume(
@@ -1761,12 +1801,6 @@ def get_okx_volume(
 
 # =========================================================
 # 업비트 거래대금
-#
-# VOLUME_HOURS = 1
-# → 1분봉 60개 사용
-#
-# VOLUME_HOURS >= 2
-# → 1시간봉 N개 사용
 # =========================================================
 
 def get_upbit_volume(
@@ -1968,9 +2002,6 @@ def get_okx_change(
 
 # =========================================================
 # 업비트 변동률
-#
-# 결과:
-# [오늘, 어제, 그제]
 # =========================================================
 
 def get_upbit_change(
@@ -2439,8 +2470,29 @@ def update_okx():
             symbol
         )
 
+        # =====================================================
+        # ★ 오늘 변동률
+        #
+        # changes[0] = 오늘
+        # =====================================================
+
+        daily_change = None
+
+        if (
+            changes is not None
+            and
+            len(changes) > 0
+        ):
+
+            daily_change = changes[0]
+
+        # =====================================================
+        # ★ 당일 변동률을 EMA/경고 필터에 전달
+        # =====================================================
+
         ema = get_okx_ema(
-            symbol
+            symbol,
+            daily_change
         )
 
         rows.append({
@@ -2533,8 +2585,27 @@ def update_upbit():
             market
         )
 
+        # =====================================================
+        # ★ 오늘 변동률
+        # =====================================================
+
+        daily_change = None
+
+        if (
+            changes is not None
+            and
+            len(changes) > 0
+        ):
+
+            daily_change = changes[0]
+
+        # =====================================================
+        # ★ 당일 변동률을 EMA/경고 필터에 전달
+        # =====================================================
+
         ema = get_upbit_ema(
-            market
+            market,
+            daily_change
         )
 
         rows.append({
@@ -2611,15 +2682,11 @@ def update_dashboard():
     )
 
     logging.info(
-        "롱 경고 : 당일 변동률 > 0%"
+        "LONG 경고 = 당일 변동률 양수"
     )
 
     logging.info(
-        "숏 경고 : 당일 변동률 < 0%"
-    )
-
-    logging.info(
-        "공통구간 : ⚪ 연속 캔들 카운팅"
+        "SHORT 경고 = 당일 변동률 음수"
     )
 
     logging.info(
@@ -3118,6 +3185,13 @@ TOP""" + str(TOP_N) + """
 최대 """ + str(MAX_WARNING_COUNT) + """개
 </span>
 
+&nbsp;&nbsp;
+
+경고 방향:
+<span class="volume-setting">
+LONG=양수 / SHORT=음수
+</span>
+
 </p>
 
 
@@ -3332,4 +3406,4 @@ if __name__ == "__main__":
 
         port=8000
 
-    )
+        )
