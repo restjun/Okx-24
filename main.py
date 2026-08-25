@@ -27,7 +27,7 @@ VOLUME_HOURS = 24
 
 
 # 표시할 순위
-TOP_N = 30
+TOP_N = 10
 
 
 # 자동 새로고침
