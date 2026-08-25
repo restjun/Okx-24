@@ -388,20 +388,19 @@ def format_volume(
 
 
 # =========================================================
-# VWMA
+# EMA
 # =========================================================
 
-def get_vwma(
+def get_ema(
     df,
     column,
-    volume_column,
     period
 ):
 
     if (
         df is None
         or len(df) < period
-        or volume_column not in df.columns
+        or column not in df.columns
     ):
         return None
 
@@ -410,54 +409,14 @@ def get_vwma(
         errors="coerce"
     )
 
-    volume = pd.to_numeric(
-        df[volume_column],
-        errors="coerce"
-    )
-
-    price_volume = price * volume
-
-    volume_sum = (
-        volume
-        .rolling(period)
-        .sum()
-    )
-
-    price_volume_sum = (
-        price_volume
-        .rolling(period)
-        .sum()
-    )
-
-    return (
-        price_volume_sum
-        /
-        volume_sum
-    )
+    return price.ewm(
+        span=period,
+        adjust=False
+    ).mean()
 
 
 # =========================================================
-# VWMA 거래량 컬럼
-# =========================================================
-
-def get_vwma_volume_column(
-    df
-):
-
-    if df is None:
-        return None
-
-    if "vol" in df.columns:
-        return "vol"
-
-    if "candle_acc_trade_volume" in df.columns:
-        return "candle_acc_trade_volume"
-
-    return None
-
-
-# =========================================================
-# VWMA 10-20 방향
+# EMA 10-20 방향
 # =========================================================
 
 def get_ema_10_20_direction(
@@ -471,44 +430,35 @@ def get_ema_10_20_direction(
     ):
         return "none"
 
-    volume_column = (
-        get_vwma_volume_column(df)
-    )
-
-    if volume_column is None:
-        return "none"
-
-    vwma10 = get_vwma(
+    ema10 = get_ema(
         df,
         column,
-        volume_column,
         10
     )
 
-    vwma20 = get_vwma(
+    ema20 = get_ema(
         df,
         column,
-        volume_column,
         20
     )
 
     if (
-        vwma10 is None
-        or vwma20 is None
+        ema10 is None
+        or ema20 is None
     ):
         return "none"
 
     if (
-        vwma10.iloc[-1]
+        ema10.iloc[-1]
         >
-        vwma20.iloc[-1]
+        ema20.iloc[-1]
     ):
         return "long"
 
     if (
-        vwma10.iloc[-1]
+        ema10.iloc[-1]
         <
-        vwma20.iloc[-1]
+        ema20.iloc[-1]
     ):
         return "short"
 
@@ -516,7 +466,7 @@ def get_ema_10_20_direction(
 
 
 # =========================================================
-# VWMA 20-60-120 방향
+# EMA 20-60-120 방향
 # =========================================================
 
 def get_ema_20_60_120_direction(
@@ -530,56 +480,46 @@ def get_ema_20_60_120_direction(
     ):
         return "none"
 
-    volume_column = (
-        get_vwma_volume_column(df)
-    )
-
-    if volume_column is None:
-        return "none"
-
-    vwma20 = get_vwma(
+    ema20 = get_ema(
         df,
         column,
-        volume_column,
         20
     )
 
-    vwma60 = get_vwma(
+    ema60 = get_ema(
         df,
         column,
-        volume_column,
         60
     )
 
-    vwma120 = get_vwma(
+    ema120 = get_ema(
         df,
         column,
-        volume_column,
         120
     )
 
     if (
-        vwma20 is None
-        or vwma60 is None
-        or vwma120 is None
+        ema20 is None
+        or ema60 is None
+        or ema120 is None
     ):
         return "none"
 
     if (
-        vwma20.iloc[-1]
+        ema20.iloc[-1]
         >
-        vwma60.iloc[-1]
+        ema60.iloc[-1]
         >
-        vwma120.iloc[-1]
+        ema120.iloc[-1]
     ):
         return "long"
 
     if (
-        vwma20.iloc[-1]
+        ema20.iloc[-1]
         <
-        vwma60.iloc[-1]
+        ema60.iloc[-1]
         <
-        vwma120.iloc[-1]
+        ema120.iloc[-1]
     ):
         return "short"
 
@@ -587,7 +527,7 @@ def get_ema_20_60_120_direction(
 
 
 # =========================================================
-# VWMA 10-20 상태 + 카운팅
+# EMA 10-20 상태 + 카운팅
 # =========================================================
 
 def check_ema_10_20(
@@ -601,26 +541,17 @@ def check_ema_10_20(
     ):
         return "⚪(0)"
 
-    volume_column = (
-        get_vwma_volume_column(df)
-    )
-
-    if volume_column is None:
-        return "⚪(0)"
-
     df = df.copy()
 
-    df["vwma10"] = get_vwma(
+    df["ema10"] = get_ema(
         df,
         column,
-        volume_column,
         10
     )
 
-    df["vwma20"] = get_vwma(
+    df["ema20"] = get_ema(
         df,
         column,
-        volume_column,
         20
     )
 
@@ -629,18 +560,18 @@ def check_ema_10_20(
     for _, row in df.iterrows():
 
         if (
-            pd.isna(row["vwma10"])
+            pd.isna(row["ema10"])
             or
-            pd.isna(row["vwma20"])
+            pd.isna(row["ema20"])
         ):
 
             states.append("none")
 
-        elif row["vwma10"] > row["vwma20"]:
+        elif row["ema10"] > row["ema20"]:
 
             states.append("long")
 
-        elif row["vwma10"] < row["vwma20"]:
+        elif row["ema10"] < row["ema20"]:
 
             states.append("short")
 
@@ -672,7 +603,7 @@ def check_ema_10_20(
 
 
 # =========================================================
-# VWMA 20-60-120 상태 + 카운팅
+# EMA 20-60-120 상태 + 카운팅
 # =========================================================
 
 def check_ema(
@@ -686,33 +617,23 @@ def check_ema(
     ):
         return "⚪(0)"
 
-    volume_column = (
-        get_vwma_volume_column(df)
-    )
-
-    if volume_column is None:
-        return "⚪(0)"
-
     df = df.copy()
 
-    df["vwma20"] = get_vwma(
+    df["ema20"] = get_ema(
         df,
         column,
-        volume_column,
         20
     )
 
-    df["vwma60"] = get_vwma(
+    df["ema60"] = get_ema(
         df,
         column,
-        volume_column,
         60
     )
 
-    df["vwma120"] = get_vwma(
+    df["ema120"] = get_ema(
         df,
         column,
-        volume_column,
         120
     )
 
@@ -721,31 +642,31 @@ def check_ema(
     for _, row in df.iterrows():
 
         if (
-            pd.isna(row["vwma20"])
+            pd.isna(row["ema20"])
             or
-            pd.isna(row["vwma60"])
+            pd.isna(row["ema60"])
             or
-            pd.isna(row["vwma120"])
+            pd.isna(row["ema120"])
         ):
 
             states.append("none")
 
         elif (
-            row["vwma20"]
+            row["ema20"]
             >
-            row["vwma60"]
+            row["ema60"]
             >
-            row["vwma120"]
+            row["ema120"]
         ):
 
             states.append("long")
 
         elif (
-            row["vwma20"]
+            row["ema20"]
             <
-            row["vwma60"]
+            row["ema60"]
             <
-            row["vwma120"]
+            row["ema120"]
         ):
 
             states.append("short")
@@ -778,7 +699,7 @@ def check_ema(
 
 
 # =========================================================
-# 4H 20-60-120 지속 카운트
+# 4H EMA 20-60-120 지속 카운트
 #
 # 1~10개 = 초기 돌파/눌림
 # =========================================================
@@ -794,33 +715,23 @@ def get_ema_20_60_120_count(
     ):
         return 0, "none"
 
-    volume_column = (
-        get_vwma_volume_column(df)
-    )
-
-    if volume_column is None:
-        return 0, "none"
-
     df = df.copy()
 
-    df["vwma20"] = get_vwma(
+    df["ema20"] = get_ema(
         df,
         column,
-        volume_column,
         20
     )
 
-    df["vwma60"] = get_vwma(
+    df["ema60"] = get_ema(
         df,
         column,
-        volume_column,
         60
     )
 
-    df["vwma120"] = get_vwma(
+    df["ema120"] = get_ema(
         df,
         column,
-        volume_column,
         120
     )
 
@@ -829,31 +740,31 @@ def get_ema_20_60_120_count(
     for _, row in df.iterrows():
 
         if (
-            pd.isna(row["vwma20"])
+            pd.isna(row["ema20"])
             or
-            pd.isna(row["vwma60"])
+            pd.isna(row["ema60"])
             or
-            pd.isna(row["vwma120"])
+            pd.isna(row["ema120"])
         ):
 
             states.append("none")
 
         elif (
-            row["vwma20"]
+            row["ema20"]
             >
-            row["vwma60"]
+            row["ema60"]
             >
-            row["vwma120"]
+            row["ema120"]
         ):
 
             states.append("long")
 
         elif (
-            row["vwma20"]
+            row["ema20"]
             <
-            row["vwma60"]
+            row["ema60"]
             <
-            row["vwma120"]
+            row["ema120"]
         ):
 
             states.append("short")
@@ -907,14 +818,14 @@ def check_1h_alignment_warning(
     ):
         return "none"
 
-    vwma1h_20_60_120 = (
+    ema1h_20_60_120 = (
         get_ema_20_60_120_direction(
             df1h,
             column
         )
     )
 
-    vwma4h_10_20 = (
+    ema4h_10_20 = (
         get_ema_10_20_direction(
             df4h,
             column
@@ -922,16 +833,16 @@ def check_1h_alignment_warning(
     )
 
     if (
-        vwma1h_20_60_120 == "long"
+        ema1h_20_60_120 == "long"
         and
-        vwma4h_10_20 == "long"
+        ema4h_10_20 == "long"
     ):
         return "long_alignment"
 
     if (
-        vwma1h_20_60_120 == "short"
+        ema1h_20_60_120 == "short"
         and
-        vwma4h_10_20 == "short"
+        ema4h_10_20 == "short"
     ):
         return "short_alignment"
 
@@ -948,17 +859,12 @@ def check_1h_alignment_warning(
 # 4H 10-20 정배열
 # 4H 20-60-120 정배열
 #
-# → 전체 상승 추세에서 1H 단기선만 눌림
-#
-#
 # SHORT
 #
 # 1H 10-20 정배열
 # 1H 20-60-120 역배열
 # 4H 10-20 역배열
 # 4H 20-60-120 역배열
-#
-# → 전체 하락 추세에서 1H 단기선만 반등
 #
 # ※ 〽️는 카운팅 없음
 # =========================================================
@@ -977,28 +883,28 @@ def check_rising_pullback_warning(
     ):
         return "none"
 
-    vwma1h_10_20 = (
+    ema1h_10_20 = (
         get_ema_10_20_direction(
             df1h,
             column
         )
     )
 
-    vwma1h_20_60_120 = (
+    ema1h_20_60_120 = (
         get_ema_20_60_120_direction(
             df1h,
             column
         )
     )
 
-    vwma4h_10_20 = (
+    ema4h_10_20 = (
         get_ema_10_20_direction(
             df4h,
             column
         )
     )
 
-    vwma4h_20_60_120 = (
+    ema4h_20_60_120 = (
         get_ema_20_60_120_direction(
             df4h,
             column
@@ -1010,13 +916,13 @@ def check_rising_pullback_warning(
     # =====================================================
 
     if (
-        vwma1h_10_20 == "short"
+        ema1h_10_20 == "short"
         and
-        vwma1h_20_60_120 == "long"
+        ema1h_20_60_120 == "long"
         and
-        vwma4h_10_20 == "long"
+        ema4h_10_20 == "long"
         and
-        vwma4h_20_60_120 == "long"
+        ema4h_20_60_120 == "long"
     ):
         return "long_special"
 
@@ -1025,13 +931,13 @@ def check_rising_pullback_warning(
     # =====================================================
 
     if (
-        vwma1h_10_20 == "long"
+        ema1h_10_20 == "long"
         and
-        vwma1h_20_60_120 == "short"
+        ema1h_20_60_120 == "short"
         and
-        vwma4h_10_20 == "short"
+        ema4h_10_20 == "short"
         and
-        vwma4h_20_60_120 == "short"
+        ema4h_20_60_120 == "short"
     ):
         return "short_special"
 
@@ -1066,28 +972,28 @@ def check_1h_breakout_warning(
     ):
         return "none"
 
-    vwma1h_10_20 = (
+    ema1h_10_20 = (
         get_ema_10_20_direction(
             df1h,
             column
         )
     )
 
-    vwma1h_20_60_120 = (
+    ema1h_20_60_120 = (
         get_ema_20_60_120_direction(
             df1h,
             column
         )
     )
 
-    vwma4h_10_20 = (
+    ema4h_10_20 = (
         get_ema_10_20_direction(
             df4h,
             column
         )
     )
 
-    vwma4h_20_60_120 = (
+    ema4h_20_60_120 = (
         get_ema_20_60_120_direction(
             df4h,
             column
@@ -1106,13 +1012,13 @@ def check_1h_breakout_warning(
     # =====================================================
 
     if (
-        vwma1h_10_20 == "long"
+        ema1h_10_20 == "long"
         and
-        vwma1h_20_60_120 == "long"
+        ema1h_20_60_120 == "long"
         and
-        vwma4h_10_20 == "long"
+        ema4h_10_20 == "long"
         and
-        vwma4h_20_60_120 == "long"
+        ema4h_20_60_120 == "long"
         and
         direction4h == "long"
         and
@@ -1125,13 +1031,13 @@ def check_1h_breakout_warning(
     # =====================================================
 
     if (
-        vwma1h_10_20 == "short"
+        ema1h_10_20 == "short"
         and
-        vwma1h_20_60_120 == "short"
+        ema1h_20_60_120 == "short"
         and
-        vwma4h_10_20 == "short"
+        ema4h_10_20 == "short"
         and
-        vwma4h_20_60_120 == "short"
+        ema4h_20_60_120 == "short"
         and
         direction4h == "short"
         and
@@ -1155,10 +1061,6 @@ def check_1h_warning(
     column
 ):
 
-    # =====================================================
-    # 〽️ 상승중 눌림
-    # =====================================================
-
     special = check_rising_pullback_warning(
         df1h,
         df4h,
@@ -1167,10 +1069,6 @@ def check_1h_warning(
 
     if special != "none":
         return special
-
-    # =====================================================
-    # 1~10 초기 돌파/눌림
-    # =====================================================
 
     breakout = check_1h_breakout_warning(
         df1h,
@@ -1296,7 +1194,7 @@ def get_trade_signal(
 
 
 # =========================================================
-# OKX 1H + 4H VWMA
+# OKX 1H + 4H EMA
 # =========================================================
 
 def get_okx_ema(
@@ -1393,7 +1291,7 @@ def get_okx_ema(
 
 
 # =========================================================
-# 업비트 1H + 4H VWMA
+# 업비트 1H + 4H EMA
 # =========================================================
 
 def get_upbit_ema(
@@ -1961,7 +1859,7 @@ def signal_html(
 
 
 # =========================================================
-# VWMA HTML
+# EMA HTML
 # =========================================================
 
 def ema_html(
@@ -2317,7 +2215,7 @@ def update_dashboard():
     )
 
     logging.info(
-        "VWMA 기준 : 1H + 4H"
+        "EMA 기준 : 1H + 4H"
     )
 
     logging.info(
@@ -2696,7 +2594,7 @@ tr:hover{
 </h2>
 
 <p>
-1시간 VWMA · 4시간 추세 · 상승중 눌림 · 초기 돌파/눌림 · 구름 · LONG / SHORT
+1시간 EMA · 4시간 추세 · 상승중 눌림 · 초기 돌파/눌림 · 구름 · LONG / SHORT
 </p>
 
 <p>
@@ -2747,7 +2645,7 @@ TOP""" + str(TOP_N) + """
 </th>
 
 <th>
-VWMA 상태
+EMA 상태
 </th>
 
 </tr>
@@ -2813,7 +2711,7 @@ VWMA 상태
 </th>
 
 <th>
-VWMA 상태
+EMA 상태
 </th>
 
 </tr>
@@ -2897,4 +2795,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-)
+        )
