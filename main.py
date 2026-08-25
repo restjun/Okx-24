@@ -157,6 +157,7 @@ def get_okx_ohlcv(
             df["volCcyQuote"].astype(float)
         )
 
+        # 미완성 캔들 제외
         df = df[
             df["confirm"]
             .astype(str)
@@ -787,15 +788,13 @@ def get_ema_20_60_120_count(
 # =========================================================
 # ☀️ 해 / 🌧 구름
 #
-# ☀️ LONG
+# LONG
 # 1H 10-20 정배열
 # 1H 20-60-120 정배열
 # 4H 10-20 정배열
 #
-# 🌧 SHORT
-# 1H 10-20 역배열
-# 1H 20-60-120 역배열
-# 4H 10-20 역배열
+# SHORT
+# 반대
 #
 # ※ 15M은 사용하지 않음
 # =========================================================
@@ -859,6 +858,16 @@ def check_1h_alignment_warning(
 # =========================================================
 # 〽️ 상승중 눌림
 #
+# LONG
+# 1H 10-20 역배열
+# 1H 20-60-120 정배열
+# 4H 10-20 정배열
+# 4H 20-60-120 정배열
+#
+# SHORT
+# 반대
+#
+# ※ 카운팅 없음
 # ※ 15M은 사용하지 않음
 # =========================================================
 
@@ -984,6 +993,7 @@ def check_breakout_warning(
 
     # =====================================================
     # ⚡ LONG 번개
+    # 전체 정배열
     # =====================================================
 
     if (
@@ -999,6 +1009,9 @@ def check_breakout_warning(
 
     # =====================================================
     # 🚀 LONG 로켓
+    #
+    # 1H 10-20 역배열
+    # 나머지 정배열
     # =====================================================
 
     if (
@@ -1014,6 +1027,7 @@ def check_breakout_warning(
 
     # =====================================================
     # 💥 SHORT 번개
+    # 전체 역배열
     # =====================================================
 
     if (
@@ -1029,6 +1043,9 @@ def check_breakout_warning(
 
     # =====================================================
     # 🚨 SHORT 로켓
+    #
+    # 1H 10-20 정배열
+    # 나머지 역배열
     # =====================================================
 
     if (
@@ -1047,6 +1064,9 @@ def check_breakout_warning(
 
 # =========================================================
 # 최종 경고
+#
+# 〽️ 상승중 눌림 우선
+# 그 다음 ⚡🚀💥🚨
 # =========================================================
 
 def check_1h_warning(
@@ -1073,6 +1093,9 @@ def check_1h_warning(
 
 # =========================================================
 # 당일 변동률 방향 필터
+#
+# LONG → 양수
+# SHORT → 음수
 # =========================================================
 
 def filter_warning_by_change(
@@ -1165,11 +1188,10 @@ def get_trade_signal(
 
 
 # =========================================================
-# OKX 15M + 1H + 4H EMA
+# OKX 1H + 4H + 15M EMA
 #
-# 15M:
-# 상태 표시만
-# 경고와 관계없음
+# 15M은 상태 표시만
+# 경고 조건에는 사용하지 않음
 # =========================================================
 
 def get_okx_ema(
@@ -1177,17 +1199,29 @@ def get_okx_ema(
     daily_change
 ):
 
+    # -----------------------------------------------------
+    # 15M
+    # -----------------------------------------------------
+
     df15m = get_okx_ohlcv(
         inst_id,
         "15m",
         200
     )
 
+    # -----------------------------------------------------
+    # 1H
+    # -----------------------------------------------------
+
     df1h = get_okx_ohlcv(
         inst_id,
         "1H",
         200
     )
+
+    # -----------------------------------------------------
+    # 4H
+    # -----------------------------------------------------
 
     df4h = get_okx_ohlcv(
         inst_id,
@@ -1196,7 +1230,7 @@ def get_okx_ema(
     )
 
     # -----------------------------------------------------
-    # 경고는 기존 1H + 4H만 사용
+    # 경고는 기존대로 1H + 4H만 사용
     # -----------------------------------------------------
 
     warning = check_1h_warning(
@@ -1205,18 +1239,14 @@ def get_okx_ema(
         "c"
     )
 
-    breakout = "none"
+    # -----------------------------------------------------
+    # 번개/로켓 자체가 warning에 들어있으므로
+    # breakout에 같은 값을 다시 넣지 않음
+    #
+    # ★ 중복 표시 방지
+    # -----------------------------------------------------
 
-    if (
-        warning.startswith("long_lightning_")
-        or
-        warning.startswith("long_rocket_")
-        or
-        warning.startswith("short_lightning_")
-        or
-        warning.startswith("short_rocket_")
-    ):
-        breakout = warning
+    breakout = "none"
 
     alignment = check_1h_alignment_warning(
         df1h,
@@ -1241,10 +1271,7 @@ def get_okx_ema(
 
     return {
 
-        # =================================================
         # 15M 상태만 표시
-        # =================================================
-
         "15m_10_20":
             check_ema_10_20(
                 df15m,
@@ -1257,10 +1284,7 @@ def get_okx_ema(
                 "c"
             ),
 
-        # =================================================
         # 1H
-        # =================================================
-
         "1h_10_20":
             check_ema_10_20(
                 df1h,
@@ -1273,10 +1297,7 @@ def get_okx_ema(
                 "c"
             ),
 
-        # =================================================
         # 4H
-        # =================================================
-
         "4h_10_20":
             check_ema_10_20(
                 df4h,
@@ -1306,9 +1327,8 @@ def get_okx_ema(
 # =========================================================
 # 업비트 15M + 1H + 4H EMA
 #
-# 15M:
-# 상태 표시만
-# 경고와 관계없음
+# 15M은 상태 표시만
+# 경고 조건에는 사용하지 않음
 # =========================================================
 
 def get_upbit_ema(
@@ -1316,17 +1336,29 @@ def get_upbit_ema(
     daily_change
 ):
 
+    # -----------------------------------------------------
+    # 15M
+    # -----------------------------------------------------
+
     df15m = get_upbit_ohlcv(
         market,
         15,
         200
     )
 
+    # -----------------------------------------------------
+    # 1H
+    # -----------------------------------------------------
+
     df1h = get_upbit_ohlcv(
         market,
         60,
         200
     )
+
+    # -----------------------------------------------------
+    # 4H
+    # -----------------------------------------------------
 
     df4h = get_upbit_ohlcv(
         market,
@@ -1335,7 +1367,7 @@ def get_upbit_ema(
     )
 
     # -----------------------------------------------------
-    # 경고는 기존 1H + 4H만 사용
+    # 경고는 기존대로 1H + 4H만 사용
     # -----------------------------------------------------
 
     warning = check_1h_warning(
@@ -1344,18 +1376,11 @@ def get_upbit_ema(
         "trade_price"
     )
 
-    breakout = "none"
+    # -----------------------------------------------------
+    # 중복 표시 방지
+    # -----------------------------------------------------
 
-    if (
-        warning.startswith("long_lightning_")
-        or
-        warning.startswith("long_rocket_")
-        or
-        warning.startswith("short_lightning_")
-        or
-        warning.startswith("short_rocket_")
-    ):
-        breakout = warning
+    breakout = "none"
 
     alignment = check_1h_alignment_warning(
         df1h,
@@ -1380,10 +1405,7 @@ def get_upbit_ema(
 
     return {
 
-        # =================================================
         # 15M 상태만 표시
-        # =================================================
-
         "15m_10_20":
             check_ema_10_20(
                 df15m,
@@ -1396,10 +1418,7 @@ def get_upbit_ema(
                 "trade_price"
             ),
 
-        # =================================================
         # 1H
-        # =================================================
-
         "1h_10_20":
             check_ema_10_20(
                 df1h,
@@ -1412,10 +1431,7 @@ def get_upbit_ema(
                 "trade_price"
             ),
 
-        # =================================================
         # 4H
-        # =================================================
-
         "4h_10_20":
             check_ema_10_20(
                 df4h,
@@ -1861,9 +1877,11 @@ def alignment_html(
 ):
 
     if alignment == "long_alignment":
+
         return "☀️"
 
     if alignment == "short_alignment":
+
         return "🌧"
 
     return ""
@@ -1871,64 +1889,16 @@ def alignment_html(
 
 # =========================================================
 # 돌파 HTML
+#
+# ※ 현재 warning과 중복되는 것을 막기 위해
+#   breakout은 별도로 표시하지 않음
 # =========================================================
 
 def breakout_html(
     breakout
 ):
 
-    if breakout.startswith(
-        "long_lightning_"
-    ):
-
-        try:
-            count = int(
-                breakout.split("_")[-1]
-            )
-        except Exception:
-            count = 0
-
-        return f"⚡({count})"
-
-    if breakout.startswith(
-        "long_rocket_"
-    ):
-
-        try:
-            count = int(
-                breakout.split("_")[-1]
-            )
-        except Exception:
-            count = 0
-
-        return f"🚀({count})"
-
-    if breakout.startswith(
-        "short_lightning_"
-    ):
-
-        try:
-            count = int(
-                breakout.split("_")[-1]
-            )
-        except Exception:
-            count = 0
-
-        return f"💥({count})"
-
-    if breakout.startswith(
-        "short_rocket_"
-    ):
-
-        try:
-            count = int(
-                breakout.split("_")[-1]
-            )
-        except Exception:
-            count = 0
-
-        return f"🚨({count})"
-
+    # 중복 표시 방지를 위해 사용하지 않음
     return ""
 
 
@@ -1975,10 +1945,6 @@ def ema_html(
         ema["warning"]
     )
 
-    breakout = breakout_html(
-        ema["breakout"]
-    )
-
     alignment = alignment_html(
         ema["alignment"]
     )
@@ -1989,6 +1955,10 @@ def ema_html(
 
     alert_html = ""
 
+    # -----------------------------------------------------
+    # 경고
+    # -----------------------------------------------------
+
     if warning:
 
         alert_html += f"""
@@ -1997,13 +1967,9 @@ def ema_html(
         </span>
         """
 
-    if breakout:
-
-        alert_html += f"""
-        <span class="alert-breakout">
-            {breakout}
-        </span>
-        """
+    # -----------------------------------------------------
+    # 해 / 구름
+    # -----------------------------------------------------
 
     if alignment:
 
@@ -2017,9 +1983,13 @@ def ema_html(
 
 <div class="ema-display">
 
+    <!-- LONG / SHORT -->
+
     <div class="signal-period">
         {signal}
     </div>
+
+    <!-- 경고 -->
 
     <div class="alert-period">
         {alert_html}
@@ -2342,7 +2312,7 @@ def update_dashboard():
     )
 
     logging.info(
-        "EMA 기준 : 15M + 1H + 4H"
+        "EMA 표시 : 15M + 1H + 4H"
     )
 
     logging.info(
@@ -2413,6 +2383,10 @@ def update_dashboard():
 
     logging.info(
         "모든 SHORT 경고 : 당일 변동률 음수"
+    )
+
+    logging.info(
+        "번개/로켓 중복 표시 방지 적용"
     )
 
     logging.info(
@@ -2668,14 +2642,6 @@ td:last-child{
 
 }
 
-.alert-breakout{
-
-    font-size:24px;
-    line-height:30px;
-    display:inline-block;
-
-}
-
 .alert-alignment{
 
     font-size:24px;
@@ -2753,8 +2719,7 @@ tr:hover{
 </h2>
 
 <p>
-15분 EMA 상태 · 1시간 EMA · 4시간 추세 ·
-상승중 눌림 · 번개 · 로켓 · 해 · 구름 · LONG / SHORT
+15분 EMA 상태 · 1시간 EMA · 4시간 추세 · 상승중 눌림 · 번개 · 로켓 · 해 · 구름 · LONG / SHORT
 </p>
 
 <p>
@@ -2955,4 +2920,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-        )
+            )
