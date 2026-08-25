@@ -22,16 +22,12 @@ logging.basicConfig(
 # 사용자 설정
 # =========================================================
 
-# 거래대금 집계 시간
 VOLUME_HOURS = 24
 
-# 표시할 순위
 TOP_N = 10
 
-# 자동 새로고침
 UPDATE_MINUTES = 5
 
-# 돌파/눌림 카운팅 최대
 MAX_WARNING_COUNT = 10
 
 
@@ -699,9 +695,7 @@ def check_ema(
 
 
 # =========================================================
-# 4H EMA 20-60-120 지속 카운트
-#
-# 1~10개 = 초기 돌파/눌림
+# 4H 20-60-120 지속 카운트
 # =========================================================
 
 def get_ema_20_60_120_count(
@@ -791,17 +785,17 @@ def get_ema_20_60_120_count(
 
 
 # =========================================================
-# 구름 조건
+# ☀️ 해 / 🌧 구름
 #
-# LONG
+# ☀️ LONG
+# 1H 10-20 정배열
 # 1H 20-60-120 정배열
 # 4H 10-20 정배열
 #
-# SHORT
+# 🌧 SHORT
+# 1H 10-20 역배열
 # 1H 20-60-120 역배열
 # 4H 10-20 역배열
-#
-# ※ 1H 10-20 제거
 # =========================================================
 
 def check_1h_alignment_warning(
@@ -818,6 +812,13 @@ def check_1h_alignment_warning(
     ):
         return "none"
 
+    ema1h_10_20 = (
+        get_ema_10_20_direction(
+            df1h,
+            column
+        )
+    )
+
     ema1h_20_60_120 = (
         get_ema_20_60_120_direction(
             df1h,
@@ -832,14 +833,26 @@ def check_1h_alignment_warning(
         )
     )
 
+    # =====================================================
+    # ☀️ 해 LONG
+    # =====================================================
+
     if (
+        ema1h_10_20 == "long"
+        and
         ema1h_20_60_120 == "long"
         and
         ema4h_10_20 == "long"
     ):
         return "long_alignment"
 
+    # =====================================================
+    # 🌧 구름 SHORT
+    # =====================================================
+
     if (
+        ema1h_10_20 == "short"
+        and
         ema1h_20_60_120 == "short"
         and
         ema4h_10_20 == "short"
@@ -853,20 +866,15 @@ def check_1h_alignment_warning(
 # 〽️ 상승중 눌림
 #
 # LONG
-#
 # 1H 10-20 역배열
 # 1H 20-60-120 정배열
 # 4H 10-20 정배열
 # 4H 20-60-120 정배열
 #
 # SHORT
+# 반대
 #
-# 1H 10-20 정배열
-# 1H 20-60-120 역배열
-# 4H 10-20 역배열
-# 4H 20-60-120 역배열
-#
-# ※ 〽️는 카운팅 없음
+# 카운팅 없음
 # =========================================================
 
 def check_rising_pullback_warning(
@@ -945,20 +953,28 @@ def check_rising_pullback_warning(
 
 
 # =========================================================
-# 기존 1~10 돌파/눌림 조건
+# ⚡ / 🚀 / 💥 / 🚨
 #
-# LONG
+# ⚡ LONG 번개
+# 전체 정배열
+# 4H 20-60-120 지속 1~10
+#
+# 🚀 LONG 로켓
+# 1H 10-20 역배열
+# 나머지 정배열
+# 4H 20-60-120 지속 1~10
+#
+# 💥 SHORT 번개
+# 전체 역배열
+# 4H 20-60-120 지속 1~10
+#
+# 🚨 SHORT 로켓
 # 1H 10-20 정배열
-# 1H 20-60-120 정배열
-# 4H 10-20 정배열
-# 4H 20-60-120 정배열
-# 4H 정배열 지속 1~10개
-#
-# SHORT
-# 반대
+# 나머지 역배열
+# 4H 20-60-120 지속 1~10
 # =========================================================
 
-def check_1h_breakout_warning(
+def check_breakout_warning(
     df1h,
     df4h,
     column
@@ -993,13 +1009,6 @@ def check_1h_breakout_warning(
         )
     )
 
-    ema4h_20_60_120 = (
-        get_ema_20_60_120_direction(
-            df4h,
-            column
-        )
-    )
-
     count4h, direction4h = (
         get_ema_20_60_120_count(
             df4h,
@@ -1007,8 +1016,15 @@ def check_1h_breakout_warning(
         )
     )
 
+    if not (
+        1 <= count4h <= MAX_WARNING_COUNT
+    ):
+        return "none"
+
     # =====================================================
-    # LONG 초기 돌파/눌림
+    # ⚡ LONG 번개
+    #
+    # 전체 정배열
     # =====================================================
 
     if (
@@ -1018,16 +1034,32 @@ def check_1h_breakout_warning(
         and
         ema4h_10_20 == "long"
         and
-        ema4h_20_60_120 == "long"
-        and
         direction4h == "long"
-        and
-        1 <= count4h <= MAX_WARNING_COUNT
     ):
-        return f"long_breakout_{count4h}"
+        return f"long_lightning_{count4h}"
 
     # =====================================================
-    # SHORT 초기 돌파/눌림
+    # 🚀 LONG 로켓
+    #
+    # 1H 10-20 역배열
+    # 나머지 정배열
+    # =====================================================
+
+    if (
+        ema1h_10_20 == "short"
+        and
+        ema1h_20_60_120 == "long"
+        and
+        ema4h_10_20 == "long"
+        and
+        direction4h == "long"
+    ):
+        return f"long_rocket_{count4h}"
+
+    # =====================================================
+    # 💥 SHORT 번개
+    #
+    # 전체 역배열
     # =====================================================
 
     if (
@@ -1037,22 +1069,36 @@ def check_1h_breakout_warning(
         and
         ema4h_10_20 == "short"
         and
-        ema4h_20_60_120 == "short"
+        direction4h == "short"
+    ):
+        return f"short_lightning_{count4h}"
+
+    # =====================================================
+    # 🚨 SHORT 로켓
+    #
+    # 1H 10-20 정배열
+    # 나머지 역배열
+    # =====================================================
+
+    if (
+        ema1h_10_20 == "long"
+        and
+        ema1h_20_60_120 == "short"
+        and
+        ema4h_10_20 == "short"
         and
         direction4h == "short"
-        and
-        1 <= count4h <= MAX_WARNING_COUNT
     ):
-        return f"short_breakout_{count4h}"
+        return f"short_rocket_{count4h}"
 
     return "none"
 
 
 # =========================================================
-# 최종 눌림 / 돌파 통합
+# 최종 경고
 #
-# 〽️ 상승중 눌림을 먼저 검사
-# 그 외에는 1~10 돌파/눌림
+# 〽️ 상승중 눌림 우선
+# 그 다음 ⚡🚀💥🚨
 # =========================================================
 
 def check_1h_warning(
@@ -1070,20 +1116,18 @@ def check_1h_warning(
     if special != "none":
         return special
 
-    breakout = check_1h_breakout_warning(
+    return check_breakout_warning(
         df1h,
         df4h,
         column
     )
 
-    return breakout
-
 
 # =========================================================
 # 당일 변동률 방향 필터
 #
-# LONG  → 변동률 > 0
-# SHORT → 변동률 < 0
+# LONG → 양수
+# SHORT → 음수
 # =========================================================
 
 def filter_warning_by_change(
@@ -1096,10 +1140,6 @@ def filter_warning_by_change(
     if daily_change is None:
         return "none", "none", "none"
 
-    # -----------------------------------------------------
-    # LONG
-    # -----------------------------------------------------
-
     if daily_change > 0:
 
         if warning.startswith("short_"):
@@ -1111,10 +1151,6 @@ def filter_warning_by_change(
         if alignment == "short_alignment":
             alignment = "none"
 
-    # -----------------------------------------------------
-    # SHORT
-    # -----------------------------------------------------
-
     elif daily_change < 0:
 
         if warning.startswith("long_"):
@@ -1125,10 +1161,6 @@ def filter_warning_by_change(
 
         if alignment == "long_alignment":
             alignment = "none"
-
-    # -----------------------------------------------------
-    # 0%
-    # -----------------------------------------------------
 
     else:
 
@@ -1161,13 +1193,14 @@ def get_trade_signal(
         if warning == "long_special":
             return "LONG"
 
-        if breakout.startswith(
-            "long_breakout_"
-        ):
-            return "LONG"
-
-        if warning.startswith(
-            "long_breakout_"
+        if (
+            warning.startswith(
+                "long_lightning_"
+            )
+            or
+            warning.startswith(
+                "long_rocket_"
+            )
         ):
             return "LONG"
 
@@ -1180,13 +1213,14 @@ def get_trade_signal(
         if warning == "short_special":
             return "SHORT"
 
-        if breakout.startswith(
-            "short_breakout_"
-        ):
-            return "SHORT"
-
-        if warning.startswith(
-            "short_breakout_"
+        if (
+            warning.startswith(
+                "short_lightning_"
+            )
+            or
+            warning.startswith(
+                "short_rocket_"
+            )
         ):
             return "SHORT"
 
@@ -1222,10 +1256,14 @@ def get_okx_ema(
 
     breakout = "none"
 
-    if warning.startswith(
-        "long_breakout_"
-    ) or warning.startswith(
-        "short_breakout_"
+    if (
+        warning.startswith("long_lightning_")
+        or
+        warning.startswith("long_rocket_")
+        or
+        warning.startswith("short_lightning_")
+        or
+        warning.startswith("short_rocket_")
     ):
         breakout = warning
 
@@ -1319,10 +1357,14 @@ def get_upbit_ema(
 
     breakout = "none"
 
-    if warning.startswith(
-        "long_breakout_"
-    ) or warning.startswith(
-        "short_breakout_"
+    if (
+        warning.startswith("long_lightning_")
+        or
+        warning.startswith("long_rocket_")
+        or
+        warning.startswith("short_lightning_")
+        or
+        warning.startswith("short_rocket_")
     ):
         breakout = warning
 
@@ -1729,21 +1771,34 @@ def format_change(
 
 
 # =========================================================
-# 〽️ / 눌림 경고 HTML
+# 경고 HTML
 # =========================================================
 
 def warning_html(
     warning
 ):
 
-    if warning == "long_special":
-        return "〽️"
-
-    if warning == "short_special":
+    if warning in (
+        "long_special",
+        "short_special"
+    ):
         return "〽️"
 
     if warning.startswith(
-        "long_breakout_"
+        "long_lightning_"
+    ):
+
+        try:
+            count = int(
+                warning.split("_")[-1]
+            )
+        except Exception:
+            count = 0
+
+        return f"⚡({count})"
+
+    if warning.startswith(
+        "long_rocket_"
     ):
 
         try:
@@ -1756,7 +1811,20 @@ def warning_html(
         return f"🚀({count})"
 
     if warning.startswith(
-        "short_breakout_"
+        "short_lightning_"
+    ):
+
+        try:
+            count = int(
+                warning.split("_")[-1]
+            )
+        except Exception:
+            count = 0
+
+        return f"💥({count})"
+
+    if warning.startswith(
+        "short_rocket_"
     ):
 
         try:
@@ -1779,15 +1847,11 @@ def alignment_html(
     alignment
 ):
 
-    if alignment.startswith(
-        "long_alignment"
-    ):
+    if alignment == "long_alignment":
 
         return "☀️"
 
-    if alignment.startswith(
-        "short_alignment"
-    ):
+    if alignment == "short_alignment":
 
         return "🌧"
 
@@ -1803,7 +1867,7 @@ def breakout_html(
 ):
 
     if breakout.startswith(
-        "long_breakout_"
+        "long_lightning_"
     ):
 
         try:
@@ -1816,7 +1880,20 @@ def breakout_html(
         return f"⚡({count})"
 
     if breakout.startswith(
-        "short_breakout_"
+        "long_rocket_"
+    ):
+
+        try:
+            count = int(
+                breakout.split("_")[-1]
+            )
+        except Exception:
+            count = 0
+
+        return f"🚀({count})"
+
+    if breakout.startswith(
+        "short_lightning_"
     ):
 
         try:
@@ -1827,6 +1904,19 @@ def breakout_html(
             count = 0
 
         return f"💥({count})"
+
+    if breakout.startswith(
+        "short_rocket_"
+    ):
+
+        try:
+            count = int(
+                breakout.split("_")[-1]
+            )
+        except Exception:
+            count = 0
+
+        return f"🚨({count})"
 
     return ""
 
@@ -2219,8 +2309,23 @@ def update_dashboard():
     )
 
     logging.info(
-        f"초기 돌파/눌림 카운팅 최대 : "
+        f"초기 카운팅 : "
+        f"4H 20-60-120 지속 1~"
         f"{MAX_WARNING_COUNT}개"
+    )
+
+    logging.info(
+        "☀️ 해 : "
+        "1H 10-20 정배열 + "
+        "1H 20-60-120 정배열 + "
+        "4H 10-20 정배열"
+    )
+
+    logging.info(
+        "🌧 구름 : "
+        "1H 10-20 역배열 + "
+        "1H 20-60-120 역배열 + "
+        "4H 10-20 역배열"
     )
 
     logging.info(
@@ -2240,12 +2345,25 @@ def update_dashboard():
     )
 
     logging.info(
-        "〽️ 상승중 눌림 : 카운팅 없음"
+        "⚡ LONG 번개 : 전체 정배열 + "
+        f"4H 20-60-120 1~{MAX_WARNING_COUNT}캔들"
     )
 
     logging.info(
-        "🚀🚨 초기 돌파/눌림 : 4H "
-        f"20-60-120 지속 1~{MAX_WARNING_COUNT}개"
+        "🚀 LONG 로켓 : "
+        "1H 10-20 역배열 + 나머지 정배열 + "
+        f"4H 20-60-120 1~{MAX_WARNING_COUNT}캔들"
+    )
+
+    logging.info(
+        "💥 SHORT 번개 : 전체 역배열 + "
+        f"4H 20-60-120 1~{MAX_WARNING_COUNT}캔들"
+    )
+
+    logging.info(
+        "🚨 SHORT 로켓 : "
+        "1H 10-20 정배열 + 나머지 역배열 + "
+        f"4H 20-60-120 1~{MAX_WARNING_COUNT}캔들"
     )
 
     logging.info(
@@ -2594,7 +2712,7 @@ tr:hover{
 </h2>
 
 <p>
-1시간 EMA · 4시간 추세 · 상승중 눌림 · 초기 돌파/눌림 · 구름 · LONG / SHORT
+1시간 EMA · 4시간 추세 · 상승중 눌림 · 번개 · 로켓 · 해 · 구름 · LONG / SHORT
 </p>
 
 <p>
@@ -2613,7 +2731,7 @@ TOP""" + str(TOP_N) + """
 
 &nbsp;&nbsp;
 
-초기 돌파/눌림 카운팅:
+4H 20-60-120 카운팅:
 <span class="volume-setting">
 1~""" + str(MAX_WARNING_COUNT) + """
 </span>
@@ -2795,4 +2913,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-        )
+    )
