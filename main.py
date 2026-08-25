@@ -25,16 +25,13 @@ logging.basicConfig(
 # 거래대금 집계 시간
 VOLUME_HOURS = 24
 
-
 # 표시할 순위
 TOP_N = 10
-
 
 # 자동 새로고침
 UPDATE_MINUTES = 5
 
-
-# 경고 카운팅 최대
+# 돌파/눌림 카운팅 최대
 MAX_WARNING_COUNT = 10
 
 
@@ -782,6 +779,8 @@ def check_ema(
 
 # =========================================================
 # 4H 20-60-120 지속 카운트
+#
+# 1~10개 = 초기 돌파/눌림
 # =========================================================
 
 def get_ema_20_60_120_count(
@@ -881,15 +880,13 @@ def get_ema_20_60_120_count(
 
 
 # =========================================================
-# ★ 구름 조건
+# 구름 조건
 #
-# 변경사항
-#
-# LONG ☀️
+# LONG
 # 1H 20-60-120 정배열
 # 4H 10-20 정배열
 #
-# SHORT 🌧
+# SHORT
 # 1H 20-60-120 역배열
 # 4H 10-20 역배열
 #
@@ -942,10 +939,31 @@ def check_1h_alignment_warning(
 
 
 # =========================================================
-# 눌림 조건
+# 〽️ 상승중 눌림
+#
+# LONG
+#
+# 1H 10-20 역배열
+# 1H 20-60-120 정배열
+# 4H 10-20 정배열
+# 4H 20-60-120 정배열
+#
+# → 전체 상승 추세에서 1H 단기선만 눌림
+#
+#
+# SHORT
+#
+# 1H 10-20 정배열
+# 1H 20-60-120 역배열
+# 4H 10-20 역배열
+# 4H 20-60-120 역배열
+#
+# → 전체 하락 추세에서 1H 단기선만 반등
+#
+# ※ 〽️는 카운팅 없음
 # =========================================================
 
-def check_1h_warning(
+def check_rising_pullback_warning(
     df1h,
     df4h,
     column
@@ -966,6 +984,13 @@ def check_1h_warning(
         )
     )
 
+    vwma1h_20_60_120 = (
+        get_ema_20_60_120_direction(
+            df1h,
+            column
+        )
+    )
+
     vwma4h_10_20 = (
         get_ema_10_20_direction(
             df4h,
@@ -980,59 +1005,9 @@ def check_1h_warning(
         )
     )
 
-    count4h, direction4h = (
-        get_ema_20_60_120_count(
-            df4h,
-            column
-        )
-    )
-
     # =====================================================
-    # LONG 특수 눌림
-    #
-    # 1H 10-20 정배열
-    # 4H 10-20 역배열
-    # 4H 20-60-120 정배열
+    # LONG 〽️
     # =====================================================
-
-    if (
-        vwma1h_10_20 == "long"
-        and
-        vwma4h_10_20 == "short"
-        and
-        vwma4h_20_60_120 == "long"
-    ):
-        return "long_special"
-
-    # =====================================================
-    # SHORT 특수 눌림
-    # =====================================================
-
-    if (
-        vwma1h_10_20 == "short"
-        and
-        vwma4h_10_20 == "long"
-        and
-        vwma4h_20_60_120 == "short"
-    ):
-        return "short_special"
-
-    # =====================================================
-    # LONG 일반 눌림
-    #
-    # 1H 10-20 역배열
-    # 1H 20-60-120 정배열
-    # 4H 10-20 정배열
-    # 4H 20-60-120 정배열
-    # 4H 정배열 1~10개
-    # =====================================================
-
-    vwma1h_20_60_120 = (
-        get_ema_20_60_120_direction(
-            df1h,
-            column
-        )
-    )
 
     if (
         vwma1h_10_20 == "short"
@@ -1042,15 +1017,11 @@ def check_1h_warning(
         vwma4h_10_20 == "long"
         and
         vwma4h_20_60_120 == "long"
-        and
-        direction4h == "long"
-        and
-        1 <= count4h <= MAX_WARNING_COUNT
     ):
-        return f"long_warning_{count4h}"
+        return "long_special"
 
     # =====================================================
-    # SHORT 일반 눌림
+    # SHORT 〽️
     # =====================================================
 
     if (
@@ -1061,18 +1032,24 @@ def check_1h_warning(
         vwma4h_10_20 == "short"
         and
         vwma4h_20_60_120 == "short"
-        and
-        direction4h == "short"
-        and
-        1 <= count4h <= MAX_WARNING_COUNT
     ):
-        return f"short_warning_{count4h}"
+        return "short_special"
 
     return "none"
 
 
 # =========================================================
-# 돌파 조건
+# 기존 1~10 돌파/눌림 조건
+#
+# LONG
+# 1H 10-20 정배열
+# 1H 20-60-120 정배열
+# 4H 10-20 정배열
+# 4H 20-60-120 정배열
+# 4H 정배열 지속 1~10개
+#
+# SHORT
+# 반대
 # =========================================================
 
 def check_1h_breakout_warning(
@@ -1125,7 +1102,7 @@ def check_1h_breakout_warning(
     )
 
     # =====================================================
-    # LONG 돌파
+    # LONG 초기 돌파/눌림
     # =====================================================
 
     if (
@@ -1144,7 +1121,7 @@ def check_1h_breakout_warning(
         return f"long_breakout_{count4h}"
 
     # =====================================================
-    # SHORT 돌파
+    # SHORT 초기 돌파/눌림
     # =====================================================
 
     if (
@@ -1163,6 +1140,45 @@ def check_1h_breakout_warning(
         return f"short_breakout_{count4h}"
 
     return "none"
+
+
+# =========================================================
+# 최종 눌림 / 돌파 통합
+#
+# 〽️ 상승중 눌림을 먼저 검사
+# 그 외에는 1~10 돌파/눌림
+# =========================================================
+
+def check_1h_warning(
+    df1h,
+    df4h,
+    column
+):
+
+    # =====================================================
+    # 〽️ 상승중 눌림
+    # =====================================================
+
+    special = check_rising_pullback_warning(
+        df1h,
+        df4h,
+        column
+    )
+
+    if special != "none":
+        return special
+
+    # =====================================================
+    # 1~10 초기 돌파/눌림
+    # =====================================================
+
+    breakout = check_1h_breakout_warning(
+        df1h,
+        df4h,
+        column
+    )
+
+    return breakout
 
 
 # =========================================================
@@ -1239,7 +1255,7 @@ def get_trade_signal(
         return ""
 
     # =====================================================
-    # LONG은 당일 양수만
+    # LONG
     # =====================================================
 
     if daily_change > 0:
@@ -1253,12 +1269,12 @@ def get_trade_signal(
             return "LONG"
 
         if warning.startswith(
-            "long_warning_"
+            "long_breakout_"
         ):
             return "LONG"
 
     # =====================================================
-    # SHORT는 당일 음수만
+    # SHORT
     # =====================================================
 
     if daily_change < 0:
@@ -1272,7 +1288,7 @@ def get_trade_signal(
             return "SHORT"
 
         if warning.startswith(
-            "short_warning_"
+            "short_breakout_"
         ):
             return "SHORT"
 
@@ -1306,21 +1322,20 @@ def get_okx_ema(
         "c"
     )
 
-    breakout = check_1h_breakout_warning(
-        df1h,
-        df4h,
-        "c"
-    )
+    breakout = "none"
+
+    if warning.startswith(
+        "long_breakout_"
+    ) or warning.startswith(
+        "short_breakout_"
+    ):
+        breakout = warning
 
     alignment = check_1h_alignment_warning(
         df1h,
         df4h,
         "c"
     )
-
-    # =====================================================
-    # 당일 변동률 필터
-    # =====================================================
 
     warning, breakout, alignment = (
         filter_warning_by_change(
@@ -1404,11 +1419,14 @@ def get_upbit_ema(
         "trade_price"
     )
 
-    breakout = check_1h_breakout_warning(
-        df1h,
-        df4h,
-        "trade_price"
-    )
+    breakout = "none"
+
+    if warning.startswith(
+        "long_breakout_"
+    ) or warning.startswith(
+        "short_breakout_"
+    ):
+        breakout = warning
 
     alignment = check_1h_alignment_warning(
         df1h,
@@ -1813,7 +1831,7 @@ def format_change(
 
 
 # =========================================================
-# 눌림 경고 HTML
+# 〽️ / 눌림 경고 HTML
 # =========================================================
 
 def warning_html(
@@ -1827,7 +1845,7 @@ def warning_html(
         return "〽️"
 
     if warning.startswith(
-        "long_warning_"
+        "long_breakout_"
     ):
 
         try:
@@ -1840,7 +1858,7 @@ def warning_html(
         return f"🚀({count})"
 
     if warning.startswith(
-        "short_warning_"
+        "short_breakout_"
     ):
 
         try:
@@ -1867,33 +1885,11 @@ def alignment_html(
         "long_alignment"
     ):
 
-        if "_" in alignment:
-
-            try:
-                count = int(
-                    alignment.split("_")[-1]
-                )
-                return f"☀️({count})"
-
-            except Exception:
-                pass
-
         return "☀️"
 
     if alignment.startswith(
         "short_alignment"
     ):
-
-        if "_" in alignment:
-
-            try:
-                count = int(
-                    alignment.split("_")[-1]
-                )
-                return f"🌧({count})"
-
-            except Exception:
-                pass
 
         return "🌧"
 
@@ -2325,18 +2321,33 @@ def update_dashboard():
     )
 
     logging.info(
-        f"경고 카운팅 최대 : "
+        f"초기 돌파/눌림 카운팅 최대 : "
         f"{MAX_WARNING_COUNT}개"
     )
 
     logging.info(
-        "구름 LONG : "
-        "1H 20-60-120 정배열 + 4H 10-20 정배열"
+        "〽️ LONG : "
+        "1H 10-20 역배열 + "
+        "1H 20-60-120 정배열 + "
+        "4H 10-20 정배열 + "
+        "4H 20-60-120 정배열"
     )
 
     logging.info(
-        "구름 SHORT : "
-        "1H 20-60-120 역배열 + 4H 10-20 역배열"
+        "〽️ SHORT : "
+        "1H 10-20 정배열 + "
+        "1H 20-60-120 역배열 + "
+        "4H 10-20 역배열 + "
+        "4H 20-60-120 역배열"
+    )
+
+    logging.info(
+        "〽️ 상승중 눌림 : 카운팅 없음"
+    )
+
+    logging.info(
+        "🚀🚨 초기 돌파/눌림 : 4H "
+        f"20-60-120 지속 1~{MAX_WARNING_COUNT}개"
     )
 
     logging.info(
@@ -2352,6 +2363,7 @@ def update_dashboard():
     )
 
     try:
+
         update_okx()
 
     except Exception as e:
@@ -2361,6 +2373,7 @@ def update_dashboard():
         )
 
     try:
+
         update_upbit()
 
     except Exception as e:
@@ -2383,6 +2396,7 @@ def scheduler():
     while True:
 
         try:
+
             schedule.run_pending()
 
         except Exception as e:
@@ -2682,7 +2696,7 @@ tr:hover{
 </h2>
 
 <p>
-1시간 VWMA · 4시간 추세 · 눌림 · 돌파 · 구름 · LONG / SHORT
+1시간 VWMA · 4시간 추세 · 상승중 눌림 · 초기 돌파/눌림 · 구름 · LONG / SHORT
 </p>
 
 <p>
@@ -2701,9 +2715,9 @@ TOP""" + str(TOP_N) + """
 
 &nbsp;&nbsp;
 
-경고 카운팅:
+초기 돌파/눌림 카운팅:
 <span class="volume-setting">
-최대 """ + str(MAX_WARNING_COUNT) + """개
+1~""" + str(MAX_WARNING_COUNT) + """
 </span>
 
 </p>
@@ -2883,4 +2897,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-    )
+)
