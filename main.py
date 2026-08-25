@@ -22,38 +22,19 @@ logging.basicConfig(
 # 사용자 설정
 # =========================================================
 
-# =========================================================
 # 거래대금 집계 시간
-#
-# 1  = 최근 1시간
-#      → 1분봉 60개 사용
-#
-# 2 이상
-#      → 완료된 1시간봉 N개 사용
-#
-# =========================================================
-
 VOLUME_HOURS = 24
 
 
-# =========================================================
 # 표시할 순위
-# =========================================================
-
-TOP_N = 10
+TOP_N = 30
 
 
-# =========================================================
 # 자동 새로고침
-# =========================================================
-
 UPDATE_MINUTES = 5
 
 
-# =========================================================
-# VWMA 경고 카운팅 최대
-# =========================================================
-
+# 경고 카운팅 최대
 MAX_WARNING_COUNT = 10
 
 
@@ -116,7 +97,6 @@ def retry_request(
 
 # =========================================================
 # OKX 캔들
-#
 # 미완성 캔들 제외
 # =========================================================
 
@@ -148,7 +128,6 @@ def get_okx_ohlcv(
     )
 
     if response is None:
-
         return None
 
     try:
@@ -156,7 +135,6 @@ def get_okx_ohlcv(
         data = response.json()["data"]
 
         if not data:
-
             return None
 
         df = pd.DataFrame(
@@ -175,23 +153,16 @@ def get_okx_ohlcv(
         )
 
         df["c"] = (
-            df["c"]
-            .astype(float)
+            df["c"].astype(float)
         )
 
         df["vol"] = (
-            df["vol"]
-            .astype(float)
+            df["vol"].astype(float)
         )
 
         df["volCcyQuote"] = (
-            df["volCcyQuote"]
-            .astype(float)
+            df["volCcyQuote"].astype(float)
         )
-
-        # =====================================================
-        # 미완성 캔들 제외
-        # =====================================================
 
         df = df[
             df["confirm"]
@@ -200,12 +171,7 @@ def get_okx_ohlcv(
         ]
 
         if df.empty:
-
             return None
-
-        # =====================================================
-        # 오래된 캔들 → 최신 캔들
-        # =====================================================
 
         df = (
             df
@@ -256,7 +222,6 @@ def get_upbit_ohlcv(
     )
 
     if response is None:
-
         return None
 
     try:
@@ -264,14 +229,9 @@ def get_upbit_ohlcv(
         data = response.json()
 
         if not data:
-
             return None
 
         df = pd.DataFrame(data)
-
-        # =====================================================
-        # 오래된 캔들 → 최신 캔들
-        # =====================================================
 
         df = (
             df
@@ -280,13 +240,8 @@ def get_upbit_ohlcv(
         )
 
         df["trade_price"] = (
-            df["trade_price"]
-            .astype(float)
+            df["trade_price"].astype(float)
         )
-
-        # =====================================================
-        # VWMA용 거래량
-        # =====================================================
 
         df["candle_acc_trade_volume"] = (
             df["candle_acc_trade_volume"]
@@ -306,61 +261,29 @@ def get_upbit_ohlcv(
 
 
 # =========================================================
-# 업비트 일봉
+# USDT/KRW
 # =========================================================
 
-def get_upbit_day_ohlcv(
-    market,
-    count=200
-):
-
-    url = (
-        "https://api.upbit.com/v1/candles/days"
-        f"?market={market}"
-        f"&count={count}"
-    )
+def get_usdt_krw():
 
     response = retry_request(
         requests.get,
-        url,
+        "https://api.upbit.com/v1/ticker?markets=KRW-USDT",
         timeout=15
     )
 
     if response is None:
-
-        return None
+        return 1400
 
     try:
 
-        data = response.json()
-
-        if not data:
-
-            return None
-
-        df = pd.DataFrame(data)
-
-        df = (
-            df
-            .iloc[::-1]
-            .reset_index(drop=True)
+        return float(
+            response.json()[0]["trade_price"]
         )
 
-        df["trade_price"] = (
-            df["trade_price"]
-            .astype(float)
-        )
+    except Exception:
 
-        return df
-
-    except Exception as e:
-
-        logging.error(
-            f"업비트 일봉 오류 "
-            f"{market} : {e}"
-        )
-
-        return None
+        return 1400
 
 
 # =========================================================
@@ -381,17 +304,13 @@ def get_all_okx_swap_symbols():
     )
 
     if response is None:
-
         return []
 
     try:
 
         return [
-
             x["instId"]
-
             for x in response.json()["data"]
-
             if (
                 x["instId"].endswith(
                     "-USDT-SWAP"
@@ -399,7 +318,6 @@ def get_all_okx_swap_symbols():
                 and
                 x.get("state") == "live"
             )
-
         ]
 
     except Exception as e:
@@ -424,21 +342,16 @@ def get_upbit_markets():
     )
 
     if response is None:
-
         return []
 
     try:
 
         return [
-
             x["market"]
-
             for x in response.json()
-
             if x["market"].startswith(
                 "KRW-"
             )
-
         ]
 
     except Exception as e:
@@ -448,33 +361,6 @@ def get_upbit_markets():
         )
 
         return []
-
-
-# =========================================================
-# USDT/KRW
-# =========================================================
-
-def get_usdt_krw():
-
-    response = retry_request(
-        requests.get,
-        "https://api.upbit.com/v1/ticker?markets=KRW-USDT",
-        timeout=15
-    )
-
-    if response is None:
-
-        return 1400
-
-    try:
-
-        return float(
-            response.json()[0]["trade_price"]
-        )
-
-    except Exception:
-
-        return 1400
 
 
 # =========================================================
@@ -505,10 +391,7 @@ def format_volume(
 
 
 # =========================================================
-# VWMA 계산
-#
 # VWMA
-# = SUM(가격 × 거래량) / SUM(거래량)
 # =========================================================
 
 def get_vwma(
@@ -523,7 +406,6 @@ def get_vwma(
         or len(df) < period
         or volume_column not in df.columns
     ):
-
         return None
 
     price = pd.to_numeric(
@@ -536,37 +418,29 @@ def get_vwma(
         errors="coerce"
     )
 
-    price_volume = (
-        price * volume
-    )
+    price_volume = price * volume
 
     volume_sum = (
         volume
-        .rolling(
-            period
-        )
+        .rolling(period)
         .sum()
     )
 
     price_volume_sum = (
         price_volume
-        .rolling(
-            period
-        )
+        .rolling(period)
         .sum()
     )
 
-    vwma = (
+    return (
         price_volume_sum
         /
         volume_sum
     )
 
-    return vwma
-
 
 # =========================================================
-# VWMA 거래량 컬럼 자동 선택
+# VWMA 거래량 컬럼
 # =========================================================
 
 def get_vwma_volume_column(
@@ -574,23 +448,12 @@ def get_vwma_volume_column(
 ):
 
     if df is None:
-
         return None
 
-    # =====================================================
-    # OKX
-    # =====================================================
-
     if "vol" in df.columns:
-
         return "vol"
 
-    # =====================================================
-    # 업비트
-    # =====================================================
-
     if "candle_acc_trade_volume" in df.columns:
-
         return "candle_acc_trade_volume"
 
     return None
@@ -609,15 +472,13 @@ def get_ema_10_20_direction(
         df is None
         or len(df) < 20
     ):
-
         return "none"
 
-    volume_column = get_vwma_volume_column(
-        df
+    volume_column = (
+        get_vwma_volume_column(df)
     )
 
     if volume_column is None:
-
         return "none"
 
     vwma10 = get_vwma(
@@ -638,7 +499,6 @@ def get_ema_10_20_direction(
         vwma10 is None
         or vwma20 is None
     ):
-
         return "none"
 
     if (
@@ -646,15 +506,13 @@ def get_ema_10_20_direction(
         >
         vwma20.iloc[-1]
     ):
-
         return "long"
 
-    elif (
+    if (
         vwma10.iloc[-1]
         <
         vwma20.iloc[-1]
     ):
-
         return "short"
 
     return "none"
@@ -673,15 +531,13 @@ def get_ema_20_60_120_direction(
         df is None
         or len(df) < 120
     ):
-
         return "none"
 
-    volume_column = get_vwma_volume_column(
-        df
+    volume_column = (
+        get_vwma_volume_column(df)
     )
 
     if volume_column is None:
-
         return "none"
 
     vwma20 = get_vwma(
@@ -710,7 +566,6 @@ def get_ema_20_60_120_direction(
         or vwma60 is None
         or vwma120 is None
     ):
-
         return "none"
 
     if (
@@ -720,24 +575,22 @@ def get_ema_20_60_120_direction(
         >
         vwma120.iloc[-1]
     ):
-
         return "long"
 
-    elif (
+    if (
         vwma20.iloc[-1]
         <
         vwma60.iloc[-1]
         <
         vwma120.iloc[-1]
     ):
-
         return "short"
 
     return "none"
 
 
 # =========================================================
-# VWMA 10-20 상태
+# VWMA 10-20 상태 + 카운팅
 # =========================================================
 
 def check_ema_10_20(
@@ -749,15 +602,13 @@ def check_ema_10_20(
         df is None
         or len(df) < 20
     ):
-
         return "⚪(0)"
 
-    volume_column = get_vwma_volume_column(
-        df
+    volume_column = (
+        get_vwma_volume_column(df)
     )
 
     if volume_column is None:
-
         return "⚪(0)"
 
     df = df.copy()
@@ -788,19 +639,11 @@ def check_ema_10_20(
 
             states.append("none")
 
-        elif (
-            row["vwma10"]
-            >
-            row["vwma20"]
-        ):
+        elif row["vwma10"] > row["vwma20"]:
 
             states.append("long")
 
-        elif (
-            row["vwma10"]
-            <
-            row["vwma20"]
-        ):
+        elif row["vwma10"] < row["vwma20"]:
 
             states.append("short")
 
@@ -811,7 +654,6 @@ def check_ema_10_20(
     current_state = states[-1]
 
     if current_state == "none":
-
         return "⚪(0)"
 
     count = 0
@@ -819,26 +661,21 @@ def check_ema_10_20(
     for state in reversed(states):
 
         if state == current_state:
-
             count += 1
-
         else:
-
             break
 
     if current_state == "long":
-
         return f"🟢({count})"
 
-    elif current_state == "short":
-
+    if current_state == "short":
         return f"🔴({count})"
 
     return "⚪(0)"
 
 
 # =========================================================
-# VWMA 20-60-120 상태
+# VWMA 20-60-120 상태 + 카운팅
 # =========================================================
 
 def check_ema(
@@ -850,15 +687,13 @@ def check_ema(
         df is None
         or len(df) < 120
     ):
-
         return "⚪(0)"
 
-    volume_column = get_vwma_volume_column(
-        df
+    volume_column = (
+        get_vwma_volume_column(df)
     )
 
     if volume_column is None:
-
         return "⚪(0)"
 
     df = df.copy()
@@ -925,7 +760,6 @@ def check_ema(
     current_state = states[-1]
 
     if current_state == "none":
-
         return "⚪(0)"
 
     count = 0
@@ -933,26 +767,21 @@ def check_ema(
     for state in reversed(states):
 
         if state == current_state:
-
             count += 1
-
         else:
-
             break
 
     if current_state == "long":
-
         return f"🟢({count})"
 
-    elif current_state == "short":
-
+    if current_state == "short":
         return f"🔴({count})"
 
     return "⚪(0)"
 
 
 # =========================================================
-# VWMA 20-60-120 지속 캔들 수
+# 4H 20-60-120 지속 카운트
 # =========================================================
 
 def get_ema_20_60_120_count(
@@ -964,15 +793,13 @@ def get_ema_20_60_120_count(
         df is None
         or len(df) < 120
     ):
-
         return 0, "none"
 
-    volume_column = get_vwma_volume_column(
-        df
+    volume_column = (
+        get_vwma_volume_column(df)
     )
 
     if volume_column is None:
-
         return 0, "none"
 
     df = df.copy()
@@ -1039,7 +866,6 @@ def get_ema_20_60_120_count(
     current_state = states[-1]
 
     if current_state == "none":
-
         return 0, "none"
 
     count = 0
@@ -1047,18 +873,27 @@ def get_ema_20_60_120_count(
     for state in reversed(states):
 
         if state == current_state:
-
             count += 1
-
         else:
-
             break
 
     return count, current_state
 
 
 # =========================================================
-# 추가 정배열 / 역배열 경고
+# ★ 구름 조건
+#
+# 변경사항
+#
+# LONG ☀️
+# 1H 20-60-120 정배열
+# 4H 10-20 정배열
+#
+# SHORT 🌧
+# 1H 20-60-120 역배열
+# 4H 10-20 역배열
+#
+# ※ 1H 10-20 제거
 # =========================================================
 
 def check_1h_alignment_warning(
@@ -1073,15 +908,7 @@ def check_1h_alignment_warning(
         or len(df1h) < 120
         or len(df4h) < 20
     ):
-
         return "none"
-
-    vwma1h_10_20 = (
-        get_ema_10_20_direction(
-            df1h,
-            column
-        )
-    )
 
     vwma1h_20_60_120 = (
         get_ema_20_60_120_direction(
@@ -1098,30 +925,24 @@ def check_1h_alignment_warning(
     )
 
     if (
-        vwma1h_10_20 == "long"
-        and
         vwma1h_20_60_120 == "long"
         and
         vwma4h_10_20 == "long"
     ):
-
         return "long_alignment"
 
     if (
-        vwma1h_10_20 == "short"
-        and
         vwma1h_20_60_120 == "short"
         and
         vwma4h_10_20 == "short"
     ):
-
         return "short_alignment"
 
     return "none"
 
 
 # =========================================================
-# 1시간 눌림 조건
+# 눌림 조건
 # =========================================================
 
 def check_1h_warning(
@@ -1136,18 +957,10 @@ def check_1h_warning(
         or len(df1h) < 120
         or len(df4h) < 120
     ):
-
         return "none"
 
     vwma1h_10_20 = (
         get_ema_10_20_direction(
-            df1h,
-            column
-        )
-    )
-
-    vwma1h_20_60_120 = (
-        get_ema_20_60_120_direction(
             df1h,
             column
         )
@@ -1175,7 +988,11 @@ def check_1h_warning(
     )
 
     # =====================================================
-    # LONG 〽️
+    # LONG 특수 눌림
+    #
+    # 1H 10-20 정배열
+    # 4H 10-20 역배열
+    # 4H 20-60-120 정배열
     # =====================================================
 
     if (
@@ -1185,11 +1002,10 @@ def check_1h_warning(
         and
         vwma4h_20_60_120 == "long"
     ):
-
         return "long_special"
 
     # =====================================================
-    # SHORT 〽️
+    # SHORT 특수 눌림
     # =====================================================
 
     if (
@@ -1199,12 +1015,24 @@ def check_1h_warning(
         and
         vwma4h_20_60_120 == "short"
     ):
-
         return "short_special"
 
     # =====================================================
-    # LONG 눌림
+    # LONG 일반 눌림
+    #
+    # 1H 10-20 역배열
+    # 1H 20-60-120 정배열
+    # 4H 10-20 정배열
+    # 4H 20-60-120 정배열
+    # 4H 정배열 1~10개
     # =====================================================
+
+    vwma1h_20_60_120 = (
+        get_ema_20_60_120_direction(
+            df1h,
+            column
+        )
+    )
 
     if (
         vwma1h_10_20 == "short"
@@ -1217,15 +1045,12 @@ def check_1h_warning(
         and
         direction4h == "long"
         and
-        count4h >= 1
-        and
-        count4h <= MAX_WARNING_COUNT
+        1 <= count4h <= MAX_WARNING_COUNT
     ):
-
         return f"long_warning_{count4h}"
 
     # =====================================================
-    # SHORT 눌림
+    # SHORT 일반 눌림
     # =====================================================
 
     if (
@@ -1239,18 +1064,15 @@ def check_1h_warning(
         and
         direction4h == "short"
         and
-        count4h >= 1
-        and
-        count4h <= MAX_WARNING_COUNT
+        1 <= count4h <= MAX_WARNING_COUNT
     ):
-
         return f"short_warning_{count4h}"
 
     return "none"
 
 
 # =========================================================
-# 1시간 돌파 조건
+# 돌파 조건
 # =========================================================
 
 def check_1h_breakout_warning(
@@ -1265,7 +1087,6 @@ def check_1h_breakout_warning(
         or len(df1h) < 120
         or len(df4h) < 120
     ):
-
         return "none"
 
     vwma1h_10_20 = (
@@ -1318,11 +1139,8 @@ def check_1h_breakout_warning(
         and
         direction4h == "long"
         and
-        count4h >= 1
-        and
-        count4h <= MAX_WARNING_COUNT
+        1 <= count4h <= MAX_WARNING_COUNT
     ):
-
         return f"long_breakout_{count4h}"
 
     # =====================================================
@@ -1340,14 +1158,71 @@ def check_1h_breakout_warning(
         and
         direction4h == "short"
         and
-        count4h >= 1
-        and
-        count4h <= MAX_WARNING_COUNT
+        1 <= count4h <= MAX_WARNING_COUNT
     ):
-
         return f"short_breakout_{count4h}"
 
     return "none"
+
+
+# =========================================================
+# 당일 변동률 방향 필터
+#
+# LONG  → 변동률 > 0
+# SHORT → 변동률 < 0
+# =========================================================
+
+def filter_warning_by_change(
+    warning,
+    breakout,
+    alignment,
+    daily_change
+):
+
+    if daily_change is None:
+        return "none", "none", "none"
+
+    # -----------------------------------------------------
+    # LONG
+    # -----------------------------------------------------
+
+    if daily_change > 0:
+
+        if warning.startswith("short_"):
+            warning = "none"
+
+        if breakout.startswith("short_"):
+            breakout = "none"
+
+        if alignment == "short_alignment":
+            alignment = "none"
+
+    # -----------------------------------------------------
+    # SHORT
+    # -----------------------------------------------------
+
+    elif daily_change < 0:
+
+        if warning.startswith("long_"):
+            warning = "none"
+
+        if breakout.startswith("long_"):
+            breakout = "none"
+
+        if alignment == "long_alignment":
+            alignment = "none"
+
+    # -----------------------------------------------------
+    # 0%
+    # -----------------------------------------------------
+
+    else:
+
+        warning = "none"
+        breakout = "none"
+        alignment = "none"
+
+    return warning, breakout, alignment
 
 
 # =========================================================
@@ -1356,183 +1231,52 @@ def check_1h_breakout_warning(
 
 def get_trade_signal(
     warning,
-    breakout
-):
-
-    if warning == "long_special":
-
-        return "LONG"
-
-    if warning == "short_special":
-
-        return "SHORT"
-
-    if breakout.startswith(
-        "long_breakout_"
-    ):
-
-        return "LONG"
-
-    if breakout.startswith(
-        "short_breakout_"
-    ):
-
-        return "SHORT"
-
-    if warning.startswith(
-        "long_warning_"
-    ):
-
-        return "LONG"
-
-    if warning.startswith(
-        "short_warning_"
-    ):
-
-        return "SHORT"
-
-    return ""
-
-
-# =========================================================
-# ★ 당일 변동률 방향 필터
-#
-# LONG  → 당일 변동률 > 0
-# SHORT → 당일 변동률 < 0
-#
-# 0 또는 N/A → 경고 없음
-# =========================================================
-
-def apply_daily_change_filter(
-    warning,
     breakout,
-    alignment,
-    signal,
     daily_change
 ):
 
-    # =====================================================
-    # 변동률을 확인할 수 없는 경우
-    # =====================================================
-
     if daily_change is None:
-
-        return (
-            "none",
-            "none",
-            "none",
-            ""
-        )
-
-    try:
-
-        daily_change = float(
-            daily_change
-        )
-
-    except Exception:
-
-        return (
-            "none",
-            "none",
-            "none",
-            ""
-        )
+        return ""
 
     # =====================================================
-    # LONG
-    #
-    # 당일 변동률이 양수일 때만 허용
+    # LONG은 당일 양수만
     # =====================================================
 
     if daily_change > 0:
 
-        if (
-            warning.startswith(
-                "short_"
-            )
+        if warning == "long_special":
+            return "LONG"
+
+        if breakout.startswith(
+            "long_breakout_"
         ):
+            return "LONG"
 
-            warning = "none"
-
-        if (
-            breakout.startswith(
-                "short_"
-            )
+        if warning.startswith(
+            "long_warning_"
         ):
-
-            breakout = "none"
-
-        if (
-            alignment == "short_alignment"
-        ):
-
-            alignment = "none"
-
-        if signal == "SHORT":
-
-            signal = ""
-
-        return (
-            warning,
-            breakout,
-            alignment,
-            signal
-        )
+            return "LONG"
 
     # =====================================================
-    # SHORT
-    #
-    # 당일 변동률이 음수일 때만 허용
+    # SHORT는 당일 음수만
     # =====================================================
 
     if daily_change < 0:
 
-        if (
-            warning.startswith(
-                "long_"
-            )
+        if warning == "short_special":
+            return "SHORT"
+
+        if breakout.startswith(
+            "short_breakout_"
         ):
+            return "SHORT"
 
-            warning = "none"
-
-        if (
-            breakout.startswith(
-                "long_"
-            )
+        if warning.startswith(
+            "short_warning_"
         ):
+            return "SHORT"
 
-            breakout = "none"
-
-        if (
-            alignment == "long_alignment"
-        ):
-
-            alignment = "none"
-
-        if signal == "LONG":
-
-            signal = ""
-
-        return (
-            warning,
-            breakout,
-            alignment,
-            signal
-        )
-
-    # =====================================================
-    # 당일 변동률 = 0
-    #
-    # LONG / SHORT 모두 표시하지 않음
-    # =====================================================
-
-    return (
-        "none",
-        "none",
-        "none",
-        ""
-    )
+    return ""
 
 
 # =========================================================
@@ -1541,7 +1285,7 @@ def apply_daily_change_filter(
 
 def get_okx_ema(
     inst_id,
-    daily_change=None
+    daily_change
 ):
 
     df1h = get_okx_ohlcv(
@@ -1574,25 +1318,22 @@ def get_okx_ema(
         "c"
     )
 
-    signal = get_trade_signal(
-        warning,
-        breakout
+    # =====================================================
+    # 당일 변동률 필터
+    # =====================================================
+
+    warning, breakout, alignment = (
+        filter_warning_by_change(
+            warning,
+            breakout,
+            alignment,
+            daily_change
+        )
     )
 
-    # =====================================================
-    # ★ 당일 변동률 방향 필터 적용
-    # =====================================================
-
-    (
+    signal = get_trade_signal(
         warning,
         breakout,
-        alignment,
-        signal
-    ) = apply_daily_change_filter(
-        warning,
-        breakout,
-        alignment,
-        signal,
         daily_change
     )
 
@@ -1642,7 +1383,7 @@ def get_okx_ema(
 
 def get_upbit_ema(
     market,
-    daily_change=None
+    daily_change
 ):
 
     df1h = get_upbit_ohlcv(
@@ -1675,25 +1416,18 @@ def get_upbit_ema(
         "trade_price"
     )
 
-    signal = get_trade_signal(
-        warning,
-        breakout
+    warning, breakout, alignment = (
+        filter_warning_by_change(
+            warning,
+            breakout,
+            alignment,
+            daily_change
+        )
     )
 
-    # =====================================================
-    # ★ 당일 변동률 방향 필터 적용
-    # =====================================================
-
-    (
+    signal = get_trade_signal(
         warning,
         breakout,
-        alignment,
-        signal
-    ) = apply_daily_change_filter(
-        warning,
-        breakout,
-        alignment,
-        signal,
         daily_change
     )
 
@@ -1761,21 +1495,14 @@ def get_okx_volume(
             61
         )
 
-        if (
-            df is None
-            or df.empty
-        ):
-
+        if df is None or df.empty:
             return 0
 
-        df = df.tail(60)
-
-        volume = (
+        return float(
             df["volCcyQuote"]
+            .tail(60)
             .sum()
         )
-
-        return float(volume)
 
     df = get_okx_ohlcv(
         inst_id,
@@ -1783,20 +1510,14 @@ def get_okx_volume(
         hours + 1
     )
 
-    if (
-        df is None
-        or df.empty
-    ):
-
+    if df is None or df.empty:
         return 0
 
-    volume = (
+    return float(
         df["volCcyQuote"]
         .tail(hours)
         .sum()
     )
-
-    return float(volume)
 
 
 # =========================================================
@@ -1823,18 +1544,13 @@ def get_upbit_volume(
             60
         )
 
-        if (
-            df is None
-            or df.empty
-        ):
-
+        if df is None or df.empty:
             return 0
 
         if "candle_acc_trade_price" not in df.columns:
-
             return 0
 
-        volume = (
+        return float(
             pd.to_numeric(
                 df["candle_acc_trade_price"],
                 errors="coerce"
@@ -1844,26 +1560,19 @@ def get_upbit_volume(
             .sum()
         )
 
-        return float(volume)
-
     df = get_upbit_ohlcv(
         market,
         60,
         hours
     )
 
-    if (
-        df is None
-        or df.empty
-    ):
-
+    if df is None or df.empty:
         return 0
 
     if "candle_acc_trade_price" not in df.columns:
-
         return 0
 
-    volume = (
+    return float(
         pd.to_numeric(
             df["candle_acc_trade_price"],
             errors="coerce"
@@ -1872,8 +1581,6 @@ def get_upbit_volume(
         .tail(hours)
         .sum()
     )
-
-    return float(volume)
 
 
 # =========================================================
@@ -1885,7 +1592,6 @@ def get_upbit_volume_map(
 ):
 
     if not markets:
-
         return {}
 
     volume_map = {}
@@ -1897,11 +1603,9 @@ def get_upbit_volume_map(
         start=1
     ):
 
-        volume = get_upbit_volume(
-            market
+        volume_map[market] = (
+            get_upbit_volume(market)
         )
-
-        volume_map[market] = volume
 
         time.sleep(0.03)
 
@@ -1917,9 +1621,6 @@ def get_upbit_volume_map(
 
 # =========================================================
 # OKX 변동률
-#
-# 결과:
-# [오늘, 어제, 그제]
 # =========================================================
 
 def get_okx_change(
@@ -1936,7 +1637,6 @@ def get_okx_change(
         df is None
         or len(df) < 50
     ):
-
         return None
 
     df = df.copy()
@@ -1965,7 +1665,6 @@ def get_okx_change(
     )
 
     if len(daily) < 5:
-
         return None
 
     result = []
@@ -1975,7 +1674,6 @@ def get_okx_change(
         if daily.iloc[i - 1] == 0:
 
             result.append(0)
-
             continue
 
         change = (
@@ -1991,10 +1689,7 @@ def get_okx_change(
         )
 
         result.append(
-            round(
-                change,
-                2
-            )
+            round(change, 2)
         )
 
     return result
@@ -2018,7 +1713,6 @@ def get_upbit_change(
         df is None
         or len(df) < 50
     ):
-
         return None
 
     df = df.copy()
@@ -2042,7 +1736,6 @@ def get_upbit_change(
     )
 
     if len(daily) < 5:
-
         return None
 
     result = []
@@ -2052,7 +1745,6 @@ def get_upbit_change(
         if daily.iloc[i - 1] == 0:
 
             result.append(0)
-
             continue
 
         change = (
@@ -2068,10 +1760,7 @@ def get_upbit_change(
         )
 
         result.append(
-            round(
-                change,
-                2
-            )
+            round(change, 2)
         )
 
     return result
@@ -2089,7 +1778,6 @@ def format_change(
         changes is None
         or len(changes) == 0
     ):
-
         return "N/A"
 
     x = changes[0]
@@ -2133,11 +1821,9 @@ def warning_html(
 ):
 
     if warning == "long_special":
-
         return "〽️"
 
-    elif warning == "short_special":
-
+    if warning == "short_special":
         return "〽️"
 
     if warning.startswith(
@@ -2145,29 +1831,23 @@ def warning_html(
     ):
 
         try:
-
             count = int(
                 warning.split("_")[-1]
             )
-
         except Exception:
-
             count = 0
 
         return f"🚀({count})"
 
-    elif warning.startswith(
+    if warning.startswith(
         "short_warning_"
     ):
 
         try:
-
             count = int(
                 warning.split("_")[-1]
             )
-
         except Exception:
-
             count = 0
 
         return f"🚨({count})"
@@ -2176,18 +1856,44 @@ def warning_html(
 
 
 # =========================================================
-# 정배열 / 역배열 추가 경고 HTML
+# 구름 HTML
 # =========================================================
 
 def alignment_html(
     alignment
 ):
 
-    if alignment == "long_alignment":
+    if alignment.startswith(
+        "long_alignment"
+    ):
+
+        if "_" in alignment:
+
+            try:
+                count = int(
+                    alignment.split("_")[-1]
+                )
+                return f"☀️({count})"
+
+            except Exception:
+                pass
 
         return "☀️"
 
-    elif alignment == "short_alignment":
+    if alignment.startswith(
+        "short_alignment"
+    ):
+
+        if "_" in alignment:
+
+            try:
+                count = int(
+                    alignment.split("_")[-1]
+                )
+                return f"🌧({count})"
+
+            except Exception:
+                pass
 
         return "🌧"
 
@@ -2195,7 +1901,7 @@ def alignment_html(
 
 
 # =========================================================
-# 돌파 경고 HTML
+# 돌파 HTML
 # =========================================================
 
 def breakout_html(
@@ -2207,29 +1913,23 @@ def breakout_html(
     ):
 
         try:
-
             count = int(
                 breakout.split("_")[-1]
             )
-
         except Exception:
-
             count = 0
 
         return f"⚡({count})"
 
-    elif breakout.startswith(
+    if breakout.startswith(
         "short_breakout_"
     ):
 
         try:
-
             count = int(
                 breakout.split("_")[-1]
             )
-
         except Exception:
-
             count = 0
 
         return f"💥({count})"
@@ -2253,7 +1953,7 @@ def signal_html(
         </span>
         """
 
-    elif signal == "SHORT":
+    if signal == "SHORT":
 
         return """
         <span class="signal short-signal">
@@ -2319,18 +2019,12 @@ def ema_html(
 <div class="ema-display">
 
     <div class="signal-period">
-
         {signal}
-
     </div>
-
 
     <div class="alert-period">
-
         {alert_html}
-
     </div>
-
 
     <div class="ema-period">
 
@@ -2348,7 +2042,6 @@ def ema_html(
 
     </div>
 
-
     <div class="ema-period last">
 
         <span class="ema-time">
@@ -2365,14 +2058,13 @@ def ema_html(
 
     </div>
 
-
 </div>
 
 """
 
 
 # =========================================================
-# OKX TOP30
+# OKX TOP
 # =========================================================
 
 def update_okx():
@@ -2410,7 +2102,6 @@ def update_okx():
         )
 
         for market in upbit_markets
-
     }
 
     volume_map = {}
@@ -2432,9 +2123,7 @@ def update_okx():
             usdt_krw
         )
 
-        volume_map[symbol] = (
-            volume_krw
-        )
+        volume_map[symbol] = volume_krw
 
         time.sleep(0.03)
 
@@ -2470,25 +2159,13 @@ def update_okx():
             symbol
         )
 
-        # =====================================================
-        # ★ 오늘 변동률
-        #
-        # changes[0] = 오늘
-        # =====================================================
-
         daily_change = None
 
         if (
             changes is not None
-            and
-            len(changes) > 0
+            and len(changes) > 0
         ):
-
             daily_change = changes[0]
-
-        # =====================================================
-        # ★ 당일 변동률을 EMA/경고 필터에 전달
-        # =====================================================
 
         ema = get_okx_ema(
             symbol,
@@ -2497,11 +2174,9 @@ def update_okx():
 
         rows.append({
 
-            "rank":
-                rank,
+            "rank": rank,
 
-            "name":
-                coin,
+            "name": coin,
 
             "change":
                 format_change(
@@ -2513,8 +2188,7 @@ def update_okx():
                     volume_map[symbol]
                 ),
 
-            "ema":
-                ema
+            "ema": ema
 
         })
 
@@ -2528,7 +2202,7 @@ def update_okx():
 
 
 # =========================================================
-# 업비트 TOP30
+# 업비트 TOP
 # =========================================================
 
 def update_upbit():
@@ -2585,23 +2259,13 @@ def update_upbit():
             market
         )
 
-        # =====================================================
-        # ★ 오늘 변동률
-        # =====================================================
-
         daily_change = None
 
         if (
             changes is not None
-            and
-            len(changes) > 0
+            and len(changes) > 0
         ):
-
             daily_change = changes[0]
-
-        # =====================================================
-        # ★ 당일 변동률을 EMA/경고 필터에 전달
-        # =====================================================
 
         ema = get_upbit_ema(
             market,
@@ -2610,11 +2274,9 @@ def update_upbit():
 
         rows.append({
 
-            "rank":
-                rank,
+            "rank": rank,
 
-            "name":
-                coin,
+            "name": coin,
 
             "change":
                 format_change(
@@ -2626,8 +2288,7 @@ def update_upbit():
                     volume_map[market]
                 ),
 
-            "ema":
-                ema
+            "ema": ema
 
         })
 
@@ -2659,19 +2320,6 @@ def update_dashboard():
         f"{VOLUME_HOURS}시간"
     )
 
-    if VOLUME_HOURS == 1:
-
-        logging.info(
-            "1시간 거래대금 = 완료된 1분봉 60개"
-        )
-
-    else:
-
-        logging.info(
-            f"{VOLUME_HOURS}시간 거래대금 = "
-            f"완료된 1시간봉 {VOLUME_HOURS}개"
-        )
-
     logging.info(
         "VWMA 기준 : 1H + 4H"
     )
@@ -2682,20 +2330,21 @@ def update_dashboard():
     )
 
     logging.info(
-        "LONG 경고 = 당일 변동률 양수"
+        "구름 LONG : "
+        "1H 20-60-120 정배열 + 4H 10-20 정배열"
     )
 
     logging.info(
-        "SHORT 경고 = 당일 변동률 음수"
+        "구름 SHORT : "
+        "1H 20-60-120 역배열 + 4H 10-20 역배열"
     )
 
     logging.info(
-        f"표시 순위 : TOP{TOP_N}"
+        "모든 LONG 경고 : 당일 변동률 양수"
     )
 
     logging.info(
-        "추가 정배열 경고 : "
-        "1H 10-20 + 1H 20-60-120 + 4H 10-20"
+        "모든 SHORT 경고 : 당일 변동률 음수"
     )
 
     logging.info(
@@ -2703,7 +2352,6 @@ def update_dashboard():
     )
 
     try:
-
         update_okx()
 
     except Exception as e:
@@ -2713,7 +2361,6 @@ def update_dashboard():
         )
 
     try:
-
         update_upbit()
 
     except Exception as e:
@@ -2736,7 +2383,6 @@ def scheduler():
     while True:
 
         try:
-
             schedule.run_pending()
 
         except Exception as e:
@@ -2773,396 +2419,271 @@ def dashboard():
 OKX + UPBIT
 </title>
 
-
 <style>
 
 body{
 
     background:#111;
-
     color:white;
-
     font-family:Arial;
-
     padding:20px;
 
 }
 
-
 table{
 
     width:auto;
-
     border-collapse:collapse;
-
     border:1px solid #444;
 
 }
-
 
 th{
 
     background:#333;
-
     padding:10px 12px;
-
     border-right:2px solid #555;
-
     white-space:nowrap;
 
 }
 
-
 th:last-child{
-
     border-right:none;
-
 }
-
 
 td{
 
     padding:8px 12px;
-
     border-bottom:1px solid #444;
-
     border-right:2px solid #333;
-
     text-align:center;
-
     white-space:nowrap;
 
 }
 
-
 td:last-child{
-
     border-right:none;
-
 }
-
 
 .rank-cell{
 
     width:45px;
-
     min-width:45px;
 
 }
-
 
 .coin-cell{
 
     min-width:90px;
-
     text-align:left;
-
     font-weight:bold;
 
 }
-
 
 .volume-cell{
 
     min-width:100px;
-
     padding-left:15px;
-
     padding-right:15px;
-
     text-align:right;
-
     white-space:nowrap;
 
 }
-
 
 .change-cell{
 
     min-width:105px;
-
     padding-left:12px;
-
     padding-right:12px;
-
     white-space:nowrap;
 
 }
-
 
 .change-item{
 
     display:inline-flex;
-
     align-items:center;
-
     width:95px;
-
     min-width:95px;
-
     box-sizing:border-box;
 
 }
-
 
 .change-icon{
 
     display:inline-block;
-
     width:28px;
-
     min-width:28px;
-
     text-align:center;
 
 }
-
 
 .change-value{
 
     display:inline-block;
-
     width:67px;
-
     min-width:67px;
-
     text-align:right;
-
     font-family:monospace;
 
 }
-
 
 .ema-display{
 
     display:flex;
-
     align-items:center;
-
     height:44px;
-
     white-space:nowrap;
-
     font-family:monospace;
-
     padding:0 5px;
 
 }
-
 
 .signal-period{
 
     width:75px;
-
     min-width:75px;
-
     text-align:center;
-
     display:flex;
-
     align-items:center;
-
     justify-content:center;
 
 }
-
 
 .signal{
 
     display:inline-block;
-
     font-weight:bold;
-
     font-size:16px;
-
     padding:4px 7px;
-
     border-radius:4px;
 
 }
 
-
 .long-signal{
 
     color:#00ff66;
-
     border:1px solid #00ff66;
 
 }
 
-
 .short-signal{
 
     color:#ff4444;
-
     border:1px solid #ff4444;
 
 }
 
-
 .alert-period{
 
     width:115px;
-
     min-width:115px;
-
     height:40px;
-
     display:flex;
-
     align-items:center;
-
     justify-content:center;
-
     gap:5px;
-
     padding:0 5px;
-
     border-right:2px solid #555;
-
     box-sizing:border-box;
 
 }
 
-
 .alert-warning{
 
     font-size:24px;
-
     line-height:30px;
-
     display:inline-block;
 
 }
-
 
 .alert-breakout{
 
     font-size:24px;
-
     line-height:30px;
-
     display:inline-block;
 
 }
-
 
 .alert-alignment{
 
     font-size:24px;
-
     line-height:30px;
-
     display:inline-block;
 
 }
-
 
 .ema-period{
 
     display:flex;
-
     align-items:center;
-
     height:40px;
-
     padding:0 10px;
-
     border-right:2px solid #555;
 
 }
 
-
 .ema-period.last{
-
     border-right:none;
-
 }
-
 
 .ema-time{
 
     display:inline-block;
-
     width:45px;
-
     min-width:45px;
-
     text-align:left;
-
     font-weight:bold;
 
 }
 
-
 .ema-status{
 
     display:inline-block;
-
     width:70px;
-
     min-width:70px;
-
     text-align:left;
 
 }
 
-
 .section-title{
 
     margin-top:25px;
-
     padding:10px 12px;
-
     background:#222;
-
     border-left:5px solid #666;
 
 }
 
-
 .volume-setting{
 
     display:inline-block;
-
     margin-left:10px;
-
     padding:6px 10px;
-
     background:#222;
-
     border:1px solid #444;
-
     border-radius:5px;
-
     color:#ddd;
 
 }
 
-
 tr:hover{
-
     background:#1d1d1d;
-
 }
 
 </style>
 
 </head>
 
-
 <body>
-
 
 <h2>
 📊 암호화폐 실시간 분석
 </h2>
 
-
 <p>
-1시간 VWMA · 4시간 추세 · 눌림 · 돌파 · LONG / SHORT
+1시간 VWMA · 4시간 추세 · 눌림 · 돌파 · 구름 · LONG / SHORT
 </p>
-
 
 <p>
 
@@ -3185,20 +2706,11 @@ TOP""" + str(TOP_N) + """
 최대 """ + str(MAX_WARNING_COUNT) + """개
 </span>
 
-&nbsp;&nbsp;
-
-경고 방향:
-<span class="volume-setting">
-LONG=양수 / SHORT=음수
-</span>
-
 </p>
-
 
 <h2 class="section-title">
 🏆 OKX 선물 거래대금 TOP""" + str(TOP_N) + """
 </h2>
-
 
 <table>
 
@@ -3227,11 +2739,6 @@ VWMA 상태
 </tr>
 
 """
-
-
-    # =====================================================
-    # OKX
-    # =====================================================
 
     for item in latest_okx_data:
 
@@ -3256,27 +2763,20 @@ VWMA 상태
 </td>
 
 <td>
-
-{ema_html(
-    item["ema"]
-)}
-
+{ema_html(item["ema"])}
 </td>
 
 </tr>
 
 """
 
-
     html += """
 
 </table>
 
-
 <h2 class="section-title">
 🏆 업비트 현물 거래대금 TOP""" + str(TOP_N) + """
 </h2>
-
 
 <table>
 
@@ -3306,11 +2806,6 @@ VWMA 상태
 
 """
 
-
-    # =====================================================
-    # 업비트
-    # =====================================================
-
     for item in latest_upbit_data:
 
         html += f"""
@@ -3334,22 +2829,16 @@ VWMA 상태
 </td>
 
 <td>
-
-{ema_html(
-    item["ema"]
-)}
-
+{ema_html(item["ema"])}
 </td>
 
 </tr>
 
 """
 
-
     html += """
 
 </table>
-
 
 </body>
 
@@ -3367,18 +2856,10 @@ VWMA 상태
 @app.on_event("startup")
 def startup():
 
-    # =====================================================
-    # 최초 1회 업데이트
-    # =====================================================
-
     threading.Thread(
         target=update_dashboard,
         daemon=True
     ).start()
-
-    # =====================================================
-    # 5분마다 업데이트
-    # =====================================================
 
     schedule.every(
         UPDATE_MINUTES
@@ -3399,11 +2880,7 @@ def startup():
 if __name__ == "__main__":
 
     uvicorn.run(
-
         app,
-
         host="0.0.0.0",
-
         port=8000
-
-        )
+    )
