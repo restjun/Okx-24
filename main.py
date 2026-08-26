@@ -414,17 +414,17 @@ def get_ema(
 
 
 # =========================================================
-# EMA 10-20 방향
+# EMA 10-30 방향
 # =========================================================
 
-def get_ema_10_20_direction(
+def get_ema_10_30_direction(
     df,
     column
 ):
 
     if (
         df is None
-        or len(df) < 20
+        or len(df) < 30
     ):
         return "none"
 
@@ -434,29 +434,29 @@ def get_ema_10_20_direction(
         10
     )
 
-    ema20 = get_ema(
+    ema30 = get_ema(
         df,
         column,
-        20
+        30
     )
 
     if (
         ema10 is None
-        or ema20 is None
+        or ema30 is None
     ):
         return "none"
 
     if (
         ema10.iloc[-1]
         >
-        ema20.iloc[-1]
+        ema30.iloc[-1]
     ):
         return "long"
 
     if (
         ema10.iloc[-1]
         <
-        ema20.iloc[-1]
+        ema30.iloc[-1]
     ):
         return "short"
 
@@ -464,10 +464,10 @@ def get_ema_10_20_direction(
 
 
 # =========================================================
-# EMA 20-60-120 방향
+# EMA 30-60-120 방향
 # =========================================================
 
-def get_ema_20_60_120_direction(
+def get_ema_30_60_120_direction(
     df,
     column
 ):
@@ -478,10 +478,10 @@ def get_ema_20_60_120_direction(
     ):
         return "none"
 
-    ema20 = get_ema(
+    ema30 = get_ema(
         df,
         column,
-        20
+        30
     )
 
     ema60 = get_ema(
@@ -497,14 +497,14 @@ def get_ema_20_60_120_direction(
     )
 
     if (
-        ema20 is None
+        ema30 is None
         or ema60 is None
         or ema120 is None
     ):
         return "none"
 
     if (
-        ema20.iloc[-1]
+        ema30.iloc[-1]
         >
         ema60.iloc[-1]
         >
@@ -513,7 +513,7 @@ def get_ema_20_60_120_direction(
         return "long"
 
     if (
-        ema20.iloc[-1]
+        ema30.iloc[-1]
         <
         ema60.iloc[-1]
         <
@@ -525,16 +525,16 @@ def get_ema_20_60_120_direction(
 
 
 # =========================================================
-# 10-20-60-120 방향
+# 10-30-60-120 방향
 #
 # 120 EMA가 충분하면
-# 10 > 20 > 60 > 120
+# 10 > 30 > 60 > 120
 #
 # 120 EMA가 부족하면
-# 10 > 20 > 60
+# 10 > 30 > 60
 # =========================================================
 
-def get_ema_10_20_60_120_direction(
+def get_ema_10_30_60_120_direction(
     df,
     column
 ):
@@ -551,10 +551,10 @@ def get_ema_10_20_60_120_direction(
         10
     )
 
-    ema20 = get_ema(
+    ema30 = get_ema(
         df,
         column,
-        20
+        30
     )
 
     ema60 = get_ema(
@@ -565,7 +565,7 @@ def get_ema_10_20_60_120_direction(
 
     if (
         ema10 is None
-        or ema20 is None
+        or ema30 is None
         or ema60 is None
     ):
         return "none"
@@ -583,7 +583,7 @@ def get_ema_10_20_60_120_direction(
             if (
                 ema10.iloc[-1]
                 >
-                ema20.iloc[-1]
+                ema30.iloc[-1]
                 >
                 ema60.iloc[-1]
                 >
@@ -594,7 +594,7 @@ def get_ema_10_20_60_120_direction(
             if (
                 ema10.iloc[-1]
                 <
-                ema20.iloc[-1]
+                ema30.iloc[-1]
                 <
                 ema60.iloc[-1]
                 <
@@ -605,7 +605,7 @@ def get_ema_10_20_60_120_direction(
     if (
         ema10.iloc[-1]
         >
-        ema20.iloc[-1]
+        ema30.iloc[-1]
         >
         ema60.iloc[-1]
     ):
@@ -614,7 +614,7 @@ def get_ema_10_20_60_120_direction(
     if (
         ema10.iloc[-1]
         <
-        ema20.iloc[-1]
+        ema30.iloc[-1]
         <
         ema60.iloc[-1]
     ):
@@ -624,10 +624,10 @@ def get_ema_10_20_60_120_direction(
 
 
 # =========================================================
-# 20-60-120 지속 카운팅
+# 30-60-120 지속 카운팅
 # =========================================================
 
-def get_20_60_120_count(
+def get_30_60_120_count(
     df,
     column
 ):
@@ -640,10 +640,10 @@ def get_20_60_120_count(
 
     df = df.copy()
 
-    df["ema20"] = get_ema(
+    df["ema30"] = get_ema(
         df,
         column,
-        20
+        30
     )
 
     df["ema60"] = get_ema(
@@ -663,7 +663,7 @@ def get_20_60_120_count(
     for _, row in df.iterrows():
 
         if (
-            pd.isna(row["ema20"])
+            pd.isna(row["ema30"])
             or
             pd.isna(row["ema60"])
             or
@@ -673,7 +673,7 @@ def get_20_60_120_count(
             states.append("none")
 
         elif (
-            row["ema20"]
+            row["ema30"]
             >
             row["ema60"]
             >
@@ -683,7 +683,7 @@ def get_20_60_120_count(
             states.append("long")
 
         elif (
-            row["ema20"]
+            row["ema30"]
             <
             row["ema60"]
             <
@@ -715,17 +715,17 @@ def get_20_60_120_count(
 
 
 # =========================================================
-# EMA 상태 + 카운팅
+# EMA 10-30 상태 + 카운팅
 # =========================================================
 
-def check_ema_10_20(
+def check_ema_10_30(
     df,
     column
 ):
 
     if (
         df is None
-        or len(df) < 20
+        or len(df) < 30
     ):
         return "⚪(0)"
 
@@ -737,10 +737,10 @@ def check_ema_10_20(
         10
     )
 
-    df["ema20"] = get_ema(
+    df["ema30"] = get_ema(
         df,
         column,
-        20
+        30
     )
 
     states = []
@@ -750,16 +750,16 @@ def check_ema_10_20(
         if (
             pd.isna(row["ema10"])
             or
-            pd.isna(row["ema20"])
+            pd.isna(row["ema30"])
         ):
 
             states.append("none")
 
-        elif row["ema10"] > row["ema20"]:
+        elif row["ema10"] > row["ema30"]:
 
             states.append("long")
 
-        elif row["ema10"] < row["ema20"]:
+        elif row["ema10"] < row["ema30"]:
 
             states.append("short")
 
@@ -792,7 +792,7 @@ def check_ema_10_20(
 
 
 # =========================================================
-# EMA 20-60-120 상태 + 카운팅
+# EMA 30-60-120 상태 + 카운팅
 # =========================================================
 
 def check_ema(
@@ -808,10 +808,10 @@ def check_ema(
 
     df = df.copy()
 
-    df["ema20"] = get_ema(
+    df["ema30"] = get_ema(
         df,
         column,
-        20
+        30
     )
 
     df["ema60"] = get_ema(
@@ -831,7 +831,7 @@ def check_ema(
     for _, row in df.iterrows():
 
         if (
-            pd.isna(row["ema20"])
+            pd.isna(row["ema30"])
             or
             pd.isna(row["ema60"])
             or
@@ -841,7 +841,7 @@ def check_ema(
             states.append("none")
 
         elif (
-            row["ema20"]
+            row["ema30"]
             >
             row["ema60"]
             >
@@ -851,7 +851,7 @@ def check_ema(
             states.append("long")
 
         elif (
-            row["ema20"]
+            row["ema30"]
             <
             row["ema60"]
             <
@@ -906,62 +906,62 @@ def check_all_alignment(
     ):
         return "none"
 
-    m15_10_20 = (
-        get_ema_10_20_direction(
+    m15_10_30 = (
+        get_ema_10_30_direction(
             df15m,
             column
         )
     )
 
-    m15_20_60_120 = (
-        get_ema_20_60_120_direction(
+    m15_30_60_120 = (
+        get_ema_30_60_120_direction(
             df15m,
             column
         )
     )
 
-    h1_10_20 = (
-        get_ema_10_20_direction(
+    h1_10_30 = (
+        get_ema_10_30_direction(
             df1h,
             column
         )
     )
 
-    h1_20_60_120 = (
-        get_ema_20_60_120_direction(
+    h1_30_60_120 = (
+        get_ema_30_60_120_direction(
             df1h,
             column
         )
     )
 
     h4_all = (
-        get_ema_10_20_60_120_direction(
+        get_ema_10_30_60_120_direction(
             df4h,
             column
         )
     )
 
     if (
-        m15_10_20 == "long"
+        m15_10_30 == "long"
         and
-        m15_20_60_120 == "long"
+        m15_30_60_120 == "long"
         and
-        h1_10_20 == "long"
+        h1_10_30 == "long"
         and
-        h1_20_60_120 == "long"
+        h1_30_60_120 == "long"
         and
         h4_all == "long"
     ):
         return "long_alignment"
 
     if (
-        m15_10_20 == "short"
+        m15_10_30 == "short"
         and
-        m15_20_60_120 == "short"
+        m15_30_60_120 == "short"
         and
-        h1_10_20 == "short"
+        h1_10_30 == "short"
         and
-        h1_20_60_120 == "short"
+        h1_30_60_120 == "short"
         and
         h4_all == "short"
     ):
@@ -993,37 +993,37 @@ def check_breakout_warning(
         return "none"
 
     # 15M
-    m15_10_20 = (
-        get_ema_10_20_direction(
+    m15_10_30 = (
+        get_ema_10_30_direction(
             df15m,
             column
         )
     )
 
-    m15_20_60_120 = (
-        get_ema_20_60_120_direction(
+    m15_30_60_120 = (
+        get_ema_30_60_120_direction(
             df15m,
             column
         )
     )
 
     count15m, direction15m = (
-        get_20_60_120_count(
+        get_30_60_120_count(
             df15m,
             column
         )
     )
 
     # 1H
-    h1_10_20 = (
-        get_ema_10_20_direction(
+    h1_10_30 = (
+        get_ema_10_30_direction(
             df1h,
             column
         )
     )
 
-    h1_20_60_120 = (
-        get_ema_20_60_120_direction(
+    h1_30_60_120 = (
+        get_ema_30_60_120_direction(
             df1h,
             column
         )
@@ -1031,7 +1031,7 @@ def check_breakout_warning(
 
     # 4H
     h4_all = (
-        get_ema_10_20_60_120_direction(
+        get_ema_10_30_60_120_direction(
             df4h,
             column
         )
@@ -1048,13 +1048,13 @@ def check_breakout_warning(
     if (
         valid_count
         and
-        m15_10_20 == "long"
+        m15_10_30 == "long"
         and
         direction15m == "long"
         and
-        h1_10_20 == "long"
+        h1_10_30 == "long"
         and
-        h1_20_60_120 == "long"
+        h1_30_60_120 == "long"
         and
         h4_all == "long"
     ):
@@ -1066,13 +1066,13 @@ def check_breakout_warning(
     # =====================================================
 
     if (
-        m15_10_20 == "short"
+        m15_10_30 == "short"
         and
-        m15_20_60_120 == "long"
+        m15_30_60_120 == "long"
         and
-        h1_10_20 == "long"
+        h1_10_30 == "long"
         and
-        h1_20_60_120 == "long"
+        h1_30_60_120 == "long"
         and
         h4_all == "long"
     ):
@@ -1085,13 +1085,13 @@ def check_breakout_warning(
     if (
         valid_count
         and
-        m15_10_20 == "short"
+        m15_10_30 == "short"
         and
         direction15m == "short"
         and
-        h1_10_20 == "short"
+        h1_10_30 == "short"
         and
-        h1_20_60_120 == "short"
+        h1_30_60_120 == "short"
         and
         h4_all == "short"
     ):
@@ -1103,13 +1103,13 @@ def check_breakout_warning(
     # =====================================================
 
     if (
-        m15_10_20 == "long"
+        m15_10_30 == "long"
         and
-        m15_20_60_120 == "short"
+        m15_30_60_120 == "short"
         and
-        h1_10_20 == "short"
+        h1_10_30 == "short"
         and
-        h1_20_60_120 == "short"
+        h1_30_60_120 == "short"
         and
         h4_all == "short"
     ):
@@ -1264,37 +1264,37 @@ def get_okx_ema(
 
     return {
 
-        "15m_10_20":
-            check_ema_10_20(
+        "15m_10_30":
+            check_ema_10_30(
                 df15m,
                 "c"
             ),
 
-        "15m_20_60_120":
+        "15m_30_60_120":
             check_ema(
                 df15m,
                 "c"
             ),
 
-        "1h_10_20":
-            check_ema_10_20(
+        "1h_10_30":
+            check_ema_10_30(
                 df1h,
                 "c"
             ),
 
-        "1h_20_60_120":
+        "1h_30_60_120":
             check_ema(
                 df1h,
                 "c"
             ),
 
-        "4h_10_20":
-            check_ema_10_20(
+        "4h_10_30":
+            check_ema_10_30(
                 df4h,
                 "c"
             ),
 
-        "4h_20_60_120":
+        "4h_30_60_120":
             check_ema(
                 df4h,
                 "c"
@@ -1367,37 +1367,37 @@ def get_upbit_ema(
 
     return {
 
-        "15m_10_20":
-            check_ema_10_20(
+        "15m_10_30":
+            check_ema_10_30(
                 df15m,
                 "trade_price"
             ),
 
-        "15m_20_60_120":
+        "15m_30_60_120":
             check_ema(
                 df15m,
                 "trade_price"
             ),
 
-        "1h_10_20":
-            check_ema_10_20(
+        "1h_10_30":
+            check_ema_10_30(
                 df1h,
                 "trade_price"
             ),
 
-        "1h_20_60_120":
+        "1h_30_60_120":
             check_ema(
                 df1h,
                 "trade_price"
             ),
 
-        "4h_10_20":
-            check_ema_10_20(
+        "4h_10_30":
+            check_ema_10_30(
                 df4h,
                 "trade_price"
             ),
 
-        "4h_20_60_120":
+        "4h_30_60_120":
             check_ema(
                 df4h,
                 "trade_price"
@@ -2034,11 +2034,11 @@ def ema_html(
         </span>
 
         <span class="ema-status">
-            {ema["15m_10_20"]}
+            {ema["15m_10_30"]}
         </span>
 
         <span class="ema-status">
-            {ema["15m_20_60_120"]}
+            {ema["15m_30_60_120"]}
         </span>
 
     </div>
@@ -2050,11 +2050,11 @@ def ema_html(
         </span>
 
         <span class="ema-status">
-            {ema["1h_10_20"]}
+            {ema["1h_10_30"]}
         </span>
 
         <span class="ema-status">
-            {ema["1h_20_60_120"]}
+            {ema["1h_30_60_120"]}
         </span>
 
     </div>
@@ -2066,11 +2066,11 @@ def ema_html(
         </span>
 
         <span class="ema-status">
-            {ema["4h_10_20"]}
+            {ema["4h_10_30"]}
         </span>
 
         <span class="ema-status">
-            {ema["4h_20_60_120"]}
+            {ema["4h_30_60_120"]}
         </span>
 
     </div>
@@ -2345,32 +2345,32 @@ def update_dashboard():
 
     logging.info(
         "⚡ LONG 번개 : "
-        "15M 10-20 정배열 + "
-        "15M 20-60-120 정배열 1~10개 + "
+        "15M 10-30 정배열 + "
+        "15M 30-60-120 정배열 1~10개 + "
         "1H 전체 정배열 + "
         "4H 전체 정배열"
     )
 
     logging.info(
         "〽️ LONG 눌림 : "
-        "15M 10-20 역배열 + "
-        "15M 20-60-120 정배열 + "
+        "15M 10-30 역배열 + "
+        "15M 30-60-120 정배열 + "
         "1H 전체 정배열 + "
         "4H 전체 정배열"
     )
 
     logging.info(
         "💥 SHORT 번개 : "
-        "15M 10-20 역배열 + "
-        "15M 20-60-120 역배열 1~10개 + "
+        "15M 10-30 역배열 + "
+        "15M 30-60-120 역배열 1~10개 + "
         "1H 전체 역배열 + "
         "4H 전체 역배열"
     )
 
     logging.info(
         "〽️ SHORT 눌림 : "
-        "15M 10-20 정배열 + "
-        "15M 20-60-120 역배열 + "
+        "15M 10-30 정배열 + "
+        "15M 30-60-120 역배열 + "
         "1H 전체 역배열 + "
         "4H 전체 역배열"
     )
@@ -2387,7 +2387,7 @@ def update_dashboard():
 
     logging.info(
         "4H 120 EMA 부족 시 "
-        "10-20-60만 사용"
+        "10-30-60만 사용"
     )
 
     logging.info(
