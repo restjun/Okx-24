@@ -534,6 +534,9 @@ def get_ema_20_60_120_direction(
 #
 # 120 EMA가 부족하면
 # 10 > 20 > 60
+#
+# 사용 목적:
+# 4H
 # =========================================================
 
 def get_ema_10_20_60_120_direction(
@@ -976,37 +979,44 @@ def check_all_alignment(
         return "none"
 
     # 15M
-    m15_10_20 = get_ema_10_20_direction(
-        df15m,
-        column
+    m15_10_20 = (
+        get_ema_10_20_direction(
+            df15m,
+            column
+        )
     )
 
-    m15_20_60_120 = get_ema_20_60_120_direction(
-        df15m,
-        column
+    m15_20_60_120 = (
+        get_ema_20_60_120_direction(
+            df15m,
+            column
+        )
     )
 
     # 1H
-    h1_10_20 = get_ema_10_20_direction(
-        df1h,
-        column
+    h1_10_20 = (
+        get_ema_10_20_direction(
+            df1h,
+            column
+        )
     )
 
-    h1_20_60_120 = get_ema_20_60_120_direction(
-        df1h,
-        column
+    h1_20_60_120 = (
+        get_ema_20_60_120_direction(
+            df1h,
+            column
+        )
     )
 
     # 4H
-    h4_all = get_ema_10_20_60_120_direction(
-        df4h,
-        column
+    h4_all = (
+        get_ema_10_20_60_120_direction(
+            df4h,
+            column
+        )
     )
 
-    # =====================================================
     # 해
-    # =====================================================
-
     if (
         m15_10_20 == "long"
         and
@@ -1020,10 +1030,7 @@ def check_all_alignment(
     ):
         return "long_alignment"
 
-    # =====================================================
     # 구름
-    # =====================================================
-
     if (
         m15_10_20 == "short"
         and
@@ -1058,32 +1065,41 @@ def check_special_warning(
     ):
         return "none"
 
-    m15_10_20 = get_ema_10_20_direction(
-        df15m,
-        column
+    m15_10_20 = (
+        get_ema_10_20_direction(
+            df15m,
+            column
+        )
     )
 
-    m15_20_60_120 = get_ema_20_60_120_direction(
-        df15m,
-        column
+    m15_20_60_120 = (
+        get_ema_20_60_120_direction(
+            df15m,
+            column
+        )
     )
 
-    h1_10_20 = get_ema_10_20_direction(
-        df1h,
-        column
+    h1_10_20 = (
+        get_ema_10_20_direction(
+            df1h,
+            column
+        )
     )
 
-    h1_20_60_120 = get_ema_20_60_120_direction(
-        df1h,
-        column
+    h1_20_60_120 = (
+        get_ema_20_60_120_direction(
+            df1h,
+            column
+        )
     )
 
-    h4_all = get_ema_10_20_60_120_direction(
-        df4h,
-        column
+    h4_all = (
+        get_ema_10_20_60_120_direction(
+            df4h,
+            column
+        )
     )
 
-    # LONG
     if (
         m15_10_20 == "long"
         and
@@ -1097,7 +1113,6 @@ def check_special_warning(
     ):
         return "long_special"
 
-    # SHORT
     if (
         m15_10_20 == "short"
         and
@@ -1115,9 +1130,7 @@ def check_special_warning(
 
 
 # =========================================================
-# ⚡ / 🚨 / 💥
-#
-# 15M 중심
+# ⚡ / 🚀 / 💥 / 🚨
 # =========================================================
 
 def check_breakout_warning(
@@ -1134,60 +1147,56 @@ def check_breakout_warning(
     ):
         return "none"
 
-    # =====================================================
     # 15M
-    # =====================================================
-
-    m15_10_20 = get_ema_10_20_direction(
-        df15m,
-        column
+    m15_10_20 = (
+        get_ema_10_20_direction(
+            df15m,
+            column
+        )
     )
 
-    m15_20_60_120 = get_ema_20_60_120_direction(
-        df15m,
-        column
+    m15_20_60_120 = (
+        get_ema_20_60_120_direction(
+            df15m,
+            column
+        )
     )
 
-    count15m, direction15m = get_20_60_120_count(
-        df15m,
-        column
+    count15m, direction15m = (
+        get_20_60_120_count(
+            df15m,
+            column
+        )
     )
 
-    # =====================================================
     # 1H
-    # =====================================================
-
-    h1_10_20 = get_ema_10_20_direction(
-        df1h,
-        column
+    h1_10_20 = (
+        get_ema_10_20_direction(
+            df1h,
+            column
+        )
     )
 
-    h1_20_60_120 = get_ema_20_60_120_direction(
-        df1h,
-        column
+    h1_20_60_120 = (
+        get_ema_20_60_120_direction(
+            df1h,
+            column
+        )
     )
 
-    # =====================================================
     # 4H
-    # =====================================================
-
-    h4_all = get_ema_10_20_60_120_direction(
-        df4h,
-        column
+    h4_all = (
+        get_ema_10_20_60_120_direction(
+            df4h,
+            column
+        )
     )
-
-    # =====================================================
-    # 카운팅
-    # =====================================================
 
     valid_count = (
         1 <= count15m <= MAX_WARNING_COUNT
     )
 
-    # =====================================================
-    # ⚡ LONG 번개
-    # =====================================================
-
+    # ⚡ LONG
     if (
         valid_count
         and
@@ -1203,13 +1212,7 @@ def check_breakout_warning(
     ):
         return f"long_lightning_{count15m}"
 
-    # =====================================================
-    # 🚨 LONG 눌림
-    #
-    # 기존 🚀 → 🚨 변경
-    # 조건은 그대로 유지
-    # =====================================================
-
+    # 🚀 LONG 눌림
     if (
         m15_10_20 == "short"
         and
@@ -1223,10 +1226,7 @@ def check_breakout_warning(
     ):
         return "long_rocket"
 
-    # =====================================================
-    # 💥 SHORT 번개
-    # =====================================================
-
+    # 💥 SHORT
     if (
         valid_count
         and
@@ -1242,10 +1242,7 @@ def check_breakout_warning(
     ):
         return f"short_lightning_{count15m}"
 
-    # =====================================================
     # 🚨 SHORT 눌림
-    # =====================================================
-
     if (
         m15_10_20 == "long"
         and
@@ -1293,12 +1290,6 @@ def check_final_warning(
 
 # =========================================================
 # 당일 변동률 방향 필터
-#
-# LONG 경고 → 양수
-# SHORT 경고 → 음수
-#
-# 중요:
-# 해 / 구름은 여기서 제거하지 않음
 # =========================================================
 
 def filter_warning_by_change(
@@ -1311,42 +1302,29 @@ def filter_warning_by_change(
 
         return (
             "none",
-            alignment
+            "none"
         )
-
-    # =====================================================
-    # 상승
-    #
-    # SHORT 경고만 제거
-    # 해는 그대로 유지
-    # =====================================================
 
     if daily_change > 0:
 
         if warning.startswith("short_"):
-
             warning = "none"
 
-    # =====================================================
-    # 하락
-    #
-    # LONG 경고만 제거
-    # 구름은 그대로 유지
-    # =====================================================
+        if alignment == "short_alignment":
+            alignment = "none"
 
     elif daily_change < 0:
 
         if warning.startswith("long_"):
-
             warning = "none"
 
-    # =====================================================
-    # 0%
-    # =====================================================
+        if alignment == "long_alignment":
+            alignment = "none"
 
     else:
 
         warning = "none"
+        alignment = "none"
 
     return (
         warning,
@@ -1369,13 +1347,11 @@ def get_trade_signal(
     if daily_change > 0:
 
         if warning.startswith("long_"):
-
             return "LONG"
 
     if daily_change < 0:
 
         if warning.startswith("short_"):
-
             return "SHORT"
 
     return ""
@@ -1422,10 +1398,12 @@ def get_okx_ema(
         "c"
     )
 
-    warning, alignment = filter_warning_by_change(
-        warning,
-        alignment,
-        daily_change
+    warning, alignment = (
+        filter_warning_by_change(
+            warning,
+            alignment,
+            daily_change
+        )
     )
 
     signal = get_trade_signal(
@@ -1523,10 +1501,12 @@ def get_upbit_ema(
         "trade_price"
     )
 
-    warning, alignment = filter_warning_by_change(
-        warning,
-        alignment,
-        daily_change
+    warning, alignment = (
+        filter_warning_by_change(
+            warning,
+            alignment,
+            daily_change
+        )
     )
 
     signal = get_trade_signal(
@@ -1932,14 +1912,12 @@ def warning_html(
     warning
 ):
 
-    # 〽️ 특수구간
     if warning in (
         "long_special",
         "short_special"
     ):
         return "〽️"
 
-    # ⚡ LONG 번개
     if warning.startswith(
         "long_lightning_"
     ):
@@ -1956,12 +1934,10 @@ def warning_html(
 
         return f"⚡({count})"
 
-    # 🚨 LONG 눌림
     if warning == "long_rocket":
 
-        return "🚨"
+        return "🚀"
 
-    # 💥 SHORT 번개
     if warning.startswith(
         "short_lightning_"
     ):
@@ -1978,7 +1954,6 @@ def warning_html(
 
         return f"💥({count})"
 
-    # 🚨 SHORT 눌림
     if warning == "short_rocket":
 
         return "🚨"
@@ -1989,10 +1964,8 @@ def warning_html(
 # =========================================================
 # 해 / 구름 HTML
 #
-# LONG → ☀️
-# SHORT → 🌧
-#
-# LONG/SHORT와 별도로 표시
+# 정배열 → ☀️
+# 역배열 → 🌧
 # =========================================================
 
 def alignment_html(
@@ -2011,93 +1984,191 @@ def alignment_html(
 
 
 # =========================================================
-# LONG / SHORT HTML
+# LONG / SHORT + 경고 + 해/구름
 #
-# LONG → LONG
-# SHORT → SHORT
+# 최종 표시
+#
+# LONG ⚡(3) ☀️
+# LONG 🚀 ☀️
+# LONG 〽️ ☀️
+# LONG ☀️
+#
+# SHORT 💥(3) 🌧
+# SHORT 🚨 🌧
+# SHORT 〽️ 🌧
+# SHORT 🌧
 # =========================================================
 
 def signal_html(
-    signal
+    signal,
+    warning,
+    alignment
 ):
+
+    # =====================================================
+    # 정배열
+    # =====================================================
+
+    if alignment == "long_alignment":
+
+        if warning.startswith(
+            "long_lightning_"
+        ):
+
+            try:
+
+                count = int(
+                    warning.split("_")[-1]
+                )
+
+            except Exception:
+
+                count = 0
+
+            return (
+                f"LONG ⚡({count}) ☀️"
+            )
+
+        if warning == "long_rocket":
+
+            return "LONG 🚀 ☀️"
+
+        if warning == "long_special":
+
+            return "LONG 〽️ ☀️"
+
+        return "LONG ☀️"
+
+    # =====================================================
+    # 역배열
+    # =====================================================
+
+    if alignment == "short_alignment":
+
+        if warning.startswith(
+            "short_lightning_"
+        ):
+
+            try:
+
+                count = int(
+                    warning.split("_")[-1]
+                )
+
+            except Exception:
+
+                count = 0
+
+            return (
+                f"SHORT 💥({count}) 🌧"
+            )
+
+        if warning == "short_rocket":
+
+            return "SHORT 🚨 🌧"
+
+        if warning == "short_special":
+
+            return "SHORT 〽️ 🌧"
+
+        return "SHORT 🌧"
+
+    # =====================================================
+    # 전체 정배열/역배열이 아니지만
+    # 경고가 있는 경우
+    # =====================================================
+
+    if warning.startswith(
+        "long_lightning_"
+    ):
+
+        try:
+
+            count = int(
+                warning.split("_")[-1]
+            )
+
+        except Exception:
+
+            count = 0
+
+        return f"LONG ⚡({count})"
+
+    if warning == "long_rocket":
+
+        return "LONG 🚀"
+
+    if warning == "long_special":
+
+        return "LONG 〽️"
+
+    if warning.startswith(
+        "short_lightning_"
+    ):
+
+        try:
+
+            count = int(
+                warning.split("_")[-1]
+            )
+
+        except Exception:
+
+            count = 0
+
+        return f"SHORT 💥({count})"
+
+    if warning == "short_rocket":
+
+        return "SHORT 🚨"
+
+    if warning == "short_special":
+
+        return "SHORT 〽️"
+
+    # =====================================================
+    # 혹시 signal 값만 존재하는 경우
+    # =====================================================
 
     if signal == "LONG":
 
-        return """
-        <span class="signal long-signal">
-            LONG
-        </span>
-        """
+        return "LONG"
 
     if signal == "SHORT":
 
-        return """
-        <span class="signal short-signal">
-            SHORT
-        </span>
-        """
+        return "SHORT"
 
     return ""
 
 
 # =========================================================
 # EMA HTML
-#
-# 예:
-# LONG  ⚡(3) ☀️
-# SHORT 💥(4) 🌧
 # =========================================================
 
 def ema_html(
     ema
 ):
 
-    warning = warning_html(
-        ema["warning"]
-    )
-
-    alignment = alignment_html(
+    display_signal = signal_html(
+        ema["signal"],
+        ema["warning"],
         ema["alignment"]
     )
-
-    signal = signal_html(
-        ema["signal"]
-    )
-
-    alert_html = ""
-
-    # 경고
-    if warning:
-
-        alert_html += f"""
-        <span class="alert-warning">
-            {warning}
-        </span>
-        """
-
-    # 해 / 구름
-    if alignment:
-
-        alert_html += f"""
-        <span class="alert-alignment">
-            {alignment}
-        </span>
-        """
 
     return f"""
 
 <div class="ema-display">
 
-    <!-- LONG / SHORT -->
+    <!-- LONG / SHORT + 경고 + 해/구름 -->
 
     <div class="signal-period">
-        {signal}
-    </div>
 
-    <!-- 경고 + 해 / 구름 -->
+        <span class="signal">
 
-    <div class="alert-period">
-        {alert_html}
+            {display_signal}
+
+        </span>
+
     </div>
 
     <!-- 15M -->
@@ -2431,7 +2502,7 @@ def update_dashboard():
     )
 
     logging.info(
-        "🚨 LONG 눌림 : "
+        "🚀 LONG 눌림 : "
         "15M 10-20 역배열 + "
         "15M 20-60-120 정배열 + "
         "1H 전체 정배열 + "
@@ -2487,11 +2558,6 @@ def update_dashboard():
 
     logging.info(
         "모든 SHORT 경고 : 당일 변동률 음수"
-    )
-
-    logging.info(
-        "☀️ / 🌧 해·구름은 LONG/SHORT와 "
-        "별도로 함께 표시"
     )
 
     logging.info(
@@ -2691,8 +2757,8 @@ td:last-child{
 
 .signal-period{
 
-    width:75px;
-    min-width:75px;
+    width:135px;
+    min-width:135px;
     text-align:center;
     display:flex;
     align-items:center;
@@ -2707,6 +2773,7 @@ td:last-child{
     font-size:16px;
     padding:4px 7px;
     border-radius:4px;
+    white-space:nowrap;
 
 }
 
@@ -2825,8 +2892,7 @@ tr:hover{
 
 <p>
 15분 EMA · 1시간 EMA · 4시간 EMA ·
-〽️ 특수구간 · ⚡ 번개 · 💥 번개 · 🚨 눌림 ·
-☀️ LONG · 🌧 SHORT
+〽️ 눌림 · ⚡ 번개 · 🚀 눌림 · ☀️ 해 · 🌧 구름
 </p>
 
 <p>
@@ -3027,4 +3093,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-    )
+        )
