@@ -28,7 +28,7 @@ TOP_N = 10
 
 UPDATE_MINUTES = 5
 
-# ⚡ / 💥 번개 카운팅 최대
+# ⚡ / 💥 번개 최대 캔들
 MAX_WARNING_COUNT = 10
 
 
@@ -526,10 +526,6 @@ def get_ema_30_60_120_direction(
 
 # =========================================================
 # EMA 10-30-60-120 방향
-#
-# 120 EMA가 충분하면
-# 10 > 30 > 60 > 120
-#
 # =========================================================
 
 def get_ema_10_30_60_120_direction(
@@ -622,101 +618,12 @@ def get_ema_10_30_60_120_direction(
 
 
 # =========================================================
-# 30-60-120 지속 카운팅
+# 1H 10-30 연속 캔들 카운트
+#
+# 번개 카운트는 이것을 사용
 # =========================================================
 
-def get_30_60_120_count(
-    df,
-    column
-):
-
-    if (
-        df is None
-        or len(df) < 120
-    ):
-        return 0, "none"
-
-    df = df.copy()
-
-    df["ema30"] = get_ema(
-        df,
-        column,
-        30
-    )
-
-    df["ema60"] = get_ema(
-        df,
-        column,
-        60
-    )
-
-    df["ema120"] = get_ema(
-        df,
-        column,
-        120
-    )
-
-    states = []
-
-    for _, row in df.iterrows():
-
-        if (
-            pd.isna(row["ema30"])
-            or
-            pd.isna(row["ema60"])
-            or
-            pd.isna(row["ema120"])
-        ):
-
-            states.append("none")
-
-        elif (
-            row["ema30"]
-            >
-            row["ema60"]
-            >
-            row["ema120"]
-        ):
-
-            states.append("long")
-
-        elif (
-            row["ema30"]
-            <
-            row["ema60"]
-            <
-            row["ema120"]
-        ):
-
-            states.append("short")
-
-        else:
-
-            states.append("none")
-
-    current_state = states[-1]
-
-    if current_state == "none":
-        return 0, "none"
-
-    count = 0
-
-    for state in reversed(states):
-
-        if state == current_state:
-            count += 1
-
-        else:
-            break
-
-    return count, current_state
-
-
-# =========================================================
-# EMA 10-30 상태 + 카운팅
-# =========================================================
-
-def check_ema_10_30(
+def get_10_30_count(
     df,
     column
 ):
@@ -725,7 +632,7 @@ def check_ema_10_30(
         df is None
         or len(df) < 30
     ):
-        return "⚪(0)"
+        return 0, "none"
 
     df = df.copy()
 
@@ -753,11 +660,19 @@ def check_ema_10_30(
 
             states.append("none")
 
-        elif row["ema10"] > row["ema30"]:
+        elif (
+            row["ema10"]
+            >
+            row["ema30"]
+        ):
 
             states.append("long")
 
-        elif row["ema10"] < row["ema30"]:
+        elif (
+            row["ema10"]
+            <
+            row["ema30"]
+        ):
 
             states.append("short")
 
@@ -768,22 +683,45 @@ def check_ema_10_30(
     current_state = states[-1]
 
     if current_state == "none":
-        return "⚪(0)"
+        return 0, "none"
 
     count = 0
 
     for state in reversed(states):
 
         if state == current_state:
+
             count += 1
 
         else:
+
             break
 
-    if current_state == "long":
+    return count, current_state
+
+
+# =========================================================
+# EMA 10-30 상태 + 카운팅
+# =========================================================
+
+def check_ema_10_30(
+    df,
+    column
+):
+
+    count, direction = (
+        get_10_30_count(
+            df,
+            column
+        )
+    )
+
+    if direction == "long":
+
         return f"🟢({count})"
 
-    if current_state == "short":
+    if direction == "short":
+
         return f"🔴({count})"
 
     return "⚪(0)"
@@ -872,15 +810,19 @@ def check_ema(
     for state in reversed(states):
 
         if state == current_state:
+
             count += 1
 
         else:
+
             break
 
     if current_state == "long":
+
         return f"🟢({count})"
 
     if current_state == "short":
+
         return f"🔴({count})"
 
     return "⚪(0)"
@@ -932,6 +874,7 @@ def check_all_alignment(
         and
         h4_all == "long"
     ):
+
         return "long_alignment"
 
     if (
@@ -941,15 +884,28 @@ def check_all_alignment(
         and
         h4_all == "short"
     ):
+
         return "short_alignment"
 
     return "none"
 
 
 # =========================================================
-# ⚡ / 〽️ / 💥
+# ⚡ / 💥 번개
 #
-# 기존 15M 경고를 1H로 이동
+# 눌림 / 특수구간 조건 모두 삭제
+#
+# LONG
+# 1H 10-30 정배열
+# 1H 30-60-120 정배열
+# 1H 10-30 정배열 1~10개
+# 4H 전체 정배열
+#
+# SHORT
+# 1H 10-30 역배열
+# 1H 30-60-120 역배열
+# 1H 10-30 역배열 1~10개
+# 4H 전체 역배열
 # =========================================================
 
 def check_breakout_warning(
@@ -965,7 +921,7 @@ def check_breakout_warning(
         return "none"
 
     # =====================================================
-    # 1H
+    # 1H 방향
     # =====================================================
 
     h1_10_30 = (
@@ -982,15 +938,21 @@ def check_breakout_warning(
         )
     )
 
+    # =====================================================
+    # ★ 번개 카운트
+    #
+    # 10-30 연속 캔들 수
+    # =====================================================
+
     count1h, direction1h = (
-        get_30_60_120_count(
+        get_10_30_count(
             df1h,
             column
         )
     )
 
     # =====================================================
-    # 4H
+    # 4H 전체 정배열 / 역배열
     # =====================================================
 
     h4_all = (
@@ -1008,73 +970,47 @@ def check_breakout_warning(
     # ⚡ LONG 번개
     #
     # 1H 10-30 정배열
-    # 1H 30-60-120 정배열 1~10개
+    # 1H 30-60-120 정배열
+    # 10-30 정배열 1~10개
     # 4H 전체 정배열
     # =====================================================
 
     if (
         valid_count
         and
-        h1_10_30 == "long"
-        and
         direction1h == "long"
         and
-        h4_all == "long"
-    ):
-        return f"long_lightning_{count1h}"
-
-    # =====================================================
-    # 〽️ LONG 눌림
-    #
-    # 1H 10-30 역배열
-    # 1H 30-60-120 정배열
-    # 4H 전체 정배열
-    # =====================================================
-
-    if (
-        h1_10_30 == "short"
+        h1_10_30 == "long"
         and
         h1_30_60_120 == "long"
         and
         h4_all == "long"
     ):
-        return "long_rocket"
+
+        return f"long_lightning_{count1h}"
 
     # =====================================================
     # 💥 SHORT 번개
     #
     # 1H 10-30 역배열
-    # 1H 30-60-120 역배열 1~10개
+    # 1H 30-60-120 역배열
+    # 10-30 역배열 1~10개
     # 4H 전체 역배열
     # =====================================================
 
     if (
         valid_count
         and
-        h1_10_30 == "short"
-        and
         direction1h == "short"
         and
-        h4_all == "short"
-    ):
-        return f"short_lightning_{count1h}"
-
-    # =====================================================
-    # 〽️ SHORT 눌림
-    #
-    # 1H 10-30 정배열
-    # 1H 30-60-120 역배열
-    # 4H 전체 역배열
-    # =====================================================
-
-    if (
-        h1_10_30 == "long"
+        h1_10_30 == "short"
         and
         h1_30_60_120 == "short"
         and
         h4_all == "short"
     ):
-        return "short_rocket"
+
+        return f"short_lightning_{count1h}"
 
     return "none"
 
@@ -1116,17 +1052,21 @@ def filter_warning_by_change(
     if daily_change > 0:
 
         if warning.startswith("short_"):
+
             warning = "none"
 
         if alignment == "short_alignment":
+
             alignment = "none"
 
     elif daily_change < 0:
 
         if warning.startswith("long_"):
+
             warning = "none"
 
         if alignment == "long_alignment":
+
             alignment = "none"
 
     else:
@@ -1150,16 +1090,19 @@ def get_trade_signal(
 ):
 
     if daily_change is None:
+
         return ""
 
     if daily_change > 0:
 
         if warning.startswith("long_"):
+
             return "LONG"
 
     if daily_change < 0:
 
         if warning.startswith("short_"):
+
             return "SHORT"
 
     return ""
@@ -1356,6 +1299,7 @@ def get_okx_volume(
         )
 
         if df is None or df.empty:
+
             return 0
 
         return float(
@@ -1371,6 +1315,7 @@ def get_okx_volume(
     )
 
     if df is None or df.empty:
+
         return 0
 
     return float(
@@ -1405,9 +1350,11 @@ def get_upbit_volume(
         )
 
         if df is None or df.empty:
+
             return 0
 
         if "candle_acc_trade_price" not in df.columns:
+
             return 0
 
         return float(
@@ -1427,9 +1374,11 @@ def get_upbit_volume(
     )
 
     if df is None or df.empty:
+
         return 0
 
     if "candle_acc_trade_price" not in df.columns:
+
         return 0
 
     return float(
@@ -1452,6 +1401,7 @@ def get_upbit_volume_map(
 ):
 
     if not markets:
+
         return {}
 
     volume_map = {}
@@ -1464,7 +1414,9 @@ def get_upbit_volume_map(
     ):
 
         volume_map[market] = (
-            get_upbit_volume(market)
+            get_upbit_volume(
+                market
+            )
         )
 
         time.sleep(0.03)
@@ -1497,6 +1449,7 @@ def get_okx_change(
         df is None
         or len(df) < 50
     ):
+
         return None
 
     df = df.copy()
@@ -1525,6 +1478,7 @@ def get_okx_change(
     )
 
     if len(daily) < 5:
+
         return None
 
     result = []
@@ -1534,6 +1488,7 @@ def get_okx_change(
         if daily.iloc[i - 1] == 0:
 
             result.append(0)
+
             continue
 
         change = (
@@ -1549,7 +1504,10 @@ def get_okx_change(
         )
 
         result.append(
-            round(change, 2)
+            round(
+                change,
+                2
+            )
         )
 
     return result
@@ -1573,6 +1531,7 @@ def get_upbit_change(
         df is None
         or len(df) < 50
     ):
+
         return None
 
     df = df.copy()
@@ -1596,6 +1555,7 @@ def get_upbit_change(
     )
 
     if len(daily) < 5:
+
         return None
 
     result = []
@@ -1605,6 +1565,7 @@ def get_upbit_change(
         if daily.iloc[i - 1] == 0:
 
             result.append(0)
+
             continue
 
         change = (
@@ -1620,7 +1581,10 @@ def get_upbit_change(
         )
 
         result.append(
-            round(change, 2)
+            round(
+                change,
+                2
+            )
         )
 
     return result
@@ -1638,6 +1602,7 @@ def format_change(
         changes is None
         or len(changes) == 0
     ):
+
         return "N/A"
 
     x = changes[0]
@@ -1674,6 +1639,8 @@ def format_change(
 
 # =========================================================
 # 경고 HTML
+#
+# 〽️ 삭제
 # =========================================================
 
 def warning_html(
@@ -1696,10 +1663,6 @@ def warning_html(
 
         return f"⚡({count})"
 
-    if warning == "long_rocket":
-
-        return "〽️"
-
     if warning.startswith(
         "short_lightning_"
     ):
@@ -1715,10 +1678,6 @@ def warning_html(
             count = 0
 
         return f"💥({count})"
-
-    if warning == "short_rocket":
-
-        return "〽️"
 
     return ""
 
@@ -1744,6 +1703,8 @@ def alignment_html(
 
 # =========================================================
 # LONG / SHORT + 경고 + 해/구름
+#
+# 〽️ 삭제
 # =========================================================
 
 def signal_html(
@@ -1778,14 +1739,6 @@ def signal_html(
                 f'</span> ⚡({count}) ☀️'
             )
 
-        if warning == "long_rocket":
-
-            return (
-                '<span class="long-text">'
-                'LONG'
-                '</span> 〽️ ☀️'
-            )
-
         return (
             '<span class="long-text">'
             'LONG'
@@ -1818,14 +1771,6 @@ def signal_html(
                 f'</span> 💥({count}) 🌧'
             )
 
-        if warning == "short_rocket":
-
-            return (
-                '<span class="short-text">'
-                'SHORT'
-                '</span> 〽️ 🌧'
-            )
-
         return (
             '<span class="short-text">'
             'SHORT'
@@ -1856,14 +1801,6 @@ def signal_html(
             f'</span> ⚡({count})'
         )
 
-    if warning == "long_rocket":
-
-        return (
-            '<span class="long-text">'
-            'LONG'
-            '</span> 〽️'
-        )
-
     if warning.startswith(
         "short_lightning_"
     ):
@@ -1882,14 +1819,6 @@ def signal_html(
             f'<span class="short-text">'
             f'SHORT'
             f'</span> 💥({count})'
-        )
-
-    if warning == "short_rocket":
-
-        return (
-            '<span class="short-text">'
-            'SHORT'
-            '</span> 〽️'
         )
 
     # =====================================================
@@ -2246,29 +2175,25 @@ def update_dashboard():
     logging.info(
         "⚡ LONG 번개 : "
         "1H 10-30 정배열 + "
-        "1H 30-60-120 정배열 1~10개 + "
-        "4H 전체 정배열"
-    )
-
-    logging.info(
-        "〽️ LONG 눌림 : "
-        "1H 10-30 역배열 + "
         "1H 30-60-120 정배열 + "
+        "10-30 정배열 1~10개 + "
         "4H 전체 정배열"
     )
 
     logging.info(
         "💥 SHORT 번개 : "
         "1H 10-30 역배열 + "
-        "1H 30-60-120 역배열 1~10개 + "
+        "1H 30-60-120 역배열 + "
+        "10-30 역배열 1~10개 + "
         "4H 전체 역배열"
     )
 
     logging.info(
-        "〽️ SHORT 눌림 : "
-        "1H 10-30 정배열 + "
-        "1H 30-60-120 역배열 + "
-        "4H 전체 역배열"
+        "〽️ 눌림 조건 : 삭제"
+    )
+
+    logging.info(
+        "특수구간 눌림 : 삭제"
     )
 
     logging.info(
@@ -2603,7 +2528,7 @@ tr:hover{
 
 <p>
 1시간 EMA · 4시간 EMA ·
-〽️ 눌림 · ⚡ 번개 · ☀️ 해 · 🌧 구름
+⚡ 번개 · ☀️ 해 · 🌧 구름
 </p>
 
 <p>
