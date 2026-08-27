@@ -34,6 +34,11 @@ PULLBACK_DISTANCE = 0.01
 
 BREAKOUT_LOOKBACK = 5
 
+# API 안정성
+REQUEST_DELAY = 0.08
+
+MAX_RETRY = 15
+
 
 # =========================================================
 # 전역 데이터
@@ -54,7 +59,7 @@ def retry_request(
     **kwargs
 ):
 
-    for attempt in range(10):
+    for attempt in range(MAX_RETRY):
 
         try:
 
@@ -68,26 +73,89 @@ def retry_request(
                 "status_code"
             ):
 
-                if result.status_code == 429:
+                status_code = (
+                    result.status_code
+                )
 
-                    logging.warning(
-                        "API 요청 제한(429) - 2초 대기"
+                # -----------------------------------------
+                # 429
+                # -----------------------------------------
+
+                if status_code == 429:
+
+                    wait_time = min(
+                        2 ** min(
+                            attempt,
+                            5
+                        ),
+                        30
                     )
 
-                    time.sleep(2)
+                    logging.warning(
+                        f"API 429 "
+                        f"{attempt + 1}/{MAX_RETRY} "
+                        f"- {wait_time}초 대기"
+                    )
+
+                    time.sleep(
+                        wait_time
+                    )
 
                     continue
+
+                # -----------------------------------------
+                # 서버 오류
+                # -----------------------------------------
+
+                if status_code >= 500:
+
+                    wait_time = min(
+                        2 ** min(
+                            attempt,
+                            5
+                        ),
+                        30
+                    )
+
+                    logging.warning(
+                        f"API 서버 오류 "
+                        f"{status_code} "
+                        f"{attempt + 1}/{MAX_RETRY} "
+                        f"- {wait_time}초 대기"
+                    )
+
+                    time.sleep(
+                        wait_time
+                    )
+
+                    continue
+
+                result.raise_for_status()
 
             return result
 
         except Exception as e:
 
-            logging.error(
-                f"API 실패 "
-                f"{attempt + 1}/10 : {e}"
+            wait_time = min(
+                2 ** min(
+                    attempt,
+                    5
+                ),
+                30
             )
 
-            time.sleep(3)
+            logging.error(
+                f"API 실패 "
+                f"{attempt + 1}/{MAX_RETRY} : {e}"
+            )
+
+            time.sleep(
+                wait_time
+            )
+
+    logging.error(
+        "API 재시도 횟수 초과"
+    )
 
     return None
 
@@ -257,14 +325,22 @@ def get_upbit_ohlcv(
             errors="coerce"
         )
 
-        df["candle_acc_trade_volume"] = pd.to_numeric(
-            df["candle_acc_trade_volume"],
-            errors="coerce"
+        df["candle_acc_trade_volume"] = (
+            pd.to_numeric(
+                df[
+                    "candle_acc_trade_volume"
+                ],
+                errors="coerce"
+            )
         )
 
-        df["candle_acc_trade_price"] = pd.to_numeric(
-            df["candle_acc_trade_price"],
-            errors="coerce"
+        df["candle_acc_trade_price"] = (
+            pd.to_numeric(
+                df[
+                    "candle_acc_trade_price"
+                ],
+                errors="coerce"
+            )
         )
 
         return df
@@ -416,7 +492,7 @@ def get_all_okx_swap_symbols():
 
     try:
 
-        return [
+        symbols = [
             x["instId"]
             for x in response.json()["data"]
             if (
@@ -427,6 +503,13 @@ def get_all_okx_swap_symbols():
                 x.get("state") == "live"
             )
         ]
+
+        logging.info(
+            f"OKX 전체 SWAP 확인 : "
+            f"{len(symbols)}개"
+        )
+
+        return symbols
 
     except Exception as e:
 
@@ -454,13 +537,20 @@ def get_upbit_markets():
 
     try:
 
-        return [
+        markets = [
             x["market"]
             for x in response.json()
             if x["market"].startswith(
                 "KRW-"
             )
         ]
+
+        logging.info(
+            f"업비트 전체 KRW 마켓 확인 : "
+            f"{len(markets)}개"
+        )
+
+        return markets
 
     except Exception as e:
 
@@ -1427,6 +1517,10 @@ def get_okx_ema(
         200
     )
 
+    time.sleep(
+        REQUEST_DELAY
+    )
+
     df1d = get_okx_ohlcv(
         inst_id,
         "1D",
@@ -1509,6 +1603,10 @@ def get_upbit_ema(
         market,
         240,
         200
+    )
+
+    time.sleep(
+        REQUEST_DELAY
     )
 
     df1d = get_upbit_daily_ohlcv(
@@ -1739,14 +1837,14 @@ def get_upbit_volume_map(
             )
         )
 
-        time.sleep(0.03)
+        time.sleep(
+            REQUEST_DELAY
+        )
 
-        if index % 50 == 0:
-
-            logging.info(
-                f"업비트 거래대금 "
-                f"{index}/{total}"
-            )
+        logging.info(
+            f"업비트 거래대금 "
+            f"{index}/{total}"
+        )
 
     return volume_map
 
@@ -1954,7 +2052,6 @@ def format_change(
 
 # =========================================================
 # LONG / SHORT
-# 경고 아이콘은 여기서 표시하지 않음
 # =========================================================
 
 def signal_html(
@@ -2142,15 +2239,29 @@ def update_upbit():
     global latest_upbit_data
 
     logging.info(
-        f"업비트 TOP{TOP_N} 시작 "
-        f"(거래대금 {VOLUME_HOURS}시간)"
+        f"업비트 전체 거래대금 조회 시작 "
+        f"({VOLUME_HOURS}시간)"
     )
 
     markets = get_upbit_markets()
 
     if not markets:
 
+        logging.error(
+            "업비트 마켓 목록 없음"
+        )
+
         return
+
+    total = len(markets)
+
+    logging.info(
+        f"업비트 전체 {total}개 처리 시작"
+    )
+
+    # -----------------------------------------
+    # 전체 코인 거래대금 조회
+    # -----------------------------------------
 
     volume_map = (
         get_upbit_volume_map(
@@ -2162,13 +2273,29 @@ def update_upbit():
 
         return
 
+    # -----------------------------------------
+    # 거래대금 TOP10 선정
+    # -----------------------------------------
+
     top_markets = sorted(
         volume_map,
         key=volume_map.get,
         reverse=True
     )[:TOP_N]
 
+    logging.info(
+        f"업비트 전체 {total}개 조회 완료"
+    )
+
+    logging.info(
+        f"업비트 TOP{TOP_N} EMA 조회 시작"
+    )
+
     rows = []
+
+    # -----------------------------------------
+    # TOP10만 상세 분석
+    # -----------------------------------------
 
     for rank, market in enumerate(
         top_markets,
@@ -2180,33 +2307,46 @@ def update_upbit():
             ""
         )
 
-        changes = get_upbit_change(
-            market
-        )
+        try:
 
-        ema = get_upbit_ema(
-            market
-        )
+            changes = get_upbit_change(
+                market
+            )
 
-        rows.append({
+            time.sleep(
+                REQUEST_DELAY
+            )
 
-            "rank": rank,
+            ema = get_upbit_ema(
+                market
+            )
 
-            "name": coin,
+            rows.append({
 
-            "change":
-                format_change(
-                    changes
-                ),
+                "rank": rank,
 
-            "volume":
-                format_volume(
-                    volume_map[market]
-                ),
+                "name": coin,
 
-            "ema": ema
+                "change":
+                    format_change(
+                        changes
+                    ),
 
-        })
+                "volume":
+                    format_volume(
+                        volume_map[market]
+                    ),
+
+                "ema": ema
+
+            })
+
+        except Exception as e:
+
+            logging.exception(
+                f"업비트 TOP 상세 오류 "
+                f"{market} : {e}"
+            )
 
     latest_upbit_data = rows
 
@@ -2224,8 +2364,8 @@ def update_okx():
     global latest_okx_data
 
     logging.info(
-        f"OKX TOP{TOP_N} 시작 "
-        f"(거래대금 {VOLUME_HOURS}시간 / 최종 ÷10)"
+        f"OKX 전체 거래대금 조회 시작 "
+        f"({VOLUME_HOURS}시간 / 최종 ÷10)"
     )
 
     symbols = (
@@ -2234,9 +2374,23 @@ def update_okx():
 
     if not symbols:
 
+        logging.error(
+            "OKX SWAP 목록 없음"
+        )
+
         return
 
+    total = len(symbols)
+
+    logging.info(
+        f"OKX 전체 {total}개 처리 시작"
+    )
+
     usdt_krw = get_usdt_krw()
+
+    time.sleep(
+        REQUEST_DELAY
+    )
 
     upbit_markets = (
         get_upbit_markets()
@@ -2254,33 +2408,61 @@ def update_okx():
 
     volume_map = {}
 
-    total = len(symbols)
+    # -----------------------------------------
+    # 전체 OKX 코인 거래대금 조회
+    # -----------------------------------------
 
     for index, symbol in enumerate(
         symbols,
         start=1
     ):
 
-        volume_usdt = get_okx_volume(
-            symbol
-        )
+        try:
 
-        volume_krw = (
-            volume_usdt
-            *
-            usdt_krw
-        )
-
-        volume_map[symbol] = volume_krw
-
-        time.sleep(0.03)
-
-        if index % 50 == 0:
-
-            logging.info(
-                f"OKX 거래대금 "
-                f"{index}/{total}"
+            volume_usdt = get_okx_volume(
+                symbol
             )
+
+            volume_krw = (
+                volume_usdt
+                *
+                usdt_krw
+            )
+
+            volume_map[symbol] = (
+                volume_krw
+            )
+
+        except Exception as e:
+
+            logging.error(
+                f"OKX 거래대금 오류 "
+                f"{symbol} : {e}"
+            )
+
+            # 실패한 코인도 목록에서 누락시키지 않음
+            volume_map[symbol] = 0
+
+        time.sleep(
+            REQUEST_DELAY
+        )
+
+        logging.info(
+            f"OKX 거래대금 "
+            f"{index}/{total}"
+        )
+
+    # -----------------------------------------
+    # 전체 처리 완료
+    # -----------------------------------------
+
+    logging.info(
+        f"OKX 전체 {total}개 조회 완료"
+    )
+
+    # -----------------------------------------
+    # TOP10 선정
+    # -----------------------------------------
 
     top_symbols = sorted(
         volume_map,
@@ -2288,49 +2470,72 @@ def update_okx():
         reverse=True
     )[:TOP_N]
 
+    logging.info(
+        f"OKX TOP{TOP_N} EMA 조회 시작"
+    )
+
     rows = []
+
+    # -----------------------------------------
+    # TOP10만 상세 분석
+    # -----------------------------------------
 
     for rank, symbol in enumerate(
         top_symbols,
         start=1
     ):
 
-        coin = symbol.replace(
-            "-USDT-SWAP",
-            ""
-        )
+        try:
 
-        if coin in upbit_coin_set:
+            coin = symbol.replace(
+                "-USDT-SWAP",
+                ""
+            )
 
-            coin = f"{coin}(업비트)"
+            if coin in upbit_coin_set:
 
-        changes = get_okx_change(
-            symbol
-        )
+                coin = (
+                    f"{coin}(업비트)"
+                )
 
-        ema = get_okx_ema(
-            symbol
-        )
+            changes = get_okx_change(
+                symbol
+            )
 
-        rows.append({
+            time.sleep(
+                REQUEST_DELAY
+            )
 
-            "rank": rank,
+            ema = get_okx_ema(
+                symbol
+            )
 
-            "name": coin,
+            rows.append({
 
-            "change":
-                format_change(
-                    changes
-                ),
+                "rank": rank,
 
-            "volume":
-                format_volume(
-                    volume_map[symbol]
-                ),
+                "name": coin,
 
-            "ema": ema
+                "change":
+                    format_change(
+                        changes
+                    ),
 
-        })
+                "volume":
+                    format_volume(
+                        volume_map[symbol]
+                    ),
+
+                "ema": ema
+
+            })
+
+        except Exception as e:
+
+            logging.exception(
+                f"OKX TOP 상세 오류 "
+                f"{symbol} : {e}"
+            )
 
     latest_okx_data = rows
 
@@ -2344,6 +2549,10 @@ def update_okx():
 # =========================================================
 
 def update_dashboard():
+
+    logging.info(
+        "========================================"
+    )
 
     logging.info(
         "전체 조회 시작"
@@ -2371,6 +2580,10 @@ def update_dashboard():
 
     logging.info(
         "전체 업데이트 완료"
+    )
+
+    logging.info(
+        "========================================"
     )
 
 
@@ -2690,7 +2903,6 @@ td{
 
 /* =====================================================
    거래대금
-   기존 15% → 20%
    ===================================================== */
 
 .volume-cell{
@@ -2708,7 +2920,6 @@ td{
 
 /* =====================================================
    변동률
-   기존 14% → 17%
    ===================================================== */
 
 .change-cell{
@@ -2722,7 +2933,6 @@ td{
 
 /* =====================================================
    EMA
-   기존 47% → 38%
    ===================================================== */
 
 .ema-cell{
@@ -3841,4 +4051,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-        )
+    )
