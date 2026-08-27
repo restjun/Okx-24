@@ -619,8 +619,6 @@ def get_ema_10_30_60_120_direction(
 
 # =========================================================
 # 1H 10-30 연속 캔들 카운트
-#
-# 번개 카운트는 이것을 사용
 # =========================================================
 
 def get_10_30_count(
@@ -893,8 +891,6 @@ def check_all_alignment(
 # =========================================================
 # ⚡ / 💥 번개
 #
-# 눌림 / 특수구간 조건 모두 삭제
-#
 # LONG
 # 1H 10-30 정배열
 # 1H 30-60-120 정배열
@@ -939,9 +935,7 @@ def check_breakout_warning(
     )
 
     # =====================================================
-    # ★ 번개 카운트
-    #
-    # 10-30 연속 캔들 수
+    # 번개 카운트
     # =====================================================
 
     count1h, direction1h = (
@@ -968,11 +962,6 @@ def check_breakout_warning(
 
     # =====================================================
     # ⚡ LONG 번개
-    #
-    # 1H 10-30 정배열
-    # 1H 30-60-120 정배열
-    # 10-30 정배열 1~10개
-    # 4H 전체 정배열
     # =====================================================
 
     if (
@@ -991,11 +980,6 @@ def check_breakout_warning(
 
     # =====================================================
     # 💥 SHORT 번개
-    #
-    # 1H 10-30 역배열
-    # 1H 30-60-120 역배열
-    # 10-30 역배열 1~10개
-    # 4H 전체 역배열
     # =====================================================
 
     if (
@@ -1033,55 +1017,9 @@ def check_final_warning(
 
 
 # =========================================================
-# 당일 변동률 방향 필터
-# =========================================================
-
-def filter_warning_by_change(
-    warning,
-    alignment,
-    daily_change
-):
-
-    if daily_change is None:
-
-        return (
-            "none",
-            "none"
-        )
-
-    if daily_change > 0:
-
-        if warning.startswith("short_"):
-
-            warning = "none"
-
-        if alignment == "short_alignment":
-
-            alignment = "none"
-
-    elif daily_change < 0:
-
-        if warning.startswith("long_"):
-
-            warning = "none"
-
-        if alignment == "long_alignment":
-
-            alignment = "none"
-
-    else:
-
-        warning = "none"
-        alignment = "none"
-
-    return (
-        warning,
-        alignment
-    )
-
-
-# =========================================================
 # LONG / SHORT
+#
+# 변동률 조건 삭제
 # =========================================================
 
 def get_trade_signal(
@@ -1089,21 +1027,13 @@ def get_trade_signal(
     daily_change
 ):
 
-    if daily_change is None:
+    if warning.startswith("long_"):
 
-        return ""
+        return "LONG"
 
-    if daily_change > 0:
+    if warning.startswith("short_"):
 
-        if warning.startswith("long_"):
-
-            return "LONG"
-
-    if daily_change < 0:
-
-        if warning.startswith("short_"):
-
-            return "SHORT"
+        return "SHORT"
 
     return ""
 
@@ -1139,14 +1069,6 @@ def get_okx_ema(
         df1h,
         df4h,
         "c"
-    )
-
-    warning, alignment = (
-        filter_warning_by_change(
-            warning,
-            alignment,
-            daily_change
-        )
     )
 
     signal = get_trade_signal(
@@ -1222,14 +1144,6 @@ def get_upbit_ema(
         df1h,
         df4h,
         "trade_price"
-    )
-
-    warning, alignment = (
-        filter_warning_by_change(
-            warning,
-            alignment,
-            daily_change
-        )
     )
 
     signal = get_trade_signal(
@@ -1639,8 +1553,6 @@ def format_change(
 
 # =========================================================
 # 경고 HTML
-#
-# 〽️ 삭제
 # =========================================================
 
 def warning_html(
@@ -1703,8 +1615,6 @@ def alignment_html(
 
 # =========================================================
 # LONG / SHORT + 경고 + 해/구름
-#
-# 〽️ 삭제
 # =========================================================
 
 def signal_html(
@@ -2212,11 +2122,12 @@ def update_dashboard():
     )
 
     logging.info(
-        "모든 LONG 경고 : 당일 변동률 양수"
+        "변동률 필터 : 삭제"
     )
 
     logging.info(
-        "모든 SHORT 경고 : 당일 변동률 음수"
+        "LONG / SHORT : "
+        "EMA 조건만 사용"
     )
 
     logging.info(
