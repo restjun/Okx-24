@@ -3421,6 +3421,11 @@ OKX ÷10
 TOP""" + str(TOP_N) + """
 </span>
 
+
+<span class="volume-setting">
+10-30-60-120
+</span>
+
 </div>
 
 
