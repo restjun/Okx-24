@@ -47,9 +47,9 @@ BREAKOUT_LOOKBACK = 5
 # 전역 데이터
 # =========================================================
 
-latest_okx_data = []
-
 latest_upbit_data = []
+
+latest_okx_data = []
 
 
 # =========================================================
@@ -797,11 +797,12 @@ def get_main_direction(
     d1_direction = (
         get_ema_10_30_direction(
             df1d,
-            column
+            "trade_price"
+            if "trade_price" in df1d.columns
+            else column
         )
     )
 
-    # LONG
     if (
         h4_direction == "long"
         and
@@ -810,7 +811,6 @@ def get_main_direction(
 
         return "long"
 
-    # SHORT
     if (
         h4_direction == "short"
         and
@@ -871,6 +871,20 @@ def check_pullback(
 
         return "none"
 
+    required = [
+        "o",
+        "h",
+        "l",
+        "c"
+    ]
+
+    if not all(
+        x in df4h.columns
+        for x in required
+    ):
+
+        return "none"
+
     df = df4h.copy()
 
     df["ema30"] = get_ema(
@@ -890,14 +904,6 @@ def check_pullback(
         column,
         120
     )
-
-    if (
-        df["ema30"].iloc[-1] is None
-        or
-        pd.isna(df["ema30"].iloc[-1])
-    ):
-
-        return "none"
 
     cur = df.iloc[-1]
     prev = df.iloc[-2]
@@ -934,7 +940,7 @@ def check_pullback(
     )
 
     long_close = (
-        cur[column]
+        cur["c"]
         >
         cur_ema30
     )
@@ -972,7 +978,7 @@ def check_pullback(
     )
 
     prev_long_close = (
-        prev[column]
+        prev["c"]
         >
         prev_ema30
     )
@@ -1022,7 +1028,7 @@ def check_pullback(
     )
 
     short_close = (
-        cur[column]
+        cur["c"]
         <
         cur_ema30
     )
@@ -1060,7 +1066,7 @@ def check_pullback(
     )
 
     prev_short_close = (
-        prev[column]
+        prev["c"]
         <
         prev_ema30
     )
@@ -1105,6 +1111,20 @@ def check_breakout(
         df4h is None
         or len(df4h)
         < 120 + BREAKOUT_LOOKBACK
+    ):
+
+        return "none"
+
+    required = [
+        "o",
+        "h",
+        "l",
+        "c"
+    ]
+
+    if not all(
+        x in df4h.columns
+        for x in required
     ):
 
         return "none"
@@ -1405,6 +1425,19 @@ def get_okx_ema(
 
 # =========================================================
 # 업비트 4H + 1D
+#
+# ★ 오류 수정 핵심
+#
+# 업비트:
+# opening_price
+# high_price
+# low_price
+# trade_price
+#
+# ↓
+#
+# 공통 로직:
+# o / h / l / c
 # =========================================================
 
 def get_upbit_ema(
@@ -1443,6 +1476,10 @@ def get_upbit_ema(
 
         }
 
+    # =====================================================
+    # 최신 진행 중 240분봉 제외
+    # =====================================================
+
     if len(df4h) > 1:
 
         df4h = (
@@ -1451,18 +1488,144 @@ def get_upbit_ema(
             .reset_index(drop=True)
         )
 
+    # =====================================================
+    # 업비트 OHLC → 공통 OHLC
+    # =====================================================
+
+    required_columns = [
+        "opening_price",
+        "high_price",
+        "low_price",
+        "trade_price"
+    ]
+
+    if not all(
+        x in df4h.columns
+        for x in required_columns
+    ):
+
+        return {
+
+            "4h_10_30": "⚪",
+
+            "4h_30_60_120": "⚪",
+
+            "1d_10_30": "⚪",
+
+            "signal": "",
+
+            "warning": "none",
+
+            "direction": "none"
+
+        }
+
+    df4h = df4h.copy()
+
+    df4h["o"] = pd.to_numeric(
+        df4h["opening_price"],
+        errors="coerce"
+    )
+
+    df4h["h"] = pd.to_numeric(
+        df4h["high_price"],
+        errors="coerce"
+    )
+
+    df4h["l"] = pd.to_numeric(
+        df4h["low_price"],
+        errors="coerce"
+    )
+
+    df4h["c"] = pd.to_numeric(
+        df4h["trade_price"],
+        errors="coerce"
+    )
+
+    df4h = (
+        df4h
+        .dropna(
+            subset=[
+                "o",
+                "h",
+                "l",
+                "c"
+            ]
+        )
+        .reset_index(drop=True)
+    )
+
+    if len(df4h) < 125:
+
+        return {
+
+            "4h_10_30": "⚪",
+
+            "4h_30_60_120": "⚪",
+
+            "1d_10_30": "⚪",
+
+            "signal": "",
+
+            "warning": "none",
+
+            "direction": "none"
+
+        }
+
+    # =====================================================
+    # 일봉 확인
+    # =====================================================
+
+    df1d = df1d.copy()
+
+    df1d["trade_price"] = pd.to_numeric(
+        df1d["trade_price"],
+        errors="coerce"
+    )
+
+    df1d = (
+        df1d
+        .dropna(
+            subset=["trade_price"]
+        )
+        .reset_index(drop=True)
+    )
+
+    if len(df1d) < 30:
+
+        return {
+
+            "4h_10_30": "⚪",
+
+            "4h_30_60_120": "⚪",
+
+            "1d_10_30": "⚪",
+
+            "signal": "",
+
+            "warning": "none",
+
+            "direction": "none"
+
+        }
+
+    # =====================================================
+    # 신호
+    # =====================================================
+
     signal, warning = (
         get_trade_signal(
             df4h,
             df1d,
-            "trade_price"
+            "c"
         )
     )
 
     direction = get_main_direction(
         df4h,
         df1d,
-        "trade_price"
+        "c"
     )
 
     return {
@@ -1470,13 +1633,13 @@ def get_upbit_ema(
         "4h_10_30":
             check_ema_10_30(
                 df4h,
-                "trade_price"
+                "c"
             ),
 
         "4h_30_60_120":
             check_ema(
                 df4h,
-                "trade_price"
+                "c"
             ),
 
         "1d_10_30":
@@ -2062,6 +2225,97 @@ def ema_html(
 
 
 # =========================================================
+# 업비트 TOP
+# =========================================================
+
+def update_upbit():
+
+    global latest_upbit_data
+
+    logging.info(
+        f"업비트 TOP{TOP_N} 시작 "
+        f"(거래대금 {VOLUME_HOURS}시간)"
+    )
+
+    markets = get_upbit_markets()
+
+    if not markets:
+
+        logging.error(
+            "업비트 마켓을 가져오지 못했습니다."
+        )
+
+        return
+
+    volume_map = (
+        get_upbit_volume_map(
+            markets
+        )
+    )
+
+    if not volume_map:
+
+        logging.error(
+            "업비트 거래대금을 가져오지 못했습니다."
+        )
+
+        return
+
+    top_markets = sorted(
+        volume_map,
+        key=volume_map.get,
+        reverse=True
+    )[:TOP_N]
+
+    rows = []
+
+    rank = 1
+
+    for market in top_markets:
+
+        coin = market.replace(
+            "KRW-",
+            ""
+        )
+
+        changes = get_upbit_change(
+            market
+        )
+
+        ema = get_upbit_ema(
+            market
+        )
+
+        rows.append({
+
+            "rank": rank,
+
+            "name": coin,
+
+            "change":
+                format_change(
+                    changes
+                ),
+
+            "volume":
+                format_volume(
+                    volume_map[market]
+                ),
+
+            "ema": ema
+
+        })
+
+        rank += 1
+
+    latest_upbit_data = rows
+
+    logging.info(
+        f"업비트 TOP{TOP_N} 완료"
+    )
+
+
+# =========================================================
 # OKX TOP
 # =========================================================
 
@@ -2191,97 +2445,6 @@ def update_okx():
 
 
 # =========================================================
-# 업비트 TOP
-# =========================================================
-
-def update_upbit():
-
-    global latest_upbit_data
-
-    logging.info(
-        f"업비트 TOP{TOP_N} 시작 "
-        f"(거래대금 {VOLUME_HOURS}시간)"
-    )
-
-    markets = get_upbit_markets()
-
-    if not markets:
-
-        logging.error(
-            "업비트 마켓을 가져오지 못했습니다."
-        )
-
-        return
-
-    volume_map = (
-        get_upbit_volume_map(
-            markets
-        )
-    )
-
-    if not volume_map:
-
-        logging.error(
-            "업비트 거래대금을 가져오지 못했습니다."
-        )
-
-        return
-
-    top_markets = sorted(
-        volume_map,
-        key=volume_map.get,
-        reverse=True
-    )[:TOP_N]
-
-    rows = []
-
-    rank = 1
-
-    for market in top_markets:
-
-        coin = market.replace(
-            "KRW-",
-            ""
-        )
-
-        changes = get_upbit_change(
-            market
-        )
-
-        ema = get_upbit_ema(
-            market
-        )
-
-        rows.append({
-
-            "rank": rank,
-
-            "name": coin,
-
-            "change":
-                format_change(
-                    changes
-                ),
-
-            "volume":
-                format_volume(
-                    volume_map[market]
-                ),
-
-            "ema": ema
-
-        })
-
-        rank += 1
-
-    latest_upbit_data = rows
-
-    logging.info(
-        f"업비트 TOP{TOP_N} 완료"
-    )
-
-
-# =========================================================
 # 전체 업데이트
 # =========================================================
 
@@ -2342,19 +2505,12 @@ def update_dashboard():
     )
 
     logging.info(
-        "조회 순서 : 업비트 → OKX"
-    )
-
-    logging.info(
         "========================================"
     )
 
-    # =====================================================
-    # 업비트 먼저
-    # =====================================================
-
     try:
 
+        # 업비트 먼저
         update_upbit()
 
     except Exception as e:
@@ -2363,12 +2519,9 @@ def update_dashboard():
             f"업비트 업데이트 오류 : {e}"
         )
 
-    # =====================================================
-    # OKX 다음
-    # =====================================================
-
     try:
 
+        # OKX 아래
         update_okx()
 
     except Exception as e:
@@ -2744,7 +2897,7 @@ TOP""" + str(TOP_N) + """
 
 
 <!-- =====================================================
-     업비트 먼저
+     업비트
      ===================================================== -->
 
 <h2 class="section-title">
@@ -2817,7 +2970,7 @@ TOP""" + str(TOP_N) + """
 
 
 <!-- =====================================================
-     OKX 아래
+     OKX
      ===================================================== -->
 
 <h2 class="section-title">
@@ -2931,4 +3084,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-            )
+        )
