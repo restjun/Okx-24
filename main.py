@@ -8,6 +8,17 @@ import threading
 import uvicorn
 import logging
 import pandas as pd
+import warnings
+
+
+# =========================================================
+# FutureWarning 숨김
+# =========================================================
+
+warnings.filterwarnings(
+    "ignore",
+    category=FutureWarning
+)
 
 
 app = FastAPI()
@@ -1335,11 +1346,6 @@ def check_pullback(
         prev["ema30"]
     )
 
-    # =====================================================
-    # 중요:
-    # 기존 코드에서 이 변수가 누락되어 NameError 발생
-    # =====================================================
-
     prev_short_candle = (
         prev["c"]
         <
@@ -1890,9 +1896,7 @@ def get_upbit_volume(
 # =========================================================
 # 업비트 거래대금 MAP
 #
-# 중요:
-# 287개라면 287개 전부 끝까지 순차 처리
-# 중간에 250에서 끝내지 않음
+# 전체 종목을 끝까지 순차 처리
 # =========================================================
 
 def get_upbit_volume_map(
@@ -1947,7 +1951,6 @@ def get_upbit_volume_map(
                 f"{market} : {e}"
             )
 
-        # 진행 상황
         if (
             index % 25 == 0
             or
@@ -1990,6 +1993,12 @@ def get_okx_change(
         return None
 
     df = df.copy()
+
+    # 문자열 timestamp를 숫자로 변환 후 datetime 처리
+    df["ts"] = pd.to_numeric(
+        df["ts"],
+        errors="coerce"
+    )
 
     df["datetime"] = (
         pd.to_datetime(
@@ -2413,6 +2422,9 @@ def update_upbit():
         f"업비트 TOP{total_top} 상세 조회 시작"
     )
 
+    success_detail = 0
+    failed_detail = 0
+
     for rank, market in enumerate(
         top_markets,
         start=1
@@ -2453,7 +2465,11 @@ def update_upbit():
 
             })
 
+            success_detail += 1
+
         except Exception as e:
+
+            failed_detail += 1
 
             logging.error(
                 f"업비트 TOP 상세 오류 "
@@ -2488,7 +2504,25 @@ def update_upbit():
 
             })
 
+        if (
+            rank % 5 == 0
+            or
+            rank == total_top
+        ):
+
+            logging.info(
+                f"업비트 TOP 상세 "
+                f"{rank}/{total_top} "
+                f"(성공 {success_detail} / "
+                f"실패 {failed_detail})"
+            )
+
     latest_upbit_data = rows
+
+    logging.info(
+        f"업비트 TOP{TOP_N} 상세 조회 완료 "
+        f"({total_top}/{total_top})"
+    )
 
     logging.info(
         f"업비트 TOP{TOP_N} 완료 "
@@ -2617,10 +2651,19 @@ def update_okx():
 
     rows = []
 
+    total_top = len(top_symbols)
+
     logging.info(
-        f"OKX TOP{len(top_symbols)} "
-        f"상세 조회 시작"
+        f"OKX TOP{total_top} 상세 조회 시작"
     )
+
+    success_detail = 0
+    failed_detail = 0
+
+    # =====================================================
+    # TOP 상세조회
+    # 변동률 + EMA + LONG/SHORT + 경고
+    # =====================================================
 
     for rank, symbol in enumerate(
         top_symbols,
@@ -2666,7 +2709,11 @@ def update_okx():
 
             })
 
+            success_detail += 1
+
         except Exception as e:
+
+            failed_detail += 1
 
             logging.error(
                 f"OKX TOP 상세 오류 "
@@ -2701,7 +2748,25 @@ def update_okx():
 
             })
 
+        if (
+            rank % 5 == 0
+            or
+            rank == total_top
+        ):
+
+            logging.info(
+                f"OKX TOP 상세 "
+                f"{rank}/{total_top} "
+                f"(성공 {success_detail} / "
+                f"실패 {failed_detail})"
+            )
+
     latest_okx_data = rows
+
+    logging.info(
+        f"OKX TOP{TOP_N} 상세 조회 완료 "
+        f"({total_top}/{total_top})"
+    )
 
     logging.info(
         f"OKX TOP{TOP_N} 완료 "
@@ -2870,6 +2935,16 @@ body{
     line-height:13px;
 
     font-weight:bold;
+
+}
+
+.title-time{
+
+    color:#777;
+
+    font-size:8px;
+
+    font-weight:normal;
 
 }
 
@@ -3512,6 +3587,13 @@ td{
     }
 
 
+    .title-time{
+
+        font-size:8px;
+
+    }
+
+
     .description{
 
         font-size:6px;
@@ -3806,7 +3888,7 @@ td{
 
 
 <div class="main-title">
-📊 4H 종가매매
+📊 4H 종가매매 <span class="title-time">(9시, 1시, 5시)</span>
 </div>
 
 
