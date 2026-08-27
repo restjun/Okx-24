@@ -1902,6 +1902,10 @@ def signal_html(
 # =========================================================
 # EMA HTML
 # =========================================================
+# 디자인 수정
+# 1줄 : LONG / SHORT + 방향
+# 2줄 : 4H / 1D 이동평균
+# =========================================================
 
 def ema_html(
     ema
@@ -1943,40 +1947,50 @@ def ema_html(
 
     return f"""
 
-<div class="ema-display">
+<div class="ema-box">
 
-    <div class="signal-period">
-        {display_signal}
-    </div>
+    <!-- 첫 번째 줄 -->
+    <div class="signal-row">
 
-    <div class="direction-period">
-        {direction_html}
-    </div>
-
-    <div class="ema-period">
-
-        <span class="ema-time">
-            4H
+        <span class="signal-area">
+            {display_signal}
         </span>
 
-        <span class="ema-status">
-            10-30 {ema["4h_10_30"]}
-        </span>
-
-        <span class="ema-status">
-            30-60-120 {ema["4h_30_60_120"]}
+        <span class="direction-area">
+            {direction_html}
         </span>
 
     </div>
 
-    <div class="ema-period last">
 
-        <span class="ema-time">
-            1D
+    <!-- 두 번째 줄 -->
+    <div class="ema-row">
+
+        <span class="ema-block">
+            <span class="ema-time">
+                4H
+            </span>
+
+            <span>
+                10-30 {ema["4h_10_30"]}
+            </span>
+
+            <span>
+                30-60-120 {ema["4h_30_60_120"]}
+            </span>
         </span>
 
-        <span class="ema-status">
-            10-30 {ema["1d_10_30"]}
+
+        <span class="ema-block">
+
+            <span class="ema-time">
+                1D
+            </span>
+
+            <span>
+                10-30 {ema["1d_10_30"]}
+            </span>
+
         </span>
 
     </div>
@@ -2271,12 +2285,13 @@ def dashboard():
 
 <meta
     name="viewport"
-    content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    content="width=device-width, initial-scale=1.0, maximum-scale=1.0"
 >
 
 <title>
 4H 종가매매
 </title>
+
 
 <style>
 
@@ -2292,7 +2307,9 @@ html,
 body{
 
     width:100%;
+
     margin:0;
+
     padding:0;
 
     overflow-x:hidden;
@@ -2301,61 +2318,35 @@ body{
 
 body{
 
-    background:#0d0d0f;
-    color:#e8e8e8;
+    background:#111;
+
+    color:#fff;
 
     font-family:
         Arial,
-        "Noto Sans KR",
         sans-serif;
 
-    padding:4px;
+    padding:3px;
 
-    font-size:9px;
+    font-size:8px;
 
 }
+
 
 /* =====================================================
-   전체 컨테이너
+   제목
    ===================================================== */
 
-.page{
+h2{
 
-    width:100%;
-    max-width:720px;
-    margin:0 auto;
+    margin:2px 0 3px;
 
-}
+    font-size:11px;
 
-/* =====================================================
-   상단
-   ===================================================== */
-
-.top-header{
-
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-
-    padding:4px 5px 3px;
+    line-height:14px;
 
 }
 
-.title{
-
-    font-size:13px;
-    font-weight:700;
-
-    letter-spacing:-0.5px;
-
-}
-
-.update-time{
-
-    color:#666;
-    font-size:7px;
-
-}
 
 /* =====================================================
    설명
@@ -2363,13 +2354,11 @@ body{
 
 .description{
 
-    padding:2px 5px 4px;
+    color:#888;
 
-    color:#777;
+    font-size:6.5px;
 
-    font-size:7px;
-
-    line-height:1.2;
+    line-height:9px;
 
     white-space:nowrap;
 
@@ -2377,7 +2366,10 @@ body{
 
     text-overflow:ellipsis;
 
+    margin-bottom:3px;
+
 }
+
 
 /* =====================================================
    설정
@@ -2386,32 +2378,33 @@ body{
 .setting-row{
 
     display:flex;
-    gap:3px;
 
-    padding:0 4px 5px;
+    gap:2px;
+
+    margin-bottom:4px;
 
 }
 
 .volume-setting{
 
-    display:inline-flex;
-    align-items:center;
+    padding:2px 3px;
 
-    padding:2px 5px;
+    background:#1d1d1d;
 
-    background:#18181b;
-
-    border:1px solid #29292d;
+    border:1px solid #303030;
 
     border-radius:3px;
 
-    color:#888;
+    color:#999;
 
-    font-size:7px;
+    font-size:6.5px;
+
+    line-height:8px;
 
     white-space:nowrap;
 
 }
+
 
 /* =====================================================
    섹션
@@ -2419,26 +2412,20 @@ body{
 
 .section-title{
 
-    display:flex;
-    align-items:center;
-
     margin:5px 0 2px;
 
-    padding:4px 5px;
+    padding:3px 4px;
 
-    background:#19191c;
+    background:#1d1d1d;
 
-    border:1px solid #29292d;
+    border-left:2px solid #555;
 
-    border-left:2px solid #777;
+    font-size:9px;
 
-    border-radius:3px;
-
-    font-size:10px;
-
-    font-weight:700;
+    line-height:11px;
 
 }
+
 
 /* =====================================================
    테이블
@@ -2450,8 +2437,6 @@ body{
 
     overflow:hidden;
 
-    border-radius:3px;
-
 }
 
 table{
@@ -2462,35 +2447,10 @@ table{
 
     border-collapse:collapse;
 
-    background:#111113;
-
-    border:1px solid #29292d;
+    border:1px solid #292929;
 
 }
 
-/* =====================================================
-   열 비율
-   ===================================================== */
-
-.rank-cell{
-    width:5%;
-}
-
-.coin-cell{
-    width:15%;
-}
-
-.volume-cell{
-    width:14%;
-}
-
-.change-cell{
-    width:13%;
-}
-
-.ema-cell{
-    width:53%;
-}
 
 /* =====================================================
    헤더
@@ -2498,26 +2458,24 @@ table{
 
 th{
 
-    height:22px;
+    background:#242424;
 
     padding:2px 1px;
 
-    background:#202023;
+    border-right:1px solid #333;
 
-    border-right:1px solid #303034;
-    border-bottom:1px solid #353539;
-
-    color:#8f8f95;
+    border-bottom:1px solid #333;
 
     white-space:nowrap;
 
-    font-size:7px;
+    font-size:6.5px;
 
-    font-weight:600;
+    line-height:9px;
 
-    text-align:center;
+    font-weight:bold;
 
 }
+
 
 /* =====================================================
    셀
@@ -2525,22 +2483,24 @@ th{
 
 td{
 
-    height:31px;
+    padding:2px 1px;
 
-    padding:1px;
+    height:40px;
 
-    border-right:1px solid #222225;
-    border-bottom:1px solid #222225;
+    border-bottom:1px solid #252525;
+
+    border-right:1px solid #252525;
 
     text-align:center;
 
+    vertical-align:middle;
+
     white-space:nowrap;
 
-    overflow:hidden;
-
-    font-size:8px;
+    font-size:7px;
 
 }
+
 
 /* =====================================================
    순위
@@ -2548,11 +2508,14 @@ td{
 
 .rank-cell{
 
-    color:#777;
+    width:5%;
+
+    color:#888;
 
     font-size:7px;
 
 }
+
 
 /* =====================================================
    코인
@@ -2560,15 +2523,13 @@ td{
 
 .coin-cell{
 
+    width:14%;
+
     text-align:left;
 
-    padding-left:4px;
+    font-weight:bold;
 
-    color:#eee;
-
-    font-weight:700;
-
-    font-size:8px;
+    font-size:7.5px;
 
     overflow:hidden;
 
@@ -2576,23 +2537,23 @@ td{
 
 }
 
+
 /* =====================================================
    거래대금
    ===================================================== */
 
 .volume-cell{
 
+    width:13%;
+
     text-align:right;
 
-    padding-right:3px;
+    font-size:6.8px;
 
     color:#bbb;
 
-    font-family:monospace;
-
-    font-size:7px;
-
 }
+
 
 /* =====================================================
    변동률
@@ -2600,127 +2561,196 @@ td{
 
 .change-cell{
 
-    font-size:7px;
+    width:12%;
+
+    font-size:6.8px;
 
 }
+
 
 .change-item{
 
     display:flex;
 
     align-items:center;
+
     justify-content:center;
 
     width:100%;
 
 }
 
+
 .change-icon{
 
-    width:9px;
-    min-width:9px;
+    width:8px;
 
-    font-size:5px;
+    min-width:8px;
+
+    font-size:5.5px;
 
 }
 
+
 .change-value{
 
-    width:35px;
+    width:31px;
+
     min-width:0;
 
     text-align:right;
 
     font-family:monospace;
 
-    font-size:7px;
+    font-size:6.8px;
 
 }
+
 
 /* =====================================================
-   EMA
+   EMA 전체
    ===================================================== */
 
-.ema-cell{
-
-    padding:0 1px;
-
-}
-
-.ema-display{
-
-    display:flex;
-
-    align-items:center;
+.ema-box{
 
     width:100%;
-    height:29px;
 
-    white-space:nowrap;
+    height:36px;
+
+    display:flex;
+
+    flex-direction:column;
+
+    justify-content:center;
 
 }
 
+
 /* =====================================================
-   신호
+   첫 번째 줄
+   LONG / SHORT + 방향
    ===================================================== */
 
-.signal-period{
+.signal-row{
 
-    width:19%;
-    min-width:19%;
+    width:100%;
 
-    height:100%;
+    height:15px;
 
     display:flex;
 
     align-items:center;
+
     justify-content:center;
-
-    overflow:hidden;
-
-    font-size:7px;
 
 }
 
-/* =====================================================
-   방향
-   ===================================================== */
 
-.direction-period{
+.signal-area{
 
-    width:9%;
-    min-width:9%;
-
-    height:100%;
-
-    display:flex;
+    display:inline-flex;
 
     align-items:center;
+
     justify-content:center;
+
+    min-width:42px;
+
+    font-size:6.5px;
+
+    line-height:9px;
+
+}
+
+
+.direction-area{
+
+    display:inline-flex;
+
+    align-items:center;
+
+    justify-content:center;
+
+    width:18px;
 
     font-size:8px;
 
 }
 
+
 /* =====================================================
-   방향
+   두 번째 줄
+   이동평선
+   ===================================================== */
+
+.ema-row{
+
+    width:100%;
+
+    height:15px;
+
+    display:flex;
+
+    align-items:center;
+
+    justify-content:center;
+
+    gap:5px;
+
+    color:#aaa;
+
+    font-size:5.8px;
+
+    line-height:8px;
+
+}
+
+
+.ema-block{
+
+    display:flex;
+
+    align-items:center;
+
+    gap:2px;
+
+    white-space:nowrap;
+
+}
+
+
+.ema-time{
+
+    color:#777;
+
+    font-weight:bold;
+
+    font-size:5.8px;
+
+}
+
+
+/* =====================================================
+   방향 색상
    ===================================================== */
 
 .direction-long{
 
-    color:#00e676;
+    color:#00e65c;
 
     font-weight:bold;
 
 }
+
 
 .direction-short{
 
-    color:#ff5252;
+    color:#ff5555;
 
     font-weight:bold;
 
 }
+
 
 .direction-none{
 
@@ -2728,103 +2758,32 @@ td{
 
 }
 
-/* =====================================================
-   EMA 구역
-   ===================================================== */
-
-.ema-period{
-
-    display:flex;
-    align-items:center;
-
-    height:24px;
-
-    padding:0 2px;
-
-    border-right:1px solid #303034;
-
-    overflow:hidden;
-
-}
-
-.ema-period.last{
-
-    border-right:none;
-
-}
 
 /* =====================================================
-   시간
+   LONG SHORT
    ===================================================== */
 
-.ema-time{
+.long-text{
 
-    display:inline-block;
+    color:#00e65c;
 
-    width:16px;
-    min-width:16px;
-
-    color:#777;
-
-    text-align:left;
-
-    font-size:7px;
     font-weight:bold;
-
-}
-
-/* =====================================================
-   EMA 상태
-   ===================================================== */
-
-.ema-status{
-
-    display:inline-block;
-
-    width:52px;
-    min-width:52px;
-
-    color:#aaa;
-
-    text-align:left;
 
     font-size:6.5px;
 
 }
 
-/* =====================================================
-   LONG / SHORT
-   ===================================================== */
-
-.long-text{
-
-    color:#00e676;
-
-    font-weight:700;
-
-    font-size:7px;
-
-}
 
 .short-text{
 
-    color:#ff5252;
+    color:#ff4444;
 
-    font-weight:700;
+    font-weight:bold;
 
-    font-size:7px;
-
-}
-
-/* =====================================================
-   TOP 강조
-   ===================================================== */
-
-tr:nth-child(2) td{
-
-    background:#151518;
+    font-size:6.5px;
 
 }
+
 
 /* =====================================================
    모바일
@@ -2838,157 +2797,179 @@ tr:nth-child(2) td{
 
         padding:3px;
 
-    }
-
-    .top-header{
-
-        padding:3px 4px;
+        font-size:7px;
 
     }
 
-    .title{
 
-        font-size:12px;
+    h2{
+
+        font-size:10px;
+
+        line-height:12px;
+
+        margin:2px 0 2px;
 
     }
 
-    .update-time{
-
-        font-size:6px;
-
-    }
 
     .description{
 
-        padding:1px 4px 3px;
+        font-size:6px;
 
-        font-size:6.5px;
+        line-height:8px;
 
-    }
-
-    .setting-row{
-
-        padding:0 3px 4px;
+        margin-bottom:3px;
 
     }
 
-    .volume-setting{
-
-        padding:2px 4px;
-
-        font-size:6.5px;
-
-    }
 
     .section-title{
 
-        margin:4px 0 2px;
+        font-size:8.5px;
+
+        line-height:10px;
 
         padding:3px 4px;
 
-        font-size:9px;
+        margin-top:4px;
 
     }
+
+
+    .volume-setting{
+
+        font-size:6px;
+
+        line-height:7px;
+
+        padding:2px 3px;
+
+    }
+
 
     th{
 
-        height:20px;
+        font-size:6px;
 
-        font-size:6.5px;
+        line-height:8px;
+
+        padding:2px 1px;
 
     }
 
+
     td{
 
-        height:29px;
+        height:39px;
+
+        font-size:6.8px;
+
+        padding:1px;
+
+    }
+
+
+    .coin-cell{
 
         font-size:7px;
 
     }
 
-    .coin-cell{
-
-        font-size:7.5px;
-
-        padding-left:3px;
-
-    }
 
     .volume-cell{
 
-        font-size:6.5px;
+        font-size:6.2px;
 
     }
 
-    .change-value{
 
-        width:32px;
+    .change-cell{
 
-        font-size:6.5px;
+        font-size:6.2px;
 
     }
+
 
     .change-icon{
 
-        width:8px;
-        min-width:8px;
+        width:7px;
+
+        min-width:7px;
 
         font-size:5px;
 
     }
 
-    .ema-display{
 
-        height:27px;
+    .change-value{
 
-    }
+        width:30px;
 
-    .signal-period{
-
-        width:18%;
-
-        min-width:18%;
-
-        font-size:6.5px;
+        font-size:6.2px;
 
     }
 
-    .direction-period{
 
-        width:8%;
+    .ema-box{
 
-        min-width:8%;
-
-        font-size:7px;
+        height:35px;
 
     }
 
-    .ema-time{
 
-        width:14px;
-        min-width:14px;
+    .signal-row{
 
-        font-size:6.5px;
+        height:14px;
 
     }
 
-    .ema-status{
 
-        width:47px;
-        min-width:47px;
+    .signal-area{
+
+        min-width:40px;
 
         font-size:6px;
 
     }
 
+
+    .direction-area{
+
+        width:16px;
+
+        font-size:7px;
+
+    }
+
+
+    .ema-row{
+
+        height:14px;
+
+        gap:4px;
+
+        font-size:5.4px;
+
+    }
+
+
+    .ema-time{
+
+        font-size:5.4px;
+
+    }
+
+
     .long-text,
     .short-text{
 
-        font-size:6.5px;
+        font-size:6px;
 
     }
 
 }
+
 
 /* =====================================================
    아주 작은 화면
@@ -2998,66 +2979,40 @@ tr:nth-child(2) td{
     max-width:380px
 ){
 
-    body{
-
-        padding:2px;
-
-    }
-
-    th{
-
-        font-size:6px;
-
-    }
-
     td{
 
-        height:28px;
+        height:37px;
 
     }
+
 
     .coin-cell{
 
-        font-size:7px;
+        font-size:6.5px;
 
     }
 
-    .volume-cell{
 
-        font-size:6px;
+    .volume-cell,
+    .change-cell{
 
-    }
-
-    .change-value{
-
-        width:29px;
-
-        font-size:6px;
+        font-size:5.8px;
 
     }
 
-    .signal-period{
 
-        width:17%;
+    .ema-row{
 
-        min-width:17%;
+        gap:3px;
 
-    }
-
-    .direction-period{
-
-        width:7%;
-
-        min-width:7%;
+        font-size:5px;
 
     }
 
-    .ema-status{
 
-        width:43px;
-        min-width:43px;
+    .ema-time{
 
-        font-size:5.7px;
+        font-size:5px;
 
     }
 
@@ -3067,33 +3022,29 @@ tr:nth-child(2) td{
 
 </head>
 
+
 <body>
 
-<div class="page">
 
 <!-- =====================================================
-     상단
+     제목
      ===================================================== -->
 
-<div class="top-header">
-
-    <div class="title">
-        📊 4H 종가매매
-    </div>
-
-    <div class="update-time">
-        5분 갱신
-    </div>
-
-</div>
+<h2>
+📊 4H 종가매매
+</h2>
 
 
 <div class="description">
 
-일봉 방향 + 4H 추세 일치 · ⚡추세전환 · 🔥눌림목 · 🚀돌파 · 완료된 4H 종가
+일봉 방향 + 4H 추세 일치 │ ⚡추세전환 │ 🔥눌림목 │ 🚀돌파 │ 완료된 4H 종가
 
 </div>
 
+
+<!-- =====================================================
+     설정
+     ===================================================== -->
 
 <div class="setting-row">
 
@@ -3130,10 +3081,10 @@ TOP""" + str(TOP_N) + """
 <colgroup>
 
 <col style="width:5%">
-<col style="width:15%">
 <col style="width:14%">
 <col style="width:13%">
-<col style="width:53%">
+<col style="width:12%">
+<col style="width:56%">
 
 </colgroup>
 
@@ -3157,12 +3108,13 @@ TOP""" + str(TOP_N) + """
 </th>
 
 <th>
-4H
+추세 / 이동평선
 </th>
 
 </tr>
 
 """
+
 
     for item in latest_upbit_data:
 
@@ -3186,13 +3138,14 @@ TOP""" + str(TOP_N) + """
 {item['change']}
 </td>
 
-<td class="ema-cell">
+<td>
 {ema_html(item["ema"])}
 </td>
 
 </tr>
 
 """
+
 
     html += """
 
@@ -3219,10 +3172,10 @@ TOP""" + str(TOP_N) + """
 <colgroup>
 
 <col style="width:5%">
-<col style="width:15%">
 <col style="width:14%">
 <col style="width:13%">
-<col style="width:53%">
+<col style="width:12%">
+<col style="width:56%">
 
 </colgroup>
 
@@ -3246,12 +3199,13 @@ TOP""" + str(TOP_N) + """
 </th>
 
 <th>
-4H
+추세 / 이동평선
 </th>
 
 </tr>
 
 """
+
 
     for item in latest_okx_data:
 
@@ -3275,7 +3229,7 @@ TOP""" + str(TOP_N) + """
 {item['change']}
 </td>
 
-<td class="ema-cell">
+<td>
 {ema_html(item["ema"])}
 </td>
 
@@ -3283,13 +3237,13 @@ TOP""" + str(TOP_N) + """
 
 """
 
+
     html += """
 
 </table>
 
 </div>
 
-</div>
 
 </body>
 
