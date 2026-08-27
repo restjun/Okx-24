@@ -1901,7 +1901,6 @@ def signal_html(
 
 # =========================================================
 # EMA HTML
-# 모바일 초소형
 # =========================================================
 
 def ema_html(
@@ -2272,7 +2271,7 @@ def dashboard():
 
 <meta
     name="viewport"
-    content="width=device-width, initial-scale=1.0, maximum-scale=1.0"
+    content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
 >
 
 <title>
@@ -2293,9 +2292,7 @@ html,
 body{
 
     width:100%;
-
     margin:0;
-
     padding:0;
 
     overflow-x:hidden;
@@ -2304,29 +2301,59 @@ body{
 
 body{
 
-    background:#111;
-
-    color:white;
+    background:#0d0d0f;
+    color:#e8e8e8;
 
     font-family:
         Arial,
+        "Noto Sans KR",
         sans-serif;
 
-    padding:5px;
+    padding:4px;
 
-    font-size:10px;
+    font-size:9px;
 
 }
 
 /* =====================================================
-   제목
+   전체 컨테이너
    ===================================================== */
 
-h2{
+.page{
 
-    margin:2px 0 4px;
+    width:100%;
+    max-width:720px;
+    margin:0 auto;
 
-    font-size:14px;
+}
+
+/* =====================================================
+   상단
+   ===================================================== */
+
+.top-header{
+
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+
+    padding:4px 5px 3px;
+
+}
+
+.title{
+
+    font-size:13px;
+    font-weight:700;
+
+    letter-spacing:-0.5px;
+
+}
+
+.update-time{
+
+    color:#666;
+    font-size:7px;
 
 }
 
@@ -2336,17 +2363,19 @@ h2{
 
 .description{
 
-    color:#999;
+    padding:2px 5px 4px;
 
-    font-size:8px;
+    color:#777;
+
+    font-size:7px;
+
+    line-height:1.2;
 
     white-space:nowrap;
 
     overflow:hidden;
 
     text-overflow:ellipsis;
-
-    margin-bottom:4px;
 
 }
 
@@ -2357,26 +2386,28 @@ h2{
 .setting-row{
 
     display:flex;
-
     gap:3px;
 
-    margin-bottom:5px;
+    padding:0 4px 5px;
 
 }
 
 .volume-setting{
 
-    padding:2px 4px;
+    display:inline-flex;
+    align-items:center;
 
-    background:#222;
+    padding:2px 5px;
 
-    border:1px solid #3a3a3a;
+    background:#18181b;
+
+    border:1px solid #29292d;
 
     border-radius:3px;
 
-    color:#aaa;
+    color:#888;
 
-    font-size:8px;
+    font-size:7px;
 
     white-space:nowrap;
 
@@ -2388,15 +2419,24 @@ h2{
 
 .section-title{
 
-    margin:6px 0 3px;
+    display:flex;
+    align-items:center;
+
+    margin:5px 0 2px;
 
     padding:4px 5px;
 
-    background:#222;
+    background:#19191c;
 
-    border-left:2px solid #666;
+    border:1px solid #29292d;
 
-    font-size:11px;
+    border-left:2px solid #777;
+
+    border-radius:3px;
+
+    font-size:10px;
+
+    font-weight:700;
 
 }
 
@@ -2410,6 +2450,8 @@ h2{
 
     overflow:hidden;
 
+    border-radius:3px;
+
 }
 
 table{
@@ -2420,8 +2462,34 @@ table{
 
     border-collapse:collapse;
 
-    border:1px solid #333;
+    background:#111113;
 
+    border:1px solid #29292d;
+
+}
+
+/* =====================================================
+   열 비율
+   ===================================================== */
+
+.rank-cell{
+    width:5%;
+}
+
+.coin-cell{
+    width:15%;
+}
+
+.volume-cell{
+    width:14%;
+}
+
+.change-cell{
+    width:13%;
+}
+
+.ema-cell{
+    width:53%;
 }
 
 /* =====================================================
@@ -2430,17 +2498,24 @@ table{
 
 th{
 
-    background:#292929;
+    height:22px;
 
-    padding:3px 1px;
+    padding:2px 1px;
 
-    border-right:1px solid #3c3c3c;
+    background:#202023;
+
+    border-right:1px solid #303034;
+    border-bottom:1px solid #353539;
+
+    color:#8f8f95;
 
     white-space:nowrap;
 
-    font-size:8px;
+    font-size:7px;
 
-    font-weight:bold;
+    font-weight:600;
+
+    text-align:center;
 
 }
 
@@ -2450,19 +2525,20 @@ th{
 
 td{
 
-    padding:2px 1px;
+    height:31px;
 
-    height:34px;
+    padding:1px;
 
-    border-bottom:1px solid #292929;
-
-    border-right:1px solid #292929;
+    border-right:1px solid #222225;
+    border-bottom:1px solid #222225;
 
     text-align:center;
 
     white-space:nowrap;
 
-    font-size:9px;
+    overflow:hidden;
+
+    font-size:8px;
 
 }
 
@@ -2472,7 +2548,9 @@ td{
 
 .rank-cell{
 
-    width:5%;
+    color:#777;
+
+    font-size:7px;
 
 }
 
@@ -2482,13 +2560,15 @@ td{
 
 .coin-cell{
 
-    width:14%;
-
     text-align:left;
 
-    font-weight:bold;
+    padding-left:4px;
 
-    font-size:9px;
+    color:#eee;
+
+    font-weight:700;
+
+    font-size:8px;
 
     overflow:hidden;
 
@@ -2502,11 +2582,15 @@ td{
 
 .volume-cell{
 
-    width:13%;
-
     text-align:right;
 
-    font-size:8px;
+    padding-right:3px;
+
+    color:#bbb;
+
+    font-family:monospace;
+
+    font-size:7px;
 
 }
 
@@ -2516,9 +2600,7 @@ td{
 
 .change-cell{
 
-    width:12%;
-
-    font-size:8px;
+    font-size:7px;
 
 }
 
@@ -2527,7 +2609,6 @@ td{
     display:flex;
 
     align-items:center;
-
     justify-content:center;
 
     width:100%;
@@ -2536,31 +2617,35 @@ td{
 
 .change-icon{
 
-    width:11px;
+    width:9px;
+    min-width:9px;
 
-    min-width:11px;
-
-    font-size:7px;
+    font-size:5px;
 
 }
 
 .change-value{
 
-    width:38px;
-
+    width:35px;
     min-width:0;
 
     text-align:right;
 
     font-family:monospace;
 
-    font-size:8px;
+    font-size:7px;
 
 }
 
 /* =====================================================
-   EMA 전체
+   EMA
    ===================================================== */
+
+.ema-cell{
+
+    padding:0 1px;
+
+}
 
 .ema-display{
 
@@ -2568,11 +2653,8 @@ td{
 
     align-items:center;
 
-    justify-content:flex-start;
-
     width:100%;
-
-    height:30px;
+    height:29px;
 
     white-space:nowrap;
 
@@ -2584,29 +2666,19 @@ td{
 
 .signal-period{
 
-    width:17%;
+    width:19%;
+    min-width:19%;
 
-    min-width:17%;
-
-    text-align:center;
+    height:100%;
 
     display:flex;
 
     align-items:center;
-
     justify-content:center;
-
-    font-size:8px;
 
     overflow:hidden;
 
-}
-
-.signal{
-
-    font-weight:bold;
-
-    font-size:8px;
+    font-size:7px;
 
 }
 
@@ -2616,23 +2688,27 @@ td{
 
 .direction-period{
 
-    width:8%;
+    width:9%;
+    min-width:9%;
 
-    min-width:8%;
+    height:100%;
 
-    text-align:center;
+    display:flex;
+
+    align-items:center;
+    justify-content:center;
 
     font-size:8px;
 
 }
 
 /* =====================================================
-   방향 색상
+   방향
    ===================================================== */
 
 .direction-long{
 
-    color:#00ff66;
+    color:#00e676;
 
     font-weight:bold;
 
@@ -2640,7 +2716,7 @@ td{
 
 .direction-short{
 
-    color:#ff6666;
+    color:#ff5252;
 
     font-weight:bold;
 
@@ -2648,25 +2724,26 @@ td{
 
 .direction-none{
 
-    color:#666;
+    color:#555;
 
 }
 
 /* =====================================================
-   EMA
+   EMA 구역
    ===================================================== */
 
 .ema-period{
 
     display:flex;
-
     align-items:center;
 
-    height:27px;
+    height:24px;
 
-    padding:0 1px;
+    padding:0 2px;
 
-    border-right:1px solid #3b3b3b;
+    border-right:1px solid #303034;
+
+    overflow:hidden;
 
 }
 
@@ -2676,57 +2753,76 @@ td{
 
 }
 
+/* =====================================================
+   시간
+   ===================================================== */
+
 .ema-time{
 
     display:inline-block;
 
-    width:17px;
+    width:16px;
+    min-width:16px;
 
-    min-width:17px;
+    color:#777;
 
     text-align:left;
 
+    font-size:7px;
     font-weight:bold;
 
-    font-size:8px;
-
 }
+
+/* =====================================================
+   EMA 상태
+   ===================================================== */
 
 .ema-status{
 
     display:inline-block;
 
-    width:53px;
+    width:52px;
+    min-width:52px;
 
-    min-width:53px;
+    color:#aaa;
 
     text-align:left;
+
+    font-size:6.5px;
+
+}
+
+/* =====================================================
+   LONG / SHORT
+   ===================================================== */
+
+.long-text{
+
+    color:#00e676;
+
+    font-weight:700;
+
+    font-size:7px;
+
+}
+
+.short-text{
+
+    color:#ff5252;
+
+    font-weight:700;
 
     font-size:7px;
 
 }
 
 /* =====================================================
-   LONG SHORT
+   TOP 강조
    ===================================================== */
 
-.long-text{
+tr:nth-child(2) td{
 
-    color:#00ff66;
-
-    font-weight:bold;
-
-    font-size:8px;
-
-}
-
-.short-text{
-
-    color:#ff4444;
-
-    font-weight:bold;
-
-    font-size:8px;
+    background:#151518;
 
 }
 
@@ -2740,85 +2836,193 @@ td{
 
     body{
 
-        padding:4px;
+        padding:3px;
 
     }
 
-    h2{
+    .top-header{
 
-        font-size:13px;
+        padding:3px 4px;
 
-        margin:2px 0 3px;
+    }
+
+    .title{
+
+        font-size:12px;
+
+    }
+
+    .update-time{
+
+        font-size:6px;
 
     }
 
     .description{
 
-        font-size:7px;
+        padding:1px 4px 3px;
 
-        margin-bottom:4px;
+        font-size:6.5px;
 
     }
 
-    .section-title{
+    .setting-row{
 
-        font-size:10px;
-
-        padding:3px 4px;
-
-        margin-top:5px;
+        padding:0 3px 4px;
 
     }
 
     .volume-setting{
 
-        font-size:7px;
+        padding:2px 4px;
 
-        padding:2px 3px;
+        font-size:6.5px;
+
+    }
+
+    .section-title{
+
+        margin:4px 0 2px;
+
+        padding:3px 4px;
+
+        font-size:9px;
 
     }
 
     th{
 
-        font-size:7px;
+        height:20px;
 
-        padding:3px 1px;
+        font-size:6.5px;
 
     }
 
     td{
 
-        font-size:8px;
+        height:29px;
 
-        padding:1px;
-
-        height:31px;
+        font-size:7px;
 
     }
 
     .coin-cell{
 
-        font-size:8px;
+        font-size:7.5px;
+
+        padding-left:3px;
 
     }
 
     .volume-cell{
 
-        font-size:7px;
+        font-size:6.5px;
 
     }
 
-    .change-cell{
+    .change-value{
 
-        font-size:7px;
+        width:32px;
+
+        font-size:6.5px;
 
     }
 
     .change-icon{
 
-        width:9px;
+        width:8px;
+        min-width:8px;
 
-        min-width:9px;
+        font-size:5px;
+
+    }
+
+    .ema-display{
+
+        height:27px;
+
+    }
+
+    .signal-period{
+
+        width:18%;
+
+        min-width:18%;
+
+        font-size:6.5px;
+
+    }
+
+    .direction-period{
+
+        width:8%;
+
+        min-width:8%;
+
+        font-size:7px;
+
+    }
+
+    .ema-time{
+
+        width:14px;
+        min-width:14px;
+
+        font-size:6.5px;
+
+    }
+
+    .ema-status{
+
+        width:47px;
+        min-width:47px;
+
+        font-size:6px;
+
+    }
+
+    .long-text,
+    .short-text{
+
+        font-size:6.5px;
+
+    }
+
+}
+
+/* =====================================================
+   아주 작은 화면
+   ===================================================== */
+
+@media(
+    max-width:380px
+){
+
+    body{
+
+        padding:2px;
+
+    }
+
+    th{
+
+        font-size:6px;
+
+    }
+
+    td{
+
+        height:28px;
+
+    }
+
+    .coin-cell{
+
+        font-size:7px;
+
+    }
+
+    .volume-cell{
 
         font-size:6px;
 
@@ -2826,15 +3030,9 @@ td{
 
     .change-value{
 
-        width:34px;
+        width:29px;
 
-        font-size:7px;
-
-    }
-
-    .ema-display{
-
-        height:28px;
+        font-size:6px;
 
     }
 
@@ -2844,8 +3042,6 @@ td{
 
         min-width:17%;
 
-        font-size:7px;
-
     }
 
     .direction-period{
@@ -2854,34 +3050,14 @@ td{
 
         min-width:7%;
 
-        font-size:7px;
-
-    }
-
-    .ema-time{
-
-        width:15px;
-
-        min-width:15px;
-
-        font-size:7px;
-
     }
 
     .ema-status{
 
-        width:49px;
+        width:43px;
+        min-width:43px;
 
-        min-width:49px;
-
-        font-size:6.5px;
-
-    }
-
-    .long-text,
-    .short-text{
-
-        font-size:7px;
+        font-size:5.7px;
 
     }
 
@@ -2893,15 +3069,28 @@ td{
 
 <body>
 
+<div class="page">
 
-<h2>
-📊 4H 종가매매
-</h2>
+<!-- =====================================================
+     상단
+     ===================================================== -->
+
+<div class="top-header">
+
+    <div class="title">
+        📊 4H 종가매매
+    </div>
+
+    <div class="update-time">
+        5분 갱신
+    </div>
+
+</div>
 
 
 <div class="description">
 
-일봉 방향 + 4H 추세 일치 | ⚡추세전환 | 🔥눌림목 | 🚀돌파 | 완료된 4H 종가
+일봉 방향 + 4H 추세 일치 · ⚡추세전환 · 🔥눌림목 · 🚀돌파 · 완료된 4H 종가
 
 </div>
 
@@ -2941,10 +3130,10 @@ TOP""" + str(TOP_N) + """
 <colgroup>
 
 <col style="width:5%">
+<col style="width:15%">
 <col style="width:14%">
 <col style="width:13%">
-<col style="width:12%">
-<col style="width:56%">
+<col style="width:53%">
 
 </colgroup>
 
@@ -2997,7 +3186,7 @@ TOP""" + str(TOP_N) + """
 {item['change']}
 </td>
 
-<td>
+<td class="ema-cell">
 {ema_html(item["ema"])}
 </td>
 
@@ -3030,10 +3219,10 @@ TOP""" + str(TOP_N) + """
 <colgroup>
 
 <col style="width:5%">
+<col style="width:15%">
 <col style="width:14%">
 <col style="width:13%">
-<col style="width:12%">
-<col style="width:56%">
+<col style="width:53%">
 
 </colgroup>
 
@@ -3086,7 +3275,7 @@ TOP""" + str(TOP_N) + """
 {item['change']}
 </td>
 
-<td>
+<td class="ema-cell">
 {ema_html(item["ema"])}
 </td>
 
@@ -3100,6 +3289,7 @@ TOP""" + str(TOP_N) + """
 
 </div>
 
+</div>
 
 </body>
 
