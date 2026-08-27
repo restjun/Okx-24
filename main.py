@@ -1024,6 +1024,10 @@ def check_pullback(
 
         return "none"
 
+    # =====================================================
+    # LONG
+    # =====================================================
+
     long_trend = (
         cur["ema30"]
         >
@@ -1106,6 +1110,10 @@ def check_pullback(
 
         return "long_pullback"
 
+    # =====================================================
+    # SHORT
+    # =====================================================
+
     short_trend = (
         cur["ema30"]
         <
@@ -1159,6 +1167,13 @@ def check_pullback(
     )
 
     prev_short_close = (
+        prev["c"]
+        <
+        prev["ema30"]
+    )
+
+    # ★ 오류 수정
+    prev_short_candle = (
         prev["c"]
         <
         prev["o"]
@@ -3826,4 +3841,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-    )
+        )
