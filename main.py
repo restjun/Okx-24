@@ -23,7 +23,7 @@ logging.basicConfig(
 # 사용자 설정
 # =========================================================
 
-VOLUME_HOURS = 4
+VOLUME_HOURS = 24
 
 TOP_N = 10
 
