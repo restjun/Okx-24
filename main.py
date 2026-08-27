@@ -596,90 +596,7 @@ def get_ema_30_60_120_direction(
 
 
 # =========================================================
-# EMA 10-30 상태 + 카운팅
-# =========================================================
-
-def get_10_30_count(
-    df,
-    column
-):
-
-    if (
-        df is None
-        or len(df) < 30
-    ):
-        return 0, "none"
-
-    df = df.copy()
-
-    df["ema10"] = get_ema(
-        df,
-        column,
-        10
-    )
-
-    df["ema30"] = get_ema(
-        df,
-        column,
-        30
-    )
-
-    states = []
-
-    for _, row in df.iterrows():
-
-        if (
-            pd.isna(row["ema10"])
-            or
-            pd.isna(row["ema30"])
-        ):
-
-            states.append("none")
-
-        elif (
-            row["ema10"]
-            >
-            row["ema30"]
-        ):
-
-            states.append("long")
-
-        elif (
-            row["ema10"]
-            <
-            row["ema30"]
-        ):
-
-            states.append("short")
-
-        else:
-
-            states.append("none")
-
-    current_state = states[-1]
-
-    if current_state == "none":
-        return 0, "none"
-
-    count = 0
-
-    for state in reversed(states):
-
-        if state == current_state:
-
-            count += 1
-
-        else:
-
-            break
-
-    return count, current_state
-
-
-# =========================================================
-# EMA 30-60-120 연속 캔들 카운팅
-#
-# 번개용
+# 4H 30-60-120 연속 카운트
 # =========================================================
 
 def get_30_60_120_count(
@@ -754,6 +671,7 @@ def get_30_60_120_count(
     current_state = states[-1]
 
     if current_state == "none":
+
         return 0, "none"
 
     count = 0
@@ -772,8 +690,86 @@ def get_30_60_120_count(
 
 
 # =========================================================
-# EMA 10-30 상태
+# EMA 10-30 상태 + 카운팅
 # =========================================================
+
+def get_10_30_count(
+    df,
+    column
+):
+
+    if (
+        df is None
+        or len(df) < 30
+    ):
+        return 0, "none"
+
+    df = df.copy()
+
+    df["ema10"] = get_ema(
+        df,
+        column,
+        10
+    )
+
+    df["ema30"] = get_ema(
+        df,
+        column,
+        30
+    )
+
+    states = []
+
+    for _, row in df.iterrows():
+
+        if (
+            pd.isna(row["ema10"])
+            or
+            pd.isna(row["ema30"])
+        ):
+
+            states.append("none")
+
+        elif (
+            row["ema10"]
+            >
+            row["ema30"]
+        ):
+
+            states.append("long")
+
+        elif (
+            row["ema10"]
+            <
+            row["ema30"]
+        ):
+
+            states.append("short")
+
+        else:
+
+            states.append("none")
+
+    current_state = states[-1]
+
+    if current_state == "none":
+
+        return 0, "none"
+
+    count = 0
+
+    for state in reversed(states):
+
+        if state == current_state:
+
+            count += 1
+
+        else:
+
+            break
+
+    return count, current_state
+
 
 def check_ema_10_30(
     df,
@@ -799,19 +795,13 @@ def check_ema_10_30(
 
 
 # =========================================================
-# EMA 30-60-120 상태
+# EMA 30-60-120 상태 + 카운팅
 # =========================================================
 
 def check_ema(
     df,
     column
 ):
-
-    if (
-        df is None
-        or len(df) < 120
-    ):
-        return "⚪(0)"
 
     count, direction = (
         get_30_60_120_count(
@@ -832,15 +822,19 @@ def check_ema(
 
 
 # =========================================================
-# 전체 정배열 / 역배열
+# ☀️ 해 / 🌧 구름
 #
-# ☀️ 해
+# 일봉 30-60-120 조건은 사용하지 않음
 #
+# LONG
 # 4H 10-30 정배열
 # 4H 30-60-120 정배열
 # 1D 10-30 정배열
 #
-# ※ 1D 30-60-120 조건 제거
+# SHORT
+# 4H 10-30 역배열
+# 4H 30-60-120 역배열
+# 1D 10-30 역배열
 # =========================================================
 
 def check_all_alignment(
@@ -905,18 +899,12 @@ def check_all_alignment(
 # ⚡ / 💥 번개
 #
 # LONG
-#
 # 4H 30-60-120 정배열
-# 4H 30-60-120 정배열 연속 1~10개
-# 1D 10-30 정배열
+# 연속 1~10개
 #
 # SHORT
-#
 # 4H 30-60-120 역배열
-# 4H 30-60-120 역배열 연속 1~10개
-# 1D 10-30 역배열
-#
-# ※ 4H 10-30 조건은 번개에서 사용하지 않음
+# 연속 1~10개
 # =========================================================
 
 def check_breakout_warning(
@@ -931,26 +919,9 @@ def check_breakout_warning(
     ):
         return "none"
 
-    # =====================================================
-    # 4H 30-60-120 카운트
-    # =====================================================
-
     count4h, direction4h = (
         get_30_60_120_count(
             df4h,
-            column
-        )
-    )
-
-    # =====================================================
-    # 1D 10-30 방향
-    #
-    # 일봉 30-60-120 조건은 사용하지 않음
-    # =====================================================
-
-    d1_10_30 = (
-        get_ema_10_30_direction(
-            df1d,
             column
         )
     )
@@ -959,31 +930,17 @@ def check_breakout_warning(
         1 <= count4h <= MAX_WARNING_COUNT
     )
 
-    # =====================================================
-    # ⚡ LONG
-    # =====================================================
+    if not valid_count:
 
-    if (
-        valid_count
-        and
-        direction4h == "long"
-        and
-        d1_10_30 == "long"
-    ):
+        return "none"
+
+    # ⚡ LONG
+    if direction4h == "long":
 
         return f"long_lightning_{count4h}"
 
-    # =====================================================
     # 💥 SHORT
-    # =====================================================
-
-    if (
-        valid_count
-        and
-        direction4h == "short"
-        and
-        d1_10_30 == "short"
-    ):
+    if direction4h == "short":
 
         return f"short_lightning_{count4h}"
 
@@ -1010,10 +967,7 @@ def check_final_warning(
 # =========================================================
 # LONG / SHORT
 #
-# 번개 또는 해/구름이 있을 때만 표시
-#
-# 양수 → LONG
-# 음수 → SHORT
+# 반드시 경고/해/구름 조건 + 변동률 방향 필요
 # =========================================================
 
 def get_trade_signal(
@@ -1023,49 +977,44 @@ def get_trade_signal(
 ):
 
     if daily_change is None:
-        return ""
-
-    try:
-
-        change = float(
-            daily_change
-        )
-
-    except Exception:
 
         return ""
 
     # =====================================================
-    # 양수 → LONG
+    # LONG 조건
     # =====================================================
 
-    if change > 0:
+    long_condition = (
+        warning.startswith("long_lightning_")
+        or
+        alignment == "long_alignment"
+    )
 
-        if (
-            warning.startswith(
-                "long_lightning_"
-            )
-            or
-            alignment == "long_alignment"
-        ):
+    if (
+        long_condition
+        and
+        daily_change > 0
+    ):
 
-            return "LONG"
+        return "LONG"
 
     # =====================================================
-    # 음수 → SHORT
+    # SHORT 조건
     # =====================================================
 
-    if change < 0:
+    short_condition = (
+        warning.startswith("short_lightning_")
+        or
+        alignment == "short_alignment"
+    )
 
-        if (
-            warning.startswith(
-                "short_lightning_"
-            )
-            or
-            alignment == "short_alignment"
-        ):
+    if (
+        short_condition
+        and
+        daily_change < 0
+    ):
 
-            return "SHORT"
+        return "SHORT"
 
     return ""
 
@@ -1223,6 +1172,8 @@ def get_upbit_ema(
 
 # =========================================================
 # OKX 거래대금
+#
+# 최종 결과 / 10
 # =========================================================
 
 def get_okx_volume(
@@ -1249,11 +1200,13 @@ def get_okx_volume(
 
             return 0
 
-        return float(
+        volume = float(
             df["volCcyQuote"]
             .tail(60)
             .sum()
         )
+
+        return volume / 10
 
     df = get_okx_ohlcv(
         inst_id,
@@ -1265,11 +1218,14 @@ def get_okx_volume(
 
         return 0
 
-    return float(
+    volume = float(
         df["volCcyQuote"]
         .tail(hours)
         .sum()
     )
+
+    # OKX 거래대금 최종 / 10
+    return volume / 10
 
 
 # =========================================================
@@ -1648,8 +1604,6 @@ def alignment_html(
 
 # =========================================================
 # LONG / SHORT + 경고 + 해/구름
-#
-# 조건이 있을 때만 LONG / SHORT 표시
 # =========================================================
 
 def signal_html(
@@ -1664,32 +1618,6 @@ def signal_html(
 
     if signal == "LONG":
 
-        # ⚡ 번개 + ☀️ 해
-        if (
-            warning.startswith(
-                "long_lightning_"
-            )
-            and
-            alignment == "long_alignment"
-        ):
-
-            try:
-
-                count = int(
-                    warning.split("_")[-1]
-                )
-
-            except Exception:
-
-                count = 0
-
-            return (
-                f'<span class="long-text">'
-                f'LONG'
-                f'</span> ⚡({count}) ☀️'
-            )
-
-        # ⚡ 번개
         if warning.startswith(
             "long_lightning_"
         ):
@@ -1710,7 +1638,6 @@ def signal_html(
                 f'</span> ⚡({count})'
             )
 
-        # ☀️ 해
         if alignment == "long_alignment":
 
             return (
@@ -1725,32 +1652,6 @@ def signal_html(
 
     if signal == "SHORT":
 
-        # 💥 번개 + 🌧 구름
-        if (
-            warning.startswith(
-                "short_lightning_"
-            )
-            and
-            alignment == "short_alignment"
-        ):
-
-            try:
-
-                count = int(
-                    warning.split("_")[-1]
-                )
-
-            except Exception:
-
-                count = 0
-
-            return (
-                f'<span class="short-text">'
-                f'SHORT'
-                f'</span> 💥({count}) 🌧'
-            )
-
-        # 💥 번개
         if warning.startswith(
             "short_lightning_"
         ):
@@ -1771,7 +1672,6 @@ def signal_html(
                 f'</span> 💥({count})'
             )
 
-        # 🌧 구름
         if alignment == "short_alignment":
 
             return (
@@ -1779,10 +1679,6 @@ def signal_html(
                 'SHORT'
                 '</span> 🌧'
             )
-
-    # =====================================================
-    # 조건 없으면 아무것도 표시
-    # =====================================================
 
     return ""
 
@@ -1862,7 +1758,7 @@ def update_okx():
 
     logging.info(
         f"OKX TOP{TOP_N} 시작 "
-        f"(거래대금 {VOLUME_HOURS}시간)"
+        f"(거래대금 {VOLUME_HOURS}시간 / 최종 ÷10)"
     )
 
     symbols = (
@@ -2112,57 +2008,54 @@ def update_dashboard():
     )
 
     logging.info(
+        "OKX 거래대금 : 최종 ÷10"
+    )
+
+    logging.info(
         "EMA 표시 : 4H + 1D"
     )
 
     logging.info(
-        "⚡ LONG 번개 : "
+        "⚡ LONG : "
         "4H 30-60-120 정배열 + "
         "연속 1~10개 + "
-        "1D 10-30 정배열"
+        "오늘 변동률 양수"
     )
 
     logging.info(
-        "💥 SHORT 번개 : "
+        "💥 SHORT : "
         "4H 30-60-120 역배열 + "
         "연속 1~10개 + "
-        "1D 10-30 역배열"
+        "오늘 변동률 음수"
     )
 
     logging.info(
         "☀️ 해 : "
-        "4H 10-30 정배열 + "
-        "4H 30-60-120 정배열 + "
+        "4H 10-30 + "
+        "4H 30-60-120 + "
         "1D 10-30 정배열"
     )
 
     logging.info(
         "🌧 구름 : "
-        "4H 10-30 역배열 + "
-        "4H 30-60-120 역배열 + "
+        "4H 10-30 + "
+        "4H 30-60-120 + "
         "1D 10-30 역배열"
     )
 
     logging.info(
-        "1D 30-60-120 정배열 조건 : 제거"
+        "일봉 30-60-120 : "
+        "해/구름 조건에서 제외"
     )
 
     logging.info(
         "변동률 필터 : "
-        "양수 LONG / 음수 SHORT"
+        "LONG 양수 / SHORT 음수"
     )
 
     logging.info(
-        "LONG / SHORT : "
-        "번개 또는 해/구름 조건이 있을 때만 표시"
-    )
-
-    logging.info(
-        "LONG 글자 : 초록색"
-    )
-
-    logging.info(
-        "SHORT 글자 : 빨간색"
+        "조건 없는 LONG / SHORT : "
+        "표시하지 않음"
     )
 
     logging.info(
@@ -2474,6 +2367,13 @@ tr:hover{
 거래대금 기준:
 <span class="volume-setting">
 최근 """ + str(VOLUME_HOURS) + """시간
+</span>
+
+&nbsp;&nbsp;
+
+OKX 거래대금:
+<span class="volume-setting">
+최종 ÷10
 </span>
 
 &nbsp;&nbsp;
