@@ -1159,7 +1159,7 @@ def check_pullback(
     )
 
     prev_short_close = (
-        prev[column]
+        prev["c"]
         <
         prev["ema30"]
     )
@@ -1944,7 +1944,8 @@ def format_change(
 
 
 # =========================================================
-# 신호 HTML
+# LONG / SHORT
+# 경고 아이콘은 여기서 표시하지 않음
 # =========================================================
 
 def signal_html(
@@ -1954,73 +1955,19 @@ def signal_html(
 
     if signal == "LONG":
 
-        if warning.startswith(
-            "long_lightning_"
-        ):
-
-            count = warning.split(
-                "_"
-            )[-1]
-
-            return (
-                '<span class="long-text">'
-                'LONG'
-                '</span>'
-                f'<span class="warning-icon">⚡{count}</span>'
-            )
-
-        if warning == "long_pullback":
-
-            return (
-                '<span class="long-text">'
-                'LONG'
-                '</span>'
-                '<span class="warning-icon">🔥</span>'
-            )
-
-        if warning == "long_breakout":
-
-            return (
-                '<span class="long-text">'
-                'LONG'
-                '</span>'
-                '<span class="warning-icon">🚀</span>'
-            )
+        return (
+            '<span class="long-text">'
+            'LONG'
+            '</span>'
+        )
 
     if signal == "SHORT":
 
-        if warning.startswith(
-            "short_lightning_"
-        ):
-
-            count = warning.split(
-                "_"
-            )[-1]
-
-            return (
-                '<span class="short-text">'
-                'SHORT'
-                '</span>'
-                f'<span class="warning-icon">💥{count}</span>'
-            )
-
-        if warning == "short_pullback":
-
-            return (
-                '<span class="short-text">'
-                'SHORT'
-                '</span>'
-                '<span class="warning-icon">🔥</span>'
-            )
-
-        if warning == "short_breakout":
-
-            return (
-                '<span class="short-text">'
-                'SHORT'
-                '</span>'
-                '<span class="warning-icon">🚀</span>'
-            )
+        return (
+            '<span class="short-text">'
+            'SHORT'
+            '</span>'
+        )
 
     return (
         '<span class="signal-none">'
@@ -2061,35 +2008,82 @@ def direction_html(
 
 
 # =========================================================
+# 경고 HTML
+# 오늘 아래에만 표시
+# =========================================================
+
+def warning_html(
+    warning
+):
+
+    if warning.startswith(
+        "long_lightning_"
+    ):
+
+        count = warning.split("_")[-1]
+
+        return (
+            '<span class="warning-icon">'
+            f'⚡{count}'
+            '</span>'
+        )
+
+    if warning.startswith(
+        "short_lightning_"
+    ):
+
+        count = warning.split("_")[-1]
+
+        return (
+            '<span class="warning-icon">'
+            f'💥{count}'
+            '</span>'
+        )
+
+    if warning == "long_pullback":
+
+        return (
+            '<span class="warning-icon">'
+            '🔥'
+            '</span>'
+        )
+
+    if warning == "short_pullback":
+
+        return (
+            '<span class="warning-icon">'
+            '🔥'
+            '</span>'
+        )
+
+    if warning == "long_breakout":
+
+        return (
+            '<span class="warning-icon">'
+            '🚀'
+            '</span>'
+        )
+
+    if warning == "short_breakout":
+
+        return (
+            '<span class="warning-icon">'
+            '🚀'
+            '</span>'
+        )
+
+    return ""
+
+
+# =========================================================
 # EMA HTML
 #
-# 정확히 2줄
-#
-# 1줄 : 코인 / 거래대금 / 오늘 / 4H
-# 2줄 : 방향 / LONG / 번개 / 1D
+# 10-30 / 30-60-120 설명 제거
 # =========================================================
 
 def ema_html(
     ema
 ):
-
-    display_signal = signal_html(
-        ema.get(
-            "signal",
-            ""
-        ),
-        ema.get(
-            "warning",
-            "none"
-        )
-    )
-
-    direction = direction_html(
-        ema.get(
-            "direction",
-            "none"
-        )
-    )
 
     return f"""
 
@@ -2102,11 +2096,11 @@ def ema_html(
         </span>
 
         <span class="ema-value">
-            10-30 {ema.get("4h_10_30", "⚪")}
+            {ema.get("4h_10_30", "⚪")}
         </span>
 
         <span class="ema-value">
-            30-60-120 {ema.get("4h_30_60_120", "⚪")}
+            {ema.get("4h_30_60_120", "⚪")}
         </span>
 
     </div>
@@ -2119,11 +2113,11 @@ def ema_html(
         </span>
 
         <span class="ema-value">
-            10-30 {ema.get("1d_10_30", "⚪")}
+            {ema.get("1d_10_30", "⚪")}
         </span>
 
         <span class="ema-value">
-            30-60-120 {ema.get("1d_30_60_120", "⚪")}
+            {ema.get("1d_30_60_120", "⚪")}
         </span>
 
     </div>
@@ -2958,8 +2952,6 @@ td{
 
 .warning-icon{
 
-    margin-left:3px;
-
     font-size:7px;
 
     line-height:10px;
@@ -3283,8 +3275,6 @@ td{
 
         font-size:6.5px;
 
-        margin-left:2px;
-
     }
 
 
@@ -3382,7 +3372,7 @@ td{
 
 
 <div class="description">
-일봉 방향 + 4H 추세 일치 | ⚡ 추세전환 | 🔥 눌림목 | 🚀 돌파 | 
+일봉 방향 + 4H 추세 일치 | ⚡ 추세전환 | 🔥 눌림목 | 🚀 돌파
 </div>
 
 
@@ -3539,54 +3529,16 @@ TOP""" + str(TOP_N) + """
 
 <div class="change-sub">
 
-<span class="warning-icon">
-
 """
 
-        warning = ema.get(
-            "warning",
-            "none"
+        html += warning_html(
+            ema.get(
+                "warning",
+                "none"
+            )
         )
 
-        if warning.startswith(
-            "long_lightning_"
-        ):
-
-            html += (
-                "⚡"
-                +
-                warning.split("_")[-1]
-            )
-
-        elif warning.startswith(
-            "short_lightning_"
-        ):
-
-            html += (
-                "💥"
-                +
-                warning.split("_")[-1]
-            )
-
-        elif warning == "long_pullback":
-
-            html += "🔥"
-
-        elif warning == "short_pullback":
-
-            html += "🔥"
-
-        elif warning == "long_breakout":
-
-            html += "🚀"
-
-        elif warning == "short_breakout":
-
-            html += "🚀"
-
         html += """
-
-</span>
 
 </div>
 
@@ -3754,54 +3706,16 @@ TOP""" + str(TOP_N) + """
 
 <div class="change-sub">
 
-<span class="warning-icon">
-
 """
 
-        warning = ema.get(
-            "warning",
-            "none"
+        html += warning_html(
+            ema.get(
+                "warning",
+                "none"
+            )
         )
 
-        if warning.startswith(
-            "long_lightning_"
-        ):
-
-            html += (
-                "⚡"
-                +
-                warning.split("_")[-1]
-            )
-
-        elif warning.startswith(
-            "short_lightning_"
-        ):
-
-            html += (
-                "💥"
-                +
-                warning.split("_")[-1]
-            )
-
-        elif warning == "long_pullback":
-
-            html += "🔥"
-
-        elif warning == "short_pullback":
-
-            html += "🔥"
-
-        elif warning == "long_breakout":
-
-            html += "🚀"
-
-        elif warning == "short_breakout":
-
-            html += "🚀"
-
         html += """
-
-</span>
 
 </div>
 
@@ -3876,4 +3790,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-    )
+        )
