@@ -22,7 +22,7 @@ logging.basicConfig(
 # 사용자 설정
 # =========================================================
 
-VOLUME_HOURS = 24
+VOLUME_HOURS = 4
 
 TOP_N = 10
 
@@ -243,12 +243,83 @@ def get_upbit_ohlcv(
             .astype(float)
         )
 
+        if "candle_acc_trade_price" in df.columns:
+
+            df["candle_acc_trade_price"] = (
+                df["candle_acc_trade_price"]
+                .astype(float)
+            )
+
         return df
 
     except Exception as e:
 
         logging.error(
             f"업비트 캔들 오류 "
+            f"{market} : {e}"
+        )
+
+        return None
+
+
+# =========================================================
+# 업비트 일봉
+# =========================================================
+
+def get_upbit_daily_ohlcv(
+    market,
+    count=200
+):
+
+    count = max(
+        1,
+        min(
+            int(count),
+            200
+        )
+    )
+
+    url = (
+        "https://api.upbit.com/v1/candles/days"
+        f"?market={market}"
+        f"&count={count}"
+    )
+
+    response = retry_request(
+        requests.get,
+        url,
+        timeout=15
+    )
+
+    if response is None:
+        return None
+
+    try:
+
+        data = response.json()
+
+        if not data:
+            return None
+
+        df = pd.DataFrame(data)
+
+        df = (
+            df
+            .iloc[::-1]
+            .reset_index(drop=True)
+        )
+
+        df["trade_price"] = (
+            df["trade_price"]
+            .astype(float)
+        )
+
+        return df
+
+    except Exception as e:
+
+        logging.error(
+            f"업비트 일봉 오류 "
             f"{market} : {e}"
         )
 
@@ -618,7 +689,7 @@ def get_ema_10_30_60_120_direction(
 
 
 # =========================================================
-# 1H 10-30 연속 캔들 카운트
+# 4H 10-30 연속 캔들 카운트
 # =========================================================
 
 def get_10_30_count(
@@ -829,58 +900,58 @@ def check_ema(
 # =========================================================
 # 전체 정배열 / 역배열
 #
-# 1H + 4H
+# 4H + 1D
 # =========================================================
 
 def check_all_alignment(
-    df1h,
     df4h,
+    df1d,
     column
 ):
 
     if (
-        df1h is None
-        or df4h is None
+        df4h is None
+        or df1d is None
     ):
         return "none"
 
-    h1_10_30 = (
+    h4_10_30 = (
         get_ema_10_30_direction(
-            df1h,
-            column
-        )
-    )
-
-    h1_30_60_120 = (
-        get_ema_30_60_120_direction(
-            df1h,
-            column
-        )
-    )
-
-    h4_all = (
-        get_ema_10_30_60_120_direction(
             df4h,
             column
         )
     )
 
+    h4_30_60_120 = (
+        get_ema_30_60_120_direction(
+            df4h,
+            column
+        )
+    )
+
+    d1_all = (
+        get_ema_10_30_60_120_direction(
+            df1d,
+            column
+        )
+    )
+
     if (
-        h1_10_30 == "long"
+        h4_10_30 == "long"
         and
-        h1_30_60_120 == "long"
+        h4_30_60_120 == "long"
         and
-        h4_all == "long"
+        d1_all == "long"
     ):
 
         return "long_alignment"
 
     if (
-        h1_10_30 == "short"
+        h4_10_30 == "short"
         and
-        h1_30_60_120 == "short"
+        h4_30_60_120 == "short"
         and
-        h4_all == "short"
+        d1_all == "short"
     ):
 
         return "short_alignment"
@@ -892,44 +963,44 @@ def check_all_alignment(
 # ⚡ / 💥 번개
 #
 # LONG
-# 1H 10-30 정배열
-# 1H 30-60-120 정배열
-# 1H 10-30 정배열 1~10개
-# 4H 전체 정배열
+# 4H 10-30 정배열
+# 4H 30-60-120 정배열
+# 4H 10-30 정배열 1~10개
+# 1D 전체 정배열
 #
 # SHORT
-# 1H 10-30 역배열
-# 1H 30-60-120 역배열
-# 1H 10-30 역배열 1~10개
-# 4H 전체 역배열
+# 4H 10-30 역배열
+# 4H 30-60-120 역배열
+# 4H 10-30 역배열 1~10개
+# 1D 전체 역배열
 # =========================================================
 
 def check_breakout_warning(
-    df1h,
     df4h,
+    df1d,
     column
 ):
 
     if (
-        df1h is None
-        or df4h is None
+        df4h is None
+        or df1d is None
     ):
         return "none"
 
     # =====================================================
-    # 1H 방향
+    # 4H 방향
     # =====================================================
 
-    h1_10_30 = (
+    h4_10_30 = (
         get_ema_10_30_direction(
-            df1h,
+            df4h,
             column
         )
     )
 
-    h1_30_60_120 = (
+    h4_30_60_120 = (
         get_ema_30_60_120_direction(
-            df1h,
+            df4h,
             column
         )
     )
@@ -938,26 +1009,26 @@ def check_breakout_warning(
     # 번개 카운트
     # =====================================================
 
-    count1h, direction1h = (
+    count4h, direction4h = (
         get_10_30_count(
-            df1h,
-            column
-        )
-    )
-
-    # =====================================================
-    # 4H 전체 정배열 / 역배열
-    # =====================================================
-
-    h4_all = (
-        get_ema_10_30_60_120_direction(
             df4h,
             column
         )
     )
 
+    # =====================================================
+    # 1D 전체 정배열 / 역배열
+    # =====================================================
+
+    d1_all = (
+        get_ema_10_30_60_120_direction(
+            df1d,
+            column
+        )
+    )
+
     valid_count = (
-        1 <= count1h <= MAX_WARNING_COUNT
+        1 <= count4h <= MAX_WARNING_COUNT
     )
 
     # =====================================================
@@ -967,16 +1038,16 @@ def check_breakout_warning(
     if (
         valid_count
         and
-        direction1h == "long"
+        direction4h == "long"
         and
-        h1_10_30 == "long"
+        h4_10_30 == "long"
         and
-        h1_30_60_120 == "long"
+        h4_30_60_120 == "long"
         and
-        h4_all == "long"
+        d1_all == "long"
     ):
 
-        return f"long_lightning_{count1h}"
+        return f"long_lightning_{count4h}"
 
     # =====================================================
     # 💥 SHORT 번개
@@ -985,16 +1056,16 @@ def check_breakout_warning(
     if (
         valid_count
         and
-        direction1h == "short"
+        direction4h == "short"
         and
-        h1_10_30 == "short"
+        h4_10_30 == "short"
         and
-        h1_30_60_120 == "short"
+        h4_30_60_120 == "short"
         and
-        h4_all == "short"
+        d1_all == "short"
     ):
 
-        return f"short_lightning_{count1h}"
+        return f"short_lightning_{count4h}"
 
     return "none"
 
@@ -1004,14 +1075,14 @@ def check_breakout_warning(
 # =========================================================
 
 def check_final_warning(
-    df1h,
     df4h,
+    df1d,
     column
 ):
 
     return check_breakout_warning(
-        df1h,
         df4h,
+        df1d,
         column
     )
 
@@ -1019,7 +1090,7 @@ def check_final_warning(
 # =========================================================
 # LONG / SHORT
 #
-# 변동률 조건 삭제
+# 변동률 조건 없음
 # =========================================================
 
 def get_trade_signal(
@@ -1039,7 +1110,7 @@ def get_trade_signal(
 
 
 # =========================================================
-# OKX 1H + 4H EMA
+# OKX 4H + 1D EMA
 # =========================================================
 
 def get_okx_ema(
@@ -1047,27 +1118,27 @@ def get_okx_ema(
     daily_change
 ):
 
-    df1h = get_okx_ohlcv(
-        inst_id,
-        "1H",
-        200
-    )
-
     df4h = get_okx_ohlcv(
         inst_id,
         "4H",
         200
     )
 
+    df1d = get_okx_ohlcv(
+        inst_id,
+        "1D",
+        200
+    )
+
     warning = check_final_warning(
-        df1h,
         df4h,
+        df1d,
         "c"
     )
 
     alignment = check_all_alignment(
-        df1h,
         df4h,
+        df1d,
         "c"
     )
 
@@ -1078,18 +1149,6 @@ def get_okx_ema(
 
     return {
 
-        "1h_10_30":
-            check_ema_10_30(
-                df1h,
-                "c"
-            ),
-
-        "1h_30_60_120":
-            check_ema(
-                df1h,
-                "c"
-            ),
-
         "4h_10_30":
             check_ema_10_30(
                 df4h,
@@ -1099,6 +1158,18 @@ def get_okx_ema(
         "4h_30_60_120":
             check_ema(
                 df4h,
+                "c"
+            ),
+
+        "1d_10_30":
+            check_ema_10_30(
+                df1d,
+                "c"
+            ),
+
+        "1d_30_60_120":
+            check_ema(
+                df1d,
                 "c"
             ),
 
@@ -1114,7 +1185,7 @@ def get_okx_ema(
 
 
 # =========================================================
-# 업비트 1H + 4H EMA
+# 업비트 4H + 1D EMA
 # =========================================================
 
 def get_upbit_ema(
@@ -1122,27 +1193,26 @@ def get_upbit_ema(
     daily_change
 ):
 
-    df1h = get_upbit_ohlcv(
-        market,
-        60,
-        200
-    )
-
     df4h = get_upbit_ohlcv(
         market,
         240,
         200
     )
 
+    df1d = get_upbit_daily_ohlcv(
+        market,
+        200
+    )
+
     warning = check_final_warning(
-        df1h,
         df4h,
+        df1d,
         "trade_price"
     )
 
     alignment = check_all_alignment(
-        df1h,
         df4h,
+        df1d,
         "trade_price"
     )
 
@@ -1153,18 +1223,6 @@ def get_upbit_ema(
 
     return {
 
-        "1h_10_30":
-            check_ema_10_30(
-                df1h,
-                "trade_price"
-            ),
-
-        "1h_30_60_120":
-            check_ema(
-                df1h,
-                "trade_price"
-            ),
-
         "4h_10_30":
             check_ema_10_30(
                 df4h,
@@ -1174,6 +1232,18 @@ def get_upbit_ema(
         "4h_30_60_120":
             check_ema(
                 df4h,
+                "trade_price"
+            ),
+
+        "1d_10_30":
+            check_ema_10_30(
+                df1d,
+                "trade_price"
+            ),
+
+        "1d_30_60_120":
+            check_ema(
+                df1d,
                 "trade_price"
             ),
 
@@ -1785,22 +1855,6 @@ def ema_html(
     <div class="ema-period">
 
         <span class="ema-time">
-            1H
-        </span>
-
-        <span class="ema-status">
-            {ema["1h_10_30"]}
-        </span>
-
-        <span class="ema-status">
-            {ema["1h_30_60_120"]}
-        </span>
-
-    </div>
-
-    <div class="ema-period last">
-
-        <span class="ema-time">
             4H
         </span>
 
@@ -1810,6 +1864,22 @@ def ema_html(
 
         <span class="ema-status">
             {ema["4h_30_60_120"]}
+        </span>
+
+    </div>
+
+    <div class="ema-period last">
+
+        <span class="ema-time">
+            1D
+        </span>
+
+        <span class="ema-status">
+            {ema["1d_10_30"]}
+        </span>
+
+        <span class="ema-status">
+            {ema["1d_30_60_120"]}
         </span>
 
     </div>
@@ -2079,23 +2149,23 @@ def update_dashboard():
     )
 
     logging.info(
-        "EMA 표시 : 1H + 4H"
+        "EMA 표시 : 4H + 1D"
     )
 
     logging.info(
         "⚡ LONG 번개 : "
-        "1H 10-30 정배열 + "
-        "1H 30-60-120 정배열 + "
-        "10-30 정배열 1~10개 + "
-        "4H 전체 정배열"
+        "4H 10-30 정배열 + "
+        "4H 30-60-120 정배열 + "
+        "4H 10-30 정배열 1~10개 + "
+        "1D 전체 정배열"
     )
 
     logging.info(
         "💥 SHORT 번개 : "
-        "1H 10-30 역배열 + "
-        "1H 30-60-120 역배열 + "
-        "10-30 역배열 1~10개 + "
-        "4H 전체 역배열"
+        "4H 10-30 역배열 + "
+        "4H 30-60-120 역배열 + "
+        "4H 10-30 역배열 1~10개 + "
+        "1D 전체 역배열"
     )
 
     logging.info(
@@ -2108,17 +2178,16 @@ def update_dashboard():
 
     logging.info(
         "☀️ 해 : "
-        "1H + 4H 모두 정배열"
+        "4H + 1D 모두 정배열"
     )
 
     logging.info(
         "🌧 구름 : "
-        "1H + 4H 모두 역배열"
+        "4H + 1D 모두 역배열"
     )
 
     logging.info(
-        "4H 120 EMA 부족 시 "
-        "10-30-60만 사용"
+        "1D 120 EMA 사용"
     )
 
     logging.info(
@@ -2438,7 +2507,7 @@ tr:hover{
 </h2>
 
 <p>
-1시간 EMA · 4시간 EMA ·
+4시간 EMA · 일봉 EMA ·
 ⚡ 번개 · ☀️ 해 · 🌧 구름
 </p>
 
@@ -2458,7 +2527,7 @@ TOP""" + str(TOP_N) + """
 
 &nbsp;&nbsp;
 
-1H 번개 카운팅:
+4H 번개 카운팅:
 <span class="volume-setting">
 1~""" + str(MAX_WARNING_COUNT) + """
 </span>
@@ -2640,4 +2709,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-    )
+            )
