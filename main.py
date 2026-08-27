@@ -534,20 +534,13 @@ def get_ema(
 
 
 # =========================================================
-# EMA 10-30
+# EMA 10-30 방향
 # =========================================================
 
 def get_ema_10_30_direction(
     df,
     column
 ):
-
-    if (
-        df is None
-        or column not in df.columns
-    ):
-
-        return "none"
 
     ema10 = get_ema(
         df,
@@ -596,10 +589,10 @@ def get_ema_10_30_direction(
 
 
 # =========================================================
-# EMA 30-60-120
+# EMA 10-30 연속 카운트
 # =========================================================
 
-def get_ema_30_60_120_direction(
+def get_10_30_count(
     df,
     column
 ):
@@ -607,9 +600,91 @@ def get_ema_30_60_120_direction(
     if (
         df is None
         or column not in df.columns
+        or len(df) < 30
     ):
 
-        return "none"
+        return 0, "none"
+
+    ema10 = get_ema(
+        df,
+        column,
+        10
+    )
+
+    ema30 = get_ema(
+        df,
+        column,
+        30
+    )
+
+    if (
+        ema10 is None
+        or ema30 is None
+    ):
+
+        return 0, "none"
+
+    states = []
+
+    for i in range(len(df)):
+
+        if (
+            pd.isna(ema10.iloc[i])
+            or
+            pd.isna(ema30.iloc[i])
+        ):
+
+            states.append("none")
+
+        elif (
+            ema10.iloc[i]
+            >
+            ema30.iloc[i]
+        ):
+
+            states.append("long")
+
+        elif (
+            ema10.iloc[i]
+            <
+            ema30.iloc[i]
+        ):
+
+            states.append("short")
+
+        else:
+
+            states.append("none")
+
+    current_state = states[-1]
+
+    if current_state == "none":
+
+        return 0, "none"
+
+    count = 0
+
+    for state in reversed(states):
+
+        if state == current_state:
+
+            count += 1
+
+        else:
+
+            break
+
+    return count, current_state
+
+
+# =========================================================
+# EMA 30-60-120 방향
+# =========================================================
+
+def get_ema_30_60_120_direction(
+    df,
+    column
+):
 
     ema30 = get_ema(
         df,
@@ -633,6 +708,16 @@ def get_ema_30_60_120_direction(
         ema30 is None
         or ema60 is None
         or ema120 is None
+    ):
+
+        return "none"
+
+    if (
+        pd.isna(ema30.iloc[-1])
+        or
+        pd.isna(ema60.iloc[-1])
+        or
+        pd.isna(ema120.iloc[-1])
     ):
 
         return "none"
@@ -757,7 +842,7 @@ def get_30_60_120_count(
 
 
 # =========================================================
-# EMA 표시
+# EMA 10-30 표시
 # =========================================================
 
 def check_ema_10_30(
@@ -765,19 +850,25 @@ def check_ema_10_30(
     column
 ):
 
-    direction = get_ema_10_30_direction(
+    count, direction = get_10_30_count(
         df,
         column
     )
 
     if direction == "long":
-        return "🟢"
+
+        return f"🟢({count})"
 
     if direction == "short":
-        return "🔴"
+
+        return f"🔴({count})"
 
     return "⚪"
 
+
+# =========================================================
+# EMA 30-60-120 표시
+# =========================================================
 
 def check_ema(
     df,
@@ -1315,6 +1406,31 @@ def get_trade_signal(
 
 
 # =========================================================
+# 기본 EMA 데이터
+# =========================================================
+
+def empty_ema_data():
+
+    return {
+
+        "4h_10_30": "⚪",
+
+        "4h_30_60_120": "⚪",
+
+        "1d_10_30": "⚪",
+
+        "1d_30_60_120": "⚪",
+
+        "signal": "",
+
+        "warning": "none",
+
+        "direction": "none"
+
+    }
+
+
+# =========================================================
 # OKX EMA
 # =========================================================
 
@@ -1339,15 +1455,7 @@ def get_okx_ema(
         or df1d is None
     ):
 
-        return {
-            "4h_10_30": "⚪",
-            "4h_30_60_120": "⚪",
-            "1d_10_30": "⚪",
-            "1d_30_60_120": "⚪",
-            "signal": "",
-            "warning": "none",
-            "direction": "none"
-        }
+        return empty_ema_data()
 
     signal, warning = get_trade_signal(
         df4h,
@@ -1395,6 +1503,7 @@ def get_okx_ema(
 
         "direction":
             direction
+
     }
 
 
@@ -1422,15 +1531,7 @@ def get_upbit_ema(
         or df1d is None
     ):
 
-        return {
-            "4h_10_30": "⚪",
-            "4h_30_60_120": "⚪",
-            "1d_10_30": "⚪",
-            "1d_30_60_120": "⚪",
-            "signal": "",
-            "warning": "none",
-            "direction": "none"
-        }
+        return empty_ema_data()
 
     # 진행 중인 4H 캔들 제거
     if len(df4h) > 1:
@@ -1487,6 +1588,7 @@ def get_upbit_ema(
 
         "direction":
             direction
+
     }
 
 
@@ -1845,104 +1947,28 @@ def format_change(
         sign = ""
 
     return (
+        f'<span class="change-item">'
         f'<span class="change-icon">{color}</span>'
         f'<span class="change-value">'
         f'{sign}{x:.2f}%'
+        f'</span>'
         f'</span>'
     )
 
 
 # =========================================================
-# 왼쪽 신호
-# =========================================================
-
-def signal_parts(
-    signal,
-    warning
-):
-
-    if signal == "LONG":
-
-        direction = "LONG"
-        direction_class = "long"
-
-        trend = "☀️"
-
-        if warning.startswith(
-            "long_lightning_"
-        ):
-
-            count = warning.split(
-                "_"
-            )[-1]
-
-            trigger = f"⚡{count}"
-
-        elif warning == "long_pullback":
-
-            trigger = "🔥"
-
-        elif warning == "long_breakout":
-
-            trigger = "🚀"
-
-        else:
-
-            trigger = "—"
-
-        return (
-            direction,
-            direction_class,
-            trend,
-            trigger
-        )
-
-    if signal == "SHORT":
-
-        direction = "SHORT"
-        direction_class = "short"
-
-        trend = "🌧"
-
-        if warning.startswith(
-            "short_lightning_"
-        ):
-
-            count = warning.split(
-                "_"
-            )[-1]
-
-            trigger = f"💥{count}"
-
-        elif warning == "short_pullback":
-
-            trigger = "🔥"
-
-        elif warning == "short_breakout":
-
-            trigger = "🚀"
-
-        else:
-
-            trigger = "—"
-
-        return (
-            direction,
-            direction_class,
-            trend,
-            trigger
-        )
-
-    return (
-        "—",
-        "none",
-        "—",
-        "—"
-    )
-
-
-# =========================================================
 # 2줄 EMA HTML
+#
+# 1줄:
+# 4H 10-30 / 30-60-120
+#
+# 2줄:
+# 1D 10-30 / 30-60-120
+#
+# 신호는 각각
+# 코인명 아래 = 방향
+# 거래대금 아래 = LONG/SHORT
+# 오늘 아래 = 경고
 # =========================================================
 
 def ema_html(
@@ -1959,68 +1985,172 @@ def ema_html(
         "none"
     )
 
-    direction, direction_class, trend, trigger = (
-        signal_parts(
-            signal,
-            warning
+    direction = ema.get(
+        "direction",
+        "none"
+    )
+
+
+    # =====================================================
+    # 방향
+    # =====================================================
+
+    if direction == "long":
+
+        direction_html = (
+            '<span class="direction-long">'
+            '☀️'
+            '</span>'
         )
-    )
 
-    four_hour = (
-        f'4H '
-        f'{ema.get("4h_10_30", "⚪")}'
-        f' / '
-        f'{ema.get("4h_30_60_120", "⚪")}'
-    )
+    elif direction == "short":
 
-    one_day = (
-        f'1D '
-        f'{ema.get("1d_10_30", "⚪")}'
-        f' / '
-        f'{ema.get("1d_30_60_120", "⚪")}'
-    )
+        direction_html = (
+            '<span class="direction-short">'
+            '🌧'
+            '</span>'
+        )
+
+    else:
+
+        direction_html = (
+            '<span class="direction-none">'
+            '—'
+            '</span>'
+        )
+
+
+    # =====================================================
+    # 신호
+    # =====================================================
+
+    if signal == "LONG":
+
+        signal_html_value = (
+            '<span class="long-text">'
+            'LONG'
+            '</span>'
+        )
+
+    elif signal == "SHORT":
+
+        signal_html_value = (
+            '<span class="short-text">'
+            'SHORT'
+            '</span>'
+        )
+
+    else:
+
+        signal_html_value = (
+            '<span class="signal-none">'
+            '—'
+            '</span>'
+        )
+
+
+    # =====================================================
+    # 경고
+    # =====================================================
+
+    warning_html_value = ""
+
+
+    if warning.startswith(
+        "long_lightning_"
+    ):
+
+        count = warning.split(
+            "_"
+        )[-1]
+
+        warning_html_value = (
+            '<span class="warning-lightning">'
+            f'⚡{count}'
+            '</span>'
+        )
+
+
+    elif warning.startswith(
+        "short_lightning_"
+    ):
+
+        count = warning.split(
+            "_"
+        )[-1]
+
+        warning_html_value = (
+            '<span class="warning-explosion">'
+            f'💥{count}'
+            '</span>'
+        )
+
+
+    elif warning in [
+        "long_pullback",
+        "short_pullback"
+    ]:
+
+        warning_html_value = (
+            '<span class="warning-fire">'
+            '🔥'
+            '</span>'
+        )
+
+
+    elif warning in [
+        "long_breakout",
+        "short_breakout"
+    ]:
+
+        warning_html_value = (
+            '<span class="warning-rocket">'
+            '🚀'
+            '</span>'
+        )
+
+
+    # =====================================================
+    # EMA 셀
+    # =====================================================
 
     return f"""
 
-<div class="signal-wrap">
+<div class="ema-box">
 
-    <div class="coin-line">
+    <div class="ema-line">
 
-        <span class="direction {direction_class}">
-            {direction}
+        <span class="tf-label">
+            4H
         </span>
 
-        <span class="trend">
-            {trend}
+        <span class="ema-item">
+            10-30
+            {ema.get("4h_10_30", "⚪")}
         </span>
 
-        <span class="trigger">
-            {trigger}
-        </span>
-
-        <span class="ema-four">
-            {four_hour}
+        <span class="ema-item">
+            30-60-120
+            {ema.get("4h_30_60_120", "⚪")}
         </span>
 
     </div>
 
 
-    <div class="coin-line">
+    <div class="ema-line">
 
-        <span class="direction {direction_class}">
-            {direction}
+        <span class="tf-label">
+            1D
         </span>
 
-        <span class="trend">
-            {trend}
+        <span class="ema-item">
+            10-30
+            {ema.get("1d_10_30", "⚪")}
         </span>
 
-        <span class="trigger">
-            {trigger}
-        </span>
-
-        <span class="ema-day">
-            {one_day}
+        <span class="ema-item">
+            30-60-120
+            {ema.get("1d_30_60_120", "⚪")}
         </span>
 
     </div>
@@ -2374,13 +2504,36 @@ body{
 
 .main-title{
 
-    margin:1px 0 3px;
+    margin:1px 0 2px;
 
     font-size:12px;
 
     line-height:14px;
 
     font-weight:bold;
+
+}
+
+
+/* =====================================================
+   설명
+   ===================================================== */
+
+.description{
+
+    color:#777;
+
+    font-size:6.5px;
+
+    line-height:9px;
+
+    white-space:nowrap;
+
+    overflow:hidden;
+
+    text-overflow:ellipsis;
+
+    margin-bottom:3px;
 
 }
 
@@ -2393,7 +2546,7 @@ body{
 
     display:flex;
 
-    gap:3px;
+    gap:2px;
 
     margin-bottom:4px;
 
@@ -2401,7 +2554,7 @@ body{
 
 .volume-setting{
 
-    padding:2px 4px;
+    padding:2px 3px;
 
     background:#1b1b1b;
 
@@ -2457,6 +2610,7 @@ body{
 
 }
 
+
 table{
 
     width:100%;
@@ -2471,6 +2625,41 @@ table{
 
 
 /* =====================================================
+   ★ 헤더와 데이터의 열 폭을 완전히 동일하게 고정
+   ===================================================== */
+
+.col-rank{
+
+    width:6%;
+
+}
+
+.col-coin{
+
+    width:18%;
+
+}
+
+.col-volume{
+
+    width:15%;
+
+}
+
+.col-change{
+
+    width:15%;
+
+}
+
+.col-ema{
+
+    width:46%;
+
+}
+
+
+/* =====================================================
    헤더
    ===================================================== */
 
@@ -2480,9 +2669,9 @@ th{
 
     color:#aaa;
 
-    padding:2px 1px;
+    padding:3px 1px;
 
-    height:17px;
+    height:18px;
 
     border-right:1px solid #333;
 
@@ -2495,6 +2684,8 @@ th{
     line-height:8px;
 
     font-weight:bold;
+
+    text-align:center;
 
 }
 
@@ -2517,7 +2708,7 @@ td{
 
     white-space:nowrap;
 
-    font-size:7px;
+    overflow:hidden;
 
 }
 
@@ -2528,9 +2719,7 @@ td{
 
 .rank-cell{
 
-    width:5%;
-
-    color:#666;
+    color:#777;
 
     font-size:6.5px;
 
@@ -2542,8 +2731,6 @@ td{
    ===================================================== */
 
 .coin-cell{
-
-    width:16%;
 
     text-align:left;
 
@@ -2557,7 +2744,37 @@ td{
 
     overflow:hidden;
 
-    text-overflow:ellipsis;
+}
+
+
+/* =====================================================
+   코인 2줄
+   ===================================================== */
+
+.coin-top,
+.coin-bottom{
+
+    height:15px;
+
+    display:flex;
+
+    align-items:center;
+
+    overflow:hidden;
+
+    white-space:nowrap;
+
+}
+
+.coin-top{
+
+    justify-content:flex-start;
+
+}
+
+.coin-bottom{
+
+    justify-content:flex-start;
 
 }
 
@@ -2568,11 +2785,7 @@ td{
 
 .volume-cell{
 
-    width:15%;
-
-    text-align:right;
-
-    padding-right:3px;
+    text-align:center;
 
     color:#bbb;
 
@@ -2582,27 +2795,39 @@ td{
 
 
 /* =====================================================
-   오늘
+   거래대금 2줄
    ===================================================== */
 
-.change-cell{
+.volume-top,
+.volume-bottom{
 
-    width:15%;
+    height:15px;
 
-    font-size:6.5px;
+    display:flex;
+
+    align-items:center;
+
+    justify-content:center;
+
+    overflow:hidden;
+
+    white-space:nowrap;
 
 }
 
+.volume-top{
 
-/* =====================================================
-   신호 + EMA
-   ===================================================== */
+    color:#bbb;
 
-.ema-cell{
+}
 
-    width:49%;
+.volume-bottom{
 
-    padding:0;
+    color:#eee;
+
+    font-weight:bold;
+
+    font-size:6.5px;
 
 }
 
@@ -2611,11 +2836,64 @@ td{
    변동률
    ===================================================== */
 
+.change-cell{
+
+    font-size:6.5px;
+
+}
+
+
+/* =====================================================
+   변동률 2줄
+   ===================================================== */
+
+.change-top,
+.change-bottom{
+
+    height:15px;
+
+    display:flex;
+
+    align-items:center;
+
+    justify-content:center;
+
+    overflow:hidden;
+
+    white-space:nowrap;
+
+}
+
+.change-bottom{
+
+    font-size:7px;
+
+}
+
+
+/* =====================================================
+   변동률 내부
+   ===================================================== */
+
+.change-item{
+
+    display:flex;
+
+    align-items:center;
+
+    justify-content:center;
+
+    width:100%;
+
+    gap:1px;
+
+}
+
 .change-icon{
 
     font-size:5.5px;
 
-    vertical-align:middle;
+    line-height:8px;
 
 }
 
@@ -2625,166 +2903,102 @@ td{
 
     font-size:6.5px;
 
-    line-height:9px;
-
-    vertical-align:middle;
+    line-height:8px;
 
 }
 
 
 /* =====================================================
-   2줄 전체
+   EMA 셀
    ===================================================== */
 
-.signal-wrap{
+.ema-cell{
 
-    width:100%;
-
-    overflow:hidden;
+    padding:0;
 
 }
 
 
 /* =====================================================
-   각각의 줄
+   EMA 전체
    ===================================================== */
 
-.coin-line{
+.ema-box{
 
     width:100%;
 
-    height:16px;
+    min-height:30px;
+
+    display:flex;
+
+    flex-direction:column;
+
+}
+
+
+/* =====================================================
+   EMA 한 줄
+   ===================================================== */
+
+.ema-line{
+
+    width:100%;
+
+    height:15px;
 
     display:flex;
 
     align-items:center;
 
-    white-space:nowrap;
-
     overflow:hidden;
 
-}
-
-.coin-line:first-child{
-
-    border-bottom:1px solid #242424;
+    white-space:nowrap;
 
 }
 
 
 /* =====================================================
-   LONG / SHORT
+   시간봉
    ===================================================== */
 
-.direction{
+.tf-label{
 
-    width:39px;
+    width:19px;
 
-    min-width:39px;
+    min-width:19px;
+
+    display:inline-block;
+
+    color:#777;
 
     text-align:left;
 
-    font-size:6.5px;
+    font-size:6px;
 
     font-weight:bold;
 
 }
 
-.direction.long{
-
-    color:#00e676;
-
-}
-
-.direction.short{
-
-    color:#ff5555;
-
-}
-
-.direction.none{
-
-    color:#444;
-
-}
-
 
 /* =====================================================
-   해 / 비
+   EMA 항목
    ===================================================== */
 
-.trend{
+.ema-item{
 
-    width:22px;
+    width:70px;
 
-    min-width:22px;
+    min-width:70px;
 
-    text-align:center;
-
-    font-size:8px;
-
-}
-
-
-/* =====================================================
-   번개 / 불꽃 / 돌파
-   ===================================================== */
-
-.trigger{
-
-    width:28px;
-
-    min-width:28px;
-
-    text-align:center;
-
-    font-size:7px;
-
-}
-
-
-/* =====================================================
-   4H
-   ===================================================== */
-
-.ema-four{
-
-    flex:1;
-
-    min-width:0;
-
-    text-align:left;
+    display:inline-block;
 
     color:#aaa;
 
-    font-family:monospace;
-
-    font-size:6.3px;
-
-    overflow:hidden;
-
-}
-
-
-/* =====================================================
-   1D
-   ===================================================== */
-
-.ema-day{
-
-    flex:1;
-
-    min-width:0;
-
     text-align:left;
 
-    color:#aaa;
+    font-size:6px;
 
-    font-family:monospace;
-
-    font-size:6.3px;
-
-    overflow:hidden;
+    line-height:9px;
 
 }
 
@@ -2803,6 +3017,7 @@ td{
 
     }
 
+
     .main-title{
 
         font-size:11px;
@@ -2811,13 +3026,15 @@ td{
 
     }
 
-    .volume-setting{
+
+    .description{
 
         font-size:6px;
 
-        padding:2px 3px;
+        line-height:8px;
 
     }
+
 
     .section-title{
 
@@ -2827,25 +3044,19 @@ td{
 
     }
 
+
     th{
 
-        font-size:6px;
+        height:17px;
 
-        height:16px;
-
-    }
-
-    td{
-
-        font-size:6.5px;
-
-    }
-
-    .rank-cell{
+        padding:2px 1px;
 
         font-size:6px;
 
+        line-height:7px;
+
     }
+
 
     .coin-cell{
 
@@ -2855,13 +3066,13 @@ td{
 
     }
 
+
     .volume-cell{
 
         font-size:6px;
 
-        padding-right:2px;
-
     }
+
 
     .change-value{
 
@@ -2869,46 +3080,65 @@ td{
 
     }
 
-    .direction{
 
-        width:36px;
+    .change-icon{
 
-        min-width:36px;
+        font-size:5px;
+
+    }
+
+
+    .coin-top,
+    .coin-bottom,
+    .volume-top,
+    .volume-bottom,
+    .change-top,
+    .change-bottom{
+
+        height:14px;
+
+    }
+
+
+    .ema-box{
+
+        min-height:28px;
+
+    }
+
+
+    .ema-line{
+
+        height:14px;
+
+    }
+
+
+    .tf-label{
+
+        width:18px;
+
+        min-width:18px;
+
+        font-size:5.7px;
+
+    }
+
+
+    .ema-item{
+
+        width:62px;
+
+        min-width:62px;
+
+        font-size:5.5px;
+
+    }
+
+
+    .volume-bottom{
 
         font-size:6px;
-
-    }
-
-    .trend{
-
-        width:20px;
-
-        min-width:20px;
-
-        font-size:7.5px;
-
-    }
-
-    .trigger{
-
-        width:25px;
-
-        min-width:25px;
-
-        font-size:6.5px;
-
-    }
-
-    .coin-line{
-
-        height:15px;
-
-    }
-
-    .ema-four,
-    .ema-day{
-
-        font-size:5.8px;
 
     }
 
@@ -2929,11 +3159,13 @@ td{
 
     }
 
+
     .volume-cell{
 
         font-size:5.7px;
 
     }
+
 
     .change-value{
 
@@ -2941,34 +3173,23 @@ td{
 
     }
 
-    .direction{
 
-        width:34px;
+    .ema-item{
 
-        min-width:34px;
+        width:58px;
 
-    }
+        min-width:58px;
 
-    .trend{
-
-        width:18px;
-
-        min-width:18px;
+        font-size:5.2px;
 
     }
 
-    .trigger{
 
-        width:23px;
+    .tf-label{
 
-        min-width:23px;
+        width:17px;
 
-    }
-
-    .ema-four,
-    .ema-day{
-
-        font-size:5.4px;
+        min-width:17px;
 
     }
 
@@ -2984,6 +3205,11 @@ td{
 
 <div class="main-title">
 📊 4H 종가매매
+</div>
+
+
+<div class="description">
+일봉 방향 + 4H 추세 일치 | ⚡ 추세전환 | 🔥 눌림목 | 🚀 돌파 | 완료된 4H 종가
 </div>
 
 
@@ -3021,11 +3247,11 @@ TOP""" + str(TOP_N) + """
 
 <colgroup>
 
-<col style="width:5%">
-<col style="width:16%">
-<col style="width:15%">
-<col style="width:15%">
-<col style="width:49%">
+<col class="col-rank">
+<col class="col-coin">
+<col class="col-volume">
+<col class="col-change">
+<col class="col-ema">
 
 </colgroup>
 
@@ -3058,28 +3284,215 @@ TOP""" + str(TOP_N) + """
 
     for item in latest_upbit_data:
 
+        ema = item["ema"]
+
+        signal = ema.get(
+            "signal",
+            ""
+        )
+
+        direction = ema.get(
+            "direction",
+            "none"
+        )
+
+        warning = ema.get(
+            "warning",
+            "none"
+        )
+
+
+        if direction == "long":
+
+            direction_html = (
+                '<span class="direction-long">'
+                '☀️'
+                '</span>'
+            )
+
+        elif direction == "short":
+
+            direction_html = (
+                '<span class="direction-short">'
+                '🌧'
+                '</span>'
+            )
+
+        else:
+
+            direction_html = (
+                '<span class="direction-none">'
+                '—'
+                '</span>'
+            )
+
+
+        if signal == "LONG":
+
+            signal_value = (
+                '<span class="long-text">'
+                'LONG'
+                '</span>'
+            )
+
+        elif signal == "SHORT":
+
+            signal_value = (
+                '<span class="short-text">'
+                'SHORT'
+                '</span>'
+            )
+
+        else:
+
+            signal_value = (
+                '<span class="signal-none">'
+                '—'
+                '</span>'
+            )
+
+
+        if warning.startswith(
+            "long_lightning_"
+        ):
+
+            count = warning.split(
+                "_"
+            )[-1]
+
+            warning_value = (
+                '<span class="warning-lightning">'
+                f'⚡{count}'
+                '</span>'
+            )
+
+        elif warning.startswith(
+            "short_lightning_"
+        ):
+
+            count = warning.split(
+                "_"
+            )[-1]
+
+            warning_value = (
+                '<span class="warning-explosion">'
+                f'💥{count}'
+                '</span>'
+            )
+
+        elif warning in [
+            "long_pullback",
+            "short_pullback"
+        ]:
+
+            warning_value = "🔥"
+
+        elif warning in [
+            "long_breakout",
+            "short_breakout"
+        ]:
+
+            warning_value = "🚀"
+
+        else:
+
+            warning_value = ""
+
+
         html += f"""
 
 <tr>
 
 <td class="rank-cell">
+
+<div class="coin-top">
 {item['rank']}
+</div>
+
+<div class="coin-bottom">
+</div>
+
 </td>
+
 
 <td class="coin-cell">
+
+<div class="coin-top">
 {item['name']}
+</div>
+
+<div class="coin-bottom">
+{direction_html}
+</div>
+
 </td>
+
 
 <td class="volume-cell">
+
+<div class="volume-top">
 {item['volume']}
+</div>
+
+<div class="volume-bottom">
+{signal_value}
+</div>
+
 </td>
+
 
 <td class="change-cell">
+
+<div class="change-top">
 {item['change']}
+</div>
+
+<div class="change-bottom">
+{warning_value}
+</div>
+
 </td>
 
+
 <td class="ema-cell">
-{ema_html(item["ema"])}
+
+<div class="ema-box">
+
+<div class="ema-line">
+
+<span class="tf-label">
+4H
+</span>
+
+<span class="ema-item">
+10-30 {ema.get("4h_10_30", "⚪")}
+</span>
+
+<span class="ema-item">
+30-60-120 {ema.get("4h_30_60_120", "⚪")}
+</span>
+
+</div>
+
+
+<div class="ema-line">
+
+<span class="tf-label">
+1D
+</span>
+
+<span class="ema-item">
+10-30 {ema.get("1d_10_30", "⚪")}
+</span>
+
+<span class="ema-item">
+30-60-120 {ema.get("1d_30_60_120", "⚪")}
+</span>
+
+</div>
+
+</div>
+
 </td>
 
 </tr>
@@ -3110,11 +3523,11 @@ TOP""" + str(TOP_N) + """
 
 <colgroup>
 
-<col style="width:5%">
-<col style="width:16%">
-<col style="width:15%">
-<col style="width:15%">
-<col style="width:49%">
+<col class="col-rank">
+<col class="col-coin">
+<col class="col-volume">
+<col class="col-change">
+<col class="col-ema">
 
 </colgroup>
 
@@ -3147,28 +3560,215 @@ TOP""" + str(TOP_N) + """
 
     for item in latest_okx_data:
 
+        ema = item["ema"]
+
+        signal = ema.get(
+            "signal",
+            ""
+        )
+
+        direction = ema.get(
+            "direction",
+            "none"
+        )
+
+        warning = ema.get(
+            "warning",
+            "none"
+        )
+
+
+        if direction == "long":
+
+            direction_html = (
+                '<span class="direction-long">'
+                '☀️'
+                '</span>'
+            )
+
+        elif direction == "short":
+
+            direction_html = (
+                '<span class="direction-short">'
+                '🌧'
+                '</span>'
+            )
+
+        else:
+
+            direction_html = (
+                '<span class="direction-none">'
+                '—'
+                '</span>'
+            )
+
+
+        if signal == "LONG":
+
+            signal_value = (
+                '<span class="long-text">'
+                'LONG'
+                '</span>'
+            )
+
+        elif signal == "SHORT":
+
+            signal_value = (
+                '<span class="short-text">'
+                'SHORT'
+                '</span>'
+            )
+
+        else:
+
+            signal_value = (
+                '<span class="signal-none">'
+                '—'
+                '</span>'
+            )
+
+
+        if warning.startswith(
+            "long_lightning_"
+        ):
+
+            count = warning.split(
+                "_"
+            )[-1]
+
+            warning_value = (
+                '<span class="warning-lightning">'
+                f'⚡{count}'
+                '</span>'
+            )
+
+        elif warning.startswith(
+            "short_lightning_"
+        ):
+
+            count = warning.split(
+                "_"
+            )[-1]
+
+            warning_value = (
+                '<span class="warning-explosion">'
+                f'💥{count}'
+                '</span>'
+            )
+
+        elif warning in [
+            "long_pullback",
+            "short_pullback"
+        ]:
+
+            warning_value = "🔥"
+
+        elif warning in [
+            "long_breakout",
+            "short_breakout"
+        ]:
+
+            warning_value = "🚀"
+
+        else:
+
+            warning_value = ""
+
+
         html += f"""
 
 <tr>
 
 <td class="rank-cell">
+
+<div class="coin-top">
 {item['rank']}
+</div>
+
+<div class="coin-bottom">
+</div>
+
 </td>
+
 
 <td class="coin-cell">
+
+<div class="coin-top">
 {item['name']}
+</div>
+
+<div class="coin-bottom">
+{direction_html}
+</div>
+
 </td>
+
 
 <td class="volume-cell">
+
+<div class="volume-top">
 {item['volume']}
+</div>
+
+<div class="volume-bottom">
+{signal_value}
+</div>
+
 </td>
+
 
 <td class="change-cell">
+
+<div class="change-top">
 {item['change']}
+</div>
+
+<div class="change-bottom">
+{warning_value}
+</div>
+
 </td>
 
+
 <td class="ema-cell">
-{ema_html(item["ema"])}
+
+<div class="ema-box">
+
+<div class="ema-line">
+
+<span class="tf-label">
+4H
+</span>
+
+<span class="ema-item">
+10-30 {ema.get("4h_10_30", "⚪")}
+</span>
+
+<span class="ema-item">
+30-60-120 {ema.get("4h_30_60_120", "⚪")}
+</span>
+
+</div>
+
+
+<div class="ema-line">
+
+<span class="tf-label">
+1D
+</span>
+
+<span class="ema-item">
+10-30 {ema.get("1d_10_30", "⚪")}
+</span>
+
+<span class="ema-item">
+30-60-120 {ema.get("1d_30_60_120", "⚪")}
+</span>
+
+</div>
+
+</div>
+
 </td>
 
 </tr>
