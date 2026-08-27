@@ -2808,7 +2808,7 @@ def dashboard():
 >
 
 <title>
-4H 종가매매
+4H 차트 집중 ( 9시 , 1시 , 5시 )
 </title>
 
 
