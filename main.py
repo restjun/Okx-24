@@ -533,7 +533,7 @@ def get_ema(
 
 
 # =========================================================
-# EMA 10-30 현재 방향
+# EMA 10-30
 # =========================================================
 
 def get_ema_10_30_direction(
@@ -592,95 +592,6 @@ def get_ema_10_30_direction(
         return "short"
 
     return "none"
-
-
-# =========================================================
-# EMA 10-30 연속 카운트
-# =========================================================
-
-def get_10_30_count(
-    df,
-    column
-):
-
-    if (
-        df is None
-        or column not in df.columns
-        or len(df) < 30
-    ):
-
-        return 0, "none"
-
-    ema10 = get_ema(
-        df,
-        column,
-        10
-    )
-
-    ema30 = get_ema(
-        df,
-        column,
-        30
-    )
-
-    if (
-        ema10 is None
-        or ema30 is None
-    ):
-
-        return 0, "none"
-
-    states = []
-
-    for i in range(len(df)):
-
-        if (
-            pd.isna(ema10.iloc[i])
-            or
-            pd.isna(ema30.iloc[i])
-        ):
-
-            states.append("none")
-
-        elif (
-            ema10.iloc[i]
-            >
-            ema30.iloc[i]
-        ):
-
-            states.append("long")
-
-        elif (
-            ema10.iloc[i]
-            <
-            ema30.iloc[i]
-        ):
-
-            states.append("short")
-
-        else:
-
-            states.append("none")
-
-    current_state = states[-1]
-
-    if current_state == "none":
-
-        return 0, "none"
-
-    count = 0
-
-    for state in reversed(states):
-
-        if state == current_state:
-
-            count += 1
-
-        else:
-
-            break
-
-    return count, current_state
 
 
 # =========================================================
@@ -845,7 +756,7 @@ def get_30_60_120_count(
 
 
 # =========================================================
-# EMA 표시
+# EMA 방향 표시
 # =========================================================
 
 def check_ema_10_30(
@@ -853,18 +764,16 @@ def check_ema_10_30(
     column
 ):
 
-    count, direction = get_10_30_count(
+    direction = get_ema_10_30_direction(
         df,
         column
     )
 
     if direction == "long":
-
-        return f"🟢({count})"
+        return "🟢"
 
     if direction == "short":
-
-        return f"🔴({count})"
+        return "🔴"
 
     return "⚪"
 
@@ -1433,7 +1342,6 @@ def get_okx_ema(
             "4h_10_30": "⚪",
             "4h_30_60_120": "⚪",
             "1d_10_30": "⚪",
-            "1d_30_60_120": "⚪",
             "signal": "",
             "warning": "none",
             "direction": "none"
@@ -1467,12 +1375,6 @@ def get_okx_ema(
 
         "1d_10_30":
             check_ema_10_30(
-                df1d,
-                "c"
-            ),
-
-        "1d_30_60_120":
-            check_ema(
                 df1d,
                 "c"
             ),
@@ -1516,7 +1418,6 @@ def get_upbit_ema(
             "4h_10_30": "⚪",
             "4h_30_60_120": "⚪",
             "1d_10_30": "⚪",
-            "1d_30_60_120": "⚪",
             "signal": "",
             "warning": "none",
             "direction": "none"
@@ -1558,12 +1459,6 @@ def get_upbit_ema(
 
         "1d_10_30":
             check_ema_10_30(
-                df1d,
-                "c"
-            ),
-
-        "1d_30_60_120":
-            check_ema(
                 df1d,
                 "c"
             ),
@@ -1944,83 +1839,32 @@ def format_change(
 
 
 # =========================================================
-# 신호 HTML
+# 신호
+#
+# 중요:
+# LONG / SHORT 글자만 표시
+# ⚡ 🔥 🚀는 별도 위치에 표시
 # =========================================================
 
 def signal_html(
-    signal,
-    warning
+    signal
 ):
 
     if signal == "LONG":
 
-        if warning.startswith(
-            "long_lightning_"
-        ):
-
-            count = warning.split(
-                "_"
-            )[-1]
-
-            return (
-                '<span class="long-text">'
-                'LONG'
-                '</span>'
-                f'<span class="warning-icon">⚡{count}</span>'
-            )
-
-        if warning == "long_pullback":
-
-            return (
-                '<span class="long-text">'
-                'LONG'
-                '</span>'
-                '<span class="warning-icon">🔥</span>'
-            )
-
-        if warning == "long_breakout":
-
-            return (
-                '<span class="long-text">'
-                'LONG'
-                '</span>'
-                '<span class="warning-icon">🚀</span>'
-            )
+        return (
+            '<span class="long-text">'
+            'LONG'
+            '</span>'
+        )
 
     if signal == "SHORT":
 
-        if warning.startswith(
-            "short_lightning_"
-        ):
-
-            count = warning.split(
-                "_"
-            )[-1]
-
-            return (
-                '<span class="short-text">'
-                'SHORT'
-                '</span>'
-                f'<span class="warning-icon">💥{count}</span>'
-            )
-
-        if warning == "short_pullback":
-
-            return (
-                '<span class="short-text">'
-                'SHORT'
-                '</span>'
-                '<span class="warning-icon">🔥</span>'
-            )
-
-        if warning == "short_breakout":
-
-            return (
-                '<span class="short-text">'
-                'SHORT'
-                '</span>'
-                '<span class="warning-icon">🚀</span>'
-            )
+        return (
+            '<span class="short-text">'
+            'SHORT'
+            '</span>'
+        )
 
     return (
         '<span class="signal-none">'
@@ -2030,7 +1874,82 @@ def signal_html(
 
 
 # =========================================================
-# 방향 HTML
+# 경고 아이콘
+# =========================================================
+
+def warning_html(
+    warning
+):
+
+    if warning.startswith(
+        "long_lightning_"
+    ):
+
+        count = warning.split(
+            "_"
+        )[-1]
+
+        return (
+            '<span class="warning-lightning">'
+            f'⚡{count}'
+            '</span>'
+        )
+
+    if warning.startswith(
+        "short_lightning_"
+    ):
+
+        count = warning.split(
+            "_"
+        )[-1]
+
+        return (
+            '<span class="warning-lightning">'
+            f'💥{count}'
+            '</span>'
+        )
+
+    if warning == "long_pullback":
+
+        return (
+            '<span class="warning-pullback">'
+            '🔥'
+            '</span>'
+        )
+
+    if warning == "short_pullback":
+
+        return (
+            '<span class="warning-pullback">'
+            '🔥'
+            '</span>'
+        )
+
+    if warning == "long_breakout":
+
+        return (
+            '<span class="warning-breakout">'
+            '🚀'
+            '</span>'
+        )
+
+    if warning == "short_breakout":
+
+        return (
+            '<span class="warning-breakout">'
+            '🚀'
+            '</span>'
+        )
+
+    return (
+        '<span class="warning-none">'
+        '—'
+        '</span>'
+    )
+
+
+# =========================================================
+# 방향
 # =========================================================
 
 def direction_html(
@@ -2063,67 +1982,104 @@ def direction_html(
 # =========================================================
 # EMA HTML
 #
-# 정확히 2줄
+# 최종 표시 구조
 #
-# 1줄 : 코인 / 거래대금 / 오늘 / 4H
-# 2줄 : 방향 / LONG / 번개 / 1D
+# 1줄
+# 4H  🟢(25)  /  🟢
+#
+# 2줄
+# 1D  🟢(11)
+#
+# 10-30 / 30-60-120 글자는 삭제
 # =========================================================
 
 def ema_html(
     ema
 ):
 
-    display_signal = signal_html(
-        ema.get(
-            "signal",
-            ""
-        ),
-        ema.get(
-            "warning",
-            "none"
-        )
+    signal = ema.get(
+        "signal",
+        ""
     )
 
-    direction = direction_html(
-        ema.get(
-            "direction",
-            "none"
-        )
+    warning = ema.get(
+        "warning",
+        "none"
+    )
+
+    direction = ema.get(
+        "direction",
+        "none"
+    )
+
+    h4_10_30 = ema.get(
+        "4h_10_30",
+        "⚪"
+    )
+
+    h4_30_60_120 = ema.get(
+        "4h_30_60_120",
+        "⚪"
+    )
+
+    d1_10_30 = ema.get(
+        "1d_10_30",
+        "⚪"
+    )
+
+    signal_display = signal_html(
+        signal
+    )
+
+    warning_display = warning_html(
+        warning
+    )
+
+    direction_display = direction_html(
+        direction
     )
 
     return f"""
 
 <div class="ema-box">
 
-    <div class="ema-row">
+    <div class="ema-row-1">
 
-        <span class="ema-period">
+        <span class="signal-under">
+            {signal_display}
+        </span>
+
+        <span class="direction-under">
+            {direction_display}
+        </span>
+
+        <span class="warning-under">
+            {warning_display}
+        </span>
+
+        <span class="time-label">
             4H
         </span>
 
-        <span class="ema-value">
-            10-30 {ema.get("4h_10_30", "⚪")}
+        <span class="ema-icon">
+            {h4_10_30}
         </span>
 
-        <span class="ema-value">
-            30-60-120 {ema.get("4h_30_60_120", "⚪")}
+        <span class="ema-icon">
+            {h4_30_60_120}
         </span>
 
     </div>
 
 
-    <div class="ema-row ema-day">
+    <div class="ema-row-2">
 
-        <span class="ema-period">
+        <span class="time-label">
             1D
         </span>
 
-        <span class="ema-value">
-            10-30 {ema.get("1d_10_30", "⚪")}
-        </span>
-
-        <span class="ema-value">
-            30-60-120 {ema.get("1d_30_60_120", "⚪")}
+        <span class="ema-icon">
+            {d1_10_30}
         </span>
 
     </div>
@@ -2466,7 +2422,7 @@ body{
 
     padding:4px;
 
-    font-size:8px;
+    font-size:9px;
 
 }
 
@@ -2477,7 +2433,7 @@ body{
 
 .main-title{
 
-    margin:2px 0 3px;
+    margin:2px 0 2px;
 
     font-size:13px;
 
@@ -2506,7 +2462,7 @@ body{
 
     text-overflow:ellipsis;
 
-    margin-bottom:4px;
+    margin-bottom:3px;
 
 }
 
@@ -2519,9 +2475,11 @@ body{
 
     display:flex;
 
+    align-items:center;
+
     gap:3px;
 
-    margin-bottom:5px;
+    margin-bottom:4px;
 
 }
 
@@ -2547,14 +2505,31 @@ body{
 
 
 /* =====================================================
+   신호 설명
+   ===================================================== */
+
+.signal-guide{
+
+    margin-left:auto;
+
+    color:#777;
+
+    font-size:6.5px;
+
+    white-space:nowrap;
+
+}
+
+
+/* =====================================================
    섹션
    ===================================================== */
 
 .section-title{
 
-    margin:6px 0 3px;
+    margin:5px 0 2px;
 
-    padding:4px 5px;
+    padding:3px 5px;
 
     background:#1d1d1d;
 
@@ -2616,9 +2591,9 @@ th{
 
     white-space:nowrap;
 
-    font-size:6.5px;
+    font-size:7px;
 
-    line-height:8px;
+    line-height:9px;
 
     font-weight:bold;
 
@@ -2626,12 +2601,14 @@ th{
 
 
 /* =====================================================
-   기본 셀
+   셀
    ===================================================== */
 
 td{
 
     padding:1px;
+
+    height:37px;
 
     border-bottom:1px solid #292929;
 
@@ -2643,7 +2620,7 @@ td{
 
     white-space:nowrap;
 
-    font-size:7px;
+    font-size:8px;
 
 }
 
@@ -2654,7 +2631,7 @@ td{
 
 .rank-cell{
 
-    width:5%;
+    width:6%;
 
     color:#777;
 
@@ -2669,17 +2646,17 @@ td{
 
 .coin-cell{
 
-    width:19%;
+    width:18%;
 
     text-align:left;
 
-    padding-left:3px;
+    padding-left:4px;
 
     color:#eee;
 
     font-weight:bold;
 
-    font-size:7.5px;
+    font-size:8px;
 
     overflow:hidden;
 
@@ -2696,11 +2673,13 @@ td{
 
     width:15%;
 
-    text-align:center;
+    text-align:right;
+
+    padding-right:3px;
 
     color:#bbb;
 
-    font-size:6.5px;
+    font-size:7px;
 
 }
 
@@ -2711,161 +2690,22 @@ td{
 
 .change-cell{
 
-    width:14%;
+    width:15%;
 
-    font-size:6.5px;
+    font-size:7px;
 
 }
 
 
 /* =====================================================
-   EMA
+   EMA 셀
    ===================================================== */
 
 .ema-cell{
 
-    width:47%;
+    width:46%;
 
-    padding:1px;
-
-}
-
-
-/* =====================================================
-   2줄 구조
-   ===================================================== */
-
-.coin-wrap{
-
-    width:100%;
-
-    min-height:31px;
-
-    display:flex;
-
-    flex-direction:column;
-
-    justify-content:center;
-
-    line-height:1;
-
-}
-
-.coin-name{
-
-    height:15px;
-
-    display:flex;
-
-    align-items:center;
-
-    overflow:hidden;
-
-    white-space:nowrap;
-
-}
-
-.coin-sub{
-
-    height:14px;
-
-    display:flex;
-
-    align-items:center;
-
-    overflow:hidden;
-
-    white-space:nowrap;
-
-}
-
-
-/* =====================================================
-   거래대금 2줄
-   ===================================================== */
-
-.volume-wrap{
-
-    width:100%;
-
-    min-height:31px;
-
-    display:flex;
-
-    flex-direction:column;
-
-    justify-content:center;
-
-}
-
-.volume-main{
-
-    height:15px;
-
-    display:flex;
-
-    align-items:center;
-
-    justify-content:center;
-
-    color:#bbb;
-
-    font-size:6.5px;
-
-}
-
-.volume-sub{
-
-    height:14px;
-
-    display:flex;
-
-    align-items:center;
-
-    justify-content:center;
-
-}
-
-
-/* =====================================================
-   오늘 2줄
-   ===================================================== */
-
-.change-wrap{
-
-    width:100%;
-
-    min-height:31px;
-
-    display:flex;
-
-    flex-direction:column;
-
-    justify-content:center;
-
-}
-
-.change-main{
-
-    height:15px;
-
-    display:flex;
-
-    align-items:center;
-
-    justify-content:center;
-
-}
-
-.change-sub{
-
-    height:14px;
-
-    display:flex;
-
-    align-items:center;
-
-    justify-content:center;
+    padding:1px 2px;
 
 }
 
@@ -2882,15 +2722,15 @@ td{
 
     justify-content:center;
 
-    gap:1px;
-
     width:100%;
+
+    gap:1px;
 
 }
 
 .change-icon{
 
-    font-size:5.5px;
+    font-size:6px;
 
     line-height:8px;
 
@@ -2898,36 +2738,100 @@ td{
 
 .change-value{
 
+    text-align:right;
+
     font-family:monospace;
 
-    font-size:6.5px;
+    font-size:7px;
 
-    line-height:8px;
+    line-height:9px;
 
 }
 
 
 /* =====================================================
-   LONG / SHORT
+   EMA 박스
    ===================================================== */
 
-.signal-text{
+.ema-box{
 
-    display:inline-flex;
+    width:100%;
 
-    align-items:center;
+    height:35px;
+
+    display:flex;
+
+    flex-direction:column;
 
     justify-content:center;
 
-    min-width:32px;
+}
 
-    padding:1px 4px;
 
-    border-radius:3px;
+/* =====================================================
+   1줄
+   ===================================================== */
 
-    font-size:7px;
+.ema-row-1{
 
-    line-height:10px;
+    width:100%;
+
+    height:17px;
+
+    display:flex;
+
+    align-items:center;
+
+    overflow:hidden;
+
+    white-space:nowrap;
+
+    border-bottom:1px solid #242424;
+
+}
+
+
+/* =====================================================
+   2줄
+   ===================================================== */
+
+.ema-row-2{
+
+    width:100%;
+
+    height:17px;
+
+    display:flex;
+
+    align-items:center;
+
+    overflow:hidden;
+
+    white-space:nowrap;
+
+}
+
+
+/* =====================================================
+   롱 / 숏
+   ===================================================== */
+
+.signal-under{
+
+    width:48px;
+
+    min-width:48px;
+
+    text-align:left;
+
+}
+
+
+.long-text{
+
+    color:#00e676;
+
+    font-size:8px;
 
     font-weight:900;
 
@@ -2935,43 +2839,23 @@ td{
 
 }
 
-.long-text{
-
-    color:#00ff7f;
-
-    background:rgba(0,230,118,.12);
-
-    border:1px solid rgba(0,230,118,.28);
-
-}
 
 .short-text{
 
     color:#ff5252;
 
-    background:rgba(255,82,82,.12);
+    font-size:8px;
 
-    border:1px solid rgba(255,82,82,.28);
+    font-weight:900;
 
-}
-
-
-.warning-icon{
-
-    margin-left:3px;
-
-    font-size:7px;
-
-    line-height:10px;
-
-    font-weight:bold;
+    letter-spacing:.2px;
 
 }
 
 
 .signal-none{
 
-    color:#444;
+    color:#333;
 
     font-size:7px;
 
@@ -2982,91 +2866,102 @@ td{
    방향
    ===================================================== */
 
+.direction-under{
+
+    width:25px;
+
+    min-width:25px;
+
+    text-align:center;
+
+}
+
+
 .direction-long{
+
+    color:#ffd54f;
 
     font-size:9px;
 
     font-weight:bold;
 
-    filter:
-        drop-shadow(
-            0 0 3px
-            rgba(255,213,79,.35)
-        );
-
 }
+
 
 .direction-short{
 
+    color:#90caf9;
+
     font-size:9px;
 
     font-weight:bold;
 
-    filter:
-        drop-shadow(
-            0 0 3px
-            rgba(144,202,249,.35)
-        );
-
 }
+
 
 .direction-none{
 
-    color:#444;
-
-    font-size:7px;
+    color:#333;
 
 }
 
 
 /* =====================================================
-   EMA 2줄
+   경고
    ===================================================== */
 
-.ema-box{
+.warning-under{
 
-    width:100%;
+    width:30px;
 
-    min-height:31px;
+    min-width:30px;
 
-    display:flex;
-
-    flex-direction:column;
-
-    justify-content:center;
-
-}
-
-.ema-row{
-
-    width:100%;
-
-    height:15px;
-
-    display:flex;
-
-    align-items:center;
-
-    overflow:hidden;
-
-    white-space:nowrap;
-
-}
-
-.ema-day{
-
-    border-top:1px solid #242424;
+    text-align:center;
 
 }
 
 
-.ema-period{
+.warning-lightning{
 
-    width:20px;
+    font-size:8px;
 
-    min-width:20px;
+    font-weight:bold;
 
-    color:#888;
+}
+
+
+.warning-pullback{
+
+    font-size:8px;
+
+}
+
+
+.warning-breakout{
+
+    font-size:8px;
+
+}
+
+
+.warning-none{
+
+    color:#333;
+
+}
+
+
+/* =====================================================
+   시간
+   ===================================================== */
+
+.time-label{
+
+    width:22px;
+
+    min-width:22px;
+
+    color:#777;
 
     text-align:left;
 
@@ -3077,23 +2972,22 @@ td{
 }
 
 
-.ema-value{
+/* =====================================================
+   방향 아이콘
+   숫자 카운터만 유지
+   ===================================================== */
 
-    flex:1;
+.ema-icon{
 
-    min-width:0;
+    width:38px;
 
-    color:#aaa;
+    min-width:38px;
 
     text-align:left;
 
-    font-size:6px;
+    color:#aaa;
 
-    line-height:9px;
-
-    overflow:hidden;
-
-    white-space:nowrap;
+    font-size:7px;
 
 }
 
@@ -3119,8 +3013,6 @@ td{
 
         line-height:14px;
 
-        margin:1px 0 2px;
-
     }
 
 
@@ -3129,17 +3021,6 @@ td{
         font-size:6px;
 
         line-height:8px;
-
-        margin-bottom:3px;
-
-    }
-
-
-    .setting-row{
-
-        gap:2px;
-
-        margin-bottom:4px;
 
     }
 
@@ -3150,20 +3031,23 @@ td{
 
         font-size:6px;
 
-        line-height:8px;
+    }
+
+
+    .signal-guide{
+
+        font-size:6px;
 
     }
 
 
     .section-title{
 
-        margin:5px 0 2px;
-
-        padding:3px 4px;
-
         font-size:8.5px;
 
         line-height:10px;
+
+        padding:3px 4px;
 
     }
 
@@ -3174,16 +3058,14 @@ td{
 
         padding:2px 1px;
 
-        font-size:6px;
-
-        line-height:8px;
+        font-size:6.5px;
 
     }
 
 
     td{
 
-        padding:1px;
+        height:36px;
 
     }
 
@@ -3197,119 +3079,95 @@ td{
 
     .coin-cell{
 
-        font-size:7px;
+        font-size:7.5px;
 
-        padding-left:2px;
+        padding-left:3px;
 
     }
 
 
     .volume-cell{
 
-        font-size:6px;
-
-    }
-
-
-    .change-cell{
-
-        font-size:6px;
-
-    }
-
-
-    .ema-cell{
-
-        padding:1px;
-
-    }
-
-
-    .coin-wrap,
-    .volume-wrap,
-    .change-wrap,
-    .ema-box{
-
-        min-height:30px;
-
-    }
-
-
-    .coin-name,
-    .volume-main,
-    .change-main,
-    .ema-row{
-
-        height:14px;
-
-    }
-
-
-    .coin-sub,
-    .volume-sub,
-    .change-sub{
-
-        height:14px;
-
-    }
-
-
-    .change-icon{
-
-        font-size:5px;
+        font-size:6.5px;
 
     }
 
 
     .change-value{
 
-        font-size:6px;
-
-    }
-
-
-    .signal-text{
-
-        min-width:30px;
-
-        padding:1px 3px;
-
         font-size:6.5px;
 
     }
 
 
-    .warning-icon{
+    .ema-box{
 
-        font-size:6.5px;
-
-        margin-left:2px;
+        height:34px;
 
     }
 
 
-    .direction-long,
-    .direction-short{
+    .ema-row-1,
+    .ema-row-2{
 
-        font-size:8px;
+        height:17px;
 
     }
 
 
-    .ema-period{
+    .signal-under{
 
-        width:19px;
+        width:44px;
 
-        min-width:19px;
+        min-width:44px;
+
+    }
+
+
+    .long-text,
+    .short-text{
+
+        font-size:7.5px;
+
+    }
+
+
+    .direction-under{
+
+        width:23px;
+
+        min-width:23px;
+
+    }
+
+
+    .warning-under{
+
+        width:28px;
+
+        min-width:28px;
+
+    }
+
+
+    .time-label{
+
+        width:20px;
+
+        min-width:20px;
 
         font-size:6px;
 
     }
 
 
-    .ema-value{
+    .ema-icon{
 
-        font-size:5.7px;
+        width:34px;
+
+        min-width:34px;
+
+        font-size:6.5px;
 
     }
 
@@ -3317,52 +3175,47 @@ td{
 
 
 /* =====================================================
-   S22 Ultra 등 좁은 화면
+   아주 작은 화면
    ===================================================== */
 
 @media(
     max-width:380px
 ){
 
-    .coin-cell{
+    .signal-under{
 
-        font-size:6.7px;
+        width:40px;
 
-    }
-
-    .volume-main{
-
-        font-size:5.8px;
+        min-width:40px;
 
     }
 
-    .change-value{
 
-        font-size:5.8px;
+    .direction-under{
 
-    }
+        width:21px;
 
-    .ema-period{
-
-        width:18px;
-
-        min-width:18px;
-
-        font-size:5.7px;
+        min-width:21px;
 
     }
 
-    .ema-value{
 
-        font-size:5.3px;
+    .warning-under{
+
+        width:25px;
+
+        min-width:25px;
 
     }
 
-    .signal-text{
+
+    .ema-icon{
+
+        width:30px;
+
+        min-width:30px;
 
         font-size:6px;
-
-        min-width:28px;
 
     }
 
@@ -3400,6 +3253,10 @@ OKX ÷10
 TOP""" + str(TOP_N) + """
 </span>
 
+<span class="signal-guide">
+🟢 상승　🔴 하락　☀️ LONG　🌧 SHORT
+</span>
+
 </div>
 
 
@@ -3420,11 +3277,11 @@ TOP""" + str(TOP_N) + """
 
 <colgroup>
 
-<col style="width:5%">
-<col style="width:19%">
+<col style="width:6%">
+<col style="width:18%">
 <col style="width:15%">
-<col style="width:14%">
-<col style="width:47%">
+<col style="width:15%">
+<col style="width:46%">
 
 </colgroup>
 
@@ -3448,7 +3305,7 @@ TOP""" + str(TOP_N) + """
 </th>
 
 <th>
-4시간 / 일봉
+신호 / 방향
 </th>
 
 </tr>
@@ -3457,154 +3314,28 @@ TOP""" + str(TOP_N) + """
 
     for item in latest_upbit_data:
 
-        ema = item["ema"]
-
         html += f"""
 
 <tr>
 
 <td class="rank-cell">
-
-<div class="coin-wrap">
-
-<div class="coin-name">
 {item['rank']}
-</div>
-
-<div class="coin-sub">
-</div>
-
-</div>
-
 </td>
-
 
 <td class="coin-cell">
-
-<div class="coin-wrap">
-
-<div class="coin-name">
 {item['name']}
-</div>
-
-<div class="coin-sub">
-{direction_html(
-    ema.get(
-        "direction",
-        "none"
-    )
-)}
-</div>
-
-</div>
-
 </td>
-
 
 <td class="volume-cell">
-
-<div class="volume-wrap">
-
-<div class="volume-main">
 {item['volume']}
-</div>
-
-<div class="volume-sub">
-
-{signal_html(
-    ema.get(
-        "signal",
-        ""
-    ),
-    ema.get(
-        "warning",
-        "none"
-    )
-)}
-
-</div>
-
-</div>
-
 </td>
-
 
 <td class="change-cell">
-
-<div class="change-wrap">
-
-<div class="change-main">
 {item['change']}
-</div>
-
-<div class="change-sub">
-
-<span class="warning-icon">
-
-"""
-
-        warning = ema.get(
-            "warning",
-            "none"
-        )
-
-        if warning.startswith(
-            "long_lightning_"
-        ):
-
-            html += (
-                "⚡"
-                +
-                warning.split("_")[-1]
-            )
-
-        elif warning.startswith(
-            "short_lightning_"
-        ):
-
-            html += (
-                "💥"
-                +
-                warning.split("_")[-1]
-            )
-
-        elif warning == "long_pullback":
-
-            html += "🔥"
-
-        elif warning == "short_pullback":
-
-            html += "🔥"
-
-        elif warning == "long_breakout":
-
-            html += "🚀"
-
-        elif warning == "short_breakout":
-
-            html += "🚀"
-
-        html += """
-
-</span>
-
-</div>
-
-</div>
-
 </td>
 
-
 <td class="ema-cell">
-
-"""
-
-        html += ema_html(
-            ema
-        )
-
-        html += """
-
+{ema_html(item["ema"])}
 </td>
 
 </tr>
@@ -3635,11 +3366,11 @@ TOP""" + str(TOP_N) + """
 
 <colgroup>
 
-<col style="width:5%">
-<col style="width:19%">
+<col style="width:6%">
+<col style="width:18%">
 <col style="width:15%">
-<col style="width:14%">
-<col style="width:47%">
+<col style="width:15%">
+<col style="width:46%">
 
 </colgroup>
 
@@ -3663,7 +3394,7 @@ TOP""" + str(TOP_N) + """
 </th>
 
 <th>
-4시간 / 일봉
+신호 / 방향
 </th>
 
 </tr>
@@ -3672,154 +3403,28 @@ TOP""" + str(TOP_N) + """
 
     for item in latest_okx_data:
 
-        ema = item["ema"]
-
         html += f"""
 
 <tr>
 
 <td class="rank-cell">
-
-<div class="coin-wrap">
-
-<div class="coin-name">
 {item['rank']}
-</div>
-
-<div class="coin-sub">
-</div>
-
-</div>
-
 </td>
-
 
 <td class="coin-cell">
-
-<div class="coin-wrap">
-
-<div class="coin-name">
 {item['name']}
-</div>
-
-<div class="coin-sub">
-{direction_html(
-    ema.get(
-        "direction",
-        "none"
-    )
-)}
-</div>
-
-</div>
-
 </td>
-
 
 <td class="volume-cell">
-
-<div class="volume-wrap">
-
-<div class="volume-main">
 {item['volume']}
-</div>
-
-<div class="volume-sub">
-
-{signal_html(
-    ema.get(
-        "signal",
-        ""
-    ),
-    ema.get(
-        "warning",
-        "none"
-    )
-)}
-
-</div>
-
-</div>
-
 </td>
-
 
 <td class="change-cell">
-
-<div class="change-wrap">
-
-<div class="change-main">
 {item['change']}
-</div>
-
-<div class="change-sub">
-
-<span class="warning-icon">
-
-"""
-
-        warning = ema.get(
-            "warning",
-            "none"
-        )
-
-        if warning.startswith(
-            "long_lightning_"
-        ):
-
-            html += (
-                "⚡"
-                +
-                warning.split("_")[-1]
-            )
-
-        elif warning.startswith(
-            "short_lightning_"
-        ):
-
-            html += (
-                "💥"
-                +
-                warning.split("_")[-1]
-            )
-
-        elif warning == "long_pullback":
-
-            html += "🔥"
-
-        elif warning == "short_pullback":
-
-            html += "🔥"
-
-        elif warning == "long_breakout":
-
-            html += "🚀"
-
-        elif warning == "short_breakout":
-
-            html += "🚀"
-
-        html += """
-
-</span>
-
-</div>
-
-</div>
-
 </td>
 
-
 <td class="ema-cell">
-
-"""
-
-        html += ema_html(
-            ema
-        )
-
-        html += """
-
+{ema_html(item["ema"])}
 </td>
 
 </tr>
@@ -3876,4 +3481,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-        )
+    )
