@@ -1161,12 +1161,6 @@ def check_pullback(
     prev_short_close = (
         prev["c"]
         <
-        prev["ema30"]
-    )
-
-    prev_short_candle = (
-        prev["c"]
-        <
         prev["o"]
     )
 
@@ -2009,7 +2003,6 @@ def direction_html(
 
 # =========================================================
 # 경고 HTML
-# 오늘 아래에만 표시
 # =========================================================
 
 def warning_html(
@@ -2077,8 +2070,6 @@ def warning_html(
 
 # =========================================================
 # EMA HTML
-#
-# 10-30 / 30-60-120 설명 제거
 # =========================================================
 
 def ema_html(
@@ -2458,7 +2449,7 @@ body{
         Arial,
         sans-serif;
 
-    padding:4px;
+    padding:3px;
 
     font-size:8px;
 
@@ -2663,7 +2654,7 @@ td{
 
 .coin-cell{
 
-    width:19%;
+    width:20%;
 
     text-align:left;
 
@@ -2684,41 +2675,44 @@ td{
 
 /* =====================================================
    거래대금
+   기존 15% → 20%
    ===================================================== */
 
 .volume-cell{
 
-    width:15%;
+    width:20%;
 
     text-align:center;
 
     color:#bbb;
 
-    font-size:6.5px;
+    font-size:7px;
 
 }
 
 
 /* =====================================================
    변동률
+   기존 14% → 17%
    ===================================================== */
 
 .change-cell{
 
-    width:14%;
+    width:17%;
 
-    font-size:6.5px;
+    font-size:7px;
 
 }
 
 
 /* =====================================================
    EMA
+   기존 47% → 38%
    ===================================================== */
 
 .ema-cell{
 
-    width:47%;
+    width:38%;
 
     padding:1px;
 
@@ -2804,7 +2798,9 @@ td{
 
     color:#bbb;
 
-    font-size:6.5px;
+    font-size:7px;
+
+    font-family:monospace;
 
 }
 
@@ -2876,7 +2872,7 @@ td{
 
     justify-content:center;
 
-    gap:1px;
+    gap:2px;
 
     width:100%;
 
@@ -2884,7 +2880,7 @@ td{
 
 .change-icon{
 
-    font-size:5.5px;
+    font-size:6px;
 
     line-height:8px;
 
@@ -2894,9 +2890,9 @@ td{
 
     font-family:monospace;
 
-    font-size:6.5px;
+    font-size:7px;
 
-    line-height:8px;
+    line-height:9px;
 
 }
 
@@ -2913,7 +2909,7 @@ td{
 
     justify-content:center;
 
-    min-width:32px;
+    min-width:34px;
 
     padding:1px 4px;
 
@@ -3054,15 +3050,15 @@ td{
 
 .ema-period{
 
-    width:20px;
+    width:18px;
 
-    min-width:20px;
+    min-width:18px;
 
-    color:#888;
+    color:#777;
 
     text-align:left;
 
-    font-size:6.5px;
+    font-size:6px;
 
     font-weight:bold;
 
@@ -3079,9 +3075,9 @@ td{
 
     text-align:left;
 
-    font-size:6px;
+    font-size:5.5px;
 
-    line-height:9px;
+    line-height:8px;
 
     overflow:hidden;
 
@@ -3189,6 +3185,8 @@ td{
 
     .coin-cell{
 
+        width:20%;
+
         font-size:7px;
 
         padding-left:2px;
@@ -3198,19 +3196,25 @@ td{
 
     .volume-cell{
 
-        font-size:6px;
+        width:20%;
+
+        font-size:6.5px;
 
     }
 
 
     .change-cell{
 
-        font-size:6px;
+        width:17%;
+
+        font-size:6.5px;
 
     }
 
 
     .ema-cell{
+
+        width:38%;
 
         padding:1px;
 
@@ -3246,23 +3250,30 @@ td{
     }
 
 
+    .volume-main{
+
+        font-size:6.5px;
+
+    }
+
+
     .change-icon{
 
-        font-size:5px;
+        font-size:5.5px;
 
     }
 
 
     .change-value{
 
-        font-size:6px;
+        font-size:6.5px;
 
     }
 
 
     .signal-text{
 
-        min-width:30px;
+        min-width:31px;
 
         padding:1px 3px;
 
@@ -3288,18 +3299,18 @@ td{
 
     .ema-period{
 
-        width:19px;
+        width:17px;
 
-        min-width:19px;
+        min-width:17px;
 
-        font-size:6px;
+        font-size:5.8px;
 
     }
 
 
     .ema-value{
 
-        font-size:5.7px;
+        font-size:5.3px;
 
     }
 
@@ -3316,35 +3327,55 @@ td{
 
     .coin-cell{
 
+        width:20%;
+
         font-size:6.7px;
+
+    }
+
+    .volume-cell{
+
+        width:20%;
 
     }
 
     .volume-main{
 
-        font-size:5.8px;
+        font-size:6px;
+
+    }
+
+    .change-cell{
+
+        width:17%;
 
     }
 
     .change-value{
 
-        font-size:5.8px;
+        font-size:6px;
+
+    }
+
+    .ema-cell{
+
+        width:38%;
 
     }
 
     .ema-period{
 
-        width:18px;
+        width:16px;
 
-        min-width:18px;
+        min-width:16px;
 
-        font-size:5.7px;
+        font-size:5.5px;
 
     }
 
     .ema-value{
 
-        font-size:5.3px;
+        font-size:5px;
 
     }
 
@@ -3352,7 +3383,7 @@ td{
 
         font-size:6px;
 
-        min-width:28px;
+        min-width:29px;
 
     }
 
@@ -3411,10 +3442,10 @@ TOP""" + str(TOP_N) + """
 <colgroup>
 
 <col style="width:5%">
-<col style="width:19%">
-<col style="width:15%">
-<col style="width:14%">
-<col style="width:47%">
+<col style="width:20%">
+<col style="width:20%">
+<col style="width:17%">
+<col style="width:38%">
 
 </colgroup>
 
@@ -3588,10 +3619,10 @@ TOP""" + str(TOP_N) + """
 <colgroup>
 
 <col style="width:5%">
-<col style="width:19%">
-<col style="width:15%">
-<col style="width:14%">
-<col style="width:47%">
+<col style="width:20%">
+<col style="width:20%">
+<col style="width:17%">
+<col style="width:38%">
 
 </colgroup>
 
@@ -3790,4 +3821,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-        )
+    )
