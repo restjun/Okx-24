@@ -1061,38 +1061,29 @@ def check_ema(
 # =========================================================
 # 메인 방향
 #
-# ★ 수정 부분
-# ★ 경고 / LONG / SHORT / ☀️ / 🌧 판단에
-# ★ 4H 30-60-120 조건만 사용
-# ★ 1D 조건은 판단에서 완전히 제외
+# ★ 판단 기준
+# ★ 1H 30-60-120만 사용
+# ★ 4H / 1D는 방향 판단에서 사용하지 않음
 # =========================================================
 
 def get_main_direction(
+    df1h,
     df4h,
-    df1d,
     column
 ):
 
-    h4_direction = (
+    h1_direction = (
         get_ema_30_60_120_direction(
-            df4h,
+            df1h,
             column
         )
     )
 
-    # =====================================================
-    # 4H 정배열 → LONG 방향
-    # =====================================================
-
-    if h4_direction == "long":
+    if h1_direction == "long":
 
         return "long"
 
-    # =====================================================
-    # 4H 역배열 → SHORT 방향
-    # =====================================================
-
-    if h4_direction == "short":
+    if h1_direction == "short":
 
         return "short"
 
@@ -1101,16 +1092,17 @@ def get_main_direction(
 
 # =========================================================
 # ⚡ 추세전환
+# ★ 1H 기준
 # =========================================================
 
 def check_lightning(
-    df4h,
+    df1h,
     column
 ):
 
     count, direction = (
         get_30_60_120_count(
-            df4h,
+            df1h,
             column
         )
     )
@@ -1134,21 +1126,22 @@ def check_lightning(
 
 # =========================================================
 # 🔥 눌림목
+# ★ 1H 기준
 # =========================================================
 
 def check_pullback(
-    df4h,
+    df1h,
     column
 ):
 
     if (
-        df4h is None
-        or len(df4h) < 125
+        df1h is None
+        or len(df1h) < 125
     ):
 
         return "none"
 
-    df = df4h.copy()
+    df = df1h.copy()
 
     df["ema30"] = get_ema(
         df,
@@ -1276,7 +1269,6 @@ def check_pullback(
 
         return "long_pullback"
 
-
     # =====================================================
     # SHORT
     # =====================================================
@@ -1370,23 +1362,24 @@ def check_pullback(
 
 # =========================================================
 # 🚀 돌파
+# ★ 1H 기준
 # =========================================================
 
 def check_breakout(
-    df4h,
+    df1h,
     column
 ):
 
     if (
-        df4h is None
-        or len(df4h)
+        df1h is None
+        or len(df1h)
         <
         120 + BREAKOUT_LOOKBACK
     ):
 
         return "none"
 
-    df = df4h.copy()
+    df = df1h.copy()
 
     df["ema30"] = get_ema(
         df,
@@ -1465,7 +1458,6 @@ def check_breakout(
 
         return "long_breakout"
 
-
     # =====================================================
     # SHORT
     # =====================================================
@@ -1505,15 +1497,16 @@ def check_breakout(
 
 # =========================================================
 # 최종 경고
+# ★ 1H 기준
 # =========================================================
 
 def check_entry_warning(
-    df4h,
+    df1h,
     column
 ):
 
     lightning = check_lightning(
-        df4h,
+        df1h,
         column
     )
 
@@ -1522,7 +1515,7 @@ def check_entry_warning(
         return lightning
 
     pullback = check_pullback(
-        df4h,
+        df1h,
         column
     )
 
@@ -1531,7 +1524,7 @@ def check_entry_warning(
         return pullback
 
     breakout = check_breakout(
-        df4h,
+        df1h,
         column
     )
 
@@ -1544,17 +1537,18 @@ def check_entry_warning(
 
 # =========================================================
 # LONG / SHORT
+# ★ 판단 기준 1H
 # =========================================================
 
 def get_trade_signal(
+    df1h,
     df4h,
-    df1d,
     column
 ):
 
     main_direction = get_main_direction(
+        df1h,
         df4h,
-        df1d,
         column
     )
 
@@ -1563,7 +1557,7 @@ def get_trade_signal(
         return "", "none"
 
     warning = check_entry_warning(
-        df4h,
+        df1h,
         column
     )
 
@@ -1592,11 +1586,19 @@ def get_trade_signal(
 
 # =========================================================
 # OKX EMA
+# ★ 1H 판단
+# ★ 4H 표시
 # =========================================================
 
 def get_okx_ema(
     inst_id
 ):
+
+    df1h = get_okx_ohlcv(
+        inst_id,
+        "1H",
+        200
+    )
 
     df4h = get_okx_ohlcv(
         inst_id,
@@ -1604,40 +1606,49 @@ def get_okx_ema(
         200
     )
 
-    df1d = get_okx_ohlcv(
-        inst_id,
-        "1D",
-        200
-    )
-
     if (
-        df4h is None
-        or df1d is None
+        df1h is None
+        or df4h is None
     ):
 
         return {
+            "1h_10_30": "⚪",
+            "1h_30_60_120": "⚪",
             "4h_10_30": "⚪",
             "4h_30_60_120": "⚪",
-            "1d_10_30": "⚪",
-            "1d_30_60_120": "⚪",
             "signal": "",
             "warning": "none",
             "direction": "none"
         }
 
+    # OKX 캔들은 confirm=1만 사용하므로
+    # 진행 중인 캔들은 이미 제거됨
+
     signal, warning = get_trade_signal(
+        df1h,
         df4h,
-        df1d,
         "c"
     )
 
     direction = get_main_direction(
+        df1h,
         df4h,
-        df1d,
         "c"
     )
 
     return {
+
+        "1h_10_30":
+            check_ema_10_30(
+                df1h,
+                "c"
+            ),
+
+        "1h_30_60_120":
+            check_ema(
+                df1h,
+                "c"
+            ),
 
         "4h_10_30":
             check_ema_10_30(
@@ -1648,18 +1659,6 @@ def get_okx_ema(
         "4h_30_60_120":
             check_ema(
                 df4h,
-                "c"
-            ),
-
-        "1d_10_30":
-            check_ema_10_30(
-                df1d,
-                "c"
-            ),
-
-        "1d_30_60_120":
-            check_ema(
-                df1d,
                 "c"
             ),
 
@@ -1676,11 +1675,19 @@ def get_okx_ema(
 
 # =========================================================
 # 업비트 EMA
+# ★ 1H 판단
+# ★ 4H 표시
 # =========================================================
 
 def get_upbit_ema(
     market
 ):
+
+    df1h = get_upbit_ohlcv(
+        market,
+        60,
+        200
+    )
 
     df4h = get_upbit_ohlcv(
         market,
@@ -1688,21 +1695,16 @@ def get_upbit_ema(
         200
     )
 
-    df1d = get_upbit_daily_ohlcv(
-        market,
-        200
-    )
-
     if (
-        df4h is None
-        or df1d is None
+        df1h is None
+        or df4h is None
     ):
 
         return {
+            "1h_10_30": "⚪",
+            "1h_30_60_120": "⚪",
             "4h_10_30": "⚪",
             "4h_30_60_120": "⚪",
-            "1d_10_30": "⚪",
-            "1d_30_60_120": "⚪",
             "signal": "",
             "warning": "none",
             "direction": "none"
@@ -1717,19 +1719,40 @@ def get_upbit_ema(
             .reset_index(drop=True)
         )
 
+    # 1H도 진행 중인 캔들 제거
+    if len(df1h) > 1:
+
+        df1h = (
+            df1h
+            .iloc[:-1]
+            .reset_index(drop=True)
+        )
+
     signal, warning = get_trade_signal(
+        df1h,
         df4h,
-        df1d,
         "c"
     )
 
     direction = get_main_direction(
+        df1h,
         df4h,
-        df1d,
         "c"
     )
 
     return {
+
+        "1h_10_30":
+            check_ema_10_30(
+                df1h,
+                "c"
+            ),
+
+        "1h_30_60_120":
+            check_ema(
+                df1h,
+                "c"
+            ),
 
         "4h_10_30":
             check_ema_10_30(
@@ -1740,18 +1763,6 @@ def get_upbit_ema(
         "4h_30_60_120":
             check_ema(
                 df4h,
-                "c"
-            ),
-
-        "1d_10_30":
-            check_ema_10_30(
-                df1d,
-                "c"
-            ),
-
-        "1d_30_60_120":
-            check_ema(
-                df1d,
                 "c"
             ),
 
@@ -1804,7 +1815,6 @@ def get_okx_volume(
         )
 
         return volume / 10
-
 
     df = get_okx_ohlcv(
         inst_id,
@@ -1867,7 +1877,6 @@ def get_upbit_volume(
             .tail(60)
             .sum()
         )
-
 
     df = get_upbit_ohlcv(
         market,
@@ -2193,7 +2202,6 @@ def signal_html(
     change_percent
 ):
 
-    # 오늘 상승 중인 LONG만 표시
     if (
         signal == "LONG"
         and
@@ -2208,7 +2216,6 @@ def signal_html(
             '</span>'
         )
 
-    # 오늘 하락 중인 SHORT만 표시
     if (
         signal == "SHORT"
         and
@@ -2232,10 +2239,6 @@ def signal_html(
 
 # =========================================================
 # 방향 HTML
-#
-# LONG  + 오늘 변동률 > 0  → ☀️
-# SHORT + 오늘 변동률 < 0  → 🌧
-# 그 외 → —
 # =========================================================
 
 def direction_html(
@@ -2289,7 +2292,6 @@ def warning_html(
     change_percent
 ):
 
-    # LONG 경고는 오늘 상승일 때만
     if warning.startswith(
         "long_"
     ):
@@ -2302,7 +2304,6 @@ def warning_html(
 
             return ""
 
-    # SHORT 경고는 오늘 하락일 때만
     if warning.startswith(
         "short_"
     ):
@@ -2376,6 +2377,7 @@ def warning_html(
 
 # =========================================================
 # EMA HTML
+# ★ 1H / 4H
 # =========================================================
 
 def ema_html(
@@ -2389,6 +2391,22 @@ def ema_html(
     <div class="ema-row">
 
         <span class="ema-period">
+            1H
+        </span>
+
+        <span class="ema-value">
+            {ema.get("1h_10_30", "⚪")}
+        </span>
+
+        <span class="ema-value">
+            {ema.get("1h_30_60_120", "⚪")}
+        </span>
+
+    </div>
+
+    <div class="ema-row ema-day">
+
+        <span class="ema-period">
             4H
         </span>
 
@@ -2398,22 +2416,6 @@ def ema_html(
 
         <span class="ema-value">
             {ema.get("4h_30_60_120", "⚪")}
-        </span>
-
-    </div>
-
-    <div class="ema-row ema-day">
-
-        <span class="ema-period">
-            1D
-        </span>
-
-        <span class="ema-value">
-            {ema.get("1d_10_30", "⚪")}
-        </span>
-
-        <span class="ema-value">
-            {ema.get("1d_30_60_120", "⚪")}
         </span>
 
     </div>
@@ -2502,7 +2504,6 @@ def update_upbit():
                 market
             )
 
-            # ★ 오늘 변동률 원본값 저장
             change_percent = (
                 changes[0]
                 if (
@@ -2566,10 +2567,10 @@ def update_upbit():
                     ),
 
                 "ema": {
+                    "1h_10_30": "⚪",
+                    "1h_30_60_120": "⚪",
                     "4h_10_30": "⚪",
                     "4h_30_60_120": "⚪",
-                    "1d_10_30": "⚪",
-                    "1d_30_60_120": "⚪",
                     "signal": "",
                     "warning": "none",
                     "direction": "none"
@@ -2653,10 +2654,6 @@ def update_okx():
     success = 0
     failed = 0
 
-    # =====================================================
-    # 전체 OKX 종목 처리
-    # =====================================================
-
     for index, symbol in enumerate(
         symbols,
         start=1
@@ -2712,10 +2709,6 @@ def update_okx():
         f"{total_symbols}/{total_symbols}"
     )
 
-    # =====================================================
-    # 전체 계산 완료 후 TOP 선정
-    # =====================================================
-
     top_symbols = sorted(
         volume_map,
         key=volume_map.get,
@@ -2732,10 +2725,6 @@ def update_okx():
 
     success_detail = 0
     failed_detail = 0
-
-    # =====================================================
-    # TOP 상세조회
-    # =====================================================
 
     for rank, symbol in enumerate(
         top_symbols,
@@ -2761,7 +2750,6 @@ def update_okx():
                 symbol
             )
 
-            # ★ 오늘 변동률 원본값 저장
             change_percent = (
                 changes[0]
                 if (
@@ -2825,10 +2813,10 @@ def update_okx():
                     ),
 
                 "ema": {
+                    "1h_10_30": "⚪",
+                    "1h_30_60_120": "⚪",
                     "4h_10_30": "⚪",
                     "4h_30_60_120": "⚪",
-                    "1d_10_30": "⚪",
-                    "1d_30_60_120": "⚪",
                     "signal": "",
                     "warning": "none",
                     "direction": "none"
@@ -2852,7 +2840,7 @@ def update_okx():
     latest_okx_data = rows
 
     logging.info(
-        f"OKX TOP{TOP_N} 상세 조회 완료 "
+        f"OKX TOP{total_top} 상세 조회 완료 "
         f"({total_top}/{total_top})"
     )
 
@@ -2876,10 +2864,6 @@ def update_dashboard():
         "전체 조회 시작"
     )
 
-    # -----------------------------------------------------
-    # 업비트
-    # -----------------------------------------------------
-
     try:
 
         update_upbit()
@@ -2889,10 +2873,6 @@ def update_dashboard():
         logging.exception(
             f"업비트 업데이트 오류 : {e}"
         )
-
-    # -----------------------------------------------------
-    # OKX
-    # -----------------------------------------------------
 
     try:
 
@@ -2961,9 +2941,8 @@ def dashboard():
 >
 
 <title>
-4H 차트 집중 ( 9시 , 1시 , 5시 )
+1H 차트 집중
 </title>
-
 
 <style>
 
@@ -3659,7 +3638,6 @@ td{
 
     }
 
-
     .main-title{
 
         font-size:12px;
@@ -3670,13 +3648,11 @@ td{
 
     }
 
-
     .title-time{
 
         font-size:8px;
 
     }
-
 
     .description{
 
@@ -3688,7 +3664,6 @@ td{
 
     }
 
-
     .setting-row{
 
         gap:2px;
@@ -3696,7 +3671,6 @@ td{
         margin-bottom:3px;
 
     }
-
 
     .volume-setting{
 
@@ -3707,7 +3681,6 @@ td{
         line-height:7px;
 
     }
-
 
     .section-title{
 
@@ -3721,7 +3694,6 @@ td{
 
     }
 
-
     th{
 
         height:16px;
@@ -3734,7 +3706,6 @@ td{
 
     }
 
-
     td{
 
         padding:0;
@@ -3743,13 +3714,11 @@ td{
 
     }
 
-
     .rank-cell{
 
         font-size:6px;
 
     }
-
 
     .coin-cell{
 
@@ -3761,7 +3730,6 @@ td{
 
     }
 
-
     .volume-cell{
 
         width:20%;
@@ -3769,7 +3737,6 @@ td{
         font-size:6.5px;
 
     }
-
 
     .change-cell{
 
@@ -3779,7 +3746,6 @@ td{
 
     }
 
-
     .ema-cell{
 
         width:38%;
@@ -3787,7 +3753,6 @@ td{
         padding:0;
 
     }
-
 
     .coin-wrap,
     .volume-wrap,
@@ -3798,7 +3763,6 @@ td{
 
     }
 
-
     .coin-name,
     .volume-main,
     .change-main,
@@ -3808,7 +3772,6 @@ td{
 
     }
 
-
     .coin-sub,
     .volume-sub,
     .change-sub{
@@ -3817,13 +3780,11 @@ td{
 
     }
 
-
     .volume-main{
 
         font-size:6.5px;
 
     }
-
 
     .change-icon{
 
@@ -3831,13 +3792,11 @@ td{
 
     }
 
-
     .change-value{
 
         font-size:6.5px;
 
     }
-
 
     .signal-text{
 
@@ -3851,7 +3810,6 @@ td{
 
     }
 
-
     .warning-icon{
 
         font-size:6.5px;
@@ -3860,14 +3818,12 @@ td{
 
     }
 
-
     .direction-long,
     .direction-short{
 
         font-size:8px;
 
     }
-
 
     .ema-period{
 
@@ -3878,7 +3834,6 @@ td{
         font-size:5.8px;
 
     }
-
 
     .ema-value{
 
@@ -3972,12 +3927,12 @@ td{
 
 
 <div class="main-title">
-📊 4H 종가매매 <span class="title-time">(9시, 1시, 5시)</span>
+📊 1H 종가매매
 </div>
 
 
 <div class="description">
-일봉 방향 + 4H 추세 일치 | ⚡ 추세전환 | 🔥 눌림목 | 🚀 돌파
+1H 추세 방향 + 1H 진입조건 | ⚡ 추세전환 | 🔥 눌림목 | 🚀 돌파
 </div>
 
 
@@ -4047,7 +4002,7 @@ TOP""" + str(TOP_N) + """
 </th>
 
 <th>
-4시간 / 일봉
+1시간 / 4시간
 </th>
 
 </tr>
@@ -4238,7 +4193,7 @@ TOP""" + str(TOP_N) + """
 </th>
 
 <th>
-4시간 / 일봉
+1시간 / 4시간
 </th>
 
 </tr>
@@ -4431,4 +4386,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-        )
+    )
