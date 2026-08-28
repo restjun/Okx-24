@@ -2237,7 +2237,7 @@ def direction_html(
 
         return (
             '<span class="direction-long">'
-            '☀️'
+            '☀️☀️☀️'
             '</span>'
         )
 
@@ -2251,7 +2251,7 @@ def direction_html(
 
         return (
             '<span class="direction-short">'
-            '🌧'
+            '🌧🌧🌧'
             '</span>'
         )
 
