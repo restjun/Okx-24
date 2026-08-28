@@ -2182,14 +2182,23 @@ def format_change(
 
 # =========================================================
 # LONG / SHORT
+# 오늘 상승/하락 방향과 일치할 때만 표시
 # =========================================================
 
 def signal_html(
     signal,
-    warning
+    warning,
+    change_percent
 ):
 
-    if signal == "LONG":
+    # 오늘 상승 중인 LONG만 표시
+    if (
+        signal == "LONG"
+        and
+        change_percent is not None
+        and
+        change_percent > 0
+    ):
 
         return (
             '<span class="signal-text long-text">'
@@ -2197,7 +2206,14 @@ def signal_html(
             '</span>'
         )
 
-    if signal == "SHORT":
+    # 오늘 하락 중인 SHORT만 표시
+    if (
+        signal == "SHORT"
+        and
+        change_percent is not None
+        and
+        change_percent < 0
+    ):
 
         return (
             '<span class="signal-text short-text">'
@@ -2214,8 +2230,6 @@ def signal_html(
 
 # =========================================================
 # 방향 HTML
-#
-# ★ 수정
 #
 # LONG  + 오늘 변동률 > 0  → ☀️
 # SHORT + 오늘 변동률 < 0  → 🌧
@@ -2264,11 +2278,40 @@ def direction_html(
 
 # =========================================================
 # 경고 HTML
+# 오늘 상승 → LONG 경고만
+# 오늘 하락 → SHORT 경고만
 # =========================================================
 
 def warning_html(
-    warning
+    warning,
+    change_percent
 ):
+
+    # LONG 경고는 오늘 상승일 때만
+    if warning.startswith(
+        "long_"
+    ):
+
+        if (
+            change_percent is None
+            or
+            change_percent <= 0
+        ):
+
+            return ""
+
+    # SHORT 경고는 오늘 하락일 때만
+    if warning.startswith(
+        "short_"
+    ):
+
+        if (
+            change_percent is None
+            or
+            change_percent >= 0
+        ):
+
+            return ""
 
     if warning.startswith(
         "long_lightning_"
@@ -4079,6 +4122,10 @@ TOP""" + str(TOP_N) + """
     ema.get(
         "warning",
         "none"
+    ),
+    item.get(
+        "change_percent",
+        None
     )
 )}
 
@@ -4105,6 +4152,10 @@ TOP""" + str(TOP_N) + """
             ema.get(
                 "warning",
                 "none"
+            ),
+            item.get(
+                "change_percent",
+                None
             )
         )
 
@@ -4262,6 +4313,10 @@ TOP""" + str(TOP_N) + """
     ema.get(
         "warning",
         "none"
+    ),
+    item.get(
+        "change_percent",
+        None
     )
 )}
 
@@ -4288,6 +4343,10 @@ TOP""" + str(TOP_N) + """
             ema.get(
                 "warning",
                 "none"
+            ),
+            item.get(
+                "change_percent",
+                None
             )
         )
 
