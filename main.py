@@ -51,13 +51,10 @@ BREAKOUT_LOOKBACK = 5
 # API 안정화 설정
 # =========================================================
 
-# 일반 요청 사이 최소 대기
 REQUEST_INTERVAL = 0.08
 
-# 429 기본 대기
 RATE_LIMIT_WAIT = 3
 
-# 최대 재시도
 MAX_RETRIES = 10
 
 
@@ -1341,7 +1338,7 @@ def check_pullback(
     )
 
     prev_short_close = (
-        prev[column]
+        prev["c"]
         <
         prev["ema30"]
     )
@@ -1895,8 +1892,6 @@ def get_upbit_volume(
 
 # =========================================================
 # 업비트 거래대금 MAP
-#
-# 전체 종목을 끝까지 순차 처리
 # =========================================================
 
 def get_upbit_volume_map(
@@ -1994,7 +1989,6 @@ def get_okx_change(
 
     df = df.copy()
 
-    # 문자열 timestamp를 숫자로 변환 후 datetime 처리
     df["ts"] = pd.to_numeric(
         df["ts"],
         errors="coerce"
@@ -2220,13 +2214,26 @@ def signal_html(
 
 # =========================================================
 # 방향 HTML
+#
+# ★ 수정
+#
+# LONG  + 오늘 변동률 > 0  → ☀️
+# SHORT + 오늘 변동률 < 0  → 🌧
+# 그 외 → —
 # =========================================================
 
 def direction_html(
-    direction
+    direction,
+    change_percent
 ):
 
-    if direction == "long":
+    if (
+        direction == "long"
+        and
+        change_percent is not None
+        and
+        change_percent > 0
+    ):
 
         return (
             '<span class="direction-long">'
@@ -2234,7 +2241,13 @@ def direction_html(
             '</span>'
         )
 
-    if direction == "short":
+    if (
+        direction == "short"
+        and
+        change_percent is not None
+        and
+        change_percent < 0
+    ):
 
         return (
             '<span class="direction-short">'
@@ -2407,7 +2420,6 @@ def update_upbit():
 
         return
 
-    # 반드시 전체를 계산한 뒤 TOP 선정
     top_markets = sorted(
         volume_map,
         key=volume_map.get,
@@ -2445,6 +2457,17 @@ def update_upbit():
                 market
             )
 
+            # ★ 오늘 변동률 원본값 저장
+            change_percent = (
+                changes[0]
+                if (
+                    changes is not None
+                    and
+                    len(changes) > 0
+                )
+                else None
+            )
+
             rows.append({
 
                 "rank": rank,
@@ -2455,6 +2478,9 @@ def update_upbit():
                     format_change(
                         changes
                     ),
+
+                "change_percent":
+                    change_percent,
 
                 "volume":
                     format_volume(
@@ -2483,6 +2509,8 @@ def update_upbit():
                 "name": coin,
 
                 "change": "N/A",
+
+                "change_percent": None,
 
                 "volume":
                     format_volume(
@@ -2662,7 +2690,6 @@ def update_okx():
 
     # =====================================================
     # TOP 상세조회
-    # 변동률 + EMA + LONG/SHORT + 경고
     # =====================================================
 
     for rank, symbol in enumerate(
@@ -2689,6 +2716,17 @@ def update_okx():
                 symbol
             )
 
+            # ★ 오늘 변동률 원본값 저장
+            change_percent = (
+                changes[0]
+                if (
+                    changes is not None
+                    and
+                    len(changes) > 0
+                )
+                else None
+            )
+
             rows.append({
 
                 "rank": rank,
@@ -2699,6 +2737,9 @@ def update_okx():
                     format_change(
                         changes
                     ),
+
+                "change_percent":
+                    change_percent,
 
                 "volume":
                     format_volume(
@@ -2727,6 +2768,8 @@ def update_okx():
                 "name": coin,
 
                 "change": "N/A",
+
+                "change_percent": None,
 
                 "volume":
                     format_volume(
@@ -2878,10 +2921,6 @@ def dashboard():
 
 
 <style>
-
-/* =====================================================
-   기본
-   ===================================================== */
 
 *{
 
@@ -4008,6 +4047,10 @@ TOP""" + str(TOP_N) + """
     ema.get(
         "direction",
         "none"
+    ),
+    item.get(
+        "change_percent",
+        None
     )
 )}
 
@@ -4187,6 +4230,10 @@ TOP""" + str(TOP_N) + """
     ema.get(
         "direction",
         "none"
+    ),
+    item.get(
+        "change_percent",
+        None
     )
 )}
 
