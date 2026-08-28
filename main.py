@@ -42,9 +42,9 @@ UPDATE_MINUTES = 5
 
 MAX_WARNING_COUNT = 3
 
-PULLBACK_DISTANCE = 0.01
+PULLBACK_DISTANCE = 0.02
 
-BREAKOUT_LOOKBACK = 5
+BREAKOUT_LOOKBACK = 10
 
 
 # =========================================================
