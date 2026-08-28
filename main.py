@@ -1126,7 +1126,18 @@ def check_lightning(
 
 # =========================================================
 # 🔥 눌림목
+#
 # ★ 1H 기준
+#
+# LONG
+# 10 > 30 > 60 > 120
+# 30일선(EMA30) 근처까지 눌림
+# 30일선 위에서 양봉 마감
+#
+# SHORT
+# 10 < 30 < 60 < 120
+# 30일선(EMA30) 근처까지 반등
+# 30일선 아래에서 음봉 마감
 # =========================================================
 
 def check_pullback(
@@ -1142,6 +1153,16 @@ def check_pullback(
         return "none"
 
     df = df1h.copy()
+
+    # =====================================================
+    # EMA10 / EMA30 / EMA60 / EMA120
+    # =====================================================
+
+    df["ema10"] = get_ema(
+        df,
+        column,
+        10
+    )
 
     df["ema30"] = get_ema(
         df,
@@ -1165,12 +1186,20 @@ def check_pullback(
 
     prev = df.iloc[-2]
 
+    # =====================================================
+    # EMA 데이터 확인
+    # =====================================================
+
     if (
+        pd.isna(cur["ema10"])
+        or
         pd.isna(cur["ema30"])
         or
         pd.isna(cur["ema60"])
         or
         pd.isna(cur["ema120"])
+        or
+        pd.isna(prev["ema10"])
         or
         pd.isna(prev["ema30"])
         or
@@ -1185,7 +1214,10 @@ def check_pullback(
     # LONG
     # =====================================================
 
+    # 1H 전체 정배열
     long_trend = (
+        cur["ema10"]
+        >
         cur["ema30"]
         >
         cur["ema60"]
@@ -1193,6 +1225,7 @@ def check_pullback(
         cur["ema120"]
     )
 
+    # EMA30까지 눌림
     long_touch = (
         cur["l"]
         <=
@@ -1201,12 +1234,14 @@ def check_pullback(
         (1 + PULLBACK_DISTANCE)
     )
 
+    # EMA30 위에서 종가
     long_close = (
         cur[column]
         >
         cur["ema30"]
     )
 
+    # 양봉
     long_candle = (
         cur["c"]
         >
@@ -1223,7 +1258,13 @@ def check_pullback(
         long_candle
     )
 
+    # =====================================================
+    # 이전 캔들 LONG 눌림 여부
+    # =====================================================
+
     prev_long_trend = (
+        prev["ema10"]
+        >
         prev["ema30"]
         >
         prev["ema60"]
@@ -1273,7 +1314,10 @@ def check_pullback(
     # SHORT
     # =====================================================
 
+    # 1H 전체 역배열
     short_trend = (
+        cur["ema10"]
+        <
         cur["ema30"]
         <
         cur["ema60"]
@@ -1281,6 +1325,7 @@ def check_pullback(
         cur["ema120"]
     )
 
+    # EMA30까지 반등
     short_touch = (
         cur["h"]
         >=
@@ -1289,12 +1334,14 @@ def check_pullback(
         (1 - PULLBACK_DISTANCE)
     )
 
+    # EMA30 아래에서 종가
     short_close = (
         cur[column]
         <
         cur["ema30"]
     )
 
+    # 음봉
     short_candle = (
         cur["c"]
         <
@@ -1311,7 +1358,13 @@ def check_pullback(
         short_candle
     )
 
+    # =====================================================
+    # 이전 캔들 SHORT 눌림 여부
+    # =====================================================
+
     prev_short_trend = (
+        prev["ema10"]
+        <
         prev["ema30"]
         <
         prev["ema60"]
@@ -1328,7 +1381,7 @@ def check_pullback(
     )
 
     prev_short_close = (
-        prev["c"]
+        prev[column]
         <
         prev["ema30"]
     )
@@ -1719,7 +1772,7 @@ def get_upbit_ema(
             .reset_index(drop=True)
         )
 
-    # 1H도 진행 중인 캔들 제거
+    # 1H 진행 중인 캔들 제거
     if len(df1h) > 1:
 
         df1h = (
