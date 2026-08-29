@@ -1094,6 +1094,8 @@ def get_main_direction(
 # ★ 1H 기준
 # ★ 번개 / 눌림목 제거
 # ★ 10-30 + 30-60-120 정배열 조건 사용
+# ★ 이전 5개 캔들 고가/저가 돌파
+# ★ 연속 돌파 횟수 카운트
 # =========================================================
 
 def check_breakout(
@@ -1136,114 +1138,178 @@ def check_breakout(
         120
     )
 
-    cur = df.iloc[-1]
+    # =====================================================
+    # 개별 캔들의 돌파 상태
+    # =====================================================
 
-    previous = df.iloc[
-        -(BREAKOUT_LOOKBACK + 1):
-        -1
-    ]
+    def get_breakout_state(index):
 
-    if previous.empty:
+        if index < BREAKOUT_LOOKBACK:
+
+            return "none"
+
+        cur = df.iloc[index]
+
+        previous = df.iloc[
+            index - BREAKOUT_LOOKBACK:
+            index
+        ]
+
+        if previous.empty:
+
+            return "none"
+
+        previous_high = (
+            pd.to_numeric(
+                previous["h"],
+                errors="coerce"
+            ).max()
+        )
+
+        previous_low = (
+            pd.to_numeric(
+                previous["l"],
+                errors="coerce"
+            ).min()
+        )
+
+        # =================================================
+        # LONG
+        # =================================================
+
+        long_10_30 = (
+            cur["ema10"]
+            >
+            cur["ema30"]
+        )
+
+        long_30_60_120 = (
+            cur["ema30"]
+            >
+            cur["ema60"]
+            >
+            cur["ema120"]
+        )
+
+        long_break = (
+            cur["c"]
+            >
+            previous_high
+        )
+
+        long_candle = (
+            cur["c"]
+            >
+            cur["o"]
+        )
+
+        if (
+            long_10_30
+            and
+            long_30_60_120
+            and
+            long_break
+            and
+            long_candle
+        ):
+
+            return "long"
+
+        # =================================================
+        # SHORT
+        # =================================================
+
+        short_10_30 = (
+            cur["ema10"]
+            <
+            cur["ema30"]
+        )
+
+        short_30_60_120 = (
+            cur["ema30"]
+            <
+            cur["ema60"]
+            <
+            cur["ema120"]
+        )
+
+        short_break = (
+            cur["c"]
+            <
+            previous_low
+        )
+
+        short_candle = (
+            cur["c"]
+            <
+            cur["o"]
+        )
+
+        if (
+            short_10_30
+            and
+            short_30_60_120
+            and
+            short_break
+            and
+            short_candle
+        ):
+
+            return "short"
 
         return "none"
 
-    previous_high = (
-        pd.to_numeric(
-            previous["h"],
-            errors="coerce"
-        ).max()
-    )
-
-    previous_low = (
-        pd.to_numeric(
-            previous["l"],
-            errors="coerce"
-        ).min()
-    )
-
     # =====================================================
-    # LONG
+    # 현재 마지막 캔들
     # =====================================================
 
-    long_10_30 = (
-        cur["ema10"]
-        >
-        cur["ema30"]
+    current_index = len(df) - 1
+
+    current_state = get_breakout_state(
+        current_index
     )
 
-    long_30_60_120 = (
-        cur["ema30"]
-        >
-        cur["ema60"]
-        >
-        cur["ema120"]
-    )
+    # 현재 캔들이 조건을 충족하지 않으면
+    # 즉시 로켓 종료
+    if current_state == "none":
 
-    long_break = (
-        cur["c"]
-        >
-        previous_high
-    )
+        return "none"
 
-    long_candle = (
-        cur["c"]
-        >
-        cur["o"]
-    )
+    # =====================================================
+    # 현재 캔들부터 과거로 연속 돌파 횟수 계산
+    # =====================================================
 
-    if (
-        long_10_30
-        and
-        long_30_60_120
-        and
-        long_break
-        and
-        long_candle
+    count = 0
+
+    for index in range(
+        current_index,
+        -1,
+        -1
     ):
 
-        return "long_breakout"
+        state = get_breakout_state(
+            index
+        )
+
+        if state == current_state:
+
+            count += 1
+
+        else:
+
+            break
 
     # =====================================================
-    # SHORT
+    # 결과
     # =====================================================
 
-    short_10_30 = (
-        cur["ema10"]
-        <
-        cur["ema30"]
-    )
+    if current_state == "long":
 
-    short_30_60_120 = (
-        cur["ema30"]
-        <
-        cur["ema60"]
-        <
-        cur["ema120"]
-    )
+        return f"long_breakout_{count}"
 
-    short_break = (
-        cur["c"]
-        <
-        previous_low
-    )
+    if current_state == "short":
 
-    short_candle = (
-        cur["c"]
-        <
-        cur["o"]
-    )
-
-    if (
-        short_10_30
-        and
-        short_30_60_120
-        and
-        short_break
-        and
-        short_candle
-    ):
-
-        return "short_breakout"
+        return f"short_breakout_{count}"
 
     return "none"
 
@@ -1251,6 +1317,7 @@ def check_breakout(
 # =========================================================
 # 최종 경고
 # ★ 돌파만 사용
+# ★ 연속 돌파 횟수 포함
 # =========================================================
 
 def check_entry_warning(
@@ -2016,6 +2083,7 @@ def direction_html(
 # =========================================================
 # 경고 HTML
 # ★ 돌파만 표시
+# ★ 연속 돌파 횟수 표시
 # =========================================================
 
 def warning_html(
@@ -2023,8 +2091,12 @@ def warning_html(
     change_percent
 ):
 
+    # =====================================================
+    # LONG 연속 돌파
+    # =====================================================
+
     if warning.startswith(
-        "long_"
+        "long_breakout_"
     ):
 
         if (
@@ -2035,8 +2107,28 @@ def warning_html(
 
             return ""
 
+        try:
+
+            count = int(
+                warning.split("_")[-1]
+            )
+
+        except Exception:
+
+            count = 1
+
+        return (
+            '<span class="warning-icon">'
+            f'🚀({count})'
+            '</span>'
+        )
+
+    # =====================================================
+    # SHORT 연속 돌파
+    # =====================================================
+
     if warning.startswith(
-        "short_"
+        "short_breakout_"
     ):
 
         if (
@@ -2047,19 +2139,19 @@ def warning_html(
 
             return ""
 
-    if warning == "long_breakout":
+        try:
+
+            count = int(
+                warning.split("_")[-1]
+            )
+
+        except Exception:
+
+            count = 1
 
         return (
             '<span class="warning-icon">'
-            '🚀'
-            '</span>'
-        )
-
-    if warning == "short_breakout":
-
-        return (
-            '<span class="warning-icon">'
-            '🚀'
+            f'🚀({count})'
             '</span>'
         )
 
@@ -3623,7 +3715,7 @@ td{
 
 
 <div class="description">
-1H 추세 방향 + 1H 돌파조건 | 🚀 돌파
+1H 추세 방향 + 1H 돌파조건 | 🚀 돌파(연속횟수)
 </div>
 
 
@@ -3706,6 +3798,7 @@ TOP""" + str(TOP_N) + """
 
         # =================================================
         # 모든 조건이 충족된 돌파 코인만 표시
+        # ★ 연속 돌파도 포함
         # =================================================
 
         direction = ema.get(
@@ -3732,7 +3825,9 @@ TOP""" + str(TOP_N) + """
                 and
                 change_percent > 0
                 and
-                warning == "long_breakout"
+                warning.startswith(
+                    "long_breakout_"
+                )
             )
 
             or
@@ -3744,7 +3839,9 @@ TOP""" + str(TOP_N) + """
                 and
                 change_percent < 0
                 and
-                warning == "short_breakout"
+                warning.startswith(
+                    "short_breakout_"
+                )
             )
 
         )
@@ -3947,6 +4044,7 @@ TOP""" + str(TOP_N) + """
 
         # =================================================
         # 모든 조건이 충족된 돌파 코인만 표시
+        # ★ 연속 돌파도 포함
         # =================================================
 
         direction = ema.get(
@@ -3973,7 +4071,9 @@ TOP""" + str(TOP_N) + """
                 and
                 change_percent > 0
                 and
-                warning == "long_breakout"
+                warning.startswith(
+                    "long_breakout_"
+                )
             )
 
             or
@@ -3985,7 +4085,9 @@ TOP""" + str(TOP_N) + """
                 and
                 change_percent < 0
                 and
-                warning == "short_breakout"
+                warning.startswith(
+                    "short_breakout_"
+                )
             )
 
         )
@@ -4177,4 +4279,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-            )
+        )
