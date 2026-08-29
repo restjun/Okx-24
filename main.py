@@ -36,7 +36,7 @@ logging.basicConfig(
 
 VOLUME_HOURS = 24
 
-TOP_N = 30
+TOP_N = 20
 
 UPDATE_MINUTES = 5
 
@@ -2316,7 +2316,7 @@ def direction_html(
 
         return (
             '<span class="direction-long">'
-            '☀️☀️☀️'
+            '✈️✈️✈️'
             '</span>'
         )
 
@@ -2330,7 +2330,7 @@ def direction_html(
 
         return (
             '<span class="direction-short">'
-            '🌧🌧🌧'
+            '🛩🛩🛩'
             '</span>'
         )
 
