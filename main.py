@@ -465,6 +465,83 @@ def get_upbit_ticker_volume_map(
 
 
 # =========================================================
+# ★ 업비트 USDT-KRW 현재가
+# ★ OKX 거래대금 환산 전용
+# ★ OKX 전체 조회 시작 시 1회만 호출
+# =========================================================
+
+def get_upbit_usdt_krw():
+
+    url = (
+        "https://api.upbit.com/v1/ticker"
+        "?markets=KRW-USDT"
+    )
+
+    response = retry_request(
+        requests.get,
+        url,
+        timeout=15
+    )
+
+    if response is None:
+
+        logging.warning(
+            "업비트 USDT-KRW 응답 없음"
+        )
+
+        return None
+
+    try:
+
+        if response.status_code != 200:
+
+            logging.warning(
+                f"업비트 USDT-KRW HTTP "
+                f"{response.status_code}"
+            )
+
+            return None
+
+        data = response.json()
+
+        if not data:
+
+            logging.warning(
+                "업비트 USDT-KRW 데이터 없음"
+            )
+
+            return None
+
+        price = float(
+            data[0]["trade_price"]
+        )
+
+        if price <= 0:
+
+            logging.warning(
+                f"업비트 USDT-KRW 가격 오류 "
+                f"{price}"
+            )
+
+            return None
+
+        logging.info(
+            f"업비트 USDT-KRW 현재가 "
+            f"= {price:,.2f}원"
+        )
+
+        return price
+
+    except Exception as e:
+
+        logging.error(
+            f"업비트 USDT-KRW 조회 오류 : {e}"
+        )
+
+        return None
+
+
+# =========================================================
 # 업비트 캔들
 # =========================================================
 
@@ -1286,13 +1363,15 @@ def get_upbit_ema(
 
 
 # =========================================================
-# OKX 거래대금
-# ★ 직렬 요청
-# ★ 실패 종목 반복
+# ★ OKX 거래대금
+# ★ 1H 확정 캔들 24개
+# ★ USDT 기준 → 업비트 USDT-KRW 환산
+# ★ USDT-KRW는 함수 밖에서 1회만 조회
 # =========================================================
 
 def get_okx_volume(
-    inst_id
+    inst_id,
+    usdt_krw
 ):
 
     hours = max(
@@ -1346,16 +1425,17 @@ def get_okx_volume(
 
                 continue
 
-            volume = float(
+            # -------------------------------------------------
+            # 완료된 1H 캔들 24개 거래대금
+            # -------------------------------------------------
+
+            volume_usdt = float(
                 df["volCcyQuote"]
                 .tail(hours)
                 .sum()
             )
 
-            # 기존 코드와 동일하게 ÷10
-            volume = volume / 10
-
-            if volume <= 0:
+            if volume_usdt <= 0:
 
                 logging.warning(
                     f"OKX 거래대금 0 "
@@ -1369,7 +1449,31 @@ def get_okx_volume(
 
                 continue
 
-            return volume
+            # -------------------------------------------------
+            # USDT → KRW 환산
+            # -------------------------------------------------
+
+            volume_krw = (
+                volume_usdt
+                *
+                usdt_krw
+            )
+
+            if volume_krw <= 0:
+
+                logging.warning(
+                    f"OKX KRW 거래대금 0 "
+                    f"{inst_id} "
+                    f"- 재시도"
+                )
+
+                time.sleep(
+                    OKX_RETRY_DELAY
+                )
+
+                continue
+
+            return volume_krw
 
         except Exception as e:
 
@@ -1990,6 +2094,7 @@ def update_upbit():
 # =========================================================
 # OKX 업데이트
 # ★ 업비트 완료 후 실행
+# ★ USDT-KRW 1회 조회
 # ★ 거래대금 직렬
 # =========================================================
 
@@ -2001,6 +2106,32 @@ def update_okx():
         f"========== OKX TOP{TOP_N} 시작 =========="
     )
 
+    # =====================================================
+    # 1. 업비트 USDT-KRW 현재가 1회 조회
+    # =====================================================
+
+    usdt_krw = get_upbit_usdt_krw()
+
+    if (
+        usdt_krw is None
+        or usdt_krw <= 0
+    ):
+
+        logging.error(
+            "업비트 USDT-KRW 조회 실패"
+        )
+
+        return False
+
+    logging.info(
+        f"OKX 거래대금 환산 기준 "
+        f"USDT-KRW = {usdt_krw:,.2f}원"
+    )
+
+    # =====================================================
+    # 2. OKX 전체 종목 목록
+    # =====================================================
+
     symbols = get_all_okx_swap_symbols()
 
     if not symbols:
@@ -2010,6 +2141,10 @@ def update_okx():
         )
 
         return False
+
+    # =====================================================
+    # 3. 업비트 마켓
+    # =====================================================
 
     upbit_markets = get_upbit_markets()
 
@@ -2035,11 +2170,13 @@ def update_okx():
     #
     # 병렬 요청하지 않음
     #
-    # 1번 요청
+    # USDT-KRW는 위에서 1회만 조회
+    #
+    # 1번 OKX 요청
     # ↓
     # 결과 취합
     # ↓
-    # 다음 요청
+    # 다음 OKX 요청
     #
     # 실패하면 해당 종목만 계속 재시도
     # =====================================================
@@ -2054,7 +2191,8 @@ def update_okx():
             try:
 
                 volume = get_okx_volume(
-                    symbol
+                    symbol,
+                    usdt_krw
                 )
 
                 if volume > 0:
@@ -2066,7 +2204,8 @@ def update_okx():
                     logging.info(
                         f"OKX 거래대금 "
                         f"{index}/{total_symbols} "
-                        f"{symbol} 완료"
+                        f"{symbol} 완료 "
+                        f"({format_volume(volume)})"
                     )
 
                     break
@@ -2101,7 +2240,7 @@ def update_okx():
         return False
 
     # =====================================================
-    # 거래대금 순위
+    # 4. 거래대금 순위
     # =====================================================
 
     top_symbols = sorted(
@@ -2851,7 +2990,11 @@ td:nth-child(5) {
 
 업비트 거래대금 = 거래소 24시간 누적 거래대금
 &nbsp;|&nbsp;
-OKX 거래대금 = 1H 캔들 기준 ÷10
+OKX 거래대금 = 완료된 1H """
+
+    html += str(VOLUME_HOURS)
+
+    html += """개 거래대금 × 업비트 USDT-KRW
 &nbsp;|&nbsp;
 TOP"""
 
@@ -3277,7 +3420,12 @@ EMA 10-30-60-120
 ※ 🚀(0) 진행 중 돌파는 완전히 제외<br>
 ※ LONG / SHORT는 확정 돌파만 표시<br>
 ※ EMA = 1H / 4H<br>
-※ OKX 거래대금은 기존 1H 캔들 방식 사용
+※ OKX 거래대금 = 완료된 1H """
+
+    html += str(VOLUME_HOURS)
+
+    html += """개 × 업비트 USDT-KRW 현재가<br>
+※ USDT-KRW는 OKX 거래대금 조회 시작 시 1회 조회
 
 </div>
 
