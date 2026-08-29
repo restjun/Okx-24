@@ -129,10 +129,6 @@ def retry_request(
 
                 status = result.status_code
 
-                # -----------------------------------------
-                # 429
-                # -----------------------------------------
-
                 if status == 429:
 
                     wait_time = min(
@@ -153,10 +149,6 @@ def retry_request(
 
                     continue
 
-                # -----------------------------------------
-                # 서버 오류
-                # -----------------------------------------
-
                 if status >= 500:
 
                     wait_time = min(
@@ -176,10 +168,6 @@ def retry_request(
                     )
 
                     continue
-
-                # -----------------------------------------
-                # 기타 HTTP 오류
-                # -----------------------------------------
 
                 if status != 200:
 
@@ -286,7 +274,6 @@ def get_okx_ohlcv(
                 errors="coerce"
             )
 
-        # 확정 캔들만 사용
         df = df[
             df["confirm"]
             .astype(str)
@@ -569,7 +556,6 @@ def get_upbit_daily_ohlcv(
             errors="coerce"
         )
 
-        # 진행 중인 일봉 제거
         if len(df) > 1:
 
             df = (
@@ -794,7 +780,7 @@ def get_ema(
 
 
 # =========================================================
-# ★ EMA 10-30-60-120 방향
+# EMA 10-30-60-120 방향
 # =========================================================
 
 def get_ema_10_30_60_120_direction(
@@ -809,29 +795,10 @@ def get_ema_10_30_60_120_direction(
 
         return "none"
 
-    ema10 = get_ema(
-        df,
-        column,
-        10
-    )
-
-    ema30 = get_ema(
-        df,
-        column,
-        30
-    )
-
-    ema60 = get_ema(
-        df,
-        column,
-        60
-    )
-
-    ema120 = get_ema(
-        df,
-        column,
-        120
-    )
+    ema10 = get_ema(df, column, 10)
+    ema30 = get_ema(df, column, 30)
+    ema60 = get_ema(df, column, 60)
+    ema120 = get_ema(df, column, 120)
 
     if (
         ema10 is None
@@ -882,7 +849,7 @@ def get_ema_10_30_60_120_direction(
 
 
 # =========================================================
-# ★ EMA 10-30-60-120 연속 카운트
+# EMA 10-30-60-120 연속 카운트
 # =========================================================
 
 def get_10_30_60_120_count(
@@ -898,29 +865,10 @@ def get_10_30_60_120_count(
 
         return 0, "none"
 
-    ema10 = get_ema(
-        df,
-        column,
-        10
-    )
-
-    ema30 = get_ema(
-        df,
-        column,
-        30
-    )
-
-    ema60 = get_ema(
-        df,
-        column,
-        60
-    )
-
-    ema120 = get_ema(
-        df,
-        column,
-        120
-    )
+    ema10 = get_ema(df, column, 10)
+    ema30 = get_ema(df, column, 30)
+    ema60 = get_ema(df, column, 60)
+    ema120 = get_ema(df, column, 120)
 
     if (
         ema10 is None
@@ -933,9 +881,7 @@ def get_10_30_60_120_count(
 
     states = []
 
-    for i in range(
-        len(df)
-    ):
+    for i in range(len(df)):
 
         if (
             pd.isna(ema10.iloc[i])
@@ -947,9 +893,7 @@ def get_10_30_60_120_count(
             pd.isna(ema120.iloc[i])
         ):
 
-            states.append(
-                "none"
-            )
+            states.append("none")
 
         elif (
             ema10.iloc[i]
@@ -961,9 +905,7 @@ def get_10_30_60_120_count(
             ema120.iloc[i]
         ):
 
-            states.append(
-                "long"
-            )
+            states.append("long")
 
         elif (
             ema10.iloc[i]
@@ -975,15 +917,11 @@ def get_10_30_60_120_count(
             ema120.iloc[i]
         ):
 
-            states.append(
-                "short"
-            )
+            states.append("short")
 
         else:
 
-            states.append(
-                "none"
-            )
+            states.append("none")
 
     current_state = states[-1]
 
@@ -993,9 +931,7 @@ def get_10_30_60_120_count(
 
     count = 0
 
-    for state in reversed(
-        states
-    ):
+    for state in reversed(states):
 
         if state == current_state:
 
@@ -1009,7 +945,7 @@ def get_10_30_60_120_count(
 
 
 # =========================================================
-# ★ 통합 EMA 표시
+# 통합 EMA 표시
 # =========================================================
 
 def check_ema_10_30_60_120(
@@ -1037,7 +973,6 @@ def check_ema_10_30_60_120(
 
 # =========================================================
 # 메인 방향
-# ★ 1H 10-30-60-120만 사용
 # =========================================================
 
 def get_main_direction(
@@ -1065,7 +1000,7 @@ def get_main_direction(
 
 
 # =========================================================
-# 🚀 1H 확정 돌파
+# 1H 확정 돌파
 # =========================================================
 
 def check_breakout(
@@ -1084,29 +1019,10 @@ def check_breakout(
 
     df = df1h.copy()
 
-    df["ema10"] = get_ema(
-        df,
-        column,
-        10
-    )
-
-    df["ema30"] = get_ema(
-        df,
-        column,
-        30
-    )
-
-    df["ema60"] = get_ema(
-        df,
-        column,
-        60
-    )
-
-    df["ema120"] = get_ema(
-        df,
-        column,
-        120
-    )
+    df["ema10"] = get_ema(df, column, 10)
+    df["ema30"] = get_ema(df, column, 30)
+    df["ema60"] = get_ema(df, column, 60)
+    df["ema120"] = get_ema(df, column, 120)
 
     def get_breakout_state(index):
 
@@ -1125,21 +1041,16 @@ def check_breakout(
 
             return "none"
 
-        previous_high = (
-            pd.to_numeric(
-                previous["h"],
-                errors="coerce"
-            ).max()
-        )
+        previous_high = pd.to_numeric(
+            previous["h"],
+            errors="coerce"
+        ).max()
 
-        previous_low = (
-            pd.to_numeric(
-                previous["l"],
-                errors="coerce"
-            ).min()
-        )
+        previous_low = pd.to_numeric(
+            previous["l"],
+            errors="coerce"
+        ).min()
 
-        # LONG
         long_10_30_60_120 = (
             cur["ema10"]
             >
@@ -1151,15 +1062,11 @@ def check_breakout(
         )
 
         long_break = (
-            cur["c"]
-            >
-            previous_high
+            cur["c"] > previous_high
         )
 
         long_candle = (
-            cur["c"]
-            >
-            cur["o"]
+            cur["c"] > cur["o"]
         )
 
         if (
@@ -1172,7 +1079,6 @@ def check_breakout(
 
             return "long"
 
-        # SHORT
         short_10_30_60_120 = (
             cur["ema10"]
             <
@@ -1184,15 +1090,11 @@ def check_breakout(
         )
 
         short_break = (
-            cur["c"]
-            <
-            previous_low
+            cur["c"] < previous_low
         )
 
         short_candle = (
-            cur["c"]
-            <
-            cur["o"]
+            cur["c"] < cur["o"]
         )
 
         if (
@@ -1225,9 +1127,7 @@ def check_breakout(
         -1
     ):
 
-        state = get_breakout_state(
-            index
-        )
+        state = get_breakout_state(index)
 
         if state == current_state:
 
@@ -1249,7 +1149,7 @@ def check_breakout(
 
 
 # =========================================================
-# 🚀 1H 진행 중 캔들 0
+# 1H 진행 중 캔들 0
 # =========================================================
 
 def check_breakout_0(
@@ -1313,19 +1213,15 @@ def check_breakout_0(
 
         return "none"
 
-    previous_high = (
-        pd.to_numeric(
-            previous["h"],
-            errors="coerce"
-        ).max()
-    )
+    previous_high = pd.to_numeric(
+        previous["h"],
+        errors="coerce"
+    ).max()
 
-    previous_low = (
-        pd.to_numeric(
-            previous["l"],
-            errors="coerce"
-        ).min()
-    )
+    previous_low = pd.to_numeric(
+        previous["l"],
+        errors="coerce"
+    ).min()
 
     if (
         pd.isna(previous_high)
@@ -1338,7 +1234,6 @@ def check_breakout_0(
     temp = pd.concat(
         [
             df[[column]],
-
             pd.DataFrame(
                 [
                     {
@@ -1351,29 +1246,10 @@ def check_breakout_0(
         ignore_index=True
     )
 
-    ema10 = get_ema(
-        temp,
-        column,
-        10
-    )
-
-    ema30 = get_ema(
-        temp,
-        column,
-        30
-    )
-
-    ema60 = get_ema(
-        temp,
-        column,
-        60
-    )
-
-    ema120 = get_ema(
-        temp,
-        column,
-        120
-    )
+    ema10 = get_ema(temp, column, 10)
+    ema30 = get_ema(temp, column, 30)
+    ema60 = get_ema(temp, column, 60)
+    ema120 = get_ema(temp, column, 120)
 
     if (
         ema10 is None
@@ -1392,8 +1268,6 @@ def check_breakout_0(
     cur_ema60 = ema60.iloc[-1]
     cur_ema120 = ema120.iloc[-1]
 
-    # LONG 0
-
     long_10_30_60_120 = (
         cur_ema10
         >
@@ -1405,15 +1279,11 @@ def check_breakout_0(
     )
 
     long_candle = (
-        current_close
-        >
-        current_open
+        current_close > current_open
     )
 
     long_possible = (
-        current_high
-        >=
-        previous_high
+        current_high >= previous_high
     )
 
     if (
@@ -1426,8 +1296,6 @@ def check_breakout_0(
 
         return "long_breakout_0"
 
-    # SHORT 0
-
     short_10_30_60_120 = (
         cur_ema10
         <
@@ -1439,15 +1307,11 @@ def check_breakout_0(
     )
 
     short_candle = (
-        current_close
-        <
-        current_open
+        current_close < current_open
     )
 
     short_possible = (
-        current_low
-        <=
-        previous_low
+        current_low <= previous_low
     )
 
     if (
@@ -1480,8 +1344,6 @@ def check_entry_warning(
         column
     )
 
-    # 확정 1H 돌파가 없을 때만 0 검사
-
     if breakout_1h == "none":
 
         breakout_1h_0 = check_breakout_0(
@@ -1494,8 +1356,6 @@ def check_entry_warning(
 
             breakout_1h = breakout_1h_0
 
-    # 4H 번개 경고 삭제
-
     breakout_4h = "none"
 
     return (
@@ -1506,7 +1366,6 @@ def check_entry_warning(
 
 # =========================================================
 # LONG / SHORT
-# ★ 0은 신호로 사용하지 않음
 # =========================================================
 
 def get_trade_signal(
@@ -1578,8 +1437,6 @@ def get_okx_ema(
     inst_id
 ):
 
-    # 확정 캔들
-
     df1h = get_okx_ohlcv(
         inst_id,
         "1H",
@@ -1596,8 +1453,6 @@ def get_okx_ema(
         inst_id,
         200
     )
-
-    # 현재 진행 캔들
 
     current1h = get_okx_current_ohlcv(
         inst_id,
@@ -1647,7 +1502,6 @@ def get_okx_ema(
     )
 
     return {
-
         "1h_10_30_60_120":
             check_ema_10_30_60_120(
                 df1h,
@@ -1666,20 +1520,15 @@ def get_okx_ema(
                 "c"
             ),
 
-        "signal":
-            signal,
+        "signal": signal,
 
-        "warning":
-            warning_1h,
+        "warning": warning_1h,
 
-        "warning_1h":
-            warning_1h,
+        "warning_1h": warning_1h,
 
-        "warning_4h":
-            "none",
+        "warning_4h": "none",
 
-        "direction":
-            direction
+        "direction": direction
     }
 
 
@@ -1727,20 +1576,10 @@ def get_upbit_ema(
             "direction": "none"
         }
 
-    # 현재 진행 캔들
-
-    current1h = raw1h.tail(
-        1
-    ).copy()
-
-    current4h = raw4h.tail(
-        1
-    ).copy()
-
-    # 확정 캔들
+    current1h = raw1h.tail(1).copy()
+    current4h = raw4h.tail(1).copy()
 
     df1h = raw1h.copy()
-
     df4h = raw4h.copy()
 
     if len(df1h) > 1:
@@ -1758,9 +1597,6 @@ def get_upbit_ema(
             .iloc[:-1]
             .reset_index(drop=True)
         )
-
-    # raw1d는 get_upbit_daily_ohlcv에서
-    # 이미 진행 중 일봉을 제거함
 
     df1d = raw1d.copy()
 
@@ -1781,7 +1617,6 @@ def get_upbit_ema(
     )
 
     return {
-
         "1h_10_30_60_120":
             check_ema_10_30_60_120(
                 df1h,
@@ -1800,20 +1635,15 @@ def get_upbit_ema(
                 "c"
             ),
 
-        "signal":
-            signal,
+        "signal": signal,
 
-        "warning":
-            warning_1h,
+        "warning": warning_1h,
 
-        "warning_1h":
-            warning_1h,
+        "warning_1h": warning_1h,
 
-        "warning_4h":
-            "none",
+        "warning_4h": "none",
 
-        "direction":
-            direction
+        "direction": direction
     }
 
 
@@ -1963,7 +1793,6 @@ def get_upbit_volume_map(
     )
 
     success = 0
-
     failed = 0
 
     for index, market in enumerate(
@@ -2075,11 +1904,7 @@ def get_okx_change(
 
     result = []
 
-    for i in [
-        -1,
-        -2,
-        -3
-    ]:
+    for i in [-1, -2, -3]:
 
         if daily.iloc[i - 1] == 0:
 
@@ -2100,10 +1925,7 @@ def get_okx_change(
         )
 
         result.append(
-            round(
-                change,
-                2
-            )
+            round(change, 2)
         )
 
     return result
@@ -2156,11 +1978,7 @@ def get_upbit_change(
 
     result = []
 
-    for i in [
-        -1,
-        -2,
-        -3
-    ]:
+    for i in [-1, -2, -3]:
 
         if daily.iloc[i - 1] == 0:
 
@@ -2181,10 +1999,7 @@ def get_upbit_change(
         )
 
         result.append(
-            round(
-                change,
-                2
-            )
+            round(change, 2)
         )
 
     return result
@@ -2210,19 +2025,16 @@ def format_change(
     if x > 0:
 
         icon = "🟩"
-
         sign = "+"
 
     elif x < 0:
 
         icon = "🟥"
-
         sign = ""
 
     else:
 
         icon = "⬜"
-
         sign = ""
 
     return (
@@ -2324,7 +2136,6 @@ def direction_html(
 
 # =========================================================
 # 경고 HTML
-# ★ 1H만 표시
 # =========================================================
 
 def warning_html(
@@ -2336,10 +2147,6 @@ def warning_html(
     html = (
         '<div class="warning-wrap">'
     )
-
-    # =====================================================
-    # 1H 🚀
-    # =====================================================
 
     html += (
         '<div class="warning-row">'
@@ -2358,16 +2165,12 @@ def warning_html(
 
         valid_1h = False
 
-        # 0
-
         if warning_1h in (
             "long_breakout_0",
             "short_breakout_0"
         ):
 
             valid_1h = True
-
-        # 확정 LONG
 
         elif (
             warning_1h.startswith(
@@ -2380,8 +2183,6 @@ def warning_html(
         ):
 
             valid_1h = True
-
-        # 확정 SHORT
 
         elif (
             warning_1h.startswith(
@@ -2430,15 +2231,13 @@ def warning_html(
         )
 
     html += '</div>'
-
     html += '</div>'
 
     return html
 
 
 # =========================================================
-# ★ EMA HTML
-# ★ 1H / 4H / 1D
+# EMA HTML
 # =========================================================
 
 def ema_html(
@@ -2530,7 +2329,6 @@ def update_upbit():
     )
 
     success_detail = 0
-
     failed_detail = 0
 
     for rank, market in enumerate(
@@ -2566,24 +2364,13 @@ def update_upbit():
             rows.append(
                 {
                     "rank": rank,
-
                     "name": coin,
-
-                    "change":
-                        format_change(
-                            changes
-                        ),
-
-                    "change_percent":
-                        change_percent,
-
-                    "volume":
-                        format_volume(
-                            volume_map[market]
-                        ),
-
-                    "ema":
-                        ema
+                    "change": format_change(changes),
+                    "change_percent": change_percent,
+                    "volume": format_volume(
+                        volume_map[market]
+                    ),
+                    "ema": ema
                 }
             )
 
@@ -2601,32 +2388,25 @@ def update_upbit():
             rows.append(
                 {
                     "rank": rank,
-
                     "name": coin,
-
                     "change": "N/A",
-
                     "change_percent": None,
-
-                    "volume":
-                        format_volume(
-                            volume_map.get(
-                                market,
-                                0
-                            )
-                        ),
-
-                    "ema":
-                        {
-                            "1h_10_30_60_120": "⚪",
-                            "4h_10_30_60_120": "⚪",
-                            "1d_10_30_60_120": "⚪",
-                            "signal": "",
-                            "warning": "none",
-                            "warning_1h": "none",
-                            "warning_4h": "none",
-                            "direction": "none"
-                        }
+                    "volume": format_volume(
+                        volume_map.get(
+                            market,
+                            0
+                        )
+                    ),
+                    "ema": {
+                        "1h_10_30_60_120": "⚪",
+                        "4h_10_30_60_120": "⚪",
+                        "1d_10_30_60_120": "⚪",
+                        "signal": "",
+                        "warning": "none",
+                        "warning_1h": "none",
+                        "warning_4h": "none",
+                        "direction": "none"
+                    }
                 }
             )
 
@@ -2701,7 +2481,6 @@ def update_okx():
     volume_map = {}
 
     success = 0
-
     failed = 0
 
     for index, symbol in enumerate(
@@ -2774,7 +2553,6 @@ def update_okx():
     )
 
     success_detail = 0
-
     failed_detail = 0
 
     for rank, symbol in enumerate(
@@ -2814,24 +2592,13 @@ def update_okx():
             rows.append(
                 {
                     "rank": rank,
-
                     "name": coin,
-
-                    "change":
-                        format_change(
-                            changes
-                        ),
-
-                    "change_percent":
-                        change_percent,
-
-                    "volume":
-                        format_volume(
-                            volume_map[symbol]
-                        ),
-
-                    "ema":
-                        ema
+                    "change": format_change(changes),
+                    "change_percent": change_percent,
+                    "volume": format_volume(
+                        volume_map[symbol]
+                    ),
+                    "ema": ema
                 }
             )
 
@@ -2849,32 +2616,25 @@ def update_okx():
             rows.append(
                 {
                     "rank": rank,
-
                     "name": coin,
-
                     "change": "N/A",
-
                     "change_percent": None,
-
-                    "volume":
-                        format_volume(
-                            volume_map.get(
-                                symbol,
-                                0
-                            )
-                        ),
-
-                    "ema":
-                        {
-                            "1h_10_30_60_120": "⚪",
-                            "4h_10_30_60_120": "⚪",
-                            "1d_10_30_60_120": "⚪",
-                            "signal": "",
-                            "warning": "none",
-                            "warning_1h": "none",
-                            "warning_4h": "none",
-                            "direction": "none"
-                        }
+                    "volume": format_volume(
+                        volume_map.get(
+                            symbol,
+                            0
+                        )
+                    ),
+                    "ema": {
+                        "1h_10_30_60_120": "⚪",
+                        "4h_10_30_60_120": "⚪",
+                        "1d_10_30_60_120": "⚪",
+                        "signal": "",
+                        "warning": "none",
+                        "warning_1h": "none",
+                        "warning_4h": "none",
+                        "direction": "none"
+                    }
                 }
             )
 
@@ -2970,6 +2730,7 @@ def scheduler():
 
 # =========================================================
 # 웹 대시보드
+# ★ 모바일용 CSS 적용
 # =========================================================
 
 @app.get(
@@ -2999,15 +2760,24 @@ def dashboard():
 
 <style>
 
+/* =====================================================
+   모바일 최적화
+   기능/계산 로직은 변경하지 않고 화면 크기만 축소
+   ===================================================== */
+
 * {
     box-sizing: border-box;
+}
+
+html {
+    font-size: 11px;
 }
 
 body {
 
     margin: 0;
 
-    padding: 12px;
+    padding: 6px;
 
     background: #111;
 
@@ -3017,31 +2787,38 @@ body {
         Arial,
         sans-serif;
 
-    font-size: 14px;
+    font-size: 11px;
+
+    line-height: 1.2;
 }
 
 h1 {
 
-    margin: 5px 0 10px 0;
+    margin: 3px 0 6px 0;
 
-    font-size: 20px;
+    font-size: 15px;
+
+    line-height: 1.2;
 }
 
 h2 {
 
-    margin: 18px 0 8px 0;
+    margin: 10px 0 5px 0;
 
-    font-size: 17px;
+    font-size: 13px;
+
+    line-height: 1.2;
 }
 
 .info {
 
-    margin-bottom: 10px;
+    margin-bottom: 6px;
 
     color: #aaa;
 
-    font-size: 12px;
+    font-size: 9px;
 
+    line-height: 1.4;
 }
 
 .table-wrap {
@@ -3050,6 +2827,7 @@ h2 {
 
     overflow-x: auto;
 
+    -webkit-overflow-scrolling: touch;
 }
 
 table {
@@ -3065,21 +2843,23 @@ table {
 
 th {
 
-    padding: 8px 5px;
+    padding: 5px 3px;
 
     background: #252525;
 
     border-bottom:
         1px solid #444;
 
-    font-size: 12px;
+    font-size: 9px;
 
     white-space: nowrap;
+
+    line-height: 1.1;
 }
 
 td {
 
-    padding: 8px 5px;
+    padding: 5px 3px;
 
     border-bottom:
         1px solid #292929;
@@ -3087,6 +2867,10 @@ td {
     text-align: center;
 
     white-space: nowrap;
+
+    font-size: 10px;
+
+    line-height: 1.15;
 }
 
 .coin {
@@ -3094,22 +2878,36 @@ td {
     font-weight: bold;
 
     text-align: left;
+
+    font-size: 10px;
 }
 
 .change-item {
 
     display: inline-flex;
 
-    gap: 3px;
+    gap: 2px;
 
     align-items: center;
+
+    font-size: 9px;
+}
+
+.change-icon {
+
+    font-size: 9px;
+}
+
+.change-value {
+
+    font-size: 9px;
 }
 
 .signal-text {
 
     font-weight: bold;
 
-    font-size: 12px;
+    font-size: 10px;
 }
 
 .long-text {
@@ -3125,26 +2923,32 @@ td {
 .signal-none {
 
     color: #666;
+
+    font-size: 9px;
 }
 
 .direction-long {
 
-    font-size: 16px;
+    font-size: 13px;
 }
 
 .direction-short {
 
-    font-size: 16px;
+    font-size: 13px;
 }
 
 .direction-none {
 
     color: #666;
+
+    font-size: 10px;
 }
 
 .warning-wrap {
 
     display: inline-block;
+
+    margin-top: 1px;
 }
 
 .warning-row {
@@ -3155,24 +2959,28 @@ td {
 
     justify-content: center;
 
-    gap: 4px;
+    gap: 3px;
 }
 
 .warning-period {
 
     color: #999;
 
-    font-size: 10px;
+    font-size: 8px;
 }
 
 .rocket {
 
-    font-size: 13px;
+    font-size: 11px;
+
+    line-height: 1;
 }
 
 .warning-empty {
 
     color: #555;
+
+    font-size: 9px;
 }
 
 .ema-container {
@@ -3181,11 +2989,11 @@ td {
 
     flex-direction: column;
 
-    gap: 3px;
+    gap: 1px;
 
     align-items: flex-start;
 
-    min-width: 100px;
+    min-width: 82px;
 }
 
 .ema-row {
@@ -3194,43 +3002,114 @@ td {
 
     align-items: center;
 
-    gap: 6px;
+    gap: 3px;
 
     width: 100%;
+
+    line-height: 1.05;
 }
 
 .ema-period {
 
-    width: 22px;
+    width: 18px;
 
     color: #999;
 
-    font-size: 11px;
+    font-size: 8px;
 
     text-align: left;
 }
 
 .ema-value {
 
-    font-size: 12px;
+    font-size: 9px;
 
     font-weight: bold;
+
+    line-height: 1;
 }
 
 .section {
 
-    margin-bottom: 20px;
+    margin-bottom: 14px;
 }
 
 .note {
 
     color: #888;
 
-    font-size: 11px;
+    font-size: 8px;
 
-    line-height: 1.5;
+    line-height: 1.3;
 
-    margin-top: 5px;
+    margin-top: 3px;
+}
+
+
+/* =====================================================
+   아주 작은 휴대폰 화면
+   ===================================================== */
+
+@media screen and (max-width: 390px) {
+
+    body {
+        padding: 4px;
+        font-size: 10px;
+    }
+
+    h1 {
+        font-size: 14px;
+        margin: 2px 0 5px 0;
+    }
+
+    h2 {
+        font-size: 12px;
+        margin: 8px 0 4px 0;
+    }
+
+    .info {
+        font-size: 8px;
+    }
+
+    th {
+        padding: 4px 2px;
+        font-size: 8px;
+    }
+
+    td {
+        padding: 4px 2px;
+        font-size: 9px;
+    }
+
+    .coin {
+        font-size: 9px;
+    }
+
+    .ema-container {
+        min-width: 76px;
+    }
+
+    .ema-period {
+        width: 17px;
+        font-size: 7px;
+    }
+
+    .ema-value {
+        font-size: 8px;
+    }
+
+    .rocket {
+        font-size: 10px;
+    }
+
+    .direction-long,
+    .direction-short {
+        font-size: 12px;
+    }
+
+    .note {
+        font-size: 7px;
+    }
 }
 
 </style>
@@ -3287,17 +3166,11 @@ EMA 10-30-60-120
 <tr>
 
 <th>#</th>
-
 <th>코인</th>
-
 <th>거래대금</th>
-
 <th>방향</th>
-
 <th>오늘</th>
-
 <th>🚀</th>
-
 <th>1H / 4H / 1D</th>
 
 </tr>
@@ -3306,7 +3179,6 @@ EMA 10-30-60-120
 
 <tbody>
 """
-
 
     # =====================================================
     # 업비트 화면
@@ -3333,10 +3205,6 @@ EMA 10-30-60-120
                 "none"
             )
         )
-
-        # -------------------------------------------------
-        # 1H만 표시 조건
-        # -------------------------------------------------
 
         valid_1h = (
 
@@ -3406,6 +3274,7 @@ EMA 10-30-60-120
 </td>
 
 <td>
+
 {signal_html(
     ema.get(
         "signal",
@@ -3432,7 +3301,6 @@ EMA 10-30-60-120
 </tr>
 
 """
-
 
     html += """
 
@@ -3472,17 +3340,11 @@ EMA 10-30-60-120
 <tr>
 
 <th>#</th>
-
 <th>코인</th>
-
 <th>거래대금</th>
-
 <th>방향</th>
-
 <th>오늘</th>
-
 <th>🚀</th>
-
 <th>1H / 4H / 1D</th>
 
 </tr>
@@ -3491,7 +3353,6 @@ EMA 10-30-60-120
 
 <tbody>
 """
-
 
     # =====================================================
     # OKX 화면
@@ -3587,6 +3448,7 @@ EMA 10-30-60-120
 </td>
 
 <td>
+
 {signal_html(
     ema.get(
         "signal",
@@ -3613,7 +3475,6 @@ EMA 10-30-60-120
 </tr>
 
 """
-
 
     html += """
 
@@ -3685,4 +3546,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-        )
+    )
