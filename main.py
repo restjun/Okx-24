@@ -1090,10 +1090,10 @@ def get_main_direction(
 
 
 # =========================================================
-# 🚀 돌파
+# 🚀 1H 돌파
+# ★ 기존 로직 그대로 유지
 # ★ 1H 기준
-# ★ 번개 / 눌림목 제거
-# ★ 10-30 + 30-60-120 정배열 조건 사용
+# ★ 10-30 + 30-60-120 정배열
 # ★ 이전 5개 캔들 고가/저가 돌파
 # ★ 연속 돌파 횟수 카운트
 # =========================================================
@@ -1315,31 +1315,261 @@ def check_breakout(
 
 
 # =========================================================
-# 최종 경고
-# ★ 돌파만 사용
-# ★ 연속 돌파 횟수 포함
+# ⚡ 4H 돌파
+# ★ 1H 돌파와 완전히 별도
+# ★ 4H 기준
+# ★ 10-30 + 30-60-120 정배열
+# ★ 이전 5개 4H 캔들 고가/저가 돌파
+# ★ 연속 돌파 횟수 카운트
 # =========================================================
 
-def check_entry_warning(
-    df1h,
+def check_breakout_4h(
+    df4h,
     column
 ):
 
-    breakout = check_breakout(
-        df1h,
-        column
+    if (
+        df4h is None
+        or len(df4h)
+        <
+        120 + BREAKOUT_LOOKBACK
+    ):
+
+        return "none"
+
+    df = df4h.copy()
+
+    df["ema10"] = get_ema(
+        df,
+        column,
+        10
     )
 
-    if breakout != "none":
+    df["ema30"] = get_ema(
+        df,
+        column,
+        30
+    )
 
-        return breakout
+    df["ema60"] = get_ema(
+        df,
+        column,
+        60
+    )
+
+    df["ema120"] = get_ema(
+        df,
+        column,
+        120
+    )
+
+    # =====================================================
+    # 개별 4H 캔들 돌파 상태
+    # =====================================================
+
+    def get_breakout_state_4h(index):
+
+        if index < BREAKOUT_LOOKBACK:
+
+            return "none"
+
+        cur = df.iloc[index]
+
+        previous = df.iloc[
+            index - BREAKOUT_LOOKBACK:
+            index
+        ]
+
+        if previous.empty:
+
+            return "none"
+
+        previous_high = (
+            pd.to_numeric(
+                previous["h"],
+                errors="coerce"
+            ).max()
+        )
+
+        previous_low = (
+            pd.to_numeric(
+                previous["l"],
+                errors="coerce"
+            ).min()
+        )
+
+        # =================================================
+        # LONG
+        # =================================================
+
+        long_10_30 = (
+            cur["ema10"]
+            >
+            cur["ema30"]
+        )
+
+        long_30_60_120 = (
+            cur["ema30"]
+            >
+            cur["ema60"]
+            >
+            cur["ema120"]
+        )
+
+        long_break = (
+            cur["c"]
+            >
+            previous_high
+        )
+
+        long_candle = (
+            cur["c"]
+            >
+            cur["o"]
+        )
+
+        if (
+            long_10_30
+            and
+            long_30_60_120
+            and
+            long_break
+            and
+            long_candle
+        ):
+
+            return "long"
+
+        # =================================================
+        # SHORT
+        # =================================================
+
+        short_10_30 = (
+            cur["ema10"]
+            <
+            cur["ema30"]
+        )
+
+        short_30_60_120 = (
+            cur["ema30"]
+            <
+            cur["ema60"]
+            <
+            cur["ema120"]
+        )
+
+        short_break = (
+            cur["c"]
+            <
+            previous_low
+        )
+
+        short_candle = (
+            cur["c"]
+            <
+            cur["o"]
+        )
+
+        if (
+            short_10_30
+            and
+            short_30_60_120
+            and
+            short_break
+            and
+            short_candle
+        ):
+
+            return "short"
+
+        return "none"
+
+    # =====================================================
+    # 현재 마지막 완성 4H 캔들
+    # =====================================================
+
+    current_index = len(df) - 1
+
+    current_state = get_breakout_state_4h(
+        current_index
+    )
+
+    if current_state == "none":
+
+        return "none"
+
+    # =====================================================
+    # 연속 4H 돌파 횟수
+    # =====================================================
+
+    count = 0
+
+    for index in range(
+        current_index,
+        -1,
+        -1
+    ):
+
+        state = get_breakout_state_4h(
+            index
+        )
+
+        if state == current_state:
+
+            count += 1
+
+        else:
+
+            break
+
+    # =====================================================
+    # 결과
+    # =====================================================
+
+    if current_state == "long":
+
+        return f"long_breakout_4h_{count}"
+
+    if current_state == "short":
+
+        return f"short_breakout_4h_{count}"
 
     return "none"
 
 
 # =========================================================
+# 최종 경고
+# ★ 기존 1H 돌파 유지
+# ★ 4H 돌파 별도 추가
+# =========================================================
+
+def check_entry_warning(
+    df1h,
+    df4h,
+    column
+):
+
+    breakout_1h = check_breakout(
+        df1h,
+        column
+    )
+
+    breakout_4h = check_breakout_4h(
+        df4h,
+        column
+    )
+
+    return (
+        breakout_1h,
+        breakout_4h
+    )
+
+
+# =========================================================
 # LONG / SHORT
-# ★ 판단 기준 1H
+# ★ 메인 방향 판단은 기존처럼 1H
+# ★ 1H LONG/SHORT 신호는 기존 돌파 기준
+# ★ 4H 돌파는 별도값
 # =========================================================
 
 def get_trade_signal(
@@ -1356,40 +1586,46 @@ def get_trade_signal(
 
     if main_direction == "none":
 
-        return "", "none"
+        return "", "none", "none"
 
-    warning = check_entry_warning(
-        df1h,
-        column
+    breakout_1h, breakout_4h = (
+        check_entry_warning(
+            df1h,
+            df4h,
+            column
+        )
     )
 
-    if warning == "none":
-
-        return "", "none"
+    signal = ""
 
     if (
         main_direction == "long"
         and
-        warning.startswith("long_")
+        breakout_1h.startswith("long_")
     ):
 
-        return "LONG", warning
+        signal = "LONG"
 
-    if (
+    elif (
         main_direction == "short"
         and
-        warning.startswith("short_")
+        breakout_1h.startswith("short_")
     ):
 
-        return "SHORT", warning
+        signal = "SHORT"
 
-    return "", "none"
+    return (
+        signal,
+        breakout_1h,
+        breakout_4h
+    )
 
 
 # =========================================================
 # OKX EMA
 # ★ 1H 판단
 # ★ 4H 표시
+# ★ 4H 돌파 별도
 # =========================================================
 
 def get_okx_ema(
@@ -1420,13 +1656,17 @@ def get_okx_ema(
             "4h_30_60_120": "⚪",
             "signal": "",
             "warning": "none",
+            "warning_1h": "none",
+            "warning_4h": "none",
             "direction": "none"
         }
 
-    signal, warning = get_trade_signal(
-        df1h,
-        df4h,
-        "c"
+    signal, warning_1h, warning_4h = (
+        get_trade_signal(
+            df1h,
+            df4h,
+            "c"
+        )
     )
 
     direction = get_main_direction(
@@ -1464,8 +1704,16 @@ def get_okx_ema(
         "signal":
             signal,
 
+        # 기존 호환용
         "warning":
-            warning,
+            warning_1h,
+
+        # 신규 별도 값
+        "warning_1h":
+            warning_1h,
+
+        "warning_4h":
+            warning_4h,
 
         "direction":
             direction
@@ -1476,6 +1724,7 @@ def get_okx_ema(
 # 업비트 EMA
 # ★ 1H 판단
 # ★ 4H 표시
+# ★ 4H 돌파 별도
 # =========================================================
 
 def get_upbit_ema(
@@ -1506,6 +1755,8 @@ def get_upbit_ema(
             "4h_30_60_120": "⚪",
             "signal": "",
             "warning": "none",
+            "warning_1h": "none",
+            "warning_4h": "none",
             "direction": "none"
         }
 
@@ -1527,10 +1778,12 @@ def get_upbit_ema(
             .reset_index(drop=True)
         )
 
-    signal, warning = get_trade_signal(
-        df1h,
-        df4h,
-        "c"
+    signal, warning_1h, warning_4h = (
+        get_trade_signal(
+            df1h,
+            df4h,
+            "c"
+        )
     )
 
     direction = get_main_direction(
@@ -1568,8 +1821,16 @@ def get_upbit_ema(
         "signal":
             signal,
 
+        # 기존 호환용
         "warning":
-            warning,
+            warning_1h,
+
+        # 신규 별도 값
+        "warning_1h":
+            warning_1h,
+
+        "warning_4h":
+            warning_4h,
 
         "direction":
             direction
@@ -2082,80 +2343,188 @@ def direction_html(
 
 # =========================================================
 # 경고 HTML
-# ★ 돌파만 표시
-# ★ 연속 돌파 횟수 표시
+# ★ 1H = 🚀
+# ★ 4H = ⚡
+# ★ 서로 별도 값
 # =========================================================
 
 def warning_html(
-    warning,
+    warning_1h,
+    warning_4h,
     change_percent
 ):
 
+    html = (
+        '<div class="warning-wrap">'
+    )
+
     # =====================================================
-    # LONG 연속 돌파
+    # 1H 🚀
     # =====================================================
 
-    if warning.startswith(
-        "long_breakout_"
+    html += (
+        '<div class="warning-row">'
+        '<span class="warning-period">1H</span>'
+    )
+
+    if (
+        warning_1h.startswith(
+            "long_breakout_"
+        )
+        or
+        warning_1h.startswith(
+            "short_breakout_"
+        )
     ):
 
+        # 기존 방향 필터 유지
+        valid_1h = False
+
         if (
-            change_percent is None
-            or
-            change_percent <= 0
+            warning_1h.startswith(
+                "long_breakout_"
+            )
+            and
+            change_percent is not None
+            and
+            change_percent > 0
         ):
 
-            return ""
+            valid_1h = True
 
-        try:
+        elif (
+            warning_1h.startswith(
+                "short_breakout_"
+            )
+            and
+            change_percent is not None
+            and
+            change_percent < 0
+        ):
 
-            count = int(
-                warning.split("_")[-1]
+            valid_1h = True
+
+        if valid_1h:
+
+            try:
+
+                count = int(
+                    warning_1h.split("_")[-1]
+                )
+
+            except Exception:
+
+                count = 1
+
+            html += (
+                '<span class="warning-icon rocket">'
+                f'🚀({count})'
+                '</span>'
             )
 
-        except Exception:
+        else:
 
-            count = 1
+            html += (
+                '<span class="warning-empty">'
+                '—'
+                '</span>'
+            )
 
-        return (
-            '<span class="warning-icon">'
-            f'🚀({count})'
+    else:
+
+        html += (
+            '<span class="warning-empty">'
+            '—'
             '</span>'
         )
 
+    html += '</div>'
+
+
     # =====================================================
-    # SHORT 연속 돌파
+    # 4H ⚡
     # =====================================================
 
-    if warning.startswith(
-        "short_breakout_"
+    html += (
+        '<div class="warning-row">'
+        '<span class="warning-period">4H</span>'
+    )
+
+    if (
+        warning_4h.startswith(
+            "long_breakout_4h_"
+        )
+        or
+        warning_4h.startswith(
+            "short_breakout_4h_"
+        )
     ):
 
+        valid_4h = False
+
         if (
-            change_percent is None
-            or
-            change_percent >= 0
+            warning_4h.startswith(
+                "long_breakout_4h_"
+            )
+            and
+            change_percent is not None
+            and
+            change_percent > 0
         ):
 
-            return ""
+            valid_4h = True
 
-        try:
+        elif (
+            warning_4h.startswith(
+                "short_breakout_4h_"
+            )
+            and
+            change_percent is not None
+            and
+            change_percent < 0
+        ):
 
-            count = int(
-                warning.split("_")[-1]
+            valid_4h = True
+
+        if valid_4h:
+
+            try:
+
+                count = int(
+                    warning_4h.split("_")[-1]
+                )
+
+            except Exception:
+
+                count = 1
+
+            html += (
+                '<span class="warning-icon lightning">'
+                f'⚡({count})'
+                '</span>'
             )
 
-        except Exception:
+        else:
 
-            count = 1
+            html += (
+                '<span class="warning-empty">'
+                '—'
+                '</span>'
+            )
 
-        return (
-            '<span class="warning-icon">'
-            f'🚀({count})'
+    else:
+
+        html += (
+            '<span class="warning-empty">'
+            '—'
             '</span>'
         )
 
-    return ""
+    html += '</div>'
+
+    html += '</div>'
+
+    return html
 
 
 # =========================================================
@@ -2356,6 +2725,8 @@ def update_upbit():
                     "4h_30_60_120": "⚪",
                     "signal": "",
                     "warning": "none",
+                    "warning_1h": "none",
+                    "warning_4h": "none",
                     "direction": "none"
                 }
 
@@ -2602,6 +2973,8 @@ def update_okx():
                     "4h_30_60_120": "⚪",
                     "signal": "",
                     "warning": "none",
+                    "warning_1h": "none",
+                    "warning_4h": "none",
                     "direction": "none"
                 }
 
@@ -2724,7 +3097,7 @@ def dashboard():
 >
 
 <title>
-1H 차트 집중
+1H / 4H 차트 집중
 </title>
 
 <style>
@@ -3139,7 +3512,9 @@ td{
 
 
 /* =====================================================
-   오늘 2줄
+   오늘 3줄
+   ★ 기존 높이를 크게 바꾸지 않고
+   ★ 1H / 4H 경고를 압축해서 표시
    ===================================================== */
 
 .change-wrap{
@@ -3267,6 +3642,46 @@ td{
 }
 
 
+.warning-wrap{
+
+    width:100%;
+
+    display:flex;
+
+    flex-direction:column;
+
+    justify-content:center;
+
+}
+
+.warning-row{
+
+    height:10px;
+
+    display:flex;
+
+    align-items:center;
+
+    justify-content:center;
+
+    gap:1px;
+
+    white-space:nowrap;
+
+}
+
+.warning-period{
+
+    color:#666;
+
+    font-size:5px;
+
+    line-height:7px;
+
+    min-width:9px;
+
+}
+
 .warning-icon{
 
     font-size:6.5px;
@@ -3274,6 +3689,28 @@ td{
     line-height:9px;
 
     font-weight:bold;
+
+}
+
+.warning-icon.rocket{
+
+    color:#fff;
+
+}
+
+.warning-icon.lightning{
+
+    color:#fff;
+
+}
+
+.warning-empty{
+
+    color:#444;
+
+    font-size:6px;
+
+    line-height:8px;
 
 }
 
@@ -3601,6 +4038,20 @@ td{
 
     }
 
+    .warning-row{
+
+        height:10px;
+
+    }
+
+    .warning-period{
+
+        font-size:5px;
+
+        min-width:9px;
+
+    }
+
     .direction-long,
     .direction-short{
 
@@ -3699,6 +4150,20 @@ td{
 
     }
 
+    .warning-icon{
+
+        font-size:6px;
+
+    }
+
+    .warning-period{
+
+        font-size:4.8px;
+
+        min-width:8px;
+
+    }
+
 }
 
 </style>
@@ -3710,12 +4175,12 @@ td{
 
 
 <div class="main-title">
-📊 1H 차트 집중
+📊 1H / 4H 차트 집중
 </div>
 
 
 <div class="description">
-1H 추세 방향 + 1H 돌파조건 | 🚀 돌파(연속횟수)
+1H 추세 방향 + 1H 🚀 돌파 + 4H ⚡ 돌파 | 각각 독립 연속횟수
 </div>
 
 
@@ -3796,11 +4261,6 @@ TOP""" + str(TOP_N) + """
 
         ema = item["ema"]
 
-        # =================================================
-        # 모든 조건이 충족된 돌파 코인만 표시
-        # ★ 연속 돌파도 포함
-        # =================================================
-
         direction = ema.get(
             "direction",
             "none"
@@ -3811,12 +4271,25 @@ TOP""" + str(TOP_N) + """
             None
         )
 
-        warning = ema.get(
-            "warning",
+        warning_1h = ema.get(
+            "warning_1h",
+            ema.get(
+                "warning",
+                "none"
+            )
+        )
+
+        warning_4h = ema.get(
+            "warning_4h",
             "none"
         )
 
-        show_item = (
+        # =================================================
+        # 기존 1H 돌파
+        # 또는 신규 4H 돌파가 있는 경우 표시
+        # =================================================
+
+        valid_1h = (
 
             (
                 direction == "long"
@@ -3825,7 +4298,7 @@ TOP""" + str(TOP_N) + """
                 and
                 change_percent > 0
                 and
-                warning.startswith(
+                warning_1h.startswith(
                     "long_breakout_"
                 )
             )
@@ -3839,11 +4312,43 @@ TOP""" + str(TOP_N) + """
                 and
                 change_percent < 0
                 and
-                warning.startswith(
+                warning_1h.startswith(
                     "short_breakout_"
                 )
             )
 
+        )
+
+        valid_4h = (
+
+            (
+                warning_4h.startswith(
+                    "long_breakout_4h_"
+                )
+                and
+                change_percent is not None
+                and
+                change_percent > 0
+            )
+
+            or
+
+            (
+                warning_4h.startswith(
+                    "short_breakout_4h_"
+                )
+                and
+                change_percent is not None
+                and
+                change_percent < 0
+            )
+
+        )
+
+        show_item = (
+            valid_1h
+            or
+            valid_4h
         )
 
         if not show_item:
@@ -3914,10 +4419,7 @@ TOP""" + str(TOP_N) + """
         "signal",
         ""
     ),
-    ema.get(
-        "warning",
-        "none"
-    ),
+    warning_1h,
     item.get(
         "change_percent",
         None
@@ -3944,10 +4446,8 @@ TOP""" + str(TOP_N) + """
 """
 
         html += warning_html(
-            ema.get(
-                "warning",
-                "none"
-            ),
+            warning_1h,
+            warning_4h,
             item.get(
                 "change_percent",
                 None
@@ -4042,11 +4542,6 @@ TOP""" + str(TOP_N) + """
 
         ema = item["ema"]
 
-        # =================================================
-        # 모든 조건이 충족된 돌파 코인만 표시
-        # ★ 연속 돌파도 포함
-        # =================================================
-
         direction = ema.get(
             "direction",
             "none"
@@ -4057,12 +4552,25 @@ TOP""" + str(TOP_N) + """
             None
         )
 
-        warning = ema.get(
-            "warning",
+        warning_1h = ema.get(
+            "warning_1h",
+            ema.get(
+                "warning",
+                "none"
+            )
+        )
+
+        warning_4h = ema.get(
+            "warning_4h",
             "none"
         )
 
-        show_item = (
+        # =================================================
+        # 기존 1H 돌파
+        # 또는 신규 4H 돌파가 있는 경우 표시
+        # =================================================
+
+        valid_1h = (
 
             (
                 direction == "long"
@@ -4071,7 +4579,7 @@ TOP""" + str(TOP_N) + """
                 and
                 change_percent > 0
                 and
-                warning.startswith(
+                warning_1h.startswith(
                     "long_breakout_"
                 )
             )
@@ -4085,11 +4593,43 @@ TOP""" + str(TOP_N) + """
                 and
                 change_percent < 0
                 and
-                warning.startswith(
+                warning_1h.startswith(
                     "short_breakout_"
                 )
             )
 
+        )
+
+        valid_4h = (
+
+            (
+                warning_4h.startswith(
+                    "long_breakout_4h_"
+                )
+                and
+                change_percent is not None
+                and
+                change_percent > 0
+            )
+
+            or
+
+            (
+                warning_4h.startswith(
+                    "short_breakout_4h_"
+                )
+                and
+                change_percent is not None
+                and
+                change_percent < 0
+            )
+
+        )
+
+        show_item = (
+            valid_1h
+            or
+            valid_4h
         )
 
         if not show_item:
@@ -4160,10 +4700,7 @@ TOP""" + str(TOP_N) + """
         "signal",
         ""
     ),
-    ema.get(
-        "warning",
-        "none"
-    ),
+    warning_1h,
     item.get(
         "change_percent",
         None
@@ -4190,10 +4727,8 @@ TOP""" + str(TOP_N) + """
 """
 
         html += warning_html(
-            ema.get(
-                "warning",
-                "none"
-            ),
+            warning_1h,
+            warning_4h,
             item.get(
                 "change_percent",
                 None
