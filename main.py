@@ -219,6 +219,8 @@ def retry_request(
 
 # =========================================================
 # OKX 캔들
+# ★ 기존 확정 캔들 함수 유지
+# ★ confirm = 1만 사용
 # =========================================================
 
 def get_okx_ohlcv(
@@ -293,7 +295,8 @@ def get_okx_ohlcv(
         df = df[
             df["confirm"]
             .astype(str)
-            == "1"
+            ==
+            "1"
         ]
 
         if df.empty:
@@ -311,6 +314,99 @@ def get_okx_ohlcv(
 
         logging.error(
             f"OKX 캔들 오류 "
+            f"{inst_id} : {e}"
+        )
+
+        return None
+
+
+# =========================================================
+# ★ OKX 현재 진행 중 캔들
+# ★ confirm 여부와 관계없이 마지막 캔들 사용
+# ★ 0 판단 전용
+# =========================================================
+
+def get_okx_current_ohlcv(
+    inst_id,
+    bar="1H",
+    limit=200
+):
+
+    limit = max(
+        1,
+        min(
+            int(limit),
+            200
+        )
+    )
+
+    url = (
+        "https://www.okx.com/api/v5/market/candles"
+        f"?instId={inst_id}"
+        f"&bar={bar}"
+        f"&limit={limit}"
+    )
+
+    response = retry_request(
+        requests.get,
+        url,
+        timeout=15
+    )
+
+    if response is None:
+        return None
+
+    try:
+
+        data = response.json().get(
+            "data",
+            []
+        )
+
+        if not data:
+            return None
+
+        df = pd.DataFrame(
+            data,
+            columns=[
+                "ts",
+                "o",
+                "h",
+                "l",
+                "c",
+                "vol",
+                "volCcy",
+                "volCcyQuote",
+                "confirm"
+            ]
+        )
+
+        for column in [
+            "o",
+            "h",
+            "l",
+            "c",
+            "vol",
+            "volCcyQuote"
+        ]:
+
+            df[column] = pd.to_numeric(
+                df[column],
+                errors="coerce"
+            )
+
+        df = (
+            df
+            .iloc[::-1]
+            .reset_index(drop=True)
+        )
+
+        return df
+
+    except Exception as e:
+
+        logging.error(
+            f"OKX 진행 캔들 오류 "
             f"{inst_id} : {e}"
         )
 
@@ -1060,9 +1156,7 @@ def check_ema(
 
 # =========================================================
 # 메인 방향
-# ★ 판단 기준
 # ★ 1H 30-60-120만 사용
-# ★ 4H / 1D는 방향 판단에서 사용하지 않음
 # =========================================================
 
 def get_main_direction(
@@ -1090,12 +1184,8 @@ def get_main_direction(
 
 
 # =========================================================
-# 🚀 1H 돌파
+# 🚀 1H 확정 돌파
 # ★ 기존 로직 그대로 유지
-# ★ 1H 기준
-# ★ 10-30 + 30-60-120 정배열
-# ★ 이전 5개 캔들 고가/저가 돌파
-# ★ 연속 돌파 횟수 카운트
 # =========================================================
 
 def check_breakout(
@@ -1138,10 +1228,6 @@ def check_breakout(
         120
     )
 
-    # =====================================================
-    # 개별 캔들의 돌파 상태
-    # =====================================================
-
     def get_breakout_state(index):
 
         if index < BREAKOUT_LOOKBACK:
@@ -1173,10 +1259,7 @@ def check_breakout(
             ).min()
         )
 
-        # =================================================
         # LONG
-        # =================================================
-
         long_10_30 = (
             cur["ema10"]
             >
@@ -1215,10 +1298,7 @@ def check_breakout(
 
             return "long"
 
-        # =================================================
         # SHORT
-        # =================================================
-
         short_10_30 = (
             cur["ema10"]
             <
@@ -1259,25 +1339,15 @@ def check_breakout(
 
         return "none"
 
-    # =====================================================
-    # 현재 마지막 캔들
-    # =====================================================
-
     current_index = len(df) - 1
 
     current_state = get_breakout_state(
         current_index
     )
 
-    # 현재 캔들이 조건을 충족하지 않으면
-    # 즉시 로켓 종료
     if current_state == "none":
 
         return "none"
-
-    # =====================================================
-    # 현재 캔들부터 과거로 연속 돌파 횟수 계산
-    # =====================================================
 
     count = 0
 
@@ -1299,10 +1369,6 @@ def check_breakout(
 
             break
 
-    # =====================================================
-    # 결과
-    # =====================================================
-
     if current_state == "long":
 
         return f"long_breakout_{count}"
@@ -1315,12 +1381,253 @@ def check_breakout(
 
 
 # =========================================================
-# ⚡ 4H 돌파
-# ★ 1H 돌파와 완전히 별도
-# ★ 4H 기준
-# ★ 10-30 + 30-60-120 정배열
-# ★ 이전 5개 4H 캔들 고가/저가 돌파
-# ★ 연속 돌파 횟수 카운트
+# 🚀 1H 진행 중 캔들 0
+# ★ 확정 돌파와 완전히 별도
+# =========================================================
+
+def check_breakout_0(
+    df1h,
+    current1h,
+    column
+):
+
+    if (
+        df1h is None
+        or current1h is None
+        or current1h.empty
+        or len(df1h) < 120 + BREAKOUT_LOOKBACK
+    ):
+
+        return "none"
+
+    df = df1h.copy()
+
+    current = current1h.iloc[-1]
+
+    # -----------------------------------------------------
+    # 현재 진행 캔들의 가격
+    # -----------------------------------------------------
+
+    current_open = pd.to_numeric(
+        current["o"],
+        errors="coerce"
+    )
+
+    current_high = pd.to_numeric(
+        current["h"],
+        errors="coerce"
+    )
+
+    current_low = pd.to_numeric(
+        current["l"],
+        errors="coerce"
+    )
+
+    current_close = pd.to_numeric(
+        current["c"],
+        errors="coerce"
+    )
+
+    if (
+        pd.isna(current_open)
+        or
+        pd.isna(current_high)
+        or
+        pd.isna(current_low)
+        or
+        pd.isna(current_close)
+    ):
+
+        return "none"
+
+    # -----------------------------------------------------
+    # 이전 5개 확정 캔들
+    # -----------------------------------------------------
+
+    previous = df.tail(
+        BREAKOUT_LOOKBACK
+    )
+
+    if len(previous) < BREAKOUT_LOOKBACK:
+
+        return "none"
+
+    previous_high = (
+        pd.to_numeric(
+            previous["h"],
+            errors="coerce"
+        ).max()
+    )
+
+    previous_low = (
+        pd.to_numeric(
+            previous["l"],
+            errors="coerce"
+        ).min()
+    )
+
+    if (
+        pd.isna(previous_high)
+        or
+        pd.isna(previous_low)
+    ):
+
+        return "none"
+
+    # -----------------------------------------------------
+    # 현재 진행 캔들을 포함하여 EMA 계산
+    # -----------------------------------------------------
+
+    temp = pd.concat(
+        [
+            df[[column]],
+            pd.DataFrame(
+                [
+                    {
+                        column:
+                            current_close
+                    }
+                ]
+            )
+        ],
+        ignore_index=True
+    )
+
+    ema10 = get_ema(
+        temp,
+        column,
+        10
+    )
+
+    ema30 = get_ema(
+        temp,
+        column,
+        30
+    )
+
+    ema60 = get_ema(
+        temp,
+        column,
+        60
+    )
+
+    ema120 = get_ema(
+        temp,
+        column,
+        120
+    )
+
+    if (
+        ema10 is None
+        or
+        ema30 is None
+        or
+        ema60 is None
+        or
+        ema120 is None
+    ):
+
+        return "none"
+
+    cur_ema10 = ema10.iloc[-1]
+    cur_ema30 = ema30.iloc[-1]
+    cur_ema60 = ema60.iloc[-1]
+    cur_ema120 = ema120.iloc[-1]
+
+    # -----------------------------------------------------
+    # LONG 0
+    # -----------------------------------------------------
+
+    long_10_30 = (
+        cur_ema10
+        >
+        cur_ema30
+    )
+
+    long_30_60_120 = (
+        cur_ema30
+        >
+        cur_ema60
+        >
+        cur_ema120
+    )
+
+    long_candle = (
+        current_close
+        >
+        current_open
+    )
+
+    # 현재 진행 캔들의 고가가
+    # 이전 5개 캔들 최고가에 도달
+    long_possible = (
+        current_high
+        >=
+        previous_high
+    )
+
+    if (
+        long_10_30
+        and
+        long_30_60_120
+        and
+        long_candle
+        and
+        long_possible
+    ):
+
+        return "long_breakout_0"
+
+    # -----------------------------------------------------
+    # SHORT 0
+    # -----------------------------------------------------
+
+    short_10_30 = (
+        cur_ema10
+        <
+        cur_ema30
+    )
+
+    short_30_60_120 = (
+        cur_ema30
+        <
+        cur_ema60
+        <
+        cur_ema120
+    )
+
+    short_candle = (
+        current_close
+        <
+        current_open
+    )
+
+    # 현재 진행 캔들의 저가가
+    # 이전 5개 캔들 최저가에 도달
+    short_possible = (
+        current_low
+        <=
+        previous_low
+    )
+
+    if (
+        short_10_30
+        and
+        short_30_60_120
+        and
+        short_candle
+        and
+        short_possible
+    ):
+
+        return "short_breakout_0"
+
+    return "none"
+
+
+# =========================================================
+# ⚡ 4H 확정 돌파
+# ★ 기존 로직 그대로 유지
 # =========================================================
 
 def check_breakout_4h(
@@ -1363,10 +1670,6 @@ def check_breakout_4h(
         120
     )
 
-    # =====================================================
-    # 개별 4H 캔들 돌파 상태
-    # =====================================================
-
     def get_breakout_state_4h(index):
 
         if index < BREAKOUT_LOOKBACK:
@@ -1398,10 +1701,7 @@ def check_breakout_4h(
             ).min()
         )
 
-        # =================================================
         # LONG
-        # =================================================
-
         long_10_30 = (
             cur["ema10"]
             >
@@ -1440,10 +1740,7 @@ def check_breakout_4h(
 
             return "long"
 
-        # =================================================
         # SHORT
-        # =================================================
-
         short_10_30 = (
             cur["ema10"]
             <
@@ -1484,10 +1781,6 @@ def check_breakout_4h(
 
         return "none"
 
-    # =====================================================
-    # 현재 마지막 완성 4H 캔들
-    # =====================================================
-
     current_index = len(df) - 1
 
     current_state = get_breakout_state_4h(
@@ -1497,10 +1790,6 @@ def check_breakout_4h(
     if current_state == "none":
 
         return "none"
-
-    # =====================================================
-    # 연속 4H 돌파 횟수
-    # =====================================================
 
     count = 0
 
@@ -1522,10 +1811,6 @@ def check_breakout_4h(
 
             break
 
-    # =====================================================
-    # 결과
-    # =====================================================
-
     if current_state == "long":
 
         return f"long_breakout_4h_{count}"
@@ -1538,14 +1823,254 @@ def check_breakout_4h(
 
 
 # =========================================================
+# ⚡ 4H 진행 중 캔들 0
+# =========================================================
+
+def check_breakout_4h_0(
+    df4h,
+    current4h,
+    column
+):
+
+    if (
+        df4h is None
+        or current4h is None
+        or current4h.empty
+        or len(df4h) < 120 + BREAKOUT_LOOKBACK
+    ):
+
+        return "none"
+
+    df = df4h.copy()
+
+    current = current4h.iloc[-1]
+
+    # -----------------------------------------------------
+    # 현재 진행 캔들
+    # -----------------------------------------------------
+
+    current_open = pd.to_numeric(
+        current["o"],
+        errors="coerce"
+    )
+
+    current_high = pd.to_numeric(
+        current["h"],
+        errors="coerce"
+    )
+
+    current_low = pd.to_numeric(
+        current["l"],
+        errors="coerce"
+    )
+
+    current_close = pd.to_numeric(
+        current["c"],
+        errors="coerce"
+    )
+
+    if (
+        pd.isna(current_open)
+        or
+        pd.isna(current_high)
+        or
+        pd.isna(current_low)
+        or
+        pd.isna(current_close)
+    ):
+
+        return "none"
+
+    # -----------------------------------------------------
+    # 이전 5개 확정 4H 캔들
+    # -----------------------------------------------------
+
+    previous = df.tail(
+        BREAKOUT_LOOKBACK
+    )
+
+    if len(previous) < BREAKOUT_LOOKBACK:
+
+        return "none"
+
+    previous_high = (
+        pd.to_numeric(
+            previous["h"],
+            errors="coerce"
+        ).max()
+    )
+
+    previous_low = (
+        pd.to_numeric(
+            previous["l"],
+            errors="coerce"
+        ).min()
+    )
+
+    if (
+        pd.isna(previous_high)
+        or
+        pd.isna(previous_low)
+    ):
+
+        return "none"
+
+    # -----------------------------------------------------
+    # 현재 진행 가격을 포함한 EMA
+    # -----------------------------------------------------
+
+    temp = pd.concat(
+        [
+            df[[column]],
+            pd.DataFrame(
+                [
+                    {
+                        column:
+                            current_close
+                    }
+                ]
+            )
+        ],
+        ignore_index=True
+    )
+
+    ema10 = get_ema(
+        temp,
+        column,
+        10
+    )
+
+    ema30 = get_ema(
+        temp,
+        column,
+        30
+    )
+
+    ema60 = get_ema(
+        temp,
+        column,
+        60
+    )
+
+    ema120 = get_ema(
+        temp,
+        column,
+        120
+    )
+
+    if (
+        ema10 is None
+        or
+        ema30 is None
+        or
+        ema60 is None
+        or
+        ema120 is None
+    ):
+
+        return "none"
+
+    cur_ema10 = ema10.iloc[-1]
+    cur_ema30 = ema30.iloc[-1]
+    cur_ema60 = ema60.iloc[-1]
+    cur_ema120 = ema120.iloc[-1]
+
+    # -----------------------------------------------------
+    # LONG 0
+    # -----------------------------------------------------
+
+    long_10_30 = (
+        cur_ema10
+        >
+        cur_ema30
+    )
+
+    long_30_60_120 = (
+        cur_ema30
+        >
+        cur_ema60
+        >
+        cur_ema120
+    )
+
+    long_candle = (
+        current_close
+        >
+        current_open
+    )
+
+    long_possible = (
+        current_high
+        >=
+        previous_high
+    )
+
+    if (
+        long_10_30
+        and
+        long_30_60_120
+        and
+        long_candle
+        and
+        long_possible
+    ):
+
+        return "long_breakout_4h_0"
+
+    # -----------------------------------------------------
+    # SHORT 0
+    # -----------------------------------------------------
+
+    short_10_30 = (
+        cur_ema10
+        <
+        cur_ema30
+    )
+
+    short_30_60_120 = (
+        cur_ema30
+        <
+        cur_ema60
+        <
+        cur_ema120
+    )
+
+    short_candle = (
+        current_close
+        <
+        current_open
+    )
+
+    short_possible = (
+        current_low
+        <=
+        previous_low
+    )
+
+    if (
+        short_10_30
+        and
+        short_30_60_120
+        and
+        short_candle
+        and
+        short_possible
+    ):
+
+        return "short_breakout_4h_0"
+
+    return "none"
+
+
+# =========================================================
 # 최종 경고
-# ★ 기존 1H 돌파 유지
-# ★ 4H 돌파 별도 추가
 # =========================================================
 
 def check_entry_warning(
     df1h,
     df4h,
+    current1h,
+    current4h,
     column
 ):
 
@@ -1559,6 +2084,34 @@ def check_entry_warning(
         column
     )
 
+    # -----------------------------------------------------
+    # 확정 돌파가 없을 때만 0 검사
+    # -----------------------------------------------------
+
+    if breakout_1h == "none":
+
+        breakout_1h_0 = check_breakout_0(
+            df1h,
+            current1h,
+            column
+        )
+
+        if breakout_1h_0 != "none":
+
+            breakout_1h = breakout_1h_0
+
+    if breakout_4h == "none":
+
+        breakout_4h_0 = check_breakout_4h_0(
+            df4h,
+            current4h,
+            column
+        )
+
+        if breakout_4h_0 != "none":
+
+            breakout_4h = breakout_4h_0
+
     return (
         breakout_1h,
         breakout_4h
@@ -1567,14 +2120,14 @@ def check_entry_warning(
 
 # =========================================================
 # LONG / SHORT
-# ★ 메인 방향 판단은 기존처럼 1H
-# ★ 1H LONG/SHORT 신호는 기존 돌파 기준
-# ★ 4H 돌파는 별도값
+# ★ 0은 신호로 사용하지 않음
 # =========================================================
 
 def get_trade_signal(
     df1h,
     df4h,
+    current1h,
+    current4h,
     column
 ):
 
@@ -1592,16 +2145,26 @@ def get_trade_signal(
         check_entry_warning(
             df1h,
             df4h,
+            current1h,
+            current4h,
             column
         )
     )
 
     signal = ""
 
+    # -----------------------------------------------------
+    # 0은 아직 확정이 아니므로 신호 발생 안 함
+    # -----------------------------------------------------
+
     if (
         main_direction == "long"
         and
-        breakout_1h.startswith("long_")
+        breakout_1h.startswith(
+            "long_breakout_"
+        )
+        and
+        breakout_1h != "long_breakout_0"
     ):
 
         signal = "LONG"
@@ -1609,7 +2172,11 @@ def get_trade_signal(
     elif (
         main_direction == "short"
         and
-        breakout_1h.startswith("short_")
+        breakout_1h.startswith(
+            "short_breakout_"
+        )
+        and
+        breakout_1h != "short_breakout_0"
     ):
 
         signal = "SHORT"
@@ -1623,14 +2190,15 @@ def get_trade_signal(
 
 # =========================================================
 # OKX EMA
-# ★ 1H 판단
-# ★ 4H 표시
-# ★ 4H 돌파 별도
 # =========================================================
 
 def get_okx_ema(
     inst_id
 ):
+
+    # -----------------------------------------------------
+    # 확정 캔들
+    # -----------------------------------------------------
 
     df1h = get_okx_ohlcv(
         inst_id,
@@ -1644,6 +2212,22 @@ def get_okx_ema(
         200
     )
 
+    # -----------------------------------------------------
+    # 현재 진행 캔들
+    # -----------------------------------------------------
+
+    current1h = get_okx_current_ohlcv(
+        inst_id,
+        "1H",
+        2
+    )
+
+    current4h = get_okx_current_ohlcv(
+        inst_id,
+        "4H",
+        2
+    )
+
     if (
         df1h is None
         or df4h is None
@@ -1665,6 +2249,8 @@ def get_okx_ema(
         get_trade_signal(
             df1h,
             df4h,
+            current1h,
+            current4h,
             "c"
         )
     )
@@ -1704,11 +2290,9 @@ def get_okx_ema(
         "signal":
             signal,
 
-        # 기존 호환용
         "warning":
             warning_1h,
 
-        # 신규 별도 값
         "warning_1h":
             warning_1h,
 
@@ -1722,30 +2306,31 @@ def get_okx_ema(
 
 # =========================================================
 # 업비트 EMA
-# ★ 1H 판단
-# ★ 4H 표시
-# ★ 4H 돌파 별도
 # =========================================================
 
 def get_upbit_ema(
     market
 ):
 
-    df1h = get_upbit_ohlcv(
+    # -----------------------------------------------------
+    # 현재 포함 원본
+    # -----------------------------------------------------
+
+    raw1h = get_upbit_ohlcv(
         market,
         60,
         200
     )
 
-    df4h = get_upbit_ohlcv(
+    raw4h = get_upbit_ohlcv(
         market,
         240,
         200
     )
 
     if (
-        df1h is None
-        or df4h is None
+        raw1h is None
+        or raw4h is None
     ):
 
         return {
@@ -1760,16 +2345,26 @@ def get_upbit_ema(
             "direction": "none"
         }
 
-    # 진행 중인 4H 캔들 제거
-    if len(df4h) > 1:
+    # -----------------------------------------------------
+    # 현재 진행 캔들
+    # -----------------------------------------------------
 
-        df4h = (
-            df4h
-            .iloc[:-1]
-            .reset_index(drop=True)
-        )
+    current1h = raw1h.tail(
+        1
+    ).copy()
 
-    # 진행 중인 1H 캔들 제거
+    current4h = raw4h.tail(
+        1
+    ).copy()
+
+    # -----------------------------------------------------
+    # 확정 캔들
+    # -----------------------------------------------------
+
+    df1h = raw1h.copy()
+
+    df4h = raw4h.copy()
+
     if len(df1h) > 1:
 
         df1h = (
@@ -1778,10 +2373,20 @@ def get_upbit_ema(
             .reset_index(drop=True)
         )
 
+    if len(df4h) > 1:
+
+        df4h = (
+            df4h
+            .iloc[:-1]
+            .reset_index(drop=True)
+        )
+
     signal, warning_1h, warning_4h = (
         get_trade_signal(
             df1h,
             df4h,
+            current1h,
+            current4h,
             "c"
         )
     )
@@ -1821,11 +2426,9 @@ def get_upbit_ema(
         "signal":
             signal,
 
-        # 기존 호환용
         "warning":
             warning_1h,
 
-        # 신규 별도 값
         "warning_1h":
             warning_1h,
 
@@ -2253,7 +2856,6 @@ def format_change(
 
 # =========================================================
 # LONG / SHORT
-# 오늘 상승/하락 방향과 일치할 때만 표시
 # =========================================================
 
 def signal_html(
@@ -2343,9 +2945,7 @@ def direction_html(
 
 # =========================================================
 # 경고 HTML
-# ★ 1H = 🚀
-# ★ 4H = ⚡
-# ★ 서로 별도 값
+# ★ 0 포함
 # =========================================================
 
 def warning_html(
@@ -2377,10 +2977,24 @@ def warning_html(
         )
     ):
 
-        # 기존 방향 필터 유지
         valid_1h = False
 
-        if (
+        # -------------------------------------------------
+        # 0
+        # -------------------------------------------------
+
+        if warning_1h in (
+            "long_breakout_0",
+            "short_breakout_0"
+        ):
+
+            valid_1h = True
+
+        # -------------------------------------------------
+        # 기존 확정 LONG
+        # -------------------------------------------------
+
+        elif (
             warning_1h.startswith(
                 "long_breakout_"
             )
@@ -2391,6 +3005,10 @@ def warning_html(
         ):
 
             valid_1h = True
+
+        # -------------------------------------------------
+        # 기존 확정 SHORT
+        # -------------------------------------------------
 
         elif (
             warning_1h.startswith(
@@ -2414,7 +3032,7 @@ def warning_html(
 
             except Exception:
 
-                count = 1
+                count = 0
 
             html += (
                 '<span class="warning-icon rocket">'
@@ -2462,7 +3080,22 @@ def warning_html(
 
         valid_4h = False
 
-        if (
+        # -------------------------------------------------
+        # 0
+        # -------------------------------------------------
+
+        if warning_4h in (
+            "long_breakout_4h_0",
+            "short_breakout_4h_0"
+        ):
+
+            valid_4h = True
+
+        # -------------------------------------------------
+        # 기존 확정 LONG
+        # -------------------------------------------------
+
+        elif (
             warning_4h.startswith(
                 "long_breakout_4h_"
             )
@@ -2473,6 +3106,10 @@ def warning_html(
         ):
 
             valid_4h = True
+
+        # -------------------------------------------------
+        # 기존 확정 SHORT
+        # -------------------------------------------------
 
         elif (
             warning_4h.startswith(
@@ -2496,7 +3133,7 @@ def warning_html(
 
             except Exception:
 
-                count = 1
+                count = 0
 
             html += (
                 '<span class="warning-icon lightning">'
@@ -2529,7 +3166,6 @@ def warning_html(
 
 # =========================================================
 # EMA HTML
-# ★ 1H / 4H
 # =========================================================
 
 def ema_html(
@@ -3141,10 +3777,6 @@ body{
 }
 
 
-/* =====================================================
-   제목
-   ===================================================== */
-
 .main-title{
 
     margin:1px 0 2px;
@@ -3168,10 +3800,6 @@ body{
 }
 
 
-/* =====================================================
-   설명
-   ===================================================== */
-
 .description{
 
     color:#777;
@@ -3190,10 +3818,6 @@ body{
 
 }
 
-
-/* =====================================================
-   설정
-   ===================================================== */
 
 .setting-row{
 
@@ -3226,10 +3850,6 @@ body{
 }
 
 
-/* =====================================================
-   섹션
-   ===================================================== */
-
 .section-title{
 
     margin:4px 0 2px;
@@ -3251,10 +3871,6 @@ body{
 }
 
 
-/* =====================================================
-   테이블
-   ===================================================== */
-
 .table-wrap{
 
     width:100%;
@@ -3275,10 +3891,6 @@ table{
 
 }
 
-
-/* =====================================================
-   헤더
-   ===================================================== */
 
 th{
 
@@ -3305,10 +3917,6 @@ th{
 }
 
 
-/* =====================================================
-   기본 셀
-   ===================================================== */
-
 td{
 
     padding:0;
@@ -3330,10 +3938,6 @@ td{
 }
 
 
-/* =====================================================
-   순위
-   ===================================================== */
-
 .rank-cell{
 
     width:5%;
@@ -3344,10 +3948,6 @@ td{
 
 }
 
-
-/* =====================================================
-   코인
-   ===================================================== */
 
 .coin-cell{
 
@@ -3370,10 +3970,6 @@ td{
 }
 
 
-/* =====================================================
-   거래대금
-   ===================================================== */
-
 .volume-cell{
 
     width:20%;
@@ -3387,10 +3983,6 @@ td{
 }
 
 
-/* =====================================================
-   변동률
-   ===================================================== */
-
 .change-cell{
 
     width:17%;
@@ -3400,10 +3992,6 @@ td{
 }
 
 
-/* =====================================================
-   EMA
-   ===================================================== */
-
 .ema-cell{
 
     width:38%;
@@ -3412,10 +4000,6 @@ td{
 
 }
 
-
-/* =====================================================
-   2줄 구조
-   ===================================================== */
 
 .coin-wrap{
 
@@ -3462,10 +4046,6 @@ td{
 }
 
 
-/* =====================================================
-   거래대금 2줄
-   ===================================================== */
-
 .volume-wrap{
 
     width:100%;
@@ -3511,12 +4091,6 @@ td{
 }
 
 
-/* =====================================================
-   오늘 3줄
-   ★ 기존 높이를 크게 바꾸지 않고
-   ★ 1H / 4H 경고를 압축해서 표시
-   ===================================================== */
-
 .change-wrap{
 
     width:100%;
@@ -3556,10 +4130,6 @@ td{
 }
 
 
-/* =====================================================
-   변동률
-   ===================================================== */
-
 .change-item{
 
     display:flex;
@@ -3592,10 +4162,6 @@ td{
 
 }
 
-
-/* =====================================================
-   LONG / SHORT
-   ===================================================== */
 
 .signal-text{
 
@@ -3724,10 +4290,6 @@ td{
 }
 
 
-/* =====================================================
-   방향
-   ===================================================== */
-
 .direction-long{
 
     font-size:8px;
@@ -3764,10 +4326,6 @@ td{
 
 }
 
-
-/* =====================================================
-   EMA 2줄
-   ===================================================== */
 
 .ema-box{
 
@@ -3843,10 +4401,6 @@ td{
 
 }
 
-
-/* =====================================================
-   모바일
-   ===================================================== */
 
 @media(
     max-width:600px
@@ -4080,10 +4634,6 @@ td{
 }
 
 
-/* =====================================================
-   S22 Ultra 등 좁은 화면
-   ===================================================== */
-
 @media(
     max-width:380px
 ){
@@ -4180,7 +4730,7 @@ td{
 
 
 <div class="description">
-1H 추세 방향 + 1H 🚀 돌파 + 4H ⚡ 돌파 | 각각 독립 연속횟수
+1H 추세 방향 + 1H 🚀 돌파 + 4H ⚡ 돌파 | 0=진행중 가능성 | 1+=확정 돌파
 </div>
 
 
@@ -4257,6 +4807,10 @@ TOP""" + str(TOP_N) + """
 
 """
 
+    # =====================================================
+    # 업비트 화면
+    # =====================================================
+
     for item in latest_upbit_data:
 
         ema = item["ema"]
@@ -4284,10 +4838,9 @@ TOP""" + str(TOP_N) + """
             "none"
         )
 
-        # =================================================
-        # 기존 1H 돌파
-        # 또는 신규 4H 돌파가 있는 경우 표시
-        # =================================================
+        # -------------------------------------------------
+        # 기존 확정 1H
+        # -------------------------------------------------
 
         valid_1h = (
 
@@ -4317,7 +4870,19 @@ TOP""" + str(TOP_N) + """
                 )
             )
 
+            or
+
+            # 진행 중 0
+            warning_1h in (
+                "long_breakout_0",
+                "short_breakout_0"
+            )
+
         )
+
+        # -------------------------------------------------
+        # 기존 확정 4H
+        # -------------------------------------------------
 
         valid_4h = (
 
@@ -4341,6 +4906,14 @@ TOP""" + str(TOP_N) + """
                 change_percent is not None
                 and
                 change_percent < 0
+            )
+
+            or
+
+            # 진행 중 0
+            warning_4h in (
+                "long_breakout_4h_0",
+                "short_breakout_4h_0"
             )
 
         )
@@ -4538,6 +5111,10 @@ TOP""" + str(TOP_N) + """
 
 """
 
+    # =====================================================
+    # OKX 화면
+    # =====================================================
+
     for item in latest_okx_data:
 
         ema = item["ema"]
@@ -4564,11 +5141,6 @@ TOP""" + str(TOP_N) + """
             "warning_4h",
             "none"
         )
-
-        # =================================================
-        # 기존 1H 돌파
-        # 또는 신규 4H 돌파가 있는 경우 표시
-        # =================================================
 
         valid_1h = (
 
@@ -4598,6 +5170,13 @@ TOP""" + str(TOP_N) + """
                 )
             )
 
+            or
+
+            warning_1h in (
+                "long_breakout_0",
+                "short_breakout_0"
+            )
+
         )
 
         valid_4h = (
@@ -4622,6 +5201,13 @@ TOP""" + str(TOP_N) + """
                 change_percent is not None
                 and
                 change_percent < 0
+            )
+
+            or
+
+            warning_4h in (
+                "long_breakout_4h_0",
+                "short_breakout_4h_0"
             )
 
         )
@@ -4814,4 +5400,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-        )
+                    )
