@@ -10,8 +10,6 @@ import logging
 import pandas as pd
 import warnings
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
-
 
 # =========================================================
 # FutureWarning 숨김
@@ -36,6 +34,8 @@ logging.basicConfig(
 # 사용자 설정
 # =========================================================
 
+VOLUME_HOURS = 24
+
 TOP_N = 20
 
 UPDATE_MINUTES = 1
@@ -48,7 +48,7 @@ BREAKOUT_LOOKBACK = 5
 
 
 # =========================================================
-# API 안정화
+# API 안정화 설정
 # =========================================================
 
 REQUEST_INTERVAL = 0.08
@@ -57,12 +57,8 @@ RATE_LIMIT_WAIT = 3
 
 MAX_RETRIES = 10
 
-
-# =========================================================
-# 병렬 처리
-# =========================================================
-
-MAX_WORKERS = 10
+# 업비트 ticker 묶음 조회 개수
+UPBIT_TICKER_BATCH_SIZE = 100
 
 
 # =========================================================
@@ -84,7 +80,7 @@ last_request_time = 0.0
 
 
 # =========================================================
-# API 요청 간격
+# API 요청 간격 조절
 # =========================================================
 
 def wait_request_interval():
@@ -116,7 +112,9 @@ def retry_request(
     **kwargs
 ):
 
-    for attempt in range(MAX_RETRIES):
+    for attempt in range(
+        MAX_RETRIES
+    ):
 
         try:
 
@@ -177,8 +175,15 @@ def retry_request(
                 if status != 200:
 
                     logging.warning(
-                        f"API HTTP 오류 {status}"
+                        f"API HTTP 오류 {status} "
+                        f"({attempt + 1}/{MAX_RETRIES})"
                     )
+
+                    if attempt < MAX_RETRIES - 1:
+
+                        time.sleep(2)
+
+                        continue
 
                     return result
 
@@ -187,7 +192,8 @@ def retry_request(
         except Exception as e:
 
             wait_time = min(
-                2 * (attempt + 1),
+                2 *
+                (attempt + 1),
                 20
             )
 
@@ -217,7 +223,10 @@ def get_okx_ohlcv(
 
     limit = max(
         1,
-        min(int(limit), 200)
+        min(
+            int(limit),
+            200
+        )
     )
 
     url = (
@@ -314,7 +323,10 @@ def get_okx_current_ohlcv(
 
     limit = max(
         1,
-        min(int(limit), 200)
+        min(
+            int(limit),
+            200
+        )
     )
 
     url = (
@@ -391,7 +403,7 @@ def get_okx_current_ohlcv(
 
 
 # =========================================================
-# 업비트 1H 캔들
+# 업비트 분봉
 # =========================================================
 
 def get_upbit_ohlcv(
@@ -402,7 +414,10 @@ def get_upbit_ohlcv(
 
     count = max(
         1,
-        min(int(count), 200)
+        min(
+            int(count),
+            200
+        )
     )
 
     url = (
@@ -469,10 +484,237 @@ def get_upbit_ohlcv(
 
 
 # =========================================================
+# OKX 전체 목록
+# =========================================================
+
+def get_all_okx_swap_symbols():
+
+    url = (
+        "https://www.okx.com/api/v5/"
+        "public/instruments?instType=SWAP"
+    )
+
+    response = retry_request(
+        requests.get,
+        url,
+        timeout=15
+    )
+
+    if response is None:
+        return []
+
+    try:
+
+        data = response.json().get(
+            "data",
+            []
+        )
+
+        symbols = [
+            x["instId"]
+            for x in data
+            if (
+                x["instId"].endswith(
+                    "-USDT-SWAP"
+                )
+                and
+                x.get("state") == "live"
+            )
+        ]
+
+        logging.info(
+            f"OKX 전체 USDT-SWAP "
+            f"{len(symbols)}개 확인"
+        )
+
+        return symbols
+
+    except Exception as e:
+
+        logging.error(
+            f"OKX 목록 오류 : {e}"
+        )
+
+        return []
+
+
+# =========================================================
+# 업비트 전체 목록
+# =========================================================
+
+def get_upbit_markets():
+
+    response = retry_request(
+        requests.get,
+        "https://api.upbit.com/v1/market/all",
+        timeout=15
+    )
+
+    if response is None:
+        return []
+
+    try:
+
+        data = response.json()
+
+        markets = [
+            x["market"]
+            for x in data
+            if x["market"].startswith(
+                "KRW-"
+            )
+        ]
+
+        logging.info(
+            f"업비트 전체 KRW 마켓 "
+            f"{len(markets)}개 확인"
+        )
+
+        return markets
+
+    except Exception as e:
+
+        logging.error(
+            f"업비트 목록 오류 : {e}"
+        )
+
+        return []
+
+
+# =========================================================
+# 업비트 24시간 거래대금
+# ★ 업비트 Ticker 제공값 사용
+# =========================================================
+
+def get_upbit_ticker_volume_map(
+    markets
+):
+
+    if not markets:
+
+        return {}
+
+    volume_map = {}
+
+    total = len(markets)
+
+    logging.info(
+        f"업비트 거래대금 조회 시작 "
+        f"(Ticker 24시간 누적 / {total}개)"
+    )
+
+    for start in range(
+        0,
+        total,
+        UPBIT_TICKER_BATCH_SIZE
+    ):
+
+        batch = markets[
+            start:
+            start + UPBIT_TICKER_BATCH_SIZE
+        ]
+
+        market_string = ",".join(
+            batch
+        )
+
+        url = (
+            "https://api.upbit.com/v1/ticker"
+            f"?markets={market_string}"
+        )
+
+        response = retry_request(
+            requests.get,
+            url,
+            timeout=15
+        )
+
+        if response is None:
+
+            logging.error(
+                f"업비트 거래대금 조회 실패 "
+                f"{start + 1}-{min(start + len(batch), total)}"
+            )
+
+            continue
+
+        try:
+
+            data = response.json()
+
+            if not isinstance(
+                data,
+                list
+            ):
+
+                logging.error(
+                    "업비트 Ticker 응답 형식 오류"
+                )
+
+                continue
+
+            for item in data:
+
+                market = item.get(
+                    "market"
+                )
+
+                volume = item.get(
+                    "acc_trade_price_24h",
+                    0
+                )
+
+                try:
+
+                    volume = float(
+                        volume
+                    )
+
+                except Exception:
+
+                    volume = 0
+
+                if market:
+
+                    volume_map[
+                        market
+                    ] = volume
+
+            logging.info(
+                f"업비트 거래대금 "
+                f"{min(start + len(batch), total)}/{total} "
+                f"조회 완료"
+            )
+
+        except Exception as e:
+
+            logging.error(
+                f"업비트 거래대금 파싱 오류 : {e}"
+            )
+
+    if not volume_map:
+
+        logging.error(
+            "업비트 거래대금 전체 조회 실패"
+        )
+
+        return {}
+
+    logging.info(
+        f"업비트 거래대금 조회 완료 "
+        f"{len(volume_map)}/{total}"
+    )
+
+    return volume_map
+
+
+# =========================================================
 # 거래대금 표시
 # =========================================================
 
-def format_volume(volume):
+def format_volume(
+    volume
+):
 
     if volume >= 1_000_000_000_000:
 
@@ -515,8 +757,9 @@ def get_ema(
         errors="coerce"
     )
 
-    if price.notna().sum() < period:
+    valid_count = price.notna().sum()
 
+    if valid_count < period:
         return None
 
     return price.ewm(
@@ -574,14 +817,15 @@ def get_ema_10_30_60_120_direction(
 
         return "none"
 
-    values = [
-        ema10.iloc[-1],
-        ema30.iloc[-1],
-        ema60.iloc[-1],
-        ema120.iloc[-1]
-    ]
-
-    if any(pd.isna(x) for x in values):
+    if (
+        pd.isna(ema10.iloc[-1])
+        or
+        pd.isna(ema30.iloc[-1])
+        or
+        pd.isna(ema60.iloc[-1])
+        or
+        pd.isna(ema120.iloc[-1])
+    ):
 
         return "none"
 
@@ -649,18 +893,18 @@ def get_main_direction(
     column
 ):
 
-    direction = (
+    h1_direction = (
         get_ema_10_30_60_120_direction(
             df1h,
             column
         )
     )
 
-    if direction == "long":
+    if h1_direction == "long":
 
         return "long"
 
-    if direction == "short":
+    if h1_direction == "short":
 
         return "short"
 
@@ -679,7 +923,8 @@ def check_breakout(
     if (
         df1h is None
         or len(df1h)
-        < 120 + BREAKOUT_LOOKBACK
+        <
+        120 + BREAKOUT_LOOKBACK
     ):
 
         return "none"
@@ -710,7 +955,9 @@ def check_breakout(
         120
     )
 
-    def get_breakout_state(index):
+    def get_breakout_state(
+        index
+    ):
 
         if index < BREAKOUT_LOOKBACK:
 
@@ -722,6 +969,10 @@ def check_breakout(
             index - BREAKOUT_LOOKBACK:
             index
         ]
+
+        if previous.empty:
+
+            return "none"
 
         previous_high = (
             pd.to_numeric(
@@ -737,14 +988,7 @@ def check_breakout(
             ).min()
         )
 
-        if (
-            pd.isna(previous_high)
-            or pd.isna(previous_low)
-        ):
-
-            return "none"
-
-        long_ema = (
+        long_alignment = (
             cur["ema10"]
             >
             cur["ema30"]
@@ -767,7 +1011,7 @@ def check_breakout(
         )
 
         if (
-            long_ema
+            long_alignment
             and
             long_break
             and
@@ -776,7 +1020,7 @@ def check_breakout(
 
             return "long"
 
-        short_ema = (
+        short_alignment = (
             cur["ema10"]
             <
             cur["ema30"]
@@ -799,7 +1043,7 @@ def check_breakout(
         )
 
         if (
-            short_ema
+            short_alignment
             and
             short_break
             and
@@ -840,13 +1084,19 @@ def check_breakout(
 
             break
 
-    return (
-        f"{current_state}_breakout_{count}"
-    )
+    if current_state == "long":
+
+        return f"long_breakout_{count}"
+
+    if current_state == "short":
+
+        return f"short_breakout_{count}"
+
+    return "none"
 
 
 # =========================================================
-# 1H 진행 중 돌파
+# 1H 진행 중 캔들
 # =========================================================
 
 def check_breakout_0(
@@ -860,10 +1110,13 @@ def check_breakout_0(
         or current1h is None
         or current1h.empty
         or len(df1h)
-        < 120 + BREAKOUT_LOOKBACK
+        <
+        120 + BREAKOUT_LOOKBACK
     ):
 
         return "none"
+
+    df = df1h.copy()
 
     current = current1h.iloc[-1]
 
@@ -887,19 +1140,19 @@ def check_breakout_0(
         errors="coerce"
     )
 
-    if any(
-        pd.isna(x)
-        for x in [
-            current_open,
-            current_high,
-            current_low,
-            current_close
-        ]
+    if (
+        pd.isna(current_open)
+        or
+        pd.isna(current_high)
+        or
+        pd.isna(current_low)
+        or
+        pd.isna(current_close)
     ):
 
         return "none"
 
-    previous = df1h.tail(
+    previous = df.tail(
         BREAKOUT_LOOKBACK
     )
 
@@ -923,14 +1176,15 @@ def check_breakout_0(
 
     if (
         pd.isna(previous_high)
-        or pd.isna(previous_low)
+        or
+        pd.isna(previous_low)
     ):
 
         return "none"
 
     temp = pd.concat(
         [
-            df1h[[column]],
+            df[[column]],
 
             pd.DataFrame(
                 [
@@ -968,59 +1222,83 @@ def check_breakout_0(
         120
     )
 
-    if any(
-        x is None
-        for x in [
-            ema10,
-            ema30,
-            ema60,
-            ema120
-        ]
+    if (
+        ema10 is None
+        or
+        ema30 is None
+        or
+        ema60 is None
+        or
+        ema120 is None
     ):
 
         return "none"
 
-    cur10 = ema10.iloc[-1]
-    cur30 = ema30.iloc[-1]
-    cur60 = ema60.iloc[-1]
-    cur120 = ema120.iloc[-1]
+    cur_ema10 = ema10.iloc[-1]
+    cur_ema30 = ema30.iloc[-1]
+    cur_ema60 = ema60.iloc[-1]
+    cur_ema120 = ema120.iloc[-1]
 
-    if (
-        cur10
+    long_alignment = (
+        cur_ema10
         >
-        cur30
+        cur_ema30
         >
-        cur60
+        cur_ema60
         >
-        cur120
-        and
+        cur_ema120
+    )
+
+    long_candle = (
         current_close
         >
         current_open
-        and
+    )
+
+    long_possible = (
         current_high
         >=
         previous_high
+    )
+
+    if (
+        long_alignment
+        and
+        long_candle
+        and
+        long_possible
     ):
 
         return "long_breakout_0"
 
-    if (
-        cur10
+    short_alignment = (
+        cur_ema10
         <
-        cur30
+        cur_ema30
         <
-        cur60
+        cur_ema60
         <
-        cur120
-        and
+        cur_ema120
+    )
+
+    short_candle = (
         current_close
         <
         current_open
-        and
+    )
+
+    short_possible = (
         current_low
         <=
         previous_low
+    )
+
+    if (
+        short_alignment
+        and
+        short_candle
+        and
+        short_possible
     ):
 
         return "short_breakout_0"
@@ -1029,7 +1307,7 @@ def check_breakout_0(
 
 
 # =========================================================
-# 진입 경고
+# 메인 진입 경고
 # =========================================================
 
 def check_entry_warning(
@@ -1129,23 +1407,6 @@ def get_trade_signal(
 
 
 # =========================================================
-# 기본 EMA 데이터
-# =========================================================
-
-def empty_ema():
-
-    return {
-        "1h_10_30_60_120": "⚪",
-        "4h_10_30_60_120": "⚪",
-        "signal": "",
-        "warning": "none",
-        "warning_1h": "none",
-        "warning_4h": "none",
-        "direction": "none"
-    }
-
-
-# =========================================================
 # OKX EMA
 # 일봉 완전 제거
 # =========================================================
@@ -1180,10 +1441,19 @@ def get_okx_ema(
 
     if (
         df1h is None
-        or df4h is None
+        or
+        df4h is None
     ):
 
-        return empty_ema()
+        return {
+            "1h_10_30_60_120": "⚪",
+            "4h_10_30_60_120": "⚪",
+            "signal": "",
+            "warning": "none",
+            "warning_1h": "none",
+            "warning_4h": "none",
+            "direction": "none"
+        }
 
     signal, warning_1h, warning_4h = (
         get_trade_signal(
@@ -1215,15 +1485,20 @@ def get_okx_ema(
                 "c"
             ),
 
-        "signal": signal,
+        "signal":
+            signal,
 
-        "warning": warning_1h,
+        "warning":
+            warning_1h,
 
-        "warning_1h": warning_1h,
+        "warning_1h":
+            warning_1h,
 
-        "warning_4h": warning_4h,
+        "warning_4h":
+            "none",
 
-        "direction": direction
+        "direction":
+            direction
     }
 
 
@@ -1250,10 +1525,19 @@ def get_upbit_ema(
 
     if (
         raw1h is None
-        or raw4h is None
+        or
+        raw4h is None
     ):
 
-        return empty_ema()
+        return {
+            "1h_10_30_60_120": "⚪",
+            "4h_10_30_60_120": "⚪",
+            "signal": "",
+            "warning": "none",
+            "warning_1h": "none",
+            "warning_4h": "none",
+            "direction": "none"
+        }
 
     current1h = raw1h.tail(
         1
@@ -1313,329 +1597,87 @@ def get_upbit_ema(
                 "c"
             ),
 
-        "signal": signal,
+        "signal":
+            signal,
 
-        "warning": warning_1h,
+        "warning":
+            warning_1h,
 
-        "warning_1h": warning_1h,
+        "warning_1h":
+            warning_1h,
 
-        "warning_4h": warning_4h,
+        "warning_4h":
+            "none",
 
-        "direction": direction
+        "direction":
+            direction
     }
 
 
 # =========================================================
-# USDT/KRW
+# OKX 거래대금
+# ★ 기존 방식 유지
 # =========================================================
 
-def get_usdt_krw():
-
-    response = retry_request(
-        requests.get,
-        "https://api.upbit.com/v1/ticker?markets=KRW-USDT",
-        timeout=15
-    )
-
-    if response is None:
-
-        logging.warning(
-            "USDT/KRW 조회 실패 - 1400 사용"
-        )
-
-        return 1400
-
-    try:
-
-        return float(
-            response.json()[0]["trade_price"]
-        )
-
-    except Exception:
-
-        return 1400
-
-
-# =========================================================
-# OKX 전체 SWAP 목록
-# =========================================================
-
-def get_all_okx_swap_symbols():
-
-    url = (
-        "https://www.okx.com/api/v5/"
-        "public/instruments?instType=SWAP"
-    )
-
-    response = retry_request(
-        requests.get,
-        url,
-        timeout=15
-    )
-
-    if response is None:
-        return []
-
-    try:
-
-        data = response.json().get(
-            "data",
-            []
-        )
-
-        symbols = [
-            x["instId"]
-            for x in data
-            if (
-                x["instId"].endswith(
-                    "-USDT-SWAP"
-                )
-                and
-                x.get("state") == "live"
-            )
-        ]
-
-        logging.info(
-            f"OKX 전체 USDT-SWAP "
-            f"{len(symbols)}개"
-        )
-
-        return symbols
-
-    except Exception as e:
-
-        logging.error(
-            f"OKX 목록 오류 : {e}"
-        )
-
-        return []
-
-
-# =========================================================
-# 업비트 전체 목록
-# =========================================================
-
-def get_upbit_markets():
-
-    response = retry_request(
-        requests.get,
-        "https://api.upbit.com/v1/market/all",
-        timeout=15
-    )
-
-    if response is None:
-        return []
-
-    try:
-
-        data = response.json()
-
-        markets = [
-            x["market"]
-            for x in data
-            if x["market"].startswith(
-                "KRW-"
-            )
-        ]
-
-        logging.info(
-            f"업비트 전체 KRW 마켓 "
-            f"{len(markets)}개"
-        )
-
-        return markets
-
-    except Exception as e:
-
-        logging.error(
-            f"업비트 목록 오류 : {e}"
-        )
-
-        return []
-
-
-# =========================================================
-# 업비트 ticker 거래대금
-# ★ 거래소 제공 24시간 거래대금
-# =========================================================
-
-def get_upbit_ticker_volumes(
-    markets
+def get_okx_volume(
+    inst_id
 ):
 
-    if not markets:
-
-        return {}
-
-    volume_map = {}
-
-    # 업비트 ticker API는 여러 마켓을 한 번에 조회
-    chunk_size = 100
-
-    logging.info(
-        f"업비트 거래소 제공 "
-        f"24시간 거래대금 조회 시작 "
-        f"({len(markets)}개)"
+    hours = max(
+        1,
+        min(
+            int(VOLUME_HOURS),
+            200
+        )
     )
 
-    for i in range(
-        0,
-        len(markets),
-        chunk_size
+    if hours == 1:
+
+        df = get_okx_ohlcv(
+            inst_id,
+            "1m",
+            61
+        )
+
+        if (
+            df is None
+            or df.empty
+        ):
+
+            return 0
+
+        volume = float(
+            df["volCcyQuote"]
+            .tail(60)
+            .sum()
+        )
+
+        return volume / 10
+
+    df = get_okx_ohlcv(
+        inst_id,
+        "1H",
+        hours + 1
+    )
+
+    if (
+        df is None
+        or df.empty
     ):
 
-        chunk = markets[
-            i:i + chunk_size
-        ]
+        return 0
 
-        market_string = ",".join(
-            chunk
-        )
-
-        url = (
-            "https://api.upbit.com/v1/ticker"
-            f"?markets={market_string}"
-        )
-
-        response = retry_request(
-            requests.get,
-            url,
-            timeout=15
-        )
-
-        if response is None:
-
-            logging.error(
-                f"업비트 ticker 조회 실패 "
-                f"{i + 1}~{i + len(chunk)}"
-            )
-
-            continue
-
-        try:
-
-            data = response.json()
-
-            for item in data:
-
-                market = item.get(
-                    "market"
-                )
-
-                volume = float(
-                    item.get(
-                        "acc_trade_price_24h",
-                        0
-                    )
-                )
-
-                if market:
-
-                    volume_map[
-                        market
-                    ] = volume
-
-        except Exception as e:
-
-            logging.error(
-                f"업비트 ticker 처리 오류 : {e}"
-            )
-
-    valid_count = sum(
-        1
-        for value in volume_map.values()
-        if value > 0
+    volume = float(
+        df["volCcyQuote"]
+        .tail(hours)
+        .sum()
     )
 
-    logging.info(
-        f"업비트 거래대금 조회 완료 "
-        f"정상 {valid_count}/{len(markets)}"
-    )
-
-    return volume_map
+    return volume / 10
 
 
 # =========================================================
-# OKX tickers
-# ★ OKX 전체 SWAP 거래대금
-# =========================================================
-
-def get_okx_ticker_volumes():
-
-    url = (
-        "https://www.okx.com/api/v5/"
-        "market/tickers?instType=SWAP"
-    )
-
-    response = retry_request(
-        requests.get,
-        url,
-        timeout=15
-    )
-
-    if response is None:
-
-        logging.error(
-            "OKX tickers 거래대금 조회 실패"
-        )
-
-        return {}
-
-    try:
-
-        data = response.json().get(
-            "data",
-            []
-        )
-
-        volume_map = {}
-
-        for item in data:
-
-            inst_id = item.get(
-                "instId",
-                ""
-            )
-
-            if not inst_id.endswith(
-                "-USDT-SWAP"
-            ):
-
-                continue
-
-            # OKX 파생상품의 volCcy24h 사용
-            volume_usdt = float(
-                item.get(
-                    "volCcy24h",
-                    0
-                )
-                or 0
-            )
-
-            if volume_usdt > 0:
-
-                volume_map[
-                    inst_id
-                ] = volume_usdt
-
-        logging.info(
-            f"OKX tickers 거래대금 "
-            f"{len(volume_map)}개 정상"
-        )
-
-        return volume_map
-
-    except Exception as e:
-
-        logging.error(
-            f"OKX tickers 처리 오류 : {e}"
-        )
-
-        return {}
-
-
-# =========================================================
-# 변동률 - OKX
+# OKX 변동률
 # =========================================================
 
 def get_okx_change(
@@ -1685,40 +1727,48 @@ def get_okx_change(
         .last()
     )
 
-    if len(daily) < 2:
+    if len(daily) < 5:
 
         return None
 
-    current = daily.iloc[-1]
+    result = []
 
-    previous = daily.iloc[-2]
+    for i in [
+        -1,
+        -2,
+        -3
+    ]:
 
-    if previous == 0:
+        if daily.iloc[i - 1] == 0:
 
-        return [0]
+            result.append(0)
 
-    change = (
-        (
-            current
-            -
-            previous
+            continue
+
+        change = (
+            (
+                daily.iloc[i]
+                -
+                daily.iloc[i - 1]
+            )
+            /
+            daily.iloc[i - 1]
+            *
+            100
         )
-        /
-        previous
-        *
-        100
-    )
 
-    return [
-        round(
-            change,
-            2
+        result.append(
+            round(
+                change,
+                2
+            )
         )
-    ]
+
+    return result
 
 
 # =========================================================
-# 변동률 - 업비트
+# 업비트 변동률
 # =========================================================
 
 def get_upbit_change(
@@ -1758,40 +1808,48 @@ def get_upbit_change(
         .last()
     )
 
-    if len(daily) < 2:
+    if len(daily) < 5:
 
         return None
 
-    current = daily.iloc[-1]
+    result = []
 
-    previous = daily.iloc[-2]
+    for i in [
+        -1,
+        -2,
+        -3
+    ]:
 
-    if previous == 0:
+        if daily.iloc[i - 1] == 0:
 
-        return [0]
+            result.append(0)
 
-    change = (
-        (
-            current
-            -
-            previous
+            continue
+
+        change = (
+            (
+                daily.iloc[i]
+                -
+                daily.iloc[i - 1]
+            )
+            /
+            daily.iloc[i - 1]
+            *
+            100
         )
-        /
-        previous
-        *
-        100
-    )
 
-    return [
-        round(
-            change,
-            2
+        result.append(
+            round(
+                change,
+                2
+            )
         )
-    ]
+
+    return result
 
 
 # =========================================================
-# 변동률 HTML
+# 변동률
 # =========================================================
 
 def format_change(
@@ -1810,16 +1868,19 @@ def format_change(
     if x > 0:
 
         icon = "🟩"
+
         sign = "+"
 
     elif x < 0:
 
         icon = "🟥"
+
         sign = ""
 
     else:
 
         icon = "⬜"
+
         sign = ""
 
     return (
@@ -1831,7 +1892,7 @@ def format_change(
 
 
 # =========================================================
-# LONG / SHORT HTML
+# LONG / SHORT
 # =========================================================
 
 def signal_html(
@@ -1948,14 +2009,14 @@ def warning_html(
         )
     ):
 
-        valid = False
+        valid_1h = False
 
         if warning_1h in (
             "long_breakout_0",
             "short_breakout_0"
         ):
 
-            valid = True
+            valid_1h = True
 
         elif (
             warning_1h.startswith(
@@ -1967,7 +2028,7 @@ def warning_html(
             change_percent > 0
         ):
 
-            valid = True
+            valid_1h = True
 
         elif (
             warning_1h.startswith(
@@ -1979,9 +2040,9 @@ def warning_html(
             change_percent < 0
         ):
 
-            valid = True
+            valid_1h = True
 
-        if valid:
+        if valid_1h:
 
             try:
 
@@ -2015,13 +2076,16 @@ def warning_html(
             '</span>'
         )
 
-    html += '</div></div>'
+    html += '</div>'
+
+    html += '</div>'
 
     return html
 
 
 # =========================================================
 # EMA HTML
+# ★ 1H / 4H만 표시
 # =========================================================
 
 def ema_html(
@@ -2040,160 +2104,31 @@ def ema_html(
 
     return f"""
     <div class="ema-container">
+
         <div class="ema-line">
 
             <div class="ema-item">
                 <span class="ema-period">1H</span>
-                <span class="ema-value">{ema_1h}</span>
+                <span class="ema-value">
+                    {ema_1h}
+                </span>
             </div>
 
             <div class="ema-item">
                 <span class="ema-period">4H</span>
-                <span class="ema-value">{ema_4h}</span>
+                <span class="ema-value">
+                    {ema_4h}
+                </span>
             </div>
 
         </div>
+
     </div>
     """
 
 
 # =========================================================
-# 업비트 상세 1개
-# =========================================================
-
-def process_upbit_detail(
-    rank,
-    market,
-    volume
-):
-
-    coin = market.replace(
-        "KRW-",
-        ""
-    )
-
-    try:
-
-        changes = get_upbit_change(
-            market
-        )
-
-        ema = get_upbit_ema(
-            market
-        )
-
-        change_percent = (
-            changes[0]
-            if changes
-            else None
-        )
-
-        return {
-            "rank": rank,
-            "name": coin,
-            "change":
-                format_change(changes),
-            "change_percent":
-                change_percent,
-            "volume":
-                format_volume(volume),
-            "ema":
-                ema
-        }
-
-    except Exception as e:
-
-        logging.error(
-            f"업비트 상세 오류 "
-            f"{market} : {e}"
-        )
-
-        return {
-            "rank": rank,
-            "name": coin,
-            "change": "N/A",
-            "change_percent": None,
-            "volume":
-                format_volume(volume),
-            "ema":
-                empty_ema()
-        }
-
-
-# =========================================================
-# OKX 상세 1개
-# =========================================================
-
-def process_okx_detail(
-    rank,
-    symbol,
-    volume_krw,
-    upbit_coin_set
-):
-
-    coin = symbol.replace(
-        "-USDT-SWAP",
-        ""
-    )
-
-    if coin in upbit_coin_set:
-
-        coin = f"{coin}(업비트)"
-
-    try:
-
-        changes = get_okx_change(
-            symbol
-        )
-
-        ema = get_okx_ema(
-            symbol
-        )
-
-        change_percent = (
-            changes[0]
-            if changes
-            else None
-        )
-
-        return {
-            "rank": rank,
-            "name": coin,
-            "change":
-                format_change(changes),
-            "change_percent":
-                change_percent,
-            "volume":
-                format_volume(
-                    volume_krw
-                ),
-            "ema":
-                ema
-        }
-
-    except Exception as e:
-
-        logging.error(
-            f"OKX 상세 오류 "
-            f"{symbol} : {e}"
-        )
-
-        return {
-            "rank": rank,
-            "name": coin,
-            "change": "N/A",
-            "change_percent": None,
-            "volume":
-                format_volume(
-                    volume_krw
-                ),
-            "ema":
-                empty_ema()
-        }
-
-
-# =========================================================
-# 업비트 업데이트
+# 업비트 TOP
 # =========================================================
 
 def update_upbit():
@@ -2201,7 +2136,8 @@ def update_upbit():
     global latest_upbit_data
 
     logging.info(
-        f"업비트 TOP{TOP_N} 시작"
+        f"업비트 TOP{TOP_N} 시작 "
+        f"(업비트 제공 24시간 거래대금)"
     )
 
     markets = get_upbit_markets()
@@ -2209,28 +2145,21 @@ def update_upbit():
     if not markets:
 
         logging.error(
-            "업비트 마켓 목록 실패"
+            "업비트 마켓 목록 조회 실패"
         )
 
         return False
 
     volume_map = (
-        get_upbit_ticker_volumes(
+        get_upbit_ticker_volume_map(
             markets
         )
     )
 
-    valid_volume_count = sum(
-        1
-        for value in volume_map.values()
-        if value > 0
-    )
-
-    if valid_volume_count == 0:
+    if not volume_map:
 
         logging.error(
-            "업비트 거래대금 정상 데이터 0개 "
-            "→ 다음 1분에 재시도"
+            "업비트 거래대금 조회 실패"
         )
 
         return False
@@ -2243,69 +2172,107 @@ def update_upbit():
 
     rows = []
 
+    total_top = len(
+        top_markets
+    )
+
     logging.info(
-        f"업비트 TOP{len(top_markets)} "
-        f"상세 병렬 조회"
+        f"업비트 TOP{total_top} 상세 조회 시작"
     )
 
-    with ThreadPoolExecutor(
-        max_workers=MAX_WORKERS
-    ) as executor:
+    for rank, market in enumerate(
+        top_markets,
+        start=1
+    ):
 
-        futures = {
-            executor.submit(
-                process_upbit_detail,
-                rank,
-                market,
-                volume_map[market]
-            ): rank
-            for rank, market
-            in enumerate(
-                top_markets,
-                start=1
-            )
-        }
-
-        for future in as_completed(
-            futures
-        ):
-
-            try:
-
-                rows.append(
-                    future.result()
-                )
-
-            except Exception as e:
-
-                logging.error(
-                    f"업비트 병렬 처리 오류 : {e}"
-                )
-
-    rows.sort(
-        key=lambda x: x["rank"]
-    )
-
-    if not rows:
-
-        logging.error(
-            "업비트 상세 데이터 없음 "
-            "→ 기존 데이터 유지"
+        coin = market.replace(
+            "KRW-",
+            ""
         )
 
-        return False
+        try:
+
+            changes = get_upbit_change(
+                market
+            )
+
+            ema = get_upbit_ema(
+                market
+            )
+
+            change_percent = (
+                changes[0]
+                if (
+                    changes is not None
+                    and
+                    len(changes) > 0
+                )
+                else None
+            )
+
+            rows.append(
+                {
+                    "rank": rank,
+                    "name": coin,
+                    "change":
+                        format_change(
+                            changes
+                        ),
+                    "change_percent":
+                        change_percent,
+                    "volume":
+                        format_volume(
+                            volume_map[market]
+                        ),
+                    "ema":
+                        ema
+                }
+            )
+
+        except Exception as e:
+
+            logging.error(
+                f"업비트 TOP 상세 오류 "
+                f"{market} : {e}"
+            )
+
+            rows.append(
+                {
+                    "rank": rank,
+                    "name": coin,
+                    "change": "N/A",
+                    "change_percent": None,
+                    "volume":
+                        format_volume(
+                            volume_map.get(
+                                market,
+                                0
+                            )
+                        ),
+                    "ema":
+                        {
+                            "1h_10_30_60_120": "⚪",
+                            "4h_10_30_60_120": "⚪",
+                            "signal": "",
+                            "warning": "none",
+                            "warning_1h": "none",
+                            "warning_4h": "none",
+                            "direction": "none"
+                        }
+                }
+            )
 
     latest_upbit_data = rows
 
     logging.info(
-        f"업비트 TOP{len(rows)} 완료"
+        f"업비트 TOP{total_top} 완료"
     )
 
     return True
 
 
 # =========================================================
-# OKX 업데이트
+# OKX TOP
 # =========================================================
 
 def update_okx():
@@ -2314,7 +2281,7 @@ def update_okx():
 
     logging.info(
         f"OKX TOP{TOP_N} 시작 "
-        f"(tickers 거래대금)"
+        f"(기존 1H 거래대금 방식 / ÷10)"
     )
 
     symbols = get_all_okx_swap_symbols()
@@ -2322,51 +2289,91 @@ def update_okx():
     if not symbols:
 
         logging.error(
-            "OKX 종목 목록 실패 "
-            "→ 다음 1분에 재시도"
-        )
-
-        return False
-
-    volume_usdt_map = (
-        get_okx_ticker_volumes()
-    )
-
-    if not volume_usdt_map:
-
-        logging.error(
-            "OKX tickers 거래대금 조회 실패 "
-            "→ 다음 1분에 재시도"
+            "OKX 종목 목록 조회 실패"
         )
 
         return False
 
     usdt_krw = get_usdt_krw()
 
+    upbit_markets = get_upbit_markets()
+
+    upbit_coin_set = {
+        market.replace(
+            "KRW-",
+            ""
+        )
+        for market in upbit_markets
+    }
+
     volume_map = {}
 
-    for symbol in symbols:
+    total_symbols = len(
+        symbols
+    )
 
-        volume_usdt = (
-            volume_usdt_map.get(
-                symbol,
-                0
+    success = 0
+
+    failed = 0
+
+    for index, symbol in enumerate(
+        symbols,
+        start=1
+    ):
+
+        try:
+
+            volume_usdt = get_okx_volume(
+                symbol
             )
-        )
 
-        if volume_usdt > 0:
-
-            volume_map[symbol] = (
+            volume_krw = (
                 volume_usdt
                 *
                 usdt_krw
             )
 
+            volume_map[
+                symbol
+            ] = volume_krw
+
+            if volume_usdt > 0:
+
+                success += 1
+
+            else:
+
+                failed += 1
+
+        except Exception as e:
+
+            failed += 1
+
+            volume_map[
+                symbol
+            ] = 0
+
+            logging.error(
+                f"OKX 거래대금 실패 "
+                f"{symbol} : {e}"
+            )
+
+        if (
+            index % 25 == 0
+            or
+            index == total_symbols
+        ):
+
+            logging.info(
+                f"OKX 거래대금 "
+                f"{index}/{total_symbols} "
+                f"(성공 {success} / 실패 {failed})"
+            )
+
     if not volume_map:
 
         logging.error(
-            "OKX 거래대금 정상 데이터 0개 "
-            "→ 다음 1분에 재시도"
+            "OKX 거래대금 전체 실패"
         )
 
         return False
@@ -2377,80 +2384,140 @@ def update_okx():
         reverse=True
     )[:TOP_N]
 
-    upbit_markets = (
-        get_upbit_markets()
-    )
-
-    upbit_coin_set = {
-        market.replace(
-            "KRW-",
-            ""
-        )
-        for market in upbit_markets
-    }
-
     rows = []
 
-    logging.info(
-        f"OKX TOP{len(top_symbols)} "
-        f"상세 병렬 조회"
+    total_top = len(
+        top_symbols
     )
 
-    with ThreadPoolExecutor(
-        max_workers=MAX_WORKERS
-    ) as executor:
+    for rank, symbol in enumerate(
+        top_symbols,
+        start=1
+    ):
 
-        futures = {
-            executor.submit(
-                process_okx_detail,
-                rank,
-                symbol,
-                volume_map[symbol],
-                upbit_coin_set
-            ): rank
-            for rank, symbol
-            in enumerate(
-                top_symbols,
-                start=1
-            )
-        }
-
-        for future in as_completed(
-            futures
-        ):
-
-            try:
-
-                rows.append(
-                    future.result()
-                )
-
-            except Exception as e:
-
-                logging.error(
-                    f"OKX 병렬 처리 오류 : {e}"
-                )
-
-    rows.sort(
-        key=lambda x: x["rank"]
-    )
-
-    if not rows:
-
-        logging.error(
-            "OKX 상세 데이터 없음 "
-            "→ 기존 데이터 유지"
+        coin = symbol.replace(
+            "-USDT-SWAP",
+            ""
         )
 
-        return False
+        if coin in upbit_coin_set:
+
+            coin = f"{coin}(업비트)"
+
+        try:
+
+            changes = get_okx_change(
+                symbol
+            )
+
+            ema = get_okx_ema(
+                symbol
+            )
+
+            change_percent = (
+                changes[0]
+                if (
+                    changes is not None
+                    and
+                    len(changes) > 0
+                )
+                else None
+            )
+
+            rows.append(
+                {
+                    "rank": rank,
+                    "name": coin,
+                    "change":
+                        format_change(
+                            changes
+                        ),
+                    "change_percent":
+                        change_percent,
+                    "volume":
+                        format_volume(
+                            volume_map[
+                                symbol
+                            ]
+                        ),
+                    "ema":
+                        ema
+                }
+            )
+
+        except Exception as e:
+
+            logging.error(
+                f"OKX TOP 상세 오류 "
+                f"{symbol} : {e}"
+            )
+
+            rows.append(
+                {
+                    "rank": rank,
+                    "name": coin,
+                    "change": "N/A",
+                    "change_percent": None,
+                    "volume":
+                        format_volume(
+                            volume_map.get(
+                                symbol,
+                                0
+                            )
+                        ),
+                    "ema":
+                        {
+                            "1h_10_30_60_120": "⚪",
+                            "4h_10_30_60_120": "⚪",
+                            "signal": "",
+                            "warning": "none",
+                            "warning_1h": "none",
+                            "warning_4h": "none",
+                            "direction": "none"
+                        }
+                }
+            )
 
     latest_okx_data = rows
 
     logging.info(
-        f"OKX TOP{len(rows)} 완료"
+        f"OKX TOP{total_top} 완료"
     )
 
     return True
+
+
+# =========================================================
+# USDT/KRW
+# =========================================================
+
+def get_usdt_krw():
+
+    response = retry_request(
+        requests.get,
+        "https://api.upbit.com/v1/ticker?markets=KRW-USDT",
+        timeout=15
+    )
+
+    if response is None:
+
+        logging.warning(
+            "USDT/KRW 조회 실패 - 1400 사용"
+        )
+
+        return 1400
+
+    try:
+
+        return float(
+            response.json()[0][
+                "trade_price"
+            ]
+        )
+
+    except Exception:
+
+        return 1400
 
 
 # =========================================================
@@ -2464,15 +2531,15 @@ def update_dashboard():
     )
 
     logging.info(
-        "전체 업데이트 시작"
+        "전체 조회 시작"
     )
 
-    upbit_success = False
-    okx_success = False
+    upbit_ok = False
+    okx_ok = False
 
     try:
 
-        upbit_success = update_upbit()
+        upbit_ok = update_upbit()
 
     except Exception as e:
 
@@ -2482,7 +2549,7 @@ def update_dashboard():
 
     try:
 
-        okx_success = update_okx()
+        okx_ok = update_okx()
 
     except Exception as e:
 
@@ -2490,10 +2557,20 @@ def update_dashboard():
             f"OKX 업데이트 오류 : {e}"
         )
 
+    if not upbit_ok:
+
+        logging.warning(
+            "업비트 조회 실패 - 다음 1분 주기에 재시도"
+        )
+
+    if not okx_ok:
+
+        logging.warning(
+            "OKX 조회 실패 - 다음 1분 주기에 재시도"
+        )
+
     logging.info(
-        f"전체 업데이트 완료 "
-        f"(업비트={upbit_success}, "
-        f"OKX={okx_success})"
+        "전체 업데이트 완료"
     )
 
     logging.info(
@@ -2503,7 +2580,6 @@ def update_dashboard():
 
 # =========================================================
 # 스케줄러
-# ★ 1분마다 실행
 # =========================================================
 
 def scheduler():
@@ -2524,7 +2600,7 @@ def scheduler():
 
 
 # =========================================================
-# HTML
+# 웹 대시보드
 # =========================================================
 
 @app.get(
@@ -2562,87 +2638,73 @@ html,
 body {
 
     margin: 0;
-
     padding: 0;
-
     width: 100%;
-
+    max-width: 100%;
     overflow-x: hidden;
 }
 
 body {
 
     background: #0f1115;
-
     color: #eeeeee;
 
-    font-family: Arial, sans-serif;
+    font-family:
+        Arial,
+        sans-serif;
 
     font-size: 10px;
-
     padding: 6px;
+
+    overflow-wrap: anywhere;
 }
-
-
-/* 제목 */
 
 h1 {
 
     margin: 3px 2px 6px 2px;
-
     font-size: 15px;
-
     font-weight: 700;
+    letter-spacing: -0.3px;
 }
 
 h2 {
 
     margin: 12px 2px 6px 2px;
-
     font-size: 12px;
-
     font-weight: 700;
 }
 
 .info {
 
     margin: 0 2px 7px 2px;
-
     padding: 6px 7px;
 
     color: #8b9099;
-
     background: #171a1f;
 
     border: 1px solid #252a31;
-
     border-radius: 8px;
 
     font-size: 8px;
-
     line-height: 1.5;
 }
-
-
-/* 테이블 */
 
 .table-wrap {
 
     width: 100%;
-
+    max-width: 100%;
     overflow: hidden;
 
     border-radius: 9px;
-
     border: 1px solid #252a31;
 }
 
 table {
 
     width: 100%;
+    max-width: 100%;
 
     table-layout: fixed;
-
     border-collapse: collapse;
 
     background: #181c21;
@@ -2654,14 +2716,15 @@ th {
 
     background: #12151a;
 
-    border-bottom: 1px solid #2b3037;
+    border-bottom:
+        1px solid #2b3037;
 
     color: #8f949d;
 
     font-size: 8px;
+    font-weight: 600;
 
     text-align: center;
-
     vertical-align: middle;
 }
 
@@ -2669,114 +2732,102 @@ td {
 
     padding: 6px 2px;
 
-    border-bottom: 1px solid #272c32;
-
-    text-align: center;
+    border-bottom:
+        1px solid #272c32;
 
     vertical-align: middle;
 
-    overflow: hidden;
+    text-align: center;
 
+    overflow: hidden;
+    overflow-wrap: anywhere;
     word-break: break-word;
 }
 
 tbody tr:last-child td {
-
     border-bottom: none;
 }
 
-
-/* 5칸 */
-
 th:nth-child(1),
 td:nth-child(1) {
-
     width: 8%;
 }
 
 th:nth-child(2),
 td:nth-child(2) {
-
     width: 20%;
 }
 
 th:nth-child(3),
 td:nth-child(3) {
-
     width: 17%;
 }
 
 th:nth-child(4),
 td:nth-child(4) {
-
     width: 25%;
 }
 
 th:nth-child(5),
 td:nth-child(5) {
-
     width: 30%;
-}
-
-
-/* 코인 */
-
-.coin-wrap {
-
-    display: flex;
-
-    flex-direction: column;
-
-    align-items: center;
-
-    justify-content: center;
-
-    gap: 2px;
 }
 
 .coin {
 
+    display: block;
+    width: 100%;
+
     font-weight: bold;
+    text-align: center;
 
     font-size: 9px;
-
-    text-align: center;
+    line-height: 1.2;
 }
 
+.coin-wrap {
 
-/* 방향 */
+    display: flex;
+    flex-direction: column;
+
+    align-items: center;
+    justify-content: center;
+
+    gap: 2px;
+
+    width: 100%;
+}
 
 .direction-long,
 .direction-short,
 .direction-none {
 
     display: block;
+    width: 100%;
 
     font-size: 9px;
-
     text-align: center;
 }
-
-
-/* 거래대금 */
 
 .volume-wrap {
 
     display: flex;
-
     flex-direction: column;
 
     align-items: center;
-
     justify-content: center;
 
     gap: 3px;
+
+    width: 100%;
 }
 
 .volume-value {
 
-    font-size: 8px;
+    display: block;
+    width: 100%;
 
+    font-size: 8px;
     font-weight: 600;
 
     text-align: center;
@@ -2784,64 +2835,80 @@ td:nth-child(5) {
 
 .signal-text {
 
-    font-weight: bold;
+    display: block;
 
+    font-weight: bold;
     font-size: 8px;
+
+    text-align: center;
 }
 
 .long-text {
-
     color: #35e66d;
 }
 
 .short-text {
-
     color: #ff4d4d;
 }
 
 .signal-none {
 
     color: #555;
-
     font-size: 8px;
+    text-align: center;
 }
-
-
-/* 오늘 */
 
 .today-wrap {
 
     display: flex;
-
     flex-direction: column;
 
     align-items: center;
-
     justify-content: center;
 
     gap: 3px;
+
+    width: 100%;
 }
 
 .change-item {
 
     display: inline-flex;
 
-    align-items: center;
+    gap: 2px;
 
+    align-items: center;
+    justify-content: center;
+
+    max-width: 100%;
+
+    font-size: 8px;
+    text-align: center;
+}
+
+.change-value {
+
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.breakout-wrap {
+
+    display: flex;
+
+    flex-direction: column;
+
+    align-items: center;
     justify-content: center;
 
     gap: 2px;
 
-    font-size: 8px;
+    width: 100%;
 }
-
-
-/* 돌파 */
 
 .warning-wrap {
 
     width: 100%;
-
     text-align: center;
 }
 
@@ -2850,38 +2917,35 @@ td:nth-child(5) {
     display: flex;
 
     align-items: center;
-
     justify-content: center;
 
     gap: 2px;
+
+    width: 100%;
 }
 
 .rocket {
 
     font-size: 8px;
-
     white-space: nowrap;
 }
 
 .warning-empty {
 
     color: #555;
+    white-space: nowrap;
 }
 
 .warning-period {
 
     color: #888;
-
     font-size: 7px;
+    white-space: nowrap;
 }
-
-
-/* EMA */
 
 .ema-container {
 
     width: 100%;
-
     overflow: hidden;
 }
 
@@ -2890,8 +2954,9 @@ td:nth-child(5) {
     display: flex;
 
     align-items: center;
+    justify-content: center;
 
-    justify-content: space-between;
+    gap: 3px;
 
     width: 100%;
 }
@@ -2901,30 +2966,25 @@ td:nth-child(5) {
     display: flex;
 
     align-items: center;
-
     justify-content: center;
 
     gap: 1px;
 
     width: 50%;
+    min-width: 0;
 }
 
 .ema-period {
 
     color: #888;
-
     font-size: 6px;
 }
 
 .ema-value {
 
     font-size: 7px;
-
     font-weight: bold;
 }
-
-
-/* 설명 */
 
 .note {
 
@@ -2937,35 +2997,39 @@ td:nth-child(5) {
     margin: 5px 2px 8px 2px;
 }
 
-
-/* 모바일 */
-
 @media (max-width: 480px) {
 
     body {
 
         padding: 4px;
+        font-size: 9px;
     }
 
     h1 {
 
         font-size: 14px;
+        margin: 2px 2px 5px 2px;
     }
 
     h2 {
 
         font-size: 12px;
+        margin: 9px 2px 5px 2px;
     }
 
     .info {
 
         font-size: 7px;
+        line-height: 1.4;
+
+        padding: 5px 6px;
+
+        margin-bottom: 6px;
     }
 
     th {
 
         padding: 5px 1px;
-
         font-size: 7px;
     }
 
@@ -2975,47 +3039,46 @@ td:nth-child(5) {
     }
 
     .coin {
-
         font-size: 8px;
     }
 
     .volume-value {
-
         font-size: 7px;
     }
 
     .signal-text {
-
         font-size: 7px;
     }
 
     .signal-none {
-
         font-size: 7px;
     }
 
     .change-item {
-
         font-size: 7px;
     }
 
-    .ema-period {
+    .ema-line {
+        gap: 1px;
+    }
 
+    .ema-item {
+        gap: 1px;
+    }
+
+    .ema-period {
         font-size: 5px;
     }
 
     .ema-value {
-
         font-size: 6px;
     }
 
     .rocket {
-
         font-size: 7px;
     }
 
     .warning-period {
-
         font-size: 5px;
     }
 
@@ -3027,7 +3090,6 @@ td:nth-child(5) {
     }
 
     .note {
-
         font-size: 6px;
     }
 }
@@ -3050,20 +3112,25 @@ td:nth-child(5) {
 
 <br>
 
-업비트 = 거래소 제공 24H 거래대금 |
-OKX = Tickers 24H 거래대금 |
+업비트 = 거래소 제공 24H 거래대금
+&nbsp;|&nbsp;
+OKX = 1H 거래대금 ÷10
+&nbsp;|&nbsp;
 TOP"""
 
     html += str(TOP_N)
 
-    html += """ |
-EMA 10-30-60-120 |
-1분마다 갱신
+    html += """&nbsp;|&nbsp;
+EMA 10-30-60-120
+&nbsp;|&nbsp;
+업데이트 1분
 
 </div>
 
 
-<!-- 업비트 -->
+<!-- =====================================================
+     업비트
+     ===================================================== -->
 
 <div class="section">
 
@@ -3084,13 +3151,9 @@ EMA 10-30-60-120 |
 <tr>
 
 <th>#</th>
-
 <th>코인</th>
-
 <th>거래대금</th>
-
 <th>오늘</th>
-
 <th>EMA</th>
 
 </tr>
@@ -3099,6 +3162,7 @@ EMA 10-30-60-120 |
 
 <tbody>
 """
+
 
     for item in latest_upbit_data:
 
@@ -3116,7 +3180,10 @@ EMA 10-30-60-120 |
 
         warning_1h = ema.get(
             "warning_1h",
-            "none"
+            ema.get(
+                "warning",
+                "none"
+            )
         )
 
         valid_1h = (
@@ -3193,7 +3260,10 @@ EMA 10-30-60-120 |
 </span>
 
 {signal_html(
-    ema.get("signal", ""),
+    ema.get(
+        "signal",
+        ""
+    ),
     warning_1h,
     change_percent
 )}
@@ -3208,11 +3278,15 @@ EMA 10-30-60-120 |
 
 {item['change']}
 
+<div class="breakout-wrap">
+
 {warning_html(
     warning_1h,
     "none",
     change_percent
 )}
+
+</div>
 
 </div>
 
@@ -3225,7 +3299,9 @@ EMA 10-30-60-120 |
 </td>
 
 </tr>
+
 """
+
 
     html += """
 
@@ -3239,15 +3315,17 @@ EMA 10-30-60-120 |
 
 ※ 🟢 = EMA10 &gt; EMA30 &gt; EMA60 &gt; EMA120<br>
 ※ 🔴 = EMA10 &lt; EMA30 &lt; EMA60 &lt; EMA120<br>
-※ 🚀(0) = 현재 진행 중인 1H 캔들 돌파 가능성<br>
-※ LONG / SHORT = 확정 돌파 기준
+※ 업비트 거래대금 = 업비트 Ticker의 24시간 누적 거래대금<br>
+※ EMA는 1H / 4H만 표시
 
 </div>
 
 </div>
 
 
-<!-- OKX -->
+<!-- =====================================================
+     OKX
+     ===================================================== -->
 
 <div class="section">
 
@@ -3268,13 +3346,9 @@ EMA 10-30-60-120 |
 <tr>
 
 <th>#</th>
-
 <th>코인</th>
-
 <th>거래대금</th>
-
 <th>오늘</th>
-
 <th>EMA</th>
 
 </tr>
@@ -3283,6 +3357,7 @@ EMA 10-30-60-120 |
 
 <tbody>
 """
+
 
     for item in latest_okx_data:
 
@@ -3300,7 +3375,10 @@ EMA 10-30-60-120 |
 
         warning_1h = ema.get(
             "warning_1h",
-            "none"
+            ema.get(
+                "warning",
+                "none"
+            )
         )
 
         valid_1h = (
@@ -3377,7 +3455,10 @@ EMA 10-30-60-120 |
 </span>
 
 {signal_html(
-    ema.get("signal", ""),
+    ema.get(
+        "signal",
+        ""
+    ),
     warning_1h,
     change_percent
 )}
@@ -3392,11 +3473,15 @@ EMA 10-30-60-120 |
 
 {item['change']}
 
+<div class="breakout-wrap">
+
 {warning_html(
     warning_1h,
     "none",
     change_percent
 )}
+
+</div>
 
 </div>
 
@@ -3409,7 +3494,9 @@ EMA 10-30-60-120 |
 </td>
 
 </tr>
+
 """
+
 
     html += """
 
@@ -3421,12 +3508,17 @@ EMA 10-30-60-120 |
 
 <div class="note">
 
-※ OKX 거래대금 = OKX Tickers 24시간 거래대금<br>
-※ 1H 돌파 = 직전 5개 확정 캔들의 고가/저가 돌파<br>
+※ 1H 돌파 기준: 직전 """
+
+    html += str(
+        BREAKOUT_LOOKBACK
+    )
+
+    html += """개 확정 캔들의 고가/저가 돌파<br>
 ※ 🚀(0) = 현재 진행 중인 1H 캔들의 돌파 가능성<br>
-※ EMA = 1H / 4H<br>
-※ 일봉 조회 없음<br>
-※ 데이터 조회 실패 시 기존 데이터 유지 후 1분 뒤 재시도
+※ LONG / SHORT 실제 신호는 확정 돌파만 사용<br>
+※ OKX 거래대금 = 기존 1H 캔들 거래대금 합산 방식<br>
+※ EMA = 1H / 4H
 
 </div>
 
@@ -3453,13 +3545,13 @@ def startup():
         "서버 시작"
     )
 
-    # 최초 실행
+    # 최초 즉시 실행
     threading.Thread(
         target=update_dashboard,
         daemon=True
     ).start()
 
-    # ★ 1분마다 실행
+    # 1분마다 실행
     schedule.every(
         UPDATE_MINUTES
     ).minutes.do(
