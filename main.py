@@ -2263,8 +2263,9 @@ def warning_html(
 
 # =========================================================
 # EMA HTML
-# ★ 방향 칸 삭제에 맞춰 폭 조정
-# ★ 글자 넘침 방지
+# ★ # / 오늘 칸 확대
+# ★ EMA 칸 축소
+# ★ 모바일 최적화
 # =========================================================
 
 def ema_html(
@@ -2292,7 +2293,11 @@ def ema_html(
         <div class="ema-line">
 
             <div class="ema-item ema-1h">
-                <span class="ema-period">1H</span>
+
+                <span class="ema-period">
+                    1H
+                </span>
+
                 <span class="ema-value">
                     {ema_1h}
                 </span>
@@ -2300,20 +2305,33 @@ def ema_html(
                 <div class="resistance-text">
                     전고점 매물 확인
                 </div>
+
             </div>
 
+
             <div class="ema-item">
-                <span class="ema-period">4H</span>
+
+                <span class="ema-period">
+                    4H
+                </span>
+
                 <span class="ema-value">
                     {ema_4h}
                 </span>
+
             </div>
 
+
             <div class="ema-item">
-                <span class="ema-period">1D</span>
+
+                <span class="ema-period">
+                    1D
+                </span>
+
                 <span class="ema-value">
                     {ema_1d}
                 </span>
+
             </div>
 
         </div>
@@ -2923,12 +2941,14 @@ td {
 /* =====================================================
    5칸 너비
    # | 코인 | 거래대금 | 오늘 | EMA
+
+   모바일 최적화
    ===================================================== */
 
 th:nth-child(1),
 td:nth-child(1) {
 
-    width: 6%;
+    width: 9%;
 }
 
 th:nth-child(2),
@@ -2946,13 +2966,13 @@ td:nth-child(3) {
 th:nth-child(4),
 td:nth-child(4) {
 
-    width: 15%;
+    width: 22%;
 }
 
 th:nth-child(5),
 td:nth-child(5) {
 
-    width: 42%;
+    width: 32%;
 }
 
 
@@ -3201,7 +3221,7 @@ td:nth-child(5) {
 
     align-items: flex-start;
 
-    gap: 3px;
+    gap: 2px;
 
     width: 100%;
 
@@ -3220,7 +3240,7 @@ td:nth-child(5) {
 
     gap: 1px;
 
-    font-size: 8px;
+    font-size: 7px;
 
     min-width: 0;
 
@@ -3235,14 +3255,14 @@ td:nth-child(5) {
 
     color: #888;
 
-    font-size: 7px;
+    font-size: 6px;
 
     flex-shrink: 0;
 }
 
 .ema-value {
 
-    font-size: 8px;
+    font-size: 7px;
 
     font-weight: bold;
 
@@ -3256,7 +3276,7 @@ td:nth-child(5) {
 
 .ema-1h {
 
-    padding-bottom: 13px;
+    padding-bottom: 12px;
 
     min-width: 0;
 }
@@ -3267,11 +3287,11 @@ td:nth-child(5) {
 
     left: 0;
 
-    top: 11px;
+    top: 10px;
 
     color: #999;
 
-    font-size: 5px;
+    font-size: 4px;
 
     line-height: 1;
 
@@ -3347,7 +3367,7 @@ td:nth-child(5) {
 
     th {
 
-        padding: 3px 1px;
+        padding: 4px 2px;
 
         font-size: 7px;
 
@@ -3360,7 +3380,7 @@ td:nth-child(5) {
 
     td {
 
-        padding: 3px 1px;
+        padding: 4px 2px;
 
         overflow: hidden;
 
@@ -3369,10 +3389,60 @@ td:nth-child(5) {
         word-break: break-word;
     }
 
+
+    /* ---------------------------------------------
+       모바일 칸 비율
+       # 9%
+       코인 20%
+       거래대금 17%
+       오늘 22%
+       EMA 32%
+       --------------------------------------------- */
+
+    th:nth-child(1),
+    td:nth-child(1) {
+
+        width: 9%;
+    }
+
+    th:nth-child(2),
+    td:nth-child(2) {
+
+        width: 20%;
+    }
+
+    th:nth-child(3),
+    td:nth-child(3) {
+
+        width: 17%;
+    }
+
+    th:nth-child(4),
+    td:nth-child(4) {
+
+        width: 22%;
+    }
+
+    th:nth-child(5),
+    td:nth-child(5) {
+
+        width: 32%;
+    }
+
+
+    /* ---------------------------------------------
+       코인
+       --------------------------------------------- */
+
     .coin {
 
         font-size: 9px;
     }
+
+
+    /* ---------------------------------------------
+       거래대금
+       --------------------------------------------- */
 
     .volume-value {
 
@@ -3389,18 +3459,30 @@ td:nth-child(5) {
         font-size: 8px;
     }
 
+
+    /* ---------------------------------------------
+       오늘
+       --------------------------------------------- */
+
     .change-item {
 
-        font-size: 7px;
+        font-size: 8px;
 
         gap: 1px;
     }
 
+
+    /* ---------------------------------------------
+       EMA 압축
+       --------------------------------------------- */
+
     .ema-line {
 
-        gap: 2px;
+        gap: 1px;
 
         overflow: hidden;
+
+        width: 100%;
     }
 
     .ema-item {
@@ -3410,28 +3492,40 @@ td:nth-child(5) {
         max-width: 33%;
 
         overflow: hidden;
+
+        flex-shrink: 1;
     }
 
     .ema-period {
 
-        font-size: 6px;
+        font-size: 5px;
     }
 
     .ema-value {
 
-        font-size: 7px;
+        font-size: 6px;
     }
+
+
+    /* ---------------------------------------------
+       전고점 매물
+       --------------------------------------------- */
 
     .resistance-text {
 
-        font-size: 5px;
+        font-size: 4px;
 
-        top: 10px;
+        top: 9px;
 
         max-width: 100%;
 
         overflow: hidden;
     }
+
+
+    /* ---------------------------------------------
+       돌파
+       --------------------------------------------- */
 
     .rocket {
 
@@ -3443,6 +3537,11 @@ td:nth-child(5) {
         font-size: 6px;
     }
 
+
+    /* ---------------------------------------------
+       방향
+       --------------------------------------------- */
+
     .direction-long,
     .direction-short,
     .direction-none {
@@ -3450,10 +3549,16 @@ td:nth-child(5) {
         font-size: 9px;
     }
 
+
+    /* ---------------------------------------------
+       설명
+       --------------------------------------------- */
+
     .note {
 
         font-size: 6px;
     }
+
 }
 
 </style>
@@ -3949,4 +4054,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-        )
+    )
