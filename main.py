@@ -40,7 +40,7 @@ logging.basicConfig(
 
 VOLUME_HOURS = 24
 
-TOP_N = 20
+TOP_N = 30
 
 UPDATE_MINUTES = 1
 
@@ -283,6 +283,7 @@ def get_okx_ohlcv(
                 errors="coerce"
             )
 
+        # 확정 캔들만 사용
         df = df[
             df["confirm"]
             .astype(str)
@@ -323,8 +324,6 @@ def get_upbit_ticker_volume_map(
 
     volume_map = {}
 
-    # 업비트 ticker API에 여러 마켓을 한 번에 요청
-    # 너무 긴 URL을 피하기 위해 100개씩 분할
     chunk_size = 100
 
     total = len(markets)
@@ -376,9 +375,7 @@ def get_upbit_ticker_volume_map(
                         f"청크 {chunk_index}"
                     )
 
-                    time.sleep(
-                        2
-                    )
+                    time.sleep(2)
 
                     continue
 
@@ -389,9 +386,7 @@ def get_upbit_ticker_volume_map(
                         f"{response.status_code}"
                     )
 
-                    time.sleep(
-                        2
-                    )
+                    time.sleep(2)
 
                     continue
 
@@ -404,9 +399,7 @@ def get_upbit_ticker_volume_map(
                         f"청크 {chunk_index}"
                     )
 
-                    time.sleep(
-                        2
-                    )
+                    time.sleep(2)
 
                     continue
 
@@ -452,9 +445,7 @@ def get_upbit_ticker_volume_map(
                     f"청크 {chunk_index}: {e}"
                 )
 
-                time.sleep(
-                    2
-                )
+                time.sleep(2)
 
     logging.info(
         f"업비트 거래대금 조회 완료 "
@@ -465,16 +456,20 @@ def get_upbit_ticker_volume_map(
 
 
 # =========================================================
-# ★ 업비트 USDT-KRW 현재가
-# ★ OKX 거래대금 환산 전용
-# ★ OKX 전체 조회 시작 시 1회만 호출
+# ★ USDT-KRW 1회 조회
 # =========================================================
 
 def get_upbit_usdt_krw():
 
+    market = "KRW-USDT"
+
     url = (
         "https://api.upbit.com/v1/ticker"
-        "?markets=KRW-USDT"
+        f"?markets={market}"
+    )
+
+    logging.info(
+        "업비트 USDT-KRW 환율 1회 조회 시작"
     )
 
     response = retry_request(
@@ -485,49 +480,40 @@ def get_upbit_usdt_krw():
 
     if response is None:
 
-        logging.warning(
-            "업비트 USDT-KRW 응답 없음"
+        logging.error(
+            "업비트 USDT-KRW 조회 실패"
         )
 
         return None
 
     try:
 
-        if response.status_code != 200:
-
-            logging.warning(
-                f"업비트 USDT-KRW HTTP "
-                f"{response.status_code}"
-            )
-
-            return None
-
         data = response.json()
 
         if not data:
 
-            logging.warning(
+            logging.error(
                 "업비트 USDT-KRW 데이터 없음"
             )
 
             return None
 
-        price = float(
-            data[0]["trade_price"]
+        price = data[0].get(
+            "trade_price"
         )
+
+        price = float(price)
 
         if price <= 0:
 
-            logging.warning(
-                f"업비트 USDT-KRW 가격 오류 "
-                f"{price}"
+            logging.error(
+                f"USDT-KRW 가격 오류 : {price}"
             )
 
             return None
 
         logging.info(
-            f"업비트 USDT-KRW 현재가 "
-            f"= {price:,.2f}원"
+            f"업비트 USDT-KRW = {price:,.2f}원"
         )
 
         return price
@@ -535,7 +521,7 @@ def get_upbit_usdt_krw():
     except Exception as e:
 
         logging.error(
-            f"업비트 USDT-KRW 조회 오류 : {e}"
+            f"USDT-KRW 처리 오류 : {e}"
         )
 
         return None
@@ -845,18 +831,24 @@ def get_main_direction(
     column
 ):
 
-    h1_direction = (
-        get_ema_10_30_60_120_direction(
-            df1h,
-            column
-        )
+    return get_ema_10_30_60_120_direction(
+        df1h,
+        column
     )
-
-    return h1_direction
 
 
 # =========================================================
-# 1H 확정 돌파
+# 돌파 상태 계산
+#
+# 양수:
+#   1, 2, 3...
+#
+# 음수:
+#   돌파 후 실패
+#   -1, -2
+#
+# 0:
+#   표시하지 않음
 # =========================================================
 
 def check_breakout(
@@ -901,103 +893,91 @@ def check_breakout(
 
     current_index = len(df) - 1
 
-    cur = df.iloc[
-        current_index
-    ]
+    # =====================================================
+    # LONG / SHORT 각각의 돌파 여부 기록
+    # =====================================================
 
-    previous = df.iloc[
-        current_index - BREAKOUT_LOOKBACK:
-        current_index
-    ]
+    long_states = []
 
-    if previous.empty:
-        return "none"
+    short_states = []
 
-    previous_high = pd.to_numeric(
-        previous["h"],
-        errors="coerce"
-    ).max()
-
-    previous_low = pd.to_numeric(
-        previous["l"],
-        errors="coerce"
-    ).min()
-
-    # -----------------------------------------------------
-    # LONG
-    # -----------------------------------------------------
-
-    long_ema = (
-        cur["ema10"]
-        >
-        cur["ema30"]
-        >
-        cur["ema60"]
-        >
-        cur["ema120"]
-    )
-
-    long_break = (
-        cur["c"]
-        >
-        previous_high
-    )
-
-    long_candle = (
-        cur["c"]
-        >
-        cur["o"]
-    )
-
-    if (
-        long_ema
-        and
-        long_break
-        and
-        long_candle
+    for index in range(
+        BREAKOUT_LOOKBACK,
+        len(df)
     ):
+
+        row = df.iloc[index]
+
+        prev = df.iloc[
+            index - BREAKOUT_LOOKBACK:
+            index
+        ]
+
+        previous_high = pd.to_numeric(
+            prev["h"],
+            errors="coerce"
+        ).max()
+
+        previous_low = pd.to_numeric(
+            prev["l"],
+            errors="coerce"
+        ).min()
+
+        long_state = (
+            row["ema10"]
+            >
+            row["ema30"]
+            >
+            row["ema60"]
+            >
+            row["ema120"]
+            and
+            row["c"]
+            >
+            previous_high
+            and
+            row["c"]
+            >
+            row["o"]
+        )
+
+        short_state = (
+            row["ema10"]
+            <
+            row["ema30"]
+            <
+            row["ema60"]
+            <
+            row["ema120"]
+            and
+            row["c"]
+            <
+            previous_low
+            and
+            row["c"]
+            <
+            row["o"]
+        )
+
+        long_states.append(
+            long_state
+        )
+
+        short_states.append(
+            short_state
+        )
+
+    # =====================================================
+    # 현재 LONG 돌파
+    # =====================================================
+
+    if long_states[-1]:
 
         count = 0
 
-        for index in range(
-            current_index,
-            -1,
-            -1
+        for state in reversed(
+            long_states
         ):
-
-            row = df.iloc[index]
-
-            if index < BREAKOUT_LOOKBACK:
-
-                break
-
-            prev = df.iloc[
-                index - BREAKOUT_LOOKBACK:
-                index
-            ]
-
-            prev_high = pd.to_numeric(
-                prev["h"],
-                errors="coerce"
-            ).max()
-
-            state = (
-                row["ema10"]
-                >
-                row["ema30"]
-                >
-                row["ema60"]
-                >
-                row["ema120"]
-                and
-                row["c"]
-                >
-                prev_high
-                and
-                row["c"]
-                >
-                row["o"]
-            )
 
             if state:
 
@@ -1010,81 +990,17 @@ def check_breakout(
         return f"long_breakout_{count}"
 
 
-    # -----------------------------------------------------
-    # SHORT
-    # -----------------------------------------------------
+    # =====================================================
+    # 현재 SHORT 돌파
+    # =====================================================
 
-    short_ema = (
-        cur["ema10"]
-        <
-        cur["ema30"]
-        <
-        cur["ema60"]
-        <
-        cur["ema120"]
-    )
-
-    short_break = (
-        cur["c"]
-        <
-        previous_low
-    )
-
-    short_candle = (
-        cur["c"]
-        <
-        cur["o"]
-    )
-
-    if (
-        short_ema
-        and
-        short_break
-        and
-        short_candle
-    ):
+    if short_states[-1]:
 
         count = 0
 
-        for index in range(
-            current_index,
-            -1,
-            -1
+        for state in reversed(
+            short_states
         ):
-
-            if index < BREAKOUT_LOOKBACK:
-
-                break
-
-            row = df.iloc[index]
-
-            prev = df.iloc[
-                index - BREAKOUT_LOOKBACK:
-                index
-            ]
-
-            prev_low = pd.to_numeric(
-                prev["l"],
-                errors="coerce"
-            ).min()
-
-            state = (
-                row["ema10"]
-                <
-                row["ema30"]
-                <
-                row["ema60"]
-                <
-                row["ema120"]
-                and
-                row["c"]
-                <
-                prev_low
-                and
-                row["c"]
-                <
-                row["o"]
-            )
 
             if state:
 
@@ -1095,6 +1011,82 @@ def check_breakout(
                 break
 
         return f"short_breakout_{count}"
+
+
+    # =====================================================
+    # LONG 돌파 이후 실패 카운트
+    #
+    # 최근 LONG 돌파 이후
+    # 현재까지 몇 개의 확정봉이
+    # 다시 고점을 돌파하지 못했는지 계산
+    # =====================================================
+
+    failure_count = 0
+
+    found_breakout = False
+
+    for state in reversed(
+        long_states
+    ):
+
+        if state:
+
+            found_breakout = True
+
+            break
+
+        failure_count += 1
+
+        if failure_count >= 2:
+
+            break
+
+    if (
+        found_breakout
+        and
+        1 <= failure_count <= 2
+    ):
+
+        return (
+            f"long_breakout_-"
+            f"{failure_count}"
+        )
+
+
+    # =====================================================
+    # SHORT 돌파 이후 실패 카운트
+    # =====================================================
+
+    failure_count = 0
+
+    found_breakout = False
+
+    for state in reversed(
+        short_states
+    ):
+
+        if state:
+
+            found_breakout = True
+
+            break
+
+        failure_count += 1
+
+        if failure_count >= 2:
+
+            break
+
+    if (
+        found_breakout
+        and
+        1 <= failure_count <= 2
+    ):
+
+        return (
+            f"short_breakout_-"
+            f"{failure_count}"
+        )
 
     return "none"
 
@@ -1152,21 +1144,39 @@ def get_trade_signal(
 
     signal = ""
 
+    # 실제 LONG 신호는 양수 돌파에서만
     if (
         main_direction == "long"
         and
         breakout_1h.startswith(
             "long_breakout_"
         )
+        and
+        not breakout_1h.endswith(
+            "-1"
+        )
+        and
+        not breakout_1h.endswith(
+            "-2"
+        )
     ):
 
         signal = "LONG"
 
+    # 실제 SHORT 신호는 양수 돌파에서만
     elif (
         main_direction == "short"
         and
         breakout_1h.startswith(
             "short_breakout_"
+        )
+        and
+        not breakout_1h.endswith(
+            "-1"
+        )
+        and
+        not breakout_1h.endswith(
+            "-2"
         )
     ):
 
@@ -1296,11 +1306,11 @@ def get_upbit_ema(
             "direction": "none"
         }
 
-    # 현재 진행 중 캔들 제거
     df1h = raw1h.copy()
 
     df4h = raw4h.copy()
 
+    # 현재 진행 중 캔들 제거
     if len(df1h) > 1:
 
         df1h = (
@@ -1364,9 +1374,17 @@ def get_upbit_ema(
 
 # =========================================================
 # ★ OKX 거래대금
-# ★ 1H 확정 캔들 24개
-# ★ USDT 기준 → 업비트 USDT-KRW 환산
-# ★ USDT-KRW는 함수 밖에서 1회만 조회
+#
+# 24개의 완료된 1H 캔들
+# ↓
+# USDT 거래대금 합산
+# ↓
+# 업비트 USDT-KRW 환율 곱하기
+#
+# 예:
+# OKX 24H 거래대금 = 10,000,000 USDT
+# USDT-KRW = 1,400원
+# = 140억원
 # =========================================================
 
 def get_okx_volume(
@@ -1425,17 +1443,17 @@ def get_okx_volume(
 
                 continue
 
-            # -------------------------------------------------
-            # 완료된 1H 캔들 24개 거래대금
-            # -------------------------------------------------
+            # =================================================
+            # 완료된 1시간봉 마지막 24개
+            # =================================================
 
-            volume_usdt = float(
+            usdt_volume = float(
                 df["volCcyQuote"]
                 .tail(hours)
                 .sum()
             )
 
-            if volume_usdt <= 0:
+            if usdt_volume <= 0:
 
                 logging.warning(
                     f"OKX 거래대금 0 "
@@ -1449,17 +1467,17 @@ def get_okx_volume(
 
                 continue
 
-            # -------------------------------------------------
+            # =================================================
             # USDT → KRW 환산
-            # -------------------------------------------------
+            # =================================================
 
-            volume_krw = (
-                volume_usdt
+            krw_volume = (
+                usdt_volume
                 *
                 usdt_krw
             )
 
-            if volume_krw <= 0:
+            if krw_volume <= 0:
 
                 logging.warning(
                     f"OKX KRW 거래대금 0 "
@@ -1473,7 +1491,7 @@ def get_okx_volume(
 
                 continue
 
-            return volume_krw
+            return krw_volume
 
         except Exception as e:
 
@@ -1842,8 +1860,18 @@ def direction_html(
 
 
 # =========================================================
-# 돌파 HTML
-# ★ 0 삭제
+# ★ 돌파 HTML
+#
+# 양수:
+#   🚀(1)
+#   🚀(2)
+#
+# 실패:
+#   🚀(-1)
+#   🚀(-2)
+#
+# 0 / -3 이하:
+#   표시 안함
 # =========================================================
 
 def warning_html(
@@ -1851,47 +1879,55 @@ def warning_html(
     change_percent
 ):
 
-    if not warning_1h.startswith(
-        "long_breakout_"
-    ) and not warning_1h.startswith(
-        "short_breakout_"
-    ):
-
-        return (
-            '<span class="warning-empty">—</span>'
-        )
-
-    if (
+    if not (
         warning_1h.startswith(
             "long_breakout_"
         )
-        and
-        (
-            change_percent is None
-            or
-            change_percent <= 0
-        )
-    ):
-
-        return (
-            '<span class="warning-empty">—</span>'
-        )
-
-    if (
+        or
         warning_1h.startswith(
             "short_breakout_"
         )
-        and
-        (
-            change_percent is None
-            or
-            change_percent >= 0
-        )
     ):
 
         return (
             '<span class="warning-empty">—</span>'
         )
+
+    # =====================================================
+    # LONG
+    # =====================================================
+
+    if warning_1h.startswith(
+        "long_breakout_"
+    ):
+
+        if (
+            change_percent is None
+            or
+            change_percent <= 0
+        ):
+
+            return (
+                '<span class="warning-empty">—</span>'
+            )
+
+    # =====================================================
+    # SHORT
+    # =====================================================
+
+    if warning_1h.startswith(
+        "short_breakout_"
+    ):
+
+        if (
+            change_percent is None
+            or
+            change_percent >= 0
+        ):
+
+            return (
+                '<span class="warning-empty">—</span>'
+            )
 
     try:
 
@@ -1905,23 +1941,57 @@ def warning_html(
             '<span class="warning-empty">—</span>'
         )
 
-    # 진행 중 0은 완전히 표시하지 않음
-    if count <= 0:
+    # =====================================================
+    # 0 삭제
+    # =====================================================
+
+    if count == 0:
 
         return (
             '<span class="warning-empty">—</span>'
         )
 
+    # =====================================================
+    # -3 이하 삭제
+    # =====================================================
+
+    if count < -2:
+
+        return (
+            '<span class="warning-empty">—</span>'
+        )
+
+    # =====================================================
+    # -1 / -2
+    # =====================================================
+
+    if count in (-1, -2):
+
+        return (
+            '<span class="warning-icon rocket">'
+            f'🚀({count})'
+            '</span>'
+        )
+
+    # =====================================================
+    # 양수
+    # =====================================================
+
+    if count > 0:
+
+        return (
+            '<span class="warning-icon rocket">'
+            f'🚀({count})'
+            '</span>'
+        )
+
     return (
-        '<span class="warning-icon rocket">'
-        f'🚀({count})'
-        '</span>'
+        '<span class="warning-empty">—</span>'
     )
 
 
 # =========================================================
 # EMA HTML
-# ★ 일봉 삭제
 # =========================================================
 
 def ema_html(
@@ -1955,7 +2025,6 @@ def ema_html(
 
             </div>
 
-
             <div class="ema-item">
 
                 <span class="ema-period">
@@ -1972,6 +2041,49 @@ def ema_html(
 
     </div>
     """
+
+
+# =========================================================
+# 화면 표시 가능 여부
+#
+# 양수 돌파 + 음수 -1/-2 모두 표시
+# =========================================================
+
+def is_display_warning(
+    warning_1h
+):
+
+    if not (
+        warning_1h.startswith(
+            "long_breakout_"
+        )
+        or
+        warning_1h.startswith(
+            "short_breakout_"
+        )
+    ):
+
+        return False
+
+    try:
+
+        count = int(
+            warning_1h.split("_")[-1]
+        )
+
+    except Exception:
+
+        return False
+
+    if count == 0:
+
+        return False
+
+    if count < -2:
+
+        return False
+
+    return True
 
 
 # =========================================================
@@ -1995,10 +2107,6 @@ def update_upbit():
         )
 
         return False
-
-    # -----------------------------------------------------
-    # 거래소가 제공하는 24시간 누적 거래대금 사용
-    # -----------------------------------------------------
 
     volume_map = get_upbit_ticker_volume_map(
         markets
@@ -2092,10 +2200,15 @@ def update_upbit():
 
 
 # =========================================================
-# OKX 업데이트
-# ★ 업비트 완료 후 실행
-# ★ USDT-KRW 1회 조회
-# ★ 거래대금 직렬
+# ★ OKX 업데이트
+#
+# 업비트 완료
+# ↓
+# USDT-KRW 1회 조회
+# ↓
+# OKX 전체 거래대금 직렬 조회
+# ↓
+# TOP20
 # =========================================================
 
 def update_okx():
@@ -2105,32 +2218,6 @@ def update_okx():
     logging.info(
         f"========== OKX TOP{TOP_N} 시작 =========="
     )
-
-    # =====================================================
-    # 1. 업비트 USDT-KRW 현재가 1회 조회
-    # =====================================================
-
-    usdt_krw = get_upbit_usdt_krw()
-
-    if (
-        usdt_krw is None
-        or usdt_krw <= 0
-    ):
-
-        logging.error(
-            "업비트 USDT-KRW 조회 실패"
-        )
-
-        return False
-
-    logging.info(
-        f"OKX 거래대금 환산 기준 "
-        f"USDT-KRW = {usdt_krw:,.2f}원"
-    )
-
-    # =====================================================
-    # 2. OKX 전체 종목 목록
-    # =====================================================
 
     symbols = get_all_okx_swap_symbols()
 
@@ -2143,7 +2230,21 @@ def update_okx():
         return False
 
     # =====================================================
-    # 3. 업비트 마켓
+    # ★ USDT-KRW 단 1회 조회
+    # =====================================================
+
+    usdt_krw = get_upbit_usdt_krw()
+
+    if usdt_krw is None:
+
+        logging.error(
+            "USDT-KRW 조회 실패 → OKX 업데이트 중단"
+        )
+
+        return False
+
+    # =====================================================
+    # 업비트 마켓
     # =====================================================
 
     upbit_markets = get_upbit_markets()
@@ -2163,22 +2264,23 @@ def update_okx():
         f"거래대금 직렬 조회 시작"
     )
 
+    logging.info(
+        f"OKX 거래대금 환산 환율 "
+        f"USDT-KRW = {usdt_krw:,.2f}원"
+    )
+
     volume_map = {}
 
     # =====================================================
-    # 중요
+    # 완전 직렬
     #
-    # 병렬 요청하지 않음
-    #
-    # USDT-KRW는 위에서 1회만 조회
-    #
-    # 1번 OKX 요청
+    # 1개 조회
     # ↓
     # 결과 취합
     # ↓
-    # 다음 OKX 요청
+    # 다음 종목
     #
-    # 실패하면 해당 종목만 계속 재시도
+    # 병렬 요청 없음
     # =====================================================
 
     for index, symbol in enumerate(
@@ -2205,7 +2307,7 @@ def update_okx():
                         f"OKX 거래대금 "
                         f"{index}/{total_symbols} "
                         f"{symbol} 완료 "
-                        f"({format_volume(volume)})"
+                        f"= {format_volume(volume)}"
                     )
 
                     break
@@ -2240,7 +2342,7 @@ def update_okx():
         return False
 
     # =====================================================
-    # 4. 거래대금 순위
+    # 거래대금 순위
     # =====================================================
 
     top_symbols = sorted(
@@ -2328,7 +2430,10 @@ def update_okx():
 
 # =========================================================
 # 전체 업데이트
-# ★ 반드시 업비트 → OKX 순서
+#
+# 업비트
+# ↓
+# OKX
 # =========================================================
 
 def update_dashboard():
@@ -2990,11 +3095,7 @@ td:nth-child(5) {
 
 업비트 거래대금 = 거래소 24시간 누적 거래대금
 &nbsp;|&nbsp;
-OKX 거래대금 = 완료된 1H """
-
-    html += str(VOLUME_HOURS)
-
-    html += """개 거래대금 × 업비트 USDT-KRW
+OKX 거래대금 = 완료된 1H 캔들 24개 × USDT-KRW
 &nbsp;|&nbsp;
 TOP"""
 
@@ -3065,13 +3166,8 @@ EMA 10-30-60-120
             "none"
         )
 
-        # 0은 완전히 제외
-        if (
+        if not is_display_warning(
             warning_1h
-            in (
-                "long_breakout_0",
-                "short_breakout_0"
-            )
         ):
 
             continue
@@ -3085,12 +3181,11 @@ EMA 10-30-60-120
                 and
                 change_percent > 0
                 and
-                warning_1h.startswith(
-                    "long_breakout_"
+                (
+                    warning_1h.startswith(
+                        "long_breakout_"
+                    )
                 )
-                and
-                warning_1h !=
-                "long_breakout_0"
             )
 
             or
@@ -3102,12 +3197,11 @@ EMA 10-30-60-120
                 and
                 change_percent < 0
                 and
-                warning_1h.startswith(
-                    "short_breakout_"
+                (
+                    warning_1h.startswith(
+                        "short_breakout_"
+                    )
                 )
-                and
-                warning_1h !=
-                "short_breakout_0"
             )
         )
 
@@ -3207,7 +3301,9 @@ EMA 10-30-60-120
 ※ 🟢 = EMA10 &gt; EMA30 &gt; EMA60 &gt; EMA120<br>
 ※ 🔴 = EMA10 &lt; EMA30 &lt; EMA60 &lt; EMA120<br>
 ※ 업비트 거래대금 = 업비트 Ticker 24시간 누적 거래대금<br>
-※ 돌파 0은 표시하지 않음
+※ 🚀(1), 🚀(2) = 확정 돌파 진행<br>
+※ 🚀(-1), 🚀(-2) = 돌파 후 다음 고점/저점 갱신 실패<br>
+※ 0 및 -3 이하 돌파는 표시하지 않음
 
 </div>
 
@@ -3273,13 +3369,8 @@ EMA 10-30-60-120
             "none"
         )
 
-        # 0 삭제
-        if (
+        if not is_display_warning(
             warning_1h
-            in (
-                "long_breakout_0",
-                "short_breakout_0"
-            )
         ):
 
             continue
@@ -3296,9 +3387,6 @@ EMA 10-30-60-120
                 warning_1h.startswith(
                     "long_breakout_"
                 )
-                and
-                warning_1h !=
-                "long_breakout_0"
             )
 
             or
@@ -3313,9 +3401,6 @@ EMA 10-30-60-120
                 warning_1h.startswith(
                     "short_breakout_"
                 )
-                and
-                warning_1h !=
-                "short_breakout_0"
             )
         )
 
@@ -3417,15 +3502,13 @@ EMA 10-30-60-120
     html += str(BREAKOUT_LOOKBACK)
 
     html += """개 확정 캔들의 고가/저가 돌파<br>
-※ 🚀(0) 진행 중 돌파는 완전히 제외<br>
-※ LONG / SHORT는 확정 돌파만 표시<br>
+※ 🚀(1), 🚀(2) = 돌파 진행<br>
+※ 🚀(-1), 🚀(-2) = 돌파 후 다음 고점/저점 갱신 실패<br>
+※ 🚀(0) 및 -3 이하 = 표시하지 않음<br>
+※ LONG / SHORT = 현재 1H EMA 방향과 오늘 변동률 조건 충족 시 표시<br>
 ※ EMA = 1H / 4H<br>
-※ OKX 거래대금 = 완료된 1H """
-
-    html += str(VOLUME_HOURS)
-
-    html += """개 × 업비트 USDT-KRW 현재가<br>
-※ USDT-KRW는 OKX 거래대금 조회 시작 시 1회 조회
+※ OKX 거래대금 = 완료된 1H 캔들 24개 volCcyQuote 합계 × 업비트 USDT-KRW<br>
+※ USDT-KRW는 OKX 거래대금 계산 시작 시 1회 조회
 
 </div>
 
