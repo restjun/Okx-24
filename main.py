@@ -129,6 +129,10 @@ def retry_request(
 
                 status = result.status_code
 
+                # -----------------------------------------
+                # 429
+                # -----------------------------------------
+
                 if status == 429:
 
                     wait_time = min(
@@ -150,6 +154,10 @@ def retry_request(
 
                     continue
 
+                # -----------------------------------------
+                # 서버 오류
+                # -----------------------------------------
+
                 if status >= 500:
 
                     wait_time = min(
@@ -170,6 +178,10 @@ def retry_request(
                     )
 
                     continue
+
+                # -----------------------------------------
+                # 기타 HTTP 오류
+                # -----------------------------------------
 
                 if status != 200:
 
@@ -469,6 +481,7 @@ def get_upbit_daily_ohlcv(
             errors="coerce"
         )
 
+        # 진행 중인 일봉 제거
         if len(df) > 1:
 
             df = (
@@ -1047,7 +1060,9 @@ def check_ema(
 
 # =========================================================
 # 메인 방향
+# ★ 판단 기준
 # ★ 1H 30-60-120만 사용
+# ★ 4H / 1D는 방향 판단에서 사용하지 않음
 # =========================================================
 
 def get_main_direction(
@@ -1075,298 +1090,10 @@ def get_main_direction(
 
 
 # =========================================================
-# ⚡ 추세전환
-# ★ 1H 기준
-# =========================================================
-
-def check_lightning(
-    df1h,
-    column
-):
-
-    count, direction = (
-        get_30_60_120_count(
-            df1h,
-            column
-        )
-    )
-
-    if not (
-        1 <= count <= MAX_WARNING_COUNT
-    ):
-
-        return "none"
-
-    if direction == "long":
-
-        return f"long_lightning_{count}"
-
-    if direction == "short":
-
-        return f"short_lightning_{count}"
-
-    return "none"
-
-
-# =========================================================
-# 🔥 눌림목
-#
-# ★ 1H 기준
-# ★ 30-60-120 정배열/역배열 사용
-# ★ 10EMA는 사용하지 않음
-# =========================================================
-
-def check_pullback(
-    df1h,
-    column
-):
-
-    if (
-        df1h is None
-        or len(df1h) < 125
-    ):
-
-        return "none"
-
-    df = df1h.copy()
-
-    df["ema30"] = get_ema(
-        df,
-        column,
-        30
-    )
-
-    df["ema60"] = get_ema(
-        df,
-        column,
-        60
-    )
-
-    df["ema120"] = get_ema(
-        df,
-        column,
-        120
-    )
-
-    cur = df.iloc[-1]
-
-    prev = df.iloc[-2]
-
-    if (
-        pd.isna(cur["ema30"])
-        or
-        pd.isna(cur["ema60"])
-        or
-        pd.isna(cur["ema120"])
-        or
-        pd.isna(prev["ema30"])
-        or
-        pd.isna(prev["ema60"])
-        or
-        pd.isna(prev["ema120"])
-    ):
-
-        return "none"
-
-
-    # =====================================================
-    # LONG
-    #
-    # 30 > 60 > 120
-    # 저가가 30EMA까지 눌림
-    # 종가가 30EMA 위
-    # 양봉 마감
-    # =====================================================
-
-    long_trend = (
-        cur["ema30"]
-        >
-        cur["ema60"]
-        >
-        cur["ema120"]
-    )
-
-    long_touch = (
-        cur["l"]
-        <=
-        cur["ema30"]
-        *
-        (1 + PULLBACK_DISTANCE)
-    )
-
-    long_close = (
-        cur[column]
-        >
-        cur["ema30"]
-    )
-
-    long_candle = (
-        cur["c"]
-        >
-        cur["o"]
-    )
-
-    current_long = (
-        long_trend
-        and
-        long_touch
-        and
-        long_close
-        and
-        long_candle
-    )
-
-
-    prev_long_trend = (
-        prev["ema30"]
-        >
-        prev["ema60"]
-        >
-        prev["ema120"]
-    )
-
-    prev_long_touch = (
-        prev["l"]
-        <=
-        prev["ema30"]
-        *
-        (1 + PULLBACK_DISTANCE)
-    )
-
-    prev_long_close = (
-        prev[column]
-        >
-        prev["ema30"]
-    )
-
-    prev_long_candle = (
-        prev["c"]
-        >
-        prev["o"]
-    )
-
-    previous_long = (
-        prev_long_trend
-        and
-        prev_long_touch
-        and
-        prev_long_close
-        and
-        prev_long_candle
-    )
-
-    if (
-        current_long
-        and
-        not previous_long
-    ):
-
-        return "long_pullback"
-
-
-    # =====================================================
-    # SHORT
-    #
-    # 30 < 60 < 120
-    # 고가가 30EMA까지 반등
-    # 종가가 30EMA 아래
-    # 음봉 마감
-    # =====================================================
-
-    short_trend = (
-        cur["ema30"]
-        <
-        cur["ema60"]
-        <
-        cur["ema120"]
-    )
-
-    short_touch = (
-        cur["h"]
-        >=
-        cur["ema30"]
-        *
-        (1 - PULLBACK_DISTANCE)
-    )
-
-    short_close = (
-        cur[column]
-        <
-        cur["ema30"]
-    )
-
-    short_candle = (
-        cur["c"]
-        <
-        cur["o"]
-    )
-
-    current_short = (
-        short_trend
-        and
-        short_touch
-        and
-        short_close
-        and
-        short_candle
-    )
-
-
-    prev_short_trend = (
-        prev["ema30"]
-        <
-        prev["ema60"]
-        <
-        prev["ema120"]
-    )
-
-    prev_short_touch = (
-        prev["h"]
-        >=
-        prev["ema30"]
-        *
-        (1 - PULLBACK_DISTANCE)
-    )
-
-    prev_short_close = (
-        prev["c"]
-        <
-        prev["ema30"]
-    )
-
-    prev_short_candle = (
-        prev["c"]
-        <
-        prev["o"]
-    )
-
-    previous_short = (
-        prev_short_trend
-        and
-        prev_short_touch
-        and
-        prev_short_close
-        and
-        prev_short_candle
-    )
-
-    if (
-        current_short
-        and
-        not previous_short
-    ):
-
-        return "short_pullback"
-
-
-    return "none"
-
-
-# =========================================================
 # 🚀 돌파
 # ★ 1H 기준
-# ★ 30-60-120 기준
-# ★ 이전 10개 캔들의 고가/저가 돌파
+# ★ 번개 / 눌림목 제거
+# ★ 10-30 + 30-60-120 정배열 조건 사용
 # =========================================================
 
 def check_breakout(
@@ -1384,6 +1111,12 @@ def check_breakout(
         return "none"
 
     df = df1h.copy()
+
+    df["ema10"] = get_ema(
+        df,
+        column,
+        10
+    )
 
     df["ema30"] = get_ema(
         df,
@@ -1428,12 +1161,17 @@ def check_breakout(
         ).min()
     )
 
-
     # =====================================================
     # LONG
     # =====================================================
 
-    long_trend = (
+    long_10_30 = (
+        cur["ema10"]
+        >
+        cur["ema30"]
+    )
+
+    long_30_60_120 = (
         cur["ema30"]
         >
         cur["ema60"]
@@ -1454,7 +1192,9 @@ def check_breakout(
     )
 
     if (
-        long_trend
+        long_10_30
+        and
+        long_30_60_120
         and
         long_break
         and
@@ -1463,12 +1203,17 @@ def check_breakout(
 
         return "long_breakout"
 
-
     # =====================================================
     # SHORT
     # =====================================================
 
-    short_trend = (
+    short_10_30 = (
+        cur["ema10"]
+        <
+        cur["ema30"]
+    )
+
+    short_30_60_120 = (
         cur["ema30"]
         <
         cur["ema60"]
@@ -1489,7 +1234,9 @@ def check_breakout(
     )
 
     if (
-        short_trend
+        short_10_30
+        and
+        short_30_60_120
         and
         short_break
         and
@@ -1503,30 +1250,13 @@ def check_breakout(
 
 # =========================================================
 # 최종 경고
+# ★ 돌파만 사용
 # =========================================================
 
 def check_entry_warning(
     df1h,
     column
 ):
-
-    lightning = check_lightning(
-        df1h,
-        column
-    )
-
-    if lightning != "none":
-
-        return lightning
-
-    pullback = check_pullback(
-        df1h,
-        column
-    )
-
-    if pullback != "none":
-
-        return pullback
 
     breakout = check_breakout(
         df1h,
@@ -1591,6 +1321,8 @@ def get_trade_signal(
 
 # =========================================================
 # OKX EMA
+# ★ 1H 판단
+# ★ 4H 표시
 # =========================================================
 
 def get_okx_ema(
@@ -1675,6 +1407,8 @@ def get_okx_ema(
 
 # =========================================================
 # 업비트 EMA
+# ★ 1H 판단
+# ★ 4H 표시
 # =========================================================
 
 def get_upbit_ema(
@@ -1708,6 +1442,7 @@ def get_upbit_ema(
             "direction": "none"
         }
 
+    # 진행 중인 4H 캔들 제거
     if len(df4h) > 1:
 
         df4h = (
@@ -1716,6 +1451,7 @@ def get_upbit_ema(
             .reset_index(drop=True)
         )
 
+    # 진행 중인 1H 캔들 제거
     if len(df1h) > 1:
 
         df1h = (
@@ -2189,6 +1925,7 @@ def format_change(
 
 # =========================================================
 # LONG / SHORT
+# 오늘 상승/하락 방향과 일치할 때만 표시
 # =========================================================
 
 def signal_html(
@@ -2278,6 +2015,7 @@ def direction_html(
 
 # =========================================================
 # 경고 HTML
+# ★ 돌파만 표시
 # =========================================================
 
 def warning_html(
@@ -2309,46 +2047,6 @@ def warning_html(
 
             return ""
 
-    if warning.startswith(
-        "long_lightning_"
-    ):
-
-        count = warning.split("_")[-1]
-
-        return (
-            '<span class="warning-icon">'
-            f'⚡{count}'
-            '</span>'
-        )
-
-    if warning.startswith(
-        "short_lightning_"
-    ):
-
-        count = warning.split("_")[-1]
-
-        return (
-            '<span class="warning-icon">'
-            f'💥{count}'
-            '</span>'
-        )
-
-    if warning == "long_pullback":
-
-        return (
-            '<span class="warning-icon">'
-            '🔥'
-            '</span>'
-        )
-
-    if warning == "short_pullback":
-
-        return (
-            '<span class="warning-icon">'
-            '🔥'
-            '</span>'
-        )
-
     if warning == "long_breakout":
 
         return (
@@ -2370,6 +2068,7 @@ def warning_html(
 
 # =========================================================
 # EMA HTML
+# ★ 1H / 4H
 # =========================================================
 
 def ema_html(
@@ -2442,6 +2141,11 @@ def update_upbit():
 
     total_markets = len(markets)
 
+    logging.info(
+        f"업비트 전체 {total_markets}개 "
+        f"거래대금 계산 시작"
+    )
+
     volume_map = get_upbit_volume_map(
         markets
     )
@@ -2463,6 +2167,13 @@ def update_upbit():
     rows = []
 
     total_top = len(top_markets)
+
+    logging.info(
+        f"업비트 TOP{total_top} 상세 조회 시작"
+    )
+
+    success_detail = 0
+    failed_detail = 0
 
     for rank, market in enumerate(
         top_markets,
@@ -2517,7 +2228,11 @@ def update_upbit():
 
             })
 
+            success_detail += 1
+
         except Exception as e:
+
+            failed_detail += 1
 
             logging.error(
                 f"업비트 TOP 상세 오류 "
@@ -2554,10 +2269,29 @@ def update_upbit():
 
             })
 
+        if (
+            rank % 5 == 0
+            or
+            rank == total_top
+        ):
+
+            logging.info(
+                f"업비트 TOP 상세 "
+                f"{rank}/{total_top} "
+                f"(성공 {success_detail} / "
+                f"실패 {failed_detail})"
+            )
+
     latest_upbit_data = rows
 
     logging.info(
-        f"업비트 TOP{TOP_N} 완료"
+        f"업비트 TOP{TOP_N} 상세 조회 완료 "
+        f"({total_top}/{total_top})"
+    )
+
+    logging.info(
+        f"업비트 TOP{TOP_N} 완료 "
+        f"(전체 {total_markets}/{total_markets} 처리)"
     )
 
 
@@ -2584,6 +2318,13 @@ def update_okx():
 
         return
 
+    total_symbols = len(symbols)
+
+    logging.info(
+        f"OKX 전체 {total_symbols}개 "
+        f"거래대금 계산 시작"
+    )
+
     usdt_krw = get_usdt_krw()
 
     upbit_markets = get_upbit_markets()
@@ -2601,7 +2342,8 @@ def update_okx():
 
     volume_map = {}
 
-    total_symbols = len(symbols)
+    success = 0
+    failed = 0
 
     for index, symbol in enumerate(
         symbols,
@@ -2622,7 +2364,17 @@ def update_okx():
 
             volume_map[symbol] = volume_krw
 
+            if volume_usdt > 0:
+
+                success += 1
+
+            else:
+
+                failed += 1
+
         except Exception as e:
+
+            failed += 1
 
             volume_map[symbol] = 0
 
@@ -2631,6 +2383,23 @@ def update_okx():
                 f"{symbol} : {e}"
             )
 
+        if (
+            index % 25 == 0
+            or
+            index == total_symbols
+        ):
+
+            logging.info(
+                f"OKX 거래대금 "
+                f"{index}/{total_symbols} "
+                f"(성공 {success} / 실패 {failed})"
+            )
+
+    logging.info(
+        f"OKX 거래대금 전체 처리 완료 "
+        f"{total_symbols}/{total_symbols}"
+    )
+
     top_symbols = sorted(
         volume_map,
         key=volume_map.get,
@@ -2638,6 +2407,15 @@ def update_okx():
     )[:TOP_N]
 
     rows = []
+
+    total_top = len(top_symbols)
+
+    logging.info(
+        f"OKX TOP{total_top} 상세 조회 시작"
+    )
+
+    success_detail = 0
+    failed_detail = 0
 
     for rank, symbol in enumerate(
         top_symbols,
@@ -2696,7 +2474,11 @@ def update_okx():
 
             })
 
+            success_detail += 1
+
         except Exception as e:
+
+            failed_detail += 1
 
             logging.error(
                 f"OKX TOP 상세 오류 "
@@ -2733,10 +2515,29 @@ def update_okx():
 
             })
 
+        if (
+            rank % 5 == 0
+            or
+            rank == total_top
+        ):
+
+            logging.info(
+                f"OKX TOP 상세 "
+                f"{rank}/{total_top} "
+                f"(성공 {success_detail} / "
+                f"실패 {failed_detail})"
+            )
+
     latest_okx_data = rows
 
     logging.info(
-        f"OKX TOP{TOP_N} 완료"
+        f"OKX TOP{total_top} 상세 조회 완료 "
+        f"({total_top}/{total_top})"
+    )
+
+    logging.info(
+        f"OKX TOP{TOP_N} 완료 "
+        f"(전체 {total_symbols}/{total_symbols} 처리)"
     )
 
 
@@ -2874,6 +2675,11 @@ body{
 
 }
 
+
+/* =====================================================
+   제목
+   ===================================================== */
+
 .main-title{
 
     margin:1px 0 2px;
@@ -2896,6 +2702,11 @@ body{
 
 }
 
+
+/* =====================================================
+   설명
+   ===================================================== */
+
 .description{
 
     color:#777;
@@ -2913,6 +2724,11 @@ body{
     margin-bottom:2px;
 
 }
+
+
+/* =====================================================
+   설정
+   ===================================================== */
 
 .setting-row{
 
@@ -2944,6 +2760,11 @@ body{
 
 }
 
+
+/* =====================================================
+   섹션
+   ===================================================== */
+
 .section-title{
 
     margin:4px 0 2px;
@@ -2964,6 +2785,11 @@ body{
 
 }
 
+
+/* =====================================================
+   테이블
+   ===================================================== */
+
 .table-wrap{
 
     width:100%;
@@ -2983,6 +2809,11 @@ table{
     border:1px solid #292929;
 
 }
+
+
+/* =====================================================
+   헤더
+   ===================================================== */
 
 th{
 
@@ -3008,6 +2839,11 @@ th{
 
 }
 
+
+/* =====================================================
+   기본 셀
+   ===================================================== */
+
 td{
 
     padding:0;
@@ -3028,6 +2864,11 @@ td{
 
 }
 
+
+/* =====================================================
+   순위
+   ===================================================== */
+
 .rank-cell{
 
     width:5%;
@@ -3037,6 +2878,11 @@ td{
     font-size:6px;
 
 }
+
+
+/* =====================================================
+   코인
+   ===================================================== */
 
 .coin-cell{
 
@@ -3058,6 +2904,11 @@ td{
 
 }
 
+
+/* =====================================================
+   거래대금
+   ===================================================== */
+
 .volume-cell{
 
     width:20%;
@@ -3070,6 +2921,11 @@ td{
 
 }
 
+
+/* =====================================================
+   변동률
+   ===================================================== */
+
 .change-cell{
 
     width:17%;
@@ -3078,6 +2934,11 @@ td{
 
 }
 
+
+/* =====================================================
+   EMA
+   ===================================================== */
+
 .ema-cell{
 
     width:38%;
@@ -3085,6 +2946,11 @@ td{
     padding:0;
 
 }
+
+
+/* =====================================================
+   2줄 구조
+   ===================================================== */
 
 .coin-wrap{
 
@@ -3130,6 +2996,11 @@ td{
 
 }
 
+
+/* =====================================================
+   거래대금 2줄
+   ===================================================== */
+
 .volume-wrap{
 
     width:100%;
@@ -3174,6 +3045,11 @@ td{
 
 }
 
+
+/* =====================================================
+   오늘 2줄
+   ===================================================== */
+
 .change-wrap{
 
     width:100%;
@@ -3212,6 +3088,11 @@ td{
 
 }
 
+
+/* =====================================================
+   변동률
+   ===================================================== */
+
 .change-item{
 
     display:flex;
@@ -3243,6 +3124,11 @@ td{
     line-height:8px;
 
 }
+
+
+/* =====================================================
+   LONG / SHORT
+   ===================================================== */
 
 .signal-text{
 
@@ -3288,6 +3174,7 @@ td{
 
 }
 
+
 .warning-icon{
 
     font-size:6.5px;
@@ -3298,6 +3185,7 @@ td{
 
 }
 
+
 .signal-none{
 
     color:#444;
@@ -3305,6 +3193,11 @@ td{
     font-size:7px;
 
 }
+
+
+/* =====================================================
+   방향
+   ===================================================== */
 
 .direction-long{
 
@@ -3342,6 +3235,11 @@ td{
 
 }
 
+
+/* =====================================================
+   EMA 2줄
+   ===================================================== */
+
 .ema-box{
 
     width:100%;
@@ -3378,6 +3276,7 @@ td{
 
 }
 
+
 .ema-period{
 
     width:17px;
@@ -3393,6 +3292,7 @@ td{
     font-weight:bold;
 
 }
+
 
 .ema-value{
 
@@ -3414,185 +3314,297 @@ td{
 
 }
 
-@media(max-width:600px){
+
+/* =====================================================
+   모바일
+   ===================================================== */
+
+@media(
+    max-width:600px
+){
 
     body{
+
         padding:2px;
+
     }
 
     .main-title{
+
         font-size:12px;
+
         line-height:13px;
+
         margin:1px 0 2px;
+
     }
 
     .title-time{
+
         font-size:8px;
+
     }
 
     .description{
+
         font-size:6px;
+
         line-height:7px;
+
         margin-bottom:2px;
+
     }
 
     .setting-row{
+
         gap:2px;
+
         margin-bottom:3px;
+
     }
 
     .volume-setting{
+
         padding:1px 3px;
+
         font-size:6px;
+
         line-height:7px;
+
     }
 
     .section-title{
+
         margin:4px 0 2px;
+
         padding:2px 4px;
+
         font-size:8px;
+
         line-height:9px;
+
     }
 
     th{
+
         height:16px;
+
         padding:1px;
+
         font-size:6px;
+
         line-height:7px;
+
     }
 
     td{
+
         padding:0;
+
         height:25px;
+
     }
 
     .rank-cell{
+
         font-size:6px;
+
     }
 
     .coin-cell{
+
         width:20%;
+
         font-size:7px;
+
         padding-left:2px;
+
     }
 
     .volume-cell{
+
         width:20%;
+
         font-size:6.5px;
+
     }
 
     .change-cell{
+
         width:17%;
+
         font-size:6.5px;
+
     }
 
     .ema-cell{
+
         width:38%;
+
         padding:0;
+
     }
 
     .coin-wrap,
     .volume-wrap,
     .change-wrap,
     .ema-box{
+
         min-height:25px;
+
     }
 
     .coin-name,
     .volume-main,
     .change-main,
     .ema-row{
+
         height:12px;
+
     }
 
     .coin-sub,
     .volume-sub,
     .change-sub{
+
         height:12px;
+
     }
 
     .volume-main{
+
         font-size:6.5px;
+
     }
 
     .change-icon{
+
         font-size:5.5px;
+
     }
 
     .change-value{
+
         font-size:6.5px;
+
     }
 
     .signal-text{
+
         min-width:30px;
+
         padding:0 3px;
+
         font-size:6.5px;
+
         line-height:9px;
+
     }
 
     .warning-icon{
+
         font-size:6.5px;
+
         line-height:9px;
+
     }
 
     .direction-long,
     .direction-short{
+
         font-size:8px;
+
     }
 
     .ema-period{
+
         width:17px;
+
         min-width:17px;
+
         font-size:5.8px;
+
     }
 
     .ema-value{
+
         font-size:5.3px;
+
         line-height:7px;
+
     }
 
 }
 
-@media(max-width:380px){
+
+/* =====================================================
+   S22 Ultra 등 좁은 화면
+   ===================================================== */
+
+@media(
+    max-width:380px
+){
 
     .coin-cell{
+
         width:20%;
+
         font-size:6.7px;
+
     }
 
     .volume-cell{
+
         width:20%;
+
     }
 
     .volume-main{
+
         font-size:6px;
+
     }
 
     .change-cell{
+
         width:17%;
+
     }
 
     .change-value{
+
         font-size:6px;
+
     }
 
     .ema-cell{
+
         width:38%;
+
     }
 
     .ema-period{
+
         width:16px;
+
         min-width:16px;
+
         font-size:5.5px;
+
     }
 
     .ema-value{
+
         font-size:5px;
+
     }
 
     .signal-text{
+
         font-size:6px;
+
         min-width:29px;
+
     }
 
 }
@@ -3601,15 +3613,19 @@ td{
 
 </head>
 
+
 <body>
 
+
 <div class="main-title">
-📊 1H 종가매매
+📊 1H 차트 집중
 </div>
 
+
 <div class="description">
-1H 추세 방향 + 1H 진입조건 | ⚡ 추세전환 | 🔥 눌림목 | 🚀 돌파
+1H 추세 방향 + 1H 돌파조건 | 🚀 돌파
 </div>
+
 
 <div class="setting-row">
 
@@ -3632,9 +3648,16 @@ TOP""" + str(TOP_N) + """
 </div>
 
 
+<!-- =====================================================
+     업비트
+     ===================================================== -->
+
 <div class="section-title">
+
 🏆 업비트 현물 TOP""" + str(TOP_N) + """
+
 </div>
+
 
 <div class="table-wrap">
 
@@ -3650,17 +3673,28 @@ TOP""" + str(TOP_N) + """
 
 </colgroup>
 
+
 <tr>
 
-<th>#</th>
+<th>
+#
+</th>
 
-<th>코인</th>
+<th>
+코인
+</th>
 
-<th>거래대금</th>
+<th>
+거래대금
+</th>
 
-<th>오늘</th>
+<th>
+오늘
+</th>
 
-<th>1시간 / 4시간</th>
+<th>
+1시간 / 4시간
+</th>
 
 </tr>
 
@@ -3805,6 +3839,10 @@ TOP""" + str(TOP_N) + """
 </div>
 
 
+<!-- =====================================================
+     OKX
+     ===================================================== -->
+
 <div class="section-title">
 
 🏆 OKX 선물 TOP""" + str(TOP_N) + """
@@ -3829,15 +3867,25 @@ TOP""" + str(TOP_N) + """
 
 <tr>
 
-<th>#</th>
+<th>
+#
+</th>
 
-<th>코인</th>
+<th>
+코인
+</th>
 
-<th>거래대금</th>
+<th>
+거래대금
+</th>
 
-<th>오늘</th>
+<th>
+오늘
+</th>
 
-<th>1시간 / 4시간</th>
+<th>
+1시간 / 4시간
+</th>
 
 </tr>
 
@@ -3981,6 +4029,7 @@ TOP""" + str(TOP_N) + """
 
 </div>
 
+
 </body>
 
 </html>
@@ -4028,4 +4077,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-)
+    )
