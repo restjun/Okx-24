@@ -3654,7 +3654,7 @@ TOP""" + str(TOP_N) + """
 
 <div class="section-title">
 
-🏆 업비트 현물 TOP""" + str(TOP_N) + """
+🏆 업비트 돌파 TOP""" + str(TOP_N) + """
 
 </div>
 
@@ -3703,6 +3703,56 @@ TOP""" + str(TOP_N) + """
     for item in latest_upbit_data:
 
         ema = item["ema"]
+
+        # =================================================
+        # 모든 조건이 충족된 돌파 코인만 표시
+        # =================================================
+
+        direction = ema.get(
+            "direction",
+            "none"
+        )
+
+        change_percent = item.get(
+            "change_percent",
+            None
+        )
+
+        warning = ema.get(
+            "warning",
+            "none"
+        )
+
+        show_item = (
+
+            (
+                direction == "long"
+                and
+                change_percent is not None
+                and
+                change_percent > 0
+                and
+                warning == "long_breakout"
+            )
+
+            or
+
+            (
+                direction == "short"
+                and
+                change_percent is not None
+                and
+                change_percent < 0
+                and
+                warning == "short_breakout"
+            )
+
+        )
+
+        if not show_item:
+
+            continue
+
 
         html += f"""
 
@@ -3845,7 +3895,7 @@ TOP""" + str(TOP_N) + """
 
 <div class="section-title">
 
-🏆 OKX 선물 TOP""" + str(TOP_N) + """
+🏆 OKX 돌파 TOP""" + str(TOP_N) + """
 
 </div>
 
@@ -3894,6 +3944,56 @@ TOP""" + str(TOP_N) + """
     for item in latest_okx_data:
 
         ema = item["ema"]
+
+        # =================================================
+        # 모든 조건이 충족된 돌파 코인만 표시
+        # =================================================
+
+        direction = ema.get(
+            "direction",
+            "none"
+        )
+
+        change_percent = item.get(
+            "change_percent",
+            None
+        )
+
+        warning = ema.get(
+            "warning",
+            "none"
+        )
+
+        show_item = (
+
+            (
+                direction == "long"
+                and
+                change_percent is not None
+                and
+                change_percent > 0
+                and
+                warning == "long_breakout"
+            )
+
+            or
+
+            (
+                direction == "short"
+                and
+                change_percent is not None
+                and
+                change_percent < 0
+                and
+                warning == "short_breakout"
+            )
+
+        )
+
+        if not show_item:
+
+            continue
+
 
         html += f"""
 
@@ -4077,4 +4177,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-    )
+            )
