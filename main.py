@@ -36,7 +36,7 @@ logging.basicConfig(
 
 VOLUME_HOURS = 24
 
-TOP_N = 30
+TOP_N = 100
 
 UPDATE_MINUTES = 5
 
@@ -44,7 +44,7 @@ MAX_WARNING_COUNT = 3
 
 PULLBACK_DISTANCE = 0.02
 
-BREAKOUT_LOOKBACK = 10
+BREAKOUT_LOOKBACK = 5
 
 
 # =========================================================
