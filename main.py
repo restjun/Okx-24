@@ -2263,6 +2263,8 @@ def warning_html(
 
 # =========================================================
 # EMA HTML
+# ★ 사진 스타일에 맞게 축소
+# ★ 전고점 매물 확인 삭제
 # =========================================================
 
 def ema_html(
@@ -2748,6 +2750,7 @@ def scheduler():
 
 # =========================================================
 # 웹 대시보드
+# ★ 사진 스타일 다크 카드형으로 수정
 # =========================================================
 
 @app.get(
@@ -2777,6 +2780,10 @@ def dashboard():
 
 <style>
 
+/* =====================================================
+   기본
+   ===================================================== */
+
 * {
     box-sizing: border-box;
 }
@@ -2797,51 +2804,200 @@ body {
 
 body {
 
-    background: #111;
+    background:
+        #0d1117;
 
-    color: #eee;
+    color:
+        #f1f3f5;
 
     font-family:
         Arial,
+        "Noto Sans KR",
         sans-serif;
 
     font-size: 10px;
 
-    padding: 4px;
+    padding: 8px;
 
     overflow-wrap: anywhere;
 }
 
 
 /* =====================================================
-   제목
+   전체 컨테이너
    ===================================================== */
 
-h1 {
+.dashboard {
 
-    margin: 2px 0 5px 0;
+    width: 100%;
 
-    font-size: 14px;
+    max-width: 100%;
+
+    margin: 0 auto;
+
+    overflow: hidden;
 }
 
-h2 {
 
-    margin: 9px 0 5px 0;
+/* =====================================================
+   상단 헤더
+   사진과 비슷한 카드형
+   ===================================================== */
 
-    font-size: 12px;
+.header-card {
+
+    width: 100%;
+
+    background:
+        #171c23;
+
+    border:
+        1px solid #292f38;
+
+    border-radius:
+        14px;
+
+    padding:
+        12px 13px;
+
+    margin-bottom:
+        9px;
+
+    box-shadow:
+        0 2px 8px rgba(0,0,0,0.25);
 }
 
-.info {
+.header-title {
 
-    margin-bottom: 5px;
+    margin: 0;
 
-    color: #888;
+    font-size: 17px;
+
+    font-weight: 800;
+
+    color:
+        #f5f7fa;
+
+    line-height:
+        1.2;
+}
+
+.header-subtitle {
+
+    margin-top: 5px;
+
+    color:
+        #7f8792;
+
+    font-size: 9px;
+
+    line-height:
+        1.4;
+}
+
+.header-info {
+
+    margin-top: 9px;
+
+    display: flex;
+
+    flex-wrap: wrap;
+
+    gap: 5px;
+}
+
+.info-badge {
+
+    background:
+        #10151b;
+
+    border:
+        1px solid #292f38;
+
+    border-radius:
+        7px;
+
+    padding:
+        4px 7px;
+
+    color:
+        #aeb5bf;
 
     font-size: 8px;
 
-    line-height: 1.4;
+    white-space:
+        nowrap;
+}
 
-    overflow-wrap: anywhere;
+
+/* =====================================================
+   섹션
+   ===================================================== */
+
+.section {
+
+    width: 100%;
+
+    margin-top: 9px;
+
+    background:
+        #11161c;
+
+    border:
+        1px solid #252b33;
+
+    border-radius:
+        14px;
+
+    overflow: hidden;
+
+    box-shadow:
+        0 2px 8px rgba(0,0,0,0.22);
+}
+
+
+/* =====================================================
+   섹션 제목
+   ===================================================== */
+
+.section-title {
+
+    display: flex;
+
+    align-items: center;
+
+    justify-content: space-between;
+
+    width: 100%;
+
+    padding:
+        11px 12px 9px 12px;
+
+    background:
+        #171c23;
+
+    border-bottom:
+        1px solid #292f38;
+}
+
+.section-title-main {
+
+    font-size: 13px;
+
+    font-weight: 800;
+
+    color:
+        #f2f4f7;
+}
+
+.section-title-sub {
+
+    color:
+        #737b87;
+
+    font-size: 7px;
+
+    font-weight: normal;
 }
 
 
@@ -2868,55 +3024,18 @@ table {
 
     border-collapse: collapse;
 
-    background: #181818;
-}
-
-th {
-
-    padding: 4px 2px;
-
-    background: #252525;
-
-    border-bottom:
-        1px solid #444;
-
-    font-size: 8px;
-
-    white-space: normal;
-
-    overflow: hidden;
-
-    overflow-wrap: anywhere;
-
-    word-break: break-word;
-
-    text-align: left;
-}
-
-td {
-
-    padding: 4px 2px;
-
-    border-bottom:
-        1px solid #292929;
-
-    vertical-align: top;
-
-    text-align: left;
-
-    overflow: hidden;
-
-    overflow-wrap: anywhere;
-
-    word-break: break-word;
-
-    min-width: 0;
+    background:
+        #171c22;
 }
 
 
 /* =====================================================
-   5칸 너비
+   5칸
    # | 코인 | 거래대금 | 오늘 | EMA
+
+   번호 확대
+   오늘 확대
+   EMA 축소
    ===================================================== */
 
 th:nth-child(1),
@@ -2928,13 +3047,13 @@ td:nth-child(1) {
 th:nth-child(2),
 td:nth-child(2) {
 
-    width: 20%;
+    width: 21%;
 }
 
 th:nth-child(3),
 td:nth-child(3) {
 
-    width: 16%;
+    width: 17%;
 }
 
 th:nth-child(4),
@@ -2946,7 +3065,121 @@ td:nth-child(4) {
 th:nth-child(5),
 td:nth-child(5) {
 
-    width: 34%;
+    width: 32%;
+}
+
+
+/* =====================================================
+   헤더
+   ===================================================== */
+
+th {
+
+    padding:
+        7px 3px;
+
+    background:
+        #10151b;
+
+    border-bottom:
+        1px solid #2a3038;
+
+    color:
+        #858d98;
+
+    font-size:
+        8px;
+
+    font-weight:
+        600;
+
+    white-space:
+        nowrap;
+
+    overflow:
+        hidden;
+
+    text-overflow:
+        clip;
+
+    text-align:
+        center;
+}
+
+
+/* =====================================================
+   셀
+   ===================================================== */
+
+td {
+
+    padding:
+        7px 3px;
+
+    border-bottom:
+        1px solid #252b32;
+
+    vertical-align:
+        middle;
+
+    text-align:
+        center;
+
+    overflow:
+        hidden;
+
+    overflow-wrap:
+        anywhere;
+
+    word-break:
+        break-word;
+
+    min-width:
+        0;
+}
+
+tbody tr:last-child td {
+
+    border-bottom:
+        none;
+}
+
+tbody tr {
+
+    transition:
+        background 0.15s;
+}
+
+tbody tr:hover {
+
+    background:
+        #1b2128;
+}
+
+
+/* =====================================================
+   순위
+   ===================================================== */
+
+td:first-child {
+
+    color:
+        #b7bec8;
+
+    font-size:
+        9px;
+
+    font-weight:
+        700;
+
+    text-align:
+        center;
+}
+
+td:first-child::before {
+
+    content:
+        "";
 }
 
 
@@ -2954,45 +3187,67 @@ td:nth-child(5) {
    코인
    ===================================================== */
 
-.coin {
-
-    display: block;
-
-    width: 100%;
-
-    max-width: 100%;
-
-    font-weight: bold;
-
-    text-align: left;
-
-    font-size: 10px;
-
-    line-height: 1.2;
-
-    overflow: hidden;
-
-    overflow-wrap: anywhere;
-
-    word-break: break-word;
-}
-
-
 .coin-wrap {
 
-    display: flex;
+    display:
+        flex;
 
-    flex-direction: column;
+    flex-direction:
+        column;
 
-    align-items: flex-start;
+    align-items:
+        flex-start;
 
-    gap: 2px;
+    justify-content:
+        center;
 
-    width: 100%;
+    gap:
+        3px;
 
-    max-width: 100%;
+    width:
+        100%;
 
-    overflow: hidden;
+    max-width:
+        100%;
+
+    overflow:
+        hidden;
+}
+
+.coin {
+
+    display:
+        block;
+
+    width:
+        100%;
+
+    max-width:
+        100%;
+
+    font-weight:
+        800;
+
+    text-align:
+        left;
+
+    font-size:
+        10px;
+
+    line-height:
+        1.15;
+
+    color:
+        #f2f4f7;
+
+    overflow:
+        hidden;
+
+    overflow-wrap:
+        anywhere;
+
+    word-break:
+        break-word;
 }
 
 
@@ -3004,7 +3259,32 @@ td:nth-child(5) {
 .direction-short,
 .direction-none {
 
-    font-size: 10px;
+    display:
+        block;
+
+    font-size:
+        9px;
+
+    line-height:
+        1;
+}
+
+.direction-long {
+
+    filter:
+        drop-shadow(0 0 2px rgba(255,210,70,0.25));
+}
+
+.direction-short {
+
+    opacity:
+        0.9;
+}
+
+.direction-none {
+
+    color:
+        #505862;
 }
 
 
@@ -3014,102 +3294,178 @@ td:nth-child(5) {
 
 .volume-wrap {
 
-    display: flex;
+    display:
+        flex;
 
-    flex-direction: column;
+    flex-direction:
+        column;
 
-    align-items: flex-start;
+    align-items:
+        center;
 
-    gap: 2px;
+    justify-content:
+        center;
 
-    width: 100%;
+    gap:
+        4px;
 
-    max-width: 100%;
+    width:
+        100%;
 
-    overflow: hidden;
+    max-width:
+        100%;
+
+    overflow:
+        hidden;
 }
 
 .volume-value {
 
-    display: block;
+    display:
+        block;
 
-    max-width: 100%;
+    max-width:
+        100%;
 
-    font-size: 9px;
+    color:
+        #e6e9ed;
 
-    overflow: hidden;
+    font-size:
+        8px;
 
-    overflow-wrap: anywhere;
+    font-weight:
+        700;
 
-    word-break: break-word;
+    line-height:
+        1.2;
+
+    overflow:
+        hidden;
+
+    overflow-wrap:
+        anywhere;
+
+    word-break:
+        break-word;
 }
+
+
+/* =====================================================
+   LONG / SHORT
+   ===================================================== */
 
 .signal-text {
 
-    font-weight: bold;
+    font-weight:
+        800;
 
-    font-size: 9px;
+    font-size:
+        8px;
+
+    line-height:
+        1;
 }
 
 .long-text {
 
-    color: #35e66d;
+    color:
+        #35e66d;
 }
 
 .short-text {
 
-    color: #ff4d4d;
+    color:
+        #ff5555;
 }
 
 .signal-none {
 
-    color: #555;
+    color:
+        #444b54;
 
-    font-size: 9px;
+    font-size:
+        8px;
 }
 
 
 /* =====================================================
    오늘
+   ★ 기존보다 넓게
    ===================================================== */
 
 .today-wrap {
 
-    display: flex;
+    display:
+        flex;
 
-    flex-direction: column;
+    flex-direction:
+        column;
 
-    align-items: flex-start;
+    align-items:
+        flex-start;
 
-    gap: 2px;
+    justify-content:
+        center;
 
-    width: 100%;
+    gap:
+        4px;
 
-    max-width: 100%;
+    width:
+        100%;
 
-    overflow: hidden;
+    max-width:
+        100%;
+
+    overflow:
+        hidden;
 }
 
 .change-item {
 
-    display: inline-flex;
+    display:
+        inline-flex;
 
-    gap: 1px;
+    align-items:
+        center;
 
-    align-items: center;
+    gap:
+        2px;
 
-    max-width: 100%;
+    max-width:
+        100%;
 
-    font-size: 8px;
+    color:
+        #e5e8ec;
 
-    overflow: hidden;
+    font-size:
+        8px;
+
+    font-weight:
+        700;
+
+    line-height:
+        1.1;
+
+    overflow:
+        hidden;
+}
+
+.change-icon {
+
+    flex-shrink:
+        0;
 }
 
 .change-value {
 
-    overflow: hidden;
+    overflow:
+        hidden;
 
-    overflow-wrap: anywhere;
+    white-space:
+        nowrap;
+
+    text-overflow:
+        clip;
 }
 
 
@@ -3119,126 +3475,189 @@ td:nth-child(5) {
 
 .breakout-wrap {
 
-    display: flex;
+    display:
+        flex;
 
-    flex-direction: column;
+    flex-direction:
+        column;
 
-    align-items: flex-start;
+    align-items:
+        flex-start;
 
-    gap: 2px;
+    justify-content:
+        center;
 
-    max-width: 100%;
+    max-width:
+        100%;
 
-    overflow: hidden;
+    overflow:
+        hidden;
 }
 
 .warning-wrap {
 
-    max-width: 100%;
+    width:
+        100%;
 
-    overflow: hidden;
+    max-width:
+        100%;
+
+    overflow:
+        hidden;
 }
 
 .warning-row {
 
-    display: flex;
+    display:
+        flex;
 
-    align-items: center;
+    align-items:
+        center;
 
-    gap: 2px;
+    justify-content:
+        flex-start;
 
-    max-width: 100%;
+    gap:
+        3px;
 
-    overflow: hidden;
+    max-width:
+        100%;
+
+    overflow:
+        hidden;
 }
 
 .rocket {
 
-    font-size: 9px;
+    font-size:
+        9px;
 
-    white-space: nowrap;
+    font-weight:
+        700;
+
+    white-space:
+        nowrap;
 }
 
 .warning-empty {
 
-    color: #555;
+    color:
+        #414850;
 
-    white-space: nowrap;
+    font-size:
+        8px;
+
+    white-space:
+        nowrap;
 }
 
 .warning-period {
 
-    color: #888;
+    color:
+        #707984;
 
-    font-size: 7px;
+    font-size:
+        7px;
 
-    white-space: nowrap;
+    white-space:
+        nowrap;
 }
 
 
 /* =====================================================
    EMA
+   ★ 기존보다 좁게
+   ★ 모바일에서 한 줄 유지
    ===================================================== */
 
 .ema-container {
 
-    width: 100%;
+    width:
+        100%;
 
-    max-width: 100%;
+    max-width:
+        100%;
 
-    overflow: hidden;
+    overflow:
+        hidden;
 }
 
 .ema-line {
 
-    display: flex;
+    display:
+        flex;
 
-    align-items: center;
+    align-items:
+        center;
 
-    justify-content: space-between;
+    justify-content:
+        space-between;
 
-    gap: 2px;
+    gap:
+        2px;
 
-    width: 100%;
+    width:
+        100%;
 
-    max-width: 100%;
+    max-width:
+        100%;
 
-    overflow: hidden;
+    overflow:
+        hidden;
 }
 
 .ema-item {
 
-    display: flex;
+    display:
+        flex;
 
-    align-items: center;
+    align-items:
+        center;
 
-    gap: 1px;
+    justify-content:
+        center;
 
-    min-width: 0;
+    gap:
+        1px;
 
-    flex: 1;
+    min-width:
+        0;
 
-    overflow: hidden;
+    width:
+        33.33%;
 
-    white-space: nowrap;
+    max-width:
+        33.33%;
+
+    overflow:
+        hidden;
+
+    white-space:
+        nowrap;
 }
 
 .ema-period {
 
-    color: #888;
+    color:
+        #737b86;
 
-    font-size: 7px;
+    font-size:
+        6px;
 
-    flex-shrink: 0;
+    flex-shrink:
+        0;
 }
 
 .ema-value {
 
-    font-size: 8px;
+    font-size:
+        8px;
 
-    font-weight: bold;
+    font-weight:
+        800;
 
-    flex-shrink: 0;
+    flex-shrink:
+        0;
 }
 
 
@@ -3248,19 +3667,32 @@ td:nth-child(5) {
 
 .note {
 
-    color: #666;
+    color:
+        #626a75;
 
-    font-size: 7px;
+    font-size:
+        7px;
 
-    line-height: 1.4;
+    line-height:
+        1.5;
 
-    margin-top: 3px;
+    padding:
+        7px 11px 9px 11px;
 
-    max-width: 100%;
+    background:
+        #11161c;
 
-    overflow-wrap: anywhere;
+    border-top:
+        1px solid #242a31;
 
-    word-break: break-word;
+    max-width:
+        100%;
+
+    overflow-wrap:
+        anywhere;
+
+    word-break:
+        break-word;
 }
 
 
@@ -3272,131 +3704,273 @@ td:nth-child(5) {
 
     body {
 
-        padding: 3px;
+        padding:
+            5px;
 
-        font-size: 9px;
-
-        overflow-x: hidden;
+        font-size:
+            9px;
     }
 
-    h1 {
+    .header-card {
 
-        font-size: 13px;
+        padding:
+            11px 11px;
 
-        margin-bottom: 3px;
+        border-radius:
+            13px;
+
+        margin-bottom:
+            7px;
     }
 
-    h2 {
+    .header-title {
 
-        font-size: 11px;
-
-        margin-top: 7px;
+        font-size:
+            15px;
     }
 
-    .info {
+    .header-subtitle {
 
-        font-size: 7px;
+        font-size:
+            8px;
 
-        line-height: 1.3;
+        margin-top:
+            4px;
+    }
+
+    .header-info {
+
+        margin-top:
+            7px;
+
+        gap:
+            4px;
+    }
+
+    .info-badge {
+
+        font-size:
+            7px;
+
+        padding:
+            4px 6px;
+    }
+
+    .section {
+
+        margin-top:
+            7px;
+
+        border-radius:
+            12px;
+    }
+
+    .section-title {
+
+        padding:
+            9px 10px 8px 10px;
+    }
+
+    .section-title-main {
+
+        font-size:
+            12px;
+    }
+
+    .section-title-sub {
+
+        font-size:
+            6px;
     }
 
     th {
 
-        padding: 3px 1px;
+        padding:
+            6px 2px;
 
-        font-size: 7px;
-
-        overflow: hidden;
-
-        overflow-wrap: anywhere;
-
-        word-break: break-word;
+        font-size:
+            7px;
     }
 
     td {
 
-        padding: 3px 1px;
+        padding:
+            6px 2px;
+    }
 
-        overflow: hidden;
+    td:first-child {
 
-        overflow-wrap: anywhere;
-
-        word-break: break-word;
+        font-size:
+            9px;
     }
 
     .coin {
 
-        font-size: 9px;
-    }
-
-    .volume-value {
-
-        font-size: 8px;
-    }
-
-    .signal-text {
-
-        font-size: 8px;
-    }
-
-    .signal-none {
-
-        font-size: 8px;
-    }
-
-    .change-item {
-
-        font-size: 7px;
-
-        gap: 1px;
-    }
-
-    .ema-line {
-
-        gap: 1px;
-
-        overflow: hidden;
-    }
-
-    .ema-item {
-
-        gap: 1px;
-
-        flex: 1;
-
-        overflow: hidden;
-    }
-
-    .ema-period {
-
-        font-size: 6px;
-    }
-
-    .ema-value {
-
-        font-size: 7px;
-    }
-
-    .rocket {
-
-        font-size: 8px;
-    }
-
-    .warning-period {
-
-        font-size: 6px;
+        font-size:
+            9px;
     }
 
     .direction-long,
     .direction-short,
     .direction-none {
 
-        font-size: 9px;
+        font-size:
+            8px;
+    }
+
+    .volume-value {
+
+        font-size:
+            7px;
+    }
+
+    .signal-text {
+
+        font-size:
+            7px;
+    }
+
+    .signal-none {
+
+        font-size:
+            7px;
+    }
+
+    .change-item {
+
+        font-size:
+            8px;
+
+        gap:
+            1px;
+    }
+
+    .warning-row {
+
+        gap:
+            2px;
+    }
+
+    .rocket {
+
+        font-size:
+            8px;
+    }
+
+    .warning-period {
+
+        font-size:
+            6px;
+    }
+
+    .ema-line {
+
+        gap:
+            1px;
+    }
+
+    .ema-item {
+
+        gap:
+            1px;
+    }
+
+    .ema-period {
+
+        font-size:
+            5px;
+    }
+
+    .ema-value {
+
+        font-size:
+            7px;
     }
 
     .note {
 
-        font-size: 6px;
+        padding:
+            6px 9px 8px 9px;
+
+        font-size:
+            6px;
+    }
+}
+
+
+/* =====================================================
+   아주 작은 모바일
+   ===================================================== */
+
+@media (max-width: 360px) {
+
+    body {
+
+        padding:
+            3px;
+    }
+
+    .header-title {
+
+        font-size:
+            14px;
+    }
+
+    .section-title-main {
+
+        font-size:
+            11px;
+    }
+
+    th {
+
+        font-size:
+            6px;
+
+        padding:
+            5px 1px;
+    }
+
+    td {
+
+        padding:
+            5px 1px;
+    }
+
+    .coin {
+
+        font-size:
+            8px;
+    }
+
+    .volume-value {
+
+        font-size:
+            6px;
+    }
+
+    .change-item {
+
+        font-size:
+            7px;
+    }
+
+    .rocket {
+
+        font-size:
+            7px;
+    }
+
+    .ema-period {
+
+        font-size:
+            5px;
+    }
+
+    .ema-value {
+
+        font-size:
+            6px;
     }
 }
 
@@ -3406,32 +3980,50 @@ td:nth-child(5) {
 
 <body>
 
-<h1>
-📊 돌파 TOP
-</h1>
+<div class="dashboard">
 
-<div class="info">
 
-1H 추세 + 1H 🚀 돌파 |
-0 = 진행 중 가능성 |
-1+ = 확정 돌파
+<!-- =====================================================
+     상단
+     ===================================================== -->
 
-<br>
+<div class="header-card">
 
-거래대금 """
+    <div class="header-title">
+        📊 돌파 TOP
+    </div>
 
-    html += str(VOLUME_HOURS)
+    <div class="header-subtitle">
+        1H 추세 + 1H 🚀 돌파 기준 실시간 조회
+    </div>
 
-    html += """H
-&nbsp;|&nbsp;
-OKX ÷10
-&nbsp;|&nbsp;
-TOP"""
+    <div class="header-info">
 
-    html += str(TOP_N)
+        <span class="info-badge">
+            거래대금 {VOLUME_HOURS}H
+        </span>
 
-    html += """&nbsp;|&nbsp;
-EMA 10-30-60-120
+        <span class="info-badge">
+            OKX ÷10
+        </span>
+
+        <span class="info-badge">
+            TOP {TOP_N}
+        </span>
+
+        <span class="info-badge">
+            EMA 10-30-60-120
+        </span>
+
+        <span class="info-badge">
+            0 진행 중
+        </span>
+
+        <span class="info-badge">
+            1+ 확정
+        </span>
+
+    </div>
 
 </div>
 
@@ -3442,37 +4034,41 @@ EMA 10-30-60-120
 
 <div class="section">
 
-<h2>
-🏆 업비트 TOP"""
+    <div class="section-title">
 
-    html += str(TOP_N)
+        <span class="section-title-main">
+            🏆 업비트 TOP {TOP_N}
+        </span>
 
-    html += """
-</h2>
+        <span class="section-title-sub">
+            1H 돌파
+        </span>
 
-<div class="table-wrap">
+    </div>
 
-<table>
+    <div class="table-wrap">
 
-<thead>
+        <table>
 
-<tr>
+            <thead>
 
-<th>#</th>
+                <tr>
 
-<th>코인</th>
+                    <th>#</th>
 
-<th>거래대금</th>
+                    <th>코인</th>
 
-<th>오늘</th>
+                    <th>거래대금</th>
 
-<th>EMA</th>
+                    <th>오늘</th>
 
-</tr>
+                    <th>EMA</th>
 
-</thead>
+                </tr>
 
-<tbody>
+            </thead>
+
+            <tbody>
 """
 
 
@@ -3540,100 +4136,101 @@ EMA 10-30-60-120
 
         html += f"""
 
-<tr>
+                <tr>
 
-<td>
-{item['rank']}
-</td>
-
-
-<td>
-
-<div class="coin-wrap">
-
-<span class="coin">
-{item['name']}
-</span>
-
-{direction_html(
-    direction,
-    change_percent
-)}
-
-</div>
-
-</td>
+                    <td>
+                        {item['rank']}
+                    </td>
 
 
-<td>
+                    <td>
 
-<div class="volume-wrap">
+                        <div class="coin-wrap">
 
-<span class="volume-value">
-{item['volume']}
-</span>
+                            <span class="coin">
+                                {item['name']}
+                            </span>
 
-{signal_html(
-    ema.get(
-        "signal",
-        ""
-    ),
-    warning_1h,
-    change_percent
-)}
+                            {direction_html(
+                                direction,
+                                change_percent
+                            )}
 
-</div>
+                        </div>
 
-</td>
+                    </td>
 
 
-<td>
+                    <td>
 
-<div class="today-wrap">
+                        <div class="volume-wrap">
 
-{item['change']}
+                            <span class="volume-value">
+                                {item['volume']}
+                            </span>
 
-<div class="breakout-wrap">
+                            {signal_html(
+                                ema.get(
+                                    "signal",
+                                    ""
+                                ),
+                                warning_1h,
+                                change_percent
+                            )}
 
-{warning_html(
-    warning_1h,
-    "none",
-    change_percent
-)}
+                        </div>
 
-</div>
-
-</div>
-
-</td>
+                    </td>
 
 
-<td>
+                    <td>
 
-{ema_html(ema)}
+                        <div class="today-wrap">
 
-</td>
+                            {item['change']}
 
-</tr>
+                            <div class="breakout-wrap">
+
+                                {warning_html(
+                                    warning_1h,
+                                    "none",
+                                    change_percent
+                                )}
+
+                            </div>
+
+                        </div>
+
+                    </td>
+
+
+                    <td>
+
+                        {ema_html(ema)}
+
+                    </td>
+
+                </tr>
 
 """
 
 
     html += """
 
-</tbody>
+            </tbody>
 
-</table>
+        </table>
 
-</div>
+    </div>
 
-<div class="note">
+    <div class="note">
 
-※ 🟢 = EMA10 &gt; EMA30 &gt; EMA60 &gt; EMA120<br>
-※ 🔴 = EMA10 &lt; EMA30 &lt; EMA60 &lt; EMA120<br>
-※ EMA 숫자 카운팅은 표시하지 않음
+        ※ 🟢 = EMA10 &gt; EMA30 &gt; EMA60 &gt; EMA120<br>
+        ※ 🔴 = EMA10 &lt; EMA30 &lt; EMA60 &lt; EMA120<br>
+        ※ 🚀(0) = 현재 진행 중인 1H 캔들의 돌파 가능성<br>
+        ※ 1+ = 확정 돌파
 
-</div>
+    </div>
 
 </div>
 
@@ -3644,37 +4241,41 @@ EMA 10-30-60-120
 
 <div class="section">
 
-<h2>
-🏆 OKX TOP"""
+    <div class="section-title">
 
-    html += str(TOP_N)
+        <span class="section-title-main">
+            🏆 OKX TOP {TOP_N}
+        </span>
 
-    html += """
-</h2>
+        <span class="section-title-sub">
+            1H 돌파
+        </span>
 
-<div class="table-wrap">
+    </div>
 
-<table>
+    <div class="table-wrap">
 
-<thead>
+        <table>
 
-<tr>
+            <thead>
 
-<th>#</th>
+                <tr>
 
-<th>코인</th>
+                    <th>#</th>
 
-<th>거래대금</th>
+                    <th>코인</th>
 
-<th>오늘</th>
+                    <th>거래대금</th>
 
-<th>EMA</th>
+                    <th>오늘</th>
 
-</tr>
+                    <th>EMA</th>
 
-</thead>
+                </tr>
 
-<tbody>
+            </thead>
+
+            <tbody>
 """
 
 
@@ -3742,105 +4343,108 @@ EMA 10-30-60-120
 
         html += f"""
 
-<tr>
+                <tr>
 
-<td>
-{item['rank']}
-</td>
-
-
-<td>
-
-<div class="coin-wrap">
-
-<span class="coin">
-{item['name']}
-</span>
-
-{direction_html(
-    direction,
-    change_percent
-)}
-
-</div>
-
-</td>
+                    <td>
+                        {item['rank']}
+                    </td>
 
 
-<td>
+                    <td>
 
-<div class="volume-wrap">
+                        <div class="coin-wrap">
 
-<span class="volume-value">
-{item['volume']}
-</span>
+                            <span class="coin">
+                                {item['name']}
+                            </span>
 
-{signal_html(
-    ema.get(
-        "signal",
-        ""
-    ),
-    warning_1h,
-    change_percent
-)}
+                            {direction_html(
+                                direction,
+                                change_percent
+                            )}
 
-</div>
+                        </div>
 
-</td>
+                    </td>
 
 
-<td>
+                    <td>
 
-<div class="today-wrap">
+                        <div class="volume-wrap">
 
-{item['change']}
+                            <span class="volume-value">
+                                {item['volume']}
+                            </span>
 
-<div class="breakout-wrap">
+                            {signal_html(
+                                ema.get(
+                                    "signal",
+                                    ""
+                                ),
+                                warning_1h,
+                                change_percent
+                            )}
 
-{warning_html(
-    warning_1h,
-    "none",
-    change_percent
-)}
+                        </div>
 
-</div>
-
-</div>
-
-</td>
+                    </td>
 
 
-<td>
+                    <td>
 
-{ema_html(ema)}
+                        <div class="today-wrap">
 
-</td>
+                            {item['change']}
 
-</tr>
+                            <div class="breakout-wrap">
+
+                                {warning_html(
+                                    warning_1h,
+                                    "none",
+                                    change_percent
+                                )}
+
+                            </div>
+
+                        </div>
+
+                    </td>
+
+
+                    <td>
+
+                        {ema_html(ema)}
+
+                    </td>
+
+                </tr>
 
 """
 
 
     html += """
 
-</tbody>
+            </tbody>
 
-</table>
+        </table>
 
-</div>
+    </div>
 
-<div class="note">
+    <div class="note">
 
-※ 1H 돌파 기준: 직전 """
+        ※ 1H 돌파 기준: 직전 """
 
     html += str(BREAKOUT_LOOKBACK)
 
     html += """개 확정 캔들의 고가/저가 돌파<br>
-※ 🚀(0) = 현재 진행 중인 1H 캔들의 돌파 가능성<br>
-※ LONG / SHORT 실제 신호는 확정 돌파만 사용<br>
-※ EMA = 1H → 4H → 1D 가로 표시
+        ※ 🚀(0) = 현재 진행 중인 1H 캔들의 돌파 가능성<br>
+        ※ LONG / SHORT 실제 신호는 확정 돌파만 사용<br>
+        ※ EMA = 1H → 4H → 1D
+
+    </div>
 
 </div>
+
 
 </div>
 
