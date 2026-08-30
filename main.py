@@ -2541,22 +2541,9 @@ def update_okx(usdt_krw):
             ""
         )
 
-        # =================================================
-        # 수정:
-        # 기존 XRP(업비트)
-        #
-        # → XRP
-        #   [UP]
-        #
-        # 업비트 미상장 코인은 기존처럼 코인명만 표시
-        # =================================================
-
         if coin in upbit_coin_set:
 
-            coin = (
-                f"{coin}"
-                f"<span class='upbit-tag'>[UP]</span>"
-            )
+            coin = f"{coin}(업비트)"
 
         try:
 
@@ -2950,22 +2937,6 @@ td:nth-child(5) {
     line-height: 1.2;
 }
 
-
-/* =====================================================
-   [UP] 업비트 표시
-   ===================================================== */
-
-.upbit-tag {
-    display: block;
-    margin-top: 2px;
-    font-size: 6px;
-    line-height: 1;
-    color: #35e66d;
-    font-weight: 700;
-    text-align: center;
-}
-
-
 .direction-long,
 .direction-short,
 .direction-none {
@@ -3153,11 +3124,6 @@ td:nth-child(5) {
 
     .coin {
         font-size: 8px;
-    }
-
-    .upbit-tag {
-        font-size: 6px;
-        margin-top: 2px;
     }
 
     .volume-value {
@@ -3519,7 +3485,7 @@ def dashboard():
                maximum-scale=1.0,
                user-scalable=no">
 
-<title>돌파 TOP</title>
+<title>Breakout Trading</title>
 
 <style>
 
@@ -3532,38 +3498,31 @@ def dashboard():
 <body>
 
 <h1>
-📊 돌파 TOP
+📊 Breakout Trading
 </h1>
 
 <div class="info">
 
 <div>
-1H 추세 + 1H 확정 돌파 |
-직전 {BREAKOUT_LOOKBACK}개 확정 캔들 고가/저가 돌파
+1H 추세 · 1H 돌파 · 최근 {BREAKOUT_LOOKBACK}개 캔들 고가/저가
 </div>
 
 <div>
-업비트 거래대금 = 거래소 24시간 누적 거래대금
-&nbsp;|&nbsp;
-OKX 거래대금 = 1H 확정 캔들 {VOLUME_HOURS}개 × USDT-KRW
+업비트 24H 거래대금 · OKX 1H×{VOLUME_HOURS} 거래대금
 </div>
 
 <div>
-TOP{TOP_N}
-&nbsp;|&nbsp;
-EMA 10-30-60-120 정렬 카운팅
-&nbsp;|&nbsp;
-TOP{TOP_N} 전체 표시
+TOP{TOP_N} · EMA 10-30-60-120 정렬
 </div>
 
 <div class="exchange-status">
 
 <span class="{upbit_status_class}">
-업비트 조회 : {USE_UPBIT}
+업비트 : {USE_UPBIT}
 </span>
 
 <span class="{okx_status_class}">
-OKX 조회 : {USE_OKX}
+OKX : {USE_OKX}
 </span>
 
 </div>
@@ -3646,4 +3605,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-        )
+)
