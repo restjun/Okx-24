@@ -40,7 +40,7 @@ logging.basicConfig(
 
 VOLUME_HOURS = 24
 
-TOP_N = 20
+TOP_N = 50
 
 UPDATE_MINUTES = 1
 
