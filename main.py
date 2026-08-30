@@ -40,7 +40,7 @@ logging.basicConfig(
 
 VOLUME_HOURS = 24
 
-TOP_N = 20
+TOP_N = 30
 
 UPDATE_MINUTES = 1
 
@@ -1444,11 +1444,6 @@ def check_breakout(
     cur = df.iloc[
         current_index
     ]
-
-    # =====================================================
-    # 60선이 있으면 10-30-60
-    # 60선이 없으면 10-30
-    # =====================================================
 
     if not pd.isna(cur["ema60"]):
 
@@ -3443,11 +3438,16 @@ td:nth-child(5) {
 
 # =========================================================
 # 테이블 행 생성
+#
+# ★ 변경:
+# 경고 조건에 해당하는 코인만 표시
 # =========================================================
 
 def make_table_rows(data):
 
     rows_html = ""
+
+    visible_count = 0
 
     for item in data:
 
@@ -3471,34 +3471,54 @@ def make_table_rows(data):
             "none"
         )
 
-        row_class = ""
+        # =================================================
+        # 경고가 없는 코인은 표시하지 않음
+        # =================================================
 
-        if is_visible_breakout_warning(
+        if not is_visible_breakout_warning(
             warning_4h,
             change_percent
         ):
 
-            try:
+            continue
 
-                count = int(
-                    warning_4h.split("_")[-1]
-                )
+        visible_count += 1
 
-            except Exception:
+        row_class = ""
 
-                count = 999
+        try:
 
-            if count == 0:
+            count = int(
+                warning_4h.split("_")[-1]
+            )
 
-                row_class = "pre-breakout-row"
+        except Exception:
 
-            elif count > 0:
+            count = 999
 
-                row_class = "breakout-row"
+        # =================================================
+        # 🚨 돌파 직전
+        # =================================================
 
-            elif count in (-1, -2):
+        if count == 0:
 
-                row_class = "failed-breakout-row"
+            row_class = "pre-breakout-row"
+
+        # =================================================
+        # 🚀 확정 돌파
+        # =================================================
+
+        elif count > 0:
+
+            row_class = "breakout-row"
+
+        # =================================================
+        # ⛔️ 돌파 후 실패
+        # =================================================
+
+        elif count in (-1, -2):
+
+            row_class = "failed-breakout-row"
 
         rows_html += f"""
 <tr class="{row_class}">
@@ -3572,6 +3592,23 @@ def make_table_rows(data):
 </tr>
 """
 
+    # =====================================================
+    # 경고 종목이 하나도 없을 때
+    # =====================================================
+
+    if visible_count == 0:
+
+        return """
+<tr>
+<td colspan="5" style="
+    color:#555;
+    padding:12px 4px;
+">
+현재 경고 종목 없음
+</td>
+</tr>
+"""
+
     return rows_html
 
 
@@ -3605,7 +3642,7 @@ def make_exchange_section(
 <div class="section">
 
 <h2>
-{title} TOP{TOP_N}
+{title} 경고
 </h2>
 
 <div class="table-wrap">
@@ -3751,7 +3788,7 @@ def dashboard():
 </div>
 
 <div>
-TOP{TOP_N} · 4H EMA
+TOP{TOP_N} 중 경고 종목만 표시 · 4H EMA
 </div>
 
 <div class="exchange-status">
