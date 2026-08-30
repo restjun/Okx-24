@@ -526,12 +526,12 @@ def get_upbit_ticker_volume_map(
 
 
 # =========================================================
-# 업비트 분봉 캔들
+# 업비트 캔들
 # =========================================================
 
 def get_upbit_ohlcv(
     market,
-    unit=60,
+    unit=240,
     count=200
 ):
 
@@ -600,85 +600,6 @@ def get_upbit_ohlcv(
 
         logging.error(
             f"업비트 캔들 오류 "
-            f"{market} : {e}"
-        )
-
-        return None
-
-
-# =========================================================
-# 업비트 일봉
-# =========================================================
-
-def get_upbit_daily_ohlcv(
-    market,
-    count=200
-):
-
-    count = max(
-        1,
-        min(
-            int(count),
-            200
-        )
-    )
-
-    url = (
-        "https://api.upbit.com/v1/candles/days"
-        f"?market={market}"
-        f"&count={count}"
-    )
-
-    response = retry_request(
-        requests.get,
-        url,
-        timeout=15
-    )
-
-    if response is None:
-        return None
-
-    try:
-
-        data = response.json()
-
-        if not data:
-            return None
-
-        df = pd.DataFrame(data)
-
-        df = (
-            df
-            .iloc[::-1]
-            .reset_index(drop=True)
-        )
-
-        df["o"] = pd.to_numeric(
-            df["opening_price"],
-            errors="coerce"
-        )
-
-        df["h"] = pd.to_numeric(
-            df["high_price"],
-            errors="coerce"
-        )
-
-        df["l"] = pd.to_numeric(
-            df["low_price"],
-            errors="coerce"
-        )
-
-        df["c"] = pd.to_numeric(
-            df["trade_price"],
-            errors="coerce"
-        )
-
-        return df
-
-    except Exception as e:
-
-        logging.error(
-            f"업비트 일봉 오류 "
             f"{market} : {e}"
         )
 
@@ -787,20 +708,109 @@ def get_ema(
 
 
 # =========================================================
-# EMA 10-30-60-120 방향
+# EMA 10-30 방향
 # =========================================================
 
-def get_ema_10_30_60_120_direction(
+def get_ema_10_30_direction(
     df,
     column
 ):
 
+    ema10 = get_ema(
+        df,
+        column,
+        10
+    )
+
+    ema30 = get_ema(
+        df,
+        column,
+        30
+    )
+
     if (
-        df is None
-        or column not in df.columns
+        ema10 is None
+        or
+        ema30 is None
     ):
 
         return "none"
+
+    a = ema10.iloc[-1]
+    b = ema30.iloc[-1]
+
+    if pd.isna(a) or pd.isna(b):
+
+        return "none"
+
+    if a > b:
+
+        return "long"
+
+    if a < b:
+
+        return "short"
+
+    return "none"
+
+
+# =========================================================
+# EMA 30-60 방향
+# =========================================================
+
+def get_ema_30_60_direction(
+    df,
+    column
+):
+
+    ema30 = get_ema(
+        df,
+        column,
+        30
+    )
+
+    ema60 = get_ema(
+        df,
+        column,
+        60
+    )
+
+    if (
+        ema30 is None
+        or
+        ema60 is None
+    ):
+
+        return "none"
+
+    a = ema30.iloc[-1]
+    b = ema60.iloc[-1]
+
+    if pd.isna(a) or pd.isna(b):
+
+        return "none"
+
+    if a > b:
+
+        return "long"
+
+    if a < b:
+
+        return "short"
+
+    return "none"
+
+
+# =========================================================
+# EMA 10-30-60 방향
+#
+# 60일선이 존재할 경우 사용
+# =========================================================
+
+def get_ema_10_30_60_direction(
+    df,
+    column
+):
 
     ema10 = get_ema(
         df,
@@ -820,20 +830,16 @@ def get_ema_10_30_60_120_direction(
         60
     )
 
-    ema120 = get_ema(
-        df,
-        column,
-        120
-    )
+    # -----------------------------------------------------
+    # 60선이 없으면 10-30-60 정렬은 계산 불가
+    # -----------------------------------------------------
 
-    if any(
-        x is None
-        for x in [
-            ema10,
-            ema30,
-            ema60,
-            ema120
-        ]
+    if (
+        ema10 is None
+        or
+        ema30 is None
+        or
+        ema60 is None
     ):
 
         return "none"
@@ -841,8 +847,7 @@ def get_ema_10_30_60_120_direction(
     values = [
         ema10.iloc[-1],
         ema30.iloc[-1],
-        ema60.iloc[-1],
-        ema120.iloc[-1]
+        ema60.iloc[-1]
     ]
 
     if any(
@@ -858,8 +863,6 @@ def get_ema_10_30_60_120_direction(
         values[1]
         >
         values[2]
-        >
-        values[3]
     ):
 
         return "long"
@@ -870,8 +873,6 @@ def get_ema_10_30_60_120_direction(
         values[1]
         <
         values[2]
-        <
-        values[3]
     ):
 
         return "short"
@@ -880,17 +881,125 @@ def get_ema_10_30_60_120_direction(
 
 
 # =========================================================
-# EMA 정렬 카운팅
+# EMA 카운팅
 # =========================================================
 
-def get_ema_alignment_count(
+def get_pair_alignment_count(
+    df,
+    column,
+    fast_period,
+    slow_period
+):
+
+    if (
+        df is None
+        or
+        len(df) < slow_period
+    ):
+
+        return (
+            "none",
+            0
+        )
+
+    fast = get_ema(
+        df,
+        column,
+        fast_period
+    )
+
+    slow = get_ema(
+        df,
+        column,
+        slow_period
+    )
+
+    if (
+        fast is None
+        or
+        slow is None
+    ):
+
+        return (
+            "none",
+            0
+        )
+
+    current_direction = None
+
+    count = 0
+
+    for index in range(
+        len(df) - 1,
+        -1,
+        -1
+    ):
+
+        a = fast.iloc[index]
+        b = slow.iloc[index]
+
+        if pd.isna(a) or pd.isna(b):
+
+            break
+
+        if a > b:
+
+            direction = "long"
+
+        elif a < b:
+
+            direction = "short"
+
+        else:
+
+            direction = "none"
+
+        if current_direction is None:
+
+            if direction == "none":
+
+                break
+
+            current_direction = direction
+
+            count = 1
+
+        else:
+
+            if direction == current_direction:
+
+                count += 1
+
+            else:
+
+                break
+
+    if current_direction is None:
+
+        return (
+            "none",
+            0
+        )
+
+    return (
+        current_direction,
+        count
+    )
+
+
+# =========================================================
+# EMA 10-30-60 카운팅
+# =========================================================
+
+def get_ema_10_30_60_alignment_count(
     df,
     column
 ):
 
     if (
         df is None
-        or len(df) < 120
+        or
+        len(df) < 60
     ):
 
         return (
@@ -916,19 +1025,12 @@ def get_ema_alignment_count(
         60
     )
 
-    ema120 = get_ema(
-        df,
-        column,
-        120
-    )
-
     if any(
         x is None
         for x in [
             ema10,
             ema30,
-            ema60,
-            ema120
+            ema60
         ]
     ):
 
@@ -937,9 +1039,9 @@ def get_ema_alignment_count(
             0
         )
 
-    count = 0
-
     current_direction = None
+
+    count = 0
 
     for index in range(
         len(df) - 1,
@@ -950,8 +1052,7 @@ def get_ema_alignment_count(
         values = [
             ema10.iloc[index],
             ema30.iloc[index],
-            ema60.iloc[index],
-            ema120.iloc[index]
+            ema60.iloc[index]
         ]
 
         if any(
@@ -967,8 +1068,6 @@ def get_ema_alignment_count(
             values[1]
             >
             values[2]
-            >
-            values[3]
         ):
 
             direction = "long"
@@ -979,8 +1078,6 @@ def get_ema_alignment_count(
             values[1]
             <
             values[2]
-            <
-            values[3]
         ):
 
             direction = "short"
@@ -1025,49 +1122,122 @@ def get_ema_alignment_count(
 # =========================================================
 # EMA 표시
 #
-# 기존
-# 1H → 4H
-# 4H → 1D
+# 기간 숫자 라벨은 표시하지 않음
+#
+# 순서:
+# 10-30
+# 30-60
+# 10-30-60
+#
+# 화면에는 공 + 카운팅만 표시
 # =========================================================
 
-def check_ema_10_30_60_120(
-    df,
-    column
-):
+def check_ema_4h(df):
 
-    direction, count = (
-        get_ema_alignment_count(
+    direction_10_30, count_10_30 = (
+        get_pair_alignment_count(
             df,
-            column
+            "c",
+            10,
+            30
         )
     )
 
-    if direction == "long":
+    direction_30_60, count_30_60 = (
+        get_pair_alignment_count(
+            df,
+            "c",
+            30,
+            60
+        )
+    )
 
-        return f"🟢({count})"
+    direction_10_30_60, count_10_30_60 = (
+        get_ema_10_30_60_alignment_count(
+            df,
+            "c"
+        )
+    )
 
-    if direction == "short":
+    def make_display(
+        direction,
+        count
+    ):
 
-        return f"🔴({count})"
+        if direction == "long":
 
-    return "⚪"
+            return f"🟢({count})"
+
+        if direction == "short":
+
+            return f"🔴({count})"
+
+        return "⚪"
+
+    return {
+        "10_30":
+            make_display(
+                direction_10_30,
+                count_10_30
+            ),
+
+        "30_60":
+            make_display(
+                direction_30_60,
+                count_30_60
+            ),
+
+        "10_30_60":
+            make_display(
+                direction_10_30_60,
+                count_10_30_60
+            ),
+
+        "direction_10_30":
+            direction_10_30,
+
+        "direction_30_60":
+            direction_30_60,
+
+        "direction_10_30_60":
+            direction_10_30_60,
+
+        "count_10_30":
+            count_10_30,
+
+        "count_30_60":
+            count_30_60,
+
+        "count_10_30_60":
+            count_10_30_60
+    }
 
 
 # =========================================================
 # 메인 방향
 #
-# 기존 1H 기준
-# → 4H 기준으로 변경
+# 60선이 있으면 10-30-60 기준
+# 60선이 없으면 10-30 기준
 # =========================================================
 
 def get_main_direction(
     df4h,
-    df1d,
     column
 ):
 
+    direction_10_30_60 = (
+        get_ema_10_30_60_direction(
+            df4h,
+            column
+        )
+    )
+
+    if direction_10_30_60 != "none":
+
+        return direction_10_30_60
+
     return (
-        get_ema_10_30_60_120_direction(
+        get_ema_10_30_direction(
             df4h,
             column
         )
@@ -1076,8 +1246,6 @@ def get_main_direction(
 
 # =========================================================
 # 돌파
-#
-# 1H → 4H로 변경
 # =========================================================
 
 def is_long_breakout(
@@ -1223,7 +1391,12 @@ def is_short_pre_breakout(
 
 
 # =========================================================
-# 4H 확정 돌파
+# 확정 돌파
+#
+# 4H 기준
+#
+# 60선이 있으면 10-30-60
+# 60선이 없으면 10-30
 #
 # -3부터 완전히 제외
 # -1/-2까지만 유지
@@ -1236,9 +1409,10 @@ def check_breakout(
 
     if (
         df4h is None
-        or len(df4h)
+        or
+        len(df4h)
         <
-        120 + BREAKOUT_LOOKBACK
+        30 + BREAKOUT_LOOKBACK
     ):
 
         return "none"
@@ -1263,37 +1437,50 @@ def check_breakout(
         60
     )
 
-    df["ema120"] = get_ema(
-        df,
-        column,
-        120
-    )
-
     current_index = len(df) - 1
 
     cur = df.iloc[
         current_index
     ]
 
-    long_ema = (
-        cur["ema10"]
-        >
-        cur["ema30"]
-        >
-        cur["ema60"]
-        >
-        cur["ema120"]
-    )
+    # =====================================================
+    # 현재 EMA 방향
+    #
+    # 60선이 있으면 10-30-60
+    # 없으면 10-30
+    # =====================================================
 
-    short_ema = (
-        cur["ema10"]
-        <
-        cur["ema30"]
-        <
-        cur["ema60"]
-        <
-        cur["ema120"]
-    )
+    if not pd.isna(cur["ema60"]):
+
+        long_ema = (
+            cur["ema10"]
+            >
+            cur["ema30"]
+            >
+            cur["ema60"]
+        )
+
+        short_ema = (
+            cur["ema10"]
+            <
+            cur["ema30"]
+            <
+            cur["ema60"]
+        )
+
+    else:
+
+        long_ema = (
+            cur["ema10"]
+            >
+            cur["ema30"]
+        )
+
+        short_ema = (
+            cur["ema10"]
+            <
+            cur["ema30"]
+        )
 
     previous = df.iloc[
         current_index - BREAKOUT_LOOKBACK:
@@ -1301,7 +1488,7 @@ def check_breakout(
     ]
 
     # =====================================================
-    # 현재 확정 LONG 4H 돌파
+    # 현재 확정 LONG 돌파
     # =====================================================
 
     if long_ema:
@@ -1320,7 +1507,6 @@ def check_breakout(
             ):
 
                 if index < BREAKOUT_LOOKBACK:
-
                     break
 
                 row = df.iloc[index]
@@ -1330,15 +1516,25 @@ def check_breakout(
                     index
                 ]
 
-                row_long_ema = (
-                    row["ema10"]
-                    >
-                    row["ema30"]
-                    >
+                if not pd.isna(
                     row["ema60"]
-                    >
-                    row["ema120"]
-                )
+                ):
+
+                    row_long_ema = (
+                        row["ema10"]
+                        >
+                        row["ema30"]
+                        >
+                        row["ema60"]
+                    )
+
+                else:
+
+                    row_long_ema = (
+                        row["ema10"]
+                        >
+                        row["ema30"]
+                    )
 
                 state = (
                     row_long_ema
@@ -1364,7 +1560,7 @@ def check_breakout(
                 )
 
     # =====================================================
-    # 현재 확정 SHORT 4H 돌파
+    # 현재 확정 SHORT 돌파
     # =====================================================
 
     if short_ema:
@@ -1383,7 +1579,6 @@ def check_breakout(
             ):
 
                 if index < BREAKOUT_LOOKBACK:
-
                     break
 
                 row = df.iloc[index]
@@ -1393,15 +1588,25 @@ def check_breakout(
                     index
                 ]
 
-                row_short_ema = (
-                    row["ema10"]
-                    <
-                    row["ema30"]
-                    <
+                if not pd.isna(
                     row["ema60"]
-                    <
-                    row["ema120"]
-                )
+                ):
+
+                    row_short_ema = (
+                        row["ema10"]
+                        <
+                        row["ema30"]
+                        <
+                        row["ema60"]
+                    )
+
+                else:
+
+                    row_short_ema = (
+                        row["ema10"]
+                        <
+                        row["ema30"]
+                    )
 
                 state = (
                     row_short_ema
@@ -1427,7 +1632,7 @@ def check_breakout(
                 )
 
     # =====================================================
-    # 4H 돌파 직전 🚨
+    # 돌파 직전 🚨
     # =====================================================
 
     if long_ema:
@@ -1449,8 +1654,9 @@ def check_breakout(
             return "short_breakout_0"
 
     # =====================================================
-    # 1~2개 4H 캔들 전 돌파 후
-    # 고점/저점 갱신 실패
+    # 1~2개 캔들 전 돌파 후 고점/저점 갱신 실패
+    #
+    # -1 / -2까지만 검사
     # =====================================================
 
     for age in [1, 2]:
@@ -1460,7 +1666,6 @@ def check_breakout(
         )
 
         if breakout_index < BREAKOUT_LOOKBACK:
-
             continue
 
         breakout_row = df.iloc[
@@ -1472,25 +1677,39 @@ def check_breakout(
             breakout_index
         ]
 
-        breakout_long_ema = (
-            breakout_row["ema10"]
-            >
-            breakout_row["ema30"]
-            >
+        if not pd.isna(
             breakout_row["ema60"]
-            >
-            breakout_row["ema120"]
-        )
+        ):
 
-        breakout_short_ema = (
-            breakout_row["ema10"]
-            <
-            breakout_row["ema30"]
-            <
-            breakout_row["ema60"]
-            <
-            breakout_row["ema120"]
-        )
+            breakout_long_ema = (
+                breakout_row["ema10"]
+                >
+                breakout_row["ema30"]
+                >
+                breakout_row["ema60"]
+            )
+
+            breakout_short_ema = (
+                breakout_row["ema10"]
+                <
+                breakout_row["ema30"]
+                <
+                breakout_row["ema60"]
+            )
+
+        else:
+
+            breakout_long_ema = (
+                breakout_row["ema10"]
+                >
+                breakout_row["ema30"]
+            )
+
+            breakout_short_ema = (
+                breakout_row["ema10"]
+                <
+                breakout_row["ema30"]
+            )
 
         # -------------------------------------------------
         # LONG
@@ -1568,12 +1787,11 @@ def check_breakout(
 # =========================================================
 # 메인 진입 경고
 #
-# 4H 돌파 사용
+# 기존 1H → 4H
 # =========================================================
 
 def check_entry_warning(
     df4h,
-    df1d,
     column
 ):
 
@@ -1594,13 +1812,11 @@ def check_entry_warning(
 
 def get_trade_signal(
     df4h,
-    df1d,
     column
 ):
 
     main_direction = get_main_direction(
         df4h,
-        df1d,
         column
     )
 
@@ -1608,17 +1824,13 @@ def get_trade_signal(
 
         return (
             "",
-            "none",
             "none"
         )
 
-    breakout_4h, breakout_1d = (
-        check_entry_warning(
-            df4h,
-            df1d,
-            column
-        )
-    )
+    breakout_4h = check_entry_warning(
+        df4h,
+        column
+    )[0]
 
     signal = ""
 
@@ -1668,8 +1880,7 @@ def get_trade_signal(
 
     return (
         signal,
-        breakout_4h,
-        breakout_1d
+        breakout_4h
     )
 
 
@@ -1680,24 +1891,22 @@ def get_trade_signal(
 def empty_ema():
 
     return {
-        "4h_10_30_60_120": "⚪",
-        "1d_10_30_60_120": "⚪",
+        "10_30": "⚪",
+        "30_60": "⚪",
+        "10_30_60": "⚪",
+
         "signal": "",
+
         "warning": "none",
+
         "warning_4h": "none",
-        "warning_1d": "none",
+
         "direction": "none"
     }
 
 
 # =========================================================
 # OKX EMA
-#
-# 기존
-# 1H + 4H
-#
-# 변경
-# 4H + 1D
 # =========================================================
 
 def get_okx_ema(inst_id):
@@ -1708,67 +1917,53 @@ def get_okx_ema(inst_id):
         200
     )
 
-    df1d = get_okx_ohlcv(
-        inst_id,
-        "1D",
-        200
-    )
-
-    if (
-        df4h is None
-        or
-        df1d is None
-    ):
+    if df4h is None:
 
         return empty_ema()
 
-    signal, warning_4h, warning_1d = (
+    signal, warning_4h = (
         get_trade_signal(
             df4h,
-            df1d,
             "c"
         )
     )
 
     direction = get_main_direction(
         df4h,
-        df1d,
         "c"
     )
 
+    ema_display = check_ema_4h(
+        df4h
+    )
+
     return {
-        "4h_10_30_60_120":
-            check_ema_10_30_60_120(
-                df4h,
-                "c"
-            ),
 
-        "1d_10_30_60_120":
-            check_ema_10_30_60_120(
-                df1d,
-                "c"
-            ),
+        "10_30":
+            ema_display["10_30"],
 
-        "signal": signal,
+        "30_60":
+            ema_display["30_60"],
 
-        "warning": warning_4h,
+        "10_30_60":
+            ema_display["10_30_60"],
 
-        "warning_4h": warning_4h,
+        "signal":
+            signal,
 
-        "warning_1d": warning_1d,
+        "warning":
+            warning_4h,
 
-        "direction": direction
+        "warning_4h":
+            warning_4h,
+
+        "direction":
+            direction
     }
 
 
 # =========================================================
 # 업비트 EMA
-#
-# 기존
-# 1H + 4H
-#
-# 변경
-# 4H + 1D
 # =========================================================
 
 def get_upbit_ema(market):
@@ -1779,22 +1974,11 @@ def get_upbit_ema(market):
         200
     )
 
-    raw1d = get_upbit_daily_ohlcv(
-        market,
-        200
-    )
-
-    if (
-        raw4h is None
-        or
-        raw1d is None
-    ):
+    if raw4h is None:
 
         return empty_ema()
 
     df4h = raw4h.copy()
-
-    df1d = raw1d.copy()
 
     # -----------------------------------------------------
     # 현재 진행 중인 4H 캔들 제외
@@ -1808,65 +1992,49 @@ def get_upbit_ema(market):
             .reset_index(drop=True)
         )
 
-    # -----------------------------------------------------
-    # 업비트 일봉
-    #
-    # API의 가장 최근 일봉은 현재 진행 중인
-    # 당일 캔들일 수 있으므로 제외
-    # -----------------------------------------------------
-
-    if len(df1d) > 1:
-
-        df1d = (
-            df1d
-            .iloc[:-1]
-            .reset_index(drop=True)
-        )
-
-    signal, warning_4h, warning_1d = (
+    signal, warning_4h = (
         get_trade_signal(
             df4h,
-            df1d,
             "c"
         )
     )
 
     direction = get_main_direction(
         df4h,
-        df1d,
         "c"
     )
 
+    ema_display = check_ema_4h(
+        df4h
+    )
+
     return {
-        "4h_10_30_60_120":
-            check_ema_10_30_60_120(
-                df4h,
-                "c"
-            ),
 
-        "1d_10_30_60_120":
-            check_ema_10_30_60_120(
-                df1d,
-                "c"
-            ),
+        "10_30":
+            ema_display["10_30"],
 
-        "signal": signal,
+        "30_60":
+            ema_display["30_60"],
 
-        "warning": warning_4h,
+        "10_30_60":
+            ema_display["10_30_60"],
 
-        "warning_4h": warning_4h,
+        "signal":
+            signal,
 
-        "warning_1d": warning_1d,
+        "warning":
+            warning_4h,
 
-        "direction": direction
+        "warning_4h":
+            warning_4h,
+
+        "direction":
+            direction
     }
 
 
 # =========================================================
 # OKX 거래대금
-#
-# 기존 그대로
-# 1H 확정 캔들 24개
 # =========================================================
 
 def get_okx_volume(
@@ -1918,7 +2086,9 @@ def get_okx_volume(
                 .sum()
             )
 
-            volume_usdt = volume_usdt / 10
+            volume_usdt = (
+                volume_usdt / 10
+            )
 
             if volume_usdt <= 0:
 
@@ -2020,7 +2190,8 @@ def get_okx_change(inst_id):
 
     if (
         df is None
-        or len(df) < 50
+        or
+        len(df) < 50
     ):
 
         return None
@@ -2289,12 +2460,10 @@ def direction_html(
 # =========================================================
 # 돌파 경고 표시 가능 여부
 #
-# 4H 경고 기준
+# LONG  → 오늘 상승
+# SHORT → 오늘 하락
 #
-# LONG  → 오늘 상승 중
-# SHORT → 오늘 하락 중
-#
-# -3부터 제외
+# -3 이하 제외
 # =========================================================
 
 def is_visible_breakout_warning(
@@ -2373,10 +2542,6 @@ def warning_html(
             '<span class="warning-empty">—</span>'
         )
 
-    # -----------------------------------------------------
-    # 돌파 직전
-    # -----------------------------------------------------
-
     if count == 0:
 
         return (
@@ -2385,10 +2550,6 @@ def warning_html(
             '</span>'
         )
 
-    # -----------------------------------------------------
-    # -1 / -2
-    # -----------------------------------------------------
-
     if count in (-1, -2):
 
         return (
@@ -2396,10 +2557,6 @@ def warning_html(
             '⛔️'
             '</span>'
         )
-
-    # -----------------------------------------------------
-    # 확정 돌파
-    # -----------------------------------------------------
 
     if count > 0:
 
@@ -2417,18 +2574,31 @@ def warning_html(
 # =========================================================
 # EMA HTML
 #
-# 4H / 1D
+# 숫자 기간 라벨 제거
+#
+# 3개 항목만 표시:
+# 10-30
+# 30-60
+# 10-30-60
+#
+# 실제 화면:
+# 🟢(N)   🟢(N)   🟢(N)
 # =========================================================
 
 def ema_html(ema):
 
-    ema_4h = ema.get(
-        "4h_10_30_60_120",
+    ema_10_30 = ema.get(
+        "10_30",
         "⚪"
     )
 
-    ema_1d = ema.get(
-        "1d_10_30_60_120",
+    ema_30_60 = ema.get(
+        "30_60",
+        "⚪"
+    )
+
+    ema_10_30_60 = ema.get(
+        "10_30_60",
         "⚪"
     )
 
@@ -2438,27 +2608,21 @@ def ema_html(ema):
         <div class="ema-line">
 
             <div class="ema-item">
-
-                <span class="ema-period">
-                    4H
-                </span>
-
                 <span class="ema-value">
-                    {ema_4h}
+                    {ema_10_30}
                 </span>
-
             </div>
 
             <div class="ema-item">
-
-                <span class="ema-period">
-                    1D
-                </span>
-
                 <span class="ema-value">
-                    {ema_1d}
+                    {ema_30_60}
                 </span>
+            </div>
 
+            <div class="ema-item">
+                <span class="ema-value">
+                    {ema_10_30_60}
+                </span>
             </div>
 
         </div>
@@ -2663,18 +2827,12 @@ def update_okx(usdt_krw):
         )
 
         # =================================================
-        # 업비트 상장 코인 표시
-        #
-        # 기존:
-        # BTC(업비트)
-        #
-        # 변경:
-        # BTC [UP]
+        # 업비트 상장 코인 → [UP]
         # =================================================
 
         if coin in upbit_coin_set:
 
-            coin = f"{coin} [UP]"
+            coin = f"{coin}[UP]"
 
         try:
 
@@ -2728,6 +2886,10 @@ def update_okx(usdt_krw):
             )
 
     latest_okx_data = rows
+
+    logging.info(
+        f"========== OKX TOP{TOP_N} 완료 =========="
+    )
 
     return True
 
@@ -3192,15 +3354,8 @@ td:nth-child(5) {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 1px;
-    width: 50%;
+    width: 33.333%;
     min-width: 0;
-}
-
-.ema-period {
-    color: #888;
-    font-size: 6px;
-    flex-shrink: 0;
 }
 
 .ema-value {
@@ -3271,10 +3426,6 @@ td:nth-child(5) {
         gap: 1px;
     }
 
-    .ema-period {
-        font-size: 5px;
-    }
-
     .ema-value {
         font-size: 6px;
     }
@@ -3338,10 +3489,6 @@ def make_table_rows(data):
 
         row_class = ""
 
-        # =================================================
-        # 화면에 실제 표시되는 경고일 때만 반짝임
-        # =================================================
-
         if is_visible_breakout_warning(
             warning_4h,
             change_percent
@@ -3357,25 +3504,13 @@ def make_table_rows(data):
 
                 count = 999
 
-            # ---------------------------------------------
-            # 🚨 돌파 직전
-            # ---------------------------------------------
-
             if count == 0:
 
                 row_class = "pre-breakout-row"
 
-            # ---------------------------------------------
-            # 🚀 확정 돌파
-            # ---------------------------------------------
-
             elif count > 0:
 
                 row_class = "breakout-row"
-
-            # ---------------------------------------------
-            # ⛔️ -1 / -2
-            # ---------------------------------------------
 
             elif count in (-1, -2):
 
@@ -3521,17 +3656,23 @@ def make_exchange_section(
 
 <div class="note">
 
-※ 🟢(N) = EMA10 &gt; EMA30 &gt; EMA60 &gt; EMA120 정배열 유지 캔들 수<br>
+※ EMA는 4H 확정 캔들 기준<br>
 
-※ 🔴(N) = EMA10 &lt; EMA30 &lt; EMA60 &lt; EMA120 역배열 유지 캔들 수<br>
+※ EMA 표시 순서는 10-30 / 30-60 / 10-30-60<br>
 
-※ EMA 표시: 4H / 1D<br>
+※ 🟢(N) = 정배열 유지 캔들 수<br>
 
-※ 🚨 = 최근 {BREAKOUT_LOOKBACK}개 4H 확정 캔들의 고가/저가를 장중 테스트했으나 종가 기준 확정 돌파 전<br>
+※ 🔴(N) = 역배열 유지 캔들 수<br>
 
-※ 🚀(1), 🚀(2) = 4H 확정 돌파<br>
+※ ⚪ = 해당 정렬 조건 없음 또는 데이터 부족<br>
 
-※ ⛔️ = 4H 돌파 후 1~2개 4H 캔들 동안 다음 고점/저점 갱신 실패<br>
+※ 60선 데이터가 부족하면 10-30 정배열/역배열은 별도로 표시<br>
+
+※ 🚨 = 직전 {BREAKOUT_LOOKBACK}개 4H 캔들의 고가/저가를 테스트했으나 종가 기준 확정 돌파 전<br>
+
+※ 🚀(1), 🚀(2) = 확정 돌파<br>
+
+※ ⛔️ = 돌파 후 1~2개 4H 캔들 동안 다음 고점/저점 갱신 실패<br>
 
 ※ -3부터는 돌파 경고에서 제외<br>
 
@@ -3539,7 +3680,7 @@ def make_exchange_section(
 
 ※ SHORT 경고는 오늘 하락 중일 때만 표시 및 반짝임<br>
 
-※ EMA 정배열/역배열 자체만으로는 반짝이지 않음<br>
+※ EMA 정렬 자체만으로는 반짝이지 않음<br>
 
 ※ 경고 조건과 행 반짝임 조건은 동일하게 적용
 
@@ -3622,7 +3763,7 @@ def dashboard():
 <div class="info">
 
 <div>
-4H 추세 · 4H 돌파 · 최근 {BREAKOUT_LOOKBACK}개 4H 확정 캔들 고가/저가
+4H 추세 · 4H 돌파 · 최근 {BREAKOUT_LOOKBACK}개 확정 4H 캔들 고가/저가
 </div>
 
 <div>
@@ -3630,7 +3771,7 @@ def dashboard():
 </div>
 
 <div>
-TOP{TOP_N} · EMA 10-30-60-120 · 4H / 1D
+TOP{TOP_N} · 4H EMA
 </div>
 
 <div class="exchange-status">
@@ -3723,4 +3864,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-    )
+)
