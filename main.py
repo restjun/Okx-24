@@ -40,13 +40,13 @@ logging.basicConfig(
 
 VOLUME_HOURS = 24
 
-TOP_N = 30
+TOP_N = 20
 
 UPDATE_MINUTES = 1
 
 MAX_WARNING_COUNT = 3
 
-BREAKOUT_LOOKBACK = 10
+BREAKOUT_LOOKBACK = 5
 
 
 # =========================================================
@@ -1445,6 +1445,11 @@ def check_breakout(
         current_index
     ]
 
+    # =====================================================
+    # 60선이 있으면 10-30-60
+    # 60선이 없으면 10-30
+    # =====================================================
+
     if not pd.isna(cur["ema60"]):
 
         long_ema = (
@@ -2469,6 +2474,16 @@ def direction_html(
 
 # =========================================================
 # 돌파 경고 표시 가능 여부
+#
+# 표시:
+# 🚨      = 0
+# 🚀(1)   = 1
+# 🚀(2)   = 2
+# ...
+# 〽️(-1)  = -1
+# 〽️(-2)  = -2
+#
+# -3부터 제외
 # =========================================================
 
 def is_visible_breakout_warning(
@@ -2494,6 +2509,10 @@ def is_visible_breakout_warning(
 
         return False
 
+    # =====================================================
+    # -3 이하 제외
+    # =====================================================
+
     if count <= -3:
 
         return False
@@ -2502,11 +2521,19 @@ def is_visible_breakout_warning(
 
         return False
 
+    # =====================================================
+    # LONG
+    # =====================================================
+
     if warning_4h.startswith(
         "long_breakout_"
     ):
 
         return change_percent > 0
+
+    # =====================================================
+    # SHORT
+    # =====================================================
 
     if warning_4h.startswith(
         "short_breakout_"
@@ -2547,6 +2574,10 @@ def warning_html(
             '<span class="warning-empty">—</span>'
         )
 
+    # =====================================================
+    # 돌파 직전
+    # =====================================================
+
     if count == 0:
 
         return (
@@ -2555,19 +2586,30 @@ def warning_html(
             '</span>'
         )
 
-    if count in (-1, -2):
-
-        return (
-            '<span class="warning-icon failed-breakout">'
-            '⛔️'
-            '</span>'
-        )
+    # =====================================================
+    # 확정 돌파
+    # =====================================================
 
     if count > 0:
 
         return (
             '<span class="warning-icon rocket">'
             f'🚀({count})'
+            '</span>'
+        )
+
+    # =====================================================
+    # 돌파 후 실패
+    #
+    # -1 / -2만 표시
+    # -3부터 제외
+    # =====================================================
+
+    if count in (-1, -2):
+
+        return (
+            '<span class="warning-icon failed-breakout">'
+            f'〽️({count})'
             '</span>'
         )
 
@@ -2610,6 +2652,9 @@ def ema_html(ema):
 
 # =========================================================
 # 업비트 업데이트
+#
+# TOP20 선정 후
+# 경고 조건에 해당하는 종목만 저장
 # =========================================================
 
 def update_upbit():
@@ -2670,6 +2715,20 @@ def update_upbit():
                 else None
             )
 
+            # =================================================
+            # 경고 조건에 해당하는 코인만 표시
+            # =================================================
+
+            if not is_visible_breakout_warning(
+                ema.get(
+                    "warning_4h",
+                    "none"
+                ),
+                change_percent
+            ):
+
+                continue
+
             rows.append(
                 {
                     "rank": rank,
@@ -2704,6 +2763,11 @@ def update_upbit():
     latest_upbit_data = rows
 
     logging.info(
+        f"업비트 경고 종목 "
+        f"{len(rows)}개"
+    )
+
+    logging.info(
         f"========== 업비트 TOP{TOP_N} 완료 =========="
     )
 
@@ -2712,6 +2776,9 @@ def update_upbit():
 
 # =========================================================
 # OKX 업데이트
+#
+# TOP20 선정 후
+# 경고 조건에 해당하는 종목만 저장
 # =========================================================
 
 def update_okx(usdt_krw):
@@ -2831,6 +2898,20 @@ def update_okx(usdt_krw):
                 else None
             )
 
+            # =================================================
+            # 경고 조건에 해당하는 코인만 표시
+            # =================================================
+
+            if not is_visible_breakout_warning(
+                ema.get(
+                    "warning_4h",
+                    "none"
+                ),
+                change_percent
+            ):
+
+                continue
+
             rows.append(
                 {
                     "rank": rank,
@@ -2863,6 +2944,11 @@ def update_okx(usdt_krw):
             )
 
     latest_okx_data = rows
+
+    logging.info(
+        f"OKX 경고 종목 "
+        f"{len(rows)}개"
+    )
 
     logging.info(
         f"========== OKX TOP{TOP_N} 완료 =========="
@@ -3141,7 +3227,7 @@ tbody tr:last-child td {
 
 
 /* =====================================================
-   ⛔️ 돌파 후 실패
+   〽️ 돌파 후 실패
    ===================================================== */
 
 .failed-breakout-row {
@@ -3439,17 +3525,17 @@ td:nth-child(5) {
 # =========================================================
 # 테이블 행 생성
 #
-# ★ 변경:
-# 경고 조건에 해당하는 코인만 표시
+# 실제 화면 순위는 경고 종목 기준으로 1부터 다시 표시
 # =========================================================
 
 def make_table_rows(data):
 
     rows_html = ""
 
-    visible_count = 0
-
-    for item in data:
+    for display_rank, item in enumerate(
+        data,
+        start=1
+    ):
 
         ema = item.get(
             "ema",
@@ -3471,60 +3557,40 @@ def make_table_rows(data):
             "none"
         )
 
-        # =================================================
-        # 경고가 없는 코인은 표시하지 않음
-        # =================================================
+        row_class = ""
 
-        if not is_visible_breakout_warning(
+        if is_visible_breakout_warning(
             warning_4h,
             change_percent
         ):
 
-            continue
+            try:
 
-        visible_count += 1
+                count = int(
+                    warning_4h.split("_")[-1]
+                )
 
-        row_class = ""
+            except Exception:
 
-        try:
+                count = 999
 
-            count = int(
-                warning_4h.split("_")[-1]
-            )
+            if count == 0:
 
-        except Exception:
+                row_class = "pre-breakout-row"
 
-            count = 999
+            elif count > 0:
 
-        # =================================================
-        # 🚨 돌파 직전
-        # =================================================
+                row_class = "breakout-row"
 
-        if count == 0:
+            elif count in (-1, -2):
 
-            row_class = "pre-breakout-row"
-
-        # =================================================
-        # 🚀 확정 돌파
-        # =================================================
-
-        elif count > 0:
-
-            row_class = "breakout-row"
-
-        # =================================================
-        # ⛔️ 돌파 후 실패
-        # =================================================
-
-        elif count in (-1, -2):
-
-            row_class = "failed-breakout-row"
+                row_class = "failed-breakout-row"
 
         rows_html += f"""
 <tr class="{row_class}">
 
 <td>
-{item['rank']}
+{display_rank}
 </td>
 
 <td>
@@ -3592,23 +3658,6 @@ def make_table_rows(data):
 </tr>
 """
 
-    # =====================================================
-    # 경고 종목이 하나도 없을 때
-    # =====================================================
-
-    if visible_count == 0:
-
-        return """
-<tr>
-<td colspan="5" style="
-    color:#555;
-    padding:12px 4px;
-">
-현재 경고 종목 없음
-</td>
-</tr>
-"""
-
     return rows_html
 
 
@@ -3633,7 +3682,7 @@ def make_exchange_section(
     color:#555;
     padding:12px 4px;
 ">
-조회된 종목 없음
+현재 경고 종목 없음
 </td>
 </tr>
 """
@@ -3642,7 +3691,7 @@ def make_exchange_section(
 <div class="section">
 
 <h2>
-{title} 경고
+{title} TOP{TOP_N} 경고
 </h2>
 
 <div class="table-wrap">
@@ -3673,6 +3722,8 @@ def make_exchange_section(
 
 <div class="note">
 
+※ 화면에는 TOP{TOP_N} 거래대금 종목 중 경고 조건에 해당하는 종목만 표시<br>
+
 ※ EMA는 4H 확정 캔들 기준<br>
 
 ※ 60개 이상 캔들 = 10-30-60 정렬 기준<br>
@@ -3689,7 +3740,7 @@ def make_exchange_section(
 
 ※ 🚀(1), 🚀(2) = 확정 돌파<br>
 
-※ ⛔️ = 돌파 후 1~2개 4H 캔들 동안 다음 고점/저점 갱신 실패<br>
+※ 〽️(-1), 〽️(-2) = 돌파 후 1~2개 4H 캔들 동안 다음 고점/저점 갱신 실패<br>
 
 ※ -3부터는 돌파 경고에서 제외<br>
 
@@ -3788,7 +3839,7 @@ def dashboard():
 </div>
 
 <div>
-TOP{TOP_N} 중 경고 종목만 표시 · 4H EMA
+TOP{TOP_N} · 경고 종목만 표시 · 4H EMA
 </div>
 
 <div class="exchange-status">
