@@ -53,7 +53,7 @@ BREAKOUT_LOOKBACK = 5
 # 거래소 조회 Y / N
 # =========================================================
 
-USE_UPBIT = "N"
+USE_UPBIT = "Y"
 
 USE_OKX = "Y"
 
