@@ -40,7 +40,7 @@ logging.basicConfig(
 
 VOLUME_HOURS = 24
 
-TOP_N = 20
+TOP_N = 10
 
 UPDATE_MINUTES = 1
 
@@ -951,7 +951,7 @@ def get_main_direction(
 
 
 # =========================================================
-# LONG 돌파
+# 돌파
 # =========================================================
 
 def is_long_breakout(
@@ -974,10 +974,6 @@ def is_long_breakout(
     )
 
 
-# =========================================================
-# SHORT 돌파
-# =========================================================
-
 def is_short_breakout(
     row,
     previous
@@ -999,13 +995,18 @@ def is_short_breakout(
 
 
 # =========================================================
-# 🚨 LONG 돌파 직전
+# 돌파 직전 경고
 #
-# 현재 캔들의 고가가 직전 5개 확정 캔들 고가를
-# 테스트했지만 종가는 아직 돌파하지 않은 경우
+# LONG:
+# 현재 EMA 정배열 + 현재 고가가 직전 고가를
+# 건드렸거나 넘어갔지만 종가는 아직 확정 돌파 아님
+#
+# SHORT:
+# 현재 EMA 역배열 + 현재 저가가 직전 저가를
+# 건드렸거나 내려갔지만 종가는 아직 확정 돌파 아님
 # =========================================================
 
-def is_long_prebreakout(
+def is_long_pre_breakout(
     row,
     previous
 ):
@@ -1018,23 +1019,43 @@ def is_long_prebreakout(
         errors="coerce"
     ).max()
 
-    if pd.isna(previous_high):
+    current_high = pd.to_numeric(
+        pd.Series([row["h"]]),
+        errors="coerce"
+    ).iloc[0]
+
+    current_close = pd.to_numeric(
+        pd.Series([row["c"]]),
+        errors="coerce"
+    ).iloc[0]
+
+    current_open = pd.to_numeric(
+        pd.Series([row["o"]]),
+        errors="coerce"
+    ).iloc[0]
+
+    if any(
+        pd.isna(x)
+        for x in [
+            previous_high,
+            current_high,
+            current_close,
+            current_open
+        ]
+    ):
+
         return False
 
     return (
-        row["h"] >= previous_high
+        current_high >= previous_high
         and
-        row["c"] <= previous_high
+        current_close <= previous_high
         and
-        row["c"] > row["o"]
+        current_close >= current_open
     )
 
 
-# =========================================================
-# 🚨 SHORT 돌파 직전
-# =========================================================
-
-def is_short_prebreakout(
+def is_short_pre_breakout(
     row,
     previous
 ):
@@ -1047,20 +1068,44 @@ def is_short_prebreakout(
         errors="coerce"
     ).min()
 
-    if pd.isna(previous_low):
+    current_low = pd.to_numeric(
+        pd.Series([row["l"]]),
+        errors="coerce"
+    ).iloc[0]
+
+    current_close = pd.to_numeric(
+        pd.Series([row["c"]]),
+        errors="coerce"
+    ).iloc[0]
+
+    current_open = pd.to_numeric(
+        pd.Series([row["o"]]),
+        errors="coerce"
+    ).iloc[0]
+
+    if any(
+        pd.isna(x)
+        for x in [
+            previous_low,
+            current_low,
+            current_close,
+            current_open
+        ]
+    ):
+
         return False
 
     return (
-        row["l"] <= previous_low
+        current_low <= previous_low
         and
-        row["c"] >= previous_low
+        current_close >= previous_low
         and
-        row["c"] < row["o"]
+        current_close <= current_open
     )
 
 
 # =========================================================
-# 확정 돌파 + 돌파 직전 + -1/-2
+# 확정 돌파
 # =========================================================
 
 def check_breakout(
@@ -1109,11 +1154,6 @@ def check_breakout(
         current_index
     ]
 
-    previous = df.iloc[
-        current_index - BREAKOUT_LOOKBACK:
-        current_index
-    ]
-
     long_ema = (
         cur["ema10"]
         >
@@ -1134,8 +1174,13 @@ def check_breakout(
         cur["ema120"]
     )
 
+    previous = df.iloc[
+        current_index - BREAKOUT_LOOKBACK:
+        current_index
+    ]
+
     # =====================================================
-    # 현재 확정 돌파
+    # 현재 확정 LONG 돌파
     # =====================================================
 
     if long_ema:
@@ -1196,6 +1241,9 @@ def check_breakout(
                     f"long_breakout_{count}"
                 )
 
+    # =====================================================
+    # 현재 확정 SHORT 돌파
+    # =====================================================
 
     if short_ema:
 
@@ -1255,9 +1303,34 @@ def check_breakout(
                     f"short_breakout_{count}"
                 )
 
+    # =====================================================
+    # 돌파 직전 🚨
+    #
+    # 현재 캔들의 고가/저가가
+    # 직전 5개 캔들의 고가/저가에 닿았지만
+    # 종가 기준 확정 돌파가 아닌 경우
+    # =====================================================
+
+    if long_ema:
+
+        if is_long_pre_breakout(
+            cur,
+            previous
+        ):
+
+            return "long_breakout_0"
+
+    if short_ema:
+
+        if is_short_pre_breakout(
+            cur,
+            previous
+        ):
+
+            return "short_breakout_0"
 
     # =====================================================
-    # 돌파 후 -1 / -2
+    # 1~2개 캔들 전 돌파 후 고점/저점 갱신 실패
     # =====================================================
 
     for age in [1, 2]:
@@ -1299,7 +1372,7 @@ def check_breakout(
         )
 
         # -------------------------------------------------
-        # LONG -1 / -2
+        # LONG
         # -------------------------------------------------
 
         if (
@@ -1334,7 +1407,7 @@ def check_breakout(
                     )
 
         # -------------------------------------------------
-        # SHORT -1 / -2
+        # SHORT
         # -------------------------------------------------
 
         if (
@@ -1367,33 +1440,6 @@ def check_breakout(
                     return (
                         f"short_breakout_-{age}"
                     )
-
-
-    # =====================================================
-    # 🚨 돌파 직전
-    #
-    # 확정 돌파가 아니면 마지막에 검사
-    # =====================================================
-
-    if long_ema:
-
-        if is_long_prebreakout(
-            cur,
-            previous
-        ):
-
-            return "long_prebreakout"
-
-
-    if short_ema:
-
-        if is_short_prebreakout(
-            cur,
-            previous
-        ):
-
-            return "short_prebreakout"
-
 
     return "none"
 
@@ -1467,6 +1513,9 @@ def get_trade_signal(
                 breakout_1h.split("_")[-1]
             )
 
+            # 0은 돌파 직전 경고이므로
+            # 실제 LONG 신호는 발생시키지 않음
+
             if count > 0:
 
                 signal = "LONG"
@@ -1488,6 +1537,9 @@ def get_trade_signal(
             count = int(
                 breakout_1h.split("_")[-1]
             )
+
+            # 0은 돌파 직전 경고이므로
+            # 실제 SHORT 신호는 발생시키지 않음
 
             if count > 0:
 
@@ -1525,9 +1577,7 @@ def empty_ema():
 # OKX EMA
 # =========================================================
 
-def get_okx_ema(
-    inst_id
-):
+def get_okx_ema(inst_id):
 
     df1h = get_okx_ohlcv(
         inst_id,
@@ -1592,9 +1642,7 @@ def get_okx_ema(
 # 업비트 EMA
 # =========================================================
 
-def get_upbit_ema(
-    market
-):
+def get_upbit_ema(market):
 
     raw1h = get_upbit_ohlcv(
         market,
@@ -1619,6 +1667,10 @@ def get_upbit_ema(
     df1h = raw1h.copy()
 
     df4h = raw4h.copy()
+
+    # -----------------------------------------------------
+    # 현재 진행 중인 캔들 제외
+    # -----------------------------------------------------
 
     if len(df1h) > 1:
 
@@ -1728,9 +1780,7 @@ def get_okx_volume(
                 .sum()
             )
 
-            volume_usdt = (
-                volume_usdt / 10
-            )
+            volume_usdt = volume_usdt / 10
 
             if volume_usdt <= 0:
 
@@ -1822,9 +1872,7 @@ def get_all_okx_swap_symbols():
 # OKX 변동률
 # =========================================================
 
-def get_okx_change(
-    inst_id
-):
+def get_okx_change(inst_id):
 
     df = get_okx_ohlcv(
         inst_id,
@@ -1908,9 +1956,7 @@ def get_okx_change(
 # 업비트 변동률
 # =========================================================
 
-def get_upbit_change(
-    market
-):
+def get_upbit_change(market):
 
     df = get_upbit_ohlcv(
         market,
@@ -1984,9 +2030,7 @@ def get_upbit_change(
 # 변동률 HTML
 # =========================================================
 
-def format_change(
-    changes
-):
+def format_change(changes):
 
     if (
         changes is None
@@ -2105,7 +2149,7 @@ def direction_html(
 
 
 # =========================================================
-# 경고 HTML
+# 돌파 HTML
 # =========================================================
 
 def warning_html(
@@ -2113,35 +2157,30 @@ def warning_html(
     change_percent
 ):
 
-    if warning_1h == "long_prebreakout":
-
-        return (
-            '<span class="warning-icon prebreak-long">'
-            '🚨'
-            '</span>'
-        )
-
-    if warning_1h == "short_prebreakout":
-
-        return (
-            '<span class="warning-icon prebreak-short">'
-            '🚨'
-            '</span>'
-        )
-
-    if (
-        not warning_1h.startswith(
-            "long_breakout_"
-        )
-        and
-        not warning_1h.startswith(
-            "short_breakout_"
-        )
-    ):
+    if not warning_1h:
 
         return (
             '<span class="warning-empty">—</span>'
         )
+
+    # =====================================================
+    # 돌파 직전 🚨
+    # =====================================================
+
+    if warning_1h in (
+        "long_breakout_0",
+        "short_breakout_0"
+    ):
+
+        return (
+            '<span class="warning-icon pre-breakout">'
+            '🚨'
+            '</span>'
+        )
+
+    # =====================================================
+    # LONG
+    # =====================================================
 
     if warning_1h.startswith(
         "long_breakout_"
@@ -2156,6 +2195,10 @@ def warning_html(
             return (
                 '<span class="warning-empty">—</span>'
             )
+
+    # =====================================================
+    # SHORT
+    # =====================================================
 
     if warning_1h.startswith(
         "short_breakout_"
@@ -2186,14 +2229,8 @@ def warning_html(
     if count == 0:
 
         return (
-            '<span class="warning-empty">—</span>'
-        )
-
-    if count < 0:
-
-        return (
-            '<span class="warning-icon rocket">'
-            f'🚀({count})'
+            '<span class="warning-icon pre-breakout">'
+            '🚨'
             '</span>'
         )
 
@@ -2208,9 +2245,7 @@ def warning_html(
 # EMA HTML
 # =========================================================
 
-def ema_html(
-    ema
-):
+def ema_html(ema):
 
     ema_1h = ema.get(
         "1h_10_30_60_120",
@@ -2255,64 +2290,6 @@ def ema_html(
 
     </div>
     """
-
-
-# =========================================================
-# 경고 종류
-# =========================================================
-
-def get_warning_type(
-    warning
-):
-
-    if warning in (
-        "long_prebreakout",
-        "short_prebreakout"
-    ):
-
-        return "prebreak"
-
-    if warning.startswith(
-        "long_breakout_"
-    ):
-
-        try:
-
-            count = int(
-                warning.split("_")[-1]
-            )
-
-            if count > 0:
-                return "breakout"
-
-            if count < 0:
-                return "failed"
-
-        except Exception:
-
-            pass
-
-    if warning.startswith(
-        "short_breakout_"
-    ):
-
-        try:
-
-            count = int(
-                warning.split("_")[-1]
-            )
-
-            if count > 0:
-                return "breakout"
-
-            if count < 0:
-                return "failed"
-
-        except Exception:
-
-            pass
-
-    return "none"
 
 
 # =========================================================
@@ -2408,6 +2385,10 @@ def update_upbit():
                 f"{market} : {e}"
             )
 
+    # =====================================================
+    # TOP20 전체 저장
+    # =====================================================
+
     latest_upbit_data = rows
 
     logging.info(
@@ -2421,9 +2402,7 @@ def update_upbit():
 # OKX 업데이트
 # =========================================================
 
-def update_okx(
-    usdt_krw
-):
+def update_okx(usdt_krw):
 
     global latest_okx_data
 
@@ -2567,6 +2546,10 @@ def update_okx(
                 f"{symbol} : {e}"
             )
 
+    # =====================================================
+    # TOP20 전체 저장
+    # =====================================================
+
     latest_okx_data = rows
 
     return True
@@ -2590,10 +2573,7 @@ def update_dashboard():
         "전체 조회 시작"
     )
 
-    if USE_UPBIT not in (
-        "Y",
-        "N"
-    ):
+    if USE_UPBIT not in ("Y", "N"):
 
         logging.error(
             f"USE_UPBIT 설정 오류 : {USE_UPBIT}"
@@ -2601,10 +2581,7 @@ def update_dashboard():
 
         return
 
-    if USE_OKX not in (
-        "Y",
-        "N"
-    ):
+    if USE_OKX not in ("Y", "N"):
 
         logging.error(
             f"USE_OKX 설정 오류 : {USE_OKX}"
@@ -2799,147 +2776,77 @@ tbody tr:last-child td {
 }
 
 
-/* =======================================================
+/* =====================================================
    경고 행 전체 반짝임
-   ======================================================= */
+   ===================================================== */
 
 .warning-row {
-    animation:
-        warningFlash 1.1s infinite;
+    animation: warningFlash 1.1s ease-in-out infinite;
 }
-
-.prebreak-row {
-    animation:
-        prebreakFlash 1.0s infinite;
-}
-
-.breakout-row {
-    animation:
-        breakoutFlash 1.0s infinite;
-}
-
-.failed-row {
-    animation:
-        failedFlash 1.3s infinite;
-}
-
-
-/* =======================================================
-   LONG / SHORT 행
-   ======================================================= */
-
-.long-row td {
-    background: rgba(30, 180, 80, 0.10);
-}
-
-.short-row td {
-    background: rgba(220, 50, 50, 0.10);
-}
-
-
-/* =======================================================
-   🚨 돌파 직전
-   ======================================================= */
-
-.prebreak-long td {
-    box-shadow:
-        inset 0 0 12px rgba(255, 190, 0, 0.35);
-}
-
-.prebreak-short td {
-    box-shadow:
-        inset 0 0 12px rgba(255, 80, 80, 0.35);
-}
-
-
-/* =======================================================
-   🚀 확정 돌파
-   ======================================================= */
-
-.breakout-row td {
-    box-shadow:
-        inset 0 0 12px rgba(255, 255, 255, 0.18);
-}
-
-
-/* =======================================================
-   🚀 -1 / -2
-   ======================================================= */
-
-.failed-row td {
-    box-shadow:
-        inset 0 0 10px rgba(255, 150, 0, 0.22);
-}
-
-
-/* =======================================================
-   애니메이션
-   ======================================================= */
 
 @keyframes warningFlash {
 
     0% {
-        filter: brightness(1);
+        background: #181c21;
     }
 
     50% {
-        filter: brightness(1.55);
+        background: #2b2520;
     }
 
     100% {
-        filter: brightness(1);
+        background: #181c21;
     }
 }
 
-@keyframes prebreakFlash {
+
+/* =====================================================
+   🚨 돌파 직전 행
+   ===================================================== */
+
+.pre-breakout-row {
+    animation: preBreakoutFlash 0.75s ease-in-out infinite;
+}
+
+@keyframes preBreakoutFlash {
 
     0% {
-        filter: brightness(1);
+        background: #181c21;
     }
 
     50% {
-        filter: brightness(1.7);
+        background: #49341d;
     }
 
     100% {
-        filter: brightness(1);
+        background: #181c21;
     }
+}
+
+
+/* =====================================================
+   🚀 확정 돌파 행
+   ===================================================== */
+
+.breakout-row {
+    animation: breakoutFlash 0.9s ease-in-out infinite;
 }
 
 @keyframes breakoutFlash {
 
     0% {
-        filter: brightness(1);
+        background: #181c21;
     }
 
     50% {
-        filter: brightness(1.65);
+        background: #203b29;
     }
 
     100% {
-        filter: brightness(1);
+        background: #181c21;
     }
 }
 
-@keyframes failedFlash {
-
-    0% {
-        filter: brightness(1);
-    }
-
-    50% {
-        filter: brightness(1.45);
-    }
-
-    100% {
-        filter: brightness(1);
-    }
-}
-
-
-/* =======================================================
-   기본 컬럼
-   ======================================================= */
 
 th:nth-child(1),
 td:nth-child(1) {
@@ -2966,7 +2873,6 @@ td:nth-child(5) {
     width: 30%;
 }
 
-
 .coin-wrap {
     display: flex;
     flex-direction: column;
@@ -2992,18 +2898,6 @@ td:nth-child(5) {
     width: 100%;
     font-size: 9px;
     text-align: center;
-}
-
-.direction-long {
-    filter: drop-shadow(
-        0 0 4px rgba(255, 220, 0, 0.7)
-    );
-}
-
-.direction-short {
-    filter: drop-shadow(
-        0 0 4px rgba(100, 150, 255, 0.7)
-    );
 }
 
 .volume-wrap {
@@ -3084,24 +2978,16 @@ td:nth-child(5) {
 .warning-icon {
     font-size: 9px;
     white-space: nowrap;
-    font-weight: bold;
-}
-
-.prebreak-long {
-    filter: drop-shadow(
-        0 0 5px rgba(255, 190, 0, 0.9)
-    );
-}
-
-.prebreak-short {
-    filter: drop-shadow(
-        0 0 5px rgba(255, 60, 60, 0.9)
-    );
 }
 
 .rocket {
+    font-size: 9px;
+}
+
+.pre-breakout {
+    font-size: 11px;
     filter: drop-shadow(
-        0 0 4px rgba(255, 255, 255, 0.7)
+        0 0 5px rgba(255, 180, 0, 0.8)
     );
 }
 
@@ -3145,11 +3031,6 @@ td:nth-child(5) {
     line-height: 1.5;
     margin: 5px 2px 8px 2px;
 }
-
-
-/* =======================================================
-   모바일
-   ======================================================= */
 
 @media (max-width: 480px) {
 
@@ -3214,9 +3095,12 @@ td:nth-child(5) {
         font-size: 6px;
     }
 
-    .rocket,
-    .warning-icon {
-        font-size: 8px;
+    .rocket {
+        font-size: 7px;
+    }
+
+    .pre-breakout {
+        font-size: 10px;
     }
 
     .direction-long,
@@ -3235,13 +3119,16 @@ td:nth-child(5) {
 # =========================================================
 # 테이블 행 생성
 #
-# 정상 종목은 표시하지 않음
-# 경고 종목만 표시
+# 기존:
+# 돌파 조건에 맞지 않으면 continue
+#
+# 변경:
+# TOP20 전체를 표시
+#
+# 단, 경고가 있는 행에는 전체 행 애니메이션 적용
 # =========================================================
 
-def make_table_rows(
-    data
-):
+def make_table_rows(data):
 
     rows_html = ""
 
@@ -3267,20 +3154,14 @@ def make_table_rows(
             "none"
         )
 
-        warning_type = get_warning_type(
-            warning_1h
-        )
+        # =================================================
+        # 행 클래스
+        # =================================================
+
+        row_class = ""
 
         # -------------------------------------------------
-        # 정상 종목은 표시하지 않음
-        # -------------------------------------------------
-
-        if warning_type == "none":
-
-            continue
-
-        # -------------------------------------------------
-        # 돌파 0은 표시하지 않음
+        # 🚨 돌파 직전
         # -------------------------------------------------
 
         if warning_1h in (
@@ -3288,168 +3169,38 @@ def make_table_rows(
             "short_breakout_0"
         ):
 
-            continue
+            row_class = "pre-breakout-row"
 
         # -------------------------------------------------
-        # 현재 확정 돌파
+        # 🚀 돌파 및 -1/-2
         # -------------------------------------------------
-
-        valid_breakout = (
-
-            (
-                direction == "long"
-                and
-                change_percent is not None
-                and
-                change_percent > 0
-                and
-                warning_1h.startswith(
-                    "long_breakout_"
-                )
-                and
-                not warning_1h.startswith(
-                    "long_breakout_-"
-                )
-            )
-
-            or
-
-            (
-                direction == "short"
-                and
-                change_percent is not None
-                and
-                change_percent < 0
-                and
-                warning_1h.startswith(
-                    "short_breakout_"
-                )
-                and
-                not warning_1h.startswith(
-                    "short_breakout_-"
-                )
-            )
-        )
-
-        # -------------------------------------------------
-        # 돌파 후 -1 / -2
-        # -------------------------------------------------
-
-        valid_failed = False
-
-        if warning_1h.startswith(
-            "long_breakout_-"
-        ):
-
-            valid_failed = (
-                direction == "long"
-                and
-                change_percent is not None
-                and
-                change_percent > 0
-            )
-
-        elif warning_1h.startswith(
-            "short_breakout_-"
-        ):
-
-            valid_failed = (
-                direction == "short"
-                and
-                change_percent is not None
-                and
-                change_percent < 0
-            )
-
-        # -------------------------------------------------
-        # 🚨 돌파 직전
-        # -------------------------------------------------
-
-        valid_prebreakout = (
-            warning_1h in (
-                "long_prebreakout",
-                "short_prebreakout"
-            )
-        )
-
-        # -------------------------------------------------
-        # 최종 표시 여부
-        # -------------------------------------------------
-
-        if not (
-            valid_breakout
-            or
-            valid_failed
-            or
-            valid_prebreakout
-        ):
-
-            continue
-
-        # -------------------------------------------------
-        # 행 클래스
-        # -------------------------------------------------
-
-        row_classes = [
-            "warning-row"
-        ]
-
-        if (
-            direction == "long"
-        ):
-
-            row_classes.append(
-                "long-row"
-            )
 
         elif (
-            direction == "short"
+            warning_1h.startswith(
+                "long_breakout_"
+            )
+            or
+            warning_1h.startswith(
+                "short_breakout_"
+            )
         ):
 
-            row_classes.append(
-                "short-row"
-            )
+            try:
 
-        if valid_prebreakout:
-
-            row_classes.append(
-                "prebreak-row"
-            )
-
-            if warning_1h == "long_prebreakout":
-
-                row_classes.append(
-                    "prebreak-long"
+                count = int(
+                    warning_1h.split("_")[-1]
                 )
 
-            else:
+                if count != 0:
 
-                row_classes.append(
-                    "prebreak-short"
-                )
+                    row_class = "breakout-row"
 
-        elif valid_breakout:
+            except Exception:
 
-            row_classes.append(
-                "breakout-row"
-            )
-
-        elif valid_failed:
-
-            row_classes.append(
-                "failed-row"
-            )
-
-        row_class_string = " ".join(
-            row_classes
-        )
-
-        # -------------------------------------------------
-        # 행
-        # -------------------------------------------------
+                pass
 
         rows_html += f"""
-<tr class="{row_class_string}">
+<tr class="{row_class}">
 
 <td>
 {item['rank']}
@@ -3513,9 +3264,7 @@ def make_table_rows(
 
 <td>
 
-{ema_html(
-    ema
-)}
+{ema_html(ema)}
 
 </td>
 
@@ -3546,7 +3295,7 @@ def make_exchange_section(
     color:#555;
     padding:12px 4px;
 ">
-현재 경고 종목 없음
+조회된 종목 없음
 </td>
 </tr>
 """
@@ -3555,7 +3304,7 @@ def make_exchange_section(
 <div class="section">
 
 <h2>
-{title} 경고
+{title} TOP{TOP_N}
 </h2>
 
 <div class="table-wrap">
@@ -3565,17 +3314,11 @@ def make_exchange_section(
 <thead>
 
 <tr>
-
 <th>#</th>
-
 <th>코인</th>
-
 <th>거래대금</th>
-
 <th>오늘</th>
-
 <th>EMA</th>
-
 </tr>
 
 </thead>
@@ -3592,16 +3335,19 @@ def make_exchange_section(
 
 <div class="note">
 
-※ 🚨 = EMA 정렬 상태에서 직전 {BREAKOUT_LOOKBACK}개 확정 캔들
-고가/저가를 테스트했지만 아직 종가 확정 돌파 전<br>
+※ 🟢(N) = EMA10 &gt; EMA30 &gt; EMA60 &gt; EMA120 정배열 유지 캔들 수<br>
+
+※ 🔴(N) = EMA10 &lt; EMA30 &lt; EMA60 &lt; EMA120 역배열 유지 캔들 수<br>
+
+※ 🚨 = 직전 {BREAKOUT_LOOKBACK}개 캔들의 고가/저가를 장중 테스트했으나 종가 기준 확정 돌파 전<br>
 
 ※ 🚀(1), 🚀(2) = 확정 돌파<br>
 
 ※ 🚀(-1), 🚀(-2) = 돌파 후 다음 고점/저점 갱신 실패<br>
 
-※ 돌파 0은 표시하지 않음<br>
+※ 🚨 / 🚀 경고가 있는 행은 전체 행이 반짝임<br>
 
-※ 정상 종목은 표시하지 않음
+※ TOP{TOP_N} 전체 종목 표시
 
 </div>
 
@@ -3631,29 +3377,26 @@ def dashboard():
         else "status-n"
     )
 
-    # -----------------------------------------------------
-    # 조회 Y인 거래소만 표시
-    # 단, 데이터는 경고 종목만 표시
-    # -----------------------------------------------------
+    # =====================================================
+    # 거래소 섹션
+    #
+    # 조회 N이면 섹션 자체를 표시하지 않음
+    # =====================================================
 
     exchange_sections = ""
 
     if USE_UPBIT == "Y":
 
-        exchange_sections += (
-            make_exchange_section(
-                "🏆 업비트",
-                latest_upbit_data
-            )
+        exchange_sections += make_exchange_section(
+            "🏆 업비트",
+            latest_upbit_data
         )
 
     if USE_OKX == "Y":
 
-        exchange_sections += (
-            make_exchange_section(
-                "🏆 OKX",
-                latest_okx_data
-            )
+        exchange_sections += make_exchange_section(
+            "🏆 OKX",
+            latest_okx_data
         )
 
     html = f"""<!DOCTYPE html>
@@ -3672,7 +3415,7 @@ def dashboard():
                maximum-scale=1.0,
                user-scalable=no">
 
-<title>돌파 경고</title>
+<title>돌파 TOP</title>
 
 <style>
 
@@ -3685,14 +3428,14 @@ def dashboard():
 <body>
 
 <h1>
-🚨 돌파 경고
+📊 돌파 TOP
 </h1>
 
 <div class="info">
 
 <div>
 1H 추세 + 1H 확정 돌파 |
-직전 {BREAKOUT_LOOKBACK}개 확정 캔들 고가/저가 기준
+직전 {BREAKOUT_LOOKBACK}개 확정 캔들 고가/저가 돌파
 </div>
 
 <div>
@@ -3705,6 +3448,8 @@ OKX 거래대금 = 1H 확정 캔들 {VOLUME_HOURS}개 × USDT-KRW
 TOP{TOP_N}
 &nbsp;|&nbsp;
 EMA 10-30-60-120 정렬 카운팅
+&nbsp;|&nbsp;
+TOP20 전체 표시
 </div>
 
 <div class="exchange-status">
@@ -3750,36 +3495,30 @@ def startup():
         f"OKX={USE_OKX}"
     )
 
-    if USE_UPBIT not in (
-        "Y",
-        "N"
-    ):
+    if USE_UPBIT not in ("Y", "N"):
 
         raise ValueError(
             "USE_UPBIT은 Y 또는 N만 사용할 수 있습니다."
         )
 
-    if USE_OKX not in (
-        "Y",
-        "N"
-    ):
+    if USE_OKX not in ("Y", "N"):
 
         raise ValueError(
             "USE_OKX는 Y 또는 N만 사용할 수 있습니다."
         )
 
-    # -----------------------------------------------------
+    # =====================================================
     # 최초 1회 즉시 실행
-    # -----------------------------------------------------
+    # =====================================================
 
     threading.Thread(
         target=update_dashboard,
         daemon=True
     ).start()
 
-    # -----------------------------------------------------
+    # =====================================================
     # 주기 실행
-    # -----------------------------------------------------
+    # =====================================================
 
     schedule.every(
         UPDATE_MINUTES
@@ -3803,4 +3542,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-        )9s
+    )
