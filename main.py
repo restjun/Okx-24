@@ -726,10 +726,29 @@ def get_ema_10_30_60_120_direction(
 
         return "none"
 
-    ema10 = get_ema(df, column, 10)
-    ema30 = get_ema(df, column, 30)
-    ema60 = get_ema(df, column, 60)
-    ema120 = get_ema(df, column, 120)
+    ema10 = get_ema(
+        df,
+        column,
+        10
+    )
+
+    ema30 = get_ema(
+        df,
+        column,
+        30
+    )
+
+    ema60 = get_ema(
+        df,
+        column,
+        60
+    )
+
+    ema120 = get_ema(
+        df,
+        column,
+        120
+    )
 
     if any(
         x is None
@@ -803,10 +822,29 @@ def get_ema_alignment_count(
             0
         )
 
-    ema10 = get_ema(df, column, 10)
-    ema30 = get_ema(df, column, 30)
-    ema60 = get_ema(df, column, 60)
-    ema120 = get_ema(df, column, 120)
+    ema10 = get_ema(
+        df,
+        column,
+        10
+    )
+
+    ema30 = get_ema(
+        df,
+        column,
+        30
+    )
+
+    ema60 = get_ema(
+        df,
+        column,
+        60
+    )
+
+    ema120 = get_ema(
+        df,
+        column,
+        120
+    )
 
     if any(
         x is None
@@ -824,6 +862,7 @@ def get_ema_alignment_count(
         )
 
     count = 0
+
     current_direction = None
 
     for index in range(
@@ -880,6 +919,7 @@ def get_ema_alignment_count(
                 break
 
             current_direction = direction
+
             count = 1
 
         else:
@@ -967,10 +1007,31 @@ def is_long_breakout(
         errors="coerce"
     ).max()
 
+    current_close = pd.to_numeric(
+        pd.Series([row["c"]]),
+        errors="coerce"
+    ).iloc[0]
+
+    current_open = pd.to_numeric(
+        pd.Series([row["o"]]),
+        errors="coerce"
+    ).iloc[0]
+
+    if any(
+        pd.isna(x)
+        for x in [
+            previous_high,
+            current_close,
+            current_open
+        ]
+    ):
+
+        return False
+
     return (
-        row["c"] > previous_high
+        current_close > previous_high
         and
-        row["c"] > row["o"]
+        current_close > current_open
     )
 
 
@@ -987,15 +1048,36 @@ def is_short_breakout(
         errors="coerce"
     ).min()
 
+    current_close = pd.to_numeric(
+        pd.Series([row["c"]]),
+        errors="coerce"
+    ).iloc[0]
+
+    current_open = pd.to_numeric(
+        pd.Series([row["o"]]),
+        errors="coerce"
+    ).iloc[0]
+
+    if any(
+        pd.isna(x)
+        for x in [
+            previous_low,
+            current_close,
+            current_open
+        ]
+    ):
+
+        return False
+
     return (
-        row["c"] < previous_low
+        current_close < previous_low
         and
-        row["c"] < row["o"]
+        current_close < current_open
     )
 
 
 # =========================================================
-# 돌파 직전 경고
+# 돌파 직전
 # =========================================================
 
 def is_long_pre_breakout(
@@ -1146,6 +1228,10 @@ def check_breakout(
         current_index
     ]
 
+    # =====================================================
+    # 현재 EMA 방향
+    # =====================================================
+
     long_ema = (
         cur["ema10"]
         >
@@ -1173,6 +1259,10 @@ def check_breakout(
 
     # =====================================================
     # 현재 확정 LONG 돌파
+    #
+    # 반드시 현재 EMA 정배열
+    # + 현재 종가가 직전 5개 고가 돌파
+    # + 양봉
     # =====================================================
 
     if long_ema:
@@ -1193,7 +1283,9 @@ def check_breakout(
                 if index < BREAKOUT_LOOKBACK:
                     break
 
-                row = df.iloc[index]
+                row = df.iloc[
+                    index
+                ]
 
                 prev = df.iloc[
                     index - BREAKOUT_LOOKBACK:
@@ -1235,6 +1327,10 @@ def check_breakout(
 
     # =====================================================
     # 현재 확정 SHORT 돌파
+    #
+    # 반드시 현재 EMA 역배열
+    # + 현재 종가가 직전 5개 저가 이탈
+    # + 음봉
     # =====================================================
 
     if short_ema:
@@ -1255,7 +1351,9 @@ def check_breakout(
                 if index < BREAKOUT_LOOKBACK:
                     break
 
-                row = df.iloc[index]
+                row = df.iloc[
+                    index
+                ]
 
                 prev = df.iloc[
                     index - BREAKOUT_LOOKBACK:
@@ -1296,7 +1394,9 @@ def check_breakout(
                 )
 
     # =====================================================
-    # 돌파 직전 🚨
+    # 🚨 돌파 직전
+    #
+    # 반드시 현재 EMA 방향과 일치해야 함
     # =====================================================
 
     if long_ema:
@@ -1318,10 +1418,11 @@ def check_breakout(
             return "short_breakout_0"
 
     # =====================================================
-    # 1~2개 캔들 전 돌파 후 고점/저점 갱신 실패
+    # 1~2개 캔들 전 돌파 후
+    # 고점/저점 갱신 실패
     #
-    # 🚀(-1), 🚀(-2)까지만 표시
-    # 🚀(-3)부터는 완전히 제외
+    # -1 / -2까지만 유효
+    # -3부터는 이 함수에서 절대 반환하지 않음
     # =====================================================
 
     for age in [1, 2]:
@@ -1362,9 +1463,9 @@ def check_breakout(
             breakout_row["ema120"]
         )
 
-        # -------------------------------------------------
+        # =================================================
         # LONG
-        # -------------------------------------------------
+        # =================================================
 
         if (
             breakout_long_ema
@@ -1391,15 +1492,19 @@ def check_breakout(
                     errors="coerce"
                 ).max()
 
-                if new_high <= breakout_high:
+                if (
+                    pd.notna(new_high)
+                    and
+                    new_high <= breakout_high
+                ):
 
                     return (
                         f"long_breakout_-{age}"
                     )
 
-        # -------------------------------------------------
+        # =================================================
         # SHORT
-        # -------------------------------------------------
+        # =================================================
 
         if (
             breakout_short_ema
@@ -1426,17 +1531,209 @@ def check_breakout(
                     errors="coerce"
                 ).min()
 
-                if new_low >= breakout_low:
+                if (
+                    pd.notna(new_low)
+                    and
+                    new_low >= breakout_low
+                ):
 
                     return (
                         f"short_breakout_-{age}"
                     )
 
     # =====================================================
-    # -3 이상은 무조건 none
+    # 그 외에는 무조건 경고 없음
     # =====================================================
 
     return "none"
+
+
+# =========================================================
+# 돌파 경고 유효성 검사
+#
+# 이 함수가 화면의 "경고 + 반짝임" 기준을 결정
+#
+# 유효:
+#   long_breakout_0
+#   short_breakout_0
+#   long_breakout_1
+#   long_breakout_2
+#   short_breakout_1
+#   short_breakout_2
+#   long_breakout_-1
+#   long_breakout_-2
+#   short_breakout_-1
+#   short_breakout_-2
+#
+# 제외:
+#   -3 이하
+#   잘못된 문자열
+#   none
+# =========================================================
+
+def parse_breakout_warning(
+    warning
+):
+
+    if not isinstance(
+        warning,
+        str
+    ):
+
+        return (
+            "none",
+            None
+        )
+
+    if warning == "none":
+
+        return (
+            "none",
+            None
+        )
+
+    if not warning.endswith(
+        tuple(
+            str(x)
+            for x in range(
+                -20,
+                21
+            )
+        )
+    ):
+
+        # 일반적인 문자열 검증은
+        # 아래 split 방식으로 다시 수행
+        pass
+
+    parts = warning.split("_")
+
+    if len(parts) != 3:
+
+        return (
+            "none",
+            None
+        )
+
+    if parts[0] not in (
+        "long",
+        "short"
+    ):
+
+        return (
+            "none",
+            None
+        )
+
+    if parts[1] != "breakout":
+
+        return (
+            "none",
+            None
+        )
+
+    try:
+
+        count = int(
+            parts[2]
+        )
+
+    except Exception:
+
+        return (
+            "none",
+            None
+        )
+
+    # =====================================================
+    # -3 이하 완전 제외
+    # =====================================================
+
+    if count <= -3:
+
+        return (
+            "none",
+            None
+        )
+
+    # =====================================================
+    # 정상 경고
+    # =====================================================
+
+    return (
+        parts[0],
+        count
+    )
+
+
+# =========================================================
+# 화면 표시 가능한 돌파 경고인지
+# =========================================================
+
+def is_valid_breakout_warning(
+    warning
+):
+
+    direction, count = (
+        parse_breakout_warning(
+            warning
+        )
+    )
+
+    if direction == "none":
+        return False
+
+    if count is None:
+        return False
+
+    return (
+        count >= -2
+    )
+
+
+# =========================================================
+# 실제 반짝임 가능한 돌파 경고인지
+#
+# 반짝임은 반드시 돌파 조건을 만족한 상태에서만
+# 발생하도록 별도 엄격 검사
+# =========================================================
+
+def is_flashing_breakout_warning(
+    warning
+):
+
+    direction, count = (
+        parse_breakout_warning(
+            warning
+        )
+    )
+
+    if direction == "none":
+        return False
+
+    if count is None:
+        return False
+
+    # 0 = 돌파 직전
+    if count == 0:
+        return True
+
+    # 1~2 = 확정 돌파
+    if count in (
+        1,
+        2
+    ):
+        return True
+
+    # -1~-2 = 돌파 후 실패
+    if count in (
+        -1,
+        -2
+    ):
+        return True
+
+    # 그 외에는 반짝임 금지
+    return False
 
 
 # =========================================================
@@ -1454,6 +1751,7 @@ def check_entry_warning(
         column
     )
 
+    # 현재 구조에서는 4H 돌파 경고를 사용하지 않음
     return (
         breakout_1h,
         "none"
@@ -1494,6 +1792,10 @@ def get_trade_signal(
 
     signal = ""
 
+    # =====================================================
+    # LONG
+    # =====================================================
+
     if (
         main_direction == "long"
         and
@@ -1508,6 +1810,9 @@ def get_trade_signal(
                 breakout_1h.split("_")[-1]
             )
 
+            # 0 = 돌파 직전
+            # 실제 매매 LONG 신호는 발생시키지 않음
+
             if count > 0:
 
                 signal = "LONG"
@@ -1515,6 +1820,10 @@ def get_trade_signal(
         except Exception:
 
             pass
+
+    # =====================================================
+    # SHORT
+    # =====================================================
 
     elif (
         main_direction == "short"
@@ -1529,6 +1838,9 @@ def get_trade_signal(
             count = int(
                 breakout_1h.split("_")[-1]
             )
+
+            # 0 = 돌파 직전
+            # 실제 매매 SHORT 신호는 발생시키지 않음
 
             if count > 0:
 
@@ -1566,7 +1878,9 @@ def empty_ema():
 # OKX EMA
 # =========================================================
 
-def get_okx_ema(inst_id):
+def get_okx_ema(
+    inst_id
+):
 
     df1h = get_okx_ohlcv(
         inst_id,
@@ -1631,7 +1945,9 @@ def get_okx_ema(inst_id):
 # 업비트 EMA
 # =========================================================
 
-def get_upbit_ema(market):
+def get_upbit_ema(
+    market
+):
 
     raw1h = get_upbit_ohlcv(
         market,
@@ -1657,9 +1973,9 @@ def get_upbit_ema(market):
 
     df4h = raw4h.copy()
 
-    # -----------------------------------------------------
+    # =====================================================
     # 현재 진행 중인 캔들 제외
-    # -----------------------------------------------------
+    # =====================================================
 
     if len(df1h) > 1:
 
@@ -1769,7 +2085,9 @@ def get_okx_volume(
                 .sum()
             )
 
-            volume_usdt = volume_usdt / 10
+            volume_usdt = (
+                volume_usdt / 10
+            )
 
             if volume_usdt <= 0:
 
@@ -1861,7 +2179,9 @@ def get_all_okx_swap_symbols():
 # OKX 변동률
 # =========================================================
 
-def get_okx_change(inst_id):
+def get_okx_change(
+    inst_id
+):
 
     df = get_okx_ohlcv(
         inst_id,
@@ -1945,7 +2265,9 @@ def get_okx_change(inst_id):
 # 업비트 변동률
 # =========================================================
 
-def get_upbit_change(market):
+def get_upbit_change(
+    market
+):
 
     df = get_upbit_ohlcv(
         market,
@@ -2019,7 +2341,9 @@ def get_upbit_change(market):
 # 변동률 HTML
 # =========================================================
 
-def format_change(changes):
+def format_change(
+    changes
+):
 
     if (
         changes is None
@@ -2033,16 +2357,19 @@ def format_change(changes):
     if x > 0:
 
         icon = "🟩"
+
         sign = "+"
 
     elif x < 0:
 
         icon = "🟥"
+
         sign = ""
 
     else:
 
         icon = "⬜"
+
         sign = ""
 
     return (
@@ -2139,6 +2466,17 @@ def direction_html(
 
 # =========================================================
 # 돌파 HTML
+#
+# 중요:
+# 변동률 방향과 관계없이
+# "돌파 경고 조건" 자체를 표시 기준으로 사용
+#
+# 즉,
+# LONG 돌파가 조건 충족되면 🚀
+# SHORT 돌파가 조건 충족되면 🚀
+#
+# 단순히 오늘 +0.5% / -0.5%라는 이유로
+# 경고를 제거하지 않음
 # =========================================================
 
 def warning_html(
@@ -2146,7 +2484,33 @@ def warning_html(
     change_percent
 ):
 
-    if not warning_1h:
+    direction, count = (
+        parse_breakout_warning(
+            warning_1h
+        )
+    )
+
+    # =====================================================
+    # 유효하지 않은 경고
+    # =====================================================
+
+    if direction == "none":
+
+        return (
+            '<span class="warning-empty">—</span>'
+        )
+
+    if count is None:
+
+        return (
+            '<span class="warning-empty">—</span>'
+        )
+
+    # =====================================================
+    # -3부터는 제외
+    # =====================================================
+
+    if count <= -3:
 
         return (
             '<span class="warning-empty">—</span>'
@@ -2154,69 +2518,6 @@ def warning_html(
 
     # =====================================================
     # 🚨 돌파 직전
-    # =====================================================
-
-    if warning_1h in (
-        "long_breakout_0",
-        "short_breakout_0"
-    ):
-
-        return (
-            '<span class="warning-icon pre-breakout">'
-            '🚨'
-            '</span>'
-        )
-
-    # =====================================================
-    # LONG
-    # =====================================================
-
-    if warning_1h.startswith(
-        "long_breakout_"
-    ):
-
-        if (
-            change_percent is None
-            or
-            change_percent <= 0
-        ):
-
-            return (
-                '<span class="warning-empty">—</span>'
-            )
-
-    # =====================================================
-    # SHORT
-    # =====================================================
-
-    if warning_1h.startswith(
-        "short_breakout_"
-    ):
-
-        if (
-            change_percent is None
-            or
-            change_percent >= 0
-        ):
-
-            return (
-                '<span class="warning-empty">—</span>'
-            )
-
-    try:
-
-        count = int(
-            warning_1h.split("_")[-1]
-        )
-
-    except Exception:
-
-        return (
-            '<span class="warning-empty">—</span>'
-        )
-
-    # =====================================================
-    # 🚨 0
     # =====================================================
 
     if count == 0:
@@ -2228,23 +2529,34 @@ def warning_html(
         )
 
     # =====================================================
-    # 🚀 -3 이하 제외
-    # =====================================================
-
-    if count <= -3:
-
-        return (
-            '<span class="warning-empty">—</span>'
-        )
-
-    # =====================================================
     # 🚀 확정 돌파
     # =====================================================
 
+    if count > 0:
+
+        return (
+            '<span class="warning-icon rocket">'
+            f'🚀({count})'
+            '</span>'
+        )
+
+    # =====================================================
+    # ⛔️ 돌파 후 실패
+    # =====================================================
+
+    if count in (
+        -1,
+        -2
+    ):
+
+        return (
+            '<span class="warning-icon failed-breakout">'
+            f'⛔️({count})'
+            '</span>'
+        )
+
     return (
-        '<span class="warning-icon rocket">'
-        f'🚀({count})'
-        '</span>'
+        '<span class="warning-empty">—</span>'
     )
 
 
@@ -2252,7 +2564,9 @@ def warning_html(
 # EMA HTML
 # =========================================================
 
-def ema_html(ema):
+def ema_html(
+    ema
+):
 
     ema_1h = ema.get(
         "1h_10_30_60_120",
@@ -2405,7 +2719,9 @@ def update_upbit():
 # OKX 업데이트
 # =========================================================
 
-def update_okx(usdt_krw):
+def update_okx(
+    usdt_krw
+):
 
     global latest_okx_data
 
@@ -2572,7 +2888,10 @@ def update_dashboard():
         "전체 조회 시작"
     )
 
-    if USE_UPBIT not in ("Y", "N"):
+    if USE_UPBIT not in (
+        "Y",
+        "N"
+    ):
 
         logging.error(
             f"USE_UPBIT 설정 오류 : {USE_UPBIT}"
@@ -2580,7 +2899,10 @@ def update_dashboard():
 
         return
 
-    if USE_OKX not in ("Y", "N"):
+    if USE_OKX not in (
+        "Y",
+        "N"
+    ):
 
         logging.error(
             f"USE_OKX 설정 오류 : {USE_OKX}"
@@ -2776,6 +3098,12 @@ tbody tr:last-child td {
 
 
 /* =====================================================
+   모든 경고 행의 반짝임은
+   실제 돌파 경고 상태가 있을 때만 적용
+   ===================================================== */
+
+
+/* =====================================================
    🚨 돌파 직전
    ===================================================== */
 
@@ -2800,14 +3128,14 @@ tbody tr:last-child td {
 
 
 /* =====================================================
-   🚀 LONG 돌파
+   🚀 확정 돌파
    ===================================================== */
 
-.long-breakout-row {
-    animation: longBreakoutFlash 0.9s ease-in-out infinite;
+.breakout-row {
+    animation: breakoutFlash 0.9s ease-in-out infinite;
 }
 
-@keyframes longBreakoutFlash {
+@keyframes breakoutFlash {
 
     0% {
         background: #181c21;
@@ -2824,21 +3152,21 @@ tbody tr:last-child td {
 
 
 /* =====================================================
-   🚀 SHORT 돌파
+   ⛔️ 돌파 후 실패
    ===================================================== */
 
-.short-breakout-row {
-    animation: shortBreakoutFlash 0.9s ease-in-out infinite;
+.failed-breakout-row {
+    animation: failedBreakoutFlash 0.9s ease-in-out infinite;
 }
 
-@keyframes shortBreakoutFlash {
+@keyframes failedBreakoutFlash {
 
     0% {
         background: #181c21;
     }
 
     50% {
-        background: #422328;
+        background: #392525;
     }
 
     100% {
@@ -2983,6 +3311,10 @@ td:nth-child(5) {
     font-size: 9px;
 }
 
+.failed-breakout {
+    font-size: 9px;
+}
+
 .pre-breakout {
     font-size: 11px;
     filter: drop-shadow(
@@ -3098,6 +3430,10 @@ td:nth-child(5) {
         font-size: 7px;
     }
 
+    .failed-breakout {
+        font-size: 7px;
+    }
+
     .pre-breakout {
         font-size: 10px;
     }
@@ -3117,9 +3453,15 @@ td:nth-child(5) {
 
 # =========================================================
 # 테이블 행 생성
+#
+# 중요:
+# row_class는 오늘 상승/하락이나 EMA 방향이 아니라
+# "실제 돌파 경고 상태"만 보고 결정
 # =========================================================
 
-def make_table_rows(data):
+def make_table_rows(
+    data
+):
 
     rows_html = ""
 
@@ -3146,79 +3488,104 @@ def make_table_rows(data):
         )
 
         # =================================================
-        # 행 클래스
+        # 경고 상태 분석
+        # =================================================
+
+        warning_direction, warning_count = (
+            parse_breakout_warning(
+                warning_1h
+            )
+        )
+
+        # =================================================
+        # 기본값
+        #
+        # 돌파 경고가 없으면
+        # 절대로 반짝이지 않음
         # =================================================
 
         row_class = ""
 
-        # -------------------------------------------------
+        # =================================================
         # 🚨 돌파 직전
-        # -------------------------------------------------
+        # =================================================
 
-        if warning_1h in (
-            "long_breakout_0",
-            "short_breakout_0"
+        if (
+            warning_direction in (
+                "long",
+                "short"
+            )
+            and
+            warning_count == 0
+            and
+            is_flashing_breakout_warning(
+                warning_1h
+            )
         ):
 
-            row_class = "pre-breakout-row"
+            row_class = (
+                "pre-breakout-row"
+            )
 
-        # -------------------------------------------------
-        # 🚀 LONG
+        # =================================================
+        # 🚀 확정 돌파
         #
-        # 1, 2, -1, -2까지만 반짝임
-        # -------------------------------------------------
+        # +1 / +2만 반짝임
+        # =================================================
 
-        elif warning_1h.startswith(
-            "long_breakout_"
+        elif (
+            warning_direction in (
+                "long",
+                "short"
+            )
+            and
+            warning_count in (
+                1,
+                2
+            )
+            and
+            is_flashing_breakout_warning(
+                warning_1h
+            )
         ):
 
-            try:
+            row_class = (
+                "breakout-row"
+            )
 
-                count = int(
-                    warning_1h.split("_")[-1]
-                )
-
-                if count in (
-                    1,
-                    2,
-                    -1,
-                    -2
-                ):
-
-                    row_class = "long-breakout-row"
-
-            except Exception:
-
-                pass
-
-        # -------------------------------------------------
-        # 🚀 SHORT
+        # =================================================
+        # ⛔️ 돌파 후 실패
         #
-        # 1, 2, -1, -2까지만 반짝임
-        # -------------------------------------------------
+        # -1 / -2만 반짝임
+        # =================================================
 
-        elif warning_1h.startswith(
-            "short_breakout_"
+        elif (
+            warning_direction in (
+                "long",
+                "short"
+            )
+            and
+            warning_count in (
+                -1,
+                -2
+            )
+            and
+            is_flashing_breakout_warning(
+                warning_1h
+            )
         ):
 
-            try:
+            row_class = (
+                "failed-breakout-row"
+            )
 
-                count = int(
-                    warning_1h.split("_")[-1]
-                )
+        # =================================================
+        # -3부터는 절대 반짝이지 않음
+        # =================================================
 
-                if count in (
-                    1,
-                    2,
-                    -1,
-                    -2
-                ):
+        else:
 
-                    row_class = "short-breakout-row"
-
-            except Exception:
-
-                pass
+            row_class = ""
 
         rows_html += f"""
 <tr class="{row_class}">
@@ -3364,13 +3731,13 @@ def make_exchange_section(
 
 ※ 🚀(1), 🚀(2) = 확정 돌파<br>
 
-※ 🚀(-1), 🚀(-2) = 돌파 후 다음 고점/저점 갱신 실패<br>
+※ ⛔️(-1), ⛔️(-2) = 돌파 후 다음 고점/저점 갱신 실패<br>
 
-※ 🚀(-3)부터는 돌파 경고에서 제외<br>
+※ -3부터는 돌파 경고에서 제외<br>
 
-※ LONG 돌파 행 = 녹색 반짝임 / SHORT 돌파 행 = 빨간색 반짝임<br>
+※ 반짝임은 실제 돌파 경고 조건이 충족된 경우에만 발생<br>
 
-※ 🚨 경고 행 = 주황색 반짝임<br>
+※ EMA 정배열/역배열 또는 오늘 상승/하락 자체만으로는 반짝이지 않음<br>
 
 ※ TOP{TOP_N} 전체 종목 표시
 
@@ -3404,22 +3771,28 @@ def dashboard():
 
     # =====================================================
     # 거래소 섹션
+    #
+    # 조회 N이면 섹션 자체를 표시하지 않음
     # =====================================================
 
     exchange_sections = ""
 
     if USE_UPBIT == "Y":
 
-        exchange_sections += make_exchange_section(
-            "🏆 업비트",
-            latest_upbit_data
+        exchange_sections += (
+            make_exchange_section(
+                "🏆 업비트",
+                latest_upbit_data
+            )
         )
 
     if USE_OKX == "Y":
 
-        exchange_sections += make_exchange_section(
-            "🏆 OKX",
-            latest_okx_data
+        exchange_sections += (
+            make_exchange_section(
+                "🏆 OKX",
+                latest_okx_data
+            )
         )
 
     html = f"""<!DOCTYPE html>
@@ -3430,7 +3803,8 @@ def dashboard():
 
 <meta charset="UTF-8">
 
-<meta http-equiv="refresh" content="60">
+<meta http-equiv="refresh"
+      content="60">
 
 <meta name="viewport"
       content="width=device-width,
@@ -3518,13 +3892,19 @@ def startup():
         f"OKX={USE_OKX}"
     )
 
-    if USE_UPBIT not in ("Y", "N"):
+    if USE_UPBIT not in (
+        "Y",
+        "N"
+    ):
 
         raise ValueError(
             "USE_UPBIT은 Y 또는 N만 사용할 수 있습니다."
         )
 
-    if USE_OKX not in ("Y", "N"):
+    if USE_OKX not in (
+        "Y",
+        "N"
+    ):
 
         raise ValueError(
             "USE_OKX는 Y 또는 N만 사용할 수 있습니다."
@@ -3565,4 +3945,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-                )
+        )
