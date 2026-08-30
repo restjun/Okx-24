@@ -226,9 +226,6 @@ def retry_request(
 
 # =========================================================
 # 업비트 USDT-KRW
-# ★ OKX 거래대금 계산용
-# ★ OKX 조회 시에만 사용
-# ★ 전체 OKX 업데이트에서 1회만 조회
 # =========================================================
 
 def get_usdt_krw():
@@ -729,29 +726,10 @@ def get_ema_10_30_60_120_direction(
 
         return "none"
 
-    ema10 = get_ema(
-        df,
-        column,
-        10
-    )
-
-    ema30 = get_ema(
-        df,
-        column,
-        30
-    )
-
-    ema60 = get_ema(
-        df,
-        column,
-        60
-    )
-
-    ema120 = get_ema(
-        df,
-        column,
-        120
-    )
+    ema10 = get_ema(df, column, 10)
+    ema30 = get_ema(df, column, 30)
+    ema60 = get_ema(df, column, 60)
+    ema120 = get_ema(df, column, 120)
 
     if any(
         x is None
@@ -780,25 +758,25 @@ def get_ema_10_30_60_120_direction(
         return "none"
 
     if (
-        ema10.iloc[-1]
+        values[0]
         >
-        ema30.iloc[-1]
+        values[1]
         >
-        ema60.iloc[-1]
+        values[2]
         >
-        ema120.iloc[-1]
+        values[3]
     ):
 
         return "long"
 
     if (
-        ema10.iloc[-1]
+        values[0]
         <
-        ema30.iloc[-1]
+        values[1]
         <
-        ema60.iloc[-1]
+        values[2]
         <
-        ema120.iloc[-1]
+        values[3]
     ):
 
         return "short"
@@ -825,29 +803,10 @@ def get_ema_alignment_count(
             0
         )
 
-    ema10 = get_ema(
-        df,
-        column,
-        10
-    )
-
-    ema30 = get_ema(
-        df,
-        column,
-        30
-    )
-
-    ema60 = get_ema(
-        df,
-        column,
-        60
-    )
-
-    ema120 = get_ema(
-        df,
-        column,
-        120
-    )
+    ema10 = get_ema(df, column, 10)
+    ema30 = get_ema(df, column, 30)
+    ema60 = get_ema(df, column, 60)
+    ema120 = get_ema(df, column, 120)
 
     if any(
         x is None
@@ -865,7 +824,6 @@ def get_ema_alignment_count(
         )
 
     count = 0
-
     current_direction = None
 
     for index in range(
@@ -993,7 +951,7 @@ def get_main_direction(
 
 
 # =========================================================
-# 돌파 상태 검사
+# 돌파
 # =========================================================
 
 def is_long_breakout(
@@ -1056,35 +1014,14 @@ def check_breakout(
 
     df = df1h.copy()
 
-    df["ema10"] = get_ema(
-        df,
-        column,
-        10
-    )
-
-    df["ema30"] = get_ema(
-        df,
-        column,
-        30
-    )
-
-    df["ema60"] = get_ema(
-        df,
-        column,
-        60
-    )
-
-    df["ema120"] = get_ema(
-        df,
-        column,
-        120
-    )
+    df["ema10"] = get_ema(df, column, 10)
+    df["ema30"] = get_ema(df, column, 30)
+    df["ema60"] = get_ema(df, column, 60)
+    df["ema120"] = get_ema(df, column, 120)
 
     current_index = len(df) - 1
 
-    cur = df.iloc[
-        current_index
-    ]
+    cur = df.iloc[current_index]
 
     long_ema = (
         cur["ema10"]
@@ -1111,16 +1048,9 @@ def check_breakout(
         current_index
     ]
 
-    # =====================================================
-    # 현재 LONG 돌파
-    # =====================================================
-
     if long_ema:
 
-        if is_long_breakout(
-            cur,
-            previous
-        ):
+        if is_long_breakout(cur, previous):
 
             count = 0
 
@@ -1160,30 +1090,17 @@ def check_breakout(
                 )
 
                 if state:
-
                     count += 1
-
                 else:
-
                     break
 
             if count > 0:
 
-                return (
-                    f"long_breakout_"
-                    f"{count}"
-                )
-
-    # =====================================================
-    # 현재 SHORT 돌파
-    # =====================================================
+                return f"long_breakout_{count}"
 
     if short_ema:
 
-        if is_short_breakout(
-            cur,
-            previous
-        ):
+        if is_short_breakout(cur, previous):
 
             count = 0
 
@@ -1223,23 +1140,13 @@ def check_breakout(
                 )
 
                 if state:
-
                     count += 1
-
                 else:
-
                     break
 
             if count > 0:
 
-                return (
-                    f"short_breakout_"
-                    f"{count}"
-                )
-
-    # =====================================================
-    # 돌파 후 실패
-    # =====================================================
+                return f"short_breakout_{count}"
 
     for age in [1, 2]:
 
@@ -1248,7 +1155,6 @@ def check_breakout(
         )
 
         if breakout_index < BREAKOUT_LOOKBACK:
-
             continue
 
         breakout_row = df.iloc[
@@ -1280,8 +1186,6 @@ def check_breakout(
             breakout_row["ema120"]
         )
 
-        # LONG
-
         if (
             breakout_long_ema
             and
@@ -1309,11 +1213,7 @@ def check_breakout(
 
                 if new_high <= breakout_high:
 
-                    return (
-                        f"long_breakout_-{age}"
-                    )
-
-        # SHORT
+                    return f"long_breakout_-{age}"
 
         if (
             breakout_short_ema
@@ -1342,9 +1242,7 @@ def check_breakout(
 
                 if new_low >= breakout_low:
 
-                    return (
-                        f"short_breakout_-{age}"
-                    )
+                    return f"short_breakout_-{age}"
 
     return "none"
 
@@ -1364,11 +1262,9 @@ def check_entry_warning(
         column
     )
 
-    breakout_4h = "none"
-
     return (
         breakout_1h,
-        breakout_4h
+        "none"
     )
 
 
@@ -1421,11 +1317,9 @@ def get_trade_signal(
             )
 
             if count > 0:
-
                 signal = "LONG"
 
         except Exception:
-
             pass
 
     elif (
@@ -1443,11 +1337,9 @@ def get_trade_signal(
             )
 
             if count > 0:
-
                 signal = "SHORT"
 
         except Exception:
-
             pass
 
     return (
@@ -1458,7 +1350,7 @@ def get_trade_signal(
 
 
 # =========================================================
-# 빈 EMA 데이터
+# 빈 EMA
 # =========================================================
 
 def empty_ema():
@@ -1478,9 +1370,7 @@ def empty_ema():
 # OKX EMA
 # =========================================================
 
-def get_okx_ema(
-    inst_id
-):
+def get_okx_ema(inst_id):
 
     df1h = get_okx_ohlcv(
         inst_id,
@@ -1517,33 +1407,21 @@ def get_okx_ema(
     )
 
     return {
-
         "1h_10_30_60_120":
             check_ema_10_30_60_120(
                 df1h,
                 "c"
             ),
-
         "4h_10_30_60_120":
             check_ema_10_30_60_120(
                 df4h,
                 "c"
             ),
-
-        "signal":
-            signal,
-
-        "warning":
-            warning_1h,
-
-        "warning_1h":
-            warning_1h,
-
-        "warning_4h":
-            "none",
-
-        "direction":
-            direction
+        "signal": signal,
+        "warning": warning_1h,
+        "warning_1h": warning_1h,
+        "warning_4h": warning_4h,
+        "direction": direction
     }
 
 
@@ -1551,9 +1429,7 @@ def get_okx_ema(
 # 업비트 EMA
 # =========================================================
 
-def get_upbit_ema(
-    market
-):
+def get_upbit_ema(market):
 
     raw1h = get_upbit_ohlcv(
         market,
@@ -1575,10 +1451,7 @@ def get_upbit_ema(
 
         return empty_ema()
 
-    # 현재 진행 중 캔들 제거
-
     df1h = raw1h.copy()
-
     df4h = raw4h.copy()
 
     if len(df1h) > 1:
@@ -1612,41 +1485,26 @@ def get_upbit_ema(
     )
 
     return {
-
         "1h_10_30_60_120":
             check_ema_10_30_60_120(
                 df1h,
                 "c"
             ),
-
         "4h_10_30_60_120":
             check_ema_10_30_60_120(
                 df4h,
                 "c"
             ),
-
-        "signal":
-            signal,
-
-        "warning":
-            warning_1h,
-
-        "warning_1h":
-            warning_1h,
-
-        "warning_4h":
-            "none",
-
-        "direction":
-            direction
+        "signal": signal,
+        "warning": warning_1h,
+        "warning_1h": warning_1h,
+        "warning_4h": warning_4h,
+        "direction": direction
     }
 
 
 # =========================================================
 # OKX 거래대금
-# ★ 24시간
-# ★ USDT-KRW 환산
-# ★ 직렬 요청
 # =========================================================
 
 def get_okx_volume(
@@ -1678,12 +1536,6 @@ def get_okx_volume(
                 df.empty
             ):
 
-                logging.warning(
-                    f"OKX 거래대금 실패 "
-                    f"{inst_id} "
-                    f"- 재시도"
-                )
-
                 time.sleep(
                     OKX_RETRY_DELAY
                 )
@@ -1691,13 +1543,6 @@ def get_okx_volume(
                 continue
 
             if len(df) < hours:
-
-                logging.warning(
-                    f"OKX 거래대금 캔들 부족 "
-                    f"{inst_id} "
-                    f"({len(df)}/{hours}) "
-                    f"- 재시도"
-                )
 
                 time.sleep(
                     OKX_RETRY_DELAY
@@ -1711,17 +1556,9 @@ def get_okx_volume(
                 .sum()
             )
 
-            volume_usdt = (
-                volume_usdt / 10
-            )
+            volume_usdt = volume_usdt / 10
 
             if volume_usdt <= 0:
-
-                logging.warning(
-                    f"OKX 거래대금 0 "
-                    f"{inst_id} "
-                    f"- 재시도"
-                )
 
                 time.sleep(
                     OKX_RETRY_DELAY
@@ -1796,11 +1633,6 @@ def get_all_okx_swap_symbols():
             )
         ]
 
-        logging.info(
-            f"OKX 전체 USDT-SWAP "
-            f"{len(symbols)}개 확인"
-        )
-
         return symbols
 
     except Exception as e:
@@ -1816,9 +1648,7 @@ def get_all_okx_swap_symbols():
 # OKX 변동률
 # =========================================================
 
-def get_okx_change(
-    inst_id
-):
+def get_okx_change(inst_id):
 
     df = get_okx_ohlcv(
         inst_id,
@@ -1864,16 +1694,11 @@ def get_okx_change(
     )
 
     if len(daily) < 5:
-
         return None
 
     result = []
 
-    for i in [
-        -1,
-        -2,
-        -3
-    ]:
+    for i in [-1, -2, -3]:
 
         if daily.iloc[i - 1] == 0:
 
@@ -1907,9 +1732,7 @@ def get_okx_change(
 # 업비트 변동률
 # =========================================================
 
-def get_upbit_change(
-    market
-):
+def get_upbit_change(market):
 
     df = get_upbit_ohlcv(
         market,
@@ -1945,16 +1768,11 @@ def get_upbit_change(
     )
 
     if len(daily) < 5:
-
         return None
 
     result = []
 
-    for i in [
-        -1,
-        -2,
-        -3
-    ]:
+    for i in [-1, -2, -3]:
 
         if daily.iloc[i - 1] == 0:
 
@@ -1988,9 +1806,7 @@ def get_upbit_change(
 # 변동률 HTML
 # =========================================================
 
-def format_change(
-    changes
-):
+def format_change(changes):
 
     if (
         changes is None
@@ -2004,19 +1820,16 @@ def format_change(
     if x > 0:
 
         icon = "🟩"
-
         sign = "+"
 
     elif x < 0:
 
         icon = "🟥"
-
         sign = ""
 
     else:
 
         icon = "⬜"
-
         sign = ""
 
     return (
@@ -2180,24 +1993,10 @@ def warning_html(
             '<span class="warning-empty">—</span>'
         )
 
-    if count in [-1, -2]:
-
-        return (
-            '<span class="warning-icon rocket">'
-            f'🚀({count})'
-            '</span>'
-        )
-
-    if count > 0:
-
-        return (
-            '<span class="warning-icon rocket">'
-            f'🚀({count})'
-            '</span>'
-        )
-
     return (
-        '<span class="warning-empty">—</span>'
+        '<span class="warning-icon rocket">'
+        f'🚀({count})'
+        '</span>'
     )
 
 
@@ -2205,9 +2004,7 @@ def warning_html(
 # EMA HTML
 # =========================================================
 
-def ema_html(
-    ema
-):
+def ema_html(ema):
 
     ema_1h = ema.get(
         "1h_10_30_60_120",
@@ -2221,35 +2018,16 @@ def ema_html(
 
     return f"""
     <div class="ema-container">
-
         <div class="ema-line">
-
             <div class="ema-item">
-
-                <span class="ema-period">
-                    1H
-                </span>
-
-                <span class="ema-value">
-                    {ema_1h}
-                </span>
-
+                <span class="ema-period">1H</span>
+                <span class="ema-value">{ema_1h}</span>
             </div>
-
             <div class="ema-item">
-
-                <span class="ema-period">
-                    4H
-                </span>
-
-                <span class="ema-value">
-                    {ema_4h}
-                </span>
-
+                <span class="ema-period">4H</span>
+                <span class="ema-value">{ema_4h}</span>
             </div>
-
         </div>
-
     </div>
     """
 
@@ -2269,11 +2047,6 @@ def update_upbit():
     markets = get_upbit_markets()
 
     if not markets:
-
-        logging.error(
-            "업비트 마켓 목록 조회 실패"
-        )
-
         return False
 
     volume_map = get_upbit_ticker_volume_map(
@@ -2281,11 +2054,6 @@ def update_upbit():
     )
 
     if not volume_map:
-
-        logging.error(
-            "업비트 거래대금 조회 실패"
-        )
-
         return False
 
     top_markets = sorted(
@@ -2295,12 +2063,6 @@ def update_upbit():
     )[:TOP_N]
 
     rows = []
-
-    total_top = len(top_markets)
-
-    logging.info(
-        f"업비트 거래대금 기준 TOP{total_top}"
-    )
 
     for rank, market in enumerate(
         top_markets,
@@ -2369,20 +2131,11 @@ def update_upbit():
 
 # =========================================================
 # OKX 업데이트
-# ★ 업비트 완료 후 실행
-# ★ USDT-KRW 1회 조회값 사용
-# ★ 거래대금 직렬
 # =========================================================
 
-def update_okx(
-    usdt_krw
-):
+def update_okx(usdt_krw):
 
     global latest_okx_data
-
-    logging.info(
-        f"========== OKX TOP{TOP_N} 시작 =========="
-    )
 
     if (
         usdt_krw is None
@@ -2390,25 +2143,12 @@ def update_okx(
         usdt_krw <= 0
     ):
 
-        logging.error(
-            "USDT-KRW 값이 없어 OKX 조회 중단"
-        )
-
         return False
 
     symbols = get_all_okx_swap_symbols()
 
     if not symbols:
-
-        logging.error(
-            "OKX 종목 목록 조회 실패"
-        )
-
         return False
-
-    # -----------------------------------------------------
-    # OKX 조회가 활성화된 경우에만 업비트 목록 조회
-    # -----------------------------------------------------
 
     upbit_markets = get_upbit_markets()
 
@@ -2420,23 +2160,7 @@ def update_okx(
         for market in upbit_markets
     }
 
-    total_symbols = len(symbols)
-
-    logging.info(
-        f"OKX 전체 {total_symbols}개 "
-        f"거래대금 직렬 조회 시작"
-    )
-
-    logging.info(
-        f"OKX 거래대금 환율 "
-        f"USDT/KRW = {usdt_krw:,.2f}"
-    )
-
     volume_map = {}
-
-    # =====================================================
-    # 직렬 요청
-    # =====================================================
 
     for index, symbol in enumerate(
         symbols,
@@ -2460,22 +2184,11 @@ def update_okx(
 
                     logging.info(
                         f"OKX 거래대금 "
-                        f"{index}/{total_symbols} "
-                        f"{symbol} 완료 "
-                        f"= {format_volume(volume)}"
+                        f"{index}/{len(symbols)} "
+                        f"{symbol} 완료"
                     )
 
                     break
-
-                logging.warning(
-                    f"OKX 거래대금 0 "
-                    f"{symbol} "
-                    f"- 재시도"
-                )
-
-                time.sleep(
-                    OKX_RETRY_DELAY
-                )
 
             except Exception as e:
 
@@ -2484,16 +2197,11 @@ def update_okx(
                     f"{symbol} : {e}"
                 )
 
-                time.sleep(
-                    OKX_RETRY_DELAY
-                )
+            time.sleep(
+                OKX_RETRY_DELAY
+            )
 
     if not volume_map:
-
-        logging.error(
-            "OKX 거래대금 전체 실패"
-        )
-
         return False
 
     top_symbols = sorted(
@@ -2503,12 +2211,6 @@ def update_okx(
     )[:TOP_N]
 
     rows = []
-
-    total_top = len(top_symbols)
-
-    logging.info(
-        f"OKX 거래대금 기준 TOP{total_top}"
-    )
 
     for rank, symbol in enumerate(
         top_symbols,
@@ -2566,33 +2268,17 @@ def update_okx(
         except Exception as e:
 
             logging.error(
-                f"OKX TOP 상세 오류 "
+                f"OKX 상세 오류 "
                 f"{symbol} : {e}"
             )
 
     latest_okx_data = rows
-
-    logging.info(
-        f"========== OKX TOP{TOP_N} 완료 =========="
-    )
 
     return True
 
 
 # =========================================================
 # 전체 업데이트
-#
-# USE_UPBIT / USE_OKX
-#
-# 업비트 Y
-# ↓
-# 업비트 조회
-#
-# OKX Y
-# ↓
-# USDT-KRW 1회
-# ↓
-# OKX 조회
 # =========================================================
 
 def update_dashboard():
@@ -2609,26 +2295,16 @@ def update_dashboard():
         "전체 조회 시작"
     )
 
-    # =====================================================
-    # 설정값 검증
-    # =====================================================
-
     if USE_UPBIT not in ("Y", "N"):
-
         logging.error(
-            f"USE_UPBIT 설정 오류 : {USE_UPBIT} "
-            f"(Y 또는 N만 사용)"
+            f"USE_UPBIT 설정 오류 : {USE_UPBIT}"
         )
-
         return
 
     if USE_OKX not in ("Y", "N"):
-
         logging.error(
-            f"USE_OKX 설정 오류 : {USE_OKX} "
-            f"(Y 또는 N만 사용)"
+            f"USE_OKX 설정 오류 : {USE_OKX}"
         )
-
         return
 
     # =====================================================
@@ -2639,11 +2315,9 @@ def update_dashboard():
 
         try:
 
-            upbit_success = update_upbit()
+            update_upbit()
 
         except Exception as e:
-
-            upbit_success = False
 
             logging.exception(
                 f"업비트 업데이트 오류 : {e}"
@@ -2652,8 +2326,6 @@ def update_dashboard():
     else:
 
         latest_upbit_data = []
-
-        upbit_success = False
 
         logging.info(
             "업비트 조회 N - 조회하지 않음"
@@ -2664,10 +2336,6 @@ def update_dashboard():
     # =====================================================
 
     if USE_OKX == "Y":
-
-        # -------------------------------------------------
-        # USDT-KRW 1회 조회
-        # -------------------------------------------------
 
         try:
 
@@ -2681,27 +2349,11 @@ def update_dashboard():
 
                 usdt_krw = latest_usdt_krw
 
-        except Exception as e:
-
-            logging.exception(
-                f"USDT-KRW 오류 : {e}"
-            )
-
-            usdt_krw = latest_usdt_krw
-
-        # -------------------------------------------------
-        # OKX
-        # -------------------------------------------------
-
-        try:
-
-            okx_success = update_okx(
+            update_okx(
                 usdt_krw
             )
 
         except Exception as e:
-
-            okx_success = False
 
             logging.exception(
                 f"OKX 업데이트 오류 : {e}"
@@ -2711,25 +2363,9 @@ def update_dashboard():
 
         latest_okx_data = []
 
-        okx_success = False
-
         logging.info(
-            "OKX 조회 N - "
-            "USDT-KRW 및 OKX 조회하지 않음"
+            "OKX 조회 N - 조회하지 않음"
         )
-
-        usdt_krw = latest_usdt_krw
-
-    logging.info(
-        f"전체 업데이트 완료 "
-        f"(업비트={upbit_success}, "
-        f"OKX={okx_success}, "
-        f"USDT/KRW={usdt_krw})"
-    )
-
-    logging.info(
-        "========================================"
-    )
 
 
 # =========================================================
@@ -2754,6 +2390,618 @@ def scheduler():
 
 
 # =========================================================
+# 대시보드 CSS
+# =========================================================
+
+DASHBOARD_CSS = """
+* {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+}
+
+body {
+    background: #0f1115;
+    color: #eeeeee;
+    font-family: Arial, sans-serif;
+    font-size: 10px;
+    padding: 6px;
+    overflow-wrap: anywhere;
+}
+
+h1 {
+    margin: 3px 2px 6px 2px;
+    font-size: 15px;
+    font-weight: 700;
+}
+
+h2 {
+    margin: 12px 2px 6px 2px;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.info {
+    margin: 0 2px 7px 2px;
+    padding: 6px 7px;
+    color: #8b9099;
+    background: #171a1f;
+    border: 1px solid #252a31;
+    border-radius: 8px;
+    font-size: 8px;
+    line-height: 1.5;
+}
+
+.exchange-status {
+    display: flex;
+    gap: 8px;
+    margin-top: 5px;
+    font-size: 8px;
+    font-weight: 700;
+}
+
+.status-y {
+    color: #35e66d;
+}
+
+.status-n {
+    color: #ff4d4d;
+}
+
+.table-wrap {
+    width: 100%;
+    overflow: hidden;
+    border-radius: 9px;
+    border: 1px solid #252a31;
+}
+
+table {
+    width: 100%;
+    table-layout: fixed;
+    border-collapse: collapse;
+    background: #181c21;
+}
+
+th {
+    padding: 6px 2px;
+    background: #12151a;
+    border-bottom: 1px solid #2b3037;
+    color: #8f949d;
+    font-size: 8px;
+    text-align: center;
+    vertical-align: middle;
+}
+
+td {
+    padding: 6px 2px;
+    border-bottom: 1px solid #272c32;
+    vertical-align: middle;
+    text-align: center;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+tbody tr:last-child td {
+    border-bottom: none;
+}
+
+th:nth-child(1),
+td:nth-child(1) {
+    width: 8%;
+}
+
+th:nth-child(2),
+td:nth-child(2) {
+    width: 20%;
+}
+
+th:nth-child(3),
+td:nth-child(3) {
+    width: 17%;
+}
+
+th:nth-child(4),
+td:nth-child(4) {
+    width: 25%;
+}
+
+th:nth-child(5),
+td:nth-child(5) {
+    width: 30%;
+}
+
+.coin-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    width: 100%;
+}
+
+.coin {
+    display: block;
+    width: 100%;
+    font-weight: bold;
+    text-align: center;
+    font-size: 9px;
+    line-height: 1.2;
+}
+
+.direction-long,
+.direction-short,
+.direction-none {
+    display: block;
+    width: 100%;
+    font-size: 9px;
+    text-align: center;
+}
+
+.volume-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    width: 100%;
+}
+
+.volume-value {
+    display: block;
+    width: 100%;
+    font-size: 8px;
+    font-weight: 600;
+    text-align: center;
+}
+
+.signal-text {
+    display: block;
+    font-weight: bold;
+    font-size: 8px;
+    text-align: center;
+}
+
+.long-text {
+    color: #35e66d;
+}
+
+.short-text {
+    color: #ff4d4d;
+}
+
+.signal-none {
+    color: #555;
+    font-size: 8px;
+    text-align: center;
+}
+
+.today-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    width: 100%;
+}
+
+.change-item {
+    display: inline-flex;
+    gap: 2px;
+    align-items: center;
+    justify-content: center;
+    max-width: 100%;
+    font-size: 8px;
+    text-align: center;
+}
+
+.change-icon {
+    flex-shrink: 0;
+}
+
+.breakout-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    width: 100%;
+}
+
+.warning-empty {
+    color: #555;
+    white-space: nowrap;
+}
+
+.rocket {
+    font-size: 8px;
+    white-space: nowrap;
+}
+
+.ema-container {
+    width: 100%;
+    overflow: hidden;
+}
+
+.ema-line {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1px;
+    width: 100%;
+}
+
+.ema-item {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1px;
+    width: 50%;
+    min-width: 0;
+}
+
+.ema-period {
+    color: #888;
+    font-size: 6px;
+    flex-shrink: 0;
+}
+
+.ema-value {
+    font-size: 7px;
+    font-weight: bold;
+    flex-shrink: 0;
+}
+
+.note {
+    color: #666;
+    font-size: 7px;
+    line-height: 1.5;
+    margin: 5px 2px 8px 2px;
+}
+
+@media (max-width: 480px) {
+
+    body {
+        padding: 4px;
+        font-size: 9px;
+    }
+
+    h1 {
+        font-size: 14px;
+        margin: 2px 2px 5px 2px;
+    }
+
+    h2 {
+        font-size: 12px;
+        margin: 9px 2px 5px 2px;
+    }
+
+    .info {
+        font-size: 7px;
+        line-height: 1.4;
+        padding: 5px 6px;
+    }
+
+    .exchange-status {
+        font-size: 7px;
+        gap: 6px;
+    }
+
+    th {
+        padding: 5px 1px;
+        font-size: 7px;
+    }
+
+    td {
+        padding: 5px 1px;
+    }
+
+    .coin {
+        font-size: 8px;
+    }
+
+    .volume-value {
+        font-size: 7px;
+    }
+
+    .signal-text,
+    .signal-none {
+        font-size: 7px;
+    }
+
+    .change-item {
+        font-size: 7px;
+        gap: 1px;
+    }
+
+    .ema-period {
+        font-size: 5px;
+    }
+
+    .ema-value {
+        font-size: 6px;
+    }
+
+    .rocket {
+        font-size: 7px;
+    }
+
+    .direction-long,
+    .direction-short,
+    .direction-none {
+        font-size: 8px;
+    }
+
+    .note {
+        font-size: 6px;
+    }
+}
+"""
+
+
+# =========================================================
+# 테이블 행 생성
+# =========================================================
+
+def make_table_rows(data):
+
+    rows_html = ""
+
+    for item in data:
+
+        ema = item.get(
+            "ema",
+            empty_ema()
+        )
+
+        direction = ema.get(
+            "direction",
+            "none"
+        )
+
+        change_percent = item.get(
+            "change_percent",
+            None
+        )
+
+        warning_1h = ema.get(
+            "warning_1h",
+            "none"
+        )
+
+        # -------------------------------------------------
+        # 돌파 0 표시 안 함
+        # -------------------------------------------------
+
+        if warning_1h in (
+            "long_breakout_0",
+            "short_breakout_0"
+        ):
+
+            continue
+
+        # -------------------------------------------------
+        # 현재 돌파
+        # -------------------------------------------------
+
+        valid_1h = (
+
+            (
+                direction == "long"
+                and
+                change_percent is not None
+                and
+                change_percent > 0
+                and
+                warning_1h.startswith(
+                    "long_breakout_"
+                )
+            )
+
+            or
+
+            (
+                direction == "short"
+                and
+                change_percent is not None
+                and
+                change_percent < 0
+                and
+                warning_1h.startswith(
+                    "short_breakout_"
+                )
+            )
+        )
+
+        # -------------------------------------------------
+        # 돌파 후 -1 / -2
+        # -------------------------------------------------
+
+        if not valid_1h:
+
+            if warning_1h.startswith(
+                "long_breakout_-"
+            ):
+
+                valid_1h = (
+                    direction == "long"
+                    and
+                    change_percent is not None
+                    and
+                    change_percent > 0
+                )
+
+            elif warning_1h.startswith(
+                "short_breakout_-"
+            ):
+
+                valid_1h = (
+                    direction == "short"
+                    and
+                    change_percent is not None
+                    and
+                    change_percent < 0
+                )
+
+        if not valid_1h:
+            continue
+
+        rows_html += f"""
+<tr>
+
+<td>
+{item['rank']}
+</td>
+
+<td>
+
+<div class="coin-wrap">
+
+<span class="coin">
+{item['name']}
+</span>
+
+{direction_html(
+    direction,
+    change_percent
+)}
+
+</div>
+
+</td>
+
+<td>
+
+<div class="volume-wrap">
+
+<span class="volume-value">
+{item['volume']}
+</span>
+
+{signal_html(
+    ema.get(
+        "signal",
+        ""
+    ),
+    change_percent
+)}
+
+</div>
+
+</td>
+
+<td>
+
+<div class="today-wrap">
+
+{item['change']}
+
+<div class="breakout-wrap">
+
+{warning_html(
+    warning_1h,
+    change_percent
+)}
+
+</div>
+
+</div>
+
+</td>
+
+<td>
+
+{ema_html(ema)}
+
+</td>
+
+</tr>
+"""
+
+    return rows_html
+
+
+# =========================================================
+# 거래소 테이블
+# =========================================================
+
+def make_exchange_section(
+    title,
+    data
+):
+
+    rows = make_table_rows(
+        data
+    )
+
+    if not rows:
+
+        rows = """
+<tr>
+<td colspan="5" style="
+    color:#555;
+    padding:12px 4px;
+">
+표시할 돌파 종목 없음
+</td>
+</tr>
+"""
+
+    return f"""
+<div class="section">
+
+<h2>
+{title} TOP{TOP_N}
+</h2>
+
+<div class="table-wrap">
+
+<table>
+
+<thead>
+
+<tr>
+<th>#</th>
+<th>코인</th>
+<th>거래대금</th>
+<th>오늘</th>
+<th>EMA</th>
+</tr>
+
+</thead>
+
+<tbody>
+
+{rows}
+
+</tbody>
+
+</table>
+
+</div>
+
+<div class="note">
+
+※ 🟢(N) = EMA10 &gt; EMA30 &gt; EMA60 &gt; EMA120 정배열 유지 캔들 수<br>
+※ 🔴(N) = EMA10 &lt; EMA30 &lt; EMA60 &lt; EMA120 역배열 유지 캔들 수<br>
+※ 🚀(1), 🚀(2) = 확정 돌파<br>
+※ 🚀(-1), 🚀(-2) = 돌파 후 다음 고점/저점 갱신 실패<br>
+※ 돌파 0은 표시하지 않음
+
+</div>
+
+</div>
+"""
+
+
+# =========================================================
 # 웹 대시보드
 # =========================================================
 
@@ -2763,12 +3011,41 @@ def scheduler():
 )
 def dashboard():
 
-    upbit_status = USE_UPBIT
+    upbit_status_class = (
+        "status-y"
+        if USE_UPBIT == "Y"
+        else "status-n"
+    )
 
-    okx_status = USE_OKX
+    okx_status_class = (
+        "status-y"
+        if USE_OKX == "Y"
+        else "status-n"
+    )
 
-    html = """
-<!DOCTYPE html>
+    # -----------------------------------------------------
+    # 거래소 섹션
+    #
+    # 조회 N이면 섹션 자체를 표시하지 않음
+    # -----------------------------------------------------
+
+    exchange_sections = ""
+
+    if USE_UPBIT == "Y":
+
+        exchange_sections += make_exchange_section(
+            "🏆 업비트",
+            latest_upbit_data
+        )
+
+    if USE_OKX == "Y":
+
+        exchange_sections += make_exchange_section(
+            "🏆 OKX",
+            latest_okx_data
+        )
+
+    html = f"""<!DOCTYPE html>
 
 <html lang="ko">
 
@@ -2788,530 +3065,7 @@ def dashboard():
 
 <style>
 
-* {
-    box-sizing: border-box;
-}
-
-html,
-body {
-
-    margin: 0;
-
-    padding: 0;
-
-    width: 100%;
-
-    max-width: 100%;
-
-    overflow-x: hidden;
-}
-
-body {
-
-    background: #0f1115;
-
-    color: #eeeeee;
-
-    font-family:
-        Arial,
-        sans-serif;
-
-    font-size: 10px;
-
-    padding: 6px;
-
-    overflow-wrap: anywhere;
-}
-
-h1 {
-
-    margin: 3px 2px 6px 2px;
-
-    font-size: 15px;
-
-    font-weight: 700;
-}
-
-h2 {
-
-    margin: 12px 2px 6px 2px;
-
-    font-size: 12px;
-
-    font-weight: 700;
-}
-
-.info {
-
-    margin: 0 2px 7px 2px;
-
-    padding: 6px 7px;
-
-    color: #8b9099;
-
-    background: #171a1f;
-
-    border: 1px solid #252a31;
-
-    border-radius: 8px;
-
-    font-size: 8px;
-
-    line-height: 1.5;
-}
-
-.exchange-status {
-
-    display: flex;
-
-    gap: 8px;
-
-    margin-top: 5px;
-
-    font-size: 8px;
-
-    font-weight: 700;
-}
-
-.status-y {
-
-    color: #35e66d;
-}
-
-.status-n {
-
-    color: #ff4d4d;
-}
-
-.table-wrap {
-
-    width: 100%;
-
-    overflow: hidden;
-
-    border-radius: 9px;
-
-    border: 1px solid #252a31;
-}
-
-table {
-
-    width: 100%;
-
-    table-layout: fixed;
-
-    border-collapse: collapse;
-
-    background: #181c21;
-}
-
-th {
-
-    padding: 6px 2px;
-
-    background: #12151a;
-
-    border-bottom:
-        1px solid #2b3037;
-
-    color: #8f949d;
-
-    font-size: 8px;
-
-    text-align: center;
-
-    vertical-align: middle;
-}
-
-td {
-
-    padding: 6px 2px;
-
-    border-bottom:
-        1px solid #272c32;
-
-    vertical-align: middle;
-
-    text-align: center;
-
-    overflow: hidden;
-
-    overflow-wrap: anywhere;
-
-    word-break: break-word;
-}
-
-tbody tr:last-child td {
-
-    border-bottom: none;
-}
-
-th:nth-child(1),
-td:nth-child(1) {
-
-    width: 8%;
-}
-
-th:nth-child(2),
-td:nth-child(2) {
-
-    width: 20%;
-}
-
-th:nth-child(3),
-td:nth-child(3) {
-
-    width: 17%;
-}
-
-th:nth-child(4),
-td:nth-child(4) {
-
-    width: 25%;
-}
-
-th:nth-child(5),
-td:nth-child(5) {
-
-    width: 30%;
-}
-
-.coin-wrap {
-
-    display: flex;
-
-    flex-direction: column;
-
-    align-items: center;
-
-    justify-content: center;
-
-    gap: 2px;
-
-    width: 100%;
-}
-
-.coin {
-
-    display: block;
-
-    width: 100%;
-
-    font-weight: bold;
-
-    text-align: center;
-
-    font-size: 9px;
-
-    line-height: 1.2;
-}
-
-.direction-long,
-.direction-short,
-.direction-none {
-
-    display: block;
-
-    width: 100%;
-
-    font-size: 9px;
-
-    text-align: center;
-}
-
-.volume-wrap {
-
-    display: flex;
-
-    flex-direction: column;
-
-    align-items: center;
-
-    justify-content: center;
-
-    gap: 3px;
-
-    width: 100%;
-}
-
-.volume-value {
-
-    display: block;
-
-    width: 100%;
-
-    font-size: 8px;
-
-    font-weight: 600;
-
-    text-align: center;
-}
-
-.signal-text {
-
-    display: block;
-
-    font-weight: bold;
-
-    font-size: 8px;
-
-    text-align: center;
-}
-
-.long-text {
-
-    color: #35e66d;
-}
-
-.short-text {
-
-    color: #ff4d4d;
-}
-
-.signal-none {
-
-    color: #555;
-
-    font-size: 8px;
-
-    text-align: center;
-}
-
-.today-wrap {
-
-    display: flex;
-
-    flex-direction: column;
-
-    align-items: center;
-
-    justify-content: center;
-
-    gap: 3px;
-
-    width: 100%;
-}
-
-.change-item {
-
-    display: inline-flex;
-
-    gap: 2px;
-
-    align-items: center;
-
-    justify-content: center;
-
-    max-width: 100%;
-
-    font-size: 8px;
-
-    text-align: center;
-}
-
-.change-icon {
-
-    flex-shrink: 0;
-}
-
-.breakout-wrap {
-
-    display: flex;
-
-    flex-direction: column;
-
-    align-items: center;
-
-    justify-content: center;
-
-    gap: 2px;
-
-    width: 100%;
-}
-
-.warning-empty {
-
-    color: #555;
-
-    white-space: nowrap;
-}
-
-.rocket {
-
-    font-size: 8px;
-
-    white-space: nowrap;
-}
-
-.ema-container {
-
-    width: 100%;
-
-    overflow: hidden;
-}
-
-.ema-line {
-
-    display: flex;
-
-    align-items: center;
-
-    justify-content: space-between;
-
-    gap: 1px;
-
-    width: 100%;
-}
-
-.ema-item {
-
-    display: flex;
-
-    align-items: center;
-
-    justify-content: center;
-
-    gap: 1px;
-
-    width: 50%;
-
-    min-width: 0;
-}
-
-.ema-period {
-
-    color: #888;
-
-    font-size: 6px;
-
-    flex-shrink: 0;
-}
-
-.ema-value {
-
-    font-size: 7px;
-
-    font-weight: bold;
-
-    flex-shrink: 0;
-}
-
-.note {
-
-    color: #666;
-
-    font-size: 7px;
-
-    line-height: 1.5;
-
-    margin: 5px 2px 8px 2px;
-}
-
-@media (max-width: 480px) {
-
-    body {
-
-        padding: 4px;
-
-        font-size: 9px;
-    }
-
-    h1 {
-
-        font-size: 14px;
-
-        margin: 2px 2px 5px 2px;
-    }
-
-    h2 {
-
-        font-size: 12px;
-
-        margin: 9px 2px 5px 2px;
-    }
-
-    .info {
-
-        font-size: 7px;
-
-        line-height: 1.4;
-
-        padding: 5px 6px;
-    }
-
-    .exchange-status {
-
-        font-size: 7px;
-
-        gap: 6px;
-    }
-
-    th {
-
-        padding: 5px 1px;
-
-        font-size: 7px;
-    }
-
-    td {
-
-        padding: 5px 1px;
-    }
-
-    .coin {
-
-        font-size: 8px;
-    }
-
-    .volume-value {
-
-        font-size: 7px;
-    }
-
-    .signal-text {
-
-        font-size: 7px;
-    }
-
-    .signal-none {
-
-        font-size: 7px;
-    }
-
-    .change-item {
-
-        font-size: 7px;
-
-        gap: 1px;
-    }
-
-    .ema-period {
-
-        font-size: 5px;
-    }
-
-    .ema-value {
-
-        font-size: 6px;
-    }
-
-    .rocket {
-
-        font-size: 7px;
-    }
-
-    .direction-long,
-    .direction-short,
-    .direction-none {
-
-        font-size: 8px;
-    }
-
-    .note {
-
-        font-size: 6px;
-    }
-}
+{DASHBOARD_CSS}
 
 </style>
 
@@ -3327,535 +3081,36 @@ td:nth-child(5) {
 
 <div>
 1H 추세 + 1H 확정 돌파 |
-직전 """
-
-    html += str(BREAKOUT_LOOKBACK)
-
-    html += """개 확정 캔들 고가/저가 돌파
+직전 {BREAKOUT_LOOKBACK}개 확정 캔들 고가/저가 돌파
 </div>
 
 <div>
 업비트 거래대금 = 거래소 24시간 누적 거래대금
 &nbsp;|&nbsp;
-OKX 거래대금 = 1H 확정 캔들 24개 × USDT-KRW
+OKX 거래대금 = 1H 확정 캔들 {VOLUME_HOURS}개 × USDT-KRW
 </div>
 
 <div>
-TOP"""
-
-    html += str(TOP_N)
-
-    html += """&nbsp;|&nbsp;
+TOP{TOP_N}
+&nbsp;|&nbsp;
 EMA 10-30-60-120 정렬 카운팅
 </div>
 
 <div class="exchange-status">
 
-<span class=""""
-
-    html += (
-        "status-y"
-        if USE_UPBIT == "Y"
-        else "status-n"
-    )
-
-    html += """">
-업비트 조회 : """
-
-    html += upbit_status
-
-    html += """
+<span class="{upbit_status_class}">
+업비트 조회 : {USE_UPBIT}
 </span>
 
-<span class=""""
-
-    html += (
-        "status-y"
-        if USE_OKX == "Y"
-        else "status-n"
-    )
-
-    html += """">
-OKX 조회 : """
-
-    html += okx_status
-
-    html += """
+<span class="{okx_status_class}">
+OKX 조회 : {USE_OKX}
 </span>
 
 </div>
 
 </div>
 
-
-<!-- =====================================================
-     업비트
-     ===================================================== -->
-
-"""
-
-    if USE_UPBIT == "Y":
-
-        html += """
-<div class="section">
-
-<h2>
-🏆 업비트 TOP"""
-
-        html += str(TOP_N)
-
-        html += """
-</h2>
-
-<div class="table-wrap">
-
-<table>
-
-<thead>
-
-<tr>
-
-<th>#</th>
-
-<th>코인</th>
-
-<th>거래대금</th>
-
-<th>오늘</th>
-
-<th>EMA</th>
-
-</tr>
-
-</thead>
-
-<tbody>
-"""
-
-        for item in latest_upbit_data:
-
-            ema = item["ema"]
-
-            direction = ema.get(
-                "direction",
-                "none"
-            )
-
-            change_percent = item.get(
-                "change_percent",
-                None
-            )
-
-            warning_1h = ema.get(
-                "warning_1h",
-                "none"
-            )
-
-            if warning_1h in (
-                "long_breakout_0",
-                "short_breakout_0"
-            ):
-
-                continue
-
-            valid_1h = (
-
-                (
-                    direction == "long"
-                    and
-                    change_percent is not None
-                    and
-                    change_percent > 0
-                    and
-                    warning_1h.startswith(
-                        "long_breakout_"
-                    )
-                )
-
-                or
-
-                (
-                    direction == "short"
-                    and
-                    change_percent is not None
-                    and
-                    change_percent < 0
-                    and
-                    warning_1h.startswith(
-                        "short_breakout_"
-                    )
-                )
-            )
-
-            if not valid_1h:
-
-                if warning_1h.startswith(
-                    "long_breakout_-"
-                ):
-
-                    valid_1h = (
-                        direction == "long"
-                        and
-                        change_percent is not None
-                        and
-                        change_percent > 0
-                    )
-
-                elif warning_1h.startswith(
-                    "short_breakout_-"
-                ):
-
-                    valid_1h = (
-                        direction == "short"
-                        and
-                        change_percent is not None
-                        and
-                        change_percent < 0
-                    )
-
-            if not valid_1h:
-
-                continue
-
-            html += f"""
-
-<tr>
-
-<td>
-{item['rank']}
-</td>
-
-<td>
-
-<div class="coin-wrap">
-
-<span class="coin">
-{item['name']}
-</span>
-
-{direction_html(
-    direction,
-    change_percent
-)}
-
-</div>
-
-</td>
-
-<td>
-
-<div class="volume-wrap">
-
-<span class="volume-value">
-{item['volume']}
-</span>
-
-{signal_html(
-    ema.get(
-        "signal",
-        ""
-    ),
-    change_percent
-)}
-
-</div>
-
-</td>
-
-<td>
-
-<div class="today-wrap">
-
-{item['change']}
-
-<div class="breakout-wrap">
-
-{warning_html(
-    warning_1h,
-    change_percent
-)}
-
-</div>
-
-</div>
-
-</td>
-
-<td>
-
-{ema_html(ema)}
-
-</td>
-
-</tr>
-
-"""
-
-        html += """
-
-</tbody>
-
-</table>
-
-</div>
-
-<div class="note">
-
-※ 🟢(N) = EMA10 &gt; EMA30 &gt; EMA60 &gt; EMA120 정배열이 N개 확정 캔들 유지<br>
-※ 🔴(N) = EMA10 &lt; EMA30 &lt; EMA60 &lt; EMA120 역배열이 N개 확정 캔들 유지<br>
-※ 🚀(1), 🚀(2) = 확정 돌파 진행<br>
-※ 🚀(-1), 🚀(-2) = 돌파 후 다음 고점/저점 갱신 실패<br>
-※ 돌파 0은 표시하지 않음
-
-</div>
-
-</div>
-"""
-
-    else:
-
-        html += """
-<div class="note">
-업비트 조회가 N 상태입니다.
-</div>
-"""
-
-
-    # =====================================================
-    # OKX
-    # =====================================================
-
-    if USE_OKX == "Y":
-
-        html += """
-
-<div class="section">
-
-<h2>
-🏆 OKX TOP"""
-
-        html += str(TOP_N)
-
-        html += """
-</h2>
-
-<div class="table-wrap">
-
-<table>
-
-<thead>
-
-<tr>
-
-<th>#</th>
-
-<th>코인</th>
-
-<th>거래대금</th>
-
-<th>오늘</th>
-
-<th>EMA</th>
-
-</tr>
-
-</thead>
-
-<tbody>
-"""
-
-        for item in latest_okx_data:
-
-            ema = item["ema"]
-
-            direction = ema.get(
-                "direction",
-                "none"
-            )
-
-            change_percent = item.get(
-                "change_percent",
-                None
-            )
-
-            warning_1h = ema.get(
-                "warning_1h",
-                "none"
-            )
-
-            if warning_1h in (
-                "long_breakout_0",
-                "short_breakout_0"
-            ):
-
-                continue
-
-            valid_1h = (
-
-                (
-                    direction == "long"
-                    and
-                    change_percent is not None
-                    and
-                    change_percent > 0
-                    and
-                    warning_1h.startswith(
-                        "long_breakout_"
-                    )
-                )
-
-                or
-
-                (
-                    direction == "short"
-                    and
-                    change_percent is not None
-                    and
-                    change_percent < 0
-                    and
-                    warning_1h.startswith(
-                        "short_breakout_"
-                    )
-                )
-            )
-
-            if not valid_1h:
-
-                if warning_1h.startswith(
-                    "long_breakout_-"
-                ):
-
-                    valid_1h = (
-                        direction == "long"
-                        and
-                        change_percent is not None
-                        and
-                        change_percent > 0
-                    )
-
-                elif warning_1h.startswith(
-                    "short_breakout_-"
-                ):
-
-                    valid_1h = (
-                        direction == "short"
-                        and
-                        change_percent is not None
-                        and
-                        change_percent < 0
-                    )
-
-            if not valid_1h:
-
-                continue
-
-            html += f"""
-
-<tr>
-
-<td>
-{item['rank']}
-</td>
-
-<td>
-
-<div class="coin-wrap">
-
-<span class="coin">
-{item['name']}
-</span>
-
-{direction_html(
-    direction,
-    change_percent
-)}
-
-</div>
-
-</td>
-
-<td>
-
-<div class="volume-wrap">
-
-<span class="volume-value">
-{item['volume']}
-</span>
-
-{signal_html(
-    ema.get(
-        "signal",
-        ""
-    ),
-    change_percent
-)}
-
-</div>
-
-</td>
-
-<td>
-
-<div class="today-wrap">
-
-{item['change']}
-
-<div class="breakout-wrap">
-
-{warning_html(
-    warning_1h,
-    change_percent
-)}
-
-</div>
-
-</div>
-
-</td>
-
-<td>
-
-{ema_html(ema)}
-
-</td>
-
-</tr>
-
-"""
-
-        html += """
-
-</tbody>
-
-</table>
-
-</div>
-
-<div class="note">
-
-※ OKX 거래대금 = OKX 1H 확정 캔들 24개 거래대금 합계 × 업비트 USDT-KRW<br>
-※ USDT-KRW는 OKX 조회 시작 전에 1회 조회<br>
-※ OKX 거래대금 조회는 직렬 처리<br>
-※ EMA = 1H / 4H<br>
-※ 🟢(N) / 🔴(N) = 정렬 유지 확정 캔들 수<br>
-※ 🚀(0)은 표시하지 않음<br>
-※ 🚀(-1), 🚀(-2) = 돌파 후 다음 고점/저점 갱신 실패 상태
-
-</div>
-
-</div>
-"""
-
-    else:
-
-        html += """
-<div class="note">
-OKX 조회가 N 상태입니다.
-</div>
-"""
-
-
-    html += """
+{exchange_sections}
 
 </body>
 
@@ -3883,10 +3138,6 @@ def startup():
         f"업비트={USE_UPBIT} "
         f"OKX={USE_OKX}"
     )
-
-    # -----------------------------------------------------
-    # 설정값 검증
-    # -----------------------------------------------------
 
     if USE_UPBIT not in ("Y", "N"):
 
