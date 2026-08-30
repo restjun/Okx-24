@@ -1239,7 +1239,7 @@ def get_main_direction(
 
 
 # =========================================================
-# 돌파
+# 최초 돌파 판정
 # =========================================================
 
 def is_long_breakout(
@@ -1385,15 +1385,402 @@ def is_short_pre_breakout(
 
 
 # =========================================================
-# 돌파
+# 🚀 이후 추적 상태
 #
-# 표시 기준
+# LONG
 #
-# 🚨 = 돌파 직전
-# 🚀 = 확정 돌파 1번째 캔들
+# 🚀 = 최초 돌파
+# 🚀(1) = 이후 고점 갱신 + 상승 마감
+# 🚀(2) = 이후 다시 고점 갱신 + 상승 마감
 #
-# 🚀(2), 🚀(3) 등은 표시하지 않음
-# 〽️(-1), 〽️(-2) 삭제
+# ⛔️ = 추적 중인 기준 저점 아래로 종가 마감
+#
+# SHORT
+#
+# 🚀 = 최초 돌파
+# 🚀(1) = 이후 저점 갱신 + 하락 마감
+# 🚀(2) = 이후 다시 저점 갱신 + 하락 마감
+#
+# ⛔️ = 추적 중인 기준 고점 위로 종가 마감
+# =========================================================
+
+def get_breakout_tracking(
+    df,
+    direction
+):
+
+    if (
+        df is None
+        or
+        len(df) < 30 + BREAKOUT_LOOKBACK
+    ):
+
+        return {
+            "status": "none",
+            "count": 0
+        }
+
+    df = df.copy().reset_index(
+        drop=True
+    )
+
+    df["ema10"] = get_ema(
+        df,
+        "c",
+        10
+    )
+
+    df["ema30"] = get_ema(
+        df,
+        "c",
+        30
+    )
+
+    df["ema60"] = get_ema(
+        df,
+        "c",
+        60
+    )
+
+    # =====================================================
+    # 가장 최근 돌파를 찾고
+    # 그 이후 캔들을 순서대로 추적
+    # =====================================================
+
+    breakout_index = None
+    breakout_direction = None
+
+    for index in range(
+        BREAKOUT_LOOKBACK,
+        len(df)
+    ):
+
+        row = df.iloc[index]
+
+        previous = df.iloc[
+            index - BREAKOUT_LOOKBACK:
+            index
+        ]
+
+        ema60 = row["ema60"]
+
+        if pd.isna(ema60):
+
+            long_ema = (
+                row["ema10"]
+                >
+                row["ema30"]
+            )
+
+            short_ema = (
+                row["ema10"]
+                <
+                row["ema30"]
+            )
+
+        else:
+
+            long_ema = (
+                row["ema10"]
+                >
+                row["ema30"]
+                >
+                row["ema60"]
+            )
+
+            short_ema = (
+                row["ema10"]
+                <
+                row["ema30"]
+                <
+                row["ema60"]
+            )
+
+        if (
+            direction == "long"
+            and
+            long_ema
+            and
+            is_long_breakout(
+                row,
+                previous
+            )
+        ):
+
+            breakout_index = index
+            breakout_direction = "long"
+
+        elif (
+            direction == "short"
+            and
+            short_ema
+            and
+            is_short_breakout(
+                row,
+                previous
+            )
+        ):
+
+            breakout_index = index
+            breakout_direction = "short"
+
+    # =====================================================
+    # 돌파가 없다면 돌파 직전 확인
+    # =====================================================
+
+    if breakout_index is None:
+
+        current_index = len(df) - 1
+
+        current = df.iloc[
+            current_index
+        ]
+
+        previous = df.iloc[
+            current_index - BREAKOUT_LOOKBACK:
+            current_index
+        ]
+
+        ema60 = current["ema60"]
+
+        if pd.isna(ema60):
+
+            long_ema = (
+                current["ema10"]
+                >
+                current["ema30"]
+            )
+
+            short_ema = (
+                current["ema10"]
+                <
+                current["ema30"]
+            )
+
+        else:
+
+            long_ema = (
+                current["ema10"]
+                >
+                current["ema30"]
+                >
+                current["ema60"]
+            )
+
+            short_ema = (
+                current["ema10"]
+                <
+                current["ema30"]
+                <
+                current["ema60"]
+            )
+
+        if (
+            direction == "long"
+            and
+            long_ema
+            and
+            is_long_pre_breakout(
+                current,
+                previous
+            )
+        ):
+
+            return {
+                "status": "long_breakout_0",
+                "count": 0
+            }
+
+        if (
+            direction == "short"
+            and
+            short_ema
+            and
+            is_short_pre_breakout(
+                current,
+                previous
+            )
+        ):
+
+            return {
+                "status": "short_breakout_0",
+                "count": 0
+            }
+
+        return {
+            "status": "none",
+            "count": 0
+        }
+
+    # =====================================================
+    # 최초 돌파 캔들
+    # =====================================================
+
+    count = 0
+
+    reference_high = float(
+        df.iloc[breakout_index]["h"]
+    )
+
+    reference_low = float(
+        df.iloc[breakout_index]["l"]
+    )
+
+    # =====================================================
+    # 돌파 이후 캔들 추적
+    # =====================================================
+
+    for index in range(
+        breakout_index + 1,
+        len(df)
+    ):
+
+        row = df.iloc[index]
+
+        high = float(row["h"])
+        low = float(row["l"])
+        close = float(row["c"])
+        open_price = float(row["o"])
+
+        # =================================================
+        # LONG
+        # =================================================
+
+        if breakout_direction == "long":
+
+            # ---------------------------------------------
+            # 저점 이탈 마감 → ⛔️
+            # ---------------------------------------------
+
+            if close < reference_low:
+
+                if index == len(df) - 1:
+
+                    return {
+                        "status":
+                            "long_breakout_stop",
+                        "count":
+                            count
+                    }
+
+                # 과거에서 중지된 돌파는 종료
+                return {
+                    "status": "none",
+                    "count": 0
+                }
+
+            # ---------------------------------------------
+            # 고점 갱신 + 상승 마감
+            # ---------------------------------------------
+
+            if (
+                high > reference_high
+                and
+                close > open_price
+            ):
+
+                count += 1
+
+                reference_high = high
+                reference_low = low
+
+            else:
+
+                # 고점을 갱신하지 못한 경우
+                # 현재 기준은 유지
+                pass
+
+        # =================================================
+        # SHORT
+        # =================================================
+
+        elif breakout_direction == "short":
+
+            # ---------------------------------------------
+            # 고점 이탈 마감 → ⛔️
+            # ---------------------------------------------
+
+            if close > reference_high:
+
+                if index == len(df) - 1:
+
+                    return {
+                        "status":
+                            "short_breakout_stop",
+                        "count":
+                            count
+                    }
+
+                return {
+                    "status": "none",
+                    "count": 0
+                }
+
+            # ---------------------------------------------
+            # 저점 갱신 + 하락 마감
+            # ---------------------------------------------
+
+            if (
+                low < reference_low
+                and
+                close < open_price
+            ):
+
+                count += 1
+
+                reference_low = low
+                reference_high = high
+
+    # =====================================================
+    # 현재 캔들이 최초 돌파
+    # =====================================================
+
+    if breakout_index == len(df) - 1:
+
+        return {
+            "status":
+                f"{breakout_direction}_breakout_1",
+            "count": 0
+        }
+
+    # =====================================================
+    # 현재까지 추적 성공
+    #
+    # count = 0
+    # → 최초 돌파 이후 다음 캔들 조건 없음
+    #
+    # count = 1
+    # → 🚀(1)
+    #
+    # count = 2
+    # → 🚀(2)
+    # =====================================================
+
+    if count > 0:
+
+        return {
+            "status":
+                f"{breakout_direction}_breakout_{count + 1}",
+            "count":
+                count
+        }
+
+    # =====================================================
+    # 돌파 이후 아직 갱신하지 못한 상태
+    # =====================================================
+
+    return {
+        "status":
+            f"{breakout_direction}_breakout_1",
+        "count":
+            0
+    }
+
+
+# =========================================================
+# 돌파 상태 계산
+#
+# 기존 check_breakout 이름 유지
 # =========================================================
 
 def check_breakout(
@@ -1413,230 +1800,17 @@ def check_breakout(
 
     df = df4h.copy()
 
-    df["ema10"] = get_ema(
+    if column != "c":
+
+        df["c"] = df[column]
+
+    return get_breakout_tracking(
         df,
-        column,
-        10
-    )
-
-    df["ema30"] = get_ema(
-        df,
-        column,
-        30
-    )
-
-    df["ema60"] = get_ema(
-        df,
-        column,
-        60
-    )
-
-    current_index = len(df) - 1
-
-    cur = df.iloc[
-        current_index
-    ]
-
-    # =====================================================
-    # 60선 존재 여부
-    # =====================================================
-
-    if not pd.isna(cur["ema60"]):
-
-        long_ema = (
-            cur["ema10"]
-            >
-            cur["ema30"]
-            >
-            cur["ema60"]
+        get_main_direction(
+            df,
+            "c"
         )
-
-        short_ema = (
-            cur["ema10"]
-            <
-            cur["ema30"]
-            <
-            cur["ema60"]
-        )
-
-    else:
-
-        long_ema = (
-            cur["ema10"]
-            >
-            cur["ema30"]
-        )
-
-        short_ema = (
-            cur["ema10"]
-            <
-            cur["ema30"]
-        )
-
-    previous = df.iloc[
-        current_index - BREAKOUT_LOOKBACK:
-        current_index
-    ]
-
-    # =====================================================
-    # 현재 확정 LONG 돌파
-    #
-    # 첫 번째 돌파 캔들만 인정
-    # =====================================================
-
-    if long_ema:
-
-        if is_long_breakout(
-            cur,
-            previous
-        ):
-
-            # 직전 캔들이 같은 조건의 돌파가 아니면
-            # 첫 번째 돌파 캔들 = 1
-            previous_index = (
-                current_index - 1
-            )
-
-            if previous_index >= BREAKOUT_LOOKBACK:
-
-                previous_row = df.iloc[
-                    previous_index
-                ]
-
-                previous_prev = df.iloc[
-                    previous_index - BREAKOUT_LOOKBACK:
-                    previous_index
-                ]
-
-                if not pd.isna(
-                    previous_row["ema60"]
-                ):
-
-                    previous_long_ema = (
-                        previous_row["ema10"]
-                        >
-                        previous_row["ema30"]
-                        >
-                        previous_row["ema60"]
-                    )
-
-                else:
-
-                    previous_long_ema = (
-                        previous_row["ema10"]
-                        >
-                        previous_row["ema30"]
-                    )
-
-                previous_was_breakout = (
-                    previous_long_ema
-                    and
-                    is_long_breakout(
-                        previous_row,
-                        previous_prev
-                    )
-                )
-
-            else:
-
-                previous_was_breakout = False
-
-            if not previous_was_breakout:
-
-                return "long_breakout_1"
-
-    # =====================================================
-    # 현재 확정 SHORT 돌파
-    #
-    # 첫 번째 돌파 캔들만 인정
-    # =====================================================
-
-    if short_ema:
-
-        if is_short_breakout(
-            cur,
-            previous
-        ):
-
-            previous_index = (
-                current_index - 1
-            )
-
-            if previous_index >= BREAKOUT_LOOKBACK:
-
-                previous_row = df.iloc[
-                    previous_index
-                ]
-
-                previous_prev = df.iloc[
-                    previous_index - BREAKOUT_LOOKBACK:
-                    previous_index
-                ]
-
-                if not pd.isna(
-                    previous_row["ema60"]
-                ):
-
-                    previous_short_ema = (
-                        previous_row["ema10"]
-                        <
-                        previous_row["ema30"]
-                        <
-                        previous_row["ema60"]
-                    )
-
-                else:
-
-                    previous_short_ema = (
-                        previous_row["ema10"]
-                        <
-                        previous_row["ema30"]
-                    )
-
-                previous_was_breakout = (
-                    previous_short_ema
-                    and
-                    is_short_breakout(
-                        previous_row,
-                        previous_prev
-                    )
-                )
-
-            else:
-
-                previous_was_breakout = False
-
-            if not previous_was_breakout:
-
-                return "short_breakout_1"
-
-    # =====================================================
-    # 돌파 직전 🚨
-    # =====================================================
-
-    if long_ema:
-
-        if is_long_pre_breakout(
-            cur,
-            previous
-        ):
-
-            return "long_breakout_0"
-
-    if short_ema:
-
-        if is_short_pre_breakout(
-            cur,
-            previous
-        ):
-
-            return "short_breakout_0"
-
-    # =====================================================
-    # 돌파 후 실패 로직 삭제
-    # =====================================================
-
-    return "none"
+    )["status"]
 
 
 # =========================================================
@@ -1690,7 +1864,9 @@ def get_trade_signal(
     if (
         main_direction == "long"
         and
-        breakout_4h == "long_breakout_1"
+        breakout_4h.startswith(
+            "long_breakout_"
+        )
     ):
 
         signal = "LONG"
@@ -1698,7 +1874,9 @@ def get_trade_signal(
     elif (
         main_direction == "short"
         and
-        breakout_4h == "short_breakout_1"
+        breakout_4h.startswith(
+            "short_breakout_"
+        )
     ):
 
         signal = "SHORT"
@@ -2301,11 +2479,12 @@ def direction_html(
 # =========================================================
 # 표시 가능 경고
 #
-# 🚨 = 0
-# 🚀 = 1
-#
-# 🚀(2) 이상 제외
-# -1 / -2 삭제
+# 🚨
+# 🚀
+# 🚀(1)
+# 🚀(2)
+# ...
+# ⛔️
 # =========================================================
 
 def is_visible_breakout_warning(
@@ -2321,6 +2500,12 @@ def is_visible_breakout_warning(
 
         return False
 
+    if warning_4h.endswith(
+        "_stop"
+    ):
+
+        return True
+
     try:
 
         count = int(
@@ -2331,53 +2516,25 @@ def is_visible_breakout_warning(
 
         return False
 
-    # =====================================================
-    # 🚨 돌파 직전
-    # =====================================================
+    if count < 0:
 
-    if count == 0:
+        return False
 
-        if change_percent is None:
+    if change_percent is None:
 
-            return False
+        return False
 
-        if warning_4h.startswith(
-            "long_breakout_"
-        ):
+    if warning_4h.startswith(
+        "long_breakout_"
+    ):
 
-            return change_percent > 0
+        return change_percent > 0
 
-        if warning_4h.startswith(
-            "short_breakout_"
-        ):
+    if warning_4h.startswith(
+        "short_breakout_"
+    ):
 
-            return change_percent < 0
-
-    # =====================================================
-    # 🚀 첫 번째 확정 돌파만
-    # =====================================================
-
-    if count == 1:
-
-        if change_percent is None:
-
-            return False
-
-        if warning_4h.startswith(
-            "long_breakout_"
-        ):
-
-            return change_percent > 0
-
-        if warning_4h.startswith(
-            "short_breakout_"
-        ):
-
-            return change_percent < 0
-
-    # =====================================================
-    # 나머지는 전부 제외
-    # =====================================================
+        return change_percent < 0
 
     return False
 
@@ -2385,16 +2542,36 @@ def is_visible_breakout_warning(
 # =========================================================
 # 돌파 HTML
 #
-# 🚨
-# 🚀
-#
-# 카운팅 표시 안 함
+# 🚨 = 돌파 직전
+# 🚀 = 최초 확정 돌파
+# 🚀(1) 이상 = 추적 성공
+# ⛔️ = 저점/고점 이탈 마감
 # =========================================================
 
 def warning_html(
     warning_4h,
     change_percent
 ):
+
+    if not warning_4h:
+
+        return (
+            '<span class="warning-empty">—</span>'
+        )
+
+    # =====================================================
+    # ⛔️ LONG / SHORT 중지
+    # =====================================================
+
+    if warning_4h.endswith(
+        "_stop"
+    ):
+
+        return (
+            '<span class="warning-icon stop">'
+            '⛔️'
+            '</span>'
+        )
 
     if not is_visible_breakout_warning(
         warning_4h,
@@ -2430,7 +2607,7 @@ def warning_html(
         )
 
     # =====================================================
-    # 첫 번째 확정 돌파
+    # 최초 돌파
     # =====================================================
 
     if count == 1:
@@ -2441,8 +2618,14 @@ def warning_html(
             '</span>'
         )
 
+    # =====================================================
+    # 이후 추적
+    # =====================================================
+
     return (
-        '<span class="warning-empty">—</span>'
+        '<span class="warning-icon rocket-count">'
+        f'🚀({count - 1})'
+        '</span>'
     )
 
 
@@ -2553,7 +2736,6 @@ def update_upbit():
 
             rows.append(
                 {
-                    # 실제 TOP20 순위
                     "rank": rank,
 
                     "name": coin,
@@ -2728,7 +2910,6 @@ def update_okx(usdt_krw):
 
             rows.append(
                 {
-                    # 실제 TOP20 순위
                     "rank": rank,
 
                     "name": coin,
@@ -3018,7 +3199,7 @@ tbody tr:last-child td {
 
 
 /* =====================================================
-   🚀 확정 돌파
+   🚀 돌파 / 추적
    ===================================================== */
 
 .breakout-row {
@@ -3033,6 +3214,30 @@ tbody tr:last-child td {
 
     50% {
         background: #203b29;
+    }
+
+    100% {
+        background: #181c21;
+    }
+}
+
+
+/* =====================================================
+   ⛔️ 중지
+   ===================================================== */
+
+.stop-row {
+    animation: stopFlash 0.9s ease-in-out infinite;
+}
+
+@keyframes stopFlash {
+
+    0% {
+        background: #181c21;
+    }
+
+    50% {
+        background: #492323;
     }
 
     100% {
@@ -3184,10 +3389,26 @@ td:nth-child(5) {
     );
 }
 
+.rocket-count {
+    font-size: 10px;
+    font-weight: bold;
+    color: #ffffff;
+    filter: drop-shadow(
+        0 0 5px rgba(50, 255, 100, 0.8)
+    );
+}
+
 .pre-breakout {
     font-size: 12px;
     filter: drop-shadow(
         0 0 5px rgba(255, 180, 0, 0.8)
+    );
+}
+
+.stop {
+    font-size: 11px;
+    filter: drop-shadow(
+        0 0 5px rgba(255, 50, 50, 0.8)
     );
 }
 
@@ -3292,8 +3513,16 @@ td:nth-child(5) {
         font-size: 9px;
     }
 
+    .rocket-count {
+        font-size: 8px;
+    }
+
     .pre-breakout {
         font-size: 11px;
+    }
+
+    .stop {
+        font-size: 9px;
     }
 
     .direction-long,
@@ -3311,11 +3540,6 @@ td:nth-child(5) {
 
 # =========================================================
 # 테이블 행 생성
-#
-# 중요:
-# 경고 종목만 표시하지만
-# 순위는 경고 리스트 순번이 아니라
-# TOP20 실제 거래대금 순위를 사용
 # =========================================================
 
 def make_table_rows(data):
@@ -3346,7 +3570,17 @@ def make_table_rows(data):
 
         row_class = ""
 
-        if is_visible_breakout_warning(
+        # =================================================
+        # ⛔️ 중지
+        # =================================================
+
+        if warning_4h.endswith(
+            "_stop"
+        ):
+
+            row_class = "stop-row"
+
+        elif is_visible_breakout_warning(
             warning_4h,
             change_percent
         ):
@@ -3365,13 +3599,9 @@ def make_table_rows(data):
 
                 row_class = "pre-breakout-row"
 
-            elif count == 1:
+            elif count >= 1:
 
                 row_class = "breakout-row"
-
-        # =================================================
-        # 실제 TOP20 순위
-        # =================================================
 
         actual_rank = item.get(
             "rank",
@@ -3474,7 +3704,7 @@ def make_exchange_section(
     color:#555;
     padding:12px 4px;
 ">
-현재 🚨 / 🚀 종목 없음
+현재 🚨 / 🚀 / ⛔️ 종목 없음
 </td>
 </tr>
 """
@@ -3514,7 +3744,7 @@ def make_exchange_section(
 
 <div class="note">
 
-※ TOP{TOP_N} 거래대금 실제 순위를 유지하며 🚨 / 🚀 종목만 표시<br>
+※ TOP{TOP_N} 거래대금 실제 순위를 유지하며 🚨 / 🚀 / ⛔️ 종목만 표시<br>
 
 ※ EMA는 4H 확정 캔들 기준<br>
 
@@ -3532,15 +3762,19 @@ def make_exchange_section(
 
 ※ 🚀 = 확정 돌파 첫 번째 4H 캔들<br>
 
-※ 🚀 다음 캔들부터는 경고에서 제외<br>
+※ 🚀(1) = 돌파 후 다음 캔들이 이전 기준 고점/저점을 갱신하고 방향대로 마감<br>
 
-※ 🚀 카운팅은 표시하지 않음<br>
+※ 🚀(2), 🚀(3)... = 같은 방식으로 계속 갱신되는 캔들 수<br>
 
-※ 돌파 후 실패 〽️ 표시는 사용하지 않음<br>
+※ LONG = 고점 갱신 + 상승 마감 기준<br>
 
-※ LONG 경고는 오늘 상승 중일 때만 표시 및 반짝임<br>
+※ SHORT = 저점 갱신 + 하락 마감 기준<br>
 
-※ SHORT 경고는 오늘 하락 중일 때만 표시 및 반짝임<br>
+※ LONG ⛔️ = 추적 기준 저점 아래로 종가 마감 시 중지<br>
+
+※ SHORT ⛔️ = 추적 기준 고점 위로 종가 마감 시 중지<br>
+
+※ ⛔️ 발생 시 해당 돌파 사이클 종료<br>
 
 ※ EMA 정렬 자체만으로는 반짝이지 않음<br>
 
@@ -3633,7 +3867,7 @@ def dashboard():
 </div>
 
 <div>
-TOP{TOP_N} · 🚨 돌파 전 / 🚀 첫 돌파만 표시 · 4H EMA
+TOP{TOP_N} · 🚨 돌파 전 / 🚀 돌파 추적 / ⛔️ 중지 · 4H EMA
 </div>
 
 <div class="exchange-status">
