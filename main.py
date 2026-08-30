@@ -2655,6 +2655,9 @@ def ema_html(ema):
 #
 # TOP20 선정 후
 # 경고 조건에 해당하는 종목만 저장
+#
+# 중요:
+# rank는 실제 TOP20 거래대금 순위
 # =========================================================
 
 def update_upbit():
@@ -2731,6 +2734,7 @@ def update_upbit():
 
             rows.append(
                 {
+                    # 실제 TOP20 순위 그대로 저장
                     "rank": rank,
 
                     "name": coin,
@@ -2779,6 +2783,9 @@ def update_upbit():
 #
 # TOP20 선정 후
 # 경고 조건에 해당하는 종목만 저장
+#
+# 중요:
+# rank는 실제 TOP20 거래대금 순위
 # =========================================================
 
 def update_okx(usdt_krw):
@@ -2914,6 +2921,7 @@ def update_okx(usdt_krw):
 
             rows.append(
                 {
+                    # 실제 TOP20 순위 그대로 저장
                     "rank": rank,
 
                     "name": coin,
@@ -3525,17 +3533,20 @@ td:nth-child(5) {
 # =========================================================
 # 테이블 행 생성
 #
-# 실제 화면 순위는 경고 종목 기준으로 1부터 다시 표시
+# ★ 수정 핵심
+#
+# 기존:
+#   경고 종목만 다시 1,2,3...으로 표시
+#
+# 수정:
+#   item["rank"]에 저장된 실제 TOP20 순위를 표시
 # =========================================================
 
 def make_table_rows(data):
 
     rows_html = ""
 
-    for display_rank, item in enumerate(
-        data,
-        start=1
-    ):
+    for item in data:
 
         ema = item.get(
             "ema",
@@ -3586,11 +3597,20 @@ def make_table_rows(data):
 
                 row_class = "failed-breakout-row"
 
+        # =================================================
+        # ★ 실제 거래대금 TOP20 순위 사용
+        # =================================================
+
+        actual_rank = item.get(
+            "rank",
+            "-"
+        )
+
         rows_html += f"""
 <tr class="{row_class}">
 
 <td>
-{display_rank}
+{actual_rank}
 </td>
 
 <td>
@@ -3723,6 +3743,8 @@ def make_exchange_section(
 <div class="note">
 
 ※ 화면에는 TOP{TOP_N} 거래대금 종목 중 경고 조건에 해당하는 종목만 표시<br>
+
+※ # 순위는 경고 리스트 순위가 아니라 실제 TOP{TOP_N} 거래대금 순위<br>
 
 ※ EMA는 4H 확정 캔들 기준<br>
 
