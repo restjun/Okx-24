@@ -2748,6 +2748,10 @@ td:nth-child(5) {
 
 # =========================================================
 # 테이블 행 생성
+#
+# ★ 변경:
+# TOP1~TOP20 전체를 표시
+# 돌파 조건이 없어도 종목을 제외하지 않음
 # =========================================================
 
 def make_table_rows(data):
@@ -2777,7 +2781,10 @@ def make_table_rows(data):
         )
 
         # -------------------------------------------------
-        # 돌파 0 표시 안 함
+        # 돌파 0은 기존대로 표시하지 않음
+        #
+        # 단, 종목 자체는 삭제하지 않고
+        # warning_html()에서 — 로 표시
         # -------------------------------------------------
 
         if warning_1h in (
@@ -2785,73 +2792,7 @@ def make_table_rows(data):
             "short_breakout_0"
         ):
 
-            continue
-
-        # -------------------------------------------------
-        # 현재 돌파
-        # -------------------------------------------------
-
-        valid_1h = (
-
-            (
-                direction == "long"
-                and
-                change_percent is not None
-                and
-                change_percent > 0
-                and
-                warning_1h.startswith(
-                    "long_breakout_"
-                )
-            )
-
-            or
-
-            (
-                direction == "short"
-                and
-                change_percent is not None
-                and
-                change_percent < 0
-                and
-                warning_1h.startswith(
-                    "short_breakout_"
-                )
-            )
-        )
-
-        # -------------------------------------------------
-        # 돌파 후 -1 / -2
-        # -------------------------------------------------
-
-        if not valid_1h:
-
-            if warning_1h.startswith(
-                "long_breakout_-"
-            ):
-
-                valid_1h = (
-                    direction == "long"
-                    and
-                    change_percent is not None
-                    and
-                    change_percent > 0
-                )
-
-            elif warning_1h.startswith(
-                "short_breakout_-"
-            ):
-
-                valid_1h = (
-                    direction == "short"
-                    and
-                    change_percent is not None
-                    and
-                    change_percent < 0
-                )
-
-        if not valid_1h:
-            continue
+            warning_1h = "none"
 
         rows_html += f"""
 <tr>
@@ -2949,7 +2890,7 @@ def make_exchange_section(
     color:#555;
     padding:12px 4px;
 ">
-표시할 돌파 종목 없음
+조회된 데이터 없음
 </td>
 </tr>
 """
@@ -2993,6 +2934,7 @@ def make_exchange_section(
 ※ 🔴(N) = EMA10 &lt; EMA30 &lt; EMA60 &lt; EMA120 역배열 유지 캔들 수<br>
 ※ 🚀(1), 🚀(2) = 확정 돌파<br>
 ※ 🚀(-1), 🚀(-2) = 돌파 후 다음 고점/저점 갱신 실패<br>
+※ 돌파가 없는 종목은 — 로 표시<br>
 ※ 돌파 0은 표시하지 않음
 
 </div>
@@ -3182,4 +3124,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-    )
+)
