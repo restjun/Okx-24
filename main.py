@@ -46,7 +46,7 @@ UPDATE_MINUTES = 1
 
 MAX_WARNING_COUNT = 3
 
-BREAKOUT_LOOKBACK = 5
+BREAKOUT_LOOKBACK = 3
 
 
 # =========================================================
