@@ -51,9 +51,6 @@ BREAKOUT_LOOKBACK = 5
 
 # =========================================================
 # 거래소 조회 Y / N
-#
-# Y = 조회
-# N = 조회 안 함
 # =========================================================
 
 USE_UPBIT = "Y"
@@ -2296,15 +2293,19 @@ def update_dashboard():
     )
 
     if USE_UPBIT not in ("Y", "N"):
+
         logging.error(
             f"USE_UPBIT 설정 오류 : {USE_UPBIT}"
         )
+
         return
 
     if USE_OKX not in ("Y", "N"):
+
         logging.error(
             f"USE_OKX 설정 오류 : {USE_OKX}"
         )
+
         return
 
     # =====================================================
@@ -2493,6 +2494,11 @@ tbody tr:last-child td {
     border-bottom: none;
 }
 
+
+/* =====================================================
+   열 너비
+   ===================================================== */
+
 th:nth-child(1),
 td:nth-child(1) {
     width: 8%;
@@ -2518,6 +2524,122 @@ td:nth-child(5) {
     width: 30%;
 }
 
+
+/* =====================================================
+   일반 행
+   ===================================================== */
+
+.normal-row {
+    background: #181c21;
+}
+
+
+/* =====================================================
+   LONG 경고 행 전체
+   ===================================================== */
+
+.warning-long {
+    animation: longPulse 1.6s ease-in-out infinite;
+}
+
+@keyframes longPulse {
+
+    0% {
+        background-color: #181c21;
+        box-shadow: inset 0 0 0 rgba(53, 230, 109, 0);
+    }
+
+    50% {
+        background-color: rgba(53, 230, 109, 0.16);
+        box-shadow:
+            inset 3px 0 0 rgba(53, 230, 109, 0.75),
+            inset -3px 0 0 rgba(53, 230, 109, 0.75);
+    }
+
+    100% {
+        background-color: #181c21;
+        box-shadow: inset 0 0 0 rgba(53, 230, 109, 0);
+    }
+}
+
+
+/* =====================================================
+   SHORT 경고 행 전체
+   ===================================================== */
+
+.warning-short {
+    animation: shortPulse 1.6s ease-in-out infinite;
+}
+
+@keyframes shortPulse {
+
+    0% {
+        background-color: #181c21;
+        box-shadow: inset 0 0 0 rgba(255, 77, 77, 0);
+    }
+
+    50% {
+        background-color: rgba(255, 77, 77, 0.16);
+        box-shadow:
+            inset 3px 0 0 rgba(255, 77, 77, 0.75),
+            inset -3px 0 0 rgba(255, 77, 77, 0.75);
+    }
+
+    100% {
+        background-color: #181c21;
+        box-shadow: inset 0 0 0 rgba(255, 77, 77, 0);
+    }
+}
+
+
+/* =====================================================
+   돌파 후 -1 / -2는 조금 약하게
+   ===================================================== */
+
+.warning-long-after {
+    animation: longAfterPulse 2s ease-in-out infinite;
+}
+
+@keyframes longAfterPulse {
+
+    0% {
+        background-color: #181c21;
+    }
+
+    50% {
+        background-color: rgba(53, 230, 109, 0.09);
+    }
+
+    100% {
+        background-color: #181c21;
+    }
+}
+
+
+.warning-short-after {
+    animation: shortAfterPulse 2s ease-in-out infinite;
+}
+
+@keyframes shortAfterPulse {
+
+    0% {
+        background-color: #181c21;
+    }
+
+    50% {
+        background-color: rgba(255, 77, 77, 0.09);
+    }
+
+    100% {
+        background-color: #181c21;
+    }
+}
+
+
+/* =====================================================
+   코인
+   ===================================================== */
+
 .coin-wrap {
     display: flex;
     flex-direction: column;
@@ -2536,6 +2658,11 @@ td:nth-child(5) {
     line-height: 1.2;
 }
 
+
+/* =====================================================
+   방향
+   ===================================================== */
+
 .direction-long,
 .direction-short,
 .direction-none {
@@ -2544,6 +2671,11 @@ td:nth-child(5) {
     font-size: 9px;
     text-align: center;
 }
+
+
+/* =====================================================
+   거래대금
+   ===================================================== */
 
 .volume-wrap {
     display: flex;
@@ -2561,6 +2693,11 @@ td:nth-child(5) {
     font-weight: 600;
     text-align: center;
 }
+
+
+/* =====================================================
+   LONG / SHORT
+   ===================================================== */
 
 .signal-text {
     display: block;
@@ -2582,6 +2719,11 @@ td:nth-child(5) {
     font-size: 8px;
     text-align: center;
 }
+
+
+/* =====================================================
+   오늘 변동률
+   ===================================================== */
 
 .today-wrap {
     display: flex;
@@ -2606,6 +2748,11 @@ td:nth-child(5) {
     flex-shrink: 0;
 }
 
+
+/* =====================================================
+   돌파
+   ===================================================== */
+
 .breakout-wrap {
     display: flex;
     flex-direction: column;
@@ -2624,6 +2771,11 @@ td:nth-child(5) {
     font-size: 8px;
     white-space: nowrap;
 }
+
+
+/* =====================================================
+   EMA
+   ===================================================== */
 
 .ema-container {
     width: 100%;
@@ -2659,12 +2811,22 @@ td:nth-child(5) {
     flex-shrink: 0;
 }
 
+
+/* =====================================================
+   설명
+   ===================================================== */
+
 .note {
     color: #666;
     font-size: 7px;
     line-height: 1.5;
     margin: 5px 2px 8px 2px;
 }
+
+
+/* =====================================================
+   모바일
+   ===================================================== */
 
 @media (max-width: 480px) {
 
@@ -2747,11 +2909,122 @@ td:nth-child(5) {
 
 
 # =========================================================
+# 행 클래스 결정
+# =========================================================
+
+def get_row_class(
+    warning_1h,
+    direction,
+    change_percent
+):
+
+    if not warning_1h:
+        return "normal-row"
+
+    # -----------------------------------------------------
+    # 현재 LONG 돌파
+    # -----------------------------------------------------
+
+    if warning_1h.startswith(
+        "long_breakout_"
+    ):
+
+        try:
+
+            count = int(
+                warning_1h.split("_")[-1]
+            )
+
+        except Exception:
+
+            count = 0
+
+        if (
+            count > 0
+            and
+            direction == "long"
+            and
+            change_percent is not None
+            and
+            change_percent > 0
+        ):
+
+            return "warning-long"
+
+    # -----------------------------------------------------
+    # 현재 SHORT 돌파
+    # -----------------------------------------------------
+
+    if warning_1h.startswith(
+        "short_breakout_"
+    ):
+
+        try:
+
+            count = int(
+                warning_1h.split("_")[-1]
+            )
+
+        except Exception:
+
+            count = 0
+
+        if (
+            count > 0
+            and
+            direction == "short"
+            and
+            change_percent is not None
+            and
+            change_percent < 0
+        ):
+
+            return "warning-short"
+
+    # -----------------------------------------------------
+    # LONG 돌파 후 -1 / -2
+    # -----------------------------------------------------
+
+    if warning_1h.startswith(
+        "long_breakout_-"
+    ):
+
+        if (
+            direction == "long"
+            and
+            change_percent is not None
+            and
+            change_percent > 0
+        ):
+
+            return "warning-long-after"
+
+    # -----------------------------------------------------
+    # SHORT 돌파 후 -1 / -2
+    # -----------------------------------------------------
+
+    if warning_1h.startswith(
+        "short_breakout_-"
+    ):
+
+        if (
+            direction == "short"
+            and
+            change_percent is not None
+            and
+            change_percent < 0
+        ):
+
+            return "warning-short-after"
+
+    return "normal-row"
+
+
+# =========================================================
 # 테이블 행 생성
 #
-# ★ 변경:
-# TOP1~TOP20 전체를 표시
-# 돌파 조건이 없어도 종목을 제외하지 않음
+# ★ TOP 1~20 전체 표시
+# ★ 경고 행 전체 반짝임
 # =========================================================
 
 def make_table_rows(data):
@@ -2781,21 +3054,17 @@ def make_table_rows(data):
         )
 
         # -------------------------------------------------
-        # 돌파 0은 기존대로 표시하지 않음
-        #
-        # 단, 종목 자체는 삭제하지 않고
-        # warning_html()에서 — 로 표시
+        # 행 전체에 적용할 클래스
         # -------------------------------------------------
 
-        if warning_1h in (
-            "long_breakout_0",
-            "short_breakout_0"
-        ):
-
-            warning_1h = "none"
+        row_class = get_row_class(
+            warning_1h,
+            direction,
+            change_percent
+        )
 
         rows_html += f"""
-<tr>
+<tr class="{row_class}">
 
 <td>
 {item['rank']}
@@ -2890,7 +3159,7 @@ def make_exchange_section(
     color:#555;
     padding:12px 4px;
 ">
-조회된 데이터 없음
+조회된 종목 없음
 </td>
 </tr>
 """
@@ -2932,10 +3201,9 @@ def make_exchange_section(
 
 ※ 🟢(N) = EMA10 &gt; EMA30 &gt; EMA60 &gt; EMA120 정배열 유지 캔들 수<br>
 ※ 🔴(N) = EMA10 &lt; EMA30 &lt; EMA60 &lt; EMA120 역배열 유지 캔들 수<br>
-※ 🚀(1), 🚀(2) = 확정 돌파<br>
-※ 🚀(-1), 🚀(-2) = 돌파 후 다음 고점/저점 갱신 실패<br>
-※ 돌파가 없는 종목은 — 로 표시<br>
-※ 돌파 0은 표시하지 않음
+※ 🚀(1), 🚀(2) = 확정 돌파 → 행 전체 녹색/빨간색 반짝임<br>
+※ 🚀(-1), 🚀(-2) = 돌파 후 다음 고점/저점 갱신 실패 → 약하게 반짝임<br>
+※ TOP1~TOP{TOP_N} 전체 표시
 
 </div>
 
@@ -3124,4 +3392,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-)
+        )
