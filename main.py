@@ -50,15 +50,15 @@ BREAKOUT_LOOKBACK = 5
 
 
 # =========================================================
-# 거래소 조회 ON / OFF
+# 거래소 조회 Y / N
 #
-# True  = 조회
-# False = 조회 안 함
+# Y = 조회
+# N = 조회 안 함
 # =========================================================
 
-USE_UPBIT = True
+USE_UPBIT = "Y"
 
-USE_OKX = False
+USE_OKX = "N"
 
 
 # =========================================================
@@ -2582,18 +2582,24 @@ def update_okx(
 # =========================================================
 # 전체 업데이트
 #
-# USE_UPBIT / USE_OKX에 따라 선택 조회
+# USE_UPBIT / USE_OKX
 #
-# 업비트 ON
+# 업비트 Y
 # ↓
-# OKX ON이면 USDT-KRW 1회
+# 업비트 조회
+#
+# OKX Y
 # ↓
-# OKX ON이면 OKX
+# USDT-KRW 1회
+# ↓
+# OKX 조회
 # =========================================================
 
 def update_dashboard():
 
     global latest_usdt_krw
+    global latest_upbit_data
+    global latest_okx_data
 
     logging.info(
         "========================================"
@@ -2604,10 +2610,32 @@ def update_dashboard():
     )
 
     # =====================================================
+    # 설정값 검증
+    # =====================================================
+
+    if USE_UPBIT not in ("Y", "N"):
+
+        logging.error(
+            f"USE_UPBIT 설정 오류 : {USE_UPBIT} "
+            f"(Y 또는 N만 사용)"
+        )
+
+        return
+
+    if USE_OKX not in ("Y", "N"):
+
+        logging.error(
+            f"USE_OKX 설정 오류 : {USE_OKX} "
+            f"(Y 또는 N만 사용)"
+        )
+
+        return
+
+    # =====================================================
     # 업비트
     # =====================================================
 
-    if USE_UPBIT:
+    if USE_UPBIT == "Y":
 
         try:
 
@@ -2628,14 +2656,14 @@ def update_dashboard():
         upbit_success = False
 
         logging.info(
-            "업비트 조회 OFF - 조회하지 않음"
+            "업비트 조회 N - 조회하지 않음"
         )
 
     # =====================================================
     # OKX
     # =====================================================
 
-    if USE_OKX:
+    if USE_OKX == "Y":
 
         # -------------------------------------------------
         # USDT-KRW 1회 조회
@@ -2686,7 +2714,8 @@ def update_dashboard():
         okx_success = False
 
         logging.info(
-            "OKX 조회 OFF - USDT-KRW 및 OKX 조회하지 않음"
+            "OKX 조회 N - "
+            "USDT-KRW 및 OKX 조회하지 않음"
         )
 
         usdt_krw = latest_usdt_krw
@@ -2734,9 +2763,9 @@ def scheduler():
 )
 def dashboard():
 
-    upbit_status = "Y" if USE_UPBIT else "N"
+    upbit_status = USE_UPBIT
 
-    okx_status = "Y" if USE_OKX else "N"
+    okx_status = USE_OKX
 
     html = """
 <!DOCTYPE html>
@@ -3326,7 +3355,7 @@ EMA 10-30-60-120 정렬 카운팅
 
     html += (
         "status-y"
-        if USE_UPBIT
+        if USE_UPBIT == "Y"
         else "status-n"
     )
 
@@ -3342,7 +3371,7 @@ EMA 10-30-60-120 정렬 카운팅
 
     html += (
         "status-y"
-        if USE_OKX
+        if USE_OKX == "Y"
         else "status-n"
     )
 
@@ -3365,7 +3394,7 @@ OKX 조회 : """
 
 """
 
-    if USE_UPBIT:
+    if USE_UPBIT == "Y":
 
         html += """
 <div class="section">
@@ -3587,7 +3616,7 @@ OKX 조회 : """
 
         html += """
 <div class="note">
-업비트 조회가 OFF 상태입니다.
+업비트 조회가 N 상태입니다.
 </div>
 """
 
@@ -3596,7 +3625,7 @@ OKX 조회 : """
     # OKX
     # =====================================================
 
-    if USE_OKX:
+    if USE_OKX == "Y":
 
         html += """
 
@@ -3821,7 +3850,7 @@ OKX 조회 : """
 
         html += """
 <div class="note">
-OKX 조회가 OFF 상태입니다.
+OKX 조회가 N 상태입니다.
 </div>
 """
 
@@ -3851,9 +3880,25 @@ def startup():
 
     logging.info(
         f"조회 설정 "
-        f"업비트={'Y' if USE_UPBIT else 'N'} "
-        f"OKX={'Y' if USE_OKX else 'N'}"
+        f"업비트={USE_UPBIT} "
+        f"OKX={USE_OKX}"
     )
+
+    # -----------------------------------------------------
+    # 설정값 검증
+    # -----------------------------------------------------
+
+    if USE_UPBIT not in ("Y", "N"):
+
+        raise ValueError(
+            "USE_UPBIT은 Y 또는 N만 사용할 수 있습니다."
+        )
+
+    if USE_OKX not in ("Y", "N"):
+
+        raise ValueError(
+            "USE_OKX는 Y 또는 N만 사용할 수 있습니다."
+        )
 
     # 최초 1회 즉시 실행
 
@@ -3886,4 +3931,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-        )
+    )
