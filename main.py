@@ -2541,9 +2541,22 @@ def update_okx(usdt_krw):
             ""
         )
 
+        # =================================================
+        # 수정:
+        # 기존 XRP(업비트)
+        #
+        # → XRP
+        #   [UP]
+        #
+        # 업비트 미상장 코인은 기존처럼 코인명만 표시
+        # =================================================
+
         if coin in upbit_coin_set:
 
-            coin = f"{coin}(업비트)"
+            coin = (
+                f"{coin}"
+                f"<span class='upbit-tag'>[UP]</span>"
+            )
 
         try:
 
@@ -2937,6 +2950,22 @@ td:nth-child(5) {
     line-height: 1.2;
 }
 
+
+/* =====================================================
+   [UP] 업비트 표시
+   ===================================================== */
+
+.upbit-tag {
+    display: block;
+    margin-top: 2px;
+    font-size: 6px;
+    line-height: 1;
+    color: #35e66d;
+    font-weight: 700;
+    text-align: center;
+}
+
+
 .direction-long,
 .direction-short,
 .direction-none {
@@ -3124,6 +3153,11 @@ td:nth-child(5) {
 
     .coin {
         font-size: 8px;
+    }
+
+    .upbit-tag {
+        font-size: 6px;
+        margin-top: 2px;
     }
 
     .volume-value {
@@ -3612,4 +3646,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-                )
+        )
