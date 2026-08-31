@@ -671,6 +671,110 @@ def get_upbit_ohlcv(
 
 
 # =========================================================
+# 업비트 일봉
+#
+# 중요:
+# 업비트 당일 변동률은 1시간봉으로 계산하지 않는다.
+#
+# 업비트 일봉 API의 change_rate를 직접 사용한다.
+#
+# GET /v1/candles/days
+# =========================================================
+
+def get_upbit_daily_change(
+    market
+):
+
+    logging.info(
+        f"[업비트 일봉] "
+        f"{market} 변동률 조회 시작"
+    )
+
+    url = (
+        "https://api.upbit.com/v1/"
+        "candles/days"
+    )
+
+    params = {
+        "market": market,
+        "count": 1
+    }
+
+    response = retry_request(
+        requests.get,
+        url,
+        params=params,
+        timeout=15
+    )
+
+    if response is None:
+
+        logging.error(
+            f"[업비트 일봉] "
+            f"{market} API 응답 실패"
+        )
+
+        return None
+
+    try:
+
+        data = response.json()
+
+        if not data:
+
+            logging.warning(
+                f"[업비트 일봉] "
+                f"{market} 데이터 없음"
+            )
+
+            return None
+
+        candle = data[0]
+
+        change_rate = candle.get(
+            "change_rate"
+        )
+
+        if change_rate is None:
+
+            logging.warning(
+                f"[업비트 일봉] "
+                f"{market} change_rate 없음"
+            )
+
+            return None
+
+        # 업비트 change_rate는 소수값으로 반환되므로 %
+        change_rate = (
+            float(change_rate) * 100
+        )
+
+        result = round(
+            change_rate,
+            2
+        )
+
+        logging.info(
+            f"[업비트 일봉] "
+            f"{market} = "
+            f"{result:+.2f}%"
+        )
+
+        return [
+            result
+        ]
+
+    except Exception as e:
+
+        logging.error(
+            f"[업비트 일봉] "
+            f"{market} 처리 오류 : {e}"
+        )
+
+        return None
+
+
+# =========================================================
 # EMA
 # =========================================================
 
@@ -1343,12 +1447,10 @@ def get_long_breakout_signal(
                     df["c"].iloc[i]
                 )
 
-                # LONG 접근봉은 양봉
                 if c < o:
 
                     continue
 
-                # 이미 돌파한 봉 제외
                 if c >= effective_high:
 
                     continue
@@ -1398,7 +1500,6 @@ def get_long_breakout_signal(
 
             continue
 
-        # 🚨 기준봉 저점
         pre_low = float(
             df["l"].iloc[
                 pre_index
@@ -1426,7 +1527,6 @@ def get_long_breakout_signal(
                     df["c"].iloc[i]
                 )
 
-                # LONG 돌파봉은 양봉
                 if c <= o:
 
                     continue
@@ -1474,7 +1574,6 @@ def get_long_breakout_signal(
 
             continue
 
-        # 최초 돌파봉
         if breakout_index == current_index:
 
             return "1"
@@ -1507,12 +1606,10 @@ def get_long_breakout_signal(
                 ]
             )
 
-            # 돌파 기준봉 저점 이탈
             if current_low < pre_low:
 
                 return "none"
 
-            # 돌파 직후 음봉
             if current_close < current_open:
 
                 return "pullback"
@@ -1697,7 +1794,6 @@ def get_short_breakout_signal(
                     df["c"].iloc[i]
                 )
 
-                # SHORT 접근봉은 음봉
                 if c > o:
 
                     continue
@@ -1751,7 +1847,6 @@ def get_short_breakout_signal(
 
             continue
 
-        # 🚨 기준봉 고점
         pre_high = float(
             df["h"].iloc[
                 pre_index
@@ -1779,7 +1874,6 @@ def get_short_breakout_signal(
                     df["c"].iloc[i]
                 )
 
-                # SHORT 돌파봉은 음봉
                 if c >= o:
 
                     continue
@@ -1827,7 +1921,6 @@ def get_short_breakout_signal(
 
             continue
 
-        # 최초 돌파봉
         if breakout_index == current_index:
 
             return "1"
@@ -1860,12 +1953,10 @@ def get_short_breakout_signal(
                 ]
             )
 
-            # 돌파 기준봉 고점 돌파
             if current_high > pre_high:
 
                 return "none"
 
-            # SHORT 직후 양봉
             if current_close > current_open:
 
                 return "pullback"
@@ -1947,6 +2038,8 @@ def get_breakout_signal(
 
 # =========================================================
 # 변동률
+#
+# OKX에서만 사용
 #
 # 한국시간 09:00 기준
 # =========================================================
@@ -2563,11 +2656,24 @@ def get_all_okx_swap_symbols():
 
 # =========================================================
 # 업비트 분석
+#
+# 1시간봉
+#   ├─ EMA
+#   └─ 돌파
+#
+# 일봉
+#   └─ 당일 변동률 change_rate 직접 사용
 # =========================================================
 
 def get_upbit_analysis(
     market
 ):
+
+    # -----------------------------------------------------
+    # 1. 업비트 1시간봉
+    #
+    # EMA / 돌파 분석용
+    # -----------------------------------------------------
 
     df = get_upbit_history(
         market
@@ -2580,19 +2686,44 @@ def get_upbit_analysis(
 
         return None
 
+    # -----------------------------------------------------
+    # 2. EMA
+    # -----------------------------------------------------
+
     ema = check_ema(
         df
     )
+
+    # -----------------------------------------------------
+    # 3. 돌파 구조
+    # -----------------------------------------------------
 
     warning = get_breakout_signal(
         df,
         allow_short=False
     )
 
-    changes = calculate_daily_changes(
-        df,
-        False
+    # -----------------------------------------------------
+    # 4. 업비트 일봉 변동률
+    #
+    # 기존 calculate_daily_changes() 사용 안 함
+    # -----------------------------------------------------
+
+    changes = get_upbit_daily_change(
+        market
     )
+
+    if (
+        changes is None
+        or len(changes) == 0
+    ):
+
+        logging.warning(
+            f"[업비트 분석] "
+            f"{market} 일봉 변동률 없음"
+        )
+
+        return None
 
     return {
         "ema": ema,
@@ -2603,6 +2734,8 @@ def get_upbit_analysis(
 
 # =========================================================
 # OKX 분석
+#
+# 기존 그대로 유지
 # =========================================================
 
 def get_okx_analysis(
@@ -2648,8 +2781,6 @@ def get_okx_analysis(
 # 1. 직전 고점 돌파 구조 LONG
 # 2. EMA 30 > 60 > 120
 # 3. 당일 변동률 양수
-#
-# 변동률 기준이 최종 필터
 # =========================================================
 
 def pass_long_filter(
@@ -2674,14 +2805,12 @@ def pass_long_filter(
         "changes"
     )
 
-    # 30-60-120 정배열
     if ema.get(
         "direction"
     ) != "long":
 
         return False
 
-    # 직전 고점 돌파 구조
     if warning.get(
         "direction"
     ) != "long":
@@ -2702,7 +2831,6 @@ def pass_long_filter(
 
         return False
 
-    # 당일 변동률 양수
     if today_change <= 0:
 
         return False
@@ -2716,8 +2844,6 @@ def pass_long_filter(
 # 1. 직전 저점 이탈 구조 SHORT
 # 2. EMA 30 < 60 < 120
 # 3. 당일 변동률 음수
-#
-# 변동률 기준이 최종 필터
 # =========================================================
 
 def pass_short_filter(
@@ -2742,14 +2868,12 @@ def pass_short_filter(
         "changes"
     )
 
-    # 30-60-120 역배열
     if ema.get(
         "direction"
     ) != "short":
 
         return False
 
-    # 직전 저점 이탈 구조
     if warning.get(
         "direction"
     ) != "short":
@@ -2770,7 +2894,6 @@ def pass_short_filter(
 
         return False
 
-    # 당일 변동률 음수
     if today_change >= 0:
 
         return False
@@ -2782,10 +2905,6 @@ def pass_short_filter(
 # 업비트 업데이트
 #
 # LONG만 표시
-#
-# 중요:
-# 여기서 latest_upbit_markets를 만들고
-# 이후 OKX에서는 이것을 재사용
 # =========================================================
 
 def update_upbit():
@@ -2872,7 +2991,7 @@ def update_upbit():
         return False
 
     # -----------------------------------------------------
-    # 3. TOP30
+    # 3. TOP100
     # -----------------------------------------------------
 
     top_markets = sorted(
@@ -2887,7 +3006,7 @@ def update_upbit():
     )
 
     # -----------------------------------------------------
-    # 4. TOP30 분석
+    # 4. TOP100 분석
     # -----------------------------------------------------
 
     rows = []
@@ -2991,9 +3110,7 @@ def update_upbit():
 #
 # LONG / SHORT
 #
-# 중요:
-# 업비트 마켓을 API로 다시 조회하지 않는다.
-# latest_upbit_markets 사용
+# 업비트 마켓을 API로 다시 조회하지 않음
 # =========================================================
 
 def update_okx(
@@ -3040,10 +3157,7 @@ def update_okx(
         return False
 
     # -----------------------------------------------------
-    # 중요
-    #
-    # 업비트 API를 다시 호출하지 않는다.
-    # 직전 업비트 단계에서 저장한 캐시 사용
+    # 업비트 API 재조회하지 않음
     # -----------------------------------------------------
 
     upbit_coin_set = {
@@ -3113,7 +3227,7 @@ def update_okx(
     rows = []
 
     # -----------------------------------------------------
-    # TOP30 분석
+    # TOP100 분석
     # -----------------------------------------------------
 
     for rank, symbol in enumerate(
@@ -3242,16 +3356,11 @@ def update_okx(
 # =========================================================
 # 전체 업데이트
 #
-# 반드시
-#
 # 업비트
 # ↓
 # 업비트 완전 종료
 # ↓
 # OKX
-# ↓
-# OKX 완전 종료
-#
 # =========================================================
 
 def update_dashboard():
@@ -3259,11 +3368,6 @@ def update_dashboard():
     global latest_usdt_krw
     global latest_upbit_data
     global latest_okx_data
-
-    # -----------------------------------------------------
-    # 이전 업데이트가 아직 끝나지 않았다면
-    # 중복 실행 방지
-    # -----------------------------------------------------
 
     if not update_lock.acquire(
         blocking=False
@@ -3391,10 +3495,6 @@ def update_dashboard():
                 "OKX 사용 안 함 "
                 "(USE_OKX=N)"
             )
-
-        # =================================================
-        # 전체 종료
-        # =================================================
 
         cycle_end = get_kst_time()
 
@@ -3851,6 +3951,10 @@ def make_exchange_section(
             "※ OKX = LONG / SHORT 모두 표시<br>"
         )
 
+        change_note = (
+            "※ 변동률 = OKX 1시간봉을 이용해 한국시간 09:00 기준 계산<br>"
+        )
+
         update_time = (
             latest_okx_update_time
         )
@@ -3859,6 +3963,10 @@ def make_exchange_section(
 
         direction_note = (
             "※ 업비트 = LONG만 표시<br>"
+        )
+
+        change_note = (
+            "※ 변동률 = 업비트 일봉 API의 change_rate 사용<br>"
         )
 
         update_time = (
@@ -3916,9 +4024,9 @@ def make_exchange_section(
 ※ TOP{TOP_N} 거래대금 순위<br>
 ※ 거래대금 = 확정 1시간봉 기준<br>
 {direction_note}
+{change_note}
 ※ LONG = EMA 30 > 60 > 120 + 당일 변동률 양수<br>
 ※ SHORT = EMA 30 < 60 < 120 + 당일 변동률 음수<br>
-※ 당일 변동률 = 한국시간 09:00 기준<br>
 ※ 현재 진행 중인 1시간봉 제외<br>
 ※ 🚨 = 직전 고점/저점 돌파 직전<br>
 ※ 🚀 = 최초 돌파 확정봉<br>
@@ -4041,7 +4149,11 @@ SHORT = 역배열 + 당일 변동률 음수
 </div>
 
 <div>
-변동률 = 한국시간 09:00 기준
+업비트 변동률 = 일봉 API change_rate
+</div>
+
+<div>
+OKX 변동률 = 한국시간 09:00 기준
 </div>
 
 <div>
@@ -4118,7 +4230,11 @@ def startup():
     )
 
     logging.info(
-        "변동률 : 한국시간 09:00 기준"
+        "업비트 변동률 : 일봉 API change_rate"
+    )
+
+    logging.info(
+        "OKX 변동률 : 한국시간 09:00 기준"
     )
 
     logging.info(
@@ -4222,4 +4338,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-)
+        )
