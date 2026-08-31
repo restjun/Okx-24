@@ -47,7 +47,7 @@ UPDATE_MINUTES = 1
 BREAKOUT_LOOKBACK = 10
 
 # 전고점 근처를 돌파 직전으로 판단하는 허용 거리
-# 0.5% 이내
+# 0.5%
 PRE_BREAKOUT_DISTANCE = 0.005
 
 # 전고점 후보를 찾기 위한 좌우 캔들 수
@@ -61,7 +61,6 @@ SWING_RIGHT = 2
 
 USE_UPBIT = "Y"
 
-# ★ OKX 활성화
 USE_OKX = "N"
 
 
@@ -82,7 +81,6 @@ MAX_RETRIES = 10
 
 OKX_RETRY_DELAY = 2
 
-# ★ 기존 0 → 종목당 최대 3회 재시도
 OKX_MAX_RETRY_ROUNDS = 3
 
 
@@ -377,6 +375,7 @@ def get_okx_ohlcv(
                 errors="coerce"
             )
 
+        # 확정 캔들만 사용
         df = df[
             df["confirm"].astype(str) == "1"
         ]
@@ -393,11 +392,6 @@ def get_okx_ohlcv(
         df = (
             df.iloc[::-1]
             .reset_index(drop=True)
-        )
-
-        logging.debug(
-            f"OKX 캔들 조회 성공 : "
-            f"{inst_id} / {bar} / {len(df)}개"
         )
 
         return df
@@ -421,6 +415,7 @@ def get_upbit_ticker_volume_map(
 ):
 
     if not markets:
+
         return {}
 
     volume_map = {}
@@ -465,11 +460,13 @@ def get_upbit_ticker_volume_map(
                 if response is None:
 
                     time.sleep(2)
+
                     continue
 
                 if response.status_code != 200:
 
                     time.sleep(2)
+
                     continue
 
                 data = response.json()
@@ -477,6 +474,7 @@ def get_upbit_ticker_volume_map(
                 if not data:
 
                     time.sleep(2)
+
                     continue
 
                 for item in data:
@@ -549,6 +547,7 @@ def get_upbit_ohlcv(
     )
 
     if response is None:
+
         return None
 
     try:
@@ -556,6 +555,7 @@ def get_upbit_ohlcv(
         data = response.json()
 
         if not data:
+
             return None
 
         df = pd.DataFrame(
@@ -563,6 +563,7 @@ def get_upbit_ohlcv(
         )
 
         if df.empty:
+
             return None
 
         df = (
@@ -615,6 +616,7 @@ def get_upbit_markets():
     )
 
     if response is None:
+
         return []
 
     try:
@@ -640,7 +642,9 @@ def get_upbit_markets():
 # 거래대금 표시
 # =========================================================
 
-def format_volume(volume):
+def format_volume(
+    volume
+):
 
     if volume >= 1_000_000_000_000:
 
@@ -685,6 +689,7 @@ def get_ema(
     )
 
     if price.notna().sum() < period:
+
         return None
 
     return price.ewm(
@@ -722,11 +727,8 @@ def get_ema_10_30_direction(
 
         return "none"
 
-    if len(ema10) == 0 or len(ema30) == 0:
-
-        return "none"
-
     a = ema10.iloc[-1]
+
     b = ema30.iloc[-1]
 
     if pd.isna(a) or pd.isna(b):
@@ -789,18 +791,10 @@ def get_ema_30_60_120_direction(
 
         return "none"
 
-    if (
-        len(ema30) == 0
-        or
-        len(ema60) == 0
-        or
-        len(ema120) == 0
-    ):
-
-        return "none"
-
     a = ema30.iloc[-1]
+
     b = ema60.iloc[-1]
+
     c = ema120.iloc[-1]
 
     if any(
@@ -810,10 +804,12 @@ def get_ema_30_60_120_direction(
 
         return "none"
 
+    # ★ 1H 정배열
     if a > b > c:
 
         return "long"
 
+    # ★ 1H 역배열
     if a < b < c:
 
         return "short"
@@ -867,7 +863,9 @@ def get_ema_10_30_60_direction(
         return "none"
 
     a = ema10.iloc[-1]
+
     b = ema30.iloc[-1]
+
     c = ema60.iloc[-1]
 
     if any(
@@ -890,6 +888,12 @@ def get_ema_10_30_60_direction(
 
 # =========================================================
 # EMA 표시
+#
+# 120개 이상이면
+# 30-60-120 기준
+#
+# 120개 미만이면
+# 10-30 기준
 # =========================================================
 
 def check_ema(
@@ -964,24 +968,30 @@ def check_ema(
 
 
 # =========================================================
-# 4H 30-60-120 정배열 여부
+# ★ 1H 30-60-120 정배열 여부
+#
+# 상승 돌파에서는 반드시
+#
+# 30 > 60 > 120
+#
+# 이어야 한다.
 # =========================================================
 
-def is_4h_long_alignment(
-    df4h
+def is_1h_long_alignment(
+    df1h
 ):
 
     if (
-        df4h is None
+        df1h is None
         or
-        len(df4h) < 120
+        len(df1h) < 120
     ):
 
         return False
 
     return (
         get_ema_30_60_120_direction(
-            df4h,
+            df1h,
             "c"
         )
         == "long"
@@ -1080,7 +1090,7 @@ def find_previous_swing_high(
 
 
 # =========================================================
-# 4H 상승 돌파 추적
+# ★ 1H 상승 돌파 추적
 #
 # 상태:
 #
@@ -1089,55 +1099,68 @@ def find_previous_swing_high(
 # 1
 # pullback
 #
-# pre:
-# 전고점 바로 아래
+# 핵심 기준:
 #
-# 1:
-# 전고점을 처음 돌파한 양봉
+# 1H 30-60-120 정배열
+#          ↓
+# 최근 전고점
+#          ↓
+# 조정
+#          ↓
+# 전고점 0.5% 이내 양봉
+#          ↓
+# 🚨
+#          ↓
+# 전고점 최초 돌파 양봉
+#          ↓
+# 🚀
+#          ↓
+# 다음 1H 음봉
+#          ↓
+# 〽️
 #
-# pullback:
-# 🚀 직후 음봉 눌림
-#
-# 핵심:
-# 🚨 캔들의 저점을 이탈하면
-# 〽️ 표시하지 않는다.
+# 🚨 캔들 저점 이탈
+#          ↓
+# 신호 제거
 # =========================================================
 
-def get_4h_breakout_signal(
-    df4h
+def get_1h_breakout_signal(
+    df1h
 ):
 
     if (
-        df4h is None
+        df1h is None
         or
-        df4h.empty
+        df1h.empty
     ):
 
         return "none"
 
-    if len(df4h) < 125:
+    if len(df1h) < 125:
 
         return "none"
 
-    # -----------------------------------------------------
-    # 30-60-120 정배열
-    # -----------------------------------------------------
+    # =====================================================
+    # ★ 1H 30-60-120 정배열
+    #
+    # 역배열이면 여기서 즉시 제외
+    # =====================================================
 
-    if not is_4h_long_alignment(
-        df4h
+    if not is_1h_long_alignment(
+        df1h
     ):
 
         return "none"
 
     df = (
-        df4h
+        df1h
         .copy()
         .reset_index(drop=True)
     )
 
-    # -----------------------------------------------------
+    # =====================================================
     # 숫자 변환
-    # -----------------------------------------------------
+    # =====================================================
 
     for col in [
         "o",
@@ -1180,12 +1203,9 @@ def get_4h_breakout_signal(
         current["o"]
     )
 
-    current_low = float(
-        current["l"]
-    )
-
     # =====================================================
-    # 최근 스윙 고점 탐색
+    # 최근 40개 1H 캔들에서
+    # 스윙 고점 탐색
     # =====================================================
 
     search_start = max(
@@ -1254,13 +1274,14 @@ def get_4h_breakout_signal(
 
         return "none"
 
+    # 가장 최근 스윙 고점
     swing_index, swing_high = (
         swing_candidates[-1]
     )
 
-    # -----------------------------------------------------
-    # 너무 오래된 고점 무효
-    # -----------------------------------------------------
+    # =====================================================
+    # 너무 오래된 전고점 제외
+    # =====================================================
 
     if (
         current_index
@@ -1273,7 +1294,7 @@ def get_4h_breakout_signal(
         return "none"
 
     # =====================================================
-    # 스윙 고점 이후 조정 확인
+    # 전고점 이후 조정 확인
     # =====================================================
 
     if current_index <= swing_index + 2:
@@ -1314,10 +1335,11 @@ def get_4h_breakout_signal(
         return "none"
 
     # =====================================================
-    # 🚨 캔들 찾기
+    # 🚨 후보 찾기
     #
-    # 전고점 아래에서
-    # 0.5% 이내 접근한 양봉
+    # 전고점 아래
+    # 전고점과 0.5% 이내
+    # 양봉
     # =====================================================
 
     pre_index = None
@@ -1337,20 +1359,19 @@ def get_4h_breakout_signal(
             candle["c"]
         )
 
-        # 양봉만 🚨 후보
+        # 양봉만
         if c < o:
 
             continue
 
-        # 이미 돌파한 캔들은 🚨 아님
+        # 전고점 이상이면
+        # 이미 돌파했으므로 🚨 아님
         if c >= swing_high:
 
             continue
 
         distance = (
-            swing_high
-            -
-            c
+            swing_high - c
         ) / swing_high
 
         if distance <= PRE_BREAKOUT_DISTANCE:
@@ -1358,8 +1379,7 @@ def get_4h_breakout_signal(
             pre_index = i
 
     # =====================================================
-    # 🚨가 아직 없다면
-    # 현재 캔들 자체가 🚨인지 확인
+    # 🚨 후보 없음
     # =====================================================
 
     if pre_index is None:
@@ -1385,7 +1405,7 @@ def get_4h_breakout_signal(
     # =====================================================
     # 🚨 캔들의 저점
     #
-    # 이후 눌림에서 반드시 지켜야 하는 기준
+    # 이후 돌파 실패 판단 기준
     # =====================================================
 
     pre_low = float(
@@ -1395,7 +1415,7 @@ def get_4h_breakout_signal(
     )
 
     # =====================================================
-    # 🚀 첫 돌파 캔들 찾기
+    # 🚀 첫 돌파 캔들 탐색
     # =====================================================
 
     breakout_index = None
@@ -1415,7 +1435,7 @@ def get_4h_breakout_signal(
             candle["c"]
         )
 
-        # 첫 돌파는 양봉
+        # 돌파 캔들은 양봉
         if c <= o:
 
             continue
@@ -1428,8 +1448,7 @@ def get_4h_breakout_signal(
             break
 
     # =====================================================
-    # 아직 돌파하지 않았다면
-    # 현재 캔들이 🚨인지 확인
+    # 아직 돌파하지 않은 경우
     # =====================================================
 
     if breakout_index is None:
@@ -1457,10 +1476,7 @@ def get_4h_breakout_signal(
         return "none"
 
     # =====================================================
-    # 🚀 돌파 캔들이 현재 캔들이면
-    #
-    # 내부 상태는 "1"
-    # 화면에는 🚀만 표시
+    # 🚀 최초 돌파
     # =====================================================
 
     if breakout_index == current_index:
@@ -1468,7 +1484,7 @@ def get_4h_breakout_signal(
         return "1"
 
     # =====================================================
-    # 🚀 바로 다음 캔들
+    # 🚀 다음 1H 캔들
     # =====================================================
 
     after_breakout_index = (
@@ -1508,41 +1524,36 @@ def get_4h_breakout_signal(
         # -------------------------------------------------
         # 🚀 직후 음봉
         #
-        # 정상적인 눌림
+        # 정상 눌림
         # -------------------------------------------------
 
         if current_close < current_open:
 
             return "pullback"
 
-        # -------------------------------------------------
-        # 직후 양봉이면 〽️ 없음
-        # -------------------------------------------------
-
         return "none"
 
     # =====================================================
-    # 🚀 이후 2번째 캔들부터는
-    # 〽️ 표시하지 않음
+    # 2번째 이후에는 〽️ 표시하지 않음
     # =====================================================
 
     return "none"
 
 
 # =========================================================
-# 4H 돌파 경고
+# 돌파 경고
 # =========================================================
 
 def get_breakout_warning(
-    df4h
+    df1h
 ):
 
-    signal = get_4h_breakout_signal(
-        df4h
+    signal = get_1h_breakout_signal(
+        df1h
     )
 
     return {
-        "4h": signal
+        "1h": signal
     }
 
 
@@ -1559,7 +1570,7 @@ def is_visible_warning(
         return False
 
     return (
-        warning.get("4h")
+        warning.get("1h")
         in
         (
             "pre",
@@ -1582,7 +1593,7 @@ def combined_warning_html(
         return ""
 
     signal = warning.get(
-        "4h",
+        "1h",
         "none"
     )
 
@@ -1599,10 +1610,7 @@ def combined_warning_html(
         )
 
     # -----------------------------------------------------
-    # 첫 돌파
-    #
-    # 내부적으로는 "1"
-    # 화면에는 숫자 없이 🚀만 표시
+    # 최초 돌파
     # -----------------------------------------------------
 
     if signal == "1":
@@ -1969,6 +1977,9 @@ def empty_ema():
 
 # =========================================================
 # 업비트 EMA
+#
+# ★ 돌파 경고 = 1H
+# ★ 4H = 표시용
 # =========================================================
 
 def get_upbit_ema(
@@ -1997,7 +2008,7 @@ def get_upbit_ema(
             "1h_ema": empty_ema(),
             "4h_ema": empty_ema(),
             "warning": {
-                "4h": "none"
+                "1h": "none"
             }
         }
 
@@ -2006,7 +2017,7 @@ def get_upbit_ema(
     df4h = raw4h.copy()
 
     # -----------------------------------------------------
-    # 현재 진행 캔들 제외
+    # 현재 진행 중인 캔들 제외
     # -----------------------------------------------------
 
     if len(df1h) > 1:
@@ -2033,8 +2044,10 @@ def get_upbit_ema(
         df4h
     )
 
+    # ★ 핵심 변경
+    # 4H가 아니라 1H로 경고 판단
     warning = get_breakout_warning(
-        df4h
+        df1h
     )
 
     return {
@@ -2046,6 +2059,9 @@ def get_upbit_ema(
 
 # =========================================================
 # OKX EMA
+#
+# ★ 돌파 경고 = 1H
+# ★ 4H = 표시용
 # =========================================================
 
 def get_okx_ema(
@@ -2074,7 +2090,7 @@ def get_okx_ema(
             "1h_ema": empty_ema(),
             "4h_ema": empty_ema(),
             "warning": {
-                "4h": "none"
+                "1h": "none"
             }
         }
 
@@ -2086,8 +2102,9 @@ def get_okx_ema(
         df4h
     )
 
+    # ★ 핵심 변경
     warning = get_breakout_warning(
-        df4h
+        df1h
     )
 
     return {
@@ -2113,10 +2130,6 @@ def get_okx_volume(
             200
         )
     )
-
-    # -----------------------------------------------------
-    # ★ 무한 while 제거
-    # -----------------------------------------------------
 
     for retry_round in range(
         1,
@@ -2358,10 +2371,11 @@ def update_upbit():
             )
 
             signal = warning.get(
-                "4h",
+                "1h",
                 "none"
             )
 
+            # ★ 1H 경고만 표시
             if signal not in (
                 "pre",
                 "1",
@@ -2424,7 +2438,7 @@ def update_upbit():
     latest_upbit_data = rows
 
     logging.info(
-        f"업비트 LONG 돌파 종목 "
+        f"업비트 1H LONG 돌파 종목 "
         f"{len(rows)}개"
     )
 
@@ -2453,10 +2467,6 @@ def update_okx(
         "========== update_okx 진입 =========="
     )
 
-    # -----------------------------------------------------
-    # USDT-KRW 확인
-    # -----------------------------------------------------
-
     if (
         usdt_krw is None
         or
@@ -2470,13 +2480,9 @@ def update_okx(
 
         return False
 
-    # -----------------------------------------------------
+    # =====================================================
     # OKX 전체 SWAP 목록
-    # -----------------------------------------------------
-
-    logging.info(
-        "OKX SWAP 전체 종목 조회 요청"
-    )
+    # =====================================================
 
     symbols = (
         get_all_okx_swap_symbols()
@@ -2495,13 +2501,9 @@ def update_okx(
 
         return False
 
-    # -----------------------------------------------------
-    # 업비트 상장 여부 확인
-    # -----------------------------------------------------
-
-    logging.info(
-        "업비트 마켓 목록 조회"
-    )
+    # =====================================================
+    # 업비트 상장 여부
+    # =====================================================
 
     upbit_markets = (
         get_upbit_markets()
@@ -2515,9 +2517,9 @@ def update_okx(
         for market in upbit_markets
     }
 
-    # -----------------------------------------------------
-    # 거래대금 조회
-    # -----------------------------------------------------
+    # =====================================================
+    # OKX 거래대금
+    # =====================================================
 
     volume_map = {}
 
@@ -2574,9 +2576,9 @@ def update_okx(
 
         return False
 
-    # -----------------------------------------------------
+    # =====================================================
     # TOP30
-    # -----------------------------------------------------
+    # =====================================================
 
     top_symbols = sorted(
         volume_map,
@@ -2584,15 +2586,11 @@ def update_okx(
         reverse=True
     )[:TOP_N]
 
-    logging.info(
-        f"OKX TOP{TOP_N} 선정 완료"
-    )
-
     rows = []
 
-    # -----------------------------------------------------
-    # TOP30 상세 조회
-    # -----------------------------------------------------
+    # =====================================================
+    # TOP30 상세
+    # =====================================================
 
     for rank, symbol in enumerate(
         top_symbols,
@@ -2610,12 +2608,6 @@ def update_okx(
 
         try:
 
-            logging.info(
-                f"[OKX 상세] "
-                f"{rank}/{len(top_symbols)} "
-                f"{symbol}"
-            )
-
             changes = get_okx_change(
                 symbol
             )
@@ -2629,6 +2621,7 @@ def update_okx(
                 {}
             )
 
+            # ★ 1H 경고
             if not is_visible_warning(
                 warning
             ):
@@ -2689,7 +2682,7 @@ def update_okx(
     latest_okx_data = rows
 
     logging.info(
-        f"OKX LONG 돌파 종목 "
+        f"OKX 1H LONG 돌파 종목 "
         f"{len(rows)}개"
     )
 
@@ -2707,6 +2700,8 @@ def update_okx(
 def update_dashboard():
 
     global latest_usdt_krw
+    global latest_upbit_data
+    global latest_okx_data
 
     logging.info(
         "========================================"
@@ -2738,8 +2733,6 @@ def update_dashboard():
 
     else:
 
-        global latest_upbit_data
-
         latest_upbit_data = []
 
         logging.info(
@@ -2757,14 +2750,6 @@ def update_dashboard():
         )
 
         try:
-
-            # -------------------------------------------------
-            # USDT-KRW
-            # -------------------------------------------------
-
-            logging.info(
-                "OKX USDT-KRW 조회 요청"
-            )
 
             usdt_krw = get_usdt_krw()
 
@@ -2790,10 +2775,6 @@ def update_dashboard():
                     f"기존값 사용 : {usdt_krw}"
                 )
 
-            # -------------------------------------------------
-            # OKX 조회
-            # -------------------------------------------------
-
             if (
                 usdt_krw is None
                 or
@@ -2806,11 +2787,6 @@ def update_dashboard():
                 )
 
             else:
-
-                logging.info(
-                    f"OKX update_okx() 호출 : "
-                    f"USDT-KRW={usdt_krw}"
-                )
 
                 result = update_okx(
                     usdt_krw
@@ -2828,8 +2804,6 @@ def update_dashboard():
             )
 
     else:
-
-        global latest_okx_data
 
         latest_okx_data = []
 
@@ -2992,11 +2966,6 @@ td {
     vertical-align: middle;
 }
 
-
-/* =====================================================
-   컬럼
-   ===================================================== */
-
 th:nth-child(1),
 td:nth-child(1) {
 
@@ -3027,11 +2996,6 @@ td:nth-child(5) {
     width: 28%;
 }
 
-
-/* =====================================================
-   코인
-   ===================================================== */
-
 .coin {
 
     display: block;
@@ -3043,22 +3007,12 @@ td:nth-child(5) {
     line-height: 1.2;
 }
 
-
-/* =====================================================
-   거래대금
-   ===================================================== */
-
 .volume-value {
 
     font-size: 7px;
 
     font-weight: 600;
 }
-
-
-/* =====================================================
-   오늘
-   ===================================================== */
 
 .today-wrap {
 
@@ -3104,11 +3058,6 @@ td:nth-child(5) {
 
     color: #aaaaaa;
 }
-
-
-/* =====================================================
-   경고
-   ===================================================== */
 
 .breakout-warning {
 
@@ -3156,11 +3105,6 @@ td:nth-child(5) {
         );
 }
 
-
-/* =====================================================
-   🚀 직후 눌림
-   ===================================================== */
-
 .warning-pullback {
 
     font-size: 10px;
@@ -3173,11 +3117,6 @@ td:nth-child(5) {
             rgba(255,200,50,0.9)
         );
 }
-
-
-/* =====================================================
-   반짝임
-   ===================================================== */
 
 @keyframes warning-blink {
 
@@ -3192,11 +3131,6 @@ td:nth-child(5) {
         opacity: 0.25;
     }
 }
-
-
-/* =====================================================
-   EMA
-   ===================================================== */
 
 .ema-value {
 
@@ -3230,11 +3164,6 @@ td:nth-child(5) {
 
     font-size: 7px;
 }
-
-
-/* =====================================================
-   모바일
-   ===================================================== */
 
 @media (max-width: 480px) {
 
@@ -3486,19 +3415,23 @@ def make_exchange_section(
 
 ※ ☀️ 양수 / ☁️ 음수<br>
 
-※ 🚨 = 4H 전고점 돌파 직전<br>
+※ 🚨 = 1H 전고점 돌파 직전<br>
 
-※ 🚨는 전고점 0.5% 이내 접근한 양봉<br>
+※ 🚨 = 전고점 0.5% 이내 접근한 1H 양봉<br>
 
-※ 🚀 = 전고점을 처음 돌파한 양봉<br>
+※ 🚀 = 전고점을 처음 돌파한 1H 양봉<br>
 
-※ 〽️ = 🚀 직후 음봉 눌림<br>
+※ 〽️ = 🚀 직후 1H 음봉 눌림<br>
 
 ※ 〽️는 🚨 캔들의 저점을 이탈하지 않을 때만 표시<br>
 
 ※ 🚨 캔들 저점 이탈 시 돌파 실패로 신호 제거<br>
 
-※ 4H EMA 30-60-120 정배열 유지 조건<br>
+※ ★ 돌파 조건은 1H 30-60-120 정배열<br>
+
+※ 1H 30 > 60 > 120 정배열이 아니면 상승 돌파 제외<br>
+
+※ 4H EMA는 참고용으로만 표시<br>
 
 ※ 고점 형성 → 조정 → 재상승 → 전고점 돌파 구조<br>
 
@@ -3596,7 +3529,7 @@ Breakout Trading
 <div class="info">
 
 <div>
-4H 30-60-120 정배열 + 전고점 재돌파
+1H 30-60-120 정배열 + 전고점 재돌파
 </div>
 
 <div>
@@ -3712,4 +3645,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-    )
+        )
