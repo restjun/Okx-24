@@ -38,7 +38,7 @@ logger = logging.getLogger("trading")
 # 사용자 설정
 # =========================================================
 
-# 업비트 ticker API가 제공하는 24시간 거래대금 사용
+# 업비트 ticker API 24시간 거래대금
 VOLUME_HOURS = 24
 
 # 거래대금 TOP
@@ -1270,6 +1270,11 @@ def find_swing_lows(
 
 # =========================================================
 # LONG 돌파
+#
+# 변경:
+# 🚨 pre 표시 안 함
+# 🚀 돌파 후 1 / 2 / 3까지만 표시
+# 기준봉 저점 이탈 시 즉시 제거
 # =========================================================
 
 def get_long_breakout_signal(
@@ -1358,6 +1363,10 @@ def get_long_breakout_signal(
 
             continue
 
+        # -------------------------------------------------
+        # 새로운 낮은 고점 확인
+        # -------------------------------------------------
+
         new_highs = find_swing_highs(
             df,
             swing_index + 1,
@@ -1386,6 +1395,10 @@ def get_long_breakout_signal(
         if effective_high_index >= current_index:
 
             continue
+
+        # -------------------------------------------------
+        # 돌파 전 눌림 확인
+        # -------------------------------------------------
 
         correction_section = df.iloc[
             effective_high_index + 1:
@@ -1421,7 +1434,10 @@ def get_long_breakout_signal(
             continue
 
         # -------------------------------------------------
-        # 🚨 직전 고점 접근
+        # 돌파 직전 접근 봉 탐색
+        #
+        # 표시하지 않음
+        # 구조 판단용으로만 사용
         # -------------------------------------------------
 
         pre_index = None
@@ -1465,49 +1481,20 @@ def get_long_breakout_signal(
 
                 continue
 
-        if pre_index is None:
+        # -------------------------------------------------
+        # 🚀 돌파 캔들 탐색
+        # -------------------------------------------------
 
-            current = df.iloc[
-                current_index
-            ]
-
-            o = float(
-                current["o"]
-            )
-
-            c = float(
-                current["c"]
-            )
-
-            if (
-                c >= o
-                and
-                c < effective_high
-                and
-                (
-                    effective_high - c
-                ) / effective_high
-                <= PRE_BREAKOUT_DISTANCE
-            ):
-
-                return "pre"
-
-            continue
-
-        pre_low = float(
-            df["l"].iloc[
-                pre_index
-            ]
+        breakout_start = (
+            pre_index + 1
+            if pre_index is not None
+            else effective_high_index + 1
         )
-
-        # -------------------------------------------------
-        # 🚀 직전 고점 돌파
-        # -------------------------------------------------
 
         breakout_index = None
 
         for i in range(
-            pre_index + 1,
+            breakout_start,
             current_index + 1
         ):
 
@@ -1537,78 +1524,71 @@ def get_long_breakout_signal(
 
         if breakout_index is None:
 
-            if current_index == pre_index:
+            continue
 
-                return "pre"
+        # -------------------------------------------------
+        # 🚀 돌파 후 카운팅
+        #
+        # breakout_index = 1
+        # +1 = 2
+        # +2 = 3
+        # 이후 표시 없음
+        # -------------------------------------------------
 
-            current = df.iloc[
-                current_index
+        count = (
+            current_index
+            -
+            breakout_index
+            +
+            1
+        )
+
+        # -------------------------------------------------
+        # 돌파 기준봉 저점
+        # -------------------------------------------------
+
+        breakout_low = float(
+            df["l"].iloc[
+                breakout_index
             ]
+        )
 
-            o = float(
-                current["o"]
-            )
+        # -------------------------------------------------
+        # 돌파 이후 현재까지
+        # 기준봉 저점 이탈 여부 확인
+        #
+        # 한 번이라도 이탈하면 구조 폐기
+        # -------------------------------------------------
 
-            c = float(
-                current["c"]
-            )
+        after_section = df.iloc[
+            breakout_index:
+            current_index + 1
+        ]
 
-            if (
-                c >= o
-                and
-                c < effective_high
-                and
-                (
-                    effective_high - c
-                ) / effective_high
-                <= PRE_BREAKOUT_DISTANCE
-            ):
+        lows_after = pd.to_numeric(
+            after_section["l"],
+            errors="coerce"
+        )
 
-                return "pre"
+        if lows_after.empty:
 
             continue
 
-        if breakout_index == current_index:
-
-            return "1"
-
-        # -------------------------------------------------
-        # 돌파 직후 봉
-        # -------------------------------------------------
-
-        after_index = (
-            breakout_index + 1
-        )
-
-        if current_index == after_index:
-
-            current_low = float(
-                df["l"].iloc[
-                    current_index
-                ]
-            )
-
-            current_close = float(
-                df["c"].iloc[
-                    current_index
-                ]
-            )
-
-            current_open = float(
-                df["o"].iloc[
-                    current_index
-                ]
-            )
-
-            if current_low < pre_low:
-
-                return "none"
-
-            if current_close < current_open:
-
-                return "pullback"
+        if (
+            lows_after.min()
+            <
+            breakout_low
+        ):
 
             return "none"
+
+        # -------------------------------------------------
+        # 1~3까지만 표시
+        # -------------------------------------------------
+
+        if 1 <= count <= 3:
+
+            return str(count)
 
         return "none"
 
@@ -1617,6 +1597,11 @@ def get_long_breakout_signal(
 
 # =========================================================
 # SHORT 돌파
+#
+# 변경:
+# 🚨 pre 표시 안 함
+# 🚀 돌파 후 1 / 2 / 3까지만 표시
+# 기준봉 고점 돌파 시 즉시 제거
 # =========================================================
 
 def get_short_breakout_signal(
@@ -1705,6 +1690,10 @@ def get_short_breakout_signal(
 
             continue
 
+        # -------------------------------------------------
+        # 새로운 높은 저점 확인
+        # -------------------------------------------------
+
         new_lows = find_swing_lows(
             df,
             swing_index + 1,
@@ -1733,6 +1722,10 @@ def get_short_breakout_signal(
         if effective_low_index >= current_index:
 
             continue
+
+        # -------------------------------------------------
+        # 반등 확인
+        # -------------------------------------------------
 
         correction_section = df.iloc[
             effective_low_index + 1:
@@ -1768,7 +1761,10 @@ def get_short_breakout_signal(
             continue
 
         # -------------------------------------------------
-        # 🚨 직전 저점 접근
+        # 돌파 직전 접근 봉 탐색
+        #
+        # 표시하지 않음
+        # 구조 판단용으로만 사용
         # -------------------------------------------------
 
         pre_index = None
@@ -1812,49 +1808,20 @@ def get_short_breakout_signal(
 
                 continue
 
-        if pre_index is None:
+        # -------------------------------------------------
+        # 🚀 돌파 캔들 탐색
+        # -------------------------------------------------
 
-            current = df.iloc[
-                current_index
-            ]
-
-            o = float(
-                current["o"]
-            )
-
-            c = float(
-                current["c"]
-            )
-
-            if (
-                c <= o
-                and
-                c > effective_low
-                and
-                (
-                    c - effective_low
-                ) / effective_low
-                <= PRE_BREAKOUT_DISTANCE
-            ):
-
-                return "pre"
-
-            continue
-
-        pre_high = float(
-            df["h"].iloc[
-                pre_index
-            ]
+        breakout_start = (
+            pre_index + 1
+            if pre_index is not None
+            else effective_low_index + 1
         )
-
-        # -------------------------------------------------
-        # 🚀 직전 저점 이탈
-        # -------------------------------------------------
 
         breakout_index = None
 
         for i in range(
-            pre_index + 1,
+            breakout_start,
             current_index + 1
         ):
 
@@ -1884,78 +1851,66 @@ def get_short_breakout_signal(
 
         if breakout_index is None:
 
-            if current_index == pre_index:
+            continue
 
-                return "pre"
+        # -------------------------------------------------
+        # 🚀 돌파 후 카운팅
+        # -------------------------------------------------
 
-            current = df.iloc[
-                current_index
+        count = (
+            current_index
+            -
+            breakout_index
+            +
+            1
+        )
+
+        # -------------------------------------------------
+        # 돌파 기준봉 고점
+        # -------------------------------------------------
+
+        breakout_high = float(
+            df["h"].iloc[
+                breakout_index
             ]
+        )
 
-            o = float(
-                current["o"]
-            )
+        # -------------------------------------------------
+        # 돌파 이후 현재까지
+        # 기준봉 고점 돌파 여부 확인
+        #
+        # 한 번이라도 돌파하면 구조 폐기
+        # -------------------------------------------------
 
-            c = float(
-                current["c"]
-            )
+        after_section = df.iloc[
+            breakout_index:
+            current_index + 1
+        ]
 
-            if (
-                c <= o
-                and
-                c > effective_low
-                and
-                (
-                    c - effective_low
-                ) / effective_low
-                <= PRE_BREAKOUT_DISTANCE
-            ):
+        highs_after = pd.to_numeric(
+            after_section["h"],
+            errors="coerce"
+        )
 
-                return "pre"
+        if highs_after.empty:
 
             continue
 
-        if breakout_index == current_index:
-
-            return "1"
-
-        # -------------------------------------------------
-        # 돌파 직후
-        # -------------------------------------------------
-
-        after_index = (
-            breakout_index + 1
-        )
-
-        if current_index == after_index:
-
-            current_high = float(
-                df["h"].iloc[
-                    current_index
-                ]
-            )
-
-            current_close = float(
-                df["c"].iloc[
-                    current_index
-                ]
-            )
-
-            current_open = float(
-                df["o"].iloc[
-                    current_index
-                ]
-            )
-
-            if current_high > pre_high:
-
-                return "none"
-
-            if current_close > current_open:
-
-                return "pullback"
+        if (
+            highs_after.max()
+            >
+            breakout_high
+        ):
 
             return "none"
+
+        # -------------------------------------------------
+        # 1~3까지만 표시
+        # -------------------------------------------------
+
+        if 1 <= count <= 3:
+
+            return str(count)
 
         return "none"
 
@@ -2288,7 +2243,11 @@ def format_change(changes):
 
 
 # =========================================================
-# 경고 표시
+# 경고 표시 여부
+#
+# 변경:
+# pre / pullback 제거
+# 1 / 2 / 3만 표시
 # =========================================================
 
 def is_visible_warning(
@@ -2303,11 +2262,19 @@ def is_visible_warning(
         "signal",
         "none"
     ) in (
-        "pre",
         "1",
-        "pullback"
+        "2",
+        "3"
     )
 
+
+# =========================================================
+# 경고 HTML
+#
+# 🚨 제거
+# 〽️ 제거
+# 🚀(1~3)만 표시
+# =========================================================
 
 def combined_warning_html(
     warning
@@ -2322,27 +2289,15 @@ def combined_warning_html(
         "none"
     )
 
-    if signal == "pre":
-
-        return (
-            '<span class="warning-pre">'
-            '🚨'
-            '</span>'
-        )
-
-    if signal == "1":
+    if signal in (
+        "1",
+        "2",
+        "3"
+    ):
 
         return (
             '<span class="warning-rocket">'
-            '🚀'
-            '</span>'
-        )
-
-    if signal == "pullback":
-
-        return (
-            '<span class="warning-pullback">'
-            '〽️'
+            f'🚀({signal})'
             '</span>'
         )
 
@@ -2599,7 +2554,6 @@ def get_okx_volume(
 
             return None
 
-        # USDT → KRW
         volume_krw = (
             float(volume)
             * float(usdt_krw)
@@ -2619,12 +2573,6 @@ def get_okx_volume(
 
 # =========================================================
 # 업비트 분석
-#
-# 15분봉 전체 기준
-#
-# EMA
-# 돌파
-# 모두 15분봉
 # =========================================================
 
 def get_upbit_analysis(
@@ -2692,8 +2640,6 @@ def get_upbit_analysis(
 
 # =========================================================
 # OKX 분석
-#
-# 15분봉 전체 기준
 # =========================================================
 
 def get_okx_analysis(
@@ -2712,28 +2658,14 @@ def get_okx_analysis(
 
         return None
 
-    # -----------------------------------------------------
-    # EMA
-    # -----------------------------------------------------
-
     ema = check_ema(
         df
     )
-
-    # -----------------------------------------------------
-    # 15분봉 돌파
-    # -----------------------------------------------------
 
     warning = get_breakout_signal(
         df,
         allow_short=True
     )
-
-    # -----------------------------------------------------
-    # 변동률
-    #
-    # 기존 OKX 방식 유지
-    # -----------------------------------------------------
 
     changes = calculate_daily_changes(
         df,
@@ -2868,9 +2800,9 @@ def pass_short_filter(
 # =========================================================
 # 업비트 업데이트
 #
-# 24시간 거래대금 TOP20
+# 24시간 거래대금 TOP30
 # ↓
-# TOP20만 15분봉 조회
+# TOP30만 15분봉 조회
 # ↓
 # EMA + 돌파
 # =========================================================
@@ -2907,7 +2839,7 @@ def update_upbit():
         return False
 
     # -----------------------------------------------------
-    # 2. 거래대금 TOP20
+    # 2. 거래대금 TOP30
     # -----------------------------------------------------
 
     market_data = sorted(
@@ -2931,7 +2863,7 @@ def update_upbit():
     }
 
     # -----------------------------------------------------
-    # 3. TOP20만 15분봉 분석
+    # 3. TOP30만 15분봉 분석
     # -----------------------------------------------------
 
     rows = []
@@ -3019,7 +2951,7 @@ def update_upbit():
     )
 
     logging.info(
-        f"업비트 LONG 경고 "
+        f"업비트 LONG 돌파 "
         f"{len(rows)}개"
     )
 
@@ -3037,10 +2969,6 @@ def update_upbit():
 
 # =========================================================
 # OKX 업데이트
-#
-# 기존 방식 유지
-# 거래대금 TOP20
-# 이후 15분봉 분석
 # =========================================================
 
 def update_okx(
@@ -3072,10 +3000,6 @@ def update_okx(
 
         return False
 
-    # -----------------------------------------------------
-    # OKX 목록
-    # -----------------------------------------------------
-
     symbols = get_all_okx_swap_symbols()
 
     if not symbols:
@@ -3085,10 +3009,6 @@ def update_okx(
         )
 
         return False
-
-    # -----------------------------------------------------
-    # 업비트 캐시 사용
-    # -----------------------------------------------------
 
     upbit_coin_set = {
         market.replace(
@@ -3103,11 +3023,6 @@ def update_okx(
         f"업비트 상장 캐시 사용 "
         f"{len(upbit_coin_set)}개"
     )
-
-    # -----------------------------------------------------
-    # OKX 거래대금
-    # 기존 1H 거래대금 방식 유지
-    # -----------------------------------------------------
 
     volume_map = {}
 
@@ -3156,13 +3071,6 @@ def update_okx(
     )
 
     rows = []
-
-    # -----------------------------------------------------
-    # TOP20 분석
-    #
-    # EMA = 15분
-    # 돌파 = 15분
-    # -----------------------------------------------------
 
     for rank, symbol in enumerate(
         top_symbols,
@@ -3213,10 +3121,6 @@ def update_okx(
                 "none"
             )
 
-            # -------------------------------------------------
-            # LONG
-            # -------------------------------------------------
-
             if direction == "long":
 
                 if not pass_long_filter(
@@ -3224,10 +3128,6 @@ def update_okx(
                 ):
 
                     continue
-
-            # -------------------------------------------------
-            # SHORT
-            # -------------------------------------------------
 
             elif direction == "short":
 
@@ -3271,7 +3171,7 @@ def update_okx(
     )
 
     logging.info(
-        f"OKX LONG/SHORT 경고 "
+        f"OKX LONG/SHORT 돌파 "
         f"{len(rows)}개"
     )
 
@@ -3289,12 +3189,6 @@ def update_okx(
 
 # =========================================================
 # 전체 업데이트
-#
-# 업비트
-# ↓
-# 업비트 완전 종료
-# ↓
-# OKX
 # =========================================================
 
 def update_dashboard():
@@ -3318,9 +3212,7 @@ def update_dashboard():
 
         cycle_start = get_kst_time()
 
-        logging.info(
-            ""
-        )
+        logging.info("")
 
         logging.info(
             "========================================"
@@ -3663,16 +3555,6 @@ td:nth-child(5) {
     white-space: nowrap;
 }
 
-.warning-pre {
-    font-size: 10px;
-    font-weight: bold;
-    animation: warning-blink 0.9s infinite;
-    filter: drop-shadow(
-        0 0 4px
-        rgba(255, 180, 0, 0.9)
-    );
-}
-
 .warning-rocket {
     font-size: 10px;
     font-weight: bold;
@@ -3680,27 +3562,6 @@ td:nth-child(5) {
         0 0 4px
         rgba(50, 255, 100, 0.9)
     );
-}
-
-.warning-pullback {
-    font-size: 10px;
-    font-weight: bold;
-    filter: drop-shadow(
-        0 0 4px
-        rgba(255, 200, 50, 0.9)
-    );
-}
-
-@keyframes warning-blink {
-
-    0%,
-    100% {
-        opacity: 1;
-    }
-
-    50% {
-        opacity: 0.25;
-    }
 }
 
 .ema-value {
@@ -3757,9 +3618,7 @@ td:nth-child(5) {
         font-size: 6px;
     }
 
-    .warning-pre,
-    .warning-rocket,
-    .warning-pullback {
+    .warning-rocket {
         font-size: 9px;
     }
 
@@ -3875,7 +3734,7 @@ def make_exchange_section(
         color:#555;
         padding:12px 4px;
     ">
-현재 🚨 / 🚀 / 〽️ 종목 없음
+현재 🚀(1~3) 종목 없음
 </td>
 </tr>
 """
@@ -3912,7 +3771,7 @@ def make_exchange_section(
 <div class="section">
 
 <h2>
-🏆 {title} TOP{TOP_N} 경고
+🏆 {title} TOP{TOP_N} 돌파
 <span style="
     color:#777;
     font-size:7px;
@@ -3964,12 +3823,16 @@ def make_exchange_section(
 ※ LONG = 15분 EMA 30 > 60 > 120 + 당일 변동률 양수<br>
 ※ SHORT = 15분 EMA 30 < 60 < 120 + 당일 변동률 음수<br>
 ※ 현재 진행 중인 15분봉 제외<br>
-※ 🚨 = 15분봉 직전 고점/저점 돌파 직전<br>
-※ 🚀 = 15분봉 최초 돌파 확정봉<br>
-※ 〽️ = 15분봉 🚀 직후 눌림<br>
+※ 🚀(1) = 15분봉 최초 돌파 확정봉<br>
+※ 🚀(2) = 돌파 후 두 번째 확정봉<br>
+※ 🚀(3) = 돌파 후 세 번째 확정봉<br>
+※ 🚀 표시는 돌파 후 3개 확정봉까지만 표시<br>
+※ 돌파 직전 🚨는 표시하지 않음<br>
+※ 돌파 직후 〽️는 표시하지 않음<br>
 ※ LONG은 직전 고점 돌파 기준<br>
 ※ SHORT는 직전 저점 이탈 기준<br>
-※ 🚨 기준봉 저점/고점 이탈 시 구조 폐기<br>
+※ LONG 돌파 기준봉 저점 이탈 시 돌파 신호 제거<br>
+※ SHORT 돌파 기준봉 고점 돌파 시 돌파 신호 제거<br>
 ※ 돌파 실패 후 반등 고점/반락 저점은 새 기준점<br>
 ※ 최초 30-60-120 배열을 찾을 때까지 과거 15분봉 추가 조회<br>
 ※ 1시간봉 조건 사용하지 않음<br>
@@ -4073,7 +3936,11 @@ def dashboard():
 </div>
 
 <div>
-🚨 돌파 직전 · 🚀 첫 돌파 · 〽️ 돌파 직후
+🚀(1) 첫 돌파 · 🚀(2) 두 번째 봉 · 🚀(3) 세 번째 봉
+</div>
+
+<div>
+돌파 직전 🚨 및 돌파 직후 〽️ 미표시
 </div>
 
 <div>
@@ -4163,6 +4030,18 @@ def startup():
 
     logging.info(
         "돌파 : 15분봉 고점/저점"
+    )
+
+    logging.info(
+        "🚨 돌파 직전 표시 안 함"
+    )
+
+    logging.info(
+        "🚀 돌파 후 1~3까지만 표시"
+    )
+
+    logging.info(
+        "〽️ 돌파 직후 표시 안 함"
     )
 
     logging.info(
@@ -4286,4 +4165,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-                )
+        )
