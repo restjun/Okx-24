@@ -46,7 +46,7 @@ UPDATE_MINUTES = 1
 
 MAX_WARNING_COUNT = 3
 
-BREAKOUT_LOOKBACK = 5
+BREAKOUT_LOOKBACK = 10
 
 
 # =========================================================
@@ -1384,25 +1384,23 @@ def is_short_pre_breakout(
 # =========================================================
 # 🚀 이후 추적 상태
 #
+# 핵심 수정
+#
 # LONG
-# ---------------------------------------------------------
-# 1. 최초 돌파 = 🚀(1)
-# 2. 돌파 후 추가 고점 갱신 = 🚀(2), 🚀(3)...
-# 3. 돌파 후 첫 음봉 발생
-#    → 그 음봉의 저점을 손절 기준으로 설정
-# 4. 이후 종가가 그 저점 아래로 내려가면 ⛔️
+# 1. 돌파 캔들 확인
+# 2. 돌파 후 최초 음봉 발생
+# 3. 그 최초 음봉의 저점을 기억
+# 4. 이후 캔들이 그 저점 아래로 종가 마감하면 ⛔️
+# 5. ⛔️ 발생 캔들에서만 stop 반환
+# 6. 그 다음 캔들부터 해당 돌파 사이클 완전 종료
 #
 # SHORT
-# ---------------------------------------------------------
-# 1. 최초 돌파 = 🚀(1)
-# 2. 돌파 후 추가 저점 갱신 = 🚀(2), 🚀(3)...
-# 3. 돌파 후 첫 양봉 발생
-#    → 그 양봉의 고점을 손절 기준으로 설정
-# 4. 이후 종가가 그 고점 위로 올라가면 ⛔️
-#
-# 중요:
-# ⛔️는 반드시 "현재 마지막 확정 캔들"에서
-# 손절 조건이 발생한 경우에만 반환한다.
+# 1. 돌파 캔들 확인
+# 2. 돌파 후 최초 양봉 발생
+# 3. 그 최초 양봉의 고점을 기억
+# 4. 이후 캔들이 그 고점 위로 종가 마감하면 ⛔️
+# 5. ⛔️ 발생 캔들에서만 stop 반환
+# 6. 그 다음 캔들부터 해당 돌파 사이클 완전 종료
 # =========================================================
 
 def get_breakout_tracking(
@@ -1421,10 +1419,8 @@ def get_breakout_tracking(
             "count": 0
         }
 
-    df = (
-        df
-        .copy()
-        .reset_index(drop=True)
+    df = df.copy().reset_index(
+        drop=True
     )
 
     df["ema10"] = get_ema(
@@ -1446,11 +1442,10 @@ def get_breakout_tracking(
     )
 
     # =====================================================
-    # 가장 최근의 유효한 돌파 찾기
+    # 최근 유효 돌파 찾기
     # =====================================================
 
     breakout_index = None
-
     breakout_direction = None
 
     for index in range(
@@ -1511,7 +1506,6 @@ def get_breakout_tracking(
         ):
 
             breakout_index = index
-
             breakout_direction = "long"
 
         elif (
@@ -1526,12 +1520,10 @@ def get_breakout_tracking(
         ):
 
             breakout_index = index
-
             breakout_direction = "short"
 
-
     # =====================================================
-    # 돌파 없음 → 돌파 직전 확인
+    # 확정 돌파가 없으면 🚨 돌파 직전 확인
     # =====================================================
 
     if breakout_index is None:
@@ -1593,8 +1585,10 @@ def get_breakout_tracking(
         ):
 
             return {
-                "status": "long_breakout_0",
-                "count": 0
+                "status":
+                    "long_breakout_0",
+                "count":
+                    0
             }
 
         if (
@@ -1609,67 +1603,56 @@ def get_breakout_tracking(
         ):
 
             return {
-                "status": "short_breakout_0",
-                "count": 0
+                "status":
+                    "short_breakout_0",
+                "count":
+                    0
             }
 
         return {
-            "status": "none",
-            "count": 0
-        }
-
-
-    # =====================================================
-    # 돌파 캔들 자체가 현재 마지막 캔들
-    # =====================================================
-
-    if breakout_index == len(df) - 1:
-
-        return {
             "status":
-                f"{breakout_direction}_breakout_1",
+                "none",
             "count":
                 0
         }
 
+    # =====================================================
+    # 돌파 캔들
+    # =====================================================
 
-    # =====================================================
-    # 돌파 기준값
-    # =====================================================
+    breakout_row = df.iloc[
+        breakout_index
+    ]
 
     reference_high = float(
-        df.iloc[
-            breakout_index
-        ]["h"]
+        breakout_row["h"]
     )
 
     reference_low = float(
-        df.iloc[
-            breakout_index
-        ]["l"]
+        breakout_row["l"]
     )
 
+    count = 0
 
     # =====================================================
-    # 첫 반대색 캔들 손절 기준
+    # 최초 반대색 캔들 기준
     #
     # LONG:
-    # 첫 음봉의 저점
+    # 최초 음봉의 저점
     #
     # SHORT:
-    # 첫 양봉의 고점
+    # 최초 양봉의 고점
     # =====================================================
+
+    first_opposite_candle_found = False
 
     first_opposite_low = None
 
     first_opposite_high = None
 
-
     # =====================================================
-    # 돌파 이후 추적
+    # 돌파 이후 캔들 추적
     # =====================================================
-
-    count = 0
 
     for index in range(
         breakout_index + 1,
@@ -1678,14 +1661,25 @@ def get_breakout_tracking(
 
         row = df.iloc[index]
 
-        high = float(row["h"])
+        high = float(
+            row["h"]
+        )
 
-        low = float(row["l"])
+        low = float(
+            row["l"]
+        )
 
-        close = float(row["c"])
+        close = float(
+            row["c"]
+        )
 
-        open_price = float(row["o"])
+        open_price = float(
+            row["o"]
+        )
 
+        is_last_candle = (
+            index == len(df) - 1
+        )
 
         # =================================================
         # LONG
@@ -1694,47 +1688,46 @@ def get_breakout_tracking(
         if breakout_direction == "long":
 
             # ---------------------------------------------
-            # 첫 음봉 확인
+            # 최초 음봉 발견
             # ---------------------------------------------
 
-            is_bearish = (
-                close < open_price
-            )
-
             if (
-                first_opposite_low is None
+                not first_opposite_candle_found
                 and
-                is_bearish
+                close < open_price
             ):
+
+                first_opposite_candle_found = True
 
                 first_opposite_low = low
 
                 logging.info(
-                    "LONG 첫 음봉 손절 기준 설정 "
-                    f"index={index} "
-                    f"low={first_opposite_low}"
+                    "LONG 돌파 후 최초 음봉 "
+                    f"저점={first_opposite_low}"
                 )
 
-
             # ---------------------------------------------
-            # 첫 음봉 이후 저점 이탈
+            # 최초 음봉 저점 이탈
             #
-            # 현재 캔들이 첫 음봉 그 자체라면
-            # 바로 손절 처리하지 않는다.
-            #
-            # 반드시 첫 음봉 이후 캔들에서
-            # 그 저점 아래로 종가 마감해야 한다.
+            # 중요:
+            # 종가 기준으로 이탈해야 ⛔️
             # ---------------------------------------------
 
             if (
-                first_opposite_low is not None
+                first_opposite_candle_found
                 and
-                index > breakout_index + 1
+                first_opposite_low is not None
                 and
                 close < first_opposite_low
             ):
 
-                if index == len(df) - 1:
+                if is_last_candle:
+
+                    logging.info(
+                        "LONG 손절 발생 "
+                        f"최초 음봉 저점={first_opposite_low} "
+                        f"현재 종가={close}"
+                    )
 
                     return {
                         "status":
@@ -1743,43 +1736,23 @@ def get_breakout_tracking(
                             count
                     }
 
+                # -----------------------------------------
+                # 과거 캔들에서 이미 손절된 경우
+                #
+                # 다음 캔들에는 절대 ⛔️ 표시하지 않음
+                # -----------------------------------------
+
                 return {
-                    "status": "none",
-                    "count": 0
+                    "status":
+                        "none",
+                    "count":
+                        0
                 }
 
-
             # ---------------------------------------------
-            # 기존 돌파 기준 저점도 유지
+            # 기존 돌파 추적
             #
-            # 첫 음봉 손절 기준이 아직 없을 때
-            # 돌파 캔들 저점 아래로 종가 이탈하면
-            # 손절
-            # ---------------------------------------------
-
-            if (
-                first_opposite_low is None
-                and
-                close < reference_low
-            ):
-
-                if index == len(df) - 1:
-
-                    return {
-                        "status":
-                            "long_breakout_stop",
-                        "count":
-                            count
-                    }
-
-                return {
-                    "status": "none",
-                    "count": 0
-                }
-
-
-            # ---------------------------------------------
-            # 새로운 고점 갱신
+            # 새로운 고점 + 상승 마감
             # ---------------------------------------------
 
             if (
@@ -1794,11 +1767,6 @@ def get_breakout_tracking(
 
                 reference_low = low
 
-                # 새로운 상승 돌파가 나오면
-                # 이전 반대색 기준은 초기화
-                first_opposite_low = None
-
-
         # =================================================
         # SHORT
         # =================================================
@@ -1806,41 +1774,45 @@ def get_breakout_tracking(
         elif breakout_direction == "short":
 
             # ---------------------------------------------
-            # 첫 양봉 확인
+            # 최초 양봉 발견
             # ---------------------------------------------
 
-            is_bullish = (
-                close > open_price
-            )
-
             if (
-                first_opposite_high is None
+                not first_opposite_candle_found
                 and
-                is_bullish
+                close > open_price
             ):
+
+                first_opposite_candle_found = True
 
                 first_opposite_high = high
 
                 logging.info(
-                    "SHORT 첫 양봉 손절 기준 설정 "
-                    f"index={index} "
-                    f"high={first_opposite_high}"
+                    "SHORT 돌파 후 최초 양봉 "
+                    f"고점={first_opposite_high}"
                 )
 
-
             # ---------------------------------------------
-            # 첫 양봉 이후 고점 이탈
+            # 최초 양봉 고점 돌파
+            #
+            # 종가 기준으로 돌파해야 ⛔️
             # ---------------------------------------------
 
             if (
-                first_opposite_high is not None
+                first_opposite_candle_found
                 and
-                index > breakout_index + 1
+                first_opposite_high is not None
                 and
                 close > first_opposite_high
             ):
 
-                if index == len(df) - 1:
+                if is_last_candle:
+
+                    logging.info(
+                        "SHORT 손절 발생 "
+                        f"최초 양봉 고점={first_opposite_high} "
+                        f"현재 종가={close}"
+                    )
 
                     return {
                         "status":
@@ -1849,39 +1821,23 @@ def get_breakout_tracking(
                             count
                     }
 
-                return {
-                    "status": "none",
-                    "count": 0
-                }
-
-
-            # ---------------------------------------------
-            # 기존 돌파 기준 고점도 유지
-            # ---------------------------------------------
-
-            if (
-                first_opposite_high is None
-                and
-                close > reference_high
-            ):
-
-                if index == len(df) - 1:
-
-                    return {
-                        "status":
-                            "short_breakout_stop",
-                        "count":
-                            count
-                    }
+                # -----------------------------------------
+                # 과거 캔들에서 이미 손절된 경우
+                #
+                # 다음 캔들에는 절대 ⛔️ 표시하지 않음
+                # -----------------------------------------
 
                 return {
-                    "status": "none",
-                    "count": 0
+                    "status":
+                        "none",
+                    "count":
+                        0
                 }
 
-
             # ---------------------------------------------
-            # 새로운 저점 갱신
+            # 기존 돌파 추적
+            #
+            # 새로운 저점 + 하락 마감
             # ---------------------------------------------
 
             if (
@@ -1896,20 +1852,41 @@ def get_breakout_tracking(
 
                 reference_high = high
 
-                # 새로운 하락 돌파가 나오면
-                # 이전 반대색 기준은 초기화
-                first_opposite_high = None
+    # =====================================================
+    # 돌파 캔들 자체가 마지막 캔들
+    # =====================================================
 
+    if breakout_index == len(df) - 1:
+
+        return {
+            "status":
+                f"{breakout_direction}_breakout_1",
+            "count":
+                0
+        }
 
     # =====================================================
-    # 돌파 후 현재까지 정상 추적
+    # 추적 카운팅
+    # =====================================================
+
+    if count > 0:
+
+        return {
+            "status":
+                f"{breakout_direction}_breakout_{count + 1}",
+            "count":
+                count
+        }
+
+    # =====================================================
+    # 최초 확정 돌파
     # =====================================================
 
     return {
         "status":
-            f"{breakout_direction}_breakout_{count + 1}",
+            f"{breakout_direction}_breakout_1",
         "count":
-            count
+            0
     }
 
 
@@ -2627,7 +2604,7 @@ def is_visible_breakout_warning(
 
         return False
 
-    # ⛔️는 실제 stop 상태이면 표시
+    # ⛔️는 현재 발생한 마지막 캔들에서만 표시
     if warning_4h.endswith(
         "_stop"
     ):
@@ -2683,7 +2660,10 @@ def warning_html(
         )
 
     # =====================================================
-    # ⛔️
+    # ⛔️ 중지
+    #
+    # 이 상태는 get_breakout_tracking()에서
+    # "현재 마지막 캔들"에서만 반환됨
     # =====================================================
 
     if warning_4h.endswith(
@@ -2730,7 +2710,7 @@ def warning_html(
         )
 
     # =====================================================
-    # 🚀
+    # 🚀 돌파 / 추적
     # =====================================================
 
     if count >= 1:
@@ -3285,6 +3265,11 @@ tbody tr:last-child td {
     border-bottom: none;
 }
 
+
+/* =====================================================
+   🚨 돌파 직전
+   ===================================================== */
+
 .pre-breakout-row {
     animation: preBreakoutFlash 0.75s ease-in-out infinite;
 }
@@ -3303,6 +3288,11 @@ tbody tr:last-child td {
         background: #181c21;
     }
 }
+
+
+/* =====================================================
+   🚀 돌파 / 추적
+   ===================================================== */
 
 .breakout-row {
     animation: breakoutFlash 0.9s ease-in-out infinite;
@@ -3323,6 +3313,11 @@ tbody tr:last-child td {
     }
 }
 
+
+/* =====================================================
+   ⛔️ 중지
+   ===================================================== */
+
 .stop-row {
     animation: stopFlash 0.9s ease-in-out infinite;
 }
@@ -3341,6 +3336,11 @@ tbody tr:last-child td {
         background: #181c21;
     }
 }
+
+
+/* =====================================================
+   실제 순위
+   ===================================================== */
 
 th:nth-child(1),
 td:nth-child(1) {
@@ -3496,6 +3496,11 @@ td:nth-child(5) {
     );
 }
 
+
+/* =====================================================
+   EMA
+   ===================================================== */
+
 .ema-container {
     width: 100%;
     overflow: hidden;
@@ -3527,6 +3532,7 @@ td:nth-child(5) {
     line-height: 1.5;
     margin: 5px 2px 8px 2px;
 }
+
 
 @media (max-width: 480px) {
 
@@ -3844,21 +3850,15 @@ def make_exchange_section(
 
 ※ SHORT = 저점 갱신 + 하락 마감 기준<br>
 
-※ LONG 첫 음봉 발생 후 그 음봉 저점 아래 종가 마감 = ⛔️<br>
+※ LONG ⛔️ = 돌파 후 최초 음봉의 저점을 종가 기준으로 이탈하면 중지<br>
 
-※ SHORT 첫 양봉 발생 후 그 양봉 고점 위 종가 마감 = ⛔️<br>
+※ SHORT ⛔️ = 돌파 후 최초 양봉의 고점을 종가 기준으로 돌파하면 중지<br>
 
-※ 첫 반대색 캔들이 발생했다고 즉시 ⛔️ 처리하지 않음<br>
+※ ⛔️는 손절 조건이 발생한 현재 캔들에서만 표시<br>
 
-※ 새로운 고점/저점 갱신 발생 시 기존 반대색 손절 기준은 초기화<br>
+※ ⛔️ 발생 다음 캔들부터 해당 돌파 사이클은 완전히 종료되어 리스트에서 제거<br>
 
-※ ⛔️는 현재 마지막 확정 캔들에서 손절 조건이 발생한 경우만 표시<br>
-
-※ ⛔️ 발생 시 해당 돌파 사이클 종료<br>
-
-※ EMA 정렬 자체만으로는 반짝이지 않음<br>
-
-※ 60개 미만 종목도 10-30 기준으로 돌파 경고 인정
+※ 새로운 돌파가 발생하면 새로운 🚨 / 🚀 사이클을 시작
 
 </div>
 
@@ -4040,4 +4040,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-            )
+        )
