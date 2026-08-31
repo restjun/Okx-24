@@ -632,17 +632,9 @@ def get_ema_10_30_direction(
     column
 ):
 
-    ema10 = get_ema(
-        df,
-        column,
-        10
-    )
+    ema10 = get_ema(df, column, 10)
 
-    ema30 = get_ema(
-        df,
-        column,
-        30
-    )
+    ema30 = get_ema(df, column, 30)
 
     if ema10 is None or ema30 is None:
         return "none"
@@ -671,30 +663,15 @@ def get_ema_10_30_60_direction(
     column
 ):
 
-    ema10 = get_ema(
-        df,
-        column,
-        10
-    )
-
-    ema30 = get_ema(
-        df,
-        column,
-        30
-    )
-
-    ema60 = get_ema(
-        df,
-        column,
-        60
-    )
+    ema10 = get_ema(df, column, 10)
+    ema30 = get_ema(df, column, 30)
+    ema60 = get_ema(df, column, 60)
 
     if (
         ema10 is None
         or ema30 is None
         or ema60 is None
     ):
-
         return "none"
 
     values = [
@@ -703,11 +680,7 @@ def get_ema_10_30_60_direction(
         ema60.iloc[-1]
     ]
 
-    if any(
-        pd.isna(x)
-        for x in values
-    ):
-
+    if any(pd.isna(x) for x in values):
         return "none"
 
     if values[0] > values[1] > values[2]:
@@ -732,23 +705,9 @@ def get_ema_10_30_60_alignment_count(
 
         return "none", 0
 
-    ema10 = get_ema(
-        df,
-        column,
-        10
-    )
-
-    ema30 = get_ema(
-        df,
-        column,
-        30
-    )
-
-    ema60 = get_ema(
-        df,
-        column,
-        60
-    )
+    ema10 = get_ema(df, column, 10)
+    ema30 = get_ema(df, column, 30)
+    ema60 = get_ema(df, column, 60)
 
     if any(
         x is None
@@ -762,7 +721,6 @@ def get_ema_10_30_60_alignment_count(
         return "none", 0
 
     current_direction = None
-
     count = 0
 
     for index in range(
@@ -781,7 +739,6 @@ def get_ema_10_30_60_alignment_count(
             pd.isna(x)
             for x in values
         ):
-
             break
 
         if (
@@ -814,7 +771,6 @@ def get_ema_10_30_60_alignment_count(
                 break
 
             current_direction = direction
-
             count = 1
 
         elif direction == current_direction:
@@ -851,7 +807,6 @@ def get_main_direction(
         )
 
         if direction != "none":
-
             return direction
 
     return get_ema_10_30_direction(
@@ -919,15 +874,9 @@ def check_ema(
                 ):
 
                     a = ema10.iloc[i]
-
                     b = ema30.iloc[i]
 
-                    if (
-                        pd.isna(a)
-                        or
-                        pd.isna(b)
-                    ):
-
+                    if pd.isna(a) or pd.isna(b):
                         break
 
                     current = (
@@ -941,7 +890,6 @@ def check_ema(
                     )
 
                     if current != direction:
-
                         break
 
                     count += 1
@@ -975,7 +923,6 @@ def is_long_breakout(
 ):
 
     if previous.empty:
-
         return False
 
     previous_high = pd.to_numeric(
@@ -996,7 +943,6 @@ def is_short_breakout(
 ):
 
     if previous.empty:
-
         return False
 
     previous_low = pd.to_numeric(
@@ -1021,7 +967,6 @@ def is_long_pre_breakout(
 ):
 
     if previous.empty:
-
         return False
 
     previous_high = pd.to_numeric(
@@ -1044,7 +989,6 @@ def is_short_pre_breakout(
 ):
 
     if previous.empty:
-
         return False
 
     previous_low = pd.to_numeric(
@@ -1062,7 +1006,11 @@ def is_short_pre_breakout(
 
 
 # =========================================================
-# 시간봉 돌파
+# 개별 시간봉 돌파 상태
+#
+# pre = 돌파전
+# 1   = 최초 돌파
+# none = 표시하지 않음
 # =========================================================
 
 def get_timeframe_breakout(
@@ -1078,29 +1026,11 @@ def get_timeframe_breakout(
 
         return "none"
 
-    df = (
-        df
-        .copy()
-        .reset_index(drop=True)
-    )
+    df = df.copy().reset_index(drop=True)
 
-    ema10 = get_ema(
-        df,
-        "c",
-        10
-    )
-
-    ema30 = get_ema(
-        df,
-        "c",
-        30
-    )
-
-    ema60 = get_ema(
-        df,
-        "c",
-        60
-    )
+    ema10 = get_ema(df, "c", 10)
+    ema30 = get_ema(df, "c", 30)
+    ema60 = get_ema(df, "c", 60)
 
     if (
         ema10 is None
@@ -1110,47 +1040,99 @@ def get_timeframe_breakout(
 
         return "none"
 
-    # =====================================================
-    # 최초 돌파 확인
-    # =====================================================
+    breakout_index = None
+
+    for index in range(
+        BREAKOUT_LOOKBACK,
+        len(df)
+    ):
+
+        row = df.iloc[index]
+
+        previous = df.iloc[
+            index - BREAKOUT_LOOKBACK:
+            index
+        ]
+
+        e10 = ema10.iloc[index]
+        e30 = ema30.iloc[index]
+
+        if pd.isna(e10) or pd.isna(e30):
+            continue
+
+        if ema60 is not None:
+
+            e60 = ema60.iloc[index]
+
+            if pd.isna(e60):
+
+                long_ema = e10 > e30
+                short_ema = e10 < e30
+
+            else:
+
+                long_ema = (
+                    e10 > e30 > e60
+                )
+
+                short_ema = (
+                    e10 < e30 < e60
+                )
+
+        else:
+
+            long_ema = e10 > e30
+            short_ema = e10 < e30
+
+        if (
+            direction == "long"
+            and
+            long_ema
+            and
+            is_long_breakout(
+                row,
+                previous
+            )
+        ):
+
+            breakout_index = index
+
+        elif (
+            direction == "short"
+            and
+            short_ema
+            and
+            is_short_breakout(
+                row,
+                previous
+            )
+        ):
+
+            breakout_index = index
 
     current_index = len(df) - 1
 
-    current = df.iloc[
-        current_index
-    ]
+    current = df.iloc[current_index]
 
     previous = df.iloc[
         current_index - BREAKOUT_LOOKBACK:
         current_index
     ]
 
-    e10 = ema10.iloc[
-        current_index
-    ]
+    e10 = ema10.iloc[current_index]
+    e30 = ema30.iloc[current_index]
 
-    e30 = ema30.iloc[
-        current_index
-    ]
-
-    if (
-        pd.isna(e10)
-        or
-        pd.isna(e30)
-    ):
+    if pd.isna(e10) or pd.isna(e30):
 
         return "none"
 
     if ema60 is not None:
 
-        e60 = ema60.iloc[
-            current_index
-        ]
+        e60 = ema60.iloc[current_index]
 
         if pd.isna(e60):
 
             long_ema = e10 > e30
-
             short_ema = e10 < e30
 
         else:
@@ -1166,44 +1148,11 @@ def get_timeframe_breakout(
     else:
 
         long_ema = e10 > e30
-
         short_ema = e10 < e30
 
-    # =====================================================
-    # 현재 캔들 최초 돌파
-    # =====================================================
-
     if (
-        direction == "long"
+        breakout_index is None
         and
-        long_ema
-        and
-        is_long_breakout(
-            current,
-            previous
-        )
-    ):
-
-        return "1"
-
-    if (
-        direction == "short"
-        and
-        short_ema
-        and
-        is_short_breakout(
-            current,
-            previous
-        )
-    ):
-
-        return "1"
-
-    # =====================================================
-    # 현재 캔들 돌파전
-    # =====================================================
-
-    if (
         direction == "long"
         and
         long_ema
@@ -1217,6 +1166,8 @@ def get_timeframe_breakout(
         return "pre"
 
     if (
+        breakout_index is None
+        and
         direction == "short"
         and
         short_ema
@@ -1229,11 +1180,19 @@ def get_timeframe_breakout(
 
         return "pre"
 
+    if breakout_index is not None:
+
+        if breakout_index == current_index:
+
+            return "1"
+
+        return "1"
+
     return "none"
 
 
 # =========================================================
-# 1H + 4H 돌파 상태
+# 1H + 4H 돌파 경고
 # =========================================================
 
 def get_combined_breakout_warning(
@@ -1264,35 +1223,179 @@ def get_combined_breakout_warning(
     return {
         "1h": warning_1h,
         "4h": warning_4h,
-
-        "direction_1h":
-            direction_1h,
-
-        "direction_4h":
-            direction_4h
+        "1h_direction": direction_1h,
+        "4h_direction": direction_4h
     }
 
 
 # =========================================================
-# 당일 방향
+# 돌파 방향 확인
 #
-# 양수 = long
-# 음수 = short
+# 1H 또는 4H 중 실제 경고가 발생한 방향
 # =========================================================
 
-def get_daily_side(
+def get_breakout_direction(
+    warning
+):
+
+    if not warning:
+        return "none"
+
+    warning_1h = warning.get(
+        "1h",
+        "none"
+    )
+
+    warning_4h = warning.get(
+        "4h",
+        "none"
+    )
+
+    direction_1h = warning.get(
+        "1h_direction",
+        "none"
+    )
+
+    direction_4h = warning.get(
+        "4h_direction",
+        "none"
+    )
+
+    # 1H 경고가 있으면 1H 방향 우선
+    if warning_1h in ("pre", "1"):
+
+        return direction_1h
+
+    # 4H 경고
+    if warning_4h in ("pre", "1"):
+
+        return direction_4h
+
+    return "none"
+
+
+# =========================================================
+# 당일 양수 / 음수
+#
+# 양수 = sun
+# 음수 = cloud
+# =========================================================
+
+def get_day_weather(
     change_percent
 ):
 
     if change_percent is None:
 
-        return "none"
+        return {
+            "weather": "none",
+            "direction": "none"
+        }
 
-    if change_percent > 0:
+    try:
+
+        value = float(
+            change_percent
+        )
+
+    except Exception:
+
+        return {
+            "weather": "none",
+            "direction": "none"
+        }
+
+    if value > 0:
+
+        return {
+            "weather": "sun",
+            "direction": "long"
+        }
+
+    if value < 0:
+
+        return {
+            "weather": "cloud",
+            "direction": "short"
+        }
+
+    return {
+        "weather": "none",
+        "direction": "none"
+    }
+
+
+# =========================================================
+# 해 / 구름 HTML
+# =========================================================
+
+def weather_html(
+    change_percent
+):
+
+    weather = get_day_weather(
+        change_percent
+    )
+
+    if weather["weather"] == "sun":
+
+        return (
+            '<span class="weather-sun">☀️</span>'
+        )
+
+    if weather["weather"] == "cloud":
+
+        return (
+            '<span class="weather-cloud">☁️</span>'
+        )
+
+    return (
+        '<span class="weather-none">—</span>'
+    )
+
+
+# =========================================================
+# 최종 롱 / 숏 조건
+#
+# 당일 방향과 돌파 방향이 일치해야 함
+# =========================================================
+
+def get_trade_signal(
+    change_percent,
+    warning
+):
+
+    day = get_day_weather(
+        change_percent
+    )
+
+    breakout_direction = (
+        get_breakout_direction(
+            warning
+        )
+    )
+
+    # -----------------------------------------------------
+    # 양수 + LONG 돌파
+    # -----------------------------------------------------
+
+    if (
+        day["direction"] == "long"
+        and
+        breakout_direction == "long"
+    ):
 
         return "long"
 
-    if change_percent < 0:
+    # -----------------------------------------------------
+    # 음수 + SHORT 돌파
+    # -----------------------------------------------------
+
+    if (
+        day["direction"] == "short"
+        and
+        breakout_direction == "short"
+    ):
 
         return "short"
 
@@ -1300,214 +1403,138 @@ def get_daily_side(
 
 
 # =========================================================
-# 해 / 구름 표시
-# =========================================================
-
-def get_market_cloud(
-    change_percent
-):
-
-    if change_percent is None:
-
-        return "none"
-
-    if change_percent > 0:
-
-        return "sun"
-
-    if change_percent < 0:
-
-        return "cloud"
-
-    return "none"
-
-
-# =========================================================
-# 돌파 방향이 당일 방향과 일치하는지
-# =========================================================
-
-def get_matching_warning(
-    warning,
-    daily_side
-):
-
-    if not warning:
-
-        return {
-            "1h": "none",
-            "4h": "none",
-            "direction": "none"
-        }
-
-    if daily_side == "long":
-
-        if (
-            warning.get("direction_1h")
-            != "long"
-            and
-            warning.get("direction_4h")
-            != "long"
-        ):
-
-            return {
-                "1h": "none",
-                "4h": "none",
-                "direction": "none"
-            }
-
-        return {
-            "1h":
-                warning.get(
-                    "1h",
-                    "none"
-                )
-                if warning.get(
-                    "direction_1h"
-                ) == "long"
-                else "none",
-
-            "4h":
-                warning.get(
-                    "4h",
-                    "none"
-                )
-                if warning.get(
-                    "direction_4h"
-                ) == "long"
-                else "none",
-
-            "direction": "long"
-        }
-
-    if daily_side == "short":
-
-        if (
-            warning.get("direction_1h")
-            != "short"
-            and
-            warning.get("direction_4h")
-            != "short"
-        ):
-
-            return {
-                "1h": "none",
-                "4h": "none",
-                "direction": "none"
-            }
-
-        return {
-            "1h":
-                warning.get(
-                    "1h",
-                    "none"
-                )
-                if warning.get(
-                    "direction_1h"
-                ) == "short"
-                else "none",
-
-            "4h":
-                warning.get(
-                    "4h",
-                    "none"
-                )
-                if warning.get(
-                    "direction_4h"
-                ) == "short"
-                else "none",
-
-            "direction": "short"
-        }
-
-    return {
-        "1h": "none",
-        "4h": "none",
-        "direction": "none"
-    }
-
-
-# =========================================================
-# 경고 표시 여부
-# =========================================================
-
-def is_visible_combined_warning(
-    warning,
-    daily_side
-):
-
-    matching = get_matching_warning(
-        warning,
-        daily_side
-    )
-
-    return (
-        matching.get("1h")
-        in ("pre", "1")
-        or
-        matching.get("4h")
-        in ("pre", "1")
-    )
-
-
-# =========================================================
-# 경고 HTML
-#
-# 당일 방향과 일치하는 것만 표시
+# 방향이 일치하는 돌파 경고만 HTML 표시
 # =========================================================
 
 def combined_warning_html(
     warning,
-    daily_side
+    trade_signal
 ):
 
-    matching = get_matching_warning(
-        warning,
-        daily_side
-    )
+    if not warning:
+        return ""
 
     result = []
 
-    warning_1h = matching.get(
+    warning_1h = warning.get(
         "1h",
         "none"
     )
 
-    warning_4h = matching.get(
+    warning_4h = warning.get(
         "4h",
         "none"
     )
 
-    if warning_1h == "pre":
+    direction_1h = warning.get(
+        "1h_direction",
+        "none"
+    )
 
-        result.append(
-            '<span class="warning-pre">'
-            '🚨1H'
-            '</span>'
-        )
+    direction_4h = warning.get(
+        "4h_direction",
+        "none"
+    )
 
-    elif warning_1h == "1":
+    # =====================================================
+    # LONG 조건
+    # =====================================================
 
-        result.append(
-            '<span class="warning-rocket">'
-            '🚀1H(1)'
-            '</span>'
-        )
+    if trade_signal == "long":
 
-    if warning_4h == "pre":
+        if (
+            direction_1h == "long"
+            and
+            warning_1h == "pre"
+        ):
 
-        result.append(
-            '<span class="warning-pre">'
-            '🚨4H'
-            '</span>'
-        )
+            result.append(
+                '<span class="warning-pre">🚨1H</span>'
+            )
 
-    elif warning_4h == "1":
+        elif (
+            direction_1h == "long"
+            and
+            warning_1h == "1"
+        ):
 
-        result.append(
-            '<span class="warning-rocket">'
-            '🚀4H(1)'
-            '</span>'
-        )
+            result.append(
+                '<span class="warning-rocket">'
+                '🚀1H(1)'
+                '</span>'
+            )
+
+        if (
+            direction_4h == "long"
+            and
+            warning_4h == "pre"
+        ):
+
+            result.append(
+                '<span class="warning-pre">🚨4H</span>'
+            )
+
+        elif (
+            direction_4h == "long"
+            and
+            warning_4h == "1"
+        ):
+
+            result.append(
+                '<span class="warning-rocket">'
+                '🚀4H(1)'
+                '</span>'
+            )
+
+    # =====================================================
+    # SHORT 조건
+    # =====================================================
+
+    elif trade_signal == "short":
+
+        if (
+            direction_1h == "short"
+            and
+            warning_1h == "pre"
+        ):
+
+            result.append(
+                '<span class="warning-pre">🚨1H</span>'
+            )
+
+        elif (
+            direction_1h == "short"
+            and
+            warning_1h == "1"
+        ):
+
+            result.append(
+                '<span class="warning-rocket">'
+                '🚀1H(1)'
+                '</span>'
+            )
+
+        if (
+            direction_4h == "short"
+            and
+            warning_4h == "pre"
+        ):
+
+            result.append(
+                '<span class="warning-pre">🚨4H</span>'
+            )
+
+        elif (
+            direction_4h == "short"
+            and
+            warning_4h == "1"
+        ):
+
+            result.append(
+                '<span class="warning-rocket">'
+                '🚀4H(1)'
+                '</span>'
+            )
 
     if not result:
 
@@ -1517,12 +1544,32 @@ def combined_warning_html(
 
 
 # =========================================================
+# 최종 경고 표시 여부
+#
+# 당일 방향 + 돌파 방향 일치
+# =========================================================
+
+def is_visible_combined_warning(
+    change_percent,
+    warning
+):
+
+    signal = get_trade_signal(
+        change_percent,
+        warning
+    )
+
+    return signal in (
+        "long",
+        "short"
+    )
+
+
+# =========================================================
 # 변동률
 # =========================================================
 
-def get_upbit_change(
-    market
-):
+def get_upbit_change(market):
 
     df = get_upbit_ohlcv(
         market,
@@ -1531,7 +1578,6 @@ def get_upbit_change(
     )
 
     if df is None or len(df) < 50:
-
         return None
 
     df = df.copy()
@@ -1555,7 +1601,6 @@ def get_upbit_change(
     )
 
     if len(daily) < 5:
-
         return None
 
     result = []
@@ -1591,9 +1636,7 @@ def get_upbit_change(
 # OKX 변동률
 # =========================================================
 
-def get_okx_change(
-    inst_id
-):
+def get_okx_change(inst_id):
 
     df = get_okx_ohlcv(
         inst_id,
@@ -1602,7 +1645,6 @@ def get_okx_change(
     )
 
     if df is None or len(df) < 50:
-
         return None
 
     df = df.copy()
@@ -1636,7 +1678,6 @@ def get_okx_change(
     )
 
     if len(daily) < 5:
-
         return None
 
     result = []
@@ -1672,9 +1713,7 @@ def get_okx_change(
 # 변동률 HTML
 # =========================================================
 
-def format_change(
-    changes
-):
+def format_change(changes):
 
     if (
         changes is None
@@ -1689,19 +1728,16 @@ def format_change(
     if x > 0:
 
         icon = "🟩"
-
         sign = "+"
 
     elif x < 0:
 
         icon = "🟥"
-
         sign = ""
 
     else:
 
         icon = "⬜"
-
         sign = ""
 
     return (
@@ -1712,111 +1748,9 @@ def format_change(
 
 
 # =========================================================
-# 해 / 구름 HTML
-# =========================================================
-
-def cloud_html(
-    change_percent
-):
-
-    if change_percent is None:
-
-        return (
-            '<span class="cloud-none">—</span>'
-        )
-
-    if change_percent > 0:
-
-        return (
-            '<span class="cloud-sun">☀️</span>'
-        )
-
-    if change_percent < 0:
-
-        return (
-            '<span class="cloud-cloud">☁️</span>'
-        )
-
-    return (
-        '<span class="cloud-none">—</span>'
-    )
-
-
-# =========================================================
-# 롱 / 숏 HTML
-#
-# 경고 방향과 당일 방향이 일치하면
-# 롱/숏 칸에서 반짝임
-# =========================================================
-
-def direction_html(
-    warning,
-    daily_side
-):
-
-    matching = get_matching_warning(
-        warning,
-        daily_side
-    )
-
-    direction = matching.get(
-        "direction",
-        "none"
-    )
-
-    has_warning = (
-        matching.get("1h")
-        in ("pre", "1")
-        or
-        matching.get("4h")
-        in ("pre", "1")
-    )
-
-    if direction == "long":
-
-        if has_warning:
-
-            return (
-                '<span class="direction-long '
-                'direction-alert">'
-                '롱'
-                '</span>'
-            )
-
-        return (
-            '<span class="direction-long">'
-            '롱'
-            '</span>'
-        )
-
-    if direction == "short":
-
-        if has_warning:
-
-            return (
-                '<span class="direction-short '
-                'direction-alert">'
-                '숏'
-                '</span>'
-            )
-
-        return (
-            '<span class="direction-short">'
-            '숏'
-            '</span>'
-        )
-
-    return (
-        '<span class="direction-none">'
-        '—'
-        '</span>'
-    )
-
-
-# =========================================================
 # EMA HTML
 #
-# 1H / 4H
+# 1H / 4H 순서
 # =========================================================
 
 def ema_html(
@@ -1826,19 +1760,13 @@ def ema_html(
 
     return f"""
     <div class="ema-value">
-
         <span class="ema-1h">
             1H {ema_1h}
         </span>
-
-        <span class="ema-divider">
-            /
-        </span>
-
+        <span class="ema-divider"> / </span>
         <span class="ema-4h">
             4H {ema_4h}
         </span>
-
     </div>
     """
 
@@ -1858,11 +1786,12 @@ def empty_ema():
 
 # =========================================================
 # 업비트 EMA
+#
+# 1H 현재 진행 캔들 제외
+# 4H 현재 진행 캔들 제외
 # =========================================================
 
-def get_upbit_ema(
-    market
-):
+def get_upbit_ema(market):
 
     raw1h = get_upbit_ohlcv(
         market,
@@ -1876,11 +1805,7 @@ def get_upbit_ema(
         200
     )
 
-    if (
-        raw1h is None
-        or
-        raw4h is None
-    ):
+    if raw1h is None or raw4h is None:
 
         return {
             "1h_ema": empty_ema(),
@@ -1888,8 +1813,8 @@ def get_upbit_ema(
             "warning": {
                 "1h": "none",
                 "4h": "none",
-                "direction_1h": "none",
-                "direction_4h": "none"
+                "1h_direction": "none",
+                "4h_direction": "none"
             }
         }
 
@@ -1897,9 +1822,9 @@ def get_upbit_ema(
 
     df4h = raw4h.copy()
 
-    # =====================================================
+    # -----------------------------------------------------
     # 현재 진행 중인 캔들 제외
-    # =====================================================
+    # -----------------------------------------------------
 
     if len(df1h) > 1:
 
@@ -1917,19 +1842,13 @@ def get_upbit_ema(
             .reset_index(drop=True)
         )
 
-    ema1h = check_ema(
-        df1h
-    )
+    ema1h = check_ema(df1h)
 
-    ema4h = check_ema(
+    ema4h = check_ema(df4h)
+
+    warning = get_combined_breakout_warning(
+        df1h,
         df4h
-    )
-
-    warning = (
-        get_combined_breakout_warning(
-            df1h,
-            df4h
-        )
     )
 
     return {
@@ -1943,9 +1862,7 @@ def get_upbit_ema(
 # OKX EMA
 # =========================================================
 
-def get_okx_ema(
-    inst_id
-):
+def get_okx_ema(inst_id):
 
     df1h = get_okx_ohlcv(
         inst_id,
@@ -1959,11 +1876,7 @@ def get_okx_ema(
         200
     )
 
-    if (
-        df1h is None
-        or
-        df4h is None
-    ):
+    if df1h is None or df4h is None:
 
         return {
             "1h_ema": empty_ema(),
@@ -1971,24 +1884,18 @@ def get_okx_ema(
             "warning": {
                 "1h": "none",
                 "4h": "none",
-                "direction_1h": "none",
-                "direction_4h": "none"
+                "1h_direction": "none",
+                "4h_direction": "none"
             }
         }
 
-    ema1h = check_ema(
-        df1h
-    )
+    ema1h = check_ema(df1h)
 
-    ema4h = check_ema(
+    ema4h = check_ema(df4h)
+
+    warning = get_combined_breakout_warning(
+        df1h,
         df4h
-    )
-
-    warning = (
-        get_combined_breakout_warning(
-            df1h,
-            df4h
-        )
     )
 
     return {
@@ -2105,7 +2012,6 @@ def get_all_okx_swap_symbols():
     )
 
     if response is None:
-
         return []
 
     try:
@@ -2151,7 +2057,6 @@ def update_upbit():
     markets = get_upbit_markets()
 
     if not markets:
-
         return False
 
     volume_map = (
@@ -2161,7 +2066,6 @@ def update_upbit():
     )
 
     if not volume_map:
-
         return False
 
     top_markets = sorted(
@@ -2207,17 +2111,22 @@ def update_upbit():
                 else None
             )
 
-            daily_side = get_daily_side(
-                change_percent
+            # =================================================
+            # 당일 방향 + 돌파 방향 일치
+            # =================================================
+
+            trade_signal = get_trade_signal(
+                change_percent,
+                warning
             )
 
             # =================================================
-            # 당일 방향과 돌파 방향이 일치할 때만 표시
+            # 일치하지 않으면 경고 리스트 제외
             # =================================================
 
-            if not is_visible_combined_warning(
-                warning,
-                daily_side
+            if trade_signal not in (
+                "long",
+                "short"
             ):
 
                 continue
@@ -2236,18 +2145,18 @@ def update_upbit():
                     "change_percent":
                         change_percent,
 
-                    "cloud":
-                        get_market_cloud(
+                    "weather":
+                        weather_html(
                             change_percent
                         ),
-
-                    "daily_side":
-                        daily_side,
 
                     "volume":
                         format_volume(
                             volume_map[market]
                         ),
+
+                    "trade_signal":
+                        trade_signal,
 
                     "ema_1h":
                         ema["1h_ema"],
@@ -2285,9 +2194,7 @@ def update_upbit():
 # OKX 업데이트
 # =========================================================
 
-def update_okx(
-    usdt_krw
-):
+def update_okx(usdt_krw):
 
     global latest_okx_data
 
@@ -2299,17 +2206,12 @@ def update_okx(
 
         return False
 
-    symbols = (
-        get_all_okx_swap_symbols()
-    )
+    symbols = get_all_okx_swap_symbols()
 
     if not symbols:
-
         return False
 
-    upbit_markets = (
-        get_upbit_markets()
-    )
+    upbit_markets = get_upbit_markets()
 
     upbit_coin_set = {
         market.replace(
@@ -2337,9 +2239,7 @@ def update_okx(
 
                 if volume > 0:
 
-                    volume_map[
-                        symbol
-                    ] = volume
+                    volume_map[symbol] = volume
 
                     break
 
@@ -2355,7 +2255,6 @@ def update_okx(
             )
 
     if not volume_map:
-
         return False
 
     top_symbols = sorted(
@@ -2405,13 +2304,18 @@ def update_okx(
                 else None
             )
 
-            daily_side = get_daily_side(
-                change_percent
+            # =================================================
+            # 당일 방향 + 돌파 방향 일치
+            # =================================================
+
+            trade_signal = get_trade_signal(
+                change_percent,
+                warning
             )
 
-            if not is_visible_combined_warning(
-                warning,
-                daily_side
+            if trade_signal not in (
+                "long",
+                "short"
             ):
 
                 continue
@@ -2430,18 +2334,18 @@ def update_okx(
                     "change_percent":
                         change_percent,
 
-                    "cloud":
-                        get_market_cloud(
+                    "weather":
+                        weather_html(
                             change_percent
                         ),
-
-                    "daily_side":
-                        daily_side,
 
                     "volume":
                         format_volume(
                             volume_map[symbol]
                         ),
+
+                    "trade_signal":
+                        trade_signal,
 
                     "ema_1h":
                         ema["1h_ema"],
@@ -2666,7 +2570,7 @@ td {
 
 
 /* =====================================================
-   컬럼
+   컬럼 폭
    ===================================================== */
 
 th:nth-child(1),
@@ -2678,25 +2582,25 @@ td:nth-child(1) {
 th:nth-child(2),
 td:nth-child(2) {
 
-    width: 17%;
+    width: 20%;
 }
 
 th:nth-child(3),
 td:nth-child(3) {
 
-    width: 18%;
+    width: 19%;
 }
 
 th:nth-child(4),
 td:nth-child(4) {
 
-    width: 33%;
+    width: 30%;
 }
 
 th:nth-child(5),
 td:nth-child(5) {
 
-    width: 25%;
+    width: 24%;
 }
 
 
@@ -2721,20 +2625,27 @@ td:nth-child(5) {
     line-height: 1.2;
 }
 
-.cloud {
+.weather {
 
-    height: 15px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.cloud-sun,
-.cloud-cloud,
-.cloud-none {
-
+    display: block;
     font-size: 10px;
     line-height: 1;
+}
+
+.weather-sun {
+
+    font-size: 10px;
+}
+
+.weather-cloud {
+
+    font-size: 10px;
+}
+
+.weather-none {
+
+    color: #555;
+    font-size: 8px;
 }
 
 
@@ -2759,76 +2670,131 @@ td:nth-child(5) {
 
 
 /* =====================================================
-   롱 / 숏
+   LONG / SHORT
    ===================================================== */
 
-.direction {
+.trade-signal {
 
     display: inline-flex;
     align-items: center;
     justify-content: center;
-
-    min-width: 25px;
-    height: 16px;
-
-    font-size: 9px;
-    font-weight: 800;
-
-    line-height: 1;
-
+    min-width: 42px;
+    padding: 2px 5px;
     border-radius: 4px;
+    font-size: 8px;
+    font-weight: 800;
+    letter-spacing: 0.3px;
 }
 
-.direction-long {
+.trade-long {
 
-    color: #39e66d;
-}
+    color: #35e66d;
+    background: rgba(
+        53,
+        230,
+        109,
+        0.10
+    );
 
-.direction-short {
-
-    color: #ff4d5f;
-}
-
-.direction-none {
-
-    color: #555;
-}
-
-
-/* =====================================================
-   롱 / 숏 반짝임
-   ===================================================== */
-
-.direction-alert {
+    border: 1px solid rgba(
+        53,
+        230,
+        109,
+        0.35
+    );
 
     animation:
-        directionBlink
-        0.8s
-        ease-in-out
+        long-flash
+        0.9s
         infinite;
 }
 
-@keyframes directionBlink {
+.trade-short {
 
-    0% {
+    color: #ff4d4d;
+    background: rgba(
+        255,
+        77,
+        77,
+        0.10
+    );
 
-        opacity: 1;
+    border: 1px solid rgba(
+        255,
+        77,
+        77,
+        0.35
+    );
 
-        transform: scale(1);
-    }
+    animation:
+        short-flash
+        0.9s
+        infinite;
+}
 
-    50% {
 
-        opacity: 0.25;
+@keyframes long-flash {
 
-        transform: scale(1.08);
-    }
-
+    0%,
     100% {
 
         opacity: 1;
 
-        transform: scale(1);
+        box-shadow:
+            0 0 3px
+            rgba(
+                53,
+                230,
+                109,
+                0.25
+            );
+    }
+
+    50% {
+
+        opacity: 0.35;
+
+        box-shadow:
+            0 0 9px
+            rgba(
+                53,
+                230,
+                109,
+                0.85
+            );
+    }
+}
+
+
+@keyframes short-flash {
+
+    0%,
+    100% {
+
+        opacity: 1;
+
+        box-shadow:
+            0 0 3px
+            rgba(
+                255,
+                77,
+                77,
+                0.25
+            );
+    }
+
+    50% {
+
+        opacity: 0.35;
+
+        box-shadow:
+            0 0 9px
+            rgba(
+                255,
+                77,
+                77,
+                0.85
+            );
     }
 }
 
@@ -2843,70 +2809,66 @@ td:nth-child(5) {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-
     gap: 5px;
-
     width: 100%;
 }
 
 .change-item {
 
     display: block;
-
     width: 100%;
-
     font-size: 8px;
-
     text-align: center;
-
     white-space: nowrap;
 }
 
 
 /* =====================================================
-   돌파 경고
+   경고
    ===================================================== */
 
 .breakout-warning {
 
     display: flex;
-
     justify-content: center;
-
     align-items: center;
-
     gap: 5px;
-
     width: 100%;
-
     min-height: 15px;
-
     white-space: nowrap;
 }
 
 .warning-pre {
 
     font-size: 10px;
-
     font-weight: bold;
 
     filter:
         drop-shadow(
             0 0 4px
-            rgba(255,180,0,0.8)
+            rgba(
+                255,
+                180,
+                0,
+                0.8
+            )
         );
 }
 
 .warning-rocket {
 
     font-size: 10px;
-
     font-weight: bold;
 
     filter:
         drop-shadow(
             0 0 4px
-            rgba(50,255,100,0.8)
+            rgba(
+                50,
+                255,
+                100,
+                0.8
+            )
         );
 }
 
@@ -2918,11 +2880,8 @@ td:nth-child(5) {
 .ema-value {
 
     width: 100%;
-
     font-size: 7px;
-
     font-weight: bold;
-
     white-space: nowrap;
 }
 
@@ -2931,7 +2890,11 @@ td:nth-child(5) {
     color: #555;
 }
 
-.ema-1h,
+.ema-1h {
+
+    display: inline;
+}
+
 .ema-4h {
 
     display: inline;
@@ -2947,7 +2910,6 @@ td:nth-child(5) {
     body {
 
         padding: 4px;
-
         font-size: 9px;
     }
 
@@ -2969,7 +2931,6 @@ td:nth-child(5) {
     th {
 
         padding: 5px 1px;
-
         font-size: 7px;
     }
 
@@ -2983,9 +2944,9 @@ td:nth-child(5) {
         font-size: 8px;
     }
 
-    .cloud-sun,
-    .cloud-cloud,
-    .cloud-none {
+    .weather,
+    .weather-sun,
+    .weather-cloud {
 
         font-size: 9px;
     }
@@ -2995,13 +2956,11 @@ td:nth-child(5) {
         font-size: 7px;
     }
 
-    .direction {
+    .trade-signal {
 
-        font-size: 8px;
-
-        min-width: 23px;
-
-        height: 15px;
+        min-width: 38px;
+        padding: 2px 3px;
+        font-size: 7px;
     }
 
     .change-item {
@@ -3019,18 +2978,44 @@ td:nth-child(5) {
 
         font-size: 6px;
     }
+
 }
 
 """
 
 
 # =========================================================
-# 테이블 행
+# 거래 신호 HTML
 # =========================================================
 
-def make_table_rows(
-    data
+def trade_signal_html(
+    signal
 ):
+
+    if signal == "long":
+
+        return (
+            '<span class="trade-signal trade-long">'
+            'LONG'
+            '</span>'
+        )
+
+    if signal == "short":
+
+        return (
+            '<span class="trade-signal trade-short">'
+            'SHORT'
+            '</span>'
+        )
+
+    return ""
+
+
+# =========================================================
+# 테이블 행 생성
+# =========================================================
+
+def make_table_rows(data):
 
     rows_html = ""
 
@@ -3041,32 +3026,21 @@ def make_table_rows(
             {}
         )
 
-        change_percent = item.get(
-            "change_percent"
-        )
-
-        daily_side = item.get(
-            "daily_side",
+        trade_signal = item.get(
+            "trade_signal",
             "none"
         )
 
         warning_text = (
             combined_warning_html(
                 warning,
-                daily_side
+                trade_signal
             )
         )
 
-        direction_text = (
-            direction_html(
-                warning,
-                daily_side
-            )
-        )
-
-        cloud_text = (
-            cloud_html(
-                change_percent
+        signal_html = (
+            trade_signal_html(
+                trade_signal
             )
         )
 
@@ -3087,9 +3061,9 @@ def make_table_rows(
 {item["name"]}
 </span>
 
-<div class="cloud">
-{cloud_text}
-</div>
+<span class="weather">
+{item.get("weather", "")}
+</span>
 
 </div>
 
@@ -3104,9 +3078,7 @@ def make_table_rows(
 {item["volume"]}
 </span>
 
-<div class="direction">
-{direction_text}
-</div>
+{signal_html}
 
 </div>
 
@@ -3122,7 +3094,9 @@ def make_table_rows(
 </div>
 
 <div class="breakout-warning">
+
 {warning_text}
+
 </div>
 
 </div>
@@ -3171,16 +3145,13 @@ def make_exchange_section(
 
 <tr>
 
-<td
-    colspan="5"
+<td colspan="5"
     style="
         color:#555;
         padding:12px 4px;
-    "
->
+    ">
 
-현재 일치하는
-🚨 / 🚀 종목 없음
+현재 조건 일치 종목 없음
 
 </td>
 
@@ -3228,7 +3199,6 @@ def make_exchange_section(
 
 </div>
 
-
 <div class="note"
      style="
         color:#666;
@@ -3237,25 +3207,31 @@ def make_exchange_section(
         margin:5px 2px 8px 2px;
      ">
 
-※ TOP{TOP_N} 거래대금 순위 기준<br>
+※ TOP{TOP_N} 거래대금 실제 순위 기준<br>
 
 ※ 코인명 아래 ☀️ = 당일 양수 / ☁️ = 당일 음수<br>
 
-※ 거래대금 아래 롱 = 당일 양수 방향 / 숏 = 당일 음수 방향<br>
+※ 거래대금 아래 LONG = 당일 양수 + LONG 돌파 방향 일치<br>
 
-※ 당일 양수 + 롱 돌파 조건이 일치할 때만 표시<br>
+※ 거래대금 아래 SHORT = 당일 음수 + SHORT 돌파 방향 일치<br>
 
-※ 당일 음수 + 숏 돌파 조건이 일치할 때만 표시<br>
+※ LONG / SHORT 조건 종목은 반짝임 표시<br>
 
-※ 🚨 = 돌파 전<br>
+※ 오늘 1줄 = 현재 당일 변동률<br>
 
-※ 🚀(1) = 최초 돌파<br>
+※ 오늘 2줄 = 1H / 4H 돌파 상태<br>
 
-※ 이후 추가 돌파는 경고 리스트에서 제외<br>
+※ 🚨1H = 1시간 돌파 전<br>
 
-※ 롱/숏 경고 발생 시 해당 방향 글자가 반짝임<br>
+※ 🚀1H(1) = 1시간 최초 확정 돌파<br>
 
-※ 1H / 4H 중 일치하는 돌파만 표시<br>
+※ 🚨4H = 4시간 돌파 전<br>
+
+※ 🚀4H(1) = 4시간 최초 확정 돌파<br>
+
+※ 당일 방향과 돌파 방향이 일치하는 경우만 표시<br>
+
+※ 🚀(2) 이상 추가 갱신은 표시하지 않음<br>
 
 ※ EMA는 1H / 4H 순서<br>
 
@@ -3346,11 +3322,9 @@ Breakout Trading
 
 <body>
 
-
 <h1>
 📊 Breakout Trading
 </h1>
-
 
 <div class="info">
 
@@ -3363,13 +3337,12 @@ Breakout Trading
 </div>
 
 <div>
-☀️ 양수 → 롱 / ☁️ 음수 → 숏
+☀️ 양수 LONG / ☁️ 음수 SHORT 방향 일치
 </div>
 
 <div>
 TOP{TOP_N} · 🚨 돌파 전 · 🚀 최초 돌파
 </div>
-
 
 <div class="exchange-status">
 
@@ -3385,9 +3358,7 @@ OKX : {USE_OKX}
 
 </div>
 
-
 {exchange_sections}
-
 
 </body>
 
@@ -3417,19 +3388,13 @@ def startup():
         f"OKX={USE_OKX}"
     )
 
-    if USE_UPBIT not in (
-        "Y",
-        "N"
-    ):
+    if USE_UPBIT not in ("Y", "N"):
 
         raise ValueError(
             "USE_UPBIT은 Y 또는 N만 사용할 수 있습니다."
         )
 
-    if USE_OKX not in (
-        "Y",
-        "N"
-    ):
+    if USE_OKX not in ("Y", "N"):
 
         raise ValueError(
             "USE_OKX는 Y 또는 N만 사용할 수 있습니다."
