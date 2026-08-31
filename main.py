@@ -5,7 +5,6 @@ import schedule
 import time
 import requests
 import threading
-import uvicorn
 import logging
 import pandas as pd
 import warnings
@@ -46,22 +45,18 @@ UPDATE_MINUTES = 1
 
 MAX_WARNING_COUNT = 3
 
-# 기존 돌파 범위
-BREAKOUT_LOOKBACK = 10
+# ---------------------------------------------------------
+# 파동 판단용
+# ---------------------------------------------------------
 
-# =========================================================
-# 스윙 고점 설정
-# =========================================================
+PIVOT_LEFT = 2
+PIVOT_RIGHT = 2
 
-# 스윙 고점을 찾기 위한 좌우 캔들 수
-SWING_LEFT = 2
-SWING_RIGHT = 2
+# 최소 파동 크기
+MIN_SWING_RATE = 0.003
 
-# 최소 분석 캔들 수
-MIN_SWING_CANDLES = 10
-
-# 고점 이후 최소 조정 캔들
-MIN_PULLBACK_CANDLES = 2
+# 돌파 후 같은 고점에서 반복 경고 방지
+BREAKOUT_REARM_RATE = 0.002
 
 
 # =========================================================
@@ -105,15 +100,87 @@ latest_usdt_krw = 0.0
 
 
 # =========================================================
-# 경고 상태 저장
+# 파동 상태 저장
 #
-# 같은 스윙 고점을 계속 돌파하고 있는 동안
-# 매 1분마다 중복 경고가 발생하지 않도록 사용
+# key:
+# UPBIT:BTC-1H
+# UPBIT:BTC-4H
+# OKX:BTC-USDT-SWAP-1H
+# OKX:BTC-USDT-SWAP-4H
+#
+# 1분마다 조회해도 기존 상태를 유지한다.
 # =========================================================
 
-breakout_state_lock = threading.Lock()
+wave_states = {}
 
-breakout_states = {}
+wave_state_lock = threading.Lock()
+
+
+def get_wave_state_key(
+    exchange,
+    symbol,
+    timeframe
+):
+
+    return f"{exchange}:{symbol}:{timeframe}"
+
+
+def new_wave_state():
+
+    return {
+        "phase": "waiting",
+
+        # 최초 상승 고점
+        "first_high": None,
+
+        # 현재 돌파 대상으로 사용하는 고점
+        "target_high": None,
+
+        # 조정 저점
+        "pullback_low": None,
+
+        # 최근 스윙 고점
+        "last_pivot_high": None,
+
+        # 최근 스윙 저점
+        "last_pivot_low": None,
+
+        # 마지막으로 처리한 확정 캔들 시간
+        "last_processed_ts": None,
+
+        # 마지막 돌파 고점
+        "last_breakout_high": None,
+
+        # 마지막 돌파 발생 캔들
+        "last_breakout_ts": None,
+
+        # 현재 경고
+        "warning": "none"
+    }
+
+
+def reset_wave_state(
+    key
+):
+
+    with wave_state_lock:
+
+        wave_states[key] = new_wave_state()
+
+        return wave_states[key]
+
+
+def get_or_create_wave_state(
+    key
+):
+
+    with wave_state_lock:
+
+        if key not in wave_states:
+
+            wave_states[key] = new_wave_state()
+
+        return wave_states[key]
 
 
 # =========================================================
@@ -294,13 +361,15 @@ def get_usdt_krw():
 # =========================================================
 # OKX 캔들
 #
-# 기존처럼 확정 캔들만 사용
+# include_current=True
+# 현재 진행 중인 캔들도 가져온다.
 # =========================================================
 
 def get_okx_ohlcv(
     inst_id,
     bar="1H",
-    limit=200
+    limit=200,
+    include_current=False
 ):
 
     limit = max(
@@ -363,17 +432,19 @@ def get_okx_ohlcv(
                 errors="coerce"
             )
 
-        df = df[
-            df["confirm"].astype(str) == "1"
-        ]
-
-        if df.empty:
-            return None
-
         df = (
             df.iloc[::-1]
             .reset_index(drop=True)
         )
+
+        if not include_current:
+
+            df = df[
+                df["confirm"].astype(str) == "1"
+            ]
+
+        if df.empty:
+            return None
 
         return df
 
@@ -475,7 +546,9 @@ def get_upbit_ticker_volume_map(
 
                     if market:
 
-                        volume_map[market] = volume
+                        volume_map[
+                            market
+                        ] = volume
 
                 success = True
 
@@ -493,6 +566,10 @@ def get_upbit_ticker_volume_map(
 
 # =========================================================
 # 업비트 캔들
+#
+# unit:
+# 60  = 1H
+# 240 = 4H
 # =========================================================
 
 def get_upbit_ohlcv(
@@ -637,8 +714,7 @@ def get_ema(
 
     if (
         df is None
-        or
-        column not in df.columns
+        or column not in df.columns
     ):
 
         return None
@@ -649,7 +725,6 @@ def get_ema(
     )
 
     if price.notna().sum() < period:
-
         return None
 
     return price.ewm(
@@ -679,16 +754,11 @@ def get_ema_10_30_direction(
         30
     )
 
-    if (
-        ema10 is None
-        or
-        ema30 is None
-    ):
+    if ema10 is None or ema30 is None:
 
         return "none"
 
     a = ema10.iloc[-1]
-
     b = ema30.iloc[-1]
 
     if pd.isna(a) or pd.isna(b):
@@ -707,84 +777,7 @@ def get_ema_10_30_direction(
 
 
 # =========================================================
-# EMA 30-60-120
-#
-# 이번 조건의 핵심 정배열
-# =========================================================
-
-def get_ema_30_60_120_direction(
-    df,
-    column
-):
-
-    ema30 = get_ema(
-        df,
-        column,
-        30
-    )
-
-    ema60 = get_ema(
-        df,
-        column,
-        60
-    )
-
-    ema120 = get_ema(
-        df,
-        column,
-        120
-    )
-
-    if (
-        ema30 is None
-        or
-        ema60 is None
-        or
-        ema120 is None
-    ):
-
-        return "none"
-
-    values = [
-        ema30.iloc[-1],
-        ema60.iloc[-1],
-        ema120.iloc[-1]
-    ]
-
-    if any(
-        pd.isna(x)
-        for x in values
-    ):
-
-        return "none"
-
-    if (
-        values[0]
-        >
-        values[1]
-        >
-        values[2]
-    ):
-
-        return "long"
-
-    if (
-        values[0]
-        <
-        values[1]
-        <
-        values[2]
-    ):
-
-        return "short"
-
-    return "none"
-
-
-# =========================================================
-# EMA 10-30-60 표시
-#
-# 기존 화면 표시 유지
+# EMA 10-30-60
 # =========================================================
 
 def get_ema_10_30_60_direction(
@@ -792,30 +785,14 @@ def get_ema_10_30_60_direction(
     column
 ):
 
-    ema10 = get_ema(
-        df,
-        column,
-        10
-    )
-
-    ema30 = get_ema(
-        df,
-        column,
-        30
-    )
-
-    ema60 = get_ema(
-        df,
-        column,
-        60
-    )
+    ema10 = get_ema(df, column, 10)
+    ema30 = get_ema(df, column, 30)
+    ema60 = get_ema(df, column, 60)
 
     if (
         ema10 is None
-        or
-        ema30 is None
-        or
-        ema60 is None
+        or ema30 is None
+        or ema60 is None
     ):
 
         return "none"
@@ -853,11 +830,7 @@ def get_ema_10_30_60_alignment_count(
     column
 ):
 
-    if (
-        df is None
-        or
-        len(df) < 60
-    ):
+    if df is None or len(df) < 60:
 
         return "none", 0
 
@@ -964,8 +937,6 @@ def get_ema_10_30_60_alignment_count(
 
 # =========================================================
 # 메인 방향
-#
-# 화면 EMA는 10-30-60
 # =========================================================
 
 def get_main_direction(
@@ -1055,7 +1026,6 @@ def check_ema(
                 ):
 
                     a = ema10.iloc[i]
-
                     b = ema30.iloc[i]
 
                     if pd.isna(a) or pd.isna(b):
@@ -1098,163 +1068,155 @@ def check_ema(
 
 
 # =========================================================
-# 스윙 고점 판정
+# 스윙 고점
 #
-# 중앙 캔들의 고가가 좌우 고가보다 높은 경우
+# 캔들 고가 기준
 # =========================================================
 
-def is_swing_high(
+def is_pivot_high(
     df,
     index
 ):
 
-    if df is None:
+    start = index - PIVOT_LEFT
+
+    end = index + PIVOT_RIGHT + 1
+
+    if start < 0 or end > len(df):
 
         return False
 
-    if index < SWING_LEFT:
-
-        return False
-
-    if (
-        index + SWING_RIGHT
-        >= len(df)
-    ):
-
-        return False
-
-    current_high = float(
+    value = float(
         df.iloc[index]["h"]
     )
 
-    if pd.isna(current_high):
-
-        return False
-
     left = pd.to_numeric(
         df.iloc[
-            index - SWING_LEFT:index
+            start:index
         ]["h"],
         errors="coerce"
     )
 
     right = pd.to_numeric(
         df.iloc[
-            index + 1:
-            index + SWING_RIGHT + 1
+            index + 1:end
         ]["h"],
         errors="coerce"
     )
 
-    if left.isna().any() or right.isna().any():
+    if left.empty or right.empty:
 
         return False
 
     return (
-        current_high > left.max()
+        value >= left.max()
         and
-        current_high >= right.max()
+        value >= right.max()
     )
 
 
 # =========================================================
-# 스윙 저점 판정
+# 스윙 저점
 #
-# 숏 조건용
+# 캔들 저가 기준
 # =========================================================
 
-def is_swing_low(
+def is_pivot_low(
     df,
     index
 ):
 
-    if df is None:
+    start = index - PIVOT_LEFT
+
+    end = index + PIVOT_RIGHT + 1
+
+    if start < 0 or end > len(df):
 
         return False
 
-    if index < SWING_LEFT:
-
-        return False
-
-    if (
-        index + SWING_RIGHT
-        >= len(df)
-    ):
-
-        return False
-
-    current_low = float(
+    value = float(
         df.iloc[index]["l"]
     )
 
-    if pd.isna(current_low):
-
-        return False
-
     left = pd.to_numeric(
         df.iloc[
-            index - SWING_LEFT:index
+            start:index
         ]["l"],
         errors="coerce"
     )
 
     right = pd.to_numeric(
         df.iloc[
-            index + 1:
-            index + SWING_RIGHT + 1
+            index + 1:end
         ]["l"],
         errors="coerce"
     )
 
-    if left.isna().any() or right.isna().any():
+    if left.empty or right.empty:
 
         return False
 
     return (
-        current_low < left.min()
+        value <= left.min()
         and
-        current_low <= right.min()
+        value <= right.min()
     )
 
 
 # =========================================================
-# 최근 유효 스윙 고점 찾기
+# 캔들 파동 돌파
 #
-# 중요한 부분
+# 핵심 구조
 #
-# 첫 번째 고점 A
-#      ↓
+# 30-60-120 정배열
+#       ↓
+# 상승 파동
+#       ↓
+# 고점 A
+#       ↓
 # 조정
-#      ↓
-# 두 번째 고점 B
+#       ↓
+# 낮은 고점 B
+#       ↓
+# B를 양봉으로 돌파
+#       ↓
+# 🚨
 #
-# B가 A보다 낮아도 B를 새로운 기준 고점으로 사용
+# 1H / 4H 독립 추적
 # =========================================================
 
-def find_latest_swing_high(
+def get_candle_wave_breakout(
     df,
-    direction
+    direction,
+    state_key
 ):
 
     if (
         df is None
         or
-        len(df) < MIN_SWING_CANDLES
+        len(df) < 80
     ):
 
-        return None
+        return "none"
 
-    end_index = (
-        len(df)
-        -
-        SWING_RIGHT
-        -
-        1
+    df = (
+        df.copy()
+        .reset_index(drop=True)
     )
 
-    if end_index <= SWING_LEFT:
+    state = get_or_create_wave_state(
+        state_key
+    )
 
-        return None
+    # -----------------------------------------------------
+    # 반드시 30-60-120 정배열
+    # -----------------------------------------------------
+
+    ema10 = get_ema(
+        df,
+        "c",
+        10
+    )
 
     ema30 = get_ema(
         df,
@@ -1266,376 +1228,254 @@ def find_latest_swing_high(
         df,
         "c",
         60
-    )
-
-    ema120 = get_ema(
-        df,
-        "c",
-        120
-    )
-
-    # =====================================================
-    # LONG
-    # =====================================================
-
-    if direction == "long":
-
-        for index in range(
-            end_index,
-            SWING_LEFT - 1,
-            -1
-        ):
-
-            if not is_swing_high(
-                df,
-                index
-            ):
-
-                continue
-
-            # -------------------------------------------------
-            # 스윙 고점 생성 당시 정배열 확인
-            # -------------------------------------------------
-
-            if (
-                ema30 is not None
-                and
-                ema60 is not None
-                and
-                ema120 is not None
-            ):
-
-                values = [
-                    ema30.iloc[index],
-                    ema60.iloc[index],
-                    ema120.iloc[index]
-                ]
-
-                if any(
-                    pd.isna(x)
-                    for x in values
-                ):
-
-                    continue
-
-                if not (
-                    values[0]
-                    >
-                    values[1]
-                    >
-                    values[2]
-                ):
-
-                    continue
-
-            # -------------------------------------------------
-            # 고점 이후 조정 캔들이 존재해야 함
-            # -------------------------------------------------
-
-            correction_start = index + 1
-
-            correction_end = (
-                len(df) - 1
-            )
-
-            correction_count = (
-                correction_end
-                -
-                correction_start
-                +
-                1
-            )
-
-            if (
-                correction_count
-                <
-                MIN_PULLBACK_CANDLES
-            ):
-
-                continue
-
-            # -------------------------------------------------
-            # 고점 이후 현재까지
-            # 고점을 이미 돌파했다면
-            # 현재 후보로 사용하지 않음
-            #
-            # 현재 진행 중인 최초 돌파만 찾기 위해
-            # 기존 고점보다 높은 종가가 없는지 확인
-            # -------------------------------------------------
-
-            after_high = df.iloc[
-                correction_start:
-                correction_end + 1
-            ]
-
-            if after_high.empty:
-
-                continue
-
-            previous_close_max = pd.to_numeric(
-                after_high["c"],
-                errors="coerce"
-            ).max()
-
-            high_value = float(
-                df.iloc[index]["h"]
-            )
-
-            if (
-                pd.notna(previous_close_max)
-                and
-                previous_close_max > high_value
-            ):
-
-                continue
-
-            return {
-                "index": index,
-                "price": high_value
-            }
-
-    # =====================================================
-    # SHORT
-    # =====================================================
-
-    if direction == "short":
-
-        for index in range(
-            end_index,
-            SWING_LEFT - 1,
-            -1
-        ):
-
-            if not is_swing_low(
-                df,
-                index
-            ):
-
-                continue
-
-            if (
-                ema30 is not None
-                and
-                ema60 is not None
-                and
-                ema120 is not None
-            ):
-
-                values = [
-                    ema30.iloc[index],
-                    ema60.iloc[index],
-                    ema120.iloc[index]
-                ]
-
-                if any(
-                    pd.isna(x)
-                    for x in values
-                ):
-
-                    continue
-
-                if not (
-                    values[0]
-                    <
-                    values[1]
-                    <
-                    values[2]
-                ):
-
-                    continue
-
-            correction_start = index + 1
-
-            correction_end = (
-                len(df) - 1
-            )
-
-            correction_count = (
-                correction_end
-                -
-                correction_start
-                +
-                1
-            )
-
-            if (
-                correction_count
-                <
-                MIN_PULLBACK_CANDLES
-            ):
-
-                continue
-
-            after_low = df.iloc[
-                correction_start:
-                correction_end + 1
-            ]
-
-            if after_low.empty:
-
-                continue
-
-            previous_close_min = pd.to_numeric(
-                after_low["c"],
-                errors="coerce"
-            ).min()
-
-            low_value = float(
-                df.iloc[index]["l"]
-            )
-
-            if (
-                pd.notna(previous_close_min)
-                and
-                previous_close_min < low_value
-            ):
-
-                continue
-
-            return {
-                "index": index,
-                "price": low_value
-            }
-
-    return None
-
-
-# =========================================================
-# 현재 정배열 확인
-#
-# 돌파 시점에도 반드시 30-60-120 유지
-# =========================================================
-
-def is_current_ema_aligned(
-    df,
-    direction
-):
-
-    if (
-        df is None
-        or
-        len(df) < 120
-    ):
-
-        return False
-
-    ema30 = get_ema(
-        df,
-        "c",
-        30
-    )
-
-    ema60 = get_ema(
-        df,
-        "c",
-        60
-    )
-
-    ema120 = get_ema(
-        df,
-        "c",
-        120
     )
 
     if (
         ema30 is None
         or
         ema60 is None
-        or
-        ema120 is None
     ):
 
-        return False
-
-    a = ema30.iloc[-1]
-
-    b = ema60.iloc[-1]
-
-    c = ema120.iloc[-1]
-
-    if (
-        pd.isna(a)
-        or
-        pd.isna(b)
-        or
-        pd.isna(c)
-    ):
-
-        return False
-
-    if direction == "long":
-
-        return (
-            a > b > c
+        reset_wave_state(
+            state_key
         )
 
-    if direction == "short":
+        return "none"
 
-        return (
-            a < b < c
+    # -----------------------------------------------------
+    # 사용자 최종 조건
+    #
+    # 30 > 60 > 120 이 아니라
+    # 현재 코드 기준 30-60-120 정배열
+    #
+    # EMA120도 반드시 계산
+    # -----------------------------------------------------
+
+    ema120 = get_ema(
+        df,
+        "c",
+        120
+    )
+
+    if ema120 is None:
+
+        reset_wave_state(
+            state_key
         )
 
-    return False
+        return "none"
 
+    current_index = len(df) - 1
 
-# =========================================================
-# 스윙 돌파 신호
-#
-# 반환
-#
-# none = 없음
-# pre  = 돌파 전
-# 1    = 최초 돌파
-# =========================================================
+    e30 = ema30.iloc[current_index]
+    e60 = ema60.iloc[current_index]
+    e120 = ema120.iloc[current_index]
 
-def get_swing_breakout_signal(
-    df,
-    direction
-):
-
-    if (
-        df is None
-        or
-        len(df) < MIN_SWING_CANDLES
+    if any(
+        pd.isna(x)
+        for x in [
+            e30,
+            e60,
+            e120
+        ]
     ):
 
-        return {
-            "state": "none",
-            "level": None,
-            "index": None
-        }
+        return "none"
 
-    # =====================================================
-    # 현재 정배열이 아니면 즉시 무효
-    # =====================================================
+    long_alignment = (
+        e30 > e60 > e120
+    )
 
-    if not is_current_ema_aligned(
-        df,
-        direction
+    short_alignment = (
+        e30 < e60 < e120
+    )
+
+    # -----------------------------------------------------
+    # 이번 파동은 롱 기준
+    #
+    # 현재 요청:
+    # 상승 1파 → 조정 → 재상승 → 고점 돌파
+    #
+    # 숏은 별도로 표시할 수 있지만
+    # 이 파동 엔진에서는 롱 구조를 기준으로 추적
+    # -----------------------------------------------------
+
+    if direction != "long" or not long_alignment:
+
+        reset_wave_state(
+            state_key
+        )
+
+        return "none"
+
+    # -----------------------------------------------------
+    # 확정 캔들만 파동 구조 판단
+    #
+    # 마지막 캔들은 현재 진행 캔들일 수 있으므로
+    # 마지막 2개는 제외하고 스윙 확정
+    # -----------------------------------------------------
+
+    confirmed_end = len(df) - 1
+
+    pivot_end = (
+        confirmed_end - PIVOT_RIGHT
+    )
+
+    if pivot_end <= PIVOT_LEFT:
+
+        return "none"
+
+    # -----------------------------------------------------
+    # 새로 확정된 pivot을 순차적으로 처리
+    # -----------------------------------------------------
+
+    last_processed = (
+        state.get(
+            "last_processed_ts"
+        )
+    )
+
+    start_index = PIVOT_LEFT
+
+    if last_processed is not None:
+
+        for i in range(
+            PIVOT_LEFT,
+            pivot_end + 1
+        ):
+
+            ts_value = (
+                df.iloc[i].get(
+                    "ts",
+                    i
+                )
+            )
+
+            if str(ts_value) == str(
+                last_processed
+            ):
+
+                start_index = i + 1
+
+                break
+
+    for index in range(
+        start_index,
+        pivot_end + 1
     ):
 
-        return {
-            "state": "none",
-            "level": None,
-            "index": None
-        }
+        row = df.iloc[index]
 
-    candidate = find_latest_swing_high(
-        df,
-        direction
-    )
+        high = float(
+            row["h"]
+        )
 
-    if candidate is None:
+        low = float(
+            row["l"]
+        )
 
-        return {
-            "state": "none",
-            "level": None,
-            "index": None
-        }
+        ts_value = row.get(
+            "ts",
+            index
+        )
 
-    level = float(
-        candidate["price"]
-    )
+        # -------------------------------------------------
+        # 스윙 저점
+        # -------------------------------------------------
+
+        if is_pivot_low(
+            df,
+            index
+        ):
+
+            state["last_pivot_low"] = low
+
+            if (
+                state["first_high"] is not None
+                and
+                low < state["first_high"]
+            ):
+
+                state["pullback_low"] = low
+
+                if state["phase"] in (
+                    "first_high",
+                    "pullback"
+                ):
+
+                    state["phase"] = "pullback"
+
+        # -------------------------------------------------
+        # 스윙 고점
+        # -------------------------------------------------
+
+        if is_pivot_high(
+            df,
+            index
+        ):
+
+            # ---------------------------------------------
+            # 첫 상승 고점
+            # ---------------------------------------------
+
+            if state["first_high"] is None:
+
+                state["first_high"] = high
+
+                state["target_high"] = high
+
+                state["last_pivot_high"] = high
+
+                state["phase"] = "first_high"
+
+            else:
+
+                previous_high = state.get(
+                    "last_pivot_high"
+                )
+
+                # -----------------------------------------
+                # 기존 고점보다 낮은 고점
+                #
+                # 이것도 새로운 돌파 대상
+                # -----------------------------------------
+
+                if (
+                    previous_high is not None
+                    and
+                    high < previous_high
+                ):
+
+                    state["last_pivot_high"] = high
+
+                    if (
+                        state.get(
+                            "pullback_low"
+                        )
+                        is not None
+                    ):
+
+                        state["target_high"] = high
+
+                        state["phase"] = "rebound"
+
+                # -----------------------------------------
+                # 기존 고점을 다시 넘어선 스윙
+                # -----------------------------------------
+
+                elif (
+                    previous_high is not None
+                    and
+                    high > previous_high
+                ):
+
+                    state["last_pivot_high"] = high
+
+        state["last_processed_ts"] = ts_value
+
+    # -----------------------------------------------------
+    # 현재 진행 캔들
+    # -----------------------------------------------------
 
     current = df.iloc[-1]
 
@@ -1651,225 +1491,141 @@ def get_swing_breakout_signal(
         current["c"]
     )
 
-    # =====================================================
-    # LONG
-    #
-    # 양봉으로 스윙 고점 돌파
-    # =====================================================
-
-    if direction == "long":
-
-        # 돌파 완료
-        if (
-            current_close > level
-            and
-            current_close > current_open
-        ):
-
-            return {
-                "state": "1",
-                "level": level,
-                "index": candidate["index"]
-            }
-
-        # 돌파 직전
-        if (
-            current_high >= level
-            and
-            current_close <= level
-            and
-            current_close >= current_open
-        ):
-
-            return {
-                "state": "pre",
-                "level": level,
-                "index": candidate["index"]
-            }
-
-    # =====================================================
-    # SHORT
-    #
-    # 음봉으로 스윙 저점 이탈
-    # =====================================================
-
-    if direction == "short":
-
-        if (
-            current_close < level
-            and
-            current_close < current_open
-        ):
-
-            return {
-                "state": "1",
-                "level": level,
-                "index": candidate["index"]
-            }
-
-        if (
-            current_low <= level
-            and
-            current_close >= level
-            and
-            current_close <= current_open
-        ):
-
-            return {
-                "state": "pre",
-                "level": level,
-                "index": candidate["index"]
-            }
-
-    return {
-        "state": "none",
-        "level": level,
-        "index": candidate["index"]
-    }
-
-
-# =========================================================
-# 상태 저장
-#
-# 같은 스윙 고점에 대해
-# 최초 1회만 돌파 신호 허용
-# =========================================================
-
-def apply_breakout_state(
-    symbol,
-    timeframe,
-    signal
-):
-
-    state = signal.get(
-        "state",
-        "none"
+    current_low = float(
+        current["l"]
     )
 
-    level = signal.get(
-        "level"
+    target_high = state.get(
+        "target_high"
     )
 
-    index = signal.get(
-        "index"
-    )
-
-    key = (
-        f"{symbol}|"
-        f"{timeframe}"
-    )
-
-    with breakout_state_lock:
-
-        previous = breakout_states.get(
-            key
-        )
-
-        # =================================================
-        # 현재 후보 자체가 없으면 상태 제거
-        # =================================================
-
-        if (
-            level is None
-            or
-            index is None
-        ):
-
-            breakout_states.pop(
-                key,
-                None
-            )
-
-            return "none"
-
-        # =================================================
-        # 새로운 스윙 고점이면
-        # 새로운 돌파 사이클 시작
-        # =================================================
-
-        if (
-            previous is None
-            or
-            previous.get("index") != index
-            or
-            previous.get("level") != level
-        ):
-
-            breakout_states[key] = {
-                "index": index,
-                "level": level,
-                "triggered": False
-            }
-
-            previous = breakout_states[key]
-
-        # =================================================
-        # 돌파 전
-        # =================================================
-
-        if state == "pre":
-
-            return "pre"
-
-        # =================================================
-        # 최초 돌파
-        # =================================================
-
-        if state == "1":
-
-            if previous.get(
-                "triggered",
-                False
-            ):
-
-                return "none"
-
-            previous["triggered"] = True
-
-            return "1"
-
-        # =================================================
-        # 그 외
-        # =================================================
+    if target_high is None:
 
         return "none"
 
+    # -----------------------------------------------------
+    # 현재 캔들이 조정 중인지 확인
+    # -----------------------------------------------------
 
-# =========================================================
-# 최종 시간봉 돌파
-#
-# 30-60-120 정배열 유지
-# 스윙 고점/저점 돌파
-# =========================================================
+    if (
+        state.get("first_high") is not None
+        and
+        current_low < state["first_high"]
+    ):
 
-def get_timeframe_breakout(
-    df,
-    direction,
-    symbol,
-    timeframe
-):
+        state["phase"] = (
+            "pullback"
+            if state["phase"]
+            != "rebound"
+            else
+            state["phase"]
+        )
 
-    signal = get_swing_breakout_signal(
-        df,
-        direction
+    # -----------------------------------------------------
+    # 돌파 조건
+    #
+    # 반드시 양봉
+    # 종가가 목표 고점 돌파
+    # 현재 고가도 목표 고점 이상
+    # -----------------------------------------------------
+
+    bullish_candle = (
+        current_close > current_open
     )
 
-    return apply_breakout_state(
-        symbol,
-        timeframe,
-        signal
+    breakout = (
+        bullish_candle
+        and
+        current_high > target_high
+        and
+        current_close > target_high
     )
+
+    if breakout:
+
+        current_ts = current.get(
+            "ts",
+            current_index
+        )
+
+        # ---------------------------------------------
+        # 동일 캔들 중복 방지
+        # ---------------------------------------------
+
+        if str(
+            state.get(
+                "last_breakout_ts"
+            )
+        ) == str(current_ts):
+
+            return "1"
+
+        # ---------------------------------------------
+        # 이미 같은 고점을 돌파했던 경우
+        # ---------------------------------------------
+
+        last_breakout_high = state.get(
+            "last_breakout_high"
+        )
+
+        if (
+            last_breakout_high is not None
+            and
+            current_close
+            <=
+            last_breakout_high
+            *
+            (
+                1
+                +
+                BREAKOUT_REARM_RATE
+            )
+        ):
+
+            return "none"
+
+        # ---------------------------------------------
+        # 최초 돌파
+        # ---------------------------------------------
+
+        state["last_breakout_high"] = (
+            current_close
+        )
+
+        state["last_breakout_ts"] = (
+            current_ts
+        )
+
+        state["warning"] = "1"
+
+        state["phase"] = "breakout"
+
+        logging.info(
+            f"[파동 돌파] "
+            f"{state_key} "
+            f"목표={target_high:.8f} "
+            f"현재={current_close:.8f}"
+        )
+
+        return "1"
+
+    # -----------------------------------------------------
+    # 돌파가 아닌 경우
+    # -----------------------------------------------------
+
+    return "none"
 
 
 # =========================================================
-# 1H + 4H 경고
+# 1H + 4H 캔들 파동 경고
 #
-# 둘 중 하나라도 경고이면 표시
+# 둘 중 하나라도 발생하면 경고
 # =========================================================
 
 def get_combined_breakout_warning(
     df1h,
     df4h,
+    exchange,
     symbol
 ):
 
@@ -1883,18 +1639,28 @@ def get_combined_breakout_warning(
         "c"
     )
 
-    warning_1h = get_timeframe_breakout(
-        df1h,
-        direction_1h,
+    state_key_1h = get_wave_state_key(
+        exchange,
         symbol,
         "1H"
     )
 
-    warning_4h = get_timeframe_breakout(
-        df4h,
-        direction_4h,
+    state_key_4h = get_wave_state_key(
+        exchange,
         symbol,
         "4H"
+    )
+
+    warning_1h = get_candle_wave_breakout(
+        df1h,
+        direction_1h,
+        state_key_1h
+    )
+
+    warning_4h = get_candle_wave_breakout(
+        df4h,
+        direction_4h,
+        state_key_4h
     )
 
     return {
@@ -1905,9 +1671,6 @@ def get_combined_breakout_warning(
 
 # =========================================================
 # 경고 표시 여부
-#
-# 🚨 돌파 전만 표시
-# 🚀는 현재 요청에서 제외
 # =========================================================
 
 def is_visible_combined_warning(
@@ -1919,20 +1682,16 @@ def is_visible_combined_warning(
         return False
 
     return (
-        warning.get("1h")
-        ==
-        "pre"
+        warning.get("1h") == "1"
         or
-        warning.get("4h")
-        ==
-        "pre"
+        warning.get("4h") == "1"
     )
 
 
 # =========================================================
 # 경고 HTML
 #
-# 현재 요청:
+# 기존 🚀 삭제
 # 🚨만 표시
 # =========================================================
 
@@ -1956,21 +1715,17 @@ def combined_warning_html(
         "none"
     )
 
-    if warning_1h == "pre":
+    if warning_1h == "1":
 
         result.append(
             '<span class="warning-pre">🚨1H</span>'
         )
 
-    if warning_4h == "pre":
+    if warning_4h == "1":
 
         result.append(
             '<span class="warning-pre">🚨4H</span>'
         )
-
-    if not result:
-
-        return ""
 
     return " ".join(result)
 
@@ -1979,9 +1734,7 @@ def combined_warning_html(
 # 변동률
 # =========================================================
 
-def get_upbit_change(
-    market
-):
+def get_upbit_change(market):
 
     df = get_upbit_ohlcv(
         market,
@@ -2040,7 +1793,10 @@ def get_upbit_change(
         )
 
         result.append(
-            round(change, 2)
+            round(
+                change,
+                2
+            )
         )
 
     return result
@@ -2050,14 +1806,13 @@ def get_upbit_change(
 # OKX 변동률
 # =========================================================
 
-def get_okx_change(
-    inst_id
-):
+def get_okx_change(inst_id):
 
     df = get_okx_ohlcv(
         inst_id,
         "1H",
-        120
+        120,
+        include_current=False
     )
 
     if df is None or len(df) < 50:
@@ -2121,7 +1876,10 @@ def get_okx_change(
         )
 
         result.append(
-            round(change, 2)
+            round(
+                change,
+                2
+            )
         )
 
     return result
@@ -2131,9 +1889,7 @@ def get_okx_change(
 # 변동률 HTML
 # =========================================================
 
-def format_change(
-    changes
-):
+def format_change(changes):
 
     if (
         changes is None
@@ -2148,16 +1904,19 @@ def format_change(
     if x > 0:
 
         icon = "🟩"
+
         sign = "+"
 
     elif x < 0:
 
         icon = "🟥"
+
         sign = ""
 
     else:
 
         icon = "⬜"
+
         sign = ""
 
     return (
@@ -2170,9 +1929,7 @@ def format_change(
 # =========================================================
 # EMA HTML
 #
-# 1시간
-# 4시간
-# 두 줄 표시
+# 1시간 / 4시간 두 줄
 # =========================================================
 
 def ema_html(
@@ -2183,12 +1940,12 @@ def ema_html(
     return f"""
     <div class="ema-value">
 
-        <div class="ema-row">
+        <div class="ema-line">
             <span class="ema-label">1H</span>
             <span>{ema_1h}</span>
         </div>
 
-        <div class="ema-row">
+        <div class="ema-line">
             <span class="ema-label">4H</span>
             <span>{ema_4h}</span>
         </div>
@@ -2211,12 +1968,14 @@ def empty_ema():
 
 
 # =========================================================
-# 업비트 EMA
+# 업비트 EMA + 파동
 #
-# 현재 진행 중인 캔들을 포함
+# EMA:
+# 현재 진행 캔들 제외
 #
-# 1분마다 조회하므로
-# 현재 상태를 즉시 반영
+# 파동:
+# 확정 캔들로 구조 추적
+# 현재 캔들로 돌파 확인
 # =========================================================
 
 def get_upbit_ema(
@@ -2235,11 +1994,7 @@ def get_upbit_ema(
         200
     )
 
-    if (
-        raw1h is None
-        or
-        raw4h is None
-    ):
+    if raw1h is None or raw4h is None:
 
         return {
             "1h_ema": empty_ema(),
@@ -2250,29 +2005,46 @@ def get_upbit_ema(
             }
         }
 
-    df1h = raw1h.copy()
+    # -----------------------------------------------------
+    # EMA용 확정 캔들
+    # -----------------------------------------------------
 
-    df4h = raw4h.copy()
+    df1h_confirmed = raw1h.copy()
 
-    # =====================================================
-    # EMA
-    # =====================================================
+    df4h_confirmed = raw4h.copy()
+
+    if len(df1h_confirmed) > 1:
+
+        df1h_confirmed = (
+            df1h_confirmed
+            .iloc[:-1]
+            .reset_index(drop=True)
+        )
+
+    if len(df4h_confirmed) > 1:
+
+        df4h_confirmed = (
+            df4h_confirmed
+            .iloc[:-1]
+            .reset_index(drop=True)
+        )
 
     ema1h = check_ema(
-        df1h
+        df1h_confirmed
     )
 
     ema4h = check_ema(
-        df4h
+        df4h_confirmed
     )
 
-    # =====================================================
-    # 돌파 경고
-    # =====================================================
+    # -----------------------------------------------------
+    # 파동은 현재 캔들 포함
+    # -----------------------------------------------------
 
     warning = get_combined_breakout_warning(
-        df1h,
-        df4h,
+        raw1h,
+        raw4h,
+        "UPBIT",
         market
     )
 
@@ -2284,30 +2056,28 @@ def get_upbit_ema(
 
 
 # =========================================================
-# OKX EMA
+# OKX EMA + 파동
 # =========================================================
 
 def get_okx_ema(
     inst_id
 ):
 
-    df1h = get_okx_ohlcv(
+    raw1h = get_okx_ohlcv(
         inst_id,
         "1H",
-        200
+        200,
+        include_current=True
     )
 
-    df4h = get_okx_ohlcv(
+    raw4h = get_okx_ohlcv(
         inst_id,
         "4H",
-        200
+        200,
+        include_current=True
     )
 
-    if (
-        df1h is None
-        or
-        df4h is None
-    ):
+    if raw1h is None or raw4h is None:
 
         return {
             "1h_ema": empty_ema(),
@@ -2318,17 +2088,44 @@ def get_okx_ema(
             }
         }
 
+    # -----------------------------------------------------
+    # EMA
+    #
+    # confirm=1만 사용
+    # -----------------------------------------------------
+
+    df1h_confirmed = (
+        raw1h[
+            raw1h["confirm"].astype(str) == "1"
+        ]
+        .reset_index(drop=True)
+    )
+
+    df4h_confirmed = (
+        raw4h[
+            raw4h["confirm"].astype(str) == "1"
+        ]
+        .reset_index(drop=True)
+    )
+
     ema1h = check_ema(
-        df1h
+        df1h_confirmed
     )
 
     ema4h = check_ema(
-        df4h
+        df4h_confirmed
     )
 
+    # -----------------------------------------------------
+    # 파동
+    #
+    # 현재 진행 캔들 포함
+    # -----------------------------------------------------
+
     warning = get_combined_breakout_warning(
-        df1h,
-        df4h,
+        raw1h,
+        raw4h,
+        "OKX",
         inst_id
     )
 
@@ -2363,7 +2160,8 @@ def get_okx_volume(
             df = get_okx_ohlcv(
                 inst_id,
                 "1H",
-                hours + 1
+                hours + 1,
+                include_current=False
             )
 
             if df is None or df.empty:
@@ -2538,10 +2336,6 @@ def update_upbit():
                 {}
             )
 
-            # =================================================
-            # 🚨가 있는 종목만 표시
-            # =================================================
-
             if not is_visible_combined_warning(
                 warning
             ):
@@ -2661,7 +2455,9 @@ def update_okx(
 
                 if volume > 0:
 
-                    volume_map[symbol] = volume
+                    volume_map[
+                        symbol
+                    ] = volume
 
                     break
 
@@ -2892,31 +2688,31 @@ body {
     background: #0f1115;
     color: #eeeeee;
     font-family: Arial, sans-serif;
-    font-size: 10px;
-    padding: 6px;
+    font-size: 9px;
+    padding: 5px;
 }
 
 h1 {
 
     margin: 3px 2px 6px 2px;
-    font-size: 15px;
+    font-size: 14px;
 }
 
 h2 {
 
-    margin: 12px 2px 6px 2px;
-    font-size: 12px;
+    margin: 10px 2px 5px 2px;
+    font-size: 11px;
 }
 
 .info {
 
-    margin: 0 2px 7px 2px;
-    padding: 6px 7px;
+    margin: 0 2px 6px 2px;
+    padding: 5px 6px;
     color: #8b9099;
     background: #171a1f;
     border: 1px solid #252a31;
     border-radius: 8px;
-    font-size: 8px;
+    font-size: 7px;
     line-height: 1.5;
 }
 
@@ -2924,8 +2720,8 @@ h2 {
 
     display: flex;
     gap: 8px;
-    margin-top: 5px;
-    font-size: 8px;
+    margin-top: 4px;
+    font-size: 7px;
     font-weight: 700;
 }
 
@@ -2957,17 +2753,17 @@ table {
 
 th {
 
-    padding: 6px 2px;
+    padding: 5px 1px;
     background: #12151a;
     border-bottom: 1px solid #2b3037;
     color: #8f949d;
-    font-size: 8px;
+    font-size: 7px;
     text-align: center;
 }
 
 td {
 
-    padding: 6px 2px;
+    padding: 5px 1px;
     border-bottom: 1px solid #272c32;
     text-align: center;
     vertical-align: middle;
@@ -2987,25 +2783,25 @@ td:nth-child(1) {
 th:nth-child(2),
 td:nth-child(2) {
 
-    width: 17%;
+    width: 18%;
 }
 
 th:nth-child(3),
 td:nth-child(3) {
 
-    width: 15%;
+    width: 17%;
 }
 
 th:nth-child(4),
 td:nth-child(4) {
 
-    width: 29%;
+    width: 33%;
 }
 
 th:nth-child(5),
 td:nth-child(5) {
 
-    width: 32%;
+    width: 25%;
 }
 
 
@@ -3016,7 +2812,7 @@ td:nth-child(5) {
 .coin {
 
     display: block;
-    font-size: 9px;
+    font-size: 8px;
     font-weight: bold;
     line-height: 1.2;
 }
@@ -3028,7 +2824,7 @@ td:nth-child(5) {
 
 .volume-value {
 
-    font-size: 8px;
+    font-size: 7px;
     font-weight: 600;
 }
 
@@ -3043,7 +2839,7 @@ td:nth-child(5) {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 5px;
+    gap: 4px;
     width: 100%;
 }
 
@@ -3068,7 +2864,7 @@ td:nth-child(5) {
     align-items: center;
     gap: 4px;
     width: 100%;
-    min-height: 15px;
+    min-height: 14px;
     white-space: nowrap;
 }
 
@@ -3079,45 +2875,27 @@ td:nth-child(5) {
 
     filter:
         drop-shadow(
-            0 0 5px
+            0 0 4px
             rgba(255,180,0,0.8)
         );
 
     animation:
         warningBlink
-        0.9s
+        0.8s
         infinite;
 }
 
-
-/* =====================================================
-   반짝임
-   ===================================================== */
-
 @keyframes warningBlink {
 
-    0% {
+    0%,
+    100% {
 
         opacity: 1;
-
-        transform:
-            scale(1);
     }
 
     50% {
 
         opacity: 0.35;
-
-        transform:
-            scale(0.94);
-    }
-
-    100% {
-
-        opacity: 1;
-
-        transform:
-            scale(1);
     }
 }
 
@@ -3129,26 +2907,24 @@ td:nth-child(5) {
 .ema-value {
 
     width: 100%;
-    font-size: 9px;
+    font-size: 8px;
     font-weight: bold;
-    line-height: 1.5;
     white-space: nowrap;
 }
 
-.ema-row {
+.ema-line {
 
     display: flex;
-    align-items: center;
     justify-content: center;
-    gap: 4px;
-    min-height: 18px;
+    align-items: center;
+    gap: 3px;
+    line-height: 1.45;
 }
 
 .ema-label {
 
-    color: #8f949d;
-    font-size: 8px;
-    font-weight: bold;
+    color: #777;
+    font-size: 7px;
 }
 
 
@@ -3161,17 +2937,16 @@ td:nth-child(5) {
     body {
 
         padding: 4px;
-        font-size: 9px;
     }
 
     h1 {
 
-        font-size: 14px;
+        font-size: 13px;
     }
 
     h2 {
 
-        font-size: 12px;
+        font-size: 10px;
     }
 
     .info {
@@ -3213,12 +2988,6 @@ td:nth-child(5) {
     .ema-value {
 
         font-size: 8px;
-        line-height: 1.5;
-    }
-
-    .ema-row {
-
-        min-height: 18px;
     }
 
     .ema-label {
@@ -3232,7 +3001,7 @@ td:nth-child(5) {
 
 
 # =========================================================
-# 테이블 행 생성
+# 테이블 행
 # =========================================================
 
 def make_table_rows(
@@ -3401,25 +3170,31 @@ def make_exchange_section(
 
 ※ TOP{TOP_N} 거래대금 실제 순위 기준<br>
 
-※ 오늘 1줄 = 당일 변동률<br>
-
-※ 오늘 2줄 = 1H / 4H 돌파 경고<br>
-
-※ 🚨1H = 1시간 스윙 고점 돌파 전<br>
-
-※ 🚨4H = 4시간 스윙 고점 돌파 전<br>
-
-※ 30-60-120 정배열 유지 조건<br>
-
-※ 상승 → 고점 → 조정 → 재반등 구조 확인<br>
-
-※ 첫 고점보다 낮은 두 번째 고점도 새로운 돌파 기준으로 인정<br>
-
-※ 정배열이 깨지면 해당 돌파 조건 무효<br>
+※ 1분마다 현재 상태 갱신<br>
 
 ※ EMA는 1H / 4H 두 줄 표시<br>
 
-※ EMA 화면 표시는 10-30-60 정렬 기준
+※ EMA 30-60-120 정배열 유지 조건<br>
+
+※ 캔들 고가/저가로 스윙 고점·저점 추적<br>
+
+※ 상승 1파 고점 이후 조정 확인<br>
+
+※ 첫 고점보다 낮은 고점도 새로운 돌파 대상으로 추적<br>
+
+※ 정배열이 유지되는 동안 파동 상태 유지<br>
+
+※ 현재 진행 캔들이 목표 고점을 양봉 종가로 돌파하면 🚨<br>
+
+※ 1H 🚨 = 1시간봉 파동 돌파<br>
+
+※ 4H 🚨 = 4시간봉 파동 돌파<br>
+
+※ 1H 또는 4H 중 하나라도 🚨이면 표시<br>
+
+※ 🚨 이후 같은 고점의 반복 신호는 차단<br>
+
+※ EMA 정배열이 깨지면 해당 파동 상태 초기화
 
 </div>
 
@@ -3511,19 +3286,19 @@ Breakout Trading
 <div class="info">
 
 <div>
-1H + 4H 추세 · 스윙 고점 돌파
+1H + 4H 캔들 파동 돌파 추적
 </div>
 
 <div>
-30-60-120 정배열 유지
+30-60-120 EMA 정배열 유지 조건
 </div>
 
 <div>
-상승 → 고점 → 조정 → 재반등 → 고점 돌파
+상승 고점 → 조정 → 낮은 고점 → 재돌파
 </div>
 
 <div>
-TOP{TOP_N} · 🚨 돌파 전
+TOP{TOP_N} · 🚨 파동 돌파
 </div>
 
 <div class="exchange-status">
@@ -3568,14 +3343,6 @@ def startup():
         f"조회 설정 "
         f"업비트={USE_UPBIT} "
         f"OKX={USE_OKX}"
-    )
-
-    logging.info(
-        "돌파 기준 = 30-60-120 정배열"
-    )
-
-    logging.info(
-        "스윙 고점 추적 = 활성화"
     )
 
     if USE_UPBIT not in (
