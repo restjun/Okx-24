@@ -25,17 +25,20 @@ warnings.filterwarnings(
 
 app = FastAPI()
 
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s:%(name)s:%(message)s"
 )
+
+logger = logging.getLogger("trading")
 
 
 # =========================================================
 # 사용자 설정
 # =========================================================
 
-# 거래대금
+# 거래대금 계산 시간
 VOLUME_HOURS = 24
 
 # 거래대금 TOP
@@ -44,19 +47,19 @@ TOP_N = 30
 # 업데이트 주기
 UPDATE_MINUTES = 1
 
-# 최초 요청
+# 최초 캔들 요청
 INITIAL_CANDLE_COUNT = 200
 
 # 과거 추가 요청
 HISTORY_CHUNK = 200
 
-# 최대 추가 횟수
+# 최대 과거 요청 횟수
 MAX_HISTORY_CHUNKS = 10
 
 # 구조 탐색 범위
 BREAKOUT_LOOKBACK = 30
 
-# 전고점/전저점 접근 허용거리
+# 직전 고점/저점 접근 허용거리
 PRE_BREAKOUT_DISTANCE = 0.005
 
 # 스윙 판정
@@ -66,7 +69,11 @@ SWING_RIGHT = 2
 # 최소 눌림/반등폭
 MIN_CORRECTION_RATE = 0.003
 
-# 거래소
+
+# =========================================================
+# 거래소 사용 여부
+# =========================================================
+
 USE_UPBIT = "Y"
 USE_OKX = "N"
 
@@ -76,10 +83,13 @@ USE_OKX = "N"
 # =========================================================
 
 REQUEST_INTERVAL = 0.08
+
 RATE_LIMIT_WAIT = 3
+
 MAX_RETRIES = 10
 
 OKX_RETRY_DELAY = 2
+
 OKX_MAX_RETRY_ROUNDS = 3
 
 
@@ -91,6 +101,7 @@ KST = ZoneInfo("Asia/Seoul")
 
 
 def get_kst_time():
+
     return datetime.now(KST).strftime(
         "%Y-%m-%d %H:%M:%S"
     )
@@ -101,21 +112,45 @@ def get_kst_time():
 # =========================================================
 
 latest_okx_data = []
+
 latest_upbit_data = []
 
 latest_usdt_krw = 0.0
 
 latest_upbit_update_time = "-"
+
 latest_okx_update_time = "-"
+
+
+# =========================================================
+# 업비트 마켓 목록 캐시
+#
+# 업비트 조회가 끝난 뒤 OKX에서
+# 다시 업비트 API를 호출하지 않도록 사용
+# =========================================================
+
+latest_upbit_markets = []
+
+
+# =========================================================
+# API 요청 동시 제어
+# =========================================================
+
+request_lock = threading.Lock()
+
+last_request_time = 0.0
+
+
+# =========================================================
+# 전체 업데이트 중복 실행 방지
+# =========================================================
+
+update_lock = threading.Lock()
 
 
 # =========================================================
 # API 요청 간격
 # =========================================================
-
-request_lock = threading.Lock()
-last_request_time = 0.0
-
 
 def wait_request_interval():
 
@@ -129,11 +164,32 @@ def wait_request_interval():
 
         if elapsed < REQUEST_INTERVAL:
 
-            time.sleep(
+            wait_time = (
                 REQUEST_INTERVAL - elapsed
             )
 
+            time.sleep(wait_time)
+
         last_request_time = time.monotonic()
+
+
+# =========================================================
+# API URL 표시
+# =========================================================
+
+def get_request_name(func):
+
+    try:
+
+        return getattr(
+            func,
+            "__name__",
+            str(func)
+        )
+
+    except Exception:
+
+        return str(func)
 
 
 # =========================================================
@@ -142,11 +198,41 @@ def wait_request_interval():
 
 def retry_request(func, *args, **kwargs):
 
+    function_name = get_request_name(func)
+
+    url = ""
+
+    if args:
+
+        try:
+
+            if isinstance(args[0], str):
+
+                url = args[0]
+
+        except Exception:
+
+            pass
+
+    if not url:
+
+        url = kwargs.get(
+            "url",
+            ""
+        )
+
     for attempt in range(MAX_RETRIES):
 
         try:
 
             wait_request_interval()
+
+            logging.info(
+                f"[API 요청] "
+                f"{function_name} "
+                f"{url} "
+                f"시도={attempt + 1}/{MAX_RETRIES}"
+            )
 
             result = func(
                 *args,
@@ -160,6 +246,16 @@ def retry_request(func, *args, **kwargs):
 
                 status = result.status_code
 
+                if status == 200:
+
+                    logging.info(
+                        f"[API 성공] "
+                        f"HTTP {status} "
+                        f"{url}"
+                    )
+
+                    return result
+
                 if status == 429:
 
                     wait_time = min(
@@ -169,12 +265,15 @@ def retry_request(func, *args, **kwargs):
                     )
 
                     logging.warning(
-                        f"API 429 "
-                        f"({attempt + 1}/{MAX_RETRIES}) "
-                        f"- {wait_time}초 대기"
+                        f"[API 429] "
+                        f"{url} "
+                        f"시도={attempt + 1}/{MAX_RETRIES} "
+                        f"{wait_time}초 대기"
                     )
 
-                    time.sleep(wait_time)
+                    time.sleep(
+                        wait_time
+                    )
 
                     continue
 
@@ -186,21 +285,31 @@ def retry_request(func, *args, **kwargs):
                     )
 
                     logging.warning(
-                        f"API 서버 오류 {status} "
-                        f"- {wait_time}초 대기"
+                        f"[API 서버 오류] "
+                        f"HTTP {status} "
+                        f"{url} "
+                        f"{wait_time}초 대기"
                     )
 
-                    time.sleep(wait_time)
+                    time.sleep(
+                        wait_time
+                    )
 
                     continue
 
-                if status != 200:
+                logging.warning(
+                    f"[API HTTP 오류] "
+                    f"HTTP {status} "
+                    f"{url}"
+                )
 
-                    logging.warning(
-                        f"API HTTP 오류 {status}"
-                    )
+                return result
 
-                    return result
+            logging.info(
+                f"[API 응답] "
+                f"{function_name} "
+                f"{url}"
+            )
 
             return result
 
@@ -212,13 +321,24 @@ def retry_request(func, *args, **kwargs):
             )
 
             logging.error(
-                f"API 실패 "
-                f"{attempt + 1}/{MAX_RETRIES}: {e}"
+                f"[API 예외] "
+                f"{function_name} "
+                f"{url} "
+                f"시도={attempt + 1}/{MAX_RETRIES} "
+                f"오류={e}"
             )
 
             if attempt < MAX_RETRIES - 1:
 
-                time.sleep(wait_time)
+                time.sleep(
+                    wait_time
+                )
+
+    logging.error(
+        f"[API 최종 실패] "
+        f"{function_name} "
+        f"{url}"
+    )
 
     return None
 
@@ -228,6 +348,10 @@ def retry_request(func, *args, **kwargs):
 # =========================================================
 
 def get_usdt_krw():
+
+    logging.info(
+        "[업비트 API] USDT-KRW 조회 시작"
+    )
 
     url = (
         "https://api.upbit.com/v1/ticker"
@@ -241,6 +365,11 @@ def get_usdt_krw():
     )
 
     if response is None:
+
+        logging.error(
+            "[업비트 API] USDT-KRW 조회 실패"
+        )
+
         return None
 
     try:
@@ -248,6 +377,11 @@ def get_usdt_krw():
         data = response.json()
 
         if not data:
+
+            logging.warning(
+                "[업비트 API] USDT-KRW 데이터 없음"
+            )
+
             return None
 
         price = float(
@@ -255,10 +389,13 @@ def get_usdt_krw():
         )
 
         if price <= 0:
+
             return None
 
         logging.info(
-            f"USDT-KRW : {price}"
+            f"[업비트 API] "
+            f"USDT-KRW 성공 "
+            f"{price:,.2f}"
         )
 
         return price
@@ -266,6 +403,7 @@ def get_usdt_krw():
     except Exception as e:
 
         logging.error(
+            f"[업비트 API] "
             f"USDT-KRW 처리 오류 : {e}"
         )
 
@@ -301,6 +439,7 @@ def get_okx_ohlcv(
     }
 
     if before is not None:
+
         params["before"] = str(before)
 
     response = retry_request(
@@ -311,16 +450,20 @@ def get_okx_ohlcv(
     )
 
     if response is None:
+
         return None
 
     try:
 
-        data = response.json().get(
+        payload = response.json()
+
+        data = payload.get(
             "data",
             []
         )
 
         if not data:
+
             return None
 
         df = pd.DataFrame(
@@ -356,12 +499,12 @@ def get_okx_ohlcv(
                 errors="coerce"
             )
 
-        # 확정봉만
         df = df[
             df["confirm"].astype(str) == "1"
         ]
 
         if df.empty:
+
             return None
 
         df = (
@@ -376,7 +519,8 @@ def get_okx_ohlcv(
     except Exception as e:
 
         logging.error(
-            f"OKX 캔들 오류 {inst_id}: {e}"
+            f"OKX 캔들 처리 오류 "
+            f"{inst_id}: {e}"
         )
 
         return None
@@ -384,7 +528,7 @@ def get_okx_ohlcv(
 
 # =========================================================
 # 업비트 1H 캔들
-# 확정봉만 사용
+# 현재 진행 중인 봉 제외
 # =========================================================
 
 def get_upbit_ohlcv(
@@ -411,6 +555,7 @@ def get_upbit_ohlcv(
     }
 
     if to is not None:
+
         params["to"] = to
 
     response = retry_request(
@@ -421,6 +566,7 @@ def get_upbit_ohlcv(
     )
 
     if response is None:
+
         return None
 
     try:
@@ -428,11 +574,13 @@ def get_upbit_ohlcv(
         data = response.json()
 
         if not data:
+
             return None
 
         df = pd.DataFrame(data)
 
         if df.empty:
+
             return None
 
         df["o"] = pd.to_numeric(
@@ -475,10 +623,17 @@ def get_upbit_ohlcv(
             ]
         )
 
+        if df.empty:
+
+            return None
+
+        # -------------------------------------------------
         # 현재 진행 중인 1시간봉 제거
-        now = pd.Timestamp.now(
-            tz="Asia/Seoul"
-        ).tz_localize(None)
+        # -------------------------------------------------
+
+        now = datetime.now(
+            KST
+        )
 
         current_hour = now.replace(
             minute=0,
@@ -487,8 +642,14 @@ def get_upbit_ohlcv(
         )
 
         df = df[
-            df["datetime"] < current_hour
+            df["datetime"] < current_hour.replace(
+                tzinfo=None
+            )
         ]
+
+        if df.empty:
+
+            return None
 
         df = (
             df
@@ -502,7 +663,8 @@ def get_upbit_ohlcv(
     except Exception as e:
 
         logging.error(
-            f"업비트 캔들 오류 {market}: {e}"
+            f"업비트 캔들 처리 오류 "
+            f"{market}: {e}"
         )
 
         return None
@@ -523,6 +685,7 @@ def get_ema(
         or df.empty
         or column not in df.columns
     ):
+
         return None
 
     price = pd.to_numeric(
@@ -531,6 +694,7 @@ def get_ema(
     )
 
     if price.notna().sum() < period:
+
         return None
 
     return price.ewm(
@@ -540,7 +704,7 @@ def get_ema(
 
 
 # =========================================================
-# 30-60-120 방향
+# EMA 30-60-120 방향
 # =========================================================
 
 def get_ema_30_60_120_direction(
@@ -551,17 +715,33 @@ def get_ema_30_60_120_direction(
         df is None
         or len(df) < 120
     ):
+
         return "none"
 
-    ema30 = get_ema(df, "c", 30)
-    ema60 = get_ema(df, "c", 60)
-    ema120 = get_ema(df, "c", 120)
+    ema30 = get_ema(
+        df,
+        "c",
+        30
+    )
+
+    ema60 = get_ema(
+        df,
+        "c",
+        60
+    )
+
+    ema120 = get_ema(
+        df,
+        "c",
+        120
+    )
 
     if (
         ema30 is None
         or ema60 is None
         or ema120 is None
     ):
+
         return "none"
 
     a = ema30.iloc[-1]
@@ -572,19 +752,22 @@ def get_ema_30_60_120_direction(
         pd.isna(x)
         for x in [a, b, c]
     ):
+
         return "none"
 
     if a > b > c:
+
         return "long"
 
     if a < b < c:
+
         return "short"
 
     return "none"
 
 
 # =========================================================
-# 전체 방향 시계열
+# 방향 시계열
 # =========================================================
 
 def get_direction_series(df):
@@ -593,17 +776,33 @@ def get_direction_series(df):
         df is None
         or len(df) < 120
     ):
+
         return []
 
-    ema30 = get_ema(df, "c", 30)
-    ema60 = get_ema(df, "c", 60)
-    ema120 = get_ema(df, "c", 120)
+    ema30 = get_ema(
+        df,
+        "c",
+        30
+    )
+
+    ema60 = get_ema(
+        df,
+        "c",
+        60
+    )
+
+    ema120 = get_ema(
+        df,
+        "c",
+        120
+    )
 
     if (
         ema30 is None
         or ema60 is None
         or ema120 is None
     ):
+
         return []
 
     result = []
@@ -637,10 +836,7 @@ def get_direction_series(df):
 
 
 # =========================================================
-# 최초 정배열 / 역배열 시작점
-#
-# 최초 배열이 200개 이전이라면
-# get_*_history()가 과거 데이터를 추가
+# 최초 배열 시작점
 # =========================================================
 
 def find_first_alignment_start(df):
@@ -648,11 +844,16 @@ def find_first_alignment_start(df):
     directions = get_direction_series(df)
 
     if not directions:
+
         return None
 
-    for i in range(120, len(directions)):
+    for i in range(
+        120,
+        len(directions)
+    ):
 
         current = directions[i]
+
         previous = directions[i - 1]
 
         if (
@@ -688,9 +889,19 @@ def get_okx_history(
 ):
 
     all_df = None
+
     before = None
 
-    for _ in range(MAX_HISTORY_CHUNKS):
+    for chunk_index in range(
+        MAX_HISTORY_CHUNKS
+    ):
+
+        logging.info(
+            f"[OKX 과거조회] "
+            f"{inst_id} "
+            f"{chunk_index + 1}/"
+            f"{MAX_HISTORY_CHUNKS}"
+        )
 
         df = get_okx_ohlcv(
             inst_id,
@@ -699,7 +910,11 @@ def get_okx_history(
             before
         )
 
-        if df is None or df.empty:
+        if (
+            df is None
+            or df.empty
+        ):
+
             break
 
         if all_df is None:
@@ -709,7 +924,10 @@ def get_okx_history(
         else:
 
             all_df = pd.concat(
-                [df, all_df],
+                [
+                    df,
+                    all_df
+                ],
                 ignore_index=True
             )
 
@@ -742,9 +960,19 @@ def get_okx_history(
 def get_upbit_history(market):
 
     all_df = None
+
     to = None
 
-    for _ in range(MAX_HISTORY_CHUNKS):
+    for chunk_index in range(
+        MAX_HISTORY_CHUNKS
+    ):
+
+        logging.info(
+            f"[업비트 과거조회] "
+            f"{market} "
+            f"{chunk_index + 1}/"
+            f"{MAX_HISTORY_CHUNKS}"
+        )
 
         df = get_upbit_ohlcv(
             market,
@@ -753,7 +981,11 @@ def get_upbit_history(market):
             to
         )
 
-        if df is None or df.empty:
+        if (
+            df is None
+            or df.empty
+        ):
+
             break
 
         if all_df is None:
@@ -763,7 +995,10 @@ def get_upbit_history(market):
         else:
 
             all_df = pd.concat(
-                [df, all_df],
+                [
+                    df,
+                    all_df
+                ],
                 ignore_index=True
             )
 
@@ -780,7 +1015,9 @@ def get_upbit_history(market):
 
             return all_df
 
-        oldest = all_df["datetime"].iloc[0]
+        oldest = all_df[
+            "datetime"
+        ].iloc[0]
 
         to = oldest.strftime(
             "%Y-%m-%dT%H:%M:%S"
@@ -811,7 +1048,10 @@ def find_swing_highs(
         len(df) - SWING_RIGHT - 1
     )
 
-    for i in range(start, end + 1):
+    for i in range(
+        start,
+        end + 1
+    ):
 
         try:
 
@@ -834,7 +1074,11 @@ def find_swing_highs(
                 errors="coerce"
             )
 
-            if left.empty or right.empty:
+            if (
+                left.empty
+                or right.empty
+            ):
+
                 continue
 
             if (
@@ -848,6 +1092,7 @@ def find_swing_highs(
                 )
 
         except Exception:
+
             continue
 
     return result
@@ -875,7 +1120,10 @@ def find_swing_lows(
         len(df) - SWING_RIGHT - 1
     )
 
-    for i in range(start, end + 1):
+    for i in range(
+        start,
+        end + 1
+    ):
 
         try:
 
@@ -898,7 +1146,11 @@ def find_swing_lows(
                 errors="coerce"
             )
 
-            if left.empty or right.empty:
+            if (
+                left.empty
+                or right.empty
+            ):
+
                 continue
 
             if (
@@ -912,23 +1164,14 @@ def find_swing_lows(
                 )
 
         except Exception:
+
             continue
 
     return result
 
 
 # =========================================================
-# LONG 구조
-#
-# 최초 LONG 배열
-# → 고점
-# → 눌림
-# → 반등
-# → 직전 고점 접근
-# → 직전 고점 돌파
-#
-# 돌파 실패 반등 고점은
-# 새로운 기준 고점으로 사용
+# LONG 돌파
 # =========================================================
 
 def get_long_breakout_signal(
@@ -937,15 +1180,23 @@ def get_long_breakout_signal(
 ):
 
     if alignment_start is None:
+
         return "none"
 
-    if alignment_start["direction"] != "long":
+    if alignment_start[
+        "direction"
+    ] != "long":
+
         return "none"
 
-    start = alignment_start["index"]
+    start = alignment_start[
+        "index"
+    ]
+
     current_index = len(df) - 1
 
     if start >= current_index - 2:
+
         return "none"
 
     highs = find_swing_highs(
@@ -955,22 +1206,25 @@ def get_long_breakout_signal(
     )
 
     if not highs:
+
         return "none"
 
-    # 최근 고점부터 검사
-    for swing_index, swing_high in reversed(highs):
+    for swing_index, swing_high in reversed(
+        highs
+    ):
 
         if (
             current_index - swing_index
             >
             BREAKOUT_LOOKBACK + 15
         ):
+
             continue
 
         if swing_index + 2 >= len(df):
+
             continue
 
-        # 고점 이후 눌림
         section = df.iloc[
             swing_index + 1:
             current_index + 1
@@ -982,25 +1236,29 @@ def get_long_breakout_signal(
         )
 
         if lows.empty:
+
             continue
 
         correction_low = lows.min()
 
-        if pd.isna(correction_low):
+        if pd.isna(
+            correction_low
+        ):
+
             continue
 
         correction_rate = (
-            swing_high - float(correction_low)
+            swing_high -
+            float(correction_low)
         ) / swing_high
 
-        if correction_rate < MIN_CORRECTION_RATE:
-            continue
+        if (
+            correction_rate
+            <
+            MIN_CORRECTION_RATE
+        ):
 
-        # -------------------------------------------------
-        # 눌림 후 반등 고점
-        # 전고점을 넘지 못한 경우
-        # 그 반등 고점을 새로운 기준 고점으로 사용
-        # -------------------------------------------------
+            continue
 
         new_highs = find_swing_highs(
             df,
@@ -1009,29 +1267,35 @@ def get_long_breakout_signal(
         )
 
         effective_high = swing_high
+
         effective_high_index = swing_index
 
-        for nh_index, nh_value in new_highs:
+        for (
+            nh_index,
+            nh_value
+        ) in new_highs:
 
             if nh_index <= swing_index:
+
                 continue
 
-            # 전고점을 돌파하지 못한 반등 고점
             if nh_value < effective_high:
 
                 effective_high = nh_value
+
                 effective_high_index = nh_index
 
         if effective_high_index >= current_index:
+
             continue
 
-        # 새로운 기준 고점 이후 눌림
         correction_section = df.iloc[
             effective_high_index + 1:
             current_index + 1
         ]
 
         if correction_section.empty:
+
             continue
 
         correction_low = pd.to_numeric(
@@ -1039,7 +1303,10 @@ def get_long_breakout_signal(
             errors="coerce"
         ).min()
 
-        if pd.isna(correction_low):
+        if pd.isna(
+            correction_low
+        ):
+
             continue
 
         correction_rate = (
@@ -1047,7 +1314,12 @@ def get_long_breakout_signal(
             float(correction_low)
         ) / effective_high
 
-        if correction_rate < MIN_CORRECTION_RATE:
+        if (
+            correction_rate
+            <
+            MIN_CORRECTION_RATE
+        ):
+
             continue
 
         # -------------------------------------------------
@@ -1061,31 +1333,55 @@ def get_long_breakout_signal(
             current_index + 1
         ):
 
-            o = float(df["o"].iloc[i])
-            c = float(df["c"].iloc[i])
+            try:
 
-            # LONG 경고는 양봉
-            if c < o:
+                o = float(
+                    df["o"].iloc[i]
+                )
+
+                c = float(
+                    df["c"].iloc[i]
+                )
+
+                # LONG 접근봉은 양봉
+                if c < o:
+
+                    continue
+
+                # 이미 돌파한 봉 제외
+                if c >= effective_high:
+
+                    continue
+
+                distance = (
+                    effective_high - c
+                ) / effective_high
+
+                if (
+                    distance
+                    <=
+                    PRE_BREAKOUT_DISTANCE
+                ):
+
+                    pre_index = i
+
+            except Exception:
+
                 continue
-
-            # 이미 돌파
-            if c >= effective_high:
-                continue
-
-            distance = (
-                effective_high - c
-            ) / effective_high
-
-            if distance <= PRE_BREAKOUT_DISTANCE:
-
-                pre_index = i
 
         if pre_index is None:
 
-            current = df.iloc[current_index]
+            current = df.iloc[
+                current_index
+            ]
 
-            o = float(current["o"])
-            c = float(current["c"])
+            o = float(
+                current["o"]
+            )
+
+            c = float(
+                current["c"]
+            )
 
             if (
                 c >= o
@@ -1104,7 +1400,9 @@ def get_long_breakout_signal(
 
         # 🚨 기준봉 저점
         pre_low = float(
-            df["l"].iloc[pre_index]
+            df["l"].iloc[
+                pre_index
+            ]
         )
 
         # -------------------------------------------------
@@ -1118,26 +1416,48 @@ def get_long_breakout_signal(
             current_index + 1
         ):
 
-            o = float(df["o"].iloc[i])
-            c = float(df["c"].iloc[i])
+            try:
 
-            if c <= o:
+                o = float(
+                    df["o"].iloc[i]
+                )
+
+                c = float(
+                    df["c"].iloc[i]
+                )
+
+                # LONG 돌파봉은 양봉
+                if c <= o:
+
+                    continue
+
+                if c > effective_high:
+
+                    breakout_index = i
+
+                    break
+
+            except Exception:
+
                 continue
-
-            if c > effective_high:
-
-                breakout_index = i
-                break
 
         if breakout_index is None:
 
             if current_index == pre_index:
+
                 return "pre"
 
-            current = df.iloc[current_index]
+            current = df.iloc[
+                current_index
+            ]
 
-            o = float(current["o"])
-            c = float(current["c"])
+            o = float(
+                current["o"]
+            )
+
+            c = float(
+                current["c"]
+            )
 
             if (
                 c >= o
@@ -1154,36 +1474,47 @@ def get_long_breakout_signal(
 
             continue
 
-        # 첫 돌파봉
+        # 최초 돌파봉
         if breakout_index == current_index:
+
             return "1"
 
         # -------------------------------------------------
         # 돌파 직후 봉
         # -------------------------------------------------
 
-        after_index = breakout_index + 1
+        after_index = (
+            breakout_index + 1
+        )
 
         if current_index == after_index:
 
             current_low = float(
-                df["l"].iloc[current_index]
+                df["l"].iloc[
+                    current_index
+                ]
             )
 
             current_close = float(
-                df["c"].iloc[current_index]
+                df["c"].iloc[
+                    current_index
+                ]
             )
 
             current_open = float(
-                df["o"].iloc[current_index]
+                df["o"].iloc[
+                    current_index
+                ]
             )
 
             # 돌파 기준봉 저점 이탈
             if current_low < pre_low:
+
                 return "none"
 
             # 돌파 직후 음봉
             if current_close < current_open:
+
                 return "pullback"
 
             return "none"
@@ -1194,16 +1525,7 @@ def get_long_breakout_signal(
 
 
 # =========================================================
-# SHORT 구조
-#
-# 최초 SHORT 배열
-# → 저점
-# → 반등
-# → 재하락
-# → 직전 저점 접근
-# → 직전 저점 이탈
-#
-# OKX만 사용
+# SHORT 돌파
 # =========================================================
 
 def get_short_breakout_signal(
@@ -1212,15 +1534,23 @@ def get_short_breakout_signal(
 ):
 
     if alignment_start is None:
+
         return "none"
 
-    if alignment_start["direction"] != "short":
+    if alignment_start[
+        "direction"
+    ] != "short":
+
         return "none"
 
-    start = alignment_start["index"]
+    start = alignment_start[
+        "index"
+    ]
+
     current_index = len(df) - 1
 
     if start >= current_index - 2:
+
         return "none"
 
     lows = find_swing_lows(
@@ -1230,18 +1560,23 @@ def get_short_breakout_signal(
     )
 
     if not lows:
+
         return "none"
 
-    for swing_index, swing_low in reversed(lows):
+    for swing_index, swing_low in reversed(
+        lows
+    ):
 
         if (
             current_index - swing_index
             >
             BREAKOUT_LOOKBACK + 15
         ):
+
             continue
 
         if swing_index + 2 >= len(df):
+
             continue
 
         section = df.iloc[
@@ -1255,11 +1590,15 @@ def get_short_breakout_signal(
         )
 
         if highs.empty:
+
             continue
 
         correction_high = highs.max()
 
-        if pd.isna(correction_high):
+        if pd.isna(
+            correction_high
+        ):
+
             continue
 
         correction_rate = (
@@ -1267,11 +1606,14 @@ def get_short_breakout_signal(
             swing_low
         ) / swing_low
 
-        if correction_rate < MIN_CORRECTION_RATE:
+        if (
+            correction_rate
+            <
+            MIN_CORRECTION_RATE
+        ):
+
             continue
 
-        # 반등 후 이전 저점을 깨지 못한
-        # 새로운 저점을 기준 저점으로 사용
         new_lows = find_swing_lows(
             df,
             swing_index + 1,
@@ -1279,19 +1621,26 @@ def get_short_breakout_signal(
         )
 
         effective_low = swing_low
+
         effective_low_index = swing_index
 
-        for nl_index, nl_value in new_lows:
+        for (
+            nl_index,
+            nl_value
+        ) in new_lows:
 
             if nl_index <= swing_index:
+
                 continue
 
             if nl_value > effective_low:
 
                 effective_low = nl_value
+
                 effective_low_index = nl_index
 
         if effective_low_index >= current_index:
+
             continue
 
         correction_section = df.iloc[
@@ -1300,6 +1649,7 @@ def get_short_breakout_signal(
         ]
 
         if correction_section.empty:
+
             continue
 
         correction_high = pd.to_numeric(
@@ -1307,7 +1657,10 @@ def get_short_breakout_signal(
             errors="coerce"
         ).max()
 
-        if pd.isna(correction_high):
+        if pd.isna(
+            correction_high
+        ):
+
             continue
 
         correction_rate = (
@@ -1315,7 +1668,12 @@ def get_short_breakout_signal(
             effective_low
         ) / effective_low
 
-        if correction_rate < MIN_CORRECTION_RATE:
+        if (
+            correction_rate
+            <
+            MIN_CORRECTION_RATE
+        ):
+
             continue
 
         # -------------------------------------------------
@@ -1329,30 +1687,54 @@ def get_short_breakout_signal(
             current_index + 1
         ):
 
-            o = float(df["o"].iloc[i])
-            c = float(df["c"].iloc[i])
+            try:
 
-            # SHORT 경고는 음봉
-            if c > o:
+                o = float(
+                    df["o"].iloc[i]
+                )
+
+                c = float(
+                    df["c"].iloc[i]
+                )
+
+                # SHORT 접근봉은 음봉
+                if c > o:
+
+                    continue
+
+                if c <= effective_low:
+
+                    continue
+
+                distance = (
+                    c - effective_low
+                ) / effective_low
+
+                if (
+                    distance
+                    <=
+                    PRE_BREAKOUT_DISTANCE
+                ):
+
+                    pre_index = i
+
+            except Exception:
+
                 continue
-
-            if c <= effective_low:
-                continue
-
-            distance = (
-                c - effective_low
-            ) / effective_low
-
-            if distance <= PRE_BREAKOUT_DISTANCE:
-
-                pre_index = i
 
         if pre_index is None:
 
-            current = df.iloc[current_index]
+            current = df.iloc[
+                current_index
+            ]
 
-            o = float(current["o"])
-            c = float(current["c"])
+            o = float(
+                current["o"]
+            )
+
+            c = float(
+                current["c"]
+            )
 
             if (
                 c <= o
@@ -1371,7 +1753,9 @@ def get_short_breakout_signal(
 
         # 🚨 기준봉 고점
         pre_high = float(
-            df["h"].iloc[pre_index]
+            df["h"].iloc[
+                pre_index
+            ]
         )
 
         # -------------------------------------------------
@@ -1385,26 +1769,48 @@ def get_short_breakout_signal(
             current_index + 1
         ):
 
-            o = float(df["o"].iloc[i])
-            c = float(df["c"].iloc[i])
+            try:
 
-            if c >= o:
+                o = float(
+                    df["o"].iloc[i]
+                )
+
+                c = float(
+                    df["c"].iloc[i]
+                )
+
+                # SHORT 돌파봉은 음봉
+                if c >= o:
+
+                    continue
+
+                if c < effective_low:
+
+                    breakout_index = i
+
+                    break
+
+            except Exception:
+
                 continue
-
-            if c < effective_low:
-
-                breakout_index = i
-                break
 
         if breakout_index is None:
 
             if current_index == pre_index:
+
                 return "pre"
 
-            current = df.iloc[current_index]
+            current = df.iloc[
+                current_index
+            ]
 
-            o = float(current["o"])
-            c = float(current["c"])
+            o = float(
+                current["o"]
+            )
+
+            c = float(
+                current["c"]
+            )
 
             if (
                 c <= o
@@ -1421,33 +1827,47 @@ def get_short_breakout_signal(
 
             continue
 
-        # 첫 돌파봉
+        # 최초 돌파봉
         if breakout_index == current_index:
+
             return "1"
 
+        # -------------------------------------------------
         # 돌파 직후
-        after_index = breakout_index + 1
+        # -------------------------------------------------
+
+        after_index = (
+            breakout_index + 1
+        )
 
         if current_index == after_index:
 
             current_high = float(
-                df["h"].iloc[current_index]
+                df["h"].iloc[
+                    current_index
+                ]
             )
 
             current_close = float(
-                df["c"].iloc[current_index]
+                df["c"].iloc[
+                    current_index
+                ]
             )
 
             current_open = float(
-                df["o"].iloc[current_index]
+                df["o"].iloc[
+                    current_index
+                ]
             )
 
-            # 돌파 기준봉 고점 이탈
+            # 돌파 기준봉 고점 돌파
             if current_high > pre_high:
+
                 return "none"
 
             # SHORT 직후 양봉
             if current_close > current_open:
+
                 return "pullback"
 
             return "none"
@@ -1476,7 +1896,9 @@ def get_breakout_signal(
             "direction": "none"
         }
 
-    alignment = find_first_alignment_start(df)
+    alignment = find_first_alignment_start(
+        df
+    )
 
     if alignment is None:
 
@@ -1485,7 +1907,9 @@ def get_breakout_signal(
             "direction": "none"
         }
 
-    direction = alignment["direction"]
+    direction = alignment[
+        "direction"
+    ]
 
     if direction == "long":
 
@@ -1532,7 +1956,11 @@ def calculate_daily_changes(
     is_okx=False
 ):
 
-    if df is None or df.empty:
+    if (
+        df is None
+        or df.empty
+    ):
+
         return None
 
     try:
@@ -1547,7 +1975,9 @@ def calculate_daily_changes(
                     unit="ms",
                     utc=True
                 )
-                .dt.tz_convert("Asia/Seoul")
+                .dt.tz_convert(
+                    "Asia/Seoul"
+                )
                 .dt.tz_localize(None)
             )
 
@@ -1568,11 +1998,16 @@ def calculate_daily_changes(
         )
 
         if temp.empty:
+
             return None
 
         temp = temp.set_index(
             "datetime"
         )
+
+        # -------------------------------------------------
+        # 한국시간 09:00 기준 일봉
+        # -------------------------------------------------
 
         daily = (
             temp["c"]
@@ -1585,6 +2020,7 @@ def calculate_daily_changes(
         )
 
         if len(daily) < 2:
+
             return None
 
         result = []
@@ -1599,14 +2035,23 @@ def calculate_daily_changes(
             len(daily)
         ):
 
-            previous = daily.iloc[i - 1]
-            current = daily.iloc[i]
+            previous = daily.iloc[
+                i - 1
+            ]
+
+            current = daily.iloc[
+                i
+            ]
 
             if previous == 0:
+
                 continue
 
             change = (
-                (current - previous)
+                (
+                    current -
+                    previous
+                )
                 /
                 previous
                 *
@@ -1637,7 +2082,9 @@ def calculate_daily_changes(
 
 def check_ema(df):
 
-    direction = get_ema_30_60_120_direction(df)
+    direction = get_ema_30_60_120_direction(
+        df
+    )
 
     if direction == "long":
 
@@ -1664,6 +2111,18 @@ def check_ema(df):
 # =========================================================
 
 def format_volume(volume):
+
+    if volume is None:
+
+        return "-"
+
+    try:
+
+        volume = float(volume)
+
+    except Exception:
+
+        return "-"
 
     if volume >= 1_000_000_000_000:
 
@@ -1701,7 +2160,9 @@ def format_change(changes):
 
     try:
 
-        x = float(changes[0])
+        x = float(
+            changes[0]
+        )
 
     except Exception:
 
@@ -1714,19 +2175,25 @@ def format_change(changes):
     if x > 0:
 
         icon = "☀️"
+
         sign = "+"
+
         cls = "positive"
 
     elif x < 0:
 
         icon = "☁️"
+
         sign = ""
+
         cls = "negative"
 
     else:
 
         icon = "☁️"
+
         sign = ""
+
         cls = "neutral"
 
     return (
@@ -1741,9 +2208,12 @@ def format_change(changes):
 # 경고 표시
 # =========================================================
 
-def is_visible_warning(warning):
+def is_visible_warning(
+    warning
+):
 
     if not warning:
+
         return False
 
     return warning.get(
@@ -1756,9 +2226,12 @@ def is_visible_warning(warning):
     )
 
 
-def combined_warning_html(warning):
+def combined_warning_html(
+    warning
+):
 
     if not warning:
+
         return ""
 
     signal = warning.get(
@@ -1797,7 +2270,9 @@ def combined_warning_html(warning):
 # 방향 표시
 # =========================================================
 
-def direction_html(direction):
+def direction_html(
+    direction
+):
 
     if direction == "long":
 
@@ -1826,7 +2301,14 @@ def direction_html(direction):
 # 업비트 거래대금
 # =========================================================
 
-def get_upbit_volume(market):
+def get_upbit_volume(
+    market
+):
+
+    logging.info(
+        f"[업비트 거래대금] "
+        f"{market} 조회"
+    )
 
     df = get_upbit_ohlcv(
         market,
@@ -1834,7 +2316,16 @@ def get_upbit_volume(market):
         VOLUME_HOURS + 1
     )
 
-    if df is None or df.empty:
+    if (
+        df is None
+        or df.empty
+    ):
+
+        logging.warning(
+            f"[업비트 거래대금] "
+            f"{market} 데이터 없음"
+        )
+
         return None
 
     volume = pd.to_numeric(
@@ -1845,9 +2336,18 @@ def get_upbit_volume(market):
     ).sum()
 
     if pd.isna(volume):
+
         return None
 
-    return float(volume)
+    volume = float(volume)
+
+    logging.info(
+        f"[업비트 거래대금] "
+        f"{market} = "
+        f"{format_volume(volume)}"
+    )
+
+    return volume
 
 
 # =========================================================
@@ -1867,7 +2367,7 @@ def get_okx_volume(
         )
     )
 
-    for _ in range(
+    for round_index in range(
         OKX_MAX_RETRY_ROUNDS
     ):
 
@@ -1925,7 +2425,8 @@ def get_okx_volume(
 
             logging.error(
                 f"OKX 거래대금 오류 "
-                f"{inst_id}: {e}"
+                f"{inst_id}: {e} "
+                f"round={round_index + 1}"
             )
 
             time.sleep(
@@ -1936,10 +2437,18 @@ def get_okx_volume(
 
 
 # =========================================================
-# 업비트 목록
+# 업비트 마켓 목록
+#
+# 이 함수에서 조회한 결과를 캐시
 # =========================================================
 
 def get_upbit_markets():
+
+    global latest_upbit_markets
+
+    logging.info(
+        "[업비트 API] 마켓 목록 조회 시작"
+    )
 
     response = retry_request(
         requests.get,
@@ -1948,22 +2457,40 @@ def get_upbit_markets():
     )
 
     if response is None:
+
+        logging.error(
+            "[업비트 API] 마켓 목록 조회 실패"
+        )
+
         return []
 
     try:
 
         data = response.json()
 
-        return [
+        markets = [
             x["market"]
             for x in data
-            if x["market"].startswith("KRW-")
+            if x.get(
+                "market",
+                ""
+            ).startswith("KRW-")
         ]
+
+        latest_upbit_markets = markets.copy()
+
+        logging.info(
+            "[업비트 API] "
+            f"마켓 목록 완료 "
+            f"KRW={len(markets)}개"
+        )
+
+        return markets
 
     except Exception as e:
 
         logging.error(
-            f"업비트 목록 오류 : {e}"
+            f"업비트 마켓 목록 처리 오류 : {e}"
         )
 
         return []
@@ -1974,6 +2501,10 @@ def get_upbit_markets():
 # =========================================================
 
 def get_all_okx_swap_symbols():
+
+    logging.info(
+        "[OKX API] SWAP 목록 조회 시작"
+    )
 
     response = retry_request(
         requests.get,
@@ -1986,6 +2517,7 @@ def get_all_okx_swap_symbols():
     )
 
     if response is None:
+
         return []
 
     try:
@@ -1995,34 +2527,51 @@ def get_all_okx_swap_symbols():
             []
         )
 
-        return [
+        symbols = [
             x["instId"]
             for x in data
             if (
-                x["instId"].endswith(
+                x.get(
+                    "instId",
+                    ""
+                ).endswith(
                     "-USDT-SWAP"
                 )
                 and
-                x.get("state") == "live"
+                x.get(
+                    "state"
+                ) == "live"
             )
         ]
+
+        logging.info(
+            f"[OKX API] "
+            f"SWAP 목록 완료 "
+            f"{len(symbols)}개"
+        )
+
+        return symbols
 
     except Exception as e:
 
         logging.error(
-            f"OKX 목록 오류 : {e}"
+            f"OKX 목록 처리 오류 : {e}"
         )
 
         return []
 
 
 # =========================================================
-# 분석
+# 업비트 분석
 # =========================================================
 
-def get_upbit_analysis(market):
+def get_upbit_analysis(
+    market
+):
 
-    df = get_upbit_history(market)
+    df = get_upbit_history(
+        market
+    )
 
     if (
         df is None
@@ -2031,7 +2580,9 @@ def get_upbit_analysis(market):
 
         return None
 
-    ema = check_ema(df)
+    ema = check_ema(
+        df
+    )
 
     warning = get_breakout_signal(
         df,
@@ -2050,7 +2601,13 @@ def get_upbit_analysis(market):
     }
 
 
-def get_okx_analysis(inst_id):
+# =========================================================
+# OKX 분석
+# =========================================================
+
+def get_okx_analysis(
+    inst_id
+):
 
     df = get_okx_history(
         inst_id,
@@ -2064,7 +2621,9 @@ def get_okx_analysis(inst_id):
 
         return None
 
-    ema = check_ema(df)
+    ema = check_ema(
+        df
+    )
 
     warning = get_breakout_signal(
         df,
@@ -2086,31 +2645,66 @@ def get_okx_analysis(inst_id):
 # =========================================================
 # 최종 LONG 필터
 #
-# 1. 돌파 방향 LONG
+# 1. 직전 고점 돌파 구조 LONG
 # 2. EMA 30 > 60 > 120
-# 3. 당일 변동률 +
+# 3. 당일 변동률 양수
+#
+# 변동률 기준이 최종 필터
 # =========================================================
 
-def pass_long_filter(analysis):
+def pass_long_filter(
+    analysis
+):
 
     if analysis is None:
+
         return False
 
-    ema = analysis.get("ema", {})
-    warning = analysis.get("warning", {})
-    changes = analysis.get("changes")
+    ema = analysis.get(
+        "ema",
+        {}
+    )
 
-    if ema.get("direction") != "long":
+    warning = analysis.get(
+        "warning",
+        {}
+    )
+
+    changes = analysis.get(
+        "changes"
+    )
+
+    # 30-60-120 정배열
+    if ema.get(
+        "direction"
+    ) != "long":
+
         return False
 
-    if warning.get("direction") != "long":
+    # 직전 고점 돌파 구조
+    if warning.get(
+        "direction"
+    ) != "long":
+
         return False
 
     if not changes:
+
         return False
 
-    # 당일 양봉
-    if float(changes[0]) <= 0:
+    try:
+
+        today_change = float(
+            changes[0]
+        )
+
+    except Exception:
+
+        return False
+
+    # 당일 변동률 양수
+    if today_change <= 0:
+
         return False
 
     return True
@@ -2119,31 +2713,66 @@ def pass_long_filter(analysis):
 # =========================================================
 # 최종 SHORT 필터
 #
-# 1. 돌파 방향 SHORT
+# 1. 직전 저점 이탈 구조 SHORT
 # 2. EMA 30 < 60 < 120
-# 3. 당일 변동률 -
+# 3. 당일 변동률 음수
+#
+# 변동률 기준이 최종 필터
 # =========================================================
 
-def pass_short_filter(analysis):
+def pass_short_filter(
+    analysis
+):
 
     if analysis is None:
+
         return False
 
-    ema = analysis.get("ema", {})
-    warning = analysis.get("warning", {})
-    changes = analysis.get("changes")
+    ema = analysis.get(
+        "ema",
+        {}
+    )
 
-    if ema.get("direction") != "short":
+    warning = analysis.get(
+        "warning",
+        {}
+    )
+
+    changes = analysis.get(
+        "changes"
+    )
+
+    # 30-60-120 역배열
+    if ema.get(
+        "direction"
+    ) != "short":
+
         return False
 
-    if warning.get("direction") != "short":
+    # 직전 저점 이탈 구조
+    if warning.get(
+        "direction"
+    ) != "short":
+
         return False
 
     if not changes:
+
         return False
 
-    # 당일 음봉
-    if float(changes[0]) >= 0:
+    try:
+
+        today_change = float(
+            changes[0]
+        )
+
+    except Exception:
+
+        return False
+
+    # 당일 변동률 음수
+    if today_change >= 0:
+
         return False
 
     return True
@@ -2153,29 +2782,64 @@ def pass_short_filter(analysis):
 # 업비트 업데이트
 #
 # LONG만 표시
+#
+# 중요:
+# 여기서 latest_upbit_markets를 만들고
+# 이후 OKX에서는 이것을 재사용
 # =========================================================
 
 def update_upbit():
 
     global latest_upbit_data
     global latest_upbit_update_time
+    global latest_upbit_markets
+
+    start_time = get_kst_time()
 
     logging.info(
-        f"========== 업비트 TOP{TOP_N} 시작 =========="
+        "========================================"
     )
+
+    logging.info(
+        f"========== 업비트 TOP{TOP_N} 시작 "
+        f"{start_time} KST =========="
+    )
+
+    # -----------------------------------------------------
+    # 1. 업비트 마켓 목록
+    # -----------------------------------------------------
 
     markets = get_upbit_markets()
 
     if not markets:
+
+        logging.error(
+            "업비트 마켓 목록 조회 실패"
+        )
+
         return False
+
+    logging.info(
+        f"[업비트 진행] "
+        f"KRW 마켓 {len(markets)}개"
+    )
+
+    # -----------------------------------------------------
+    # 2. 거래대금 조회
+    # -----------------------------------------------------
 
     volume_map = {}
 
-    # 거래대금 먼저
     for index, market in enumerate(
         markets,
         start=1
     ):
+
+        logging.info(
+            f"[업비트 거래대금 진행] "
+            f"{index}/{len(markets)} "
+            f"{market}"
+        )
 
         try:
 
@@ -2188,7 +2852,9 @@ def update_upbit():
                 and volume > 0
             ):
 
-                volume_map[market] = volume
+                volume_map[
+                    market
+                ] = volume
 
         except Exception as e:
 
@@ -2198,13 +2864,31 @@ def update_upbit():
             )
 
     if not volume_map:
+
+        logging.error(
+            "업비트 거래대금 데이터 없음"
+        )
+
         return False
+
+    # -----------------------------------------------------
+    # 3. TOP30
+    # -----------------------------------------------------
 
     top_markets = sorted(
         volume_map,
         key=volume_map.get,
         reverse=True
     )[:TOP_N]
+
+    logging.info(
+        f"[업비트 진행] "
+        f"거래대금 TOP{TOP_N} 선정 완료"
+    )
+
+    # -----------------------------------------------------
+    # 4. TOP30 분석
+    # -----------------------------------------------------
 
     rows = []
 
@@ -2218,6 +2902,12 @@ def update_upbit():
             ""
         )
 
+        logging.info(
+            f"[업비트 분석] "
+            f"{rank}/{len(top_markets)} "
+            f"{market}"
+        )
+
         try:
 
             analysis = get_upbit_analysis(
@@ -2225,19 +2915,29 @@ def update_upbit():
             )
 
             if analysis is None:
+
+                logging.info(
+                    f"[업비트 분석] "
+                    f"{market} 데이터 부족"
+                )
+
                 continue
 
-            warning = analysis["warning"]
+            warning = analysis[
+                "warning"
+            ]
 
             if not is_visible_warning(
                 warning
             ):
+
                 continue
 
-            # 업비트는 LONG만
+            # 업비트 LONG만
             if not pass_long_filter(
                 analysis
             ):
+
                 continue
 
             rows.append(
@@ -2265,7 +2965,9 @@ def update_upbit():
 
     latest_upbit_data = rows
 
-    latest_upbit_update_time = get_kst_time()
+    latest_upbit_update_time = (
+        get_kst_time()
+    )
 
     logging.info(
         f"업비트 LONG 경고 "
@@ -2274,7 +2976,11 @@ def update_upbit():
 
     logging.info(
         f"업비트 조회 종료 "
-        f"{latest_upbit_update_time}"
+        f"{latest_upbit_update_time} KST"
+    )
+
+    logging.info(
+        "========== 업비트 완전 종료 =========="
     )
 
     return True
@@ -2283,16 +2989,29 @@ def update_upbit():
 # =========================================================
 # OKX 업데이트
 #
-# LONG / SHORT 모두 표시
+# LONG / SHORT
+#
+# 중요:
+# 업비트 마켓을 API로 다시 조회하지 않는다.
+# latest_upbit_markets 사용
 # =========================================================
 
-def update_okx(usdt_krw):
+def update_okx(
+    usdt_krw
+):
 
     global latest_okx_data
     global latest_okx_update_time
 
+    start_time = get_kst_time()
+
     logging.info(
-        "========== OKX 업데이트 시작 =========="
+        "========================================"
+    )
+
+    logging.info(
+        f"========== OKX TOP{TOP_N} 시작 "
+        f"{start_time} KST =========="
     )
 
     if (
@@ -2300,34 +3019,60 @@ def update_okx(usdt_krw):
         or usdt_krw <= 0
     ):
 
+        logging.error(
+            "OKX USDT-KRW 환율 없음"
+        )
+
         return False
+
+    # -----------------------------------------------------
+    # OKX 목록
+    # -----------------------------------------------------
 
     symbols = get_all_okx_swap_symbols()
 
     if not symbols:
+
+        logging.error(
+            "OKX SWAP 목록 없음"
+        )
+
         return False
 
-    # 업비트 상장 여부
-    upbit_markets = get_upbit_markets()
+    # -----------------------------------------------------
+    # 중요
+    #
+    # 업비트 API를 다시 호출하지 않는다.
+    # 직전 업비트 단계에서 저장한 캐시 사용
+    # -----------------------------------------------------
 
     upbit_coin_set = {
         market.replace(
             "KRW-",
             ""
         )
-        for market in upbit_markets
+        for market in latest_upbit_markets
     }
+
+    logging.info(
+        f"[OKX] "
+        f"업비트 상장 캐시 사용 "
+        f"{len(upbit_coin_set)}개"
+    )
+
+    # -----------------------------------------------------
+    # OKX 거래대금
+    # -----------------------------------------------------
 
     volume_map = {}
 
-    # 거래대금
     for index, symbol in enumerate(
         symbols,
         start=1
     ):
 
         logging.info(
-            f"[OKX 거래대금] "
+            f"[OKX 거래대금 진행] "
             f"{index}/{len(symbols)} "
             f"{symbol}"
         )
@@ -2342,9 +3087,16 @@ def update_okx(usdt_krw):
             and volume > 0
         ):
 
-            volume_map[symbol] = volume
+            volume_map[
+                symbol
+            ] = volume
 
     if not volume_map:
+
+        logging.error(
+            "OKX 거래대금 데이터 없음"
+        )
+
         return False
 
     top_symbols = sorted(
@@ -2353,7 +3105,16 @@ def update_okx(usdt_krw):
         reverse=True
     )[:TOP_N]
 
+    logging.info(
+        f"[OKX 진행] "
+        f"거래대금 TOP{TOP_N} 선정 완료"
+    )
+
     rows = []
+
+    # -----------------------------------------------------
+    # TOP30 분석
+    # -----------------------------------------------------
 
     for rank, symbol in enumerate(
         top_symbols,
@@ -2365,8 +3126,19 @@ def update_okx(usdt_krw):
             ""
         )
 
+        display_coin = coin
+
         if coin in upbit_coin_set:
-            coin = f"{coin}[UP]"
+
+            display_coin = (
+                f"{coin}[UP]"
+            )
+
+        logging.info(
+            f"[OKX 분석] "
+            f"{rank}/{len(top_symbols)} "
+            f"{symbol}"
+        )
 
         try:
 
@@ -2375,13 +3147,17 @@ def update_okx(usdt_krw):
             )
 
             if analysis is None:
+
                 continue
 
-            warning = analysis["warning"]
+            warning = analysis[
+                "warning"
+            ]
 
             if not is_visible_warning(
                 warning
             ):
+
                 continue
 
             direction = warning.get(
@@ -2389,19 +3165,28 @@ def update_okx(usdt_krw):
                 "none"
             )
 
-            # 최종 LONG/SHORT 필터
+            # -------------------------------------------------
+            # LONG
+            # -------------------------------------------------
+
             if direction == "long":
 
                 if not pass_long_filter(
                     analysis
                 ):
+
                     continue
+
+            # -------------------------------------------------
+            # SHORT
+            # -------------------------------------------------
 
             elif direction == "short":
 
                 if not pass_short_filter(
                     analysis
                 ):
+
                     continue
 
             else:
@@ -2411,7 +3196,7 @@ def update_okx(usdt_krw):
             rows.append(
                 {
                     "rank": rank,
-                    "name": coin,
+                    "name": display_coin,
                     "change": format_change(
                         analysis["changes"]
                     ),
@@ -2433,7 +3218,9 @@ def update_okx(usdt_krw):
 
     latest_okx_data = rows
 
-    latest_okx_update_time = get_kst_time()
+    latest_okx_update_time = (
+        get_kst_time()
+    )
 
     logging.info(
         f"OKX LONG/SHORT 경고 "
@@ -2442,7 +3229,11 @@ def update_okx(usdt_krw):
 
     logging.info(
         f"OKX 조회 종료 "
-        f"{latest_okx_update_time}"
+        f"{latest_okx_update_time} KST"
+    )
+
+    logging.info(
+        "========== OKX 완전 종료 =========="
     )
 
     return True
@@ -2453,10 +3244,14 @@ def update_okx(usdt_krw):
 #
 # 반드시
 #
-# 업비트 → 업비트 종료
-# → OKX → OKX 종료
+# 업비트
+# ↓
+# 업비트 완전 종료
+# ↓
+# OKX
+# ↓
+# OKX 완전 종료
 #
-# 순서
 # =========================================================
 
 def update_dashboard():
@@ -2465,79 +3260,156 @@ def update_dashboard():
     global latest_upbit_data
     global latest_okx_data
 
-    logging.info(
-        "========================================"
-    )
+    # -----------------------------------------------------
+    # 이전 업데이트가 아직 끝나지 않았다면
+    # 중복 실행 방지
+    # -----------------------------------------------------
 
-    logging.info(
-        "전체 조회 시작"
-    )
+    if not update_lock.acquire(
+        blocking=False
+    ):
 
-    # =====================================================
-    # 1. 업비트
-    # =====================================================
+        logging.warning(
+            "이전 전체 조회가 아직 진행 중입니다. "
+            "이번 주기는 건너뜁니다."
+        )
 
-    if USE_UPBIT == "Y":
+        return
 
-        try:
+    try:
 
-            update_upbit()
+        cycle_start = get_kst_time()
 
-        except Exception as e:
+        logging.info(
+            ""
+        )
 
-            logging.exception(
-                f"업비트 업데이트 오류 : {e}"
-            )
+        logging.info(
+            "========================================"
+        )
 
-    else:
+        logging.info(
+            f"전체 조회 시작 "
+            f"{cycle_start} KST"
+        )
 
-        latest_upbit_data = []
+        logging.info(
+            "조회 순서 : 업비트 → OKX"
+        )
 
-    # =====================================================
-    # 2. 업비트가 완전히 끝난 뒤 OKX
-    # =====================================================
+        # =================================================
+        # 1. 업비트
+        # =================================================
 
-    if USE_OKX == "Y":
+        if USE_UPBIT == "Y":
 
-        try:
+            try:
 
-            usdt_krw = get_usdt_krw()
+                upbit_result = update_upbit()
 
-            if usdt_krw is not None:
+                if upbit_result:
 
-                latest_usdt_krw = usdt_krw
+                    logging.info(
+                        "업비트 단계 성공"
+                    )
 
-            else:
+                else:
 
-                usdt_krw = latest_usdt_krw
+                    logging.warning(
+                        "업비트 단계 실패"
+                    )
 
-            if (
-                usdt_krw is not None
-                and
-                usdt_krw > 0
-            ):
+            except Exception as e:
 
-                update_okx(
-                    usdt_krw
+                logging.exception(
+                    f"업비트 업데이트 오류 : {e}"
                 )
 
-        except Exception as e:
+        else:
 
-            logging.exception(
-                f"OKX 업데이트 오류 : {e}"
+            latest_upbit_data = []
+
+            latest_upbit_markets = []
+
+            logging.info(
+                "업비트 사용 안 함"
             )
 
-    else:
+        # =================================================
+        # 2. 업비트가 완전히 끝난 뒤 OKX
+        # =================================================
 
-        latest_okx_data = []
+        if USE_OKX == "Y":
 
-    logging.info(
-        "전체 조회 종료"
-    )
+            logging.info(
+                "업비트 종료 확인 → OKX 시작"
+            )
 
-    logging.info(
-        "========================================"
-    )
+            try:
+
+                usdt_krw = get_usdt_krw()
+
+                if usdt_krw is not None:
+
+                    latest_usdt_krw = (
+                        usdt_krw
+                    )
+
+                else:
+
+                    usdt_krw = (
+                        latest_usdt_krw
+                    )
+
+                if (
+                    usdt_krw is not None
+                    and
+                    usdt_krw > 0
+                ):
+
+                    update_okx(
+                        usdt_krw
+                    )
+
+                else:
+
+                    logging.error(
+                        "OKX 환율을 사용할 수 없습니다."
+                    )
+
+            except Exception as e:
+
+                logging.exception(
+                    f"OKX 업데이트 오류 : {e}"
+                )
+
+        else:
+
+            latest_okx_data = []
+
+            logging.info(
+                "OKX 사용 안 함 "
+                "(USE_OKX=N)"
+            )
+
+        # =================================================
+        # 전체 종료
+        # =================================================
+
+        cycle_end = get_kst_time()
+
+        logging.info(
+            f"전체 조회 종료 "
+            f"{cycle_end} KST"
+        )
+
+        logging.info(
+            "========================================"
+        )
+
+    finally:
+
+        update_lock.release()
 
 
 # =========================================================
@@ -2545,6 +3417,10 @@ def update_dashboard():
 # =========================================================
 
 def scheduler():
+
+    logging.info(
+        "스케줄러 스레드 시작"
+    )
 
     while True:
 
@@ -2562,7 +3438,7 @@ def scheduler():
 
 
 # =========================================================
-# HTML
+# HTML CSS
 # =========================================================
 
 DASHBOARD_CSS = """
@@ -2865,7 +3741,9 @@ td:nth-child(5) {
 # 테이블 행
 # =========================================================
 
-def make_table_rows(data):
+def make_table_rows(
+    data
+):
 
     rows_html = ""
 
@@ -2949,7 +3827,9 @@ def make_exchange_section(
     is_okx=False
 ):
 
-    rows = make_table_rows(data)
+    rows = make_table_rows(
+        data
+    )
 
     if not rows:
 
@@ -2971,7 +3851,9 @@ def make_exchange_section(
             "※ OKX = LONG / SHORT 모두 표시<br>"
         )
 
-        update_time = latest_okx_update_time
+        update_time = (
+            latest_okx_update_time
+        )
 
     else:
 
@@ -2979,7 +3861,9 @@ def make_exchange_section(
             "※ 업비트 = LONG만 표시<br>"
         )
 
-        update_time = latest_upbit_update_time
+        update_time = (
+            latest_upbit_update_time
+        )
 
     return f"""
 <div class="section">
@@ -3032,8 +3916,9 @@ def make_exchange_section(
 ※ TOP{TOP_N} 거래대금 순위<br>
 ※ 거래대금 = 확정 1시간봉 기준<br>
 {direction_note}
-※ LONG = EMA 30 > 60 > 120 + 당일 양봉<br>
-※ SHORT = EMA 30 < 60 < 120 + 당일 음봉<br>
+※ LONG = EMA 30 > 60 > 120 + 당일 변동률 양수<br>
+※ SHORT = EMA 30 < 60 < 120 + 당일 변동률 음수<br>
+※ 당일 변동률 = 한국시간 09:00 기준<br>
 ※ 현재 진행 중인 1시간봉 제외<br>
 ※ 🚨 = 직전 고점/저점 돌파 직전<br>
 ※ 🚀 = 최초 돌파 확정봉<br>
@@ -3148,11 +4033,15 @@ def dashboard():
 </div>
 
 <div>
-LONG = 정배열 + 당일 양봉
+LONG = 정배열 + 당일 변동률 양수
 </div>
 
 <div>
-SHORT = 역배열 + 당일 음봉
+SHORT = 역배열 + 당일 변동률 음수
+</div>
+
+<div>
+변동률 = 한국시간 09:00 기준
 </div>
 
 <div>
@@ -3209,6 +4098,10 @@ def startup():
     )
 
     logging.info(
+        f"UPDATE={UPDATE_MINUTES}분"
+    )
+
+    logging.info(
         "기준 : 1H 확정봉"
     )
 
@@ -3217,11 +4110,15 @@ def startup():
     )
 
     logging.info(
-        "LONG : EMA 30 > 60 > 120 + 당일 양봉"
+        "LONG : EMA 30 > 60 > 120 + 당일 변동률 양수"
     )
 
     logging.info(
-        "SHORT : EMA 30 < 60 < 120 + 당일 음봉"
+        "SHORT : EMA 30 < 60 < 120 + 당일 변동률 음수"
+    )
+
+    logging.info(
+        "변동률 : 한국시간 09:00 기준"
     )
 
     logging.info(
@@ -3229,33 +4126,77 @@ def startup():
     )
 
     logging.info(
-        "조회 순서 : 업비트 → OKX"
+        "조회 순서 : 업비트 → 업비트 종료 → OKX"
     )
 
-    if USE_UPBIT not in ("Y", "N"):
+    logging.info(
+        "OKX 단계에서 업비트 마켓 API 재조회 안 함"
+    )
+
+    # -----------------------------------------------------
+    # 설정 검증
+    # -----------------------------------------------------
+
+    if USE_UPBIT not in (
+        "Y",
+        "N"
+    ):
 
         raise ValueError(
             "USE_UPBIT은 Y 또는 N만 사용할 수 있습니다."
         )
 
-    if USE_OKX not in ("Y", "N"):
+    if USE_OKX not in (
+        "Y",
+        "N"
+    ):
 
         raise ValueError(
             "USE_OKX는 Y 또는 N만 사용할 수 있습니다."
         )
 
+    if TOP_N <= 0:
+
+        raise ValueError(
+            "TOP_N은 1 이상이어야 합니다."
+        )
+
+    if UPDATE_MINUTES <= 0:
+
+        raise ValueError(
+            "UPDATE_MINUTES는 1 이상이어야 합니다."
+        )
+
+    # -----------------------------------------------------
     # 최초 즉시 조회
+    # -----------------------------------------------------
+
+    logging.info(
+        "최초 즉시 조회 스레드 시작"
+    )
+
     threading.Thread(
         target=update_dashboard,
         daemon=True
     ).start()
 
+    # -----------------------------------------------------
     # 주기 등록
+    # -----------------------------------------------------
+
     schedule.every(
         UPDATE_MINUTES
     ).minutes.do(
         update_dashboard
     )
+
+    logging.info(
+        f"{UPDATE_MINUTES}분 주기 등록 완료"
+    )
+
+    # -----------------------------------------------------
+    # 스케줄러
+    # -----------------------------------------------------
 
     threading.Thread(
         target=scheduler,
@@ -3263,7 +4204,11 @@ def startup():
     ).start()
 
     logging.info(
-        f"{UPDATE_MINUTES}분 주기 등록 완료"
+        "스케줄러 시작 완료"
+    )
+
+    logging.info(
+        "========================================"
     )
 
 
@@ -3277,4 +4222,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-        )
+)
