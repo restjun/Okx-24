@@ -124,9 +124,6 @@ latest_okx_update_time = "-"
 
 # =========================================================
 # 업비트 마켓 목록 캐시
-#
-# 업비트 ticker/all 조회 결과를 사용하여
-# KRW 마켓 목록을 캐시
 # =========================================================
 
 latest_upbit_markets = []
@@ -411,13 +408,13 @@ def get_usdt_krw():
 
 
 # =========================================================
-# OKX 1H 캔들
+# OKX 15분봉
 # 확정봉만 사용
 # =========================================================
 
 def get_okx_ohlcv(
     inst_id,
-    bar="1H",
+    bar="15m",
     limit=200,
     before=None
 ):
@@ -519,7 +516,7 @@ def get_okx_ohlcv(
     except Exception as e:
 
         logging.error(
-            f"OKX 캔들 처리 오류 "
+            f"OKX 15분봉 처리 오류 "
             f"{inst_id}: {e}"
         )
 
@@ -527,13 +524,13 @@ def get_okx_ohlcv(
 
 
 # =========================================================
-# 업비트 1H 캔들
+# 업비트 15분봉
 # 현재 진행 중인 봉 제외
 # =========================================================
 
 def get_upbit_ohlcv(
     market,
-    unit=60,
+    unit=15,
     count=200,
     to=None
 ):
@@ -628,23 +625,30 @@ def get_upbit_ohlcv(
             return None
 
         # -------------------------------------------------
-        # 현재 진행 중인 1시간봉 제거
+        # 현재 진행 중인 15분봉 제거
         # -------------------------------------------------
 
-        now = datetime.now(
-            KST
-        )
+        now = datetime.now(KST)
 
-        current_hour = now.replace(
-            minute=0,
+        minute_block = (
+            now.minute // 15
+        ) * 15
+
+        current_candle_start = now.replace(
+            minute=minute_block,
             second=0,
             microsecond=0
         )
 
+        current_candle_start_naive = (
+            current_candle_start
+            .replace(tzinfo=None)
+        )
+
         df = df[
-            df["datetime"] < current_hour.replace(
-                tzinfo=None
-            )
+            df["datetime"]
+            <
+            current_candle_start_naive
         ]
 
         if df.empty:
@@ -663,7 +667,7 @@ def get_upbit_ohlcv(
     except Exception as e:
 
         logging.error(
-            f"업비트 캔들 처리 오류 "
+            f"업비트 15분봉 처리 오류 "
             f"{market}: {e}"
         )
 
@@ -672,11 +676,6 @@ def get_upbit_ohlcv(
 
 # =========================================================
 # 업비트 일봉
-#
-# 중요:
-# 업비트 당일 변동률은 1시간봉으로 계산하지 않는다.
-#
-# 업비트 일봉 API의 change_rate를 직접 사용한다.
 # =========================================================
 
 def get_upbit_daily_change(
@@ -981,12 +980,12 @@ def find_first_alignment_start(df):
 
 
 # =========================================================
-# OKX 과거 데이터
+# 과거 데이터
 # =========================================================
 
 def get_okx_history(
     inst_id,
-    bar="1H"
+    bar="15m"
 ):
 
     all_df = None
@@ -998,7 +997,7 @@ def get_okx_history(
     ):
 
         logging.info(
-            f"[OKX 과거조회] "
+            f"[OKX 15분 과거조회] "
             f"{inst_id} "
             f"{chunk_index + 1}/"
             f"{MAX_HISTORY_CHUNKS}"
@@ -1054,11 +1053,9 @@ def get_okx_history(
     return all_df
 
 
-# =========================================================
-# 업비트 과거 데이터
-# =========================================================
-
-def get_upbit_history(market):
+def get_upbit_history(
+    market
+):
 
     all_df = None
 
@@ -1069,7 +1066,7 @@ def get_upbit_history(market):
     ):
 
         logging.info(
-            f"[업비트 과거조회] "
+            f"[업비트 15분 과거조회] "
             f"{market} "
             f"{chunk_index + 1}/"
             f"{MAX_HISTORY_CHUNKS}"
@@ -1077,7 +1074,7 @@ def get_upbit_history(market):
 
         df = get_upbit_ohlcv(
             market,
-            60,
+            15,
             HISTORY_CHUNK,
             to
         )
@@ -2095,10 +2092,6 @@ def calculate_daily_changes(
             "datetime"
         )
 
-        # -------------------------------------------------
-        # 한국시간 09:00 기준 일봉
-        # -------------------------------------------------
-
         daily = (
             temp["c"]
             .resample(
@@ -2389,21 +2382,6 @@ def direction_html(
 
 # =========================================================
 # 업비트 마켓 목록 + 24시간 거래대금
-#
-# 중요:
-#
-# 기존:
-# 전체 코인 각각 1H 캔들 조회
-# -> 24시간 거래대금 계산
-# -> TOP100
-#
-# 변경:
-# 업비트 ticker/all API 한 번 조회
-# -> acc_trade_price_24h 사용
-# -> TOP100
-#
-# 따라서 거래대금 순위를 만들기 위해
-# 전체 코인의 1시간봉을 조회하지 않는다.
 # =========================================================
 
 def get_upbit_markets():
@@ -2501,13 +2479,6 @@ def get_upbit_markets():
 
             return []
 
-        # -------------------------------------------------
-        # 업비트 마켓 캐시
-        #
-        # OKX가 켜져 있을 경우에도
-        # 여기의 캐시를 사용한다.
-        # -------------------------------------------------
-
         latest_upbit_markets = [
             item["market"]
             for item in markets
@@ -2596,14 +2567,64 @@ def get_all_okx_swap_symbols():
 
 
 # =========================================================
+# OKX 거래대금
+# =========================================================
+
+def get_okx_volume(
+    inst_id,
+    usdt_krw
+):
+
+    df = get_okx_ohlcv(
+        inst_id,
+        "1H",
+        24
+    )
+
+    if (
+        df is None
+        or df.empty
+    ):
+
+        return None
+
+    try:
+
+        volume = pd.to_numeric(
+            df["volCcyQuote"],
+            errors="coerce"
+        ).sum()
+
+        if pd.isna(volume):
+
+            return None
+
+        # USDT → KRW
+        volume_krw = (
+            float(volume)
+            * float(usdt_krw)
+        )
+
+        return volume_krw
+
+    except Exception as e:
+
+        logging.error(
+            f"OKX 거래대금 계산 오류 "
+            f"{inst_id}: {e}"
+        )
+
+        return None
+
+
+# =========================================================
 # 업비트 분석
 #
-# 1시간봉
-#   ├─ EMA
-#   └─ 돌파
+# 15분봉 전체 기준
 #
-# 일봉
-#   └─ 당일 변동률 change_rate 직접 사용
+# EMA
+# 돌파
+# 모두 15분봉
 # =========================================================
 
 def get_upbit_analysis(
@@ -2611,11 +2632,7 @@ def get_upbit_analysis(
 ):
 
     # -----------------------------------------------------
-    # 1. 업비트 1시간봉
-    #
-    # EMA / 돌파 분석용
-    #
-    # 이제 TOP100에 선정된 코인만 호출된다.
+    # 1. 15분봉
     # -----------------------------------------------------
 
     df = get_upbit_history(
@@ -2638,7 +2655,7 @@ def get_upbit_analysis(
     )
 
     # -----------------------------------------------------
-    # 3. 돌파 구조
+    # 3. 15분봉 돌파
     # -----------------------------------------------------
 
     warning = get_breakout_signal(
@@ -2647,9 +2664,7 @@ def get_upbit_analysis(
     )
 
     # -----------------------------------------------------
-    # 4. 업비트 일봉 변동률
-    #
-    # 기존 calculate_daily_changes() 사용 안 함
+    # 4. 일봉 변동률
     # -----------------------------------------------------
 
     changes = get_upbit_daily_change(
@@ -2678,7 +2693,7 @@ def get_upbit_analysis(
 # =========================================================
 # OKX 분석
 #
-# 기존 그대로 유지
+# 15분봉 전체 기준
 # =========================================================
 
 def get_okx_analysis(
@@ -2687,7 +2702,7 @@ def get_okx_analysis(
 
     df = get_okx_history(
         inst_id,
-        "1H"
+        "15m"
     )
 
     if (
@@ -2697,14 +2712,28 @@ def get_okx_analysis(
 
         return None
 
+    # -----------------------------------------------------
+    # EMA
+    # -----------------------------------------------------
+
     ema = check_ema(
         df
     )
+
+    # -----------------------------------------------------
+    # 15분봉 돌파
+    # -----------------------------------------------------
 
     warning = get_breakout_signal(
         df,
         allow_short=True
     )
+
+    # -----------------------------------------------------
+    # 변동률
+    #
+    # 기존 OKX 방식 유지
+    # -----------------------------------------------------
 
     changes = calculate_daily_changes(
         df,
@@ -2720,10 +2749,6 @@ def get_okx_analysis(
 
 # =========================================================
 # 최종 LONG 필터
-#
-# 1. 직전 고점 돌파 구조 LONG
-# 2. EMA 30 > 60 > 120
-# 3. 당일 변동률 양수
 # =========================================================
 
 def pass_long_filter(
@@ -2783,10 +2808,6 @@ def pass_long_filter(
 
 # =========================================================
 # 최종 SHORT 필터
-#
-# 1. 직전 저점 이탈 구조 SHORT
-# 2. EMA 30 < 60 < 120
-# 3. 당일 변동률 음수
 # =========================================================
 
 def pass_short_filter(
@@ -2847,14 +2868,11 @@ def pass_short_filter(
 # =========================================================
 # 업비트 업데이트
 #
-# LONG만 표시
-#
-# 중요:
-# 전체 업비트 코인의 1H 캔들을 조회하지 않는다.
-#
-# 1. ticker/all에서 24H 거래대금 수신
-# 2. TOP100 선정
-# 3. TOP100만 기존 분석
+# 24시간 거래대금 TOP20
+# ↓
+# TOP20만 15분봉 조회
+# ↓
+# EMA + 돌파
 # =========================================================
 
 def update_upbit():
@@ -2875,10 +2893,7 @@ def update_upbit():
     )
 
     # -----------------------------------------------------
-    # 1. 업비트 전체 KRW 마켓의
-    #    24시간 거래대금 조회
-    #
-    # ticker/all API 1회
+    # 1. 전체 KRW 마켓의 24시간 거래대금
     # -----------------------------------------------------
 
     market_data = get_upbit_markets()
@@ -2891,14 +2906,8 @@ def update_upbit():
 
         return False
 
-    logging.info(
-        f"[업비트 진행] "
-        f"KRW 마켓 {len(market_data)}개 "
-        "24시간 거래대금 확보"
-    )
-
     # -----------------------------------------------------
-    # 2. 24시간 거래대금 TOP100
+    # 2. 거래대금 TOP20
     # -----------------------------------------------------
 
     market_data = sorted(
@@ -2916,17 +2925,13 @@ def update_upbit():
         f"24시간 거래대금 TOP{TOP_N} 선정 완료"
     )
 
-    # -----------------------------------------------------
-    # 거래대금 map
-    # -----------------------------------------------------
-
     volume_map = {
         item["market"]: item["volume_24h"]
         for item in top_markets
     }
 
     # -----------------------------------------------------
-    # 3. TOP100만 분석
+    # 3. TOP20만 15분봉 분석
     # -----------------------------------------------------
 
     rows = []
@@ -2944,7 +2949,7 @@ def update_upbit():
         )
 
         logging.info(
-            f"[업비트 분석] "
+            f"[업비트 15분 분석] "
             f"{rank}/{len(top_markets)} "
             f"{market}"
         )
@@ -3033,11 +3038,9 @@ def update_upbit():
 # =========================================================
 # OKX 업데이트
 #
-# LONG / SHORT
-#
-# 업비트 마켓을 API로 다시 조회하지 않음
-#
-# 이 부분은 원본 그대로 유지
+# 기존 방식 유지
+# 거래대금 TOP20
+# 이후 15분봉 분석
 # =========================================================
 
 def update_okx(
@@ -3084,7 +3087,7 @@ def update_okx(
         return False
 
     # -----------------------------------------------------
-    # 업비트 API 재조회하지 않음
+    # 업비트 캐시 사용
     # -----------------------------------------------------
 
     upbit_coin_set = {
@@ -3103,6 +3106,7 @@ def update_okx(
 
     # -----------------------------------------------------
     # OKX 거래대금
+    # 기존 1H 거래대금 방식 유지
     # -----------------------------------------------------
 
     volume_map = {}
@@ -3154,7 +3158,10 @@ def update_okx(
     rows = []
 
     # -----------------------------------------------------
-    # TOP100 분석
+    # TOP20 분석
+    #
+    # EMA = 15분
+    # 돌파 = 15분
     # -----------------------------------------------------
 
     for rank, symbol in enumerate(
@@ -3176,7 +3183,7 @@ def update_okx(
             )
 
         logging.info(
-            f"[OKX 분석] "
+            f"[OKX 15분 분석] "
             f"{rank}/{len(top_symbols)} "
             f"{symbol}"
         )
@@ -3367,7 +3374,7 @@ def update_dashboard():
             )
 
         # =================================================
-        # 2. 업비트가 완전히 끝난 뒤 OKX
+        # 2. 업비트 종료 후 OKX
         # =================================================
 
         if USE_OKX == "Y":
@@ -3759,6 +3766,7 @@ td:nth-child(5) {
     .ema-value {
         font-size: 7px;
     }
+
 }
 
 """
@@ -3879,7 +3887,7 @@ def make_exchange_section(
         )
 
         change_note = (
-            "※ 변동률 = OKX 1시간봉을 이용해 한국시간 09:00 기준 계산<br>"
+            "※ 변동률 = OKX 15분봉을 이용해 한국시간 09:00 기준 계산<br>"
         )
 
         update_time = (
@@ -3952,18 +3960,19 @@ def make_exchange_section(
 ※ 업비트 거래대금 = 업비트 API의 24시간 누적 거래대금<br>
 {direction_note}
 {change_note}
-※ LONG = EMA 30 > 60 > 120 + 당일 변동률 양수<br>
-※ SHORT = EMA 30 < 60 < 120 + 당일 변동률 음수<br>
-※ 현재 진행 중인 1시간봉 제외<br>
-※ 🚨 = 직전 고점/저점 돌파 직전<br>
-※ 🚀 = 최초 돌파 확정봉<br>
-※ 〽️ = 🚀 직후 눌림<br>
+※ EMA = 15분봉 30-60-120<br>
+※ LONG = 15분 EMA 30 > 60 > 120 + 당일 변동률 양수<br>
+※ SHORT = 15분 EMA 30 < 60 < 120 + 당일 변동률 음수<br>
+※ 현재 진행 중인 15분봉 제외<br>
+※ 🚨 = 15분봉 직전 고점/저점 돌파 직전<br>
+※ 🚀 = 15분봉 최초 돌파 확정봉<br>
+※ 〽️ = 15분봉 🚀 직후 눌림<br>
 ※ LONG은 직전 고점 돌파 기준<br>
 ※ SHORT는 직전 저점 이탈 기준<br>
 ※ 🚨 기준봉 저점/고점 이탈 시 구조 폐기<br>
 ※ 돌파 실패 후 반등 고점/반락 저점은 새 기준점<br>
-※ 최초 30-60-120 배열을 찾을 때까지 과거 캔들 추가 조회<br>
-※ 4H 조건 사용하지 않음<br>
+※ 최초 30-60-120 배열을 찾을 때까지 과거 15분봉 추가 조회<br>
+※ 1시간봉 조건 사용하지 않음<br>
 
 </div>
 
@@ -4035,7 +4044,7 @@ def dashboard():
         user-scalable=no">
 
 <title>
-1H Breakout Trading
+15M Breakout Trading
 </title>
 
 <style>
@@ -4049,13 +4058,13 @@ def dashboard():
 <body>
 
 <h1>
-📊 1H Breakout Trading
+📊 15M Breakout Trading
 </h1>
 
 <div class="info">
 
 <div>
-1H 30-60-120 정배열 / 역배열
+15분봉 30-60-120 정배열 / 역배열
 </div>
 
 <div>
@@ -4068,11 +4077,11 @@ def dashboard():
 </div>
 
 <div>
-LONG = 정배열 + 당일 변동률 양수
+LONG = 15분 EMA 정배열 + 당일 변동률 양수
 </div>
 
 <div>
-SHORT = 역배열 + 당일 변동률 음수
+SHORT = 15분 EMA 역배열 + 당일 변동률 음수
 </div>
 
 <div>
@@ -4080,11 +4089,11 @@ SHORT = 역배열 + 당일 변동률 음수
 </div>
 
 <div>
-OKX 변동률 = 한국시간 09:00 기준
+OKX 변동률 = 15분봉 한국시간 09:00 기준
 </div>
 
 <div>
-확정 1시간봉 기준
+확정 15분봉 기준
 </div>
 
 <div>
@@ -4145,19 +4154,23 @@ def startup():
     )
 
     logging.info(
-        "기준 : 1H 확정봉"
+        "기준 : 15분 확정봉"
     )
 
     logging.info(
-        "EMA : 30-60-120"
+        "EMA : 15분 30-60-120"
     )
 
     logging.info(
-        "LONG : EMA 30 > 60 > 120 + 당일 변동률 양수"
+        "돌파 : 15분봉 고점/저점"
     )
 
     logging.info(
-        "SHORT : EMA 30 < 60 < 120 + 당일 변동률 음수"
+        "LONG : 15분 EMA 30 > 60 > 120 + 당일 변동률 양수"
+    )
+
+    logging.info(
+        "SHORT : 15분 EMA 30 < 60 < 120 + 당일 변동률 음수"
     )
 
     logging.info(
@@ -4173,7 +4186,7 @@ def startup():
     )
 
     logging.info(
-        "4H 조건 : 사용 안 함"
+        "1H 조건 : 사용 안 함"
     )
 
     logging.info(
@@ -4273,4 +4286,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-    )
+                )
