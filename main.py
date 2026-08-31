@@ -42,7 +42,7 @@ logger = logging.getLogger("trading")
 VOLUME_HOURS = 24
 
 # 거래대금 TOP
-TOP_N = 20
+TOP_N = 30
 
 # 업데이트 주기
 UPDATE_MINUTES = 1
