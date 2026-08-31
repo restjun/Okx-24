@@ -5,6 +5,7 @@ import schedule
 import time
 import requests
 import threading
+import uvicorn
 import logging
 import pandas as pd
 import warnings
@@ -43,24 +44,17 @@ TOP_N = 20
 
 UPDATE_MINUTES = 1
 
-MAX_WARNING_COUNT = 3
+BREAKOUT_LOOKBACK = 10
 
-# ---------------------------------------------------------
-# 파동 판단용
-# ---------------------------------------------------------
+# 고점과 저점 사이 최소 캔들
+MIN_SWING_BARS = 2
 
-PIVOT_LEFT = 2
-PIVOT_RIGHT = 2
-
-# 최소 파동 크기
-MIN_SWING_RATE = 0.003
-
-# 돌파 후 같은 고점에서 반복 경고 방지
-BREAKOUT_REARM_RATE = 0.002
+# 파동 추적에 사용할 최대 과거 캔들
+WAVE_LOOKBACK = 100
 
 
 # =========================================================
-# 거래소 조회 Y / N
+# 거래소
 # =========================================================
 
 USE_UPBIT = "Y"
@@ -69,7 +63,7 @@ USE_OKX = "N"
 
 
 # =========================================================
-# API 안정화 설정
+# API 안정화
 # =========================================================
 
 REQUEST_INTERVAL = 0.08
@@ -80,7 +74,7 @@ MAX_RETRIES = 10
 
 
 # =========================================================
-# OKX 실패 종목 반복 설정
+# OKX 재시도
 # =========================================================
 
 OKX_RETRY_DELAY = 2
@@ -97,90 +91,6 @@ latest_okx_data = []
 latest_upbit_data = []
 
 latest_usdt_krw = 0.0
-
-
-# =========================================================
-# 파동 상태 저장
-#
-# key:
-# UPBIT:BTC-1H
-# UPBIT:BTC-4H
-# OKX:BTC-USDT-SWAP-1H
-# OKX:BTC-USDT-SWAP-4H
-#
-# 1분마다 조회해도 기존 상태를 유지한다.
-# =========================================================
-
-wave_states = {}
-
-wave_state_lock = threading.Lock()
-
-
-def get_wave_state_key(
-    exchange,
-    symbol,
-    timeframe
-):
-
-    return f"{exchange}:{symbol}:{timeframe}"
-
-
-def new_wave_state():
-
-    return {
-        "phase": "waiting",
-
-        # 최초 상승 고점
-        "first_high": None,
-
-        # 현재 돌파 대상으로 사용하는 고점
-        "target_high": None,
-
-        # 조정 저점
-        "pullback_low": None,
-
-        # 최근 스윙 고점
-        "last_pivot_high": None,
-
-        # 최근 스윙 저점
-        "last_pivot_low": None,
-
-        # 마지막으로 처리한 확정 캔들 시간
-        "last_processed_ts": None,
-
-        # 마지막 돌파 고점
-        "last_breakout_high": None,
-
-        # 마지막 돌파 발생 캔들
-        "last_breakout_ts": None,
-
-        # 현재 경고
-        "warning": "none"
-    }
-
-
-def reset_wave_state(
-    key
-):
-
-    with wave_state_lock:
-
-        wave_states[key] = new_wave_state()
-
-        return wave_states[key]
-
-
-def get_or_create_wave_state(
-    key
-):
-
-    with wave_state_lock:
-
-        if key not in wave_states:
-
-            wave_states[key] = new_wave_state()
-
-        return wave_states[key]
 
 
 # =========================================================
@@ -360,16 +270,12 @@ def get_usdt_krw():
 
 # =========================================================
 # OKX 캔들
-#
-# include_current=True
-# 현재 진행 중인 캔들도 가져온다.
 # =========================================================
 
 def get_okx_ohlcv(
     inst_id,
     bar="1H",
-    limit=200,
-    include_current=False
+    limit=200
 ):
 
     limit = max(
@@ -432,19 +338,17 @@ def get_okx_ohlcv(
                 errors="coerce"
             )
 
+        df = df[
+            df["confirm"].astype(str) == "1"
+        ]
+
+        if df.empty:
+            return None
+
         df = (
             df.iloc[::-1]
             .reset_index(drop=True)
         )
-
-        if not include_current:
-
-            df = df[
-                df["confirm"].astype(str) == "1"
-            ]
-
-        if df.empty:
-            return None
 
         return df
 
@@ -546,9 +450,7 @@ def get_upbit_ticker_volume_map(
 
                     if market:
 
-                        volume_map[
-                            market
-                        ] = volume
+                        volume_map[market] = volume
 
                 success = True
 
@@ -566,15 +468,11 @@ def get_upbit_ticker_volume_map(
 
 # =========================================================
 # 업비트 캔들
-#
-# unit:
-# 60  = 1H
-# 240 = 4H
 # =========================================================
 
 def get_upbit_ohlcv(
     market,
-    unit=240,
+    unit=60,
     count=200
 ):
 
@@ -714,7 +612,8 @@ def get_ema(
 
     if (
         df is None
-        or column not in df.columns
+        or
+        column not in df.columns
     ):
 
         return None
@@ -734,87 +633,60 @@ def get_ema(
 
 
 # =========================================================
-# EMA 10-30
+# EMA 30-60-120
 # =========================================================
 
-def get_ema_10_30_direction(
-    df,
-    column
+def get_ema_30_60_120_direction(
+    df
 ):
-
-    ema10 = get_ema(
-        df,
-        column,
-        10
-    )
 
     ema30 = get_ema(
         df,
-        column,
+        "c",
         30
     )
 
-    if ema10 is None or ema30 is None:
+    ema60 = get_ema(
+        df,
+        "c",
+        60
+    )
 
-        return "none"
-
-    a = ema10.iloc[-1]
-    b = ema30.iloc[-1]
-
-    if pd.isna(a) or pd.isna(b):
-
-        return "none"
-
-    if a > b:
-
-        return "long"
-
-    if a < b:
-
-        return "short"
-
-    return "none"
-
-
-# =========================================================
-# EMA 10-30-60
-# =========================================================
-
-def get_ema_10_30_60_direction(
-    df,
-    column
-):
-
-    ema10 = get_ema(df, column, 10)
-    ema30 = get_ema(df, column, 30)
-    ema60 = get_ema(df, column, 60)
+    ema120 = get_ema(
+        df,
+        "c",
+        120
+    )
 
     if (
-        ema10 is None
-        or ema30 is None
-        or ema60 is None
+        ema30 is None
+        or
+        ema60 is None
+        or
+        ema120 is None
     ):
 
         return "none"
 
-    values = [
-        ema10.iloc[-1],
-        ema30.iloc[-1],
-        ema60.iloc[-1]
-    ]
+    a = ema30.iloc[-1]
+    b = ema60.iloc[-1]
+    c = ema120.iloc[-1]
 
-    if any(
-        pd.isna(x)
-        for x in values
+    if (
+        pd.isna(a)
+        or
+        pd.isna(b)
+        or
+        pd.isna(c)
     ):
 
         return "none"
 
-    if values[0] > values[1] > values[2]:
+    if a > b > c:
 
         return "long"
 
-    if values[0] < values[1] < values[2]:
+    if a < b < c:
 
         return "short"
 
@@ -825,40 +697,38 @@ def get_ema_10_30_60_direction(
 # EMA 정렬 카운트
 # =========================================================
 
-def get_ema_10_30_60_alignment_count(
-    df,
-    column
+def get_ema_30_60_120_alignment_count(
+    df
 ):
 
-    if df is None or len(df) < 60:
+    if df is None or len(df) < 120:
 
         return "none", 0
 
-    ema10 = get_ema(
-        df,
-        column,
-        10
-    )
-
     ema30 = get_ema(
         df,
-        column,
+        "c",
         30
     )
 
     ema60 = get_ema(
         df,
-        column,
+        "c",
         60
     )
 
-    if any(
-        x is None
-        for x in [
-            ema10,
-            ema30,
-            ema60
-        ]
+    ema120 = get_ema(
+        df,
+        "c",
+        120
+    )
+
+    if (
+        ema30 is None
+        or
+        ema60 is None
+        or
+        ema120 is None
     ):
 
         return "none", 0
@@ -873,36 +743,25 @@ def get_ema_10_30_60_alignment_count(
         -1
     ):
 
-        values = [
-            ema10.iloc[index],
-            ema30.iloc[index],
-            ema60.iloc[index]
-        ]
+        a = ema30.iloc[index]
+        b = ema60.iloc[index]
+        c = ema120.iloc[index]
 
-        if any(
-            pd.isna(x)
-            for x in values
+        if (
+            pd.isna(a)
+            or
+            pd.isna(b)
+            or
+            pd.isna(c)
         ):
 
             break
 
-        if (
-            values[0]
-            >
-            values[1]
-            >
-            values[2]
-        ):
+        if a > b > c:
 
             direction = "long"
 
-        elif (
-            values[0]
-            <
-            values[1]
-            <
-            values[2]
-        ):
+        elif a < b < c:
 
             direction = "short"
 
@@ -913,7 +772,6 @@ def get_ema_10_30_60_alignment_count(
         if current_direction is None:
 
             if direction == "none":
-
                 break
 
             current_direction = direction
@@ -936,117 +794,24 @@ def get_ema_10_30_60_alignment_count(
 
 
 # =========================================================
-# 메인 방향
-# =========================================================
-
-def get_main_direction(
-    df,
-    column
-):
-
-    if (
-        df is not None
-        and
-        len(df) >= 60
-    ):
-
-        direction = (
-            get_ema_10_30_60_direction(
-                df,
-                column
-            )
-        )
-
-        if direction != "none":
-
-            return direction
-
-    return get_ema_10_30_direction(
-        df,
-        column
-    )
-
-
-# =========================================================
 # EMA 표시
 # =========================================================
 
-def check_ema(
-    df
-):
+def check_ema(df):
 
-    if (
-        df is not None
-        and
-        len(df) >= 60
-    ):
+    if df is None:
 
-        direction, count = (
-            get_ema_10_30_60_alignment_count(
-                df,
-                "c"
-            )
+        return {
+            "display": "⚪",
+            "direction": "none",
+            "count": 0
+        }
+
+    direction, count = (
+        get_ema_30_60_120_alignment_count(
+            df
         )
-
-    else:
-
-        direction = (
-            get_ema_10_30_direction(
-                df,
-                "c"
-            )
-        )
-
-        count = 0
-
-        if direction != "none":
-
-            ema10 = get_ema(
-                df,
-                "c",
-                10
-            )
-
-            ema30 = get_ema(
-                df,
-                "c",
-                30
-            )
-
-            if (
-                ema10 is not None
-                and
-                ema30 is not None
-            ):
-
-                for i in range(
-                    len(df) - 1,
-                    -1,
-                    -1
-                ):
-
-                    a = ema10.iloc[i]
-                    b = ema30.iloc[i]
-
-                    if pd.isna(a) or pd.isna(b):
-
-                        break
-
-                    current = (
-                        "long"
-                        if a > b
-                        else
-                        "short"
-                        if a < b
-                        else
-                        "none"
-                    )
-
-                    if current != direction:
-
-                        break
-
-                    count += 1
+    )
 
     if direction == "long":
 
@@ -1068,155 +833,104 @@ def check_ema(
 
 
 # =========================================================
-# 스윙 고점
-#
-# 캔들 고가 기준
+# 파동용 고점/저점
 # =========================================================
 
-def is_pivot_high(
+def is_swing_high(
     df,
     index
 ):
 
-    start = index - PIVOT_LEFT
-
-    end = index + PIVOT_RIGHT + 1
-
-    if start < 0 or end > len(df):
+    if index <= 0:
 
         return False
 
-    value = float(
+    if index >= len(df) - 1:
+
+        return False
+
+    high = float(
         df.iloc[index]["h"]
     )
 
-    left = pd.to_numeric(
-        df.iloc[
-            start:index
-        ]["h"],
-        errors="coerce"
+    left_high = float(
+        df.iloc[index - 1]["h"]
     )
 
-    right = pd.to_numeric(
-        df.iloc[
-            index + 1:end
-        ]["h"],
-        errors="coerce"
+    right_high = float(
+        df.iloc[index + 1]["h"]
     )
-
-    if left.empty or right.empty:
-
-        return False
 
     return (
-        value >= left.max()
+        high >= left_high
         and
-        value >= right.max()
+        high >= right_high
     )
 
 
-# =========================================================
-# 스윙 저점
-#
-# 캔들 저가 기준
-# =========================================================
-
-def is_pivot_low(
+def is_swing_low(
     df,
     index
 ):
 
-    start = index - PIVOT_LEFT
-
-    end = index + PIVOT_RIGHT + 1
-
-    if start < 0 or end > len(df):
+    if index <= 0:
 
         return False
 
-    value = float(
+    if index >= len(df) - 1:
+
+        return False
+
+    low = float(
         df.iloc[index]["l"]
     )
 
-    left = pd.to_numeric(
-        df.iloc[
-            start:index
-        ]["l"],
-        errors="coerce"
+    left_low = float(
+        df.iloc[index - 1]["l"]
     )
 
-    right = pd.to_numeric(
-        df.iloc[
-            index + 1:end
-        ]["l"],
-        errors="coerce"
+    right_low = float(
+        df.iloc[index + 1]["l"]
     )
-
-    if left.empty or right.empty:
-
-        return False
 
     return (
-        value <= left.min()
+        low <= left_low
         and
-        value <= right.min()
+        low <= right_low
     )
 
 
 # =========================================================
-# 캔들 파동 돌파
+# LONG 파동 돌파
 #
-# 핵심 구조
-#
-# 30-60-120 정배열
-#       ↓
-# 상승 파동
-#       ↓
-# 고점 A
-#       ↓
+# 상승
+#   ↓
+# 고점
+#   ↓
 # 조정
-#       ↓
-# 낮은 고점 B
-#       ↓
-# B를 양봉으로 돌파
-#       ↓
-# 🚨
+#   ↓
+# 낮은 고점
+#   ↓
+# 재상승
+#   ↓
+# 이전 고점 돌파
 #
-# 1H / 4H 독립 추적
+# EMA 30-60-120 정배열 유지 시 인정
 # =========================================================
 
-def get_candle_wave_breakout(
-    df,
-    direction,
-    state_key
+def find_long_wave_breakout(
+    df
 ):
 
     if (
         df is None
         or
-        len(df) < 80
+        len(df) < 125
     ):
 
-        return "none"
+        return False
 
-    df = (
-        df.copy()
-        .reset_index(drop=True)
-    )
-
-    state = get_or_create_wave_state(
-        state_key
-    )
-
-    # -----------------------------------------------------
-    # 반드시 30-60-120 정배열
-    # -----------------------------------------------------
-
-    ema10 = get_ema(
-        df,
-        "c",
-        10
-    )
+    df = df.copy().reset_index(drop=True)
 
     ema30 = get_ema(
         df,
@@ -1230,26 +944,284 @@ def get_candle_wave_breakout(
         60
     )
 
+    ema120 = get_ema(
+        df,
+        "c",
+        120
+    )
+
     if (
         ema30 is None
         or
         ema60 is None
+        or
+        ema120 is None
     ):
 
-        reset_wave_state(
-            state_key
-        )
+        return False
 
-        return "none"
+    current_index = len(df) - 1
+
+    current = df.iloc[current_index]
 
     # -----------------------------------------------------
-    # 사용자 최종 조건
-    #
-    # 30 > 60 > 120 이 아니라
-    # 현재 코드 기준 30-60-120 정배열
-    #
-    # EMA120도 반드시 계산
+    # 현재 캔들
+    # 양봉 조건
     # -----------------------------------------------------
+
+    current_open = float(
+        current["o"]
+    )
+
+    current_close = float(
+        current["c"]
+    )
+
+    current_high = float(
+        current["h"]
+    )
+
+    if current_close <= current_open:
+
+        return False
+
+    # -----------------------------------------------------
+    # 현재 EMA 정배열
+    # -----------------------------------------------------
+
+    e30 = ema30.iloc[current_index]
+    e60 = ema60.iloc[current_index]
+    e120 = ema120.iloc[current_index]
+
+    if (
+        pd.isna(e30)
+        or
+        pd.isna(e60)
+        or
+        pd.isna(e120)
+    ):
+
+        return False
+
+    if not (
+        e30 > e60 > e120
+    ):
+
+        return False
+
+    # -----------------------------------------------------
+    # 최근 구간에서 고점 후보 수집
+    # -----------------------------------------------------
+
+    start = max(
+        2,
+        current_index - WAVE_LOOKBACK
+    )
+
+    swing_highs = []
+
+    for i in range(
+        start,
+        current_index - 1
+    ):
+
+        if is_swing_high(
+            df,
+            i
+        ):
+
+            high_value = float(
+                df.iloc[i]["h"]
+            )
+
+            swing_highs.append(
+                (
+                    i,
+                    high_value
+                )
+            )
+
+    if not swing_highs:
+
+        return False
+
+    # -----------------------------------------------------
+    # 가장 최근 고점부터 확인
+    #
+    # 최근 고점보다 현재가가 높아야 함
+    # -----------------------------------------------------
+
+    for high_index, high_value in reversed(
+        swing_highs
+    ):
+
+        if current_high <= high_value:
+
+            continue
+
+        # -------------------------------------------------
+        # 고점 이후 조정 구간 확인
+        # -------------------------------------------------
+
+        if (
+            current_index
+            -
+            high_index
+            <
+            MIN_SWING_BARS + 1
+        ):
+
+            continue
+
+        correction_low = None
+
+        for j in range(
+            high_index + 1,
+            current_index
+        ):
+
+            low_value = float(
+                df.iloc[j]["l"]
+            )
+
+            if (
+                correction_low is None
+                or
+                low_value < correction_low
+            ):
+
+                correction_low = low_value
+
+        if correction_low is None:
+
+            continue
+
+        # -------------------------------------------------
+        # 고점 이후 조정이 실제로 있었는지
+        # -------------------------------------------------
+
+        if correction_low >= high_value:
+
+            continue
+
+        # -------------------------------------------------
+        # 조정 이후 재상승 확인
+        # -------------------------------------------------
+
+        rebound_exists = False
+
+        for j in range(
+            high_index + 1,
+            current_index
+        ):
+
+            close_value = float(
+                df.iloc[j]["c"]
+            )
+
+            if close_value > correction_low:
+
+                rebound_exists = True
+
+                break
+
+        if not rebound_exists:
+
+            continue
+
+        # -------------------------------------------------
+        # 돌파 직전까지 EMA 정배열 유지
+        # -------------------------------------------------
+
+        alignment_ok = True
+
+        for j in range(
+            high_index,
+            current_index + 1
+        ):
+
+            a = ema30.iloc[j]
+            b = ema60.iloc[j]
+            c = ema120.iloc[j]
+
+            if (
+                pd.isna(a)
+                or
+                pd.isna(b)
+                or
+                pd.isna(c)
+            ):
+
+                alignment_ok = False
+
+                break
+
+            if not (
+                a > b > c
+            ):
+
+                alignment_ok = False
+
+                break
+
+        if not alignment_ok:
+
+            continue
+
+        # -------------------------------------------------
+        # 현재 양봉이 해당 고점을 돌파
+        # -------------------------------------------------
+
+        if current_close > high_value:
+
+            return True
+
+    return False
+
+
+# =========================================================
+# SHORT 파동 돌파
+#
+# 하락
+#   ↓
+# 저점
+#   ↓
+# 반등
+#   ↓
+# 높은 저점
+#   ↓
+# 재하락
+#   ↓
+# 이전 저점 이탈
+#
+# EMA 30-60-120 역배열 유지
+# =========================================================
+
+def find_short_wave_breakout(
+    df
+):
+
+    if (
+        df is None
+        or
+        len(df) < 125
+    ):
+
+        return False
+
+    df = df.copy().reset_index(drop=True)
+
+    ema30 = get_ema(
+        df,
+        "c",
+        30
+    )
+
+    ema60 = get_ema(
+        df,
+        "c",
+        60
+    )
 
     ema120 = get_ema(
         df,
@@ -1257,234 +1229,22 @@ def get_candle_wave_breakout(
         120
     )
 
-    if ema120 is None:
+    if (
+        ema30 is None
+        or
+        ema60 is None
+        or
+        ema120 is None
+    ):
 
-        reset_wave_state(
-            state_key
-        )
-
-        return "none"
+        return False
 
     current_index = len(df) - 1
 
-    e30 = ema30.iloc[current_index]
-    e60 = ema60.iloc[current_index]
-    e120 = ema120.iloc[current_index]
-
-    if any(
-        pd.isna(x)
-        for x in [
-            e30,
-            e60,
-            e120
-        ]
-    ):
-
-        return "none"
-
-    long_alignment = (
-        e30 > e60 > e120
-    )
-
-    short_alignment = (
-        e30 < e60 < e120
-    )
-
-    # -----------------------------------------------------
-    # 이번 파동은 롱 기준
-    #
-    # 현재 요청:
-    # 상승 1파 → 조정 → 재상승 → 고점 돌파
-    #
-    # 숏은 별도로 표시할 수 있지만
-    # 이 파동 엔진에서는 롱 구조를 기준으로 추적
-    # -----------------------------------------------------
-
-    if direction != "long" or not long_alignment:
-
-        reset_wave_state(
-            state_key
-        )
-
-        return "none"
-
-    # -----------------------------------------------------
-    # 확정 캔들만 파동 구조 판단
-    #
-    # 마지막 캔들은 현재 진행 캔들일 수 있으므로
-    # 마지막 2개는 제외하고 스윙 확정
-    # -----------------------------------------------------
-
-    confirmed_end = len(df) - 1
-
-    pivot_end = (
-        confirmed_end - PIVOT_RIGHT
-    )
-
-    if pivot_end <= PIVOT_LEFT:
-
-        return "none"
-
-    # -----------------------------------------------------
-    # 새로 확정된 pivot을 순차적으로 처리
-    # -----------------------------------------------------
-
-    last_processed = (
-        state.get(
-            "last_processed_ts"
-        )
-    )
-
-    start_index = PIVOT_LEFT
-
-    if last_processed is not None:
-
-        for i in range(
-            PIVOT_LEFT,
-            pivot_end + 1
-        ):
-
-            ts_value = (
-                df.iloc[i].get(
-                    "ts",
-                    i
-                )
-            )
-
-            if str(ts_value) == str(
-                last_processed
-            ):
-
-                start_index = i + 1
-
-                break
-
-    for index in range(
-        start_index,
-        pivot_end + 1
-    ):
-
-        row = df.iloc[index]
-
-        high = float(
-            row["h"]
-        )
-
-        low = float(
-            row["l"]
-        )
-
-        ts_value = row.get(
-            "ts",
-            index
-        )
-
-        # -------------------------------------------------
-        # 스윙 저점
-        # -------------------------------------------------
-
-        if is_pivot_low(
-            df,
-            index
-        ):
-
-            state["last_pivot_low"] = low
-
-            if (
-                state["first_high"] is not None
-                and
-                low < state["first_high"]
-            ):
-
-                state["pullback_low"] = low
-
-                if state["phase"] in (
-                    "first_high",
-                    "pullback"
-                ):
-
-                    state["phase"] = "pullback"
-
-        # -------------------------------------------------
-        # 스윙 고점
-        # -------------------------------------------------
-
-        if is_pivot_high(
-            df,
-            index
-        ):
-
-            # ---------------------------------------------
-            # 첫 상승 고점
-            # ---------------------------------------------
-
-            if state["first_high"] is None:
-
-                state["first_high"] = high
-
-                state["target_high"] = high
-
-                state["last_pivot_high"] = high
-
-                state["phase"] = "first_high"
-
-            else:
-
-                previous_high = state.get(
-                    "last_pivot_high"
-                )
-
-                # -----------------------------------------
-                # 기존 고점보다 낮은 고점
-                #
-                # 이것도 새로운 돌파 대상
-                # -----------------------------------------
-
-                if (
-                    previous_high is not None
-                    and
-                    high < previous_high
-                ):
-
-                    state["last_pivot_high"] = high
-
-                    if (
-                        state.get(
-                            "pullback_low"
-                        )
-                        is not None
-                    ):
-
-                        state["target_high"] = high
-
-                        state["phase"] = "rebound"
-
-                # -----------------------------------------
-                # 기존 고점을 다시 넘어선 스윙
-                # -----------------------------------------
-
-                elif (
-                    previous_high is not None
-                    and
-                    high > previous_high
-                ):
-
-                    state["last_pivot_high"] = high
-
-        state["last_processed_ts"] = ts_value
-
-    # -----------------------------------------------------
-    # 현재 진행 캔들
-    # -----------------------------------------------------
-
-    current = df.iloc[-1]
+    current = df.iloc[current_index]
 
     current_open = float(
         current["o"]
-    )
-
-    current_high = float(
-        current["h"]
     )
 
     current_close = float(
@@ -1495,239 +1255,260 @@ def get_candle_wave_breakout(
         current["l"]
     )
 
-    target_high = state.get(
-        "target_high"
-    )
-
-    if target_high is None:
-
-        return "none"
-
     # -----------------------------------------------------
-    # 현재 캔들이 조정 중인지 확인
+    # 음봉
     # -----------------------------------------------------
 
-    if (
-        state.get("first_high") is not None
-        and
-        current_low < state["first_high"]
-    ):
-
-        state["phase"] = (
-            "pullback"
-            if state["phase"]
-            != "rebound"
-            else
-            state["phase"]
-        )
-
-    # -----------------------------------------------------
-    # 돌파 조건
-    #
-    # 반드시 양봉
-    # 종가가 목표 고점 돌파
-    # 현재 고가도 목표 고점 이상
-    # -----------------------------------------------------
-
-    bullish_candle = (
-        current_close > current_open
-    )
-
-    breakout = (
-        bullish_candle
-        and
-        current_high > target_high
-        and
-        current_close > target_high
-    )
-
-    if breakout:
-
-        current_ts = current.get(
-            "ts",
-            current_index
-        )
-
-        # ---------------------------------------------
-        # 동일 캔들 중복 방지
-        # ---------------------------------------------
-
-        if str(
-            state.get(
-                "last_breakout_ts"
-            )
-        ) == str(current_ts):
-
-            return "1"
-
-        # ---------------------------------------------
-        # 이미 같은 고점을 돌파했던 경우
-        # ---------------------------------------------
-
-        last_breakout_high = state.get(
-            "last_breakout_high"
-        )
-
-        if (
-            last_breakout_high is not None
-            and
-            current_close
-            <=
-            last_breakout_high
-            *
-            (
-                1
-                +
-                BREAKOUT_REARM_RATE
-            )
-        ):
-
-            return "none"
-
-        # ---------------------------------------------
-        # 최초 돌파
-        # ---------------------------------------------
-
-        state["last_breakout_high"] = (
-            current_close
-        )
-
-        state["last_breakout_ts"] = (
-            current_ts
-        )
-
-        state["warning"] = "1"
-
-        state["phase"] = "breakout"
-
-        logging.info(
-            f"[파동 돌파] "
-            f"{state_key} "
-            f"목표={target_high:.8f} "
-            f"현재={current_close:.8f}"
-        )
-
-        return "1"
-
-    # -----------------------------------------------------
-    # 돌파가 아닌 경우
-    # -----------------------------------------------------
-
-    return "none"
-
-
-# =========================================================
-# 1H + 4H 캔들 파동 경고
-#
-# 둘 중 하나라도 발생하면 경고
-# =========================================================
-
-def get_combined_breakout_warning(
-    df1h,
-    df4h,
-    exchange,
-    symbol
-):
-
-    direction_1h = get_main_direction(
-        df1h,
-        "c"
-    )
-
-    direction_4h = get_main_direction(
-        df4h,
-        "c"
-    )
-
-    state_key_1h = get_wave_state_key(
-        exchange,
-        symbol,
-        "1H"
-    )
-
-    state_key_4h = get_wave_state_key(
-        exchange,
-        symbol,
-        "4H"
-    )
-
-    warning_1h = get_candle_wave_breakout(
-        df1h,
-        direction_1h,
-        state_key_1h
-    )
-
-    warning_4h = get_candle_wave_breakout(
-        df4h,
-        direction_4h,
-        state_key_4h
-    )
-
-    return {
-        "1h": warning_1h,
-        "4h": warning_4h
-    }
-
-
-# =========================================================
-# 경고 표시 여부
-# =========================================================
-
-def is_visible_combined_warning(
-    warning
-):
-
-    if not warning:
+    if current_close >= current_open:
 
         return False
 
-    return (
-        warning.get("1h") == "1"
+    # -----------------------------------------------------
+    # 현재 EMA 역배열
+    # -----------------------------------------------------
+
+    e30 = ema30.iloc[current_index]
+    e60 = ema60.iloc[current_index]
+    e120 = ema120.iloc[current_index]
+
+    if (
+        pd.isna(e30)
         or
-        warning.get("4h") == "1"
+        pd.isna(e60)
+        or
+        pd.isna(e120)
+    ):
+
+        return False
+
+    if not (
+        e30 < e60 < e120
+    ):
+
+        return False
+
+    # -----------------------------------------------------
+    # 최근 저점 수집
+    # -----------------------------------------------------
+
+    start = max(
+        2,
+        current_index - WAVE_LOOKBACK
     )
 
+    swing_lows = []
+
+    for i in range(
+        start,
+        current_index - 1
+    ):
+
+        if is_swing_low(
+            df,
+            i
+        ):
+
+            low_value = float(
+                df.iloc[i]["l"]
+            )
+
+            swing_lows.append(
+                (
+                    i,
+                    low_value
+                )
+            )
+
+    if not swing_lows:
+
+        return False
+
+    # -----------------------------------------------------
+    # 최근 저점부터 확인
+    # -----------------------------------------------------
+
+    for low_index, low_value in reversed(
+        swing_lows
+    ):
+
+        if current_low >= low_value:
+
+            continue
+
+        if (
+            current_index
+            -
+            low_index
+            <
+            MIN_SWING_BARS + 1
+        ):
+
+            continue
+
+        correction_high = None
+
+        for j in range(
+            low_index + 1,
+            current_index
+        ):
+
+            high_value = float(
+                df.iloc[j]["h"]
+            )
+
+            if (
+                correction_high is None
+                or
+                high_value > correction_high
+            ):
+
+                correction_high = high_value
+
+        if correction_high is None:
+
+            continue
+
+        if correction_high <= low_value:
+
+            continue
+
+        rebound_exists = False
+
+        for j in range(
+            low_index + 1,
+            current_index
+        ):
+
+            close_value = float(
+                df.iloc[j]["c"]
+            )
+
+            if close_value < correction_high:
+
+                rebound_exists = True
+
+                break
+
+        if not rebound_exists:
+
+            continue
+
+        # -------------------------------------------------
+        # 역배열 유지
+        # -------------------------------------------------
+
+        alignment_ok = True
+
+        for j in range(
+            low_index,
+            current_index + 1
+        ):
+
+            a = ema30.iloc[j]
+            b = ema60.iloc[j]
+            c = ema120.iloc[j]
+
+            if (
+                pd.isna(a)
+                or
+                pd.isna(b)
+                or
+                pd.isna(c)
+            ):
+
+                alignment_ok = False
+
+                break
+
+            if not (
+                a < b < c
+            ):
+
+                alignment_ok = False
+
+                break
+
+        if not alignment_ok:
+
+            continue
+
+        # -------------------------------------------------
+        # 현재 음봉이 이전 저점 이탈
+        # -------------------------------------------------
+
+        if current_close < low_value:
+
+            return True
+
+    return False
+
 
 # =========================================================
-# 경고 HTML
+# 1H 돌파 상태
 #
-# 기존 🚀 삭제
-# 🚨만 표시
+# LONG / SHORT 중 하나만 반환
 # =========================================================
 
-def combined_warning_html(
-    warning
+def get_1h_breakout_signal(
+    df,
+    day_change
 ):
 
-    if not warning:
+    if (
+        df is None
+        or
+        len(df) < 125
+    ):
 
-        return ""
+        return {
+            "signal": "none",
+            "direction": "none"
+        }
 
-    result = []
+    # =====================================================
+    # 당일 양수 → LONG만
+    # =====================================================
 
-    warning_1h = warning.get(
-        "1h",
-        "none"
-    )
+    if day_change is not None and day_change > 0:
 
-    warning_4h = warning.get(
-        "4h",
-        "none"
-    )
+        if find_long_wave_breakout(df):
 
-    if warning_1h == "1":
+            return {
+                "signal": "warning",
+                "direction": "long"
+            }
 
-        result.append(
-            '<span class="warning-pre">🚨1H</span>'
-        )
+        return {
+            "signal": "none",
+            "direction": "long"
+        }
 
-    if warning_4h == "1":
+    # =====================================================
+    # 당일 음수 → SHORT만
+    # =====================================================
 
-        result.append(
-            '<span class="warning-pre">🚨4H</span>'
-        )
+    if day_change is not None and day_change < 0:
 
-    return " ".join(result)
+        if find_short_wave_breakout(df):
+
+            return {
+                "signal": "warning",
+                "direction": "short"
+            }
+
+        return {
+            "signal": "none",
+            "direction": "short"
+        }
+
+    # =====================================================
+    # 변동 없음
+    # =====================================================
+
+    return {
+        "signal": "none",
+        "direction": "none"
+    }
 
 
 # =========================================================
@@ -1793,10 +1574,7 @@ def get_upbit_change(market):
         )
 
         result.append(
-            round(
-                change,
-                2
-            )
+            round(change, 2)
         )
 
     return result
@@ -1811,8 +1589,7 @@ def get_okx_change(inst_id):
     df = get_okx_ohlcv(
         inst_id,
         "1H",
-        120,
-        include_current=False
+        120
     )
 
     if df is None or len(df) < 50:
@@ -1876,10 +1653,7 @@ def get_okx_change(inst_id):
         )
 
         result.append(
-            round(
-                change,
-                2
-            )
+            round(change, 2)
         )
 
     return result
@@ -1904,19 +1678,16 @@ def format_change(changes):
     if x > 0:
 
         icon = "🟩"
-
         sign = "+"
 
     elif x < 0:
 
         icon = "🟥"
-
         sign = ""
 
     else:
 
         icon = "⬜"
-
         sign = ""
 
     return (
@@ -1927,29 +1698,19 @@ def format_change(changes):
 
 
 # =========================================================
-# EMA HTML
-#
-# 1시간 / 4시간 두 줄
+# 1H EMA HTML
 # =========================================================
 
 def ema_html(
-    ema_1h,
-    ema_4h
+    ema_1h
 ):
 
     return f"""
     <div class="ema-value">
-
-        <div class="ema-line">
-            <span class="ema-label">1H</span>
-            <span>{ema_1h}</span>
-        </div>
-
-        <div class="ema-line">
-            <span class="ema-label">4H</span>
-            <span>{ema_4h}</span>
-        </div>
-
+        <span class="ema-title">1H</span>
+        <span class="ema-data">
+            {ema_1h}
+        </span>
     </div>
     """
 
@@ -1968,19 +1729,12 @@ def empty_ema():
 
 
 # =========================================================
-# 업비트 EMA + 파동
+# 업비트 EMA
 #
-# EMA:
-# 현재 진행 캔들 제외
-#
-# 파동:
-# 확정 캔들로 구조 추적
-# 현재 캔들로 돌파 확인
+# 현재 진행 중인 1H 캔들 제외
 # =========================================================
 
-def get_upbit_ema(
-    market
-):
+def get_upbit_ema(market):
 
     raw1h = get_upbit_ohlcv(
         market,
@@ -1988,151 +1742,63 @@ def get_upbit_ema(
         200
     )
 
-    raw4h = get_upbit_ohlcv(
-        market,
-        240,
-        200
-    )
-
-    if raw1h is None or raw4h is None:
+    if raw1h is None:
 
         return {
             "1h_ema": empty_ema(),
-            "4h_ema": empty_ema(),
-            "warning": {
-                "1h": "none",
-                "4h": "none"
+            "signal": {
+                "signal": "none",
+                "direction": "none"
             }
         }
 
+    df1h = raw1h.copy()
+
     # -----------------------------------------------------
-    # EMA용 확정 캔들
+    # 현재 진행 중인 캔들 제외
     # -----------------------------------------------------
 
-    df1h_confirmed = raw1h.copy()
+    if len(df1h) > 1:
 
-    df4h_confirmed = raw4h.copy()
-
-    if len(df1h_confirmed) > 1:
-
-        df1h_confirmed = (
-            df1h_confirmed
-            .iloc[:-1]
-            .reset_index(drop=True)
-        )
-
-    if len(df4h_confirmed) > 1:
-
-        df4h_confirmed = (
-            df4h_confirmed
+        df1h = (
+            df1h
             .iloc[:-1]
             .reset_index(drop=True)
         )
 
     ema1h = check_ema(
-        df1h_confirmed
-    )
-
-    ema4h = check_ema(
-        df4h_confirmed
-    )
-
-    # -----------------------------------------------------
-    # 파동은 현재 캔들 포함
-    # -----------------------------------------------------
-
-    warning = get_combined_breakout_warning(
-        raw1h,
-        raw4h,
-        "UPBIT",
-        market
+        df1h
     )
 
     return {
-        "1h_ema": ema1h,
-        "4h_ema": ema4h,
-        "warning": warning
+        "1h_ema": ema1h
     }
 
 
 # =========================================================
-# OKX EMA + 파동
+# OKX EMA
 # =========================================================
 
-def get_okx_ema(
-    inst_id
-):
+def get_okx_ema(inst_id):
 
-    raw1h = get_okx_ohlcv(
+    df1h = get_okx_ohlcv(
         inst_id,
         "1H",
-        200,
-        include_current=True
+        200
     )
 
-    raw4h = get_okx_ohlcv(
-        inst_id,
-        "4H",
-        200,
-        include_current=True
-    )
-
-    if raw1h is None or raw4h is None:
+    if df1h is None:
 
         return {
-            "1h_ema": empty_ema(),
-            "4h_ema": empty_ema(),
-            "warning": {
-                "1h": "none",
-                "4h": "none"
-            }
+            "1h_ema": empty_ema()
         }
 
-    # -----------------------------------------------------
-    # EMA
-    #
-    # confirm=1만 사용
-    # -----------------------------------------------------
-
-    df1h_confirmed = (
-        raw1h[
-            raw1h["confirm"].astype(str) == "1"
-        ]
-        .reset_index(drop=True)
-    )
-
-    df4h_confirmed = (
-        raw4h[
-            raw4h["confirm"].astype(str) == "1"
-        ]
-        .reset_index(drop=True)
-    )
-
     ema1h = check_ema(
-        df1h_confirmed
-    )
-
-    ema4h = check_ema(
-        df4h_confirmed
-    )
-
-    # -----------------------------------------------------
-    # 파동
-    #
-    # 현재 진행 캔들 포함
-    # -----------------------------------------------------
-
-    warning = get_combined_breakout_warning(
-        raw1h,
-        raw4h,
-        "OKX",
-        inst_id
+        df1h
     )
 
     return {
-        "1h_ema": ema1h,
-        "4h_ema": ema4h,
-        "warning": warning
+        "1h_ema": ema1h
     }
 
 
@@ -2160,8 +1826,7 @@ def get_okx_volume(
             df = get_okx_ohlcv(
                 inst_id,
                 "1H",
-                hours + 1,
-                include_current=False
+                hours + 1
             )
 
             if df is None or df.empty:
@@ -2244,7 +1909,6 @@ def get_all_okx_swap_symbols():
     )
 
     if response is None:
-
         return []
 
     try:
@@ -2327,58 +1991,112 @@ def update_upbit():
                 market
             )
 
-            ema = get_upbit_ema(
-                market
-            )
-
-            warning = ema.get(
-                "warning",
-                {}
-            )
-
-            if not is_visible_combined_warning(
-                warning
+            if (
+                changes is None
+                or
+                len(changes) == 0
             ):
 
                 continue
 
-            change_percent = (
-                changes[0]
-                if (
-                    changes is not None
-                    and
-                    len(changes) > 0
-                )
-                else None
+            day_change = changes[0]
+
+            # -------------------------------------------------
+            # 1H 캔들
+            # -------------------------------------------------
+
+            raw1h = get_upbit_ohlcv(
+                market,
+                60,
+                200
             )
+
+            if raw1h is None:
+
+                continue
+
+            df1h = raw1h.copy()
+
+            # 현재 진행 캔들 제외
+            if len(df1h) > 1:
+
+                df1h = (
+                    df1h
+                    .iloc[:-1]
+                    .reset_index(drop=True)
+                )
+
+            # -------------------------------------------------
+            # EMA
+            # -------------------------------------------------
+
+            ema = check_ema(
+                df1h
+            )
+
+            # -------------------------------------------------
+            # 당일 방향 + 1H 돌파
+            # -------------------------------------------------
+
+            signal = get_1h_breakout_signal(
+                df1h,
+                day_change
+            )
+
+            # -------------------------------------------------
+            # 🚨 조건이 없으면 리스트 제외
+            # -------------------------------------------------
+
+            if signal["signal"] != "warning":
+
+                continue
+
+            # -------------------------------------------------
+            # 당일 방향과 EMA 방향도 일치해야 함
+            # -------------------------------------------------
+
+            if (
+                signal["direction"]
+                !=
+                ema["direction"]
+            ):
+
+                continue
+
+            if signal["direction"] == "long":
+
+                direction_html = (
+                    '<span class="direction-long">'
+                    'LONG'
+                    '</span>'
+                )
+
+            elif signal["direction"] == "short":
+
+                direction_html = (
+                    '<span class="direction-short">'
+                    'SHORT'
+                    '</span>'
+                )
+
+            else:
+
+                continue
 
             rows.append(
                 {
                     "rank": rank,
-
                     "name": coin,
-
-                    "change":
-                        format_change(
-                            changes
-                        ),
-
-                    "change_percent":
-                        change_percent,
-
-                    "volume":
-                        format_volume(
-                            volume_map[market]
-                        ),
-
-                    "ema_1h":
-                        ema["1h_ema"],
-
-                    "ema_4h":
-                        ema["4h_ema"],
-
-                    "warning":
-                        warning
+                    "change": format_change(
+                        changes
+                    ),
+                    "change_percent": day_change,
+                    "volume": format_volume(
+                        volume_map[market]
+                    ),
+                    "ema_1h": ema,
+                    "direction": direction_html,
+                    "signal": "warning"
                 }
             )
 
@@ -2455,9 +2173,7 @@ def update_okx(
 
                 if volume > 0:
 
-                    volume_map[
-                        symbol
-                    ] = volume
+                    volume_map[symbol] = volume
 
                     break
 
@@ -2504,58 +2220,93 @@ def update_okx(
                 symbol
             )
 
-            ema = get_okx_ema(
-                symbol
-            )
-
-            warning = ema.get(
-                "warning",
-                {}
-            )
-
-            if not is_visible_combined_warning(
-                warning
+            if (
+                changes is None
+                or
+                len(changes) == 0
             ):
 
                 continue
 
-            change_percent = (
-                changes[0]
-                if (
-                    changes is not None
-                    and
-                    len(changes) > 0
-                )
-                else None
+            day_change = changes[0]
+
+            # -------------------------------------------------
+            # 1H
+            # -------------------------------------------------
+
+            df1h = get_okx_ohlcv(
+                symbol,
+                "1H",
+                200
             )
+
+            if df1h is None:
+
+                continue
+
+            # -------------------------------------------------
+            # EMA
+            # -------------------------------------------------
+
+            ema = check_ema(
+                df1h
+            )
+
+            # -------------------------------------------------
+            # 돌파
+            # -------------------------------------------------
+
+            signal = get_1h_breakout_signal(
+                df1h,
+                day_change
+            )
+
+            if signal["signal"] != "warning":
+
+                continue
+
+            if (
+                signal["direction"]
+                !=
+                ema["direction"]
+            ):
+
+                continue
+
+            if signal["direction"] == "long":
+
+                direction_html = (
+                    '<span class="direction-long">'
+                    'LONG'
+                    '</span>'
+                )
+
+            elif signal["direction"] == "short":
+
+                direction_html = (
+                    '<span class="direction-short">'
+                    'SHORT'
+                    '</span>'
+                )
+
+            else:
+
+                continue
 
             rows.append(
                 {
                     "rank": rank,
-
                     "name": coin,
-
-                    "change":
-                        format_change(
-                            changes
-                        ),
-
-                    "change_percent":
-                        change_percent,
-
-                    "volume":
-                        format_volume(
-                            volume_map[symbol]
-                        ),
-
-                    "ema_1h":
-                        ema["1h_ema"],
-
-                    "ema_4h":
-                        ema["4h_ema"],
-
-                    "warning":
-                        warning
+                    "change": format_change(
+                        changes
+                    ),
+                    "change_percent": day_change,
+                    "volume": format_volume(
+                        volume_map[symbol]
+                    ),
+                    "ema_1h": ema,
+                    "direction": direction_html,
+                    "signal": "warning"
                 }
             )
 
@@ -2567,6 +2318,11 @@ def update_okx(
             )
 
     latest_okx_data = rows
+
+    logging.info(
+        f"OKX 경고 종목 "
+        f"{len(rows)}개"
+    )
 
     return True
 
@@ -2586,7 +2342,7 @@ def update_dashboard():
     )
 
     logging.info(
-        "전체 조회 시작"
+        "1H 전체 조회 시작"
     )
 
     # =====================================================
@@ -2688,7 +2444,7 @@ body {
     background: #0f1115;
     color: #eeeeee;
     font-family: Arial, sans-serif;
-    font-size: 9px;
+    font-size: 10px;
     padding: 5px;
 }
 
@@ -2711,7 +2467,7 @@ h2 {
     color: #8b9099;
     background: #171a1f;
     border: 1px solid #252a31;
-    border-radius: 8px;
+    border-radius: 7px;
     font-size: 7px;
     line-height: 1.5;
 }
@@ -2739,7 +2495,7 @@ h2 {
 
     width: 100%;
     overflow: hidden;
-    border-radius: 9px;
+    border-radius: 8px;
     border: 1px solid #252a31;
 }
 
@@ -2783,19 +2539,19 @@ td:nth-child(1) {
 th:nth-child(2),
 td:nth-child(2) {
 
-    width: 18%;
+    width: 19%;
 }
 
 th:nth-child(3),
 td:nth-child(3) {
 
-    width: 17%;
+    width: 20%;
 }
 
 th:nth-child(4),
 td:nth-child(4) {
 
-    width: 33%;
+    width: 29%;
 }
 
 th:nth-child(5),
@@ -2824,6 +2580,7 @@ td:nth-child(5) {
 
 .volume-value {
 
+    display: block;
     font-size: 7px;
     font-weight: 600;
 }
@@ -2839,7 +2596,7 @@ td:nth-child(5) {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 4px;
+    gap: 3px;
     width: 100%;
 }
 
@@ -2854,48 +2611,94 @@ td:nth-child(5) {
 
 
 /* =====================================================
-   경고
+   방향
+   ===================================================== */
+
+.direction-long,
+.direction-short {
+
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    font-size: 8px;
+    font-weight: 800;
+
+    min-width: 43px;
+    height: 15px;
+
+    border-radius: 4px;
+
+    animation: alarmBlink 1s infinite;
+}
+
+.direction-long {
+
+    color: #39ef75;
+    border: 1px solid rgba(
+        57,
+        239,
+        117,
+        0.45
+    );
+}
+
+.direction-short {
+
+    color: #ff4f5f;
+    border: 1px solid rgba(
+        255,
+        79,
+        95,
+        0.45
+    );
+}
+
+
+/* =====================================================
+   🚨
    ===================================================== */
 
 .breakout-warning {
 
     display: flex;
-    justify-content: center;
     align-items: center;
-    gap: 4px;
-    width: 100%;
+    justify-content: center;
+    gap: 3px;
     min-height: 14px;
-    white-space: nowrap;
 }
 
-.warning-pre {
+.warning {
 
     font-size: 10px;
-    font-weight: bold;
+    line-height: 1;
 
-    filter:
-        drop-shadow(
-            0 0 4px
-            rgba(255,180,0,0.8)
-        );
-
-    animation:
-        warningBlink
-        0.8s
-        infinite;
+    animation: alarmBlink 0.9s infinite;
 }
 
-@keyframes warningBlink {
 
-    0%,
-    100% {
+/* =====================================================
+   반짝임
+   ===================================================== */
+
+@keyframes alarmBlink {
+
+    0% {
 
         opacity: 1;
+        transform: scale(1);
     }
 
     50% {
 
         opacity: 0.35;
+        transform: scale(0.96);
+    }
+
+    100% {
+
+        opacity: 1;
+        transform: scale(1);
     }
 }
 
@@ -2907,24 +2710,28 @@ td:nth-child(5) {
 .ema-value {
 
     width: 100%;
-    font-size: 8px;
-    font-weight: bold;
-    white-space: nowrap;
-}
-
-.ema-line {
 
     display: flex;
-    justify-content: center;
     align-items: center;
+    justify-content: center;
+
     gap: 3px;
-    line-height: 1.45;
+
+    white-space: nowrap;
+
+    font-size: 9px;
+    font-weight: bold;
 }
 
-.ema-label {
+.ema-title {
 
-    color: #777;
-    font-size: 7px;
+    color: #8f949d;
+    font-size: 8px;
+}
+
+.ema-data {
+
+    font-size: 9px;
 }
 
 
@@ -2936,7 +2743,7 @@ td:nth-child(5) {
 
     body {
 
-        padding: 4px;
+        padding: 3px;
     }
 
     h1 {
@@ -2951,36 +2758,44 @@ td:nth-child(5) {
 
     .info {
 
-        font-size: 7px;
+        font-size: 6px;
     }
 
     th {
 
-        padding: 5px 1px;
-        font-size: 7px;
+        padding: 4px 1px;
+        font-size: 6px;
     }
 
     td {
 
-        padding: 5px 1px;
+        padding: 4px 1px;
     }
 
     .coin {
 
-        font-size: 8px;
+        font-size: 7px;
     }
 
     .volume-value {
 
-        font-size: 7px;
+        font-size: 6px;
     }
 
     .change-item {
 
-        font-size: 8px;
+        font-size: 7px;
     }
 
-    .warning-pre {
+    .direction-long,
+    .direction-short {
+
+        font-size: 7px;
+        min-width: 39px;
+        height: 14px;
+    }
+
+    .warning {
 
         font-size: 9px;
     }
@@ -2990,9 +2805,14 @@ td:nth-child(5) {
         font-size: 8px;
     }
 
-    .ema-label {
+    .ema-title {
 
         font-size: 7px;
+    }
+
+    .ema-data {
+
+        font-size: 8px;
     }
 
 }
@@ -3004,23 +2824,16 @@ td:nth-child(5) {
 # 테이블 행
 # =========================================================
 
-def make_table_rows(
-    data
-):
+def make_table_rows(data):
 
     rows_html = ""
 
     for item in data:
 
-        warning = item.get(
-            "warning",
-            {}
-        )
-
-        warning_text = (
-            combined_warning_html(
-                warning
-            )
+        warning_html = (
+            '<span class="warning">🚨</span>'
+            if item.get("signal") == "warning"
+            else ""
         )
 
         rows_html += f"""
@@ -3045,6 +2858,12 @@ def make_table_rows(
 {item["volume"]}
 </span>
 
+<div style="
+    margin-top:3px;
+">
+{item["direction"]}
+</div>
+
 </td>
 
 <td>
@@ -3057,7 +2876,7 @@ def make_table_rows(
 
 <div class="breakout-warning">
 
-{warning_text}
+{warning_html}
 
 </div>
 
@@ -3069,10 +2888,6 @@ def make_table_rows(
 
 {ema_html(
     item["ema_1h"].get(
-        "display",
-        "⚪"
-    ),
-    item["ema_4h"].get(
         "display",
         "⚪"
     )
@@ -3163,38 +2978,30 @@ def make_exchange_section(
 <div class="note"
      style="
         color:#666;
-        font-size:7px;
+        font-size:6px;
         line-height:1.5;
-        margin:5px 2px 8px 2px;
+        margin:4px 2px 7px 2px;
      ">
 
-※ TOP{TOP_N} 거래대금 실제 순위 기준<br>
+※ 1H 기준<br>
 
-※ 1분마다 현재 상태 갱신<br>
+※ EMA 30-60-120 정배열 / 역배열<br>
 
-※ EMA는 1H / 4H 두 줄 표시<br>
+※ ☀️ 당일 양수 = LONG 조건<br>
 
-※ EMA 30-60-120 정배열 유지 조건<br>
+※ ☁️ 당일 음수 = SHORT 조건<br>
 
-※ 캔들 고가/저가로 스윙 고점·저점 추적<br>
+※ LONG은 당일 양수일 때만 인정<br>
 
-※ 상승 1파 고점 이후 조정 확인<br>
+※ SHORT는 당일 음수일 때만 인정<br>
 
-※ 첫 고점보다 낮은 고점도 새로운 돌파 대상으로 추적<br>
+※ 상승 후 조정 → 재상승 → 이전 고점 양봉 돌파<br>
 
-※ 정배열이 유지되는 동안 파동 상태 유지<br>
+※ 첫 고점보다 낮은 고점도 정배열 유지 시 돌파 대상으로 인정<br>
 
-※ 현재 진행 캔들이 목표 고점을 양봉 종가로 돌파하면 🚨<br>
+※ 🚨 조건 발생 종목만 표시<br>
 
-※ 1H 🚨 = 1시간봉 파동 돌파<br>
-
-※ 4H 🚨 = 4시간봉 파동 돌파<br>
-
-※ 1H 또는 4H 중 하나라도 🚨이면 표시<br>
-
-※ 🚨 이후 같은 고점의 반복 신호는 차단<br>
-
-※ EMA 정배열이 깨지면 해당 파동 상태 초기화
+※ 4H 조건은 사용하지 않음
 
 </div>
 
@@ -3266,7 +3073,7 @@ def dashboard():
         user-scalable=no">
 
 <title>
-Breakout Trading
+1H Wave Breakout
 </title>
 
 <style>
@@ -3280,25 +3087,21 @@ Breakout Trading
 <body>
 
 <h1>
-📊 Breakout Trading
+📊 1H Wave Breakout
 </h1>
 
 <div class="info">
 
 <div>
-1H + 4H 캔들 파동 돌파 추적
+1H 파동 + 30-60-120 EMA
 </div>
 
 <div>
-30-60-120 EMA 정배열 유지 조건
+상승 → 조정 → 재상승 → 이전 고점 돌파
 </div>
 
 <div>
-상승 고점 → 조정 → 낮은 고점 → 재돌파
-</div>
-
-<div>
-TOP{TOP_N} · 🚨 파동 돌파
+☀️ LONG / ☁️ SHORT · 🚨 돌파
 </div>
 
 <div class="exchange-status">
@@ -3345,6 +3148,14 @@ def startup():
         f"OKX={USE_OKX}"
     )
 
+    logging.info(
+        "4H 조건 제거"
+    )
+
+    logging.info(
+        "1H 30-60-120 파동 돌파 모드"
+    )
+
     if USE_UPBIT not in (
         "Y",
         "N"
@@ -3364,7 +3175,7 @@ def startup():
         )
 
     # =====================================================
-    # 최초 즉시 조회
+    # 최초 조회
     # =====================================================
 
     threading.Thread(
@@ -3373,7 +3184,7 @@ def startup():
     ).start()
 
     # =====================================================
-    # 1분마다 조회
+    # 1분마다
     # =====================================================
 
     schedule.every(
@@ -3398,4 +3209,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-        )
+    )
