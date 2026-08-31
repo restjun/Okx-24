@@ -40,7 +40,7 @@ logging.basicConfig(
 
 VOLUME_HOURS = 24
 
-TOP_N = 30
+TOP_N = 50
 
 UPDATE_MINUTES = 1
 
@@ -62,7 +62,7 @@ SWING_RIGHT = 2
 USE_UPBIT = "Y"
 
 # ★ OKX 활성화
-USE_OKX = "Y"
+USE_OKX = "N"
 
 
 # =========================================================
