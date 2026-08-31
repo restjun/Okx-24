@@ -61,6 +61,7 @@ SWING_RIGHT = 2
 
 USE_UPBIT = "Y"
 
+# ★ OKX 활성화
 USE_OKX = "Y"
 
 
@@ -81,7 +82,8 @@ MAX_RETRIES = 10
 
 OKX_RETRY_DELAY = 2
 
-OKX_MAX_RETRY_ROUNDS = 0
+# ★ 기존 0 → 종목당 최대 3회 재시도
+OKX_MAX_RETRY_ROUNDS = 3
 
 
 # =========================================================
@@ -227,6 +229,10 @@ def retry_request(
 
 def get_usdt_krw():
 
+    logging.info(
+        "OKX 환산용 USDT-KRW API 요청 시작"
+    )
+
     url = (
         "https://api.upbit.com/v1/ticker"
         "?markets=KRW-USDT"
@@ -239,6 +245,11 @@ def get_usdt_krw():
     )
 
     if response is None:
+
+        logging.error(
+            "USDT-KRW API 응답 없음"
+        )
+
         return None
 
     try:
@@ -246,6 +257,11 @@ def get_usdt_krw():
         data = response.json()
 
         if not data:
+
+            logging.error(
+                "USDT-KRW API 데이터 없음"
+            )
+
             return None
 
         price = float(
@@ -253,7 +269,16 @@ def get_usdt_krw():
         )
 
         if price <= 0:
+
+            logging.error(
+                f"USDT-KRW 잘못된 가격 : {price}"
+            )
+
             return None
+
+        logging.info(
+            f"USDT-KRW 조회 성공 : {price}"
+        )
 
         return price
 
@@ -276,6 +301,11 @@ def get_okx_ohlcv(
     limit=200
 ):
 
+    logging.debug(
+        f"OKX 캔들 API 요청 : "
+        f"{inst_id} / {bar} / {limit}"
+    )
+
     limit = max(
         1,
         min(int(limit), 200)
@@ -295,6 +325,11 @@ def get_okx_ohlcv(
     )
 
     if response is None:
+
+        logging.warning(
+            f"OKX 캔들 응답 없음 : {inst_id}"
+        )
+
         return None
 
     try:
@@ -305,6 +340,12 @@ def get_okx_ohlcv(
         )
 
         if not data:
+
+            logging.warning(
+                f"OKX 캔들 데이터 없음 : "
+                f"{inst_id} / {bar}"
+            )
+
             return None
 
         df = pd.DataFrame(
@@ -341,11 +382,22 @@ def get_okx_ohlcv(
         ]
 
         if df.empty:
+
+            logging.warning(
+                f"OKX 확정 캔들 없음 : "
+                f"{inst_id} / {bar}"
+            )
+
             return None
 
         df = (
             df.iloc[::-1]
             .reset_index(drop=True)
+        )
+
+        logging.debug(
+            f"OKX 캔들 조회 성공 : "
+            f"{inst_id} / {bar} / {len(df)}개"
         )
 
         return df
@@ -2062,9 +2114,22 @@ def get_okx_volume(
         )
     )
 
-    while True:
+    # -----------------------------------------------------
+    # ★ 무한 while 제거
+    # -----------------------------------------------------
+
+    for retry_round in range(
+        1,
+        OKX_MAX_RETRY_ROUNDS + 1
+    ):
 
         try:
+
+            logging.info(
+                f"OKX 거래대금 API 조회 "
+                f"{inst_id} "
+                f"({retry_round}/{OKX_MAX_RETRY_ROUNDS})"
+            )
 
             df = get_okx_ohlcv(
                 inst_id,
@@ -2078,6 +2143,11 @@ def get_okx_volume(
                 df.empty
             ):
 
+                logging.warning(
+                    f"OKX 거래대금 캔들 없음 : "
+                    f"{inst_id}"
+                )
+
                 time.sleep(
                     OKX_RETRY_DELAY
                 )
@@ -2085,6 +2155,12 @@ def get_okx_volume(
                 continue
 
             if len(df) < hours:
+
+                logging.warning(
+                    f"OKX 거래대금 캔들 부족 : "
+                    f"{inst_id} "
+                    f"{len(df)}/{hours}"
+                )
 
                 time.sleep(
                     OKX_RETRY_DELAY
@@ -2098,11 +2174,17 @@ def get_okx_volume(
                 .sum()
             )
 
+            # 기존 코드 유지
             volume_usdt = (
                 volume_usdt / 10
             )
 
             if volume_usdt <= 0:
+
+                logging.warning(
+                    f"OKX 거래대금 0 : "
+                    f"{inst_id}"
+                )
 
                 time.sleep(
                     OKX_RETRY_DELAY
@@ -2117,6 +2199,11 @@ def get_okx_volume(
             )
 
             if volume_krw <= 0:
+
+                logging.warning(
+                    f"OKX KRW 거래대금 0 : "
+                    f"{inst_id}"
+                )
 
                 time.sleep(
                     OKX_RETRY_DELAY
@@ -2137,12 +2224,23 @@ def get_okx_volume(
                 OKX_RETRY_DELAY
             )
 
+    logging.warning(
+        f"OKX 거래대금 최종 실패 : "
+        f"{inst_id}"
+    )
+
+    return None
+
 
 # =========================================================
 # OKX 전체 목록
 # =========================================================
 
 def get_all_okx_swap_symbols():
+
+    logging.info(
+        "OKX SWAP 종목 목록 API 요청 시작"
+    )
 
     url = (
         "https://www.okx.com/api/v5/"
@@ -2157,6 +2255,10 @@ def get_all_okx_swap_symbols():
 
     if response is None:
 
+        logging.error(
+            "OKX SWAP 종목 API 응답 없음"
+        )
+
         return []
 
     try:
@@ -2166,7 +2268,7 @@ def get_all_okx_swap_symbols():
             []
         )
 
-        return [
+        symbols = [
             x["instId"]
             for x in data
             if (
@@ -2177,6 +2279,13 @@ def get_all_okx_swap_symbols():
                 x.get("state") == "live"
             )
         ]
+
+        logging.info(
+            f"OKX SWAP 종목 목록 조회 성공 : "
+            f"{len(symbols)}개"
+        )
+
+        return symbols
 
     except Exception as e:
 
@@ -2336,21 +2445,63 @@ def update_okx(
 
     global latest_okx_data
 
+    logging.info(
+        "========================================"
+    )
+
+    logging.info(
+        "========== update_okx 진입 =========="
+    )
+
+    # -----------------------------------------------------
+    # USDT-KRW 확인
+    # -----------------------------------------------------
+
     if (
         usdt_krw is None
         or
         usdt_krw <= 0
     ):
 
+        logging.error(
+            f"OKX 조회 중단 - "
+            f"USDT-KRW={usdt_krw}"
+        )
+
         return False
+
+    # -----------------------------------------------------
+    # OKX 전체 SWAP 목록
+    # -----------------------------------------------------
+
+    logging.info(
+        "OKX SWAP 전체 종목 조회 요청"
+    )
 
     symbols = (
         get_all_okx_swap_symbols()
     )
 
+    logging.info(
+        f"OKX SWAP 종목 수 : "
+        f"{len(symbols)}"
+    )
+
     if not symbols:
 
+        logging.error(
+            "OKX SWAP 종목을 가져오지 못했습니다."
+        )
+
         return False
+
+    # -----------------------------------------------------
+    # 업비트 상장 여부 확인
+    # -----------------------------------------------------
+
+    logging.info(
+        "업비트 마켓 목록 조회"
+    )
 
     upbit_markets = (
         get_upbit_markets()
@@ -2364,41 +2515,68 @@ def update_okx(
         for market in upbit_markets
     }
 
+    # -----------------------------------------------------
+    # 거래대금 조회
+    # -----------------------------------------------------
+
     volume_map = {}
 
-    for symbol in symbols:
+    total_symbols = len(symbols)
 
-        while True:
+    logging.info(
+        f"OKX 거래대금 조회 시작 : "
+        f"총 {total_symbols}개"
+    )
 
-            try:
+    for index, symbol in enumerate(
+        symbols,
+        start=1
+    ):
 
-                volume = get_okx_volume(
-                    symbol,
-                    usdt_krw
-                )
+        logging.info(
+            f"[OKX 거래대금] "
+            f"{index}/{total_symbols} "
+            f"{symbol}"
+        )
 
-                if volume > 0:
+        volume = get_okx_volume(
+            symbol,
+            usdt_krw
+        )
 
-                    volume_map[
-                        symbol
-                    ] = volume
+        if (
+            volume is not None
+            and
+            volume > 0
+        ):
 
-                    break
+            volume_map[
+                symbol
+            ] = volume
 
-            except Exception as e:
+        else:
 
-                logging.error(
-                    f"OKX 거래대금 실패 "
-                    f"{symbol} : {e}"
-                )
-
-            time.sleep(
-                OKX_RETRY_DELAY
+            logging.warning(
+                f"[OKX 거래대금 실패] "
+                f"{symbol}"
             )
+
+    logging.info(
+        f"OKX 거래대금 조회 완료 : "
+        f"{len(volume_map)}개 성공"
+    )
 
     if not volume_map:
 
+        logging.error(
+            "OKX 거래대금 데이터를 하나도 가져오지 못했습니다."
+        )
+
         return False
+
+    # -----------------------------------------------------
+    # TOP30
+    # -----------------------------------------------------
 
     top_symbols = sorted(
         volume_map,
@@ -2406,7 +2584,15 @@ def update_okx(
         reverse=True
     )[:TOP_N]
 
+    logging.info(
+        f"OKX TOP{TOP_N} 선정 완료"
+    )
+
     rows = []
+
+    # -----------------------------------------------------
+    # TOP30 상세 조회
+    # -----------------------------------------------------
 
     for rank, symbol in enumerate(
         top_symbols,
@@ -2423,6 +2609,12 @@ def update_okx(
             coin = f"{coin}[UP]"
 
         try:
+
+            logging.info(
+                f"[OKX 상세] "
+                f"{rank}/{len(top_symbols)} "
+                f"{symbol}"
+            )
 
             changes = get_okx_change(
                 symbol
@@ -2496,6 +2688,15 @@ def update_okx(
 
     latest_okx_data = rows
 
+    logging.info(
+        f"OKX LONG 돌파 종목 "
+        f"{len(rows)}개"
+    )
+
+    logging.info(
+        "========== OKX 업데이트 완료 =========="
+    )
+
     return True
 
 
@@ -2521,6 +2722,10 @@ def update_dashboard():
 
     if USE_UPBIT == "Y":
 
+        logging.info(
+            "업비트 조회 활성화 : Y"
+        )
+
         try:
 
             update_upbit()
@@ -2537,15 +2742,36 @@ def update_dashboard():
 
         latest_upbit_data = []
 
+        logging.info(
+            "업비트 조회 비활성화 : N"
+        )
+
     # =====================================================
     # OKX
     # =====================================================
 
     if USE_OKX == "Y":
 
+        logging.info(
+            "========== OKX API 조회 시작 =========="
+        )
+
         try:
 
+            # -------------------------------------------------
+            # USDT-KRW
+            # -------------------------------------------------
+
+            logging.info(
+                "OKX USDT-KRW 조회 요청"
+            )
+
             usdt_krw = get_usdt_krw()
+
+            logging.info(
+                f"OKX 환산용 USDT-KRW 결과 : "
+                f"{usdt_krw}"
+            )
 
             if usdt_krw is not None:
 
@@ -2559,9 +2785,41 @@ def update_dashboard():
                     latest_usdt_krw
                 )
 
-            update_okx(
-                usdt_krw
-            )
+                logging.warning(
+                    f"USDT-KRW 신규 조회 실패. "
+                    f"기존값 사용 : {usdt_krw}"
+                )
+
+            # -------------------------------------------------
+            # OKX 조회
+            # -------------------------------------------------
+
+            if (
+                usdt_krw is None
+                or
+                usdt_krw <= 0
+            ):
+
+                logging.error(
+                    "OKX 조회 중단 : "
+                    "USDT-KRW 가격 없음"
+                )
+
+            else:
+
+                logging.info(
+                    f"OKX update_okx() 호출 : "
+                    f"USDT-KRW={usdt_krw}"
+                )
+
+                result = update_okx(
+                    usdt_krw
+                )
+
+                logging.info(
+                    f"OKX update_okx() 결과 : "
+                    f"{result}"
+                )
 
         except Exception as e:
 
@@ -2574,6 +2832,18 @@ def update_dashboard():
         global latest_okx_data
 
         latest_okx_data = []
+
+        logging.info(
+            "OKX 조회 비활성화 : USE_OKX=N"
+        )
+
+    logging.info(
+        "1분 현재상태 조회 종료"
+    )
+
+    logging.info(
+        "========================================"
+    )
 
 
 # =========================================================
@@ -3403,6 +3673,10 @@ def startup():
     # 최초 즉시 조회
     # =====================================================
 
+    logging.info(
+        "최초 대시보드 조회 Thread 시작"
+    )
+
     threading.Thread(
         target=update_dashboard,
         daemon=True
@@ -3416,6 +3690,10 @@ def startup():
         UPDATE_MINUTES
     ).minutes.do(
         update_dashboard
+    )
+
+    logging.info(
+        f"{UPDATE_MINUTES}분 주기 스케줄 등록 완료"
     )
 
     threading.Thread(
