@@ -48,7 +48,7 @@ logging.basicConfig(
 VOLUME_HOURS = 24
 
 # 거래대금 TOP
-TOP_N = 30
+TOP_N = 20
 
 # 업데이트 주기
 UPDATE_MINUTES = 1
@@ -84,7 +84,7 @@ USE_UPBIT = "Y"
 
 # 현재는 N
 # Y로 변경하면 OKX 사용
-USE_OKX = "N"
+USE_OKX = "Y"
 
 
 # =========================================================
