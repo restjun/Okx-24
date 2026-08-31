@@ -38,7 +38,7 @@ logger = logging.getLogger("trading")
 # 사용자 설정
 # =========================================================
 
-# 거래대금 계산 시간
+# 업비트 ticker API가 제공하는 24시간 거래대금 사용
 VOLUME_HOURS = 24
 
 # 거래대금 TOP
@@ -125,8 +125,8 @@ latest_okx_update_time = "-"
 # =========================================================
 # 업비트 마켓 목록 캐시
 #
-# 업비트 조회가 끝난 뒤 OKX에서
-# 다시 업비트 API를 호출하지 않도록 사용
+# 업비트 ticker/all 조회 결과를 사용하여
+# KRW 마켓 목록을 캐시
 # =========================================================
 
 latest_upbit_markets = []
@@ -677,8 +677,6 @@ def get_upbit_ohlcv(
 # 업비트 당일 변동률은 1시간봉으로 계산하지 않는다.
 #
 # 업비트 일봉 API의 change_rate를 직접 사용한다.
-#
-# GET /v1/candles/days
 # =========================================================
 
 def get_upbit_daily_change(
@@ -744,7 +742,6 @@ def get_upbit_daily_change(
 
             return None
 
-        # 업비트 change_rate는 소수값으로 반환되므로 %
         change_rate = (
             float(change_rate) * 100
         )
@@ -2391,148 +2388,22 @@ def direction_html(
 
 
 # =========================================================
-# 업비트 거래대금
-# =========================================================
-
-def get_upbit_volume(
-    market
-):
-
-    logging.info(
-        f"[업비트 거래대금] "
-        f"{market} 조회"
-    )
-
-    df = get_upbit_ohlcv(
-        market,
-        60,
-        VOLUME_HOURS + 1
-    )
-
-    if (
-        df is None
-        or df.empty
-    ):
-
-        logging.warning(
-            f"[업비트 거래대금] "
-            f"{market} 데이터 없음"
-        )
-
-        return None
-
-    volume = pd.to_numeric(
-        df["volume_krw"],
-        errors="coerce"
-    ).tail(
-        VOLUME_HOURS
-    ).sum()
-
-    if pd.isna(volume):
-
-        return None
-
-    volume = float(volume)
-
-    logging.info(
-        f"[업비트 거래대금] "
-        f"{market} = "
-        f"{format_volume(volume)}"
-    )
-
-    return volume
-
-
-# =========================================================
-# OKX 거래대금
-# =========================================================
-
-def get_okx_volume(
-    inst_id,
-    usdt_krw
-):
-
-    hours = max(
-        1,
-        min(
-            int(VOLUME_HOURS),
-            200
-        )
-    )
-
-    for round_index in range(
-        OKX_MAX_RETRY_ROUNDS
-    ):
-
-        try:
-
-            df = get_okx_ohlcv(
-                inst_id,
-                "1H",
-                hours + 1
-            )
-
-            if (
-                df is None
-                or len(df) < hours
-            ):
-
-                time.sleep(
-                    OKX_RETRY_DELAY
-                )
-
-                continue
-
-            volume_usdt = float(
-                df[
-                    "volCcyQuote"
-                ]
-                .tail(hours)
-                .sum()
-            )
-
-            if volume_usdt <= 0:
-
-                time.sleep(
-                    OKX_RETRY_DELAY
-                )
-
-                continue
-
-            volume_krw = (
-                volume_usdt *
-                usdt_krw
-            )
-
-            if volume_krw <= 0:
-
-                time.sleep(
-                    OKX_RETRY_DELAY
-                )
-
-                continue
-
-            return volume_krw
-
-        except Exception as e:
-
-            logging.error(
-                f"OKX 거래대금 오류 "
-                f"{inst_id}: {e} "
-                f"round={round_index + 1}"
-            )
-
-            time.sleep(
-                OKX_RETRY_DELAY
-            )
-
-    return None
-
-
-# =========================================================
-# 업비트 마켓 목록
+# 업비트 마켓 목록 + 24시간 거래대금
 #
-# 이 함수에서 조회한 결과를 캐시
+# 중요:
+#
+# 기존:
+# 전체 코인 각각 1H 캔들 조회
+# -> 24시간 거래대금 계산
+# -> TOP100
+#
+# 변경:
+# 업비트 ticker/all API 한 번 조회
+# -> acc_trade_price_24h 사용
+# -> TOP100
+#
+# 따라서 거래대금 순위를 만들기 위해
+# 전체 코인의 1시간봉을 조회하지 않는다.
 # =========================================================
 
 def get_upbit_markets():
@@ -2540,19 +2411,30 @@ def get_upbit_markets():
     global latest_upbit_markets
 
     logging.info(
-        "[업비트 API] 마켓 목록 조회 시작"
+        "[업비트 API] "
+        "KRW 마켓 + 24시간 거래대금 조회 시작"
     )
+
+    url = (
+        "https://api.upbit.com/v1/ticker/all"
+    )
+
+    params = {
+        "quote_currencies": "KRW"
+    }
 
     response = retry_request(
         requests.get,
-        "https://api.upbit.com/v1/market/all",
+        url,
+        params=params,
         timeout=15
     )
 
     if response is None:
 
         logging.error(
-            "[업비트 API] 마켓 목록 조회 실패"
+            "[업비트 API] "
+            "KRW 마켓 + 24시간 거래대금 조회 실패"
         )
 
         return []
@@ -2561,21 +2443,80 @@ def get_upbit_markets():
 
         data = response.json()
 
-        markets = [
-            x["market"]
-            for x in data
-            if x.get(
+        if not data:
+
+            logging.warning(
+                "[업비트 API] "
+                "KRW 마켓 데이터 없음"
+            )
+
+            return []
+
+        markets = []
+
+        for item in data:
+
+            market = item.get(
                 "market",
                 ""
-            ).startswith("KRW-")
-        ]
+            )
 
-        latest_upbit_markets = markets.copy()
+            if not market.startswith(
+                "KRW-"
+            ):
+
+                continue
+
+            volume_24h = item.get(
+                "acc_trade_price_24h"
+            )
+
+            try:
+
+                volume_24h = float(
+                    volume_24h
+                )
+
+            except Exception:
+
+                continue
+
+            if volume_24h <= 0:
+
+                continue
+
+            markets.append(
+                {
+                    "market": market,
+                    "volume_24h": volume_24h
+                }
+            )
+
+        if not markets:
+
+            logging.error(
+                "[업비트 API] "
+                "유효한 KRW 마켓 없음"
+            )
+
+            return []
+
+        # -------------------------------------------------
+        # 업비트 마켓 캐시
+        #
+        # OKX가 켜져 있을 경우에도
+        # 여기의 캐시를 사용한다.
+        # -------------------------------------------------
+
+        latest_upbit_markets = [
+            item["market"]
+            for item in markets
+        ]
 
         logging.info(
             "[업비트 API] "
-            f"마켓 목록 완료 "
-            f"KRW={len(markets)}개"
+            f"KRW 마켓 {len(markets)}개 "
+            "24시간 거래대금 확보 완료"
         )
 
         return markets
@@ -2583,7 +2524,7 @@ def get_upbit_markets():
     except Exception as e:
 
         logging.error(
-            f"업비트 마켓 목록 처리 오류 : {e}"
+            f"업비트 마켓/거래대금 처리 오류 : {e}"
         )
 
         return []
@@ -2673,6 +2614,8 @@ def get_upbit_analysis(
     # 1. 업비트 1시간봉
     #
     # EMA / 돌파 분석용
+    #
+    # 이제 TOP100에 선정된 코인만 호출된다.
     # -----------------------------------------------------
 
     df = get_upbit_history(
@@ -2905,6 +2848,13 @@ def pass_short_filter(
 # 업비트 업데이트
 #
 # LONG만 표시
+#
+# 중요:
+# 전체 업비트 코인의 1H 캔들을 조회하지 않는다.
+#
+# 1. ticker/all에서 24H 거래대금 수신
+# 2. TOP100 선정
+# 3. TOP100만 기존 분석
 # =========================================================
 
 def update_upbit():
@@ -2925,96 +2875,68 @@ def update_upbit():
     )
 
     # -----------------------------------------------------
-    # 1. 업비트 마켓 목록
+    # 1. 업비트 전체 KRW 마켓의
+    #    24시간 거래대금 조회
+    #
+    # ticker/all API 1회
     # -----------------------------------------------------
 
-    markets = get_upbit_markets()
+    market_data = get_upbit_markets()
 
-    if not markets:
+    if not market_data:
 
         logging.error(
-            "업비트 마켓 목록 조회 실패"
+            "업비트 24시간 거래대금 데이터 없음"
         )
 
         return False
 
     logging.info(
         f"[업비트 진행] "
-        f"KRW 마켓 {len(markets)}개"
+        f"KRW 마켓 {len(market_data)}개 "
+        "24시간 거래대금 확보"
     )
 
     # -----------------------------------------------------
-    # 2. 거래대금 조회
+    # 2. 24시간 거래대금 TOP100
     # -----------------------------------------------------
 
-    volume_map = {}
-
-    for index, market in enumerate(
-        markets,
-        start=1
-    ):
-
-        logging.info(
-            f"[업비트 거래대금 진행] "
-            f"{index}/{len(markets)} "
-            f"{market}"
-        )
-
-        try:
-
-            volume = get_upbit_volume(
-                market
-            )
-
-            if (
-                volume is not None
-                and volume > 0
-            ):
-
-                volume_map[
-                    market
-                ] = volume
-
-        except Exception as e:
-
-            logging.error(
-                f"업비트 거래대금 오류 "
-                f"{market}: {e}"
-            )
-
-    if not volume_map:
-
-        logging.error(
-            "업비트 거래대금 데이터 없음"
-        )
-
-        return False
-
-    # -----------------------------------------------------
-    # 3. TOP100
-    # -----------------------------------------------------
-
-    top_markets = sorted(
-        volume_map,
-        key=volume_map.get,
+    market_data = sorted(
+        market_data,
+        key=lambda x: x["volume_24h"],
         reverse=True
-    )[:TOP_N]
+    )
+
+    top_markets = market_data[
+        :TOP_N
+    ]
 
     logging.info(
         f"[업비트 진행] "
-        f"거래대금 TOP{TOP_N} 선정 완료"
+        f"24시간 거래대금 TOP{TOP_N} 선정 완료"
     )
 
     # -----------------------------------------------------
-    # 4. TOP100 분석
+    # 거래대금 map
+    # -----------------------------------------------------
+
+    volume_map = {
+        item["market"]: item["volume_24h"]
+        for item in top_markets
+    }
+
+    # -----------------------------------------------------
+    # 3. TOP100만 분석
     # -----------------------------------------------------
 
     rows = []
 
-    for rank, market in enumerate(
+    for rank, item in enumerate(
         top_markets,
         start=1
     ):
+
+        market = item["market"]
 
         coin = market.replace(
             "KRW-",
@@ -3052,7 +2974,10 @@ def update_upbit():
 
                 continue
 
+            # -------------------------------------------------
             # 업비트 LONG만
+            # -------------------------------------------------
+
             if not pass_long_filter(
                 analysis
             ):
@@ -3111,6 +3036,8 @@ def update_upbit():
 # LONG / SHORT
 #
 # 업비트 마켓을 API로 다시 조회하지 않음
+#
+# 이 부분은 원본 그대로 유지
 # =========================================================
 
 def update_okx(
@@ -4022,7 +3949,7 @@ def make_exchange_section(
      ">
 
 ※ TOP{TOP_N} 거래대금 순위<br>
-※ 거래대금 = 확정 1시간봉 기준<br>
+※ 업비트 거래대금 = 업비트 API의 24시간 누적 거래대금<br>
 {direction_note}
 {change_note}
 ※ LONG = EMA 30 > 60 > 120 + 당일 변동률 양수<br>
@@ -4160,6 +4087,10 @@ OKX 변동률 = 한국시간 09:00 기준
 확정 1시간봉 기준
 </div>
 
+<div>
+업비트 거래대금 = 24시간 누적 거래대금
+</div>
+
 <div class="exchange-status">
 
 <span class="{upbit_status_class}">
@@ -4231,6 +4162,10 @@ def startup():
 
     logging.info(
         "업비트 변동률 : 일봉 API change_rate"
+    )
+
+    logging.info(
+        "업비트 거래대금 : ticker/all의 acc_trade_price_24h"
     )
 
     logging.info(
@@ -4338,4 +4273,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-        )
+    )
