@@ -91,913 +91,6 @@ latest_usdt_krw = 0.0
 
 
 # =========================================================
-# 🚀 돌파 사이클 상태 저장
-#
-# 중요:
-# 1분마다 전체 과거 데이터를 다시 계산하지 않고
-# 돌파가 발생한 이후 상태를 계속 기억한다.
-# =========================================================
-
-breakout_states = {}
-
-breakout_state_lock = threading.Lock()
-
-
-# =========================================================
-# 돌파 상태 키
-# =========================================================
-
-def make_breakout_key(
-    exchange,
-    symbol
-):
-
-    return f"{exchange}:{symbol}"
-
-
-# =========================================================
-# 돌파 상태 삭제
-# =========================================================
-
-def reset_breakout_state(
-    exchange,
-    symbol
-):
-
-    key = make_breakout_key(
-        exchange,
-        symbol
-    )
-
-    with breakout_state_lock:
-
-        breakout_states.pop(
-            key,
-            None
-        )
-
-
-# =========================================================
-# 돌파 상태 가져오기
-# =========================================================
-
-def get_saved_breakout_state(
-    exchange,
-    symbol
-):
-
-    key = make_breakout_key(
-        exchange,
-        symbol
-    )
-
-    with breakout_state_lock:
-
-        return breakout_states.get(
-            key
-        )
-
-
-# =========================================================
-# 돌파 상태 저장
-# =========================================================
-
-def save_breakout_state(
-    exchange,
-    symbol,
-    state
-):
-
-    key = make_breakout_key(
-        exchange,
-        symbol
-    )
-
-    with breakout_state_lock:
-
-        breakout_states[key] = state.copy()
-
-
-# =========================================================
-# 돌파 상태 생성
-# =========================================================
-
-def create_breakout_state(
-    direction,
-    breakout_ts,
-    breakout_high,
-    breakout_low
-):
-
-    return {
-
-        # active / stopped
-        "status":
-            "active",
-
-        "direction":
-            direction,
-
-        # 돌파 캔들 timestamp
-        "breakout_ts":
-            breakout_ts,
-
-        # 돌파 캔들의 고점
-        "reference_high":
-            float(breakout_high),
-
-        # 돌파 캔들의 저점
-        "reference_low":
-            float(breakout_low),
-
-        # 🚀 카운트
-        # 최초 돌파 = 1
-        "count":
-            1,
-
-        # 마지막 고점/저점 갱신 캔들
-        "last_update_ts":
-            breakout_ts,
-
-        # 첫 번째 반대색 캔들
-        "first_opposite_ts":
-            None,
-
-        # LONG이면 첫 음봉 저점
-        "first_opposite_low":
-            None,
-
-        # SHORT이면 첫 양봉 고점
-        "first_opposite_high":
-            None,
-
-        # 손절 여부
-        "stopped":
-            False
-    }
-
-
-# =========================================================
-# 마지막으로 발생한 돌파 찾기
-#
-# 상태가 없을 때 최초 1회만 과거를 검색한다.
-# =========================================================
-
-def find_latest_breakout(
-    df,
-    direction
-):
-
-    if (
-        df is None
-        or
-        len(df)
-        <
-        30 + BREAKOUT_LOOKBACK
-    ):
-
-        return None
-
-    work = df.copy().reset_index(
-        drop=True
-    )
-
-    work["ema10"] = get_ema(
-        work,
-        "c",
-        10
-    )
-
-    work["ema30"] = get_ema(
-        work,
-        "c",
-        30
-    )
-
-    work["ema60"] = get_ema(
-        work,
-        "c",
-        60
-    )
-
-    latest = None
-
-    for index in range(
-        BREAKOUT_LOOKBACK,
-        len(work)
-    ):
-
-        row = work.iloc[index]
-
-        previous = work.iloc[
-            index - BREAKOUT_LOOKBACK:
-            index
-        ]
-
-        ema10 = row["ema10"]
-
-        ema30 = row["ema30"]
-
-        ema60 = row["ema60"]
-
-        if (
-            pd.isna(ema10)
-            or
-            pd.isna(ema30)
-        ):
-
-            continue
-
-        if pd.isna(ema60):
-
-            long_ema = (
-                ema10 > ema30
-            )
-
-            short_ema = (
-                ema10 < ema30
-            )
-
-        else:
-
-            long_ema = (
-                ema10
-                >
-                ema30
-                >
-                ema60
-            )
-
-            short_ema = (
-                ema10
-                <
-                ema30
-                <
-                ema60
-            )
-
-        if (
-            direction == "long"
-            and
-            long_ema
-            and
-            is_long_breakout(
-                row,
-                previous
-            )
-        ):
-
-            latest = (
-                index,
-                "long"
-            )
-
-        elif (
-            direction == "short"
-            and
-            short_ema
-            and
-            is_short_breakout(
-                row,
-                previous
-            )
-        ):
-
-            latest = (
-                index,
-                "short"
-            )
-
-    return latest
-
-
-# =========================================================
-# 상태 기반 돌파 추적
-#
-# 핵심:
-#
-# 1. 상태가 없으면 최신 돌파를 찾음
-# 2. 상태가 있으면 그 상태만 계속 추적
-# 3. 손절 발생 시 stopped=True
-# 4. stopped 상태는 다음 조회부터 완전히 제거
-# =========================================================
-
-def get_breakout_tracking_state(
-    df,
-    direction,
-    exchange,
-    symbol
-):
-
-    if (
-        df is None
-        or
-        df.empty
-    ):
-
-        return {
-            "status": "none",
-            "count": 0
-        }
-
-    df = df.copy().reset_index(
-        drop=True
-    )
-
-    # -----------------------------------------------------
-    # EMA
-    # -----------------------------------------------------
-
-    df["ema10"] = get_ema(
-        df,
-        "c",
-        10
-    )
-
-    df["ema30"] = get_ema(
-        df,
-        "c",
-        30
-    )
-
-    df["ema60"] = get_ema(
-        df,
-        "c",
-        60
-    )
-
-    # -----------------------------------------------------
-    # 현재 저장 상태
-    # -----------------------------------------------------
-
-    state = get_saved_breakout_state(
-        exchange,
-        symbol
-    )
-
-    # =====================================================
-    # 이미 손절된 사이클
-    #
-    # 중요:
-    # ⛔️를 한 번 표시한 뒤에는 다음 조회부터 제거
-    # =====================================================
-
-    if (
-        state is not None
-        and
-        state.get("stopped", False)
-    ):
-
-        reset_breakout_state(
-            exchange,
-            symbol
-        )
-
-        return {
-            "status": "none",
-            "count": 0
-        }
-
-    # =====================================================
-    # 상태가 없는 경우
-    #
-    # 과거 돌파를 최초 1회 검색
-    # =====================================================
-
-    if state is None:
-
-        latest = find_latest_breakout(
-            df,
-            direction
-        )
-
-        if latest is not None:
-
-            breakout_index, breakout_direction = latest
-
-            breakout_row = df.iloc[
-                breakout_index
-            ]
-
-            state = create_breakout_state(
-                breakout_direction,
-                breakout_row.get(
-                    "ts",
-                    breakout_index
-                ),
-                breakout_row["h"],
-                breakout_row["l"]
-            )
-
-            # -------------------------------------------------
-            # 과거 돌파 이후 현재까지 상태 재구성
-            # -------------------------------------------------
-
-            for index in range(
-                breakout_index + 1,
-                len(df)
-            ):
-
-                row = df.iloc[index]
-
-                row_ts = row.get(
-                    "ts",
-                    index
-                )
-
-                high = float(
-                    row["h"]
-                )
-
-                low = float(
-                    row["l"]
-                )
-
-                close = float(
-                    row["c"]
-                )
-
-                open_price = float(
-                    row["o"]
-                )
-
-                # =================================================
-                # LONG
-                # =================================================
-
-                if breakout_direction == "long":
-
-                    # ---------------------------------------------
-                    # 첫 번째 음봉
-                    #
-                    # 돌파 캔들 자체는 제외
-                    # ---------------------------------------------
-
-                    if (
-                        state[
-                            "first_opposite_ts"
-                        ]
-                        is None
-                        and
-                        index >
-                        breakout_index
-                        and
-                        close < open_price
-                    ):
-
-                        state[
-                            "first_opposite_ts"
-                        ] = row_ts
-
-                        state[
-                            "first_opposite_low"
-                        ] = low
-
-                    # ---------------------------------------------
-                    # 추가 고점 갱신
-                    # ---------------------------------------------
-
-                    if (
-                        high >
-                        state[
-                            "reference_high"
-                        ]
-                        and
-                        close >
-                        open_price
-                    ):
-
-                        state[
-                            "count"
-                        ] += 1
-
-                        state[
-                            "reference_high"
-                        ] = high
-
-                        state[
-                            "reference_low"
-                        ] = low
-
-                        state[
-                            "last_update_ts"
-                        ] = row_ts
-
-                # =================================================
-                # SHORT
-                # =================================================
-
-                elif breakout_direction == "short":
-
-                    # ---------------------------------------------
-                    # 첫 번째 양봉
-                    # ---------------------------------------------
-
-                    if (
-                        state[
-                            "first_opposite_ts"
-                        ]
-                        is None
-                        and
-                        index >
-                        breakout_index
-                        and
-                        close > open_price
-                    ):
-
-                        state[
-                            "first_opposite_ts"
-                        ] = row_ts
-
-                        state[
-                            "first_opposite_high"
-                        ] = high
-
-                    # ---------------------------------------------
-                    # 추가 저점 갱신
-                    # ---------------------------------------------
-
-                    if (
-                        low <
-                        state[
-                            "reference_low"
-                        ]
-                        and
-                        close <
-                        open_price
-                    ):
-
-                        state[
-                            "count"
-                        ] += 1
-
-                        state[
-                            "reference_low"
-                        ] = low
-
-                        state[
-                            "reference_high"
-                        ] = high
-
-                        state[
-                            "last_update_ts"
-                        ] = row_ts
-
-            save_breakout_state(
-                exchange,
-                symbol,
-                state
-            )
-
-    # =====================================================
-    # 현재 진행 중인 캔들
-    # =====================================================
-
-    current_index = len(df) - 1
-
-    current = df.iloc[
-        current_index
-    ]
-
-    current_ts = current.get(
-        "ts",
-        current_index
-    )
-
-    current_high = float(
-        current["h"]
-    )
-
-    current_low = float(
-        current["l"]
-    )
-
-    current_close = float(
-        current["c"]
-    )
-
-    current_open = float(
-        current["o"]
-    )
-
-    # =====================================================
-    # 현재 상태의 방향과 다르면 종료
-    # =====================================================
-
-    if state["direction"] != direction:
-
-        return {
-            "status": "none",
-            "count": 0
-        }
-
-    # =====================================================
-    # LONG 현재 상태
-    # =====================================================
-
-    if state["direction"] == "long":
-
-        # -----------------------------------------------------
-        # 첫 번째 음봉 기준이 이미 존재하는 경우
-        #
-        # 반드시 첫 음봉이 발생한 이후의 캔들에서만
-        # 손절을 판단한다.
-        # -----------------------------------------------------
-
-        first_opposite_ts = state.get(
-            "first_opposite_ts"
-        )
-
-        first_opposite_low = state.get(
-            "first_opposite_low"
-        )
-
-        if (
-            first_opposite_ts is not None
-            and
-            first_opposite_low is not None
-            and
-            current_ts != first_opposite_ts
-            and
-            current_low <
-            first_opposite_low
-        ):
-
-            state["stopped"] = True
-
-            state["status"] = (
-                "long_breakout_stop"
-            )
-
-            save_breakout_state(
-                exchange,
-                symbol,
-                state
-            )
-
-            return {
-                "status":
-                    "long_breakout_stop",
-                "count":
-                    state["count"]
-            }
-
-        # -----------------------------------------------------
-        # 돌파 캔들 저점도 손절 기준
-        #
-        # 단, 돌파 캔들 자체에서는 판단하지 않는다.
-        # -----------------------------------------------------
-
-        if (
-            current_ts !=
-            state["breakout_ts"]
-            and
-            current_low <
-            state["reference_low"]
-        ):
-
-            state["stopped"] = True
-
-            state["status"] = (
-                "long_breakout_stop"
-            )
-
-            save_breakout_state(
-                exchange,
-                symbol,
-                state
-            )
-
-            return {
-                "status":
-                    "long_breakout_stop",
-                "count":
-                    state["count"]
-            }
-
-        # -----------------------------------------------------
-        # 첫 번째 음봉 발견
-        #
-        # 현재 캔들이 첫 음봉이면 기준만 저장한다.
-        # 같은 캔들에서는 손절 처리하지 않는다.
-        # -----------------------------------------------------
-
-        if (
-            state["first_opposite_ts"]
-            is None
-            and
-            current_ts !=
-            state["breakout_ts"]
-            and
-            current_close <
-            current_open
-        ):
-
-            state[
-                "first_opposite_ts"
-            ] = current_ts
-
-            state[
-                "first_opposite_low"
-            ] = current_low
-
-        # -----------------------------------------------------
-        # 현재 상승 캔들이 돌파 고점 갱신
-        # -----------------------------------------------------
-
-        if (
-            current_high >
-            state["reference_high"]
-            and
-            current_close >
-            current_open
-            and
-            current_ts !=
-            state["last_update_ts"]
-        ):
-
-            state["count"] += 1
-
-            state[
-                "reference_high"
-            ] = current_high
-
-            state[
-                "reference_low"
-            ] = current_low
-
-            state[
-                "last_update_ts"
-            ] = current_ts
-
-        # -----------------------------------------------------
-        # 현재 상태 저장
-        # -----------------------------------------------------
-
-        save_breakout_state(
-            exchange,
-            symbol,
-            state
-        )
-
-        return {
-            "status":
-                f"long_breakout_{state['count']}",
-            "count":
-                state["count"] - 1
-        }
-
-    # =====================================================
-    # SHORT 현재 상태
-    # =====================================================
-
-    if state["direction"] == "short":
-
-        # -----------------------------------------------------
-        # 첫 번째 양봉 고점 이탈
-        # -----------------------------------------------------
-
-        first_opposite_ts = state.get(
-            "first_opposite_ts"
-        )
-
-        first_opposite_high = state.get(
-            "first_opposite_high"
-        )
-
-        if (
-            first_opposite_ts is not None
-            and
-            first_opposite_high is not None
-            and
-            current_ts != first_opposite_ts
-            and
-            current_high >
-            first_opposite_high
-        ):
-
-            state["stopped"] = True
-
-            state["status"] = (
-                "short_breakout_stop"
-            )
-
-            save_breakout_state(
-                exchange,
-                symbol,
-                state
-            )
-
-            return {
-                "status":
-                    "short_breakout_stop",
-                "count":
-                    state["count"]
-            }
-
-        # -----------------------------------------------------
-        # 돌파 캔들 고점 이탈
-        # -----------------------------------------------------
-
-        if (
-            current_ts !=
-            state["breakout_ts"]
-            and
-            current_high >
-            state["reference_high"]
-        ):
-
-            state["stopped"] = True
-
-            state["status"] = (
-                "short_breakout_stop"
-            )
-
-            save_breakout_state(
-                exchange,
-                symbol,
-                state
-            )
-
-            return {
-                "status":
-                    "short_breakout_stop",
-                "count":
-                    state["count"]
-            }
-
-        # -----------------------------------------------------
-        # 첫 번째 양봉
-        # -----------------------------------------------------
-
-        if (
-            state["first_opposite_ts"]
-            is None
-            and
-            current_ts !=
-            state["breakout_ts"]
-            and
-            current_close >
-            current_open
-        ):
-
-            state[
-                "first_opposite_ts"
-            ] = current_ts
-
-            state[
-                "first_opposite_high"
-            ] = current_high
-
-        # -----------------------------------------------------
-        # 추가 저점 갱신
-        # -----------------------------------------------------
-
-        if (
-            current_low <
-            state["reference_low"]
-            and
-            current_close <
-            current_open
-            and
-            current_ts !=
-            state["last_update_ts"]
-        ):
-
-            state["count"] += 1
-
-            state[
-                "reference_low"
-            ] = current_low
-
-            state[
-                "reference_high"
-            ] = current_high
-
-            state[
-                "last_update_ts"
-            ] = current_ts
-
-        save_breakout_state(
-            exchange,
-            symbol,
-            state
-        )
-
-        return {
-            "status":
-                f"short_breakout_{state['count']}",
-            "count":
-                state["count"] - 1
-        }
-
-    return {
-        "status": "none",
-        "count": 0
-    }
-
-
-# =========================================================
 # 마지막 요청 시간
 # =========================================================
 
@@ -1146,6 +239,11 @@ def get_usdt_krw():
     )
 
     if response is None:
+
+        logging.error(
+            "USDT-KRW 조회 실패"
+        )
+
         return None
 
     try:
@@ -1153,6 +251,11 @@ def get_usdt_krw():
         data = response.json()
 
         if not data:
+
+            logging.error(
+                "USDT-KRW 데이터 없음"
+            )
+
             return None
 
         price = float(
@@ -1160,6 +263,7 @@ def get_usdt_krw():
         )
 
         if price <= 0:
+
             return None
 
         logging.info(
@@ -1180,7 +284,7 @@ def get_usdt_krw():
 # =========================================================
 # OKX 캔들
 #
-# 현재 진행 중인 캔들을 유지한다.
+# OKX는 confirm=1 확정 캔들만 사용
 # =========================================================
 
 def get_okx_ohlcv(
@@ -1239,7 +343,6 @@ def get_okx_ohlcv(
         )
 
         for column in [
-            "ts",
             "o",
             "h",
             "l",
@@ -1253,10 +356,14 @@ def get_okx_ohlcv(
                 errors="coerce"
             )
 
-        df["confirm"] = (
+        df = df[
             df["confirm"]
             .astype(str)
-        )
+            == "1"
+        ]
+
+        if df.empty:
+            return None
 
         df = (
             df
@@ -1335,19 +442,37 @@ def get_upbit_ticker_volume_map(
 
                 if response is None:
 
+                    logging.warning(
+                        f"업비트 Ticker 응답 없음 "
+                        f"청크 {chunk_index}"
+                    )
+
                     time.sleep(2)
+
                     continue
 
                 if response.status_code != 200:
 
+                    logging.warning(
+                        f"업비트 Ticker HTTP "
+                        f"{response.status_code}"
+                    )
+
                     time.sleep(2)
+
                     continue
 
                 data = response.json()
 
                 if not data:
 
+                    logging.warning(
+                        f"업비트 Ticker 데이터 없음 "
+                        f"청크 {chunk_index}"
+                    )
+
                     time.sleep(2)
+
                     continue
 
                 for item in data:
@@ -1362,11 +487,17 @@ def get_upbit_ticker_volume_map(
                     )
 
                     try:
-                        volume = float(volume)
+
+                        volume = float(
+                            volume
+                        )
+
                     except Exception:
+
                         volume = 0
 
                     if market:
+
                         volume_map[
                             market
                         ] = volume
@@ -1375,7 +506,8 @@ def get_upbit_ticker_volume_map(
 
                 logging.info(
                     f"업비트 거래대금 "
-                    f"{chunk_index}/{len(chunks)} 완료"
+                    f"{chunk_index}/{len(chunks)} 완료 "
+                    f"({len(data)}개)"
                 )
 
             except Exception as e:
@@ -1387,13 +519,18 @@ def get_upbit_ticker_volume_map(
 
                 time.sleep(2)
 
+    logging.info(
+        f"업비트 거래대금 조회 완료 "
+        f"{len(volume_map)}/{total}"
+    )
+
     return volume_map
 
 
 # =========================================================
 # 업비트 캔들
 #
-# 현재 진행 중인 4H 캔들 포함
+# 현재 진행 중인 4H 캔들도 포함
 # =========================================================
 
 def get_upbit_ohlcv(
@@ -1441,10 +578,6 @@ def get_upbit_ohlcv(
             .reset_index(drop=True)
         )
 
-        df["ts"] = pd.to_datetime(
-            df["candle_date_time_utc"]
-        ).astype("int64") // 10**6
-
         df["o"] = pd.to_numeric(
             df["opening_price"],
             errors="coerce"
@@ -1462,6 +595,11 @@ def get_upbit_ohlcv(
 
         df["c"] = pd.to_numeric(
             df["trade_price"],
+            errors="coerce"
+        )
+
+        df["datetime"] = pd.to_datetime(
+            df["candle_date_time_kst"],
             errors="coerce"
         )
 
@@ -1557,9 +695,9 @@ def get_ema(
 
     if (
         df is None
-        or
-        column not in df.columns
+        or column not in df.columns
     ):
+
         return None
 
     price = pd.to_numeric(
@@ -1579,7 +717,7 @@ def get_ema(
 
 
 # =========================================================
-# EMA 10-30
+# EMA 10-30 방향
 # =========================================================
 
 def get_ema_10_30_direction(
@@ -1604,25 +742,29 @@ def get_ema_10_30_direction(
         or
         ema30 is None
     ):
+
         return "none"
 
     a = ema10.iloc[-1]
     b = ema30.iloc[-1]
 
     if pd.isna(a) or pd.isna(b):
+
         return "none"
 
     if a > b:
+
         return "long"
 
     if a < b:
+
         return "short"
 
     return "none"
 
 
 # =========================================================
-# EMA 30-60
+# EMA 30-60 방향
 # =========================================================
 
 def get_ema_30_60_direction(
@@ -1647,25 +789,29 @@ def get_ema_30_60_direction(
         or
         ema60 is None
     ):
+
         return "none"
 
     a = ema30.iloc[-1]
     b = ema60.iloc[-1]
 
     if pd.isna(a) or pd.isna(b):
+
         return "none"
 
     if a > b:
+
         return "long"
 
     if a < b:
+
         return "short"
 
     return "none"
 
 
 # =========================================================
-# EMA 10-30-60
+# EMA 10-30-60 방향
 # =========================================================
 
 def get_ema_10_30_60_direction(
@@ -1691,14 +837,14 @@ def get_ema_10_30_60_direction(
         60
     )
 
-    if any(
-        x is None
-        for x in [
-            ema10,
-            ema30,
-            ema60
-        ]
+    if (
+        ema10 is None
+        or
+        ema30 is None
+        or
+        ema60 is None
     ):
+
         return "none"
 
     values = [
@@ -1711,6 +857,7 @@ def get_ema_10_30_60_direction(
         pd.isna(x)
         for x in values
     ):
+
         return "none"
 
     if (
@@ -1720,6 +867,7 @@ def get_ema_10_30_60_direction(
         >
         values[2]
     ):
+
         return "long"
 
     if (
@@ -1729,6 +877,7 @@ def get_ema_10_30_60_direction(
         <
         values[2]
     ):
+
         return "short"
 
     return "none"
@@ -1750,6 +899,7 @@ def get_pair_alignment_count(
         or
         len(df) < slow_period
     ):
+
         return (
             "none",
             0
@@ -1772,6 +922,7 @@ def get_pair_alignment_count(
         or
         slow is None
     ):
+
         return (
             "none",
             0
@@ -1791,33 +942,43 @@ def get_pair_alignment_count(
         b = slow.iloc[index]
 
         if pd.isna(a) or pd.isna(b):
+
             break
 
         if a > b:
+
             direction = "long"
 
         elif a < b:
+
             direction = "short"
 
         else:
+
             direction = "none"
 
         if current_direction is None:
 
             if direction == "none":
+
                 break
 
             current_direction = direction
+
             count = 1
 
         else:
 
             if direction == current_direction:
+
                 count += 1
+
             else:
+
                 break
 
     if current_direction is None:
+
         return (
             "none",
             0
@@ -1843,6 +1004,7 @@ def get_ema_10_30_60_alignment_count(
         or
         len(df) < 60
     ):
+
         return (
             "none",
             0
@@ -1874,6 +1036,7 @@ def get_ema_10_30_60_alignment_count(
             ema60
         ]
     ):
+
         return (
             "none",
             0
@@ -1899,6 +1062,7 @@ def get_ema_10_30_60_alignment_count(
             pd.isna(x)
             for x in values
         ):
+
             break
 
         if (
@@ -1908,6 +1072,7 @@ def get_ema_10_30_60_alignment_count(
             >
             values[2]
         ):
+
             direction = "long"
 
         elif (
@@ -1917,27 +1082,35 @@ def get_ema_10_30_60_alignment_count(
             <
             values[2]
         ):
+
             direction = "short"
 
         else:
+
             direction = "none"
 
         if current_direction is None:
 
             if direction == "none":
+
                 break
 
             current_direction = direction
+
             count = 1
 
         else:
 
             if direction == current_direction:
+
                 count += 1
+
             else:
+
                 break
 
     if current_direction is None:
+
         return (
             "none",
             0
@@ -1980,12 +1153,15 @@ def check_ema_4h(df):
         )
 
     if direction == "long":
+
         display = f"🟢({count})"
 
     elif direction == "short":
+
         display = f"🔴({count})"
 
     else:
+
         display = "⚪"
 
     return {
@@ -2057,16 +1233,22 @@ def get_main_direction(
         )
 
         if direction != "none":
+
             return direction
 
-    return get_ema_10_30_direction(
-        df4h,
-        column
+    return (
+        get_ema_10_30_direction(
+            df4h,
+            column
+        )
     )
 
 
 # =========================================================
-# 최초 돌파
+# 최초 LONG 돌파
+#
+# 최근 BREAKOUT_LOOKBACK개 캔들 고가 돌파
+# 상승 마감
 # =========================================================
 
 def is_long_breakout(
@@ -2082,12 +1264,29 @@ def is_long_breakout(
         errors="coerce"
     ).max()
 
+    try:
+
+        close = float(row["c"])
+        open_price = float(row["o"])
+
+    except Exception:
+
+        return False
+
+    if pd.isna(previous_high):
+
+        return False
+
     return (
-        row["c"] > previous_high
+        close > previous_high
         and
-        row["c"] > row["o"]
+        close > open_price
     )
 
+
+# =========================================================
+# 최초 SHORT 돌파
+# =========================================================
 
 def is_short_breakout(
     row,
@@ -2102,15 +1301,28 @@ def is_short_breakout(
         errors="coerce"
     ).min()
 
+    try:
+
+        close = float(row["c"])
+        open_price = float(row["o"])
+
+    except Exception:
+
+        return False
+
+    if pd.isna(previous_low):
+
+        return False
+
     return (
-        row["c"] < previous_low
+        close < previous_low
         and
-        row["c"] < row["o"]
+        close < open_price
     )
 
 
 # =========================================================
-# 돌파 직전
+# LONG 돌파 직전
 # =========================================================
 
 def is_long_pre_breakout(
@@ -2126,17 +1338,25 @@ def is_long_pre_breakout(
         errors="coerce"
     ).max()
 
-    current_high = float(
-        row["h"]
-    )
+    values = [
+        row.get("h"),
+        row.get("c"),
+        row.get("o")
+    ]
 
-    current_close = float(
-        row["c"]
-    )
+    try:
 
-    current_open = float(
-        row["o"]
-    )
+        current_high = float(values[0])
+        current_close = float(values[1])
+        current_open = float(values[2])
+
+    except Exception:
+
+        return False
+
+    if pd.isna(previous_high):
+
+        return False
 
     return (
         current_high >= previous_high
@@ -2146,6 +1366,10 @@ def is_long_pre_breakout(
         current_close >= current_open
     )
 
+
+# =========================================================
+# SHORT 돌파 직전
+# =========================================================
 
 def is_short_pre_breakout(
     row,
@@ -2160,17 +1384,25 @@ def is_short_pre_breakout(
         errors="coerce"
     ).min()
 
-    current_low = float(
-        row["l"]
-    )
+    values = [
+        row.get("l"),
+        row.get("c"),
+        row.get("o")
+    ]
 
-    current_close = float(
-        row["c"]
-    )
+    try:
 
-    current_open = float(
-        row["o"]
-    )
+        current_low = float(values[0])
+        current_close = float(values[1])
+        current_open = float(values[2])
+
+    except Exception:
+
+        return False
+
+    if pd.isna(previous_low):
+
+        return False
 
     return (
         current_low <= previous_low
@@ -2182,20 +1414,235 @@ def is_short_pre_breakout(
 
 
 # =========================================================
+# 🚨 / 🚀 상태 계산
+#
+# 최종 규칙
+#
+# 1. 현재 캔들이 돌파 전
+#       → 🚨
+#
+# 2. 현재 캔들이 최초 돌파
+#       → 🚀(1)
+#
+# 3. 최초 돌파 캔들이 지나감
+#       → none
+#
+# 4. 🚀(2) 이상
+#       → 사용하지 않음
+# =========================================================
+
+def get_breakout_tracking(
+    df,
+    direction
+):
+
+    if (
+        df is None
+        or
+        len(df) < 30 + BREAKOUT_LOOKBACK
+    ):
+
+        return {
+            "status": "none",
+            "count": 0
+        }
+
+    df = (
+        df
+        .copy()
+        .reset_index(drop=True)
+    )
+
+    df["ema10"] = get_ema(
+        df,
+        "c",
+        10
+    )
+
+    df["ema30"] = get_ema(
+        df,
+        "c",
+        30
+    )
+
+    df["ema60"] = get_ema(
+        df,
+        "c",
+        60
+    )
+
+    current_index = len(df) - 1
+
+    current = df.iloc[
+        current_index
+    ]
+
+    previous = df.iloc[
+        current_index - BREAKOUT_LOOKBACK:
+        current_index
+    ]
+
+    # =====================================================
+    # 현재 EMA 정렬 확인
+    # =====================================================
+
+    ema60 = current["ema60"]
+
+    if pd.isna(ema60):
+
+        long_ema = (
+            current["ema10"]
+            >
+            current["ema30"]
+        )
+
+        short_ema = (
+            current["ema10"]
+            <
+            current["ema30"]
+        )
+
+    else:
+
+        long_ema = (
+            current["ema10"]
+            >
+            current["ema30"]
+            >
+            current["ema60"]
+        )
+
+        short_ema = (
+            current["ema10"]
+            <
+            current["ema30"]
+            <
+            current["ema60"]
+        )
+
+    # =====================================================
+    # 현재 캔들이 이미 최초 확정 돌파
+    #
+    # LONG
+    # =====================================================
+
+    if (
+        direction == "long"
+        and
+        long_ema
+        and
+        is_long_breakout(
+            current,
+            previous
+        )
+    ):
+
+        return {
+            "status":
+                "long_breakout_1",
+
+            "count":
+                1
+        }
+
+    # =====================================================
+    # 현재 캔들이 이미 최초 확정 돌파
+    #
+    # SHORT
+    # =====================================================
+
+    if (
+        direction == "short"
+        and
+        short_ema
+        and
+        is_short_breakout(
+            current,
+            previous
+        )
+    ):
+
+        return {
+            "status":
+                "short_breakout_1",
+
+            "count":
+                1
+        }
+
+    # =====================================================
+    # 현재 캔들이 돌파 직전
+    # =====================================================
+
+    if (
+        direction == "long"
+        and
+        long_ema
+        and
+        is_long_pre_breakout(
+            current,
+            previous
+        )
+    ):
+
+        return {
+            "status":
+                "long_breakout_0",
+
+            "count":
+                0
+        }
+
+    if (
+        direction == "short"
+        and
+        short_ema
+        and
+        is_short_pre_breakout(
+            current,
+            previous
+        )
+    ):
+
+        return {
+            "status":
+                "short_breakout_0",
+
+            "count":
+                0
+        }
+
+    # =====================================================
+    # 현재 캔들이 돌파도 아니고
+    # 돌파 직전도 아님
+    #
+    # 과거에 돌파했던 기록은 표시하지 않음
+    # =====================================================
+
+    return {
+        "status":
+            "none",
+
+        "count":
+            0
+    }
+
+
+# =========================================================
 # 돌파 상태 계산
 # =========================================================
 
 def check_breakout(
     df4h,
-    column,
-    exchange,
-    symbol
+    column
 ):
 
     if (
         df4h is None
         or
-        len(df4h) < 30
+        len(df4h)
+        <
+        30 + BREAKOUT_LOOKBACK
     ):
 
         return "none"
@@ -2211,11 +1658,9 @@ def check_breakout(
         "c"
     )
 
-    result = get_breakout_tracking_state(
+    result = get_breakout_tracking(
         df,
-        direction,
-        exchange,
-        symbol
+        direction
     )
 
     return result["status"]
@@ -2227,16 +1672,12 @@ def check_breakout(
 
 def check_entry_warning(
     df4h,
-    column,
-    exchange,
-    symbol
+    column
 ):
 
     breakout_4h = check_breakout(
         df4h,
-        column,
-        exchange,
-        symbol
+        column
     )
 
     return (
@@ -2251,9 +1692,7 @@ def check_entry_warning(
 
 def get_trade_signal(
     df4h,
-    column,
-    exchange,
-    symbol
+    column
 ):
 
     main_direction = get_main_direction(
@@ -2270,9 +1709,7 @@ def get_trade_signal(
 
     breakout_4h = check_entry_warning(
         df4h,
-        column,
-        exchange,
-        symbol
+        column
     )[0]
 
     signal = ""
@@ -2280,9 +1717,8 @@ def get_trade_signal(
     if (
         main_direction == "long"
         and
-        breakout_4h.startswith(
-            "long_breakout_"
-        )
+        breakout_4h ==
+        "long_breakout_1"
     ):
 
         signal = "LONG"
@@ -2290,9 +1726,8 @@ def get_trade_signal(
     elif (
         main_direction == "short"
         and
-        breakout_4h.startswith(
-            "short_breakout_"
-        )
+        breakout_4h ==
+        "short_breakout_1"
     ):
 
         signal = "SHORT"
@@ -2310,14 +1745,30 @@ def get_trade_signal(
 def empty_ema():
 
     return {
-        "10_30": "⚪",
-        "30_60": "⚪",
-        "10_30_60": "⚪",
-        "signal": "",
-        "warning": "none",
-        "warning_4h": "none",
-        "direction": "none",
-        "count": 0
+
+        "10_30":
+            "⚪",
+
+        "30_60":
+            "⚪",
+
+        "10_30_60":
+            "⚪",
+
+        "signal":
+            "",
+
+        "warning":
+            "none",
+
+        "warning_4h":
+            "none",
+
+        "direction":
+            "none",
+
+        "count":
+            0
     }
 
 
@@ -2334,14 +1785,13 @@ def get_okx_ema(inst_id):
     )
 
     if df4h is None:
+
         return empty_ema()
 
     signal, warning_4h = (
         get_trade_signal(
             df4h,
-            "c",
-            "OKX",
-            inst_id
+            "c"
         )
     )
 
@@ -2352,17 +1802,6 @@ def get_okx_ema(inst_id):
 
     ema_display = check_ema_4h(
         df4h
-    )
-
-    state = get_saved_breakout_state(
-        "OKX",
-        inst_id
-    )
-
-    count = (
-        state.get("count", 1)
-        if state is not None
-        else 0
     )
 
     return {
@@ -2389,12 +1828,17 @@ def get_okx_ema(inst_id):
             direction,
 
         "count":
-            count
+            ema_display.get(
+                "count",
+                0
+            )
     }
 
 
 # =========================================================
 # 업비트 EMA
+#
+# 현재 진행 중인 4H 캔들 포함
 # =========================================================
 
 def get_upbit_ema(market):
@@ -2406,18 +1850,20 @@ def get_upbit_ema(market):
     )
 
     if df4h is None:
+
         return empty_ema()
 
     # =====================================================
-    # 현재 진행 중인 4H 캔들 포함
+    # 현재 진행 중인 4H 캔들을 제거하지 않음
+    #
+    # 1분마다 현재 상태를 판단하기 위해
+    # 마지막 캔들을 그대로 사용
     # =====================================================
 
     signal, warning_4h = (
         get_trade_signal(
             df4h,
-            "c",
-            "UPBIT",
-            market
+            "c"
         )
     )
 
@@ -2428,17 +1874,6 @@ def get_upbit_ema(market):
 
     ema_display = check_ema_4h(
         df4h
-    )
-
-    state = get_saved_breakout_state(
-        "UPBIT",
-        market
-    )
-
-    count = (
-        state.get("count", 1)
-        if state is not None
-        else 0
     )
 
     return {
@@ -2465,7 +1900,10 @@ def get_upbit_ema(market):
             direction,
 
         "count":
-            count
+            ema_display.get(
+                "count",
+                0
+            )
     }
 
 
@@ -2508,12 +1946,7 @@ def get_okx_volume(
 
                 continue
 
-            # 거래대금은 확정 1H 기준
-            confirmed = df[
-                df["confirm"] == "1"
-            ]
-
-            if len(confirmed) < hours:
+            if len(df) < hours:
 
                 time.sleep(
                     OKX_RETRY_DELAY
@@ -2522,9 +1955,7 @@ def get_okx_volume(
                 continue
 
             volume_usdt = float(
-                confirmed[
-                    "volCcyQuote"
-                ]
+                df["volCcyQuote"]
                 .tail(hours)
                 .sum()
             )
@@ -2641,6 +2072,11 @@ def get_okx_change(inst_id):
 
     df = df.copy()
 
+    df["ts"] = pd.to_numeric(
+        df["ts"],
+        errors="coerce"
+    )
+
     df["datetime"] = (
         pd.to_datetime(
             df["ts"],
@@ -2721,9 +2157,12 @@ def get_upbit_change(market):
 
     df = df.copy()
 
-    df["datetime"] = pd.to_datetime(
-        df["candle_date_time_kst"]
-    )
+    if "datetime" not in df.columns:
+
+        df["datetime"] = pd.to_datetime(
+            df["candle_date_time_kst"],
+            errors="coerce"
+        )
 
     df.set_index(
         "datetime",
@@ -2731,7 +2170,7 @@ def get_upbit_change(market):
     )
 
     daily = (
-        df["trade_price"]
+        df["c"]
         .resample(
             "1D",
             offset="9h"
@@ -2898,12 +2337,19 @@ def direction_html(
 
 
 # =========================================================
-# 표시 가능 경고
+# 표시 가능한 경고
+#
+# 오직
+#
+# 🚨 = _0
+# 🚀(1) = _breakout_1
+#
+# 두 종류만 표시
 # =========================================================
 
 def is_visible_breakout_warning(
     warning_4h,
-    change_percent
+    change_percent=None
 ):
 
     if (
@@ -2914,72 +2360,45 @@ def is_visible_breakout_warning(
 
         return False
 
-    # ⛔️는 현재 조회에서 1회 표시
+    # =====================================================
+    # 🚨 돌파 전
+    # =====================================================
+
     if warning_4h.endswith(
-        "_stop"
+        "_breakout_0"
     ):
 
         return True
 
-    try:
+    # =====================================================
+    # 🚀(1) 최초 돌파
+    # =====================================================
 
-        count = int(
-            warning_4h.split("_")[-1]
-        )
-
-    except Exception:
-
-        return False
-
-    if count < 0:
-        return False
-
-    if change_percent is None:
-        return False
-
-    if warning_4h.startswith(
-        "long_breakout_"
+    if warning_4h.endswith(
+        "_breakout_1"
     ):
 
-        return change_percent > 0
+        return True
 
-    if warning_4h.startswith(
-        "short_breakout_"
-    ):
-
-        return change_percent < 0
+    # =====================================================
+    # 그 외 전부 제거
+    # =====================================================
 
     return False
 
 
 # =========================================================
 # 돌파 HTML
+#
+# 🚨
+# 🚀(1)
+# 만 표시
 # =========================================================
 
 def warning_html(
     warning_4h,
     change_percent
 ):
-
-    if not warning_4h:
-
-        return (
-            '<span class="warning-empty">—</span>'
-        )
-
-    # =====================================================
-    # ⛔️
-    # =====================================================
-
-    if warning_4h.endswith(
-        "_stop"
-    ):
-
-        return (
-            '<span class="warning-icon stop">'
-            '⛔️'
-            '</span>'
-        )
 
     if not is_visible_breakout_warning(
         warning_4h,
@@ -2990,23 +2409,13 @@ def warning_html(
             '<span class="warning-empty">—</span>'
         )
 
-    try:
-
-        count = int(
-            warning_4h.split("_")[-1]
-        )
-
-    except Exception:
-
-        return (
-            '<span class="warning-empty">—</span>'
-        )
-
     # =====================================================
     # 🚨
     # =====================================================
 
-    if count == 0:
+    if warning_4h.endswith(
+        "_breakout_0"
+    ):
 
         return (
             '<span class="warning-icon pre-breakout">'
@@ -3015,13 +2424,21 @@ def warning_html(
         )
 
     # =====================================================
-    # 🚀
+    # 🚀(1)
     # =====================================================
 
+    if warning_4h.endswith(
+        "_breakout_1"
+    ):
+
+        return (
+            '<span class="warning-icon rocket">'
+            '🚀(1)'
+            '</span>'
+        )
+
     return (
-        '<span class="warning-icon rocket">'
-        f'🚀({count})'
-        '</span>'
+        '<span class="warning-empty">—</span>'
     )
 
 
@@ -3038,19 +2455,28 @@ def ema_html(ema):
 
     return f"""
     <div class="ema-container">
+
         <div class="ema-line">
+
             <div class="ema-item">
+
                 <span class="ema-value">
                     {ema_display}
                 </span>
+
             </div>
+
         </div>
+
     </div>
     """
 
 
 # =========================================================
 # 업비트 업데이트
+#
+# TOP20 거래대금 순위 유지
+# 🚨 / 🚀(1)만 저장
 # =========================================================
 
 def update_upbit():
@@ -3116,6 +2542,10 @@ def update_upbit():
                 "none"
             )
 
+            # =================================================
+            # 🚨 / 🚀(1) 외에는 저장하지 않음
+            # =================================================
+
             if not is_visible_breakout_warning(
                 warning,
                 change_percent
@@ -3172,6 +2602,9 @@ def update_upbit():
 
 # =========================================================
 # OKX 업데이트
+#
+# TOP20 거래대금 실제 순위 유지
+# 🚨 / 🚀(1)만 저장
 # =========================================================
 
 def update_okx(usdt_krw):
@@ -3222,6 +2655,12 @@ def update_okx(usdt_krw):
                     volume_map[
                         symbol
                     ] = volume
+
+                    logging.info(
+                        f"OKX 거래대금 "
+                        f"{index}/{len(symbols)} "
+                        f"{symbol} 완료"
+                    )
 
                     break
 
@@ -3286,6 +2725,10 @@ def update_okx(usdt_krw):
                 "none"
             )
 
+            # =================================================
+            # 🚨 / 🚀(1) 외에는 저장하지 않음
+            # =================================================
+
             if not is_visible_breakout_warning(
                 warning,
                 change_percent
@@ -3328,6 +2771,15 @@ def update_okx(usdt_krw):
 
     latest_okx_data = rows
 
+    logging.info(
+        f"OKX 경고 종목 "
+        f"{len(rows)}개"
+    )
+
+    logging.info(
+        f"========== OKX TOP{TOP_N} 완료 =========="
+    )
+
     return True
 
 
@@ -3350,9 +2802,19 @@ def update_dashboard():
     )
 
     if USE_UPBIT not in ("Y", "N"):
+
+        logging.error(
+            f"USE_UPBIT 설정 오류 : {USE_UPBIT}"
+        )
+
         return
 
     if USE_OKX not in ("Y", "N"):
+
+        logging.error(
+            f"USE_OKX 설정 오류 : {USE_OKX}"
+        )
+
         return
 
     # =====================================================
@@ -3374,6 +2836,10 @@ def update_dashboard():
     else:
 
         latest_upbit_data = []
+
+        logging.info(
+            "업비트 조회 N - 조회하지 않음"
+        )
 
     # =====================================================
     # OKX
@@ -3407,6 +2873,10 @@ def update_dashboard():
 
         latest_okx_data = []
 
+        logging.info(
+            "OKX 조회 N - 조회하지 않음"
+        )
+
 
 # =========================================================
 # 스케줄러
@@ -3430,7 +2900,7 @@ def scheduler():
 
 
 # =========================================================
-# CSS
+# 대시보드 CSS
 # =========================================================
 
 DASHBOARD_CSS = """
@@ -3516,6 +2986,7 @@ th {
     color: #8f949d;
     font-size: 8px;
     text-align: center;
+    vertical-align: middle;
 }
 
 td {
@@ -3531,6 +3002,11 @@ td {
 tbody tr:last-child td {
     border-bottom: none;
 }
+
+
+/* =====================================================
+   🚨 돌파 직전
+   ===================================================== */
 
 .pre-breakout-row {
     animation: preBreakoutFlash 0.75s ease-in-out infinite;
@@ -3551,6 +3027,11 @@ tbody tr:last-child td {
     }
 }
 
+
+/* =====================================================
+   🚀 최초 돌파
+   ===================================================== */
+
 .breakout-row {
     animation: breakoutFlash 0.9s ease-in-out infinite;
 }
@@ -3570,24 +3051,10 @@ tbody tr:last-child td {
     }
 }
 
-.stop-row {
-    animation: stopFlash 0.9s ease-in-out infinite;
-}
 
-@keyframes stopFlash {
-
-    0% {
-        background: #181c21;
-    }
-
-    50% {
-        background: #492323;
-    }
-
-    100% {
-        background: #181c21;
-    }
-}
+/* =====================================================
+   실제 순위
+   ===================================================== */
 
 th:nth-child(1),
 td:nth-child(1) {
@@ -3614,10 +3081,7 @@ td:nth-child(5) {
     width: 30%;
 }
 
-.coin-wrap,
-.volume-wrap,
-.today-wrap,
-.breakout-wrap {
+.coin-wrap {
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -3632,6 +3096,7 @@ td:nth-child(5) {
     font-weight: bold;
     text-align: center;
     font-size: 9px;
+    line-height: 1.2;
 }
 
 .direction-long,
@@ -3641,6 +3106,15 @@ td:nth-child(5) {
     width: 100%;
     font-size: 9px;
     text-align: center;
+}
+
+.volume-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    width: 100%;
 }
 
 .volume-value {
@@ -3669,6 +3143,16 @@ td:nth-child(5) {
 .signal-none {
     color: #555;
     font-size: 8px;
+    text-align: center;
+}
+
+.today-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    width: 100%;
 }
 
 .change-item {
@@ -3678,10 +3162,25 @@ td:nth-child(5) {
     justify-content: center;
     max-width: 100%;
     font-size: 8px;
+    text-align: center;
+}
+
+.change-icon {
+    flex-shrink: 0;
+}
+
+.breakout-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    width: 100%;
 }
 
 .warning-empty {
     color: #555;
+    white-space: nowrap;
 }
 
 .warning-icon {
@@ -3704,12 +3203,10 @@ td:nth-child(5) {
     );
 }
 
-.stop {
-    font-size: 11px;
-    filter: drop-shadow(
-        0 0 5px rgba(255, 50, 50, 0.8)
-    );
-}
+
+/* =====================================================
+   EMA
+   ===================================================== */
 
 .ema-container {
     width: 100%;
@@ -3733,6 +3230,7 @@ td:nth-child(5) {
 .ema-value {
     font-size: 7px;
     font-weight: bold;
+    flex-shrink: 0;
 }
 
 .note {
@@ -3741,6 +3239,7 @@ td:nth-child(5) {
     line-height: 1.5;
     margin: 5px 2px 8px 2px;
 }
+
 
 @media (max-width: 480px) {
 
@@ -3751,14 +3250,23 @@ td:nth-child(5) {
 
     h1 {
         font-size: 14px;
+        margin: 2px 2px 5px 2px;
     }
 
     h2 {
         font-size: 12px;
+        margin: 9px 2px 5px 2px;
     }
 
     .info {
         font-size: 7px;
+        line-height: 1.4;
+        padding: 5px 6px;
+    }
+
+    .exchange-status {
+        font-size: 7px;
+        gap: 6px;
     }
 
     th {
@@ -3785,6 +3293,7 @@ td:nth-child(5) {
 
     .change-item {
         font-size: 7px;
+        gap: 1px;
     }
 
     .ema-value {
@@ -3799,15 +3308,21 @@ td:nth-child(5) {
         font-size: 11px;
     }
 
-    .stop {
-        font-size: 9px;
+    .direction-long,
+    .direction-short,
+    .direction-none {
+        font-size: 8px;
+    }
+
+    .note {
+        font-size: 6px;
     }
 }
 """
 
 
 # =========================================================
-# 테이블 행
+# 테이블 행 생성
 # =========================================================
 
 def make_table_rows(data):
@@ -3836,40 +3351,38 @@ def make_table_rows(data):
             "none"
         )
 
-        row_class = ""
-
         # =================================================
-        # ⛔️
+        # 🚨 / 🚀(1) 외에는 표시하지 않음
         # =================================================
 
-        if warning_4h.endswith(
-            "_stop"
-        ):
-
-            row_class = "stop-row"
-
-        elif is_visible_breakout_warning(
+        if not is_visible_breakout_warning(
             warning_4h,
             change_percent
         ):
 
-            try:
+            continue
 
-                count = int(
-                    warning_4h.split("_")[-1]
-                )
+        row_class = ""
 
-            except Exception:
+        # =================================================
+        # 🚨
+        # =================================================
 
-                count = 999
+        if warning_4h.endswith(
+            "_breakout_0"
+        ):
 
-            if count == 0:
+            row_class = "pre-breakout-row"
 
-                row_class = "pre-breakout-row"
+        # =================================================
+        # 🚀(1)
+        # =================================================
 
-            elif count >= 1:
+        elif warning_4h.endswith(
+            "_breakout_1"
+        ):
 
-                row_class = "breakout-row"
+            row_class = "breakout-row"
 
         actual_rank = item.get(
             "rank",
@@ -3952,7 +3465,7 @@ def make_table_rows(data):
 
 
 # =========================================================
-# 거래소 섹션
+# 거래소 테이블
 # =========================================================
 
 def make_exchange_section(
@@ -3972,7 +3485,7 @@ def make_exchange_section(
     color:#555;
     padding:12px 4px;
 ">
-현재 🚨 / 🚀 / ⛔️ 종목 없음
+현재 🚨 / 🚀(1) 종목 없음
 </td>
 </tr>
 """
@@ -4012,13 +3525,13 @@ def make_exchange_section(
 
 <div class="note">
 
-※ TOP{TOP_N} 거래대금 실제 순위를 유지하며 🚨 / 🚀 / ⛔️ 종목만 표시<br>
+※ TOP{TOP_N} 거래대금 실제 순위를 유지하며 🚨 / 🚀(1) 종목만 표시<br>
 
-※ 조회 주기 = {UPDATE_MINUTES}분<br>
+※ 1분마다 데이터를 다시 조회<br>
 
-※ 돌파/손절은 현재 진행 중인 4H 캔들 상태를 기준으로 판단<br>
+※ 업비트 4H는 현재 진행 중인 캔들을 포함하여 현재 상태를 판단<br>
 
-※ EMA는 현재 4H 캔들 포함<br>
+※ EMA는 현재 조회된 4H 캔들 기준<br>
 
 ※ 60개 이상 캔들 = 10-30-60 정렬 기준<br>
 
@@ -4028,25 +3541,23 @@ def make_exchange_section(
 
 ※ 🔴(N) = 현재 역배열 유지 캔들 수<br>
 
-※ 🚨 = 최근 {BREAKOUT_LOOKBACK}개 4H 고가/저가 테스트 상태<br>
+※ ⚪ = 정렬 조건 없음 또는 데이터 부족<br>
 
-※ 🚀(1) = 최초 확정 돌파<br>
+※ 🚨 = 최근 {BREAKOUT_LOOKBACK}개 4H 캔들의 고가/저가를 테스트하는 현재 상태<br>
 
-※ 🚀(2) = 이후 첫 추가 고점/저점 갱신<br>
+※ 🚀(1) = 현재 캔들이 최초 확정 돌파 조건을 만족하는 상태<br>
 
-※ 🚀(3) = 이후 두 번째 추가 고점/저점 갱신<br>
+※ 최초 돌파 캔들이 지나가면 다음 조회부터 경고 리스트에서 삭제<br>
 
-※ LONG = 상승 돌파 상태<br>
+※ 🚀(2), 🚀(3) 등 추가 카운팅은 사용하지 않음<br>
 
-※ SHORT = 하락 돌파 상태<br>
+※ ⛔️ 중지 표시는 사용하지 않음<br>
 
-※ LONG 손절 = 첫 번째 음봉 저점 또는 돌파 기준 저점 이탈<br>
+※ LONG = 고점 돌파 + 상승 마감 조건<br>
 
-※ SHORT 손절 = 첫 번째 양봉 고점 또는 돌파 기준 고점 이탈<br>
+※ SHORT = 저점 돌파 + 하락 마감 조건<br>
 
-※ ⛔️ 발생 시 해당 돌파 사이클은 즉시 종료<br>
-
-※ ⛔️는 발생한 조회에서 1회 표시 후 다음 조회부터 리스트에서 제거
+※ EMA 정렬 자체만으로는 경고 표시하지 않음
 
 </div>
 
@@ -4127,7 +3638,7 @@ def dashboard():
 <div class="info">
 
 <div>
-4H 현재 추세 · 4H 현재 돌파 상태 · 최근 {BREAKOUT_LOOKBACK}개 확정 4H 캔들 기준
+4H 추세 · 4H 돌파 · 최근 {BREAKOUT_LOOKBACK}개 확정 4H 캔들 고가/저가
 </div>
 
 <div>
@@ -4135,7 +3646,7 @@ def dashboard():
 </div>
 
 <div>
-TOP{TOP_N} · 🚨 돌파 전 / 🚀 돌파 추적 / ⛔️ 손절
+TOP{TOP_N} · 🚨 돌파 전 / 🚀(1) 최초 돌파 · 4H EMA
 </div>
 
 <div class="exchange-status">
@@ -4194,7 +3705,7 @@ def startup():
         )
 
     # =====================================================
-    # 최초 즉시 실행
+    # 최초 1회 즉시 실행
     # =====================================================
 
     threading.Thread(
