@@ -715,7 +715,7 @@ def get_ema(df, column, period):
 
 
 # =========================================================
-# EMA 10-30-60-120 방향
+# ★ EMA 10-30-60-120 방향
 # =========================================================
 
 def get_ema_10_30_60_120_direction(df):
@@ -1593,10 +1593,10 @@ def get_breakout_count(
 
 
 # =========================================================
-# 1H N자
+# ★ 15M N자 분석
 # =========================================================
 
-def get_1h_breakout_signal(
+def get_15m_breakout_signal(
     df,
     exchange,
     symbol,
@@ -1653,7 +1653,7 @@ def get_1h_breakout_signal(
             invalidation_id = make_breakout_id(
                 exchange,
                 symbol,
-                "1H",
+                "15M",
                 df,
                 idx
             )
@@ -1691,6 +1691,7 @@ def get_1h_breakout_signal(
         )
 
         if breakout_index is None:
+
             return {
                 **empty,
                 "direction": "long"
@@ -1699,7 +1700,7 @@ def get_1h_breakout_signal(
         breakout_id = make_breakout_id(
             exchange,
             symbol,
-            "1H",
+            "15M",
             df,
             breakout_index
         )
@@ -1755,7 +1756,7 @@ def get_1h_breakout_signal(
             invalidation_id = make_breakout_id(
                 exchange,
                 symbol,
-                "1H",
+                "15M",
                 df,
                 idx
             )
@@ -1793,6 +1794,7 @@ def get_1h_breakout_signal(
         )
 
         if breakout_index is None:
+
             return {
                 **empty,
                 "direction": "short"
@@ -1801,7 +1803,7 @@ def get_1h_breakout_signal(
         breakout_id = make_breakout_id(
             exchange,
             symbol,
-            "1H",
+            "15M",
             df,
             breakout_index
         )
@@ -1831,17 +1833,21 @@ def get_1h_breakout_signal(
 
 
 # =========================================================
-# ★ 최종 N자 조건
+# ★ 최종 멀티타임프레임 조건
 #
-# N자 자체는 1H만 분석
+# N자 구조는 15M만 분석
 #
 # LONG:
-# 15M LONG + 1H LONG + 4H LONG
+# 15M N자 + 15M EMA LONG
+# 1H EMA LONG
+# 4H EMA LONG
 #
 # SHORT:
-# 15M SHORT + 1H SHORT + 4H SHORT
+# 15M N자 + 15M EMA SHORT
+# 1H EMA SHORT
+# 4H EMA SHORT
 #
-# EMA 기준 = 10-30-60-120
+# EMA = 10-30-60-120
 # =========================================================
 
 def get_multi_timeframe_breakout(
@@ -1853,8 +1859,8 @@ def get_multi_timeframe_breakout(
     allow_short=True
 ):
 
-    warning = get_1h_breakout_signal(
-        df1h,
+    warning = get_15m_breakout_signal(
+        df15m,
         exchange,
         symbol,
         allow_short
@@ -1916,7 +1922,7 @@ def get_multi_timeframe_breakout(
             warning["warning_index"] = None
 
     return {
-        "1h": warning
+        "15m": warning
     }
 
 
@@ -2178,7 +2184,7 @@ def multi_warning_html(warnings):
         )
 
     warning = warnings.get(
-        "1h",
+        "15m",
         {}
     )
 
@@ -2196,7 +2202,7 @@ def multi_warning_html(warnings):
 
     return f"""
 <span class="tf-warning">
-<span class="tf-label">1H</span>
+<span class="tf-label">15M</span>
 {warning_text}
 </span>
 """
@@ -2612,15 +2618,15 @@ def get_upbit_analysis(market):
         allow_short=False
     )
 
-    warning1h = warnings["1h"]
+    warning15m = warnings["15m"]
 
-    signal = warning1h.get(
+    signal = warning15m.get(
         "signal",
         "none"
     )
 
     qualified = (
-        warning1h.get("direction") == "long"
+        warning15m.get("direction") == "long"
         and signal.isdigit()
         and int(signal) >= 1
         and ema15m.get("direction") == "long"
@@ -2636,7 +2642,7 @@ def get_upbit_analysis(market):
         "ema": ema15m,
         "ema_1h": ema1h,
         "ema_4h": ema4h,
-        "warning": warning1h,
+        "warning": warning15m,
         "warnings": warnings,
         "changes": changes,
         "qualified": qualified
@@ -2681,14 +2687,14 @@ def get_okx_analysis(inst_id):
         allow_short=True
     )
 
-    warning1h = warnings["1h"]
+    warning15m = warnings["15m"]
 
-    direction = warning1h.get(
+    direction = warning15m.get(
         "direction",
         "none"
     )
 
-    signal = warning1h.get(
+    signal = warning15m.get(
         "signal",
         "none"
     )
@@ -2729,7 +2735,7 @@ def get_okx_analysis(inst_id):
         "ema": ema15m,
         "ema_1h": ema1h,
         "ema_4h": ema4h,
-        "warning": warning1h,
+        "warning": warning15m,
         "warnings": warnings,
         "changes": changes,
         "qualified": qualified
@@ -2841,7 +2847,7 @@ def make_empty_analysis():
         },
         "warning": warning.copy(),
         "warnings": {
-            "1h": warning.copy()
+            "15m": warning.copy()
         },
         "changes": None,
         "qualified": False
@@ -3970,7 +3976,7 @@ maximum-scale=1.0,
 user-scalable=no">
 
 <title>
-1H N Pattern Breakout
+15M N Pattern Breakout
 </title>
 
 <style>
@@ -3984,7 +3990,7 @@ user-scalable=no">
 <body>
 
 <h1>
-📊 1H N Pattern Breakout
+📊 15M N Pattern Breakout
 </h1>
 
 <div class="info">
@@ -3998,7 +4004,7 @@ user-scalable=no">
 </div>
 
 <div>
-③ N자 구조는 1H만 분석
+③ N자 구조는 15M만 분석
 </div>
 
 <div>
@@ -4010,7 +4016,7 @@ user-scalable=no">
 </div>
 
 <div>
-⑥ 1H N자 돌파 후 🚀(1)부터 계속 카운터
+⑥ 15M N자 돌파 후 🚀(1)부터 계속 카운터
 </div>
 
 <div>
@@ -4018,11 +4024,11 @@ user-scalable=no">
 </div>
 
 <div>
-⑧ LONG 해지 : 음봉 + 현재 종가 < 이전 종가
+⑧ LONG 해지 : 음봉 + 현재 종가 &lt; 이전 종가
 </div>
 
 <div>
-⑨ SHORT 해지 : 양봉 + 현재 종가 > 이전 종가
+⑨ SHORT 해지 : 양봉 + 현재 종가 &gt; 이전 종가
 </div>
 
 <div>
@@ -4030,7 +4036,7 @@ user-scalable=no">
 </div>
 
 <div>
-⑪ 15M / 4H N자 분석은 하지 않음
+⑪ 1H / 4H N자 분석은 하지 않음
 </div>
 
 <div class="exchange-status">
@@ -4088,11 +4094,11 @@ def startup():
     )
 
     logging.info(
-        "N자 구조 분석 : 1H만"
+        "N자 구조 분석 : 15M만"
     )
 
     logging.info(
-        "15M N자 분석 : 완전 제거"
+        "1H N자 분석 : 완전 제거"
     )
 
     logging.info(
@@ -4101,12 +4107,12 @@ def startup():
 
     logging.info(
         "LONG 경고 : "
-        "15M + 1H + 4H 정배열 + 1H N자"
+        "15M + 1H + 4H 정배열 + 15M N자"
     )
 
     logging.info(
         "SHORT 경고 : "
-        "15M + 1H + 4H 역배열 + 1H N자"
+        "15M + 1H + 4H 역배열 + 15M N자"
     )
 
     logging.info(
