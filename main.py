@@ -3093,13 +3093,17 @@ def get_upbit_analysis(market):
     )
 
     # -----------------------------------------------------
-    # 기존 필터 유지
+    # 수정 조건
     #
-    # 4H LONG
-    # +
     # 15M LONG
     # +
+    # 1H LONG
+    # +
+    # 4H LONG
+    # +
     # 15M N자
+    #
+    # 모두 만족해야 LONG 조건 충족
     # -----------------------------------------------------
 
     warning15m = warnings["15m"]
@@ -3107,9 +3111,11 @@ def get_upbit_analysis(market):
     qualified = False
 
     if (
-        ema4h.get("direction") == "long"
-        and
         ema15m.get("direction") == "long"
+        and
+        ema1h.get("direction") == "long"
+        and
+        ema4h.get("direction") == "long"
         and
         warning15m.get("direction") == "long"
     ):
@@ -3231,67 +3237,72 @@ def get_okx_analysis(inst_id):
     )
 
     # -----------------------------------------------------
-    # 기존 15M 조건 유지
+    # 15M N자 + 3개 시간봉 방향 일치
     # -----------------------------------------------------
 
     warning15m = warnings["15m"]
-
-    qualified = False
 
     warning_direction = warning15m.get(
         "direction",
         "none"
     )
 
-    if warning_direction == "long":
+    signal = warning15m.get(
+        "signal",
+        "none"
+    )
 
-        if (
-            ema4h.get("direction") == "long"
+    signal_valid = (
+        signal == "prebreakout"
+        or
+        (
+            signal.isdigit()
             and
-            ema15m.get("direction") == "long"
-        ):
+            1 <= int(signal) <= 3
+        )
+    )
 
-            signal = warning15m.get(
-                "signal",
-                "none"
-            )
+    qualified = False
 
-            if (
-                signal == "prebreakout"
-                or
-                (
-                    signal.isdigit()
-                    and
-                    1 <= int(signal) <= 3
-                )
-            ):
+    # -----------------------------------------------------
+    # LONG
+    #
+    # 15M + 1H + 4H 모두 LONG
+    # -----------------------------------------------------
 
-                qualified = True
+    if (
+        warning_direction == "long"
+        and
+        ema15m.get("direction") == "long"
+        and
+        ema1h.get("direction") == "long"
+        and
+        ema4h.get("direction") == "long"
+        and
+        signal_valid
+    ):
 
-    elif warning_direction == "short":
+        qualified = True
 
-        if (
-            ema4h.get("direction") == "short"
-            and
-            ema15m.get("direction") == "short"
-        ):
+    # -----------------------------------------------------
+    # SHORT
+    #
+    # 15M + 1H + 4H 모두 SHORT
+    # -----------------------------------------------------
 
-            signal = warning15m.get(
-                "signal",
-                "none"
-            )
+    elif (
+        warning_direction == "short"
+        and
+        ema15m.get("direction") == "short"
+        and
+        ema1h.get("direction") == "short"
+        and
+        ema4h.get("direction") == "short"
+        and
+        signal_valid
+    ):
 
-            if (
-                signal == "prebreakout"
-                or
-                (
-                    signal.isdigit()
-                    and
-                    1 <= int(signal) <= 3
-                )
-            ):
-
-                qualified = True
+        qualified = True
 
     changes = calculate_daily_changes(
         df15m,
@@ -3311,6 +3322,8 @@ def get_okx_analysis(inst_id):
 
 # =========================================================
 # LONG 필터
+#
+# 15M + 1H + 4H 모두 LONG
 # =========================================================
 
 def pass_long_filter(analysis):
@@ -3324,6 +3337,11 @@ def pass_long_filter(analysis):
         {}
     )
 
+    ema1h = analysis.get(
+        "ema_1h",
+        {}
+    )
+
     ema4h = analysis.get(
         "ema_4h",
         {}
@@ -3334,17 +3352,39 @@ def pass_long_filter(analysis):
         {}
     )
 
-    if ema4h.get(
-        "direction"
-    ) != "long":
-
-        return False
+    # =====================================================
+    # 15M LONG
+    # =====================================================
 
     if ema.get(
         "direction"
     ) != "long":
 
         return False
+
+    # =====================================================
+    # 1H LONG
+    # =====================================================
+
+    if ema1h.get(
+        "direction"
+    ) != "long":
+
+        return False
+
+    # =====================================================
+    # 4H LONG
+    # =====================================================
+
+    if ema4h.get(
+        "direction"
+    ) != "long":
+
+        return False
+
+    # =====================================================
+    # 15M N자 LONG
+    # =====================================================
 
     if warning.get(
         "direction"
@@ -3374,6 +3414,8 @@ def pass_long_filter(analysis):
 
 # =========================================================
 # SHORT 필터
+#
+# 15M + 1H + 4H 모두 SHORT
 # =========================================================
 
 def pass_short_filter(analysis):
@@ -3387,6 +3429,11 @@ def pass_short_filter(analysis):
         {}
     )
 
+    ema1h = analysis.get(
+        "ema_1h",
+        {}
+    )
+
     ema4h = analysis.get(
         "ema_4h",
         {}
@@ -3397,17 +3444,39 @@ def pass_short_filter(analysis):
         {}
     )
 
-    if ema4h.get(
-        "direction"
-    ) != "short":
-
-        return False
+    # =====================================================
+    # 15M SHORT
+    # =====================================================
 
     if ema.get(
         "direction"
     ) != "short":
 
         return False
+
+    # =====================================================
+    # 1H SHORT
+    # =====================================================
+
+    if ema1h.get(
+        "direction"
+    ) != "short":
+
+        return False
+
+    # =====================================================
+    # 4H SHORT
+    # =====================================================
+
+    if ema4h.get(
+        "direction"
+    ) != "short":
+
+        return False
+
+    # =====================================================
+    # 15M N자 SHORT
+    # =====================================================
 
     if warning.get(
         "direction"
@@ -3572,14 +3641,20 @@ def update_upbit():
                 "none"
             )
 
+            # =================================================
+            # 15M + 1H + 4H 모두 LONG일 때만 LONG
+            # =================================================
+
             if (
                 qualified
                 and
                 warning_signal != "none"
                 and
-                warning.get(
-                    "direction"
-                ) == "long"
+                ema.get("direction") == "long"
+                and
+                ema1h.get("direction") == "long"
+                and
+                ema4h.get("direction") == "long"
             ):
 
                 display_direction = "long"
@@ -3774,6 +3849,10 @@ def update_okx(usdt_krw):
                 "none"
             )
 
+            # =================================================
+            # LONG / SHORT 모두 3개 시간봉 방향 일치
+            # =================================================
+
             if warning_direction == "long":
 
                 qualified = pass_long_filter(
@@ -3795,10 +3874,24 @@ def update_okx(usdt_krw):
                 "none"
             )
 
+            # =================================================
+            # 실제 LONG/SHORT 표시 조건
+            #
+            # 15M + 1H + 4H가 같은 방향
+            # +
+            # 실제 15M N자 경고
+            # =================================================
+
             if (
                 qualified
                 and
                 warning_signal != "none"
+                and
+                ema.get("direction") == warning_direction
+                and
+                ema1h.get("direction") == warning_direction
+                and
+                ema4h.get("direction") == warning_direction
                 and
                 warning_direction in (
                     "long",
@@ -4192,6 +4285,11 @@ td:nth-child(5) {
     font-size: 7px;
 }
 
+
+/* =======================================================
+   N자 경고
+   ======================================================= */
+
 .warning-wrap {
     display: flex;
     flex-direction: column;
@@ -4246,21 +4344,51 @@ td:nth-child(5) {
     );
 }
 
-.ema-value {
+
+/* =======================================================
+   EMA 고정 정렬
+   ======================================================= */
+
+.ema-grid {
     width: 100%;
-    font-size: 7px;
-    font-weight: bold;
-    line-height: 1.5;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: center;
+}
+
+.ema-row {
+    width: 100%;
+    height: 13px;
+    display: grid;
+    grid-template-columns: 28px 1fr;
+    align-items: center;
+    justify-items: start;
+    line-height: 13px;
     white-space: nowrap;
 }
 
-.ema4h-value {
-    width: 100%;
-    font-size: 7px;
+.ema-tf {
+    width: 28px;
+    text-align: right;
+    padding-right: 3px;
     color: #8f949d;
-    margin-top: 2px;
+    font-size: 6px;
+    font-weight: 700;
+}
+
+.ema-signal {
+    width: 100%;
+    text-align: left;
+    font-size: 7px;
+    font-weight: bold;
     white-space: nowrap;
 }
+
+
+/* =======================================================
+   조건 충족 행
+   ======================================================= */
 
 .qualified-row {
     animation:
@@ -4315,6 +4443,7 @@ td:nth-child(5) {
         0 0 7px
         rgba(255, 77, 77, 0.75);
 }
+
 
 @media (max-width: 480px) {
 
@@ -4371,11 +4500,24 @@ td:nth-child(5) {
         font-size: 5px;
     }
 
-    .ema-value {
-        font-size: 6px;
+
+    /* ===================================================
+       모바일 EMA 고정 정렬
+       =================================================== */
+
+    .ema-row {
+        height: 12px;
+        grid-template-columns: 25px 1fr;
+        line-height: 12px;
     }
 
-    .ema4h-value {
+    .ema-tf {
+        width: 25px;
+        font-size: 5px;
+        padding-right: 3px;
+    }
+
+    .ema-signal {
         font-size: 6px;
     }
 
@@ -4394,6 +4536,9 @@ td:nth-child(5) {
 #   LONG/SHORT
 #
 # EMA
+#   15M
+#   1H
+#   4H
 #
 # N자
 #   15M / 1H
@@ -4417,6 +4562,11 @@ def make_table_rows(data):
 
         warning_text = multi_warning_html(
             warnings
+        )
+
+        ema = item.get(
+            "ema",
+            {}
         )
 
         ema1h = item.get(
@@ -4506,29 +4656,60 @@ def make_table_rows(data):
 
 <!-- =================================================
      EMA
+     15M / 1H / 4H 고정 정렬
      ================================================= -->
 
 <td class="{direction_class}">
 
-<div class="ema-value">
-15M {item.get("ema", {}).get(
-    "display",
-    "⚪"
-)}
-</div>
+<div class="ema-grid">
 
-<div class="ema-value">
-1H {ema1h.get(
-    "display",
-    "⚪"
-)}
-</div>
+    <div class="ema-row">
 
-<div class="ema4h-value">
-4H {ema4h.get(
-    "display",
-    "⚪"
-)}
+        <span class="ema-tf">
+            15M
+        </span>
+
+        <span class="ema-signal">
+            {ema.get(
+                "display",
+                "⚪"
+            )}
+        </span>
+
+    </div>
+
+
+    <div class="ema-row">
+
+        <span class="ema-tf">
+            1H
+        </span>
+
+        <span class="ema-signal">
+            {ema1h.get(
+                "display",
+                "⚪"
+            )}
+        </span>
+
+    </div>
+
+
+    <div class="ema-row">
+
+        <span class="ema-tf">
+            4H
+        </span>
+
+        <span class="ema-signal">
+            {ema4h.get(
+                "display",
+                "⚪"
+            )}
+        </span>
+
+    </div>
+
 </div>
 
 </td>
@@ -4542,7 +4723,9 @@ def make_table_rows(data):
 <td class="{direction_class}">
 
 <div class="warning-wrap">
+
 {warning_text}
+
 </div>
 
 </td>
@@ -4740,7 +4923,7 @@ def dashboard():
 </div>
 
 <div>
-⑤ 기존 조건 : 4H 방향 + 15M 방향 + 15M N자
+⑤ LONG/SHORT : 15M + 1H + 4H 한방향 + 15M N자
 </div>
 
 <div>
@@ -4825,11 +5008,15 @@ def startup():
     )
 
     logging.info(
-        "LONG : 4H LONG + 15M LONG + 15M N자"
+        "LONG : "
+        "15M LONG + 1H LONG + 4H LONG "
+        "+ 15M N자"
     )
 
     logging.info(
-        "SHORT : 4H SHORT + 15M SHORT + 15M N자"
+        "SHORT : "
+        "15M SHORT + 1H SHORT + 4H SHORT "
+        "+ 15M N자"
     )
 
     logging.info(
@@ -4858,7 +5045,7 @@ def startup():
 
     logging.info(
         "거래대금 아래 LONG/SHORT : "
-        "기존 15M 실제 경고 조건 충족 시에만 표시"
+        "15M + 1H + 4H 한방향일 때만 표시"
     )
 
     logging.info(
@@ -4871,6 +5058,10 @@ def startup():
 
     logging.info(
         "4H N자 표시 : 사용 안 함"
+    )
+
+    logging.info(
+        "EMA 표시 : 15M / 1H / 4H 고정 일렬 정렬"
     )
 
     logging.info(
@@ -4946,4 +5137,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-        )
+            )
