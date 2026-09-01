@@ -20,7 +20,7 @@ logging.basicConfig(
 log = logging.getLogger("trading")
 
 VOLUME_HOURS = 24
-TOP_N = 20
+TOP_N = 30
 UPDATE_MINUTES = 1
 
 INITIAL_CANDLE_COUNT = 200
@@ -33,7 +33,7 @@ SWING_RIGHT = 2
 MIN_CORRECTION_RATE = 0.003
 
 USE_UPBIT = "Y"
-USE_OKX = "Y"
+USE_OKX = "N"
 
 REQUEST_INTERVAL = 0.08
 RATE_LIMIT_WAIT = 3
