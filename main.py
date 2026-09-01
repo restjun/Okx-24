@@ -25,6 +25,7 @@ warnings.filterwarnings(
 
 app = FastAPI()
 
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s:%(name)s:%(message)s"
@@ -37,29 +38,40 @@ logger = logging.getLogger("trading")
 # 사용자 설정
 # =========================================================
 
+# 업비트 ticker API 24시간 거래대금
 VOLUME_HOURS = 24
 
+# 거래대금 TOP
 TOP_N = 20
 
+# 업데이트 주기
 UPDATE_MINUTES = 1
 
+# 최초 캔들 요청
 INITIAL_CANDLE_COUNT = 200
 
+# 과거 추가 요청
 HISTORY_CHUNK = 200
 
+# 최대 과거 요청 횟수
 MAX_HISTORY_CHUNKS = 10
 
-# 정배열 시작점 이후 구조를 확인할 최대 범위
+# ---------------------------------------------------------
+# N자 구조 탐색 범위
+#
+# 정배열 시작점 이후 충분한 구간을 추적
+# ---------------------------------------------------------
+
 BREAKOUT_LOOKBACK = 30
 
-# 직전 고점/저점 접근 허용거리
+# 직전 기준 고점 접근 허용거리
 PRE_BREAKOUT_DISTANCE = 0.005
 
 # 스윙 판정
 SWING_LEFT = 2
 SWING_RIGHT = 2
 
-# 최소 눌림/반등폭
+# 최소 조정폭
 MIN_CORRECTION_RATE = 0.003
 
 
@@ -114,11 +126,26 @@ latest_upbit_update_time = "-"
 
 latest_okx_update_time = "-"
 
+
+# =========================================================
+# 업비트 마켓 목록 캐시
+# =========================================================
+
 latest_upbit_markets = []
+
+
+# =========================================================
+# API 요청 동시 제어
+# =========================================================
 
 request_lock = threading.Lock()
 
 last_request_time = 0.0
+
+
+# =========================================================
+# 전체 업데이트 중복 실행 방지
+# =========================================================
 
 update_lock = threading.Lock()
 
@@ -139,15 +166,17 @@ def wait_request_interval():
 
         if elapsed < REQUEST_INTERVAL:
 
-            time.sleep(
+            wait_time = (
                 REQUEST_INTERVAL - elapsed
             )
+
+            time.sleep(wait_time)
 
         last_request_time = time.monotonic()
 
 
 # =========================================================
-# API 요청 이름
+# API URL 표시
 # =========================================================
 
 def get_request_name(func):
@@ -278,6 +307,12 @@ def retry_request(func, *args, **kwargs):
 
                 return result
 
+            logging.info(
+                f"[API 응답] "
+                f"{function_name} "
+                f"{url}"
+            )
+
             return result
 
         except Exception as e:
@@ -333,6 +368,10 @@ def get_usdt_krw():
 
     if response is None:
 
+        logging.error(
+            "[업비트 API] USDT-KRW 조회 실패"
+        )
+
         return None
 
     try:
@@ -356,6 +395,7 @@ def get_usdt_krw():
     except Exception as e:
 
         logging.error(
+            f"[업비트 API] "
             f"USDT-KRW 처리 오류 : {e}"
         )
 
@@ -433,7 +473,7 @@ def get_okx_ohlcv(
             ]
         )
 
-        for col in [
+        numeric_columns = [
             "ts",
             "o",
             "h",
@@ -442,7 +482,9 @@ def get_okx_ohlcv(
             "vol",
             "volCcy",
             "volCcyQuote"
-        ]:
+        ]
+
+        for col in numeric_columns:
 
             df[col] = pd.to_numeric(
                 df[col],
@@ -457,12 +499,14 @@ def get_okx_ohlcv(
 
             return None
 
-        return (
+        df = (
             df
             .sort_values("ts")
             .drop_duplicates("ts")
             .reset_index(drop=True)
         )
+
+        return df
 
     except Exception as e:
 
@@ -575,6 +619,8 @@ def get_upbit_ohlcv(
 
             return None
 
+        # 현재 진행 중인 15분봉 제거
+
         now = datetime.now(KST)
 
         minute_block = (
@@ -602,12 +648,14 @@ def get_upbit_ohlcv(
 
             return None
 
-        return (
+        df = (
             df
             .sort_values("datetime")
             .drop_duplicates("datetime")
             .reset_index(drop=True)
         )
+
+        return df
 
     except Exception as e:
 
@@ -664,17 +712,18 @@ def get_upbit_daily_change(
 
             return None
 
-        return [
-            round(
-                float(change_rate) * 100,
-                2
-            )
-        ]
+        result = round(
+            float(change_rate) * 100,
+            2
+        )
+
+        return [result]
 
     except Exception as e:
 
         logging.error(
-            f"업비트 일봉 처리 오류 : {e}"
+            f"[업비트 일봉] "
+            f"{market} 처리 오류 : {e}"
         )
 
         return None
@@ -846,47 +895,75 @@ def get_direction_series(df):
 
 
 # =========================================================
-# 최초 정배열 시작점
+# 정배열/역배열 시작점
+#
+# 중요:
+# 가장 오래된 시작점이 아니라
+# 현재 이어지고 있는 배열의 "최근 시작점" 사용
 # =========================================================
 
-def find_first_alignment_start(df):
+def find_latest_alignment_start(
+    df,
+    direction
+):
 
-    directions = get_direction_series(df)
+    directions = get_direction_series(
+        df
+    )
 
     if not directions:
 
         return None
+
+    latest = None
 
     for i in range(
         120,
         len(directions)
     ):
 
-        current = directions[i]
-
-        previous = directions[i - 1]
-
         if (
-            current == "long"
-            and previous != "long"
+            directions[i] == direction
+            and
+            directions[i - 1] != direction
         ):
 
-            return {
-                "direction": "long",
+            latest = {
+                "direction": direction,
                 "index": i
             }
 
-        if (
-            current == "short"
-            and previous != "short"
-        ):
+    return latest
 
-            return {
-                "direction": "short",
-                "index": i
-            }
 
-    return None
+# =========================================================
+# 정배열 유지 여부
+# =========================================================
+
+def alignment_is_valid(
+    directions,
+    start_index,
+    end_index,
+    direction
+):
+
+    if (
+        start_index < 0
+        or end_index >= len(directions)
+    ):
+
+        return False
+
+    for i in range(
+        start_index,
+        end_index + 1
+    ):
+
+        if directions[i] != direction:
+
+            return False
+
+    return True
 
 
 # =========================================================
@@ -937,7 +1014,10 @@ def find_swing_highs(
                 errors="coerce"
             )
 
-            if left.empty or right.empty:
+            if (
+                left.empty
+                or right.empty
+            ):
 
                 continue
 
@@ -1006,7 +1086,10 @@ def find_swing_lows(
                 errors="coerce"
             )
 
-            if left.empty or right.empty:
+            if (
+                left.empty
+                or right.empty
+            ):
 
                 continue
 
@@ -1028,32 +1111,36 @@ def find_swing_lows(
 
 
 # =========================================================
-# LONG 구조 추적
+# =========================================================
+# N자 LONG 추적
+# =========================================================
 #
-# 핵심 로직
+# 핵심 구조
 #
-# 정배열 시작점
+# 정배열 시작
 #       ↓
-# 최초 확정 최고점
+# 상승
 #       ↓
-# 눌림
+# 주요 고점 형성
 #       ↓
-# 반등 고점
+# 가격 조정
+#       ↓
+# 반등
 #       ↓
 # 기준 고점 돌파 실패
 #       ↓
-# 다시 눌림
+# 다시 조정
 #       ↓
-# 다시 반등 고점
-#       ↓
-# 반복
+# 다시 반등
 #       ↓
 # 기준 고점 돌파
 #       ↓
-# 🚀(1)
+# 🚀
 #
-# "최근 N개 고점" 방식이 아님.
-# 정배열 시작점 이후의 구조를 시간순으로 추적.
+# 중요:
+# 기준 고점은 중간 반등 고점 때문에 변경하지 않는다.
+#
+# 이평 정배열이 유지되는 동안 가격 구조만 추적한다.
 # =========================================================
 
 def get_long_breakout_signal(
@@ -1071,27 +1158,51 @@ def get_long_breakout_signal(
 
         return "none"
 
-    start = alignment_start.get(
-        "index"
-    )
-
-    current_index = len(df) - 1
-
-    if start is None:
+    if (
+        df is None
+        or len(df) < 125
+    ):
 
         return "none"
 
-    if start >= current_index - 5:
+    directions = get_direction_series(
+        df
+    )
+
+    if not directions:
+
+        return "none"
+
+    start = alignment_start[
+        "index"
+    ]
+
+    current_index = len(df) - 1
+
+    if start >= current_index:
 
         return "none"
 
     # -----------------------------------------------------
-    # 정배열 시작 이후 확정된 스윙 고점 목록
+    # 현재까지 정배열이 깨졌으면 전체 구조 폐기
+    # -----------------------------------------------------
+
+    if not alignment_is_valid(
+        directions,
+        start,
+        current_index,
+        "long"
+    ):
+
+        return "none"
+
+    # -----------------------------------------------------
+    # 정배열 시작 이후의 스윙 고점
     # -----------------------------------------------------
 
     swing_highs = find_swing_highs(
         df,
-        start + 1,
+        start + SWING_RIGHT + 1,
         current_index
     )
 
@@ -1100,344 +1211,352 @@ def get_long_breakout_signal(
         return "none"
 
     # -----------------------------------------------------
-    # 첫 번째 확정 고점을 최초 기준 고점으로 설정
-    # -----------------------------------------------------
-
-    first_high = None
-
-    for index, value in swing_highs:
-
-        if index > start:
-
-            first_high = (
-                index,
-                value
-            )
-
-            break
-
-    if first_high is None:
-
-        return "none"
-
-    reference_index = first_high[0]
-
-    reference_high = first_high[1]
-
-    # -----------------------------------------------------
-    # 정배열 시작 → 최초 고점 이후 구조를 순차적으로 추적
-    # -----------------------------------------------------
-
-    correction_started = False
-
-    correction_low = None
-
-    failed_rebounds = []
-
-    candidate_rebound = None
-
-    breakout_index = None
-
-    i = reference_index + 1
-
-    while i <= current_index:
-
-        try:
-
-            high = float(
-                df["h"].iloc[i]
-            )
-
-            low = float(
-                df["l"].iloc[i]
-            )
-
-            close = float(
-                df["c"].iloc[i]
-            )
-
-        except Exception:
-
-            i += 1
-            continue
-
-        # =================================================
-        # 1. 기준 고점보다 높은 가격이 나왔는지
-        # =================================================
-
-        if (
-            close > reference_high
-        ):
-
-            breakout_index = i
-
-            break
-
-        # =================================================
-        # 2. 기준 고점 아래에서 눌림 확인
-        # =================================================
-
-        if low < reference_high:
-
-            if not correction_started:
-
-                correction_started = True
-
-                correction_low = low
-
-            else:
-
-                if (
-                    correction_low is None
-                    or low < correction_low
-                ):
-
-                    correction_low = low
-
-        # =================================================
-        # 3. 충분한 눌림이 발생했는지
-        # =================================================
-
-        if (
-            correction_started
-            and
-            correction_low is not None
-        ):
-
-            correction_rate = (
-                reference_high -
-                correction_low
-            ) / reference_high
-
-            if (
-                correction_rate
-                >=
-                MIN_CORRECTION_RATE
-            ):
-
-                # -----------------------------------------
-                # 현재 시점까지 확정된 스윙 고점 확인
-                # -----------------------------------------
-
-                confirmed_highs = [
-                    x
-                    for x in swing_highs
-                    if (
-                        x[0] >
-                        reference_index
-                        and
-                        x[0] <= i
-                    )
-                ]
-
-                # -----------------------------------------
-                # 반등 고점 확인
-                # -----------------------------------------
-
-                if confirmed_highs:
-
-                    candidate_rebound = (
-                        confirmed_highs[-1]
-                    )
-
-                    rebound_index = (
-                        candidate_rebound[0]
-                    )
-
-                    rebound_high = (
-                        candidate_rebound[1]
-                    )
-
-                    # -------------------------------------
-                    # 반등 고점이 기존 기준 고점보다 낮으면
-                    # 돌파 실패
-                    # -------------------------------------
-
-                    if (
-                        rebound_index > reference_index
-                        and
-                        rebound_high < reference_high
-                    ):
-
-                        if not failed_rebounds:
-
-                            failed_rebounds.append(
-                                (
-                                    rebound_index,
-                                    rebound_high
-                                )
-                            )
-
-                        elif (
-                            failed_rebounds[-1][0]
-                            !=
-                            rebound_index
-                        ):
-
-                            failed_rebounds.append(
-                                (
-                                    rebound_index,
-                                    rebound_high
-                                )
-                            )
-
-                        # ---------------------------------
-                        # 새로운 실패 고점 이후 다시 눌림
-                        # ---------------------------------
-
-                        correction_started = False
-
-                        correction_low = None
-
-                        candidate_rebound = None
-
-                        # ---------------------------------
-                        # 다음 구조를 계속 추적
-                        # 기준 고점은 유지
-                        # ---------------------------------
-
-        # =================================================
-        # 4. 캔들의 고가가 기준 고점을 넘었지만
-        #    종가가 넘지 못했다면 돌파 실패 후보
-        # =================================================
-
-        if (
-            high > reference_high
-            and
-            close <= reference_high
-        ):
-
-            # 아직 종가 돌파가 아니므로 실패 구조로 유지
-            if not failed_rebounds:
-
-                failed_rebounds.append(
-                    (
-                        i,
-                        high
-                    )
-                )
-
-            elif (
-                failed_rebounds[-1][0] != i
-            ):
-
-                failed_rebounds.append(
-                    (
-                        i,
-                        high
-                    )
-                )
-
-        i += 1
-
-    # =====================================================
-    # 종가 기준 돌파가 없으면 신호 없음
-    # =====================================================
-
-    if breakout_index is None:
-
-        return "none"
-
-    # =====================================================
-    # 돌파 기준봉
-    # =====================================================
-
-    breakout_open = float(
-        df["o"].iloc[
-            breakout_index
-        ]
-    )
-
-    breakout_close = float(
-        df["c"].iloc[
-            breakout_index
-        ]
-    )
-
-    breakout_low = float(
-        df["l"].iloc[
-            breakout_index
-        ]
-    )
-
-    # 안전 확인
-    if breakout_close <= breakout_open:
-
-        return "none"
-
-    if breakout_close <= reference_high:
-
-        return "none"
-
-    # =====================================================
-    # 돌파 이후 카운팅
-    # =====================================================
-
-    count = (
-        current_index
-        -
-        breakout_index
-        +
-        1
-    )
-
-    # =====================================================
-    # 돌파 기준봉 저점 이탈
+    # 후보 고점을 하나씩 기준점으로 사용
     #
-    # 한 번이라도 이탈하면 구조 폐기
-    # =====================================================
+    # 가장 최근 구조부터 검사
+    # -----------------------------------------------------
 
-    after_section = df.iloc[
-        breakout_index:
-        current_index + 1
-    ]
-
-    lows_after = pd.to_numeric(
-        after_section["l"],
-        errors="coerce"
-    )
-
-    if lows_after.empty:
-
-        return "none"
-
-    if (
-        lows_after.min()
-        <
-        breakout_low
+    for anchor_pos in range(
+        len(swing_highs) - 1,
+        -1,
+        -1
     ):
 
+        anchor_index, anchor_high = (
+            swing_highs[anchor_pos]
+        )
+
+        if anchor_index >= current_index - 2:
+
+            continue
+
+        # -------------------------------------------------
+        # 기준 고점 이후 조정이 실제로 발생했는지 확인
+        # -------------------------------------------------
+
+        correction_start = (
+            anchor_index + 1
+        )
+
+        correction_end = (
+            current_index
+        )
+
+        if correction_start > correction_end:
+
+            continue
+
+        correction_lows = pd.to_numeric(
+            df["l"].iloc[
+                correction_start:
+                correction_end + 1
+            ],
+            errors="coerce"
+        )
+
+        if correction_lows.empty:
+
+            continue
+
+        correction_low = correction_lows.min()
+
+        if pd.isna(
+            correction_low
+        ):
+
+            continue
+
+        correction_rate = (
+            anchor_high -
+            float(correction_low)
+        ) / anchor_high
+
+        if (
+            correction_rate
+            <
+            MIN_CORRECTION_RATE
+        ):
+
+            continue
+
+        # -------------------------------------------------
+        # 기준 고점 이후 모든 구간이
+        # 정배열 상태인지 다시 확인
+        # -------------------------------------------------
+
+        if not alignment_is_valid(
+            directions,
+            anchor_index,
+            current_index,
+            "long"
+        ):
+
+            continue
+
+        # -------------------------------------------------
+        # N자 추적 시작
+        # -------------------------------------------------
+
+        last_correction_low = float(
+            correction_low
+        )
+
+        attempt_high = None
+
+        attempt_high_index = None
+
+        breakout_index = None
+
+        search_start = (
+            anchor_index + 1
+        )
+
+        # -------------------------------------------------
+        # 시간순으로 추적
+        # -------------------------------------------------
+
+        for i in range(
+            search_start,
+            current_index + 1
+        ):
+
+            # ---------------------------------------------
+            # 정배열 깨지면 즉시 이 후보 폐기
+            # ---------------------------------------------
+
+            if directions[i] != "long":
+
+                breakout_index = None
+
+                break
+
+            try:
+
+                high = float(
+                    df["h"].iloc[i]
+                )
+
+                low = float(
+                    df["l"].iloc[i]
+                )
+
+                close = float(
+                    df["c"].iloc[i]
+                )
+
+            except Exception:
+
+                continue
+
+            # ---------------------------------------------
+            # 기준 고점 돌파
+            #
+            # 확정봉 종가가 기준 고점보다 높아야 함
+            # ---------------------------------------------
+
+            if close > anchor_high:
+
+                breakout_index = i
+
+                break
+
+            # ---------------------------------------------
+            # 현재 가격이 기준 고점 아래에 있는 동안
+            # 조정 저점 계속 추적
+            # ---------------------------------------------
+
+            if low < last_correction_low:
+
+                last_correction_low = low
+
+            # ---------------------------------------------
+            # 반등 고점 후보
+            # ---------------------------------------------
+
+            if i >= SWING_RIGHT:
+
+                left_start = max(
+                    search_start,
+                    i - SWING_LEFT
+                )
+
+                left_values = pd.to_numeric(
+                    df["h"].iloc[
+                        left_start:i
+                    ],
+                    errors="coerce"
+                )
+
+                if not left_values.empty:
+
+                    if (
+                        high >=
+                        left_values.max()
+                    ):
+
+                        # ---------------------------------
+                        # 기준 고점보다 낮은 반등 고점
+                        # ---------------------------------
+
+                        if high < anchor_high:
+
+                            attempt_high = high
+
+                            attempt_high_index = i
+
+                        # ---------------------------------
+                        # 기준 고점을 wick으로 넘었지만
+                        # 종가 돌파가 아닌 경우
+                        #
+                        # 돌파 실패로 간주하고 계속 추적
+                        # ---------------------------------
+
+                        elif high >= anchor_high:
+
+                            if close <= anchor_high:
+
+                                attempt_high = (
+                                    anchor_high
+                                    -
+                                    (
+                                        anchor_high
+                                        *
+                                        0.000001
+                                    )
+                                )
+
+                                attempt_high_index = i
+
+            # ---------------------------------------------
+            # 반등 후 다시 하락했는지 확인
+            #
+            # 다음 N자 구간으로 넘어가는 조건
+            # ---------------------------------------------
+
+            if (
+                attempt_high is not None
+                and
+                attempt_high_index is not None
+                and
+                i > attempt_high_index
+            ):
+
+                decline_rate = (
+                    attempt_high -
+                    low
+                ) / attempt_high
+
+                if (
+                    decline_rate
+                    >=
+                    MIN_CORRECTION_RATE
+                ):
+
+                    # -------------------------------------
+                    # 돌파 실패 후 새로운 조정 발생
+                    #
+                    # 기준 고점은 그대로 유지
+                    # -------------------------------------
+
+                    last_correction_low = low
+
+                    attempt_high = None
+
+                    attempt_high_index = None
+
+        # -------------------------------------------------
+        # 돌파가 발생하지 않았으면 다음 후보 검사
+        # -------------------------------------------------
+
+        if breakout_index is None:
+
+            continue
+
+        # -------------------------------------------------
+        # 돌파 후 카운팅
+        # -------------------------------------------------
+
+        count = (
+            current_index
+            -
+            breakout_index
+            +
+            1
+        )
+
+        # -------------------------------------------------
+        # 돌파 기준봉 저점
+        # -------------------------------------------------
+
+        breakout_low = float(
+            df["l"].iloc[
+                breakout_index
+            ]
+        )
+
+        # -------------------------------------------------
+        # 돌파 이후 기준봉 저점 이탈 확인
+        # -------------------------------------------------
+
+        after_section = df.iloc[
+            breakout_index:
+            current_index + 1
+        ]
+
+        lows_after = pd.to_numeric(
+            after_section["l"],
+            errors="coerce"
+        )
+
+        if lows_after.empty:
+
+            continue
+
+        if (
+            lows_after.min()
+            <
+            breakout_low
+        ):
+
+            return "none"
+
+        # -------------------------------------------------
+        # 1~3만 표시
+        # -------------------------------------------------
+
+        if 1 <= count <= 3:
+
+            return str(count)
+
         return "none"
-
-    # =====================================================
-    # 1~3까지만 표시
-    # =====================================================
-
-    if 1 <= count <= 3:
-
-        return str(count)
 
     return "none"
 
 
 # =========================================================
-# SHORT 구조 추적
+# =========================================================
+# N자 SHORT 추적
+# =========================================================
 #
-# 정배열 시작점
+# LONG의 반대 구조
+#
+# 역배열 시작
 #       ↓
-# 최초 확정 최저점
+# 하락
 #       ↓
-# 반등
+# 주요 저점
 #       ↓
-# 반락 저점
+# 가격 반등
 #       ↓
-# 기존 최저점 이탈 실패
+# 기준 저점 이탈 실패
 #       ↓
-# 반복
+# 다시 반등
+#       ↓
+# 다시 하락
 #       ↓
 # 기준 저점 이탈
 #       ↓
-# 🚀(1)
+# 🚀
 # =========================================================
 
 def get_short_breakout_signal(
@@ -1455,27 +1574,43 @@ def get_short_breakout_signal(
 
         return "none"
 
-    start = alignment_start.get(
-        "index"
+    if (
+        df is None
+        or len(df) < 125
+    ):
+
+        return "none"
+
+    directions = get_direction_series(
+        df
     )
+
+    if not directions:
+
+        return "none"
+
+    start = alignment_start[
+        "index"
+    ]
 
     current_index = len(df) - 1
 
-    if start is None:
+    if start >= current_index:
 
         return "none"
 
-    if start >= current_index - 5:
+    if not alignment_is_valid(
+        directions,
+        start,
+        current_index,
+        "short"
+    ):
 
         return "none"
-
-    # -----------------------------------------------------
-    # 정배열 시작 이후 스윙 저점
-    # -----------------------------------------------------
 
     swing_lows = find_swing_lows(
         df,
-        start + 1,
+        start + SWING_RIGHT + 1,
         current_index
     )
 
@@ -1484,293 +1619,292 @@ def get_short_breakout_signal(
         return "none"
 
     # -----------------------------------------------------
-    # 최초 확정 저점
+    # 최근 후보부터 검사
     # -----------------------------------------------------
 
-    first_low = None
-
-    for index, value in swing_lows:
-
-        if index > start:
-
-            first_low = (
-                index,
-                value
-            )
-
-            break
-
-    if first_low is None:
-
-        return "none"
-
-    reference_index = first_low[0]
-
-    reference_low = first_low[1]
-
-    correction_started = False
-
-    correction_high = None
-
-    failed_rebounds = []
-
-    candidate_rebound = None
-
-    breakout_index = None
-
-    i = reference_index + 1
-
-    while i <= current_index:
-
-        try:
-
-            high = float(
-                df["h"].iloc[i]
-            )
-
-            low = float(
-                df["l"].iloc[i]
-            )
-
-            close = float(
-                df["c"].iloc[i]
-            )
-
-        except Exception:
-
-            i += 1
-            continue
-
-        # =================================================
-        # 1. 기준 저점 아래 종가 이탈
-        # =================================================
-
-        if (
-            close < reference_low
-        ):
-
-            breakout_index = i
-
-            break
-
-        # =================================================
-        # 2. 기준 저점 위 반등
-        # =================================================
-
-        if high > reference_low:
-
-            if not correction_started:
-
-                correction_started = True
-
-                correction_high = high
-
-            else:
-
-                if (
-                    correction_high is None
-                    or high > correction_high
-                ):
-
-                    correction_high = high
-
-        # =================================================
-        # 3. 충분한 반등 확인
-        # =================================================
-
-        if (
-            correction_started
-            and
-            correction_high is not None
-        ):
-
-            correction_rate = (
-                correction_high -
-                reference_low
-            ) / reference_low
-
-            if (
-                correction_rate
-                >=
-                MIN_CORRECTION_RATE
-            ):
-
-                confirmed_lows = [
-                    x
-                    for x in swing_lows
-                    if (
-                        x[0] >
-                        reference_index
-                        and
-                        x[0] <= i
-                    )
-                ]
-
-                if confirmed_lows:
-
-                    candidate_rebound = (
-                        confirmed_lows[-1]
-                    )
-
-                    rebound_index = (
-                        candidate_rebound[0]
-                    )
-
-                    rebound_low = (
-                        candidate_rebound[1]
-                    )
-
-                    # -------------------------------------
-                    # 새로운 반락 저점이 기존 기준 저점보다
-                    # 높다면 이탈 실패
-                    # -------------------------------------
-
-                    if (
-                        rebound_index > reference_index
-                        and
-                        rebound_low > reference_low
-                    ):
-
-                        if not failed_rebounds:
-
-                            failed_rebounds.append(
-                                (
-                                    rebound_index,
-                                    rebound_low
-                                )
-                            )
-
-                        elif (
-                            failed_rebounds[-1][0]
-                            !=
-                            rebound_index
-                        ):
-
-                            failed_rebounds.append(
-                                (
-                                    rebound_index,
-                                    rebound_low
-                                )
-                            )
-
-                        correction_started = False
-
-                        correction_high = None
-
-                        candidate_rebound = None
-
-        # =================================================
-        # 4. 저가가 기준 저점 밑으로 내려갔지만
-        #    종가가 기준 저점 위라면 이탈 실패 후보
-        # =================================================
-
-        if (
-            low < reference_low
-            and
-            close >= reference_low
-        ):
-
-            if not failed_rebounds:
-
-                failed_rebounds.append(
-                    (
-                        i,
-                        low
-                    )
-                )
-
-            elif (
-                failed_rebounds[-1][0] != i
-            ):
-
-                failed_rebounds.append(
-                    (
-                        i,
-                        low
-                    )
-                )
-
-        i += 1
-
-    # =====================================================
-    # 종가 기준 이탈이 없으면 신호 없음
-    # =====================================================
-
-    if breakout_index is None:
-
-        return "none"
-
-    breakout_open = float(
-        df["o"].iloc[
-            breakout_index
-        ]
-    )
-
-    breakout_close = float(
-        df["c"].iloc[
-            breakout_index
-        ]
-    )
-
-    breakout_high = float(
-        df["h"].iloc[
-            breakout_index
-        ]
-    )
-
-    if breakout_close >= breakout_open:
-
-        return "none"
-
-    if breakout_close >= reference_low:
-
-        return "none"
-
-    # =====================================================
-    # 돌파 이후 카운팅
-    # =====================================================
-
-    count = (
-        current_index
-        -
-        breakout_index
-        +
-        1
-    )
-
-    # =====================================================
-    # 돌파 기준봉 고점 돌파 시 무효
-    # =====================================================
-
-    after_section = df.iloc[
-        breakout_index:
-        current_index + 1
-    ]
-
-    highs_after = pd.to_numeric(
-        after_section["h"],
-        errors="coerce"
-    )
-
-    if highs_after.empty:
-
-        return "none"
-
-    if (
-        highs_after.max()
-        >
-        breakout_high
+    for anchor_pos in range(
+        len(swing_lows) - 1,
+        -1,
+        -1
     ):
 
+        anchor_index, anchor_low = (
+            swing_lows[anchor_pos]
+        )
+
+        if anchor_index >= current_index - 2:
+
+            continue
+
+        # -------------------------------------------------
+        # 기준 저점 이후 반등 확인
+        # -------------------------------------------------
+
+        correction_start = (
+            anchor_index + 1
+        )
+
+        correction_end = (
+            current_index
+        )
+
+        if correction_start > correction_end:
+
+            continue
+
+        correction_highs = pd.to_numeric(
+            df["h"].iloc[
+                correction_start:
+                correction_end + 1
+            ],
+            errors="coerce"
+        )
+
+        if correction_highs.empty:
+
+            continue
+
+        correction_high = (
+            correction_highs.max()
+        )
+
+        if pd.isna(
+            correction_high
+        ):
+
+            continue
+
+        correction_rate = (
+            float(correction_high) -
+            anchor_low
+        ) / anchor_low
+
+        if (
+            correction_rate
+            <
+            MIN_CORRECTION_RATE
+        ):
+
+            continue
+
+        if not alignment_is_valid(
+            directions,
+            anchor_index,
+            current_index,
+            "short"
+        ):
+
+            continue
+
+        # -------------------------------------------------
+        # N자 추적
+        # -------------------------------------------------
+
+        last_correction_high = float(
+            correction_high
+        )
+
+        attempt_low = None
+
+        attempt_low_index = None
+
+        breakout_index = None
+
+        search_start = (
+            anchor_index + 1
+        )
+
+        for i in range(
+            search_start,
+            current_index + 1
+        ):
+
+            # ---------------------------------------------
+            # 역배열 깨지면 폐기
+            # ---------------------------------------------
+
+            if directions[i] != "short":
+
+                breakout_index = None
+
+                break
+
+            try:
+
+                high = float(
+                    df["h"].iloc[i]
+                )
+
+                low = float(
+                    df["l"].iloc[i]
+                )
+
+                close = float(
+                    df["c"].iloc[i]
+                )
+
+            except Exception:
+
+                continue
+
+            # ---------------------------------------------
+            # 기준 저점 이탈
+            #
+            # 확정봉 종가가 기준 저점 아래
+            # ---------------------------------------------
+
+            if close < anchor_low:
+
+                breakout_index = i
+
+                break
+
+            # ---------------------------------------------
+            # 반등 고점 추적
+            # ---------------------------------------------
+
+            if high > last_correction_high:
+
+                last_correction_high = high
+
+            # ---------------------------------------------
+            # 재하락 저점 후보
+            # ---------------------------------------------
+
+            if i >= SWING_RIGHT:
+
+                left_start = max(
+                    search_start,
+                    i - SWING_LEFT
+                )
+
+                left_values = pd.to_numeric(
+                    df["l"].iloc[
+                        left_start:i
+                    ],
+                    errors="coerce"
+                )
+
+                if not left_values.empty:
+
+                    if (
+                        low <=
+                        left_values.min()
+                    ):
+
+                        if low > anchor_low:
+
+                            attempt_low = low
+
+                            attempt_low_index = i
+
+                        # ---------------------------------
+                        # wick으로 기준 저점 이탈했지만
+                        # 종가 이탈이 아닌 경우
+                        # ---------------------------------
+
+                        elif low <= anchor_low:
+
+                            if close >= anchor_low:
+
+                                attempt_low = (
+                                    anchor_low
+                                    +
+                                    (
+                                        anchor_low
+                                        *
+                                        0.000001
+                                    )
+                                )
+
+                                attempt_low_index = i
+
+            # ---------------------------------------------
+            # 재하락 후 다시 반등
+            # ---------------------------------------------
+
+            if (
+                attempt_low is not None
+                and
+                attempt_low_index is not None
+                and
+                i > attempt_low_index
+            ):
+
+                rise_rate = (
+                    high -
+                    attempt_low
+                ) / attempt_low
+
+                if (
+                    rise_rate
+                    >=
+                    MIN_CORRECTION_RATE
+                ):
+
+                    last_correction_high = high
+
+                    attempt_low = None
+
+                    attempt_low_index = None
+
+        if breakout_index is None:
+
+            continue
+
+        # -------------------------------------------------
+        # 카운팅
+        # -------------------------------------------------
+
+        count = (
+            current_index
+            -
+            breakout_index
+            +
+            1
+        )
+
+        # -------------------------------------------------
+        # 돌파 기준봉 고점
+        # -------------------------------------------------
+
+        breakout_high = float(
+            df["h"].iloc[
+                breakout_index
+            ]
+        )
+
+        # -------------------------------------------------
+        # 돌파 이후 기준봉 고점 돌파 확인
+        # -------------------------------------------------
+
+        after_section = df.iloc[
+            breakout_index:
+            current_index + 1
+        ]
+
+        highs_after = pd.to_numeric(
+            after_section["h"],
+            errors="coerce"
+        )
+
+        if highs_after.empty:
+
+            continue
+
+        if (
+            highs_after.max()
+            >
+            breakout_high
+        ):
+
+            return "none"
+
+        if 1 <= count <= 3:
+
+            return str(count)
+
         return "none"
-
-    # =====================================================
-    # 1~3까지만 표시
-    # =====================================================
-
-    if 1 <= count <= 3:
-
-        return str(count)
 
     return "none"
 
@@ -1794,26 +1928,41 @@ def get_breakout_signal(
             "direction": "none"
         }
 
-    alignment = find_first_alignment_start(
+    directions = get_direction_series(
         df
     )
 
-    if alignment is None:
+    if not directions:
 
         return {
             "signal": "none",
             "direction": "none"
         }
 
-    direction = alignment[
-        "direction"
-    ]
+    # -----------------------------------------------------
+    # 현재 EMA 방향
+    # -----------------------------------------------------
 
-    if direction == "long":
+    current_direction = directions[-1]
 
-        signal = get_long_breakout_signal(
-            df,
-            alignment
+    # -----------------------------------------------------
+    # LONG
+    # -----------------------------------------------------
+
+    if current_direction == "long":
+
+        alignment = (
+            find_latest_alignment_start(
+                df,
+                "long"
+            )
+        )
+
+        signal = (
+            get_long_breakout_signal(
+                df,
+                alignment
+            )
         )
 
         return {
@@ -1821,15 +1970,28 @@ def get_breakout_signal(
             "direction": "long"
         }
 
+    # -----------------------------------------------------
+    # SHORT
+    # -----------------------------------------------------
+
     if (
-        direction == "short"
+        current_direction == "short"
         and
         allow_short
     ):
 
-        signal = get_short_breakout_signal(
-            df,
-            alignment
+        alignment = (
+            find_latest_alignment_start(
+                df,
+                "short"
+            )
+        )
+
+        signal = (
+            get_short_breakout_signal(
+                df,
+                alignment
+            )
         )
 
         return {
@@ -1839,12 +2001,14 @@ def get_breakout_signal(
 
     return {
         "signal": "none",
-        "direction": direction
+        "direction": current_direction
     }
 
 
 # =========================================================
 # 변동률
+# OKX에서만 사용
+# 한국시간 09:00 기준
 # =========================================================
 
 def calculate_daily_changes(
@@ -1974,8 +2138,10 @@ def calculate_daily_changes(
 
 def check_ema(df):
 
-    direction = get_ema_30_60_120_direction(
-        df
+    direction = (
+        get_ema_30_60_120_direction(
+            df
+        )
     )
 
     if direction == "long":
@@ -2097,7 +2263,7 @@ def format_change(changes):
 
 
 # =========================================================
-# 표시 여부
+# 경고 표시 여부
 # =========================================================
 
 def is_visible_warning(
@@ -2151,7 +2317,7 @@ def combined_warning_html(
 
 
 # =========================================================
-# 방향 HTML
+# 방향 표시
 # =========================================================
 
 def direction_html(
@@ -2182,7 +2348,7 @@ def direction_html(
 
 
 # =========================================================
-# 업비트 마켓 + 24시간 거래대금
+# 업비트 마켓 목록 + 24시간 거래대금
 # =========================================================
 
 def get_upbit_markets():
@@ -2261,17 +2427,27 @@ def get_upbit_markets():
                 }
             )
 
+        if not markets:
+
+            return []
+
         latest_upbit_markets = [
             item["market"]
             for item in markets
         ]
+
+        logging.info(
+            f"[업비트 API] "
+            f"KRW 마켓 {len(markets)}개 "
+            "24시간 거래대금 확보 완료"
+        )
 
         return markets
 
     except Exception as e:
 
         logging.error(
-            f"업비트 마켓 처리 오류 : {e}"
+            f"업비트 마켓/거래대금 처리 오류 : {e}"
         )
 
         return []
@@ -2282,6 +2458,10 @@ def get_upbit_markets():
 # =========================================================
 
 def get_all_okx_swap_symbols():
+
+    logging.info(
+        "[OKX API] SWAP 목록 조회 시작"
+    )
 
     response = retry_request(
         requests.get,
@@ -2304,7 +2484,7 @@ def get_all_okx_swap_symbols():
             []
         )
 
-        return [
+        symbols = [
             x["instId"]
             for x in data
             if (
@@ -2315,9 +2495,13 @@ def get_all_okx_swap_symbols():
                     "-USDT-SWAP"
                 )
                 and
-                x.get("state") == "live"
+                x.get(
+                    "state"
+                ) == "live"
             )
         ]
+
+        return symbols
 
     except Exception as e:
 
@@ -2361,15 +2545,179 @@ def get_okx_volume(
 
             return None
 
-        return (
+        volume_krw = (
             float(volume)
             *
             float(usdt_krw)
         )
 
-    except Exception:
+        return volume_krw
+
+    except Exception as e:
+
+        logging.error(
+            f"OKX 거래대금 계산 오류 "
+            f"{inst_id}: {e}"
+        )
 
         return None
+
+
+# =========================================================
+# 과거 데이터
+# =========================================================
+
+def get_okx_history(
+    inst_id,
+    bar="15m"
+):
+
+    all_df = None
+
+    before = None
+
+    for chunk_index in range(
+        MAX_HISTORY_CHUNKS
+    ):
+
+        logging.info(
+            f"[OKX 15분 과거조회] "
+            f"{inst_id} "
+            f"{chunk_index + 1}/"
+            f"{MAX_HISTORY_CHUNKS}"
+        )
+
+        df = get_okx_ohlcv(
+            inst_id,
+            bar,
+            HISTORY_CHUNK,
+            before
+        )
+
+        if (
+            df is None
+            or df.empty
+        ):
+
+            break
+
+        if all_df is None:
+
+            all_df = df.copy()
+
+        else:
+
+            all_df = pd.concat(
+                [
+                    df,
+                    all_df
+                ],
+                ignore_index=True
+            )
+
+        all_df = (
+            all_df
+            .drop_duplicates("ts")
+            .sort_values("ts")
+            .reset_index(drop=True)
+        )
+
+        # -------------------------------------------------
+        # 충분한 데이터가 있으면 종료
+        # -------------------------------------------------
+
+        if len(all_df) >= INITIAL_CANDLE_COUNT:
+
+            directions = get_direction_series(
+                all_df
+            )
+
+            if directions:
+
+                return all_df
+
+        oldest_ts = int(
+            all_df["ts"].iloc[0]
+        )
+
+        before = oldest_ts
+
+    return all_df
+
+
+def get_upbit_history(
+    market
+):
+
+    all_df = None
+
+    to = None
+
+    for chunk_index in range(
+        MAX_HISTORY_CHUNKS
+    ):
+
+        logging.info(
+            f"[업비트 15분 과거조회] "
+            f"{market} "
+            f"{chunk_index + 1}/"
+            f"{MAX_HISTORY_CHUNKS}"
+        )
+
+        df = get_upbit_ohlcv(
+            market,
+            15,
+            HISTORY_CHUNK,
+            to
+        )
+
+        if (
+            df is None
+            or df.empty
+        ):
+
+            break
+
+        if all_df is None:
+
+            all_df = df.copy()
+
+        else:
+
+            all_df = pd.concat(
+                [
+                    df,
+                    all_df
+                ],
+                ignore_index=True
+            )
+
+        all_df = (
+            all_df
+            .drop_duplicates("datetime")
+            .sort_values("datetime")
+            .reset_index(drop=True)
+        )
+
+        if len(all_df) >= INITIAL_CANDLE_COUNT:
+
+            directions = get_direction_series(
+                all_df
+            )
+
+            if directions:
+
+                return all_df
+
+        oldest = all_df[
+            "datetime"
+        ].iloc[0]
+
+        to = oldest.strftime(
+            "%Y-%m-%dT%H:%M:%S"
+        )
+
+    return all_df
 
 
 # =========================================================
@@ -2585,13 +2933,22 @@ def update_upbit():
 
     global latest_upbit_data
     global latest_upbit_update_time
+    global latest_upbit_markets
 
     start_time = get_kst_time()
+
+    logging.info(
+        "========================================"
+    )
 
     logging.info(
         f"========== 업비트 TOP{TOP_N} 시작 "
         f"{start_time} KST =========="
     )
+
+    # -----------------------------------------------------
+    # 24시간 거래대금
+    # -----------------------------------------------------
 
     market_data = get_upbit_markets()
 
@@ -2690,8 +3047,12 @@ def update_upbit():
     )
 
     logging.info(
-        f"업비트 LONG 돌파 "
+        f"업비트 LONG N자 돌파 "
         f"{len(rows)}개"
+    )
+
+    logging.info(
+        "========== 업비트 완전 종료 =========="
     )
 
     return True
@@ -2878,12 +3239,14 @@ def update_dashboard():
     ):
 
         logging.warning(
-            "이전 전체 조회가 진행 중입니다."
+            "이전 전체 조회 진행 중 → 이번 주기 건너뜀"
         )
 
         return
 
     try:
+
+        cycle_start = get_kst_time()
 
         logging.info(
             "========================================"
@@ -2891,7 +3254,11 @@ def update_dashboard():
 
         logging.info(
             f"전체 조회 시작 "
-            f"{get_kst_time()} KST"
+            f"{cycle_start} KST"
+        )
+
+        logging.info(
+            "조회 순서 : 업비트 → OKX"
         )
 
         # =================================================
@@ -2928,11 +3295,15 @@ def update_dashboard():
 
                 if usdt_krw is not None:
 
-                    latest_usdt_krw = usdt_krw
+                    latest_usdt_krw = (
+                        usdt_krw
+                    )
 
                 else:
 
-                    usdt_krw = latest_usdt_krw
+                    usdt_krw = (
+                        latest_usdt_krw
+                    )
 
                 if (
                     usdt_krw is not None
@@ -2954,9 +3325,15 @@ def update_dashboard():
 
             latest_okx_data = []
 
+        cycle_end = get_kst_time()
+
         logging.info(
             f"전체 조회 종료 "
-            f"{get_kst_time()} KST"
+            f"{cycle_end} KST"
+        )
+
+        logging.info(
+            "========================================"
         )
 
     finally:
@@ -2990,7 +3367,7 @@ def scheduler():
 
 
 # =========================================================
-# HTML CSS
+# CSS
 # =========================================================
 
 DASHBOARD_CSS = """
@@ -3251,6 +3628,7 @@ td:nth-child(5) {
     .ema-value {
         font-size: 7px;
     }
+
 }
 
 """
@@ -3371,7 +3749,7 @@ def make_exchange_section(
         )
 
         change_note = (
-            "※ 변동률 = OKX 15분봉을 이용해 한국시간 09:00 기준 계산<br>"
+            "※ 변동률 = OKX 15분봉 한국시간 09:00 기준<br>"
         )
 
         update_time = (
@@ -3385,7 +3763,7 @@ def make_exchange_section(
         )
 
         change_note = (
-            "※ 변동률 = 업비트 일봉 API의 change_rate 사용<br>"
+            "※ 변동률 = 업비트 일봉 API change_rate<br>"
         )
 
         update_time = (
@@ -3396,7 +3774,7 @@ def make_exchange_section(
 <div class="section">
 
 <h2>
-🏆 {title} TOP{TOP_N} 돌파
+🏆 {title} TOP{TOP_N} N자 돌파
 <span style="
     color:#777;
     font-size:7px;
@@ -3432,35 +3810,38 @@ def make_exchange_section(
 
 </div>
 
-<div class="note"
-     style="
+<div
+    style="
         color:#666;
         font-size:6px;
         line-height:1.5;
         margin:4px 2px 7px 2px;
-     ">
+    ">
 
 ※ TOP{TOP_N} 거래대금 순위<br>
-※ 업비트 거래대금 = 24시간 누적 거래대금<br>
+※ 업비트 거래대금 = API 24시간 누적 거래대금<br>
 {direction_note}
 {change_note}
 ※ EMA = 15분봉 30-60-120<br>
-※ LONG = 15분 EMA 30 > 60 > 120 + 당일 변동률 양수<br>
-※ SHORT = 15분 EMA 30 < 60 < 120 + 당일 변동률 음수<br>
+※ LONG = 30 > 60 > 120 정배열 유지<br>
+※ SHORT = 30 < 60 < 120 역배열 유지<br>
+※ 정배열/역배열 시작점부터 가격 구조 추적<br>
+※ LONG = 상승 → 고점 → 가격 조정 → 반등 → 고점 돌파 실패 → 반복 → 이전 고점 돌파<br>
+※ SHORT = 하락 → 저점 → 가격 반등 → 재하락 → 저점 이탈 실패 → 반복 → 이전 저점 이탈<br>
+※ N자 추적 중 이평 배열이 깨지면 구조 폐기<br>
+※ 중간 반등 고점/반락 저점 때문에 기준 고점을 임의로 변경하지 않음<br>
+※ LONG 기준 고점은 N자 구조의 최초 주요 고점<br>
+※ SHORT 기준 저점은 N자 구조의 최초 주요 저점<br>
+※ 돌파는 15분 확정봉 종가 기준<br>
 ※ 현재 진행 중인 15분봉 제외<br>
-※ 정배열 시작점부터 고점/저점 구조를 순차적으로 추적<br>
-※ 최초 확정 고점/저점을 기준점으로 설정<br>
-※ 눌림/반등 후 돌파 실패 구조를 반복 확인<br>
-※ LONG = 이전 기준 고점 종가 돌파<br>
-※ SHORT = 이전 기준 저점 종가 이탈<br>
-※ 🚀(1) = 돌파 첫 확정봉<br>
+※ 🚀(1) = 이전 기준 고점/저점 최초 돌파 확정봉<br>
 ※ 🚀(2) = 돌파 후 두 번째 확정봉<br>
 ※ 🚀(3) = 돌파 후 세 번째 확정봉<br>
-※ 🚀는 돌파 후 3개 확정봉까지만 표시<br>
-※ 돌파 직전 🚨는 표시하지 않음<br>
-※ 돌파 직후 〽️는 표시하지 않음<br>
-※ LONG 돌파 기준봉 저점 이탈 시 신호 제거<br>
-※ SHORT 돌파 기준봉 고점 돌파 시 신호 제거<br>
+※ 🚀 표시는 3개 확정봉까지만 표시<br>
+※ 돌파 직전 🚨 미표시<br>
+※ 돌파 직후 〽️ 미표시<br>
+※ LONG 돌파 기준봉 저가 이탈 시 신호 제거<br>
+※ SHORT 돌파 기준봉 고가 돌파 시 신호 제거<br>
 ※ 1시간봉 조건 사용하지 않음
 
 </div>
@@ -3533,7 +3914,7 @@ def dashboard():
         user-scalable=no">
 
 <title>
-15M Breakout Trading
+15M N Pattern Breakout
 </title>
 
 <style>
@@ -3547,7 +3928,7 @@ def dashboard():
 <body>
 
 <h1>
-📊 15M Breakout Trading
+📊 15M N Pattern Breakout
 </h1>
 
 <div class="info">
@@ -3557,9 +3938,13 @@ def dashboard():
 </div>
 
 <div>
-정배열 시작점 → 최초 최고점/최저점
-→ 눌림/반등 → 돌파 실패 반복
-→ 이전 기준점 돌파
+정배열 시작 → 상승 → 주요 고점
+→ 가격 조정 → 반등 → 돌파 실패
+→ 다시 조정 → 다시 반등
+</div>
+
+<div>
+이 과정을 반복하면서 이전 주요 고점을 돌파하는 지점 탐색
 </div>
 
 <div>
@@ -3571,15 +3956,23 @@ def dashboard():
 </div>
 
 <div>
-LONG = 15분 EMA 정배열 + 당일 변동률 양수
+LONG = 가격 조정 중에도 EMA 30 > 60 > 120 유지
 </div>
 
 <div>
-SHORT = 15분 EMA 역배열 + 당일 변동률 음수
+SHORT = 가격 반등 중에도 EMA 30 < 60 < 120 유지
 </div>
 
 <div>
-확정 15분봉 기준
+돌파는 15분 확정봉 종가 기준
+</div>
+
+<div>
+업비트 변동률 = 일봉 API change_rate
+</div>
+
+<div>
+OKX 변동률 = 15분봉 한국시간 09:00 기준
 </div>
 
 <div>
@@ -3626,6 +4019,7 @@ def startup():
     )
 
     logging.info(
+        f"설정 "
         f"업비트={USE_UPBIT} "
         f"OKX={USE_OKX}"
     )
@@ -3647,15 +4041,15 @@ def startup():
     )
 
     logging.info(
-        "돌파 구조 : 정배열 시작점부터 순차 추적"
+        "N자형 가격 구조 추적"
     )
 
     logging.info(
-        "최초 확정 최고점/최저점을 기준점으로 사용"
+        "정배열/역배열 유지 중 가격 조정 추적"
     )
 
     logging.info(
-        "돌파 실패 구조 반복 확인"
+        "기준 고점/저점 돌파 시 🚀"
     )
 
     logging.info(
@@ -3671,24 +4065,16 @@ def startup():
     )
 
     logging.info(
-        "LONG : 기준 고점 종가 돌파"
-    )
-
-    logging.info(
-        "SHORT : 기준 저점 종가 이탈"
-    )
-
-    logging.info(
-        "LONG : 돌파 기준봉 저점 이탈 시 제거"
-    )
-
-    logging.info(
-        "SHORT : 돌파 기준봉 고점 돌파 시 제거"
-    )
-
-    logging.info(
         "1H 조건 : 사용 안 함"
     )
+
+    logging.info(
+        "조회 순서 : 업비트 → OKX"
+    )
+
+    # -----------------------------------------------------
+    # 설정 검증
+    # -----------------------------------------------------
 
     if USE_UPBIT not in (
         "Y",
@@ -3730,7 +4116,7 @@ def startup():
     ).start()
 
     # -----------------------------------------------------
-    # 주기 등록
+    # 주기
     # -----------------------------------------------------
 
     schedule.every(
@@ -3749,7 +4135,11 @@ def startup():
     ).start()
 
     logging.info(
-        "서버 시작 완료"
+        "스케줄러 시작 완료"
+    )
+
+    logging.info(
+        "========================================"
     )
 
 
@@ -3763,4 +4153,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-                    )
+        )
