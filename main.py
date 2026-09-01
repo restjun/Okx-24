@@ -841,7 +841,6 @@ def get_upbit_daily_change(market):
 # =========================================================
 # EMA
 #
-# 중요:
 # 캔들이 EMA 기간보다 부족해도
 # 현재 확보된 캔들로 계산
 # =========================================================
@@ -1031,8 +1030,6 @@ def find_latest_alignment_start(
 
     latest = None
 
-    # N자 분석은 기존처럼
-    # EMA 120 안정 구간부터 사용
     start_scan = min(
         120,
         len(directions) - 1
@@ -1865,7 +1862,6 @@ def get_breakout_signal(
         "warning_index": None
     }
 
-    # N자 분석 자체는 기존처럼 125개 필요
     if (
         df is None
         or len(df) < 125
@@ -1958,10 +1954,6 @@ def get_breakout_signal(
         if count is None:
 
             return empty_result
-
-        # =============================================
-        # 🚀 4개부터는 해지
-        # =============================================
 
         if count >= 4:
 
@@ -2060,10 +2052,6 @@ def get_breakout_signal(
         if count is None:
 
             return empty_result
-
-        # =============================================
-        # 🚀 4개부터는 해지
-        # =============================================
 
         if count >= 4:
 
@@ -3059,12 +3047,10 @@ def pass_long_filter(analysis):
         "none"
     )
 
-    # 돌파 직전
     if signal == "prebreakout":
 
         return True
 
-    # 돌파 후 1~3
     if signal.isdigit():
 
         count = int(signal)
@@ -3073,7 +3059,6 @@ def pass_long_filter(analysis):
 
             return True
 
-    # expired / 4 이상 / none
     return False
 
 
@@ -3128,12 +3113,10 @@ def pass_short_filter(analysis):
         "none"
     )
 
-    # 돌파 직전
     if signal == "prebreakout":
 
         return True
 
-    # 돌파 후 1~3
     if signal.isdigit():
 
         count = int(signal)
@@ -3142,7 +3125,6 @@ def pass_short_filter(analysis):
 
             return True
 
-    # expired / 4 이상 / none
     return False
 
 
@@ -4132,6 +4114,9 @@ def make_table_rows(data):
 
 # =========================================================
 # 거래소 섹션
+#
+# ★ 수정:
+# 업비트/OKX 표 아래의 하단 설명 전체 삭제
 # =========================================================
 
 def make_exchange_section(
@@ -4160,25 +4145,9 @@ def make_exchange_section(
 
     if is_okx:
 
-        direction_note = (
-            "※ OKX = 4H + 15M + 실제 N자 LONG/SHORT 조건 충족 시 표시<br>"
-        )
-
-        change_note = (
-            "※ 변동률 = OKX 15분봉 한국시간 09:00 기준<br>"
-        )
-
         update_time = latest_okx_update_time
 
     else:
-
-        direction_note = (
-            "※ 업비트 = 4H + 15M + 실제 N자 LONG 조건 충족 시 표시<br>"
-        )
-
-        change_note = (
-            "※ 변동률 = 업비트 일봉 API change_rate<br>"
-        )
 
         update_time = latest_upbit_update_time
 
@@ -4220,84 +4189,6 @@ def make_exchange_section(
 </tbody>
 
 </table>
-
-</div>
-
-<div
-    style="
-        color:#666;
-        font-size:6px;
-        line-height:1.5;
-        margin:4px 2px 7px 2px;
-    ">
-
-※ 1차 = 24시간 거래대금 TOP{TOP_N}<br>
-
-※ TOP{TOP_N} 전체 랭크 항상 표시<br>
-
-※ 2차 = 4시간봉 EMA 30-60-120 방향 필터<br>
-
-※ 3차 = 15분봉 EMA 30-60-120 + N자 구조 분석<br>
-
-{direction_note}
-
-{change_note}
-
-※ LONG 필수 = 4H LONG + 15M LONG + N자 LONG<br>
-
-※ SHORT 필수 = 4H SHORT + 15M SHORT + N자 SHORT<br>
-
-※ 4H LONG = EMA 30 > 60 > 120<br>
-
-※ 4H SHORT = EMA 30 < 60 < 120<br>
-
-※ 15M LONG = EMA 30 > 60 > 120<br>
-
-※ 15M SHORT = EMA 30 < 60 < 120<br>
-
-※ 신규 코인은 캔들이 부족해도 확보된 캔들로 EMA 배열 계산<br>
-
-※ 4H와 15M 방향이 다르면 LONG / SHORT 표시하지 않음<br>
-
-※ 실제 N자 경고가 없으면 LONG / SHORT 표시하지 않음<br>
-
-※ 거래대금 아래 LONG / SHORT는 실제 경고 조건 충족 종목만 표시<br>
-
-※ 🚨 = 돌파 직전 가능성이 높은 확정봉<br>
-
-※ 🚨는 이전 고점/저점에 설정 거리 이내 접근한 경우 표시<br>
-
-※ LONG 🚨 = 이전 주요 고점의 0.5% 이내 접근 + 아직 종가 돌파 전<br>
-
-※ SHORT 🚨 = 이전 주요 저점의 0.5% 이내 접근 + 아직 종가 이탈 전<br>
-
-※ 🚀(1) = 최초 돌파 확정봉<br>
-
-※ 🚀(2) = 돌파 후 두 번째 확정봉<br>
-
-※ 🚀(3) = 돌파 후 세 번째 확정봉<br>
-
-※ 🚀는 3개까지만 표시<br>
-
-※ 🚀(4)부터 LONG / SHORT 조건을 해지하고 화면 표시하지 않음<br>
-
-※ 🚀(4) 이후 기존 돌파 상태는 더 이상 조건 충족으로 인정하지 않음<br>
-
-※ 기존 ⛔️ 해지 경고는 사용하지 않음<br>
-
-※ 기존 돌파 후 기준봉 저가/고가에 의한 해지 판정도 사용하지 않음<br>
-
-※ 돌파 직전 🚨는 돌파가 확정되면 🚀(1)로 변경<br>
-
-※ N자 추적 중 15분 EMA 배열이 깨지면 구조 폐기<br>
-
-※ 돌파는 15분 확정봉 종가 기준<br>
-
-※ 현재 진행 중인 15분봉 제외<br>
-
-※ 당일 변동률 양수/음수는 필터에 사용하지 않음<br>
-
-※ 1시간봉 조건 사용하지 않음<br>
 
 </div>
 
