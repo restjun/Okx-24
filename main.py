@@ -25,7 +25,6 @@ warnings.filterwarnings(
 
 app = FastAPI()
 
-
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s:%(name)s:%(message)s"
@@ -38,41 +37,54 @@ logger = logging.getLogger("trading")
 # 사용자 설정
 # =========================================================
 
-# 업비트 ticker API 24시간 거래대금
 VOLUME_HOURS = 24
 
-# 거래대금 TOP
 TOP_N = 20
 
-# 업데이트 주기
 UPDATE_MINUTES = 1
 
-# 최초 캔들 요청
 INITIAL_CANDLE_COUNT = 200
 
-# 과거 추가 요청
 HISTORY_CHUNK = 200
 
-# 최대 과거 요청 횟수
 MAX_HISTORY_CHUNKS = 10
 
-# ---------------------------------------------------------
-# N자 구조 탐색 범위
-#
-# 정배열 시작점 이후 충분한 구간을 추적
-# ---------------------------------------------------------
+
+# =========================================================
+# N자 구조 설정
+# =========================================================
 
 BREAKOUT_LOOKBACK = 30
 
-# 직전 기준 고점 접근 허용거리
 PRE_BREAKOUT_DISTANCE = 0.005
 
-# 스윙 판정
 SWING_LEFT = 2
+
 SWING_RIGHT = 2
 
 # 최소 조정폭
 MIN_CORRECTION_RATE = 0.003
+
+# ---------------------------------------------------------
+# N자 되돌림 기준
+#
+# 이전 상승폭/하락폭의 50% 이상 되돌림되어야
+# 다음 N자 구조로 인정
+#
+# LONG
+# 100 → 120 상승
+# 상승폭 = 20
+# 50% 되돌림 = 10
+# 따라서 110 이하까지 내려와야 인정
+#
+# SHORT
+# 120 → 100 하락
+# 하락폭 = 20
+# 50% 되돌림 = 10
+# 따라서 110 이상까지 반등해야 인정
+# ---------------------------------------------------------
+
+N_PATTERN_RETRACE = 0.50
 
 
 # =========================================================
@@ -80,6 +92,7 @@ MIN_CORRECTION_RATE = 0.003
 # =========================================================
 
 USE_UPBIT = "Y"
+
 USE_OKX = "N"
 
 
@@ -126,26 +139,11 @@ latest_upbit_update_time = "-"
 
 latest_okx_update_time = "-"
 
-
-# =========================================================
-# 업비트 마켓 목록 캐시
-# =========================================================
-
 latest_upbit_markets = []
-
-
-# =========================================================
-# API 요청 동시 제어
-# =========================================================
 
 request_lock = threading.Lock()
 
 last_request_time = 0.0
-
-
-# =========================================================
-# 전체 업데이트 중복 실행 방지
-# =========================================================
 
 update_lock = threading.Lock()
 
@@ -166,17 +164,15 @@ def wait_request_interval():
 
         if elapsed < REQUEST_INTERVAL:
 
-            wait_time = (
+            time.sleep(
                 REQUEST_INTERVAL - elapsed
             )
-
-            time.sleep(wait_time)
 
         last_request_time = time.monotonic()
 
 
 # =========================================================
-# API URL 표시
+# API 요청 이름
 # =========================================================
 
 def get_request_name(func):
@@ -250,12 +246,6 @@ def retry_request(func, *args, **kwargs):
 
                 if status == 200:
 
-                    logging.info(
-                        f"[API 성공] "
-                        f"HTTP {status} "
-                        f"{url}"
-                    )
-
                     return result
 
                 if status == 429:
@@ -269,7 +259,6 @@ def retry_request(func, *args, **kwargs):
                     logging.warning(
                         f"[API 429] "
                         f"{url} "
-                        f"시도={attempt + 1}/{MAX_RETRIES} "
                         f"{wait_time}초 대기"
                     )
 
@@ -289,8 +278,7 @@ def retry_request(func, *args, **kwargs):
                     logging.warning(
                         f"[API 서버 오류] "
                         f"HTTP {status} "
-                        f"{url} "
-                        f"{wait_time}초 대기"
+                        f"{url}"
                     )
 
                     time.sleep(
@@ -307,12 +295,6 @@ def retry_request(func, *args, **kwargs):
 
                 return result
 
-            logging.info(
-                f"[API 응답] "
-                f"{function_name} "
-                f"{url}"
-            )
-
             return result
 
         except Exception as e:
@@ -326,7 +308,6 @@ def retry_request(func, *args, **kwargs):
                 f"[API 예외] "
                 f"{function_name} "
                 f"{url} "
-                f"시도={attempt + 1}/{MAX_RETRIES} "
                 f"오류={e}"
             )
 
@@ -351,10 +332,6 @@ def retry_request(func, *args, **kwargs):
 
 def get_usdt_krw():
 
-    logging.info(
-        "[업비트 API] USDT-KRW 조회 시작"
-    )
-
     url = (
         "https://api.upbit.com/v1/ticker"
         "?markets=KRW-USDT"
@@ -367,10 +344,6 @@ def get_usdt_krw():
     )
 
     if response is None:
-
-        logging.error(
-            "[업비트 API] USDT-KRW 조회 실패"
-        )
 
         return None
 
@@ -395,7 +368,6 @@ def get_usdt_krw():
     except Exception as e:
 
         logging.error(
-            f"[업비트 API] "
             f"USDT-KRW 처리 오류 : {e}"
         )
 
@@ -473,7 +445,7 @@ def get_okx_ohlcv(
             ]
         )
 
-        numeric_columns = [
+        for col in [
             "ts",
             "o",
             "h",
@@ -482,9 +454,7 @@ def get_okx_ohlcv(
             "vol",
             "volCcy",
             "volCcyQuote"
-        ]
-
-        for col in numeric_columns:
+        ]:
 
             df[col] = pd.to_numeric(
                 df[col],
@@ -619,8 +589,6 @@ def get_upbit_ohlcv(
 
             return None
 
-        # 현재 진행 중인 15분봉 제거
-
         now = datetime.now(KST)
 
         minute_block = (
@@ -712,18 +680,18 @@ def get_upbit_daily_change(
 
             return None
 
-        result = round(
-            float(change_rate) * 100,
-            2
-        )
-
-        return [result]
+        return [
+            round(
+                float(change_rate) * 100,
+                2
+            )
+        ]
 
     except Exception as e:
 
         logging.error(
-            f"[업비트 일봉] "
-            f"{market} 처리 오류 : {e}"
+            f"업비트 일봉 처리 오류 "
+            f"{market}: {e}"
         )
 
         return None
@@ -895,11 +863,7 @@ def get_direction_series(df):
 
 
 # =========================================================
-# 정배열/역배열 시작점
-#
-# 중요:
-# 가장 오래된 시작점이 아니라
-# 현재 이어지고 있는 배열의 "최근 시작점" 사용
+# 최근 정배열/역배열 시작점
 # =========================================================
 
 def find_latest_alignment_start(
@@ -937,7 +901,7 @@ def find_latest_alignment_start(
 
 
 # =========================================================
-# 정배열 유지 여부
+# 배열 유지 확인
 # =========================================================
 
 def alignment_is_valid(
@@ -950,6 +914,7 @@ def alignment_is_valid(
     if (
         start_index < 0
         or end_index >= len(directions)
+        or start_index > end_index
     ):
 
         return False
@@ -1111,36 +1076,7 @@ def find_swing_lows(
 
 
 # =========================================================
-# =========================================================
-# N자 LONG 추적
-# =========================================================
-#
-# 핵심 구조
-#
-# 정배열 시작
-#       ↓
-# 상승
-#       ↓
-# 주요 고점 형성
-#       ↓
-# 가격 조정
-#       ↓
-# 반등
-#       ↓
-# 기준 고점 돌파 실패
-#       ↓
-# 다시 조정
-#       ↓
-# 다시 반등
-#       ↓
-# 기준 고점 돌파
-#       ↓
-# 🚀
-#
-# 중요:
-# 기준 고점은 중간 반등 고점 때문에 변경하지 않는다.
-#
-# 이평 정배열이 유지되는 동안 가격 구조만 추적한다.
+# LONG N자 추적
 # =========================================================
 
 def get_long_breakout_signal(
@@ -1184,7 +1120,7 @@ def get_long_breakout_signal(
         return "none"
 
     # -----------------------------------------------------
-    # 현재까지 정배열이 깨졌으면 전체 구조 폐기
+    # 현재까지 정배열 유지
     # -----------------------------------------------------
 
     if not alignment_is_valid(
@@ -1196,11 +1132,13 @@ def get_long_breakout_signal(
 
         return "none"
 
-    # -----------------------------------------------------
-    # 정배열 시작 이후의 스윙 고점
-    # -----------------------------------------------------
-
     swing_highs = find_swing_highs(
+        df,
+        start + SWING_RIGHT + 1,
+        current_index
+    )
+
+    swing_lows = find_swing_lows(
         df,
         start + SWING_RIGHT + 1,
         current_index
@@ -1210,78 +1148,116 @@ def get_long_breakout_signal(
 
         return "none"
 
+    if not swing_lows:
+
+        return "none"
+
     # -----------------------------------------------------
-    # 후보 고점을 하나씩 기준점으로 사용
-    #
-    # 가장 최근 구조부터 검사
+    # 기준 고점 후보
+    # 최근 후보부터 검사
     # -----------------------------------------------------
 
-    for anchor_pos in range(
-        len(swing_highs) - 1,
-        -1,
-        -1
+    for anchor_index, anchor_high in reversed(
+        swing_highs
     ):
-
-        anchor_index, anchor_high = (
-            swing_highs[anchor_pos]
-        )
 
         if anchor_index >= current_index - 2:
 
             continue
 
+        anchor_high = float(
+            anchor_high
+        )
+
         # -------------------------------------------------
-        # 기준 고점 이후 조정이 실제로 발생했는지 확인
+        # 기준 고점 직전의 가장 가까운 스윙 저점
         # -------------------------------------------------
 
-        correction_start = (
-            anchor_index + 1
-        )
+        previous_lows = [
+            (idx, low)
+            for idx, low in swing_lows
+            if idx < anchor_index
+        ]
 
-        correction_end = (
-            current_index
-        )
-
-        if correction_start > correction_end:
+        if not previous_lows:
 
             continue
 
-        correction_lows = pd.to_numeric(
-            df["l"].iloc[
-                correction_start:
-                correction_end + 1
-            ],
-            errors="coerce"
+        previous_low_index, previous_low = (
+            previous_lows[-1]
         )
 
-        if correction_lows.empty:
+        previous_low = float(
+            previous_low
+        )
+
+        if anchor_high <= previous_low:
 
             continue
 
-        correction_low = correction_lows.min()
+        # -------------------------------------------------
+        # 기준 상승폭
+        # -------------------------------------------------
 
-        if pd.isna(
-            correction_low
-        ):
-
-            continue
-
-        correction_rate = (
+        rise_range = (
             anchor_high -
-            float(correction_low)
-        ) / anchor_high
+            previous_low
+        )
 
-        if (
-            correction_rate
-            <
-            MIN_CORRECTION_RATE
-        ):
+        if rise_range <= 0:
 
             continue
 
         # -------------------------------------------------
-        # 기준 고점 이후 모든 구간이
-        # 정배열 상태인지 다시 확인
+        # 50% 되돌림 가격
+        # -------------------------------------------------
+
+        retracement_price = (
+            anchor_high
+            -
+            (
+                rise_range
+                *
+                N_PATTERN_RETRACE
+            )
+        )
+
+        # -------------------------------------------------
+        # 기준 고점 이후 실제 저점
+        # -------------------------------------------------
+
+        post_anchor = df.iloc[
+            anchor_index + 1:
+            current_index + 1
+        ]
+
+        if post_anchor.empty:
+
+            continue
+
+        lows = pd.to_numeric(
+            post_anchor["l"],
+            errors="coerce"
+        ).dropna()
+
+        if lows.empty:
+
+            continue
+
+        correction_low = float(
+            lows.min()
+        )
+
+        # -------------------------------------------------
+        # 반드시 50% 이상 되돌림
+        # -------------------------------------------------
+
+        if correction_low > retracement_price:
+
+            continue
+
+        # -------------------------------------------------
+        # 기준 고점 이후에도 정배열 유지
         # -------------------------------------------------
 
         if not alignment_is_valid(
@@ -1294,16 +1270,14 @@ def get_long_breakout_signal(
             continue
 
         # -------------------------------------------------
-        # N자 추적 시작
+        # N자 구조 확인
         # -------------------------------------------------
 
-        last_correction_low = float(
-            correction_low
-        )
+        correction_confirmed = False
 
-        attempt_high = None
+        rebound_high = None
 
-        attempt_high_index = None
+        rebound_high_index = None
 
         breakout_index = None
 
@@ -1311,18 +1285,10 @@ def get_long_breakout_signal(
             anchor_index + 1
         )
 
-        # -------------------------------------------------
-        # 시간순으로 추적
-        # -------------------------------------------------
-
         for i in range(
             search_start,
             current_index + 1
         ):
-
-            # ---------------------------------------------
-            # 정배열 깨지면 즉시 이 후보 폐기
-            # ---------------------------------------------
 
             if directions[i] != "long":
 
@@ -1348,103 +1314,61 @@ def get_long_breakout_signal(
 
                 continue
 
-            # ---------------------------------------------
-            # 기준 고점 돌파
-            #
-            # 확정봉 종가가 기준 고점보다 높아야 함
-            # ---------------------------------------------
+            # -------------------------------------------------
+            # 50% 되돌림 완료
+            # -------------------------------------------------
 
-            if close > anchor_high:
+            if low <= retracement_price:
 
-                breakout_index = i
+                correction_confirmed = True
 
-                break
+            # -------------------------------------------------
+            # 되돌림이 확인된 이후에만
+            # 반등 고점 추적
+            # -------------------------------------------------
 
-            # ---------------------------------------------
-            # 현재 가격이 기준 고점 아래에 있는 동안
-            # 조정 저점 계속 추적
-            # ---------------------------------------------
+            if correction_confirmed:
 
-            if low < last_correction_low:
+                if i >= search_start + SWING_LEFT:
 
-                last_correction_low = low
+                    left_start = max(
+                        search_start,
+                        i - SWING_LEFT
+                    )
 
-            # ---------------------------------------------
-            # 반등 고점 후보
-            # ---------------------------------------------
+                    left_values = pd.to_numeric(
+                        df["h"].iloc[
+                            left_start:i
+                        ],
+                        errors="coerce"
+                    ).dropna()
 
-            if i >= SWING_RIGHT:
+                    if not left_values.empty:
 
-                left_start = max(
-                    search_start,
-                    i - SWING_LEFT
-                )
+                        if high >= left_values.max():
 
-                left_values = pd.to_numeric(
-                    df["h"].iloc[
-                        left_start:i
-                    ],
-                    errors="coerce"
-                )
+                            if high < anchor_high:
 
-                if not left_values.empty:
+                                rebound_high = high
 
-                    if (
-                        high >=
-                        left_values.max()
-                    ):
+                                rebound_high_index = i
 
-                        # ---------------------------------
-                        # 기준 고점보다 낮은 반등 고점
-                        # ---------------------------------
-
-                        if high < anchor_high:
-
-                            attempt_high = high
-
-                            attempt_high_index = i
-
-                        # ---------------------------------
-                        # 기준 고점을 wick으로 넘었지만
-                        # 종가 돌파가 아닌 경우
-                        #
-                        # 돌파 실패로 간주하고 계속 추적
-                        # ---------------------------------
-
-                        elif high >= anchor_high:
-
-                            if close <= anchor_high:
-
-                                attempt_high = (
-                                    anchor_high
-                                    -
-                                    (
-                                        anchor_high
-                                        *
-                                        0.000001
-                                    )
-                                )
-
-                                attempt_high_index = i
-
-            # ---------------------------------------------
-            # 반등 후 다시 하락했는지 확인
-            #
-            # 다음 N자 구간으로 넘어가는 조건
-            # ---------------------------------------------
+            # -------------------------------------------------
+            # 반등 후 다시 조정
+            # -------------------------------------------------
 
             if (
-                attempt_high is not None
+                rebound_high is not None
                 and
-                attempt_high_index is not None
+                rebound_high_index is not None
                 and
-                i > attempt_high_index
+                i > rebound_high_index
             ):
 
                 decline_rate = (
-                    attempt_high -
+                    rebound_high -
                     low
-                ) / attempt_high
+                ) / rebound_high
 
                 if (
                     decline_rate
@@ -1452,29 +1376,36 @@ def get_long_breakout_signal(
                     MIN_CORRECTION_RATE
                 ):
 
-                    # -------------------------------------
-                    # 돌파 실패 후 새로운 조정 발생
-                    #
-                    # 기준 고점은 그대로 유지
-                    # -------------------------------------
+                    # 새로운 N자 조정이 발생했지만
+                    # 기준 고점은 절대 변경하지 않음
+                    rebound_high = None
 
-                    last_correction_low = low
+                    rebound_high_index = None
 
-                    attempt_high = None
+            # -------------------------------------------------
+            # 최종 기준 고점 돌파
+            #
+            # 반드시 50% 되돌림이 먼저 발생하고
+            # 그 후 기준 고점을 종가로 돌파해야 함
+            # -------------------------------------------------
 
-                    attempt_high_index = None
+            if (
+                correction_confirmed
+                and
+                close > anchor_high
+            ):
 
-        # -------------------------------------------------
-        # 돌파가 발생하지 않았으면 다음 후보 검사
-        # -------------------------------------------------
+                breakout_index = i
+
+                break
 
         if breakout_index is None:
 
             continue
 
-        # -------------------------------------------------
+        # -----------------------------------------------------
         # 돌파 후 카운팅
-        # -------------------------------------------------
+        # -----------------------------------------------------
 
         count = (
             current_index
@@ -1484,9 +1415,9 @@ def get_long_breakout_signal(
             1
         )
 
-        # -------------------------------------------------
+        # -----------------------------------------------------
         # 돌파 기준봉 저점
-        # -------------------------------------------------
+        # -----------------------------------------------------
 
         breakout_low = float(
             df["l"].iloc[
@@ -1494,9 +1425,9 @@ def get_long_breakout_signal(
             ]
         )
 
-        # -------------------------------------------------
-        # 돌파 이후 기준봉 저점 이탈 확인
-        # -------------------------------------------------
+        # -----------------------------------------------------
+        # 돌파 이후 기준봉 저점 이탈
+        # -----------------------------------------------------
 
         after_section = df.iloc[
             breakout_index:
@@ -1506,23 +1437,19 @@ def get_long_breakout_signal(
         lows_after = pd.to_numeric(
             after_section["l"],
             errors="coerce"
-        )
+        ).dropna()
 
         if lows_after.empty:
 
             continue
 
-        if (
-            lows_after.min()
-            <
-            breakout_low
-        ):
+        if lows_after.min() < breakout_low:
 
             return "none"
 
-        # -------------------------------------------------
-        # 1~3만 표시
-        # -------------------------------------------------
+        # -----------------------------------------------------
+        # 🚀 1~3
+        # -----------------------------------------------------
 
         if 1 <= count <= 3:
 
@@ -1534,29 +1461,7 @@ def get_long_breakout_signal(
 
 
 # =========================================================
-# =========================================================
-# N자 SHORT 추적
-# =========================================================
-#
-# LONG의 반대 구조
-#
-# 역배열 시작
-#       ↓
-# 하락
-#       ↓
-# 주요 저점
-#       ↓
-# 가격 반등
-#       ↓
-# 기준 저점 이탈 실패
-#       ↓
-# 다시 반등
-#       ↓
-# 다시 하락
-#       ↓
-# 기준 저점 이탈
-#       ↓
-# 🚀
+# SHORT N자 추적
 # =========================================================
 
 def get_short_breakout_signal(
@@ -1614,78 +1519,126 @@ def get_short_breakout_signal(
         current_index
     )
 
+    swing_highs = find_swing_highs(
+        df,
+        start + SWING_RIGHT + 1,
+        current_index
+    )
+
     if not swing_lows:
 
         return "none"
 
+    if not swing_highs:
+
+        return "none"
+
     # -----------------------------------------------------
-    # 최근 후보부터 검사
+    # 기준 저점 후보
     # -----------------------------------------------------
 
-    for anchor_pos in range(
-        len(swing_lows) - 1,
-        -1,
-        -1
+    for anchor_index, anchor_low in reversed(
+        swing_lows
     ):
-
-        anchor_index, anchor_low = (
-            swing_lows[anchor_pos]
-        )
 
         if anchor_index >= current_index - 2:
 
             continue
 
-        # -------------------------------------------------
-        # 기준 저점 이후 반등 확인
-        # -------------------------------------------------
-
-        correction_start = (
-            anchor_index + 1
-        )
-
-        correction_end = (
-            current_index
-        )
-
-        if correction_start > correction_end:
-
-            continue
-
-        correction_highs = pd.to_numeric(
-            df["h"].iloc[
-                correction_start:
-                correction_end + 1
-            ],
-            errors="coerce"
-        )
-
-        if correction_highs.empty:
-
-            continue
-
-        correction_high = (
-            correction_highs.max()
-        )
-
-        if pd.isna(
-            correction_high
-        ):
-
-            continue
-
-        correction_rate = (
-            float(correction_high) -
+        anchor_low = float(
             anchor_low
-        ) / anchor_low
+        )
 
-        if (
-            correction_rate
-            <
-            MIN_CORRECTION_RATE
-        ):
+        # -------------------------------------------------
+        # 기준 저점 직전 스윙 고점
+        # -------------------------------------------------
+
+        previous_highs = [
+            (idx, high)
+            for idx, high in swing_highs
+            if idx < anchor_index
+        ]
+
+        if not previous_highs:
 
             continue
+
+        previous_high_index, previous_high = (
+            previous_highs[-1]
+        )
+
+        previous_high = float(
+            previous_high
+        )
+
+        if previous_high <= anchor_low:
+
+            continue
+
+        # -------------------------------------------------
+        # 기준 하락폭
+        # -------------------------------------------------
+
+        fall_range = (
+            previous_high -
+            anchor_low
+        )
+
+        if fall_range <= 0:
+
+            continue
+
+        # -------------------------------------------------
+        # 50% 되돌림 가격
+        # -------------------------------------------------
+
+        retracement_price = (
+            anchor_low
+            +
+            (
+                fall_range
+                *
+                N_PATTERN_RETRACE
+            )
+        )
+
+        # -------------------------------------------------
+        # 기준 저점 이후 실제 반등
+        # -------------------------------------------------
+
+        post_anchor = df.iloc[
+            anchor_index + 1:
+            current_index + 1
+        ]
+
+        if post_anchor.empty:
+
+            continue
+
+        highs = pd.to_numeric(
+            post_anchor["h"],
+            errors="coerce"
+        ).dropna()
+
+        if highs.empty:
+
+            continue
+
+        correction_high = float(
+            highs.max()
+        )
+
+        # -------------------------------------------------
+        # 반드시 50% 이상 반등
+        # -------------------------------------------------
+
+        if correction_high < retracement_price:
+
+            continue
+
+        # -------------------------------------------------
+        # 역배열 유지
+        # -------------------------------------------------
 
         if not alignment_is_valid(
             directions,
@@ -1696,17 +1649,11 @@ def get_short_breakout_signal(
 
             continue
 
-        # -------------------------------------------------
-        # N자 추적
-        # -------------------------------------------------
+        correction_confirmed = False
 
-        last_correction_high = float(
-            correction_high
-        )
+        rebound_low = None
 
-        attempt_low = None
-
-        attempt_low_index = None
+        rebound_low_index = None
 
         breakout_index = None
 
@@ -1718,10 +1665,6 @@ def get_short_breakout_signal(
             search_start,
             current_index + 1
         ):
-
-            # ---------------------------------------------
-            # 역배열 깨지면 폐기
-            # ---------------------------------------------
 
             if directions[i] != "short":
 
@@ -1747,94 +1690,60 @@ def get_short_breakout_signal(
 
                 continue
 
-            # ---------------------------------------------
-            # 기준 저점 이탈
-            #
-            # 확정봉 종가가 기준 저점 아래
-            # ---------------------------------------------
+            # -------------------------------------------------
+            # 50% 반등 확인
+            # -------------------------------------------------
 
-            if close < anchor_low:
+            if high >= retracement_price:
 
-                breakout_index = i
+                correction_confirmed = True
 
-                break
+            # -------------------------------------------------
+            # 반등 이후 재하락 저점 추적
+            # -------------------------------------------------
 
-            # ---------------------------------------------
-            # 반등 고점 추적
-            # ---------------------------------------------
+            if correction_confirmed:
 
-            if high > last_correction_high:
+                if i >= search_start + SWING_LEFT:
 
-                last_correction_high = high
+                    left_start = max(
+                        search_start,
+                        i - SWING_LEFT
+                    )
 
-            # ---------------------------------------------
-            # 재하락 저점 후보
-            # ---------------------------------------------
+                    left_values = pd.to_numeric(
+                        df["l"].iloc[
+                            left_start:i
+                        ],
+                        errors="coerce"
+                    ).dropna()
 
-            if i >= SWING_RIGHT:
+                    if not left_values.empty:
 
-                left_start = max(
-                    search_start,
-                    i - SWING_LEFT
-                )
+                        if low <= left_values.min():
 
-                left_values = pd.to_numeric(
-                    df["l"].iloc[
-                        left_start:i
-                    ],
-                    errors="coerce"
-                )
+                            if low > anchor_low:
 
-                if not left_values.empty:
+                                rebound_low = low
 
-                    if (
-                        low <=
-                        left_values.min()
-                    ):
+                                rebound_low_index = i
 
-                        if low > anchor_low:
-
-                            attempt_low = low
-
-                            attempt_low_index = i
-
-                        # ---------------------------------
-                        # wick으로 기준 저점 이탈했지만
-                        # 종가 이탈이 아닌 경우
-                        # ---------------------------------
-
-                        elif low <= anchor_low:
-
-                            if close >= anchor_low:
-
-                                attempt_low = (
-                                    anchor_low
-                                    +
-                                    (
-                                        anchor_low
-                                        *
-                                        0.000001
-                                    )
-                                )
-
-                                attempt_low_index = i
-
-            # ---------------------------------------------
-            # 재하락 후 다시 반등
-            # ---------------------------------------------
+            # -------------------------------------------------
+            # 재하락 후 반등
+            # -------------------------------------------------
 
             if (
-                attempt_low is not None
+                rebound_low is not None
                 and
-                attempt_low_index is not None
+                rebound_low_index is not None
                 and
-                i > attempt_low_index
+                i > rebound_low_index
             ):
 
                 rise_rate = (
                     high -
-                    attempt_low
-                ) / attempt_low
+                    rebound_low
+                ) / rebound_low
 
                 if (
                     rise_rate
@@ -1842,19 +1751,31 @@ def get_short_breakout_signal(
                     MIN_CORRECTION_RATE
                 ):
 
-                    last_correction_high = high
+                    rebound_low = None
 
-                    attempt_low = None
+                    rebound_low_index = None
 
-                    attempt_low_index = None
+            # -------------------------------------------------
+            # 기준 저점 최종 이탈
+            # -------------------------------------------------
+
+            if (
+                correction_confirmed
+                and
+                close < anchor_low
+            ):
+
+                breakout_index = i
+
+                break
 
         if breakout_index is None:
 
             continue
 
-        # -------------------------------------------------
+        # -----------------------------------------------------
         # 카운팅
-        # -------------------------------------------------
+        # -----------------------------------------------------
 
         count = (
             current_index
@@ -1864,9 +1785,9 @@ def get_short_breakout_signal(
             1
         )
 
-        # -------------------------------------------------
+        # -----------------------------------------------------
         # 돌파 기준봉 고점
-        # -------------------------------------------------
+        # -----------------------------------------------------
 
         breakout_high = float(
             df["h"].iloc[
@@ -1874,9 +1795,10 @@ def get_short_breakout_signal(
             ]
         )
 
-        # -------------------------------------------------
-        # 돌파 이후 기준봉 고점 돌파 확인
-        # -------------------------------------------------
+        # -----------------------------------------------------
+        # 돌파 기준봉 고점 돌파 시
+        # SHORT 신호 제거
+        # -----------------------------------------------------
 
         after_section = df.iloc[
             breakout_index:
@@ -1886,19 +1808,19 @@ def get_short_breakout_signal(
         highs_after = pd.to_numeric(
             after_section["h"],
             errors="coerce"
-        )
+        ).dropna()
 
         if highs_after.empty:
 
             continue
 
-        if (
-            highs_after.max()
-            >
-            breakout_high
-        ):
+        if highs_after.max() > breakout_high:
 
             return "none"
+
+        # -----------------------------------------------------
+        # 🚀 1~3
+        # -----------------------------------------------------
 
         if 1 <= count <= 3:
 
@@ -1938,10 +1860,6 @@ def get_breakout_signal(
             "signal": "none",
             "direction": "none"
         }
-
-    # -----------------------------------------------------
-    # 현재 EMA 방향
-    # -----------------------------------------------------
 
     current_direction = directions[-1]
 
@@ -2007,8 +1925,6 @@ def get_breakout_signal(
 
 # =========================================================
 # 변동률
-# OKX에서만 사용
-# 한국시간 09:00 기준
 # =========================================================
 
 def calculate_daily_changes(
@@ -2165,7 +2081,7 @@ def check_ema(df):
 
 
 # =========================================================
-# 거래대금 표시
+# 거래대금
 # =========================================================
 
 def format_volume(volume):
@@ -2263,7 +2179,7 @@ def format_change(changes):
 
 
 # =========================================================
-# 경고 표시 여부
+# 경고 표시
 # =========================================================
 
 def is_visible_warning(
@@ -2283,10 +2199,6 @@ def is_visible_warning(
         "3"
     )
 
-
-# =========================================================
-# 경고 HTML
-# =========================================================
 
 def combined_warning_html(
     warning
@@ -2348,17 +2260,12 @@ def direction_html(
 
 
 # =========================================================
-# 업비트 마켓 목록 + 24시간 거래대금
+# 업비트 마켓 + 24시간 거래대금
 # =========================================================
 
 def get_upbit_markets():
 
     global latest_upbit_markets
-
-    logging.info(
-        "[업비트 API] "
-        "KRW 마켓 + 24시간 거래대금 조회 시작"
-    )
 
     url = (
         "https://api.upbit.com/v1/ticker/all"
@@ -2436,18 +2343,12 @@ def get_upbit_markets():
             for item in markets
         ]
 
-        logging.info(
-            f"[업비트 API] "
-            f"KRW 마켓 {len(markets)}개 "
-            "24시간 거래대금 확보 완료"
-        )
-
         return markets
 
     except Exception as e:
 
         logging.error(
-            f"업비트 마켓/거래대금 처리 오류 : {e}"
+            f"업비트 마켓 처리 오류 : {e}"
         )
 
         return []
@@ -2458,10 +2359,6 @@ def get_upbit_markets():
 # =========================================================
 
 def get_all_okx_swap_symbols():
-
-    logging.info(
-        "[OKX API] SWAP 목록 조회 시작"
-    )
 
     response = retry_request(
         requests.get,
@@ -2484,7 +2381,7 @@ def get_all_okx_swap_symbols():
             []
         )
 
-        symbols = [
+        return [
             x["instId"]
             for x in data
             if (
@@ -2500,8 +2397,6 @@ def get_all_okx_swap_symbols():
                 ) == "live"
             )
         ]
-
-        return symbols
 
     except Exception as e:
 
@@ -2545,13 +2440,11 @@ def get_okx_volume(
 
             return None
 
-        volume_krw = (
+        return (
             float(volume)
             *
             float(usdt_krw)
         )
-
-        return volume_krw
 
     except Exception as e:
 
@@ -2564,7 +2457,7 @@ def get_okx_volume(
 
 
 # =========================================================
-# 과거 데이터
+# OKX 과거 데이터
 # =========================================================
 
 def get_okx_history(
@@ -2579,13 +2472,6 @@ def get_okx_history(
     for chunk_index in range(
         MAX_HISTORY_CHUNKS
     ):
-
-        logging.info(
-            f"[OKX 15분 과거조회] "
-            f"{inst_id} "
-            f"{chunk_index + 1}/"
-            f"{MAX_HISTORY_CHUNKS}"
-        )
 
         df = get_okx_ohlcv(
             inst_id,
@@ -2622,19 +2508,9 @@ def get_okx_history(
             .reset_index(drop=True)
         )
 
-        # -------------------------------------------------
-        # 충분한 데이터가 있으면 종료
-        # -------------------------------------------------
-
         if len(all_df) >= INITIAL_CANDLE_COUNT:
 
-            directions = get_direction_series(
-                all_df
-            )
-
-            if directions:
-
-                return all_df
+            return all_df
 
         oldest_ts = int(
             all_df["ts"].iloc[0]
@@ -2644,6 +2520,10 @@ def get_okx_history(
 
     return all_df
 
+
+# =========================================================
+# 업비트 과거 데이터
+# =========================================================
 
 def get_upbit_history(
     market
@@ -2656,13 +2536,6 @@ def get_upbit_history(
     for chunk_index in range(
         MAX_HISTORY_CHUNKS
     ):
-
-        logging.info(
-            f"[업비트 15분 과거조회] "
-            f"{market} "
-            f"{chunk_index + 1}/"
-            f"{MAX_HISTORY_CHUNKS}"
-        )
 
         df = get_upbit_ohlcv(
             market,
@@ -2701,13 +2574,7 @@ def get_upbit_history(
 
         if len(all_df) >= INITIAL_CANDLE_COUNT:
 
-            directions = get_direction_series(
-                all_df
-            )
-
-            if directions:
-
-                return all_df
+            return all_df
 
         oldest = all_df[
             "datetime"
@@ -2935,20 +2802,9 @@ def update_upbit():
     global latest_upbit_update_time
     global latest_upbit_markets
 
-    start_time = get_kst_time()
-
     logging.info(
-        "========================================"
+        f"========== 업비트 TOP{TOP_N} 시작 =========="
     )
-
-    logging.info(
-        f"========== 업비트 TOP{TOP_N} 시작 "
-        f"{start_time} KST =========="
-    )
-
-    # -----------------------------------------------------
-    # 24시간 거래대금
-    # -----------------------------------------------------
 
     market_data = get_upbit_markets()
 
@@ -2983,12 +2839,6 @@ def update_upbit():
         coin = market.replace(
             "KRW-",
             ""
-        )
-
-        logging.info(
-            f"[업비트 15분 분석] "
-            f"{rank}/{len(top_markets)} "
-            f"{market}"
         )
 
         try:
@@ -3051,10 +2901,6 @@ def update_upbit():
         f"{len(rows)}개"
     )
 
-    logging.info(
-        "========== 업비트 완전 종료 =========="
-    )
-
     return True
 
 
@@ -3096,12 +2942,6 @@ def update_okx(
         symbols,
         start=1
     ):
-
-        logging.info(
-            f"[OKX 거래대금 진행] "
-            f"{index}/{len(symbols)} "
-            f"{symbol}"
-        )
 
         volume = get_okx_volume(
             symbol,
@@ -3246,24 +3086,18 @@ def update_dashboard():
 
     try:
 
-        cycle_start = get_kst_time()
-
         logging.info(
             "========================================"
         )
 
         logging.info(
             f"전체 조회 시작 "
-            f"{cycle_start} KST"
+            f"{get_kst_time()} KST"
         )
 
         logging.info(
             "조회 순서 : 업비트 → OKX"
         )
-
-        # =================================================
-        # 업비트
-        # =================================================
 
         if USE_UPBIT == "Y":
 
@@ -3283,10 +3117,6 @@ def update_dashboard():
 
             latest_upbit_markets = []
 
-        # =================================================
-        # OKX
-        # =================================================
-
         if USE_OKX == "Y":
 
             try:
@@ -3295,15 +3125,11 @@ def update_dashboard():
 
                 if usdt_krw is not None:
 
-                    latest_usdt_krw = (
-                        usdt_krw
-                    )
+                    latest_usdt_krw = usdt_krw
 
                 else:
 
-                    usdt_krw = (
-                        latest_usdt_krw
-                    )
+                    usdt_krw = latest_usdt_krw
 
                 if (
                     usdt_krw is not None
@@ -3325,11 +3151,9 @@ def update_dashboard():
 
             latest_okx_data = []
 
-        cycle_end = get_kst_time()
-
         logging.info(
             f"전체 조회 종료 "
-            f"{cycle_end} KST"
+            f"{get_kst_time()} KST"
         )
 
         logging.info(
@@ -3826,20 +3650,19 @@ def make_exchange_section(
 ※ LONG = 30 > 60 > 120 정배열 유지<br>
 ※ SHORT = 30 < 60 < 120 역배열 유지<br>
 ※ 정배열/역배열 시작점부터 가격 구조 추적<br>
-※ LONG = 상승 → 고점 → 가격 조정 → 반등 → 고점 돌파 실패 → 반복 → 이전 고점 돌파<br>
-※ SHORT = 하락 → 저점 → 가격 반등 → 재하락 → 저점 이탈 실패 → 반복 → 이전 저점 이탈<br>
+※ LONG = 상승 → 주요 고점 → 50% 이상 되돌림 → 반등 → 재조정 → 기준 고점 돌파<br>
+※ SHORT = 하락 → 주요 저점 → 50% 이상 되돌림 → 재하락 → 재반등 → 기준 저점 이탈<br>
+※ 50% 되돌림 기준은 기준 고점/저점 직전 상승폭/하락폭 기준<br>
+※ 중간 반등 고점/반락 저점 때문에 기준 고점/저점을 변경하지 않음<br>
 ※ N자 추적 중 이평 배열이 깨지면 구조 폐기<br>
-※ 중간 반등 고점/반락 저점 때문에 기준 고점을 임의로 변경하지 않음<br>
-※ LONG 기준 고점은 N자 구조의 최초 주요 고점<br>
-※ SHORT 기준 저점은 N자 구조의 최초 주요 저점<br>
 ※ 돌파는 15분 확정봉 종가 기준<br>
 ※ 현재 진행 중인 15분봉 제외<br>
-※ 🚀(1) = 이전 기준 고점/저점 최초 돌파 확정봉<br>
+※ 🚀(1) = 최초 돌파 확정봉<br>
 ※ 🚀(2) = 돌파 후 두 번째 확정봉<br>
 ※ 🚀(3) = 돌파 후 세 번째 확정봉<br>
 ※ 🚀 표시는 3개 확정봉까지만 표시<br>
 ※ 돌파 직전 🚨 미표시<br>
-※ 돌파 직후 〽️ 미표시<br>
+※ 돌파 직후 별도 표시 없음<br>
 ※ LONG 돌파 기준봉 저가 이탈 시 신호 제거<br>
 ※ SHORT 돌파 기준봉 고가 돌파 시 신호 제거<br>
 ※ 1시간봉 조건 사용하지 않음
@@ -3939,12 +3762,12 @@ def dashboard():
 
 <div>
 정배열 시작 → 상승 → 주요 고점
-→ 가격 조정 → 반등 → 돌파 실패
-→ 다시 조정 → 다시 반등
+→ 50% 이상 되돌림 → 반등
+→ 재조정 → 재반등 → 기준 고점 돌파
 </div>
 
 <div>
-이 과정을 반복하면서 이전 주요 고점을 돌파하는 지점 탐색
+기준 고점/저점은 중간 반등/반락 때문에 변경하지 않음
 </div>
 
 <div>
@@ -3952,7 +3775,7 @@ def dashboard():
 </div>
 
 <div>
-돌파 직전 🚨 및 돌파 직후 〽️ 미표시
+돌파 직전 🚨 미표시
 </div>
 
 <div>
@@ -3961,6 +3784,10 @@ LONG = 가격 조정 중에도 EMA 30 > 60 > 120 유지
 
 <div>
 SHORT = 가격 반등 중에도 EMA 30 < 60 < 120 유지
+</div>
+
+<div>
+기준 상승폭/하락폭의 50% 이상 되돌림 발생 필요
 </div>
 
 <div>
@@ -4045,6 +3872,11 @@ def startup():
     )
 
     logging.info(
+        f"N자 최소 되돌림 = "
+        f"{N_PATTERN_RETRACE * 100:.0f}%"
+    )
+
+    logging.info(
         "정배열/역배열 유지 중 가격 조정 추적"
     )
 
@@ -4061,20 +3893,12 @@ def startup():
     )
 
     logging.info(
-        "〽️ 돌파 직후 표시 안 함"
-    )
-
-    logging.info(
         "1H 조건 : 사용 안 함"
     )
 
     logging.info(
         "조회 순서 : 업비트 → OKX"
     )
-
-    # -----------------------------------------------------
-    # 설정 검증
-    # -----------------------------------------------------
 
     if USE_UPBIT not in (
         "Y",
@@ -4107,7 +3931,7 @@ def startup():
         )
 
     # -----------------------------------------------------
-    # 최초 즉시 조회
+    # 최초 조회
     # -----------------------------------------------------
 
     threading.Thread(
