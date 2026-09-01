@@ -493,7 +493,6 @@ def get_upbit_minute_ohlcv(
             .replace(tzinfo=None)
         )
 
-        # 현재 진행 중인 봉 제외
         df = df[
             df["datetime"] < current_start
         ]
@@ -615,7 +614,6 @@ def get_upbit_4h_ohlcv(
             microsecond=0
         ).replace(tzinfo=None)
 
-        # 현재 진행 중인 4H 봉 제외
         df = df[
             df["datetime"] < current_start
         ]
@@ -717,36 +715,42 @@ def get_ema(df, column, period):
 
 
 # =========================================================
-# EMA 30-60-120 방향
+# EMA 10-30-60-120 방향
 # =========================================================
 
-def get_ema_30_60_120_direction(df):
+def get_ema_10_30_60_120_direction(df):
 
     if df is None or df.empty:
         return "none"
 
+    ema10 = get_ema(df, "c", 10)
     ema30 = get_ema(df, "c", 30)
     ema60 = get_ema(df, "c", 60)
     ema120 = get_ema(df, "c", 120)
 
     if (
-        ema30 is None
+        ema10 is None
+        or ema30 is None
         or ema60 is None
         or ema120 is None
     ):
         return "none"
 
-    a = ema30.iloc[-1]
-    b = ema60.iloc[-1]
-    c = ema120.iloc[-1]
+    a = ema10.iloc[-1]
+    b = ema30.iloc[-1]
+    c = ema60.iloc[-1]
+    d = ema120.iloc[-1]
 
-    if any(pd.isna(x) for x in [a, b, c]):
+    if any(
+        pd.isna(x)
+        for x in [a, b, c, d]
+    ):
         return "none"
 
-    if a > b > c:
+    if a > b > c > d:
         return "long"
 
-    if a < b < c:
+    if a < b < c < d:
         return "short"
 
     return "none"
@@ -761,12 +765,14 @@ def get_direction_series(df):
     if df is None or df.empty:
         return []
 
+    ema10 = get_ema(df, "c", 10)
     ema30 = get_ema(df, "c", 30)
     ema60 = get_ema(df, "c", 60)
     ema120 = get_ema(df, "c", 120)
 
     if (
-        ema30 is None
+        ema10 is None
+        or ema30 is None
         or ema60 is None
         or ema120 is None
     ):
@@ -776,17 +782,21 @@ def get_direction_series(df):
 
     for i in range(len(df)):
 
-        a = ema30.iloc[i]
-        b = ema60.iloc[i]
-        c = ema120.iloc[i]
+        a = ema10.iloc[i]
+        b = ema30.iloc[i]
+        c = ema60.iloc[i]
+        d = ema120.iloc[i]
 
-        if any(pd.isna(x) for x in [a, b, c]):
+        if any(
+            pd.isna(x)
+            for x in [a, b, c, d]
+        ):
             result.append("none")
 
-        elif a > b > c:
+        elif a > b > c > d:
             result.append("long")
 
-        elif a < b < c:
+        elif a < b < c < d:
             result.append("short")
 
         else:
@@ -897,7 +907,9 @@ def find_swing_highs(
 
         try:
 
-            high = float(df["h"].iloc[i])
+            high = float(
+                df["h"].iloc[i]
+            )
 
             left = pd.to_numeric(
                 df["h"].iloc[
@@ -961,7 +973,9 @@ def find_swing_lows(
 
         try:
 
-            low = float(df["l"].iloc[i])
+            low = float(
+                df["l"].iloc[i]
+            )
 
             left = pd.to_numeric(
                 df["l"].iloc[
@@ -1181,9 +1195,17 @@ def find_long_breakout(
 
             try:
 
-                high = float(df["h"].iloc[i])
-                low = float(df["l"].iloc[i])
-                close = float(df["c"].iloc[i])
+                high = float(
+                    df["h"].iloc[i]
+                )
+
+                low = float(
+                    df["l"].iloc[i]
+                )
+
+                close = float(
+                    df["c"].iloc[i]
+                )
 
             except Exception:
                 continue
@@ -1379,9 +1401,17 @@ def find_short_breakout(
 
             try:
 
-                high = float(df["h"].iloc[i])
-                low = float(df["l"].iloc[i])
-                close = float(df["c"].iloc[i])
+                high = float(
+                    df["h"].iloc[i]
+                )
+
+                low = float(
+                    df["l"].iloc[i]
+                )
+
+                close = float(
+                    df["c"].iloc[i]
+                )
 
             except Exception:
                 continue
@@ -1495,7 +1525,9 @@ def make_breakout_id(
     try:
 
         if "ts" in df.columns:
-            candle_id = int(df["ts"].iloc[index])
+            candle_id = int(
+                df["ts"].iloc[index]
+            )
 
         elif "datetime" in df.columns:
             candle_id = str(
@@ -1809,7 +1841,7 @@ def get_1h_breakout_signal(
 # SHORT:
 # 15M SHORT + 1H SHORT + 4H SHORT
 #
-# 이 조건을 만족할 때만 🚀 / 🚨 표시
+# EMA 기준 = 10-30-60-120
 # =========================================================
 
 def get_multi_timeframe_breakout(
@@ -1828,15 +1860,15 @@ def get_multi_timeframe_breakout(
         allow_short
     )
 
-    direction15m = get_ema_30_60_120_direction(
+    direction15m = get_ema_10_30_60_120_direction(
         df15m
     )
 
-    direction1h = get_ema_30_60_120_direction(
+    direction1h = get_ema_10_30_60_120_direction(
         df1h
     )
 
-    direction4h = get_ema_30_60_120_direction(
+    direction4h = get_ema_10_30_60_120_direction(
         df4h
     )
 
@@ -1862,8 +1894,6 @@ def get_multi_timeframe_breakout(
         if not final_long:
 
             warning["signal"] = "none"
-
-            # 배열이 깨졌으므로 현재 경고 표시 금지
             warning["warning_index"] = None
 
     # =====================================================
@@ -1999,7 +2029,7 @@ def calculate_daily_changes(
 
 def check_ema(df):
 
-    direction = get_ema_30_60_120_direction(
+    direction = get_ema_10_30_60_120_direction(
         df
     )
 
@@ -2560,8 +2590,6 @@ def get_upbit_analysis(market):
     if df1h is None or df1h.empty:
         return None
 
-    # 15M은 EMA + 최종 배열 필터용
-    # N자 분석은 하지 않음
     df15m = get_upbit_history_generic(
         market,
         15,
@@ -2631,7 +2659,6 @@ def get_okx_analysis(inst_id):
     if df1h is None or df1h.empty:
         return None
 
-    # 15M은 EMA + 최종 배열 필터용
     df15m = get_okx_history_generic(
         inst_id,
         "15m",
@@ -2673,7 +2700,6 @@ def get_okx_analysis(inst_id):
 
     qualified = False
 
-    # LONG
     if (
         direction == "long"
         and signal_valid
@@ -2684,7 +2710,6 @@ def get_okx_analysis(inst_id):
 
         qualified = True
 
-    # SHORT
     elif (
         direction == "short"
         and signal_valid
@@ -2856,6 +2881,7 @@ def update_upbit():
 
         market = item["market"]
         coin = market.replace("KRW-", "")
+
         volume = format_volume(
             item["volume_24h"]
         )
@@ -3968,7 +3994,7 @@ user-scalable=no">
 </div>
 
 <div>
-② 4H / 1H / 15M EMA 30-60-120
+② 4H / 1H / 15M EMA 10-30-60-120
 </div>
 
 <div>
@@ -4058,7 +4084,7 @@ def startup():
 
     logging.info(
         "EMA : 15M + 1H + 4H "
-        "30-60-120"
+        "10-30-60-120"
     )
 
     logging.info(
@@ -4172,4 +4198,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-            ) 
+        )
