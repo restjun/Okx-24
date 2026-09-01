@@ -40,7 +40,7 @@ logger = logging.getLogger("trading")
 
 VOLUME_HOURS = 24
 
-TOP_N = 30
+TOP_N = 50
 
 UPDATE_MINUTES = 1
 
