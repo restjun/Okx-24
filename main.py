@@ -144,13 +144,6 @@ update_lock = threading.Lock()
 
 # =========================================================
 # 로켓 상태
-#
-# breakout_id:
-#   거래소 + 종목 + 돌파봉 timestamp
-#
-# invalid_alerted:
-#   해당 돌파 구조의 🚨 표시 여부
-#
 # =========================================================
 
 rocket_state_lock = threading.Lock()
@@ -1972,11 +1965,6 @@ def get_breakout_count(
 
 # =========================================================
 # 돌파 통합
-#
-# 🚀 카운팅 제한 없음
-#
-# invalid:
-#   최초 1회만 🚨
 # =========================================================
 
 def get_breakout_signal(
@@ -2268,8 +2256,6 @@ def get_breakout_signal(
 
 # =========================================================
 # 변동률
-# OKX에서만 사용
-# 한국시간 09:00 기준
 # =========================================================
 
 def calculate_daily_changes(
@@ -3428,14 +3414,6 @@ def make_empty_analysis():
 
 # =========================================================
 # 업비트 업데이트
-#
-# TOP10 전체 랭크 표시
-#
-# 1차 : 24시간 거래대금 TOP10
-# 2차 : 4H EMA
-# 3차 : 15M N자
-#
-# 조건 충족 종목만 반짝임
 # =========================================================
 
 def update_upbit():
@@ -3501,10 +3479,6 @@ def update_upbit():
                 market
             )
 
-            # ---------------------------------------------
-            # 분석 실패해도 TOP 랭크는 유지
-            # ---------------------------------------------
-
             if analysis is None:
 
                 empty = make_empty_analysis()
@@ -3539,10 +3513,6 @@ def update_upbit():
 
             # ---------------------------------------------
             # 업비트 LONG 조건
-            #
-            # 4H LONG
-            # + 15M LONG
-            # + N자 돌파
             # ---------------------------------------------
 
             qualified = pass_long_filter(
@@ -3550,8 +3520,7 @@ def update_upbit():
             )
 
             # ---------------------------------------------
-            # 🚨는 표시하되
-            # 조건 충족 반짝임에서는 제외
+            # 🚨는 반짝임 제외
             # ---------------------------------------------
 
             if warning.get(
@@ -3561,14 +3530,31 @@ def update_upbit():
                 qualified = False
 
             # ---------------------------------------------
-            # 업비트는 LONG만 방향 표시
+            # ★ 수정된 부분
+            #
+            # 거래대금 아래 LONG 표시는
+            # 실제 N자 경고가 발생한 경우에만 표시
+            #
+            # 경고 없음 → -
+            # 🚨 → -
+            # 🚀(N) → LONG
             # ---------------------------------------------
 
-            if ema4h.get(
-                "direction"
-            ) == "long":
+            warning_signal = warning.get(
+                "signal",
+                "none"
+            )
 
-                display_direction = "long"
+            if (
+                warning_signal != "none"
+                and
+                warning_signal != "invalid"
+            ):
+
+                display_direction = warning.get(
+                    "direction",
+                    "none"
+                )
 
             else:
 
@@ -3634,14 +3620,6 @@ def update_upbit():
 
 # =========================================================
 # OKX 업데이트
-#
-# TOP10 전체 랭크 표시
-#
-# 1차 : 24시간 거래대금
-# 2차 : 4H EMA
-# 3차 : 15M N자
-#
-# LONG / SHORT 조건 충족 종목 반짝임
 # =========================================================
 
 def update_okx(
@@ -3745,10 +3723,6 @@ def update_okx(
                 symbol
             )
 
-            # ---------------------------------------------
-            # 분석 실패해도 TOP10 랭크 유지
-            # ---------------------------------------------
-
             if analysis is None:
 
                 empty = make_empty_analysis()
@@ -3781,14 +3755,11 @@ def update_okx(
                 "warning"
             ]
 
+            # 실제 경고 방향
             direction = warning.get(
                 "direction",
                 "none"
             )
-
-            # ---------------------------------------------
-            # LONG
-            # ---------------------------------------------
 
             qualified = False
 
@@ -3798,25 +3769,41 @@ def update_okx(
                     analysis
                 )
 
-            # ---------------------------------------------
-            # SHORT
-            # ---------------------------------------------
-
             elif direction == "short":
 
                 qualified = pass_short_filter(
                     analysis
                 )
 
-            # ---------------------------------------------
-            # 🚨는 반짝임 제외
-            # ---------------------------------------------
-
             if warning.get(
                 "signal"
             ) == "invalid":
 
                 qualified = False
+
+            # -------------------------------------------------
+            # OKX도 실제 경고가 있을 때만 LONG / SHORT 표시
+            # -------------------------------------------------
+
+            warning_signal = warning.get(
+                "signal",
+                "none"
+            )
+
+            if (
+                warning_signal == "none"
+                or
+                warning_signal == "invalid"
+            ):
+
+                display_direction = "none"
+
+            else:
+
+                display_direction = warning.get(
+                    "direction",
+                    "none"
+                )
 
             rows.append(
                 {
@@ -3828,7 +3815,7 @@ def update_okx(
                     "volume": volume,
                     "ema": ema,
                     "ema_4h": ema4h,
-                    "direction": direction,
+                    "direction": display_direction,
                     "warning": warning,
                     "qualified": qualified
                 }
@@ -4235,11 +4222,6 @@ td:nth-child(5) {
     white-space: nowrap;
 }
 
-
-/* =========================================================
-   조건 충족 종목 반짝임
-   ========================================================= */
-
 .qualified-row {
     animation:
         qualifiedBlink
@@ -4254,9 +4236,6 @@ td:nth-child(5) {
         infinite;
 }
 
-
-/* 전체 행 밝기 변화 */
-
 @keyframes qualifiedBlink {
 
     0%,
@@ -4268,9 +4247,6 @@ td:nth-child(5) {
         background: #26352b;
     }
 }
-
-
-/* 글자 반짝임 */
 
 @keyframes qualifiedCellBlink {
 
@@ -4284,9 +4260,6 @@ td:nth-child(5) {
     }
 }
 
-
-/* LONG */
-
 .qualified-long {
     text-shadow:
         0 0 3px
@@ -4295,9 +4268,6 @@ td:nth-child(5) {
         rgba(53, 230, 109, 0.75);
 }
 
-
-/* SHORT */
-
 .qualified-short {
     text-shadow:
         0 0 3px
@@ -4305,7 +4275,6 @@ td:nth-child(5) {
         0 0 7px
         rgba(255, 77, 77, 0.75);
 }
-
 
 @media (max-width: 480px) {
 
@@ -4404,10 +4373,6 @@ def make_table_rows(
             "qualified",
             False
         )
-
-        # -------------------------------------------------
-        # 조건 충족 행
-        # -------------------------------------------------
 
         row_class = ""
 
@@ -4525,7 +4490,7 @@ def make_exchange_section(
     if is_okx:
 
         direction_note = (
-            "※ OKX = LONG / SHORT 모두 표시<br>"
+            "※ OKX = 실제 N자 경고 발생 시 LONG / SHORT 표시<br>"
         )
 
         change_note = (
@@ -4539,7 +4504,7 @@ def make_exchange_section(
     else:
 
         direction_note = (
-            "※ 업비트 = LONG만 조건 표시<br>"
+            "※ 업비트 = 실제 N자 경고 발생 시 LONG 표시<br>"
         )
 
         change_note = (
@@ -4614,6 +4579,12 @@ def make_exchange_section(
 ※ 🟢 반짝임 = LONG 조건 충족<br>
 
 ※ 🔴 반짝임 = SHORT 조건 충족<br>
+
+※ 거래대금 아래 LONG / SHORT = 실제 N자 경고가 발생한 종목만 표시<br>
+
+※ 경고 없음 = LONG / SHORT 미표시<br>
+
+※ 🚨 해지 = LONG / SHORT 미표시<br>
 
 ※ 조건 충족 범위 = 랭크 → 코인 → 거래대금 → 방향 → 변동률 → 🚀 → EMA<br>
 
@@ -4763,7 +4734,11 @@ def dashboard():
 </div>
 
 <div>
-④ 조건 충족 종목은 랭크부터 EMA까지 반짝임
+④ 실제 경고 발생 종목만 LONG / SHORT 표시
+</div>
+
+<div>
+⑤ 조건 충족 종목은 랭크부터 EMA까지 반짝임
 </div>
 
 <div>
@@ -4799,6 +4774,10 @@ SHORT 돌파 기준봉 고가 돌파 시 🚨 1회
 
 <div>
 🔴 반짝임 = SHORT 조건 충족
+</div>
+
+<div>
+거래대금 아래 LONG / SHORT = 실제 N자 경고 발생 시에만 표시
 </div>
 
 <div>
@@ -4923,6 +4902,10 @@ def startup():
     )
 
     logging.info(
+        "거래대금 아래 방향 표시 : 실제 경고 발생 종목만"
+    )
+
+    logging.info(
         "당일 변동률 양수/음수 필터 사용 안 함"
     )
 
@@ -4941,10 +4924,6 @@ def startup():
     logging.info(
         "조회 순서 : 거래대금 → 4H → 15M"
     )
-
-    # -----------------------------------------------------
-    # 설정 검증
-    # -----------------------------------------------------
 
     if USE_UPBIT not in (
         "Y",
@@ -4976,28 +4955,16 @@ def startup():
             "UPDATE_MINUTES는 1 이상이어야 합니다."
         )
 
-    # -----------------------------------------------------
-    # 최초 즉시 조회
-    # -----------------------------------------------------
-
     threading.Thread(
         target=update_dashboard,
         daemon=True
     ).start()
-
-    # -----------------------------------------------------
-    # 주기
-    # -----------------------------------------------------
 
     schedule.every(
         UPDATE_MINUTES
     ).minutes.do(
         update_dashboard
     )
-
-    # -----------------------------------------------------
-    # 스케줄러
-    # -----------------------------------------------------
 
     threading.Thread(
         target=scheduler,
@@ -5023,4 +4990,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-    )
+            )
