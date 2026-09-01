@@ -39,7 +39,7 @@ logger = logging.getLogger("trading")
 
 VOLUME_HOURS = 24
 
-TOP_N = 20
+TOP_N = 30
 
 UPDATE_MINUTES = 1
 
@@ -71,7 +71,7 @@ MIN_CORRECTION_RATE = 0.003
 
 USE_UPBIT = "Y"
 
-USE_OKX = "Y"
+USE_OKX = "n"
 
 
 # =========================================================
