@@ -18,10 +18,7 @@ from zoneinfo import ZoneInfo
 # 기본 설정
 # =========================================================
 
-warnings.filterwarnings(
-    "ignore",
-    category=FutureWarning
-)
+warnings.filterwarnings("ignore", category=FutureWarning)
 
 app = FastAPI()
 
@@ -38,15 +35,11 @@ logger = logging.getLogger("trading")
 # =========================================================
 
 VOLUME_HOURS = 24
-
 TOP_N = 30
-
 UPDATE_MINUTES = 1
 
 INITIAL_CANDLE_COUNT = 200
-
 HISTORY_CHUNK = 200
-
 MAX_HISTORY_CHUNKS = 10
 
 
@@ -55,11 +48,8 @@ MAX_HISTORY_CHUNKS = 10
 # =========================================================
 
 BREAKOUT_LOOKBACK = 30
-
 SWING_LEFT = 2
-
 SWING_RIGHT = 2
-
 MIN_CORRECTION_RATE = 0.003
 
 
@@ -68,7 +58,6 @@ MIN_CORRECTION_RATE = 0.003
 # =========================================================
 
 USE_UPBIT = "Y"
-
 USE_OKX = "N"
 
 
@@ -77,13 +66,9 @@ USE_OKX = "N"
 # =========================================================
 
 REQUEST_INTERVAL = 0.08
-
 RATE_LIMIT_WAIT = 3
-
 MAX_RETRIES = 10
-
 OKX_RETRY_DELAY = 2
-
 OKX_MAX_RETRY_ROUNDS = 3
 
 
@@ -95,10 +80,7 @@ KST = ZoneInfo("Asia/Seoul")
 
 
 def get_kst_time():
-
-    return datetime.now(KST).strftime(
-        "%Y-%m-%d %H:%M:%S"
-    )
+    return datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
 
 
 # =========================================================
@@ -106,34 +88,21 @@ def get_kst_time():
 # =========================================================
 
 latest_okx_data = []
-
 latest_upbit_data = []
 
 latest_usdt_krw = 0.0
 
 latest_upbit_update_time = "-"
-
 latest_okx_update_time = "-"
-
-
-# =========================================================
-# 업비트 마켓 목록 캐시
-# =========================================================
 
 latest_upbit_markets = []
 
 
 # =========================================================
-# N자 해지 🚨 중복 표시 방지
-#
-# 같은 해지 확정봉에서는 🚨를 한 번만 표시
-#
-# key:
-# exchange:symbol:timeframe:candle_id
+# N자 해지 🚨 중복 방지
 # =========================================================
 
 shown_invalidation_ids = set()
-
 invalidation_lock = threading.Lock()
 
 
@@ -142,13 +111,7 @@ invalidation_lock = threading.Lock()
 # =========================================================
 
 request_lock = threading.Lock()
-
 last_request_time = 0.0
-
-
-# =========================================================
-# 전체 업데이트 중복 실행 방지
-# =========================================================
 
 update_lock = threading.Lock()
 
@@ -158,20 +121,14 @@ update_lock = threading.Lock()
 # =========================================================
 
 def wait_request_interval():
-
     global last_request_time
 
     with request_lock:
-
         now = time.monotonic()
-
         elapsed = now - last_request_time
 
         if elapsed < REQUEST_INTERVAL:
-
-            time.sleep(
-                REQUEST_INTERVAL - elapsed
-            )
+            time.sleep(REQUEST_INTERVAL - elapsed)
 
         last_request_time = time.monotonic()
 
@@ -181,17 +138,9 @@ def wait_request_interval():
 # =========================================================
 
 def get_request_name(func):
-
     try:
-
-        return getattr(
-            func,
-            "__name__",
-            str(func)
-        )
-
+        return getattr(func, "__name__", str(func))
     except Exception:
-
         return str(func)
 
 
@@ -202,61 +151,38 @@ def get_request_name(func):
 def retry_request(func, *args, **kwargs):
 
     function_name = get_request_name(func)
-
     url = ""
 
     if args:
-
         try:
-
             if isinstance(args[0], str):
-
                 url = args[0]
-
         except Exception:
-
             pass
 
     if not url:
-
-        url = kwargs.get(
-            "url",
-            ""
-        )
+        url = kwargs.get("url", "")
 
     for attempt in range(MAX_RETRIES):
 
         try:
-
             wait_request_interval()
 
             logging.info(
-                f"[API 요청] "
-                f"{function_name} "
-                f"{url} "
-                f"시도={attempt + 1}/{MAX_RETRIES}"
+                f"[API 요청] {function_name} "
+                f"{url} 시도={attempt + 1}/{MAX_RETRIES}"
             )
 
-            result = func(
-                *args,
-                **kwargs
-            )
+            result = func(*args, **kwargs)
 
-            if hasattr(
-                result,
-                "status_code"
-            ):
+            if hasattr(result, "status_code"):
 
                 status = result.status_code
 
                 if status == 200:
-
                     logging.info(
-                        f"[API 성공] "
-                        f"HTTP {status} "
-                        f"{url}"
+                        f"[API 성공] HTTP {status} {url}"
                     )
-
                     return result
 
                 if status == 429:
@@ -267,15 +193,11 @@ def retry_request(func, *args, **kwargs):
                     )
 
                     logging.warning(
-                        f"[API 429] "
-                        f"{url} "
+                        f"[API 429] {url} "
                         f"{wait_time}초 대기"
                     )
 
-                    time.sleep(
-                        wait_time
-                    )
-
+                    time.sleep(wait_time)
                     continue
 
                 if status >= 500:
@@ -286,22 +208,15 @@ def retry_request(func, *args, **kwargs):
                     )
 
                     logging.warning(
-                        f"[API 서버 오류] "
-                        f"HTTP {status} "
-                        f"{url} "
-                        f"{wait_time}초 대기"
+                        f"[API 서버 오류] HTTP {status} "
+                        f"{url} {wait_time}초 대기"
                     )
 
-                    time.sleep(
-                        wait_time
-                    )
-
+                    time.sleep(wait_time)
                     continue
 
                 logging.warning(
-                    f"[API HTTP 오류] "
-                    f"HTTP {status} "
-                    f"{url}"
+                    f"[API HTTP 오류] HTTP {status} {url}"
                 )
 
                 return result
@@ -316,23 +231,16 @@ def retry_request(func, *args, **kwargs):
             )
 
             logging.error(
-                f"[API 예외] "
-                f"{function_name} "
-                f"{url} "
-                f"시도={attempt + 1}/{MAX_RETRIES} "
+                f"[API 예외] {function_name} "
+                f"{url} 시도={attempt + 1}/{MAX_RETRIES} "
                 f"오류={e}"
             )
 
             if attempt < MAX_RETRIES - 1:
-
-                time.sleep(
-                    wait_time
-                )
+                time.sleep(wait_time)
 
     logging.error(
-        f"[API 최종 실패] "
-        f"{function_name} "
-        f"{url}"
+        f"[API 최종 실패] {function_name} {url}"
     )
 
     return None
@@ -356,26 +264,17 @@ def get_usdt_krw():
     )
 
     if response is None:
-
         return None
 
     try:
-
         data = response.json()
 
         if not data:
-
             return None
 
-        price = float(
-            data[0]["trade_price"]
-        )
+        price = float(data[0]["trade_price"])
 
-        if price <= 0:
-
-            return None
-
-        return price
+        return price if price > 0 else None
 
     except Exception as e:
 
@@ -398,10 +297,7 @@ def get_okx_ohlcv(
     before=None
 ):
 
-    limit = max(
-        1,
-        min(int(limit), 200)
-    )
+    limit = max(1, min(int(limit), 200))
 
     url = (
         "https://www.okx.com/api/v5/"
@@ -415,7 +311,6 @@ def get_okx_ohlcv(
     }
 
     if before is not None:
-
         params["before"] = str(before)
 
     response = retry_request(
@@ -426,20 +321,14 @@ def get_okx_ohlcv(
     )
 
     if response is None:
-
         return None
 
     try:
 
         payload = response.json()
-
-        data = payload.get(
-            "data",
-            []
-        )
+        data = payload.get("data", [])
 
         if not data:
-
             return None
 
         df = pd.DataFrame(
@@ -457,7 +346,7 @@ def get_okx_ohlcv(
             ]
         )
 
-        numeric_columns = [
+        for col in [
             "ts",
             "o",
             "h",
@@ -466,9 +355,7 @@ def get_okx_ohlcv(
             "vol",
             "volCcy",
             "volCcyQuote"
-        ]
-
-        for col in numeric_columns:
+        ]:
 
             df[col] = pd.to_numeric(
                 df[col],
@@ -480,17 +367,13 @@ def get_okx_ohlcv(
         ]
 
         if df.empty:
-
             return None
 
-        df = (
-            df
-            .sort_values("ts")
+        return (
+            df.sort_values("ts")
             .drop_duplicates("ts")
             .reset_index(drop=True)
         )
-
-        return df
 
     except Exception as e:
 
@@ -513,15 +396,11 @@ def get_upbit_minute_ohlcv(
     to=None
 ):
 
-    count = max(
-        1,
-        min(int(count), 200)
-    )
+    count = max(1, min(int(count), 200))
 
     url = (
         "https://api.upbit.com/v1/"
-        "candles/minutes/"
-        f"{unit}"
+        f"candles/minutes/{unit}"
     )
 
     params = {
@@ -530,7 +409,6 @@ def get_upbit_minute_ohlcv(
     }
 
     if to is not None:
-
         params["to"] = to
 
     response = retry_request(
@@ -541,7 +419,6 @@ def get_upbit_minute_ohlcv(
     )
 
     if response is None:
-
         return None
 
     try:
@@ -549,13 +426,11 @@ def get_upbit_minute_ohlcv(
         data = response.json()
 
         if not data:
-
             return None
 
         df = pd.DataFrame(data)
 
         if df.empty:
-
             return None
 
         df["o"] = pd.to_numeric(
@@ -599,7 +474,6 @@ def get_upbit_minute_ohlcv(
         )
 
         if df.empty:
-
             return None
 
         now = datetime.now(KST)
@@ -614,30 +488,24 @@ def get_upbit_minute_ohlcv(
             microsecond=0
         )
 
-        current_candle_start_naive = (
+        current_start = (
             current_candle_start
             .replace(tzinfo=None)
         )
 
         # 현재 진행 중인 봉 제외
         df = df[
-            df["datetime"]
-            <
-            current_candle_start_naive
+            df["datetime"] < current_start
         ]
 
         if df.empty:
-
             return None
 
-        df = (
-            df
-            .sort_values("datetime")
+        return (
+            df.sort_values("datetime")
             .drop_duplicates("datetime")
             .reset_index(drop=True)
         )
-
-        return df
 
     except Exception as e:
 
@@ -650,26 +518,7 @@ def get_upbit_minute_ohlcv(
 
 
 # =========================================================
-# 업비트 1시간봉
-# =========================================================
-
-def get_upbit_1h_ohlcv(
-    market,
-    count=200,
-    to=None
-):
-
-    return get_upbit_minute_ohlcv(
-        market,
-        60,
-        count,
-        to
-    )
-
-
-# =========================================================
-# 업비트 4시간봉
-# 현재 진행 중인 봉 제외
+# 업비트 4H
 # =========================================================
 
 def get_upbit_4h_ohlcv(
@@ -678,10 +527,7 @@ def get_upbit_4h_ohlcv(
     to=None
 ):
 
-    count = max(
-        1,
-        min(int(count), 200)
-    )
+    count = max(1, min(int(count), 200))
 
     url = (
         "https://api.upbit.com/v1/"
@@ -694,7 +540,6 @@ def get_upbit_4h_ohlcv(
     }
 
     if to is not None:
-
         params["to"] = to
 
     response = retry_request(
@@ -705,7 +550,6 @@ def get_upbit_4h_ohlcv(
     )
 
     if response is None:
-
         return None
 
     try:
@@ -713,13 +557,11 @@ def get_upbit_4h_ohlcv(
         data = response.json()
 
         if not data:
-
             return None
 
         df = pd.DataFrame(data)
 
         if df.empty:
-
             return None
 
         df["o"] = pd.to_numeric(
@@ -758,7 +600,6 @@ def get_upbit_4h_ohlcv(
         )
 
         if df.empty:
-
             return None
 
         now = datetime.now(KST)
@@ -767,36 +608,26 @@ def get_upbit_4h_ohlcv(
             now.hour // 4
         ) * 4
 
-        current_candle_start = now.replace(
+        current_start = now.replace(
             hour=hour_block,
             minute=0,
             second=0,
             microsecond=0
-        )
+        ).replace(tzinfo=None)
 
-        current_candle_start_naive = (
-            current_candle_start
-            .replace(tzinfo=None)
-        )
-
+        # 현재 진행 중인 4H 봉 제외
         df = df[
-            df["datetime"]
-            <
-            current_candle_start_naive
+            df["datetime"] < current_start
         ]
 
         if df.empty:
-
             return None
 
-        df = (
-            df
-            .sort_values("datetime")
+        return (
+            df.sort_values("datetime")
             .drop_duplicates("datetime")
             .reset_index(drop=True)
         )
-
-        return df
 
     except Exception as e:
 
@@ -819,20 +650,17 @@ def get_upbit_daily_change(market):
         "candles/days"
     )
 
-    params = {
-        "market": market,
-        "count": 1
-    }
-
     response = retry_request(
         requests.get,
         url,
-        params=params,
+        params={
+            "market": market,
+            "count": 1
+        },
         timeout=15
     )
 
     if response is None:
-
         return None
 
     try:
@@ -840,29 +668,21 @@ def get_upbit_daily_change(market):
         data = response.json()
 
         if not data:
-
             return None
 
-        change_rate = data[0].get(
-            "change_rate"
-        )
+        rate = data[0].get("change_rate")
 
-        if change_rate is None:
-
+        if rate is None:
             return None
 
         return [
-            round(
-                float(change_rate) * 100,
-                2
-            )
+            round(float(rate) * 100, 2)
         ]
 
     except Exception as e:
 
         logging.error(
-            f"[업비트 일봉] "
-            f"{market} 처리 오류 : {e}"
+            f"[업비트 일봉] {market} 오류 : {e}"
         )
 
         return None
@@ -872,29 +692,21 @@ def get_upbit_daily_change(market):
 # EMA
 # =========================================================
 
-def get_ema(
-    df,
-    column,
-    period
-):
+def get_ema(df, column, period):
 
     if (
         df is None
         or df.empty
         or column not in df.columns
     ):
-
         return None
 
     price = pd.to_numeric(
         df[column],
         errors="coerce"
-    )
-
-    price = price.dropna()
+    ).dropna()
 
     if price.empty:
-
         return None
 
     return price.ewm(
@@ -910,56 +722,31 @@ def get_ema(
 
 def get_ema_30_60_120_direction(df):
 
-    if (
-        df is None
-        or df.empty
-    ):
-
+    if df is None or df.empty:
         return "none"
 
-    ema30 = get_ema(
-        df,
-        "c",
-        30
-    )
-
-    ema60 = get_ema(
-        df,
-        "c",
-        60
-    )
-
-    ema120 = get_ema(
-        df,
-        "c",
-        120
-    )
+    ema30 = get_ema(df, "c", 30)
+    ema60 = get_ema(df, "c", 60)
+    ema120 = get_ema(df, "c", 120)
 
     if (
         ema30 is None
         or ema60 is None
         or ema120 is None
     ):
-
         return "none"
 
     a = ema30.iloc[-1]
     b = ema60.iloc[-1]
     c = ema120.iloc[-1]
 
-    if any(
-        pd.isna(x)
-        for x in [a, b, c]
-    ):
-
+    if any(pd.isna(x) for x in [a, b, c]):
         return "none"
 
     if a > b > c:
-
         return "long"
 
     if a < b < c:
-
         return "short"
 
     return "none"
@@ -971,37 +758,18 @@ def get_ema_30_60_120_direction(df):
 
 def get_direction_series(df):
 
-    if (
-        df is None
-        or df.empty
-    ):
-
+    if df is None or df.empty:
         return []
 
-    ema30 = get_ema(
-        df,
-        "c",
-        30
-    )
-
-    ema60 = get_ema(
-        df,
-        "c",
-        60
-    )
-
-    ema120 = get_ema(
-        df,
-        "c",
-        120
-    )
+    ema30 = get_ema(df, "c", 30)
+    ema60 = get_ema(df, "c", 60)
+    ema120 = get_ema(df, "c", 120)
 
     if (
         ema30 is None
         or ema60 is None
         or ema120 is None
     ):
-
         return []
 
     result = []
@@ -1012,30 +780,23 @@ def get_direction_series(df):
         b = ema60.iloc[i]
         c = ema120.iloc[i]
 
-        if any(
-            pd.isna(x)
-            for x in [a, b, c]
-        ):
-
+        if any(pd.isna(x) for x in [a, b, c]):
             result.append("none")
 
         elif a > b > c:
-
             result.append("long")
 
         elif a < b < c:
-
             result.append("short")
 
         else:
-
             result.append("none")
 
     return result
 
 
 # =========================================================
-# 정배열/역배열 시작점
+# 정배열 시작점
 # =========================================================
 
 def find_latest_alignment_start(
@@ -1043,12 +804,9 @@ def find_latest_alignment_start(
     direction
 ):
 
-    directions = get_direction_series(
-        df
-    )
+    directions = get_direction_series(df)
 
     if not directions:
-
         return None
 
     latest = None
@@ -1071,8 +829,7 @@ def find_latest_alignment_start(
 
         if (
             directions[i] == direction
-            and
-            previous != direction
+            and previous != direction
         ):
 
             latest = {
@@ -1084,7 +841,7 @@ def find_latest_alignment_start(
 
 
 # =========================================================
-# 정배열 유지 여부
+# 배열 유지 여부
 # =========================================================
 
 def alignment_is_valid(
@@ -1098,7 +855,6 @@ def alignment_is_valid(
         start_index < 0
         or end_index >= len(directions)
     ):
-
         return False
 
     for i in range(
@@ -1107,7 +863,6 @@ def alignment_is_valid(
     ):
 
         if directions[i] != direction:
-
             return False
 
     return True
@@ -1142,9 +897,7 @@ def find_swing_highs(
 
         try:
 
-            high = float(
-                df["h"].iloc[i]
-            )
+            high = float(df["h"].iloc[i])
 
             left = pd.to_numeric(
                 df["h"].iloc[
@@ -1161,17 +914,12 @@ def find_swing_highs(
                 errors="coerce"
             )
 
-            if (
-                left.empty
-                or right.empty
-            ):
-
+            if left.empty or right.empty:
                 continue
 
             if (
                 high >= left.max()
-                and
-                high >= right.max()
+                and high >= right.max()
             ):
 
                 result.append(
@@ -1179,7 +927,6 @@ def find_swing_highs(
                 )
 
         except Exception:
-
             continue
 
     return result
@@ -1214,9 +961,7 @@ def find_swing_lows(
 
         try:
 
-            low = float(
-                df["l"].iloc[i]
-            )
+            low = float(df["l"].iloc[i])
 
             left = pd.to_numeric(
                 df["l"].iloc[
@@ -1233,17 +978,12 @@ def find_swing_lows(
                 errors="coerce"
             )
 
-            if (
-                left.empty
-                or right.empty
-            ):
-
+            if left.empty or right.empty:
                 continue
 
             if (
                 low <= left.min()
-                and
-                low <= right.min()
+                and low <= right.min()
             ):
 
                 result.append(
@@ -1251,18 +991,13 @@ def find_swing_lows(
                 )
 
         except Exception:
-
             continue
 
     return result
 
 
 # =========================================================
-# LONG 해지 조건
-#
-# 현재 확정봉이 음봉
-# AND
-# 현재 종가 < 이전 확정봉 종가
+# LONG 해지
 # =========================================================
 
 def is_long_invalidation(
@@ -1275,7 +1010,6 @@ def is_long_invalidation(
         or index <= 0
         or index >= len(df)
     ):
-
         return False
 
     try:
@@ -1299,16 +1033,11 @@ def is_long_invalidation(
         )
 
     except Exception:
-
         return False
 
 
 # =========================================================
-# SHORT 해지 조건
-#
-# 현재 확정봉이 양봉
-# AND
-# 현재 종가 > 이전 확정봉 종가
+# SHORT 해지
 # =========================================================
 
 def is_short_invalidation(
@@ -1321,7 +1050,6 @@ def is_short_invalidation(
         or index <= 0
         or index >= len(df)
     ):
-
         return False
 
     try:
@@ -1345,12 +1073,11 @@ def is_short_invalidation(
         )
 
     except Exception:
-
         return False
 
 
 # =========================================================
-# LONG N자 구조
+# LONG N자
 # =========================================================
 
 def find_long_breakout(
@@ -1367,36 +1094,23 @@ def find_long_breakout(
     }
 
     if alignment_start is None:
-
         return result
 
-    if alignment_start.get(
-        "direction"
-    ) != "long":
-
+    if alignment_start.get("direction") != "long":
         return result
 
-    if (
-        df is None
-        or len(df) < 125
-    ):
-
+    if df is None or len(df) < 125:
         return result
 
-    directions = get_direction_series(
-        df
-    )
+    directions = get_direction_series(df)
 
     if not directions:
-
         return result
 
     start = alignment_start["index"]
-
     current_index = len(df) - 1
 
     if start >= current_index:
-
         return result
 
     if not alignment_is_valid(
@@ -1405,7 +1119,6 @@ def find_long_breakout(
         current_index,
         "long"
     ):
-
         return result
 
     swing_highs = find_swing_highs(
@@ -1415,32 +1128,17 @@ def find_long_breakout(
     )
 
     if not swing_highs:
-
         return result
 
-    for anchor_pos in range(
-        len(swing_highs) - 1,
-        -1,
-        -1
+    for anchor_index, anchor_high in reversed(
+        swing_highs
     ):
 
-        anchor_index, anchor_high = (
-            swing_highs[anchor_pos]
-        )
-
         if anchor_index >= current_index:
-
             continue
 
-        correction_start = (
-            anchor_index + 1
-        )
-
+        correction_start = anchor_index + 1
         correction_end = current_index
-
-        if correction_start > correction_end:
-
-            continue
 
         correction_lows = pd.to_numeric(
             df["l"].iloc[
@@ -1451,13 +1149,11 @@ def find_long_breakout(
         )
 
         if correction_lows.empty:
-
             continue
 
         correction_low = correction_lows.min()
 
         if pd.isna(correction_low):
-
             continue
 
         correction_rate = (
@@ -1466,15 +1162,12 @@ def find_long_breakout(
         ) / anchor_high
 
         if correction_rate < MIN_CORRECTION_RATE:
-
             continue
 
         search_start = anchor_index + 1
 
         attempt_high = None
-
         attempt_high_index = None
-
         breakout_index = None
 
         for i in range(
@@ -1483,37 +1176,23 @@ def find_long_breakout(
         ):
 
             if directions[i] != "long":
-
                 breakout_index = None
-
                 break
 
             try:
 
-                high = float(
-                    df["h"].iloc[i]
-                )
-
-                low = float(
-                    df["l"].iloc[i]
-                )
-
-                close = float(
-                    df["c"].iloc[i]
-                )
+                high = float(df["h"].iloc[i])
+                low = float(df["l"].iloc[i])
+                close = float(df["c"].iloc[i])
 
             except Exception:
-
                 continue
 
             if close > anchor_high:
-
                 breakout_index = i
-
                 break
 
             if low < float(correction_low):
-
                 correction_low = low
 
             if i >= SWING_RIGHT:
@@ -1530,15 +1209,14 @@ def find_long_breakout(
                     errors="coerce"
                 )
 
-                if not left_values.empty:
+                if (
+                    not left_values.empty
+                    and high >= left_values.max()
+                    and high < anchor_high
+                ):
 
-                    if high >= left_values.max():
-
-                        if high < anchor_high:
-
-                            attempt_high = high
-
-                            attempt_high_index = i
+                    attempt_high = high
+                    attempt_high_index = i
 
             if (
                 attempt_high is not None
@@ -1555,13 +1233,10 @@ def find_long_breakout(
                 if decline_rate >= MIN_CORRECTION_RATE:
 
                     correction_low = low
-
                     attempt_high = None
-
                     attempt_high_index = None
 
         if breakout_index is None:
-
             continue
 
         invalidation_index = None
@@ -1571,44 +1246,28 @@ def find_long_breakout(
             current_index + 1
         ):
 
-            if is_long_invalidation(
-                df,
-                i
-            ):
-
+            if is_long_invalidation(df, i):
                 invalidation_index = i
 
         if invalidation_index is not None:
 
             if invalidation_index < current_index:
-
                 continue
 
-            result["status"] = "invalidated"
-
-            result["breakout_index"] = (
-                breakout_index
-            )
-
-            result["breakout_level"] = (
-                anchor_high
-            )
-
-            result["invalidation_index"] = (
-                invalidation_index
-            )
+            result.update({
+                "status": "invalidated",
+                "breakout_index": breakout_index,
+                "breakout_level": anchor_high,
+                "invalidation_index": invalidation_index
+            })
 
             return result
 
-        result["status"] = "breakout"
-
-        result["breakout_index"] = (
-            breakout_index
-        )
-
-        result["breakout_level"] = (
-            anchor_high
-        )
+        result.update({
+            "status": "breakout",
+            "breakout_index": breakout_index,
+            "breakout_level": anchor_high
+        })
 
         return result
 
@@ -1616,7 +1275,7 @@ def find_long_breakout(
 
 
 # =========================================================
-# SHORT N자 구조
+# SHORT N자
 # =========================================================
 
 def find_short_breakout(
@@ -1633,36 +1292,23 @@ def find_short_breakout(
     }
 
     if alignment_start is None:
-
         return result
 
-    if alignment_start.get(
-        "direction"
-    ) != "short":
-
+    if alignment_start.get("direction") != "short":
         return result
 
-    if (
-        df is None
-        or len(df) < 125
-    ):
-
+    if df is None or len(df) < 125:
         return result
 
-    directions = get_direction_series(
-        df
-    )
+    directions = get_direction_series(df)
 
     if not directions:
-
         return result
 
     start = alignment_start["index"]
-
     current_index = len(df) - 1
 
     if start >= current_index:
-
         return result
 
     if not alignment_is_valid(
@@ -1671,7 +1317,6 @@ def find_short_breakout(
         current_index,
         "short"
     ):
-
         return result
 
     swing_lows = find_swing_lows(
@@ -1681,32 +1326,17 @@ def find_short_breakout(
     )
 
     if not swing_lows:
-
         return result
 
-    for anchor_pos in range(
-        len(swing_lows) - 1,
-        -1,
-        -1
+    for anchor_index, anchor_low in reversed(
+        swing_lows
     ):
 
-        anchor_index, anchor_low = (
-            swing_lows[anchor_pos]
-        )
-
         if anchor_index >= current_index:
-
             continue
 
-        correction_start = (
-            anchor_index + 1
-        )
-
+        correction_start = anchor_index + 1
         correction_end = current_index
-
-        if correction_start > correction_end:
-
-            continue
 
         correction_highs = pd.to_numeric(
             df["h"].iloc[
@@ -1717,13 +1347,11 @@ def find_short_breakout(
         )
 
         if correction_highs.empty:
-
             continue
 
         correction_high = correction_highs.max()
 
         if pd.isna(correction_high):
-
             continue
 
         correction_rate = (
@@ -1732,15 +1360,12 @@ def find_short_breakout(
         ) / anchor_low
 
         if correction_rate < MIN_CORRECTION_RATE:
-
             continue
 
         search_start = anchor_index + 1
 
         attempt_low = None
-
         attempt_low_index = None
-
         breakout_index = None
 
         for i in range(
@@ -1749,37 +1374,23 @@ def find_short_breakout(
         ):
 
             if directions[i] != "short":
-
                 breakout_index = None
-
                 break
 
             try:
 
-                high = float(
-                    df["h"].iloc[i]
-                )
-
-                low = float(
-                    df["l"].iloc[i]
-                )
-
-                close = float(
-                    df["c"].iloc[i]
-                )
+                high = float(df["h"].iloc[i])
+                low = float(df["l"].iloc[i])
+                close = float(df["c"].iloc[i])
 
             except Exception:
-
                 continue
 
             if close < anchor_low:
-
                 breakout_index = i
-
                 break
 
             if high > float(correction_high):
-
                 correction_high = high
 
             if i >= SWING_RIGHT:
@@ -1796,15 +1407,14 @@ def find_short_breakout(
                     errors="coerce"
                 )
 
-                if not left_values.empty:
+                if (
+                    not left_values.empty
+                    and low <= left_values.min()
+                    and low > anchor_low
+                ):
 
-                    if low <= left_values.min():
-
-                        if low > anchor_low:
-
-                            attempt_low = low
-
-                            attempt_low_index = i
+                    attempt_low = low
+                    attempt_low_index = i
 
             if (
                 attempt_low is not None
@@ -1821,13 +1431,10 @@ def find_short_breakout(
                 if rise_rate >= MIN_CORRECTION_RATE:
 
                     correction_high = high
-
                     attempt_low = None
-
                     attempt_low_index = None
 
         if breakout_index is None:
-
             continue
 
         invalidation_index = None
@@ -1837,44 +1444,28 @@ def find_short_breakout(
             current_index + 1
         ):
 
-            if is_short_invalidation(
-                df,
-                i
-            ):
-
+            if is_short_invalidation(df, i):
                 invalidation_index = i
 
         if invalidation_index is not None:
 
             if invalidation_index < current_index:
-
                 continue
 
-            result["status"] = "invalidated"
-
-            result["breakout_index"] = (
-                breakout_index
-            )
-
-            result["breakout_level"] = (
-                anchor_low
-            )
-
-            result["invalidation_index"] = (
-                invalidation_index
-            )
+            result.update({
+                "status": "invalidated",
+                "breakout_index": breakout_index,
+                "breakout_level": anchor_low,
+                "invalidation_index": invalidation_index
+            })
 
             return result
 
-        result["status"] = "breakout"
-
-        result["breakout_index"] = (
-            breakout_index
-        )
-
-        result["breakout_level"] = (
-            anchor_low
-        )
+        result.update({
+            "status": "breakout",
+            "breakout_index": breakout_index,
+            "breakout_level": anchor_low
+        })
 
         return result
 
@@ -1899,25 +1490,19 @@ def make_breakout_id(
         or index < 0
         or index >= len(df)
     ):
-
         return None
 
     try:
 
         if "ts" in df.columns:
-
-            candle_id = int(
-                df["ts"].iloc[index]
-            )
+            candle_id = int(df["ts"].iloc[index])
 
         elif "datetime" in df.columns:
-
             candle_id = str(
                 df["datetime"].iloc[index]
             )
 
         else:
-
             candle_id = int(index)
 
         return (
@@ -1928,7 +1513,6 @@ def make_breakout_id(
         )
 
     except Exception:
-
         return None
 
 
@@ -1936,18 +1520,14 @@ def make_breakout_id(
 # 해지 ID 1회 처리
 # =========================================================
 
-def mark_invalidation_once(
-    invalidation_id
-):
+def mark_invalidation_once(invalidation_id):
 
     if not invalidation_id:
-
         return False
 
     with invalidation_lock:
 
         if invalidation_id in shown_invalidation_ids:
-
             return False
 
         shown_invalidation_ids.add(
@@ -1958,12 +1538,7 @@ def mark_invalidation_once(
 
 
 # =========================================================
-# 돌파 후 카운팅
-#
-# 돌파봉 = 1
-# 다음 확정봉 = 2
-# ...
-# 제한 없음
+# 돌파 후 카운터
 # =========================================================
 
 def get_breakout_count(
@@ -1972,7 +1547,6 @@ def get_breakout_count(
 ):
 
     if breakout_index is None:
-
         return None
 
     current_index = len(df) - 1
@@ -1983,20 +1557,11 @@ def get_breakout_count(
         1
     )
 
-    if count < 1:
-
-        return None
-
-    return count
+    return count if count >= 1 else None
 
 
 # =========================================================
-# 1시간 N자 신호
-#
-# 중요:
-# 15분 N자는 완전히 제거
-#
-# 1H만 분석
+# 1H N자
 # =========================================================
 
 def get_1h_breakout_signal(
@@ -2006,7 +1571,7 @@ def get_1h_breakout_signal(
     allow_short=True
 ):
 
-    empty_result = {
+    empty = {
         "signal": "none",
         "direction": "none",
         "breakout_id": None,
@@ -2016,20 +1581,13 @@ def get_1h_breakout_signal(
         "invalidation_index": None
     }
 
-    if (
-        df is None
-        or len(df) < 125
-    ):
+    if df is None or len(df) < 125:
+        return empty
 
-        return empty_result
-
-    directions = get_direction_series(
-        df
-    )
+    directions = get_direction_series(df)
 
     if not directions:
-
-        return empty_result
+        return empty
 
     current_direction = directions[-1]
 
@@ -2054,13 +1612,9 @@ def get_1h_breakout_signal(
             "none"
         )
 
-        # -------------------------------------------------
-        # 해지
-        # -------------------------------------------------
-
         if status == "invalidated":
 
-            invalidation_index = result.get(
+            idx = result.get(
                 "invalidation_index"
             )
 
@@ -2069,7 +1623,7 @@ def get_1h_breakout_signal(
                 symbol,
                 "1H",
                 df,
-                invalidation_index
+                idx
             )
 
             if mark_invalidation_once(
@@ -2083,9 +1637,9 @@ def get_1h_breakout_signal(
                     "breakout_index": result.get(
                         "breakout_index"
                     ),
-                    "warning_index": invalidation_index,
+                    "warning_index": idx,
                     "invalidation_id": invalidation_id,
-                    "invalidation_index": invalidation_index
+                    "invalidation_index": idx
                 }
 
             return {
@@ -2097,27 +1651,17 @@ def get_1h_breakout_signal(
                 ),
                 "warning_index": None,
                 "invalidation_id": invalidation_id,
-                "invalidation_index": invalidation_index
+                "invalidation_index": idx
             }
-
-        # -------------------------------------------------
-        # N자 돌파 유지
-        # -------------------------------------------------
 
         breakout_index = result.get(
             "breakout_index"
         )
 
         if breakout_index is None:
-
             return {
-                "signal": "none",
-                "direction": "long",
-                "breakout_id": None,
-                "breakout_index": None,
-                "warning_index": None,
-                "invalidation_id": None,
-                "invalidation_index": None
+                **empty,
+                "direction": "long"
             }
 
         breakout_id = make_breakout_id(
@@ -2128,18 +1672,13 @@ def get_1h_breakout_signal(
             breakout_index
         )
 
-        if breakout_id is None:
-
-            return empty_result
-
         count = get_breakout_count(
             df,
             breakout_index
         )
 
-        if count is None:
-
-            return empty_result
+        if breakout_id is None or count is None:
+            return empty
 
         return {
             "signal": str(count),
@@ -2157,8 +1696,7 @@ def get_1h_breakout_signal(
 
     if (
         current_direction == "short"
-        and
-        allow_short
+        and allow_short
     ):
 
         alignment = find_latest_alignment_start(
@@ -2176,13 +1714,9 @@ def get_1h_breakout_signal(
             "none"
         )
 
-        # -------------------------------------------------
-        # 해지
-        # -------------------------------------------------
-
         if status == "invalidated":
 
-            invalidation_index = result.get(
+            idx = result.get(
                 "invalidation_index"
             )
 
@@ -2191,7 +1725,7 @@ def get_1h_breakout_signal(
                 symbol,
                 "1H",
                 df,
-                invalidation_index
+                idx
             )
 
             if mark_invalidation_once(
@@ -2205,9 +1739,9 @@ def get_1h_breakout_signal(
                     "breakout_index": result.get(
                         "breakout_index"
                     ),
-                    "warning_index": invalidation_index,
+                    "warning_index": idx,
                     "invalidation_id": invalidation_id,
-                    "invalidation_index": invalidation_index
+                    "invalidation_index": idx
                 }
 
             return {
@@ -2219,27 +1753,17 @@ def get_1h_breakout_signal(
                 ),
                 "warning_index": None,
                 "invalidation_id": invalidation_id,
-                "invalidation_index": invalidation_index
+                "invalidation_index": idx
             }
-
-        # -------------------------------------------------
-        # N자 돌파 유지
-        # -------------------------------------------------
 
         breakout_index = result.get(
             "breakout_index"
         )
 
         if breakout_index is None:
-
             return {
-                "signal": "none",
-                "direction": "short",
-                "breakout_id": None,
-                "breakout_index": None,
-                "warning_index": None,
-                "invalidation_id": None,
-                "invalidation_index": None
+                **empty,
+                "direction": "short"
             }
 
         breakout_id = make_breakout_id(
@@ -2250,18 +1774,13 @@ def get_1h_breakout_signal(
             breakout_index
         )
 
-        if breakout_id is None:
-
-            return empty_result
-
         count = get_breakout_count(
             df,
             breakout_index
         )
 
-        if count is None:
-
-            return empty_result
+        if breakout_id is None or count is None:
+            return empty
 
         return {
             "signal": str(count),
@@ -2274,39 +1793,100 @@ def get_1h_breakout_signal(
         }
 
     return {
-        "signal": "none",
-        "direction": current_direction,
-        "breakout_id": None,
-        "breakout_index": None,
-        "warning_index": None,
-        "invalidation_id": None,
-        "invalidation_index": None
+        **empty,
+        "direction": current_direction
     }
 
 
 # =========================================================
-# 1H N자만 통합
+# ★ 최종 N자 조건
 #
-# 15M N자 완전 삭제
-# 4H N자도 사용하지 않음
+# N자 자체는 1H만 분석
+#
+# LONG:
+# 15M LONG + 1H LONG + 4H LONG
+#
+# SHORT:
+# 15M SHORT + 1H SHORT + 4H SHORT
+#
+# 이 조건을 만족할 때만 🚀 / 🚨 표시
 # =========================================================
 
 def get_multi_timeframe_breakout(
+    df15m,
     df1h,
+    df4h,
     exchange,
     symbol,
     allow_short=True
 ):
 
-    warning_1h = get_1h_breakout_signal(
+    warning = get_1h_breakout_signal(
         df1h,
         exchange,
         symbol,
         allow_short
     )
 
+    direction15m = get_ema_30_60_120_direction(
+        df15m
+    )
+
+    direction1h = get_ema_30_60_120_direction(
+        df1h
+    )
+
+    direction4h = get_ema_30_60_120_direction(
+        df4h
+    )
+
+    warning_direction = warning.get(
+        "direction",
+        "none"
+    )
+
+    # =====================================================
+    # LONG 최종 조건
+    # =====================================================
+
+    if warning_direction == "long":
+
+        final_long = (
+            direction15m == "long"
+            and
+            direction1h == "long"
+            and
+            direction4h == "long"
+        )
+
+        if not final_long:
+
+            warning["signal"] = "none"
+
+            # 배열이 깨졌으므로 현재 경고 표시 금지
+            warning["warning_index"] = None
+
+    # =====================================================
+    # SHORT 최종 조건
+    # =====================================================
+
+    elif warning_direction == "short":
+
+        final_short = (
+            direction15m == "short"
+            and
+            direction1h == "short"
+            and
+            direction4h == "short"
+        )
+
+        if not final_short:
+
+            warning["signal"] = "none"
+            warning["warning_index"] = None
+
     return {
-        "1h": warning_1h
+        "1h": warning
     }
 
 
@@ -2319,11 +1899,7 @@ def calculate_daily_changes(
     is_okx=False
 ):
 
-    if (
-        df is None
-        or df.empty
-    ):
-
+    if df is None or df.empty:
         return None
 
     try:
@@ -2361,12 +1937,9 @@ def calculate_daily_changes(
         )
 
         if temp.empty:
-
             return None
 
-        temp = temp.set_index(
-            "datetime"
-        )
+        temp = temp.set_index("datetime")
 
         daily = (
             temp["c"]
@@ -2379,7 +1952,6 @@ def calculate_daily_changes(
         )
 
         if len(daily) < 2:
-
             return None
 
         result = []
@@ -2395,26 +1967,19 @@ def calculate_daily_changes(
         ):
 
             previous = daily.iloc[i - 1]
-
             current = daily.iloc[i]
 
             if previous == 0:
-
                 continue
 
             change = (
                 (current - previous)
-                /
-                previous
-                *
-                100
+                / previous
+                * 100
             )
 
             result.append(
-                round(
-                    float(change),
-                    2
-                )
+                round(float(change), 2)
             )
 
         return result[::-1]
@@ -2459,51 +2024,17 @@ def check_ema(df):
 
 
 # =========================================================
-# 4H EMA 필터
-# =========================================================
-
-def check_4h_filter(df4h):
-
-    direction = get_ema_30_60_120_direction(
-        df4h
-    )
-
-    if direction == "long":
-
-        return {
-            "direction": "long",
-            "display": "🟢 LONG"
-        }
-
-    if direction == "short":
-
-        return {
-            "direction": "short",
-            "display": "🔴 SHORT"
-        }
-
-    return {
-        "direction": "none",
-        "display": "⚪"
-    }
-
-
-# =========================================================
-# 거래대금 표시
+# 거래대금
 # =========================================================
 
 def format_volume(volume):
 
     if volume is None:
-
         return "-"
 
     try:
-
         volume = float(volume)
-
     except Exception:
-
         return "-"
 
     if volume >= 1_000_000_000_000:
@@ -2529,10 +2060,7 @@ def format_volume(volume):
 
 def format_change(changes):
 
-    if (
-        changes is None
-        or len(changes) == 0
-    ):
+    if not changes:
 
         return (
             '<span class="change-item">'
@@ -2541,11 +2069,8 @@ def format_change(changes):
         )
 
     try:
-
         x = float(changes[0])
-
     except Exception:
-
         return (
             '<span class="change-item">'
             '⬜ N/A'
@@ -2553,19 +2078,16 @@ def format_change(changes):
         )
 
     if x > 0:
-
         icon = "☀️"
         sign = "+"
         cls = "positive"
 
     elif x < 0:
-
         icon = "☁️"
         sign = ""
         cls = "negative"
 
     else:
-
         icon = "☁️"
         sign = ""
         cls = "neutral"
@@ -2579,14 +2101,43 @@ def format_change(changes):
 
 
 # =========================================================
-# 1H N자 경고 HTML
-#
-# 15M 표시 완전 삭제
+# N자 HTML
 # =========================================================
 
-def multi_warning_html(
-    warnings
-):
+def single_warning_html(warning):
+
+    if not warning:
+        return ""
+
+    signal = warning.get(
+        "signal",
+        "none"
+    )
+
+    if signal == "invalidated":
+
+        return (
+            '<span class="invalidation-warning">'
+            '🚨'
+            '</span>'
+        )
+
+    if str(signal).isdigit():
+
+        count = int(signal)
+
+        if count >= 1:
+
+            return (
+                '<span class="warning-rocket">'
+                f'🚀({count})'
+                '</span>'
+            )
+
+    return ""
+
+
+def multi_warning_html(warnings):
 
     if not warnings:
 
@@ -2622,55 +2173,10 @@ def multi_warning_html(
 
 
 # =========================================================
-# 단일 N자 경고 HTML
-#
-# 🚨 = N자 해지 순간 1회
-# 🚀(1 이상) = N자 돌파 유지
+# 방향 HTML
 # =========================================================
 
-def single_warning_html(
-    warning
-):
-
-    if not warning:
-
-        return ""
-
-    signal = warning.get(
-        "signal",
-        "none"
-    )
-
-    if signal == "invalidated":
-
-        return (
-            '<span class="invalidation-warning">'
-            '🚨'
-            '</span>'
-        )
-
-    if str(signal).isdigit():
-
-        count = int(signal)
-
-        if count >= 1:
-
-            return (
-                '<span class="warning-rocket">'
-                f'🚀({count})'
-                '</span>'
-            )
-
-    return ""
-
-
-# =========================================================
-# 방향 표시
-# =========================================================
-
-def direction_html(
-    direction
-):
+def direction_html(direction):
 
     if direction == "long":
 
@@ -2696,35 +2202,27 @@ def direction_html(
 
 
 # =========================================================
-# 업비트 마켓 + 24시간 거래대금
+# 업비트 마켓
 # =========================================================
 
 def get_upbit_markets():
 
     global latest_upbit_markets
 
-    logging.info(
-        "[업비트 API] "
-        "KRW 마켓 + 24시간 거래대금 조회"
-    )
-
     url = (
         "https://api.upbit.com/v1/ticker/all"
     )
 
-    params = {
-        "quote_currencies": "KRW"
-    }
-
     response = retry_request(
         requests.get,
         url,
-        params=params,
+        params={
+            "quote_currencies": "KRW"
+        },
         timeout=15
     )
 
     if response is None:
-
         return []
 
     try:
@@ -2732,7 +2230,6 @@ def get_upbit_markets():
         data = response.json()
 
         if not data:
-
             return []
 
         markets = []
@@ -2744,44 +2241,31 @@ def get_upbit_markets():
                 ""
             )
 
-            if not market.startswith(
-                "KRW-"
-            ):
-
+            if not market.startswith("KRW-"):
                 continue
-
-            volume_24h = item.get(
-                "acc_trade_price_24h"
-            )
 
             try:
 
-                volume_24h = float(
-                    volume_24h
+                volume = float(
+                    item.get(
+                        "acc_trade_price_24h"
+                    )
                 )
 
             except Exception:
-
                 continue
 
-            if volume_24h <= 0:
-
+            if volume <= 0:
                 continue
 
-            markets.append(
-                {
-                    "market": market,
-                    "volume_24h": volume_24h
-                }
-            )
-
-        if not markets:
-
-            return []
+            markets.append({
+                "market": market,
+                "volume_24h": volume
+            })
 
         latest_upbit_markets = [
-            item["market"]
-            for item in markets
+            x["market"]
+            for x in markets
         ]
 
         return markets
@@ -2789,7 +2273,7 @@ def get_upbit_markets():
     except Exception as e:
 
         logging.error(
-            f"업비트 마켓 처리 오류 : {e}"
+            f"업비트 마켓 오류 : {e}"
         )
 
         return []
@@ -2812,7 +2296,6 @@ def get_all_okx_swap_symbols():
     )
 
     if response is None:
-
         return []
 
     try:
@@ -2826,10 +2309,7 @@ def get_all_okx_swap_symbols():
             x["instId"]
             for x in data
             if (
-                x.get(
-                    "instId",
-                    ""
-                ).endswith(
+                x.get("instId", "").endswith(
                     "-USDT-SWAP"
                 )
                 and
@@ -2840,7 +2320,7 @@ def get_all_okx_swap_symbols():
     except Exception as e:
 
         logging.error(
-            f"OKX 목록 처리 오류 : {e}"
+            f"OKX 목록 오류 : {e}"
         )
 
         return []
@@ -2861,11 +2341,7 @@ def get_okx_volume(
         24
     )
 
-    if (
-        df is None
-        or df.empty
-    ):
-
+    if df is None or df.empty:
         return None
 
     try:
@@ -2876,13 +2352,11 @@ def get_okx_volume(
         ).sum()
 
         if pd.isna(volume):
-
             return None
 
         return (
             float(volume)
-            *
-            float(usdt_krw)
+            * float(usdt_krw)
         )
 
     except Exception as e:
@@ -2896,7 +2370,7 @@ def get_okx_volume(
 
 
 # =========================================================
-# OKX 과거 데이터 공통
+# OKX 과거 데이터
 # =========================================================
 
 def get_okx_history_generic(
@@ -2906,12 +2380,9 @@ def get_okx_history_generic(
 ):
 
     all_df = None
-
     before = None
 
-    for chunk_index in range(
-        MAX_HISTORY_CHUNKS
-    ):
+    for _ in range(MAX_HISTORY_CHUNKS):
 
         df = get_okx_ohlcv(
             inst_id,
@@ -2920,24 +2391,15 @@ def get_okx_history_generic(
             before
         )
 
-        if (
-            df is None
-            or df.empty
-        ):
-
+        if df is None or df.empty:
             break
 
         if all_df is None:
-
             all_df = df.copy()
 
         else:
-
             all_df = pd.concat(
-                [
-                    df,
-                    all_df
-                ],
+                [df, all_df],
                 ignore_index=True
             )
 
@@ -2949,21 +2411,14 @@ def get_okx_history_generic(
         )
 
         if len(all_df) >= required_count:
-
             return all_df
 
-        oldest_ts = int(
+        before = int(
             all_df["ts"].iloc[0]
         )
 
-        before = oldest_ts
-
     return all_df
 
-
-# =========================================================
-# OKX 4H 과거 데이터
-# =========================================================
 
 def get_okx_4h_history(inst_id):
 
@@ -2973,10 +2428,6 @@ def get_okx_4h_history(inst_id):
         125
     )
 
-
-# =========================================================
-# OKX 1H 과거 데이터
-# =========================================================
 
 def get_okx_1h_history(inst_id):
 
@@ -2988,7 +2439,7 @@ def get_okx_1h_history(inst_id):
 
 
 # =========================================================
-# 업비트 과거 데이터 공통
+# 업비트 과거 데이터
 # =========================================================
 
 def get_upbit_history_generic(
@@ -2998,12 +2449,9 @@ def get_upbit_history_generic(
 ):
 
     all_df = None
-
     to = None
 
-    for chunk_index in range(
-        MAX_HISTORY_CHUNKS
-    ):
+    for _ in range(MAX_HISTORY_CHUNKS):
 
         df = get_upbit_minute_ohlcv(
             market,
@@ -3012,24 +2460,15 @@ def get_upbit_history_generic(
             to
         )
 
-        if (
-            df is None
-            or df.empty
-        ):
-
+        if df is None or df.empty:
             break
 
         if all_df is None:
-
             all_df = df.copy()
 
         else:
-
             all_df = pd.concat(
-                [
-                    df,
-                    all_df
-                ],
+                [df, all_df],
                 ignore_index=True
             )
 
@@ -3041,12 +2480,9 @@ def get_upbit_history_generic(
         )
 
         if len(all_df) >= required_count:
-
             return all_df
 
-        oldest = all_df[
-            "datetime"
-        ].iloc[0]
+        oldest = all_df["datetime"].iloc[0]
 
         to = oldest.strftime(
             "%Y-%m-%dT%H:%M:%S"
@@ -3055,19 +2491,12 @@ def get_upbit_history_generic(
     return all_df
 
 
-# =========================================================
-# 업비트 4H 과거 데이터
-# =========================================================
-
 def get_upbit_4h_history(market):
 
     all_df = None
-
     to = None
 
-    for chunk_index in range(
-        MAX_HISTORY_CHUNKS
-    ):
+    for _ in range(MAX_HISTORY_CHUNKS):
 
         df = get_upbit_4h_ohlcv(
             market,
@@ -3075,24 +2504,15 @@ def get_upbit_4h_history(market):
             to
         )
 
-        if (
-            df is None
-            or df.empty
-        ):
-
+        if df is None or df.empty:
             break
 
         if all_df is None:
-
             all_df = df.copy()
 
         else:
-
             all_df = pd.concat(
-                [
-                    df,
-                    all_df
-                ],
+                [df, all_df],
                 ignore_index=True
             )
 
@@ -3104,12 +2524,9 @@ def get_upbit_4h_history(market):
         )
 
         if len(all_df) >= 125:
-
             return all_df
 
-        oldest = all_df[
-            "datetime"
-        ].iloc[0]
+        oldest = all_df["datetime"].iloc[0]
 
         to = oldest.strftime(
             "%Y-%m-%dT%H:%M:%S"
@@ -3117,10 +2534,6 @@ def get_upbit_4h_history(market):
 
     return all_df
 
-
-# =========================================================
-# 업비트 1H 과거 데이터
-# =========================================================
 
 def get_upbit_1h_history(market):
 
@@ -3133,85 +2546,39 @@ def get_upbit_1h_history(market):
 
 # =========================================================
 # 업비트 분석
-#
-# 1H N자만 사용
-# 15M N자 완전 삭제
 # =========================================================
 
 def get_upbit_analysis(market):
 
-    # -----------------------------------------------------
-    # 4H
-    # -----------------------------------------------------
+    df4h = get_upbit_4h_history(market)
 
-    df4h = get_upbit_4h_history(
-        market
-    )
-
-    if (
-        df4h is None
-        or df4h.empty
-    ):
-
+    if df4h is None or df4h.empty:
         return None
 
-    filter4h = check_4h_filter(
-        df4h
-    )
+    df1h = get_upbit_1h_history(market)
 
-    # -----------------------------------------------------
-    # 1H
-    # -----------------------------------------------------
-
-    df1h = get_upbit_1h_history(
-        market
-    )
-
-    if (
-        df1h is None
-        or df1h.empty
-    ):
-
+    if df1h is None or df1h.empty:
         return None
 
-    # -----------------------------------------------------
-    # 15M
-    #
-    # EMA 표시용으로만 사용
-    # N자 분석에는 사용하지 않음
-    # -----------------------------------------------------
-
+    # 15M은 EMA + 최종 배열 필터용
+    # N자 분석은 하지 않음
     df15m = get_upbit_history_generic(
         market,
         15,
         INITIAL_CANDLE_COUNT
     )
 
-    if (
-        df15m is None
-        or df15m.empty
-    ):
-
+    if df15m is None or df15m.empty:
         return None
 
-    ema15m = check_ema(
-        df15m
-    )
-
-    ema1h = check_ema(
-        df1h
-    )
-
-    ema4h = check_ema(
-        df4h
-    )
-
-    # -----------------------------------------------------
-    # 1H N자만 분석
-    # -----------------------------------------------------
+    ema15m = check_ema(df15m)
+    ema1h = check_ema(df1h)
+    ema4h = check_ema(df4h)
 
     warnings = get_multi_timeframe_breakout(
+        df15m,
         df1h,
+        df4h,
         "UPBIT",
         market,
         allow_short=False
@@ -3219,36 +2586,19 @@ def get_upbit_analysis(market):
 
     warning1h = warnings["1h"]
 
-    qualified = False
+    signal = warning1h.get(
+        "signal",
+        "none"
+    )
 
-    # -----------------------------------------------------
-    # 15M + 1H + 4H LONG
-    # +
-    # 1H N자
-    # -----------------------------------------------------
-
-    if (
-        ema15m.get("direction") == "long"
-        and
-        ema1h.get("direction") == "long"
-        and
-        ema4h.get("direction") == "long"
-        and
+    qualified = (
         warning1h.get("direction") == "long"
-    ):
-
-        signal = warning1h.get(
-            "signal",
-            "none"
-        )
-
-        if (
-            signal.isdigit()
-            and
-            int(signal) >= 1
-        ):
-
-            qualified = True
+        and signal.isdigit()
+        and int(signal) >= 1
+        and ema15m.get("direction") == "long"
+        and ema1h.get("direction") == "long"
+        and ema4h.get("direction") == "long"
+    )
 
     changes = get_upbit_daily_change(
         market
@@ -3267,84 +2617,38 @@ def get_upbit_analysis(market):
 
 # =========================================================
 # OKX 분석
-#
-# 1H N자만 사용
-# 15M N자 완전 삭제
 # =========================================================
 
 def get_okx_analysis(inst_id):
 
-    # -----------------------------------------------------
-    # 4H
-    # -----------------------------------------------------
+    df4h = get_okx_4h_history(inst_id)
 
-    df4h = get_okx_4h_history(
-        inst_id
-    )
-
-    if (
-        df4h is None
-        or df4h.empty
-    ):
-
+    if df4h is None or df4h.empty:
         return None
 
-    filter4h = check_4h_filter(
-        df4h
-    )
+    df1h = get_okx_1h_history(inst_id)
 
-    # -----------------------------------------------------
-    # 1H
-    # -----------------------------------------------------
-
-    df1h = get_okx_1h_history(
-        inst_id
-    )
-
-    if (
-        df1h is None
-        or df1h.empty
-    ):
-
+    if df1h is None or df1h.empty:
         return None
 
-    # -----------------------------------------------------
-    # 15M
-    #
-    # EMA 표시용으로만 사용
-    # -----------------------------------------------------
-
+    # 15M은 EMA + 최종 배열 필터용
     df15m = get_okx_history_generic(
         inst_id,
         "15m",
         INITIAL_CANDLE_COUNT
     )
 
-    if (
-        df15m is None
-        or df15m.empty
-    ):
-
+    if df15m is None or df15m.empty:
         return None
 
-    ema15m = check_ema(
-        df15m
-    )
-
-    ema1h = check_ema(
-        df1h
-    )
-
-    ema4h = check_ema(
-        df4h
-    )
-
-    # -----------------------------------------------------
-    # 1H N자만 분석
-    # -----------------------------------------------------
+    ema15m = check_ema(df15m)
+    ema1h = check_ema(df1h)
+    ema4h = check_ema(df4h)
 
     warnings = get_multi_timeframe_breakout(
+        df15m,
         df1h,
+        df4h,
         "OKX",
         inst_id,
         allow_short=True
@@ -3352,7 +2656,7 @@ def get_okx_analysis(inst_id):
 
     warning1h = warnings["1h"]
 
-    warning_direction = warning1h.get(
+    direction = warning1h.get(
         "direction",
         "none"
     )
@@ -3364,44 +2668,29 @@ def get_okx_analysis(inst_id):
 
     signal_valid = (
         signal.isdigit()
-        and
-        int(signal) >= 1
+        and int(signal) >= 1
     )
 
     qualified = False
 
-    # -----------------------------------------------------
     # LONG
-    # -----------------------------------------------------
-
     if (
-        warning_direction == "long"
-        and
-        ema15m.get("direction") == "long"
-        and
-        ema1h.get("direction") == "long"
-        and
-        ema4h.get("direction") == "long"
-        and
-        signal_valid
+        direction == "long"
+        and signal_valid
+        and ema15m.get("direction") == "long"
+        and ema1h.get("direction") == "long"
+        and ema4h.get("direction") == "long"
     ):
 
         qualified = True
 
-    # -----------------------------------------------------
     # SHORT
-    # -----------------------------------------------------
-
     elif (
-        warning_direction == "short"
-        and
-        ema15m.get("direction") == "short"
-        and
-        ema1h.get("direction") == "short"
-        and
-        ema4h.get("direction") == "short"
-        and
-        signal_valid
+        direction == "short"
+        and signal_valid
+        and ema15m.get("direction") == "short"
+        and ema1h.get("direction") == "short"
+        and ema4h.get("direction") == "short"
     ):
 
         qualified = True
@@ -3414,7 +2703,7 @@ def get_okx_analysis(inst_id):
     return {
         "ema": ema15m,
         "ema_1h": ema1h,
-        "ema_4h": filter4h,
+        "ema_4h": ema4h,
         "warning": warning1h,
         "warnings": warnings,
         "changes": changes,
@@ -3424,60 +2713,28 @@ def get_okx_analysis(inst_id):
 
 # =========================================================
 # LONG 필터
-#
-# 15M + 1H + 4H 모두 LONG
-# +
-# 1H N자 진행 중
 # =========================================================
 
 def pass_long_filter(analysis):
 
     if analysis is None:
-
         return False
 
-    ema = analysis.get(
-        "ema",
-        {}
-    )
+    ema = analysis.get("ema", {})
+    ema1h = analysis.get("ema_1h", {})
+    ema4h = analysis.get("ema_4h", {})
+    warning = analysis.get("warning", {})
 
-    ema1h = analysis.get(
-        "ema_1h",
-        {}
-    )
-
-    ema4h = analysis.get(
-        "ema_4h",
-        {}
-    )
-
-    warning = analysis.get(
-        "warning",
-        {}
-    )
-
-    if ema.get(
-        "direction"
-    ) != "long":
-
+    if ema.get("direction") != "long":
         return False
 
-    if ema1h.get(
-        "direction"
-    ) != "long":
-
+    if ema1h.get("direction") != "long":
         return False
 
-    if ema4h.get(
-        "direction"
-    ) != "long":
-
+    if ema4h.get("direction") != "long":
         return False
 
-    if warning.get(
-        "direction"
-    ) != "long":
-
+    if warning.get("direction") != "long":
         return False
 
     signal = warning.get(
@@ -3485,71 +2742,36 @@ def pass_long_filter(analysis):
         "none"
     )
 
-    if not signal.isdigit():
-
-        return False
-
-    count = int(signal)
-
-    return count >= 1
+    return (
+        signal.isdigit()
+        and int(signal) >= 1
+    )
 
 
 # =========================================================
 # SHORT 필터
-#
-# 15M + 1H + 4H 모두 SHORT
-# +
-# 1H N자 진행 중
 # =========================================================
 
 def pass_short_filter(analysis):
 
     if analysis is None:
-
         return False
 
-    ema = analysis.get(
-        "ema",
-        {}
-    )
+    ema = analysis.get("ema", {})
+    ema1h = analysis.get("ema_1h", {})
+    ema4h = analysis.get("ema_4h", {})
+    warning = analysis.get("warning", {})
 
-    ema1h = analysis.get(
-        "ema_1h",
-        {}
-    )
-
-    ema4h = analysis.get(
-        "ema_4h",
-        {}
-    )
-
-    warning = analysis.get(
-        "warning",
-        {}
-    )
-
-    if ema.get(
-        "direction"
-    ) != "short":
-
+    if ema.get("direction") != "short":
         return False
 
-    if ema1h.get(
-        "direction"
-    ) != "short":
-
+    if ema1h.get("direction") != "short":
         return False
 
-    if ema4h.get(
-        "direction"
-    ) != "short":
-
+    if ema4h.get("direction") != "short":
         return False
 
-    if warning.get(
-        "direction"
-    ) != "short":
-
+    if warning.get("direction") != "short":
         return False
 
     signal = warning.get(
@@ -3557,13 +2779,10 @@ def pass_short_filter(analysis):
         "none"
     )
 
-    if not signal.isdigit():
-
-        return False
-
-    count = int(signal)
-
-    return count >= 1
+    return (
+        signal.isdigit()
+        and int(signal) >= 1
+    )
 
 
 # =========================================================
@@ -3572,7 +2791,7 @@ def pass_short_filter(analysis):
 
 def make_empty_analysis():
 
-    empty_warning = {
+    warning = {
         "signal": "none",
         "direction": "none",
         "breakout_id": None,
@@ -3583,30 +2802,23 @@ def make_empty_analysis():
     }
 
     return {
-
         "ema": {
             "display": "⚪",
             "direction": "none"
         },
-
         "ema_1h": {
             "display": "⚪",
             "direction": "none"
         },
-
         "ema_4h": {
             "display": "⚪",
             "direction": "none"
         },
-
-        "warning": empty_warning.copy(),
-
+        "warning": warning.copy(),
         "warnings": {
-            "1h": empty_warning.copy()
+            "1h": warning.copy()
         },
-
         "changes": None,
-
         "qualified": False
     }
 
@@ -3619,7 +2831,6 @@ def update_upbit():
 
     global latest_upbit_data
     global latest_upbit_update_time
-    global latest_upbit_markets
 
     logging.info(
         f"========== 업비트 TOP{TOP_N} 시작 =========="
@@ -3628,7 +2839,6 @@ def update_upbit():
     market_data = get_upbit_markets()
 
     if not market_data:
-
         return False
 
     market_data = sorted(
@@ -3637,22 +2847,15 @@ def update_upbit():
         reverse=True
     )
 
-    top_markets = market_data[:TOP_N]
-
     rows = []
 
     for rank, item in enumerate(
-        top_markets,
+        market_data[:TOP_N],
         start=1
     ):
 
         market = item["market"]
-
-        coin = market.replace(
-            "KRW-",
-            ""
-        )
-
+        coin = market.replace("KRW-", "")
         volume = format_volume(
             item["volume_24h"]
         )
@@ -3667,98 +2870,7 @@ def update_upbit():
 
                 empty = make_empty_analysis()
 
-                rows.append(
-                    {
-                        "rank": rank,
-                        "name": coin,
-                        "change": "",
-                        "volume": volume,
-                        "ema": empty["ema"],
-                        "ema_1h": empty["ema_1h"],
-                        "ema_4h": empty["ema_4h"],
-                        "direction": "none",
-                        "warning": empty["warning"],
-                        "warnings": empty["warnings"],
-                        "qualified": False
-                    }
-                )
-
-                continue
-
-            ema = analysis["ema"]
-
-            ema1h = analysis["ema_1h"]
-
-            ema4h = analysis["ema_4h"]
-
-            warning = analysis["warning"]
-
-            warnings = analysis["warnings"]
-
-            qualified = pass_long_filter(
-                analysis
-            )
-
-            warning_signal = warning.get(
-                "signal",
-                "none"
-            )
-
-            # =================================================
-            # 15M + 1H + 4H 모두 LONG
-            # +
-            # 1H N자 진행 중
-            # =================================================
-
-            if (
-                qualified
-                and
-                warning_signal.isdigit()
-                and
-                int(warning_signal) >= 1
-                and
-                ema.get("direction") == "long"
-                and
-                ema1h.get("direction") == "long"
-                and
-                ema4h.get("direction") == "long"
-            ):
-
-                display_direction = "long"
-
-            else:
-
-                display_direction = "none"
-
-            rows.append(
-                {
-                    "rank": rank,
-                    "name": coin,
-                    "change": format_change(
-                        analysis["changes"]
-                    ),
-                    "volume": volume,
-                    "ema": ema,
-                    "ema_1h": ema1h,
-                    "ema_4h": ema4h,
-                    "direction": display_direction,
-                    "warning": warning,
-                    "warnings": warnings,
-                    "qualified": qualified
-                }
-            )
-
-        except Exception as e:
-
-            logging.error(
-                f"업비트 상세 오류 "
-                f"{market}: {e}"
-            )
-
-            empty = make_empty_analysis()
-
-            rows.append(
-                {
+                rows.append({
                     "rank": rank,
                     "name": coin,
                     "change": "",
@@ -3770,19 +2882,83 @@ def update_upbit():
                     "warning": empty["warning"],
                     "warnings": empty["warnings"],
                     "qualified": False
-                }
+                })
+
+                continue
+
+            ema = analysis["ema"]
+            ema1h = analysis["ema_1h"]
+            ema4h = analysis["ema_4h"]
+            warning = analysis["warning"]
+            warnings = analysis["warnings"]
+
+            qualified = pass_long_filter(
+                analysis
             )
 
-    latest_upbit_data = rows
+            signal = warning.get(
+                "signal",
+                "none"
+            )
 
-    latest_upbit_update_time = (
-        get_kst_time()
-    )
+            if (
+                qualified
+                and signal.isdigit()
+                and int(signal) >= 1
+            ):
+
+                display_direction = "long"
+
+            else:
+
+                display_direction = "none"
+
+            rows.append({
+                "rank": rank,
+                "name": coin,
+                "change": format_change(
+                    analysis["changes"]
+                ),
+                "volume": volume,
+                "ema": ema,
+                "ema_1h": ema1h,
+                "ema_4h": ema4h,
+                "direction": display_direction,
+                "warning": warning,
+                "warnings": warnings,
+                "qualified": qualified
+            })
+
+        except Exception as e:
+
+            logging.error(
+                f"업비트 상세 오류 "
+                f"{market}: {e}"
+            )
+
+            empty = make_empty_analysis()
+
+            rows.append({
+                "rank": rank,
+                "name": coin,
+                "change": "",
+                "volume": volume,
+                "ema": empty["ema"],
+                "ema_1h": empty["ema_1h"],
+                "ema_4h": empty["ema_4h"],
+                "direction": "none",
+                "warning": empty["warning"],
+                "warnings": empty["warnings"],
+                "qualified": False
+            })
+
+    latest_upbit_data = rows
+    latest_upbit_update_time = get_kst_time()
 
     logging.info(
         f"업비트 TOP{TOP_N} 완료 / "
         f"조건 충족 "
-        f"{sum(1 for x in rows if x.get('qualified'))}개"
+        f"{sum(x.get('qualified') for x in rows)}개"
     )
 
     return True
@@ -3797,50 +2973,32 @@ def update_okx(usdt_krw):
     global latest_okx_data
     global latest_okx_update_time
 
-    if (
-        usdt_krw is None
-        or usdt_krw <= 0
-    ):
-
+    if usdt_krw is None or usdt_krw <= 0:
         return False
 
     symbols = get_all_okx_swap_symbols()
 
     if not symbols:
-
         return False
 
     upbit_coin_set = {
-        market.replace(
-            "KRW-",
-            ""
-        )
+        market.replace("KRW-", "")
         for market in latest_upbit_markets
     }
 
     volume_map = {}
 
-    for index, symbol in enumerate(
-        symbols,
-        start=1
-    ):
+    for symbol in symbols:
 
         volume = get_okx_volume(
             symbol,
             usdt_krw
         )
 
-        if (
-            volume is not None
-            and volume > 0
-        ):
-
-            volume_map[
-                symbol
-            ] = volume
+        if volume is not None and volume > 0:
+            volume_map[symbol] = volume
 
     if not volume_map:
-
         return False
 
     top_symbols = sorted(
@@ -3861,13 +3019,11 @@ def update_okx(usdt_krw):
             ""
         )
 
-        display_coin = coin
-
-        if coin in upbit_coin_set:
-
-            display_coin = (
-                f"{coin}[UP]"
-            )
+        display_coin = (
+            f"{coin}[UP]"
+            if coin in upbit_coin_set
+            else coin
+        )
 
         volume = format_volume(
             volume_map[symbol]
@@ -3883,116 +3039,7 @@ def update_okx(usdt_krw):
 
                 empty = make_empty_analysis()
 
-                rows.append(
-                    {
-                        "rank": rank,
-                        "name": display_coin,
-                        "change": "",
-                        "volume": volume,
-                        "ema": empty["ema"],
-                        "ema_1h": empty["ema_1h"],
-                        "ema_4h": empty["ema_4h"],
-                        "direction": "none",
-                        "warning": empty["warning"],
-                        "warnings": empty["warnings"],
-                        "qualified": False
-                    }
-                )
-
-                continue
-
-            ema = analysis["ema"]
-
-            ema1h = analysis["ema_1h"]
-
-            ema4h = analysis["ema_4h"]
-
-            warning = analysis["warning"]
-
-            warnings = analysis["warnings"]
-
-            warning_direction = warning.get(
-                "direction",
-                "none"
-            )
-
-            if warning_direction == "long":
-
-                qualified = pass_long_filter(
-                    analysis
-                )
-
-            elif warning_direction == "short":
-
-                qualified = pass_short_filter(
-                    analysis
-                )
-
-            else:
-
-                qualified = False
-
-            warning_signal = warning.get(
-                "signal",
-                "none"
-            )
-
-            if (
-                qualified
-                and
-                warning_signal.isdigit()
-                and
-                int(warning_signal) >= 1
-                and
-                ema.get("direction") == warning_direction
-                and
-                ema1h.get("direction") == warning_direction
-                and
-                ema4h.get("direction") == warning_direction
-                and
-                warning_direction in (
-                    "long",
-                    "short"
-                )
-            ):
-
-                display_direction = (
-                    warning_direction
-                )
-
-            else:
-
-                display_direction = "none"
-
-            rows.append(
-                {
-                    "rank": rank,
-                    "name": display_coin,
-                    "change": format_change(
-                        analysis["changes"]
-                    ),
-                    "volume": volume,
-                    "ema": ema,
-                    "ema_1h": ema1h,
-                    "ema_4h": ema4h,
-                    "direction": display_direction,
-                    "warning": warning,
-                    "warnings": warnings,
-                    "qualified": qualified
-                }
-            )
-
-        except Exception as e:
-
-            logging.error(
-                f"OKX 상세 오류 "
-                f"{symbol}: {e}"
-            )
-
-            empty = make_empty_analysis()
-
-            rows.append(
-                {
+                rows.append({
                     "rank": rank,
                     "name": display_coin,
                     "change": "",
@@ -4004,19 +3051,104 @@ def update_okx(usdt_krw):
                     "warning": empty["warning"],
                     "warnings": empty["warnings"],
                     "qualified": False
-                }
+                })
+
+                continue
+
+            ema = analysis["ema"]
+            ema1h = analysis["ema_1h"]
+            ema4h = analysis["ema_4h"]
+            warning = analysis["warning"]
+            warnings = analysis["warnings"]
+
+            direction = warning.get(
+                "direction",
+                "none"
             )
 
-    latest_okx_data = rows
+            if direction == "long":
 
-    latest_okx_update_time = (
-        get_kst_time()
-    )
+                qualified = pass_long_filter(
+                    analysis
+                )
+
+            elif direction == "short":
+
+                qualified = pass_short_filter(
+                    analysis
+                )
+
+            else:
+
+                qualified = False
+
+            signal = warning.get(
+                "signal",
+                "none"
+            )
+
+            if (
+                qualified
+                and signal.isdigit()
+                and int(signal) >= 1
+                and direction in (
+                    "long",
+                    "short"
+                )
+            ):
+
+                display_direction = direction
+
+            else:
+
+                display_direction = "none"
+
+            rows.append({
+                "rank": rank,
+                "name": display_coin,
+                "change": format_change(
+                    analysis["changes"]
+                ),
+                "volume": volume,
+                "ema": ema,
+                "ema_1h": ema1h,
+                "ema_4h": ema4h,
+                "direction": display_direction,
+                "warning": warning,
+                "warnings": warnings,
+                "qualified": qualified
+            })
+
+        except Exception as e:
+
+            logging.error(
+                f"OKX 상세 오류 "
+                f"{symbol}: {e}"
+            )
+
+            empty = make_empty_analysis()
+
+            rows.append({
+                "rank": rank,
+                "name": display_coin,
+                "change": "",
+                "volume": volume,
+                "ema": empty["ema"],
+                "ema_1h": empty["ema_1h"],
+                "ema_4h": empty["ema_4h"],
+                "direction": "none",
+                "warning": empty["warning"],
+                "warnings": empty["warnings"],
+                "qualified": False
+            })
+
+    latest_okx_data = rows
+    latest_okx_update_time = get_kst_time()
 
     logging.info(
         f"OKX TOP{TOP_N} 완료 / "
         f"조건 충족 "
-        f"{sum(1 for x in rows if x.get('qualified'))}개"
+        f"{sum(x.get('qualified') for x in rows)}개"
     )
 
     return True
@@ -4052,16 +3184,9 @@ def update_dashboard():
             f"전체 조회 시작 {get_kst_time()} KST"
         )
 
-        logging.info(
-            "조회 순서 : "
-            "24H 거래대금 → 4H/1H/15M EMA → "
-            "1H N자"
-        )
-
         if USE_UPBIT == "Y":
 
             try:
-
                 update_upbit()
 
             except Exception as e:
@@ -4081,22 +3206,13 @@ def update_dashboard():
                 usdt_krw = get_usdt_krw()
 
                 if usdt_krw is not None:
-
                     latest_usdt_krw = usdt_krw
 
                 else:
-
                     usdt_krw = latest_usdt_krw
 
-                if (
-                    usdt_krw is not None
-                    and
-                    usdt_krw > 0
-                ):
-
-                    update_okx(
-                        usdt_krw
-                    )
+                if usdt_krw > 0:
+                    update_okx(usdt_krw)
 
             except Exception as e:
 
@@ -4134,7 +3250,6 @@ def scheduler():
     while True:
 
         try:
-
             schedule.run_pending()
 
         except Exception as e:
@@ -4265,7 +3380,8 @@ td:nth-child(5) {
     width: 30%;
 }
 
-.coin-wrap {
+.coin-wrap,
+.volume-wrap {
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -4279,19 +3395,6 @@ td:nth-child(5) {
     font-weight: bold;
     line-height: 1.2;
     white-space: nowrap;
-}
-
-.coin-change {
-    display: block;
-    margin-top: 1px;
-}
-
-.volume-wrap {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 2px;
 }
 
 .volume-value {
@@ -4308,10 +3411,7 @@ td:nth-child(5) {
     white-space: nowrap;
 }
 
-.positive {
-    color: #ffffff;
-}
-
+.positive,
 .negative {
     color: #ffffff;
 }
@@ -4342,23 +3442,7 @@ td:nth-child(5) {
     font-size: 7px;
 }
 
-
-/* =======================================================
-   N자 경고
-   ======================================================= */
-
 .warning-wrap {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    width: 100%;
-    min-height: 14px;
-    white-space: nowrap;
-    gap: 2px;
-}
-
-.breakout-warning {
     display: flex;
     flex-direction: column;
     justify-content: center;
@@ -4383,11 +3467,6 @@ td:nth-child(5) {
     font-weight: 700;
 }
 
-
-/* =======================================================
-   N자 진행
-   ======================================================= */
-
 .warning-rocket {
     font-size: 10px;
     font-weight: bold;
@@ -4397,11 +3476,6 @@ td:nth-child(5) {
     );
 }
 
-
-/* =======================================================
-   N자 해지 🚨
-   ======================================================= */
-
 .invalidation-warning {
     font-size: 10px;
     font-weight: bold;
@@ -4410,11 +3484,6 @@ td:nth-child(5) {
         rgba(255, 190, 50, 0.95)
     );
 }
-
-
-/* =======================================================
-   EMA 고정 정렬
-   ======================================================= */
 
 .ema-grid {
     width: 100%;
@@ -4451,11 +3520,6 @@ td:nth-child(5) {
     font-weight: bold;
     white-space: nowrap;
 }
-
-
-/* =======================================================
-   조건 충족 행
-   ======================================================= */
 
 .qualified-row {
     animation:
@@ -4511,7 +3575,6 @@ td:nth-child(5) {
         rgba(255, 77, 77, 0.75);
 }
 
-
 @media (max-width: 480px) {
 
     body {
@@ -4545,10 +3608,7 @@ td:nth-child(5) {
         font-size: 7px;
     }
 
-    .volume-value {
-        font-size: 6px;
-    }
-
+    .volume-value,
     .change-item {
         font-size: 6px;
     }
@@ -4582,7 +3642,6 @@ td:nth-child(5) {
     .ema-signal {
         font-size: 6px;
     }
-
 }
 
 """
@@ -4590,20 +3649,6 @@ td:nth-child(5) {
 
 # =========================================================
 # 테이블 행
-#
-# 코인
-#   변동률
-#
-# 거래대금
-#   LONG/SHORT
-#
-# EMA
-#   15M
-#   1H
-#   4H
-#
-# N자
-#   1H만 표시
 # =========================================================
 
 def make_table_rows(data):
@@ -4647,7 +3692,6 @@ def make_table_rows(data):
         )
 
         row_class = ""
-
         direction_class = ""
 
         if qualified:
@@ -4655,16 +3699,10 @@ def make_table_rows(data):
             row_class = "qualified-row"
 
             if direction == "long":
-
-                direction_class = (
-                    "qualified-long"
-                )
+                direction_class = "qualified-long"
 
             elif direction == "short":
-
-                direction_class = (
-                    "qualified-short"
-                )
+                direction_class = "qualified-short"
 
         rows_html += f"""
 <tr class="{row_class}">
@@ -4672,7 +3710,6 @@ def make_table_rows(data):
 <td class="{direction_class}">
 {item.get("rank", "-")}
 </td>
-
 
 <td class="{direction_class}">
 
@@ -4690,7 +3727,6 @@ def make_table_rows(data):
 
 </td>
 
-
 <td class="{direction_class}">
 
 <div class="volume-wrap">
@@ -4699,70 +3735,55 @@ def make_table_rows(data):
 {item.get("volume", "-")}
 </span>
 
-{direction_html(
-    direction
-)}
+{direction_html(direction)}
 
 </div>
 
 </td>
-
 
 <td class="{direction_class}">
 
 <div class="ema-grid">
 
-    <div class="ema-row">
+<div class="ema-row">
 
-        <span class="ema-tf">
-            15M
-        </span>
+<span class="ema-tf">
+15M
+</span>
 
-        <span class="ema-signal">
-            {ema.get(
-                "display",
-                "⚪"
-            )}
-        </span>
+<span class="ema-signal">
+{ema.get("display", "⚪")}
+</span>
 
-    </div>
+</div>
 
+<div class="ema-row">
 
-    <div class="ema-row">
+<span class="ema-tf">
+1H
+</span>
 
-        <span class="ema-tf">
-            1H
-        </span>
+<span class="ema-signal">
+{ema1h.get("display", "⚪")}
+</span>
 
-        <span class="ema-signal">
-            {ema1h.get(
-                "display",
-                "⚪"
-            )}
-        </span>
+</div>
 
-    </div>
+<div class="ema-row">
 
+<span class="ema-tf">
+4H
+</span>
 
-    <div class="ema-row">
+<span class="ema-signal">
+{ema4h.get("display", "⚪")}
+</span>
 
-        <span class="ema-tf">
-            4H
-        </span>
-
-        <span class="ema-signal">
-            {ema4h.get(
-                "display",
-                "⚪"
-            )}
-        </span>
-
-    </div>
+</div>
 
 </div>
 
 </td>
-
 
 <td class="{direction_class}">
 
@@ -4790,31 +3811,27 @@ def make_exchange_section(
     is_okx=False
 ):
 
-    rows = make_table_rows(
-        data
-    )
+    rows = make_table_rows(data)
 
     if not rows:
 
         rows = """
 <tr>
 <td colspan="5"
-    style="
-        color:#555;
-        padding:12px 4px;
-    ">
+style="
+color:#555;
+padding:12px 4px;
+">
 현재 조회 데이터 없음
 </td>
 </tr>
 """
 
-    if is_okx:
-
-        update_time = latest_okx_update_time
-
-    else:
-
-        update_time = latest_upbit_update_time
+    update_time = (
+        latest_okx_update_time
+        if is_okx
+        else latest_upbit_update_time
+    )
 
     return f"""
 <div class="section">
@@ -4822,9 +3839,9 @@ def make_exchange_section(
 <h2>
 🏆 {title} TOP{TOP_N}
 <span style="
-    color:#777;
-    font-size:7px;
-    font-weight:normal;
+color:#777;
+font-size:7px;
+font-weight:normal;
 ">
 &nbsp;전체 랭크 / 조건 종목 반짝임
 &nbsp;조회 {update_time} KST
@@ -4840,13 +3857,9 @@ def make_exchange_section(
 <tr>
 
 <th>#</th>
-
 <th>코인</th>
-
 <th>거래대금</th>
-
 <th>EMA</th>
-
 <th>N자</th>
 
 </tr>
@@ -4921,14 +3934,14 @@ def dashboard():
 <meta charset="UTF-8">
 
 <meta http-equiv="refresh"
-      content="60">
+content="60">
 
 <meta name="viewport"
-      content="
-        width=device-width,
-        initial-scale=1.0,
-        maximum-scale=1.0,
-        user-scalable=no">
+content="
+width=device-width,
+initial-scale=1.0,
+maximum-scale=1.0,
+user-scalable=no">
 
 <title>
 1H N Pattern Breakout
@@ -4959,27 +3972,39 @@ def dashboard():
 </div>
 
 <div>
-③ 1H N자만 분석
+③ N자 구조는 1H만 분석
 </div>
 
 <div>
-④ 1H N자 돌파 후 🚀(1)부터 계속 카운터
+④ LONG N자 : 15M + 1H + 4H 모두 정배열
 </div>
 
 <div>
-⑤ LONG/SHORT : 15M + 1H + 4H 한방향 + 1H N자
+⑤ SHORT N자 : 15M + 1H + 4H 모두 역배열
 </div>
 
 <div>
-⑥ 1H N자 해지 : 음봉/양봉 종가 조건
+⑥ 1H N자 돌파 후 🚀(1)부터 계속 카운터
 </div>
 
 <div>
-⑦ 1H N자 해지 순간 🚨 1회 표시 후 새 N자 대기
+⑦ 🚀 카운터는 4 이상도 계속 유지
 </div>
 
 <div>
-⑧ 4H N자 분석은 사용하지 않음
+⑧ LONG 해지 : 음봉 + 현재 종가 < 이전 종가
+</div>
+
+<div>
+⑨ SHORT 해지 : 양봉 + 현재 종가 > 이전 종가
+</div>
+
+<div>
+⑩ 해지 순간 🚨 1회 표시 후 새 N자 대기
+</div>
+
+<div>
+⑪ 15M / 4H N자 분석은 하지 않음
 </div>
 
 <div class="exchange-status">
@@ -5017,34 +4042,27 @@ def startup():
         "========================================"
     )
 
-    logging.info(
-        "서버 시작"
-    )
+    logging.info("서버 시작")
 
     logging.info(
         f"설정 업비트={USE_UPBIT} "
         f"OKX={USE_OKX}"
     )
 
-    logging.info(
-        f"TOP={TOP_N}"
-    )
-
-    logging.info(
-        f"UPDATE={UPDATE_MINUTES}분"
-    )
+    logging.info(f"TOP={TOP_N}")
+    logging.info(f"UPDATE={UPDATE_MINUTES}분")
 
     logging.info(
         "1차 필터 : 24시간 거래대금"
     )
 
     logging.info(
-        "EMA : 4H + 1H + 15M "
+        "EMA : 15M + 1H + 4H "
         "30-60-120"
     )
 
     logging.info(
-        "N자 분석 : 1H만 사용"
+        "N자 구조 분석 : 1H만"
     )
 
     logging.info(
@@ -5052,107 +4070,69 @@ def startup():
     )
 
     logging.info(
-        "4H N자 분석 : 제거"
+        "4H N자 분석 : 완전 제거"
     )
 
     logging.info(
-        "신규 코인 : 부족한 캔들로 EMA 배열 계산"
+        "LONG 경고 : "
+        "15M + 1H + 4H 정배열 + 1H N자"
     )
 
     logging.info(
-        "1H N자 : 125개 이상 확정봉 필요"
+        "SHORT 경고 : "
+        "15M + 1H + 4H 역배열 + 1H N자"
     )
 
     logging.info(
-        "🚨 돌파전 경고 : 제거"
+        "🚀 돌파 후 : (1)부터 계속 카운터"
     )
 
     logging.info(
-        "1H N자 돌파 후 : 🚀(1)부터 계속 카운터"
-    )
-
-    logging.info(
-        "🚀 카운터 : 4 이상도 계속 유지"
+        "🚀 카운터 제한 없음"
     )
 
     logging.info(
         "LONG 해지 : "
-        "현재 확정봉 음봉 "
-        "+ 현재 종가 < 이전 확정봉 종가"
+        "음봉 + 현재 종가 < 이전 종가"
     )
 
     logging.info(
         "SHORT 해지 : "
-        "현재 확정봉 양봉 "
-        "+ 현재 종가 > 이전 확정봉 종가"
+        "양봉 + 현재 종가 > 이전 종가"
     )
 
     logging.info(
-        "1H N자 해지 순간 : 🚨 1회 표시"
+        "🚨 해지 순간 1회 표시"
     )
 
     logging.info(
-        "동일 해지봉 : 🚨 반복 표시 안 함"
+        "동일 해지봉 🚨 반복 표시 안 함"
     )
 
     logging.info(
-        "해지 후 : 새 1H N자 패턴 발생까지 대기"
-    )
-
-    logging.info(
-        "LONG : "
-        "15M LONG + 1H LONG + 4H LONG "
-        "+ 1H N자"
-    )
-
-    logging.info(
-        "SHORT : "
-        "15M SHORT + 1H SHORT + 4H SHORT "
-        "+ 1H N자"
-    )
-
-    logging.info(
-        "N자 표시 : 1H만 표시"
-    )
-
-    logging.info(
-        "EMA 표시 : 15M / 1H / 4H 고정 일렬 정렬"
-    )
-
-    logging.info(
-        "기준 : 각 시간봉 확정봉"
+        "해지 후 새 N자까지 대기"
     )
 
     logging.info(
         "현재 진행 중인 봉 제외"
     )
 
-    if USE_UPBIT not in (
-        "Y",
-        "N"
-    ):
-
+    if USE_UPBIT not in ("Y", "N"):
         raise ValueError(
             "USE_UPBIT은 Y 또는 N만 사용할 수 있습니다."
         )
 
-    if USE_OKX not in (
-        "Y",
-        "N"
-    ):
-
+    if USE_OKX not in ("Y", "N"):
         raise ValueError(
             "USE_OKX는 Y 또는 N만 사용할 수 있습니다."
         )
 
     if TOP_N <= 0:
-
         raise ValueError(
             "TOP_N은 1 이상이어야 합니다."
         )
 
     if UPDATE_MINUTES <= 0:
-
         raise ValueError(
             "UPDATE_MINUTES는 1 이상이어야 합니다."
         )
@@ -5192,4 +4172,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-        )
+            ) 
