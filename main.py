@@ -962,7 +962,8 @@ def swings(
     col = (
         "h"
         if high
-        else "l"
+        else
+        "l"
     )
 
     result = []
@@ -1069,14 +1070,12 @@ def invalidated(
 
         if long:
 
-            # 돌파 후 A 아래 종가
             if (
                 breakout_level is not None
                 and c < breakout_level
             ):
                 return True
 
-            # 음봉 마감 + 이전 종가보다 현재 종가 하락
             if (
                 c < o
                 and c < p
@@ -1085,14 +1084,12 @@ def invalidated(
 
         else:
 
-            # 돌파 후 A 위 종가
             if (
                 breakout_level is not None
                 and c > breakout_level
             ):
                 return True
 
-            # 양봉 마감 + 이전 종가보다 현재 종가 상승
             if (
                 c > o
                 and c > p
@@ -1168,23 +1165,6 @@ def mark_invalidation_once(cid):
 
 # =========================================================
 # N자 핵심 엔진
-#
-# LONG
-#
-# 0 → A → B → C
-#
-# 가격:
-# 0 < B < A < C
-#
-# A → B까지 형성
-# = 〽️
-#
-# C가 A를 종가 돌파
-# = 🚀
-#
-# 돌파 후 A 아래 종가
-# = 🚨
-#
 # =========================================================
 
 def find_n_breakout(
@@ -1207,7 +1187,6 @@ def find_n_breakout(
         "breakout_level": None,
         "invalidation_index": None,
 
-        # ★ B 지점 정보
         "b_index": None,
         "a_index": None,
         "zero_index": None,
@@ -1242,7 +1221,6 @@ def find_n_breakout(
     ):
         return empty
 
-    # EMA 정렬 유지
     if not alignment_valid(
         ds,
         start,
@@ -1280,13 +1258,11 @@ def find_n_breakout(
         pivots = []
 
         for i, price in low_swings:
-
             pivots.append(
                 (i, "low", price)
             )
 
         for i, price in high_swings:
-
             pivots.append(
                 (i, "high", price)
             )
@@ -1295,23 +1271,14 @@ def find_n_breakout(
             key=lambda x: x[0]
         )
 
-        # 0 = 0 찾기
-        # 1 = A 찾기
-        # 2 = B 찾기
-        # 3 = C 찾기
-        # 4 = 돌파 후
-
         state = 0
 
         zero_i = None
         zero_price = None
-
         a_i = None
         a_price = None
-
         b_i = None
         b_price = None
-
         c_i = None
         c_price = None
 
@@ -1319,10 +1286,6 @@ def find_n_breakout(
         latest_breakout = None
 
         for i, typ, price in pivots:
-
-            # =================================================
-            # 0
-            # =================================================
 
             if state == 0:
 
@@ -1341,10 +1304,6 @@ def find_n_breakout(
                     state = 1
 
                 continue
-
-            # =================================================
-            # 0 → A
-            # =================================================
 
             if state == 1:
 
@@ -1369,17 +1328,10 @@ def find_n_breakout(
 
                 continue
 
-            # =================================================
-            # A → B
-            #
-            # 0 < B < A
-            # =================================================
-
             if state == 2:
 
                 if typ == "low":
 
-                    # B가 0 아래로 내려감
                     if price <= zero_price:
 
                         zero_i = i
@@ -1408,7 +1360,6 @@ def find_n_breakout(
                             b_i = i
                             b_price = price
 
-                            # ★ B 도달
                             state = 3
 
                 elif typ == "high":
@@ -1420,18 +1371,10 @@ def find_n_breakout(
 
                 continue
 
-            # =================================================
-            # B → C
-            #
-            # ★ 이 상태에서 아직 C 돌파가 없으면
-            # ★ 마지막에 〽️ 반환
-            # =================================================
-
             if state == 3:
 
                 if typ == "low":
 
-                    # B가 0 아래로 무너지면 N 폐기
                     if price <= zero_price:
 
                         zero_i = i
@@ -1446,7 +1389,6 @@ def find_n_breakout(
 
                         continue
 
-                    # 더 높은 조정 저점
                     if (
                         price > b_price
                         and price < a_price
@@ -1459,13 +1401,11 @@ def find_n_breakout(
 
                 if typ == "high":
 
-                    # C는 A보다 높아야 함
                     if price > a_price:
 
                         c_i = i
                         c_price = price
 
-                        # C 구간에서 A 종가 돌파 확인
                         for j in range(
                             b_i + 1,
                             i + 1
@@ -1497,10 +1437,6 @@ def find_n_breakout(
 
                 continue
 
-            # =================================================
-            # 돌파 후
-            # =================================================
-
             if state == 4:
 
                 if invalidated(
@@ -1518,7 +1454,6 @@ def find_n_breakout(
                         "invalidation_index": i
                     }
 
-                # 새로운 조정
                 if typ == "low":
 
                     if price > a_price:
@@ -1557,10 +1492,6 @@ def find_n_breakout(
 
                 continue
 
-        # =====================================================
-        # ★ 현재 활성 N
-        # =====================================================
-
         if latest_breakout is not None:
 
             bi = latest_breakout[
@@ -1593,10 +1524,6 @@ def find_n_breakout(
 
             return latest_breakout
 
-        # =====================================================
-        # ★★★ B 지점 대기
-        # =====================================================
-
         if (
             state == 3
             and b_i is not None
@@ -1621,8 +1548,6 @@ def find_n_breakout(
 
     # =====================================================
     # SHORT
-    #
-    # 0 > B > A > C
     # =====================================================
 
     high_swings = swings(
@@ -1648,13 +1573,11 @@ def find_n_breakout(
     pivots = []
 
     for i, price in high_swings:
-
         pivots.append(
             (i, "high", price)
         )
 
     for i, price in low_swings:
-
         pivots.append(
             (i, "low", price)
         )
@@ -1667,13 +1590,10 @@ def find_n_breakout(
 
     zero_i = None
     zero_price = None
-
     a_i = None
     a_price = None
-
     b_i = None
     b_price = None
-
     c_i = None
     c_price = None
 
@@ -1681,10 +1601,6 @@ def find_n_breakout(
     latest_breakout = None
 
     for i, typ, price in pivots:
-
-        # =================================================
-        # 0
-        # =================================================
 
         if state == 0:
 
@@ -1696,10 +1612,6 @@ def find_n_breakout(
                 state = 1
 
             continue
-
-        # =================================================
-        # 0 → A
-        # =================================================
 
         if state == 1:
 
@@ -1723,12 +1635,6 @@ def find_n_breakout(
                 state = 2
 
             continue
-
-        # =================================================
-        # A → B
-        #
-        # 0 > B > A
-        # =================================================
 
         if state == 2:
 
@@ -1762,7 +1668,6 @@ def find_n_breakout(
                         b_i = i
                         b_price = price
 
-                        # ★ B 도달
                         state = 3
 
             elif typ == "low":
@@ -1773,10 +1678,6 @@ def find_n_breakout(
                     a_price = price
 
             continue
-
-        # =================================================
-        # B → C
-        # =================================================
 
         if state == 3:
 
@@ -1844,10 +1745,6 @@ def find_n_breakout(
 
             continue
 
-        # =================================================
-        # SHORT 돌파 후
-        # =================================================
-
         if state == 4:
 
             if invalidated(
@@ -1903,10 +1800,6 @@ def find_n_breakout(
 
             continue
 
-    # =====================================================
-    # 현재 활성 SHORT N
-    # =====================================================
-
     if latest_breakout is not None:
 
         bi = latest_breakout[
@@ -1938,10 +1831,6 @@ def find_n_breakout(
                 }
 
         return latest_breakout
-
-    # =====================================================
-    # ★★★ SHORT B 지점 대기
-    # =====================================================
 
     if (
         state == 3
@@ -1989,8 +1878,10 @@ def get_15m_signal(
         "invalidation_id": None,
         "invalidation_index": None,
 
-        # ★ B 지점
-        "b_index": None
+        "b_index": None,
+
+        # 🛩 ✈️ 경고
+        "air_warning": False
     }
 
     if df is None or len(df) < 125:
@@ -2078,7 +1969,7 @@ def get_15m_signal(
         }
 
     # =====================================================
-    # ★ 〽️ B 지점
+    # 〽️ B 지점
     # =====================================================
 
     if result["status"] == "waiting":
@@ -2123,7 +2014,6 @@ def get_15m_signal(
     if not bid:
         return empty
 
-    # 돌파 봉 = 🚀(1)
     count = len(df) - bi
 
     return {
@@ -2163,6 +2053,61 @@ def multi_signal(
     d1 = direction(df1h)
     d4 = direction(df4h)
 
+    # =====================================================
+    # 🛩 ✈️ 경고
+    #
+    # 조건:
+    # 15M = 정배열
+    # 1H  = 정배열
+    # 4H  = 정배열
+    #
+    # 그리고
+    #
+    # 마지막 완성 15M 종가
+    # <
+    # 15M EMA10
+    # =====================================================
+
+    air_warning = False
+
+    if (
+        d15 == "long"
+        and d1 == "long"
+        and d4 == "long"
+        and df15 is not None
+        and not df15.empty
+    ):
+
+        e10 = ema(
+            df15,
+            10
+        )
+
+        if e10 is not None:
+
+            try:
+
+                current_close = float(
+                    df15.c.iloc[-1]
+                )
+
+                current_ema10 = float(
+                    e10.iloc[-1]
+                )
+
+                if current_close < current_ema10:
+
+                    air_warning = True
+
+            except:
+                pass
+
+    w["air_warning"] = air_warning
+
+    # =====================================================
+    # 기존 N자 조건
+    # =====================================================
+
     if w["direction"] == "long":
 
         ok = (
@@ -2186,8 +2131,6 @@ def multi_signal(
 
     if not ok:
 
-        # ★ 기존 정렬 조건이 맞지 않으면
-        # ★ N 신호는 표시하지 않음
         w["signal"] = "none"
         w["warning_index"] = None
         w["b_index"] = None
@@ -2320,28 +2263,17 @@ def format_volume(v):
         return "-"
 
     try:
-
         v = float(v)
-
     except:
-
         return "-"
 
     if v >= 1e12:
-
-        return (
-            f"{v/1e12:.2f}조"
-        )
+        return f"{v/1e12:.2f}조"
 
     if v >= 1e8:
+        return f"{v/1e8:,.0f}억"
 
-        return (
-            f"{v/1e8:,.0f}억"
-        )
-
-    return (
-        f"{v/1e4:,.0f}만원"
-    )
+    return f"{v/1e4:,.0f}만원"
 
 
 def format_change(x):
@@ -2355,11 +2287,8 @@ def format_change(x):
         )
 
     try:
-
         v = float(x[0])
-
     except:
-
         return (
             '<span class="change-item">'
             '⬜ N/A'
@@ -2477,8 +2406,6 @@ def analyze(
         and int(signal) >= 1
     )
 
-    # ★ 〽️는 진입 확정이 아니므로
-    # ★ 기존 qualified 조건에는 포함하지 않음
     qualified = (
         valid
         and e15["direction"] == d
@@ -2561,8 +2488,9 @@ def empty_analysis():
         "invalidation_id": None,
         "invalidation_index": None,
 
-        # ★ B 지점
-        "b_index": None
+        "b_index": None,
+
+        "air_warning": False
     }
 
     return {
@@ -2713,7 +2641,6 @@ def update_upbit():
             })
 
     latest_upbit_data = rows
-
     latest_upbit_update_time = kst()
 
     log.info(
@@ -2961,7 +2888,6 @@ def update_okx(usdt):
             })
 
     latest_okx_data = rows
-
     latest_okx_update_time = kst()
 
     return True
@@ -2994,7 +2920,6 @@ def update_dashboard():
         if USE_UPBIT == "Y":
 
             try:
-
                 update_upbit()
 
             except Exception as e:
@@ -3014,11 +2939,8 @@ def update_dashboard():
                 usdt = get_usdt_krw()
 
                 if usdt:
-
                     latest_usdt_krw = usdt
-
                 else:
-
                     usdt = latest_usdt_krw
 
                 if usdt > 0:
@@ -3043,13 +2965,30 @@ def update_dashboard():
 
 
 # =========================================================
-# HTML
+# HTML 경고
 # =========================================================
 
 def warning_html(w):
 
     if not w:
         return "-"
+
+    result = []
+
+    # =====================================================
+    # 🛩 ✈️
+    # =====================================================
+
+    if w.get(
+        "air_warning",
+        False
+    ):
+
+        result.append(
+            '<span class="air">'
+            '🛩 ✈️'
+            '</span>'
+        )
 
     s = w.get(
         "signal",
@@ -3062,19 +3001,19 @@ def warning_html(w):
 
     if s == "invalidated":
 
-        return (
+        result.append(
             '<span class="inv">'
             '🚨'
             '</span>'
         )
 
     # =====================================================
-    # ★ 〽️ B 지점
+    # 〽️ B 지점
     # =====================================================
 
-    if s == "pending":
+    elif s == "pending":
 
-        return (
+        result.append(
             '<span class="pending">'
             '〽️'
             '</span>'
@@ -3084,18 +3023,21 @@ def warning_html(w):
     # 🚀 돌파
     # =====================================================
 
-    if (
+    elif (
         str(s).isdigit()
         and int(s) >= 1
     ):
 
-        return (
+        result.append(
             f'<span class="rocket">'
             f'🚀({s})'
             f'</span>'
         )
 
-    return "-"
+    if not result:
+        return "-"
+
+    return " ".join(result)
 
 
 def direction_html(d):
@@ -3501,7 +3443,8 @@ td:nth-child(5){
 
 .rocket,
 .inv,
-.pending{
+.pending,
+.air{
  font-size:10px;
  font-weight:bold
 }
@@ -3520,11 +3463,18 @@ td:nth-child(5){
  )
 }
 
-/* ★ B 지점 〽️ */
 .pending{
  filter:
  drop-shadow(
  0 0 4px rgba(255,255,255,.75)
+ )
+}
+
+/* 🛩 ✈️ */
+.air{
+ filter:
+ drop-shadow(
+ 0 0 4px rgba(255,255,255,.9)
  )
 }
 
@@ -3594,7 +3544,8 @@ td:nth-child(5){
 
  .rocket,
  .inv,
- .pending{
+ .pending,
+ .air{
   font-size:9px
  }
 
@@ -3758,6 +3709,10 @@ user-scalable=no
 ⑭ 1H / 4H N자 분석 없음
 </div>
 
+<div>
+⑮ 15M + 1H + 4H 정배열이고 15M 종가가 EMA10 아래 → 🛩 ✈️
+</div>
+
 {status}
 
 </div>
@@ -3881,6 +3836,10 @@ def startup():
     )
 
     log.info(
+        "🛩 ✈️ = 15M/1H/4H 정배열 + 15M 종가 < EMA10"
+    )
+
+    log.info(
         "현재 진행 중인 봉 제외"
     )
 
@@ -3915,4 +3874,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-        )
+                        )
