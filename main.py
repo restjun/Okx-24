@@ -876,9 +876,6 @@ def get_upbit_daily_change(market):
 
 # =========================================================
 # EMA
-#
-# 캔들이 EMA 기간보다 부족해도
-# 현재 확보된 캔들로 계산
 # =========================================================
 
 def get_ema(
@@ -2120,9 +2117,9 @@ def get_single_timeframe_breakout_signal(
 
 
 # =========================================================
-# 3개 시간봉 N자 통합
+# 15M + 1H N자 통합
 #
-# 15M + 1H + 4H
+# 4H N자 제거
 # =========================================================
 
 def get_multi_timeframe_breakout(
@@ -2136,6 +2133,7 @@ def get_multi_timeframe_breakout(
 
     return {
 
+        # 15M N자
         "15m": get_single_timeframe_breakout_signal(
             df15m,
             exchange,
@@ -2144,19 +2142,12 @@ def get_multi_timeframe_breakout(
             allow_short
         ),
 
+        # 1H N자
         "1h": get_single_timeframe_breakout_signal(
             df1h,
             exchange,
             symbol,
             "1H",
-            allow_short
-        ),
-
-        "4h": get_single_timeframe_breakout_signal(
-            df4h,
-            exchange,
-            symbol,
-            "4H",
             allow_short
         )
     }
@@ -2471,7 +2462,9 @@ def single_warning_html(
 
 
 # =========================================================
-# 3개 시간봉 N자 HTML
+# 15M + 1H N자 HTML
+#
+# 4H 제거
 # =========================================================
 
 def multi_warning_html(
@@ -2486,18 +2479,12 @@ def multi_warning_html(
 
     for key, label in [
         ("15m", "15M"),
-        ("1h", "1H"),
-        ("4h", "4H")
+        ("1h", "1H")
     ]:
 
         warning = warnings.get(
             key,
             {}
-        )
-
-        signal = warning.get(
-            "signal",
-            "none"
         )
 
         warning_text = single_warning_html(
@@ -3025,7 +3012,8 @@ def get_upbit_history(market):
 # =========================================================
 # 업비트 분석
 #
-# 15M + 1H + 4H N자
+# 15M + 1H N자
+# 4H N자 제거
 # =========================================================
 
 def get_upbit_analysis(market):
@@ -3092,7 +3080,7 @@ def get_upbit_analysis(market):
     )
 
     # -----------------------------------------------------
-    # 3개 시간봉 N자
+    # 15M + 1H N자
     # -----------------------------------------------------
 
     warnings = get_multi_timeframe_breakout(
@@ -3104,14 +3092,14 @@ def get_upbit_analysis(market):
         allow_short=False
     )
 
-    # 기존 필터는 유지
+    # -----------------------------------------------------
+    # 기존 필터 유지
     #
     # 4H LONG
     # +
     # 15M LONG
     # +
     # 15M N자
-    #
     # -----------------------------------------------------
 
     warning15m = warnings["15m"]
@@ -3161,7 +3149,8 @@ def get_upbit_analysis(market):
 # =========================================================
 # OKX 분석
 #
-# 15M + 1H + 4H N자
+# 15M + 1H N자
+# 4H N자 제거
 # =========================================================
 
 def get_okx_analysis(inst_id):
@@ -3229,7 +3218,7 @@ def get_okx_analysis(inst_id):
     )
 
     # -----------------------------------------------------
-    # 3개 시간봉 N자
+    # 15M + 1H N자
     # -----------------------------------------------------
 
     warnings = get_multi_timeframe_breakout(
@@ -3322,8 +3311,6 @@ def get_okx_analysis(inst_id):
 
 # =========================================================
 # LONG 필터
-#
-# 기존 기준 유지
 # =========================================================
 
 def pass_long_filter(analysis):
@@ -3483,8 +3470,7 @@ def make_empty_analysis():
 
         "warnings": {
             "15m": empty_warning.copy(),
-            "1h": empty_warning.copy(),
-            "4h": empty_warning.copy()
+            "1h": empty_warning.copy()
         },
 
         "changes": None,
@@ -3919,7 +3905,7 @@ def update_dashboard():
         logging.info(
             "조회 순서 : "
             "24H 거래대금 → 4H/1H/15M EMA → "
-            "15M/1H/4H N자"
+            "15M/1H N자"
         )
 
         if USE_UPBIT == "Y":
@@ -4111,7 +4097,7 @@ td:nth-child(1) {
 
 th:nth-child(2),
 td:nth-child(2) {
-    width: 15%;
+    width: 20%;
 }
 
 th:nth-child(3),
@@ -4121,17 +4107,20 @@ td:nth-child(3) {
 
 th:nth-child(4),
 td:nth-child(4) {
-    width: 14%;
+    width: 26%;
 }
 
 th:nth-child(5),
 td:nth-child(5) {
-    width: 17%;
+    width: 30%;
 }
 
-th:nth-child(6),
-td:nth-child(6) {
-    width: 30%;
+.coin-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
 }
 
 .coin {
@@ -4139,6 +4128,20 @@ td:nth-child(6) {
     font-size: 8px;
     font-weight: bold;
     line-height: 1.2;
+    white-space: nowrap;
+}
+
+.coin-change {
+    display: block;
+    margin-top: 1px;
+}
+
+.volume-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
 }
 
 .volume-value {
@@ -4146,19 +4149,10 @@ td:nth-child(6) {
     font-weight: 600;
 }
 
-.today-wrap {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 3px;
-    width: 100%;
-}
-
 .change-item {
     display: block;
     width: 100%;
-    font-size: 8px;
+    font-size: 7px;
     font-weight: 700;
     text-align: center;
     white-space: nowrap;
@@ -4181,7 +4175,7 @@ td:nth-child(6) {
     color: #35e66d;
     font-size: 7px;
     font-weight: 800;
-    margin-top: 2px;
+    margin-top: 1px;
 }
 
 .direction-short {
@@ -4189,13 +4183,24 @@ td:nth-child(6) {
     color: #ff4d4d;
     font-size: 7px;
     font-weight: 800;
-    margin-top: 2px;
+    margin-top: 1px;
 }
 
 .direction-none {
     display: block;
     color: #666;
     font-size: 7px;
+}
+
+.warning-wrap {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+    min-height: 14px;
+    white-space: nowrap;
+    gap: 2px;
 }
 
 .breakout-warning {
@@ -4349,7 +4354,7 @@ td:nth-child(6) {
     }
 
     .change-item {
-        font-size: 7px;
+        font-size: 6px;
     }
 
     .direction-long,
@@ -4381,6 +4386,17 @@ td:nth-child(6) {
 
 # =========================================================
 # 테이블 행
+#
+# 코인
+#   변동률
+#
+# 거래대금
+#   LONG/SHORT
+#
+# EMA
+#
+# N자
+#   15M / 1H
 # =========================================================
 
 def make_table_rows(data):
@@ -4445,13 +4461,35 @@ def make_table_rows(data):
 {item.get("rank", "-")}
 </td>
 
+
+<!-- =================================================
+     코인 + 변동률
+     ================================================= -->
+
 <td class="{direction_class}">
+
+<div class="coin-wrap">
+
 <span class="coin">
 {item.get("name", "-")}
 </span>
+
+<div class="coin-change">
+{item.get("change", "")}
+</div>
+
+</div>
+
 </td>
 
+
+<!-- =================================================
+     거래대금 + LONG/SHORT
+     ================================================= -->
+
 <td class="{direction_class}">
+
+<div class="volume-wrap">
 
 <span class="volume-value">
 {item.get("volume", "-")}
@@ -4461,19 +4499,14 @@ def make_table_rows(data):
     direction
 )}
 
-</td>
-
-<td class="{direction_class}">
-
-<div class="today-wrap">
-
-<div>
-{item.get("change", "")}
-</div>
-
 </div>
 
 </td>
+
+
+<!-- =================================================
+     EMA
+     ================================================= -->
 
 <td class="{direction_class}">
 
@@ -4500,9 +4533,15 @@ def make_table_rows(data):
 
 </td>
 
+
+<!-- =================================================
+     N자
+     15M + 1H
+     ================================================= -->
+
 <td class="{direction_class}">
 
-<div class="breakout-warning">
+<div class="warning-wrap">
 {warning_text}
 </div>
 
@@ -4516,8 +4555,6 @@ def make_table_rows(data):
 
 # =========================================================
 # 거래소 섹션
-#
-# 하단 설명 없음
 # =========================================================
 
 def make_exchange_section(
@@ -4534,7 +4571,7 @@ def make_exchange_section(
 
         rows = """
 <tr>
-<td colspan="6"
+<td colspan="5"
     style="
         color:#555;
         padding:12px 4px;
@@ -4574,12 +4611,17 @@ def make_exchange_section(
 <thead>
 
 <tr>
+
 <th>#</th>
+
 <th>코인</th>
+
 <th>거래대금</th>
-<th>오늘</th>
+
 <th>EMA</th>
+
 <th>N자</th>
+
 </tr>
 
 </thead>
@@ -4662,7 +4704,7 @@ def dashboard():
         user-scalable=no">
 
 <title>
-15M / 1H / 4H N Pattern Breakout
+15M / 1H N Pattern Breakout
 </title>
 
 <style>
@@ -4676,7 +4718,7 @@ def dashboard():
 <body>
 
 <h1>
-📊 15M / 1H / 4H N Pattern Breakout
+📊 15M / 1H N Pattern Breakout
 </h1>
 
 <div class="info">
@@ -4690,7 +4732,7 @@ def dashboard():
 </div>
 
 <div>
-③ 15M + 1H + 4H N자 독립 분석
+③ 15M + 1H N자 독립 분석
 </div>
 
 <div>
@@ -4699,6 +4741,10 @@ def dashboard():
 
 <div>
 ⑤ 기존 조건 : 4H 방향 + 15M 방향 + 15M N자
+</div>
+
+<div>
+⑥ 4H N자 분석은 사용하지 않음
 </div>
 
 <div class="exchange-status">
@@ -4763,7 +4809,11 @@ def startup():
     )
 
     logging.info(
-        "N자 분석 : 15M + 1H + 4H"
+        "N자 분석 : 15M + 1H"
+    )
+
+    logging.info(
+        "4H N자 분석 : 제거"
     )
 
     logging.info(
@@ -4783,7 +4833,7 @@ def startup():
     )
 
     logging.info(
-        "15M / 1H / 4H N자는 각각 독립 표시"
+        "15M / 1H N자는 각각 독립 표시"
     )
 
     logging.info(
@@ -4809,6 +4859,18 @@ def startup():
     logging.info(
         "거래대금 아래 LONG/SHORT : "
         "기존 15M 실제 경고 조건 충족 시에만 표시"
+    )
+
+    logging.info(
+        "코인 이름 아래 : 오늘 변동률"
+    )
+
+    logging.info(
+        "N자 표시 : 15M + 1H"
+    )
+
+    logging.info(
+        "4H N자 표시 : 사용 안 함"
     )
 
     logging.info(
@@ -4884,4 +4946,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-    )
+        )
