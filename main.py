@@ -650,25 +650,6 @@ def get_upbit_minute_ohlcv(
 
 
 # =========================================================
-# 업비트 15분봉
-# =========================================================
-
-def get_upbit_ohlcv(
-    market,
-    unit=15,
-    count=200,
-    to=None
-):
-
-    return get_upbit_minute_ohlcv(
-        market,
-        unit,
-        count,
-        to
-    )
-
-
-# =========================================================
 # 업비트 1시간봉
 # =========================================================
 
@@ -1370,22 +1351,6 @@ def is_short_invalidation(
 
 # =========================================================
 # LONG N자 구조
-#
-# 돌파 전 🚨 사용 안 함
-#
-# 돌파 후:
-# 🚀(1)
-# 🚀(2)
-# 🚀(3)
-# 🚀(4)
-# ...
-#
-# LONG 해지:
-# 현재 확정봉 음봉
-# +
-# 현재 종가 < 이전 종가
-#
-# 해지봉에서는 🚨 1회
 # =========================================================
 
 def find_long_breakout(
@@ -1453,7 +1418,6 @@ def find_long_breakout(
 
         return result
 
-    # 가장 최근 스윙 고점부터 확인
     for anchor_pos in range(
         len(swing_highs) - 1,
         -1,
@@ -1542,10 +1506,6 @@ def find_long_breakout(
 
                 continue
 
-            # ---------------------------------------------
-            # N자 상단 돌파
-            # ---------------------------------------------
-
             if close > anchor_high:
 
                 breakout_index = i
@@ -1555,10 +1515,6 @@ def find_long_breakout(
             if low < float(correction_low):
 
                 correction_low = low
-
-            # ---------------------------------------------
-            # 추가 고점
-            # ---------------------------------------------
 
             if i >= SWING_RIGHT:
 
@@ -1584,10 +1540,6 @@ def find_long_breakout(
 
                             attempt_high_index = i
 
-            # ---------------------------------------------
-            # 추가 조정
-            # ---------------------------------------------
-
             if (
                 attempt_high is not None
                 and
@@ -1612,12 +1564,6 @@ def find_long_breakout(
 
             continue
 
-        # =================================================
-        # 돌파 후 해지 여부 확인
-        #
-        # 돌파봉 포함 이후 현재봉까지 검사
-        # =================================================
-
         invalidation_index = None
 
         for i in range(
@@ -1632,14 +1578,8 @@ def find_long_breakout(
 
                 invalidation_index = i
 
-        # =================================================
-        # 이미 해지된 N자
-        # =================================================
-
         if invalidation_index is not None:
 
-            # 해지 후 새로운 N자가 있는지 판단하기 위해
-            # 가장 최근 패턴만 유지
             if invalidation_index < current_index:
 
                 continue
@@ -1660,10 +1600,6 @@ def find_long_breakout(
 
             return result
 
-        # =================================================
-        # 현재 N자 유지
-        # =================================================
-
         result["status"] = "breakout"
 
         result["breakout_index"] = (
@@ -1681,22 +1617,6 @@ def find_long_breakout(
 
 # =========================================================
 # SHORT N자 구조
-#
-# 돌파 전 🚨 사용 안 함
-#
-# 돌파 후:
-# 🚀(1)
-# 🚀(2)
-# 🚀(3)
-# 🚀(4)
-# ...
-#
-# SHORT 해지:
-# 현재 확정봉 양봉
-# +
-# 현재 종가 > 이전 종가
-#
-# 해지봉에서는 🚨 1회
 # =========================================================
 
 def find_short_breakout(
@@ -1764,7 +1684,6 @@ def find_short_breakout(
 
         return result
 
-    # 가장 최근 스윙 저점부터 확인
     for anchor_pos in range(
         len(swing_lows) - 1,
         -1,
@@ -1853,10 +1772,6 @@ def find_short_breakout(
 
                 continue
 
-            # ---------------------------------------------
-            # N자 하단 돌파
-            # ---------------------------------------------
-
             if close < anchor_low:
 
                 breakout_index = i
@@ -1866,10 +1781,6 @@ def find_short_breakout(
             if high > float(correction_high):
 
                 correction_high = high
-
-            # ---------------------------------------------
-            # 추가 저점
-            # ---------------------------------------------
 
             if i >= SWING_RIGHT:
 
@@ -1895,10 +1806,6 @@ def find_short_breakout(
 
                             attempt_low_index = i
 
-            # ---------------------------------------------
-            # 추가 조정
-            # ---------------------------------------------
-
             if (
                 attempt_low is not None
                 and
@@ -1923,10 +1830,6 @@ def find_short_breakout(
 
             continue
 
-        # =================================================
-        # 돌파 후 해지 여부 확인
-        # =================================================
-
         invalidation_index = None
 
         for i in range(
@@ -1940,10 +1843,6 @@ def find_short_breakout(
             ):
 
                 invalidation_index = i
-
-        # =================================================
-        # 이미 해지된 N자
-        # =================================================
 
         if invalidation_index is not None:
 
@@ -1966,10 +1865,6 @@ def find_short_breakout(
             )
 
             return result
-
-        # =================================================
-        # 현재 N자 유지
-        # =================================================
 
         result["status"] = "breakout"
 
@@ -2096,25 +1991,18 @@ def get_breakout_count(
 
 
 # =========================================================
-# 단일 시간봉 N자 신호
+# 1시간 N자 신호
 #
-# 돌파전 🚨 없음
+# 중요:
+# 15분 N자는 완전히 제거
 #
-# breakout:
-# 1 이상 계속 🚀
-#
-# invalidated:
-# 해지 확정봉에서 🚨 1회
-#
-# 이후:
-# none
+# 1H만 분석
 # =========================================================
 
-def get_single_timeframe_breakout_signal(
+def get_1h_breakout_signal(
     df,
     exchange,
     symbol,
-    timeframe,
     allow_short=True
 ):
 
@@ -2179,12 +2067,11 @@ def get_single_timeframe_breakout_signal(
             invalidation_id = make_breakout_id(
                 exchange,
                 symbol,
-                timeframe,
+                "1H",
                 df,
                 invalidation_index
             )
 
-            # 해지봉에서 단 한 번만 🚨
             if mark_invalidation_once(
                 invalidation_id
             ):
@@ -2201,7 +2088,6 @@ def get_single_timeframe_breakout_signal(
                     "invalidation_index": invalidation_index
                 }
 
-            # 이미 🚨를 표시한 해지봉
             return {
                 "signal": "none",
                 "direction": "long",
@@ -2237,7 +2123,7 @@ def get_single_timeframe_breakout_signal(
         breakout_id = make_breakout_id(
             exchange,
             symbol,
-            timeframe,
+            "1H",
             df,
             breakout_index
         )
@@ -2255,7 +2141,6 @@ def get_single_timeframe_breakout_signal(
 
             return empty_result
 
-        # 1 이상 무제한
         return {
             "signal": str(count),
             "direction": "long",
@@ -2304,12 +2189,11 @@ def get_single_timeframe_breakout_signal(
             invalidation_id = make_breakout_id(
                 exchange,
                 symbol,
-                timeframe,
+                "1H",
                 df,
                 invalidation_index
             )
 
-            # 해지봉에서 단 한 번만 🚨
             if mark_invalidation_once(
                 invalidation_id
             ):
@@ -2361,7 +2245,7 @@ def get_single_timeframe_breakout_signal(
         breakout_id = make_breakout_id(
             exchange,
             symbol,
-            timeframe,
+            "1H",
             df,
             breakout_index
         )
@@ -2379,7 +2263,6 @@ def get_single_timeframe_breakout_signal(
 
             return empty_result
 
-        # 1 이상 무제한
         return {
             "signal": str(count),
             "direction": "short",
@@ -2402,39 +2285,28 @@ def get_single_timeframe_breakout_signal(
 
 
 # =========================================================
-# 15M + 1H N자 통합
+# 1H N자만 통합
 #
-# 4H N자 제거
+# 15M N자 완전 삭제
+# 4H N자도 사용하지 않음
 # =========================================================
 
 def get_multi_timeframe_breakout(
-    df15m,
     df1h,
-    df4h,
     exchange,
     symbol,
     allow_short=True
 ):
 
+    warning_1h = get_1h_breakout_signal(
+        df1h,
+        exchange,
+        symbol,
+        allow_short
+    )
+
     return {
-
-        # 15M N자
-        "15m": get_single_timeframe_breakout_signal(
-            df15m,
-            exchange,
-            symbol,
-            "15M",
-            allow_short
-        ),
-
-        # 1H N자
-        "1h": get_single_timeframe_breakout_signal(
-            df1h,
-            exchange,
-            symbol,
-            "1H",
-            allow_short
-        )
+        "1h": warning_1h
     }
 
 
@@ -2707,6 +2579,49 @@ def format_change(changes):
 
 
 # =========================================================
+# 1H N자 경고 HTML
+#
+# 15M 표시 완전 삭제
+# =========================================================
+
+def multi_warning_html(
+    warnings
+):
+
+    if not warnings:
+
+        return (
+            '<span class="direction-none">'
+            '-'
+            '</span>'
+        )
+
+    warning = warnings.get(
+        "1h",
+        {}
+    )
+
+    warning_text = single_warning_html(
+        warning
+    )
+
+    if not warning_text:
+
+        return (
+            '<span class="direction-none">'
+            '-'
+            '</span>'
+        )
+
+    return f"""
+<span class="tf-warning">
+<span class="tf-label">1H</span>
+{warning_text}
+</span>
+"""
+
+
+# =========================================================
 # 단일 N자 경고 HTML
 #
 # 🚨 = N자 해지 순간 1회
@@ -2726,7 +2641,6 @@ def single_warning_html(
         "none"
     )
 
-    # 해지 순간 🚨
     if signal == "invalidated":
 
         return (
@@ -2735,7 +2649,6 @@ def single_warning_html(
             '</span>'
         )
 
-    # N자 돌파 후 카운터
     if str(signal).isdigit():
 
         count = int(signal)
@@ -2749,58 +2662,6 @@ def single_warning_html(
             )
 
     return ""
-
-
-# =========================================================
-# 15M + 1H N자 HTML
-#
-# 4H 제거
-# =========================================================
-
-def multi_warning_html(
-    warnings
-):
-
-    if not warnings:
-
-        return "-"
-
-    html = []
-
-    for key, label in [
-        ("15m", "15M"),
-        ("1h", "1H")
-    ]:
-
-        warning = warnings.get(
-            key,
-            {}
-        )
-
-        warning_text = single_warning_html(
-            warning
-        )
-
-        if warning_text:
-
-            html.append(
-                f"""
-<span class="tf-warning">
-<span class="tf-label">{label}</span>
-{warning_text}
-</span>
-"""
-            )
-
-    if not html:
-
-        return (
-            '<span class="direction-none">'
-            '-'
-            '</span>'
-        )
-
-    return "".join(html)
 
 
 # =========================================================
@@ -3127,22 +2988,6 @@ def get_okx_1h_history(inst_id):
 
 
 # =========================================================
-# OKX 15M 과거 데이터
-# =========================================================
-
-def get_okx_history(
-    inst_id,
-    bar="15m"
-):
-
-    return get_okx_history_generic(
-        inst_id,
-        bar,
-        INITIAL_CANDLE_COUNT
-    )
-
-
-# =========================================================
 # 업비트 과거 데이터 공통
 # =========================================================
 
@@ -3287,23 +3132,10 @@ def get_upbit_1h_history(market):
 
 
 # =========================================================
-# 업비트 15M 과거 데이터
-# =========================================================
-
-def get_upbit_history(market):
-
-    return get_upbit_history_generic(
-        market,
-        15,
-        INITIAL_CANDLE_COUNT
-    )
-
-
-# =========================================================
 # 업비트 분석
 #
-# 15M + 1H N자
-# 4H N자 제거
+# 1H N자만 사용
+# 15M N자 완전 삭제
 # =========================================================
 
 def get_upbit_analysis(market):
@@ -3344,10 +3176,15 @@ def get_upbit_analysis(market):
 
     # -----------------------------------------------------
     # 15M
+    #
+    # EMA 표시용으로만 사용
+    # N자 분석에는 사용하지 않음
     # -----------------------------------------------------
 
-    df15m = get_upbit_history(
-        market
+    df15m = get_upbit_history_generic(
+        market,
+        15,
+        INITIAL_CANDLE_COUNT
     )
 
     if (
@@ -3370,27 +3207,25 @@ def get_upbit_analysis(market):
     )
 
     # -----------------------------------------------------
-    # 15M + 1H N자
+    # 1H N자만 분석
     # -----------------------------------------------------
 
     warnings = get_multi_timeframe_breakout(
-        df15m,
         df1h,
-        df4h,
         "UPBIT",
         market,
         allow_short=False
     )
 
+    warning1h = warnings["1h"]
+
+    qualified = False
+
     # -----------------------------------------------------
     # 15M + 1H + 4H LONG
     # +
-    # 15M N자
+    # 1H N자
     # -----------------------------------------------------
-
-    warning15m = warnings["15m"]
-
-    qualified = False
 
     if (
         ema15m.get("direction") == "long"
@@ -3399,10 +3234,10 @@ def get_upbit_analysis(market):
         and
         ema4h.get("direction") == "long"
         and
-        warning15m.get("direction") == "long"
+        warning1h.get("direction") == "long"
     ):
 
-        signal = warning15m.get(
+        signal = warning1h.get(
             "signal",
             "none"
         )
@@ -3423,7 +3258,7 @@ def get_upbit_analysis(market):
         "ema": ema15m,
         "ema_1h": ema1h,
         "ema_4h": ema4h,
-        "warning": warning15m,
+        "warning": warning1h,
         "warnings": warnings,
         "changes": changes,
         "qualified": qualified
@@ -3433,8 +3268,8 @@ def get_upbit_analysis(market):
 # =========================================================
 # OKX 분석
 #
-# 15M + 1H N자
-# 4H N자 제거
+# 1H N자만 사용
+# 15M N자 완전 삭제
 # =========================================================
 
 def get_okx_analysis(inst_id):
@@ -3475,11 +3310,14 @@ def get_okx_analysis(inst_id):
 
     # -----------------------------------------------------
     # 15M
+    #
+    # EMA 표시용으로만 사용
     # -----------------------------------------------------
 
-    df15m = get_okx_history(
+    df15m = get_okx_history_generic(
         inst_id,
-        "15m"
+        "15m",
+        INITIAL_CANDLE_COUNT
     )
 
     if (
@@ -3502,26 +3340,24 @@ def get_okx_analysis(inst_id):
     )
 
     # -----------------------------------------------------
-    # 15M + 1H N자
+    # 1H N자만 분석
     # -----------------------------------------------------
 
     warnings = get_multi_timeframe_breakout(
-        df15m,
         df1h,
-        df4h,
         "OKX",
         inst_id,
         allow_short=True
     )
 
-    warning15m = warnings["15m"]
+    warning1h = warnings["1h"]
 
-    warning_direction = warning15m.get(
+    warning_direction = warning1h.get(
         "direction",
         "none"
     )
 
-    signal = warning15m.get(
+    signal = warning1h.get(
         "signal",
         "none"
     )
@@ -3579,7 +3415,7 @@ def get_okx_analysis(inst_id):
         "ema": ema15m,
         "ema_1h": ema1h,
         "ema_4h": filter4h,
-        "warning": warning15m,
+        "warning": warning1h,
         "warnings": warnings,
         "changes": changes,
         "qualified": qualified
@@ -3591,7 +3427,7 @@ def get_okx_analysis(inst_id):
 #
 # 15M + 1H + 4H 모두 LONG
 # +
-# 15M N자 진행 중
+# 1H N자 진행 중
 # =========================================================
 
 def pass_long_filter(analysis):
@@ -3649,18 +3485,13 @@ def pass_long_filter(analysis):
         "none"
     )
 
-    # 해지 상태는 조건 충족 아님
     if not signal.isdigit():
 
         return False
 
     count = int(signal)
 
-    if count >= 1:
-
-        return True
-
-    return False
+    return count >= 1
 
 
 # =========================================================
@@ -3668,7 +3499,7 @@ def pass_long_filter(analysis):
 #
 # 15M + 1H + 4H 모두 SHORT
 # +
-# 15M N자 진행 중
+# 1H N자 진행 중
 # =========================================================
 
 def pass_short_filter(analysis):
@@ -3732,11 +3563,7 @@ def pass_short_filter(analysis):
 
     count = int(signal)
 
-    if count >= 1:
-
-        return True
-
-    return False
+    return count >= 1
 
 
 # =========================================================
@@ -3775,7 +3602,6 @@ def make_empty_analysis():
         "warning": empty_warning.copy(),
 
         "warnings": {
-            "15m": empty_warning.copy(),
             "1h": empty_warning.copy()
         },
 
@@ -3881,7 +3707,7 @@ def update_upbit():
             # =================================================
             # 15M + 1H + 4H 모두 LONG
             # +
-            # 15M N자 진행 중
+            # 1H N자 진행 중
             # =================================================
 
             if (
@@ -4090,10 +3916,6 @@ def update_okx(usdt_krw):
                 "none"
             )
 
-            # =================================================
-            # LONG / SHORT
-            # =================================================
-
             if warning_direction == "long":
 
                 qualified = pass_long_filter(
@@ -4114,14 +3936,6 @@ def update_okx(usdt_krw):
                 "signal",
                 "none"
             )
-
-            # =================================================
-            # 실제 LONG / SHORT 표시
-            #
-            # 15M + 1H + 4H 동일 방향
-            # +
-            # 15M N자 진행 중
-            # =================================================
 
             if (
                 qualified
@@ -4241,7 +4055,7 @@ def update_dashboard():
         logging.info(
             "조회 순서 : "
             "24H 거래대금 → 4H/1H/15M EMA → "
-            "15M/1H N자"
+            "1H N자"
         )
 
         if USE_UPBIT == "Y":
@@ -4569,6 +4383,7 @@ td:nth-child(5) {
     font-weight: 700;
 }
 
+
 /* =======================================================
    N자 진행
    ======================================================= */
@@ -4581,6 +4396,7 @@ td:nth-child(5) {
         rgba(50, 255, 100, 0.9)
     );
 }
+
 
 /* =======================================================
    N자 해지 🚨
@@ -4751,11 +4567,6 @@ td:nth-child(5) {
         font-size: 5px;
     }
 
-
-    /* ===================================================
-       모바일 EMA 고정 정렬
-       =================================================== */
-
     .ema-row {
         height: 12px;
         grid-template-columns: 25px 1fr;
@@ -4792,7 +4603,7 @@ td:nth-child(5) {
 #   4H
 #
 # N자
-#   15M / 1H
+#   1H만 표시
 # =========================================================
 
 def make_table_rows(data):
@@ -4863,10 +4674,6 @@ def make_table_rows(data):
 </td>
 
 
-<!-- =================================================
-     코인 + 변동률
-     ================================================= -->
-
 <td class="{direction_class}">
 
 <div class="coin-wrap">
@@ -4884,10 +4691,6 @@ def make_table_rows(data):
 </td>
 
 
-<!-- =================================================
-     거래대금 + LONG/SHORT
-     ================================================= -->
-
 <td class="{direction_class}">
 
 <div class="volume-wrap">
@@ -4904,11 +4707,6 @@ def make_table_rows(data):
 
 </td>
 
-
-<!-- =================================================
-     EMA
-     15M / 1H / 4H 고정 정렬
-     ================================================= -->
 
 <td class="{direction_class}">
 
@@ -4965,11 +4763,6 @@ def make_table_rows(data):
 
 </td>
 
-
-<!-- =================================================
-     N자
-     15M + 1H
-     ================================================= -->
 
 <td class="{direction_class}">
 
@@ -5138,7 +4931,7 @@ def dashboard():
         user-scalable=no">
 
 <title>
-15M / 1H N Pattern Breakout
+1H N Pattern Breakout
 </title>
 
 <style>
@@ -5152,7 +4945,7 @@ def dashboard():
 <body>
 
 <h1>
-📊 15M / 1H N Pattern Breakout
+📊 1H N Pattern Breakout
 </h1>
 
 <div class="info">
@@ -5166,23 +4959,23 @@ def dashboard():
 </div>
 
 <div>
-③ 15M + 1H N자 독립 분석
+③ 1H N자만 분석
 </div>
 
 <div>
-④ N자 돌파 후 🚀(1)부터 계속 카운터
+④ 1H N자 돌파 후 🚀(1)부터 계속 카운터
 </div>
 
 <div>
-⑤ LONG/SHORT : 15M + 1H + 4H 한방향 + 15M N자
+⑤ LONG/SHORT : 15M + 1H + 4H 한방향 + 1H N자
 </div>
 
 <div>
-⑥ N자 해지 : 음봉/양봉 종가 조건
+⑥ 1H N자 해지 : 음봉/양봉 종가 조건
 </div>
 
 <div>
-⑦ 해지 순간 🚨 1회 표시 후 새 N자 대기
+⑦ 1H N자 해지 순간 🚨 1회 표시 후 새 N자 대기
 </div>
 
 <div>
@@ -5251,7 +5044,11 @@ def startup():
     )
 
     logging.info(
-        "N자 분석 : 15M + 1H"
+        "N자 분석 : 1H만 사용"
+    )
+
+    logging.info(
+        "15M N자 분석 : 완전 제거"
     )
 
     logging.info(
@@ -5263,7 +5060,7 @@ def startup():
     )
 
     logging.info(
-        "N자 : 125개 이상 확정봉 필요"
+        "1H N자 : 125개 이상 확정봉 필요"
     )
 
     logging.info(
@@ -5271,7 +5068,7 @@ def startup():
     )
 
     logging.info(
-        "N자 돌파 후 : 🚀(1)부터 계속 카운터"
+        "1H N자 돌파 후 : 🚀(1)부터 계속 카운터"
     )
 
     logging.info(
@@ -5291,7 +5088,7 @@ def startup():
     )
 
     logging.info(
-        "N자 해지 순간 : 🚨 1회 표시"
+        "1H N자 해지 순간 : 🚨 1회 표시"
     )
 
     logging.info(
@@ -5299,40 +5096,23 @@ def startup():
     )
 
     logging.info(
-        "해지 후 : 새 N자 패턴 발생까지 대기"
+        "해지 후 : 새 1H N자 패턴 발생까지 대기"
     )
 
     logging.info(
         "LONG : "
         "15M LONG + 1H LONG + 4H LONG "
-        "+ 15M N자"
+        "+ 1H N자"
     )
 
     logging.info(
         "SHORT : "
         "15M SHORT + 1H SHORT + 4H SHORT "
-        "+ 15M N자"
+        "+ 1H N자"
     )
 
     logging.info(
-        "15M / 1H N자는 각각 독립 표시"
-    )
-
-    logging.info(
-        "4H N자 표시 : 사용 안 함"
-    )
-
-    logging.info(
-        "거래대금 아래 LONG/SHORT : "
-        "15M + 1H + 4H 한방향일 때만 표시"
-    )
-
-    logging.info(
-        "코인 이름 아래 : 오늘 변동률"
-    )
-
-    logging.info(
-        "N자 표시 : 15M + 1H"
+        "N자 표시 : 1H만 표시"
     )
 
     logging.info(
@@ -5412,4 +5192,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-) 
+        )
