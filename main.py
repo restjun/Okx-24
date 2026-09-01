@@ -56,9 +56,6 @@ MAX_HISTORY_CHUNKS = 10
 
 BREAKOUT_LOOKBACK = 30
 
-# 돌파 직전 경고 거리
-# LONG  : 이전 고점의 0.5% 이내 접근
-# SHORT : 이전 저점의 0.5% 이내 접근
 PRE_BREAKOUT_DISTANCE = 0.005
 
 SWING_LEFT = 2
@@ -843,6 +840,10 @@ def get_upbit_daily_change(market):
 
 # =========================================================
 # EMA
+#
+# 중요:
+# 캔들이 EMA 기간보다 부족해도
+# 현재 확보된 캔들로 계산
 # =========================================================
 
 def get_ema(
@@ -864,25 +865,30 @@ def get_ema(
         errors="coerce"
     )
 
-    if price.notna().sum() < period:
+    price = price.dropna()
+
+    if price.empty:
 
         return None
 
     return price.ewm(
         span=period,
-        adjust=False
+        adjust=False,
+        min_periods=1
     ).mean()
 
 
 # =========================================================
 # EMA 30-60-120 방향
+#
+# 신규 코인도 현재 확보된 캔들로 판단
 # =========================================================
 
 def get_ema_30_60_120_direction(df):
 
     if (
         df is None
-        or len(df) < 120
+        or df.empty
     ):
 
         return "none"
@@ -937,13 +943,15 @@ def get_ema_30_60_120_direction(df):
 
 # =========================================================
 # 방향 시계열
+#
+# 캔들이 부족해도 계산
 # =========================================================
 
 def get_direction_series(df):
 
     if (
         df is None
-        or len(df) < 120
+        or df.empty
     ):
 
         return []
@@ -1023,15 +1031,28 @@ def find_latest_alignment_start(
 
     latest = None
 
-    for i in range(
+    # N자 분석은 기존처럼
+    # EMA 120 안정 구간부터 사용
+    start_scan = min(
         120,
+        len(directions) - 1
+    )
+
+    for i in range(
+        start_scan,
         len(directions)
     ):
+
+        previous = (
+            directions[i - 1]
+            if i > 0
+            else "none"
+        )
 
         if (
             directions[i] == direction
             and
-            directions[i - 1] != direction
+            previous != direction
         ):
 
             latest = {
@@ -1218,11 +1239,6 @@ def find_swing_lows(
 
 # =========================================================
 # LONG N자 구조
-#
-# 반환 상태
-# none        : 구조 없음
-# prebreakout : 돌파 직전
-# breakout    : 돌파 확정
 # =========================================================
 
 def find_long_breakout(
@@ -1290,7 +1306,6 @@ def find_long_breakout(
 
         return result
 
-    # 가장 최근 유효 고점부터 탐색
     for anchor_pos in range(
         len(swing_highs) - 1,
         -1,
@@ -1349,10 +1364,6 @@ def find_long_breakout(
 
         breakout_index = None
 
-        # ---------------------------------------------
-        # N자 구조 추적
-        # ---------------------------------------------
-
         for i in range(
             search_start,
             current_index + 1
@@ -1382,27 +1393,15 @@ def find_long_breakout(
 
                 continue
 
-            # -----------------------------------------
-            # 이전 고점 종가 돌파
-            # -----------------------------------------
-
             if close > anchor_high:
 
                 breakout_index = i
 
                 break
 
-            # -----------------------------------------
-            # 조정 저점 갱신
-            # -----------------------------------------
-
             if low < float(correction_low):
 
                 correction_low = low
-
-            # -----------------------------------------
-            # 반등 고점 탐색
-            # -----------------------------------------
 
             if i >= SWING_RIGHT:
 
@@ -1428,10 +1427,6 @@ def find_long_breakout(
 
                             attempt_high_index = i
 
-            # -----------------------------------------
-            # 반등 후 재조정
-            # -----------------------------------------
-
             if (
                 attempt_high is not None
                 and
@@ -1452,10 +1447,6 @@ def find_long_breakout(
 
                     attempt_high_index = None
 
-        # ---------------------------------------------
-        # 돌파 발생
-        # ---------------------------------------------
-
         if breakout_index is not None:
 
             result["status"] = "breakout"
@@ -1469,14 +1460,6 @@ def find_long_breakout(
             )
 
             return result
-
-        # ---------------------------------------------
-        # 돌파 직전 판단
-        #
-        # 최신 확정봉의 고가가
-        # 이전 고점의 0.5% 이내까지 접근
-        # 하지만 아직 종가 돌파하지 않은 경우
-        # ---------------------------------------------
 
         try:
 
@@ -1674,27 +1657,15 @@ def find_short_breakout(
 
                 continue
 
-            # -----------------------------------------
-            # 이전 저점 종가 이탈
-            # -----------------------------------------
-
             if close < anchor_low:
 
                 breakout_index = i
 
                 break
 
-            # -----------------------------------------
-            # 반등 고점 갱신
-            # -----------------------------------------
-
             if high > float(correction_high):
 
                 correction_high = high
-
-            # -----------------------------------------
-            # 재하락 저점 탐색
-            # -----------------------------------------
 
             if i >= SWING_RIGHT:
 
@@ -1720,10 +1691,6 @@ def find_short_breakout(
 
                             attempt_low_index = i
 
-            # -----------------------------------------
-            # 재하락 후 반등
-            # -----------------------------------------
-
             if (
                 attempt_low is not None
                 and
@@ -1744,10 +1711,6 @@ def find_short_breakout(
 
                     attempt_low_index = None
 
-        # ---------------------------------------------
-        # 돌파 발생
-        # ---------------------------------------------
-
         if breakout_index is not None:
 
             result["status"] = "breakout"
@@ -1761,10 +1724,6 @@ def find_short_breakout(
             )
 
             return result
-
-        # ---------------------------------------------
-        # 돌파 직전 판단
-        # ---------------------------------------------
 
         try:
 
@@ -1886,13 +1845,9 @@ def get_breakout_count(
 # =========================================================
 # 돌파 통합
 #
-# signal
 # prebreakout = 🚨
 # 1~3         = 🚀(1~3)
-# 4 이상      = 내부 상태만 유지
-# none        = 표시 없음
-#
-# 기존 invalid / 해지 기능 완전 삭제
+# 4 이상      = 해지 / 화면 표시 없음
 # =========================================================
 
 def get_breakout_signal(
@@ -1910,6 +1865,7 @@ def get_breakout_signal(
         "warning_index": None
     }
 
+    # N자 분석 자체는 기존처럼 125개 필요
     if (
         df is None
         or len(df) < 125
@@ -1948,10 +1904,6 @@ def get_breakout_signal(
             "none"
         )
 
-        # ---------------------------------------------
-        # 돌파 직전
-        # ---------------------------------------------
-
         if status == "prebreakout":
 
             warning_index = result.get(
@@ -1972,10 +1924,6 @@ def get_breakout_signal(
                 "breakout_index": None,
                 "warning_index": warning_index
             }
-
-        # ---------------------------------------------
-        # 돌파
-        # ---------------------------------------------
 
         breakout_index = result.get(
             "breakout_index"
@@ -2010,6 +1958,20 @@ def get_breakout_signal(
         if count is None:
 
             return empty_result
+
+        # =============================================
+        # 🚀 4개부터는 해지
+        # =============================================
+
+        if count >= 4:
+
+            return {
+                "signal": "expired",
+                "direction": "long",
+                "breakout_id": breakout_id,
+                "breakout_index": breakout_index,
+                "warning_index": None
+            }
 
         return {
             "signal": str(count),
@@ -2044,10 +2006,6 @@ def get_breakout_signal(
             "none"
         )
 
-        # ---------------------------------------------
-        # 돌파 직전
-        # ---------------------------------------------
-
         if status == "prebreakout":
 
             warning_index = result.get(
@@ -2068,10 +2026,6 @@ def get_breakout_signal(
                 "breakout_index": None,
                 "warning_index": warning_index
             }
-
-        # ---------------------------------------------
-        # 돌파
-        # ---------------------------------------------
 
         breakout_index = result.get(
             "breakout_index"
@@ -2106,6 +2060,20 @@ def get_breakout_signal(
         if count is None:
 
             return empty_result
+
+        # =============================================
+        # 🚀 4개부터는 해지
+        # =============================================
+
+        if count >= 4:
+
+            return {
+                "signal": "expired",
+                "direction": "short",
+                "breakout_id": breakout_id,
+                "breakout_index": breakout_index,
+                "warning_index": None
+            }
 
         return {
             "signal": str(count),
@@ -2394,9 +2362,6 @@ def format_change(changes):
 
 # =========================================================
 # 경고 HTML
-#
-# 🚨 = 돌파 직전
-# 🚀 = 돌파 후 1~3
 # =========================================================
 
 def combined_warning_html(
@@ -2417,10 +2382,6 @@ def combined_warning_html(
         "none"
     )
 
-    # ---------------------------------------------
-    # 돌파 직전
-    # ---------------------------------------------
-
     if signal == "prebreakout":
 
         return (
@@ -2428,10 +2389,6 @@ def combined_warning_html(
             '🚨'
             '</span>'
         )
-
-    # ---------------------------------------------
-    # 돌파 후 1~3
-    # ---------------------------------------------
 
     if signal.isdigit():
 
@@ -2450,8 +2407,6 @@ def combined_warning_html(
 
 # =========================================================
 # 방향 표시
-#
-# 경고 조건을 모두 만족한 경우에만 표시
 # =========================================================
 
 def direction_html(
@@ -2937,6 +2892,9 @@ def get_upbit_history(market):
 
 # =========================================================
 # 업비트 분석
+#
+# 캔들 부족해도 EMA 분석은 진행
+# N자만 125개 이상 필요
 # =========================================================
 
 def get_upbit_analysis(market):
@@ -2947,7 +2905,7 @@ def get_upbit_analysis(market):
 
     if (
         df4h is None
-        or len(df4h) < 125
+        or df4h.empty
     ):
 
         return None
@@ -2962,7 +2920,7 @@ def get_upbit_analysis(market):
 
     if (
         df is None
-        or len(df) < 125
+        or df.empty
     ):
 
         return None
@@ -2992,6 +2950,9 @@ def get_upbit_analysis(market):
 
 # =========================================================
 # OKX 분석
+#
+# 캔들 부족해도 EMA 분석은 진행
+# N자만 125개 이상 필요
 # =========================================================
 
 def get_okx_analysis(inst_id):
@@ -3002,7 +2963,7 @@ def get_okx_analysis(inst_id):
 
     if (
         df4h is None
-        or len(df4h) < 125
+        or df4h.empty
     ):
 
         return None
@@ -3018,7 +2979,7 @@ def get_okx_analysis(inst_id):
 
     if (
         df is None
-        or len(df) < 125
+        or df.empty
     ):
 
         return None
@@ -3049,6 +3010,9 @@ def get_okx_analysis(inst_id):
 
 # =========================================================
 # LONG 필터
+#
+# 🚨 또는 🚀(1~3)만 통과
+# 🚀(4)부터 해지
 # =========================================================
 
 def pass_long_filter(analysis):
@@ -3095,15 +3059,29 @@ def pass_long_filter(analysis):
         "none"
     )
 
-    if signal == "none":
+    # 돌파 직전
+    if signal == "prebreakout":
 
-        return False
+        return True
 
-    return True
+    # 돌파 후 1~3
+    if signal.isdigit():
+
+        count = int(signal)
+
+        if 1 <= count <= 3:
+
+            return True
+
+    # expired / 4 이상 / none
+    return False
 
 
 # =========================================================
 # SHORT 필터
+#
+# 🚨 또는 🚀(1~3)만 통과
+# 🚀(4)부터 해지
 # =========================================================
 
 def pass_short_filter(analysis):
@@ -3150,11 +3128,22 @@ def pass_short_filter(analysis):
         "none"
     )
 
-    if signal == "none":
+    # 돌파 직전
+    if signal == "prebreakout":
 
-        return False
+        return True
 
-    return True
+    # 돌파 후 1~3
+    if signal.isdigit():
+
+        count = int(signal)
+
+        if 1 <= count <= 3:
+
+            return True
+
+    # expired / 4 이상 / none
+    return False
 
 
 # =========================================================
@@ -3261,7 +3250,6 @@ def update_upbit():
 
             warning = analysis["warning"]
 
-            # 업비트는 LONG만
             qualified = pass_long_filter(
                 analysis
             )
@@ -3270,13 +3258,6 @@ def update_upbit():
                 "signal",
                 "none"
             )
-
-            # ---------------------------------------------
-            # 핵심
-            # 실제 경고가 있을 때만 LONG 표시
-            #
-            # prebreakout도 실제 경고이므로 표시
-            # ---------------------------------------------
 
             if (
                 qualified
@@ -3490,12 +3471,6 @@ def update_okx(usdt_krw):
                 "signal",
                 "none"
             )
-
-            # ---------------------------------------------
-            # 핵심
-            #
-            # 경고가 없는 코인은 LONG / SHORT 없음
-            # ---------------------------------------------
 
             if (
                 qualified
@@ -4280,6 +4255,8 @@ def make_exchange_section(
 
 ※ 15M SHORT = EMA 30 < 60 < 120<br>
 
+※ 신규 코인은 캔들이 부족해도 확보된 캔들로 EMA 배열 계산<br>
+
 ※ 4H와 15M 방향이 다르면 LONG / SHORT 표시하지 않음<br>
 
 ※ 실제 N자 경고가 없으면 LONG / SHORT 표시하지 않음<br>
@@ -4302,7 +4279,9 @@ def make_exchange_section(
 
 ※ 🚀는 3개까지만 표시<br>
 
-※ 🚀(4) 이후에도 내부적으로 돌파 상태를 계산하지만 화면에는 표시하지 않음<br>
+※ 🚀(4)부터 LONG / SHORT 조건을 해지하고 화면 표시하지 않음<br>
+
+※ 🚀(4) 이후 기존 돌파 상태는 더 이상 조건 충족으로 인정하지 않음<br>
 
 ※ 기존 ⛔️ 해지 경고는 사용하지 않음<br>
 
@@ -4426,7 +4405,7 @@ def dashboard():
 </div>
 
 <div>
-🚨 돌파 직전 / 🚀 돌파 후 1~3
+🚨 돌파 직전 / 🚀 돌파 후 1~3 / 🚀4부터 해지
 </div>
 
 <div class="exchange-status">
@@ -4494,6 +4473,10 @@ def startup():
     )
 
     logging.info(
+        "신규 코인 : 부족한 캔들로 EMA 배열 계산"
+    )
+
+    logging.info(
         "LONG : 4H LONG + 15M LONG + N자 LONG"
     )
 
@@ -4510,7 +4493,7 @@ def startup():
     )
 
     logging.info(
-        "🚀 4 이상 : 화면 표시 안 함"
+        "🚀 4 이상 : LONG/SHORT 해지"
     )
 
     logging.info(
@@ -4518,7 +4501,7 @@ def startup():
     )
 
     logging.info(
-        "돌파 후 해지 판정 : 사용 안 함"
+        "돌파 후 기존 기준봉 해지 판정 : 사용 안 함"
     )
 
     logging.info(
@@ -4599,4 +4582,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-    )
+        )
