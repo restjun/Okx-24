@@ -769,7 +769,6 @@ def get_upbit_4h_ohlcv(
 
             return None
 
-        # 현재 진행 중인 4시간봉 제거
         now = datetime.now(KST)
 
         hour_block = (
@@ -1437,7 +1436,6 @@ def find_long_breakout(
 
                 continue
 
-            # 이전 주요 고점 종가 돌파
             if close > anchor_high:
 
                 breakout_index = i
@@ -1539,11 +1537,6 @@ def find_long_breakout(
         if lows_after.empty:
 
             continue
-
-        # =================================================
-        # LONG 로켓 해지
-        # 돌파 기준봉 저가 이탈
-        # =================================================
 
         if (
             lows_after.min()
@@ -1761,7 +1754,6 @@ def find_short_breakout(
 
                 continue
 
-            # 이전 주요 저점 종가 이탈
             if close < anchor_low:
 
                 breakout_index = i
@@ -1863,11 +1855,6 @@ def find_short_breakout(
         if highs_after.empty:
 
             continue
-
-        # =================================================
-        # SHORT 로켓 해지
-        # 돌파 기준봉 고가 돌파
-        # =================================================
 
         if (
             highs_after.max()
@@ -1990,7 +1977,6 @@ def get_breakout_count(
 #
 # invalid:
 #   최초 1회만 🚨
-#
 # =========================================================
 
 def get_breakout_signal(
@@ -2071,10 +2057,6 @@ def get_breakout_signal(
                 "breakout_index": None
             }
 
-        # -------------------------------------------------
-        # 무효화
-        # -------------------------------------------------
-
         if result.get(
             "status"
         ) == "invalid":
@@ -2105,10 +2087,6 @@ def get_breakout_signal(
                 "breakout_id": breakout_id,
                 "breakout_index": breakout_index
             }
-
-        # -------------------------------------------------
-        # 이미 🚨 처리된 돌파 구조면 종료
-        # -------------------------------------------------
 
         with rocket_state_lock:
 
@@ -2205,10 +2183,6 @@ def get_breakout_signal(
                 "breakout_index": None
             }
 
-        # -------------------------------------------------
-        # 무효화
-        # -------------------------------------------------
-
         if result.get(
             "status"
         ) == "invalid":
@@ -2239,10 +2213,6 @@ def get_breakout_signal(
                 "breakout_id": breakout_id,
                 "breakout_index": breakout_index
             }
-
-        # -------------------------------------------------
-        # 이미 🚨 처리된 돌파 구조면 종료
-        # -------------------------------------------------
 
         with rocket_state_lock:
 
@@ -2589,7 +2559,6 @@ def format_change(changes):
 
 # =========================================================
 # 경고 표시 여부
-# 🚀 또는 🚨
 # =========================================================
 
 def is_visible_warning(
@@ -3185,11 +3154,6 @@ def get_upbit_analysis(
     market
 ):
 
-    # -----------------------------------------------------
-    # 2차 필터
-    # 4시간봉
-    # -----------------------------------------------------
-
     df4h = get_upbit_4h_history(
         market
     )
@@ -3209,19 +3173,6 @@ def get_upbit_analysis(
     filter4h = check_4h_filter(
         df4h
     )
-
-    if filter4h["direction"] == "none":
-
-        logging.info(
-            f"[업비트 4H 필터 탈락] "
-            f"{market} : 배열 없음"
-        )
-
-        return None
-
-    # -----------------------------------------------------
-    # 15분 분석
-    # -----------------------------------------------------
 
     df = get_upbit_history(
         market
@@ -3254,7 +3205,7 @@ def get_upbit_analysis(
         or len(changes) == 0
     ):
 
-        return None
+        changes = None
 
     return {
         "ema": ema,
@@ -3271,11 +3222,6 @@ def get_upbit_analysis(
 def get_okx_analysis(
     inst_id
 ):
-
-    # -----------------------------------------------------
-    # 2차 필터
-    # 4시간봉
-    # -----------------------------------------------------
 
     df4h = get_okx_4h_history(
         inst_id
@@ -3296,19 +3242,6 @@ def get_okx_analysis(
     filter4h = check_4h_filter(
         df4h
     )
-
-    if filter4h["direction"] == "none":
-
-        logging.info(
-            f"[OKX 4H 필터 탈락] "
-            f"{inst_id} : 배열 없음"
-        )
-
-        return None
-
-    # -----------------------------------------------------
-    # 15분 분석
-    # -----------------------------------------------------
 
     df = get_okx_history(
         inst_id,
@@ -3348,10 +3281,6 @@ def get_okx_analysis(
 
 # =========================================================
 # LONG 필터
-#
-# 당일 양수/음수 조건 없음
-#
-# 4H LONG + 15M LONG
 # =========================================================
 
 def pass_long_filter(
@@ -3395,15 +3324,24 @@ def pass_long_filter(
 
         return False
 
+    if warning.get(
+        "signal",
+        "none"
+    ) == "none":
+
+        return False
+
+    if warning.get(
+        "signal"
+    ) == "invalid":
+
+        return False
+
     return True
 
 
 # =========================================================
 # SHORT 필터
-#
-# 당일 양수/음수 조건 없음
-#
-# 4H SHORT + 15M SHORT
 # =========================================================
 
 def pass_short_filter(
@@ -3447,15 +3385,57 @@ def pass_short_filter(
 
         return False
 
+    if warning.get(
+        "signal",
+        "none"
+    ) == "none":
+
+        return False
+
+    if warning.get(
+        "signal"
+    ) == "invalid":
+
+        return False
+
     return True
+
+
+# =========================================================
+# 빈 분석 데이터
+# =========================================================
+
+def make_empty_analysis():
+
+    return {
+        "ema": {
+            "display": "⚪",
+            "direction": "none"
+        },
+        "ema_4h": {
+            "display": "⚪",
+            "direction": "none"
+        },
+        "warning": {
+            "signal": "none",
+            "direction": "none",
+            "breakout_id": None,
+            "breakout_index": None
+        },
+        "changes": None
+    }
 
 
 # =========================================================
 # 업비트 업데이트
 #
-# 1차 : 24시간 거래대금 TOP30
-# 2차 : 4H EMA 30-60-120
-# 3차 : 15M N자 돌파
+# TOP10 전체 랭크 표시
+#
+# 1차 : 24시간 거래대금 TOP10
+# 2차 : 4H EMA
+# 3차 : 15M N자
+#
+# 조건 충족 종목만 반짝임
 # =========================================================
 
 def update_upbit():
@@ -3475,11 +3455,6 @@ def update_upbit():
         f"{start_time} KST =========="
     )
 
-    # =====================================================
-    # 1차 필터
-    # 거래대금
-    # =====================================================
-
     market_data = get_upbit_markets()
 
     if not market_data:
@@ -3496,16 +3471,7 @@ def update_upbit():
         :TOP_N
     ]
 
-    volume_map = {
-        item["market"]: item["volume_24h"]
-        for item in top_markets
-    }
-
     rows = []
-
-    # =====================================================
-    # 2차 + 3차
-    # =====================================================
 
     for rank, item in enumerate(
         top_markets,
@@ -3517,6 +3483,10 @@ def update_upbit():
         coin = market.replace(
             "KRW-",
             ""
+        )
+
+        volume = format_volume(
+            item["volume_24h"]
         )
 
         logging.info(
@@ -3531,51 +3501,78 @@ def update_upbit():
                 market
             )
 
+            # ---------------------------------------------
+            # 분석 실패해도 TOP 랭크는 유지
+            # ---------------------------------------------
+
             if analysis is None:
 
+                empty = make_empty_analysis()
+
+                rows.append(
+                    {
+                        "rank": rank,
+                        "name": coin,
+                        "change": "",
+                        "volume": volume,
+                        "ema": empty["ema"],
+                        "ema_4h": empty["ema_4h"],
+                        "direction": "none",
+                        "warning": empty["warning"],
+                        "qualified": False
+                    }
+                )
+
                 continue
+
+            ema = analysis[
+                "ema"
+            ]
 
             ema4h = analysis[
                 "ema_4h"
             ]
 
-            # 업비트는 LONG만
-            if ema4h.get(
-                "direction"
-            ) != "long":
-
-                continue
-
             warning = analysis[
                 "warning"
             ]
 
-            # 🚀 또는 🚨
-            if not is_visible_warning(
-                warning
-            ):
+            # ---------------------------------------------
+            # 업비트 LONG 조건
+            #
+            # 4H LONG
+            # + 15M LONG
+            # + N자 돌파
+            # ---------------------------------------------
 
-                continue
+            qualified = pass_long_filter(
+                analysis
+            )
+
+            # ---------------------------------------------
+            # 🚨는 표시하되
+            # 조건 충족 반짝임에서는 제외
+            # ---------------------------------------------
 
             if warning.get(
                 "signal"
             ) == "invalid":
 
-                # 무효화 🚨는
-                # 4H 방향까지 맞는 경우 표시
-                if warning.get(
-                    "direction"
-                ) != "long":
+                qualified = False
 
-                    continue
+            # ---------------------------------------------
+            # 업비트는 LONG만 방향 표시
+            # ---------------------------------------------
+
+            if ema4h.get(
+                "direction"
+            ) == "long":
+
+                display_direction = "long"
 
             else:
 
-                if not pass_long_filter(
-                    analysis
-                ):
-
-                    continue
+                display_direction = "none"
 
             rows.append(
                 {
@@ -3584,13 +3581,12 @@ def update_upbit():
                     "change": format_change(
                         analysis["changes"]
                     ),
-                    "volume": format_volume(
-                        volume_map[market]
-                    ),
-                    "ema": analysis["ema"],
-                    "ema_4h": analysis["ema_4h"],
-                    "direction": "long",
-                    "warning": warning
+                    "volume": volume,
+                    "ema": ema,
+                    "ema_4h": ema4h,
+                    "direction": display_direction,
+                    "warning": warning,
+                    "qualified": qualified
                 }
             )
 
@@ -3601,6 +3597,22 @@ def update_upbit():
                 f"{market}: {e}"
             )
 
+            empty = make_empty_analysis()
+
+            rows.append(
+                {
+                    "rank": rank,
+                    "name": coin,
+                    "change": "",
+                    "volume": volume,
+                    "ema": empty["ema"],
+                    "ema_4h": empty["ema_4h"],
+                    "direction": "none",
+                    "warning": empty["warning"],
+                    "qualified": False
+                }
+            )
+
     latest_upbit_data = rows
 
     latest_upbit_update_time = (
@@ -3608,9 +3620,9 @@ def update_upbit():
     )
 
     logging.info(
-        f"업비트 4H 필터 → "
-        f"15M N자 결과 "
-        f"{len(rows)}개"
+        f"업비트 TOP{TOP_N} 전체 표시 "
+        f"/ 조건 충족 "
+        f"{sum(1 for x in rows if x.get('qualified'))}개"
     )
 
     logging.info(
@@ -3623,9 +3635,13 @@ def update_upbit():
 # =========================================================
 # OKX 업데이트
 #
+# TOP10 전체 랭크 표시
+#
 # 1차 : 24시간 거래대금
-# 2차 : 4H EMA 30-60-120
-# 3차 : 15M N자 돌파
+# 2차 : 4H EMA
+# 3차 : 15M N자
+#
+# LONG / SHORT 조건 충족 종목 반짝임
 # =========================================================
 
 def update_okx(
@@ -3655,10 +3671,6 @@ def update_okx(
         )
         for market in latest_upbit_markets
     }
-
-    # =====================================================
-    # 1차 거래대금
-    # =====================================================
 
     volume_map = {}
 
@@ -3699,10 +3711,6 @@ def update_okx(
 
     rows = []
 
-    # =====================================================
-    # 2차 + 3차
-    # =====================================================
-
     for rank, symbol in enumerate(
         top_symbols,
         start=1
@@ -3721,86 +3729,94 @@ def update_okx(
                 f"{coin}[UP]"
             )
 
+        logging.info(
+            f"[OKX 분석] "
+            f"{rank}/{len(top_symbols)} "
+            f"{symbol}"
+        )
+
+        volume = format_volume(
+            volume_map[symbol]
+        )
+
         try:
 
             analysis = get_okx_analysis(
                 symbol
             )
 
+            # ---------------------------------------------
+            # 분석 실패해도 TOP10 랭크 유지
+            # ---------------------------------------------
+
             if analysis is None:
 
+                empty = make_empty_analysis()
+
+                rows.append(
+                    {
+                        "rank": rank,
+                        "name": display_coin,
+                        "change": "",
+                        "volume": volume,
+                        "ema": empty["ema"],
+                        "ema_4h": empty["ema_4h"],
+                        "direction": "none",
+                        "warning": empty["warning"],
+                        "qualified": False
+                    }
+                )
+
                 continue
+
+            ema = analysis[
+                "ema"
+            ]
+
+            ema4h = analysis[
+                "ema_4h"
+            ]
 
             warning = analysis[
                 "warning"
             ]
-
-            if not is_visible_warning(
-                warning
-            ):
-
-                continue
 
             direction = warning.get(
                 "direction",
                 "none"
             )
 
-            # -------------------------------------------------
+            # ---------------------------------------------
             # LONG
-            # -------------------------------------------------
+            # ---------------------------------------------
+
+            qualified = False
 
             if direction == "long":
 
-                if warning.get(
-                    "signal"
-                ) != "invalid":
+                qualified = pass_long_filter(
+                    analysis
+                )
 
-                    if not pass_long_filter(
-                        analysis
-                    ):
-
-                        continue
-
-                else:
-
-                    if (
-                        analysis["ema_4h"]
-                        .get("direction")
-                        != "long"
-                    ):
-
-                        continue
-
-            # -------------------------------------------------
+            # ---------------------------------------------
             # SHORT
-            # -------------------------------------------------
+            # ---------------------------------------------
 
             elif direction == "short":
 
-                if warning.get(
-                    "signal"
-                ) != "invalid":
+                qualified = pass_short_filter(
+                    analysis
+                )
 
-                    if not pass_short_filter(
-                        analysis
-                    ):
+            # ---------------------------------------------
+            # 🚨는 반짝임 제외
+            # ---------------------------------------------
 
-                        continue
+            if warning.get(
+                "signal"
+            ) == "invalid":
 
-                else:
-
-                    if (
-                        analysis["ema_4h"]
-                        .get("direction")
-                        != "short"
-                    ):
-
-                        continue
-
-            else:
-
-                continue
+                qualified = False
 
             rows.append(
                 {
@@ -3809,13 +3825,12 @@ def update_okx(
                     "change": format_change(
                         analysis["changes"]
                     ),
-                    "volume": format_volume(
-                        volume_map[symbol]
-                    ),
-                    "ema": analysis["ema"],
-                    "ema_4h": analysis["ema_4h"],
+                    "volume": volume,
+                    "ema": ema,
+                    "ema_4h": ema4h,
                     "direction": direction,
-                    "warning": warning
+                    "warning": warning,
+                    "qualified": qualified
                 }
             )
 
@@ -3826,6 +3841,22 @@ def update_okx(
                 f"{symbol}: {e}"
             )
 
+            empty = make_empty_analysis()
+
+            rows.append(
+                {
+                    "rank": rank,
+                    "name": display_coin,
+                    "change": "",
+                    "volume": volume,
+                    "ema": empty["ema"],
+                    "ema_4h": empty["ema_4h"],
+                    "direction": "none",
+                    "warning": empty["warning"],
+                    "qualified": False
+                }
+            )
+
     latest_okx_data = rows
 
     latest_okx_update_time = (
@@ -3833,9 +3864,9 @@ def update_okx(
     )
 
     logging.info(
-        f"OKX 4H 필터 → "
-        f"15M N자 결과 "
-        f"{len(rows)}개"
+        f"OKX TOP{TOP_N} 전체 표시 "
+        f"/ 조건 충족 "
+        f"{sum(1 for x in rows if x.get('qualified'))}개"
     )
 
     return True
@@ -3881,10 +3912,6 @@ def update_dashboard():
             "3차 15M N자"
         )
 
-        # =================================================
-        # 업비트
-        # =================================================
-
         if USE_UPBIT == "Y":
 
             try:
@@ -3902,10 +3929,6 @@ def update_dashboard():
             latest_upbit_data = []
 
             latest_upbit_markets = []
-
-        # =================================================
-        # OKX
-        # =================================================
 
         if USE_OKX == "Y":
 
@@ -4212,6 +4235,78 @@ td:nth-child(5) {
     white-space: nowrap;
 }
 
+
+/* =========================================================
+   조건 충족 종목 반짝임
+   ========================================================= */
+
+.qualified-row {
+    animation:
+        qualifiedBlink
+        1.2s
+        infinite;
+}
+
+.qualified-row td {
+    animation:
+        qualifiedCellBlink
+        1.2s
+        infinite;
+}
+
+
+/* 전체 행 밝기 변화 */
+
+@keyframes qualifiedBlink {
+
+    0%,
+    100% {
+        background: #181c21;
+    }
+
+    50% {
+        background: #26352b;
+    }
+}
+
+
+/* 글자 반짝임 */
+
+@keyframes qualifiedCellBlink {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.55;
+    }
+}
+
+
+/* LONG */
+
+.qualified-long {
+    text-shadow:
+        0 0 3px
+        rgba(53, 230, 109, 0.95),
+        0 0 7px
+        rgba(53, 230, 109, 0.75);
+}
+
+
+/* SHORT */
+
+.qualified-short {
+    text-shadow:
+        0 0 3px
+        rgba(255, 77, 77, 0.95),
+        0 0 7px
+        rgba(255, 77, 77, 0.75);
+}
+
+
 @media (max-width: 480px) {
 
     body {
@@ -4300,35 +4395,66 @@ def make_table_rows(
             {}
         )
 
-        rows_html += f"""
-<tr>
+        direction = item.get(
+            "direction",
+            "none"
+        )
 
-<td>
+        qualified = item.get(
+            "qualified",
+            False
+        )
+
+        # -------------------------------------------------
+        # 조건 충족 행
+        # -------------------------------------------------
+
+        row_class = ""
+
+        direction_class = ""
+
+        if qualified:
+
+            row_class = "qualified-row"
+
+            if direction == "long":
+
+                direction_class = (
+                    "qualified-long"
+                )
+
+            elif direction == "short":
+
+                direction_class = (
+                    "qualified-short"
+                )
+
+        rows_html += f"""
+<tr class="{row_class}">
+
+<td class="{direction_class}">
 {item.get("rank", "-")}
 </td>
 
-<td>
+<td class="{direction_class}">
 <span class="coin">
 {item.get("name", "-")}
 </span>
 </td>
 
-<td>
+<td class="{direction_class}">
 
 <span class="volume-value">
 {item.get("volume", "-")}
 </span>
 
 {direction_html(
-    item.get(
-        "direction",
-        "none"
-    )
+    direction
 )}
 
 </td>
 
-<td>
+<td class="{direction_class}">
 
 <div class="today-wrap">
 
@@ -4344,7 +4470,7 @@ def make_table_rows(
 
 </td>
 
-<td>
+<td class="{direction_class}">
 
 <div class="ema-value">
 15M {item.get("ema", {}).get(
@@ -4391,7 +4517,7 @@ def make_exchange_section(
         color:#555;
         padding:12px 4px;
     ">
-현재 표시할 🚀 / 🚨 종목 없음
+현재 조회 데이터 없음
 </td>
 </tr>
 """
@@ -4413,7 +4539,7 @@ def make_exchange_section(
     else:
 
         direction_note = (
-            "※ 업비트 = LONG만 표시<br>"
+            "※ 업비트 = LONG만 조건 표시<br>"
         )
 
         change_note = (
@@ -4428,12 +4554,13 @@ def make_exchange_section(
 <div class="section">
 
 <h2>
-🏆 {title} TOP{TOP_N} N자 돌파
+🏆 {title} TOP{TOP_N}
 <span style="
     color:#777;
     font-size:7px;
     font-weight:normal;
 ">
+&nbsp;전체 랭크 / 조건 종목 반짝임
 &nbsp;조회 {update_time} KST
 </span>
 </h2>
@@ -4474,6 +4601,8 @@ def make_exchange_section(
 
 ※ 1차 = 24시간 거래대금 TOP{TOP_N}<br>
 
+※ TOP{TOP_N} 전체 랭크 항상 표시<br>
+
 ※ 2차 = 4시간봉 EMA 30-60-120 정배열/역배열<br>
 
 ※ 3차 = 15분봉 N자 가격 구조<br>
@@ -4481,6 +4610,12 @@ def make_exchange_section(
 {direction_note}
 
 {change_note}
+
+※ 🟢 반짝임 = LONG 조건 충족<br>
+
+※ 🔴 반짝임 = SHORT 조건 충족<br>
+
+※ 조건 충족 범위 = 랭크 → 코인 → 거래대금 → 방향 → 변동률 → 🚀 → EMA<br>
 
 ※ 4H LONG = EMA 30 > 60 > 120<br>
 
@@ -4616,7 +4751,7 @@ def dashboard():
 <div class="info">
 
 <div>
-① 24시간 거래대금 TOP{TOP_N}
+① 24시간 거래대금 TOP{TOP_N} 전체 랭크 표시
 </div>
 
 <div>
@@ -4624,7 +4759,11 @@ def dashboard():
 </div>
 
 <div>
-③ 4시간 조건 통과 종목만 15분봉 N자 분석
+③ 4시간 조건 통과 종목 15분봉 N자 분석
+</div>
+
+<div>
+④ 조건 충족 종목은 랭크부터 EMA까지 반짝임
 </div>
 
 <div>
@@ -4652,6 +4791,14 @@ SHORT 돌파 기준봉 고가 돌파 시 🚨 1회
 
 <div>
 🚨 이후 동일 돌파 구조 종료
+</div>
+
+<div>
+🟢 반짝임 = LONG 조건 충족
+</div>
+
+<div>
+🔴 반짝임 = SHORT 조건 충족
 </div>
 
 <div>
@@ -4684,6 +4831,10 @@ OKX 변동률 = 15분봉 한국시간 09:00 기준
 
 <div>
 OKX 거래대금 = 최근 24개 1시간봉 거래대금 합산
+</div>
+
+<div>
+TOP{TOP_N} 전체 랭크는 조건 미충족이어도 계속 표시
 </div>
 
 <div class="exchange-status">
@@ -4777,6 +4928,14 @@ def startup():
 
     logging.info(
         "1H 조건 : 사용 안 함"
+    )
+
+    logging.info(
+        "TOP 전체 랭크 표시 : 사용"
+    )
+
+    logging.info(
+        "조건 충족 행 반짝임 : 사용"
     )
 
     logging.info(
