@@ -56,8 +56,6 @@ MAX_HISTORY_CHUNKS = 10
 
 BREAKOUT_LOOKBACK = 30
 
-PRE_BREAKOUT_DISTANCE = 0.005
-
 SWING_LEFT = 2
 
 SWING_RIGHT = 2
@@ -123,6 +121,20 @@ latest_okx_update_time = "-"
 # =========================================================
 
 latest_upbit_markets = []
+
+
+# =========================================================
+# N자 해지 🚨 중복 표시 방지
+#
+# 같은 해지 확정봉에서는 🚨를 한 번만 표시
+#
+# key:
+# exchange:symbol:timeframe:candle_id
+# =========================================================
+
+shown_invalidation_ids = set()
+
+invalidation_lock = threading.Lock()
 
 
 # =========================================================
@@ -607,6 +619,7 @@ def get_upbit_minute_ohlcv(
             .replace(tzinfo=None)
         )
 
+        # 현재 진행 중인 봉 제외
         df = df[
             df["datetime"]
             <
@@ -1264,7 +1277,115 @@ def find_swing_lows(
 
 
 # =========================================================
+# LONG 해지 조건
+#
+# 현재 확정봉이 음봉
+# AND
+# 현재 종가 < 이전 확정봉 종가
+# =========================================================
+
+def is_long_invalidation(
+    df,
+    index
+):
+
+    if (
+        df is None
+        or index <= 0
+        or index >= len(df)
+    ):
+
+        return False
+
+    try:
+
+        current_open = float(
+            df["o"].iloc[index]
+        )
+
+        current_close = float(
+            df["c"].iloc[index]
+        )
+
+        previous_close = float(
+            df["c"].iloc[index - 1]
+        )
+
+        return (
+            current_close < current_open
+            and
+            current_close < previous_close
+        )
+
+    except Exception:
+
+        return False
+
+
+# =========================================================
+# SHORT 해지 조건
+#
+# 현재 확정봉이 양봉
+# AND
+# 현재 종가 > 이전 확정봉 종가
+# =========================================================
+
+def is_short_invalidation(
+    df,
+    index
+):
+
+    if (
+        df is None
+        or index <= 0
+        or index >= len(df)
+    ):
+
+        return False
+
+    try:
+
+        current_open = float(
+            df["o"].iloc[index]
+        )
+
+        current_close = float(
+            df["c"].iloc[index]
+        )
+
+        previous_close = float(
+            df["c"].iloc[index - 1]
+        )
+
+        return (
+            current_close > current_open
+            and
+            current_close > previous_close
+        )
+
+    except Exception:
+
+        return False
+
+
+# =========================================================
 # LONG N자 구조
+#
+# 돌파 전 🚨 사용 안 함
+#
+# 돌파 후:
+# 🚀(1)
+# 🚀(2)
+# 🚀(3)
+# 🚀(4)
+# ...
+#
+# LONG 해지:
+# 현재 확정봉 음봉
+# +
+# 현재 종가 < 이전 종가
+#
+# 해지봉에서는 🚨 1회
 # =========================================================
 
 def find_long_breakout(
@@ -1277,7 +1398,7 @@ def find_long_breakout(
         "direction": "long",
         "breakout_index": None,
         "breakout_level": None,
-        "warning_index": None
+        "invalidation_index": None
     }
 
     if alignment_start is None:
@@ -1332,6 +1453,7 @@ def find_long_breakout(
 
         return result
 
+    # 가장 최근 스윙 고점부터 확인
     for anchor_pos in range(
         len(swing_highs) - 1,
         -1,
@@ -1386,6 +1508,7 @@ def find_long_breakout(
         search_start = anchor_index + 1
 
         attempt_high = None
+
         attempt_high_index = None
 
         breakout_index = None
@@ -1419,6 +1542,10 @@ def find_long_breakout(
 
                 continue
 
+            # ---------------------------------------------
+            # N자 상단 돌파
+            # ---------------------------------------------
+
             if close > anchor_high:
 
                 breakout_index = i
@@ -1428,6 +1555,10 @@ def find_long_breakout(
             if low < float(correction_low):
 
                 correction_low = low
+
+            # ---------------------------------------------
+            # 추가 고점
+            # ---------------------------------------------
 
             if i >= SWING_RIGHT:
 
@@ -1453,6 +1584,10 @@ def find_long_breakout(
 
                             attempt_high_index = i
 
+            # ---------------------------------------------
+            # 추가 조정
+            # ---------------------------------------------
+
             if (
                 attempt_high is not None
                 and
@@ -1473,9 +1608,43 @@ def find_long_breakout(
 
                     attempt_high_index = None
 
-        if breakout_index is not None:
+        if breakout_index is None:
 
-            result["status"] = "breakout"
+            continue
+
+        # =================================================
+        # 돌파 후 해지 여부 확인
+        #
+        # 돌파봉 포함 이후 현재봉까지 검사
+        # =================================================
+
+        invalidation_index = None
+
+        for i in range(
+            breakout_index + 1,
+            current_index + 1
+        ):
+
+            if is_long_invalidation(
+                df,
+                i
+            ):
+
+                invalidation_index = i
+
+        # =================================================
+        # 이미 해지된 N자
+        # =================================================
+
+        if invalidation_index is not None:
+
+            # 해지 후 새로운 N자가 있는지 판단하기 위해
+            # 가장 최근 패턴만 유지
+            if invalidation_index < current_index:
+
+                continue
+
+            result["status"] = "invalidated"
 
             result["breakout_index"] = (
                 breakout_index
@@ -1485,50 +1654,49 @@ def find_long_breakout(
                 anchor_high
             )
 
+            result["invalidation_index"] = (
+                invalidation_index
+            )
+
             return result
 
-        try:
+        # =================================================
+        # 현재 N자 유지
+        # =================================================
 
-            latest_high = float(
-                df["h"].iloc[current_index]
-            )
+        result["status"] = "breakout"
 
-            latest_close = float(
-                df["c"].iloc[current_index]
-            )
-
-        except Exception:
-
-            continue
-
-        pre_breakout_level = (
-            anchor_high *
-            (1 - PRE_BREAKOUT_DISTANCE)
+        result["breakout_index"] = (
+            breakout_index
         )
 
-        if (
-            latest_high >= pre_breakout_level
-            and
-            latest_close <= anchor_high
-        ):
+        result["breakout_level"] = (
+            anchor_high
+        )
 
-            result["status"] = "prebreakout"
-
-            result["warning_index"] = (
-                current_index
-            )
-
-            result["breakout_level"] = (
-                anchor_high
-            )
-
-            return result
+        return result
 
     return result
 
 
 # =========================================================
 # SHORT N자 구조
+#
+# 돌파 전 🚨 사용 안 함
+#
+# 돌파 후:
+# 🚀(1)
+# 🚀(2)
+# 🚀(3)
+# 🚀(4)
+# ...
+#
+# SHORT 해지:
+# 현재 확정봉 양봉
+# +
+# 현재 종가 > 이전 종가
+#
+# 해지봉에서는 🚨 1회
 # =========================================================
 
 def find_short_breakout(
@@ -1541,7 +1709,7 @@ def find_short_breakout(
         "direction": "short",
         "breakout_index": None,
         "breakout_level": None,
-        "warning_index": None
+        "invalidation_index": None
     }
 
     if alignment_start is None:
@@ -1596,6 +1764,7 @@ def find_short_breakout(
 
         return result
 
+    # 가장 최근 스윙 저점부터 확인
     for anchor_pos in range(
         len(swing_lows) - 1,
         -1,
@@ -1650,6 +1819,7 @@ def find_short_breakout(
         search_start = anchor_index + 1
 
         attempt_low = None
+
         attempt_low_index = None
 
         breakout_index = None
@@ -1683,6 +1853,10 @@ def find_short_breakout(
 
                 continue
 
+            # ---------------------------------------------
+            # N자 하단 돌파
+            # ---------------------------------------------
+
             if close < anchor_low:
 
                 breakout_index = i
@@ -1692,6 +1866,10 @@ def find_short_breakout(
             if high > float(correction_high):
 
                 correction_high = high
+
+            # ---------------------------------------------
+            # 추가 저점
+            # ---------------------------------------------
 
             if i >= SWING_RIGHT:
 
@@ -1717,6 +1895,10 @@ def find_short_breakout(
 
                             attempt_low_index = i
 
+            # ---------------------------------------------
+            # 추가 조정
+            # ---------------------------------------------
+
             if (
                 attempt_low is not None
                 and
@@ -1737,9 +1919,39 @@ def find_short_breakout(
 
                     attempt_low_index = None
 
-        if breakout_index is not None:
+        if breakout_index is None:
 
-            result["status"] = "breakout"
+            continue
+
+        # =================================================
+        # 돌파 후 해지 여부 확인
+        # =================================================
+
+        invalidation_index = None
+
+        for i in range(
+            breakout_index + 1,
+            current_index + 1
+        ):
+
+            if is_short_invalidation(
+                df,
+                i
+            ):
+
+                invalidation_index = i
+
+        # =================================================
+        # 이미 해지된 N자
+        # =================================================
+
+        if invalidation_index is not None:
+
+            if invalidation_index < current_index:
+
+                continue
+
+            result["status"] = "invalidated"
 
             result["breakout_index"] = (
                 breakout_index
@@ -1749,44 +1961,27 @@ def find_short_breakout(
                 anchor_low
             )
 
+            result["invalidation_index"] = (
+                invalidation_index
+            )
+
             return result
 
-        try:
+        # =================================================
+        # 현재 N자 유지
+        # =================================================
 
-            latest_low = float(
-                df["l"].iloc[current_index]
-            )
+        result["status"] = "breakout"
 
-            latest_close = float(
-                df["c"].iloc[current_index]
-            )
-
-        except Exception:
-
-            continue
-
-        pre_breakout_level = (
-            anchor_low *
-            (1 + PRE_BREAKOUT_DISTANCE)
+        result["breakout_index"] = (
+            breakout_index
         )
 
-        if (
-            latest_low <= pre_breakout_level
-            and
-            latest_close >= anchor_low
-        ):
+        result["breakout_level"] = (
+            anchor_low
+        )
 
-            result["status"] = "prebreakout"
-
-            result["warning_index"] = (
-                current_index
-            )
-
-            result["breakout_level"] = (
-                anchor_low
-            )
-
-            return result
+        return result
 
     return result
 
@@ -1843,7 +2038,37 @@ def make_breakout_id(
 
 
 # =========================================================
+# 해지 ID 1회 처리
+# =========================================================
+
+def mark_invalidation_once(
+    invalidation_id
+):
+
+    if not invalidation_id:
+
+        return False
+
+    with invalidation_lock:
+
+        if invalidation_id in shown_invalidation_ids:
+
+            return False
+
+        shown_invalidation_ids.add(
+            invalidation_id
+        )
+
+        return True
+
+
+# =========================================================
 # 돌파 후 카운팅
+#
+# 돌파봉 = 1
+# 다음 확정봉 = 2
+# ...
+# 제한 없음
 # =========================================================
 
 def get_breakout_count(
@@ -1873,9 +2098,16 @@ def get_breakout_count(
 # =========================================================
 # 단일 시간봉 N자 신호
 #
-# prebreakout = 🚨
-# 1~3         = 🚀(1~3)
-# 4 이상      = 해지
+# 돌파전 🚨 없음
+#
+# breakout:
+# 1 이상 계속 🚀
+#
+# invalidated:
+# 해지 확정봉에서 🚨 1회
+#
+# 이후:
+# none
 # =========================================================
 
 def get_single_timeframe_breakout_signal(
@@ -1891,7 +2123,9 @@ def get_single_timeframe_breakout_signal(
         "direction": "none",
         "breakout_id": None,
         "breakout_index": None,
-        "warning_index": None
+        "warning_index": None,
+        "invalidation_id": None,
+        "invalidation_index": None
     }
 
     if (
@@ -1932,27 +2166,57 @@ def get_single_timeframe_breakout_signal(
             "none"
         )
 
-        if status == "prebreakout":
+        # -------------------------------------------------
+        # 해지
+        # -------------------------------------------------
 
-            warning_index = result.get(
-                "warning_index"
+        if status == "invalidated":
+
+            invalidation_index = result.get(
+                "invalidation_index"
             )
 
-            warning_id = make_breakout_id(
+            invalidation_id = make_breakout_id(
                 exchange,
                 symbol,
                 timeframe,
                 df,
-                warning_index
+                invalidation_index
             )
 
+            # 해지봉에서 단 한 번만 🚨
+            if mark_invalidation_once(
+                invalidation_id
+            ):
+
+                return {
+                    "signal": "invalidated",
+                    "direction": "long",
+                    "breakout_id": None,
+                    "breakout_index": result.get(
+                        "breakout_index"
+                    ),
+                    "warning_index": invalidation_index,
+                    "invalidation_id": invalidation_id,
+                    "invalidation_index": invalidation_index
+                }
+
+            # 이미 🚨를 표시한 해지봉
             return {
-                "signal": "prebreakout",
+                "signal": "none",
                 "direction": "long",
-                "breakout_id": warning_id,
-                "breakout_index": None,
-                "warning_index": warning_index
+                "breakout_id": None,
+                "breakout_index": result.get(
+                    "breakout_index"
+                ),
+                "warning_index": None,
+                "invalidation_id": invalidation_id,
+                "invalidation_index": invalidation_index
             }
+
+        # -------------------------------------------------
+        # N자 돌파 유지
+        # -------------------------------------------------
 
         breakout_index = result.get(
             "breakout_index"
@@ -1965,7 +2229,9 @@ def get_single_timeframe_breakout_signal(
                 "direction": "long",
                 "breakout_id": None,
                 "breakout_index": None,
-                "warning_index": None
+                "warning_index": None,
+                "invalidation_id": None,
+                "invalidation_index": None
             }
 
         breakout_id = make_breakout_id(
@@ -1989,22 +2255,15 @@ def get_single_timeframe_breakout_signal(
 
             return empty_result
 
-        if count >= 4:
-
-            return {
-                "signal": "expired",
-                "direction": "long",
-                "breakout_id": breakout_id,
-                "breakout_index": breakout_index,
-                "warning_index": None
-            }
-
+        # 1 이상 무제한
         return {
             "signal": str(count),
             "direction": "long",
             "breakout_id": breakout_id,
             "breakout_index": breakout_index,
-            "warning_index": None
+            "warning_index": None,
+            "invalidation_id": None,
+            "invalidation_index": None
         }
 
     # =====================================================
@@ -2032,27 +2291,56 @@ def get_single_timeframe_breakout_signal(
             "none"
         )
 
-        if status == "prebreakout":
+        # -------------------------------------------------
+        # 해지
+        # -------------------------------------------------
 
-            warning_index = result.get(
-                "warning_index"
+        if status == "invalidated":
+
+            invalidation_index = result.get(
+                "invalidation_index"
             )
 
-            warning_id = make_breakout_id(
+            invalidation_id = make_breakout_id(
                 exchange,
                 symbol,
                 timeframe,
                 df,
-                warning_index
+                invalidation_index
             )
 
+            # 해지봉에서 단 한 번만 🚨
+            if mark_invalidation_once(
+                invalidation_id
+            ):
+
+                return {
+                    "signal": "invalidated",
+                    "direction": "short",
+                    "breakout_id": None,
+                    "breakout_index": result.get(
+                        "breakout_index"
+                    ),
+                    "warning_index": invalidation_index,
+                    "invalidation_id": invalidation_id,
+                    "invalidation_index": invalidation_index
+                }
+
             return {
-                "signal": "prebreakout",
+                "signal": "none",
                 "direction": "short",
-                "breakout_id": warning_id,
-                "breakout_index": None,
-                "warning_index": warning_index
+                "breakout_id": None,
+                "breakout_index": result.get(
+                    "breakout_index"
+                ),
+                "warning_index": None,
+                "invalidation_id": invalidation_id,
+                "invalidation_index": invalidation_index
             }
+
+        # -------------------------------------------------
+        # N자 돌파 유지
+        # -------------------------------------------------
 
         breakout_index = result.get(
             "breakout_index"
@@ -2065,7 +2353,9 @@ def get_single_timeframe_breakout_signal(
                 "direction": "short",
                 "breakout_id": None,
                 "breakout_index": None,
-                "warning_index": None
+                "warning_index": None,
+                "invalidation_id": None,
+                "invalidation_index": None
             }
 
         breakout_id = make_breakout_id(
@@ -2089,22 +2379,15 @@ def get_single_timeframe_breakout_signal(
 
             return empty_result
 
-        if count >= 4:
-
-            return {
-                "signal": "expired",
-                "direction": "short",
-                "breakout_id": breakout_id,
-                "breakout_index": breakout_index,
-                "warning_index": None
-            }
-
+        # 1 이상 무제한
         return {
             "signal": str(count),
             "direction": "short",
             "breakout_id": breakout_id,
             "breakout_index": breakout_index,
-            "warning_index": None
+            "warning_index": None,
+            "invalidation_id": None,
+            "invalidation_index": None
         }
 
     return {
@@ -2112,7 +2395,9 @@ def get_single_timeframe_breakout_signal(
         "direction": current_direction,
         "breakout_id": None,
         "breakout_index": None,
-        "warning_index": None
+        "warning_index": None,
+        "invalidation_id": None,
+        "invalidation_index": None
     }
 
 
@@ -2423,6 +2708,9 @@ def format_change(changes):
 
 # =========================================================
 # 단일 N자 경고 HTML
+#
+# 🚨 = N자 해지 순간 1회
+# 🚀(1 이상) = N자 돌파 유지
 # =========================================================
 
 def single_warning_html(
@@ -2438,19 +2726,21 @@ def single_warning_html(
         "none"
     )
 
-    if signal == "prebreakout":
+    # 해지 순간 🚨
+    if signal == "invalidated":
 
         return (
-            '<span class="prebreakout-warning">'
+            '<span class="invalidation-warning">'
             '🚨'
             '</span>'
         )
 
-    if signal.isdigit():
+    # N자 돌파 후 카운터
+    if str(signal).isdigit():
 
         count = int(signal)
 
-        if 1 <= count <= 3:
+        if count >= 1:
 
             return (
                 '<span class="warning-rocket">'
@@ -3093,17 +3383,9 @@ def get_upbit_analysis(market):
     )
 
     # -----------------------------------------------------
-    # 수정 조건
-    #
-    # 15M LONG
-    # +
-    # 1H LONG
-    # +
-    # 4H LONG
+    # 15M + 1H + 4H LONG
     # +
     # 15M N자
-    #
-    # 모두 만족해야 LONG 조건 충족
     # -----------------------------------------------------
 
     warning15m = warnings["15m"]
@@ -3126,13 +3408,9 @@ def get_upbit_analysis(market):
         )
 
         if (
-            signal == "prebreakout"
-            or
-            (
-                signal.isdigit()
-                and
-                1 <= int(signal) <= 3
-            )
+            signal.isdigit()
+            and
+            int(signal) >= 1
         ):
 
             qualified = True
@@ -3236,10 +3514,6 @@ def get_okx_analysis(inst_id):
         allow_short=True
     )
 
-    # -----------------------------------------------------
-    # 15M N자 + 3개 시간봉 방향 일치
-    # -----------------------------------------------------
-
     warning15m = warnings["15m"]
 
     warning_direction = warning15m.get(
@@ -3253,21 +3527,15 @@ def get_okx_analysis(inst_id):
     )
 
     signal_valid = (
-        signal == "prebreakout"
-        or
-        (
-            signal.isdigit()
-            and
-            1 <= int(signal) <= 3
-        )
+        signal.isdigit()
+        and
+        int(signal) >= 1
     )
 
     qualified = False
 
     # -----------------------------------------------------
     # LONG
-    #
-    # 15M + 1H + 4H 모두 LONG
     # -----------------------------------------------------
 
     if (
@@ -3286,8 +3554,6 @@ def get_okx_analysis(inst_id):
 
     # -----------------------------------------------------
     # SHORT
-    #
-    # 15M + 1H + 4H 모두 SHORT
     # -----------------------------------------------------
 
     elif (
@@ -3324,6 +3590,8 @@ def get_okx_analysis(inst_id):
 # LONG 필터
 #
 # 15M + 1H + 4H 모두 LONG
+# +
+# 15M N자 진행 중
 # =========================================================
 
 def pass_long_filter(analysis):
@@ -3352,19 +3620,11 @@ def pass_long_filter(analysis):
         {}
     )
 
-    # =====================================================
-    # 15M LONG
-    # =====================================================
-
     if ema.get(
         "direction"
     ) != "long":
 
         return False
-
-    # =====================================================
-    # 1H LONG
-    # =====================================================
 
     if ema1h.get(
         "direction"
@@ -3372,19 +3632,11 @@ def pass_long_filter(analysis):
 
         return False
 
-    # =====================================================
-    # 4H LONG
-    # =====================================================
-
     if ema4h.get(
         "direction"
     ) != "long":
 
         return False
-
-    # =====================================================
-    # 15M N자 LONG
-    # =====================================================
 
     if warning.get(
         "direction"
@@ -3397,17 +3649,16 @@ def pass_long_filter(analysis):
         "none"
     )
 
-    if signal == "prebreakout":
+    # 해지 상태는 조건 충족 아님
+    if not signal.isdigit():
+
+        return False
+
+    count = int(signal)
+
+    if count >= 1:
 
         return True
-
-    if signal.isdigit():
-
-        count = int(signal)
-
-        if 1 <= count <= 3:
-
-            return True
 
     return False
 
@@ -3416,6 +3667,8 @@ def pass_long_filter(analysis):
 # SHORT 필터
 #
 # 15M + 1H + 4H 모두 SHORT
+# +
+# 15M N자 진행 중
 # =========================================================
 
 def pass_short_filter(analysis):
@@ -3444,19 +3697,11 @@ def pass_short_filter(analysis):
         {}
     )
 
-    # =====================================================
-    # 15M SHORT
-    # =====================================================
-
     if ema.get(
         "direction"
     ) != "short":
 
         return False
-
-    # =====================================================
-    # 1H SHORT
-    # =====================================================
 
     if ema1h.get(
         "direction"
@@ -3464,19 +3709,11 @@ def pass_short_filter(analysis):
 
         return False
 
-    # =====================================================
-    # 4H SHORT
-    # =====================================================
-
     if ema4h.get(
         "direction"
     ) != "short":
 
         return False
-
-    # =====================================================
-    # 15M N자 SHORT
-    # =====================================================
 
     if warning.get(
         "direction"
@@ -3489,17 +3726,15 @@ def pass_short_filter(analysis):
         "none"
     )
 
-    if signal == "prebreakout":
+    if not signal.isdigit():
+
+        return False
+
+    count = int(signal)
+
+    if count >= 1:
 
         return True
-
-    if signal.isdigit():
-
-        count = int(signal)
-
-        if 1 <= count <= 3:
-
-            return True
 
     return False
 
@@ -3515,7 +3750,9 @@ def make_empty_analysis():
         "direction": "none",
         "breakout_id": None,
         "breakout_index": None,
-        "warning_index": None
+        "warning_index": None,
+        "invalidation_id": None,
+        "invalidation_index": None
     }
 
     return {
@@ -3642,13 +3879,17 @@ def update_upbit():
             )
 
             # =================================================
-            # 15M + 1H + 4H 모두 LONG일 때만 LONG
+            # 15M + 1H + 4H 모두 LONG
+            # +
+            # 15M N자 진행 중
             # =================================================
 
             if (
                 qualified
                 and
-                warning_signal != "none"
+                warning_signal.isdigit()
+                and
+                int(warning_signal) >= 1
                 and
                 ema.get("direction") == "long"
                 and
@@ -3850,7 +4091,7 @@ def update_okx(usdt_krw):
             )
 
             # =================================================
-            # LONG / SHORT 모두 3개 시간봉 방향 일치
+            # LONG / SHORT
             # =================================================
 
             if warning_direction == "long":
@@ -3875,17 +4116,19 @@ def update_okx(usdt_krw):
             )
 
             # =================================================
-            # 실제 LONG/SHORT 표시 조건
+            # 실제 LONG / SHORT 표시
             #
-            # 15M + 1H + 4H가 같은 방향
+            # 15M + 1H + 4H 동일 방향
             # +
-            # 실제 15M N자 경고
+            # 15M N자 진행 중
             # =================================================
 
             if (
                 qualified
                 and
-                warning_signal != "none"
+                warning_signal.isdigit()
+                and
+                int(warning_signal) >= 1
                 and
                 ema.get("direction") == warning_direction
                 and
@@ -4326,14 +4569,9 @@ td:nth-child(5) {
     font-weight: 700;
 }
 
-.prebreakout-warning {
-    font-size: 10px;
-    font-weight: bold;
-    filter: drop-shadow(
-        0 0 4px
-        rgba(255, 190, 50, 0.95)
-    );
-}
+/* =======================================================
+   N자 진행
+   ======================================================= */
 
 .warning-rocket {
     font-size: 10px;
@@ -4341,6 +4579,19 @@ td:nth-child(5) {
     filter: drop-shadow(
         0 0 4px
         rgba(50, 255, 100, 0.9)
+    );
+}
+
+/* =======================================================
+   N자 해지 🚨
+   ======================================================= */
+
+.invalidation-warning {
+    font-size: 10px;
+    font-weight: bold;
+    filter: drop-shadow(
+        0 0 4px
+        rgba(255, 190, 50, 0.95)
     );
 }
 
@@ -4491,8 +4742,8 @@ td:nth-child(5) {
         font-size: 6px;
     }
 
-    .prebreakout-warning,
-    .warning-rocket {
+    .warning-rocket,
+    .invalidation-warning {
         font-size: 9px;
     }
 
@@ -4919,7 +5170,7 @@ def dashboard():
 </div>
 
 <div>
-④ 각 시간봉 🚨 돌파직전 / 🚀(1~3) / 4 이상 해지
+④ N자 돌파 후 🚀(1)부터 계속 카운터
 </div>
 
 <div>
@@ -4927,7 +5178,15 @@ def dashboard():
 </div>
 
 <div>
-⑥ 4H N자 분석은 사용하지 않음
+⑥ N자 해지 : 음봉/양봉 종가 조건
+</div>
+
+<div>
+⑦ 해지 순간 🚨 1회 표시 후 새 N자 대기
+</div>
+
+<div>
+⑧ 4H N자 분석은 사용하지 않음
 </div>
 
 <div class="exchange-status">
@@ -5008,6 +5267,42 @@ def startup():
     )
 
     logging.info(
+        "🚨 돌파전 경고 : 제거"
+    )
+
+    logging.info(
+        "N자 돌파 후 : 🚀(1)부터 계속 카운터"
+    )
+
+    logging.info(
+        "🚀 카운터 : 4 이상도 계속 유지"
+    )
+
+    logging.info(
+        "LONG 해지 : "
+        "현재 확정봉 음봉 "
+        "+ 현재 종가 < 이전 확정봉 종가"
+    )
+
+    logging.info(
+        "SHORT 해지 : "
+        "현재 확정봉 양봉 "
+        "+ 현재 종가 > 이전 확정봉 종가"
+    )
+
+    logging.info(
+        "N자 해지 순간 : 🚨 1회 표시"
+    )
+
+    logging.info(
+        "동일 해지봉 : 🚨 반복 표시 안 함"
+    )
+
+    logging.info(
+        "해지 후 : 새 N자 패턴 발생까지 대기"
+    )
+
+    logging.info(
         "LONG : "
         "15M LONG + 1H LONG + 4H LONG "
         "+ 15M N자"
@@ -5024,23 +5319,7 @@ def startup():
     )
 
     logging.info(
-        "🚨 : 돌파 직전"
-    )
-
-    logging.info(
-        "🚀 : 돌파 후 1~3"
-    )
-
-    logging.info(
-        "🚀 4 이상 : 해지"
-    )
-
-    logging.info(
-        "⛔️ 해지 경고 : 사용 안 함"
-    )
-
-    logging.info(
-        "돌파 후 기존 기준봉 해지 판정 : 사용 안 함"
+        "4H N자 표시 : 사용 안 함"
     )
 
     logging.info(
@@ -5054,10 +5333,6 @@ def startup():
 
     logging.info(
         "N자 표시 : 15M + 1H"
-    )
-
-    logging.info(
-        "4H N자 표시 : 사용 안 함"
     )
 
     logging.info(
@@ -5137,4 +5412,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-            )
+) 
