@@ -2563,13 +2563,24 @@ def is_visible_warning(
 
 # =========================================================
 # 경고 HTML
+# 🚀는 1~3까지만 표시
 # =========================================================
 
 def combined_warning_html(
-    warning
+    warning,
+    qualified=False
 ):
 
     if not warning:
+
+        return ""
+
+    # =====================================================
+    # 필수 조건을 만족하지 않으면
+    # 🚀 / 🚨 모두 화면에 표시하지 않음
+    # =====================================================
+
+    if not qualified:
 
         return ""
 
@@ -2577,6 +2588,10 @@ def combined_warning_html(
         "signal",
         "none"
     )
+
+    # =====================================================
+    # 해지
+    # =====================================================
 
     if signal == "invalid":
 
@@ -2586,13 +2601,24 @@ def combined_warning_html(
             '</span>'
         )
 
+    # =====================================================
+    # 🚀 1~3까지만 표시
+    # =====================================================
+
     if signal.isdigit():
 
-        return (
-            '<span class="warning-rocket">'
-            f'🚀({signal})'
-            '</span>'
-        )
+        count = int(signal)
+
+        if 1 <= count <= 3:
+
+            return (
+                '<span class="warning-rocket">'
+                f'🚀({count})'
+                '</span>'
+            )
+
+        # 4 이상은 로켓 표시 안 함
+        return ""
 
     return ""
 
@@ -3267,6 +3293,7 @@ def get_okx_analysis(
 
 # =========================================================
 # LONG 필터
+# 4H LONG + 15M LONG + N자 LONG
 # =========================================================
 
 def pass_long_filter(
@@ -3292,17 +3319,29 @@ def pass_long_filter(
         {}
     )
 
+    # -----------------------------------------------------
+    # 필수 1 : 4H 정배열
+    # -----------------------------------------------------
+
     if ema4h.get(
         "direction"
     ) != "long":
 
         return False
 
+    # -----------------------------------------------------
+    # 필수 2 : 15M 정배열
+    # -----------------------------------------------------
+
     if ema.get(
         "direction"
     ) != "long":
 
         return False
+
+    # -----------------------------------------------------
+    # 필수 3 : N자 LONG
+    # -----------------------------------------------------
 
     if warning.get(
         "direction"
@@ -3328,6 +3367,7 @@ def pass_long_filter(
 
 # =========================================================
 # SHORT 필터
+# 4H SHORT + 15M SHORT + N자 SHORT
 # =========================================================
 
 def pass_short_filter(
@@ -3353,17 +3393,29 @@ def pass_short_filter(
         {}
     )
 
+    # -----------------------------------------------------
+    # 필수 1 : 4H 역배열
+    # -----------------------------------------------------
+
     if ema4h.get(
         "direction"
     ) != "short":
 
         return False
 
+    # -----------------------------------------------------
+    # 필수 2 : 15M 역배열
+    # -----------------------------------------------------
+
     if ema.get(
         "direction"
     ) != "short":
 
         return False
+
+    # -----------------------------------------------------
+    # 필수 3 : N자 SHORT
+    # -----------------------------------------------------
 
     if warning.get(
         "direction"
@@ -3513,6 +3565,9 @@ def update_upbit():
 
             # ---------------------------------------------
             # 업비트 LONG 조건
+            # 4H LONG
+            # + 15M LONG
+            # + N자 LONG
             # ---------------------------------------------
 
             qualified = pass_long_filter(
@@ -3520,7 +3575,7 @@ def update_upbit():
             )
 
             # ---------------------------------------------
-            # 🚨는 반짝임 제외
+            # 🚨는 조건 충족으로 취급하지 않음
             # ---------------------------------------------
 
             if warning.get(
@@ -3530,7 +3585,14 @@ def update_upbit():
                 qualified = False
 
             # ---------------------------------------------
-            # 실제 N자 경고가 있을 때만 방향 표시
+            # 중요
+            #
+            # 실제 화면의 LONG 표시도
+            # 반드시 qualified를 통과해야 함
+            #
+            # 따라서
+            # 4H SHORT + 15M LONG + N자 LONG
+            # 이 경우 LONG 표시 안 됨
             # ---------------------------------------------
 
             warning_signal = warning.get(
@@ -3539,15 +3601,19 @@ def update_upbit():
             )
 
             if (
+                qualified
+                and
                 warning_signal != "none"
                 and
                 warning_signal != "invalid"
-            ):
-
-                display_direction = warning.get(
+                and
+                warning.get(
                     "direction",
                     "none"
-                )
+                ) == "long"
+            ):
+
+                display_direction = "long"
 
             else:
 
@@ -3774,7 +3840,8 @@ def update_okx(
                 qualified = False
 
             # -------------------------------------------------
-            # 실제 경고가 있을 때만 LONG / SHORT 표시
+            # 실제 필수 조건을 모두 만족할 때만
+            # LONG / SHORT 표시
             # -------------------------------------------------
 
             warning_signal = warning.get(
@@ -3783,19 +3850,21 @@ def update_okx(
             )
 
             if (
-                warning_signal == "none"
-                or
-                warning_signal == "invalid"
+                qualified
+                and
+                warning_signal != "none"
+                and
+                warning_signal != "invalid"
             ):
-
-                display_direction = "none"
-
-            else:
 
                 display_direction = warning.get(
                     "direction",
                     "none"
                 )
+
+            else:
+
+                display_direction = "none"
 
             rows.append(
                 {
@@ -4344,11 +4413,17 @@ def make_table_rows(
 
     for item in data:
 
+        qualified = item.get(
+            "qualified",
+            False
+        )
+
         warning_text = combined_warning_html(
             item.get(
                 "warning",
                 {}
-            )
+            ),
+            qualified
         )
 
         ema4h = item.get(
@@ -4359,11 +4434,6 @@ def make_table_rows(
         direction = item.get(
             "direction",
             "none"
-        )
-
-        qualified = item.get(
-            "qualified",
-            False
         )
 
         row_class = ""
@@ -4482,7 +4552,7 @@ def make_exchange_section(
     if is_okx:
 
         direction_note = (
-            "※ OKX = 실제 N자 경고 발생 시 LONG / SHORT 표시<br>"
+            "※ OKX = 4H + 15M + 실제 N자 경고 조건 충족 시 LONG / SHORT 표시<br>"
         )
 
         change_note = (
@@ -4496,7 +4566,7 @@ def make_exchange_section(
     else:
 
         direction_note = (
-            "※ 업비트 = 실제 N자 경고 발생 시 LONG 표시<br>"
+            "※ 업비트 = 4H + 15M + 실제 N자 LONG 경고 조건 충족 시 LONG 표시<br>"
         )
 
         change_note = (
@@ -4560,25 +4630,17 @@ def make_exchange_section(
 
 ※ TOP{TOP_N} 전체 랭크 항상 표시<br>
 
-※ 2차 = 4시간봉 EMA 30-60-120 정배열/역배열<br>
+※ 2차 = 4시간봉 EMA 30-60-120 방향 필터<br>
 
-※ 3차 = 15분봉 N자 가격 구조<br>
+※ 3차 = 15분봉 EMA 30-60-120 + N자 구조 분석<br>
 
 {direction_note}
 
 {change_note}
 
-※ 🟢 반짝임 = LONG 조건 충족<br>
+※ LONG 필수 = 4H LONG + 15M LONG + N자 LONG<br>
 
-※ 🔴 반짝임 = SHORT 조건 충족<br>
-
-※ 거래대금 아래 LONG / SHORT = 실제 N자 경고가 발생한 종목만 표시<br>
-
-※ 경고 없음 = LONG / SHORT 미표시<br>
-
-※ 🚨 해지 = LONG / SHORT 미표시<br>
-
-※ 조건 충족 범위 = 랭크 → 코인 → 거래대금 → 방향 → 변동률 → 🚀 → EMA<br>
+※ SHORT 필수 = 4H SHORT + 15M SHORT + N자 SHORT<br>
 
 ※ 4H LONG = EMA 30 > 60 > 120<br>
 
@@ -4587,6 +4649,22 @@ def make_exchange_section(
 ※ 15M LONG = EMA 30 > 60 > 120<br>
 
 ※ 15M SHORT = EMA 30 < 60 < 120<br>
+
+※ 4H와 15M 방향이 다르면 LONG / SHORT 표시하지 않음<br>
+
+※ 실제 N자 경고가 없으면 LONG / SHORT 표시하지 않음<br>
+
+※ 🟢 반짝임 = LONG 필수 조건 모두 충족<br>
+
+※ 🔴 반짝임 = SHORT 필수 조건 모두 충족<br>
+
+※ 거래대금 아래 LONG / SHORT = 필수 조건 + 실제 N자 경고 충족 종목만 표시<br>
+
+※ 경고 없음 = LONG / SHORT 미표시<br>
+
+※ 🚨 해지 = LONG / SHORT 미표시<br>
+
+※ 조건 충족 범위 = 랭크 → 코인 → 거래대금 → 방향 → 변동률 → 🚀 → EMA<br>
 
 ※ 정배열/역배열 시작점부터 가격 구조 추적<br>
 
@@ -4606,9 +4684,9 @@ def make_exchange_section(
 
 ※ 🚀(3) = 돌파 후 세 번째 확정봉<br>
 
-※ 🚀(4) 이후에도 계속 카운팅<br>
+※ 🚀는 3개까지만 표시<br>
 
-※ 🚀 카운팅 상한 없음<br>
+※ 🚀(4) 이후에도 내부 돌파 상태는 계속 추적<br>
 
 ※ LONG 돌파 기준봉 저가 이탈 시 🚨 1회<br>
 
@@ -4712,7 +4790,7 @@ def dashboard():
 </h1>
 
 <!-- =====================================================
-     상단 설명 - 간단하게 정리
+     상단 설명
      ===================================================== -->
 
 <div class="info">
@@ -4726,15 +4804,15 @@ def dashboard():
 </div>
 
 <div>
-③ 15M N자 돌파 분석
+③ 15M EMA 30-60-120 + N자 돌파
 </div>
 
 <div>
-④ 실제 경고 발생 종목만 LONG / SHORT 표시
+④ 4H와 15M 방향 일치 + 실제 N자 경고 시 표시
 </div>
 
 <div>
-🚀 돌파 후 카운팅 / 🚨 돌파 기준 무효화 시 1회 표시
+🚀 돌파 후 1~3까지만 표시 / 🚨 무효화 시 1회
 </div>
 
 <div class="exchange-status">
@@ -4799,7 +4877,11 @@ def startup():
     )
 
     logging.info(
-        "3차 분석 : 15분 N자 구조"
+        "3차 분석 : 15분 EMA 30-60-120 + N자 구조"
+    )
+
+    logging.info(
+        "필수 조건 : 4H 방향 = 15M 방향"
     )
 
     logging.info(
@@ -4807,7 +4889,11 @@ def startup():
     )
 
     logging.info(
-        "🚀 카운팅 : 1부터 제한 없음"
+        "🚀 카운팅 : 1~3까지만 표시"
+    )
+
+    logging.info(
+        "🚀 4 이상 : 내부 상태 추적만 유지"
     )
 
     logging.info(
@@ -4823,7 +4909,8 @@ def startup():
     )
 
     logging.info(
-        "거래대금 아래 방향 표시 : 실제 경고 발생 종목만"
+        "거래대금 아래 방향 표시 : "
+        "4H + 15M + N자 필수 조건 충족 종목만"
     )
 
     logging.info(
@@ -4911,4 +4998,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-    )
+        )
