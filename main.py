@@ -491,13 +491,12 @@ def get_okx_ohlcv(
 
 
 # =========================================================
-# 업비트 15분봉
-# 현재 진행 중인 봉 제외
+# 업비트 분봉 공통
 # =========================================================
 
-def get_upbit_ohlcv(
+def get_upbit_minute_ohlcv(
     market,
-    unit=15,
+    unit,
     count=200,
     to=None
 ):
@@ -594,8 +593,8 @@ def get_upbit_ohlcv(
         now = datetime.now(KST)
 
         minute_block = (
-            now.minute // 15
-        ) * 15
+            now.minute // unit
+        ) * unit
 
         current_candle_start = now.replace(
             minute=minute_block,
@@ -635,6 +634,43 @@ def get_upbit_ohlcv(
         )
 
         return None
+
+
+# =========================================================
+# 업비트 15분봉
+# =========================================================
+
+def get_upbit_ohlcv(
+    market,
+    unit=15,
+    count=200,
+    to=None
+):
+
+    return get_upbit_minute_ohlcv(
+        market,
+        unit,
+        count,
+        to
+    )
+
+
+# =========================================================
+# 업비트 1시간봉
+# =========================================================
+
+def get_upbit_1h_ohlcv(
+    market,
+    count=200,
+    to=None
+):
+
+    return get_upbit_minute_ohlcv(
+        market,
+        60,
+        count,
+        to
+    )
 
 
 # =========================================================
@@ -879,8 +915,6 @@ def get_ema(
 
 # =========================================================
 # EMA 30-60-120 방향
-#
-# 신규 코인도 현재 확보된 캔들로 판단
 # =========================================================
 
 def get_ema_30_60_120_direction(df):
@@ -942,8 +976,6 @@ def get_ema_30_60_120_direction(df):
 
 # =========================================================
 # 방향 시계열
-#
-# 캔들이 부족해도 계산
 # =========================================================
 
 def get_direction_series(df):
@@ -1769,6 +1801,7 @@ def find_short_breakout(
 def make_breakout_id(
     exchange,
     symbol,
+    timeframe,
     df,
     index
 ):
@@ -1803,6 +1836,7 @@ def make_breakout_id(
         return (
             f"{exchange}:"
             f"{symbol}:"
+            f"{timeframe}:"
             f"{candle_id}"
         )
 
@@ -1840,17 +1874,18 @@ def get_breakout_count(
 
 
 # =========================================================
-# 돌파 통합
+# 단일 시간봉 N자 신호
 #
 # prebreakout = 🚨
 # 1~3         = 🚀(1~3)
-# 4 이상      = 해지 / 화면 표시 없음
+# 4 이상      = 해지
 # =========================================================
 
-def get_breakout_signal(
+def get_single_timeframe_breakout_signal(
     df,
     exchange,
     symbol,
+    timeframe,
     allow_short=True
 ):
 
@@ -1909,6 +1944,7 @@ def get_breakout_signal(
             warning_id = make_breakout_id(
                 exchange,
                 symbol,
+                timeframe,
                 df,
                 warning_index
             )
@@ -1938,6 +1974,7 @@ def get_breakout_signal(
         breakout_id = make_breakout_id(
             exchange,
             symbol,
+            timeframe,
             df,
             breakout_index
         )
@@ -2007,6 +2044,7 @@ def get_breakout_signal(
             warning_id = make_breakout_id(
                 exchange,
                 symbol,
+                timeframe,
                 df,
                 warning_index
             )
@@ -2036,6 +2074,7 @@ def get_breakout_signal(
         breakout_id = make_breakout_id(
             exchange,
             symbol,
+            timeframe,
             df,
             breakout_index
         )
@@ -2077,6 +2116,49 @@ def get_breakout_signal(
         "breakout_id": None,
         "breakout_index": None,
         "warning_index": None
+    }
+
+
+# =========================================================
+# 3개 시간봉 N자 통합
+#
+# 15M + 1H + 4H
+# =========================================================
+
+def get_multi_timeframe_breakout(
+    df15m,
+    df1h,
+    df4h,
+    exchange,
+    symbol,
+    allow_short=True
+):
+
+    return {
+
+        "15m": get_single_timeframe_breakout_signal(
+            df15m,
+            exchange,
+            symbol,
+            "15M",
+            allow_short
+        ),
+
+        "1h": get_single_timeframe_breakout_signal(
+            df1h,
+            exchange,
+            symbol,
+            "1H",
+            allow_short
+        ),
+
+        "4h": get_single_timeframe_breakout_signal(
+            df4h,
+            exchange,
+            symbol,
+            "4H",
+            allow_short
+        )
     }
 
 
@@ -2349,19 +2431,14 @@ def format_change(changes):
 
 
 # =========================================================
-# 경고 HTML
+# 단일 N자 경고 HTML
 # =========================================================
 
-def combined_warning_html(
-    warning,
-    qualified=False
+def single_warning_html(
+    warning
 ):
 
     if not warning:
-
-        return ""
-
-    if not qualified:
 
         return ""
 
@@ -2391,6 +2468,62 @@ def combined_warning_html(
             )
 
     return ""
+
+
+# =========================================================
+# 3개 시간봉 N자 HTML
+# =========================================================
+
+def multi_warning_html(
+    warnings
+):
+
+    if not warnings:
+
+        return "-"
+
+    html = []
+
+    for key, label in [
+        ("15m", "15M"),
+        ("1h", "1H"),
+        ("4h", "4H")
+    ]:
+
+        warning = warnings.get(
+            key,
+            {}
+        )
+
+        signal = warning.get(
+            "signal",
+            "none"
+        )
+
+        warning_text = single_warning_html(
+            warning
+        )
+
+        if warning_text:
+
+            html.append(
+                f"""
+<span class="tf-warning">
+<span class="tf-label">{label}</span>
+{warning_text}
+</span>
+"""
+            )
+
+    if not html:
+
+        return (
+            '<span class="direction-none">'
+            '-'
+            '</span>'
+        )
+
+    return "".join(html)
 
 
 # =========================================================
@@ -2625,74 +2758,13 @@ def get_okx_volume(
 
 
 # =========================================================
-# OKX 4H 과거 데이터
+# OKX 과거 데이터 공통
 # =========================================================
 
-def get_okx_4h_history(inst_id):
-
-    all_df = None
-
-    before = None
-
-    for chunk_index in range(
-        MAX_HISTORY_CHUNKS
-    ):
-
-        df = get_okx_ohlcv(
-            inst_id,
-            "4H",
-            HISTORY_CHUNK,
-            before
-        )
-
-        if (
-            df is None
-            or df.empty
-        ):
-
-            break
-
-        if all_df is None:
-
-            all_df = df.copy()
-
-        else:
-
-            all_df = pd.concat(
-                [
-                    df,
-                    all_df
-                ],
-                ignore_index=True
-            )
-
-        all_df = (
-            all_df
-            .drop_duplicates("ts")
-            .sort_values("ts")
-            .reset_index(drop=True)
-        )
-
-        if len(all_df) >= 125:
-
-            return all_df
-
-        oldest_ts = int(
-            all_df["ts"].iloc[0]
-        )
-
-        before = oldest_ts
-
-    return all_df
-
-
-# =========================================================
-# OKX 15M 과거 데이터
-# =========================================================
-
-def get_okx_history(
+def get_okx_history_generic(
     inst_id,
-    bar="15m"
+    bar,
+    required_count=125
 ):
 
     all_df = None
@@ -2738,7 +2810,7 @@ def get_okx_history(
             .reset_index(drop=True)
         )
 
-        if len(all_df) >= INITIAL_CANDLE_COUNT:
+        if len(all_df) >= required_count:
 
             return all_df
 
@@ -2747,6 +2819,116 @@ def get_okx_history(
         )
 
         before = oldest_ts
+
+    return all_df
+
+
+# =========================================================
+# OKX 4H 과거 데이터
+# =========================================================
+
+def get_okx_4h_history(inst_id):
+
+    return get_okx_history_generic(
+        inst_id,
+        "4H",
+        125
+    )
+
+
+# =========================================================
+# OKX 1H 과거 데이터
+# =========================================================
+
+def get_okx_1h_history(inst_id):
+
+    return get_okx_history_generic(
+        inst_id,
+        "1H",
+        125
+    )
+
+
+# =========================================================
+# OKX 15M 과거 데이터
+# =========================================================
+
+def get_okx_history(
+    inst_id,
+    bar="15m"
+):
+
+    return get_okx_history_generic(
+        inst_id,
+        bar,
+        INITIAL_CANDLE_COUNT
+    )
+
+
+# =========================================================
+# 업비트 과거 데이터 공통
+# =========================================================
+
+def get_upbit_history_generic(
+    market,
+    unit,
+    required_count
+):
+
+    all_df = None
+
+    to = None
+
+    for chunk_index in range(
+        MAX_HISTORY_CHUNKS
+    ):
+
+        df = get_upbit_minute_ohlcv(
+            market,
+            unit,
+            HISTORY_CHUNK,
+            to
+        )
+
+        if (
+            df is None
+            or df.empty
+        ):
+
+            break
+
+        if all_df is None:
+
+            all_df = df.copy()
+
+        else:
+
+            all_df = pd.concat(
+                [
+                    df,
+                    all_df
+                ],
+                ignore_index=True
+            )
+
+        all_df = (
+            all_df
+            .drop_duplicates("datetime")
+            .sort_values("datetime")
+            .reset_index(drop=True)
+        )
+
+        if len(all_df) >= required_count:
+
+            return all_df
+
+        oldest = all_df[
+            "datetime"
+        ].iloc[0]
+
+        to = oldest.strftime(
+            "%Y-%m-%dT%H:%M:%S"
+        )
 
     return all_df
 
@@ -2815,77 +2997,42 @@ def get_upbit_4h_history(market):
 
 
 # =========================================================
+# 업비트 1H 과거 데이터
+# =========================================================
+
+def get_upbit_1h_history(market):
+
+    return get_upbit_history_generic(
+        market,
+        60,
+        125
+    )
+
+
+# =========================================================
 # 업비트 15M 과거 데이터
 # =========================================================
 
 def get_upbit_history(market):
 
-    all_df = None
-
-    to = None
-
-    for chunk_index in range(
-        MAX_HISTORY_CHUNKS
-    ):
-
-        df = get_upbit_ohlcv(
-            market,
-            15,
-            HISTORY_CHUNK,
-            to
-        )
-
-        if (
-            df is None
-            or df.empty
-        ):
-
-            break
-
-        if all_df is None:
-
-            all_df = df.copy()
-
-        else:
-
-            all_df = pd.concat(
-                [
-                    df,
-                    all_df
-                ],
-                ignore_index=True
-            )
-
-        all_df = (
-            all_df
-            .drop_duplicates("datetime")
-            .sort_values("datetime")
-            .reset_index(drop=True)
-        )
-
-        if len(all_df) >= INITIAL_CANDLE_COUNT:
-
-            return all_df
-
-        oldest = all_df[
-            "datetime"
-        ].iloc[0]
-
-        to = oldest.strftime(
-            "%Y-%m-%dT%H:%M:%S"
-        )
-
-    return all_df
+    return get_upbit_history_generic(
+        market,
+        15,
+        INITIAL_CANDLE_COUNT
+    )
 
 
 # =========================================================
 # 업비트 분석
 #
-# 캔들 부족해도 EMA 분석은 진행
-# N자만 125개 이상 필요
+# 15M + 1H + 4H N자
 # =========================================================
 
 def get_upbit_analysis(market):
+
+    # -----------------------------------------------------
+    # 4H
+    # -----------------------------------------------------
 
     df4h = get_upbit_4h_history(
         market
@@ -2902,48 +3049,126 @@ def get_upbit_analysis(market):
         df4h
     )
 
-    df = get_upbit_history(
+    # -----------------------------------------------------
+    # 1H
+    # -----------------------------------------------------
+
+    df1h = get_upbit_1h_history(
         market
     )
 
     if (
-        df is None
-        or df.empty
+        df1h is None
+        or df1h.empty
     ):
 
         return None
 
-    ema = check_ema(
-        df
+    # -----------------------------------------------------
+    # 15M
+    # -----------------------------------------------------
+
+    df15m = get_upbit_history(
+        market
     )
 
-    warning = get_breakout_signal(
-        df,
+    if (
+        df15m is None
+        or df15m.empty
+    ):
+
+        return None
+
+    ema15m = check_ema(
+        df15m
+    )
+
+    ema1h = check_ema(
+        df1h
+    )
+
+    ema4h = check_ema(
+        df4h
+    )
+
+    # -----------------------------------------------------
+    # 3개 시간봉 N자
+    # -----------------------------------------------------
+
+    warnings = get_multi_timeframe_breakout(
+        df15m,
+        df1h,
+        df4h,
         "UPBIT",
         market,
         allow_short=False
     )
+
+    # 기존 필터는 유지
+    #
+    # 4H LONG
+    # +
+    # 15M LONG
+    # +
+    # 15M N자
+    #
+    # -----------------------------------------------------
+
+    warning15m = warnings["15m"]
+
+    qualified = False
+
+    if (
+        ema4h.get("direction") == "long"
+        and
+        ema15m.get("direction") == "long"
+        and
+        warning15m.get("direction") == "long"
+    ):
+
+        signal = warning15m.get(
+            "signal",
+            "none"
+        )
+
+        if (
+            signal == "prebreakout"
+            or
+            (
+                signal.isdigit()
+                and
+                1 <= int(signal) <= 3
+            )
+        ):
+
+            qualified = True
 
     changes = get_upbit_daily_change(
         market
     )
 
     return {
-        "ema": ema,
-        "ema_4h": filter4h,
-        "warning": warning,
-        "changes": changes
+        "ema": ema15m,
+        "ema_1h": ema1h,
+        "ema_4h": ema4h,
+        "warning": warning15m,
+        "warnings": warnings,
+        "changes": changes,
+        "qualified": qualified
     }
 
 
 # =========================================================
 # OKX 분석
 #
-# 캔들 부족해도 EMA 분석은 진행
-# N자만 125개 이상 필요
+# 15M + 1H + 4H N자
 # =========================================================
 
 def get_okx_analysis(inst_id):
+
+    # -----------------------------------------------------
+    # 4H
+    # -----------------------------------------------------
 
     df4h = get_okx_4h_history(
         inst_id
@@ -2960,47 +3185,145 @@ def get_okx_analysis(inst_id):
         df4h
     )
 
-    df = get_okx_history(
+    # -----------------------------------------------------
+    # 1H
+    # -----------------------------------------------------
+
+    df1h = get_okx_1h_history(
+        inst_id
+    )
+
+    if (
+        df1h is None
+        or df1h.empty
+    ):
+
+        return None
+
+    # -----------------------------------------------------
+    # 15M
+    # -----------------------------------------------------
+
+    df15m = get_okx_history(
         inst_id,
         "15m"
     )
 
     if (
-        df is None
-        or df.empty
+        df15m is None
+        or df15m.empty
     ):
 
         return None
 
-    ema = check_ema(
-        df
+    ema15m = check_ema(
+        df15m
     )
 
-    warning = get_breakout_signal(
-        df,
+    ema1h = check_ema(
+        df1h
+    )
+
+    ema4h = check_ema(
+        df4h
+    )
+
+    # -----------------------------------------------------
+    # 3개 시간봉 N자
+    # -----------------------------------------------------
+
+    warnings = get_multi_timeframe_breakout(
+        df15m,
+        df1h,
+        df4h,
         "OKX",
         inst_id,
         allow_short=True
     )
 
+    # -----------------------------------------------------
+    # 기존 15M 조건 유지
+    # -----------------------------------------------------
+
+    warning15m = warnings["15m"]
+
+    qualified = False
+
+    warning_direction = warning15m.get(
+        "direction",
+        "none"
+    )
+
+    if warning_direction == "long":
+
+        if (
+            ema4h.get("direction") == "long"
+            and
+            ema15m.get("direction") == "long"
+        ):
+
+            signal = warning15m.get(
+                "signal",
+                "none"
+            )
+
+            if (
+                signal == "prebreakout"
+                or
+                (
+                    signal.isdigit()
+                    and
+                    1 <= int(signal) <= 3
+                )
+            ):
+
+                qualified = True
+
+    elif warning_direction == "short":
+
+        if (
+            ema4h.get("direction") == "short"
+            and
+            ema15m.get("direction") == "short"
+        ):
+
+            signal = warning15m.get(
+                "signal",
+                "none"
+            )
+
+            if (
+                signal == "prebreakout"
+                or
+                (
+                    signal.isdigit()
+                    and
+                    1 <= int(signal) <= 3
+                )
+            ):
+
+                qualified = True
+
     changes = calculate_daily_changes(
-        df,
+        df15m,
         True
     )
 
     return {
-        "ema": ema,
+        "ema": ema15m,
+        "ema_1h": ema1h,
         "ema_4h": filter4h,
-        "warning": warning,
-        "changes": changes
+        "warning": warning15m,
+        "warnings": warnings,
+        "changes": changes,
+        "qualified": qualified
     }
 
 
 # =========================================================
 # LONG 필터
 #
-# 🚨 또는 🚀(1~3)만 통과
-# 🚀(4)부터 해지
+# 기존 기준 유지
 # =========================================================
 
 def pass_long_filter(analysis):
@@ -3064,9 +3387,6 @@ def pass_long_filter(analysis):
 
 # =========================================================
 # SHORT 필터
-#
-# 🚨 또는 🚀(1~3)만 통과
-# 🚀(4)부터 해지
 # =========================================================
 
 def pass_short_filter(analysis):
@@ -3134,23 +3454,42 @@ def pass_short_filter(analysis):
 
 def make_empty_analysis():
 
+    empty_warning = {
+        "signal": "none",
+        "direction": "none",
+        "breakout_id": None,
+        "breakout_index": None,
+        "warning_index": None
+    }
+
     return {
+
         "ema": {
             "display": "⚪",
             "direction": "none"
         },
+
+        "ema_1h": {
+            "display": "⚪",
+            "direction": "none"
+        },
+
         "ema_4h": {
             "display": "⚪",
             "direction": "none"
         },
-        "warning": {
-            "signal": "none",
-            "direction": "none",
-            "breakout_id": None,
-            "breakout_index": None,
-            "warning_index": None
+
+        "warning": empty_warning.copy(),
+
+        "warnings": {
+            "15m": empty_warning.copy(),
+            "1h": empty_warning.copy(),
+            "4h": empty_warning.copy()
         },
-        "changes": None
+
+        "changes": None,
+
+        "qualified": False
     }
 
 
@@ -3217,9 +3556,11 @@ def update_upbit():
                         "change": "",
                         "volume": volume,
                         "ema": empty["ema"],
+                        "ema_1h": empty["ema_1h"],
                         "ema_4h": empty["ema_4h"],
                         "direction": "none",
                         "warning": empty["warning"],
+                        "warnings": empty["warnings"],
                         "qualified": False
                     }
                 )
@@ -3228,9 +3569,13 @@ def update_upbit():
 
             ema = analysis["ema"]
 
+            ema1h = analysis["ema_1h"]
+
             ema4h = analysis["ema_4h"]
 
             warning = analysis["warning"]
+
+            warnings = analysis["warnings"]
 
             qualified = pass_long_filter(
                 analysis
@@ -3266,9 +3611,11 @@ def update_upbit():
                     ),
                     "volume": volume,
                     "ema": ema,
+                    "ema_1h": ema1h,
                     "ema_4h": ema4h,
                     "direction": display_direction,
                     "warning": warning,
+                    "warnings": warnings,
                     "qualified": qualified
                 }
             )
@@ -3289,9 +3636,11 @@ def update_upbit():
                     "change": "",
                     "volume": volume,
                     "ema": empty["ema"],
+                    "ema_1h": empty["ema_1h"],
                     "ema_4h": empty["ema_4h"],
                     "direction": "none",
                     "warning": empty["warning"],
+                    "warnings": empty["warnings"],
                     "qualified": False
                 }
             )
@@ -3413,9 +3762,11 @@ def update_okx(usdt_krw):
                         "change": "",
                         "volume": volume,
                         "ema": empty["ema"],
+                        "ema_1h": empty["ema_1h"],
                         "ema_4h": empty["ema_4h"],
                         "direction": "none",
                         "warning": empty["warning"],
+                        "warnings": empty["warnings"],
                         "qualified": False
                     }
                 )
@@ -3424,9 +3775,13 @@ def update_okx(usdt_krw):
 
             ema = analysis["ema"]
 
+            ema1h = analysis["ema_1h"]
+
             ema4h = analysis["ema_4h"]
 
             warning = analysis["warning"]
+
+            warnings = analysis["warnings"]
 
             warning_direction = warning.get(
                 "direction",
@@ -3482,9 +3837,11 @@ def update_okx(usdt_krw):
                     ),
                     "volume": volume,
                     "ema": ema,
+                    "ema_1h": ema1h,
                     "ema_4h": ema4h,
                     "direction": display_direction,
                     "warning": warning,
+                    "warnings": warnings,
                     "qualified": qualified
                 }
             )
@@ -3505,9 +3862,11 @@ def update_okx(usdt_krw):
                     "change": "",
                     "volume": volume,
                     "ema": empty["ema"],
+                    "ema_1h": empty["ema_1h"],
                     "ema_4h": empty["ema_4h"],
                     "direction": "none",
                     "warning": empty["warning"],
+                    "warnings": empty["warnings"],
                     "qualified": False
                 }
             )
@@ -3559,7 +3918,8 @@ def update_dashboard():
 
         logging.info(
             "조회 순서 : "
-            "24H 거래대금 → 4H EMA → 15M N자"
+            "24H 거래대금 → 4H/1H/15M EMA → "
+            "15M/1H/4H N자"
         )
 
         if USE_UPBIT == "Y":
@@ -3733,7 +4093,7 @@ th {
     background: #12151a;
     border-bottom: 1px solid #2b3037;
     color: #8f949d;
-    font-size: 7px;
+    font-size: 6px;
     text-align: center;
 }
 
@@ -3746,27 +4106,32 @@ td {
 
 th:nth-child(1),
 td:nth-child(1) {
-    width: 7%;
+    width: 6%;
 }
 
 th:nth-child(2),
 td:nth-child(2) {
-    width: 18%;
+    width: 15%;
 }
 
 th:nth-child(3),
 td:nth-child(3) {
-    width: 21%;
+    width: 18%;
 }
 
 th:nth-child(4),
 td:nth-child(4) {
-    width: 22%;
+    width: 14%;
 }
 
 th:nth-child(5),
 td:nth-child(5) {
-    width: 32%;
+    width: 17%;
+}
+
+th:nth-child(6),
+td:nth-child(6) {
+    width: 30%;
 }
 
 .coin {
@@ -3835,11 +4200,27 @@ td:nth-child(5) {
 
 .breakout-warning {
     display: flex;
+    flex-direction: column;
     justify-content: center;
     align-items: center;
     width: 100%;
     min-height: 14px;
     white-space: nowrap;
+    gap: 2px;
+}
+
+.tf-warning {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 2px;
+    line-height: 1;
+}
+
+.tf-label {
+    color: #777;
+    font-size: 6px;
+    font-weight: 700;
 }
 
 .prebreakout-warning {
@@ -3862,7 +4243,7 @@ td:nth-child(5) {
 
 .ema-value {
     width: 100%;
-    font-size: 8px;
+    font-size: 7px;
     font-weight: bold;
     line-height: 1.5;
     white-space: nowrap;
@@ -3952,7 +4333,7 @@ td:nth-child(5) {
 
     th {
         padding: 4px 1px;
-        font-size: 6px;
+        font-size: 5px;
     }
 
     td {
@@ -3981,8 +4362,12 @@ td:nth-child(5) {
         font-size: 9px;
     }
 
+    .tf-label {
+        font-size: 5px;
+    }
+
     .ema-value {
-        font-size: 7px;
+        font-size: 6px;
     }
 
     .ema4h-value {
@@ -4009,12 +4394,18 @@ def make_table_rows(data):
             False
         )
 
-        warning_text = combined_warning_html(
-            item.get(
-                "warning",
-                {}
-            ),
-            qualified
+        warnings = item.get(
+            "warnings",
+            {}
+        )
+
+        warning_text = multi_warning_html(
+            warnings
+        )
+
+        ema1h = item.get(
+            "ema_1h",
+            {}
         )
 
         ema4h = item.get(
@@ -4080,10 +4471,6 @@ def make_table_rows(data):
 {item.get("change", "")}
 </div>
 
-<div class="breakout-warning">
-{warning_text}
-</div>
-
 </div>
 
 </td>
@@ -4092,6 +4479,13 @@ def make_table_rows(data):
 
 <div class="ema-value">
 15M {item.get("ema", {}).get(
+    "display",
+    "⚪"
+)}
+</div>
+
+<div class="ema-value">
+1H {ema1h.get(
     "display",
     "⚪"
 )}
@@ -4106,6 +4500,14 @@ def make_table_rows(data):
 
 </td>
 
+<td class="{direction_class}">
+
+<div class="breakout-warning">
+{warning_text}
+</div>
+
+</td>
+
 </tr>
 """
 
@@ -4115,8 +4517,7 @@ def make_table_rows(data):
 # =========================================================
 # 거래소 섹션
 #
-# ★ 수정:
-# 업비트/OKX 표 아래의 하단 설명 전체 삭제
+# 하단 설명 없음
 # =========================================================
 
 def make_exchange_section(
@@ -4133,7 +4534,7 @@ def make_exchange_section(
 
         rows = """
 <tr>
-<td colspan="5"
+<td colspan="6"
     style="
         color:#555;
         padding:12px 4px;
@@ -4178,6 +4579,7 @@ def make_exchange_section(
 <th>거래대금</th>
 <th>오늘</th>
 <th>EMA</th>
+<th>N자</th>
 </tr>
 
 </thead>
@@ -4260,7 +4662,7 @@ def dashboard():
         user-scalable=no">
 
 <title>
-15M N Pattern Breakout
+15M / 1H / 4H N Pattern Breakout
 </title>
 
 <style>
@@ -4274,7 +4676,7 @@ def dashboard():
 <body>
 
 <h1>
-📊 15M N Pattern Breakout
+📊 15M / 1H / 4H N Pattern Breakout
 </h1>
 
 <div class="info">
@@ -4284,19 +4686,19 @@ def dashboard():
 </div>
 
 <div>
-② 4H EMA 30-60-120 방향 필터
+② 4H / 1H / 15M EMA 30-60-120
 </div>
 
 <div>
-③ 15M EMA 30-60-120 + N자 돌파
+③ 15M + 1H + 4H N자 독립 분석
 </div>
 
 <div>
-④ 4H와 15M 방향 일치 + 실제 N자 경고 시 표시
+④ 각 시간봉 🚨 돌파직전 / 🚀(1~3) / 4 이상 해지
 </div>
 
 <div>
-🚨 돌파 직전 / 🚀 돌파 후 1~3 / 🚀4부터 해지
+⑤ 기존 조건 : 4H 방향 + 15M 방향 + 15M N자
 </div>
 
 <div class="exchange-status">
@@ -4356,11 +4758,12 @@ def startup():
     )
 
     logging.info(
-        "2차 필터 : 4시간 EMA 30-60-120"
+        "EMA : 4H + 1H + 15M "
+        "30-60-120"
     )
 
     logging.info(
-        "3차 분석 : 15분 EMA 30-60-120 + N자"
+        "N자 분석 : 15M + 1H + 4H"
     )
 
     logging.info(
@@ -4368,15 +4771,23 @@ def startup():
     )
 
     logging.info(
-        "LONG : 4H LONG + 15M LONG + N자 LONG"
+        "N자 : 125개 이상 확정봉 필요"
     )
 
     logging.info(
-        "SHORT : 4H SHORT + 15M SHORT + N자 SHORT"
+        "LONG : 4H LONG + 15M LONG + 15M N자"
     )
 
     logging.info(
-        "🚨 : 돌파 직전 확정봉"
+        "SHORT : 4H SHORT + 15M SHORT + 15M N자"
+    )
+
+    logging.info(
+        "15M / 1H / 4H N자는 각각 독립 표시"
+    )
+
+    logging.info(
+        "🚨 : 돌파 직전"
     )
 
     logging.info(
@@ -4384,7 +4795,7 @@ def startup():
     )
 
     logging.info(
-        "🚀 4 이상 : LONG/SHORT 해지"
+        "🚀 4 이상 : 해지"
     )
 
     logging.info(
@@ -4397,15 +4808,15 @@ def startup():
 
     logging.info(
         "거래대금 아래 LONG/SHORT : "
-        "실제 경고 조건 충족 시에만 표시"
+        "기존 15M 실제 경고 조건 충족 시에만 표시"
     )
 
     logging.info(
-        "기준 : 15분 확정봉"
+        "기준 : 각 시간봉 확정봉"
     )
 
     logging.info(
-        "현재 진행 중인 15분봉 제외"
+        "현재 진행 중인 봉 제외"
     )
 
     if USE_UPBIT not in (
@@ -4473,4 +4884,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-        )
+    )
