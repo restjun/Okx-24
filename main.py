@@ -395,7 +395,7 @@ def get_usdt_krw():
 
 
 # =========================================================
-# OKX 15분봉
+# OKX 캔들
 # 확정봉만 사용
 # =========================================================
 
@@ -483,6 +483,7 @@ def get_okx_ohlcv(
                 errors="coerce"
             )
 
+        # 확정봉만 사용
         df = df[
             df["confirm"].astype(str) == "1"
         ]
@@ -503,7 +504,7 @@ def get_okx_ohlcv(
     except Exception as e:
 
         logging.error(
-            f"OKX 15분봉 처리 오류 "
+            f"OKX {bar} 처리 오류 "
             f"{inst_id}: {e}"
         )
 
@@ -653,6 +654,158 @@ def get_upbit_ohlcv(
 
         logging.error(
             f"업비트 15분봉 처리 오류 "
+            f"{market}: {e}"
+        )
+
+        return None
+
+
+# =========================================================
+# 업비트 4시간봉
+# 현재 진행 중인 4시간봉 제외
+#
+# 00 / 04 / 08 / 12 / 16 / 20
+# =========================================================
+
+def get_upbit_4h_ohlcv(
+    market,
+    count=200,
+    to=None
+):
+
+    count = max(
+        1,
+        min(int(count), 200)
+    )
+
+    url = (
+        "https://api.upbit.com/v1/"
+        "candles/minutes/240"
+    )
+
+    params = {
+        "market": market,
+        "count": count
+    }
+
+    if to is not None:
+
+        params["to"] = to
+
+    response = retry_request(
+        requests.get,
+        url,
+        params=params,
+        timeout=15
+    )
+
+    if response is None:
+
+        return None
+
+    try:
+
+        data = response.json()
+
+        if not data:
+
+            return None
+
+        df = pd.DataFrame(data)
+
+        if df.empty:
+
+            return None
+
+        df["o"] = pd.to_numeric(
+            df["opening_price"],
+            errors="coerce"
+        )
+
+        df["h"] = pd.to_numeric(
+            df["high_price"],
+            errors="coerce"
+        )
+
+        df["l"] = pd.to_numeric(
+            df["low_price"],
+            errors="coerce"
+        )
+
+        df["c"] = pd.to_numeric(
+            df["trade_price"],
+            errors="coerce"
+        )
+
+        df["volume_krw"] = pd.to_numeric(
+            df["candle_acc_trade_price"],
+            errors="coerce"
+        )
+
+        df["datetime"] = pd.to_datetime(
+            df["candle_date_time_kst"],
+            errors="coerce"
+        )
+
+        df = df.dropna(
+            subset=[
+                "datetime",
+                "o",
+                "h",
+                "l",
+                "c"
+            ]
+        )
+
+        if df.empty:
+
+            return None
+
+        # ---------------------------------------------
+        # 현재 진행 중인 4시간봉 제거
+        # ---------------------------------------------
+
+        now = datetime.now(KST)
+
+        hour_block = (
+            now.hour // 4
+        ) * 4
+
+        current_candle_start = now.replace(
+            hour=hour_block,
+            minute=0,
+            second=0,
+            microsecond=0
+        )
+
+        current_candle_start_naive = (
+            current_candle_start
+            .replace(tzinfo=None)
+        )
+
+        df = df[
+            df["datetime"]
+            <
+            current_candle_start_naive
+        ]
+
+        if df.empty:
+
+            return None
+
+        df = (
+            df
+            .sort_values("datetime")
+            .drop_duplicates("datetime")
+            .reset_index(drop=True)
+        )
+
+        return df
+
+    except Exception as e:
+
+        logging.error(
+            f"업비트 4시간봉 처리 오류 "
             f"{market}: {e}"
         )
 
@@ -2235,6 +2388,55 @@ def get_upbit_markets():
 
 
 # =========================================================
+# 업비트 4시간봉 2차 필터
+#
+# 30 > 60 > 120 = LONG
+# 30 < 60 < 120 = SHORT
+# 그 외 = 제외
+# =========================================================
+
+def get_upbit_4h_filter(
+    market
+):
+
+    df4h = get_upbit_4h_ohlcv(
+        market,
+        200
+    )
+
+    if (
+        df4h is None
+        or len(df4h) < 120
+    ):
+
+        return {
+            "pass": False,
+            "direction": "none"
+        }
+
+    direction4h = (
+        get_ema_30_60_120_direction(
+            df4h
+        )
+    )
+
+    if direction4h in (
+        "long",
+        "short"
+    ):
+
+        return {
+            "pass": True,
+            "direction": direction4h
+        }
+
+    return {
+        "pass": False,
+        "direction": "none"
+    }
+
+
+# =========================================================
 # OKX 목록
 # =========================================================
 
@@ -2345,7 +2547,57 @@ def get_okx_volume(
 
 
 # =========================================================
-# 과거 데이터
+# OKX 4시간봉 2차 필터
+#
+# 30 > 60 > 120 = LONG
+# 30 < 60 < 120 = SHORT
+# 그 외 = 제외
+# =========================================================
+
+def get_okx_4h_filter(
+    inst_id
+):
+
+    df4h = get_okx_ohlcv(
+        inst_id,
+        "4H",
+        200
+    )
+
+    if (
+        df4h is None
+        or len(df4h) < 120
+    ):
+
+        return {
+            "pass": False,
+            "direction": "none"
+        }
+
+    direction4h = (
+        get_ema_30_60_120_direction(
+            df4h
+        )
+    )
+
+    if direction4h in (
+        "long",
+        "short"
+    ):
+
+        return {
+            "pass": True,
+            "direction": direction4h
+        }
+
+    return {
+        "pass": False,
+        "direction": "none"
+    }
+
+
+# =========================================================
+# 과거 데이터 - OKX
 # =========================================================
 
 def get_okx_history(
@@ -2362,7 +2614,7 @@ def get_okx_history(
     ):
 
         logging.info(
-            f"[OKX 15분 과거조회] "
+            f"[OKX {bar} 과거조회] "
             f"{inst_id} "
             f"{chunk_index + 1}/"
             f"{MAX_HISTORY_CHUNKS}"
@@ -2421,6 +2673,10 @@ def get_okx_history(
 
     return all_df
 
+
+# =========================================================
+# 과거 데이터 - 업비트 15분
+# =========================================================
 
 def get_upbit_history(
     market
@@ -2499,6 +2755,9 @@ def get_upbit_history(
 
 # =========================================================
 # 업비트 분석
+#
+# 여기까지 들어온 종목은
+# 이미 4H 2차 필터 통과 종목
 # =========================================================
 
 def get_upbit_analysis(
@@ -2545,6 +2804,9 @@ def get_upbit_analysis(
 
 # =========================================================
 # OKX 분석
+#
+# 여기까지 들어온 종목은
+# 이미 4H 2차 필터 통과 종목
 # =========================================================
 
 def get_okx_analysis(
@@ -2587,8 +2849,7 @@ def get_okx_analysis(
 # =========================================================
 # LONG 필터
 #
-# ★ 수정:
-# 당일 변동률 양수 조건 제거
+# 당일 변동률 양수 조건 없음
 # =========================================================
 
 def pass_long_filter(
@@ -2621,24 +2882,13 @@ def pass_long_filter(
 
         return False
 
-    # -----------------------------------------------------
-    # 당일 변동률 조건 제거
-    #
-    # 기존:
-    # today_change > 0
-    #
-    # 현재:
-    # 양수/음수 관계없이 통과
-    # -----------------------------------------------------
-
     return True
 
 
 # =========================================================
 # SHORT 필터
 #
-# ★ 수정:
-# 당일 변동률 음수 조건 제거
+# 당일 변동률 음수 조건 없음
 # =========================================================
 
 def pass_short_filter(
@@ -2671,21 +2921,17 @@ def pass_short_filter(
 
         return False
 
-    # -----------------------------------------------------
-    # 당일 변동률 조건 제거
-    #
-    # 기존:
-    # today_change < 0
-    #
-    # 현재:
-    # 양수/음수 관계없이 통과
-    # -----------------------------------------------------
-
     return True
 
 
 # =========================================================
 # 업비트 업데이트
+#
+# 1차 : 24시간 거래대금 TOP30
+# 2차 : 4시간봉 30-60-120
+# 3차 : 통과 종목만 15분봉 N자 분석
+#
+# 업비트는 최종 LONG만 표시
 # =========================================================
 
 def update_upbit():
@@ -2704,6 +2950,10 @@ def update_upbit():
         f"========== 업비트 TOP{TOP_N} 시작 "
         f"{start_time} KST =========="
     )
+
+    # =====================================================
+    # 1차 필터
+    # =====================================================
 
     market_data = get_upbit_markets()
 
@@ -2726,12 +2976,106 @@ def update_upbit():
         for item in top_markets
     }
 
-    rows = []
+    logging.info(
+        f"[업비트 1차 필터] "
+        f"24시간 거래대금 TOP{len(top_markets)}"
+    )
+
+    # =====================================================
+    # 2차 필터
+    # 4시간봉 30-60-120
+    # =====================================================
+
+    filtered_markets = []
 
     for rank, item in enumerate(
         top_markets,
         start=1
     ):
+
+        market = item["market"]
+
+        logging.info(
+            f"[업비트 4H 필터] "
+            f"{rank}/{len(top_markets)} "
+            f"{market}"
+        )
+
+        try:
+
+            filter_result = (
+                get_upbit_4h_filter(
+                    market
+                )
+            )
+
+            if not filter_result.get(
+                "pass",
+                False
+            ):
+
+                logging.info(
+                    f"[4H 제외] "
+                    f"{market} "
+                    f"30-60-120 배열 아님"
+                )
+
+                continue
+
+            direction4h = (
+                filter_result.get(
+                    "direction",
+                    "none"
+                )
+            )
+
+            # 업비트는 LONG만 최종 분석
+            if direction4h != "long":
+
+                logging.info(
+                    f"[4H 제외] "
+                    f"{market} "
+                    f"4H={direction4h}"
+                )
+
+                continue
+
+            filtered_markets.append(
+                {
+                    "rank": rank,
+                    "market": market,
+                    "direction4h": direction4h
+                }
+            )
+
+            logging.info(
+                f"[4H 통과] "
+                f"{market} "
+                f"4H={direction4h}"
+            )
+
+        except Exception as e:
+
+            logging.error(
+                f"[업비트 4H 필터 오류] "
+                f"{market}: {e}"
+            )
+
+    logging.info(
+        f"[업비트 2차 필터 완료] "
+        f"{len(filtered_markets)}개 통과"
+    )
+
+    # =====================================================
+    # 3차
+    # 4H 통과 종목만 15분봉 분석
+    # =====================================================
+
+    rows = []
+
+    for item in filtered_markets:
+
+        rank = item["rank"]
 
         market = item["market"]
 
@@ -2742,7 +3086,7 @@ def update_upbit():
 
         logging.info(
             f"[업비트 15분 분석] "
-            f"{rank}/{len(top_markets)} "
+            f"{rank}/{len(filtered_markets)} "
             f"{market}"
         )
 
@@ -2759,6 +3103,24 @@ def update_upbit():
             warning = analysis[
                 "warning"
             ]
+
+            # 15분봉 방향도 LONG이어야 함
+            if (
+                analysis
+                .get("ema", {})
+                .get("direction")
+                != "long"
+            ):
+
+                continue
+
+            if (
+                warning
+                .get("direction")
+                != "long"
+            ):
+
+                continue
 
             if not is_visible_warning(
                 warning
@@ -2802,7 +3164,8 @@ def update_upbit():
     )
 
     logging.info(
-        f"업비트 LONG N자 돌파 "
+        f"업비트 "
+        f"4H 필터 → 15M N자 돌파 "
         f"{len(rows)}개"
     )
 
@@ -2815,6 +3178,12 @@ def update_upbit():
 
 # =========================================================
 # OKX 업데이트
+#
+# 1차 : 24시간 거래대금 TOP30
+# 2차 : 4시간봉 30-60-120
+# 3차 : 통과 종목만 15분봉 N자 분석
+#
+# OKX는 LONG / SHORT 모두 사용
 # =========================================================
 
 def update_okx(
@@ -2831,6 +3200,10 @@ def update_okx(
 
         return False
 
+    # =====================================================
+    # OKX 전체 SWAP 목록
+    # =====================================================
+
     symbols = get_all_okx_swap_symbols()
 
     if not symbols:
@@ -2845,6 +3218,14 @@ def update_okx(
         for market in latest_upbit_markets
     }
 
+    # =====================================================
+    # 1차 필터
+    # 24시간 거래대금
+    #
+    # 기존 방식 유지
+    # 1시간봉 24개 합산
+    # =====================================================
+
     volume_map = {}
 
     for index, symbol in enumerate(
@@ -2853,7 +3234,7 @@ def update_okx(
     ):
 
         logging.info(
-            f"[OKX 거래대금 진행] "
+            f"[OKX 1차 거래대금] "
             f"{index}/{len(symbols)} "
             f"{symbol}"
         )
@@ -2882,12 +3263,109 @@ def update_okx(
         reverse=True
     )[:TOP_N]
 
-    rows = []
+    logging.info(
+        f"[OKX 1차 필터 완료] "
+        f"24시간 거래대금 TOP{len(top_symbols)}"
+    )
+
+    # =====================================================
+    # 2차 필터
+    # 4시간봉 30-60-120
+    #
+    # LONG : 30 > 60 > 120
+    # SHORT: 30 < 60 < 120
+    # =====================================================
+
+    filtered_symbols = []
 
     for rank, symbol in enumerate(
         top_symbols,
         start=1
     ):
+
+        logging.info(
+            f"[OKX 4H 필터] "
+            f"{rank}/{len(top_symbols)} "
+            f"{symbol}"
+        )
+
+        try:
+
+            filter_result = (
+                get_okx_4h_filter(
+                    symbol
+                )
+            )
+
+            if not filter_result.get(
+                "pass",
+                False
+            ):
+
+                logging.info(
+                    f"[OKX 4H 제외] "
+                    f"{symbol} "
+                    f"30-60-120 배열 아님"
+                )
+
+                continue
+
+            direction4h = (
+                filter_result.get(
+                    "direction",
+                    "none"
+                )
+            )
+
+            if direction4h not in (
+                "long",
+                "short"
+            ):
+
+                continue
+
+            filtered_symbols.append(
+                {
+                    "rank": rank,
+                    "symbol": symbol,
+                    "direction4h": direction4h
+                }
+            )
+
+            logging.info(
+                f"[OKX 4H 통과] "
+                f"{symbol} "
+                f"4H={direction4h}"
+            )
+
+        except Exception as e:
+
+            logging.error(
+                f"[OKX 4H 필터 오류] "
+                f"{symbol}: {e}"
+            )
+
+    logging.info(
+        f"[OKX 2차 필터 완료] "
+        f"{len(filtered_symbols)}개 통과"
+    )
+
+    # =====================================================
+    # 3차
+    # 4H 통과 종목만 15분봉 분석
+    # =====================================================
+
+    rows = []
+
+    for item in filtered_symbols:
+
+        rank = item["rank"]
+
+        symbol = item["symbol"]
+
+        direction4h = item[
+            "direction4h"
+        ]
 
         coin = symbol.replace(
             "-USDT-SWAP",
@@ -2902,6 +3380,13 @@ def update_okx(
                 f"{coin}[UP]"
             )
 
+        logging.info(
+            f"[OKX 15분 분석] "
+            f"{rank}/{len(filtered_symbols)} "
+            f"{symbol} "
+            f"4H={direction4h}"
+        )
+
         try:
 
             analysis = get_okx_analysis(
@@ -2912,9 +3397,44 @@ def update_okx(
 
                 continue
 
+            # -------------------------------------------------
+            # 15분봉 방향도 4H 방향과 일치해야 함
+            # -------------------------------------------------
+
+            ema_direction = (
+                analysis
+                .get("ema", {})
+                .get(
+                    "direction",
+                    "none"
+                )
+            )
+
             warning = analysis[
                 "warning"
             ]
+
+            warning_direction = (
+                warning.get(
+                    "direction",
+                    "none"
+                )
+            )
+
+            if ema_direction != direction4h:
+
+                logging.info(
+                    f"[OKX 15M 제외] "
+                    f"{symbol} "
+                    f"4H={direction4h} "
+                    f"15M={ema_direction}"
+                )
+
+                continue
+
+            if warning_direction != direction4h:
+
+                continue
 
             if not is_visible_warning(
                 warning
@@ -2922,12 +3442,7 @@ def update_okx(
 
                 continue
 
-            direction = warning.get(
-                "direction",
-                "none"
-            )
-
-            if direction == "long":
+            if direction4h == "long":
 
                 if not pass_long_filter(
                     analysis
@@ -2935,7 +3450,7 @@ def update_okx(
 
                     continue
 
-            elif direction == "short":
+            elif direction4h == "short":
 
                 if not pass_short_filter(
                     analysis
@@ -2958,7 +3473,7 @@ def update_okx(
                         volume_map[symbol]
                     ),
                     "ema": analysis["ema"],
-                    "direction": direction,
+                    "direction": direction4h,
                     "warning": warning
                 }
             )
@@ -2974,6 +3489,16 @@ def update_okx(
 
     latest_okx_update_time = (
         get_kst_time()
+    )
+
+    logging.info(
+        f"OKX "
+        f"4H 필터 → 15M N자 돌파 "
+        f"{len(rows)}개"
+    )
+
+    logging.info(
+        "========== OKX 완전 종료 =========="
     )
 
     return True
@@ -3013,8 +3538,18 @@ def update_dashboard():
         )
 
         logging.info(
-            "조회 순서 : 업비트 → OKX"
+            "조회 순서 :"
+            " 업비트 1차 거래대금"
+            " → 업비트 4H"
+            " → 업비트 15M"
+            " → OKX 1차 거래대금"
+            " → OKX 4H"
+            " → OKX 15M"
         )
+
+        # =================================================
+        # 업비트
+        # =================================================
 
         if USE_UPBIT == "Y":
 
@@ -3033,6 +3568,10 @@ def update_dashboard():
             latest_upbit_data = []
 
             latest_upbit_markets = []
+
+        # =================================================
+        # OKX
+        # =================================================
 
         if USE_OKX == "Y":
 
@@ -3565,11 +4104,14 @@ def make_exchange_section(
         margin:4px 2px 7px 2px;
     ">
 
-※ TOP{TOP_N} 거래대금 순위<br>
-※ 업비트 거래대금 = API 24시간 누적 거래대금<br>
+※ 1차 = 24시간 거래대금 TOP{TOP_N}<br>
+※ 2차 = 4시간봉 EMA 30-60-120<br>
+※ 4H LONG = 30 > 60 > 120<br>
+※ 4H SHORT = 30 < 60 < 120<br>
+※ 4H 배열이 아니면 15분봉 조회하지 않음<br>
 {direction_note}
 {change_note}
-※ EMA = 15분봉 30-60-120<br>
+※ 최종 분석 = 15분봉 EMA 30-60-120<br>
 ※ LONG = 30 > 60 > 120 정배열 유지<br>
 ※ SHORT = 30 < 60 < 120 역배열 유지<br>
 ※ 정배열/역배열 시작점부터 가격 구조 추적<br>
@@ -3682,17 +4224,23 @@ def dashboard():
 <div class="info">
 
 <div>
-15분봉 30-60-120 정배열 / 역배열
+① 24시간 거래대금 TOP{TOP_N}
 </div>
 
 <div>
-정배열 시작 → 상승 → 주요 고점
-→ 가격 조정 → 반등 → 돌파 실패
-→ 다시 조정 → 다시 반등
+② 4시간봉 EMA 30-60-120 2차 필터
 </div>
 
 <div>
-이 과정을 반복하면서 이전 주요 고점을 돌파하는 지점 탐색
+③ 4시간봉 통과 종목만 15분봉 조회
+</div>
+
+<div>
+④ 15분봉 EMA 30-60-120 방향 확인
+</div>
+
+<div>
+⑤ N자 구조 탐색 → 기준 고점/저점 돌파
 </div>
 
 <div>
@@ -3704,11 +4252,19 @@ def dashboard():
 </div>
 
 <div>
-LONG = 가격 조정 중에도 EMA 30 > 60 > 120 유지
+LONG = 4H 30 > 60 > 120
 </div>
 
 <div>
-SHORT = 가격 반등 중에도 EMA 30 < 60 < 120 유지
+SHORT = 4H 30 < 60 < 120
+</div>
+
+<div>
+LONG = 15M 30 > 60 > 120 유지
+</div>
+
+<div>
+SHORT = 15M 30 < 60 < 120 유지
 </div>
 
 <div>
@@ -3729,6 +4285,10 @@ OKX 변동률 = 15분봉 한국시간 09:00 기준
 
 <div>
 업비트 거래대금 = 24시간 누적 거래대금
+</div>
+
+<div>
+OKX 거래대금 = 1시간봉 24개 volCcyQuote 합산
 </div>
 
 <div class="exchange-status">
@@ -3785,11 +4345,31 @@ def startup():
     )
 
     logging.info(
+        "1차 : 24시간 거래대금 TOP"
+    )
+
+    logging.info(
+        "2차 : 4시간봉 EMA 30-60-120"
+    )
+
+    logging.info(
+        "3차 : 15분봉 N자 구조"
+    )
+
+    logging.info(
         "기준 : 15분 확정봉"
     )
 
     logging.info(
-        "EMA : 15분 30-60-120"
+        "4H LONG : 30 > 60 > 120"
+    )
+
+    logging.info(
+        "4H SHORT : 30 < 60 < 120"
+    )
+
+    logging.info(
+        "15M EMA : 30-60-120"
     )
 
     logging.info(
@@ -3825,12 +4405,13 @@ def startup():
     )
 
     logging.info(
-        "조회 순서 : 업비트 → OKX"
+        "조회 순서 : "
+        "거래대금 → 4H → 15M"
     )
 
-    # -----------------------------------------------------
+    # =====================================================
     # 설정 검증
-    # -----------------------------------------------------
+    # =====================================================
 
     if USE_UPBIT not in (
         "Y",
@@ -3862,18 +4443,18 @@ def startup():
             "UPDATE_MINUTES는 1 이상이어야 합니다."
         )
 
-    # -----------------------------------------------------
+    # =====================================================
     # 최초 즉시 조회
-    # -----------------------------------------------------
+    # =====================================================
 
     threading.Thread(
         target=update_dashboard,
         daemon=True
     ).start()
 
-    # -----------------------------------------------------
+    # =====================================================
     # 주기
-    # -----------------------------------------------------
+    # =====================================================
 
     schedule.every(
         UPDATE_MINUTES
@@ -3881,9 +4462,9 @@ def startup():
         update_dashboard
     )
 
-    # -----------------------------------------------------
+    # =====================================================
     # 스케줄러
-    # -----------------------------------------------------
+    # =====================================================
 
     threading.Thread(
         target=scheduler,
@@ -3909,4 +4490,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-        )
+            )
