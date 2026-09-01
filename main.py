@@ -1,14 +1,6 @@
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
-
-import schedule
-import time
-import requests
-import threading
-import uvicorn
-import logging
-import pandas as pd
-import warnings
+import schedule, time, requests, threading, uvicorn, logging, pandas as pd, warnings
 
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -19,15 +11,13 @@ from zoneinfo import ZoneInfo
 # =========================================================
 
 warnings.filterwarnings("ignore", category=FutureWarning)
-
 app = FastAPI()
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(message)s"
+    format="%(asctime)s %(levelname)s:%(name)s:%(message)s"
 )
-
-KST = ZoneInfo("Asia/Seoul")
+log = logging.getLogger("trading")
 
 VOLUME_HOURS = 24
 TOP_N = 30
@@ -37,9 +27,9 @@ INITIAL_CANDLE_COUNT = 200
 HISTORY_CHUNK = 200
 MAX_HISTORY_CHUNKS = 10
 
+BREAKOUT_LOOKBACK = 30
 SWING_LEFT = 2
 SWING_RIGHT = 2
-
 MIN_CORRECTION_RATE = 0.003
 
 USE_UPBIT = "Y"
@@ -49,348 +39,600 @@ REQUEST_INTERVAL = 0.08
 RATE_LIMIT_WAIT = 3
 MAX_RETRIES = 10
 
-MIN_N_CANDLES = 20
-
-
-# =========================================================
-# 전역 변수
-# =========================================================
+KST = ZoneInfo("Asia/Seoul")
 
 latest_upbit_data = []
 latest_okx_data = []
-
-latest_usdt_krw = 0.0
-
+latest_usdt_krw = 0
 latest_upbit_update_time = "-"
 latest_okx_update_time = "-"
-
 latest_upbit_markets = []
 
 shown_invalidation_ids = set()
-
+invalidation_lock = threading.Lock()
 request_lock = threading.Lock()
 update_lock = threading.Lock()
-invalidation_lock = threading.Lock()
-
-last_request_time = 0.0
+last_request_time = 0
 
 
 # =========================================================
-# HTTP
+# 공통
 # =========================================================
+
+def kst():
+    return datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
+
 
 def wait_request():
     global last_request_time
 
     with request_lock:
-        now = time.time()
-        diff = now - last_request_time
+        gap = time.monotonic() - last_request_time
 
-        if diff < REQUEST_INTERVAL:
-            time.sleep(REQUEST_INTERVAL - diff)
+        if gap < REQUEST_INTERVAL:
+            time.sleep(REQUEST_INTERVAL - gap)
 
-        last_request_time = time.time()
+        last_request_time = time.monotonic()
 
 
-def retry_request(method, url, **kwargs):
+def retry(func, *args, **kwargs):
 
-    for i in range(MAX_RETRIES):
+    name = getattr(func, "__name__", str(func))
+    url = args[0] if args and isinstance(args[0], str) else kwargs.get("url", "")
+
+    for n in range(MAX_RETRIES):
 
         try:
             wait_request()
+            r = func(*args, **kwargs)
 
-            r = requests.request(
-                method,
-                url,
-                timeout=10,
-                **kwargs
-            )
+            if not hasattr(r, "status_code"):
+                return r
 
             if r.status_code == 200:
                 return r
 
             if r.status_code == 429:
-                time.sleep(min(RATE_LIMIT_WAIT * (2 ** i), 60))
-                continue
+                wait = min(RATE_LIMIT_WAIT * 2 ** n, 60)
 
-            if 500 <= r.status_code < 600:
-                time.sleep(min(2 ** i, 30))
-                continue
+            elif r.status_code >= 500:
+                wait = min(2 * 2 ** n, 30)
 
-            return r
+            else:
+                log.warning(f"[HTTP {r.status_code}] {url}")
+                return r
 
-        except Exception:
-            time.sleep(min(2 ** i, 20))
+            log.warning(f"[API 재시도] {url} {wait}초")
+            time.sleep(wait)
+
+        except Exception as e:
+
+            log.error(
+                f"[API 오류] {name} {url}: {e}"
+            )
+
+            if n < MAX_RETRIES - 1:
+                time.sleep(min(2 * (n + 1), 20))
+
+    log.error(f"[API 최종 실패] {name} {url}")
 
     return None
 
 
 # =========================================================
-# Upbit
+# 거래소 데이터
 # =========================================================
 
 def get_upbit_markets():
 
-    r = retry_request(
-        "GET",
-        "https://api.upbit.com/v1/market/all",
-        params={"isDetails": "false"}
+    global latest_upbit_markets
+
+    r = retry(
+        requests.get,
+        "https://api.upbit.com/v1/ticker/all",
+        params={"quote_currencies": "KRW"},
+        timeout=15
     )
 
-    if not r:
+    if r is None:
         return []
 
     try:
+
         data = r.json()
-        return [
-            x["market"]
-            for x in data
-            if x["market"].startswith("KRW-")
-        ]
-    except Exception:
-        return []
-
-
-def get_upbit_tickers(markets):
-
-    if not markets:
-        return []
-
-    result = []
-
-    for i in range(0, len(markets), 100):
-        batch = markets[i:i + 100]
-
-        r = retry_request(
-            "GET",
-            "https://api.upbit.com/v1/ticker",
-            params={"markets": ",".join(batch)}
-        )
-
-        if not r:
-            continue
-
-        try:
-            result.extend(r.json())
-        except Exception:
-            pass
-
-    return result
-
-
-def get_upbit_minute(market, unit=15, count=200):
-
-    r = retry_request(
-        "GET",
-        f"https://api.upbit.com/v1/candles/minutes/{unit}",
-        params={
-            "market": market,
-            "count": count
-        }
-    )
-
-    if not r:
-        return pd.DataFrame()
-
-    try:
-        data = r.json()
-
-        df = pd.DataFrame(data)
-
-        if df.empty:
-            return df
-
-        df["time"] = pd.to_datetime(
-            df["candle_date_time_kst"]
-        )
-
-        df = df.sort_values("time").reset_index(drop=True)
-
-        return df[
-            ["time", "opening_price", "high_price",
-             "low_price", "trade_price", "candle_acc_trade_volume"]
-        ].rename(
-            columns={
-                "opening_price": "open",
-                "high_price": "high",
-                "low_price": "low",
-                "trade_price": "close",
-                "candle_acc_trade_volume": "volume"
-            }
-        )
-
-    except Exception:
-        return pd.DataFrame()
-
-
-def get_upbit_4h(market, count=200):
-
-    r = retry_request(
-        "GET",
-        "https://api.upbit.com/v1/candles/minutes/240",
-        params={
-            "market": market,
-            "count": count
-        }
-    )
-
-    if not r:
-        return pd.DataFrame()
-
-    try:
-        data = r.json()
-        df = pd.DataFrame(data)
-
-        if df.empty:
-            return df
-
-        df["time"] = pd.to_datetime(
-            df["candle_date_time_kst"]
-        )
-
-        df = df.sort_values("time").reset_index(drop=True)
-
-        return df[
-            ["time", "opening_price", "high_price",
-             "low_price", "trade_price"]
-        ].rename(
-            columns={
-                "opening_price": "open",
-                "high_price": "high",
-                "low_price": "low",
-                "trade_price": "close"
-            }
-        )
-
-    except Exception:
-        return pd.DataFrame()
-
-
-# =========================================================
-# OKX
-# =========================================================
-
-def get_okx_symbols():
-
-    r = retry_request(
-        "GET",
-        "https://www.okx.com/api/v5/public/instruments",
-        params={"instType": "SWAP"}
-    )
-
-    if not r:
-        return []
-
-    try:
-        data = r.json()["data"]
-
-        return [
-            x["instId"]
-            for x in data
-            if x.get("settleCcy") == "USDT"
-            and x.get("state") == "live"
-            and x["instId"].endswith("-USDT-SWAP")
-        ]
-
-    except Exception:
-        return []
-
-
-def get_okx_ohlcv(inst_id, bar="15m", limit=200):
-
-    r = retry_request(
-        "GET",
-        "https://www.okx.com/api/v5/market/candles",
-        params={
-            "instId": inst_id,
-            "bar": bar,
-            "limit": limit
-        }
-    )
-
-    if not r:
-        return pd.DataFrame()
-
-    try:
-        data = r.json()["data"]
-
-        if not data:
-            return pd.DataFrame()
-
-        rows = []
+        result = []
 
         for x in data:
-            rows.append({
-                "time": pd.to_datetime(
-                    int(x[0]), unit="ms"
-                ),
-                "open": float(x[1]),
-                "high": float(x[2]),
-                "low": float(x[3]),
-                "close": float(x[4]),
-                "confirm": x[8]
-            })
 
-        df = pd.DataFrame(rows)
+            market = x.get("market", "")
 
-        df = df.sort_values("time").reset_index(drop=True)
+            if not market.startswith("KRW-"):
+                continue
 
-        # 현재 진행 중인 캔들 제거
-        df = df[df["confirm"].astype(str) == "1"]
+            try:
+                volume = float(x["acc_trade_price_24h"])
+            except:
+                continue
 
-        return df[
-            ["time", "open", "high", "low", "close"]
-        ].reset_index(drop=True)
+            if volume > 0:
 
-    except Exception:
-        return pd.DataFrame()
+                result.append({
+                    "market": market,
+                    "volume_24h": volume
+                })
+
+        latest_upbit_markets = [
+            x["market"] for x in result
+        ]
+
+        return result
+
+    except Exception as e:
+
+        log.error(f"업비트 마켓 오류: {e}")
+        return []
 
 
 def get_usdt_krw():
 
-    r = retry_request(
-        "GET",
-        "https://api.upbit.com/v1/ticker",
-        params={"markets": "KRW-USDT"}
+    r = retry(
+        requests.get,
+        "https://api.upbit.com/v1/ticker?markets=KRW-USDT",
+        timeout=15
     )
 
-    if not r:
-        return 0.0
-
     try:
-        return float(r.json()[0]["trade_price"])
-    except Exception:
-        return 0.0
+
+        price = float(
+            r.json()[0]["trade_price"]
+        )
+
+        return price if price > 0 else None
+
+    except:
+        return None
 
 
-def get_okx_volume(inst_id):
+def get_okx_ohlcv(
+    inst,
+    bar="15m",
+    limit=200,
+    before=None
+):
 
-    r = retry_request(
-        "GET",
+    params = {
+        "instId": inst,
+        "bar": bar,
+        "limit": min(max(int(limit), 1), 200)
+    }
+
+    if before is not None:
+        params["before"] = str(before)
+
+    r = retry(
+        requests.get,
         "https://www.okx.com/api/v5/market/candles",
-        params={
-            "instId": inst_id,
-            "bar": "1H",
-            "limit": VOLUME_HOURS + 2
-        }
+        params=params,
+        timeout=15
     )
 
-    if not r:
-        return 0.0
+    if r is None:
+        return None
 
     try:
-        data = r.json()["data"]
 
-        total = 0.0
+        data = r.json().get("data", [])
 
-        for x in data:
-            if len(x) > 7:
-                total += float(x[7])
+        if not data:
+            return None
 
-        return total * latest_usdt_krw / 10
+        df = pd.DataFrame(
+            data,
+            columns=[
+                "ts",
+                "o",
+                "h",
+                "l",
+                "c",
+                "vol",
+                "volCcy",
+                "volCcyQuote",
+                "confirm"
+            ]
+        )
 
-    except Exception:
-        return 0.0
+        for c in [
+            "ts",
+            "o",
+            "h",
+            "l",
+            "c",
+            "vol",
+            "volCcy",
+            "volCcyQuote"
+        ]:
+
+            df[c] = pd.to_numeric(
+                df[c],
+                errors="coerce"
+            )
+
+        df = df[
+            df.confirm.astype(str) == "1"
+        ]
+
+        if df.empty:
+            return None
+
+        return (
+            df
+            .sort_values("ts")
+            .drop_duplicates("ts")
+            .reset_index(drop=True)
+        )
+
+    except Exception as e:
+
+        log.error(
+            f"OKX {inst} {bar} 오류: {e}"
+        )
+
+        return None
+
+
+def get_upbit_minute(
+    market,
+    unit,
+    count=200,
+    to=None
+):
+
+    params = {
+        "market": market,
+        "count": min(max(int(count), 1), 200)
+    }
+
+    if to:
+        params["to"] = to
+
+    r = retry(
+        requests.get,
+        f"https://api.upbit.com/v1/candles/minutes/{unit}",
+        params=params,
+        timeout=15
+    )
+
+    if r is None:
+        return None
+
+    try:
+
+        df = pd.DataFrame(r.json())
+
+        if df.empty:
+            return None
+
+        df["o"] = pd.to_numeric(
+            df["opening_price"],
+            errors="coerce"
+        )
+
+        df["h"] = pd.to_numeric(
+            df["high_price"],
+            errors="coerce"
+        )
+
+        df["l"] = pd.to_numeric(
+            df["low_price"],
+            errors="coerce"
+        )
+
+        df["c"] = pd.to_numeric(
+            df["trade_price"],
+            errors="coerce"
+        )
+
+        df["volume_krw"] = pd.to_numeric(
+            df["candle_acc_trade_price"],
+            errors="coerce"
+        )
+
+        df["datetime"] = pd.to_datetime(
+            df["candle_date_time_kst"],
+            errors="coerce"
+        )
+
+        df = df.dropna(
+            subset=[
+                "datetime",
+                "o",
+                "h",
+                "l",
+                "c"
+            ]
+        )
+
+        if df.empty:
+            return None
+
+        now = datetime.now(KST)
+
+        block = (
+            now.minute // unit
+        ) * unit
+
+        current = now.replace(
+            minute=block,
+            second=0,
+            microsecond=0
+        ).replace(tzinfo=None)
+
+        # 현재 진행 중인 봉 제외
+        df = df[
+            df.datetime < current
+        ]
+
+        if df.empty:
+            return None
+
+        return (
+            df
+            .sort_values("datetime")
+            .drop_duplicates("datetime")
+            .reset_index(drop=True)
+        )
+
+    except Exception as e:
+
+        log.error(
+            f"업비트 {unit}분봉 오류 {market}: {e}"
+        )
+
+        return None
+
+
+def get_upbit_4h(
+    market,
+    count=200,
+    to=None
+):
+
+    r = retry(
+        requests.get,
+        "https://api.upbit.com/v1/candles/minutes/240",
+        params={
+            "market": market,
+            "count": min(max(int(count), 1), 200),
+            **({"to": to} if to else {})
+        },
+        timeout=15
+    )
+
+    if r is None:
+        return None
+
+    try:
+
+        df = pd.DataFrame(r.json())
+
+        if df.empty:
+            return None
+
+        df["o"] = pd.to_numeric(
+            df.opening_price,
+            errors="coerce"
+        )
+
+        df["h"] = pd.to_numeric(
+            df.high_price,
+            errors="coerce"
+        )
+
+        df["l"] = pd.to_numeric(
+            df.low_price,
+            errors="coerce"
+        )
+
+        df["c"] = pd.to_numeric(
+            df.trade_price,
+            errors="coerce"
+        )
+
+        df["datetime"] = pd.to_datetime(
+            df.candle_date_time_kst,
+            errors="coerce"
+        )
+
+        df = df.dropna(
+            subset=[
+                "datetime",
+                "o",
+                "h",
+                "l",
+                "c"
+            ]
+        )
+
+        if df.empty:
+            return None
+
+        now = datetime.now(KST)
+
+        block = (
+            now.hour // 4
+        ) * 4
+
+        current = now.replace(
+            hour=block,
+            minute=0,
+            second=0,
+            microsecond=0
+        ).replace(tzinfo=None)
+
+        # 현재 진행 중인 4H 봉 제외
+        df = df[
+            df.datetime < current
+        ]
+
+        if df.empty:
+            return None
+
+        return (
+            df
+            .sort_values("datetime")
+            .drop_duplicates("datetime")
+            .reset_index(drop=True)
+        )
+
+    except Exception as e:
+
+        log.error(
+            f"업비트 4H 오류 {market}: {e}"
+        )
+
+        return None
+
+
+# =========================================================
+# 과거 데이터
+# =========================================================
+
+def history_okx(
+    inst,
+    bar,
+    required=125
+):
+
+    all_df = None
+    before = None
+
+    for _ in range(MAX_HISTORY_CHUNKS):
+
+        df = get_okx_ohlcv(
+            inst,
+            bar,
+            HISTORY_CHUNK,
+            before
+        )
+
+        if df is None or df.empty:
+            break
+
+        all_df = (
+            df.copy()
+            if all_df is None
+            else pd.concat(
+                [df, all_df],
+                ignore_index=True
+            )
+        )
+
+        all_df = (
+            all_df
+            .drop_duplicates("ts")
+            .sort_values("ts")
+            .reset_index(drop=True)
+        )
+
+        if len(all_df) >= required:
+            return all_df
+
+        before = int(
+            all_df.ts.iloc[0]
+        )
+
+    return all_df
+
+
+def history_upbit(
+    market,
+    unit,
+    required=125
+):
+
+    all_df = None
+    to = None
+
+    for _ in range(MAX_HISTORY_CHUNKS):
+
+        df = get_upbit_minute(
+            market,
+            unit,
+            HISTORY_CHUNK,
+            to
+        )
+
+        if df is None or df.empty:
+            break
+
+        all_df = (
+            df.copy()
+            if all_df is None
+            else pd.concat(
+                [df, all_df],
+                ignore_index=True
+            )
+        )
+
+        all_df = (
+            all_df
+            .drop_duplicates("datetime")
+            .sort_values("datetime")
+            .reset_index(drop=True)
+        )
+
+        if len(all_df) >= required:
+            return all_df
+
+        to = (
+            all_df.datetime.iloc[0]
+            .strftime("%Y-%m-%dT%H:%M:%S")
+        )
+
+    return all_df
+
+
+def history_upbit_4h(market):
+
+    all_df = None
+    to = None
+
+    for _ in range(MAX_HISTORY_CHUNKS):
+
+        df = get_upbit_4h(
+            market,
+            HISTORY_CHUNK,
+            to
+        )
+
+        if df is None or df.empty:
+            break
+
+        all_df = (
+            df.copy()
+            if all_df is None
+            else pd.concat(
+                [df, all_df],
+                ignore_index=True
+            )
+        )
+
+        all_df = (
+            all_df
+            .drop_duplicates("datetime")
+            .sort_values("datetime")
+            .reset_index(drop=True)
+        )
+
+        if len(all_df) >= 125:
+            return all_df
+
+        to = (
+            all_df.datetime.iloc[0]
+            .strftime("%Y-%m-%dT%H:%M:%S")
+        )
+
+    return all_df
 
 
 # =========================================================
@@ -399,26 +641,54 @@ def get_okx_volume(inst_id):
 
 def ema(df, period):
 
-    return df["close"].ewm(
+    if (
+        df is None
+        or df.empty
+        or "c" not in df
+    ):
+        return None
+
+    return pd.to_numeric(
+        df.c,
+        errors="coerce"
+    ).ewm(
         span=period,
-        adjust=False
+        adjust=False,
+        min_periods=1
     ).mean()
 
 
 def direction(df):
 
-    if df.empty or len(df) < 120:
+    if df is None or df.empty:
         return "none"
 
-    e10 = ema(df, 10).iloc[-1]
-    e30 = ema(df, 30).iloc[-1]
-    e60 = ema(df, 60).iloc[-1]
-    e120 = ema(df, 120).iloc[-1]
+    e10, e30, e60, e120 = [
+        ema(df, x)
+        for x in (10, 30, 60, 120)
+    ]
 
-    if e10 > e30 > e60 > e120:
+    if any(
+        x is None
+        for x in (e10, e30, e60, e120)
+    ):
+        return "none"
+
+    a, b, c, d = [
+        x.iloc[-1]
+        for x in (e10, e30, e60, e120)
+    ]
+
+    if any(
+        pd.isna(x)
+        for x in (a, b, c, d)
+    ):
+        return "none"
+
+    if a > b > c > d:
         return "long"
 
-    if e10 < e30 < e60 < e120:
+    if a < b < c < d:
         return "short"
 
     return "none"
@@ -426,36 +696,36 @@ def direction(df):
 
 def direction_series(df):
 
-    if df.empty or len(df) < 120:
+    if df is None or df.empty:
         return []
 
-    e10 = ema(df, 10)
-    e30 = ema(df, 30)
-    e60 = ema(df, 60)
-    e120 = ema(df, 120)
+    es = [
+        ema(df, x)
+        for x in (10, 30, 60, 120)
+    ]
+
+    if any(x is None for x in es):
+        return []
 
     result = []
 
     for i in range(len(df)):
 
-        if i < 119:
-            result.append("none")
-            continue
+        a, b, c, d = [
+            x.iloc[i]
+            for x in es
+        ]
 
-        if (
-            e10.iloc[i] >
-            e30.iloc[i] >
-            e60.iloc[i] >
-            e120.iloc[i]
+        if any(
+            pd.isna(x)
+            for x in (a, b, c, d)
         ):
+            result.append("none")
+
+        elif a > b > c > d:
             result.append("long")
 
-        elif (
-            e10.iloc[i] <
-            e30.iloc[i] <
-            e60.iloc[i] <
-            e120.iloc[i]
-        ):
+        elif a < b < c < d:
             result.append("short")
 
         else:
@@ -468,462 +738,256 @@ def ema_display(df):
 
     d = direction(df)
 
-    if d == "long":
-        return "🟢 LONG"
-
-    if d == "short":
-        return "🔴 SHORT"
-
-    return "⚪"
+    return {
+        "display":
+            "🟢 LONG"
+            if d == "long"
+            else "🔴 SHORT"
+            if d == "short"
+            else "⚪",
+        "direction": d
+    }
 
 
 # =========================================================
-# N자 파동
-#
-# LONG
-# 0 < B < A < C
-#
-# 0 : 상승 시작점
-# A : 첫 고점
-# B : A 이후 조정 저점
-# C : B 이후 상승
-#
-# C가 A를 종가로 돌파하면 🚀
-#
-# 돌파 후 종가가 A 아래로 내려가면 🚨
-#
-# 돌파 후 새로운 조정이 나오면
-# B -> 새로운 0
-# C -> 새로운 A
+# 배열 시작점
 # =========================================================
 
-def get_swings(df):
+def latest_alignment(df, wanted):
 
-    if len(df) < SWING_LEFT + SWING_RIGHT + 5:
-        return [], []
+    ds = direction_series(df)
 
-    highs = []
-    lows = []
+    if not ds:
+        return None
+
+    latest = None
 
     for i in range(
-        SWING_LEFT,
-        len(df) - SWING_RIGHT
+        min(120, len(ds) - 1),
+        len(ds)
     ):
 
-        h = df["high"].iloc[i]
-        l = df["low"].iloc[i]
-
-        left_h = df["high"].iloc[
-            i - SWING_LEFT:i
-        ]
-
-        right_h = df["high"].iloc[
-            i + 1:i + SWING_RIGHT + 1
-        ]
-
-        left_l = df["low"].iloc[
-            i - SWING_LEFT:i
-        ]
-
-        right_l = df["low"].iloc[
-            i + 1:i + SWING_RIGHT + 1
-        ]
-
-        if h >= left_h.max() and h >= right_h.max():
-            highs.append(i)
-
-        if l <= left_l.min() and l <= right_l.min():
-            lows.append(i)
-
-    return highs, lows
-
-
-def find_long_n(df):
-
-    if df.empty or len(df) < MIN_N_CANDLES:
-        return None
-
-    highs, lows = get_swings(df)
-
-    if not highs or not lows:
-        return None
-
-    # 모든 파동 후보 탐색
-    for zero_idx in reversed(lows):
-
-        zero_price = float(df["low"].iloc[zero_idx])
-
-        # ---------------------------------------------
-        # 0 -> A
-        # ---------------------------------------------
-
-        a_candidates = [
-            x for x in highs
-            if x > zero_idx
-        ]
-
-        if not a_candidates:
-            continue
-
-        for a_idx in a_candidates:
-
-            a_price = float(df["high"].iloc[a_idx])
-
-            if a_price <= zero_price:
-                continue
-
-            # -----------------------------------------
-            # A -> B
-            # B < A
-            # B > 0
-            # -----------------------------------------
-
-            b_candidates = [
-                x for x in lows
-                if x > a_idx
-                and zero_price < float(df["low"].iloc[x]) < a_price
-            ]
-
-            if not b_candidates:
-                continue
-
-            # 가장 최근 B부터 확인
-            for b_idx in reversed(b_candidates):
-
-                b_price = float(df["low"].iloc[b_idx])
-
-                # 조정폭이 너무 작은 경우 제외
-                correction = (
-                    a_price - b_price
-                ) / a_price
-
-                if correction < MIN_CORRECTION_RATE:
-                    continue
-
-                # -------------------------------------
-                # B -> C
-                # C는 A보다 반드시 높아야 함
-                # -------------------------------------
-
-                c_candidates = [
-                    x for x in highs
-                    if x > b_idx
-                    and float(df["high"].iloc[x]) > a_price
-                ]
-
-                if not c_candidates:
-                    continue
-
-                c_idx = c_candidates[0]
-
-                # C 고점
-                c_price = float(
-                    df["high"].iloc[c_idx]
-                )
-
-                if c_price <= a_price:
-                    continue
-
-                # -------------------------------------
-                # A 돌파 캔들 확인
-                # close > A high
-                # -------------------------------------
-
-                breakout_idx = None
-
-                for j in range(b_idx + 1, len(df)):
-
-                    close = float(df["close"].iloc[j])
-
-                    if close > a_price:
-                        breakout_idx = j
-                        break
-
-                if breakout_idx is None:
-                    continue
-
-                # -------------------------------------
-                # 돌파 이후 A 아래로 내려갔는지 검사
-                #
-                # 내려가면 이 N은 무효
-                # -------------------------------------
-
-                invalid = False
-
-                for j in range(
-                    breakout_idx + 1,
-                    len(df)
-                ):
-
-                    close = float(
-                        df["close"].iloc[j]
-                    )
-
-                    if close < a_price:
-                        invalid = True
-                        break
-
-                if invalid:
-                    continue
-
-                # -------------------------------------
-                # 현재가 C의 상승구간에 있는지 확인
-                # -------------------------------------
-
-                count = len(df) - breakout_idx
-
-                return {
-                    "direction": "long",
-                    "zero_idx": zero_idx,
-                    "a_idx": a_idx,
-                    "b_idx": b_idx,
-                    "c_idx": c_idx,
-                    "breakout_idx": breakout_idx,
-                    "a_price": a_price,
-                    "b_price": b_price,
-                    "c_price": c_price,
-                    "count": count
-                }
-
-    return None
-
-
-def find_short_n(df):
-
-    if df.empty or len(df) < MIN_N_CANDLES:
-        return None
-
-    highs, lows = get_swings(df)
-
-    if not highs or not lows:
-        return None
-
-    # SHORT
-    # 0 > B > A > C
-
-    for zero_idx in reversed(highs):
-
-        zero_price = float(
-            df["high"].iloc[zero_idx]
-        )
-
-        a_candidates = [
-            x for x in lows
-            if x > zero_idx
-        ]
-
-        if not a_candidates:
-            continue
-
-        for a_idx in a_candidates:
-
-            a_price = float(
-                df["low"].iloc[a_idx]
+        if (
+            ds[i] == wanted
+            and (
+                i == 0
+                or ds[i-1] != wanted
             )
-
-            if a_price >= zero_price:
-                continue
-
-            b_candidates = [
-                x for x in highs
-                if x > a_idx
-                and a_price < float(df["high"].iloc[x]) < zero_price
-            ]
-
-            if not b_candidates:
-                continue
-
-            for b_idx in reversed(b_candidates):
-
-                b_price = float(
-                    df["high"].iloc[b_idx]
-                )
-
-                correction = (
-                    b_price - a_price
-                ) / a_price
-
-                if correction < MIN_CORRECTION_RATE:
-                    continue
-
-                c_candidates = [
-                    x for x in lows
-                    if x > b_idx
-                    and float(df["low"].iloc[x]) < a_price
-                ]
-
-                if not c_candidates:
-                    continue
-
-                c_idx = c_candidates[0]
-
-                c_price = float(
-                    df["low"].iloc[c_idx]
-                )
-
-                if c_price >= a_price:
-                    continue
-
-                breakout_idx = None
-
-                for j in range(
-                    b_idx + 1,
-                    len(df)
-                ):
-
-                    close = float(
-                        df["close"].iloc[j]
-                    )
-
-                    if close < a_price:
-                        breakout_idx = j
-                        break
-
-                if breakout_idx is None:
-                    continue
-
-                # A 위로 다시 올라오면 무효
-                invalid = False
-
-                for j in range(
-                    breakout_idx + 1,
-                    len(df)
-                ):
-
-                    close = float(
-                        df["close"].iloc[j]
-                    )
-
-                    if close > a_price:
-                        invalid = True
-                        break
-
-                if invalid:
-                    continue
-
-                count = len(df) - breakout_idx
-
-                return {
-                    "direction": "short",
-                    "zero_idx": zero_idx,
-                    "a_idx": a_idx,
-                    "b_idx": b_idx,
-                    "c_idx": c_idx,
-                    "breakout_idx": breakout_idx,
-                    "a_price": a_price,
-                    "b_price": b_price,
-                    "c_price": c_price,
-                    "count": count
-                }
-
-    return None
-
-
-# =========================================================
-# 해지 경고
-# =========================================================
-
-def invalidation_id(symbol, signal):
-
-    if not signal:
-        return None
+        ):
+            latest = i
 
     return (
-        f"{symbol}_"
-        f"{signal['direction']}_"
-        f"{signal['breakout_idx']}_"
-        f"{signal['a_price']}"
+        {
+            "direction": wanted,
+            "index": latest
+        }
+        if latest is not None
+        else None
     )
 
 
-def check_invalidation(
-    symbol,
-    df,
-    signal
+def alignment_valid(
+    ds,
+    start,
+    end,
+    wanted
 ):
 
-    if not signal or df.empty:
+    if (
+        start < 0
+        or end >= len(ds)
+    ):
         return False
 
-    i = len(df) - 1
+    return all(
+        x == wanted
+        for x in ds[start:end+1]
+    )
 
-    if i < 1:
+
+# =========================================================
+# 스윙
+# =========================================================
+
+def swings(
+    df,
+    start,
+    end,
+    high=True
+):
+
+    col = "h" if high else "l"
+    result = []
+
+    start = max(
+        start,
+        SWING_LEFT
+    )
+
+    end = min(
+        end,
+        len(df) - SWING_RIGHT - 1
+    )
+
+    for i in range(
+        start,
+        end + 1
+    ):
+
+        try:
+
+            value = float(
+                df[col].iloc[i]
+            )
+
+            left = pd.to_numeric(
+                df[col].iloc[
+                    i-SWING_LEFT:i
+                ],
+                errors="coerce"
+            )
+
+            right = pd.to_numeric(
+                df[col].iloc[
+                    i+1:i+1+SWING_RIGHT
+                ],
+                errors="coerce"
+            )
+
+            if (
+                left.empty
+                or right.empty
+            ):
+                continue
+
+            if high:
+
+                if (
+                    value >= left.max()
+                    and value >= right.max()
+                ):
+                    result.append(
+                        (i, value)
+                    )
+
+            else:
+
+                if (
+                    value <= left.min()
+                    and value <= right.min()
+                ):
+                    result.append(
+                        (i, value)
+                    )
+
+        except:
+            pass
+
+    return result
+
+
+# =========================================================
+# 해지
+# =========================================================
+
+def invalidated(
+    df,
+    i,
+    long=True,
+    breakout_level=None
+):
+
+    if i <= 0 or i >= len(df):
         return False
 
-    a_price = signal["a_price"]
+    try:
 
-    current_close = float(
-        df["close"].iloc[i]
-    )
+        o = float(df.o.iloc[i])
+        c = float(df.c.iloc[i])
+        p = float(df.c.iloc[i-1])
 
-    previous_close = float(
-        df["close"].iloc[i - 1]
-    )
+        if long:
 
-    current_open = float(
-        df["open"].iloc[i]
-    )
+            # ---------------------------------------------
+            # 돌파 후 A 아래로 종가 하락
+            # ---------------------------------------------
 
-    direction_ = signal["direction"]
+            if (
+                breakout_level is not None
+                and c < breakout_level
+            ):
+                return True
 
-    # ---------------------------------------------
-    # LONG
-    #
-    # 음봉 마감
-    # 현재 종가 < 이전 종가
-    # 또는 A 아래로 하락
-    # ---------------------------------------------
+            # 기존 해지 조건 유지
+            if c < o and c < p:
+                return True
 
-    if direction_ == "long":
+        else:
 
-        if current_close < a_price:
-            return True
+            if (
+                breakout_level is not None
+                and c > breakout_level
+            ):
+                return True
 
-        if (
-            current_close < current_open
-            and current_close < previous_close
-        ):
-            return True
+            if c > o and c > p:
+                return True
 
-    # ---------------------------------------------
-    # SHORT
-    # ---------------------------------------------
-
-    if direction_ == "short":
-
-        if current_close > a_price:
-            return True
-
-        if (
-            current_close > current_open
-            and current_close > previous_close
-        ):
-            return True
+    except:
+        pass
 
     return False
 
 
-def mark_invalidation_once(
+def breakout_id(
+    exchange,
     symbol,
-    signal
+    tf,
+    df,
+    i
 ):
 
-    sid = invalidation_id(
-        symbol,
-        signal
-    )
+    if (
+        i is None
+        or i < 0
+        or i >= len(df)
+    ):
+        return None
 
-    if sid is None:
+    try:
+
+        if "ts" in df.columns:
+            cid = int(
+                df.ts.iloc[i]
+            )
+        else:
+            cid = str(
+                df.datetime.iloc[i]
+            )
+
+        return (
+            f"{exchange}:"
+            f"{symbol}:"
+            f"{tf}:"
+            f"{cid}"
+        )
+
+    except:
+        return None
+
+
+def mark_invalidation_once(cid):
+
+    if not cid:
         return False
 
     with invalidation_lock:
 
-        if sid in shown_invalidation_ids:
+        if cid in shown_invalidation_ids:
             return False
 
-        shown_invalidation_ids.add(sid)
+        shown_invalidation_ids.add(cid)
 
-        # 너무 커지지 않게 관리
         if len(shown_invalidation_ids) > 10000:
             shown_invalidation_ids.clear()
 
@@ -931,415 +995,1621 @@ def mark_invalidation_once(
 
 
 # =========================================================
-# 15분 N자
+# N자 핵심 엔진
+#
+# LONG
+#
+#              C
+#             / \
+#            /   \
+#           A     \
+#          /       \
+#         /         \
+#        0           B
+#
+# 실제 순서:
+#
+# 0 → A → B → C
+#
+# 가격:
+#
+# 0 < B < A < C
+#
+# C가 A를 종가 돌파
+# → 🚀(1)
+#
+# 이후 A 아래 종가
+# → 🚨 해지
+#
+# 해지 후 기존 N 재사용 금지
+# → 새로운 0부터 다시 탐색
+# =========================================================
+
+def find_n_breakout(
+    df,
+    alignment,
+    long=True
+):
+
+    direction_name = (
+        "long" if long else "short"
+    )
+
+    empty = {
+        "status": "none",
+        "direction": direction_name,
+        "breakout_index": None,
+        "breakout_level": None,
+        "invalidation_index": None
+    }
+
+    if (
+        df is None
+        or df.empty
+        or len(df) < 125
+        or alignment is None
+        or alignment.get("direction")
+            != direction_name
+    ):
+        return empty
+
+    ds = direction_series(df)
+
+    if not ds:
+        return empty
+
+    start = int(
+        alignment.get("index", 0)
+    )
+
+    if (
+        start < 0
+        or start >= len(df) - 1
+    ):
+        return empty
+
+    # EMA 정렬 유지 확인
+    if not alignment_valid(
+        ds,
+        start,
+        len(df) - 1,
+        direction_name
+    ):
+        return empty
+
+    # =====================================================
+    # LONG
+    # =====================================================
+
+    if long:
+
+        low_swings = swings(
+            df,
+            start + SWING_RIGHT + 1,
+            len(df) - SWING_RIGHT - 1,
+            high=False
+        )
+
+        high_swings = swings(
+            df,
+            start + SWING_RIGHT + 1,
+            len(df) - SWING_RIGHT - 1,
+            high=True
+        )
+
+        if (
+            not low_swings
+            or not high_swings
+        ):
+            return empty
+
+        pivots = []
+
+        for i, price in low_swings:
+            pivots.append(
+                (i, "low", price)
+            )
+
+        for i, price in high_swings:
+            pivots.append(
+                (i, "high", price)
+            )
+
+        pivots.sort(
+            key=lambda x: x[0]
+        )
+
+        # -------------------------------------------------
+        # 상태
+        #
+        # 0 = 0 찾기
+        # 1 = A 찾기
+        # 2 = B 찾기
+        # 3 = C 찾기
+        # 4 = 돌파 후 유지
+        # -------------------------------------------------
+
+        state = 0
+
+        zero_i = None
+        zero_price = None
+
+        a_i = None
+        a_price = None
+
+        b_i = None
+        b_price = None
+
+        c_i = None
+        c_price = None
+
+        breakout_i = None
+        latest_breakout = None
+
+        for i, typ, price in pivots:
+
+            # =================================================
+            # 0
+            # =================================================
+
+            if state == 0:
+
+                if typ == "low":
+
+                    zero_i = i
+                    zero_price = price
+
+                    a_i = None
+                    a_price = None
+                    b_i = None
+                    b_price = None
+                    c_i = None
+                    c_price = None
+
+                    state = 1
+
+                continue
+
+            # =================================================
+            # 0 → A
+            #
+            # A > 0
+            # =================================================
+
+            if state == 1:
+
+                if typ == "low":
+
+                    # 더 낮은 저점이면
+                    # 새로운 0
+                    if price <= zero_price:
+
+                        zero_i = i
+                        zero_price = price
+
+                    continue
+
+                if (
+                    typ == "high"
+                    and price > zero_price
+                ):
+
+                    a_i = i
+                    a_price = price
+
+                    state = 2
+
+                continue
+
+            # =================================================
+            # A → B
+            #
+            # 반드시
+            #
+            # 0 < B < A
+            # =================================================
+
+            if state == 2:
+
+                if typ == "low":
+
+                    # -----------------------------------------
+                    # B가 0 이하로 내려가면
+                    # 기존 N자 폐기
+                    # -----------------------------------------
+
+                    if price <= zero_price:
+
+                        zero_i = i
+                        zero_price = price
+
+                        a_i = None
+                        a_price = None
+                        b_i = None
+                        b_price = None
+
+                        state = 1
+
+                        continue
+
+                    # -----------------------------------------
+                    # B는 A보다 낮아야 함
+                    # -----------------------------------------
+
+                    if price < a_price:
+
+                        correction = (
+                            a_price - price
+                        ) / a_price
+
+                        if (
+                            correction
+                            >= MIN_CORRECTION_RATE
+                        ):
+
+                            b_i = i
+                            b_price = price
+
+                            state = 3
+
+                elif typ == "high":
+
+                    # A보다 높은 고점이
+                    # 아직 돌파 전이라면
+                    # 새로운 A로 갱신
+                    if price > a_price:
+
+                        a_i = i
+                        a_price = price
+
+                continue
+
+            # =================================================
+            # B → C
+            #
+            # 핵심:
+            #
+            # C HIGH > A HIGH
+            #
+            # 그리고 C 구간의 종가가
+            # A를 실제로 돌파해야 함
+            # =================================================
+
+            if state == 3:
+
+                if typ == "low":
+
+                    # B가 0 아래로 무너지면
+                    # N 폐기
+                    if price <= zero_price:
+
+                        zero_i = i
+                        zero_price = price
+
+                        a_i = None
+                        a_price = None
+                        b_i = None
+                        b_price = None
+
+                        state = 1
+
+                        continue
+
+                    # B 이후 더 높은 조정 저점
+                    # → 새로운 B
+                    if (
+                        price > b_price
+                        and price < a_price
+                    ):
+
+                        b_i = i
+                        b_price = price
+
+                    continue
+
+                if typ == "high":
+
+                    # -----------------------------------------
+                    # C는 반드시 A보다 위
+                    # -----------------------------------------
+
+                    if price > a_price:
+
+                        c_i = i
+                        c_price = price
+
+                        # -------------------------------------
+                        # C가 A를 실제 종가로 돌파했는지 확인
+                        # -------------------------------------
+
+                        for j in range(
+                            b_i + 1,
+                            i + 1
+                        ):
+
+                            close = float(
+                                df.c.iloc[j]
+                            )
+
+                            if close > a_price:
+
+                                breakout_i = j
+
+                                latest_breakout = {
+                                    "status": "breakout",
+                                    "direction": "long",
+                                    "breakout_index": j,
+                                    "breakout_level": a_price,
+                                    "invalidation_index": None,
+                                    "zero_index": zero_i,
+                                    "a_index": a_i,
+                                    "b_index": b_i,
+                                    "c_index": c_i
+                                }
+
+                                state = 4
+                                break
+
+                continue
+
+            # =================================================
+            # 돌파 후
+            #
+            # A 아래로 내려가면 N자 종료
+            # =================================================
+
+            if state == 4:
+
+                if invalidated(
+                    df,
+                    i,
+                    long=True,
+                    breakout_level=a_price
+                ):
+
+                    return {
+                        "status": "invalidated",
+                        "direction": "long",
+                        "breakout_index": breakout_i,
+                        "breakout_level": a_price,
+                        "invalidation_index": i
+                    }
+
+                # ---------------------------------------------
+                # 새로운 조정이 발생하면
+                #
+                # 이전 B → 새로운 0
+                # 이전 C → 새로운 A
+                #
+                # 다시 B → C 탐색
+                # ---------------------------------------------
+
+                if typ == "low":
+
+                    # A 위에서 조정해야 함
+                    if price > a_price:
+
+                        zero_i = b_i
+                        zero_price = b_price
+
+                        a_i = c_i
+                        a_price = c_price
+
+                        b_i = i
+                        b_price = price
+
+                        c_i = None
+                        c_price = None
+
+                        state = 3
+
+                elif typ == "high":
+
+                    # C보다 더 높은 고점 발생
+                    if price > a_price:
+
+                        zero_i = b_i
+                        zero_price = b_price
+
+                        a_i = i
+                        a_price = price
+
+                        b_i = None
+                        b_price = None
+
+                        c_i = None
+                        c_price = None
+
+                        state = 2
+
+                continue
+
+        # =====================================================
+        # 현재 활성 N 확인
+        # =====================================================
+
+        if latest_breakout is not None:
+
+            bi = latest_breakout[
+                "breakout_index"
+            ]
+
+            level = latest_breakout[
+                "breakout_level"
+            ]
+
+            for j in range(
+                bi + 1,
+                len(df)
+            ):
+
+                if invalidated(
+                    df,
+                    j,
+                    long=True,
+                    breakout_level=level
+                ):
+
+                    return {
+                        "status": "invalidated",
+                        "direction": "long",
+                        "breakout_index": bi,
+                        "breakout_level": level,
+                        "invalidation_index": j
+                    }
+
+            return latest_breakout
+
+        return empty
+
+    # =====================================================
+    # SHORT
+    #
+    # LONG의 반대
+    #
+    # 0 > B > A > C
+    # =====================================================
+
+    high_swings = swings(
+        df,
+        start + SWING_RIGHT + 1,
+        len(df) - SWING_RIGHT - 1,
+        high=True
+    )
+
+    low_swings = swings(
+        df,
+        start + SWING_RIGHT + 1,
+        len(df) - SWING_RIGHT - 1,
+        high=False
+    )
+
+    if (
+        not high_swings
+        or not low_swings
+    ):
+        return empty
+
+    pivots = []
+
+    for i, price in high_swings:
+        pivots.append(
+            (i, "high", price)
+        )
+
+    for i, price in low_swings:
+        pivots.append(
+            (i, "low", price)
+        )
+
+    pivots.sort(
+        key=lambda x: x[0]
+    )
+
+    state = 0
+
+    zero_i = None
+    zero_price = None
+
+    a_i = None
+    a_price = None
+
+    b_i = None
+    b_price = None
+
+    c_i = None
+    c_price = None
+
+    breakout_i = None
+    latest_breakout = None
+
+    for i, typ, price in pivots:
+
+        # =================================================
+        # 0
+        # =================================================
+
+        if state == 0:
+
+            if typ == "high":
+
+                zero_i = i
+                zero_price = price
+
+                state = 1
+
+            continue
+
+        # =================================================
+        # 0 → A
+        #
+        # A < 0
+        # =================================================
+
+        if state == 1:
+
+            if typ == "high":
+
+                if price >= zero_price:
+
+                    zero_i = i
+                    zero_price = price
+
+                continue
+
+            if (
+                typ == "low"
+                and price < zero_price
+            ):
+
+                a_i = i
+                a_price = price
+
+                state = 2
+
+            continue
+
+        # =================================================
+        # A → B
+        #
+        # 0 > B > A
+        # =================================================
+
+        if state == 2:
+
+            if typ == "high":
+
+                if price >= zero_price:
+
+                    zero_i = i
+                    zero_price = price
+
+                    a_i = None
+                    a_price = None
+                    b_i = None
+                    b_price = None
+
+                    state = 1
+
+                    continue
+
+                if price > a_price:
+
+                    correction = (
+                        price - a_price
+                    ) / abs(a_price)
+
+                    if (
+                        correction
+                        >= MIN_CORRECTION_RATE
+                    ):
+
+                        b_i = i
+                        b_price = price
+
+                        state = 3
+
+            elif typ == "low":
+
+                if price < a_price:
+
+                    a_i = i
+                    a_price = price
+
+            continue
+
+        # =================================================
+        # B → C
+        #
+        # C < A
+        # =================================================
+
+        if state == 3:
+
+            if typ == "high":
+
+                if price >= zero_price:
+
+                    zero_i = i
+                    zero_price = price
+
+                    a_i = None
+                    a_price = None
+                    b_i = None
+                    b_price = None
+
+                    state = 1
+
+                    continue
+
+                if (
+                    price > b_price
+                    and price < zero_price
+                ):
+
+                    b_i = i
+                    b_price = price
+
+                continue
+
+            if typ == "low":
+
+                if price < a_price:
+
+                    c_i = i
+                    c_price = price
+
+                    for j in range(
+                        b_i + 1,
+                        i + 1
+                    ):
+
+                        close = float(
+                            df.c.iloc[j]
+                        )
+
+                        if close < a_price:
+
+                            breakout_i = j
+
+                            latest_breakout = {
+                                "status": "breakout",
+                                "direction": "short",
+                                "breakout_index": j,
+                                "breakout_level": a_price,
+                                "invalidation_index": None,
+                                "zero_index": zero_i,
+                                "a_index": a_i,
+                                "b_index": b_i,
+                                "c_index": c_i
+                            }
+
+                            state = 4
+                            break
+
+            continue
+
+        # =================================================
+        # SHORT 돌파 후
+        #
+        # A 위로 종가가 올라가면 해지
+        # =================================================
+
+        if state == 4:
+
+            if invalidated(
+                df,
+                i,
+                long=False,
+                breakout_level=a_price
+            ):
+
+                return {
+                    "status": "invalidated",
+                    "direction": "short",
+                    "breakout_index": breakout_i,
+                    "breakout_level": a_price,
+                    "invalidation_index": i
+                }
+
+            # 새로운 조정
+            if typ == "high":
+
+                if price < a_price:
+
+                    zero_i = b_i
+                    zero_price = b_price
+
+                    a_i = c_i
+                    a_price = c_price
+
+                    b_i = i
+                    b_price = price
+
+                    c_i = None
+                    c_price = None
+
+                    state = 3
+
+            elif typ == "low":
+
+                if price < a_price:
+
+                    zero_i = b_i
+                    zero_price = b_price
+
+                    a_i = i
+                    a_price = price
+
+                    b_i = None
+                    b_price = None
+
+                    c_i = None
+                    c_price = None
+
+                    state = 2
+
+            continue
+
+    # =====================================================
+    # 현재 활성 SHORT N
+    # =====================================================
+
+    if latest_breakout is not None:
+
+        bi = latest_breakout[
+            "breakout_index"
+        ]
+
+        level = latest_breakout[
+            "breakout_level"
+        ]
+
+        for j in range(
+            bi + 1,
+            len(df)
+        ):
+
+            if invalidated(
+                df,
+                j,
+                long=False,
+                breakout_level=level
+            ):
+
+                return {
+                    "status": "invalidated",
+                    "direction": "short",
+                    "breakout_index": bi,
+                    "breakout_level": level,
+                    "invalidation_index": j
+                }
+
+        return latest_breakout
+
+    return empty
+
+
+# =========================================================
+# 15M N자
 # =========================================================
 
 def get_15m_signal(
+    df,
+    exchange,
     symbol,
-    df15,
     allow_short=True
 ):
 
-    if df15.empty:
-        return None
+    empty = {
+        "signal": "none",
+        "direction": "none",
+        "breakout_id": None,
+        "breakout_index": None,
+        "warning_index": None,
+        "invalidation_id": None,
+        "invalidation_index": None
+    }
 
-    long_signal = find_long_n(df15)
+    if df is None or len(df) < 125:
+        return empty
 
-    short_signal = (
-        find_short_n(df15)
-        if allow_short
-        else None
+    current_dir = direction(df)
+
+    if current_dir not in (
+        "long",
+        "short"
+    ):
+        return {
+            **empty,
+            "direction": current_dir
+        }
+
+    if (
+        current_dir == "short"
+        and not allow_short
+    ):
+        return {
+            **empty,
+            "direction": "short"
+        }
+
+    alignment = latest_alignment(
+        df,
+        current_dir
     )
 
-    # 최근 breakout을 선택
-    candidates = [
-        x for x in
-        [long_signal, short_signal]
-        if x is not None
-    ]
-
-    if not candidates:
-        return None
-
-    return max(
-        candidates,
-        key=lambda x: x["breakout_idx"]
+    result = find_n_breakout(
+        df,
+        alignment,
+        long=current_dir == "long"
     )
+
+    # =====================================================
+    # 🚨 해지
+    # =====================================================
+
+    if result["status"] == "invalidated":
+
+        idx = result[
+            "invalidation_index"
+        ]
+
+        iid = breakout_id(
+            exchange,
+            symbol,
+            "15M",
+            df,
+            idx
+        )
+
+        if mark_invalidation_once(iid):
+
+            return {
+                **empty,
+                "direction": current_dir,
+                "breakout_index":
+                    result["breakout_index"],
+                "warning_index": idx,
+                "invalidation_id": iid,
+                "invalidation_index": idx,
+                "signal": "invalidated"
+            }
+
+        return {
+            **empty,
+            "direction": current_dir,
+            "breakout_index":
+                result["breakout_index"],
+            "invalidation_id": iid,
+            "invalidation_index": idx
+        }
+
+    # =====================================================
+    # 🚀 돌파
+    # =====================================================
+
+    bi = result.get(
+        "breakout_index"
+    )
+
+    if bi is None:
+
+        return {
+            **empty,
+            "direction": current_dir
+        }
+
+    bid = breakout_id(
+        exchange,
+        symbol,
+        "15M",
+        df,
+        bi
+    )
+
+    if not bid:
+        return empty
+
+    # 돌파 봉 = 🚀(1)
+    count = len(df) - bi
+
+    return {
+        **empty,
+        "signal": str(count),
+        "direction": current_dir,
+        "breakout_id": bid,
+        "breakout_index": bi
+    }
 
 
 # =========================================================
-# 멀티 타임프레임 확인
+# 멀티 타임프레임
 # =========================================================
 
 def multi_signal(
     df15,
     df1h,
     df4h,
-    allow_short=True
+    exchange,
+    symbol,
+    allow_short
 ):
 
-    if df15.empty or df1h.empty or df4h.empty:
-        return None
-
-    n = get_15m_signal(
-        "",
+    w = get_15m_signal(
         df15,
+        exchange,
+        symbol,
         allow_short
     )
 
-    if not n:
-        return None
-
     d15 = direction(df15)
-    d1h = direction(df1h)
-    d4h = direction(df4h)
+    d1 = direction(df1h)
+    d4 = direction(df4h)
 
-    nd = n["direction"]
+    if w["direction"] == "long":
 
-    if nd == "long":
-
-        if (
+        ok = (
             d15 == "long"
-            and d1h == "long"
-            and d4h == "long"
-        ):
-            return n
+            and d1 == "long"
+            and d4 == "long"
+        )
 
-    if nd == "short" and allow_short:
+    elif w["direction"] == "short":
 
-        if (
-            d15 == "short"
-            and d1h == "short"
-            and d4h == "short"
-        ):
-            return n
+        ok = (
+            allow_short
+            and d15 == "short"
+            and d1 == "short"
+            and d4 == "short"
+        )
 
-    return None
+    else:
+        ok = False
+
+    if not ok:
+
+        w["signal"] = "none"
+        w["warning_index"] = None
+
+    return {
+        "15m": w
+    }
 
 
 # =========================================================
-# 일간 변동률
+# 변동률 / 거래대금
 # =========================================================
 
 def daily_change_upbit(market):
 
-    r = retry_request(
-        "GET",
-        "https://api.upbit.com/v1/ticker",
-        params={"markets": market}
+    r = retry(
+        requests.get,
+        "https://api.upbit.com/v1/candles/days",
+        params={
+            "market": market,
+            "count": 1
+        },
+        timeout=15
     )
 
-    if not r:
-        return 0.0
+    try:
+
+        x = r.json()[0].get(
+            "change_rate"
+        )
+
+        return (
+            [round(float(x) * 100, 2)]
+            if x is not None
+            else None
+        )
+
+    except:
+        return None
+
+
+def daily_changes(df):
+
+    if df is None or df.empty:
+        return None
 
     try:
-        return float(
-            r.json()[0]["signed_change_rate"]
-        ) * 100
-    except Exception:
-        return 0.0
 
+        x = df.copy()
 
-def format_change(v):
+        x["datetime"] = (
+            pd.to_datetime(
+                x.ts,
+                unit="ms",
+                utc=True
+            )
+            .dt.tz_convert("Asia/Seoul")
+            .dt.tz_localize(None)
+        )
 
-    if v is None:
-        return "-"
+        x["c"] = pd.to_numeric(
+            x.c,
+            errors="coerce"
+        )
 
-    return f"{v:+.2f}%"
+        x = (
+            x
+            .dropna(
+                subset=[
+                    "datetime",
+                    "c"
+                ]
+            )
+            .set_index("datetime")
+        )
+
+        daily = (
+            x.c
+            .resample(
+                "1D",
+                offset="9h"
+            )
+            .last()
+            .dropna()
+        )
+
+        if len(daily) < 2:
+            return None
+
+        result = []
+
+        for i in range(
+            max(1, len(daily) - 3),
+            len(daily)
+        ):
+
+            if daily.iloc[i-1] != 0:
+
+                result.append(
+                    round(
+                        (
+                            daily.iloc[i]
+                            - daily.iloc[i-1]
+                        )
+                        / daily.iloc[i-1]
+                        * 100,
+                        2
+                    )
+                )
+
+        return result[::-1]
+
+    except:
+        return None
 
 
 def format_volume(v):
 
-    if v >= 1_000_000_000_000:
-        return f"{v / 1_000_000_000_000:.1f}조"
+    if v is None:
+        return "-"
 
-    if v >= 100_000_000:
-        return f"{v / 100_000_000:.0f}억"
+    try:
+        v = float(v)
+    except:
+        return "-"
 
-    if v >= 10_000_000:
-        return f"{v / 10_000_000:.1f}천만"
+    if v >= 1e12:
+        return f"{v/1e12:.2f}조"
 
-    return f"{v:,.0f}"
+    if v >= 1e8:
+        return f"{v/1e8:,.0f}억"
+
+    return f"{v/1e4:,.0f}만원"
+
+
+def format_change(x):
+
+    if not x:
+        return (
+            '<span class="change-item">'
+            '⬜ N/A'
+            '</span>'
+        )
+
+    try:
+        v = float(x[0])
+    except:
+        return (
+            '<span class="change-item">'
+            '⬜ N/A'
+            '</span>'
+        )
+
+    icon = "☀️" if v > 0 else "☁️"
+    sign = "+" if v > 0 else ""
+
+    cls = (
+        "positive"
+        if v > 0
+        else "negative"
+        if v < 0
+        else "neutral"
+    )
+
+    return (
+        f'<span class="change-item {cls}">'
+        f'{icon} {sign}{v:.2f}%'
+        f'</span>'
+    )
 
 
 # =========================================================
 # 분석
 # =========================================================
 
-def analyze_upbit(
+def analyze(
     market,
-    ticker
+    okx=False
 ):
 
-    df15 = get_upbit_minute(
-        market,
-        15,
-        INITIAL_CANDLE_COUNT
-    )
+    if okx:
 
-    df1h = get_upbit_minute(
-        market,
-        60,
-        INITIAL_CANDLE_COUNT
-    )
-
-    df4h = get_upbit_4h(
-        market,
-        INITIAL_CANDLE_COUNT
-    )
-
-    if (
-        df15.empty
-        or df1h.empty
-        or df4h.empty
-    ):
-        return None
-
-    d15 = direction(df15)
-    d1h = direction(df1h)
-    d4h = direction(df4h)
-
-    n = find_long_n(df15)
-
-    signal = None
-
-    if n and (
-        d15 == "long"
-        and d1h == "long"
-        and d4h == "long"
-    ):
-        signal = n
-
-    result = {
-        "symbol": market.replace("KRW-", ""),
-        "market": market,
-        "change": float(
-            ticker.get("signed_change_rate", 0)
-        ) * 100,
-        "volume": float(
-            ticker.get("acc_trade_price_24h", 0)
-        ),
-        "d15": d15,
-        "d1h": d1h,
-        "d4h": d4h,
-        "signal": signal
-    }
-
-    return result
-
-
-def analyze_okx(
-    inst_id,
-    volume
-):
-
-    df15 = get_okx_ohlcv(
-        inst_id,
-        "15m",
-        INITIAL_CANDLE_COUNT
-    )
-
-    df1h = get_okx_ohlcv(
-        inst_id,
-        "1H",
-        INITIAL_CANDLE_COUNT
-    )
-
-    df4h = get_okx_ohlcv(
-        inst_id,
-        "4H",
-        INITIAL_CANDLE_COUNT
-    )
-
-    if (
-        df15.empty
-        or df1h.empty
-        or df4h.empty
-    ):
-        return None
-
-    d15 = direction(df15)
-    d1h = direction(df1h)
-    d4h = direction(df4h)
-
-    n_long = find_long_n(df15)
-    n_short = find_short_n(df15)
-
-    candidates = [
-        x for x in
-        [n_long, n_short]
-        if x is not None
-    ]
-
-    signal = None
-
-    if candidates:
-
-        n = max(
-            candidates,
-            key=lambda x: x["breakout_idx"]
+        df4 = history_okx(
+            market,
+            "4H"
         )
 
-        if (
-            n["direction"] == "long"
-            and d15 == "long"
-            and d1h == "long"
-            and d4h == "long"
-        ):
-            signal = n
+        df1 = history_okx(
+            market,
+            "1H"
+        )
 
-        elif (
-            n["direction"] == "short"
-            and d15 == "short"
-            and d1h == "short"
-            and d4h == "short"
-        ):
-            signal = n
+        df15 = history_okx(
+            market,
+            "15m",
+            INITIAL_CANDLE_COUNT
+        )
+
+    else:
+
+        df4 = history_upbit_4h(
+            market
+        )
+
+        df1 = history_upbit(
+            market,
+            60
+        )
+
+        df15 = history_upbit(
+            market,
+            15,
+            INITIAL_CANDLE_COUNT
+        )
+
+    if any(
+        x is None or x.empty
+        for x in (
+            df4,
+            df1,
+            df15
+        )
+    ):
+        return None
+
+    e15 = ema_display(df15)
+    e1 = ema_display(df1)
+    e4 = ema_display(df4)
+
+    warnings = multi_signal(
+        df15,
+        df1,
+        df4,
+        "OKX" if okx else "UPBIT",
+        market,
+        allow_short=okx
+    )
+
+    w = warnings["15m"]
+
+    d = w["direction"]
+    signal = w["signal"]
+
+    valid = (
+        signal.isdigit()
+        and int(signal) >= 1
+    )
+
+    qualified = (
+        valid
+        and e15["direction"] == d
+        and e1["direction"] == d
+        and e4["direction"] == d
+        and d in (
+            "long",
+            "short"
+        )
+    )
+
+    changes = (
+        daily_changes(df15)
+        if okx
+        else daily_change_upbit(market)
+    )
 
     return {
-        "symbol": inst_id.replace("-USDT-SWAP", ""),
-        "market": inst_id,
-        "change": 0,
-        "volume": volume,
-        "d15": d15,
-        "d1h": d1h,
-        "d4h": d4h,
-        "signal": signal
+        "ema": e15,
+        "ema_1h": e1,
+        "ema_4h": e4,
+        "warning": w,
+        "warnings": warnings,
+        "changes": changes,
+        "qualified": qualified
     }
 
 
 # =========================================================
-# Upbit 업데이트
+# 필터
+# =========================================================
+
+def pass_filter(
+    a,
+    short=False
+):
+
+    if not a:
+        return False
+
+    d = (
+        "short"
+        if short
+        else "long"
+    )
+
+    return (
+        a["ema"]["direction"] == d
+        and a["ema_1h"]["direction"] == d
+        and a["ema_4h"]["direction"] == d
+        and a["warning"]["direction"] == d
+        and a["warning"]["signal"].isdigit()
+        and int(a["warning"]["signal"]) >= 1
+    )
+
+
+def empty_analysis():
+
+    e = {
+        "display": "⚪",
+        "direction": "none"
+    }
+
+    w = {
+        "signal": "none",
+        "direction": "none",
+        "breakout_id": None,
+        "breakout_index": None,
+        "warning_index": None,
+        "invalidation_id": None,
+        "invalidation_index": None
+    }
+
+    return {
+        "ema": e.copy(),
+        "ema_1h": e.copy(),
+        "ema_4h": e.copy(),
+        "warning": w.copy(),
+        "warnings": {
+            "15m": w.copy()
+        },
+        "changes": None,
+        "qualified": False
+    }
+
+
+# =========================================================
+# 업비트 업데이트
 # =========================================================
 
 def update_upbit():
 
     global latest_upbit_data
-    global latest_upbit_markets
     global latest_upbit_update_time
 
-    if USE_UPBIT != "Y":
-        return
+    log.info(
+        f"========== 업비트 TOP{TOP_N} 시작 =========="
+    )
+
+    markets = sorted(
+        get_upbit_markets(),
+        key=lambda x: x["volume_24h"],
+        reverse=True
+    )
+
+    rows = []
+
+    for rank, item in enumerate(
+        markets[:TOP_N],
+        1
+    ):
+
+        market = item["market"]
+        coin = market.replace(
+            "KRW-",
+            ""
+        )
+
+        try:
+
+            a = analyze(market)
+
+            a = (
+                a
+                or empty_analysis()
+            )
+
+            qualified = pass_filter(
+                a,
+                False
+            )
+
+            rows.append({
+                "rank": rank,
+                "name": coin,
+                "change":
+                    format_change(
+                        a["changes"]
+                    ),
+                "volume":
+                    format_volume(
+                        item["volume_24h"]
+                    ),
+                "ema": a["ema"],
+                "ema_1h": a["ema_1h"],
+                "ema_4h": a["ema_4h"],
+                "direction":
+                    "long"
+                    if qualified
+                    else "none",
+                "warning": a["warning"],
+                "warnings": a["warnings"],
+                "qualified": qualified
+            })
+
+        except Exception as e:
+
+            log.error(
+                f"업비트 상세 오류 {market}: {e}"
+            )
+
+            a = empty_analysis()
+
+            rows.append({
+                "rank": rank,
+                "name": coin,
+                "change": "",
+                "volume":
+                    format_volume(
+                        item["volume_24h"]
+                    ),
+                "ema": a["ema"],
+                "ema_1h": a["ema_1h"],
+                "ema_4h": a["ema_4h"],
+                "direction": "none",
+                "warning": a["warning"],
+                "warnings": a["warnings"],
+                "qualified": False
+            })
+
+    latest_upbit_data = rows
+    latest_upbit_update_time = kst()
+
+    log.info(
+        f"업비트 완료 / 조건 충족 "
+        f"{sum(x['qualified'] for x in rows)}개"
+    )
+
+    return True
+
+
+# =========================================================
+# OKX
+# =========================================================
+
+def get_okx_symbols():
+
+    r = retry(
+        requests.get,
+        "https://www.okx.com/api/v5/public/instruments",
+        params={
+            "instType": "SWAP"
+        },
+        timeout=15
+    )
+
+    if r is None:
+        return []
 
     try:
 
-        markets = get_upbit_markets()
-
-        latest_upbit_markets = markets
-
-        tickers = get_upbit_tickers(markets)
-
-        tickers = sorted(
-            tickers,
-            key=lambda x:
-            x.get("acc_trade_price_24h", 0),
-            reverse=True
-        )[:TOP_N]
-
-        result = []
-
-        for ticker in tickers:
-
-            market = ticker["market"]
-
-            data = analyze_upbit(
-                market,
-                ticker
+        return [
+            x["instId"]
+            for x in r.json().get(
+                "data",
+                []
             )
-
-            if data:
-                result.append(data)
-
-        latest_upbit_data = result
-
-        latest_upbit_update_time = (
-            datetime.now(KST).strftime(
-                "%m-%d %H:%M:%S"
+            if x.get(
+                "instId",
+                ""
+            ).endswith(
+                "-USDT-SWAP"
             )
-        )
+            and x.get("state") == "live"
+        ]
 
-        logging.info(
-            "Upbit update: %d",
-            len(result)
-        )
-
-    except Exception as e:
-
-        logging.exception(
-            "Upbit update error: %s",
-            e
-        )
+    except:
+        return []
 
 
-# =========================================================
-# OKX 업데이트
-# =========================================================
+def get_okx_volume(
+    inst,
+    usdt
+):
 
-def update_okx():
+    df = get_okx_ohlcv(
+        inst,
+        "1H",
+        24
+    )
+
+    if df is None or df.empty:
+        return None
+
+    try:
+
+        return float(
+            pd.to_numeric(
+                df.volCcyQuote,
+                errors="coerce"
+            ).sum()
+        ) * float(usdt)
+
+    except:
+        return None
+
+
+def update_okx(usdt):
 
     global latest_okx_data
     global latest_okx_update_time
-    global latest_usdt_krw
 
-    if USE_OKX != "Y":
-        return
+    if not usdt or usdt <= 0:
+        return False
 
-    try:
+    symbols = get_okx_symbols()
 
-        latest_usdt_krw = get_usdt_krw()
+    if not symbols:
+        return False
 
-        symbols = get_okx_symbols()
+    upbit_set = {
+        x.replace(
+            "KRW-",
+            ""
+        )
+        for x in latest_upbit_markets
+    }
 
-        rows = []
+    volumes = {}
 
-        for symbol in symbols:
+    for s in symbols:
 
-            volume = get_okx_volume(
-                symbol
-            )
-
-            rows.append(
-                (symbol, volume)
-            )
-
-        rows.sort(
-            key=lambda x: x[1],
-            reverse=True
+        v = get_okx_volume(
+            s,
+            usdt
         )
 
-        rows = rows[:TOP_N]
+        if v and v > 0:
+            volumes[s] = v
 
-        result = []
+    top = sorted(
+        volumes,
+        key=volumes.get,
+        reverse=True
+    )[:TOP_N]
 
-        for symbol, volume in rows:
+    rows = []
 
-            data = analyze_okx(
+    for rank, symbol in enumerate(
+        top,
+        1
+    ):
+
+        coin = symbol.replace(
+            "-USDT-SWAP",
+            ""
+        )
+
+        display = (
+            f"{coin}[UP]"
+            if coin in upbit_set
+            else coin
+        )
+
+        try:
+
+            a = analyze(
                 symbol,
-                volume
+                True
             )
 
-            if data:
-                result.append(data)
-
-        latest_okx_data = result
-
-        latest_okx_update_time = (
-            datetime.now(KST).strftime(
-                "%m-%d %H:%M:%S"
+            a = (
+                a
+                or empty_analysis()
             )
-        )
 
-        logging.info(
-            "OKX update: %d",
-            len(result)
-        )
+            d = a[
+                "warning"
+            ]["direction"]
 
-    except Exception as e:
+            qualified = (
+                pass_filter(
+                    a,
+                    short=(d == "short")
+                )
+                if d in (
+                    "long",
+                    "short"
+                )
+                else False
+            )
 
-        logging.exception(
-            "OKX update error: %s",
-            e
-        )
+            rows.append({
+                "rank": rank,
+                "name": display,
+                "change":
+                    format_change(
+                        a["changes"]
+                    ),
+                "volume":
+                    format_volume(
+                        volumes[symbol]
+                    ),
+                "ema": a["ema"],
+                "ema_1h": a["ema_1h"],
+                "ema_4h": a["ema_4h"],
+                "direction":
+                    d
+                    if qualified
+                    else "none",
+                "warning": a["warning"],
+                "warnings": a["warnings"],
+                "qualified": qualified
+            })
+
+        except Exception as e:
+
+            log.error(
+                f"OKX 상세 오류 {symbol}: {e}"
+            )
+
+            a = empty_analysis()
+
+            rows.append({
+                "rank": rank,
+                "name": display,
+                "change": "",
+                "volume":
+                    format_volume(
+                        volumes[symbol]
+                    ),
+                "ema": a["ema"],
+                "ema_1h": a["ema_1h"],
+                "ema_4h": a["ema_4h"],
+                "direction": "none",
+                "warning": a["warning"],
+                "warnings": a["warnings"],
+                "qualified": False
+            })
+
+    latest_okx_data = rows
+    latest_okx_update_time = kst()
+
+    return True
 
 
 # =========================================================
@@ -1348,22 +2618,59 @@ def update_okx():
 
 def update_dashboard():
 
-    if not update_lock.acquire(
-        blocking=False
-    ):
+    global latest_usdt_krw
+    global latest_upbit_data
+    global latest_okx_data
+
+    if not update_lock.acquire(False):
+
+        log.warning(
+            "이전 조회 진행 중 → 건너뜀"
+        )
+
         return
 
     try:
 
-        logging.info("===== UPDATE START =====")
+        log.info(
+            f"========== 전체 조회 {kst()} =========="
+        )
 
         if USE_UPBIT == "Y":
-            update_upbit()
+
+            try:
+                update_upbit()
+
+            except Exception as e:
+                log.exception(
+                    f"업비트 업데이트 오류: {e}"
+                )
+
+        else:
+            latest_upbit_data = []
 
         if USE_OKX == "Y":
-            update_okx()
 
-        logging.info("===== UPDATE END =====")
+            try:
+
+                usdt = get_usdt_krw()
+
+                if usdt:
+                    latest_usdt_krw = usdt
+                else:
+                    usdt = latest_usdt_krw
+
+                if usdt > 0:
+                    update_okx(usdt)
+
+            except Exception as e:
+
+                log.exception(
+                    f"OKX 업데이트 오류: {e}"
+                )
+
+        else:
+            latest_okx_data = []
 
     finally:
         update_lock.release()
@@ -1373,324 +2680,602 @@ def update_dashboard():
 # HTML
 # =========================================================
 
+def warning_html(w):
+
+    if not w:
+        return "-"
+
+    s = w.get(
+        "signal",
+        "none"
+    )
+
+    if s == "invalidated":
+
+        return (
+            '<span class="inv">🚨</span>'
+        )
+
+    if (
+        str(s).isdigit()
+        and int(s) >= 1
+    ):
+
+        return (
+            f'<span class="rocket">'
+            f'🚀({s})'
+            f'</span>'
+        )
+
+    return "-"
+
+
 def direction_html(d):
 
     if d == "long":
-        return '<span class="long">LONG</span>'
+
+        return (
+            '<span class="long">'
+            'LONG'
+            '</span>'
+        )
 
     if d == "short":
-        return '<span class="short">SHORT</span>'
 
-    return '<span class="none">-</span>'
+        return (
+            '<span class="short">'
+            'SHORT'
+            '</span>'
+        )
 
-
-def n_html(
-    symbol,
-    df,
-    signal
-):
-
-    if not signal:
-        return "-"
-
-    count = signal["count"]
-
-    if check_invalidation(
-        symbol,
-        df,
-        signal
-    ):
-
-        if mark_invalidation_once(
-            symbol,
-            signal
-        ):
-            return "🚨"
-
-        return "❌"
-
-    if signal["direction"] == "long":
-        return f"🚀({count})"
-
-    return f"🚀({count})"
+    return (
+        '<span class="none">'
+        '-'
+        '</span>'
+    )
 
 
-def make_rows(
-    data,
-    source
-):
+def rows_html(data):
 
-    rows = []
+    out = ""
 
     for x in data:
 
-        signal = x.get("signal")
-
-        direction_ = (
-            signal["direction"]
-            if signal
-            else None
+        q = x.get(
+            "qualified",
+            False
         )
 
-        cls = "qualified" if signal else ""
-
-        coin = x["symbol"]
-
-        if source == "upbit":
-            coin += " <small>(업비트)</small>"
-
-        rows.append(
-            f"""
-            <tr class="{cls}">
-                <td>{coin}</td>
-
-                <td>
-                    {format_change(x["change"])}
-                </td>
-
-                <td>
-                    {format_volume(x["volume"])}
-                </td>
-
-                <td>
-                    {direction_html(x["d15"])}
-                    /
-                    {direction_html(x["d1h"])}
-                    /
-                    {direction_html(x["d4h"])}
-                </td>
-
-                <td>
-                    {(
-                        n_html(
-                            x["market"],
-                            x.get("_df15", pd.DataFrame()),
-                            signal
-                        )
-                        if signal
-                        else "-"
-                    )}
-                </td>
-            </tr>
-            """
+        dc = x.get(
+            "direction",
+            "none"
         )
 
-    return "".join(rows)
+        cls = (
+            " qualified"
+            if q
+            else ""
+        )
+
+        e15 = x.get(
+            "ema",
+            {}
+        )
+
+        e1 = x.get(
+            "ema_1h",
+            {}
+        )
+
+        e4 = x.get(
+            "ema_4h",
+            {}
+        )
+
+        out += f"""
+<tr class="{cls}">
+<td>{x.get('rank','-')}</td>
+
+<td>
+<div class="coin">{x.get('name','-')}</div>
+{x.get('change','')}
+</td>
+
+<td>
+<div class="vol">{x.get('volume','-')}</div>
+{direction_html(dc)}
+</td>
+
+<td>
+<div class="ema">
+<div><b>15M</b>{e15.get('display','⚪')}</div>
+<div><b>1H</b>{e1.get('display','⚪')}</div>
+<div><b>4H</b>{e4.get('display','⚪')}</div>
+</div>
+</td>
+
+<td>
+<div class="warning">
+<span class="label">15M</span>
+{warning_html(x.get('warning',{}))}
+</div>
+</td>
+</tr>
+"""
+
+    return out
+
+
+def section(
+    title,
+    data,
+    update_time
+):
+
+    rows = rows_html(data)
+
+    if not rows:
+
+        rows = """
+<tr>
+<td colspan="5" class="empty">
+현재 조회 데이터 없음
+</td>
+</tr>
+"""
+
+    return f"""
+<h2>
+🏆 {title} TOP{TOP_N}
+<small>
+조회 {update_time} KST
+</small>
+</h2>
+
+<div class="table-wrap">
+<table>
+
+<thead>
+<tr>
+<th>#</th>
+<th>코인</th>
+<th>거래대금</th>
+<th>EMA</th>
+<th>N자</th>
+</tr>
+</thead>
+
+<tbody>
+{rows}
+</tbody>
+
+</table>
+</div>
+"""
+
+
+CSS = """
+*{box-sizing:border-box}
+
+html,body{
+ margin:0;
+ padding:0;
+ width:100%;
+ overflow-x:hidden
+}
+
+body{
+ background:#0f1115;
+ color:#eee;
+ font-family:Arial,sans-serif;
+ font-size:9px;
+ padding:4px
+}
+
+h1{
+ margin:3px 2px 6px;
+ font-size:14px
+}
+
+h2{
+ margin:10px 2px 5px;
+ font-size:11px
+}
+
+h2 small{
+ color:#777;
+ font-size:7px;
+ font-weight:normal
+}
+
+.info{
+ margin:0 2px 6px;
+ padding:5px 6px;
+ color:#8b9099;
+ background:#171a1f;
+ border:1px solid #252a31;
+ border-radius:7px;
+ font-size:7px;
+ line-height:1.5
+}
+
+.status{
+ display:flex;
+ gap:7px;
+ margin-top:4px;
+ font-weight:bold
+}
+
+.y{color:#35e66d}
+.n{color:#ff4d4d}
+
+.table-wrap{
+ width:100%;
+ overflow:hidden;
+ border-radius:8px;
+ border:1px solid #252a31
+}
+
+table{
+ width:100%;
+ table-layout:fixed;
+ border-collapse:collapse;
+ background:#181c21
+}
+
+th{
+ padding:5px 1px;
+ background:#12151a;
+ border-bottom:1px solid #2b3037;
+ color:#8f949d;
+ font-size:6px
+}
+
+td{
+ padding:5px 1px;
+ border-bottom:1px solid #272c32;
+ text-align:center;
+ vertical-align:middle
+}
+
+th:nth-child(1),
+td:nth-child(1){width:6%}
+
+th:nth-child(2),
+td:nth-child(2){width:20%}
+
+th:nth-child(3),
+td:nth-child(3){width:18%}
+
+th:nth-child(4),
+td:nth-child(4){width:26%}
+
+th:nth-child(5),
+td:nth-child(5){width:30%}
+
+.coin{
+ font-size:8px;
+ font-weight:bold;
+ white-space:nowrap
+}
+
+.change-item{
+ display:block;
+ font-size:7px;
+ font-weight:bold
+}
+
+.positive,
+.negative{color:#fff}
+
+.neutral{color:#aaa}
+
+.vol{
+ font-size:7px;
+ font-weight:bold;
+ margin-bottom:2px
+}
+
+.long{
+ display:block;
+ color:#35e66d;
+ font-size:7px;
+ font-weight:800
+}
+
+.short{
+ display:block;
+ color:#ff4d4d;
+ font-size:7px;
+ font-weight:800
+}
+
+.none{
+ color:#666;
+ font-size:7px
+}
+
+.ema{
+ display:flex;
+ flex-direction:column;
+ text-align:left
+}
+
+.ema div{
+ height:13px;
+ line-height:13px;
+ white-space:nowrap;
+ font-size:7px;
+ font-weight:bold
+}
+
+.ema b{
+ display:inline-block;
+ width:28px;
+ color:#8f949d;
+ font-size:6px;
+ text-align:right;
+ margin-right:3px
+}
+
+.warning{
+ min-height:14px;
+ display:flex;
+ justify-content:center;
+ align-items:center;
+ gap:2px;
+ white-space:nowrap
+}
+
+.label{
+ color:#777;
+ font-size:6px;
+ font-weight:bold
+}
+
+.rocket,
+.inv{
+ font-size:10px;
+ font-weight:bold
+}
+
+.rocket{
+ filter:
+ drop-shadow(
+ 0 0 4px rgba(50,255,100,.9)
+ )
+}
+
+.inv{
+ filter:
+ drop-shadow(
+ 0 0 4px rgba(255,190,50,.95)
+ )
+}
+
+.qualified{
+ animation:blink 1.2s infinite
+}
+
+@keyframes blink{
+
+ 0%,100%{
+  background:#181c21
+ }
+
+ 50%{
+  background:#26352b
+ }
+
+}
+
+.empty{
+ color:#555;
+ padding:12px 4px
+}
+
+@media(max-width:480px){
+
+ body{
+  padding:3px;
+  font-size:8px
+ }
+
+ h1{font-size:13px}
+ h2{font-size:10px}
+
+ .info{
+  font-size:6px;
+  padding:4px 5px
+ }
+
+ th{
+  padding:4px 1px;
+  font-size:5px
+ }
+
+ td{
+  padding:4px 1px
+ }
+
+ .coin{
+  font-size:7px
+ }
+
+ .change-item,
+ .vol{
+  font-size:6px
+ }
+
+ .long,
+ .short{
+  font-size:6px
+ }
+
+ .rocket,
+ .inv{
+  font-size:9px
+ }
+
+ .label{
+  font-size:5px
+ }
+
+ .ema div{
+  height:12px;
+  line-height:12px;
+  font-size:6px
+ }
+
+ .ema b{
+  width:25px;
+  font-size:5px
+ }
+
+}
+"""
 
 
 # =========================================================
-# 데이터에 15분 DF 연결
-# =========================================================
-#
-# HTML에서 해지 여부를 다시 판단하기 위해
-# 분석 결과에 DF를 보관
-# =========================================================
-
-def attach_upbit_df():
-
-    for x in latest_upbit_data:
-
-        try:
-            x["_df15"] = get_upbit_minute(
-                x["market"],
-                15,
-                INITIAL_CANDLE_COUNT
-            )
-        except Exception:
-            x["_df15"] = pd.DataFrame()
-
-
-def attach_okx_df():
-
-    for x in latest_okx_data:
-
-        try:
-            x["_df15"] = get_okx_ohlcv(
-                x["market"],
-                "15m",
-                INITIAL_CANDLE_COUNT
-            )
-        except Exception:
-            x["_df15"] = pd.DataFrame()
-
-
-# =========================================================
-# FastAPI
+# 대시보드
 # =========================================================
 
 @app.get(
     "/",
     response_class=HTMLResponse
 )
-def home():
+def dashboard():
 
-    attach_upbit_df()
-    attach_okx_df()
+    status = f"""
+<div class="status">
 
-    upbit_rows = make_rows(
-        latest_upbit_data,
-        "upbit"
-    )
+<span class="{'y' if USE_UPBIT=='Y' else 'n'}">
+업비트 : {USE_UPBIT}
+</span>
 
-    okx_rows = make_rows(
-        latest_okx_data,
-        "okx"
-    )
+<span class="{'y' if USE_OKX=='Y' else 'n'}">
+OKX : {USE_OKX}
+</span>
+
+</div>
+"""
+
+    sections = ""
+
+    if USE_UPBIT == "Y":
+
+        sections += section(
+            "업비트",
+            latest_upbit_data,
+            latest_upbit_update_time
+        )
+
+    if USE_OKX == "Y":
+
+        sections += section(
+            "OKX",
+            latest_okx_data,
+            latest_okx_update_time
+        )
 
     return f"""
 <!DOCTYPE html>
+
 <html lang="ko">
+
 <head>
 
 <meta charset="UTF-8">
 
 <meta
- name="viewport"
- content="width=device-width,
- initial-scale=1.0"
+http-equiv="refresh"
+content="60"
 >
 
-<title>15M N Pattern</title>
+<meta
+name="viewport"
+content="
+width=device-width,
+initial-scale=1.0,
+maximum-scale=1.0,
+user-scalable=no
+">
+
+<title>
+15M N Pattern Breakout
+</title>
 
 <style>
-
-* {{
-    box-sizing: border-box;
-}}
-
-body {{
-    margin: 0;
-    background: #111;
-    color: #eee;
-    font-family: Arial, sans-serif;
-}}
-
-.wrap {{
-    width: 100%;
-    max-width: 1000px;
-    margin: auto;
-    padding: 8px;
-}}
-
-h2 {{
-    margin: 5px 0 10px;
-    font-size: 18px;
-}}
-
-.info {{
-    font-size: 11px;
-    color: #aaa;
-    margin-bottom: 8px;
-}}
-
-table {{
-    width: 100%;
-    border-collapse: collapse;
-    table-layout: fixed;
-    font-size: 12px;
-}}
-
-th {{
-    background: #222;
-    padding: 7px 3px;
-    border-bottom: 1px solid #444;
-}}
-
-td {{
-    padding: 7px 3px;
-    text-align: center;
-    border-bottom: 1px solid #292929;
-}}
-
-td:first-child {{
-    text-align: left;
-    font-weight: bold;
-}}
-
-small {{
-    color: #888;
-    font-weight: normal;
-}}
-
-.long {{
-    color: #00e676;
-    font-weight: bold;
-}}
-
-.short {{
-    color: #ff5252;
-    font-weight: bold;
-}}
-
-.none {{
-    color: #777;
-}}
-
-.qualified {{
-    animation: blink 1.2s infinite;
-}}
-
-@keyframes blink {{
-    50% {{
-        background: #263b25;
-    }}
-}}
-
-@media(max-width:600px) {{
-
-    table {{
-        font-size: 10px;
-    }}
-
-    td, th {{
-        padding: 6px 2px;
-    }}
-
-    h2 {{
-        font-size: 16px;
-    }}
-}}
-
+{CSS}
 </style>
 
 </head>
 
 <body>
 
-<div class="wrap">
-
-<h2>🚀 15분 N자 돌파 감시</h2>
+<h1>
+📊 15M N Pattern Breakout
+</h1>
 
 <div class="info">
-Upbit: {latest_upbit_update_time}
-&nbsp;&nbsp;
-OKX: {latest_okx_update_time}
+
+<div>
+① 24시간 거래대금 TOP{TOP_N}
 </div>
 
-<table>
+<div>
+② 4H / 1H / 15M EMA 10-30-60-120
+</div>
 
-<thead>
+<div>
+③ N자 구조는 15M만 분석
+</div>
 
-<tr>
-<th>코인</th>
-<th>변동</th>
-<th>거래대금</th>
-<th>EMA<br>15M/1H/4H</th>
-<th>N자</th>
-</tr>
+<div>
+④ LONG : 15M + 1H + 4H 모두 정배열
+</div>
 
-</thead>
+<div>
+⑤ SHORT : 15M + 1H + 4H 모두 역배열
+</div>
 
-<tbody>
+<div>
+⑥ LONG N자 : 0 → A → B → C
+</div>
 
-{upbit_rows}
-{okx_rows}
+<div>
+⑦ LONG 가격 : 0 &lt; B &lt; A &lt; C
+</div>
 
-</tbody>
+<div>
+⑧ C가 A를 종가 돌파하면 🚀(1)
+</div>
 
-</table>
+<div>
+⑨ 돌파 후 A 아래 종가 하락 시 🚨
+</div>
+
+<div>
+⑩ 🚀 카운터 제한 없음
+</div>
+
+<div>
+⑪ 해지 후 기존 N자 재사용 안 함
+</div>
+
+<div>
+⑫ 새 0 → A → B → C부터 다시 탐색
+</div>
+
+<div>
+⑬ 1H / 4H N자 분석 없음
+</div>
+
+{status}
 
 </div>
+
+{sections}
 
 </body>
 </html>
@@ -1703,19 +3288,17 @@ OKX: {latest_okx_update_time}
 
 def scheduler():
 
-    schedule.every(
-        UPDATE_MINUTES
-    ).minutes.do(
-        update_dashboard
-    )
+    log.info("스케줄러 시작")
 
     while True:
 
         try:
             schedule.run_pending()
-        except Exception:
-            logging.exception(
-                "Scheduler error"
+
+        except Exception as e:
+
+            log.exception(
+                f"스케줄러 오류: {e}"
             )
 
         time.sleep(1)
@@ -1725,14 +3308,107 @@ def scheduler():
 # 시작
 # =========================================================
 
-if __name__ == "__main__":
+@app.on_event("startup")
+def startup():
 
-    update_dashboard()
+    if USE_UPBIT not in (
+        "Y",
+        "N"
+    ):
+        raise ValueError(
+            "USE_UPBIT은 Y 또는 N만 가능합니다."
+        )
+
+    if USE_OKX not in (
+        "Y",
+        "N"
+    ):
+        raise ValueError(
+            "USE_OKX는 Y 또는 N만 가능합니다."
+        )
+
+    if TOP_N <= 0:
+        raise ValueError(
+            "TOP_N은 1 이상이어야 합니다."
+        )
+
+    if UPDATE_MINUTES <= 0:
+        raise ValueError(
+            "UPDATE_MINUTES는 1 이상이어야 합니다."
+        )
+
+    log.info(
+        "========================================"
+    )
+
+    log.info("서버 시작")
+
+    log.info(
+        f"업비트={USE_UPBIT} / OKX={USE_OKX}"
+    )
+
+    log.info(
+        f"TOP={TOP_N} / UPDATE={UPDATE_MINUTES}분"
+    )
+
+    log.info(
+        "EMA = 10-30-60-120"
+    )
+
+    log.info(
+        "N자 = 15M만"
+    )
+
+    log.info(
+        "LONG = 0 < B < A < C"
+    )
+
+    log.info(
+        "C가 A를 종가 돌파 → 🚀(1)"
+    )
+
+    log.info(
+        "돌파 후 A 아래 종가 → 🚨"
+    )
+
+    log.info(
+        "🚀 돌파 후 카운터 제한 없음"
+    )
+
+    log.info(
+        "🚨 해지봉 1회 표시"
+    )
+
+    log.info(
+        "현재 진행 중인 봉 제외"
+    )
+
+    log.info(
+        "========================================"
+    )
+
+    threading.Thread(
+        target=update_dashboard,
+        daemon=True
+    ).start()
+
+    schedule.every(
+        UPDATE_MINUTES
+    ).minutes.do(
+        update_dashboard
+    )
 
     threading.Thread(
         target=scheduler,
         daemon=True
     ).start()
+
+
+# =========================================================
+# 실행
+# =========================================================
+
+if __name__ == "__main__":
 
     uvicorn.run(
         app,
