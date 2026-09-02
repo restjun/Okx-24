@@ -1030,7 +1030,7 @@ def ema3_10_cross_count(df):
 
 
 # =========================================================
-# ✈️ 비행기 돌파직전 경고
+# ✈️ 비행기 돌파직전 조건
 #
 # 업비트 LONG 전용
 #
@@ -1075,9 +1075,7 @@ def get_air_warning(
         ):
             return None
 
-        # -------------------------------------------------
         # EMA3 ↔ EMA10
-        # -------------------------------------------------
 
         ema3_10_result = ema3_10_cross_count(
             df1h
@@ -1156,20 +1154,15 @@ def get_air_warning(
 # =========================================================
 # ✈️ 비행기 카운터
 #
-# 돌파직전 신호가 한번 발생하면
-# 이후 get_air_warning()이 None이어도
-# 기존 active 상태 유지
+# ★ 변경:
+# 돌파직전 조건 포착 순간부터 바로 ✈️(1)
 #
-# 돌파 완료
-# → 경고 유지
+# 이후 새로운 1H 캔들에서
+# 양봉 → ✈️(2)
+# 양봉 → ✈️(3)
+# 양봉 → ✈️(4)
 #
-# 이후 양봉
-# → ✈️(1)
-# → ✈️(2)
-# → ✈️(3)
-#
-# 음봉
-# → ⛔️ 종료
+# 음봉 → ⛔️ 종료
 # =========================================================
 
 def update_air_counter(
@@ -1210,6 +1203,8 @@ def update_air_counter(
 
         # -------------------------------------------------
         # 새로운 돌파직전 신호
+        #
+        # ★ 기존 count=0 → count=1 변경
         # -------------------------------------------------
 
         if new_warning is not None:
@@ -1225,8 +1220,13 @@ def update_air_counter(
                     "active": True,
                     "ended": False,
                     "direction": new_warning,
-                    "count": 0,
+
+                    # ★ 최초 경고부터 1
+                    "count": 1,
+
                     "warning_candle": candle_time,
+
+                    # 현재 캔들은 이미 1번으로 처리
                     "counted_candle": candle_time
                 }
 
@@ -1234,7 +1234,7 @@ def update_air_counter(
                     "active": True,
                     "ended": False,
                     "direction": new_warning,
-                    "count": 0
+                    "count": 1
                 }
 
         # -------------------------------------------------
@@ -1308,7 +1308,7 @@ def update_air_counter(
                 ),
                 "count": state.get(
                     "count",
-                    0
+                    1
                 )
             }
 
@@ -1336,7 +1336,7 @@ def update_air_counter(
                 ),
                 "count": state.get(
                     "count",
-                    0
+                    1
                 )
             }
 
@@ -1355,7 +1355,7 @@ def update_air_counter(
             ),
             "count": state.get(
                 "count",
-                0
+                1
             )
         }
 
@@ -1637,24 +1637,20 @@ def analyze(
         df4
     )
 
-    # ★ EMA3 ↔ EMA10
+    # EMA3 ↔ EMA10
 
     ema3_10_cross = ema3_10_cross_count(
         df1
     )
 
-    # -------------------------------------------------
     # 새로운 돌파직전 신호
-    # -------------------------------------------------
 
     new_warning = get_air_warning(
         df1,
         df4
     )
 
-    # -------------------------------------------------
     # 기존 비행기 상태 업데이트
-    # -------------------------------------------------
 
     air = update_air_counter(
         market,
@@ -2133,7 +2129,9 @@ def warning_html(
     air_ended=False
 ):
 
+    # -------------------------------------------------
     # 종료 상태
+    # -------------------------------------------------
 
     if air_ended:
 
@@ -2145,7 +2143,9 @@ def warning_html(
             '</div>'
         )
 
+    # -------------------------------------------------
     # 진행 중이 아니면 표시 없음
+    # -------------------------------------------------
 
     if not air_warning:
         return "-"
@@ -2161,30 +2161,11 @@ def warning_html(
         else "short"
     )
 
-    # 돌파직전
-
-    if air_count <= 0:
-
-        return (
-            '<div class="air-box">'
-
-            '<div class="air-main">'
-
-            '<span class="air-direction '
-            f'{direction_class}">'
-            '직전'
-            '</span>'
-
-            '<span class="air-icon">'
-            '🛩 ✈️'
-            '</span>'
-
-            '</div>'
-
-            '</div>'
-        )
-
-    # 돌파 후 카운팅
+    # -------------------------------------------------
+    # ★ 최초 경고부터 바로 ✈️(1)
+    #
+    # 직전 / 🛩 표시 완전 삭제
+    # -------------------------------------------------
 
     return (
         '<div class="air-box">'
@@ -2203,7 +2184,7 @@ def warning_html(
         '</div>'
 
         '<div class="air-count">'
-        f'({air_count})'
+        f'({max(int(air_count), 1)})'
         '</div>'
 
         '</div>'
@@ -3215,7 +3196,7 @@ def dashboard():
         >
 
         <title>
-            1H EMA3-10 돌파직전 경고
+            1H EMA3-10 돌파진행 경고
         </title>
 
         <style>
@@ -3242,20 +3223,17 @@ def dashboard():
 
             ④ 1H EMA3 > EMA10 연속 카운팅 → 🟢(N)<br>
 
-            ⑤ 1H EMA3가 EMA10 아래 전환 시 이전 🟢(N)을 돌파직전 조건으로 사용<br>
+            ⑤ 1H EMA3가 EMA10 아래 전환 시 이전 🟢(N)을 돌파조건으로 사용<br>
 
             ⑥ 현재 1H 고가가 EMA10 접촉/돌파<br>
 
             ⑦ 현재 1H 양봉 + 종가 EMA10 아래<br>
 
-            ⑧ 1H + 4H 정배열 동시 충족
-            → 🛩 ✈️ 돌파직전<br>
+            ⑧ 1H + 4H 정배열 동시 충족 → ✈️(1) 시작<br>
 
-            ⑨ 돌파 완료 후에도 비행기 경고 유지<br>
+            ⑨ 이후 양봉마다 ✈️(2) → ✈️(3) → ✈️(4) 계속 카운팅<br>
 
-            ⑩ 이후 양봉마다 ✈️(1) → ✈️(2) → ✈️(3) 계속 카운팅<br>
-
-            ⑪ 음봉 마감 시 ⛔️ 경고 종료
+            ⑩ 음봉 마감 시 ⛔️ 경고 종료
 
             {status}
 
@@ -3324,7 +3302,7 @@ def startup():
     )
 
     log.info(
-        "1H + 4H EMA 돌파직전 / 돌파진행 경고 시스템 시작"
+        "1H + 4H EMA 돌파진행 경고 시스템 시작"
     )
 
     log.info(
@@ -3352,11 +3330,11 @@ def startup():
     )
 
     log.info(
-        "EMA3 위 EMA10 연속 = 🟢(N)"
+        "EMA3 > EMA10 연속 = 🟢(N)"
     )
 
     log.info(
-        "EMA3가 EMA10 아래 전환 시 이전 🟢(N)을 돌파직전 조건으로 사용"
+        "EMA3가 EMA10 아래 전환 시 이전 🟢(N)을 돌파조건으로 사용"
     )
 
     log.info(
@@ -3364,16 +3342,13 @@ def startup():
         f"{MIN_EMA10_LONG_COUNT}"
     )
 
+    # ★ 직전 🛩 단계 삭제
     log.info(
-        "돌파직전 = 🛩 ✈️"
+        "돌파조건 충족 즉시 = ✈️(1)"
     )
 
     log.info(
-        "돌파 완료 후에도 비행기 상태 유지"
-    )
-
-    log.info(
-        "양봉마다 ✈️ 카운트 증가"
+        "이후 양봉마다 ✈️ 카운트 증가"
     )
 
     log.info(
@@ -3415,4 +3390,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-            )
+        )
