@@ -50,9 +50,11 @@ KST = ZoneInfo("Asia/Seoul")
 
 
 # =========================================================
-# 3-10선 경고 설정
+# 3-10선 설정
 # =========================================================
 
+# EMA3 > EMA10이 최소 몇 개의 확정 1H 캔들 동안
+# 연속되어 있어야 비행기 조건을 허용할 것인지
 MIN_EMA10_LONG_COUNT = 1
 
 
@@ -405,7 +407,6 @@ def get_upbit_candle(
             )
 
         # 현재 진행 중인 캔들 제외
-
         df = df[
             df.datetime < current
         ]
@@ -576,6 +577,7 @@ def get_okx_ohlcv(
                 tzinfo=None
             )
 
+        # 현재 진행 중인 캔들 제외
         df = df[
             df.datetime < current
         ]
@@ -717,7 +719,7 @@ def ema(
     ):
         return None
 
-    # EMA는 반드시 캔들 종가(c)를 기준으로 계산
+    # 모든 EMA는 캔들 종가(c) 기준
     return pd.to_numeric(
         df.c,
         errors="coerce"
@@ -735,10 +737,25 @@ def direction(df):
 
     try:
 
-        e10 = ema(df, 10).iloc[-1]
-        e30 = ema(df, 30).iloc[-1]
-        e60 = ema(df, 60).iloc[-1]
-        e120 = ema(df, 120).iloc[-1]
+        e10 = ema(
+            df,
+            10
+        ).iloc[-1]
+
+        e30 = ema(
+            df,
+            30
+        ).iloc[-1]
+
+        e60 = ema(
+            df,
+            60
+        ).iloc[-1]
+
+        e120 = ema(
+            df,
+            120
+        ).iloc[-1]
 
         if e10 > e30 > e60 > e120:
             return "long"
@@ -764,10 +781,25 @@ def ema_alignment_count(df):
 
     try:
 
-        e10 = ema(df, 10)
-        e30 = ema(df, 30)
-        e60 = ema(df, 60)
-        e120 = ema(df, 120)
+        e10 = ema(
+            df,
+            10
+        )
+
+        e30 = ema(
+            df,
+            30
+        )
+
+        e60 = ema(
+            df,
+            60
+        )
+
+        e120 = ema(
+            df,
+            120
+        )
 
         current_direction = None
         count = 0
@@ -778,10 +810,21 @@ def ema_alignment_count(df):
             -1
         ):
 
-            a = float(e10.iloc[i])
-            b = float(e30.iloc[i])
-            c = float(e60.iloc[i])
-            d = float(e120.iloc[i])
+            a = float(
+                e10.iloc[i]
+            )
+
+            b = float(
+                e30.iloc[i]
+            )
+
+            c = float(
+                e60.iloc[i]
+            )
+
+            d = float(
+                e120.iloc[i]
+            )
 
             if a > b > c > d:
 
@@ -838,7 +881,9 @@ def ema_alignment_count(df):
 
 def ema_display(df):
 
-    result = ema_alignment_count(df)
+    result = ema_alignment_count(
+        df
+    )
 
     d = result["direction"]
     count = result["count"]
@@ -857,16 +902,21 @@ def ema_display(df):
         count = 0
 
     return {
-        "display": f"{icon}({count})",
-        "direction": d,
-        "count": count
+        "display":
+            f"{icon}({count})",
+
+        "direction":
+            d,
+
+        "count":
+            count
     }
 
 
 # =========================================================
 # 1H EMA3 ↔ EMA10
 #
-# EMA3 / EMA10 모두 캔들 종가 기준
+# ★ EMA3 / EMA10 모두 1H 캔들 종가 기준
 # =========================================================
 
 def ema3_10_cross_count(df):
@@ -888,13 +938,13 @@ def ema3_10_cross_count(df):
 
     try:
 
-        # EMA3 = 종가 기준
+        # EMA3 = 1H 종가 기준
         e3 = ema(
             df,
             3
         )
 
-        # EMA10 = 종가 기준
+        # EMA10 = 1H 종가 기준
         e10 = ema(
             df,
             10
@@ -922,7 +972,8 @@ def ema3_10_cross_count(df):
 
         valid_last = (
             e3_values.notna().iloc[-1]
-            and e10_values.notna().iloc[-1]
+            and
+            e10_values.notna().iloc[-1]
         )
 
         if not valid_last:
@@ -930,7 +981,9 @@ def ema3_10_cross_count(df):
 
         states = []
 
-        for i in range(len(df)):
+        for i in range(
+            len(df)
+        ):
 
             ema3_value = float(
                 e3_values.iloc[i]
@@ -942,19 +995,27 @@ def ema3_10_cross_count(df):
 
             if ema3_value > ema10_value:
 
-                states.append("long")
+                states.append(
+                    "long"
+                )
 
             elif ema3_value < ema10_value:
 
-                states.append("short")
+                states.append(
+                    "short"
+                )
 
             else:
 
-                states.append("equal")
+                states.append(
+                    "equal"
+                )
 
         current_state = states[-1]
 
-        result["state"] = current_state
+        result["state"] = (
+            current_state
+        )
 
         result["candle_time"] = (
             df.datetime.iloc[-1]
@@ -966,15 +1027,20 @@ def ema3_10_cross_count(df):
 
             return result
 
-        # 현재 EMA3 > EMA10 또는
-        # EMA3 < EMA10 연속 카운트
+        # -------------------------------------------------
+        # 현재 상태 연속 카운트
+        # -------------------------------------------------
 
         current_count = 0
+
         i = len(states) - 1
 
         while i >= 0:
 
-            if states[i] == current_state:
+            if (
+                states[i]
+                == current_state
+            ):
 
                 current_count += 1
                 i -= 1
@@ -983,7 +1049,9 @@ def ema3_10_cross_count(df):
 
                 break
 
+        # -------------------------------------------------
         # 이전 반대 방향 카운트
+        # -------------------------------------------------
 
         previous_state = (
             "short"
@@ -992,11 +1060,15 @@ def ema3_10_cross_count(df):
         )
 
         final_count = 0
+
         j = i
 
         while j >= 0:
 
-            if states[j] == previous_state:
+            if (
+                states[j]
+                == previous_state
+            ):
 
                 final_count += 1
                 j -= 1
@@ -1005,24 +1077,43 @@ def ema3_10_cross_count(df):
 
                 break
 
-        result["count"] = current_count
-        result["final_count"] = final_count
+        result["count"] = (
+            current_count
+        )
+
+        result["final_count"] = (
+            final_count
+        )
 
         if current_state == "long":
 
-            result["display"] = (
-                f"{final_count}|🟢({current_count})"
-                if final_count > 0
-                else f"🟢({current_count})"
-            )
+            if final_count > 0:
+
+                result["display"] = (
+                    f"{final_count}|"
+                    f"🟢({current_count})"
+                )
+
+            else:
+
+                result["display"] = (
+                    f"🟢({current_count})"
+                )
 
         else:
 
-            result["display"] = (
-                f"{final_count}|🔻({current_count})"
-                if final_count > 0
-                else f"🔻({current_count})"
-            )
+            if final_count > 0:
+
+                result["display"] = (
+                    f"{final_count}|"
+                    f"🔻({current_count})"
+                )
+
+            else:
+
+                result["display"] = (
+                    f"🔻({current_count})"
+                )
 
         return result
 
@@ -1038,20 +1129,24 @@ def ema3_10_cross_count(df):
 # =========================================================
 # ✈️ 비행기 경고 조건
 #
-# ★ 핵심 변경
+# 최종 조건
 #
-# EMA3는 종가 기준으로 계산
+# ① 거래대금 TOP20
+# ② 1H EMA 10-30-60-120 정배열
+# ③ 4H EMA 10-30-60-120 정배열
+# ④ 1H EMA3 > EMA10
+# ⑤ EMA3 / EMA10 모두 1H 캔들 종가 기준
+# ⑥ 현재 EMA3 > EMA10
+# ⑦ 모든 조건 충족 즉시 ✈️(1)
 #
-# 현재 EMA3 > EMA10 이어야 함
+# 삭제된 조건
+# - 현재 고가 >= EMA10
+# - 현재 종가 < EMA10
+# - 현재 양봉 필수
 #
-# 필수:
-# 1H EMA 10-30-60-120 정배열
-# 4H EMA 10-30-60-120 정배열
-# 현재 EMA3 > EMA10
-# EMA3 > EMA10 연속 카운트 >= 1
-# 현재 고가 >= EMA10
-# 현재 종가 < EMA10
-# 현재 양봉
+# ★ 비행기 종료 조건은 별도
+# EMA3 < EMA10 역배열이
+# 확정된 1H 캔들의 종가 기준으로 확인될 때 종료
 # =========================================================
 
 def get_air_warning(
@@ -1069,49 +1164,54 @@ def get_air_warning(
 
     try:
 
+        # -------------------------------------------------
+        # 1H 정배열
+        # -------------------------------------------------
+
         direction_1h = direction(
             df1h
         )
+
+        if direction_1h != "long":
+            return None
+
+        # -------------------------------------------------
+        # 4H 정배열
+        # -------------------------------------------------
 
         direction_4h = direction(
             df4h
         )
 
-        # -------------------------------------------------
-        # 1H + 4H 모두 10-30-60-120 정배열
-        # -------------------------------------------------
-
-        if (
-            direction_1h != "long"
-            or direction_4h != "long"
-        ):
+        if direction_4h != "long":
             return None
 
         # -------------------------------------------------
         # EMA3 / EMA10
         #
-        # 둘 다 종가 기준 EMA
+        # 모두 1H 캔들 종가 기준
         # -------------------------------------------------
 
-        ema3_10_result = ema3_10_cross_count(
-            df1h
+        ema3_10_result = (
+            ema3_10_cross_count(
+                df1h
+            )
         )
 
         # -------------------------------------------------
-        # ★ 현재 3선이 10선 위
-        #
-        # 기존:
-        # EMA3 < EMA10
-        #
-        # 변경:
-        # EMA3 > EMA10
+        # 현재 EMA3 > EMA10
         # -------------------------------------------------
 
-        if ema3_10_result["state"] != "long":
+        if (
+            ema3_10_result.get(
+                "state"
+            )
+            != "long"
+        ):
             return None
 
         # -------------------------------------------------
-        # 현재 EMA3 > EMA10 연속 카운트
+        # EMA3 > EMA10 연속 카운트
         # -------------------------------------------------
 
         current_long_count = int(
@@ -1128,60 +1228,7 @@ def get_air_warning(
             return None
 
         # -------------------------------------------------
-        # EMA10
-        # -------------------------------------------------
-
-        e10 = ema(
-            df1h,
-            10
-        )
-
-        if e10 is None or e10.empty:
-            return None
-
-        # -------------------------------------------------
-        # 현재 캔들
-        # -------------------------------------------------
-
-        current_open = float(
-            df1h.o.iloc[-1]
-        )
-
-        current_high = float(
-            df1h.h.iloc[-1]
-        )
-
-        current_close = float(
-            df1h.c.iloc[-1]
-        )
-
-        current_ema10 = float(
-            e10.iloc[-1]
-        )
-
-        # -------------------------------------------------
-        # 현재 종가가 EMA10 아래
-        # -------------------------------------------------
-
-        if current_close >= current_ema10:
-            return None
-
-        # -------------------------------------------------
-        # 현재 고가가 EMA10 접촉/돌파
-        # -------------------------------------------------
-
-        if current_high < current_ema10:
-            return None
-
-        # -------------------------------------------------
-        # 현재 양봉
-        # -------------------------------------------------
-
-        if current_close <= current_open:
-            return None
-
-        # -------------------------------------------------
-        # 모든 조건 충족
+        # ★ 모든 조건 충족
         #
         # 즉시 ✈️(1)
         # -------------------------------------------------
@@ -1200,13 +1247,23 @@ def get_air_warning(
 # =========================================================
 # ✈️ 비행기 카운터
 #
-# 경고 조건 충족 순간
+# 시작:
+# 조건 최초 충족
 # → ✈️(1)
 #
-# 이후 새로운 1H 캔들
-# 양봉 → +1
+# 진행:
+# 새로운 1H 캔들
 #
-# 음봉 → ⛔️
+# 양봉:
+# → ✈️ 카운트 +1
+#
+# 음봉:
+# → 종료하지 않음
+#
+# 종료:
+# EMA3 < EMA10 역배열이
+# 1H 종가 기준으로 확정
+# → ⛔️
 # =========================================================
 
 def update_air_counter(
@@ -1246,78 +1303,141 @@ def update_air_counter(
         )
 
         # -------------------------------------------------
-        # 새로운 비행기 경고
+        # 현재 EMA3 / EMA10 상태
         #
-        # ★ 즉시 1부터 시작
+        # 확정된 1H 종가 기준
         # -------------------------------------------------
 
-        if new_warning is not None:
+        ema3_10_result = (
+            ema3_10_cross_count(
+                df1h
+            )
+        )
 
-            if (
-                state is None
-                or state.get(
-                    "warning_candle"
-                ) != candle_time
-            ):
+        current_ema_state = (
+            ema3_10_result.get(
+                "state",
+                "none"
+            )
+        )
 
-                air_state[market] = {
-                    "active": True,
-                    "ended": False,
-                    "direction": new_warning,
-
-                    # ★ 최초부터 1
-                    "count": 1,
-
-                    "warning_candle": candle_time,
-
-                    # 현재 캔들은 이미 1번 처리
-                    "counted_candle": candle_time
-                }
-
-                return {
-                    "active": True,
-                    "ended": False,
-                    "direction": new_warning,
-                    "count": 1
-                }
-
-        # -------------------------------------------------
-        # 기존 상태 없음
-        # -------------------------------------------------
+        # =================================================
+        # 1. 기존 상태가 없는 경우
+        # =================================================
 
         if state is None:
 
-            return {
-                "active": False,
-                "ended": False,
-                "direction": None,
-                "count": 0
+            if new_warning is None:
+
+                return {
+                    "active": False,
+                    "ended": False,
+                    "direction": None,
+                    "count": 0
+                }
+
+            # ---------------------------------------------
+            # 최초 비행기
+            # ---------------------------------------------
+
+            air_state[market] = {
+
+                "active":
+                    True,
+
+                "ended":
+                    False,
+
+                "direction":
+                    new_warning,
+
+                "count":
+                    1,
+
+                "warning_candle":
+                    candle_time,
+
+                "counted_candle":
+                    candle_time
             }
 
-        # -------------------------------------------------
-        # 종료 상태
-        # -------------------------------------------------
+            return {
+                "active": True,
+                "ended": False,
+                "direction":
+                    new_warning,
+                "count": 1
+            }
+
+        # =================================================
+        # 2. 이미 종료된 상태
+        #
+        # EMA3 > EMA10으로 다시 전환하여
+        # 조건이 새롭게 충족되면 재시작 가능
+        # =================================================
 
         if state.get(
             "ended",
             False
         ):
 
+            if new_warning is not None:
+
+                # 같은 캔들에서 종료 후
+                # 다시 시작하는 것을 방지
+                if (
+                    state.get(
+                        "warning_candle"
+                    )
+                    != candle_time
+                ):
+
+                    air_state[market] = {
+
+                        "active":
+                            True,
+
+                        "ended":
+                            False,
+
+                        "direction":
+                            new_warning,
+
+                        "count":
+                            1,
+
+                        "warning_candle":
+                            candle_time,
+
+                        "counted_candle":
+                            candle_time
+                    }
+
+                    return {
+                        "active": True,
+                        "ended": False,
+                        "direction":
+                            new_warning,
+                        "count": 1
+                    }
+
             return {
                 "active": False,
                 "ended": True,
-                "direction": state.get(
-                    "direction"
-                ),
-                "count": state.get(
-                    "count",
-                    0
-                )
+                "direction":
+                    state.get(
+                        "direction"
+                    ),
+                "count":
+                    state.get(
+                        "count",
+                        0
+                    )
             }
 
-        # -------------------------------------------------
-        # 비활성
-        # -------------------------------------------------
+        # =================================================
+        # 3. 현재 진행 중 상태
+        # =================================================
 
         if not state.get(
             "active",
@@ -1326,81 +1446,151 @@ def update_air_counter(
 
             return {
                 "active": False,
-                "ended": False,
-                "direction": state.get(
-                    "direction"
-                ),
-                "count": state.get(
-                    "count",
-                    0
-                )
+                "ended":
+                    state.get(
+                        "ended",
+                        False
+                    ),
+                "direction":
+                    state.get(
+                        "direction"
+                    ),
+                "count":
+                    state.get(
+                        "count",
+                        0
+                    )
             }
 
-        # -------------------------------------------------
-        # 같은 캔들
-        # -------------------------------------------------
+        # =================================================
+        # 4. 같은 1H 캔들
+        #
+        # 이미 처리한 캔들이므로
+        # 카운트를 증가시키지 않음
+        # =================================================
 
         if candle_time <= state.get(
             "counted_candle"
         ):
 
+            # 현재 캔들의 종가가
+            # 이미 EMA3 < EMA10이면 종료
+            if current_ema_state == "short":
+
+                state["active"] = False
+                state["ended"] = True
+
+                return {
+                    "active": False,
+                    "ended": True,
+                    "direction":
+                        state.get(
+                            "direction"
+                        ),
+                    "count":
+                        state.get(
+                            "count",
+                            1
+                        )
+                }
+
             return {
                 "active": True,
                 "ended": False,
-                "direction": state.get(
-                    "direction"
-                ),
-                "count": state.get(
-                    "count",
-                    1
-                )
+                "direction":
+                    state.get(
+                        "direction"
+                    ),
+                "count":
+                    state.get(
+                        "count",
+                        1
+                    )
             }
 
-        # -------------------------------------------------
-        # 새로운 1H 캔들
-        # -------------------------------------------------
+        # =================================================
+        # 5. 새로운 1H 캔들 확정
+        # =================================================
 
         state["counted_candle"] = (
             candle_time
         )
 
-        # -------------------------------------------------
-        # 양봉
-        # -------------------------------------------------
+        # =================================================
+        # 6. EMA3 < EMA10
+        #
+        # ★ 역배열 종가 확정
+        # → ⛔️ 종료
+        #
+        # 음봉인지 아닌지는 상관없음
+        # =================================================
+
+        if current_ema_state == "short":
+
+            state["active"] = False
+            state["ended"] = True
+
+            return {
+                "active": False,
+                "ended": True,
+                "direction":
+                    state.get(
+                        "direction"
+                    ),
+                "count":
+                    state.get(
+                        "count",
+                        1
+                    )
+            }
+
+        # =================================================
+        # 7. EMA3 == EMA10
+        #
+        # 아직 역배열이 아니므로 종료하지 않음
+        # =================================================
+
+        if current_ema_state == "equal":
+
+            return {
+                "active": True,
+                "ended": False,
+                "direction":
+                    state.get(
+                        "direction"
+                    ),
+                "count":
+                    state.get(
+                        "count",
+                        1
+                    )
+            }
+
+        # =================================================
+        # 8. EMA3 > EMA10 유지
+        #
+        # 새로운 양봉이면 카운트 증가
+        #
+        # 음봉이면 카운트 증가하지 않지만
+        # 비행기는 계속 유지
+        # =================================================
 
         if current_close > current_open:
 
             state["count"] += 1
 
-            return {
-                "active": True,
-                "ended": False,
-                "direction": state.get(
+        return {
+            "active": True,
+            "ended": False,
+            "direction":
+                state.get(
                     "direction"
                 ),
-                "count": state.get(
+            "count":
+                state.get(
                     "count",
                     1
                 )
-            }
-
-        # -------------------------------------------------
-        # 음봉
-        # -------------------------------------------------
-
-        state["active"] = False
-        state["ended"] = True
-
-        return {
-            "active": False,
-            "ended": True,
-            "direction": state.get(
-                "direction"
-            ),
-            "count": state.get(
-                "count",
-                1
-            )
         }
 
 
@@ -1607,31 +1797,59 @@ def empty_analysis():
 
     return {
 
-        "ema_1h": e.copy(),
-        "ema_4h": e.copy(),
+        "ema_1h":
+            e.copy(),
+
+        "ema_4h":
+            e.copy(),
 
         "ema3_10_cross_1h": {
-            "state": "none",
-            "count": 0,
-            "final_count": 0,
-            "display": "-",
-            "candle_time": None
+
+            "state":
+                "none",
+
+            "count":
+                0,
+
+            "final_count":
+                0,
+
+            "display":
+                "-",
+
+            "candle_time":
+                None
         },
 
-        "changes": None,
+        "changes":
+            None,
 
-        "air_warning": False,
-        "air_direction": None,
-        "air_count": 0,
-        "air_active": False,
-        "air_ended": False,
+        "air_warning":
+            False,
 
-        "qualified": False,
+        "air_direction":
+            None,
 
-        "direction_1h": "none",
-        "direction_4h": "none",
+        "air_count":
+            0,
 
-        "df1h": None
+        "air_active":
+            False,
+
+        "air_ended":
+            False,
+
+        "qualified":
+            False,
+
+        "direction_1h":
+            "none",
+
+        "direction_4h":
+            "none",
+
+        "df1h":
+            None
     }
 
 
@@ -1681,21 +1899,20 @@ def analyze(
         df4
     )
 
-    # EMA3 ↔ EMA10
-
-    ema3_10_cross = ema3_10_cross_count(
-        df1
+    # 1H EMA3 / EMA10
+    ema3_10_cross = (
+        ema3_10_cross_count(
+            df1
+        )
     )
 
-    # 비행기 경고 조건
-
+    # 비행기 경고
     new_warning = get_air_warning(
         df1,
         df4
     )
 
-    # 비행기 상태 업데이트
-
+    # 비행기 상태
     air = update_air_counter(
         market,
         df1,
@@ -1710,9 +1927,11 @@ def analyze(
 
     return {
 
-        "ema_1h": e1,
+        "ema_1h":
+            e1,
 
-        "ema_4h": e4,
+        "ema_4h":
+            e4,
 
         "ema3_10_cross_1h":
             ema3_10_cross,
@@ -1889,7 +2108,10 @@ def update_upbit():
     )
 
     ended_count = sum(
-        x.get("air_ended", False)
+        x.get(
+            "air_ended",
+            False
+        )
         for x in rows
     )
 
@@ -2076,7 +2298,10 @@ def update_okx(
     )
 
     ended_count = sum(
-        x.get("air_ended", False)
+        x.get(
+            "air_ended",
+            False
+        )
         for x in rows
     )
 
@@ -2113,6 +2338,10 @@ def update_dashboard():
             f"========== 전체 조회 {kst()} =========="
         )
 
+        # -------------------------------------------------
+        # Upbit
+        # -------------------------------------------------
+
         if USE_UPBIT == "Y":
 
             try:
@@ -2129,6 +2358,10 @@ def update_dashboard():
 
             latest_upbit_data = []
 
+        # -------------------------------------------------
+        # OKX
+        # -------------------------------------------------
+
         if USE_OKX == "Y":
 
             try:
@@ -2136,9 +2369,11 @@ def update_dashboard():
                 usdt = get_usdt_krw()
 
                 if usdt:
+
                     latest_usdt_krw = usdt
 
                 else:
+
                     usdt = latest_usdt_krw
 
                 if usdt > 0:
@@ -2173,21 +2408,28 @@ def warning_html(
     air_ended=False
 ):
 
+    # -----------------------------------------------------
     # 종료
+    # -----------------------------------------------------
 
     if air_ended:
 
         return (
             '<div class="air-box ended">'
+
             '<div class="air-end">'
             '⛔️'
             '</div>'
+
             '</div>'
         )
 
+    # -----------------------------------------------------
     # 진행 중 아님
+    # -----------------------------------------------------
 
     if not air_warning:
+
         return "-"
 
     direction = (
@@ -2200,8 +2442,6 @@ def warning_html(
         if direction == "LONG_PRE_BREAKOUT"
         else "short"
     )
-
-    # 최초부터 ✈️(1)
 
     return (
         '<div class="air-box">'
@@ -2467,7 +2707,9 @@ def rows_html(data):
 
 def table_html(data):
 
-    rows = rows_html(data)
+    rows = rows_html(
+        data
+    )
 
     if not rows:
 
@@ -2519,6 +2761,7 @@ def section(
 
     return f"""
     <h2>
+
         🏆 {title} TOP{TOP_N}
 
         <small>
@@ -2590,8 +2833,9 @@ def focus_section(
 
         table = (
             '<div class="focus-table">'
-            + table_html(focus_data)
-            .replace(
+            + table_html(
+                focus_data
+            ).replace(
                 '<div class="table-wrap">',
                 '',
                 1
@@ -2600,6 +2844,7 @@ def focus_section(
 
     return f"""
     <h2 class="focus-title">
+
         🚨 비행기 경고 리스트
 
         <small>
@@ -3257,21 +3502,21 @@ def dashboard():
 
             ③ 4H EMA 10-30-60-120 정배열 필수<br>
 
-            ④ 1H EMA3 > EMA10 연속 카운팅 → 🟢(N)<br>
+            ④ 1H EMA3 &gt; EMA10 연속 카운팅 → 🟢(N)<br>
 
             ⑤ EMA3와 EMA10은 모두 캔들 종가 기준<br>
 
             ⑥ 현재 EMA3가 EMA10 위에 있어야 함<br>
 
-            ⑦ 현재 1H 고가가 EMA10 접촉/돌파<br>
+            ⑦ 모든 조건 충족 즉시 → ✈️(1) 시작<br>
 
-            ⑧ 현재 1H 양봉 + 종가 EMA10 아래<br>
+            ⑧ 이후 새로운 양봉마다 → ✈️(2) → ✈️(3) → ✈️(4) 계속 카운팅<br>
 
-            ⑨ 모든 조건 충족 즉시 → ✈️(1) 시작<br>
+            ⑨ 음봉 여부와 관계없이 EMA3 &gt; EMA10이면 비행기 유지<br>
 
-            ⑩ 이후 새로운 양봉마다 ✈️(2) → ✈️(3) → ✈️(4) 계속 카운팅<br>
+            ⑩ EMA3 &lt; EMA10 역배열 종가 확정 시 → ⛔️ 종료<br>
 
-            ⑪ 음봉 마감 시 ⛔️ 경고 종료
+            ⑪ 업비트 : Y / OKX : N
 
             {status}
 
@@ -3356,7 +3601,7 @@ def startup():
     )
 
     log.info(
-        "EMA3 / EMA10 = 캔들 종가 기준"
+        "EMA3 / EMA10 = 1H 캔들 종가 기준"
     )
 
     log.info(
@@ -3368,24 +3613,20 @@ def startup():
     )
 
     log.info(
-        "현재 고가 >= EMA10"
+        f"EMA3 > EMA10 최소 연속 = "
+        f"{MIN_EMA10_LONG_COUNT}개"
     )
 
     log.info(
-        "현재 종가 < EMA10"
+        "고가 >= EMA10 조건 = 사용 안 함"
     )
 
     log.info(
-        "현재 양봉 필수"
+        "종가 < EMA10 조건 = 사용 안 함"
     )
 
     log.info(
-        "1H EMA3 > EMA10 연속 = 🟢(N)"
-    )
-
-    log.info(
-        f"최소 EMA3-EMA10 상승 카운팅 = "
-        f"{MIN_EMA10_LONG_COUNT}"
+        "양봉 필수 조건 = 비행기 시작 조건에서 사용 안 함"
     )
 
     log.info(
@@ -3397,7 +3638,11 @@ def startup():
     )
 
     log.info(
-        "음봉 마감 = ⛔️ 종료"
+        "음봉 자체는 비행기 종료 조건이 아님"
+    )
+
+    log.info(
+        "EMA3 < EMA10 역배열 종가 확정 = ⛔️ 종료"
     )
 
     log.info(
@@ -3435,4 +3680,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-        )
+    )
