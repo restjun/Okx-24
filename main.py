@@ -3642,7 +3642,6 @@ def dashboard():
     → 현재 양봉 + 종가 &gt; EMA10<br>
 
     ⑤ 조건 충족 🛩
-    → 이후 양봉마다 카운터 증가
 
     {status}
 
