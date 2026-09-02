@@ -478,6 +478,7 @@ def get_okx_ohlcv(
     }
 
     if before is not None:
+
         params["before"] = str(before)
 
     r = retry(
@@ -717,9 +718,10 @@ def ema(
         or df.empty
         or "c" not in df
     ):
+
         return None
 
-    # 모든 EMA는 캔들 종가(c) 기준
+    # 모든 EMA는 캔들 종가 기준
     return pd.to_numeric(
         df.c,
         errors="coerce"
@@ -758,9 +760,11 @@ def direction(df):
         ).iloc[-1]
 
         if e10 > e30 > e60 > e120:
+
             return "long"
 
         if e10 < e30 < e60 < e120:
+
             return "short"
 
     except Exception:
@@ -863,8 +867,10 @@ def ema_alignment_count(df):
                 break
 
         return {
-            "direction": current_direction,
-            "count": count
+            "direction":
+                current_direction,
+            "count":
+                count
         }
 
     except Exception as e:
@@ -916,7 +922,7 @@ def ema_display(df):
 # =========================================================
 # 1H EMA3 ↔ EMA10
 #
-# ★ EMA3 / EMA10 모두 1H 캔들 종가 기준
+# EMA3 / EMA10 모두 1H 캔들 종가 기준
 # =========================================================
 
 def ema3_10_cross_count(df):
@@ -934,6 +940,7 @@ def ema3_10_cross_count(df):
         or df.empty
         or len(df) < 2
     ):
+
         return result
 
     try:
@@ -954,6 +961,7 @@ def ema3_10_cross_count(df):
             e3 is None
             or e10 is None
         ):
+
             return result
 
         e3_values = pd.to_numeric(
@@ -1129,24 +1137,18 @@ def ema3_10_cross_count(df):
 # =========================================================
 # ✈️ 비행기 경고 조건
 #
-# 최종 조건
-#
 # ① 거래대금 TOP20
 # ② 1H EMA 10-30-60-120 정배열
 # ③ 4H EMA 10-30-60-120 정배열
 # ④ 1H EMA3 > EMA10
 # ⑤ EMA3 / EMA10 모두 1H 캔들 종가 기준
-# ⑥ 현재 EMA3 > EMA10
-# ⑦ 모든 조건 충족 즉시 ✈️(1)
 #
-# 삭제된 조건
-# - 현재 고가 >= EMA10
-# - 현재 종가 < EMA10
-# - 현재 양봉 필수
+# ★ 모든 조건 충족 즉시 ✈️
 #
-# ★ 비행기 종료 조건은 별도
-# EMA3 < EMA10 역배열이
-# 확정된 1H 캔들의 종가 기준으로 확인될 때 종료
+# 삭제 조건
+# - 고가 >= EMA10
+# - 종가 < EMA10
+# - 양봉 필수
 # =========================================================
 
 def get_air_warning(
@@ -1160,6 +1162,7 @@ def get_air_warning(
         or df4h is None
         or df4h.empty
     ):
+
         return None
 
     try:
@@ -1173,6 +1176,7 @@ def get_air_warning(
         )
 
         if direction_1h != "long":
+
             return None
 
         # -------------------------------------------------
@@ -1184,6 +1188,7 @@ def get_air_warning(
         )
 
         if direction_4h != "long":
+
             return None
 
         # -------------------------------------------------
@@ -1208,6 +1213,7 @@ def get_air_warning(
             )
             != "long"
         ):
+
             return None
 
         # -------------------------------------------------
@@ -1225,12 +1231,11 @@ def get_air_warning(
             current_long_count
             < MIN_EMA10_LONG_COUNT
         ):
+
             return None
 
         # -------------------------------------------------
         # ★ 모든 조건 충족
-        #
-        # 즉시 ✈️(1)
         # -------------------------------------------------
 
         return "LONG_PRE_BREAKOUT"
@@ -1245,25 +1250,23 @@ def get_air_warning(
 
 
 # =========================================================
-# ✈️ 비행기 카운터
+# ✈️ 비행기 상태
 #
 # 시작:
-# 조건 최초 충족
-# → ✈️(1)
+# 조건 충족 → ✈️
 #
 # 진행:
-# 새로운 1H 캔들
-#
-# 양봉:
-# → ✈️ 카운트 +1
+# EMA3 > EMA10 유지 → ✈️ 계속
 #
 # 음봉:
-# → 종료하지 않음
+# 종료하지 않음
 #
 # 종료:
-# EMA3 < EMA10 역배열이
-# 1H 종가 기준으로 확정
+# EMA3 < EMA10이 1H 종가로 확정
 # → ⛔️
+#
+# ★ 내부 count는 상태 호환을 위해 유지하지만
+# ★ 화면에는 절대 표시하지 않음
 # =========================================================
 
 def update_air_counter(
@@ -1336,10 +1339,7 @@ def update_air_counter(
                     "count": 0
                 }
 
-            # ---------------------------------------------
-            # 최초 비행기
-            # ---------------------------------------------
-
+            # 최초 비행기 시작
             air_state[market] = {
 
                 "active":
@@ -1372,8 +1372,8 @@ def update_air_counter(
         # =================================================
         # 2. 이미 종료된 상태
         #
-        # EMA3 > EMA10으로 다시 전환하여
-        # 조건이 새롭게 충족되면 재시작 가능
+        # EMA3 > EMA10으로 다시 전환되고
+        # 새로운 캔들에서 조건 충족 시 재시작
         # =================================================
 
         if state.get(
@@ -1383,8 +1383,6 @@ def update_air_counter(
 
             if new_warning is not None:
 
-                # 같은 캔들에서 종료 후
-                # 다시 시작하는 것을 방지
                 if (
                     state.get(
                         "warning_candle"
@@ -1464,17 +1462,14 @@ def update_air_counter(
 
         # =================================================
         # 4. 같은 1H 캔들
-        #
-        # 이미 처리한 캔들이므로
-        # 카운트를 증가시키지 않음
         # =================================================
 
         if candle_time <= state.get(
             "counted_candle"
         ):
 
-            # 현재 캔들의 종가가
-            # 이미 EMA3 < EMA10이면 종료
+            # 같은 확정 캔들에서
+            # EMA3 < EMA10이면 종료
             if current_ema_state == "short":
 
                 state["active"] = False
@@ -1509,7 +1504,7 @@ def update_air_counter(
             }
 
         # =================================================
-        # 5. 새로운 1H 캔들 확정
+        # 5. 새로운 1H 확정 캔들
         # =================================================
 
         state["counted_candle"] = (
@@ -1522,7 +1517,7 @@ def update_air_counter(
         # ★ 역배열 종가 확정
         # → ⛔️ 종료
         #
-        # 음봉인지 아닌지는 상관없음
+        # 양봉/음봉 여부와 관계 없음
         # =================================================
 
         if current_ema_state == "short":
@@ -1569,10 +1564,10 @@ def update_air_counter(
         # =================================================
         # 8. EMA3 > EMA10 유지
         #
-        # 새로운 양봉이면 카운트 증가
+        # 양봉이면 내부 count 증가
         #
-        # 음봉이면 카운트 증가하지 않지만
-        # 비행기는 계속 유지
+        # 음봉이면 count 증가하지 않음
+        # 하지만 비행기는 계속 유지
         # =================================================
 
         if current_close > current_open:
@@ -1906,7 +1901,7 @@ def analyze(
         )
     )
 
-    # 비행기 경고
+    # 비행기 조건
     new_warning = get_air_warning(
         df1,
         df4
@@ -2399,6 +2394,11 @@ def update_dashboard():
 
 # =========================================================
 # 경고 HTML
+#
+# ★ 비행기 카운팅 완전 제거
+# ★ "진행" 글자 제거
+# ★ 화면에는 ✈️만 표시
+# ★ 종료 시 ⛔️
 # =========================================================
 
 def warning_html(
@@ -2409,60 +2409,42 @@ def warning_html(
 ):
 
     # -----------------------------------------------------
-    # 종료
+    # EMA3 < EMA10 종가 확정 → 종료
     # -----------------------------------------------------
 
     if air_ended:
 
         return (
             '<div class="air-box ended">'
-
             '<div class="air-end">'
             '⛔️'
             '</div>'
-
             '</div>'
         )
 
     # -----------------------------------------------------
-    # 진행 중 아님
+    # 비행기 경고 없음
     # -----------------------------------------------------
 
     if not air_warning:
 
         return "-"
 
-    direction = (
-        air_direction
-        or "LONG_PRE_BREAKOUT"
-    )
-
-    direction_class = (
-        "long"
-        if direction == "LONG_PRE_BREAKOUT"
-        else "short"
-    )
+    # -----------------------------------------------------
+    # 비행기 진행
+    #
+    # 카운팅 없음
+    # "진행" 표시 없음
+    # ✈️ 하나만 표시
+    # -----------------------------------------------------
 
     return (
         '<div class="air-box">'
-
         '<div class="air-main">'
-
-        '<span class="air-direction '
-        f'{direction_class}">'
-        '진행'
-        '</span>'
-
         '<span class="air-icon">'
         '✈️'
         '</span>'
-
         '</div>'
-
-        '<div class="air-count">'
-        f'({max(int(air_count), 1)})'
-        '</div>'
-
         '</div>'
     )
 
@@ -2840,6 +2822,7 @@ def focus_section(
                 '',
                 1
             )
+            + '</div>'
         )
 
     return f"""
@@ -3162,7 +3145,6 @@ padding:0 2px !important;
 .air-box{
 width:100%;
 display:flex;
-flex-direction:column;
 align-items:center;
 justify-content:center;
 text-align:center;
@@ -3172,21 +3154,7 @@ text-align:center;
 display:flex;
 align-items:center;
 justify-content:center;
-gap:3px;
-white-space:nowrap;
-}
-
-.air-direction{
-font-size:6px;
-font-weight:bold;
-}
-
-.air-direction.long{
-color:#35e66d;
-}
-
-.air-direction.short{
-color:#ff4d4d;
+width:100%;
 }
 
 .air-icon{
@@ -3194,7 +3162,9 @@ font-size:11px;
 font-weight:bold;
 display:inline-block;
 transform-origin:center center;
+
 animation:air-pulse 0.55s infinite;
+
 filter:
 drop-shadow(0 0 2px currentColor)
 drop-shadow(0 0 4px currentColor);
@@ -3227,14 +3197,6 @@ transform:scale(.90);
 opacity:.30;
 }
 
-}
-
-.air-count{
-margin-top:0;
-font-size:9px;
-line-height:9px;
-font-weight:bold;
-color:#fff;
 }
 
 .air-end{
@@ -3371,17 +3333,8 @@ text-align:center;
 font-size:6px;
 }
 
-.air-direction{
-font-size:5px;
-}
-
 .air-icon{
 font-size:9px;
-}
-
-.air-count{
-font-size:8px;
-line-height:8px;
 }
 
 .air-end{
@@ -3504,19 +3457,17 @@ def dashboard():
 
             ④ 1H EMA3 &gt; EMA10 연속 카운팅 → 🟢(N)<br>
 
-            ⑤ EMA3와 EMA10은 모두 캔들 종가 기준<br>
+            ⑤ EMA3와 EMA10은 모두 1H 캔들 종가 기준<br>
 
-            ⑥ 현재 EMA3가 EMA10 위에 있어야 함<br>
+            ⑥ 모든 조건 충족 즉시 → ✈️ 경고<br>
 
-            ⑦ 모든 조건 충족 즉시 → ✈️(1) 시작<br>
+            ⑦ EMA3 &gt; EMA10 유지 → ✈️ 계속 표시<br>
 
-            ⑧ 이후 새로운 양봉마다 → ✈️(2) → ✈️(3) → ✈️(4) 계속 카운팅<br>
+            ⑧ 음봉 자체는 종료 조건이 아님<br>
 
-            ⑨ 음봉 여부와 관계없이 EMA3 &gt; EMA10이면 비행기 유지<br>
+            ⑨ EMA3 &lt; EMA10 역배열 종가 확정 시 → ⛔️ 종료<br>
 
-            ⑩ EMA3 &lt; EMA10 역배열 종가 확정 시 → ⛔️ 종료<br>
-
-            ⑪ 업비트 : Y / OKX : N
+            ⑩ 업비트 : Y / OKX : N
 
             {status}
 
@@ -3605,11 +3556,8 @@ def startup():
     )
 
     log.info(
-        "비행기 조건 = 1H 정배열 + 4H 정배열"
-    )
-
-    log.info(
-        "현재 EMA3 > EMA10 필수"
+        "비행기 시작 조건 = "
+        "1H 정배열 + 4H 정배열 + EMA3 > EMA10"
     )
 
     log.info(
@@ -3626,23 +3574,27 @@ def startup():
     )
 
     log.info(
-        "양봉 필수 조건 = 비행기 시작 조건에서 사용 안 함"
+        "양봉 필수 조건 = 사용 안 함"
     )
 
     log.info(
-        "조건 충족 즉시 = ✈️(1)"
+        "조건 충족 즉시 = ✈️ 경고"
     )
 
     log.info(
-        "이후 새로운 양봉마다 ✈️ 카운트 증가"
+        "EMA3 > EMA10 유지 = ✈️ 계속 표시"
     )
 
     log.info(
-        "음봉 자체는 비행기 종료 조건이 아님"
+        "음봉 자체는 종료하지 않음"
     )
 
     log.info(
         "EMA3 < EMA10 역배열 종가 확정 = ⛔️ 종료"
+    )
+
+    log.info(
+        "비행기 화면 카운팅 = 사용 안 함"
     )
 
     log.info(
@@ -3680,4 +3632,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-    )
+        )
