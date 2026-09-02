@@ -2567,6 +2567,8 @@ h2 small{
 
     display:flex;
 
+    justify-content:center;
+
     gap:8px;
 
     margin-top:4px;
@@ -2627,7 +2629,11 @@ th{
 
     font-size:6px;
 
-    white-space:nowrap
+    white-space:nowrap;
+
+    text-align:center !important;
+
+    vertical-align:middle
 
 }
 
@@ -2639,7 +2645,7 @@ td{
     border-bottom:
         1px solid #272c32;
 
-    text-align:center;
+    text-align:center !important;
 
     vertical-align:middle
 
@@ -2654,7 +2660,9 @@ td{
 th:nth-child(1),
 td:nth-child(1){
 
-    width:7%
+    width:7%;
+
+    text-align:center !important
 
 }
 
@@ -2663,14 +2671,16 @@ td:nth-child(2){
 
     width:23%;
 
-    text-align:left
+    text-align:center !important
 
 }
 
 th:nth-child(3),
 td:nth-child(3){
 
-    width:17%
+    width:17%;
+
+    text-align:center !important
 
 }
 
@@ -2679,7 +2689,7 @@ td:nth-child(4){
 
     width:18%;
 
-    text-align:left
+    text-align:center !important
 
 }
 
@@ -2688,7 +2698,7 @@ td:nth-child(5){
 
     width:10%;
 
-    text-align:center
+    text-align:center !important
 
 }
 
@@ -2697,7 +2707,7 @@ td:nth-child(6){
 
     width:25%;
 
-    text-align:center
+    text-align:center !important
 
 }
 
@@ -2710,7 +2720,9 @@ td:nth-child(6){
 
     color:#8f949d;
 
-    font-size:7px
+    font-size:7px;
+
+    text-align:center !important
 
 }
 
@@ -2723,11 +2735,15 @@ td:nth-child(6){
 
     overflow:hidden;
 
-    padding-left:5px;
+    padding-left:2px;
+
+    padding-right:2px;
 
     padding-top:2px;
 
-    padding-bottom:2px
+    padding-bottom:2px;
+
+    text-align:center !important
 
 }
 
@@ -2745,14 +2761,15 @@ td:nth-child(6){
 
     overflow:hidden;
 
-    text-overflow:ellipsis
+    text-overflow:ellipsis;
+
+    text-align:center
 
 }
 
 
 /* =====================================================
    등락률
-   코인명 바로 아래에 밀착
    ===================================================== */
 
 .change{
@@ -2765,13 +2782,15 @@ td:nth-child(6){
 
     font-size:7px;
 
-    white-space:nowrap
+    white-space:nowrap;
+
+    text-align:center
 
 }
 
 
 /* =====================================================
-   등락률
+   등락률 색상
    ===================================================== */
 
 .up{
@@ -2799,7 +2818,6 @@ td:nth-child(6){
 
 /* =====================================================
    거래대금
-   코인명/등락률과 동일한 높이감 유지
    ===================================================== */
 
 .vol{
@@ -2816,23 +2834,26 @@ td:nth-child(6){
 
     height:18px;
 
-    white-space:nowrap
+    white-space:nowrap;
+
+    text-align:center !important
 
 }
 
 
 /* =====================================================
    EMA
-   기존 그대로 유지
    ===================================================== */
 
 .ema-cell{
 
     overflow:hidden;
 
-    padding-left:2px;
+    padding-left:1px;
 
-    padding-right:1px
+    padding-right:1px;
+
+    text-align:center !important
 
 }
 
@@ -2841,6 +2862,8 @@ td:nth-child(6){
     display:flex;
 
     align-items:center;
+
+    justify-content:center;
 
     height:15px;
 
@@ -2852,7 +2875,9 @@ td:nth-child(6){
 
     font-size:7px;
 
-    font-weight:bold
+    font-weight:bold;
+
+    text-align:center
 
 }
 
@@ -2862,7 +2887,9 @@ td:nth-child(6){
 
     text-overflow:ellipsis;
 
-    white-space:nowrap
+    white-space:nowrap;
+
+    text-align:center
 
 }
 
@@ -2874,19 +2901,20 @@ td:nth-child(6){
 
     font-size:6px;
 
-    font-weight:bold
+    font-weight:bold;
+
+    text-align:center
 
 }
 
 
 /* =====================================================
    1H 종가 / EMA10 위치
-   기존 그대로 유지
    ===================================================== */
 
 .close-ema10{
 
-    text-align:center;
+    text-align:center !important;
 
     vertical-align:middle;
 
@@ -2919,7 +2947,6 @@ td:nth-child(6){
 
 /* =====================================================
    경고
-   기존 그대로 유지
    ===================================================== */
 
 .warning{
@@ -2959,7 +2986,7 @@ td:nth-child(6){
 
     justify-content:center;
 
-    gap:3px;
+    gap:4px;
 
     white-space:nowrap
 
@@ -2985,6 +3012,11 @@ td:nth-child(6){
 
 }
 
+
+/* =====================================================
+   비행기 반짝임 강화
+   ===================================================== */
+
 .air-icon{
 
     font-size:11px;
@@ -2996,7 +3028,75 @@ td:nth-child(6){
     transform-origin:center center;
 
     animation:
-        air-pulse 0.8s infinite
+        air-pulse 0.55s infinite;
+
+    filter:
+        drop-shadow(0 0 2px currentColor)
+        drop-shadow(0 0 4px currentColor)
+
+}
+
+@keyframes air-pulse{
+
+    0%{
+
+        transform:scale(0.90);
+
+        opacity:0.30;
+
+        filter:
+            drop-shadow(0 0 1px currentColor)
+            drop-shadow(0 0 2px currentColor)
+
+    }
+
+    25%{
+
+        transform:scale(1.15);
+
+        opacity:0.75;
+
+        filter:
+            drop-shadow(0 0 3px currentColor)
+            drop-shadow(0 0 6px currentColor)
+
+    }
+
+    50%{
+
+        transform:scale(1.35);
+
+        opacity:1;
+
+        filter:
+            drop-shadow(0 0 4px currentColor)
+            drop-shadow(0 0 9px currentColor)
+
+    }
+
+    75%{
+
+        transform:scale(1.15);
+
+        opacity:0.75;
+
+        filter:
+            drop-shadow(0 0 3px currentColor)
+            drop-shadow(0 0 6px currentColor)
+
+    }
+
+    100%{
+
+        transform:scale(0.90);
+
+        opacity:0.30;
+
+        filter:
+            drop-shadow(0 0 1px currentColor)
+            drop-shadow(0 0 2px currentColor)
+
+    }
 
 }
 
@@ -3010,35 +3110,9 @@ td:nth-child(6){
 
     font-weight:bold;
 
-    color:#ffffff
+    color:#ffffff;
 
-}
-
-@keyframes air-pulse{
-
-    0%{
-
-        transform:scale(1);
-
-        opacity:0.35
-
-    }
-
-    50%{
-
-        transform:scale(1.25);
-
-        opacity:1
-
-    }
-
-    100%{
-
-        transform:scale(1);
-
-        opacity:0.35
-
-    }
+    text-align:center
 
 }
 
@@ -3068,7 +3142,9 @@ td:nth-child(6){
 
     color:#555;
 
-    padding:12px 4px
+    padding:12px 4px;
+
+    text-align:center !important
 
 }
 
@@ -3113,24 +3189,32 @@ td:nth-child(6){
         padding:
             4px 1px;
 
-        font-size:5px
+        font-size:5px;
+
+        text-align:center !important
 
     }
 
     td{
 
         padding:
-            4px 1px
+            4px 1px;
+
+        text-align:center !important
 
     }
 
     .coin{
 
-        padding-left:4px;
+        padding-left:1px;
+
+        padding-right:1px;
 
         padding-top:1px;
 
-        padding-bottom:1px
+        padding-bottom:1px;
+
+        text-align:center !important
 
     }
 
@@ -3140,7 +3224,9 @@ td:nth-child(6){
 
         line-height:9px;
 
-        height:9px
+        height:9px;
+
+        text-align:center
 
     }
 
@@ -3152,7 +3238,9 @@ td:nth-child(6){
 
         line-height:7px;
 
-        height:7px
+        height:7px;
+
+        text-align:center
 
     }
 
@@ -3166,15 +3254,19 @@ td:nth-child(6){
 
         line-height:15px;
 
-        height:15px
+        height:15px;
+
+        text-align:center !important
 
     }
 
     .ema-cell{
 
-        padding-left:1px;
+        padding-left:0;
 
-        padding-right:0
+        padding-right:0;
+
+        text-align:center !important
 
     }
 
@@ -3184,7 +3276,11 @@ td:nth-child(6){
 
         line-height:14px;
 
-        font-size:6px
+        font-size:6px;
+
+        justify-content:center;
+
+        text-align:center
 
     }
 
@@ -3192,13 +3288,17 @@ td:nth-child(6){
 
         flex-basis:17px;
 
-        font-size:5px
+        font-size:5px;
+
+        text-align:center
 
     }
 
     .close-ema10{
 
-        font-size:6px
+        font-size:6px;
+
+        text-align:center !important
 
     }
 
@@ -3543,4 +3643,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-        )
+)
