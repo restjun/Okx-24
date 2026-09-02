@@ -955,7 +955,7 @@ def close_vs_ema10_1h(df):
 
                 "position": "above",
 
-                "display": "▲ 위"
+                "display": "▲"
 
             }
 
@@ -965,7 +965,7 @@ def close_vs_ema10_1h(df):
 
                 "position": "below",
 
-                "display": "▼ 아래"
+                "display": "▼"
 
             }
 
@@ -973,7 +973,7 @@ def close_vs_ema10_1h(df):
 
             "position": "equal",
 
-            "display": "＝ 동일"
+            "display": "＝"
 
         }
 
