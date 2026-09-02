@@ -2962,7 +2962,7 @@ def dashboard():
 <body>
 
 <h1>
-    📊 1H EMA 비행기 경고
+    📊 매매 전술 눌림 돒파
 </h1>
 
 
