@@ -865,13 +865,6 @@ def direction(df):
 
 # =========================================================
 # EMA 정배열 연속 카운팅
-#
-# 예:
-# 현재까지 10-30-60-120 정배열이
-# 10개 연속이면 🟢(10)
-#
-# 역배열이면 🔴(숫자)
-# 둘 다 아니면 ⚪(0)
 # =========================================================
 
 def ema_alignment_count(df):
@@ -1012,70 +1005,240 @@ def ema_display(df):
 
 
 # =========================================================
-# 1H 종가 / EMA10 위치
+# 1H EMA1 ↔ EMA10 교차 카운팅
+#
+# EMA1 = 종가
+#
+# 골든크로스:
+# 이전 종가 <= 이전 EMA10
+# 현재 종가 > 현재 EMA10
+#
+# 데드크로스:
+# 이전 종가 >= 이전 EMA10
+# 현재 종가 < 현재 EMA10
+#
+# 중요:
+# 교차 기호 ▲ / ▼를 표시하지 않는다.
+#
+# 예:
+# 하락 진행
+# 🔻(1) → 🔻(2) → 🔻(3) → 🔻(4) → 🔻(5)
+#
+# 골든크로스 확정
+# 5 = 회색 최종값
+# 🟢(1) = 새로운 상승 시작
+#
+# 화면:
+# 5  🟢(1)
+#
+# 다시 데드크로스
+# 화면:
+# 1  🔻(1)
 # =========================================================
 
-def close_vs_ema10_1h(df):
+def ema10_cross_count(df):
+
+    result = {
+
+        "state": "none",
+
+        "count": 0,
+
+        "final_count": 0,
+
+        "display": "-",
+
+        "candle_time": None
+    }
 
     if (
         df is None
         or df.empty
-        or len(df) < 1
+        or len(df) < 2
     ):
-
-        return {
-            "position": "none",
-            "display": "-"
-        }
+        return result
 
     try:
 
-        e10 = ema(df, 10)
+        e10 = ema(
+            df,
+            10
+        )
 
         if e10 is None or e10.empty:
+            return result
 
-            return {
-                "position": "none",
-                "display": "-"
-            }
+        closes = pd.to_numeric(
+            df["c"],
+            errors="coerce"
+        ).reset_index(drop=True)
 
-        close = float(
-            df.c.iloc[-1]
+        e10_values = pd.to_numeric(
+            e10,
+            errors="coerce"
+        ).reset_index(drop=True)
+
+        valid = (
+            closes.notna()
+            & e10_values.notna()
         )
 
-        ema10_value = float(
-            e10.iloc[-1]
+        if not valid.iloc[-1]:
+            return result
+
+        # -------------------------------------------------
+        # 각 캔들의 EMA10 위/아래 상태
+        # -------------------------------------------------
+
+        states = []
+
+        for i in range(len(df)):
+
+            close_value = float(
+                closes.iloc[i]
+            )
+
+            ema10_value = float(
+                e10_values.iloc[i]
+            )
+
+            if close_value > ema10_value:
+
+                states.append("long")
+
+            elif close_value < ema10_value:
+
+                states.append("short")
+
+            else:
+
+                states.append("equal")
+
+
+        current_state = states[-1]
+
+        candle_time = df.datetime.iloc[-1]
+
+        result["state"] = current_state
+        result["candle_time"] = candle_time
+
+        # -------------------------------------------------
+        # 현재 종가가 EMA10과 같은 경우
+        # -------------------------------------------------
+
+        if current_state == "equal":
+
+            result["count"] = 0
+
+            result["final_count"] = 0
+
+            result["display"] = "⚪(0)"
+
+            return result
+
+
+        # -------------------------------------------------
+        # 현재 진행 방향의 연속 카운팅
+        #
+        # 현재 캔들부터 뒤로 가면서
+        # 같은 상태가 몇 개 이어졌는지 계산
+        # -------------------------------------------------
+
+        current_count = 0
+
+        i = len(states) - 1
+
+        while i >= 0:
+
+            if states[i] == current_state:
+
+                current_count += 1
+
+                i -= 1
+
+            else:
+
+                break
+
+
+        # -------------------------------------------------
+        # 바로 앞의 반대 방향 구간 최종 카운팅
+        #
+        # 예:
+        #
+        # 🔻 1
+        # 🔻 2
+        # 🔻 3
+        # 🔻 4
+        # 🔻 5
+        # 🟢 1
+        #
+        # 현재 🟢(1)
+        # final_count = 5
+        # -------------------------------------------------
+
+        final_count = 0
+
+        previous_state = (
+            "short"
+            if current_state == "long"
+            else "long"
         )
 
-        if close > ema10_value:
+        j = i
 
-            return {
-                "position": "above",
-                "display": "▲"
-            }
+        while j >= 0:
 
-        elif close < ema10_value:
+            if states[j] == previous_state:
 
-            return {
-                "position": "below",
-                "display": "▼"
-            }
+                final_count += 1
 
-        return {
-            "position": "equal",
-            "display": "＝"
-        }
+                j -= 1
 
-    except:
+            else:
 
-        return {
-            "position": "none",
-            "display": "-"
-        }
+                break
+
+
+        result["count"] = current_count
+
+        result["final_count"] = final_count
+
+        # -------------------------------------------------
+        # 표시
+        # -------------------------------------------------
+
+        if current_state == "long":
+
+            result["display"] = (
+                f'{final_count}|🟢({current_count})'
+                if final_count > 0
+                else f'🟢({current_count})'
+            )
+
+        elif current_state == "short":
+
+            result["display"] = (
+                f'{final_count}|🔻({current_count})'
+                if final_count > 0
+                else f'🔻({current_count})'
+            )
+
+        return result
+
+    except Exception as e:
+
+        log.error(
+            f"EMA1-EMA10 교차 카운팅 오류: {e}"
+        )
+
+        return result
 
 
 # =========================================================
 # 비행기 발생 조건
+#
+# 기존 로직 그대로 유지
 # =========================================================
 
 def get_air_warning(
@@ -1495,9 +1658,18 @@ def empty_analysis():
         "ema_4h":
             e.copy(),
 
-        "close_ema10_1h": {
-            "position": "none",
-            "display": "-"
+        "ema10_cross_1h": {
+
+            "state": "none",
+
+            "count": 0,
+
+            "final_count": 0,
+
+            "display": "-",
+
+            "candle_time": None
+
         },
 
         "changes":
@@ -1569,7 +1741,11 @@ def analyze(
     e1 = ema_display(df1)
     e4 = ema_display(df4)
 
-    close_ema10 = close_vs_ema10_1h(
+    # =====================================================
+    # 1H EMA1 ↔ EMA10 카운팅
+    # =====================================================
+
+    ema10_cross = ema10_cross_count(
         df1
     )
 
@@ -1598,8 +1774,8 @@ def analyze(
         "ema_4h":
             e4,
 
-        "close_ema10_1h":
-            close_ema10,
+        "ema10_cross_1h":
+            ema10_cross,
 
         "changes":
             changes,
@@ -1694,8 +1870,8 @@ def update_upbit():
                 "ema_4h":
                     a["ema_4h"],
 
-                "close_ema10_1h":
-                    a["close_ema10_1h"],
+                "ema10_cross_1h":
+                    a["ema10_cross_1h"],
 
                 "air_warning":
                     a["air_warning"],
@@ -1738,8 +1914,8 @@ def update_upbit():
                 "ema_4h":
                     a["ema_4h"],
 
-                "close_ema10_1h":
-                    a["close_ema10_1h"],
+                "ema10_cross_1h":
+                    a["ema10_cross_1h"],
 
                 "air_warning": False,
 
@@ -1936,8 +2112,8 @@ def update_okx(usdt):
                 "ema_4h":
                     a["ema_4h"],
 
-                "close_ema10_1h":
-                    a["close_ema10_1h"],
+                "ema10_cross_1h":
+                    a["ema10_cross_1h"],
 
                 "air_warning":
                     a["air_warning"],
@@ -1980,8 +2156,8 @@ def update_okx(usdt):
                 "ema_4h":
                     a["ema_4h"],
 
-                "close_ema10_1h":
-                    a["close_ema10_1h"],
+                "ema10_cross_1h":
+                    a["ema10_cross_1h"],
 
                 "air_warning": False,
 
@@ -2079,7 +2255,7 @@ def update_dashboard():
 
 
 # =========================================================
-# 경고 HTML
+# 비행기 경고 HTML
 # =========================================================
 
 def warning_html(
@@ -2179,49 +2355,108 @@ def ema_html(e):
 
 
 # =========================================================
-# 1H 종가 / EMA10 HTML
+# 1H EMA1 ↔ EMA10 HTML
 # =========================================================
 
-def close_ema10_html(data):
+def ema10_cross_html(data):
 
     if not data:
         return "-"
 
-    position = data.get(
-        "position",
+    state = data.get(
+        "state",
         "none"
     )
 
-    display = data.get(
-        "display",
-        "-"
+    count = int(
+        data.get(
+            "count",
+            0
+        )
     )
 
-    if position == "above":
+    final_count = int(
+        data.get(
+            "final_count",
+            0
+        )
+    )
 
-        return (
-            '<span class="close-ema-above">'
-            f'{display}'
+    # -----------------------------------------------------
+    # 상승 진행
+    #
+    # 예:
+    # 이전 하락 최종 5
+    # 현재 상승 1
+    #
+    # 5  🟢(1)
+    # -----------------------------------------------------
+
+    if state == "long":
+
+        final_html = ""
+
+        if final_count > 0:
+
+            final_html = (
+                '<span class="ema10-final">'
+                f'{final_count}'
+                '</span>'
+            )
+
+        current_html = (
+            '<span class="ema10-long">'
+            f'🟢({count})'
             '</span>'
         )
 
-    if position == "below":
-
         return (
-            '<span class="close-ema-below">'
-            f'{display}'
+            '<span class="ema10-box">'
+            f'{final_html}'
+            f'{current_html}'
             '</span>'
         )
 
-    if position == "equal":
+    # -----------------------------------------------------
+    # 하락 진행
+    #
+    # 예:
+    # 이전 상승 최종 7
+    # 현재 하락 1
+    #
+    # 7  🔻(1)
+    # -----------------------------------------------------
 
-        return (
-            '<span class="close-ema-equal">'
-            f'{display}'
+    if state == "short":
+
+        final_html = ""
+
+        if final_count > 0:
+
+            final_html = (
+                '<span class="ema10-final">'
+                f'{final_count}'
+                '</span>'
+            )
+
+        current_html = (
+            '<span class="ema10-short">'
+            f'🔻({count})'
             '</span>'
         )
 
-    return "-"
+        return (
+            '<span class="ema10-box">'
+            f'{final_html}'
+            f'{current_html}'
+            '</span>'
+        )
+
+    return (
+        '<span class="ema10-none">'
+        '⚪(0)'
+        '</span>'
+    )
 
 
 # =========================================================
@@ -2255,8 +2490,8 @@ def rows_html(data):
             {}
         )
 
-        close_ema10 = x.get(
-            "close_ema10_1h",
+        ema10_cross = x.get(
+            "ema10_cross_1h",
             {}
         )
 
@@ -2314,8 +2549,8 @@ def rows_html(data):
 
             <td class="close-ema10">
 
-                {close_ema10_html(
-                    close_ema10
+                {ema10_cross_html(
+                    ema10_cross
                 )}
 
             </td>
@@ -2920,9 +3155,6 @@ td:nth-child(6){
 
 }
 
-
-/* 1H / 4H 고정 폭 */
-
 .tf{
 
     flex:0 0 18px;
@@ -2938,12 +3170,6 @@ td:nth-child(6){
     text-align:center;
 
 }
-
-
-/*
-   EMA 표시 영역 고정
-   아이콘 + 숫자 위치가 항상 동일
-*/
 
 .ema-value-wrap{
 
@@ -2967,13 +3193,6 @@ td:nth-child(6){
     overflow:hidden
 
 }
-
-
-/*
-   🟢(10)
-   🔴(5)
-   ⚪(0)
-*/
 
 .ema-value{
 
@@ -3019,7 +3238,7 @@ td:nth-child(6){
 
 
 /* =====================================================
-   1H 종가 / EMA10
+   1H EMA1 ↔ EMA10
    ===================================================== */
 
 .close-ema10{
@@ -3032,25 +3251,73 @@ td:nth-child(6){
 
     font-size:7px;
 
-    font-weight:bold
+    font-weight:bold;
+
+    overflow:hidden
 
 }
 
-.close-ema-above{
+.ema10-box{
 
-    color:#35e66d
+    display:flex;
+
+    align-items:center;
+
+    justify-content:center;
+
+    gap:3px;
+
+    width:100%;
+
+    white-space:nowrap;
+
+    line-height:12px
 
 }
 
-.close-ema-below{
+.ema10-final{
 
-    color:#ff4d4d
+    color:#666;
+
+    font-size:7px;
+
+    font-weight:bold;
+
+    min-width:10px;
+
+    text-align:center
 
 }
 
-.close-ema-equal{
+.ema10-long{
 
-    color:#999
+    color:#35e66d;
+
+    font-size:7px;
+
+    font-weight:bold;
+
+    white-space:nowrap
+
+}
+
+.ema10-short{
+
+    color:#ff4d4d;
+
+    font-size:7px;
+
+    font-weight:bold;
+
+    white-space:nowrap
+
+}
+
+.ema10-none{
+
+    color:#777;
+
+    font-size:7px
 
 }
 
@@ -3385,7 +3652,7 @@ td:nth-child(6){
 
         height:14px;
 
-        text-align:center !important
+        text-align:center
 
     }
 
@@ -3460,6 +3727,40 @@ td:nth-child(6){
         font-size:6px;
 
         text-align:center !important
+
+    }
+
+    .ema10-box{
+
+        gap:2px;
+
+        line-height:11px
+
+    }
+
+    .ema10-final{
+
+        font-size:6px;
+
+        min-width:8px
+
+    }
+
+    .ema10-long{
+
+        font-size:6px
+
+    }
+
+    .ema10-short{
+
+        font-size:6px
+
+    }
+
+    .ema10-none{
+
+        font-size:6px
 
     }
 
@@ -3638,11 +3939,15 @@ def dashboard():
 
     ③ EMA 정배열/역배열 연속 캔들 수 표시<br>
 
-    ④ 이전 1H 종가 &lt; EMA10
-    → 현재 양봉 + 종가 &gt; EMA10<br>
+    ④ 1H EMA1(종가) ↔ EMA10<br>
 
-    ⑤ 조건 충족 🛩
-    → 이후 양봉마다 카운터 증가
+    ⑤ 데드크로스 종가 확정 → 🔻(1) 시작<br>
+
+    ⑥ 골든크로스 종가 확정 → 이전 하락 최종값 회색 + 🟢(1) 시작<br>
+
+    ⑦ 이후 종가가 같은 방향이면 카운팅 증가<br>
+
+    ⑧ 조건 충족 🛩 → 이후 양봉마다 카운터 증가
 
     {status}
 
@@ -3742,7 +4047,23 @@ def startup():
     )
 
     log.info(
-        "1H 종가 / EMA10 위치 표시"
+        "1H EMA1(종가) ↔ EMA10 교차 카운팅 적용"
+    )
+
+    log.info(
+        "데드크로스 = 🔻(1) 시작"
+    )
+
+    log.info(
+        "골든크로스 = 🟢(1) 시작"
+    )
+
+    log.info(
+        "이전 방향 최종 카운팅 = 회색 유지"
+    )
+
+    log.info(
+        "골든/데드크로스 별도 기호 표시 안 함"
     )
 
     log.info(
@@ -3820,4 +4141,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-)
+        )
