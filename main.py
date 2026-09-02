@@ -18,7 +18,10 @@ from zoneinfo import ZoneInfo
 # 기본 설정
 # =========================================================
 
-warnings.filterwarnings("ignore", category=FutureWarning)
+warnings.filterwarnings(
+    "ignore",
+    category=FutureWarning
+)
 
 app = FastAPI()
 
@@ -74,7 +77,9 @@ air_state = {}
 # =========================================================
 
 def kst():
-    return datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
+    return datetime.now(KST).strftime(
+        "%Y-%m-%d %H:%M:%S"
+    )
 
 
 def wait_request():
@@ -86,6 +91,7 @@ def wait_request():
         gap = time.monotonic() - last_request_time
 
         if gap < REQUEST_INTERVAL:
+
             time.sleep(
                 REQUEST_INTERVAL - gap
             )
@@ -1024,6 +1030,31 @@ def ema10_cross_count(df):
 
 # =========================================================
 # 비행기
+# ★ 돌파 완료가 아니라 돌파 직전 캔들 포착
+# =========================================================
+#
+# 조건
+#
+# 1. 1H EMA 10-30-60-120 정배열
+# 2. 4H EMA 10-30-60-120 정배열
+# 3. 현재 확정 1H 종가가 EMA10 아래
+# 4. 현재 1H 고가가 EMA10 이상
+# 5. 현재 1H 캔들이 양봉
+#
+# 즉,
+#
+#        고가 ───── EMA10 이상
+#                 ↑
+#        ┌───────┐
+#        │  양봉 │
+#        └───────┘
+#        종가 ─── EMA10 아래
+#
+# → 다음 돌파가 나올 가능성이 있는 "직전 캔들"
+#
+# 주의:
+# 실제 미래 돌파를 예측하는 것은 아니며,
+# 확정된 현재 캔들의 구조를 이용한 사전 신호입니다.
 # =========================================================
 
 def get_air_warning(
@@ -1036,9 +1067,12 @@ def get_air_warning(
         or df1h.empty
         or df4h is None
         or df4h.empty
-        or len(df1h) < 2
     ):
         return None
+
+    # -----------------------------------------------------
+    # 1H + 4H 전체 EMA 정배열
+    # -----------------------------------------------------
 
     if direction(df1h) != "long":
         return None
@@ -1053,16 +1087,15 @@ def get_air_warning(
             10
         )
 
-        prev_close = float(
-            df1h.c.iloc[-2]
-        )
-
-        prev_ema10 = float(
-            e10.iloc[-2]
-        )
+        if e10 is None or e10.empty:
+            return None
 
         current_open = float(
             df1h.o.iloc[-1]
+        )
+
+        current_high = float(
+            df1h.h.iloc[-1]
         )
 
         current_close = float(
@@ -1073,20 +1106,37 @@ def get_air_warning(
             e10.iloc[-1]
         )
 
-        if (
-            prev_close < prev_ema10
-            and current_close > current_open
-            and current_close > current_ema10
-        ):
+        # -------------------------------------------------
+        # 돌파 직전 조건
+        #
+        # 종가는 아직 EMA10 아래
+        # 고가는 EMA10 이상
+        # 양봉
+        # -------------------------------------------------
 
-            return "LONG"
+        if current_close >= current_ema10:
+            return None
 
-    except:
+        if current_high < current_ema10:
+            return None
 
-        pass
+        if current_close <= current_open:
+            return None
 
-    return None
+        return "LONG_PRE_BREAKOUT"
 
+    except Exception as e:
+
+        log.error(
+            f"돌파직전 경고 오류: {e}"
+        )
+
+        return None
+
+
+# =========================================================
+# 비행기 카운터
+# =========================================================
 
 def update_air_counter(
     market,
@@ -1097,7 +1147,6 @@ def update_air_counter(
     if (
         df1h is None
         or df1h.empty
-        or len(df1h) < 2
     ):
 
         return {
@@ -1124,6 +1173,10 @@ def update_air_counter(
             market
         )
 
+        # -------------------------------------------------
+        # 돌파직전 캔들 발견
+        # -------------------------------------------------
+
         if new_warning is not None:
 
             if (
@@ -1147,6 +1200,10 @@ def update_air_counter(
                     "count": 0
                 }
 
+        # -------------------------------------------------
+        # 기존 경고 없음
+        # -------------------------------------------------
+
         if (
             state is None
             or not state.get(
@@ -1160,6 +1217,10 @@ def update_air_counter(
                 "direction": None,
                 "count": 0
             }
+
+        # -------------------------------------------------
+        # 같은 캔들이면 유지
+        # -------------------------------------------------
 
         if candle_time <= state.get(
             "counted_candle"
@@ -1176,9 +1237,20 @@ def update_air_counter(
                 )
             }
 
+        # -------------------------------------------------
+        # 새로운 캔들
+        # -------------------------------------------------
+
         state["counted_candle"] = (
             candle_time
         )
+
+        # -------------------------------------------------
+        # 기존 비행기 카운팅
+        #
+        # 다음 캔들이 양봉이면 카운트 증가
+        # 음봉이면 종료
+        # -------------------------------------------------
 
         if current_close > current_open:
 
@@ -1476,8 +1548,13 @@ def analyze(
 
         return None
 
-    e1 = ema_display(df1)
-    e4 = ema_display(df4)
+    e1 = ema_display(
+        df1
+    )
+
+    e4 = ema_display(
+        df4
+    )
 
     ema10_cross = ema10_cross_count(
         df1
@@ -1505,21 +1582,35 @@ def analyze(
         "ema_1h": e1,
         "ema_4h": e4,
 
-        "ema10_cross_1h": ema10_cross,
+        "ema10_cross_1h":
+            ema10_cross,
 
-        "changes": changes,
+        "changes":
+            changes,
 
-        "air_warning": air["active"],
-        "air_direction": air["direction"],
-        "air_count": air["count"],
-        "air_active": air["active"],
+        "air_warning":
+            air["active"],
 
-        "qualified": air["active"],
+        "air_direction":
+            air["direction"],
 
-        "direction_1h": e1["direction"],
-        "direction_4h": e4["direction"],
+        "air_count":
+            air["count"],
 
-        "df1h": df1
+        "air_active":
+            air["active"],
+
+        "qualified":
+            air["active"],
+
+        "direction_1h":
+            e1["direction"],
+
+        "direction_4h":
+            e4["direction"],
+
+        "df1h":
+            df1
     }
 
 
@@ -1541,19 +1632,27 @@ def make_row(
 
     return {
 
-        "rank": rank,
-        "name": name,
+        "rank":
+            rank,
 
-        "change": format_change(
-            a["changes"]
-        ),
+        "name":
+            name,
 
-        "volume": format_volume(
-            volume
-        ),
+        "change":
+            format_change(
+                a["changes"]
+            ),
 
-        "ema_1h": a["ema_1h"],
-        "ema_4h": a["ema_4h"],
+        "volume":
+            format_volume(
+                volume
+            ),
+
+        "ema_1h":
+            a["ema_1h"],
+
+        "ema_4h":
+            a["ema_4h"],
 
         "ema10_cross_1h":
             a["ema10_cross_1h"],
@@ -1637,11 +1736,12 @@ def update_upbit():
             )
 
     latest_upbit_data = rows
+
     latest_upbit_update_time = kst()
 
     log.info(
-        f"업비트 완료 / 비행기 "
-        f"{sum(x['qualified'] for x in rows)}개"
+        f"업비트 완료 / "
+        f"돌파직전 {sum(x['qualified'] for x in rows)}개"
     )
 
 
@@ -1753,6 +1853,7 @@ def update_okx(
         )
 
         if v and v > 0:
+
             volumes[symbol] = v
 
     top = sorted(
@@ -1811,11 +1912,12 @@ def update_okx(
             )
 
     latest_okx_data = rows
+
     latest_okx_update_time = kst()
 
     log.info(
-        f"OKX 완료 / 비행기 "
-        f"{sum(x['qualified'] for x in rows)}개"
+        f"OKX 완료 / "
+        f"돌파직전 {sum(x['qualified'] for x in rows)}개"
     )
 
     return True
@@ -1892,7 +1994,7 @@ def update_dashboard():
 
 
 # =========================================================
-# HTML
+# 경고 HTML
 # =========================================================
 
 def warning_html(
@@ -1906,12 +2008,12 @@ def warning_html(
 
     direction = (
         air_direction
-        or "LONG"
+        or "LONG_PRE_BREAKOUT"
     )
 
     direction_class = (
         "long"
-        if direction == "LONG"
+        if direction == "LONG_PRE_BREAKOUT"
         else "short"
     )
 
@@ -1930,11 +2032,9 @@ def warning_html(
 
         '<div class="air-main">'
 
-        f'<span class="air-direction '
+        '<span class="air-direction '
         f'{direction_class}">'
-
-        f'{direction}'
-
+        '직전'
         '</span>'
 
         '<span class="air-icon">'
@@ -1980,10 +2080,7 @@ def ema_html(e):
 
 
 # =========================================================
-# ★ 10선 표시
-# 현재 상태 = 위
-# 이전 마감 = 아래 (N)
-# 이전 마감은 흰색 + 가운데 정렬
+# 10선 표시
 # =========================================================
 
 def ema10_cross_html(data):
@@ -2010,10 +2107,6 @@ def ema10_cross_html(data):
         )
     )
 
-    # -----------------------------------------
-    # 상승
-    # -----------------------------------------
-
     if state == "long":
 
         previous_html = ""
@@ -2038,10 +2131,6 @@ def ema10_cross_html(data):
             '</div>'
         )
 
-    # -----------------------------------------
-    # 하락
-    # -----------------------------------------
-
     if state == "short":
 
         previous_html = ""
@@ -2065,10 +2154,6 @@ def ema10_cross_html(data):
 
             '</div>'
         )
-
-    # -----------------------------------------
-    # 동일
-    # -----------------------------------------
 
     return (
         '<div class="ema10-none">'
@@ -2195,7 +2280,7 @@ def rows_html(data):
 
 
 # =========================================================
-# Table 공통
+# Table
 # =========================================================
 
 def table_html(data):
@@ -2267,6 +2352,10 @@ def section(
     """
 
 
+# =========================================================
+# 집중 리스트
+# =========================================================
+
 def focus_section(
     data,
     update_time
@@ -2286,7 +2375,7 @@ def focus_section(
         rows = """
         <tr>
             <td colspan="6" class="empty">
-                현재 경고 발생 코인 없음
+                현재 돌파직전 코인 없음
             </td>
         </tr>
         """
@@ -2333,7 +2422,7 @@ def focus_section(
     return f"""
     <h2 class="focus-title">
 
-        🚨 집중 리스트
+        🚨 돌파직전 리스트
 
         <small>
             {update_time} KST
@@ -2389,9 +2478,7 @@ h2 small{
 }
 
 
-/* =====================================================
-   설명
-   ===================================================== */
+/* 설명 */
 
 .info{
     margin:0 2px 4px;
@@ -2421,9 +2508,7 @@ h2 small{
 }
 
 
-/* =====================================================
-   테이블
-   ===================================================== */
+/* 테이블 */
 
 .table-wrap{
     width:100%;
@@ -2458,19 +2543,7 @@ td{
 }
 
 
-/* =====================================================
-   컬럼 폭
-   =====================================================
-
-   #        6%
-   코인     19%
-   거래대금  15%
-   EMA      23%
-   10선     17%
-   경고     20%
-
-   합계     100%
-   ===================================================== */
+/* 컬럼 */
 
 th:nth-child(1),
 td:nth-child(1){
@@ -2503,9 +2576,7 @@ td:nth-child(6){
 }
 
 
-/* =====================================================
-   순위
-   ===================================================== */
+/* 순위 */
 
 .rank{
     color:#8f949d;
@@ -2513,9 +2584,7 @@ td:nth-child(6){
 }
 
 
-/* =====================================================
-   코인
-   ===================================================== */
+/* 코인 */
 
 .coin{
     overflow:hidden;
@@ -2555,9 +2624,7 @@ td:nth-child(6){
 }
 
 
-/* =====================================================
-   거래대금
-   ===================================================== */
+/* 거래대금 */
 
 .vol{
     padding:1px 2px !important;
@@ -2569,9 +2636,7 @@ td:nth-child(6){
 }
 
 
-/* =====================================================
-   EMA
-   ===================================================== */
+/* EMA */
 
 .ema-cell{
     overflow:hidden;
@@ -2634,12 +2699,7 @@ td:nth-child(6){
 }
 
 
-/* =====================================================
-   10선
-   현재 상태 = 위
-   이전 마감 = 아래
-   이전 마감 = 흰색
-   ===================================================== */
+/* 10선 */
 
 .close-ema10{
     text-align:center !important;
@@ -2694,9 +2754,7 @@ td:nth-child(6){
 }
 
 
-/* =====================================================
-   경고
-   ===================================================== */
+/* 경고 */
 
 .warning{
     text-align:center !important;
@@ -2783,18 +2841,14 @@ td:nth-child(6){
 }
 
 
-/* =====================================================
-   조건 충족
-   ===================================================== */
+/* 조건 충족 */
 
 .qualified{
     background:rgba(255,255,255,.06);
 }
 
 
-/* =====================================================
-   집중 리스트
-   ===================================================== */
+/* 집중 리스트 */
 
 .focus-title{
     margin-top:5px;
@@ -2806,9 +2860,7 @@ td:nth-child(6){
 }
 
 
-/* =====================================================
-   빈 데이터
-   ===================================================== */
+/* 빈 데이터 */
 
 .empty{
     color:#555;
@@ -2816,9 +2868,7 @@ td:nth-child(6){
 }
 
 
-/* =====================================================
-   모바일
-   ===================================================== */
+/* 모바일 */
 
 @media(max-width:480px){
 
@@ -3028,7 +3078,7 @@ def dashboard():
 >
 
 <title>
-    1H EMA 비행기 경고
+    1H EMA 돌파직전 경고
 </title>
 
 <style>
@@ -3051,10 +3101,10 @@ def dashboard():
     ② 1H + 4H EMA 10-30-60-120 정배열<br>
     ③ EMA 정배열/역배열 연속 캔들 수 표시<br>
     ④ 1H EMA1(종가) ↔ EMA10<br>
-    ⑤ 데드크로스 종가 확정 → 🔻(1) 시작<br>
-    ⑥ 골든크로스 종가 확정 → 이전 하락 최종값을 아래 흰색 (N) 표시<br>
-    ⑦ 이후 종가가 같은 방향이면 카운팅 증가<br>
-    ⑧ 조건 충족 🛩 → 이후 양봉마다 카운터 증가
+    ⑤ 종가가 EMA10 아래 + 고가가 EMA10 접촉/돌파<br>
+    ⑥ 양봉 조건 충족 → 🛩 ✈️ 돌파직전<br>
+    ⑦ 이후 양봉마다 카운터 증가<br>
+    ⑧ 음봉 마감 시 경고 종료
 
     {status}
 
@@ -3123,7 +3173,7 @@ def startup():
     )
 
     log.info(
-        "1H EMA 비행기 경고 시스템 시작"
+        "1H EMA 돌파직전 경고 시스템 시작"
     )
 
     log.info(
@@ -3147,7 +3197,11 @@ def startup():
     )
 
     log.info(
-        "비행기 = 1H + 4H 정배열"
+        "비행기 = 돌파 완료가 아닌 돌파직전 캔들"
+    )
+
+    log.info(
+        "돌파직전 = 종가<EMA10 + 고가>=EMA10 + 양봉"
     )
 
     log.info(
@@ -3185,4 +3239,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-            )
+        )
