@@ -33,7 +33,7 @@ logging.basicConfig(
 log = logging.getLogger("trading")
 
 
-VOLUME_HOURS = 24
+VOLUME_HOURS = 1
 TOP_N = 20
 UPDATE_MINUTES = 1
 
