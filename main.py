@@ -955,19 +955,19 @@ def close_vs_ema10_1h(df):
 
             return {
                 "position": "above",
-                "display": "▲ 위"
+                "display": "▲"
             }
 
         elif close < ema10_value:
 
             return {
                 "position": "below",
-                "display": "▼ 아래"
+                "display": "▼"
             }
 
         return {
             "position": "equal",
-            "display": "＝ 동일"
+            "display": "＝"
         }
 
     except:
