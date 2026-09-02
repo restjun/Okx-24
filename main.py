@@ -908,6 +908,77 @@ def ema_display(df):
 
 
 # =========================================================
+# 🟢 1H 종가 / EMA10 위치
+#
+# 마지막 완료 1H 캔들의 종가 기준
+#
+# 종가 > EMA10 → ▲ 위 / 녹색
+# 종가 < EMA10 → ▼ 아래 / 적색
+# =========================================================
+
+def close_vs_ema10_1h(df):
+
+    if (
+        df is None
+        or df.empty
+        or len(df) < 1
+    ):
+
+        return {
+            "position": "none",
+            "display": "-"
+        }
+
+    try:
+
+        e10 = ema(
+            df,
+            10
+        )
+
+        if e10 is None or e10.empty:
+
+            return {
+                "position": "none",
+                "display": "-"
+            }
+
+        close = float(
+            df.c.iloc[-1]
+        )
+
+        ema10_value = float(
+            e10.iloc[-1]
+        )
+
+        if close > ema10_value:
+
+            return {
+                "position": "above",
+                "display": "▲ 위"
+            }
+
+        elif close < ema10_value:
+
+            return {
+                "position": "below",
+                "display": "▼ 아래"
+            }
+
+        return {
+            "position": "equal",
+            "display": "＝ 동일"
+        }
+
+    except:
+
+        return {
+            "position": "none",
+            "display": "-"
+        }
+
+
+# =========================================================
 # 🛩 ✈️ 비행기 발생 조건
 #
 # LONG
@@ -1370,6 +1441,11 @@ def empty_analysis():
         "ema_4h":
             e.copy(),
 
+        "close_ema10_1h": {
+            "position": "none",
+            "display": "-"
+        },
+
         "changes":
             None,
 
@@ -1443,13 +1519,27 @@ def analyze(
         df4
     )
 
+    # -------------------------------------------------
+    # 1H 종가 / EMA10 위치
+    # -------------------------------------------------
+
+    close_ema10 = close_vs_ema10_1h(
+        df1
+    )
+
+    # -------------------------------------------------
     # 현재 캔들의 새 비행기 발생 여부
+    # -------------------------------------------------
+
     new_warning = get_air_warning(
         df1,
         df4
     )
 
+    # -------------------------------------------------
     # 비행기 상태 / 카운터
+    # -------------------------------------------------
+
     air = update_air_counter(
         market,
         df1,
@@ -1459,8 +1549,7 @@ def analyze(
     changes = (
         daily_changes(df1)
         if okx
-        else
-        daily_change_upbit(
+        else daily_change_upbit(
             market
         )
     )
@@ -1472,6 +1561,9 @@ def analyze(
 
         "ema_4h":
             e4,
+
+        "close_ema10_1h":
+            close_ema10,
 
         "changes":
             changes,
@@ -1572,6 +1664,9 @@ def update_upbit():
                 "ema_4h":
                     a["ema_4h"],
 
+                "close_ema10_1h":
+                    a["close_ema10_1h"],
+
                 "air_warning":
                     a["air_warning"],
 
@@ -1617,6 +1712,9 @@ def update_upbit():
 
                 "ema_4h":
                     a["ema_4h"],
+
+                "close_ema10_1h":
+                    a["close_ema10_1h"],
 
                 "air_warning":
                     False,
@@ -1818,6 +1916,9 @@ def update_okx(usdt):
                 "ema_4h":
                     a["ema_4h"],
 
+                "close_ema10_1h":
+                    a["close_ema10_1h"],
+
                 "air_warning":
                     a["air_warning"],
 
@@ -1861,6 +1962,9 @@ def update_okx(usdt):
 
                 "ema_4h":
                     a["ema_4h"],
+
+                "close_ema10_1h":
+                    a["close_ema10_1h"],
 
                 "air_warning":
                     False,
@@ -2065,6 +2169,52 @@ def ema_html(e):
 
 
 # =========================================================
+# 1H 종가 / EMA10 HTML
+# =========================================================
+
+def close_ema10_html(data):
+
+    if not data:
+        return "-"
+
+    position = data.get(
+        "position",
+        "none"
+    )
+
+    display = data.get(
+        "display",
+        "-"
+    )
+
+    if position == "above":
+
+        return (
+            '<span class="close-ema-above">'
+            f'{display}'
+            '</span>'
+        )
+
+    if position == "below":
+
+        return (
+            '<span class="close-ema-below">'
+            f'{display}'
+            '</span>'
+        )
+
+    if position == "equal":
+
+        return (
+            '<span class="close-ema-equal">'
+            f'{display}'
+            '</span>'
+        )
+
+    return "-"
+
+
+# =========================================================
 # 행 HTML
 # =========================================================
 
@@ -2092,6 +2242,11 @@ def rows_html(data):
 
         e4 = x.get(
             "ema_4h",
+            {}
+        )
+
+        close_ema10 = x.get(
+            "close_ema10_1h",
             {}
         )
 
@@ -2146,6 +2301,14 @@ def rows_html(data):
 
             </td>
 
+            <td class="close-ema10">
+
+                {close_ema10_html(
+                    close_ema10
+                )}
+
+            </td>
+
             <td class="warning">
 
                 {warning_html(
@@ -2189,7 +2352,7 @@ def section(
         rows = """
         <tr>
             <td
-                colspan="5"
+                colspan="6"
                 class="empty"
             >
                 현재 조회 데이터 없음
@@ -2229,6 +2392,10 @@ def section(
 
                     <th>
                         EMA
+                    </th>
+
+                    <th>
+                        10선
                     </th>
 
                     <th>
@@ -2413,7 +2580,7 @@ td{
 
 /* =====================================================
    컬럼
-   # / 코인 / 거래대금 / EMA / 경고
+   # / 코인 / 거래대금 / EMA / 10선 / 경고
    ===================================================== */
 
 th:nth-child(1),
@@ -2433,19 +2600,27 @@ td:nth-child(2){
 th:nth-child(3),
 td:nth-child(3){
 
-    width:19%
+    width:17%
 }
 
 th:nth-child(4),
 td:nth-child(4){
 
-    width:41%;
+    width:31%;
 
     text-align:left
 }
 
 th:nth-child(5),
 td:nth-child(5){
+
+    width:12%;
+
+    text-align:center
+}
+
+th:nth-child(6),
+td:nth-child(6){
 
     width:10%;
 
@@ -2585,6 +2760,39 @@ td:nth-child(5){
     font-size:6px;
 
     font-weight:bold
+}
+
+
+/* =====================================================
+   1H 종가 / EMA10 위치
+   ===================================================== */
+
+.close-ema10{
+
+    text-align:center;
+
+    vertical-align:middle;
+
+    white-space:nowrap;
+
+    font-size:7px;
+
+    font-weight:bold
+}
+
+.close-ema-above{
+
+    color:#35e66d
+}
+
+.close-ema-below{
+
+    color:#ff4d4d
+}
+
+.close-ema-equal{
+
+    color:#999
 }
 
 
@@ -2833,6 +3041,11 @@ td:nth-child(5){
         font-size:5px
     }
 
+    .close-ema10{
+
+        font-size:6px
+    }
+
     .air-direction{
 
         font-size:5px
@@ -2962,7 +3175,7 @@ def dashboard():
 <body>
 
 <h1>
-    📊 매매 전술 눌림 돒파
+    📊 매매 전술 눌림 돌파
 </h1>
 
 
@@ -2986,7 +3199,9 @@ def dashboard():
 
     ⑨ 이후 양봉마다 → ② → ③ → ④ ...<br>
 
-    ⑩ 진행 중인 1H / 4H 봉은 제외
+    ⑩ 진행 중인 1H / 4H 봉은 제외<br>
+
+    ⑪ <b>10선</b> = 마지막 완료 1H 종가와 EMA10 비교
 
     {status}
 
@@ -3076,6 +3291,10 @@ def startup():
     )
 
     log.info(
+        "1H 종가 / EMA10 위치 표시 추가"
+    )
+
+    log.info(
         "15M EMA = 완전 삭제"
     )
 
@@ -3120,6 +3339,14 @@ def startup():
     )
 
     log.info(
+        "1H 종가 > EMA10 = ▲ 위 / 녹색"
+    )
+
+    log.info(
+        "1H 종가 < EMA10 = ▼ 아래 / 적색"
+    )
+
+    log.info(
         "========================================"
     )
 
@@ -3152,4 +3379,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-            )
+        )
