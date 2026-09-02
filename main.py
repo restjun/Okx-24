@@ -1442,7 +1442,12 @@ def update_air_counter(
                     )
             }
 
-        if current_close > current_open:
+        # =================================================
+        # ★ 수정
+        # 양봉/음봉 관계없이 EMA3 > EMA10이면 카운트 증가
+        # =================================================
+
+        if current_ema_state == "long":
 
             state["count"] += 1
 
