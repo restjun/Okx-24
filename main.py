@@ -78,19 +78,28 @@ def kst():
 
 
 def wait_request():
+
     global last_request_time
 
     with request_lock:
+
         gap = time.monotonic() - last_request_time
 
         if gap < REQUEST_INTERVAL:
-            time.sleep(REQUEST_INTERVAL - gap)
+            time.sleep(
+                REQUEST_INTERVAL - gap
+            )
 
         last_request_time = time.monotonic()
 
 
 def retry(func, *args, **kwargs):
-    name = getattr(func, "__name__", str(func))
+
+    name = getattr(
+        func,
+        "__name__",
+        str(func)
+    )
 
     url = (
         args[0]
@@ -101,9 +110,13 @@ def retry(func, *args, **kwargs):
     for n in range(MAX_RETRIES):
 
         try:
+
             wait_request()
 
-            r = func(*args, **kwargs)
+            r = func(
+                *args,
+                **kwargs
+            )
 
             if not hasattr(r, "status_code"):
                 return r
@@ -112,21 +125,25 @@ def retry(func, *args, **kwargs):
                 return r
 
             if r.status_code == 429:
+
                 wait = min(
                     RATE_LIMIT_WAIT * 2 ** n,
                     60
                 )
 
             elif r.status_code >= 500:
+
                 wait = min(
                     2 * 2 ** n,
                     30
                 )
 
             else:
+
                 log.warning(
                     f"[HTTP {r.status_code}] {url}"
                 )
+
                 return r
 
             log.warning(
@@ -142,8 +159,12 @@ def retry(func, *args, **kwargs):
             )
 
             if n < MAX_RETRIES - 1:
+
                 time.sleep(
-                    min(2 * (n + 1), 20)
+                    min(
+                        2 * (n + 1),
+                        20
+                    )
                 )
 
     log.error(
@@ -188,11 +209,13 @@ def get_upbit_markets():
                 continue
 
             try:
+
                 volume = float(
                     x["acc_trade_price_24h"]
                 )
 
             except:
+
                 continue
 
             if volume > 0:
@@ -235,9 +258,14 @@ def get_usdt_krw():
             r.json()[0]["trade_price"]
         )
 
-        return price if price > 0 else None
+        return (
+            price
+            if price > 0
+            else None
+        )
 
     except:
+
         return None
 
 
@@ -382,6 +410,7 @@ def get_upbit_1h(
     count=200,
     to=None
 ):
+
     return get_upbit_candle(
         market,
         60,
@@ -395,6 +424,7 @@ def get_upbit_4h(
     count=200,
     to=None
 ):
+
     return get_upbit_candle(
         market,
         240,
@@ -591,8 +621,9 @@ def history_upbit(
         if len(all_df) >= required:
             return all_df
 
-        to = all_df.datetime.iloc[0].strftime(
-            "%Y-%m-%dT%H:%M:%S"
+        to = (
+            all_df.datetime.iloc[0]
+            .strftime("%Y-%m-%dT%H:%M:%S")
         )
 
     return all_df
@@ -651,7 +682,10 @@ def history_okx(
 # EMA
 # =========================================================
 
-def ema(df, period):
+def ema(
+    df,
+    period
+):
 
     if (
         df is None
@@ -678,19 +712,23 @@ def direction(df):
     try:
 
         e10 = ema(
-            df, 10
+            df,
+            10
         ).iloc[-1]
 
         e30 = ema(
-            df, 30
+            df,
+            30
         ).iloc[-1]
 
         e60 = ema(
-            df, 60
+            df,
+            60
         ).iloc[-1]
 
         e120 = ema(
-            df, 120
+            df,
+            120
         ).iloc[-1]
 
         if e10 > e30 > e60 > e120:
@@ -700,6 +738,7 @@ def direction(df):
             return "short"
 
     except:
+
         pass
 
     return "none"
@@ -747,12 +786,15 @@ def ema_alignment_count(df):
             )
 
             if a > b > c > d:
+
                 candle_direction = "long"
 
             elif a < b < c < d:
+
                 candle_direction = "short"
 
             else:
+
                 candle_direction = "none"
 
             if i == len(df) - 1:
@@ -772,9 +814,11 @@ def ema_alignment_count(df):
                 candle_direction
                 == current_direction
             ):
+
                 count += 1
 
             else:
+
                 break
 
         return {
@@ -802,12 +846,15 @@ def ema_display(df):
     count = result["count"]
 
     if d == "long":
+
         icon = "🟢"
 
     elif d == "short":
+
         icon = "🔴"
 
     else:
+
         icon = "⚪"
         count = 0
 
@@ -820,13 +867,6 @@ def ema_display(df):
 
 # =========================================================
 # 1H EMA1(종가) ↔ EMA10
-#
-# 현재 진행:
-#   🟢(N)
-#   🔻(N)
-#
-# 이전 마감:
-#   N
 # =========================================================
 
 def ema10_cross_count(df):
@@ -859,17 +899,23 @@ def ema10_cross_count(df):
         closes = pd.to_numeric(
             df["c"],
             errors="coerce"
-        ).reset_index(drop=True)
+        ).reset_index(
+            drop=True
+        )
 
         e10_values = pd.to_numeric(
             e10,
             errors="coerce"
-        ).reset_index(drop=True)
+        ).reset_index(
+            drop=True
+        )
 
-        if not (
+        valid_last = (
             closes.notna().iloc[-1]
             and e10_values.notna().iloc[-1]
-        ):
+        )
+
+        if not valid_last:
             return result
 
         states = []
@@ -887,17 +933,21 @@ def ema10_cross_count(df):
             )
 
             if close_value > ema10_value:
+
                 states.append("long")
 
             elif close_value < ema10_value:
+
                 states.append("short")
 
             else:
+
                 states.append("equal")
 
         current_state = states[-1]
 
         result["state"] = current_state
+
         result["candle_time"] = (
             df.datetime.iloc[-1]
         )
@@ -919,6 +969,7 @@ def ema10_cross_count(df):
                 i -= 1
 
             else:
+
                 break
 
         previous_state = (
@@ -938,18 +989,16 @@ def ema10_cross_count(df):
                 j -= 1
 
             else:
+
                 break
 
         result["count"] = current_count
         result["final_count"] = final_count
 
-        # 내부 값은 그대로 유지
-        # HTML에서 2줄로 표시
-
         if current_state == "long":
 
             result["display"] = (
-                f"{final_count}|🟢({current_count)}"
+                f"{final_count}|🟢({current_count})"
                 if final_count > 0
                 else f"🟢({current_count})"
             )
@@ -1029,9 +1078,11 @@ def get_air_warning(
             and current_close > current_open
             and current_close > current_ema10
         ):
+
             return "LONG"
 
     except:
+
         pass
 
     return None
@@ -1110,11 +1161,8 @@ def update_air_counter(
                 "count": 0
             }
 
-        if (
-            candle_time
-            <= state.get(
-                "counted_candle"
-            )
+        if candle_time <= state.get(
+            "counted_candle"
         ):
 
             return {
@@ -1128,7 +1176,9 @@ def update_air_counter(
                 )
             }
 
-        state["counted_candle"] = candle_time
+        state["counted_candle"] = (
+            candle_time
+        )
 
         if current_close > current_open:
 
@@ -1201,12 +1251,15 @@ def daily_change_upbit(
             return None
 
         return [
-            (current - previous)
+            (
+                current - previous
+            )
             / previous
             * 100
         ]
 
     except:
+
         return None
 
 
@@ -1264,12 +1317,15 @@ def daily_changes(df):
             return None
 
         return [
-            (current - previous)
+            (
+                current - previous
+            )
             / previous
             * 100
         ]
 
     except:
+
         return None
 
 
@@ -1312,6 +1368,7 @@ def format_change(x):
         )
 
     except:
+
         return "-"
 
 
@@ -1321,9 +1378,11 @@ def format_volume(v):
         return "-"
 
     try:
+
         v = float(v)
 
     except:
+
         return "-"
 
     if v >= 1e12:
@@ -1351,6 +1410,7 @@ def empty_analysis():
     }
 
     return {
+
         "ema_1h": e.copy(),
         "ema_4h": e.copy(),
 
@@ -1413,15 +1473,11 @@ def analyze(
         or df4 is None
         or df4.empty
     ):
+
         return None
 
-    e1 = ema_display(
-        df1
-    )
-
-    e4 = ema_display(
-        df4
-    )
+    e1 = ema_display(df1)
+    e4 = ema_display(df4)
 
     ema10_cross = ema10_cross_count(
         df1
@@ -1445,34 +1501,23 @@ def analyze(
     )
 
     return {
+
         "ema_1h": e1,
         "ema_4h": e4,
 
-        "ema10_cross_1h":
-            ema10_cross,
+        "ema10_cross_1h": ema10_cross,
 
         "changes": changes,
 
-        "air_warning":
-            air["active"],
+        "air_warning": air["active"],
+        "air_direction": air["direction"],
+        "air_count": air["count"],
+        "air_active": air["active"],
 
-        "air_direction":
-            air["direction"],
+        "qualified": air["active"],
 
-        "air_count":
-            air["count"],
-
-        "air_active":
-            air["active"],
-
-        "qualified":
-            air["active"],
-
-        "direction_1h":
-            e1["direction"],
-
-        "direction_4h":
-            e4["direction"],
+        "direction_1h": e1["direction"],
+        "direction_4h": e4["direction"],
 
         "df1h": df1
     }
@@ -1495,24 +1540,33 @@ def make_row(
     )
 
     return {
+
         "rank": rank,
         "name": name,
+
         "change": format_change(
             a["changes"]
         ),
+
         "volume": format_volume(
             volume
         ),
+
         "ema_1h": a["ema_1h"],
         "ema_4h": a["ema_4h"],
+
         "ema10_cross_1h":
             a["ema10_cross_1h"],
+
         "air_warning":
             a["air_warning"],
+
         "air_direction":
             a["air_direction"],
+
         "air_count":
             a["air_count"],
+
         "qualified":
             a["qualified"]
     }
@@ -1534,8 +1588,7 @@ def update_upbit():
     markets = get_upbit_markets()
 
     markets.sort(
-        key=lambda x:
-            x["volume_24h"],
+        key=lambda x: x["volume_24h"],
         reverse=True
     )
 
@@ -1571,8 +1624,7 @@ def update_upbit():
         except Exception as e:
 
             log.error(
-                f"업비트 상세 오류 "
-                f"{market}: {e}"
+                f"업비트 상세 오류 {market}: {e}"
             )
 
             rows.append(
@@ -1631,6 +1683,7 @@ def get_okx_symbols():
         ]
 
     except:
+
         return []
 
 
@@ -1663,6 +1716,7 @@ def get_okx_volume(
         )
 
     except:
+
         return None
 
 
@@ -1744,8 +1798,7 @@ def update_okx(
         except Exception as e:
 
             log.error(
-                f"OKX 상세 오류 "
-                f"{symbol}: {e}"
+                f"OKX 상세 오류 {symbol}: {e}"
             )
 
             rows.append(
@@ -1778,9 +1831,7 @@ def update_dashboard():
     global latest_upbit_data
     global latest_okx_data
 
-    if not update_lock.acquire(
-        False
-    ):
+    if not update_lock.acquire(False):
 
         log.warning(
             "이전 조회 진행 중 → 건너뜀"
@@ -1791,13 +1842,13 @@ def update_dashboard():
     try:
 
         log.info(
-            f"========== 전체 조회 "
-            f"{kst()} =========="
+            f"========== 전체 조회 {kst()} =========="
         )
 
         if USE_UPBIT == "Y":
 
             try:
+
                 update_upbit()
 
             except Exception as e:
@@ -1807,6 +1858,7 @@ def update_dashboard():
                 )
 
         else:
+
             latest_upbit_data = []
 
         if USE_OKX == "Y":
@@ -1831,6 +1883,7 @@ def update_dashboard():
                 )
 
         else:
+
             latest_okx_data = []
 
     finally:
@@ -1879,7 +1932,9 @@ def warning_html(
 
         f'<span class="air-direction '
         f'{direction_class}">'
+
         f'{direction}'
+
         '</span>'
 
         '<span class="air-icon">'
@@ -1925,17 +1980,10 @@ def ema_html(e):
 
 
 # =========================================================
-# ★ 10선 HTML
-#
-# 위 : 현재 상태
-# 아래 : 이전 마감 카운팅
-#
-# 예:
-# 🟢(3)
-# (5)
-#
-# 🔻(2)
-# (7)
+# ★ 10선 표시
+# 현재 상태 = 위
+# 이전 마감 = 아래 (N)
+# 이전 마감은 흰색 + 가운데 정렬
 # =========================================================
 
 def ema10_cross_html(data):
@@ -1962,6 +2010,10 @@ def ema10_cross_html(data):
         )
     )
 
+    # -----------------------------------------
+    # 상승
+    # -----------------------------------------
+
     if state == "long":
 
         previous_html = ""
@@ -1969,7 +2021,7 @@ def ema10_cross_html(data):
         if final_count > 0:
 
             previous_html = (
-                '<div class="ema10-previous">'
+                '<div class="ema10-final">'
                 f'({final_count})'
                 '</div>'
             )
@@ -1977,17 +2029,18 @@ def ema10_cross_html(data):
         return (
             '<div class="ema10-box">'
 
-            '<div class="ema10-current '
-            'ema10-long">'
-
+            '<div class="ema10-long">'
             f'🟢({count})'
-
             '</div>'
 
             f'{previous_html}'
 
             '</div>'
         )
+
+    # -----------------------------------------
+    # 하락
+    # -----------------------------------------
 
     if state == "short":
 
@@ -1996,7 +2049,7 @@ def ema10_cross_html(data):
         if final_count > 0:
 
             previous_html = (
-                '<div class="ema10-previous">'
+                '<div class="ema10-final">'
                 f'({final_count})'
                 '</div>'
             )
@@ -2004,11 +2057,8 @@ def ema10_cross_html(data):
         return (
             '<div class="ema10-box">'
 
-            '<div class="ema10-current '
-            'ema10-short">'
-
+            '<div class="ema10-short">'
             f'🔻({count})'
-
             '</div>'
 
             f'{previous_html}'
@@ -2016,16 +2066,13 @@ def ema10_cross_html(data):
             '</div>'
         )
 
+    # -----------------------------------------
+    # 동일
+    # -----------------------------------------
+
     return (
-        '<div class="ema10-box">'
-
-        '<div class="ema10-current '
-        'ema10-none">'
-
+        '<div class="ema10-none">'
         '⚪(0)'
-
-        '</div>'
-
         '</div>'
     )
 
@@ -2051,175 +2098,136 @@ def rows_html(data):
 
         out.append(
             f"""
-        <tr class="{cls}">
+            <tr class="{cls}">
 
-            <td class="rank">
-                {x.get("rank", "-")}
-            </td>
+                <td class="rank">
+                    {x.get("rank", "-")}
+                </td>
 
-            <td class="coin">
+                <td class="coin">
 
-                <div class="coin-name">
-                    {x.get("name", "-")}
-                </div>
+                    <div class="coin-name">
+                        {x.get("name", "-")}
+                    </div>
 
-                <div class="change">
-                    {x.get("change", "-")}
-                </div>
+                    <div class="change">
+                        {x.get("change", "-")}
+                    </div>
 
-            </td>
+                </td>
 
-            <td class="vol">
-                {x.get("volume", "-")}
-            </td>
+                <td class="vol">
+                    {x.get("volume", "-")}
+                </td>
 
-            <td class="ema-cell">
+                <td class="ema-cell">
 
-                <div class="ema-row">
+                    <div class="ema-row">
 
-                    <span class="tf">
-                        1H
-                    </span>
+                        <span class="tf">
+                            1H
+                        </span>
 
-                    <span class="ema-value-wrap">
-                        {ema_html(
-                            x.get(
-                                "ema_1h",
-                                {}
-                            )
-                        )}
-                    </span>
+                        <span class="ema-value-wrap">
+                            {ema_html(
+                                x.get(
+                                    "ema_1h",
+                                    {}
+                                )
+                            )}
+                        </span>
 
-                </div>
+                    </div>
 
-                <div class="ema-row">
+                    <div class="ema-row">
 
-                    <span class="tf">
-                        4H
-                    </span>
+                        <span class="tf">
+                            4H
+                        </span>
 
-                    <span class="ema-value-wrap">
-                        {ema_html(
-                            x.get(
-                                "ema_4h",
-                                {}
-                            )
-                        )}
-                    </span>
+                        <span class="ema-value-wrap">
+                            {ema_html(
+                                x.get(
+                                    "ema_4h",
+                                    {}
+                                )
+                            )}
+                        </span>
 
-                </div>
+                    </div>
 
-            </td>
+                </td>
 
-            <td class="close-ema10">
+                <td class="close-ema10">
 
-                {ema10_cross_html(
-                    x.get(
-                        "ema10_cross_1h",
-                        {}
-                    )
-                )}
+                    {ema10_cross_html(
+                        x.get(
+                            "ema10_cross_1h",
+                            {}
+                        )
+                    )}
 
-            </td>
+                </td>
 
-            <td class="warning">
+                <td class="warning">
 
-                {warning_html(
-                    x.get(
-                        "air_warning",
-                        False
-                    ),
-                    x.get(
-                        "air_direction"
-                    ),
-                    x.get(
-                        "air_count",
-                        0
-                    )
-                )}
+                    {warning_html(
+                        x.get(
+                            "air_warning",
+                            False
+                        ),
+                        x.get(
+                            "air_direction"
+                        ),
+                        x.get(
+                            "air_count",
+                            0
+                        )
+                    )}
 
-            </td>
+                </td>
 
-        </tr>
-        """
+            </tr>
+            """
         )
 
     return "".join(out)
 
 
 # =========================================================
-# Section
+# Table 공통
 # =========================================================
 
-def table_section(
-    title,
-    data,
-    update_time,
-    focus=False
-):
-
-    if focus:
-
-        data = [
-            x for x in data
-            if x.get(
-                "qualified",
-                False
-            )
-        ]
-
-        title_html = (
-            '<h2 class="focus-title">'
-            '🚨 집중 리스트'
-            f'<small>{update_time} KST</small>'
-            '</h2>'
-        )
-
-        table_class = "table-wrap focus-table"
-
-        empty_text = "현재 경고 발생 코인 없음"
-
-    else:
-
-        title_html = (
-            '<h2>'
-            f'🏆 {title} TOP{TOP_N}'
-            f'<small>{update_time} KST</small>'
-            '</h2>'
-        )
-
-        table_class = "table-wrap"
-
-        empty_text = "현재 조회 데이터 없음"
+def table_html(data):
 
     rows = rows_html(data)
 
     if not rows:
 
-        rows = (
-            '<tr>'
-            '<td colspan="6" class="empty">'
-            f'{empty_text}'
-            '</td>'
-            '</tr>'
-        )
+        rows = """
+        <tr>
+            <td colspan="6" class="empty">
+                현재 조회 데이터 없음
+            </td>
+        </tr>
+        """
 
     return f"""
-    {title_html}
-
-    <div class="{table_class}">
+    <div class="table-wrap">
 
         <table>
 
             <thead>
 
                 <tr>
+
                     <th>#</th>
                     <th>코인</th>
                     <th>거래대금</th>
                     <th>EMA</th>
                     <th>10선</th>
                     <th>경고</th>
+
                 </tr>
 
             </thead>
@@ -2234,18 +2242,29 @@ def table_section(
     """
 
 
+# =========================================================
+# Section
+# =========================================================
+
 def section(
     title,
     data,
     update_time
 ):
 
-    return table_section(
-        title,
-        data,
-        update_time,
-        False
-    )
+    return f"""
+    <h2>
+
+        🏆 {title} TOP{TOP_N}
+
+        <small>
+            {update_time} KST
+        </small>
+
+    </h2>
+
+    {table_html(data)}
+    """
 
 
 def focus_section(
@@ -2253,12 +2272,77 @@ def focus_section(
     update_time
 ):
 
-    return table_section(
-        "",
-        data,
-        update_time,
-        True
-    )
+    focus_data = [
+        x
+        for x in data
+        if x.get(
+            "qualified",
+            False
+        )
+    ]
+
+    if not focus_data:
+
+        rows = """
+        <tr>
+            <td colspan="6" class="empty">
+                현재 경고 발생 코인 없음
+            </td>
+        </tr>
+        """
+
+        table = f"""
+        <div class="table-wrap focus-table">
+
+            <table>
+
+                <thead>
+
+                    <tr>
+                        <th>#</th>
+                        <th>코인</th>
+                        <th>거래대금</th>
+                        <th>EMA</th>
+                        <th>10선</th>
+                        <th>경고</th>
+                    </tr>
+
+                </thead>
+
+                <tbody>
+                    {rows}
+                </tbody>
+
+            </table>
+
+        </div>
+        """
+
+    else:
+
+        table = (
+            '<div class="focus-table">'
+            + table_html(focus_data)
+            .replace(
+                '<div class="table-wrap">',
+                '',
+                1
+            )
+        )
+
+    return f"""
+    <h2 class="focus-title">
+
+        🚨 집중 리스트
+
+        <small>
+            {update_time} KST
+        </small>
+
+    </h2>
+
+    {table}
+    """
 
 
 # =========================================================
@@ -2375,17 +2459,17 @@ td{
 
 
 /* =====================================================
-   ★ 컬럼 폭
+   컬럼 폭
    =====================================================
 
-   #          6%
-   코인       19%
-   거래대금   15%
-   EMA        23%
-   10선       17%
-   경고       20%
+   #        6%
+   코인     19%
+   거래대금  15%
+   EMA      23%
+   10선     17%
+   경고     20%
 
-   합계       100%
+   합계     100%
    ===================================================== */
 
 th:nth-child(1),
@@ -2508,8 +2592,8 @@ td:nth-child(6){
 }
 
 .tf{
-    flex:0 0 22px;
-    width:22px;
+    flex:0 0 20px;
+    width:20px;
     color:#8f949d;
     font-size:6px;
     font-weight:bold;
@@ -2517,7 +2601,7 @@ td:nth-child(6){
 }
 
 .ema-value-wrap{
-    flex:1 1 auto;
+    flex:1;
     min-width:0;
     display:flex;
     align-items:center;
@@ -2551,57 +2635,62 @@ td:nth-child(6){
 
 
 /* =====================================================
-   ★ 10선
+   10선
+   현재 상태 = 위
+   이전 마감 = 아래
+   이전 마감 = 흰색
    ===================================================== */
 
 .close-ema10{
     text-align:center !important;
-    vertical-align:middle;
+    vertical-align:middle !important;
     white-space:nowrap;
-    overflow:hidden;
     font-size:7px;
     font-weight:bold;
+    overflow:hidden;
 }
 
 .ema10-box{
     width:100%;
-    min-height:25px;
     display:flex;
     flex-direction:column;
     align-items:center;
     justify-content:center;
-    line-height:12px;
+    text-align:center;
     white-space:nowrap;
+    line-height:10px;
 }
 
-.ema10-current{
-    height:12px;
-    line-height:12px;
-    font-size:7px;
+.ema10-final{
+    width:100%;
+    display:block;
+    color:#fff;
+    font-size:6px;
     font-weight:bold;
-    white-space:nowrap;
-}
-
-/* ★ 이전 마감 카운팅 = 흰색 */
-.ema10-previous{
-    height:11px;
-    line-height:11px;
-    color:#ffffff;
-    font-size:7px;
-    font-weight:bold;
-    white-space:nowrap;
+    line-height:9px;
+    text-align:center;
 }
 
 .ema10-long{
     color:#35e66d;
+    font-size:7px;
+    font-weight:bold;
+    line-height:10px;
+    text-align:center;
 }
 
 .ema10-short{
     color:#ff4d4d;
+    font-size:7px;
+    font-weight:bold;
+    line-height:10px;
+    text-align:center;
 }
 
 .ema10-none{
     color:#777;
+    font-size:7px;
+    text-align:center;
 }
 
 
@@ -2787,11 +2876,6 @@ td:nth-child(6){
         height:14px;
     }
 
-
-    /* ================================
-       모바일 EMA
-       ================================ */
-
     .ema-cell{
         padding:0 !important;
     }
@@ -2809,49 +2893,41 @@ td:nth-child(6){
     }
 
     .ema-value-wrap{
-        flex:1 1 auto;
+        flex:1;
         min-width:0;
     }
 
     .ema-value{
-        width:auto;
-        min-width:0;
-        max-width:100%;
         font-size:6px;
         line-height:12px;
     }
-
-
-    /* ================================
-       모바일 10선
-       ================================ */
 
     .close-ema10{
         font-size:6px;
     }
 
     .ema10-box{
-        min-height:23px;
-        line-height:11px;
+        line-height:9px;
     }
 
-    .ema10-current{
-        height:11px;
-        line-height:11px;
-        font-size:6px;
-    }
-
-    .ema10-previous{
-        height:10px;
-        line-height:10px;
-        font-size:6px;
+    .ema10-final{
+        width:100%;
         color:#fff;
+        font-size:5px;
+        line-height:8px;
+        text-align:center;
     }
 
+    .ema10-long,
+    .ema10-short{
+        font-size:6px;
+        line-height:9px;
+        text-align:center;
+    }
 
-    /* ================================
-       모바일 경고
-       ================================ */
+    .ema10-none{
+        font-size:6px;
+    }
 
     .air-direction{
         font-size:5px;
@@ -2865,7 +2941,6 @@ td:nth-child(6){
         font-size:8px;
         line-height:8px;
     }
-
 }
 
 """
@@ -2957,7 +3032,9 @@ def dashboard():
 </title>
 
 <style>
+
 {CSS}
+
 </style>
 
 </head>
@@ -2975,7 +3052,7 @@ def dashboard():
     ③ EMA 정배열/역배열 연속 캔들 수 표시<br>
     ④ 1H EMA1(종가) ↔ EMA10<br>
     ⑤ 데드크로스 종가 확정 → 🔻(1) 시작<br>
-    ⑥ 골든크로스 종가 확정 → 이전 하락 최종값 회색 + 🟢(1) 시작<br>
+    ⑥ 골든크로스 종가 확정 → 이전 하락 최종값을 아래 흰색 (N) 표시<br>
     ⑦ 이후 종가가 같은 방향이면 카운팅 증가<br>
     ⑧ 조건 충족 🛩 → 이후 양봉마다 카운터 증가
 
@@ -3050,13 +3127,11 @@ def startup():
     )
 
     log.info(
-        f"업비트={USE_UPBIT} / "
-        f"OKX={USE_OKX}"
+        f"업비트={USE_UPBIT} / OKX={USE_OKX}"
     )
 
     log.info(
-        f"TOP={TOP_N} / "
-        f"UPDATE={UPDATE_MINUTES}분"
+        f"TOP={TOP_N} / UPDATE={UPDATE_MINUTES}분"
     )
 
     log.info(
@@ -3068,11 +3143,7 @@ def startup():
     )
 
     log.info(
-        "10선 = 현재 2줄 + 이전 마감 카운팅"
-    )
-
-    log.info(
-        "이전 방향 최종 카운팅 = 흰색 유지"
+        "이전 방향 최종 카운팅 = 아래 흰색 (N)"
     )
 
     log.info(
@@ -3114,4 +3185,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-                )
+            )
