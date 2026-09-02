@@ -879,29 +879,193 @@ def direction(df):
     return "none"
 
 
+# =========================================================
+# EMA 정배열 / 역배열 연속 카운트
+# =========================================================
+
+def ema_alignment_count(df):
+
+    if (
+        df is None
+        or df.empty
+    ):
+
+        return "none", 0
+
+    try:
+
+        e10 = ema(
+            df,
+            10
+        )
+
+        e30 = ema(
+            df,
+            30
+        )
+
+        e60 = ema(
+            df,
+            60
+        )
+
+        e120 = ema(
+            df,
+            120
+        )
+
+        if (
+            e10 is None
+            or e30 is None
+            or e60 is None
+            or e120 is None
+        ):
+
+            return "none", 0
+
+        count = 0
+
+        current_direction = "none"
+
+        # 최근 완료 캔들부터 과거 방향 확인
+        for i in range(
+            len(df) - 1,
+            -1,
+            -1
+        ):
+
+            v10 = float(
+                e10.iloc[i]
+            )
+
+            v30 = float(
+                e30.iloc[i]
+            )
+
+            v60 = float(
+                e60.iloc[i]
+            )
+
+            v120 = float(
+                e120.iloc[i]
+            )
+
+            # -----------------------------------------
+            # 정배열
+            # -----------------------------------------
+
+            if (
+                v10
+                > v30
+                > v60
+                > v120
+            ):
+
+                if current_direction == "none":
+
+                    current_direction = "long"
+
+                if current_direction != "long":
+
+                    break
+
+                count += 1
+
+            # -----------------------------------------
+            # 역배열
+            # -----------------------------------------
+
+            elif (
+                v10
+                < v30
+                < v60
+                < v120
+            ):
+
+                if current_direction == "none":
+
+                    current_direction = "short"
+
+                if current_direction != "short":
+
+                    break
+
+                count += 1
+
+            # -----------------------------------------
+            # 정배열/역배열 모두 아님
+            # -----------------------------------------
+
+            else:
+
+                break
+
+        return (
+            current_direction,
+            count
+        )
+
+    except:
+
+        return (
+            "none",
+            0
+        )
+
+
 def ema_display(df):
 
-    d = direction(df)
+    direction_value, count = (
+        ema_alignment_count(df)
+    )
 
-    if d == "long":
+    # 정배열
+    if direction_value == "long":
 
-        icon = "🟢"
+        return {
 
-    elif d == "short":
+            "display":
+                f"🟢({count})",
 
-        icon = "🔴"
+            "direction":
+                "long",
 
+            "count":
+                count
+
+        }
+
+    # 역배열
+    elif direction_value == "short":
+
+        return {
+
+            "display":
+                f"🔴({count})",
+
+            "direction":
+                "short",
+
+            "count":
+                count
+
+        }
+
+    # 중립
     else:
 
-        icon = "⚪"
+        return {
 
-    return {
+            "display":
+                "⚪(0)",
 
-        "display": icon,
+            "direction":
+                "none",
 
-        "direction": d
+            "count":
+                0
 
-    }
+        }
 
 
 # =========================================================
@@ -1007,12 +1171,15 @@ def get_air_warning(
         return None
 
     if len(df1h) < 2:
+
         return None
 
     if direction(df1h) != "long":
+
         return None
 
     if direction(df4h) != "long":
+
         return None
 
     try:
@@ -1023,6 +1190,7 @@ def get_air_warning(
         )
 
         if e10 is None:
+
             return None
 
         prev_close = float(
@@ -1442,9 +1610,11 @@ def empty_analysis():
 
     e = {
 
-        "display": "⚪",
+        "display": "⚪(0)",
 
-        "direction": "none"
+        "direction": "none",
+
+        "count": 0
 
     }
 
@@ -2168,7 +2338,7 @@ def ema_html(e):
 
     if not e:
 
-        return "⚪"
+        return "⚪(0)"
 
     direction = e.get(
         "direction",
@@ -2177,7 +2347,7 @@ def ema_html(e):
 
     display = e.get(
         "display",
-        "⚪"
+        "⚪(0)"
     )
 
     if direction == "long":
@@ -2484,7 +2654,6 @@ def focus_section(
     update_time
 ):
 
-    # 비행기 경고가 현재 활성화된 코인만 표시
     focus_data = [
 
         x for x in data
@@ -3705,6 +3874,16 @@ def startup():
     )
 
     log.info(
+        "EMA 정배열/역배열 연속 캔들 카운트 표시"
+    )
+
+    log.info(
+        "표시 = 🟢(정배열 연속) / "
+        "🔴(역배열 연속) / "
+        "⚪(0)"
+    )
+
+    log.info(
         "1H 종가 / EMA10 위치 표시 추가"
     )
 
@@ -3791,4 +3970,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-            )
+        )
