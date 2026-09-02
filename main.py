@@ -2506,25 +2506,25 @@ body{
 
     font-size:9px;
 
-    padding:4px
+    padding:3px
 
 }
 
 h1{
 
     margin:
-        3px 2px 6px;
+        2px 2px 4px;
 
-    font-size:14px
+    font-size:13px
 
 }
 
 h2{
 
     margin:
-        10px 2px 5px;
+        7px 2px 3px;
 
-    font-size:11px
+    font-size:10px
 
 }
 
@@ -2532,21 +2532,26 @@ h2 small{
 
     color:#777;
 
-    font-size:7px;
+    font-size:6px;
 
     font-weight:normal;
 
-    margin-left:4px
+    margin-left:3px
 
 }
+
+
+/* =====================================================
+   상단 설명 - 높이 축소
+   ===================================================== */
 
 .info{
 
     margin:
-        0 2px 6px;
+        0 2px 4px;
 
     padding:
-        5px 6px;
+        3px 5px;
 
     color:#8b9099;
 
@@ -2559,7 +2564,7 @@ h2 small{
 
     font-size:7px;
 
-    line-height:1.55
+    line-height:1.25
 
 }
 
@@ -2571,7 +2576,7 @@ h2 small{
 
     gap:8px;
 
-    margin-top:4px;
+    margin-top:2px;
 
     font-weight:bold
 
@@ -2618,7 +2623,7 @@ table{
 th{
 
     padding:
-        5px 2px;
+        4px 2px;
 
     background:#12151a;
 
@@ -2640,7 +2645,7 @@ th{
 td{
 
     padding:
-        5px 2px;
+        3px 2px;
 
     border-bottom:
         1px solid #272c32;
@@ -2654,7 +2659,6 @@ td{
 
 /* =====================================================
    컬럼
-   # / 코인 / 거래대금 / EMA / 10선 / 경고
    ===================================================== */
 
 th:nth-child(1),
@@ -2739,9 +2743,9 @@ td:nth-child(6){
 
     padding-right:2px;
 
-    padding-top:2px;
+    padding-top:1px;
 
-    padding-bottom:2px;
+    padding-bottom:1px;
 
     text-align:center !important
 
@@ -2753,9 +2757,9 @@ td:nth-child(6){
 
     font-weight:bold;
 
-    line-height:10px;
+    line-height:9px;
 
-    height:10px;
+    height:9px;
 
     white-space:nowrap;
 
@@ -2776,9 +2780,9 @@ td:nth-child(6){
 
     margin-top:0;
 
-    line-height:8px;
+    line-height:7px;
 
-    height:8px;
+    height:7px;
 
     font-size:7px;
 
@@ -2822,17 +2826,17 @@ td:nth-child(6){
 
 .vol{
 
-    padding-top:2px !important;
+    padding-top:1px !important;
 
-    padding-bottom:2px !important;
+    padding-bottom:1px !important;
 
     font-size:7px;
 
     font-weight:bold;
 
-    line-height:18px;
+    line-height:16px;
 
-    height:18px;
+    height:16px;
 
     white-space:nowrap;
 
@@ -2865,9 +2869,9 @@ td:nth-child(6){
 
     justify-content:center;
 
-    height:15px;
+    height:13px;
 
-    line-height:15px;
+    line-height:13px;
 
     white-space:nowrap;
 
@@ -3014,7 +3018,7 @@ td:nth-child(6){
 
 
 /* =====================================================
-   비행기 반짝임 강화
+   비행기 반짝임
    ===================================================== */
 
 .air-icon{
@@ -3102,7 +3106,7 @@ td:nth-child(6){
 
 .air-count{
 
-    margin-top:1px;
+    margin-top:0;
 
     font-size:9px;
 
@@ -3142,7 +3146,7 @@ td:nth-child(6){
 
     color:#555;
 
-    padding:12px 4px;
+    padding:10px 4px;
 
     text-align:center !important
 
@@ -3157,7 +3161,7 @@ td:nth-child(6){
 
     body{
 
-        padding:3px;
+        padding:2px;
 
         font-size:8px
 
@@ -3165,13 +3169,19 @@ td:nth-child(6){
 
     h1{
 
-        font-size:13px
+        font-size:12px;
+
+        margin:
+            2px 2px 3px
 
     }
 
     h2{
 
-        font-size:10px
+        font-size:9px;
+
+        margin:
+            6px 2px 2px
 
     }
 
@@ -3180,14 +3190,18 @@ td:nth-child(6){
         font-size:6px;
 
         padding:
-            4px 5px
+            2px 4px;
+
+        line-height:1.2;
+
+        margin-bottom:3px
 
     }
 
     th{
 
         padding:
-            4px 1px;
+            3px 1px;
 
         font-size:5px;
 
@@ -3198,7 +3212,7 @@ td:nth-child(6){
     td{
 
         padding:
-            4px 1px;
+            2px 1px;
 
         text-align:center !important
 
@@ -3210,9 +3224,9 @@ td:nth-child(6){
 
         padding-right:1px;
 
-        padding-top:1px;
+        padding-top:0;
 
-        padding-bottom:1px;
+        padding-bottom:0;
 
         text-align:center !important
 
@@ -3222,9 +3236,9 @@ td:nth-child(6){
 
         font-size:7px;
 
-        line-height:9px;
+        line-height:8px;
 
-        height:9px;
+        height:8px;
 
         text-align:center
 
@@ -3236,9 +3250,9 @@ td:nth-child(6){
 
         font-size:6px;
 
-        line-height:7px;
+        line-height:6px;
 
-        height:7px;
+        height:6px;
 
         text-align:center
 
@@ -3246,15 +3260,15 @@ td:nth-child(6){
 
     .vol{
 
-        padding-top:1px !important;
+        padding-top:0 !important;
 
-        padding-bottom:1px !important;
+        padding-bottom:0 !important;
 
         font-size:6px;
 
-        line-height:15px;
+        line-height:14px;
 
-        height:15px;
+        height:14px;
 
         text-align:center !important
 
@@ -3272,9 +3286,9 @@ td:nth-child(6){
 
     .ema-row{
 
-        height:14px;
+        height:12px;
 
-        line-height:14px;
+        line-height:12px;
 
         font-size:6px;
 
@@ -3449,27 +3463,13 @@ def dashboard():
 
 <div class="info">
 
-    ① 24시간 거래대금 TOP{TOP_N}<br>
+    ① 거래대금 TOP{TOP_N}<br>
 
-    ② 1H / 4H EMA 10-30-60-120<br>
+    ② 1H + 4H EMA 10-30-60-120 정배열<br>
 
-    ③ 1H + 4H 모두 정배열<br>
+    ③ 이전 종가 &lt; EMA10 → 현재 양봉 + 종가 &gt; EMA10<br>
 
-    ④ 이전 1H 완성봉 종가 &lt; EMA10<br>
-
-    ⑤ 현재 1H 완성봉 양봉<br>
-
-    ⑥ 현재 1H 완성봉 종가 &gt; EMA10<br>
-
-    ⑦ 조건 만족 → LONG 🛩 ✈️<br>
-
-    ⑧ 비행기 이후 다음 1H 양봉 마감 → ①<br>
-
-    ⑨ 이후 양봉마다 → ② → ③ → ④ ...<br>
-
-    ⑩ 진행 중인 1H / 4H 봉은 제외<br>
-
-    ⑪ <b>10선</b> = 마지막 완료 1H 종가와 EMA10 비교
+    ④ 조건 충족 🛩 → 이후 양봉마다 카운터 증가
 
     {status}
 
@@ -3643,4 +3643,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-)
+    )
