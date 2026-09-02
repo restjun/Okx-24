@@ -34,7 +34,7 @@ log = logging.getLogger("trading")
 
 
 VOLUME_HOURS = 24
-TOP_N = 100
+TOP_N = 50
 UPDATE_MINUTES = 1
 
 INITIAL_CANDLE_COUNT = 200
