@@ -1121,6 +1121,7 @@ def format_change(x):
         else:
             value = float(x)
 
+        # 상승 = 녹색
         if value > 0:
 
             return (
@@ -1129,6 +1130,7 @@ def format_change(x):
                 f'</span>'
             )
 
+        # 하락 = 적색
         if value < 0:
 
             return (
@@ -1216,7 +1218,6 @@ def analyze(
 
     if okx:
 
-        # OKX 1H / 4H만 사용
         df1 = history_okx(
             market,
             "1H"
@@ -1229,7 +1230,6 @@ def analyze(
 
     else:
 
-        # Upbit 1H / 4H만 사용
         df1 = history_upbit(
             market,
             60
@@ -1760,10 +1760,8 @@ def ema_html(e):
 # =========================================================
 # 행 HTML
 #
-# 컬럼
+# 기존 컬럼 순서 유지
 # # / 코인 / 거래대금 / EMA / 경고
-#
-# 등락률은 코인명 바로 아래
 # =========================================================
 
 def rows_html(data):
@@ -1780,8 +1778,7 @@ def rows_html(data):
         cls = (
             " qualified"
             if q
-            else
-            ""
+            else ""
         )
 
         e1 = x.get(
@@ -1845,13 +1842,16 @@ def rows_html(data):
 
             </td>
 
+            <!-- 경고는 마지막 칸 -->
             <td class="warning">
+
                 {warning_html(
                     x.get(
                         "air_warning",
                         False
                     )
                 )}
+
             </td>
 
         </tr>
@@ -2042,6 +2042,11 @@ h2 small{
     color:#ff4d4d
 }
 
+
+/* =====================================================
+   테이블
+   ===================================================== */
+
 .table-wrap{
 
     width:100%;
@@ -2132,7 +2137,9 @@ td:nth-child(4){
 th:nth-child(5),
 td:nth-child(5){
 
-    width:10%
+    width:10%;
+
+    text-align:center
 }
 
 
@@ -2175,7 +2182,8 @@ td:nth-child(5){
 
 /* =====================================================
    등락률
-   코인명 바로 아래
+   상승 = 녹색
+   하락 = 적색
    ===================================================== */
 
 .change{
@@ -2189,14 +2197,14 @@ td:nth-child(5){
 
 .up{
 
-    color:#ff5c5c;
+    color:#35e66d;
 
     font-weight:bold
 }
 
 .down{
 
-    color:#4da6ff;
+    color:#ff4d4d;
 
     font-weight:bold
 }
@@ -2223,6 +2231,9 @@ td:nth-child(5){
 
 /* =====================================================
    EMA
+   롱 = 녹색
+   숏 = 적색
+   중립 = 흰색
    ===================================================== */
 
 .ema-cell{
@@ -2274,13 +2285,19 @@ td:nth-child(5){
 
 /* =====================================================
    경고
+   마지막 칸의 정확한 중앙
    ===================================================== */
 
 .warning{
 
-    text-align:center;
+    text-align:center !important;
 
-    white-space:nowrap
+    vertical-align:middle !important;
+
+    white-space:nowrap;
+
+    padding:
+        0 2px !important
 }
 
 .air{
@@ -2291,22 +2308,38 @@ td:nth-child(5){
 
     display:inline-block;
 
+    transform-origin:center center;
+
     animation:
-        air-pulse 1.2s infinite
+        air-pulse 0.8s infinite
 }
+
+
+/* =====================================================
+   비행기 반짝임
+   ===================================================== */
 
 @keyframes air-pulse{
 
     0%{
-        transform:scale(1)
+
+        transform:scale(1);
+
+        opacity:0.35
     }
 
     50%{
-        transform:scale(1.18)
+
+        transform:scale(1.25);
+
+        opacity:1
     }
 
     100%{
-        transform:scale(1)
+
+        transform:scale(1);
+
+        opacity:0.35
     }
 
 }
@@ -2426,6 +2459,28 @@ td:nth-child(5){
         font-size:10px
     }
 
+    .warning{
+
+        text-align:center !important;
+
+        vertical-align:middle !important
+    }
+
+}
+
+
+/* =====================================================
+   롱 / 숏 방향 표시
+   ===================================================== */
+
+.ema-long{
+
+    color:#35e66d
+}
+
+.ema-short{
+
+    color:#ff4d4d
 }
 
 """
@@ -2434,6 +2489,55 @@ td:nth-child(5){
 # =========================================================
 # Dashboard
 # =========================================================
+
+def warning_html(
+    air_warning
+):
+
+    if air_warning:
+
+        return (
+            '<span class="air">'
+            '🛩 ✈️'
+            '</span>'
+        )
+
+    return "-"
+
+
+def ema_html(e):
+
+    if not e:
+        return "⚪"
+
+    direction = e.get(
+        "direction",
+        "none"
+    )
+
+    display = e.get(
+        "display",
+        "⚪"
+    )
+
+    if direction == "long":
+
+        return (
+            '<span class="ema-long">'
+            f'{display}'
+            '</span>'
+        )
+
+    if direction == "short":
+
+        return (
+            '<span class="ema-short">'
+            f'{display}'
+            '</span>'
+        )
+
+    return display
+
 
 @app.get(
     "/",
@@ -2694,4 +2798,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-        )
+    )
