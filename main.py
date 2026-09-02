@@ -2384,7 +2384,7 @@ def rows_html(data):
 
 
 # =========================================================
-# Section
+# TOP Section
 # =========================================================
 
 def section(
@@ -2429,6 +2429,109 @@ def section(
     </h2>
 
     <div class="table-wrap">
+
+        <table>
+
+            <thead>
+
+                <tr>
+
+                    <th>#</th>
+
+                    <th>
+                        코인
+                    </th>
+
+                    <th>
+                        거래대금
+                    </th>
+
+                    <th>
+                        EMA
+                    </th>
+
+                    <th>
+                        10선
+                    </th>
+
+                    <th>
+                        경고
+                    </th>
+
+                </tr>
+
+            </thead>
+
+            <tbody>
+
+                {rows}
+
+            </tbody>
+
+        </table>
+
+    </div>
+
+    """
+
+
+# =========================================================
+# 🚨 집중 리스트
+# =========================================================
+
+def focus_section(
+    data,
+    update_time
+):
+
+    # 비행기 경고가 현재 활성화된 코인만 표시
+    focus_data = [
+
+        x for x in data
+
+        if x.get(
+            "qualified",
+            False
+        )
+
+    ]
+
+    rows = rows_html(
+        focus_data
+    )
+
+    if not rows:
+
+        rows = """
+
+        <tr>
+
+            <td
+                colspan="6"
+                class="empty"
+            >
+
+                현재 경고 발생 코인 없음
+
+            </td>
+
+        </tr>
+
+        """
+
+    return f"""
+
+    <h2 class="focus-title">
+
+        🚨 집중 리스트
+
+        <small>
+            {update_time} KST
+        </small>
+
+    </h2>
+
+    <div class="table-wrap focus-table">
 
         <table>
 
@@ -3139,6 +3242,26 @@ td:nth-child(6){
 
 
 /* =====================================================
+   🚨 집중 리스트
+   ===================================================== */
+
+.focus-title{
+
+    margin-top:5px;
+
+    margin-bottom:3px
+
+}
+
+.focus-table{
+
+    border:
+        1px solid #343a42
+
+}
+
+
+/* =====================================================
    빈 데이터
    ===================================================== */
 
@@ -3407,6 +3530,30 @@ def dashboard():
 
     sections = ""
 
+
+    # =====================================================
+    # 🚨 집중 리스트
+    # =====================================================
+
+    if USE_UPBIT == "Y":
+
+        sections += focus_section(
+            latest_upbit_data,
+            latest_upbit_update_time
+        )
+
+    if USE_OKX == "Y":
+
+        sections += focus_section(
+            latest_okx_data,
+            latest_okx_update_time
+        )
+
+
+    # =====================================================
+    # 🏆 TOP 리스트
+    # =====================================================
+
     if USE_UPBIT == "Y":
 
         sections += section(
@@ -3422,6 +3569,7 @@ def dashboard():
             latest_okx_data,
             latest_okx_update_time
         )
+
 
     return f"""
 
@@ -3643,4 +3791,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-    )
+            )
