@@ -34,7 +34,7 @@ log = logging.getLogger("trading")
 
 
 VOLUME_HOURS = 24
-TOP_N = 20
+TOP_N = 100
 UPDATE_MINUTES = 1
 
 INITIAL_CANDLE_COUNT = 200
@@ -74,31 +74,6 @@ last_request_time = 0
 
 # =========================================================
 # 🛩 비행기 상태
-# =========================================================
-#
-# market별 상태
-#
-# {
-#     "active": True,
-#     "direction": "LONG",
-#     "count": 0,
-#     "warning_candle": 마지막 비행기 발생 캔들,
-#     "counted_candle": 마지막으로 카운트한 캔들
-# }
-#
-# 비행기 발생
-#       ↓
-# LONG 🛩 ✈️
-#
-# 다음 캔들 양봉
-#       ↓
-# LONG 🛩 ✈️
-#     ①
-#
-# 다음 캔들 양봉
-#       ↓
-# LONG 🛩 ✈️
-#     ②
 # =========================================================
 
 air_state = {}
@@ -168,6 +143,7 @@ def retry(func, *args, **kwargs):
                 return r
 
             if r.status_code == 200:
+
                 return r
 
             if r.status_code == 429:
@@ -275,8 +251,11 @@ def get_upbit_markets():
             if volume > 0:
 
                 result.append({
+
                     "market": market,
+
                     "volume_24h": volume
+
                 })
 
         latest_upbit_markets = [
@@ -335,12 +314,16 @@ def get_okx_ohlcv(
 ):
 
     params = {
+
         "instId": inst,
+
         "bar": bar,
+
         "limit": min(
             max(int(limit), 1),
             200
         )
+
     }
 
     if before is not None:
@@ -478,14 +461,18 @@ def get_upbit_1h(
 ):
 
     params = {
+
         "market": market,
+
         "count": min(
             max(int(count), 1),
             200
         )
+
     }
 
     if to:
+
         params["to"] = to
 
     r = retry(
@@ -594,14 +581,18 @@ def get_upbit_4h(
 ):
 
     params = {
+
         "market": market,
+
         "count": min(
             max(int(count), 1),
             200
         )
+
     }
 
     if to:
+
         params["to"] = to
 
     r = retry(
@@ -833,6 +824,7 @@ def ema(df, period):
         or df.empty
         or "c" not in df
     ):
+
         return None
 
     return pd.to_numeric(
@@ -873,9 +865,11 @@ def direction(df):
         ).iloc[-1]
 
         if e10 > e30 > e60 > e120:
+
             return "long"
 
         if e10 < e30 < e60 < e120:
+
             return "short"
 
     except:
@@ -902,18 +896,16 @@ def ema_display(df):
         icon = "⚪"
 
     return {
+
         "display": icon,
+
         "direction": d
+
     }
 
 
 # =========================================================
 # 🟢 1H 종가 / EMA10 위치
-#
-# 마지막 완료 1H 캔들의 종가 기준
-#
-# 종가 > EMA10 → ▲ 위 / 녹색
-# 종가 < EMA10 → ▼ 아래 / 적색
 # =========================================================
 
 def close_vs_ema10_1h(df):
@@ -925,8 +917,11 @@ def close_vs_ema10_1h(df):
     ):
 
         return {
+
             "position": "none",
+
             "display": "-"
+
         }
 
     try:
@@ -939,8 +934,11 @@ def close_vs_ema10_1h(df):
         if e10 is None or e10.empty:
 
             return {
+
                 "position": "none",
+
                 "display": "-"
+
             }
 
         close = float(
@@ -954,42 +952,44 @@ def close_vs_ema10_1h(df):
         if close > ema10_value:
 
             return {
+
                 "position": "above",
-                "display": "▲"
+
+                "display": "▲ 위"
+
             }
 
         elif close < ema10_value:
 
             return {
+
                 "position": "below",
-                "display": "▼"
+
+                "display": "▼ 아래"
+
             }
 
         return {
+
             "position": "equal",
-            "display": "＝"
+
+            "display": "＝ 동일"
+
         }
 
     except:
 
         return {
+
             "position": "none",
+
             "display": "-"
+
         }
 
 
 # =========================================================
-# 🛩 ✈️ 비행기 발생 조건
-#
-# LONG
-#
-# ① 1H EMA 10-30-60-120 정배열
-# ② 4H EMA 10-30-60-120 정배열
-# ③ 이전 완료 1H 종가 < 이전 EMA10
-# ④ 현재 완료 1H 봉 양봉
-# ⑤ 현재 완료 1H 종가 > 현재 EMA10
-#
-# SHORT 조건은 임의로 추가하지 않음
+# 🛩 비행기 발생 조건
 # =========================================================
 
 def get_air_warning(
@@ -1003,6 +1003,7 @@ def get_air_warning(
         or df4h is None
         or df4h.empty
     ):
+
         return None
 
     if len(df1h) < 2:
@@ -1074,10 +1075,15 @@ def update_air_counter(
         or df1h.empty
         or len(df1h) < 2
     ):
+
         return {
+
             "active": False,
+
             "direction": None,
+
             "count": 0
+
         }
 
     candle_time = df1h.datetime.iloc[-1]
@@ -1125,12 +1131,17 @@ def update_air_counter(
 
                     "counted_candle":
                         candle_time
+
                 }
 
                 return {
+
                     "active": True,
+
                     "direction": new_warning,
+
                     "count": 0
+
                 }
 
         # -------------------------------------------------
@@ -1146,14 +1157,17 @@ def update_air_counter(
         ):
 
             return {
+
                 "active": False,
+
                 "direction": None,
+
                 "count": 0
+
             }
 
         # -------------------------------------------------
         # 새로운 캔들이 아직 아니면
-        # 같은 캔들에서 중복 카운트 금지
         # -------------------------------------------------
 
         if candle_time <= state.get(
@@ -1161,16 +1175,20 @@ def update_air_counter(
         ):
 
             return {
+
                 "active": True,
+
                 "direction":
                     state.get(
                         "direction"
                     ),
+
                 "count":
                     state.get(
                         "count",
                         0
                     )
+
             }
 
         # -------------------------------------------------
@@ -1182,39 +1200,47 @@ def update_air_counter(
         )
 
         # 상승 마감
+
         if current_close > current_open:
 
             state["count"] += 1
 
         else:
 
-            # 양봉이 아니면 카운터 종료
             state["active"] = False
 
             return {
+
                 "active": False,
+
                 "direction":
                     state.get(
                         "direction"
                     ),
+
                 "count":
                     state.get(
                         "count",
                         0
                     )
+
             }
 
         return {
+
             "active": True,
+
             "direction":
                 state.get(
                     "direction"
                 ),
+
             "count":
                 state.get(
                     "count",
                     0
                 )
+
         }
 
 
@@ -1256,11 +1282,13 @@ def daily_change_upbit(market):
             return None
 
         return [
+
             (
                 current - previous
             )
             / previous
             * 100
+
         ]
 
     except:
@@ -1327,11 +1355,13 @@ def daily_changes(df):
             return None
 
         return [
+
             (
                 current - previous
             )
             / previous
             * 100
+
         ]
 
     except:
@@ -1429,8 +1459,11 @@ def format_volume(v):
 def empty_analysis():
 
     e = {
+
         "display": "⚪",
+
         "direction": "none"
+
     }
 
     return {
@@ -1442,8 +1475,11 @@ def empty_analysis():
             e.copy(),
 
         "close_ema10_1h": {
+
             "position": "none",
+
             "display": "-"
+
         },
 
         "changes":
@@ -1472,6 +1508,7 @@ def empty_analysis():
 
         "df1h":
             None
+
     }
 
 
@@ -1509,6 +1546,7 @@ def analyze(
         or df4 is None
         or df4.empty
     ):
+
         return None
 
     e1 = ema_display(
@@ -1519,26 +1557,14 @@ def analyze(
         df4
     )
 
-    # -------------------------------------------------
-    # 1H 종가 / EMA10 위치
-    # -------------------------------------------------
-
     close_ema10 = close_vs_ema10_1h(
         df1
     )
-
-    # -------------------------------------------------
-    # 현재 캔들의 새 비행기 발생 여부
-    # -------------------------------------------------
 
     new_warning = get_air_warning(
         df1,
         df4
     )
-
-    # -------------------------------------------------
-    # 비행기 상태 / 카운터
-    # -------------------------------------------------
 
     air = update_air_counter(
         market,
@@ -1547,11 +1573,15 @@ def analyze(
     )
 
     changes = (
+
         daily_changes(df1)
+
         if okx
+
         else daily_change_upbit(
             market
         )
+
     )
 
     return {
@@ -1591,6 +1621,7 @@ def analyze(
 
         "df1h":
             df1
+
     }
 
 
@@ -1678,6 +1709,7 @@ def update_upbit():
 
                 "qualified":
                     a["qualified"]
+
             })
 
         except Exception as e:
@@ -1727,6 +1759,7 @@ def update_upbit():
 
                 "qualified":
                     False
+
             })
 
     latest_upbit_data = rows
@@ -1779,6 +1812,7 @@ def get_okx_symbols():
             and x.get(
                 "state"
             ) == "live"
+
         ]
 
     except:
@@ -1838,11 +1872,14 @@ def update_okx(usdt):
         return False
 
     upbit_set = {
+
         x.replace(
             "KRW-",
             ""
         )
+
         for x in latest_upbit_markets
+
     }
 
     volumes = {}
@@ -1877,9 +1914,13 @@ def update_okx(usdt):
         )
 
         display_name = (
+
             f"{coin} (업비트)"
+
             if coin in upbit_set
+
             else coin
+
         )
 
         try:
@@ -1930,6 +1971,7 @@ def update_okx(usdt):
 
                 "qualified":
                     a["qualified"]
+
             })
 
         except Exception as e:
@@ -1977,6 +2019,7 @@ def update_okx(usdt):
 
                 "qualified":
                     False
+
             })
 
     latest_okx_data = rows
@@ -2088,18 +2131,27 @@ def warning_html(
 ):
 
     if not air_warning:
+
         return "-"
 
     direction = (
+
         air_direction
+
         if air_direction
+
         else "LONG"
+
     )
 
     direction_class = (
+
         "long"
+
         if direction == "LONG"
+
         else "short"
+
     )
 
     count_html = ""
@@ -2107,12 +2159,15 @@ def warning_html(
     if air_count > 0:
 
         count_html = (
+
             f'<div class="air-count">'
             f'{air_count}'
             f'</div>'
+
         )
 
     return (
+
         '<div class="air-box">'
 
         '<div class="air-main">'
@@ -2131,12 +2186,14 @@ def warning_html(
         f'{count_html}'
 
         '</div>'
+
     )
 
 
 def ema_html(e):
 
     if not e:
+
         return "⚪"
 
     direction = e.get(
@@ -2152,17 +2209,21 @@ def ema_html(e):
     if direction == "long":
 
         return (
+
             '<span class="ema-long">'
             f'{display}'
             '</span>'
+
         )
 
     if direction == "short":
 
         return (
+
             '<span class="ema-short">'
             f'{display}'
             '</span>'
+
         )
 
     return display
@@ -2175,6 +2236,7 @@ def ema_html(e):
 def close_ema10_html(data):
 
     if not data:
+
         return "-"
 
     position = data.get(
@@ -2190,25 +2252,31 @@ def close_ema10_html(data):
     if position == "above":
 
         return (
+
             '<span class="close-ema-above">'
             f'{display}'
             '</span>'
+
         )
 
     if position == "below":
 
         return (
+
             '<span class="close-ema-below">'
             f'{display}'
             '</span>'
+
         )
 
     if position == "equal":
 
         return (
+
             '<span class="close-ema-equal">'
             f'{display}'
             '</span>'
+
         )
 
     return "-"
@@ -2230,9 +2298,13 @@ def rows_html(data):
         )
 
         cls = (
+
             " qualified"
+
             if q
+
             else ""
+
         )
 
         e1 = x.get(
@@ -2251,6 +2323,7 @@ def rows_html(data):
         )
 
         out += f"""
+
         <tr class="{cls}">
 
             <td class="rank">
@@ -2316,9 +2389,11 @@ def rows_html(data):
                         "air_warning",
                         False
                     ),
+
                     x.get(
                         "air_direction"
                     ),
+
                     x.get(
                         "air_count",
                         0
@@ -2328,6 +2403,7 @@ def rows_html(data):
             </td>
 
         </tr>
+
         """
 
     return out
@@ -2350,14 +2426,20 @@ def section(
     if not rows:
 
         rows = """
+
         <tr>
+
             <td
                 colspan="6"
                 class="empty"
             >
+
                 현재 조회 데이터 없음
+
             </td>
+
         </tr>
+
         """
 
     return f"""
@@ -2415,6 +2497,7 @@ def section(
         </table>
 
     </div>
+
     """
 
 
@@ -2428,12 +2511,13 @@ CSS = """
     box-sizing:border-box
 }
 
-html,
-body{
+html, body{
+
     margin:0;
     padding:0;
     width:100%;
     overflow-x:hidden
+
 }
 
 body{
@@ -2449,6 +2533,7 @@ body{
     font-size:9px;
 
     padding:4px
+
 }
 
 h1{
@@ -2457,6 +2542,7 @@ h1{
         3px 2px 6px;
 
     font-size:14px
+
 }
 
 h2{
@@ -2465,6 +2551,7 @@ h2{
         10px 2px 5px;
 
     font-size:11px
+
 }
 
 h2 small{
@@ -2476,6 +2563,7 @@ h2 small{
     font-weight:normal;
 
     margin-left:4px
+
 }
 
 .info{
@@ -2498,6 +2586,7 @@ h2 small{
     font-size:7px;
 
     line-height:1.55
+
 }
 
 .status{
@@ -2509,6 +2598,7 @@ h2 small{
     margin-top:4px;
 
     font-weight:bold
+
 }
 
 .y{
@@ -2534,6 +2624,7 @@ h2 small{
 
     border:
         1px solid #252a31
+
 }
 
 table{
@@ -2545,6 +2636,7 @@ table{
     border-collapse:collapse;
 
     background:#181c21
+
 }
 
 th{
@@ -2562,6 +2654,7 @@ th{
     font-size:6px;
 
     white-space:nowrap
+
 }
 
 td{
@@ -2575,18 +2668,24 @@ td{
     text-align:center;
 
     vertical-align:middle
+
 }
 
 
 /* =====================================================
    컬럼
    # / 코인 / 거래대금 / EMA / 10선 / 경고
+
+   EMA 축소
+   10선 EMA 뒤에 밀착
+   경고 영역 확대
    ===================================================== */
 
 th:nth-child(1),
 td:nth-child(1){
 
     width:7%
+
 }
 
 th:nth-child(2),
@@ -2595,36 +2694,41 @@ td:nth-child(2){
     width:23%;
 
     text-align:left
+
 }
 
 th:nth-child(3),
 td:nth-child(3){
 
     width:17%
+
 }
 
 th:nth-child(4),
 td:nth-child(4){
 
-    width:31%;
+    width:18%;
 
     text-align:left
+
 }
 
 th:nth-child(5),
 td:nth-child(5){
 
-    width:12%;
+    width:10%;
 
     text-align:center
+
 }
 
 th:nth-child(6),
 td:nth-child(6){
 
-    width:10%;
+    width:25%;
 
     text-align:center
+
 }
 
 
@@ -2637,6 +2741,7 @@ td:nth-child(6){
     color:#8f949d;
 
     font-size:7px
+
 }
 
 
@@ -2649,6 +2754,7 @@ td:nth-child(6){
     overflow:hidden;
 
     padding-left:5px
+
 }
 
 .coin-name{
@@ -2662,6 +2768,7 @@ td:nth-child(6){
     overflow:hidden;
 
     text-overflow:ellipsis
+
 }
 
 
@@ -2676,6 +2783,7 @@ td:nth-child(6){
     font-size:7px;
 
     white-space:nowrap
+
 }
 
 .up{
@@ -2683,6 +2791,7 @@ td:nth-child(6){
     color:#35e66d;
 
     font-weight:bold
+
 }
 
 .down{
@@ -2690,11 +2799,13 @@ td:nth-child(6){
     color:#ff4d4d;
 
     font-weight:bold
+
 }
 
 .zero{
 
     color:#999
+
 }
 
 
@@ -2709,6 +2820,7 @@ td:nth-child(6){
     font-weight:bold;
 
     white-space:nowrap
+
 }
 
 
@@ -2720,7 +2832,10 @@ td:nth-child(6){
 
     overflow:hidden;
 
-    padding-left:3px
+    padding-left:2px;
+
+    padding-right:1px
+
 }
 
 .ema-row{
@@ -2740,6 +2855,7 @@ td:nth-child(6){
     font-size:7px;
 
     font-weight:bold
+
 }
 
 .ema-row > span:last-child{
@@ -2749,17 +2865,19 @@ td:nth-child(6){
     text-overflow:ellipsis;
 
     white-space:nowrap
+
 }
 
 .tf{
 
-    flex:0 0 20px;
+    flex:0 0 18px;
 
     color:#8f949d;
 
     font-size:6px;
 
     font-weight:bold
+
 }
 
 
@@ -2778,27 +2896,31 @@ td:nth-child(6){
     font-size:7px;
 
     font-weight:bold
+
 }
 
 .close-ema-above{
 
     color:#35e66d
+
 }
 
 .close-ema-below{
 
     color:#ff4d4d
+
 }
 
 .close-ema-equal{
 
     color:#999
+
 }
 
 
 /* =====================================================
    경고
-   정확히 가운데
+   넓어진 영역
    ===================================================== */
 
 .warning{
@@ -2811,6 +2933,7 @@ td:nth-child(6){
 
     padding:
         0 2px !important
+
 }
 
 .air-box{
@@ -2826,6 +2949,7 @@ td:nth-child(6){
     justify-content:center;
 
     text-align:center
+
 }
 
 .air-main{
@@ -2836,9 +2960,10 @@ td:nth-child(6){
 
     justify-content:center;
 
-    gap:2px;
+    gap:3px;
 
     white-space:nowrap
+
 }
 
 
@@ -2852,16 +2977,19 @@ td:nth-child(6){
     font-size:6px;
 
     font-weight:bold
+
 }
 
 .air-direction.long{
 
     color:#35e66d
+
 }
 
 .air-direction.short{
 
     color:#ff4d4d
+
 }
 
 
@@ -2881,6 +3009,7 @@ td:nth-child(6){
 
     animation:
         air-pulse 0.8s infinite
+
 }
 
 
@@ -2899,6 +3028,7 @@ td:nth-child(6){
     font-weight:bold;
 
     color:#ffffff
+
 }
 
 
@@ -2913,6 +3043,7 @@ td:nth-child(6){
         transform:scale(1);
 
         opacity:0.35
+
     }
 
     50%{
@@ -2920,6 +3051,7 @@ td:nth-child(6){
         transform:scale(1.25);
 
         opacity:1
+
     }
 
     100%{
@@ -2927,6 +3059,7 @@ td:nth-child(6){
         transform:scale(1);
 
         opacity:0.35
+
     }
 
 }
@@ -2945,6 +3078,7 @@ td:nth-child(6){
             255,
             0.06
         )
+
 }
 
 
@@ -2957,6 +3091,7 @@ td:nth-child(6){
     color:#555;
 
     padding:12px 4px
+
 }
 
 
@@ -2971,16 +3106,19 @@ td:nth-child(6){
         padding:3px;
 
         font-size:8px
+
     }
 
     h1{
 
         font-size:13px
+
     }
 
     h2{
 
         font-size:10px
+
     }
 
     .info{
@@ -2989,6 +3127,7 @@ td:nth-child(6){
 
         padding:
             4px 5px
+
     }
 
     th{
@@ -2997,32 +3136,46 @@ td:nth-child(6){
             4px 1px;
 
         font-size:5px
+
     }
 
     td{
 
         padding:
             4px 1px
+
     }
 
     .coin{
 
         padding-left:4px
+
     }
 
     .coin-name{
 
         font-size:7px
+
     }
 
     .change{
 
         font-size:6px
+
     }
 
     .vol{
 
         font-size:6px
+
+    }
+
+    .ema-cell{
+
+        padding-left:1px;
+
+        padding-right:0
+
     }
 
     .ema-row{
@@ -3032,28 +3185,33 @@ td:nth-child(6){
         line-height:14px;
 
         font-size:6px
+
     }
 
     .tf{
 
-        flex-basis:18px;
+        flex-basis:17px;
 
         font-size:5px
+
     }
 
     .close-ema10{
 
         font-size:6px
+
     }
 
     .air-direction{
 
         font-size:5px
+
     }
 
     .air-icon{
 
         font-size:10px
+
     }
 
     .air-count{
@@ -3061,6 +3219,7 @@ td:nth-child(6){
         font-size:8px;
 
         line-height:8px
+
     }
 
     .warning{
@@ -3068,6 +3227,7 @@ td:nth-child(6){
         text-align:center !important;
 
         vertical-align:middle !important
+
     }
 
 }
@@ -3080,11 +3240,13 @@ td:nth-child(6){
 .ema-long{
 
     color:#35e66d
+
 }
 
 .ema-short{
 
     color:#ff4d4d
+
 }
 
 """
@@ -3098,6 +3260,7 @@ td:nth-child(6){
     "/",
     response_class=HTMLResponse
 )
+
 def dashboard():
 
     status = f"""
@@ -3105,17 +3268,23 @@ def dashboard():
     <div class="status">
 
         <span>
+
             업비트 :
+
             <b class="y">
                 {USE_UPBIT}
             </b>
+
         </span>
 
         <span>
+
             OKX :
+
             <b class="n">
                 {USE_OKX}
             </b>
+
         </span>
 
     </div>
@@ -3178,7 +3347,6 @@ def dashboard():
     📊 매매 전술 눌림 돌파
 </h1>
 
-
 <div class="info">
 
     ① 24시간 거래대금 TOP{TOP_N}<br>
@@ -3207,9 +3375,7 @@ def dashboard():
 
 </div>
 
-
 {sections}
-
 
 </body>
 
@@ -3351,12 +3517,14 @@ def startup():
     )
 
     # 최초 업데이트
+
     threading.Thread(
         target=update_dashboard,
         daemon=True
     ).start()
 
     # 1분마다 업데이트
+
     schedule.every(
         UPDATE_MINUTES
     ).minutes.do(
