@@ -84,7 +84,6 @@ air_state = {}
 # =========================================================
 
 def kst():
-
     return datetime.now(KST).strftime(
         "%Y-%m-%d %H:%M:%S"
     )
@@ -251,11 +250,8 @@ def get_upbit_markets():
             if volume > 0:
 
                 result.append({
-
                     "market": market,
-
                     "volume_24h": volume
-
                 })
 
         latest_upbit_markets = [
@@ -987,7 +983,6 @@ def ema_display(df):
     else:
 
         icon = "⚪"
-
         count = 0
 
     return {
@@ -1069,16 +1064,6 @@ def close_vs_ema10_1h(df):
 
 # =========================================================
 # 비행기 발생 조건
-#
-# 조건:
-# 1. 1H 정배열
-# 2. 4H 정배열
-# 3. 이전 1H 종가 < 이전 EMA10
-# 4. 현재 1H 양봉
-# 5. 현재 1H 종가 > 현재 EMA10
-#
-# ※ 현재 코드는 확정된 캔들만 사용하므로
-#   현재 진행 중인 1H 캔들은 제외됨
 # =========================================================
 
 def get_air_warning(
@@ -1147,20 +1132,6 @@ def get_air_warning(
 
 # =========================================================
 # 비행기 카운터
-#
-# 변경 핵심
-#
-# 비행기 발생:
-#     1
-#
-# 이후 양봉 + EMA10 위:
-#     2 → 3 → 4 → ...
-#
-# EMA10 아래 종가:
-#     ⛔️
-#
-# 음봉 + EMA10 위:
-#     기존처럼 비행기 종료
 # =========================================================
 
 def update_air_counter(
@@ -1192,10 +1163,6 @@ def update_air_counter(
         df1h.c.iloc[-1]
     )
 
-    # =====================================================
-    # 현재 EMA10
-    # =====================================================
-
     e10 = ema(
         df1h,
         10
@@ -1214,18 +1181,14 @@ def update_air_counter(
         e10.iloc[-1]
     )
 
-
     with air_state_lock:
 
         state = air_state.get(
             market
         )
 
-
         # =================================================
-        # ① 새로운 비행기 발생
-        #
-        # ★ 비행기 발생 자체를 1로 시작
+        # 새로운 비행기 발생
         # =================================================
 
         if new_warning is not None:
@@ -1248,7 +1211,6 @@ def update_air_counter(
                     "direction":
                         new_warning,
 
-                    # ★ 최초 카운트 = 1
                     "count": 1,
 
                     "warning_candle":
@@ -1273,7 +1235,6 @@ def update_air_counter(
                     "stopped": False
 
                 }
-
 
         # =================================================
         # 기존 상태 없음
@@ -1305,9 +1266,8 @@ def update_air_counter(
 
             }
 
-
         # =================================================
-        # 같은 캔들은 중복 카운팅하지 않음
+        # 같은 캔들 중복 방지
         # =================================================
 
         if candle_time <= state.get(
@@ -1333,21 +1293,12 @@ def update_air_counter(
 
             }
 
-
-        # 새로운 확정 캔들
         state["counted_candle"] = (
             candle_time
         )
 
-
         # =================================================
-        # ② EMA10 아래 종가 마감
-        #
-        # ★ 가장 먼저 검사
-        #
-        # 종가 < EMA10
-        # → 비행기 종료
-        # → ⛔️ 표시
+        # EMA10 아래 종가
         # =================================================
 
         if current_close < current_ema10:
@@ -1375,11 +1326,8 @@ def update_air_counter(
 
             }
 
-
         # =================================================
-        # ③ EMA10 위 양봉
-        #
-        # → 카운트 +1
+        # EMA10 위 양봉
         # =================================================
 
         if (
@@ -1408,11 +1356,8 @@ def update_air_counter(
 
             }
 
-
         # =================================================
-        # ④ EMA10 위라도 음봉이면 종료
-        #
-        # 기존 로직 유지
+        # EMA10 위라도 음봉이면 종료
         # =================================================
 
         if current_close <= current_open:
@@ -1437,7 +1382,6 @@ def update_air_counter(
                 "stopped": False
 
             }
-
 
         return {
 
@@ -1695,7 +1639,6 @@ def empty_analysis():
         "air_active":
             False,
 
-        # ★ 추가
         "air_stopped":
             False,
 
@@ -1805,7 +1748,6 @@ def analyze(
         "air_active":
             air["active"],
 
-        # ★ EMA10 아래 종가 마감 여부
         "air_stopped":
             air.get(
                 "stopped",
@@ -1904,7 +1846,6 @@ def update_upbit():
                 "air_count":
                     a["air_count"],
 
-                # ★ 추가
                 "air_stopped":
                     a.get(
                         "air_stopped",
@@ -1958,7 +1899,6 @@ def update_upbit():
                 "air_count":
                     0,
 
-                # ★ 추가
                 "air_stopped":
                     False,
 
@@ -2166,7 +2106,6 @@ def update_okx(usdt):
                 "air_count":
                     a["air_count"],
 
-                # ★ 추가
                 "air_stopped":
                     a.get(
                         "air_stopped",
@@ -2220,7 +2159,6 @@ def update_okx(usdt):
                 "air_count":
                     0,
 
-                # ★ 추가
                 "air_stopped":
                     False,
 
@@ -2325,12 +2263,6 @@ def warning_html(
     air_stopped=False
 ):
 
-    # =====================================================
-    # EMA10 아래 종가 마감
-    #
-    # ★ 비행기 종료 후 ⛔️ 표시
-    # =====================================================
-
     if air_stopped:
 
         return (
@@ -2339,15 +2271,9 @@ def warning_html(
             '</div>'
         )
 
-
-    # =====================================================
-    # 비행기 없음
-    # =====================================================
-
     if not air_warning:
 
         return "-"
-
 
     direction = (
         air_direction
@@ -2361,7 +2287,6 @@ def warning_html(
         else "short"
     )
 
-
     count_html = ""
 
     if air_count > 0:
@@ -2371,7 +2296,6 @@ def warning_html(
             f'{air_count}'
             f'</div>'
         )
-
 
     return (
 
@@ -2520,7 +2444,7 @@ def rows_html(data):
             {}
         )
 
-        out += f"""
+        out += f'''
 
         <tr class="{cls}">
 
@@ -2587,17 +2511,13 @@ def rows_html(data):
                         "air_warning",
                         False
                     ),
-
                     x.get(
                         "air_direction"
                     ),
-
                     x.get(
                         "air_count",
                         0
                     ),
-
-                    # ★ 추가
                     x.get(
                         "air_stopped",
                         False
@@ -2608,7 +2528,7 @@ def rows_html(data):
 
         </tr>
 
-        """
+        '''
 
     return out
 
@@ -2627,7 +2547,7 @@ def section(
 
     if not rows:
 
-        rows = """
+        rows = '''
 
         <tr>
 
@@ -2642,9 +2562,9 @@ def section(
 
         </tr>
 
-        """
+        '''
 
-    return f"""
+    return f'''
 
     <h2>
 
@@ -2690,7 +2610,7 @@ def section(
 
     </div>
 
-    """
+    '''
 
 
 # =========================================================
@@ -2719,7 +2639,7 @@ def focus_section(
 
     if not rows:
 
-        rows = """
+        rows = '''
 
         <tr>
 
@@ -2734,9 +2654,9 @@ def focus_section(
 
         </tr>
 
-        """
+        '''
 
-    return f"""
+    return f'''
 
     <h2 class="focus-title">
 
@@ -2782,14 +2702,18 @@ def focus_section(
 
     </div>
 
-    """
+    '''
 
 
 # =========================================================
 # CSS
+#
+# ★ 중요
+# 기존 CSS = """ ... """ 대신
+# CSS = ''' ... ''' 사용
 # =========================================================
 
-CSS = """
+CSS = r'''
 
 *{
     box-sizing:border-box
@@ -3186,9 +3110,6 @@ td:nth-child(6){
 
 }
 
-
-/* 1H / 4H 고정 폭 */
-
 .tf{
 
     flex:0 0 18px;
@@ -3491,7 +3412,7 @@ td:nth-child(6){
 
 
 /* =====================================================
-   EMA10 이탈 ⛔️
+   EMA10 이탈
    ===================================================== */
 
 .air-stop{
@@ -3512,7 +3433,7 @@ td:nth-child(6){
 
     font-weight:bold;
 
-    text-align:center;
+    text-align:center
 
 }
 
@@ -3813,7 +3734,7 @@ td:nth-child(6){
 
 }
 
-"""
+'''
 
 
 # =========================================================
@@ -3827,7 +3748,7 @@ td:nth-child(6){
 
 def dashboard():
 
-    status = f"""
+    status = f'''
 
     <div class="status">
 
@@ -3853,10 +3774,9 @@ def dashboard():
 
     </div>
 
-    """
+    '''
 
     sections = ""
-
 
     # =====================================================
     # 집중 리스트
@@ -3875,7 +3795,6 @@ def dashboard():
             latest_okx_data,
             latest_okx_update_time
         )
-
 
     # =====================================================
     # TOP 리스트
@@ -3897,8 +3816,7 @@ def dashboard():
             latest_okx_update_time
         )
 
-
-    return f"""
+    return f'''
 
 <!DOCTYPE html>
 
@@ -3966,7 +3884,7 @@ def dashboard():
 
 </html>
 
-"""
+'''
 
 
 # =========================================================
@@ -4109,19 +4027,16 @@ def startup():
         "========================================"
     )
 
-
     threading.Thread(
         target=update_dashboard,
         daemon=True
     ).start()
-
 
     schedule.every(
         UPDATE_MINUTES
     ).minutes.do(
         update_dashboard
     )
-
 
     threading.Thread(
         target=scheduler,
@@ -4139,4 +4054,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-    )
+            )
