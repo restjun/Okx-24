@@ -50,7 +50,7 @@ KST = ZoneInfo("Asia/Seoul")
 
 
 # =========================================================
-# 10선 경고 설정
+# 3-10선 경고 설정
 # =========================================================
 
 MIN_EMA10_LONG_COUNT = 1
@@ -863,10 +863,10 @@ def ema_display(df):
 
 
 # =========================================================
-# 1H EMA1(종가) ↔ EMA10
+# 1H EMA3 ↔ EMA10
 # =========================================================
 
-def ema10_cross_count(df):
+def ema3_10_cross_count(df):
 
     result = {
         "state": "none",
@@ -885,16 +885,24 @@ def ema10_cross_count(df):
 
     try:
 
+        e3 = ema(
+            df,
+            3
+        )
+
         e10 = ema(
             df,
             10
         )
 
-        if e10 is None:
+        if (
+            e3 is None
+            or e10 is None
+        ):
             return result
 
-        closes = pd.to_numeric(
-            df["c"],
+        e3_values = pd.to_numeric(
+            e3,
             errors="coerce"
         ).reset_index(
             drop=True
@@ -908,7 +916,7 @@ def ema10_cross_count(df):
         )
 
         valid_last = (
-            closes.notna().iloc[-1]
+            e3_values.notna().iloc[-1]
             and e10_values.notna().iloc[-1]
         )
 
@@ -919,19 +927,19 @@ def ema10_cross_count(df):
 
         for i in range(len(df)):
 
-            close_value = float(
-                closes.iloc[i]
+            ema3_value = float(
+                e3_values.iloc[i]
             )
 
             ema10_value = float(
                 e10_values.iloc[i]
             )
 
-            if close_value > ema10_value:
+            if ema3_value > ema10_value:
 
                 states.append("long")
 
-            elif close_value < ema10_value:
+            elif ema3_value < ema10_value:
 
                 states.append("short")
 
@@ -953,6 +961,8 @@ def ema10_cross_count(df):
 
             return result
 
+        # 현재 EMA3-EMA10 상태 연속 카운트
+
         current_count = 0
         i = len(states) - 1
 
@@ -966,6 +976,8 @@ def ema10_cross_count(df):
             else:
 
                 break
+
+        # 이전 반대 방향 카운트
 
         previous_state = (
             "short"
@@ -1011,7 +1023,7 @@ def ema10_cross_count(df):
     except Exception as e:
 
         log.error(
-            f"EMA1-EMA10 교차 카운팅 오류: {e}"
+            f"EMA3-EMA10 교차 카운팅 오류: {e}"
         )
 
         return result
@@ -1025,13 +1037,11 @@ def ema10_cross_count(df):
 # 필수:
 # 1H EMA 10-30-60-120 정배열
 # 4H EMA 10-30-60-120 정배열
-# 이전 EMA10 위 종가 카운팅 >= 1
+# 이전 EMA3 > EMA10 카운팅 >= 1
+# 현재 EMA3 < EMA10
 # 현재 고가 >= EMA10
 # 현재 종가 < EMA10
 # 현재 양봉
-#
-# ★ 이 함수는 "시작 신호"만 판단
-# ★ 한번 시작된 비행기는 이후에도 유지
 # =========================================================
 
 def get_air_warning(
@@ -1057,7 +1067,7 @@ def get_air_warning(
             df4h
         )
 
-        # ★ 1H + 4H 모두 정배열 필수
+        # 1H + 4H 모두 정배열 필수
 
         if (
             direction_1h != "long"
@@ -1065,19 +1075,23 @@ def get_air_warning(
         ):
             return None
 
-        ema10_result = ema10_cross_count(
+        # -------------------------------------------------
+        # EMA3 ↔ EMA10
+        # -------------------------------------------------
+
+        ema3_10_result = ema3_10_cross_count(
             df1h
         )
 
-        # 현재 종가가 EMA10 아래
+        # 현재 EMA3가 EMA10 아래
 
-        if ema10_result["state"] != "short":
+        if ema3_10_result["state"] != "short":
             return None
 
-        # 이전 EMA10 위 종가 카운팅
+        # 이전 EMA3 > EMA10 연속 카운팅
 
         previous_long_count = int(
-            ema10_result.get(
+            ema3_10_result.get(
                 "final_count",
                 0
             )
@@ -1113,7 +1127,7 @@ def get_air_warning(
             e10.iloc[-1]
         )
 
-        # 종가 EMA10 아래
+        # 현재 종가 EMA10 아래
 
         if current_close >= current_ema10:
             return None
@@ -1142,13 +1156,11 @@ def get_air_warning(
 # =========================================================
 # ✈️ 비행기 카운터
 #
-# ★ 핵심 수정
-#
 # 돌파직전 신호가 한번 발생하면
-# 이후 get_air_warning()이 None이 되어도
-# 기존 active 상태를 유지한다.
+# 이후 get_air_warning()이 None이어도
+# 기존 active 상태 유지
 #
-# 돌파 완료(종가 > EMA10)
+# 돌파 완료
 # → 경고 유지
 #
 # 이후 양봉
@@ -1198,9 +1210,6 @@ def update_air_counter(
 
         # -------------------------------------------------
         # 새로운 돌파직전 신호
-        #
-        # 새로운 캔들에서 신호가 다시 잡히면
-        # 새로운 비행기 사이클 시작
         # -------------------------------------------------
 
         if new_warning is not None:
@@ -1243,9 +1252,6 @@ def update_air_counter(
 
         # -------------------------------------------------
         # 종료 상태
-        #
-        # 이미 종료된 상태라면
-        # ⛔️ 표시를 유지
         # -------------------------------------------------
 
         if state.get(
@@ -1266,7 +1272,7 @@ def update_air_counter(
             }
 
         # -------------------------------------------------
-        # 기존 경고가 없는 상태
+        # 기존 경고 없음
         # -------------------------------------------------
 
         if not state.get(
@@ -1288,9 +1294,6 @@ def update_air_counter(
 
         # -------------------------------------------------
         # 같은 캔들
-        #
-        # 돌파직전 캔들은 count=0
-        # 화면에는 🛩 ✈️
         # -------------------------------------------------
 
         if candle_time <= state.get(
@@ -1318,10 +1321,7 @@ def update_air_counter(
         )
 
         # -------------------------------------------------
-        # ★ 양봉이면 비행기 카운트 증가
-        #
-        # EMA10 위로 돌파했어도
-        # 절대로 여기서 종료하지 않는다.
+        # 양봉이면 비행기 카운트 증가
         # -------------------------------------------------
 
         if current_close > current_open:
@@ -1341,7 +1341,7 @@ def update_air_counter(
             }
 
         # -------------------------------------------------
-        # ★ 음봉이면 종료
+        # 음봉이면 종료
         # -------------------------------------------------
 
         state["active"] = False
@@ -1566,7 +1566,7 @@ def empty_analysis():
         "ema_1h": e.copy(),
         "ema_4h": e.copy(),
 
-        "ema10_cross_1h": {
+        "ema3_10_cross_1h": {
             "state": "none",
             "count": 0,
             "final_count": 0,
@@ -1637,7 +1637,9 @@ def analyze(
         df4
     )
 
-    ema10_cross = ema10_cross_count(
+    # ★ EMA3 ↔ EMA10
+
+    ema3_10_cross = ema3_10_cross_count(
         df1
     )
 
@@ -1651,10 +1653,7 @@ def analyze(
     )
 
     # -------------------------------------------------
-    # 비행기 상태 업데이트
-    #
-    # new_warning이 None이어도
-    # 기존 active 상태를 유지
+    # 기존 비행기 상태 업데이트
     # -------------------------------------------------
 
     air = update_air_counter(
@@ -1675,8 +1674,8 @@ def analyze(
 
         "ema_4h": e4,
 
-        "ema10_cross_1h":
-            ema10_cross,
+        "ema3_10_cross_1h":
+            ema3_10_cross,
 
         "changes":
             changes,
@@ -1753,8 +1752,8 @@ def make_row(
         "ema_4h":
             a["ema_4h"],
 
-        "ema10_cross_1h":
-            a["ema10_cross_1h"],
+        "ema3_10_cross_1h":
+            a["ema3_10_cross_1h"],
 
         "air_warning":
             a["air_warning"],
@@ -2134,9 +2133,7 @@ def warning_html(
     air_ended=False
 ):
 
-    # -----------------------------------------------------
-    # ★ 종료 상태
-    # -----------------------------------------------------
+    # 종료 상태
 
     if air_ended:
 
@@ -2148,9 +2145,7 @@ def warning_html(
             '</div>'
         )
 
-    # -----------------------------------------------------
     # 진행 중이 아니면 표시 없음
-    # -----------------------------------------------------
 
     if not air_warning:
         return "-"
@@ -2166,9 +2161,7 @@ def warning_html(
         else "short"
     )
 
-    # -----------------------------------------------------
-    # ★ 돌파직전
-    # -----------------------------------------------------
+    # 돌파직전
 
     if air_count <= 0:
 
@@ -2191,13 +2184,7 @@ def warning_html(
             '</div>'
         )
 
-    # -----------------------------------------------------
-    # ★ 돌파 후 카운팅
-    #
-    # ✈️(1)
-    # ✈️(2)
-    # ✈️(3)
-    # -----------------------------------------------------
+    # 돌파 후 카운팅
 
     return (
         '<div class="air-box">'
@@ -2254,10 +2241,10 @@ def ema_html(e):
 
 
 # =========================================================
-# 10선 표시
+# 3-10선 표시
 # =========================================================
 
-def ema10_cross_html(data):
+def ema3_10_cross_html(data):
 
     if not data:
         return "-"
@@ -2419,9 +2406,9 @@ def rows_html(data):
 
                 <td class="close-ema10">
 
-                    {ema10_cross_html(
+                    {ema3_10_cross_html(
                         x.get(
-                            "ema10_cross_1h",
+                            "ema3_10_cross_1h",
                             {}
                         )
                     )}
@@ -2487,7 +2474,7 @@ def table_html(data):
                     <th>코인</th>
                     <th>거래대금</th>
                     <th>EMA</th>
-                    <th>10선</th>
+                    <th>3-10선</th>
                     <th>경고</th>
                 </tr>
 
@@ -2567,7 +2554,7 @@ def focus_section(
                         <th>코인</th>
                         <th>거래대금</th>
                         <th>EMA</th>
-                        <th>10선</th>
+                        <th>3-10선</th>
                         <th>경고</th>
                     </tr>
 
@@ -3142,6 +3129,7 @@ line-height:12px;
 
 }
 
+
 """
 
 
@@ -3227,7 +3215,7 @@ def dashboard():
         >
 
         <title>
-            1H EMA 돌파직전 경고
+            1H EMA3-10 돌파직전 경고
         </title>
 
         <style>
@@ -3252,9 +3240,9 @@ def dashboard():
 
             ③ 4H EMA 10-30-60-120 정배열 필수<br>
 
-            ④ 1H EMA10 위 종가 연속 카운팅 → 🟢(N)<br>
+            ④ 1H EMA3 > EMA10 연속 카운팅 → 🟢(N)<br>
 
-            ⑤ 1H EMA10 아래 전환 시 이전 🟢(N)을 돌파직전 조건으로 사용<br>
+            ⑤ 1H EMA3가 EMA10 아래 전환 시 이전 🟢(N)을 돌파직전 조건으로 사용<br>
 
             ⑥ 현재 1H 고가가 EMA10 접촉/돌파<br>
 
@@ -3360,19 +3348,19 @@ def startup():
     )
 
     log.info(
-        "1H EMA1(종가) ↔ EMA10 카운팅"
+        "1H EMA3 ↔ EMA10 카운팅"
     )
 
     log.info(
-        "EMA10 위 연속 종가 = 🟢(N)"
+        "EMA3 위 EMA10 연속 = 🟢(N)"
     )
 
     log.info(
-        "EMA10 아래 전환 시 이전 🟢(N)을 돌파직전 조건으로 사용"
+        "EMA3가 EMA10 아래 전환 시 이전 🟢(N)을 돌파직전 조건으로 사용"
     )
 
     log.info(
-        f"최소 EMA10 상승 카운팅 = "
+        f"최소 EMA3-EMA10 상승 카운팅 = "
         f"{MIN_EMA10_LONG_COUNT}"
     )
 
@@ -3427,4 +3415,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-    )
+            )
