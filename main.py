@@ -2779,7 +2779,7 @@ def focus_section(
         rows = """
         <tr>
             <td colspan="6" class="empty">
-                현재 비행기 경고 진행 코인 없음
+                현재 경고 진행 코인 없음
             </td>
         </tr>
         """
@@ -2828,7 +2828,7 @@ def focus_section(
     return f"""
     <h2 class="focus-title">
 
-        🚨 비행기 경고 리스트
+        🚨 경고 리스트
 
         <small>
             {update_time} KST
