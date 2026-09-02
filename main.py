@@ -53,9 +53,8 @@ KST = ZoneInfo("Asia/Seoul")
 # 10선 경고 설정
 # =========================================================
 
-# 이전 EMA10 위 종가 카운팅이 1개 이상이면
-# 10선 상승 정배열 흐름으로 인정
 MIN_EMA10_LONG_COUNT = 1
+MIN_EMA10_SHORT_COUNT = 1
 
 
 # =========================================================
@@ -86,6 +85,7 @@ air_state = {}
 # =========================================================
 
 def kst():
+
     return datetime.now(KST).strftime(
         "%Y-%m-%d %H:%M:%S"
     )
@@ -97,9 +97,13 @@ def wait_request():
 
     with request_lock:
 
-        gap = time.monotonic() - last_request_time
+        gap = (
+            time.monotonic()
+            - last_request_time
+        )
 
         if gap < REQUEST_INTERVAL:
+
             time.sleep(
                 REQUEST_INTERVAL - gap
             )
@@ -117,7 +121,8 @@ def retry(func, *args, **kwargs):
 
     url = (
         args[0]
-        if args and isinstance(args[0], str)
+        if args
+        and isinstance(args[0], str)
         else kwargs.get("url", "")
     )
 
@@ -132,10 +137,15 @@ def retry(func, *args, **kwargs):
                 **kwargs
             )
 
-            if not hasattr(r, "status_code"):
+            if not hasattr(
+                r,
+                "status_code"
+            ):
+
                 return r
 
             if r.status_code == 200:
+
                 return r
 
             if r.status_code == 429:
@@ -469,6 +479,7 @@ def get_okx_ohlcv(
     }
 
     if before is not None:
+
         params["before"] = str(before)
 
     r = retry(
@@ -638,7 +649,9 @@ def history_upbit(
 
         to = (
             all_df.datetime.iloc[0]
-            .strftime("%Y-%m-%dT%H:%M:%S")
+            .strftime(
+                "%Y-%m-%dT%H:%M:%S"
+            )
         )
 
     return all_df
@@ -719,6 +732,16 @@ def ema(
     ).mean()
 
 
+# =========================================================
+# EMA 방향
+#
+# LONG
+# EMA10 > EMA30 > EMA60 > EMA120
+#
+# SHORT
+# EMA10 < EMA30 < EMA60 < EMA120
+# =========================================================
+
 def direction(df):
 
     if df is None or df.empty:
@@ -726,37 +749,29 @@ def direction(df):
 
     try:
 
-        e10 = ema(
-            df,
-            10
-        ).iloc[-1]
-
-        e30 = ema(
-            df,
-            30
-        ).iloc[-1]
-
-        e60 = ema(
-            df,
-            60
-        ).iloc[-1]
-
-        e120 = ema(
-            df,
-            120
-        ).iloc[-1]
+        e10 = ema(df, 10).iloc[-1]
+        e30 = ema(df, 30).iloc[-1]
+        e60 = ema(df, 60).iloc[-1]
+        e120 = ema(df, 120).iloc[-1]
 
         if e10 > e30 > e60 > e120:
+
             return "long"
 
         if e10 < e30 < e60 < e120:
+
             return "short"
 
     except Exception:
+
         pass
 
     return "none"
 
+
+# =========================================================
+# EMA 정배열/역배열 연속 카운팅
+# =========================================================
 
 def ema_alignment_count(df):
 
@@ -865,7 +880,7 @@ def ema_display(df):
 
     elif d == "short":
 
-        icon = "🔴"
+        icon = "🔻"
 
     else:
 
@@ -880,18 +895,16 @@ def ema_display(df):
 
 
 # =========================================================
-# 1H EMA1(종가) ↔ EMA10
+# 1H EMA10 종가 카운팅
 #
-# 핵심:
-# 현재 상태와 이전 방향의 최종 카운팅을 분리
+# LONG:
+# EMA10 위 종가 연속
 #
-# 예:
-# 이전 EMA10 위 4개
-# 현재 EMA10 아래 1개
+# SHORT:
+# EMA10 아래 종가 연속
 #
-# 표시:
-# (4)
-# 🔻(1)
+# 현재 방향으로 전환되었을 때
+# 이전 방향의 최종 카운트를 final_count로 보관
 # =========================================================
 
 def ema10_cross_count(df):
@@ -935,19 +948,19 @@ def ema10_cross_count(df):
             drop=True
         )
 
-        valid_last = (
-            closes.notna().iloc[-1]
-            and e10_values.notna().iloc[-1]
-        )
-
-        if not valid_last:
-            return result
-
         states = []
 
         for i in range(
             len(df)
         ):
+
+            if (
+                pd.isna(closes.iloc[i])
+                or pd.isna(e10_values.iloc[i])
+            ):
+
+                states.append("equal")
+                continue
 
             close_value = float(
                 closes.iloc[i]
@@ -1048,35 +1061,19 @@ def ema10_cross_count(df):
 
 
 # =========================================================
-# ✈️ 비행기
+# ✈️ 돌파직전 경고
 #
 # ★ 핵심 변경
 #
-# 10선 카운팅을 직접 활용
+# LONG
+# 1H = 정배열
+# 4H = 정배열
 #
-# 예:
+# SHORT
+# 1H = 역배열
+# 4H = 역배열
 #
-# 이전:
-# EMA10 위 종가
-# EMA10 위 종가
-# EMA10 위 종가
-# EMA10 위 종가
-#
-# → 🟢(4)
-#
-# 현재:
-# 고가 >= EMA10
-# 종가 < EMA10
-# 양봉
-#
-# → 🔻(1)
-# → ✈️ 돌파직전
-#
-# 즉 현재 캔들의 EMA10 아래 마감만 보는 것이 아니라
-# 직전까지 EMA10 위에서 몇 개의 종가가 연속되었는지를
-# final_count로 확인한다.
-#
-# 4H는 기존처럼 전체 EMA 10-30-60-120 정배열 유지
+# 둘 중 하나라도 방향이 다르면 경고 없음
 # =========================================================
 
 def get_air_warning(
@@ -1090,102 +1087,170 @@ def get_air_warning(
         or df4h is None
         or df4h.empty
     ):
+
         return None
 
     try:
 
-        # -------------------------------------------------
-        # 4H 전체 EMA 정배열
-        # -------------------------------------------------
-
-        if direction(df4h) != "long":
-            return None
-
-        # -------------------------------------------------
-        # 1H EMA10 종가 카운팅
-        # -------------------------------------------------
-
-        ema10_result = ema10_cross_count(
+        direction_1h = direction(
             df1h
         )
 
-        # 현재 캔들이 EMA10 아래여야 함
-        if ema10_result["state"] != "short":
-            return None
+        direction_4h = direction(
+            df4h
+        )
 
-        # -------------------------------------------------
-        # ★ 핵심
+        # =================================================
+        # ★ LONG
         #
-        # 현재 캔들 직전까지 EMA10 위 종가가
-        # 연속적으로 존재해야 함
-        #
-        # final_count = 이전 🟢(N)
-        # -------------------------------------------------
+        # 1H 정배열 + 4H 정배열 필수
+        # =================================================
 
-        previous_long_count = int(
-            ema10_result.get(
-                "final_count",
-                0
+        if (
+            direction_1h == "long"
+            and direction_4h == "long"
+        ):
+
+            ema10_result = ema10_cross_count(
+                df1h
             )
-        )
 
-        if previous_long_count < MIN_EMA10_LONG_COUNT:
-            return None
+            # 현재 종가가 EMA10 아래
+            if ema10_result["state"] != "short":
+                return None
 
-        # -------------------------------------------------
-        # EMA10
-        # -------------------------------------------------
+            previous_long_count = int(
+                ema10_result.get(
+                    "final_count",
+                    0
+                )
+            )
 
-        e10 = ema(
-            df1h,
-            10
-        )
+            if (
+                previous_long_count
+                < MIN_EMA10_LONG_COUNT
+            ):
 
-        if e10 is None or e10.empty:
-            return None
+                return None
 
-        current_open = float(
-            df1h.o.iloc[-1]
-        )
+            e10 = ema(
+                df1h,
+                10
+            )
 
-        current_high = float(
-            df1h.h.iloc[-1]
-        )
+            if e10 is None or e10.empty:
+                return None
 
-        current_close = float(
-            df1h.c.iloc[-1]
-        )
+            current_open = float(
+                df1h.o.iloc[-1]
+            )
 
-        current_ema10 = float(
-            e10.iloc[-1]
-        )
+            current_high = float(
+                df1h.h.iloc[-1]
+            )
 
-        # -------------------------------------------------
-        # 현재 종가가 EMA10 아래
-        # -------------------------------------------------
+            current_close = float(
+                df1h.c.iloc[-1]
+            )
 
-        if current_close >= current_ema10:
-            return None
+            current_ema10 = float(
+                e10.iloc[-1]
+            )
 
-        # -------------------------------------------------
-        # 현재 고가가 EMA10 접촉/돌파
-        # -------------------------------------------------
+            # 종가 EMA10 아래
+            if current_close >= current_ema10:
+                return None
 
-        if current_high < current_ema10:
-            return None
+            # 고가 EMA10 접촉/돌파
+            if current_high < current_ema10:
+                return None
 
-        # -------------------------------------------------
-        # 현재 캔들 양봉
-        # -------------------------------------------------
+            # 양봉
+            if current_close <= current_open:
+                return None
 
-        if current_close <= current_open:
-            return None
+            return "LONG_PRE_BREAKOUT"
 
-        # -------------------------------------------------
-        # 모든 조건 충족
-        # -------------------------------------------------
+        # =================================================
+        # ★ SHORT
+        #
+        # 1H 역배열 + 4H 역배열 필수
+        # =================================================
 
-        return "LONG_PRE_BREAKOUT"
+        if (
+            direction_1h == "short"
+            and direction_4h == "short"
+        ):
+
+            ema10_result = ema10_cross_count(
+                df1h
+            )
+
+            # 현재 종가가 EMA10 위
+            if ema10_result["state"] != "long":
+                return None
+
+            previous_short_count = int(
+                ema10_result.get(
+                    "final_count",
+                    0
+                )
+            )
+
+            if (
+                previous_short_count
+                < MIN_EMA10_SHORT_COUNT
+            ):
+
+                return None
+
+            e10 = ema(
+                df1h,
+                10
+            )
+
+            if e10 is None or e10.empty:
+                return None
+
+            current_open = float(
+                df1h.o.iloc[-1]
+            )
+
+            current_low = float(
+                df1h.l.iloc[-1]
+            )
+
+            current_close = float(
+                df1h.c.iloc[-1]
+            )
+
+            current_ema10 = float(
+                e10.iloc[-1]
+            )
+
+            # 종가 EMA10 위
+            if current_close <= current_ema10:
+                return None
+
+            # 저가 EMA10 접촉/돌파
+            if current_low > current_ema10:
+                return None
+
+            # 음봉
+            if current_close >= current_open:
+                return None
+
+            return "SHORT_PRE_BREAKOUT"
+
+        # =================================================
+        # ★ 1H / 4H 방향 불일치
+        #
+        # 정배열 + 역배열
+        # 역배열 + 정배열
+        # 둘 다 경고 없음
+        # =================================================
+
+        return None
 
     except Exception as e:
 
@@ -1235,9 +1300,9 @@ def update_air_counter(
             market
         )
 
-        # -------------------------------------------------
+        # =================================================
         # 새로운 돌파직전 캔들
-        # -------------------------------------------------
+        # =================================================
 
         if new_warning is not None:
 
@@ -1246,6 +1311,9 @@ def update_air_counter(
                 or state.get(
                     "warning_candle"
                 ) != candle_time
+                or state.get(
+                    "direction"
+                ) != new_warning
             ):
 
                 air_state[market] = {
@@ -1262,9 +1330,9 @@ def update_air_counter(
                     "count": 0
                 }
 
-        # -------------------------------------------------
+        # =================================================
         # 기존 경고 없음
-        # -------------------------------------------------
+        # =================================================
 
         if (
             state is None
@@ -1280,9 +1348,9 @@ def update_air_counter(
                 "count": 0
             }
 
-        # -------------------------------------------------
+        # =================================================
         # 같은 캔들
-        # -------------------------------------------------
+        # =================================================
 
         if candle_time <= state.get(
             "counted_candle"
@@ -1299,22 +1367,69 @@ def update_air_counter(
                 )
             }
 
-        # -------------------------------------------------
+        # =================================================
         # 새로운 캔들
-        # -------------------------------------------------
+        # =================================================
 
         state["counted_candle"] = (
             candle_time
         )
 
-        # -------------------------------------------------
-        # 다음 캔들이 양봉이면 카운트 증가
-        # 음봉이면 경고 종료
-        # -------------------------------------------------
+        direction_value = state.get(
+            "direction"
+        )
 
-        if current_close > current_open:
+        # =================================================
+        # LONG
+        #
+        # 이후 양봉마다 카운트
+        # 음봉이면 종료
+        # =================================================
 
-            state["count"] += 1
+        if direction_value == "LONG_PRE_BREAKOUT":
+
+            if current_close > current_open:
+
+                state["count"] += 1
+
+            else:
+
+                state["active"] = False
+
+                return {
+                    "active": False,
+                    "direction": direction_value,
+                    "count": state.get(
+                        "count",
+                        0
+                    )
+                }
+
+        # =================================================
+        # SHORT
+        #
+        # 이후 음봉마다 카운트
+        # 양봉이면 종료
+        # =================================================
+
+        elif direction_value == "SHORT_PRE_BREAKOUT":
+
+            if current_close < current_open:
+
+                state["count"] += 1
+
+            else:
+
+                state["active"] = False
+
+                return {
+                    "active": False,
+                    "direction": direction_value,
+                    "count": state.get(
+                        "count",
+                        0
+                    )
+                }
 
         else:
 
@@ -1322,9 +1437,7 @@ def update_air_counter(
 
             return {
                 "active": False,
-                "direction": state.get(
-                    "direction"
-                ),
+                "direction": direction_value,
                 "count": state.get(
                     "count",
                     0
@@ -1518,12 +1631,15 @@ def format_volume(v):
         return "-"
 
     if v >= 1e12:
+
         return f"{v / 1e12:.2f}조"
 
     if v >= 1e8:
+
         return f"{v / 1e8:.0f}억"
 
     if v >= 1e4:
+
         return f"{v / 1e4:.0f}만"
 
     return f"{v:,.0f}"
@@ -1616,12 +1732,11 @@ def analyze(
         df4
     )
 
-    # 1H EMA10 종가 카운팅
     ema10_cross = ema10_cross_count(
         df1
     )
 
-    # ★ 10선 카운팅을 활용한 돌파직전
+    # ★ 1H + 4H 정배열/역배열 필수
     new_warning = get_air_warning(
         df1,
         df4
@@ -1642,6 +1757,7 @@ def analyze(
     return {
 
         "ema_1h": e1,
+
         "ema_4h": e4,
 
         "ema10_cross_1h":
@@ -2032,12 +2148,15 @@ def update_dashboard():
                 usdt = get_usdt_krw()
 
                 if usdt:
+
                     latest_usdt_krw = usdt
 
                 else:
+
                     usdt = latest_usdt_krw
 
                 if usdt > 0:
+
                     update_okx(usdt)
 
             except Exception as e:
@@ -2073,11 +2192,15 @@ def warning_html(
         or "LONG_PRE_BREAKOUT"
     )
 
-    direction_class = (
-        "long"
-        if direction == "LONG_PRE_BREAKOUT"
-        else "short"
-    )
+    if direction == "LONG_PRE_BREAKOUT":
+
+        direction_class = "long"
+        direction_text = "직전"
+
+    else:
+
+        direction_class = "short"
+        direction_text = "직전"
 
     count_html = ""
 
@@ -2096,7 +2219,7 @@ def warning_html(
 
         '<span class="air-direction '
         f'{direction_class}">'
-        '직전'
+        f'{direction_text}'
         '</span>'
 
         '<span class="air-icon">'
@@ -2116,7 +2239,7 @@ def ema_html(e):
     if not e:
         return "⚪(0)"
 
-    direction = e.get(
+    direction_value = e.get(
         "direction",
         "none"
     )
@@ -2130,7 +2253,7 @@ def ema_html(e):
         "long": "ema-long",
         "short": "ema-short"
     }.get(
-        direction,
+        direction_value,
         "ema-none"
     )
 
@@ -3120,21 +3243,25 @@ def dashboard():
 
             ① 거래대금 TOP{TOP_N}<br>
 
-            ② 4H EMA 10-30-60-120 정배열<br>
+            ② 1H EMA 10-30-60-120 정배열/역배열 확인<br>
 
-            ③ 1H EMA10 위 종가 연속 카운팅 → 🟢(N)<br>
+            ③ 4H EMA 10-30-60-120 정배열/역배열 확인<br>
 
-            ④ 1H EMA10 아래 전환 시 이전 🟢(N)을 정배열 카운트로 활용<br>
+            ④ 1H + 4H 방향이 동일할 때만 돌파직전 조건 적용<br>
 
-            ⑤ 현재 1H 고가가 EMA10 접촉/돌파<br>
+            ⑤ 1H EMA10 위 종가 연속 카운팅 → 🟢(N)<br>
 
-            ⑥ 현재 1H 양봉 + 종가 EMA10 아래<br>
+            ⑥ 1H EMA10 아래 전환 시 이전 🟢(N)을 활용<br>
 
-            ⑦ 이전 EMA10 위 카운팅 존재 시 → 🛩 ✈️ 돌파직전<br>
+            ⑦ LONG : 1H·4H 정배열 + 고가 EMA10 접촉/돌파 + 종가 EMA10 아래 + 양봉<br>
 
-            ⑧ 이후 양봉마다 비행기 카운터 증가<br>
+            ⑧ SHORT : 1H·4H 역배열 + 저가 EMA10 접촉/돌파 + 종가 EMA10 위 + 음봉<br>
 
-            ⑨ 음봉 마감 시 경고 종료
+            ⑨ 조건 충족 → 🛩 ✈️ 돌파직전<br>
+
+            ⑩ 이후 LONG은 양봉 / SHORT는 음봉마다 카운트 증가<br>
+
+            ⑪ 반대 캔들 마감 시 경고 종료
 
             {status}
 
@@ -3203,7 +3330,7 @@ def startup():
     )
 
     log.info(
-        "1H EMA 돌파직전 경고 시스템 시작"
+        "1H + 4H EMA 돌파직전 경고 시스템 시작"
     )
 
     log.info(
@@ -3219,6 +3346,14 @@ def startup():
     )
 
     log.info(
+        "LONG = 1H 정배열 + 4H 정배열"
+    )
+
+    log.info(
+        "SHORT = 1H 역배열 + 4H 역배열"
+    )
+
+    log.info(
         "1H EMA1(종가) ↔ EMA10 카운팅"
     )
 
@@ -3227,11 +3362,17 @@ def startup():
     )
 
     log.info(
-        "EMA10 아래 전환 시 이전 🟢(N)을 돌파직전 조건으로 사용"
+        "EMA10 아래 연속 종가 = 🔻(N)"
     )
 
     log.info(
-        f"최소 EMA10 상승 카운팅 = {MIN_EMA10_LONG_COUNT}"
+        f"최소 LONG EMA10 상승 카운팅 = "
+        f"{MIN_EMA10_LONG_COUNT}"
+    )
+
+    log.info(
+        f"최소 SHORT EMA10 하락 카운팅 = "
+        f"{MIN_EMA10_SHORT_COUNT}"
     )
 
     log.info(
@@ -3239,15 +3380,11 @@ def startup():
     )
 
     log.info(
+        "1H와 4H 방향 불일치 시 비행기 경고 없음"
+    )
+
+    log.info(
         "비행기 = 돌파 완료가 아닌 돌파직전 캔들"
-    )
-
-    log.info(
-        "돌파직전 = 이전 🟢(N) 존재 + 종가<EMA10 + 고가>=EMA10 + 양봉"
-    )
-
-    log.info(
-        "15M EMA / N자 / 로켓 = 삭제"
     )
 
     log.info(
@@ -3281,4 +3418,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-    )
+            )
