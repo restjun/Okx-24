@@ -59,7 +59,6 @@ latest_data = []
 
 last_update_time = None
 
-
 # ---------------------------------------------------------
 # 비행기 상태
 #
@@ -164,9 +163,7 @@ def ema(
 def get_upbit_markets():
 
     data = safe_get(
-        "{}/v1/ticker/all".format(
-            UPBIT_URL
-        ),
+        f"{UPBIT_URL}/v1/ticker/all",
         params={
             "quote_currencies": "KRW"
         }
@@ -247,10 +244,7 @@ def get_upbit_candle(
 ):
 
     data = safe_get(
-        "{}/v1/candles/minutes/{}".format(
-            UPBIT_URL,
-            unit
-        ),
+        f"{UPBIT_URL}/v1/candles/minutes/{unit}",
         params={
             "market": market,
             "count": count
@@ -278,7 +272,6 @@ def get_upbit_candle(
                 ]
             )
 
-            # 현재 진행 중인 캔들 제거
             if dt >= now:
                 continue
 
@@ -336,9 +329,7 @@ def get_upbit_candle(
     if not rows:
         return pd.DataFrame()
 
-    df = pd.DataFrame(
-        rows
-    )
+    df = pd.DataFrame(rows)
 
     df = df.sort_values(
         "datetime"
@@ -392,10 +383,7 @@ def history_upbit(
             params["to"] = to_time
 
         data = safe_get(
-            "{}/v1/candles/minutes/{}".format(
-                UPBIT_URL,
-                unit
-            ),
+            f"{UPBIT_URL}/v1/candles/minutes/{unit}",
             params=params
         )
 
@@ -472,9 +460,7 @@ def history_upbit(
             rows
         )
 
-        frames.append(
-            df
-        )
+        frames.append(df)
 
         oldest = df[
             "datetime"
@@ -715,9 +701,11 @@ def ema10_cross_count(df):
     if current == "equal":
 
         if len(states) >= 2:
+
             current = states[-2]
 
         else:
+
             current = "equal"
 
     current_count = 0
@@ -786,14 +774,10 @@ def ema10_cross_count(df):
 # ★ 비행기 기본 방향
 #
 # LONG:
-# 1H EMA10 > EMA30 > EMA60 > EMA120
-# AND
-# 4H EMA10 > EMA30 > EMA60 > EMA120
+# 1H 정배열 + 4H 정배열
 #
 # SHORT:
-# 1H EMA10 < EMA30 < EMA60 < EMA120
-# AND
-# 4H EMA10 < EMA30 < EMA60 < EMA120
+# 1H 역배열 + 4H 역배열
 # =========================================================
 
 def get_base_plane_direction(
@@ -831,46 +815,17 @@ def get_base_plane_direction(
 # =========================================================
 # ★ 비행기 상태
 #
-# [LONG]
+# LONG
+# 현재가격 > EMA10
+# 골든크로스 확정 → (1)
+# 종가 EMA10 위 → +1
+# 종가 EMA10 아래 → ⛔️
 #
-# 기본조건:
-# 1H + 4H 정배열
-#
-# 현재가 > 확정 1H EMA10
-# → ✈️ 사전경고
-#
-# 확정봉:
-# 이전 종가 <= 이전 EMA10
-# 현재 종가 > 현재 EMA10
-# → ✈️(1)
-#
-# 이후:
-# 종가 > EMA10
-# → 카운트 +1
-#
-# 종가 < EMA10
-# → ⛔️
-#
-#
-# [SHORT]
-#
-# 기본조건:
-# 1H + 4H 역배열
-#
-# 현재가 < 확정 1H EMA10
-# → ✈️ 사전경고
-#
-# 확정봉:
-# 이전 종가 >= 이전 EMA10
-# 현재 종가 < 현재 EMA10
-# → ✈️(1)
-#
-# 이후:
-# 종가 < EMA10
-# → 카운트 +1
-#
-# 종가 > EMA10
-# → ⛔️
+# SHORT
+# 현재가격 < EMA10
+# 데드크로스 확정 → (1)
+# 종가 EMA10 아래 → +1
+# 종가 EMA10 위 → ⛔️
 # =========================================================
 
 def get_plane_state(
@@ -912,7 +867,7 @@ def get_plane_state(
         }
 
     # -----------------------------------------------------
-    # EMA 계산
+    # EMA
     # -----------------------------------------------------
 
     df1 = df1h.copy()
@@ -939,7 +894,7 @@ def get_plane_state(
     )
 
     # -----------------------------------------------------
-    # 마지막 확정 1H 봉
+    # 현재 1H 확정봉
     # -----------------------------------------------------
 
     last = df1.iloc[-1]
@@ -967,7 +922,7 @@ def get_plane_state(
     )
 
     # -----------------------------------------------------
-    # 기존 상태
+    # 상태 가져오기
     # -----------------------------------------------------
 
     state = air_state.get(
@@ -983,7 +938,7 @@ def get_plane_state(
     )
 
     # -----------------------------------------------------
-    # 새로운 확정 1H 봉인지 확인
+    # 현재 확정봉이 새로 생겼는지
     # -----------------------------------------------------
 
     is_new_candle = (
@@ -993,14 +948,14 @@ def get_plane_state(
     )
 
     # =====================================================
-    # 새로운 확정봉 처리
+    # 새로운 확정 1H 봉
     # =====================================================
 
     if is_new_candle:
 
-        # =================================================
-        # 이미 비행기 카운팅 중
-        # =================================================
+        # -------------------------------------------------
+        # 기존 카운팅 중
+        # -------------------------------------------------
 
         if state["active"]:
 
@@ -1008,10 +963,7 @@ def get_plane_state(
                 "direction"
             ]
 
-            # ---------------------------------------------
-            # 기본 1H + 4H 방향이 깨진 경우
-            # ---------------------------------------------
-
+            # 기본 1H + 4H 방향이 깨졌으면 종료
             if (
                 base_direction
                 !=
@@ -1036,7 +988,6 @@ def get_plane_state(
 
             elif active_direction == "long":
 
-                # 반대 종가
                 if last_close < last_ema10:
 
                     state["active"] = False
@@ -1046,31 +997,14 @@ def get_plane_state(
                     )
 
                     logging.info(
-                        "%s | LONG EMA10 아래 마감 → ⛔️ | 최종 %s",
+                        "%s | LONG 데드 → ⛔️ | 최종 %s",
                         market,
                         state["count"]
                     )
 
-                # 같은 방향 종가
-                elif last_close > last_ema10:
-
-                    state["count"] += 1
-
-                    logging.info(
-                        "%s | LONG 지속 → ✈️(%s)",
-                        market,
-                        state["count"]
-                    )
-
-                # EMA10과 동일한 경우
-                # 카운트 변화 없음
                 else:
 
-                    logging.info(
-                        "%s | LONG EMA10 동일값 → 카운트 유지 %s",
-                        market,
-                        state["count"]
-                    )
+                    state["count"] += 1
 
             # ---------------------------------------------
             # SHORT
@@ -1078,7 +1012,6 @@ def get_plane_state(
 
             elif active_direction == "short":
 
-                # 반대 종가
                 if last_close > last_ema10:
 
                     state["active"] = False
@@ -1088,34 +1021,18 @@ def get_plane_state(
                     )
 
                     logging.info(
-                        "%s | SHORT EMA10 위 마감 → ⛔️ | 최종 %s",
+                        "%s | SHORT 골든 → ⛔️ | 최종 %s",
                         market,
                         state["count"]
                     )
 
-                # 같은 방향 종가
-                elif last_close < last_ema10:
+                else:
 
                     state["count"] += 1
 
-                    logging.info(
-                        "%s | SHORT 지속 → ✈️(%s)",
-                        market,
-                        state["count"]
-                    )
-
-                # EMA10과 동일한 경우
-                else:
-
-                    logging.info(
-                        "%s | SHORT EMA10 동일값 → 카운트 유지 %s",
-                        market,
-                        state["count"]
-                    )
-
-        # =================================================
+        # -------------------------------------------------
         # 아직 카운팅 전
-        # =================================================
+        # -------------------------------------------------
 
         else:
 
@@ -1148,7 +1065,7 @@ def get_plane_state(
                     state["ended_candle"] = None
 
                     logging.info(
-                        "%s | LONG 골든크로스 확정 → ✈️(1)",
+                        "%s | LONG 골든크로스 → ✈️(1)",
                         market
                     )
 
@@ -1181,26 +1098,22 @@ def get_plane_state(
                     state["ended_candle"] = None
 
                     logging.info(
-                        "%s | SHORT 데드크로스 확정 → ✈️(1)",
+                        "%s | SHORT 데드크로스 → ✈️(1)",
                         market
                     )
-
-        # -------------------------------------------------
-        # 마지막 처리 캔들 기록
-        # -------------------------------------------------
 
         state["last_candle"] = (
             last_time
         )
 
-    # -----------------------------------------------------
+    # =====================================================
     # 상태 저장
-    # -----------------------------------------------------
+    # =====================================================
 
     air_state[market] = state
 
     # =====================================================
-    # 현재 카운팅 중
+    # 카운팅 중
     # =====================================================
 
     if state["active"]:
@@ -1227,7 +1140,7 @@ def get_plane_state(
         }
 
     # =====================================================
-    # 종료 직후
+    # 종료 직후 ⛔️
     # =====================================================
 
     if (
@@ -1261,13 +1174,13 @@ def get_plane_state(
         }
 
     # =====================================================
-    # 확정 교차 전 사전경고
+    # 골든/데드 확정 전 현재가격 경고
     #
     # LONG:
-    # 현재가 > 마지막 확정 1H EMA10
+    # 현재가격 > EMA10
     #
     # SHORT:
-    # 현재가 < 마지막 확정 1H EMA10
+    # 현재가격 < EMA10
     # =====================================================
 
     if base_direction == "long":
@@ -1333,7 +1246,7 @@ def get_plane_state(
             }
 
     # =====================================================
-    # 아무 상태 없음
+    # 아무것도 없음
     # =====================================================
 
     return {
@@ -1392,13 +1305,13 @@ def warning_html(row):
 
     if status == "COUNTING":
 
-        return """
+        return f"""
         <div class="warning counting">
-            ✈️<span class="air-count">({})</span>
+            ✈️<span class="air-count">
+                ({count})
+            </span>
         </div>
-        """.format(
-            count
-        )
+        """
 
     # -----------------------------------------------------
     # 사전 경고
@@ -1443,22 +1356,19 @@ def ema10_html(info):
 
     if state == "long":
 
-        return """
+        return f"""
         <div class="ema10-wrap">
 
             <div class="ema10-up">
-                🟢({})
+                🟢({count})
             </div>
 
             <div class="ema10-prev">
-                ({})
+                ({previous})
             </div>
 
         </div>
-        """.format(
-            count,
-            previous
-        )
+        """
 
     # -----------------------------------------------------
     # 하락
@@ -1466,22 +1376,19 @@ def ema10_html(info):
 
     if state == "short":
 
-        return """
+        return f"""
         <div class="ema10-wrap">
 
             <div class="ema10-down">
-                🔻({})
+                🔻({count})
             </div>
 
             <div class="ema10-prev">
-                ({})
+                ({previous})
             </div>
 
         </div>
-        """.format(
-            count,
-            previous
-        )
+        """
 
     return "-"
 
@@ -1518,24 +1425,17 @@ def ema_direction_html(
 
         if direction_value == "long":
 
-            return "🟢({})".format(
-                count
-            )
+            return f"🟢({count})"
 
         if direction_value == "short":
 
-            return "🔻({})".format(
-                count
-            )
+            return f"🔻({count})"
 
         return "-"
 
     return (
-        "<div>1H {}</div>"
-        "<div>4H {}</div>"
-    ).format(
-        one(d1, c1),
-        one(d4, c4)
+        f"<div>1H {one(d1, c1)}</div>"
+        f"<div>4H {one(d4, c4)}</div>"
     )
 
 
@@ -1595,7 +1495,7 @@ def analyze(
         )
 
         # -------------------------------------------------
-        # ★ 비행기
+        # 비행기
         # -------------------------------------------------
 
         plane = get_plane_state(
@@ -1658,6 +1558,7 @@ def analyze(
                     "previous_count"
                 ],
 
+            # 비행기
             "air_warning":
                 plane[
                     "air_warning"
@@ -1830,30 +1731,25 @@ def format_volume(
         if value >= 100_000_000_000:
 
             return (
-                "{:.1f}천억"
-            ).format(
-                value / 100_000_000_000
+                f"{value / 100_000_000_000:.1f}"
+                "천억"
             )
 
         if value >= 100_000_000:
 
             return (
-                "{:.1f}억"
-            ).format(
-                value / 100_000_000
+                f"{value / 100_000_000:.1f}"
+                "억"
             )
 
         if value >= 10_000:
 
             return (
-                "{:.1f}만"
-            ).format(
-                value / 10_000
+                f"{value / 10_000:.1f}"
+                "만"
             )
 
-        return "{:,.0f}".format(
-            value
-        )
+        return f"{value:,.0f}"
 
     except Exception:
 
@@ -1879,19 +1775,13 @@ def format_price(
 
         if value >= 1000:
 
-            return "{:,.0f}".format(
-                value
-            )
+            return f"{value:,.0f}"
 
         if value >= 1:
 
-            return "{:,.2f}".format(
-                value
-            )
+            return f"{value:,.2f}"
 
-        return "{:.6f}".format(
-            value
-        )
+        return f"{value:.6f}"
 
     except Exception:
 
@@ -1933,15 +1823,16 @@ def make_row(
 
         change_class = ""
 
-    return """
+    return f"""
+
 <tr>
 
 <td>
-{rank}
+{row.get("rank", "-")}
 </td>
 
 <td class="coin">
-{coin}
+{row.get("coin", "-")}
 </td>
 
 <td class="{change_class}">
@@ -1949,70 +1840,36 @@ def make_row(
 </td>
 
 <td>
-{volume}
+{format_volume(
+    row.get(
+        "volume_24h",
+        0
+    )
+)}
 </td>
 
 <td class="ema-direction">
-{ema_direction}
+{row.get(
+    "ema_direction",
+    "-"
+)}
 </td>
 
 <td>
-{ema10}
+{ema10_html(row)}
 </td>
 
 <td>
-{warning}
+{warning_html(row)}
 </td>
 
 </tr>
-""".format(
 
-        rank=row.get(
-            "rank",
-            "-"
-        ),
-
-        coin=row.get(
-            "coin",
-            "-"
-        ),
-
-        change_class=change_class,
-
-        change=change,
-
-        volume=format_volume(
-            row.get(
-                "volume_24h",
-                0
-            )
-        ),
-
-        ema_direction=row.get(
-            "ema_direction",
-            "-"
-        ),
-
-        ema10=ema10_html(
-            row
-        ),
-
-        warning=warning_html(
-            row
-        )
-    )
+"""
 
 
 # =========================================================
 # HTML
-#
-# 중요:
-# HTML 전체에 .format()을 사용하지 않습니다.
-#
-# CSS의 { } 때문에 KeyError가 발생했던 문제를
-# 완전히 제거합니다.
-#
-# rows만 __ROWS__로 replace합니다.
 # =========================================================
 
 HTML = """
@@ -2273,7 +2130,6 @@ td {
     100% {
         transform: scale(1);
     }
-
 }
 
 .footer {
@@ -2316,25 +2172,21 @@ setTimeout(
 1H + 4H 같은 방향 정배열/역배열<br>
 
 ② LONG =
-1H EMA10 > EMA30 > EMA60 > EMA120
-+
-4H EMA10 > EMA30 > EMA60 > EMA120<br>
+1H 정배열 + 4H 정배열<br>
 
 ③ SHORT =
-1H EMA10 < EMA30 < EMA60 < EMA120
-+
-4H EMA10 < EMA30 < EMA60 < EMA120<br>
+1H 역배열 + 4H 역배열<br>
 
-④ 기본조건 + 현재가격이 확정 1H EMA10 위/아래
+④ 기본조건 + 현재가격이 1H EMA10 위/아래
 → ✈️ 사전경고<br>
 
-⑤ 확정 1H 종가가 EMA10 교차
+⑤ 종가 EMA10 교차 확정
 → ✈️(1)부터 카운팅<br>
 
 ⑥ 이후 같은 방향 종가 유지
 → ✈️(2), ✈️(3)...<br>
 
-⑦ 반대 종가 또는 기본방향 종료
+⑦ 반대 종가 교차 또는 기본방향 종료
 → ⛔️
 
 </div>
@@ -2383,7 +2235,7 @@ EMA 정배열
 
 <tbody>
 
-__ROWS__
+{rows}
 
 </tbody>
 
@@ -2406,8 +2258,6 @@ __ROWS__
 현재가격 사전경고는 마지막 확정 1시간봉 EMA10을 기준으로 합니다.<br>
 
 종가 교차가 확정된 봉부터 ✈️(1)로 시작합니다.<br>
-
-이후 같은 방향 종가마다 카운트가 1씩 증가합니다.<br>
 
 종가가 반대쪽으로 마감되면 ⛔️로 종료합니다.
 
@@ -2462,26 +2312,16 @@ def home():
         """
 
     # =====================================================
-    # ★ 핵심 수정
+    # 중요
     #
-    # 기존:
+    # HTML.format()을 사용하지 않음.
     #
-    # html = HTML.format(
-    #     rows=html_rows
-    # )
-    #
-    # CSS의 { }가 format()에 의해 해석되어
-    #
-    # KeyError: '\\n    box-sizing'
-    #
-    # 발생.
-    #
-    # 이제 CSS 전체를 format()하지 않고
-    # rows 자리만 replace.
+    # CSS/JS 안의 { }까지 format()이 해석하면서
+    # KeyError가 발생하는 문제를 방지.
     # =====================================================
 
     html = HTML.replace(
-        "__ROWS__",
+        "{rows}",
         html_rows
     )
 
@@ -2494,22 +2334,19 @@ def home():
         )
 
         html = html.replace(
-            '<div class="title">',
-            """
+            "<div class=\"title\">",
+            f"""
             <div style="
                 color:#777;
                 font-size:11px;
                 margin-bottom:5px;
             ">
             업데이트:
-            {}
+            {update_text}
             </div>
 
             <div class="title">
-            """.format(
-                update_text
-            ),
-            1
+            """
         )
 
     return HTMLResponse(
@@ -2576,27 +2413,19 @@ if __name__ == "__main__":
     )
 
     logging.info(
-        "Python 3.9 호환 모드"
+        "LONG 기본조건 = 1H 정배열 + 4H 정배열"
     )
 
     logging.info(
-        "HTML.format() 사용 안 함"
+        "SHORT 기본조건 = 1H 역배열 + 4H 역배열"
     )
 
     logging.info(
-        "LONG = 1H 정배열 + 4H 정배열"
+        "현재가격 EMA10 상회/하회 → ✈️"
     )
 
     logging.info(
-        "SHORT = 1H 역배열 + 4H 역배열"
-    )
-
-    logging.info(
-        "현재가격 EMA10 상회/하회 → ✈️ 사전경고"
-    )
-
-    logging.info(
-        "확정 종가 교차 → ✈️(1)"
+        "종가 교차 확정 → ✈️(1)"
     )
 
     logging.info(
@@ -2604,7 +2433,7 @@ if __name__ == "__main__":
     )
 
     logging.info(
-        "반대 종가 → ⛔️"
+        "반대 종가 교차 → ⛔️"
     )
 
     logging.info(
