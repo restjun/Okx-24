@@ -67,6 +67,7 @@ air_state_lock = threading.Lock()
 
 last_request_time = 0
 
+# 비행기 상태
 air_state = {}
 
 
@@ -84,6 +85,14 @@ def empty_air():
         "direction": None,
         "count": 0,
         "stopped": False
+    }
+
+
+def empty_ema():
+    return {
+        "display": "⚪(0)",
+        "direction": "none",
+        "count": 0
     }
 
 
@@ -111,7 +120,6 @@ def retry(func, *args, **kwargs):
     for n in range(MAX_RETRIES):
         try:
             wait_request()
-
             r = func(*args, **kwargs)
 
             if not hasattr(r, "status_code"):
@@ -246,18 +254,18 @@ def get_okx_ohlcv(inst, bar="1H", limit=200, before=None):
             ]
         )
 
-        for col in [
+        numeric_cols = [
             "ts", "o", "h", "l", "c",
             "vol", "volCcy", "volCcyQuote"
-        ]:
+        ]
+
+        for col in numeric_cols:
             df[col] = pd.to_numeric(
                 df[col],
                 errors="coerce"
             )
 
-        df = df[
-            df.confirm.astype(str) == "1"
-        ]
+        df = df[df.confirm.astype(str) == "1"]
 
         if df.empty:
             return None
@@ -409,24 +417,18 @@ def get_upbit_candle(
 
 def get_upbit_1h(market, count=200, to=None):
     return get_upbit_candle(
-        market,
-        60,
-        count,
-        to
+        market, 60, count, to
     )
 
 
 def get_upbit_4h(market, count=200, to=None):
     return get_upbit_candle(
-        market,
-        240,
-        count,
-        to
+        market, 240, count, to
     )
 
 
 # =========================================================
-# History
+# History 공통
 # =========================================================
 
 def history_okx(inst, bar, required=125):
@@ -543,15 +545,12 @@ def ema_values(df):
     if df is None or df.empty:
         return None
 
-    try:
-        return {
-            10: ema(df, 10),
-            30: ema(df, 30),
-            60: ema(df, 60),
-            120: ema(df, 120)
-        }
-    except:
-        return None
+    return {
+        10: ema(df, 10),
+        30: ema(df, 30),
+        60: ema(df, 60),
+        120: ema(df, 120)
+    }
 
 
 # =========================================================
@@ -600,6 +599,7 @@ def ema_alignment_count(df):
         count = 0
 
         for i in range(len(df) - 1, -1, -1):
+
             a = float(e[10].iloc[i])
             b = float(e[30].iloc[i])
             c = float(e[60].iloc[i])
@@ -653,29 +653,35 @@ def ema_display(df):
         "short": "🔴"
     }.get(d, "⚪")
 
-    if d == "none":
-        count = 0
-
     return {
-        "display": f"{icon}({count})",
+        "display": f"{icon}({count if d != 'none' else 0})",
         "direction": d,
-        "count": count
+        "count": count if d != "none" else 0
     }
 
 
 # =========================================================
 # ★ 10선 종가 카운팅
 #
-# 아래 = ▼(연속 하락 종가 수)
-# 위로 전환 = ▲
-# 다시 아래 = ▼(1)부터 시작
+# 아래:
+#   🔻(1) → 🔻(2) → 🔻(3) ...
+#
+# 위:
+#   🟢▲
+#
+# 위로 전환했다고 이전 하락 상태를
+# 내부적으로 강제 삭제하지 않는다.
+#
+# 다시 아래 종가가 발생하면
+# 새로운 하락 구간으로 보고 🔻(1)부터 시작.
 # =========================================================
 
 def close_vs_ema10_1h(df):
     if df is None or df.empty:
         return {
             "position": "none",
-            "display": "-"
+            "display": "-",
+            "count": 0
         }
 
     try:
@@ -684,7 +690,8 @@ def close_vs_ema10_1h(df):
         if e10 is None or e10.empty:
             return {
                 "position": "none",
-                "display": "-"
+                "display": "-",
+                "count": 0
             }
 
         closes = pd.to_numeric(
@@ -697,29 +704,21 @@ def close_vs_ema10_1h(df):
             errors="coerce"
         ).reset_index(drop=True)
 
-        if len(closes) == 0:
-            return {
-                "position": "none",
-                "display": "-"
-            }
-
         close = float(closes.iloc[-1])
         current_ema10 = float(emas.iloc[-1])
 
         # -------------------------------------------------
-        # EMA10 위
+        # 10선 위 종가
         # -------------------------------------------------
         if close > current_ema10:
             return {
                 "position": "above",
-                "display": "▲"
+                "display": "▲",
+                "count": 0
             }
 
         # -------------------------------------------------
-        # EMA10 아래
-        #
-        # 현재 봉부터 과거 방향으로 내려가면서
-        # EMA10 아래 종가가 몇 개 연속인지 계산
+        # 10선 아래 종가
         # -------------------------------------------------
         if close < current_ema10:
 
@@ -743,12 +742,14 @@ def close_vs_ema10_1h(df):
 
             return {
                 "position": "below",
-                "display": f"▼({count})"
+                "display": f"▼({count})",
+                "count": count
             }
 
         return {
             "position": "equal",
-            "display": "＝"
+            "display": "＝",
+            "count": 0
         }
 
     except Exception as e:
@@ -756,12 +757,13 @@ def close_vs_ema10_1h(df):
 
         return {
             "position": "none",
-            "display": "-"
+            "display": "-",
+            "count": 0
         }
 
 
 # =========================================================
-# 비행기 발생 조건
+# 비행기 최초 발생 조건
 # =========================================================
 
 def get_air_warning(df1h, df4h):
@@ -774,6 +776,7 @@ def get_air_warning(df1h, df4h):
     ):
         return None
 
+    # 1H + 4H 모두 정배열
     if direction(df1h) != "long":
         return None
 
@@ -790,6 +793,9 @@ def get_air_warning(df1h, df4h):
         current_close = float(df1h.c.iloc[-1])
         current_ema10 = float(e10.iloc[-1])
 
+        # 이전 종가가 10선 아래
+        # 현재 양봉
+        # 현재 종가가 10선 위
         if (
             prev_close < prev_ema10
             and current_close > current_open
@@ -806,13 +812,20 @@ def get_air_warning(df1h, df4h):
 # =========================================================
 # ★ 비행기 카운터
 #
-# 최초 발생       = 1
-# 다음 새 1H 양봉 = +1
-# 다음 새 1H 양봉 = +1
-# EMA10 아래      = 종료
+# 최초 조건:
+#   🛩️1
 #
-# new_warning은 최초 발생 때만 사용
-# 이후 카운팅은 new_warning과 무관
+# 이후 새로운 1H 캔들:
+#   양봉 + EMA10 위 종가
+#   → 🛩️2
+#   → 🛩️3
+#   → 🛩️4 ...
+#
+# 중요:
+# 최초 발생 이후에는 get_air_warning()이
+# 다시 발생하지 않아도 계속 카운트한다.
+#
+# 같은 1H 캔들은 candle_time으로 중복 방지.
 # =========================================================
 
 def update_air_counter(
@@ -860,17 +873,24 @@ def update_air_counter(
 
         if new_warning == "LONG":
 
+            # 같은 캔들에서 반복 발생하는 것을 방지
             if (
                 state is None
                 or state.get("warning_candle") != candle_time
                 or state.get("stopped", False)
             ):
+
                 state = {
                     "active": True,
                     "direction": "LONG",
                     "count": 1,
+
+                    # 최초 발생 캔들
                     "warning_candle": candle_time,
+
+                    # 이 캔들은 이미 1로 계산했음
                     "counted_candle": candle_time,
+
                     "stopped": False
                 }
 
@@ -884,7 +904,7 @@ def update_air_counter(
                 }
 
         # =================================================
-        # ② 기존 비행기 없음
+        # ② 기존 비행기가 없는 경우
         # =================================================
 
         if (
@@ -895,10 +915,10 @@ def update_air_counter(
                 "active": False,
                 "direction": None,
                 "count": 0,
-                "stopped": state.get(
-                    "stopped",
-                    False
-                ) if state else False
+                "stopped": (
+                    state.get("stopped", False)
+                    if state else False
+                )
             }
 
         # =================================================
@@ -925,10 +945,11 @@ def update_air_counter(
         state["counted_candle"] = candle_time
 
         # =================================================
-        # ④ EMA10 아래 종가
+        # ④ 10선 아래 종가
         # =================================================
 
         if current_close < current_ema10:
+
             state["active"] = False
             state["stopped"] = True
 
@@ -946,15 +967,17 @@ def update_air_counter(
             }
 
         # =================================================
-        # ⑤ EMA10 위 양봉
+        # ⑤ 새로운 양봉 + 10선 위 종가
         #
-        # ★ new_warning이 없어도 계속 카운트
+        # ★ 핵심:
+        # new_warning이 없어도 카운트 증가
         # =================================================
 
         if (
             current_close > current_open
             and current_close > current_ema10
         ):
+
             state["count"] = (
                 state.get("count", 1) + 1
             )
@@ -973,10 +996,11 @@ def update_air_counter(
             }
 
         # =================================================
-        # ⑥ EMA10 위 음봉이면 기존 동작대로 종료
+        # ⑥ 10선 위라도 음봉이면 종료
         # =================================================
 
         if current_close <= current_open:
+
             state["active"] = False
 
             return {
@@ -1163,39 +1187,55 @@ def format_volume(v):
 # =========================================================
 
 def empty_analysis():
-    e = {
-        "display": "⚪(0)",
-        "direction": "none",
-        "count": 0
-    }
-
     return {
-        "ema_1h": e.copy(),
-        "ema_4h": e.copy(),
+        "ema_1h": empty_ema(),
+        "ema_4h": empty_ema(),
+
         "close_ema10_1h": {
             "position": "none",
-            "display": "-"
+            "display": "-",
+            "count": 0
         },
+
         "changes": None,
+
         "air_warning": False,
         "air_direction": None,
         "air_count": 0,
         "air_active": False,
         "air_stopped": False,
+
         "qualified": False,
+
         "direction_1h": "none",
         "direction_4h": "none",
+
         "df1h": None
     }
 
 
 def analyze(market, okx=False):
+
     if okx:
-        df1 = history_okx(market, "1H")
-        df4 = history_okx(market, "4H")
+        df1 = history_okx(
+            market,
+            "1H"
+        )
+
+        df4 = history_okx(
+            market,
+            "4H"
+        )
+
     else:
-        df1 = history_upbit(market, 60)
-        df4 = history_upbit_4h(market)
+        df1 = history_upbit(
+            market,
+            60
+        )
+
+        df4 = history_upbit_4h(
+            market
+        )
 
     if (
         df1 is None
@@ -1208,13 +1248,16 @@ def analyze(market, okx=False):
     e1 = ema_display(df1)
     e4 = ema_display(df4)
 
+    # ★ 10선 위치 + 하락 연속 카운트
     close_ema10 = close_vs_ema10_1h(df1)
 
+    # 최초 비행기 발생 여부
     new_warning = get_air_warning(
         df1,
         df4
     )
 
+    # 비행기 상태 업데이트
     air = update_air_counter(
         market,
         df1,
@@ -1230,22 +1273,28 @@ def analyze(market, okx=False):
     return {
         "ema_1h": e1,
         "ema_4h": e4,
+
         "close_ema10_1h": close_ema10,
+
         "changes": changes,
+
         "air_warning": air["active"],
         "air_direction": air["direction"],
         "air_count": air["count"],
         "air_active": air["active"],
         "air_stopped": air["stopped"],
+
         "qualified": air["active"],
+
         "direction_1h": e1["direction"],
         "direction_4h": e4["direction"],
+
         "df1h": df1
     }
 
 
 # =========================================================
-# 행 데이터 생성 공통
+# 행 데이터 공통
 # =========================================================
 
 def make_row(
@@ -1259,16 +1308,33 @@ def make_row(
     return {
         "rank": rank,
         "name": name,
-        "change": format_change(a["changes"]),
-        "volume": format_volume(volume),
+        "change": format_change(
+            a["changes"]
+        ),
+        "volume": format_volume(
+            volume
+        ),
         "ema_1h": a["ema_1h"],
         "ema_4h": a["ema_4h"],
-        "close_ema10_1h": a["close_ema10_1h"],
-        "air_warning": a["air_warning"],
-        "air_direction": a["air_direction"],
-        "air_count": a["air_count"],
-        "air_stopped": a.get("air_stopped", False),
-        "qualified": a["qualified"]
+        "close_ema10_1h": a[
+            "close_ema10_1h"
+        ],
+        "air_warning": a[
+            "air_warning"
+        ],
+        "air_direction": a[
+            "air_direction"
+        ],
+        "air_count": a[
+            "air_count"
+        ],
+        "air_stopped": a.get(
+            "air_stopped",
+            False
+        ),
+        "qualified": a[
+            "qualified"
+        ]
     }
 
 
@@ -1297,8 +1363,12 @@ def update_upbit():
         markets[:TOP_N],
         1
     ):
+
         market = item["market"]
-        coin = market.replace("KRW-", "")
+        coin = market.replace(
+            "KRW-",
+            ""
+        )
 
         try:
             a = analyze(market)
@@ -1353,7 +1423,10 @@ def get_okx_symbols():
     try:
         return [
             x["instId"]
-            for x in r.json().get("data", [])
+            for x in r.json().get(
+                "data",
+                []
+            )
             if x.get(
                 "instId",
                 ""
@@ -1406,13 +1479,17 @@ def update_okx(usdt):
         return False
 
     upbit_set = {
-        x.replace("KRW-", "")
+        x.replace(
+            "KRW-",
+            ""
+        )
         for x in latest_upbit_markets
     }
 
     volumes = {}
 
     for symbol in symbols:
+
         v = get_okx_volume(
             symbol,
             usdt
@@ -1433,6 +1510,7 @@ def update_okx(usdt):
         top,
         1
     ):
+
         coin = symbol.replace(
             "-USDT-SWAP",
             ""
@@ -1504,15 +1582,24 @@ def update_dashboard():
             f"========== 전체 조회 {kst()} =========="
         )
 
+        # -------------------------------
+        # Upbit
+        # -------------------------------
+
         if USE_UPBIT == "Y":
             try:
                 update_upbit()
+
             except Exception as e:
                 log.exception(
                     f"업비트 업데이트 오류: {e}"
                 )
         else:
             latest_upbit_data = []
+
+        # -------------------------------
+        # OKX
+        # -------------------------------
 
         if USE_OKX == "Y":
             try:
@@ -1564,7 +1651,7 @@ def warning_html(
     return (
         '<div class="air-box">'
         '<div class="air-main">'
-        f'<span class="air-direction long">'
+        '<span class="air-direction long">'
         f'{direction}</span>'
         '<span class="air-icon">🛩 ✈️</span>'
         '</div>'
@@ -1591,7 +1678,10 @@ def ema_html(e):
         "long": "ema-long",
         "short": "ema-short",
         "none": "ema-none"
-    }.get(direction, "ema-none")
+    }.get(
+        direction,
+        "ema-none"
+    )
 
     return (
         f'<span class="ema-value {cls}">'
@@ -1638,15 +1728,20 @@ def rows_html(data):
     out = []
 
     for x in data:
+
         cls = (
             " qualified"
-            if x.get("qualified", False)
+            if x.get(
+                "qualified",
+                False
+            )
             else ""
         )
 
         out.append(
             f'''
             <tr class="{cls}">
+
                 <td class="rank">
                     {x.get("rank", "-")}
                 </td>
@@ -1655,6 +1750,7 @@ def rows_html(data):
                     <div class="coin-name">
                         {x.get("name", "-")}
                     </div>
+
                     <div class="change">
                         {x.get("change", "-")}
                     </div>
@@ -1669,14 +1765,24 @@ def rows_html(data):
                     <div class="ema-row">
                         <span class="tf">1H</span>
                         <span class="ema-value-wrap">
-                            {ema_html(x.get("ema_1h", {}))}
+                            {ema_html(
+                                x.get(
+                                    "ema_1h",
+                                    {}
+                                )
+                            )}
                         </span>
                     </div>
 
                     <div class="ema-row">
                         <span class="tf">4H</span>
                         <span class="ema-value-wrap">
-                            {ema_html(x.get("ema_4h", {}))}
+                            {ema_html(
+                                x.get(
+                                    "ema_4h",
+                                    {}
+                                )
+                            )}
                         </span>
                     </div>
 
@@ -1693,12 +1799,24 @@ def rows_html(data):
 
                 <td class="warning">
                     {warning_html(
-                        x.get("air_warning", False),
-                        x.get("air_direction"),
-                        x.get("air_count", 0),
-                        x.get("air_stopped", False)
+                        x.get(
+                            "air_warning",
+                            False
+                        ),
+                        x.get(
+                            "air_direction"
+                        ),
+                        x.get(
+                            "air_count",
+                            0
+                        ),
+                        x.get(
+                            "air_stopped",
+                            False
+                        )
                     )}
                 </td>
+
             </tr>
             '''
         )
@@ -1710,7 +1828,11 @@ def rows_html(data):
 # Section
 # =========================================================
 
-def section(title, data, update_time):
+def section(
+    title,
+    data,
+    update_time
+):
     rows = rows_html(data)
 
     if not rows:
@@ -1729,7 +1851,9 @@ def section(title, data, update_time):
     </h2>
 
     <div class="table-wrap">
+
         <table>
+
             <thead>
                 <tr>
                     <th>#</th>
@@ -1744,15 +1868,23 @@ def section(title, data, update_time):
             <tbody>
                 {rows}
             </tbody>
+
         </table>
+
     </div>
     '''
 
 
-def focus_section(data, update_time):
+def focus_section(
+    data,
+    update_time
+):
     focus_data = [
         x for x in data
-        if x.get("qualified", False)
+        if x.get(
+            "qualified",
+            False
+        )
     ]
 
     rows = rows_html(focus_data)
@@ -1773,7 +1905,9 @@ def focus_section(data, update_time):
     </h2>
 
     <div class="table-wrap focus-table">
+
         <table>
+
             <thead>
                 <tr>
                     <th>#</th>
@@ -1788,7 +1922,9 @@ def focus_section(data, update_time):
             <tbody>
                 {rows}
             </tbody>
+
         </table>
+
     </div>
     '''
 
@@ -1944,7 +2080,9 @@ td:nth-child(6){width:25%}
     font-weight:bold
 }
 
-.zero{color:#999}
+.zero{
+    color:#999
+}
 
 .vol{
     padding:1px 2px!important;
@@ -2004,9 +2142,17 @@ td:nth-child(6){width:25%}
     line-height:13px
 }
 
-.ema-long{color:#35e66d}
-.ema-short{color:#ff4d4d}
-.ema-none{color:#eee}
+.ema-long{
+    color:#35e66d
+}
+
+.ema-short{
+    color:#ff4d4d
+}
+
+.ema-none{
+    color:#eee
+}
 
 .close-ema10{
     text-align:center!important;
@@ -2016,9 +2162,17 @@ td:nth-child(6){width:25%}
     font-weight:bold
 }
 
-.close-ema-above{color:#35e66d}
-.close-ema-below{color:#ff4d4d}
-.close-ema-equal{color:#999}
+.close-ema-above{
+    color:#35e66d
+}
+
+.close-ema-below{
+    color:#ff4d4d
+}
+
+.close-ema-equal{
+    color:#999
+}
 
 .warning{
     text-align:center!important;
@@ -2062,22 +2216,27 @@ td:nth-child(6){width:25%}
 }
 
 @keyframes air-pulse{
+
     0%{
         transform:scale(.90);
         opacity:.30
     }
+
     25%{
         transform:scale(1.15);
         opacity:.75
     }
+
     50%{
         transform:scale(1.35);
         opacity:1
     }
+
     75%{
         transform:scale(1.15);
         opacity:.75
     }
+
     100%{
         transform:scale(.90);
         opacity:.30
@@ -2330,19 +2489,21 @@ def dashboard():
 
     ③ EMA 정배열/역배열 연속 캔들 수 표시<br>
 
-    ④ 10선 아래 종가 → ▼(연속 횟수)<br>
+    ④ 10선 아래 종가 → 🔻(연속 횟수)<br>
 
-    ⑤ 10선 위 종가 전환 → ▲<br>
+    ⑤ 10선 위 종가 → 🟢▲<br>
 
-    ⑥ 이전 1H 종가 &lt; EMA10
+    ⑥ 다시 10선 아래 종가 → 🔻(1)부터 재시작<br>
+
+    ⑦ 이전 1H 종가 &lt; EMA10
     → 현재 양봉 + 종가 &gt; EMA10<br>
 
-    ⑦ 비행기 발생 → 1<br>
+    ⑧ 비행기 최초 발생 → 🛩️1<br>
 
-    ⑧ 이후 새 1H 양봉 + EMA10 위 종가
-    → 2 → 3 → 4...<br>
+    ⑨ 이후 새 1H 양봉 + EMA10 위 종가
+    → 🛩️2 → 🛩️3 → 🛩️4...<br>
 
-    ⑨ 1H 종가 &lt; EMA10
+    ⑩ 1H 종가 &lt; EMA10
     → ⛔️ 비행기 종료
 
     {status}
@@ -2364,6 +2525,7 @@ def scheduler():
     log.info("스케줄러 시작")
 
     while True:
+
         try:
             schedule.run_pending()
 
@@ -2392,27 +2554,73 @@ def startup():
             "USE_OKX는 Y 또는 N만 가능합니다."
         )
 
-    log.info("========================================")
-    log.info("1H EMA 비행기 경고 시스템 시작")
+    log.info(
+        "========================================"
+    )
+
+    log.info(
+        "1H EMA 비행기 경고 시스템 시작"
+    )
+
     log.info(
         f"업비트={USE_UPBIT} / OKX={USE_OKX}"
     )
+
     log.info(
         f"TOP={TOP_N} / UPDATE={UPDATE_MINUTES}분"
     )
-    log.info("EMA = 10-30-60-120")
-    log.info("EMA 정배열/역배열 연속 카운팅 적용")
-    log.info("EMA 표시 = 🟢(N) / 🔴(N) / ⚪(0)")
-    log.info("1H 종가 / EMA10 위치 카운팅 적용")
-    log.info("10선 아래 = ▼(연속 종가 수)")
-    log.info("10선 위 전환 = ▲")
-    log.info("비행기 최초 발생 = 1")
-    log.info("이후 새 1H 양봉 + EMA10 위 = 계속 카운트")
-    log.info("같은 1H 캔들 중복 카운트 방지")
-    log.info("1H 종가 < EMA10 = ⛔️ 비행기 종료")
-    log.info("15M EMA = 완전 삭제")
-    log.info("N자 / 로켓 = 완전 삭제")
-    log.info("========================================")
+
+    log.info(
+        "EMA = 10-30-60-120"
+    )
+
+    log.info(
+        "EMA 정배열/역배열 연속 카운팅 적용"
+    )
+
+    log.info(
+        "EMA 표시 = 🟢(N) / 🔴(N) / ⚪(0)"
+    )
+
+    log.info(
+        "10선 아래 종가 = 🔻(연속 카운트)"
+    )
+
+    log.info(
+        "10선 위 종가 = 🟢▲"
+    )
+
+    log.info(
+        "다시 하락 종가 = 🔻(1)부터 재시작"
+    )
+
+    log.info(
+        "비행기 최초 발생 = 🛩️1"
+    )
+
+    log.info(
+        "이후 새 1H 양봉 + EMA10 위 = 계속 카운트"
+    )
+
+    log.info(
+        "같은 1H 캔들 중복 카운트 방지"
+    )
+
+    log.info(
+        "1H 종가 < EMA10 = ⛔️ 비행기 종료"
+    )
+
+    log.info(
+        "15M EMA = 완전 삭제"
+    )
+
+    log.info(
+        "N자 / 로켓 = 완전 삭제"
+    )
+
+    log.info(
+        "========================================"
+    )
 
     threading.Thread(
         target=update_dashboard,
@@ -2436,8 +2644,9 @@ def startup():
 # =========================================================
 
 if __name__ == "__main__":
+
     uvicorn.run(
         app,
         host="0.0.0.0",
         port=8000
-            )
+    p
