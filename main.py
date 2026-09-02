@@ -53,9 +53,6 @@ KST = ZoneInfo("Asia/Seoul")
 # 10선 경고 설정
 # =========================================================
 
-# 이전 EMA10 위 종가 카운팅이 1개 이상이면
-# 10선 상승 정배열 흐름으로 인정
-
 MIN_EMA10_LONG_COUNT = 1
 
 
@@ -110,9 +107,7 @@ def wait_request():
                 REQUEST_INTERVAL - gap
             )
 
-        last_request_time = (
-            time.monotonic()
-        )
+        last_request_time = time.monotonic()
 
 
 def retry(func, *args, **kwargs):
@@ -739,25 +734,10 @@ def direction(df):
 
     try:
 
-        e10 = ema(
-            df,
-            10
-        ).iloc[-1]
-
-        e30 = ema(
-            df,
-            30
-        ).iloc[-1]
-
-        e60 = ema(
-            df,
-            60
-        ).iloc[-1]
-
-        e120 = ema(
-            df,
-            120
-        ).iloc[-1]
+        e10 = ema(df, 10).iloc[-1]
+        e30 = ema(df, 30).iloc[-1]
+        e60 = ema(df, 60).iloc[-1]
+        e120 = ema(df, 120).iloc[-1]
 
         if e10 > e30 > e60 > e120:
             return "long"
@@ -797,21 +777,10 @@ def ema_alignment_count(df):
             -1
         ):
 
-            a = float(
-                e10.iloc[i]
-            )
-
-            b = float(
-                e30.iloc[i]
-            )
-
-            c = float(
-                e60.iloc[i]
-            )
-
-            d = float(
-                e120.iloc[i]
-            )
+            a = float(e10.iloc[i])
+            b = float(e30.iloc[i])
+            c = float(e60.iloc[i])
+            d = float(e120.iloc[i])
 
             if a > b > c > d:
 
@@ -895,18 +864,6 @@ def ema_display(df):
 
 # =========================================================
 # 1H EMA1(종가) ↔ EMA10
-#
-# 현재 상태와 이전 방향의 최종 카운팅 분리
-#
-# 예:
-#
-# 이전 EMA10 위 4개
-# 현재 EMA10 아래 1개
-#
-# 표시:
-#
-# (4)
-# 🔻(1)
 # =========================================================
 
 def ema10_cross_count(df):
@@ -960,9 +917,7 @@ def ema10_cross_count(df):
 
         states = []
 
-        for i in range(
-            len(df)
-        ):
+        for i in range(len(df)):
 
             close_value = float(
                 closes.iloc[i]
@@ -1065,18 +1020,18 @@ def ema10_cross_count(df):
 # =========================================================
 # ✈️ 비행기 돌파직전 경고
 #
-# ★ 업비트 LONG 전용
+# 업비트 LONG 전용
 #
-# 필수 조건:
+# 필수:
+# 1H EMA 10-30-60-120 정배열
+# 4H EMA 10-30-60-120 정배열
+# 이전 EMA10 위 종가 카운팅 >= 1
+# 현재 고가 >= EMA10
+# 현재 종가 < EMA10
+# 현재 양봉
 #
-# 1. 1H EMA 10-30-60-120 정배열
-# 2. 4H EMA 10-30-60-120 정배열
-# 3. 이전 EMA10 위 종가 카운팅 >= 1
-# 4. 현재 고가 >= EMA10
-# 5. 현재 종가 < EMA10
-# 6. 현재 양봉
-#
-# ※ 역배열 경고 없음
+# ★ 이 함수는 "시작 신호"만 판단
+# ★ 한번 시작된 비행기는 이후에도 유지
 # =========================================================
 
 def get_air_warning(
@@ -1094,31 +1049,15 @@ def get_air_warning(
 
     try:
 
-        # -------------------------------------------------
-        # ★ 1H EMA 10-30-60-120 방향
-        # -------------------------------------------------
-
         direction_1h = direction(
             df1h
         )
-
-        # -------------------------------------------------
-        # ★ 4H EMA 10-30-60-120 방향
-        # -------------------------------------------------
 
         direction_4h = direction(
             df4h
         )
 
-        # -------------------------------------------------
-        # ★ 핵심
-        #
-        # 1H 정배열
-        # AND
-        # 4H 정배열
-        #
-        # 둘 다 반드시 LONG이어야 함
-        # -------------------------------------------------
+        # ★ 1H + 4H 모두 정배열 필수
 
         if (
             direction_1h != "long"
@@ -1126,21 +1065,16 @@ def get_air_warning(
         ):
             return None
 
-        # -------------------------------------------------
-        # 1H EMA10 종가 카운팅
-        # -------------------------------------------------
-
         ema10_result = ema10_cross_count(
             df1h
         )
 
-        # 현재 캔들이 EMA10 아래
+        # 현재 종가가 EMA10 아래
+
         if ema10_result["state"] != "short":
             return None
 
-        # -------------------------------------------------
-        # 현재 캔들 직전까지 EMA10 위 종가
-        # -------------------------------------------------
+        # 이전 EMA10 위 종가 카운팅
 
         previous_long_count = int(
             ema10_result.get(
@@ -1154,10 +1088,6 @@ def get_air_warning(
             < MIN_EMA10_LONG_COUNT
         ):
             return None
-
-        # -------------------------------------------------
-        # EMA10
-        # -------------------------------------------------
 
         e10 = ema(
             df1h,
@@ -1183,30 +1113,20 @@ def get_air_warning(
             e10.iloc[-1]
         )
 
-        # -------------------------------------------------
-        # 현재 종가가 EMA10 아래
-        # -------------------------------------------------
+        # 종가 EMA10 아래
 
         if current_close >= current_ema10:
             return None
 
-        # -------------------------------------------------
-        # 현재 고가가 EMA10 접촉/돌파
-        # -------------------------------------------------
+        # 고가 EMA10 접촉/돌파
 
         if current_high < current_ema10:
             return None
 
-        # -------------------------------------------------
-        # 현재 캔들 양봉
-        # -------------------------------------------------
+        # 양봉
 
         if current_close <= current_open:
             return None
-
-        # -------------------------------------------------
-        # ★ 모든 조건 충족
-        # -------------------------------------------------
 
         return "LONG_PRE_BREAKOUT"
 
@@ -1221,6 +1141,23 @@ def get_air_warning(
 
 # =========================================================
 # ✈️ 비행기 카운터
+#
+# ★ 핵심 수정
+#
+# 돌파직전 신호가 한번 발생하면
+# 이후 get_air_warning()이 None이 되어도
+# 기존 active 상태를 유지한다.
+#
+# 돌파 완료(종가 > EMA10)
+# → 경고 유지
+#
+# 이후 양봉
+# → ✈️(1)
+# → ✈️(2)
+# → ✈️(3)
+#
+# 음봉
+# → ⛔️ 종료
 # =========================================================
 
 def update_air_counter(
@@ -1236,6 +1173,7 @@ def update_air_counter(
 
         return {
             "active": False,
+            "ended": False,
             "direction": None,
             "count": 0
         }
@@ -1259,7 +1197,10 @@ def update_air_counter(
         )
 
         # -------------------------------------------------
-        # 새로운 돌파직전 캔들
+        # 새로운 돌파직전 신호
+        #
+        # 새로운 캔들에서 신호가 다시 잡히면
+        # 새로운 비행기 사이클 시작
         # -------------------------------------------------
 
         if new_warning is not None:
@@ -1273,6 +1214,7 @@ def update_air_counter(
 
                 air_state[market] = {
                     "active": True,
+                    "ended": False,
                     "direction": new_warning,
                     "count": 0,
                     "warning_candle": candle_time,
@@ -1281,30 +1223,74 @@ def update_air_counter(
 
                 return {
                     "active": True,
+                    "ended": False,
                     "direction": new_warning,
                     "count": 0
                 }
 
         # -------------------------------------------------
-        # 기존 경고 없음
+        # 기존 상태 없음
         # -------------------------------------------------
 
-        if (
-            state is None
-            or not state.get(
-                "active",
-                False
-            )
-        ):
+        if state is None:
 
             return {
                 "active": False,
+                "ended": False,
                 "direction": None,
                 "count": 0
             }
 
         # -------------------------------------------------
+        # 종료 상태
+        #
+        # 이미 종료된 상태라면
+        # ⛔️ 표시를 유지
+        # -------------------------------------------------
+
+        if state.get(
+            "ended",
+            False
+        ):
+
+            return {
+                "active": False,
+                "ended": True,
+                "direction": state.get(
+                    "direction"
+                ),
+                "count": state.get(
+                    "count",
+                    0
+                )
+            }
+
+        # -------------------------------------------------
+        # 기존 경고가 없는 상태
+        # -------------------------------------------------
+
+        if not state.get(
+            "active",
+            False
+        ):
+
+            return {
+                "active": False,
+                "ended": False,
+                "direction": state.get(
+                    "direction"
+                ),
+                "count": state.get(
+                    "count",
+                    0
+                )
+            }
+
+        # -------------------------------------------------
         # 같은 캔들
+        #
+        # 돌파직전 캔들은 count=0
+        # 화면에는 🛩 ✈️
         # -------------------------------------------------
 
         if candle_time <= state.get(
@@ -1313,6 +1299,7 @@ def update_air_counter(
 
             return {
                 "active": True,
+                "ended": False,
                 "direction": state.get(
                     "direction"
                 ),
@@ -1323,7 +1310,7 @@ def update_air_counter(
             }
 
         # -------------------------------------------------
-        # 새로운 캔들
+        # 새로운 1H 캔들
         # -------------------------------------------------
 
         state["counted_candle"] = (
@@ -1331,20 +1318,19 @@ def update_air_counter(
         )
 
         # -------------------------------------------------
-        # 다음 캔들이 양봉이면 카운트 증가
-        # 음봉이면 경고 종료
+        # ★ 양봉이면 비행기 카운트 증가
+        #
+        # EMA10 위로 돌파했어도
+        # 절대로 여기서 종료하지 않는다.
         # -------------------------------------------------
 
         if current_close > current_open:
 
             state["count"] += 1
 
-        else:
-
-            state["active"] = False
-
             return {
-                "active": False,
+                "active": True,
+                "ended": False,
                 "direction": state.get(
                     "direction"
                 ),
@@ -1354,8 +1340,16 @@ def update_air_counter(
                 )
             }
 
+        # -------------------------------------------------
+        # ★ 음봉이면 종료
+        # -------------------------------------------------
+
+        state["active"] = False
+        state["ended"] = True
+
         return {
-            "active": True,
+            "active": False,
+            "ended": True,
             "direction": state.get(
                 "direction"
             ),
@@ -1586,6 +1580,7 @@ def empty_analysis():
         "air_direction": None,
         "air_count": 0,
         "air_active": False,
+        "air_ended": False,
 
         "qualified": False,
 
@@ -1642,19 +1637,25 @@ def analyze(
         df4
     )
 
-    # 1H EMA10 종가 카운팅
-
     ema10_cross = ema10_cross_count(
         df1
     )
 
-    # ★ 1H + 4H 정배열 조건을 포함한
-    # 돌파직전 경고
+    # -------------------------------------------------
+    # 새로운 돌파직전 신호
+    # -------------------------------------------------
 
     new_warning = get_air_warning(
         df1,
         df4
     )
+
+    # -------------------------------------------------
+    # 비행기 상태 업데이트
+    #
+    # new_warning이 None이어도
+    # 기존 active 상태를 유지
+    # -------------------------------------------------
 
     air = update_air_counter(
         market,
@@ -1671,6 +1672,7 @@ def analyze(
     return {
 
         "ema_1h": e1,
+
         "ema_4h": e4,
 
         "ema10_cross_1h":
@@ -1690,6 +1692,12 @@ def analyze(
 
         "air_active":
             air["active"],
+
+        "air_ended":
+            air.get(
+                "ended",
+                False
+            ),
 
         "qualified":
             air["active"],
@@ -1756,6 +1764,12 @@ def make_row(
 
         "air_count":
             a["air_count"],
+
+        "air_ended":
+            a.get(
+                "air_ended",
+                False
+            ),
 
         "qualified":
             a["qualified"]
@@ -1830,9 +1844,20 @@ def update_upbit():
 
     latest_upbit_update_time = kst()
 
+    active_count = sum(
+        x["qualified"]
+        for x in rows
+    )
+
+    ended_count = sum(
+        x.get("air_ended", False)
+        for x in rows
+    )
+
     log.info(
         f"업비트 완료 / "
-        f"돌파직전 {sum(x['qualified'] for x in rows)}개"
+        f"비행기 진행 {active_count}개 / "
+        f"종료 ⛔️ {ended_count}개"
     )
 
 
@@ -2006,9 +2031,20 @@ def update_okx(
 
     latest_okx_update_time = kst()
 
+    active_count = sum(
+        x["qualified"]
+        for x in rows
+    )
+
+    ended_count = sum(
+        x.get("air_ended", False)
+        for x in rows
+    )
+
     log.info(
         f"OKX 완료 / "
-        f"돌파직전 {sum(x['qualified'] for x in rows)}개"
+        f"비행기 진행 {active_count}개 / "
+        f"종료 ⛔️ {ended_count}개"
     )
 
     return True
@@ -2094,8 +2130,27 @@ def update_dashboard():
 def warning_html(
     air_warning,
     air_direction=None,
-    air_count=0
+    air_count=0,
+    air_ended=False
 ):
+
+    # -----------------------------------------------------
+    # ★ 종료 상태
+    # -----------------------------------------------------
+
+    if air_ended:
+
+        return (
+            '<div class="air-box ended">'
+            '<div class="air-end">'
+            '⛔️'
+            '</div>'
+            '</div>'
+        )
+
+    # -----------------------------------------------------
+    # 진행 중이 아니면 표시 없음
+    # -----------------------------------------------------
 
     if not air_warning:
         return "-"
@@ -2111,15 +2166,38 @@ def warning_html(
         else "short"
     )
 
-    count_html = ""
+    # -----------------------------------------------------
+    # ★ 돌파직전
+    # -----------------------------------------------------
 
-    if air_count > 0:
+    if air_count <= 0:
 
-        count_html = (
-            '<div class="air-count">'
-            f'{air_count}'
+        return (
+            '<div class="air-box">'
+
+            '<div class="air-main">'
+
+            '<span class="air-direction '
+            f'{direction_class}">'
+            '직전'
+            '</span>'
+
+            '<span class="air-icon">'
+            '🛩 ✈️'
+            '</span>'
+
+            '</div>'
+
             '</div>'
         )
+
+    # -----------------------------------------------------
+    # ★ 돌파 후 카운팅
+    #
+    # ✈️(1)
+    # ✈️(2)
+    # ✈️(3)
+    # -----------------------------------------------------
 
     return (
         '<div class="air-box">'
@@ -2128,16 +2206,18 @@ def warning_html(
 
         '<span class="air-direction '
         f'{direction_class}">'
-        '직전'
+        '진행'
         '</span>'
 
         '<span class="air-icon">'
-        '🛩 ✈️'
+        '✈️'
         '</span>'
 
         '</div>'
 
-        f'{count_html}'
+        '<div class="air-count">'
+        f'({air_count})'
+        '</div>'
 
         '</div>'
     )
@@ -2361,6 +2441,10 @@ def rows_html(data):
                         x.get(
                             "air_count",
                             0
+                        ),
+                        x.get(
+                            "air_ended",
+                            False
                         )
                     )}
 
@@ -2466,7 +2550,7 @@ def focus_section(
         rows = """
         <tr>
             <td colspan="6" class="empty">
-                현재 돌파직전 코인 없음
+                현재 비행기 경고 진행 코인 없음
             </td>
         </tr>
         """
@@ -2512,7 +2596,7 @@ def focus_section(
 
     return f"""
     <h2 class="focus-title">
-        🚨 돌파직전 리스트
+        🚨 비행기 경고 리스트
 
         <small>
             {update_time} KST
@@ -2904,6 +2988,13 @@ font-weight:bold;
 color:#fff;
 }
 
+.air-end{
+font-size:12px;
+font-weight:bold;
+line-height:14px;
+color:#ff4d4d;
+}
+
 .qualified{
 background:rgba(255,255,255,.06);
 }
@@ -3044,6 +3135,11 @@ font-size:8px;
 line-height:8px;
 }
 
+.air-end{
+font-size:10px;
+line-height:12px;
+}
+
 }
 
 """
@@ -3164,12 +3260,14 @@ def dashboard():
 
             ⑦ 현재 1H 양봉 + 종가 EMA10 아래<br>
 
-            ⑧ 1H + 4H 정배열 동시 충족 + 이전 EMA10 위 카운팅 존재
+            ⑧ 1H + 4H 정배열 동시 충족
             → 🛩 ✈️ 돌파직전<br>
 
-            ⑨ 이후 양봉마다 비행기 카운터 증가<br>
+            ⑨ 돌파 완료 후에도 비행기 경고 유지<br>
 
-            ⑩ 음봉 마감 시 경고 종료
+            ⑩ 이후 양봉마다 ✈️(1) → ✈️(2) → ✈️(3) 계속 카운팅<br>
+
+            ⑪ 음봉 마감 시 ⛔️ 경고 종료
 
             {status}
 
@@ -3238,7 +3336,7 @@ def startup():
     )
 
     log.info(
-        "1H + 4H EMA 돌파직전 경고 시스템 시작"
+        "1H + 4H EMA 돌파직전 / 돌파진행 경고 시스템 시작"
     )
 
     log.info(
@@ -3254,7 +3352,7 @@ def startup():
     )
 
     log.info(
-        "비행기 조건 = 1H 정배열 + 4H 정배열"
+        "비행기 시작 조건 = 1H 정배열 + 4H 정배열"
     )
 
     log.info(
@@ -3279,18 +3377,19 @@ def startup():
     )
 
     log.info(
-        "이전 방향 최종 카운팅 = 아래 흰색 (N)"
+        "돌파직전 = 🛩 ✈️"
     )
 
     log.info(
-        "비행기 = 돌파 완료가 아닌 돌파직전 캔들"
+        "돌파 완료 후에도 비행기 상태 유지"
     )
 
     log.info(
-        "돌파직전 = "
-        "1H 정배열 + 4H 정배열 + "
-        "이전 EMA10 위 카운팅 + "
-        "고가>=EMA10 + 종가<EMA10 + 양봉"
+        "양봉마다 ✈️ 카운트 증가"
+    )
+
+    log.info(
+        "음봉 마감 = ⛔️ 종료"
     )
 
     log.info(
@@ -3328,4 +3427,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-        )
+    )
