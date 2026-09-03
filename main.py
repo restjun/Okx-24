@@ -3449,7 +3449,7 @@ def dashboard():
     <body>
 
         <h1>
-            📊 매매 전술 눌림 돌파
+            📊 트레이딩 전략
         </h1>
 
         <div class="info">
