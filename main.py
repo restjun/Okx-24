@@ -80,6 +80,26 @@ air_state = {}
 
 
 # =========================================================
+# ★ 비트코인지수
+#
+# 1H + 4H EMA 30-60-120 기준
+#
+# 집중 = 1H 정배열 + 4H 정배열 → ☀️
+# 관망 = 역배열 없음 + 완전 정배열 아님 → 🌥
+# 중지 = 1H 또는 4H 역배열 → 🌧
+# =========================================================
+
+latest_btc_index = {
+    "mode": "관망",
+    "icon": "",
+    "direction_1h": "none",
+    "direction_4h": "none"
+}
+
+btc_index_lock = threading.Lock()
+
+
+# =========================================================
 # ★ 종료 표시 관리
 #
 # 종료된 종목은 ⛔️를 한 번만 표시하고
@@ -913,172 +933,123 @@ def ema_display(df):
 
 
 # =========================================================
-# 1H EMA3 ↔ EMA10
+# ★ 비트코인지수 업데이트
+#
+# BTC = KRW-BTC
+#
+# 확정 1H / 4H 캔들 기준
+# EMA 30-60-120 기준
+#
+# 1H long + 4H long
+# → 집중 / ☀️
+#
+# short가 하나라도 있으면
+# → 중지 / 🌧
+#
+# 그 외
+# → 관망 / 🌥
 # =========================================================
 
-def ema3_10_cross_count(df):
+def update_btc_index():
 
-    result = {
-        "state": "none",
-        "count": 0,
-        "final_count": 0,
-        "display": "-",
-        "candle_time": None
-    }
-
-    if (
-        df is None
-        or df.empty
-        or len(df) < 2
-    ):
-
-        return result
+    global latest_btc_index
 
     try:
 
-        e3 = ema(df, 3)
-        e10 = ema(df, 10)
+        df1h = history_upbit(
+            "KRW-BTC",
+            60
+        )
+
+        df4h = history_upbit(
+            "KRW-BTC",
+            240
+        )
 
         if (
-            e3 is None
-            or e10 is None
+            df1h is None
+            or df1h.empty
+            or df4h is None
+            or df4h.empty
         ):
 
-            return result
+            log.warning(
+                "비트코인지수 데이터 없음"
+            )
 
-        e3_values = pd.to_numeric(
-            e3,
-            errors="coerce"
-        ).reset_index(drop=True)
+            return
 
-        e10_values = pd.to_numeric(
-            e10,
-            errors="coerce"
-        ).reset_index(drop=True)
+        direction_1h = direction(
+            df1h
+        )
 
-        valid_last = (
-            e3_values.notna().iloc[-1]
+        direction_4h = direction(
+            df4h
+        )
+
+        # =================================================
+        # ① 중지
+        # =================================================
+
+        if (
+            direction_1h == "short"
+            or
+            direction_4h == "short"
+        ):
+
+            mode = "중지"
+            icon = "🌧"
+
+        # =================================================
+        # ② 집중
+        # =================================================
+
+        elif (
+            direction_1h == "long"
             and
-            e10_values.notna().iloc[-1]
-        )
+            direction_4h == "long"
+        ):
 
-        if not valid_last:
-            return result
+            mode = "집중"
+            icon = "☀️"
 
-        states = []
-
-        for i in range(len(df)):
-
-            ema3_value = float(
-                e3_values.iloc[i]
-            )
-
-            ema10_value = float(
-                e10_values.iloc[i]
-            )
-
-            if ema3_value > ema10_value:
-
-                states.append("long")
-
-            elif ema3_value < ema10_value:
-
-                states.append("short")
-
-            else:
-
-                states.append("equal")
-
-        current_state = states[-1]
-
-        result["state"] = current_state
-
-        result["candle_time"] = (
-            df.datetime.iloc[-1]
-        )
-
-        if current_state == "equal":
-
-            result["display"] = "⚪(0)"
-
-            return result
-
-        current_count = 0
-        i = len(states) - 1
-
-        while i >= 0:
-
-            if states[i] == current_state:
-
-                current_count += 1
-                i -= 1
-
-            else:
-
-                break
-
-        previous_state = (
-            "short"
-            if current_state == "long"
-            else "long"
-        )
-
-        final_count = 0
-        j = i
-
-        while j >= 0:
-
-            if states[j] == previous_state:
-
-                final_count += 1
-                j -= 1
-
-            else:
-
-                break
-
-        result["count"] = current_count
-        result["final_count"] = final_count
-
-        if current_state == "long":
-
-            if final_count > 0:
-
-                result["display"] = (
-                    f"{final_count}|"
-                    f"🟢({current_count})"
-                )
-
-            else:
-
-                result["display"] = (
-                    f"🟢({current_count})"
-                )
+        # =================================================
+        # ③ 관망
+        # =================================================
 
         else:
 
-            if final_count > 0:
+            mode = "관망"
+            icon = "🌥"
 
-                result["display"] = (
-                    f"{final_count}|"
-                    f"🔻({current_count})"
-                )
+        with btc_index_lock:
 
-            else:
+            latest_btc_index = {
 
-                result["display"] = (
-                    f"🔻({current_count})"
-                )
+                "mode":
+                    mode,
 
-        return result
+                "icon":
+                    icon,
+
+                "direction_1h":
+                    direction_1h,
+
+                "direction_4h":
+                    direction_4h
+            }
+
+        log.info(
+            f"비트코인지수 = {mode} {icon} / "
+            f"1H={direction_1h} / "
+            f"4H={direction_4h}"
+        )
 
     except Exception as e:
 
-        log.error(
-            f"EMA3-EMA10 교차 카운팅 오류: {e}"
+        log.exception(
+            f"비트코인지수 오류: {e}"
         )
-
-        return result
 
 
 # =========================================================
@@ -2173,6 +2144,20 @@ def update_dashboard():
                     f"업비트 업데이트 오류: {e}"
                 )
 
+            # =================================================
+            # ★ 비트코인지수 업데이트
+            # =================================================
+
+            try:
+
+                update_btc_index()
+
+            except Exception as e:
+
+                log.exception(
+                    f"비트코인지수 업데이트 오류: {e}"
+                )
+
         else:
 
             latest_upbit_data = []
@@ -2204,6 +2189,84 @@ def update_dashboard():
     finally:
 
         update_lock.release()
+
+
+# =========================================================
+# ★ 비트코인지수 HTML
+#
+# 3칸 고정
+#
+# 집중 | 관망 | 중지
+#
+# 현재 상태에 해당하는 그림만 표시
+# =========================================================
+
+def bitcoin_index_section():
+
+    with btc_index_lock:
+
+        data = latest_btc_index.copy()
+
+    current_mode = data.get(
+        "mode",
+        "관망"
+    )
+
+    current_icon = data.get(
+        "icon",
+        ""
+    )
+
+    def mode_cell(
+        mode,
+        default_icon
+    ):
+
+        active = (
+            " btc-mode-active"
+            if current_mode == mode
+            else ""
+        )
+
+        icon = (
+            current_icon
+            if current_mode == mode
+            else ""
+        )
+
+        return f"""
+        <div class="btc-mode-cell{active}">
+
+            <div class="btc-mode-name">
+                {mode}
+            </div>
+
+            <div class="btc-mode-icon">
+                {icon}
+            </div>
+
+        </div>
+        """
+
+    return f"""
+    <div class="btc-index">
+
+        <div class="btc-index-title">
+            비트코인지수
+        </div>
+
+        <div class="btc-mode-grid">
+
+            {mode_cell("집중", "☀️")}
+
+            {mode_cell("관망", "🌥")}
+
+            {mode_cell("중지", "🌧")}
+
+        </div>
+
+    </div>
+    """
 
 
 # =========================================================
@@ -2900,6 +2963,76 @@ color:#35e66d;
 color:#ff4d4d;
 }
 
+
+/* =====================================================
+★ 비트코인지수
+===================================================== */
+
+.btc-index{
+margin:5px 2px 4px;
+padding:5px;
+background:#171a1f;
+border:1px solid #252a31;
+border-radius:8px;
+}
+
+.btc-index-title{
+text-align:center;
+font-size:10px;
+font-weight:bold;
+margin-bottom:5px;
+color:#eee;
+}
+
+.btc-mode-grid{
+display:grid;
+grid-template-columns:repeat(3,1fr);
+gap:4px;
+}
+
+.btc-mode-cell{
+text-align:center;
+padding:4px 2px;
+min-height:34px;
+border:1px solid #2b3037;
+border-radius:7px;
+background:#12151a;
+}
+
+.btc-mode-name{
+font-size:8px;
+font-weight:bold;
+line-height:10px;
+}
+
+.btc-mode-icon{
+margin-top:3px;
+height:18px;
+font-size:17px;
+line-height:18px;
+}
+
+.btc-mode-active{
+background:rgba(255,255,255,.08);
+}
+
+.btc-mode-cell:nth-child(1).btc-mode-active{
+border-color:#35e66d;
+}
+
+.btc-mode-cell:nth-child(2).btc-mode-active{
+border-color:#d6b84c;
+}
+
+.btc-mode-cell:nth-child(3).btc-mode-active{
+border-color:#ff4d4d;
+}
+
+
+/* =====================================================
+기존 CSS
+===================================================== */
+
 .table-wrap{
 width:100%;
 overflow:hidden;
@@ -3147,6 +3280,7 @@ justify-content:center;
 width:100%;
 }
 
+
 /* =====================================================
 ★ 비행기 반짝임 제거
 ===================================================== */
@@ -3168,6 +3302,7 @@ color:#ff4d4d;
 background:rgba(255,255,255,.06);
 }
 
+
 /* =====================================================
 ★ 상승 경고리스트
 ===================================================== */
@@ -3184,6 +3319,7 @@ color:#35e66d;
 .rising-table{
 border:1px solid #35e66d;
 }
+
 
 /* =====================================================
 ★ 경고리스트
@@ -3324,6 +3460,42 @@ font-size:10px;
 line-height:12px;
 }
 
+
+/* =====================================================
+★ 모바일 비트코인지수
+===================================================== */
+
+.btc-index{
+margin:4px 1px 3px;
+padding:4px;
+}
+
+.btc-index-title{
+font-size:9px;
+margin-bottom:4px;
+}
+
+.btc-mode-grid{
+gap:3px;
+}
+
+.btc-mode-cell{
+padding:3px 1px;
+min-height:31px;
+}
+
+.btc-mode-name{
+font-size:7px;
+line-height:9px;
+}
+
+.btc-mode-icon{
+margin-top:2px;
+height:17px;
+font-size:15px;
+line-height:17px;
+}
+
 }
 
 """
@@ -3362,7 +3534,15 @@ def dashboard():
     sections = ""
 
     # -----------------------------------------------------
-    # ① 상승 경고리스트
+    # ★ ① 비트코인지수
+    # -----------------------------------------------------
+
+    if USE_UPBIT == "Y":
+
+        sections += bitcoin_index_section()
+
+    # -----------------------------------------------------
+    # ② 상승 경고리스트
     # -----------------------------------------------------
 
     if USE_UPBIT == "Y":
@@ -3380,7 +3560,7 @@ def dashboard():
         )
 
     # -----------------------------------------------------
-    # ② 경고리스트
+    # ③ 경고리스트
     # -----------------------------------------------------
 
     if USE_UPBIT == "Y":
@@ -3398,7 +3578,7 @@ def dashboard():
         )
 
     # -----------------------------------------------------
-    # ③ 전체 TOP30
+    # ④ 전체 TOP30
     # -----------------------------------------------------
 
     if USE_UPBIT == "Y":
@@ -3615,6 +3795,22 @@ def startup():
     )
 
     log.info(
+        "비트코인지수 = 1H + 4H EMA 30-60-120"
+    )
+
+    log.info(
+        "비트코인 정배열 = 집중 ☀️"
+    )
+
+    log.info(
+        "비트코인 중립 = 관망 🌥"
+    )
+
+    log.info(
+        "비트코인 역배열 = 중지 🌧"
+    )
+
+    log.info(
         "========================================"
     )
 
@@ -3645,4 +3841,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-    )
+            )
