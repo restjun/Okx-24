@@ -82,13 +82,29 @@ air_state = {}
 # =========================================================
 # ★ 종료 표시 관리
 #
-# 종료된 종목은 ⛔️를 한 번만 표시하고
-# 다음 대시보드 갱신부터 제거
+# 기존 경고리스트에서 ⛔️ 1회 표시
 # =========================================================
 
 air_ended_displayed = set()
 
 air_ended_displayed_lock = threading.Lock()
+
+
+# =========================================================
+# ★ 상승 해지 리스트 관리
+#
+# 종료된 종목을 종료 시점부터 1시간 동안 유지
+#
+# TOP30에서 빠져도 1시간 동안 별도 리스트에 표시
+# =========================================================
+
+air_released_time = {}
+
+air_released_snapshot = {}
+
+air_released_lock = threading.Lock()
+
+AIR_RELEASE_DISPLAY_SECONDS = 60 * 60
 
 
 # =========================================================
@@ -1192,8 +1208,22 @@ def update_air_counter(
 
             # ★ 새로운 비행기 시작
             with air_ended_displayed_lock:
+
                 air_ended_displayed.discard(
                     market
+                )
+
+            # ★ 해지 리스트에서도 제거
+            with air_released_lock:
+
+                air_released_time.pop(
+                    market,
+                    None
+                )
+
+                air_released_snapshot.pop(
+                    market,
+                    None
                 )
 
             air_state[market] = {
@@ -1245,8 +1275,22 @@ def update_air_counter(
 
                     # ★ 새로운 비행기 재시작
                     with air_ended_displayed_lock:
+
                         air_ended_displayed.discard(
                             market
+                        )
+
+                    # ★ 해지 리스트 제거
+                    with air_released_lock:
+
+                        air_released_time.pop(
+                            market,
+                            None
+                        )
+
+                        air_released_snapshot.pop(
+                            market,
+                            None
                         )
 
                     air_state[market] = {
@@ -1322,6 +1366,13 @@ def update_air_counter(
                 state["active"] = False
                 state["ended"] = True
 
+                # ★ 종료 시각 기록
+                with air_released_lock:
+
+                    air_released_time[market] = (
+                        time.time()
+                    )
+
                 return {
                     "active": False,
                     "ended": True,
@@ -1354,6 +1405,13 @@ def update_air_counter(
 
             state["active"] = False
             state["ended"] = True
+
+            # ★ 종료 시각 기록
+            with air_released_lock:
+
+                air_released_time[market] = (
+                    time.time()
+                )
 
             return {
                 "active": False,
@@ -1838,6 +1896,32 @@ def make_row(
 
 
 # =========================================================
+# ★ 상승 해지 스냅샷 저장
+# =========================================================
+
+def save_air_release_snapshot(
+    market,
+    row
+):
+
+    if not row:
+        return
+
+    with air_released_lock:
+
+        air_released_time[market] = (
+            air_released_time.get(
+                market,
+                time.time()
+            )
+        )
+
+        air_released_snapshot[market] = (
+            row.copy()
+        )
+
+
+# =========================================================
 # Upbit 업데이트
 # =========================================================
 
@@ -1875,14 +1959,28 @@ def update_upbit():
 
             a = analyze(market)
 
-            rows.append(
-                make_row(
-                    rank,
-                    coin,
-                    item["volume_24h"],
-                    a
-                )
+            row = make_row(
+                rank,
+                coin,
+                item["volume_24h"],
+                a
             )
+
+            rows.append(row)
+
+            # ★ 종료된 순간 스냅샷 저장
+            if (
+                a is not None
+                and a.get(
+                    "air_ended",
+                    False
+                )
+            ):
+
+                save_air_release_snapshot(
+                    market,
+                    row
+                )
 
         except Exception as e:
 
@@ -2062,14 +2160,28 @@ def update_okx(usdt):
                 True
             )
 
-            rows.append(
-                make_row(
-                    rank,
-                    name,
-                    volumes[symbol],
-                    a
-                )
+            row = make_row(
+                rank,
+                name,
+                volumes[symbol],
+                a
             )
+
+            rows.append(row)
+
+            # ★ 종료된 순간 스냅샷 저장
+            if (
+                a is not None
+                and a.get(
+                    "air_ended",
+                    False
+                )
+            ):
+
+                save_air_release_snapshot(
+                    symbol,
+                    row
+                )
 
         except Exception as e:
 
@@ -2180,18 +2292,18 @@ def update_dashboard():
 
 
 # =========================================================
-# 경고 HTML
+# ★ 비행기 HTML
 #
-# 1 → 🛩✈️
-# 2 이상 → ✈️
-# 종료 → ⛔️
+# animate=True  → 상승 경고리스트
+# animate=False → 경고리스트
 # =========================================================
 
 def warning_html(
     air_warning,
     air_direction=None,
     air_count=0,
-    air_ended=False
+    air_ended=False,
+    animate=True
 ):
 
     # -----------------------------------------------------
@@ -2225,6 +2337,12 @@ def warning_html(
 
         count = 1
 
+    animation_class = (
+        " air-animated"
+        if animate
+        else ""
+    )
+
     # -----------------------------------------------------
     # 최초 1개
     # -----------------------------------------------------
@@ -2234,7 +2352,9 @@ def warning_html(
         return (
             '<div class="air-box">'
             '<div class="air-main">'
-            '<span class="air-icon">'
+            '<span class="air-icon'
+            f'{animation_class}'
+            '">'
             '🛩✈️'
             '</span>'
             '</div>'
@@ -2248,7 +2368,9 @@ def warning_html(
     return (
         '<div class="air-box">'
         '<div class="air-main">'
-        '<span class="air-icon">'
+        '<span class="air-icon'
+        f'{animation_class}'
+        '">'
         '✈️'
         '</span>'
         '</div>'
@@ -2373,7 +2495,10 @@ def ema3_10_cross_html(data):
 # Rows
 # =========================================================
 
-def rows_html(data):
+def rows_html(
+    data,
+    animate_warning=True
+):
 
     out = []
 
@@ -2491,7 +2616,8 @@ def rows_html(data):
                         x.get(
                             "air_ended",
                             False
-                        )
+                        ),
+                        animate_warning
                     )}
 
                 </td>
@@ -2507,9 +2633,15 @@ def rows_html(data):
 # Table
 # =========================================================
 
-def table_html(data):
+def table_html(
+    data,
+    animate_warning=True
+):
 
-    rows = rows_html(data)
+    rows = rows_html(
+        data,
+        animate_warning
+    )
 
     if not rows:
 
@@ -2614,8 +2746,7 @@ def get_visual_air_count(x):
 #
 # ★ 현재 진행 중
 # ★ 비행기 카운트 = 1
-#
-# 🛩✈️만 표시되는 종목
+# ★ 반짝임 ON
 # =========================================================
 
 def rising_focus_section(
@@ -2689,7 +2820,8 @@ def rising_focus_section(
         table = (
             '<div class="focus-table rising-table">'
             + table_html(
-                rising_data
+                rising_data,
+                animate_warning=True
             ).replace(
                 '<div class="table-wrap">',
                 '',
@@ -2714,10 +2846,197 @@ def rising_focus_section(
 
 
 # =========================================================
+# 📉 상승 해지 리스트
+#
+# ★ EMA3 < EMA10 확정으로 종료된 종목
+# ★ 종료 시점부터 1시간 유지
+# ★ TOP30에서 빠져도 유지
+# ★ 반짝임 없음
+# =========================================================
+
+def rising_release_section(
+    data,
+    update_time
+):
+
+    release_data = []
+
+    now = time.time()
+
+    # =====================================================
+    # 현재 TOP 데이터와 스냅샷 비교
+    #
+    # 종료된 종목은 별도 snapshot에서 가져오기 때문에
+    # TOP30에서 빠져도 1시간 표시 가능
+    # =====================================================
+
+    with air_released_lock:
+
+        # -------------------------------------------------
+        # 현재 전달된 데이터에서 최신 종료 상태 반영
+        # -------------------------------------------------
+
+        for x in data:
+
+            if not x.get(
+                "air_ended",
+                False
+            ):
+                continue
+
+            # name을 기본 식별자로 사용
+            market_name = x.get(
+                "name",
+                ""
+            )
+
+            # 기존 시간은 유지
+            if market_name not in air_released_time:
+
+                air_released_time[
+                    market_name
+                ] = now
+
+            air_released_snapshot[
+                market_name
+            ] = x.copy()
+
+        # -------------------------------------------------
+        # 1시간 지난 데이터 제거
+        # -------------------------------------------------
+
+        expired = []
+
+        for market_name, released_at in (
+            air_released_time.items()
+        ):
+
+            if (
+                now - released_at
+                >= AIR_RELEASE_DISPLAY_SECONDS
+            ):
+
+                expired.append(
+                    market_name
+                )
+
+        for market_name in expired:
+
+            air_released_time.pop(
+                market_name,
+                None
+            )
+
+            air_released_snapshot.pop(
+                market_name,
+                None
+            )
+
+        # -------------------------------------------------
+        # 표시 데이터 생성
+        # -------------------------------------------------
+
+        for market_name, released_at in (
+            air_released_time.items()
+        ):
+
+            snapshot = (
+                air_released_snapshot.get(
+                    market_name
+                )
+            )
+
+            if snapshot is None:
+                continue
+
+            # 종료 상태 유지
+            snapshot = snapshot.copy()
+
+            snapshot["air_ended"] = True
+            snapshot["air_active"] = False
+            snapshot["qualified"] = False
+
+            release_data.append(
+                snapshot
+            )
+
+    # =====================================================
+    # 표시
+    # =====================================================
+
+    if not release_data:
+
+        rows = """
+        <tr>
+            <td colspan="6" class="empty">
+                현재 상승 해지 코인 없음
+            </td>
+        </tr>
+        """
+
+        table = f"""
+        <div class="table-wrap focus-table release-table">
+
+            <table>
+
+                <thead>
+
+                    <tr>
+                        <th>#</th>
+                        <th>코인</th>
+                        <th>거래대금</th>
+                        <th>EMA</th>
+                        <th>3-10선</th>
+                        <th>경고</th>
+                    </tr>
+
+                </thead>
+
+                <tbody>
+                    {rows}
+                </tbody>
+
+            </table>
+
+        </div>
+        """
+
+    else:
+
+        table = (
+            '<div class="focus-table release-table">'
+            + table_html(
+                release_data,
+                animate_warning=False
+            ).replace(
+                '<div class="table-wrap">',
+                '',
+                1
+            )
+            + '</div>'
+        )
+
+    return f"""
+    <h2 class="focus-title release-title">
+
+        📉 상승 해지 리스트
+
+        <small>
+            {update_time} KST
+        </small>
+
+    </h2>
+
+    {table}
+    """
+
+
+# =========================================================
 # 🚨 경고리스트
 #
 # ★ 비행기 카운트 2 이상
-# ★ 종료 ⛔️는 한 번만 표시
+# ★ 종료 ⛔️는 기존대로 1회 표시
+# ★ 반짝임 OFF
 #
 # count 2 이상 → ✈️
 # 종료 최초 1회 → ⛔️
@@ -2741,7 +3060,7 @@ def warning_focus_section(
         # =================================================
         # ① 종료된 종목
         #
-        # ★ ⛔️를 아직 표시하지 않은 경우에만 추가
+        # 기존 원본 로직 유지
         # =================================================
 
         if x.get(
@@ -2753,7 +3072,6 @@ def warning_focus_section(
 
                 if market in air_ended_displayed:
 
-                    # 이미 ⛔️ 표시 완료
                     continue
 
                 air_ended_displayed.add(
@@ -2826,7 +3144,8 @@ def warning_focus_section(
         table = (
             '<div class="focus-table warning-table">'
             + table_html(
-                warning_data
+                warning_data,
+                animate_warning=False
             ).replace(
                 '<div class="table-wrap">',
                 '',
@@ -3173,12 +3492,20 @@ font-weight:bold;
 display:inline-block;
 transform-origin:center center;
 
-animation:air-pulse 0.55s infinite;
-
 filter:
 drop-shadow(0 0 2px currentColor)
 drop-shadow(0 0 4px currentColor);
 }
+
+
+/* =====================================================
+   ★ 상승 경고리스트만 반짝임
+   ===================================================== */
+
+.air-animated{
+animation:air-pulse 0.55s infinite;
+}
+
 
 @keyframes air-pulse{
 
@@ -3236,6 +3563,19 @@ color:#35e66d;
 
 .rising-table{
 border:1px solid #35e66d;
+}
+
+
+/* =====================================================
+   ★ 상승 해지 리스트
+   ===================================================== */
+
+.release-title{
+color:#fff;
+}
+
+.release-table{
+border:1px solid #555;
 }
 
 
@@ -3417,15 +3757,19 @@ def dashboard():
     # =====================================================
     # ★ 대시보드 리스트 순서
     #
-    # ① 상승 경고리스트 : 카운트 1
-    # ② 경고리스트      : 카운트 2 이상 + 종료 1회
-    # ③ 전체 TOP30
+    # ① 상승 경고리스트
+    # ② 상승 해지 리스트
+    # ③ 경고리스트
+    # ④ 전체 TOP30
     # =====================================================
 
     sections = ""
 
     # -----------------------------------------------------
     # ① 상승 경고리스트
+    #
+    # ★ 카운트 1
+    # ★ 반짝임 ON
     # -----------------------------------------------------
 
     if USE_UPBIT == "Y":
@@ -3443,7 +3787,31 @@ def dashboard():
         )
 
     # -----------------------------------------------------
-    # ② 경고리스트
+    # ② 상승 해지 리스트
+    #
+    # ★ 종료 후 1시간
+    # ★ TOP30에서 빠져도 표시
+    # -----------------------------------------------------
+
+    if USE_UPBIT == "Y":
+
+        sections += rising_release_section(
+            latest_upbit_data,
+            latest_upbit_update_time
+        )
+
+    if USE_OKX == "Y":
+
+        sections += rising_release_section(
+            latest_okx_data,
+            latest_okx_update_time
+        )
+
+    # -----------------------------------------------------
+    # ③ 경고리스트
+    #
+    # ★ 카운트 2 이상
+    # ★ 반짝임 OFF
     # -----------------------------------------------------
 
     if USE_UPBIT == "Y":
@@ -3461,7 +3829,7 @@ def dashboard():
         )
 
     # -----------------------------------------------------
-    # ③ 전체 TOP30
+    # ④ 전체 TOP30
     # -----------------------------------------------------
 
     if USE_UPBIT == "Y":
@@ -3537,7 +3905,13 @@ def dashboard():
 
             ⑨ EMA3 &lt; EMA10 역배열 종가 확정 시 → ⛔️ 종료<br>
 
-            ⑩ 업비트 : Y / OKX : N
+            ⑩ 종료된 상승 신호 → 📉 상승 해지 리스트에서 1시간 표시<br>
+
+            ⑪ 상승 경고리스트만 비행기 반짝임<br>
+
+            ⑫ 경고리스트 비행기 → 반짝임 없음<br>
+
+            ⑬ 업비트 : Y / OKX : N
 
             {status}
 
@@ -3664,7 +4038,15 @@ def startup():
     )
 
     log.info(
-        "종료 ⛔️ = 대시보드 1회만 표시"
+        "종료 ⛔️ = 상승 해지 리스트에서 1시간 표시"
+    )
+
+    log.info(
+        "상승 경고리스트 = 비행기 반짝임 ON"
+    )
+
+    log.info(
+        "경고리스트 = 비행기 반짝임 OFF"
     )
 
     log.info(
