@@ -2152,13 +2152,9 @@ def update_dashboard():
 # =========================================================
 # 경고 HTML
 #
-# ★ 여기서는 "현재 3-10선 카운트"를 기준으로 표시
-#
 # 1 → 🛩✈️
 # 2 이상 → ✈️
 # 종료 → ⛔️
-#
-# ※ 카운팅 자체는 update_air_counter()가 담당
 # =========================================================
 
 def warning_html(
@@ -2188,10 +2184,6 @@ def warning_html(
 
     if not air_warning:
         return "-"
-
-    # -----------------------------------------------------
-    # 전달받은 카운트
-    # -----------------------------------------------------
 
     try:
 
@@ -2367,11 +2359,7 @@ def rows_html(data):
         )
 
         # =================================================
-        # ★ 핵심 수정
-        #
-        # 비행기 표시용 카운트는
-        # air_count가 아니라
-        # 화면에 실제 표시되는 EMA3-EMA10 count를 사용
+        # ★ 화면에 표시되는 EMA3-EMA10 카운트 사용
         # =================================================
 
         ema3_data = x.get(
@@ -2557,35 +2545,52 @@ def section(
 
 
 # =========================================================
-# 집중 리스트
+# 🚀 상승 경고리스트
+#
+# ★ 현재 진행 중
+# ★ 비행기 카운트 = 정확히 1
+#
+# 🛩✈️만 표시되는 종목
 # =========================================================
 
-def focus_section(
+def rising_focus_section(
     data,
     update_time
 ):
 
-    focus_data = [
+    rising_data = [
         x
         for x in data
-        if x.get(
-            "qualified",
-            False
+        if (
+            x.get(
+                "air_active",
+                False
+            )
+            and not x.get(
+                "air_ended",
+                False
+            )
+            and int(
+                x.get(
+                    "air_count",
+                    0
+                )
+            ) == 1
         )
     ]
 
-    if not focus_data:
+    if not rising_data:
 
         rows = """
         <tr>
             <td colspan="6" class="empty">
-                현재 경고 진행 코인 없음
+                현재 상승 경고 코인 없음
             </td>
         </tr>
         """
 
         table = f"""
-        <div class="table-wrap focus-table">
+        <div class="table-wrap focus-table rising-table">
 
             <table>
 
@@ -2614,9 +2619,9 @@ def focus_section(
     else:
 
         table = (
-            '<div class="focus-table">'
+            '<div class="focus-table rising-table">'
             + table_html(
-                focus_data
+                rising_data
             ).replace(
                 '<div class="table-wrap">',
                 '',
@@ -2626,7 +2631,111 @@ def focus_section(
         )
 
     return f"""
-    <h2 class="focus-title">
+    <h2 class="focus-title rising-title">
+
+        🚀 상승 경고리스트
+
+        <small>
+            {update_time} KST
+        </small>
+
+    </h2>
+
+    {table}
+    """
+
+
+# =========================================================
+# 🚨 경고리스트
+#
+# ★ 현재 진행 중인 비행기 카운트 2 이상
+# ★ 종료된 비행기
+#
+# ✈️ / ⛔️ 표시
+# =========================================================
+
+def warning_focus_section(
+    data,
+    update_time
+):
+
+    warning_data = [
+        x
+        for x in data
+        if (
+            (
+                x.get(
+                    "air_active",
+                    False
+                )
+                and int(
+                    x.get(
+                        "air_count",
+                        0
+                    )
+                ) >= 2
+            )
+            or
+            x.get(
+                "air_ended",
+                False
+            )
+        )
+    ]
+
+    if not warning_data:
+
+        rows = """
+        <tr>
+            <td colspan="6" class="empty">
+                현재 경고 진행 코인 없음
+            </td>
+        </tr>
+        """
+
+        table = f"""
+        <div class="table-wrap focus-table warning-table">
+
+            <table>
+
+                <thead>
+
+                    <tr>
+                        <th>#</th>
+                        <th>코인</th>
+                        <th>거래대금</th>
+                        <th>EMA</th>
+                        <th>3-10선</th>
+                        <th>경고</th>
+                    </tr>
+
+                </thead>
+
+                <tbody>
+                    {rows}
+                </tbody>
+
+            </table>
+
+        </div>
+        """
+
+    else:
+
+        table = (
+            '<div class="focus-table warning-table">'
+            + table_html(
+                warning_data
+            ).replace(
+                '<div class="table-wrap">',
+                '',
+                1
+            )
+            + '</div>'
+        )
+
+    return f"""
+    <h2 class="focus-title warning-title">
 
         🚨 경고 리스트
 
@@ -3010,9 +3119,35 @@ color:#ff4d4d;
 background:rgba(255,255,255,.06);
 }
 
+
+/* =====================================================
+   ★ 상승 경고리스트
+   ===================================================== */
+
 .focus-title{
 margin-top:5px;
 margin-bottom:3px;
+}
+
+.rising-title{
+color:#35e66d;
+}
+
+.rising-table{
+border:1px solid #35e66d;
+}
+
+
+/* =====================================================
+   ★ 경고리스트
+   ===================================================== */
+
+.warning-title{
+color:#ff4d4d;
+}
+
+.warning-table{
+border:1px solid #343a42;
 }
 
 .focus-table{
@@ -3178,21 +3313,55 @@ def dashboard():
     </div>
     """
 
+    # =====================================================
+    # ★ 대시보드 리스트 순서
+    #
+    # ① 상승 경고리스트 : 카운트 1
+    # ② 경고리스트      : 카운트 2 이상 + 종료
+    # ③ 전체 TOP30
+    # =====================================================
+
     sections = ""
+
+    # -----------------------------------------------------
+    # ① 상승 경고리스트
+    # -----------------------------------------------------
 
     if USE_UPBIT == "Y":
 
-        sections += focus_section(
+        sections += rising_focus_section(
             latest_upbit_data,
             latest_upbit_update_time
         )
 
     if USE_OKX == "Y":
 
-        sections += focus_section(
+        sections += rising_focus_section(
             latest_okx_data,
             latest_okx_update_time
         )
+
+    # -----------------------------------------------------
+    # ② 경고리스트
+    # -----------------------------------------------------
+
+    if USE_UPBIT == "Y":
+
+        sections += warning_focus_section(
+            latest_upbit_data,
+            latest_upbit_update_time
+        )
+
+    if USE_OKX == "Y":
+
+        sections += warning_focus_section(
+            latest_okx_data,
+            latest_okx_update_time
+        )
+
+    # -----------------------------------------------------
+    # ③ 전체 TOP30
+    # -----------------------------------------------------
 
     if USE_UPBIT == "Y":
 
@@ -3259,7 +3428,7 @@ def dashboard():
 
             ⑤ EMA3와 EMA10은 모두 1H 캔들 종가 기준<br>
 
-            ⑥ 모든 조건 충족 즉시 → ✈️ 경고<br>
+            ⑥ 모든 조건 충족 즉시 → 🛩✈️<br>
 
             ⑦ EMA3 &gt; EMA10 유지 → 새 확정 캔들마다 비행기 카운트 +1<br>
 
