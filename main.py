@@ -1198,7 +1198,6 @@ def update_air_counter(
                     "count": 0
                 }
 
-            # ★ 새로운 비행기 시작
             with air_ended_displayed_lock:
 
                 air_ended_displayed.discard(
@@ -1252,7 +1251,6 @@ def update_air_counter(
                     != candle_time
                 ):
 
-                    # ★ 새로운 비행기 재시작
                     with air_ended_displayed_lock:
 
                         air_ended_displayed.discard(
@@ -2399,10 +2397,6 @@ def rows_html(data):
             else ""
         )
 
-        # =================================================
-        # ★ 화면에 표시되는 EMA3-EMA10 카운트
-        # =================================================
-
         ema3_data = x.get(
             "ema3_10_cross_1h",
             {}
@@ -2587,8 +2581,6 @@ def section(
 
 # =========================================================
 # ★ 실제 화면용 비행기 카운트
-#
-# rows_html()과 동일한 기준
 # =========================================================
 
 def get_visual_air_count(x):
@@ -2622,11 +2614,6 @@ def get_visual_air_count(x):
 
 # =========================================================
 # 🚀 상승 경고리스트
-#
-# ★ 현재 진행 중
-# ★ 비행기 카운트 = 1
-#
-# 🛩✈️만 표시되는 종목
 # =========================================================
 
 def rising_focus_section(
@@ -2726,13 +2713,6 @@ def rising_focus_section(
 
 # =========================================================
 # 🚨 경고리스트
-#
-# ★ 비행기 카운트 2 이상
-# ★ 종료 ⛔️는 한 번만 표시
-#
-# count 2 이상 → ✈️
-# 종료 최초 1회 → ⛔️
-# 이후 → 제거
 # =========================================================
 
 def warning_focus_section(
@@ -2749,12 +2729,6 @@ def warning_focus_section(
             ""
         )
 
-        # =================================================
-        # ① 종료된 종목
-        #
-        # ★ ⛔️를 아직 표시하지 않은 경우에만 추가
-        # =================================================
-
         if x.get(
             "air_ended",
             False
@@ -2764,7 +2738,6 @@ def warning_focus_section(
 
                 if market in air_ended_displayed:
 
-                    # 이미 ⛔️ 표시 완료
                     continue
 
                 air_ended_displayed.add(
@@ -2774,12 +2747,6 @@ def warning_focus_section(
             warning_data.append(x)
 
             continue
-
-        # =================================================
-        # ② 현재 진행 중
-        #
-        # ★ 비행기 2개 이상
-        # =================================================
 
         if not x.get(
             "air_active",
@@ -3178,46 +3145,14 @@ justify-content:center;
 width:100%;
 }
 
+/* =====================================================
+★ 비행기 반짝임 제거
+===================================================== */
+
 .air-icon{
 font-size:11px;
 font-weight:bold;
 display:inline-block;
-transform-origin:center center;
-
-animation:air-pulse 0.55s infinite;
-
-filter:
-drop-shadow(0 0 2px currentColor)
-drop-shadow(0 0 4px currentColor);
-}
-
-@keyframes air-pulse{
-
-0%{
-transform:scale(.90);
-opacity:.30;
-}
-
-25%{
-transform:scale(1.15);
-opacity:.75;
-}
-
-50%{
-transform:scale(1.35);
-opacity:1;
-}
-
-75%{
-transform:scale(1.15);
-opacity:.75;
-}
-
-100%{
-transform:scale(.90);
-opacity:.30;
-}
-
 }
 
 .air-end{
@@ -3421,14 +3356,6 @@ def dashboard():
 
     </div>
     """
-
-    # =====================================================
-    # ★ 대시보드 리스트 순서
-    #
-    # ① 상승 경고리스트 : 카운트 1
-    # ② 경고리스트      : 카운트 2 이상 + 종료 1회
-    # ③ 전체 TOP30
-    # =====================================================
 
     sections = ""
 
