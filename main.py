@@ -80,29 +80,6 @@ air_state = {}
 
 
 # =========================================================
-# ★ 비트코인지수
-#
-# ★ OKX BTC-USDT-SWAP만 별도 사용
-# ★ 기존 OKX TOP30과 완전히 독립
-#
-# 1H + 4H EMA 30-60-120 기준
-#
-# 집중 = 1H 정배열 + 4H 정배열 → ☀️
-# 관망 = 역배열 없음 + 완전 정배열 아님 → 🌥
-# 중지 = 1H 또는 4H 역배열 → 🌧
-# =========================================================
-
-latest_btc_index = {
-    "mode": "관망",
-    "icon": "🌥",
-    "direction_1h": "none",
-    "direction_4h": "none"
-}
-
-btc_index_lock = threading.Lock()
-
-
-# =========================================================
 # ★ 종료 표시 관리
 #
 # 종료된 종목은 ⛔️를 한 번만 표시하고
@@ -110,7 +87,6 @@ btc_index_lock = threading.Lock()
 # =========================================================
 
 air_ended_displayed = set()
-
 air_ended_displayed_lock = threading.Lock()
 
 
@@ -764,8 +740,7 @@ def ema(
 # =========================================================
 # ★ 정배열 / 역배열
 #
-# EMA30 > EMA60 > EMA120 = long
-# EMA30 < EMA60 < EMA120 = short
+# EMA30 > EMA60 > EMA120
 # =========================================================
 
 def direction(df):
@@ -929,125 +904,172 @@ def ema_display(df):
 
 
 # =========================================================
-# ★ 비트코인지수 업데이트
-#
-# ★ OKX BTC-USDT-SWAP만 사용
-# ★ 기존 OKX TOP30과 독립
-#
-# 확정 1H / 4H 캔들
-# EMA 30-60-120
-#
-# 1H long + 4H long
-# → 집중 ☀️
-#
-# 1H 또는 4H short
-# → 중지 🌧
-#
-# 그 외
-# → 관망 🌥
+# 1H EMA3 ↔ EMA10
 # =========================================================
 
-def update_btc_index():
+def ema3_10_cross_count(df):
 
-    global latest_btc_index
+    result = {
+        "state": "none",
+        "count": 0,
+        "final_count": 0,
+        "display": "-",
+        "candle_time": None
+    }
+
+    if (
+        df is None
+        or df.empty
+        or len(df) < 2
+    ):
+
+        return result
 
     try:
 
-        df1h = history_okx(
-            "BTC-USDT-SWAP",
-            "1H"
-        )
-
-        df4h = history_okx(
-            "BTC-USDT-SWAP",
-            "4H"
-        )
+        e3 = ema(df, 3)
+        e10 = ema(df, 10)
 
         if (
-            df1h is None
-            or df1h.empty
-            or df4h is None
-            or df4h.empty
+            e3 is None
+            or e10 is None
         ):
 
-            log.warning(
-                "[OKX BTC 지수] 데이터 없음"
+            return result
+
+        e3_values = pd.to_numeric(
+            e3,
+            errors="coerce"
+        ).reset_index(drop=True)
+
+        e10_values = pd.to_numeric(
+            e10,
+            errors="coerce"
+        ).reset_index(drop=True)
+
+        valid_last = (
+            e3_values.notna().iloc[-1]
+            and
+            e10_values.notna().iloc[-1]
+        )
+
+        if not valid_last:
+            return result
+
+        states = []
+
+        for i in range(len(df)):
+
+            ema3_value = float(
+                e3_values.iloc[i]
             )
 
-            return
+            ema10_value = float(
+                e10_values.iloc[i]
+            )
 
-        direction_1h = direction(
-            df1h
+            if ema3_value > ema10_value:
+
+                states.append("long")
+
+            elif ema3_value < ema10_value:
+
+                states.append("short")
+
+            else:
+
+                states.append("equal")
+
+        current_state = states[-1]
+
+        result["state"] = current_state
+
+        result["candle_time"] = (
+            df.datetime.iloc[-1]
         )
 
-        direction_4h = direction(
-            df4h
+        if current_state == "equal":
+
+            result["display"] = "⚪(0)"
+
+            return result
+
+        current_count = 0
+        i = len(states) - 1
+
+        while i >= 0:
+
+            if states[i] == current_state:
+
+                current_count += 1
+                i -= 1
+
+            else:
+
+                break
+
+        previous_state = (
+            "short"
+            if current_state == "long"
+            else "long"
         )
 
-        # =================================================
-        # ① 중지
-        # =================================================
+        final_count = 0
+        j = i
 
-        if (
-            direction_1h == "short"
-            or
-            direction_4h == "short"
-        ):
+        while j >= 0:
 
-            mode = "중지"
-            icon = "🌧"
+            if states[j] == previous_state:
 
-        # =================================================
-        # ② 집중
-        # =================================================
+                final_count += 1
+                j -= 1
 
-        elif (
-            direction_1h == "long"
-            and
-            direction_4h == "long"
-        ):
+            else:
 
-            mode = "집중"
-            icon = "☀️"
+                break
 
-        # =================================================
-        # ③ 관망
-        # =================================================
+        result["count"] = current_count
+        result["final_count"] = final_count
+
+        if current_state == "long":
+
+            if final_count > 0:
+
+                result["display"] = (
+                    f"{final_count}|"
+                    f"🟢({current_count})"
+                )
+
+            else:
+
+                result["display"] = (
+                    f"🟢({current_count})"
+                )
 
         else:
 
-            mode = "관망"
-            icon = "🌥"
+            if final_count > 0:
 
-        with btc_index_lock:
+                result["display"] = (
+                    f"{final_count}|"
+                    f"🔻({current_count})"
+                )
 
-            latest_btc_index = {
+            else:
 
-                "mode":
-                    mode,
+                result["display"] = (
+                    f"🔻({current_count})"
+                )
 
-                "icon":
-                    icon,
-
-                "direction_1h":
-                    direction_1h,
-
-                "direction_4h":
-                    direction_4h
-            }
-
-        log.info(
-            f"[OKX BTC 지수] "
-            f"{mode} {icon} / "
-            f"1H={direction_1h} / "
-            f"4H={direction_4h}"
-        )
+        return result
 
     except Exception as e:
 
-        log.exception(
-            f"[OKX BTC 지수] 오류: {e}"
+        log.error(
+            f"EMA3-EMA10 교차 카운팅 오류: {e}"
         )
+
+        return result
 
 
 # =========================================================
@@ -1167,6 +1189,10 @@ def update_air_counter(
             )
         )
 
+        # =================================================
+        # ① 최초 비행기 포착
+        # =================================================
+
         if state is None:
 
             if new_warning is None:
@@ -1212,6 +1238,10 @@ def update_air_counter(
                     new_warning,
                 "count": 1
             }
+
+        # =================================================
+        # ② 이전 비행기가 종료된 상태
+        # =================================================
 
         if state.get(
             "ended",
@@ -1271,6 +1301,10 @@ def update_air_counter(
                     state.get("count", 0)
             }
 
+        # =================================================
+        # ③ 비행기 진행 상태가 아닌 경우
+        # =================================================
+
         if not state.get(
             "active",
             False
@@ -1288,6 +1322,10 @@ def update_air_counter(
                 "count":
                     state.get("count", 0)
             }
+
+        # =================================================
+        # ④ 같은 확정 캔들이면 카운트 증가 금지
+        # =================================================
 
         if candle_time <= state.get(
             "counted_candle"
@@ -1316,7 +1354,15 @@ def update_air_counter(
                     state.get("count", 1)
             }
 
+        # =================================================
+        # ⑤ 새로운 확정 1H 캔들
+        # =================================================
+
         state["counted_candle"] = candle_time
+
+        # =================================================
+        # EMA3 < EMA10 → 종료
+        # =================================================
 
         if current_ema_state == "short":
 
@@ -1332,6 +1378,10 @@ def update_air_counter(
                     state.get("count", 1)
             }
 
+        # =================================================
+        # EMA3 = EMA10
+        # =================================================
+
         if current_ema_state == "equal":
 
             return {
@@ -1342,6 +1392,12 @@ def update_air_counter(
                 "count":
                     state.get("count", 1)
             }
+
+        # =================================================
+        # EMA3 > EMA10
+        #
+        # 양봉/음봉 관계없이 +1
+        # =================================================
 
         if current_ema_state == "long":
 
@@ -2093,10 +2149,6 @@ def update_dashboard():
             f"========== 전체 조회 {kst()} =========="
         )
 
-        # =================================================
-        # ① 업비트
-        # =================================================
-
         if USE_UPBIT == "Y":
 
             try:
@@ -2112,29 +2164,6 @@ def update_dashboard():
         else:
 
             latest_upbit_data = []
-
-        # =================================================
-        # ★ ② 비트코인지수
-        #
-        # 업비트와 완전히 독립
-        # OKX BTC-USDT-SWAP만 사용
-        #
-        # USE_OKX = "N"이어도 작동
-        # =================================================
-
-        try:
-
-            update_btc_index()
-
-        except Exception as e:
-
-            log.exception(
-                f"OKX BTC 지수 업데이트 오류: {e}"
-            )
-
-        # =================================================
-        # ③ 기존 OKX TOP30
-        # =================================================
 
         if USE_OKX == "Y":
 
@@ -2166,86 +2195,11 @@ def update_dashboard():
 
 
 # =========================================================
-# ★ 비트코인지수 HTML
-#
-# 집중 | 관망 | 중지
-#
-# 아이콘은 항상 표시
-# 현재 상태만 강조
-# =========================================================
-
-def bitcoin_index_section():
-
-    with btc_index_lock:
-
-        data = latest_btc_index.copy()
-
-    current_mode = data.get(
-        "mode",
-        "관망"
-    )
-
-    def active(mode):
-
-        return (
-            " btc-mode-active"
-            if current_mode == mode
-            else ""
-        )
-
-    return f"""
-    <div class="btc-index">
-
-        <div class="btc-index-title">
-            비트코인지수
-        </div>
-
-        <div class="btc-mode-grid">
-
-            <div class="btc-mode-cell{active("집중")}">
-
-                <div class="btc-mode-name">
-                    집중
-                </div>
-
-                <div class="btc-mode-icon">
-                    ☀️
-                </div>
-
-            </div>
-
-            <div class="btc-mode-cell{active("관망")}">
-
-                <div class="btc-mode-name">
-                    관망
-                </div>
-
-                <div class="btc-mode-icon">
-                    🌥
-                </div>
-
-            </div>
-
-            <div class="btc-mode-cell{active("중지")}">
-
-                <div class="btc-mode-name">
-                    중지
-                </div>
-
-                <div class="btc-mode-icon">
-                    🌧
-                </div>
-
-            </div>
-
-        </div>
-
-    </div>
-    """
-
-
-# =========================================================
 # 경고 HTML
+#
+# 1 → 🛩✈️
+# 2 이상 → ✈️
+# 종료 → ⛔️
 # =========================================================
 
 def warning_html(
@@ -2871,601 +2825,492 @@ def warning_focus_section(
 CSS = """
 
 *{
-box-sizing:border-box;
+    box-sizing:border-box;
 }
 
 html,
 body{
-margin:0;
-padding:0;
-width:100%;
-overflow-x:hidden;
+    margin:0;
+    padding:0;
+    width:100%;
+    overflow-x:hidden;
 }
 
 body{
-background:#0f1115;
-color:#eee;
-font-family:Arial,sans-serif;
-font-size:9px;
-padding:3px;
+    background:#0f1115;
+    color:#eee;
+    font-family:Arial,sans-serif;
+    font-size:9px;
+    padding:3px;
 }
 
 h1{
-margin:2px 2px 4px;
-font-size:13px;
+    margin:2px 2px 4px;
+    font-size:13px;
 }
 
 h2{
-margin:7px 2px 3px;
-font-size:10px;
+    margin:7px 2px 3px;
+    font-size:10px;
 }
 
 h2 small{
-color:#777;
-font-size:6px;
-font-weight:normal;
-margin-left:3px;
+    color:#777;
+    font-size:6px;
+    font-weight:normal;
+    margin-left:3px;
 }
 
 .info{
-margin:0 2px 4px;
-padding:3px 5px;
-color:#8b9099;
-background:#171a1f;
-border:1px solid #252a31;
-border-radius:7px;
-font-size:7px;
-line-height:1.25;
+    margin:0 2px 4px;
+    padding:3px 5px;
+    color:#8b9099;
+    background:#171a1f;
+    border:1px solid #252a31;
+    border-radius:7px;
+    font-size:7px;
+    line-height:1.25;
 }
 
 .status{
-display:flex;
-justify-content:center;
-gap:8px;
-margin-top:2px;
-font-weight:bold;
+    display:flex;
+    justify-content:center;
+    gap:8px;
+    margin-top:2px;
+    font-weight:bold;
 }
 
 .y{
-color:#35e66d;
+    color:#35e66d;
 }
 
 .n{
-color:#ff4d4d;
+    color:#ff4d4d;
 }
-
-
-/* =====================================================
-★ 비트코인지수
-===================================================== */
-
-.btc-index{
-margin:5px 2px 4px;
-padding:5px;
-background:#171a1f;
-border:1px solid #252a31;
-border-radius:8px;
-}
-
-.btc-index-title{
-text-align:center;
-font-size:10px;
-font-weight:bold;
-margin-bottom:5px;
-color:#eee;
-}
-
-.btc-mode-grid{
-display:grid;
-grid-template-columns:repeat(3,1fr);
-gap:4px;
-}
-
-.btc-mode-cell{
-text-align:center;
-padding:4px 2px;
-min-height:34px;
-border:1px solid #2b3037;
-border-radius:7px;
-background:#12151a;
-}
-
-.btc-mode-name{
-font-size:8px;
-font-weight:bold;
-line-height:10px;
-}
-
-.btc-mode-icon{
-margin-top:3px;
-height:18px;
-font-size:17px;
-line-height:18px;
-}
-
-.btc-mode-active{
-background:rgba(255,255,255,.08);
-}
-
-.btc-mode-cell:nth-child(1).btc-mode-active{
-border-color:#35e66d;
-}
-
-.btc-mode-cell:nth-child(2).btc-mode-active{
-border-color:#d6b84c;
-}
-
-.btc-mode-cell:nth-child(3).btc-mode-active{
-border-color:#ff4d4d;
-}
-
-
-/* =====================================================
-기존 CSS
-===================================================== */
 
 .table-wrap{
-width:100%;
-overflow:hidden;
-border-radius:8px;
-border:1px solid #252a31;
+    width:100%;
+    overflow:hidden;
+    border-radius:8px;
+    border:1px solid #252a31;
 }
 
 table{
-width:100%;
-table-layout:fixed;
-border-collapse:collapse;
-background:#181c21;
+    width:100%;
+    table-layout:fixed;
+    border-collapse:collapse;
+    background:#181c21;
 }
 
 th{
-padding:4px 2px;
-background:#12151a;
-border-bottom:1px solid #2b3037;
-color:#8f949d;
-font-size:6px;
-white-space:nowrap;
-text-align:center !important;
-vertical-align:middle;
+    padding:4px 2px;
+    background:#12151a;
+    border-bottom:1px solid #2b3037;
+    color:#8f949d;
+    font-size:6px;
+    white-space:nowrap;
+    text-align:center !important;
+    vertical-align:middle;
 }
 
 td{
-padding:3px 2px;
-border-bottom:1px solid #272c32;
-text-align:center !important;
-vertical-align:middle;
+    padding:3px 2px;
+    border-bottom:1px solid #272c32;
+    text-align:center !important;
+    vertical-align:middle;
 }
 
 th:nth-child(1),
 td:nth-child(1){
-width:6%;
+    width:6%;
 }
 
 th:nth-child(2),
 td:nth-child(2){
-width:19%;
+    width:19%;
 }
 
 th:nth-child(3),
 td:nth-child(3){
-width:15%;
+    width:15%;
 }
 
 th:nth-child(4),
 td:nth-child(4){
-width:23%;
+    width:23%;
 }
 
 th:nth-child(5),
 td:nth-child(5){
-width:17%;
+    width:17%;
 }
 
 th:nth-child(6),
 td:nth-child(6){
-width:20%;
+    width:20%;
 }
 
 .rank{
-color:#8f949d;
-font-size:7px;
+    color:#8f949d;
+    font-size:7px;
 }
 
 .coin{
-overflow:hidden;
-padding:1px 2px;
+    overflow:hidden;
+    padding:1px 2px;
 }
 
 .coin-name{
-font-size:8px;
-font-weight:bold;
-line-height:9px;
-height:9px;
-white-space:nowrap;
-overflow:hidden;
-text-overflow:ellipsis;
+    font-size:8px;
+    font-weight:bold;
+    line-height:9px;
+    height:9px;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
 }
 
 .change{
-margin-top:0;
-line-height:7px;
-height:7px;
-font-size:7px;
-white-space:nowrap;
+    margin-top:0;
+    line-height:7px;
+    height:7px;
+    font-size:7px;
+    white-space:nowrap;
 }
 
 .up{
-color:#35e66d;
-font-weight:bold;
+    color:#35e66d;
+    font-weight:bold;
 }
 
 .down{
-color:#ff4d4d;
-font-weight:bold;
+    color:#ff4d4d;
+    font-weight:bold;
 }
 
 .zero{
-color:#999;
+    color:#999;
 }
 
 .vol{
-padding:1px 2px !important;
-font-size:7px;
-font-weight:bold;
-line-height:16px;
-height:16px;
-white-space:nowrap;
+    padding:1px 2px !important;
+    font-size:7px;
+    font-weight:bold;
+    line-height:16px;
+    height:16px;
+    white-space:nowrap;
 }
 
 .ema-cell{
-overflow:hidden;
-padding:1px !important;
+    overflow:hidden;
+    padding:1px !important;
 }
 
 .ema-row{
-display:flex;
-align-items:center;
-justify-content:center;
-width:100%;
-height:13px;
-line-height:13px;
-white-space:nowrap;
-overflow:hidden;
-font-size:7px;
-font-weight:bold;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    width:100%;
+    height:13px;
+    line-height:13px;
+    white-space:nowrap;
+    overflow:hidden;
+    font-size:7px;
+    font-weight:bold;
 }
 
 .tf{
-flex:0 0 20px;
-width:20px;
-color:#8f949d;
-font-size:6px;
-font-weight:bold;
-text-align:center;
+    flex:0 0 20px;
+    width:20px;
+    color:#8f949d;
+    font-size:6px;
+    font-weight:bold;
+    text-align:center;
 }
 
 .ema-value-wrap{
-flex:1;
-min-width:0;
-display:flex;
-align-items:center;
-justify-content:flex-start;
-overflow:hidden;
+    flex:1;
+    min-width:0;
+    display:flex;
+    align-items:center;
+    justify-content:flex-start;
+    overflow:hidden;
 }
 
 .ema-value{
-display:inline-block;
-width:auto;
-min-width:0;
-max-width:100%;
-text-align:left;
-white-space:nowrap;
-font-size:7px;
-font-weight:bold;
-line-height:13px;
+    display:inline-block;
+    width:auto;
+    min-width:0;
+    max-width:100%;
+    text-align:left;
+    white-space:nowrap;
+    font-size:7px;
+    font-weight:bold;
+    line-height:13px;
 }
 
 .ema-long{
-color:#35e66d;
+    color:#35e66d;
 }
 
 .ema-short{
-color:#ff4d4d;
+    color:#ff4d4d;
 }
 
 .ema-none{
-color:#eee;
+    color:#eee;
 }
 
 .close-ema10{
-text-align:center !important;
-vertical-align:middle !important;
-white-space:nowrap;
-font-size:7px;
-font-weight:bold;
-overflow:hidden;
+    text-align:center !important;
+    vertical-align:middle !important;
+    white-space:nowrap;
+    font-size:7px;
+    font-weight:bold;
+    overflow:hidden;
 }
 
 .ema10-box{
-width:100%;
-display:flex;
-flex-direction:column;
-align-items:center;
-justify-content:center;
-text-align:center;
-white-space:nowrap;
-line-height:10px;
+    width:100%;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    text-align:center;
+    white-space:nowrap;
+    line-height:10px;
 }
 
 .ema10-final{
-width:100%;
-display:block;
-color:#fff;
-font-size:6px;
-font-weight:bold;
-line-height:9px;
-text-align:center;
+    width:100%;
+    display:block;
+    color:#fff;
+    font-size:6px;
+    font-weight:bold;
+    line-height:9px;
+    text-align:center;
 }
 
 .ema10-long{
-color:#35e66d;
-font-size:7px;
-font-weight:bold;
-line-height:10px;
-text-align:center;
+    color:#35e66d;
+    font-size:7px;
+    font-weight:bold;
+    line-height:10px;
+    text-align:center;
 }
 
 .ema10-short{
-color:#ff4d4d;
-font-size:7px;
-font-weight:bold;
-line-height:10px;
-text-align:center;
+    color:#ff4d4d;
+    font-size:7px;
+    font-weight:bold;
+    line-height:10px;
+    text-align:center;
 }
 
 .ema10-none{
-color:#777;
-font-size:7px;
-text-align:center;
+    color:#777;
+    font-size:7px;
+    text-align:center;
 }
 
 .warning{
-text-align:center !important;
-vertical-align:middle !important;
-white-space:nowrap;
-padding:0 2px !important;
+    text-align:center !important;
+    vertical-align:middle !important;
+    white-space:nowrap;
+    padding:0 2px !important;
 }
 
 .air-box{
-width:100%;
-display:flex;
-align-items:center;
-justify-content:center;
-text-align:center;
+    width:100%;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    text-align:center;
 }
 
 .air-main{
-display:flex;
-align-items:center;
-justify-content:center;
-width:100%;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    width:100%;
 }
-
 
 /* =====================================================
 ★ 비행기 반짝임 제거
 ===================================================== */
 
 .air-icon{
-font-size:11px;
-font-weight:bold;
-display:inline-block;
+    font-size:11px;
+    font-weight:bold;
+    display:inline-block;
 }
 
 .air-end{
-font-size:12px;
-font-weight:bold;
-line-height:14px;
-color:#ff4d4d;
+    font-size:12px;
+    font-weight:bold;
+    line-height:14px;
+    color:#ff4d4d;
 }
 
 .qualified{
-background:rgba(255,255,255,.06);
+    background:rgba(255,255,255,.06);
 }
-
 
 /* =====================================================
 ★ 상승 경고리스트
 ===================================================== */
 
 .focus-title{
-margin-top:5px;
-margin-bottom:3px;
+    margin-top:5px;
+    margin-bottom:3px;
 }
 
 .rising-title{
-color:#35e66d;
+    color:#35e66d;
 }
 
 .rising-table{
-border:1px solid #35e66d;
+    border:1px solid #35e66d;
 }
-
 
 /* =====================================================
 ★ 경고리스트
 ===================================================== */
 
 .warning-title{
-color:#ff4d4d;
+    color:#ff4d4d;
 }
 
 .warning-table{
-border:1px solid #343a42;
+    border:1px solid #343a42;
 }
 
 .focus-table{
-border:1px solid #343a42;
+    border:1px solid #343a42;
 }
 
 .empty{
-color:#555;
-padding:10px 4px;
+    color:#555;
+    padding:10px 4px;
 }
 
 @media(max-width:480px){
 
-body{
-padding:2px;
-font-size:8px;
-}
+    body{
+        padding:2px;
+        font-size:8px;
+    }
 
-h1{
-font-size:12px;
-margin:2px 2px 3px;
-}
+    h1{
+        font-size:12px;
+        margin:2px 2px 3px;
+    }
 
-h2{
-font-size:9px;
-margin:6px 2px 2px;
-}
+    h2{
+        font-size:9px;
+        margin:6px 2px 2px;
+    }
 
-.info{
-font-size:6px;
-padding:2px 4px;
-line-height:1.2;
-margin-bottom:3px;
-}
+    .info{
+        font-size:6px;
+        padding:2px 4px;
+        line-height:1.2;
+        margin-bottom:3px;
+    }
 
-th{
-padding:3px 1px;
-font-size:5px;
-}
+    th{
+        padding:3px 1px;
+        font-size:5px;
+    }
 
-td{
-padding:2px 1px;
-}
+    td{
+        padding:2px 1px;
+    }
 
-.coin{
-padding:0 1px;
-}
+    .coin{
+        padding:0 1px;
+    }
 
-.coin-name{
-font-size:7px;
-line-height:8px;
-height:8px;
-}
+    .coin-name{
+        font-size:7px;
+        line-height:8px;
+        height:8px;
+    }
 
-.change{
-font-size:6px;
-line-height:6px;
-height:6px;
-}
+    .change{
+        font-size:6px;
+        line-height:6px;
+        height:6px;
+    }
 
-.vol{
-padding:0 1px !important;
-font-size:6px;
-line-height:14px;
-height:14px;
-}
+    .vol{
+        padding:0 1px !important;
+        font-size:6px;
+        line-height:14px;
+        height:14px;
+    }
 
-.ema-cell{
-padding:0 !important;
-}
+    .ema-cell{
+        padding:0 !important;
+    }
 
-.ema-row{
-height:12px;
-line-height:12px;
-font-size:6px;
-}
+    .ema-row{
+        height:12px;
+        line-height:12px;
+        font-size:6px;
+    }
 
-.tf{
-flex:0 0 18px;
-width:18px;
-font-size:5px;
-}
+    .tf{
+        flex:0 0 18px;
+        width:18px;
+        font-size:5px;
+    }
 
-.ema-value-wrap{
-flex:1;
-min-width:0;
-}
+    .ema-value-wrap{
+        flex:1;
+        min-width:0;
+    }
 
-.ema-value{
-font-size:6px;
-line-height:12px;
-}
+    .ema-value{
+        font-size:6px;
+        line-height:12px;
+    }
 
-.close-ema10{
-font-size:6px;
-}
+    .close-ema10{
+        font-size:6px;
+    }
 
-.ema10-box{
-line-height:9px;
-}
+    .ema10-box{
+        line-height:9px;
+    }
 
-.ema10-final{
-width:100%;
-color:#fff;
-font-size:5px;
-line-height:8px;
-text-align:center;
-}
+    .ema10-final{
+        width:100%;
+        color:#fff;
+        font-size:5px;
+        line-height:8px;
+        text-align:center;
+    }
 
-.ema10-long,
-.ema10-short{
-font-size:6px;
-line-height:9px;
-text-align:center;
-}
+    .ema10-long,
+    .ema10-short{
+        font-size:6px;
+        line-height:9px;
+        text-align:center;
+    }
 
-.ema10-none{
-font-size:6px;
-}
+    .ema10-none{
+        font-size:6px;
+    }
 
-.air-icon{
-font-size:9px;
-}
+    .air-icon{
+        font-size:9px;
+    }
 
-.air-end{
-font-size:10px;
-line-height:12px;
-}
-
-
-/* =====================================================
-★ 모바일 비트코인지수
-===================================================== */
-
-.btc-index{
-margin:4px 1px 3px;
-padding:4px;
-}
-
-.btc-index-title{
-font-size:9px;
-margin-bottom:4px;
-}
-
-.btc-mode-grid{
-gap:3px;
-}
-
-.btc-mode-cell{
-padding:3px 1px;
-min-height:31px;
-}
-
-.btc-mode-name{
-font-size:7px;
-line-height:9px;
-}
-
-.btc-mode-icon{
-margin-top:2px;
-height:17px;
-font-size:15px;
-line-height:17px;
-}
+    .air-end{
+        font-size:10px;
+        line-height:12px;
+    }
 
 }
 
@@ -3505,15 +3350,7 @@ def dashboard():
     sections = ""
 
     # -----------------------------------------------------
-    # ① 비트코인지수
-    #
-    # ★ OKX BTC-USDT-SWAP 독립
-    # -----------------------------------------------------
-
-    sections += bitcoin_index_section()
-
-    # -----------------------------------------------------
-    # ② 상승 경고리스트
+    # ① 상승 경고리스트
     # -----------------------------------------------------
 
     if USE_UPBIT == "Y":
@@ -3531,7 +3368,7 @@ def dashboard():
         )
 
     # -----------------------------------------------------
-    # ③ 경고리스트
+    # ② 경고리스트
     # -----------------------------------------------------
 
     if USE_UPBIT == "Y":
@@ -3549,7 +3386,7 @@ def dashboard():
         )
 
     # -----------------------------------------------------
-    # ④ 전체 TOP30
+    # ③ 전체 TOP30
     # -----------------------------------------------------
 
     if USE_UPBIT == "Y":
@@ -3766,23 +3603,6 @@ def startup():
     )
 
     log.info(
-        "OKX BTC-USDT-SWAP = "
-        "비트코인지수 전용"
-    )
-
-    log.info(
-        "BTC 1H + 4H 정배열 = 집중 ☀️"
-    )
-
-    log.info(
-        "BTC 중립 = 관망 🌥"
-    )
-
-    log.info(
-        "BTC 1H 또는 4H 역배열 = 중지 🌧"
-    )
-
-    log.info(
         "========================================"
     )
 
@@ -3813,4 +3633,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-            )
+    )
