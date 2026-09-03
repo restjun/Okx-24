@@ -2712,7 +2712,7 @@ def rising_focus_section(
     return f"""
     <h2 class="focus-title rising-title">
 
-        🚀 상승 경고리스트
+        🚀 상승 경고 리스트
 
         <small>
             {update_time} KST
@@ -2849,7 +2849,7 @@ def warning_focus_section(
     return f"""
     <h2 class="focus-title warning-title">
 
-        🚨 경고 리스트
+        🚨 상승 진행 리스트
 
         <small>
             {update_time} KST
