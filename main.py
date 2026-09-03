@@ -80,7 +80,7 @@ air_state = {}
 
 
 # =========================================================
-# ★ 종료 표시 관리
+# 종료 표시 관리
 #
 # 기존 경고리스트에서 ⛔️ 1회 표시
 # =========================================================
@@ -91,11 +91,19 @@ air_ended_displayed_lock = threading.Lock()
 
 
 # =========================================================
-# ★ 상승 해지 리스트 관리
+# 상승 해지 리스트 관리
 #
 # 종료된 종목을 종료 시점부터 1시간 동안 유지
 #
-# TOP30에서 빠져도 1시간 동안 별도 리스트에 표시
+# 중요
+# ---------------------------------------------------------
+# air_released_time:
+#     실제 종료 확정 시각
+#
+# air_released_snapshot:
+#     종료 당시 화면에 표시할 데이터
+#
+# 이 시간은 화면 조회 때 절대 새로 만들지 않는다.
 # =========================================================
 
 air_released_time = {}
@@ -221,6 +229,72 @@ def retry(func, *args, **kwargs):
     )
 
     return None
+
+
+# =========================================================
+# ★ 해지 리스트 종목 키 정규화
+#
+# KRW-BTC → BTC
+# BTC → BTC
+# BTC-USDT-SWAP → BTC
+#
+# 같은 코인이 서로 다른 이름으로 들어오는 것을 방지
+# =========================================================
+
+def normalize_release_key(market):
+
+    if not market:
+        return ""
+
+    market = str(
+        market
+    ).strip()
+
+    if market.startswith("KRW-"):
+
+        return market[4:]
+
+    if market.endswith("-USDT-SWAP"):
+
+        return market[
+            :-10
+        ]
+
+    return market
+
+
+# =========================================================
+# ★ 상승 해지 시간만 기록
+#
+# 매우 중요
+# ---------------------------------------------------------
+# 종료가 최초 확정된 순간에만 시간을 기록한다.
+#
+# 이미 시간이 있다면 절대로 갱신하지 않는다.
+# =========================================================
+
+def mark_air_release_time(market):
+
+    release_key = normalize_release_key(
+        market
+    )
+
+    if not release_key:
+        return
+
+    with air_released_lock:
+
+        if release_key not in air_released_time:
+
+            air_released_time[
+                release_key
+            ] = time.time()
+
+            log.info(
+                f"[상승 해지 시작] "
+                f"{release_key} / "
+                f"1시간 표시 시작"
+            )
 
 
 # =========================================================
@@ -828,12 +902,15 @@ def ema_alignment_count(df):
             d = float(e120.iloc[i])
 
             if a > b > c > d:
+
                 candle_direction = "long"
 
             elif a < b < c < d:
+
                 candle_direction = "short"
 
             else:
+
                 candle_direction = "none"
 
             if i == len(df) - 1:
@@ -889,12 +966,15 @@ def ema_display(df):
     count = result["count"]
 
     if d == "long":
+
         icon = "🟢"
 
     elif d == "short":
+
         icon = "🔴"
 
     else:
+
         icon = "⚪"
         count = 0
 
@@ -974,12 +1054,15 @@ def ema3_10_cross_count(df):
             )
 
             if ema3_value > ema10_value:
+
                 states.append("long")
 
             elif ema3_value < ema10_value:
+
                 states.append("short")
 
             else:
+
                 states.append("equal")
 
         current_state = states[-1]
@@ -1206,23 +1289,27 @@ def update_air_counter(
                     "count": 0
                 }
 
-            # ★ 새로운 비행기 시작
             with air_ended_displayed_lock:
 
                 air_ended_displayed.discard(
                     market
                 )
 
-            # ★ 해지 리스트에서도 제거
+            # 새로운 신호가 시작되면
+            # 기존 해지 리스트도 제거
+            release_key = normalize_release_key(
+                market
+            )
+
             with air_released_lock:
 
                 air_released_time.pop(
-                    market,
+                    release_key,
                     None
                 )
 
                 air_released_snapshot.pop(
-                    market,
+                    release_key,
                     None
                 )
 
@@ -1273,23 +1360,27 @@ def update_air_counter(
                     != candle_time
                 ):
 
-                    # ★ 새로운 비행기 재시작
                     with air_ended_displayed_lock:
 
                         air_ended_displayed.discard(
                             market
                         )
 
-                    # ★ 해지 리스트 제거
+                    release_key = (
+                        normalize_release_key(
+                            market
+                        )
+                    )
+
                     with air_released_lock:
 
                         air_released_time.pop(
-                            market,
+                            release_key,
                             None
                         )
 
                         air_released_snapshot.pop(
-                            market,
+                            release_key,
                             None
                         )
 
@@ -1366,12 +1457,10 @@ def update_air_counter(
                 state["active"] = False
                 state["ended"] = True
 
-                # ★ 종료 시각 기록
-                with air_released_lock:
-
-                    air_released_time[market] = (
-                        time.time()
-                    )
+                # ★ 최초 종료 시각만 기록
+                mark_air_release_time(
+                    market
+                )
 
                 return {
                     "active": False,
@@ -1406,12 +1495,10 @@ def update_air_counter(
             state["active"] = False
             state["ended"] = True
 
-            # ★ 종료 시각 기록
-            with air_released_lock:
-
-                air_released_time[market] = (
-                    time.time()
-                )
+            # ★ 정확히 종료 확정 순간에만 시간 기록
+            mark_air_release_time(
+                market
+            )
 
             return {
                 "active": False,
@@ -1897,6 +1984,11 @@ def make_row(
 
 # =========================================================
 # ★ 상승 해지 스냅샷 저장
+#
+# 중요
+# ---------------------------------------------------------
+# 종료 시간은 여기서 새로 만들지 않는다.
+# update_air_counter()에서 종료 순간 이미 기록한다.
 # =========================================================
 
 def save_air_release_snapshot(
@@ -1907,18 +1999,27 @@ def save_air_release_snapshot(
     if not row:
         return
 
+    release_key = normalize_release_key(
+        market
+    )
+
+    if not release_key:
+        return
+
     with air_released_lock:
 
-        air_released_time[market] = (
-            air_released_time.get(
-                market,
-                time.time()
-            )
-        )
+        # 종료 시간이 없는 경우에는 저장하지 않는다.
+        #
+        # 이것이 중요하다.
+        # TOP30 데이터가 air_ended=True라고 해서
+        # 현재 시각을 종료 시각으로 새로 잡지 않는다.
+        if release_key not in air_released_time:
 
-        air_released_snapshot[market] = (
-            row.copy()
-        )
+            return
+
+        air_released_snapshot[
+            release_key
+        ] = row.copy()
 
 
 # =========================================================
@@ -1957,7 +2058,9 @@ def update_upbit():
 
         try:
 
-            a = analyze(market)
+            a = analyze(
+                market
+            )
 
             row = make_row(
                 rank,
@@ -2169,7 +2272,6 @@ def update_okx(usdt):
 
             rows.append(row)
 
-            # ★ 종료된 순간 스냅샷 저장
             if (
                 a is not None
                 and a.get(
@@ -2250,6 +2352,7 @@ def update_dashboard():
         if USE_UPBIT == "Y":
 
             try:
+
                 update_upbit()
 
             except Exception as e:
@@ -2269,12 +2372,18 @@ def update_dashboard():
                 usdt = get_usdt_krw()
 
                 if usdt:
+
                     latest_usdt_krw = usdt
+
                 else:
+
                     usdt = latest_usdt_krw
 
                 if usdt > 0:
-                    update_okx(usdt)
+
+                    update_okx(
+                        usdt
+                    )
 
             except Exception as e:
 
@@ -2295,7 +2404,7 @@ def update_dashboard():
 # ★ 비행기 HTML
 #
 # animate=True  → 상승 경고리스트
-# animate=False → 경고리스트
+# animate=False → 상승 진행리스트
 # =========================================================
 
 def warning_html(
@@ -2325,6 +2434,7 @@ def warning_html(
     # -----------------------------------------------------
 
     if not air_warning:
+
         return "-"
 
     try:
@@ -2512,10 +2622,6 @@ def rows_html(
             )
             else ""
         )
-
-        # =================================================
-        # ★ 화면에 표시되는 EMA3-EMA10 카운트
-        # =================================================
 
         ema3_data = x.get(
             "ema3_10_cross_1h",
@@ -2708,8 +2814,6 @@ def section(
 
 # =========================================================
 # ★ 실제 화면용 비행기 카운트
-#
-# rows_html()과 동일한 기준
 # =========================================================
 
 def get_visual_air_count(x):
@@ -2848,10 +2952,10 @@ def rising_focus_section(
 # =========================================================
 # 📉 상승 해지 리스트
 #
-# ★ EMA3 < EMA10 확정으로 종료된 종목
-# ★ 종료 시점부터 1시간 유지
-# ★ TOP30에서 빠져도 유지
-# ★ 반짝임 없음
+# ★ 종료 확정 시각부터 1시간
+# ★ TOP30에서 빠져도 표시
+# ★ 화면 새로고침으로 시간 연장되지 않음
+# ★ 중복 종목 제거
 # =========================================================
 
 def rising_release_section(
@@ -2863,17 +2967,25 @@ def rising_release_section(
 
     now = time.time()
 
-    # =====================================================
-    # 현재 TOP 데이터와 스냅샷 비교
-    #
-    # 종료된 종목은 별도 snapshot에서 가져오기 때문에
-    # TOP30에서 빠져도 1시간 표시 가능
-    # =====================================================
-
     with air_released_lock:
 
+        # =================================================
+        # 중요
+        #
+        # 여기서는 air_released_time을 새로 만들지 않는다.
+        #
+        # 기존 코드의
+        #
+        # if market_name not in air_released_time:
+        #     air_released_time[market_name] = now
+        #
+        # 를 완전히 제거했다.
+        #
+        # 따라서 화면을 새로고침해도 1시간이 연장되지 않는다.
+        # =================================================
+
         # -------------------------------------------------
-        # 현재 전달된 데이터에서 최신 종료 상태 반영
+        # 현재 TOP 데이터의 종료 스냅샷만 업데이트
         # -------------------------------------------------
 
         for x in data:
@@ -2884,30 +2996,31 @@ def rising_release_section(
             ):
                 continue
 
-            # name을 기본 식별자로 사용
-            market_name = x.get(
-                "name",
-                ""
+            market_name = normalize_release_key(
+                x.get(
+                    "name",
+                    ""
+                )
             )
 
-            # 기존 시간은 유지
-            if market_name not in air_released_time:
+            if not market_name:
+                continue
 
-                air_released_time[
+            # 이미 종료 시간이 등록된 종목만
+            # 스냅샷을 업데이트한다.
+            if market_name in air_released_time:
+
+                air_released_snapshot[
                     market_name
-                ] = now
-
-            air_released_snapshot[
-                market_name
-            ] = x.copy()
+                ] = x.copy()
 
         # -------------------------------------------------
-        # 1시간 지난 데이터 제거
+        # 60분 초과 삭제
         # -------------------------------------------------
 
         expired = []
 
-        for market_name, released_at in (
+        for market_name, released_at in list(
             air_released_time.items()
         ):
 
@@ -2932,9 +3045,17 @@ def rising_release_section(
                 None
             )
 
+            log.info(
+                f"[상승 해지 만료] "
+                f"{market_name} / "
+                f"1시간 경과 → 삭제"
+            )
+
         # -------------------------------------------------
         # 표시 데이터 생성
         # -------------------------------------------------
+
+        seen = set()
 
         for market_name, released_at in (
             air_released_time.items()
@@ -2949,11 +3070,21 @@ def rising_release_section(
             if snapshot is None:
                 continue
 
-            # 종료 상태 유지
+            if market_name in seen:
+                continue
+
+            seen.add(
+                market_name
+            )
+
             snapshot = snapshot.copy()
 
+            snapshot["name"] = market_name
+
             snapshot["air_ended"] = True
+
             snapshot["air_active"] = False
+
             snapshot["qualified"] = False
 
             release_data.append(
@@ -3032,15 +3163,11 @@ def rising_release_section(
 
 
 # =========================================================
-# 🚨 경고리스트
+# 🚨 상승 진행 리스트
 #
 # ★ 비행기 카운트 2 이상
 # ★ 종료 ⛔️는 기존대로 1회 표시
 # ★ 반짝임 OFF
-#
-# count 2 이상 → ✈️
-# 종료 최초 1회 → ⛔️
-# 이후 → 제거
 # =========================================================
 
 def warning_focus_section(
@@ -3059,8 +3186,6 @@ def warning_focus_section(
 
         # =================================================
         # ① 종료된 종목
-        #
-        # 기존 원본 로직 유지
         # =================================================
 
         if x.get(
@@ -3550,6 +3675,7 @@ background:rgba(255,255,255,.06);
 
 /* =====================================================
    ★ 상승 경고리스트
+   녹색
    ===================================================== */
 
 .focus-title{
@@ -3568,23 +3694,25 @@ border:1px solid #35e66d;
 
 /* =====================================================
    ★ 상승 해지 리스트
+   적색
    ===================================================== */
 
 .release-title{
-color:#fff;
+color:#ff4d4d;
 }
 
 .release-table{
-border:1px solid #555;
+border:1px solid #ff4d4d;
 }
 
 
 /* =====================================================
-   ★ 경고리스트
+   ★ 상승 진행 리스트
+   흰색
    ===================================================== */
 
 .warning-title{
-color:#ff4d4d;
+color:#fff;
 }
 
 .warning-table{
@@ -3755,11 +3883,11 @@ def dashboard():
     """
 
     # =====================================================
-    # ★ 대시보드 리스트 순서
+    # 대시보드 리스트 순서
     #
     # ① 상승 경고리스트
     # ② 상승 해지 리스트
-    # ③ 경고리스트
+    # ③ 상승 진행 리스트
     # ④ 전체 TOP30
     # =====================================================
 
@@ -3767,9 +3895,6 @@ def dashboard():
 
     # -----------------------------------------------------
     # ① 상승 경고리스트
-    #
-    # ★ 카운트 1
-    # ★ 반짝임 ON
     # -----------------------------------------------------
 
     if USE_UPBIT == "Y":
@@ -3788,9 +3913,6 @@ def dashboard():
 
     # -----------------------------------------------------
     # ② 상승 해지 리스트
-    #
-    # ★ 종료 후 1시간
-    # ★ TOP30에서 빠져도 표시
     # -----------------------------------------------------
 
     if USE_UPBIT == "Y":
@@ -3808,10 +3930,7 @@ def dashboard():
         )
 
     # -----------------------------------------------------
-    # ③ 경고리스트
-    #
-    # ★ 카운트 2 이상
-    # ★ 반짝임 OFF
+    # ③ 상승 진행 리스트
     # -----------------------------------------------------
 
     if USE_UPBIT == "Y":
@@ -3909,7 +4028,7 @@ def dashboard():
 
             ⑪ 상승 경고리스트만 비행기 반짝임<br>
 
-            ⑫ 경고리스트 비행기 → 반짝임 없음<br>
+            ⑫ 상승 진행리스트 비행기 → 반짝임 없음<br>
 
             ⑬ 업비트 : Y / OKX : N
 
@@ -4042,11 +4161,35 @@ def startup():
     )
 
     log.info(
+        "해지 시작시간 = 종료 확정 순간 1회만 기록"
+    )
+
+    log.info(
+        "화면 새로고침으로 해지시간 연장 = 사용 안 함"
+    )
+
+    log.info(
+        "해지 리스트 중복 종목 = 제거"
+    )
+
+    log.info(
+        "상승 경고리스트 = 녹색"
+    )
+
+    log.info(
+        "상승 해지 리스트 = 적색"
+    )
+
+    log.info(
+        "상승 진행 리스트 = 흰색"
+    )
+
+    log.info(
         "상승 경고리스트 = 비행기 반짝임 ON"
     )
 
     log.info(
-        "경고리스트 = 비행기 반짝임 OFF"
+        "상승 진행리스트 = 비행기 반짝임 OFF"
     )
 
     log.info(
