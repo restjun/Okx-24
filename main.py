@@ -738,17 +738,22 @@ def ema(
     ).mean()
 
 
+# =========================================================
+# ★ 정배열 / 역배열
+#
+# 기존
+# EMA10 > EMA30 > EMA60 > EMA120
+#
+# 변경
+# EMA30 > EMA60 > EMA120
+# =========================================================
+
 def direction(df):
 
     if df is None or df.empty:
         return "none"
 
     try:
-
-        e10 = ema(
-            df,
-            10
-        ).iloc[-1]
 
         e30 = ema(
             df,
@@ -765,11 +770,13 @@ def direction(df):
             120
         ).iloc[-1]
 
-        if e10 > e30 > e60 > e120:
+        # 30-60-120 정배열
+        if e30 > e60 > e120:
 
             return "long"
 
-        if e10 < e30 < e60 < e120:
+        # 30-60-120 역배열
+        if e30 < e60 < e120:
 
             return "short"
 
@@ -791,7 +798,6 @@ def ema_alignment_count(df):
 
     try:
 
-        e10 = ema(df, 10)
         e30 = ema(df, 30)
         e60 = ema(df, 60)
         e120 = ema(df, 120)
@@ -805,16 +811,25 @@ def ema_alignment_count(df):
             -1
         ):
 
-            a = float(e10.iloc[i])
-            b = float(e30.iloc[i])
-            c = float(e60.iloc[i])
-            d = float(e120.iloc[i])
+            b = float(
+                e30.iloc[i]
+            )
 
-            if a > b > c > d:
+            c = float(
+                e60.iloc[i]
+            )
+
+            d = float(
+                e120.iloc[i]
+            )
+
+            # 30-60-120 정배열
+            if b > c > d:
 
                 candle_direction = "long"
 
-            elif a < b < c < d:
+            # 30-60-120 역배열
+            elif b < c < d:
 
                 candle_direction = "short"
 
@@ -1086,6 +1101,7 @@ def get_air_warning(
 
     try:
 
+        # ★ 1H 30-60-120 정배열 필수
         direction_1h = direction(
             df1h
         )
@@ -1093,6 +1109,7 @@ def get_air_warning(
         if direction_1h != "long":
             return None
 
+        # ★ 4H 30-60-120 정배열 필수
         direction_4h = direction(
             df4h
         )
@@ -1100,6 +1117,7 @@ def get_air_warning(
         if direction_4h != "long":
             return None
 
+        # ★ EMA3 > EMA10 조건은 기존 그대로 유지
         ema3_10_result = (
             ema3_10_cross_count(
                 df1h
@@ -2203,10 +2221,6 @@ def warning_html(
     air_ended=False
 ):
 
-    # -----------------------------------------------------
-    # 종료
-    # -----------------------------------------------------
-
     if air_ended:
 
         return (
@@ -2216,10 +2230,6 @@ def warning_html(
             '</div>'
             '</div>'
         )
-
-    # -----------------------------------------------------
-    # 경고 없음
-    # -----------------------------------------------------
 
     if not air_warning:
         return "-"
@@ -2234,10 +2244,6 @@ def warning_html(
 
         count = 1
 
-    # -----------------------------------------------------
-    # 최초 1개
-    # -----------------------------------------------------
-
     if count <= 1:
 
         return (
@@ -2249,10 +2255,6 @@ def warning_html(
             '</div>'
             '</div>'
         )
-
-    # -----------------------------------------------------
-    # 2개 이상
-    # -----------------------------------------------------
 
     return (
         '<div class="air-box">'
@@ -3456,9 +3458,9 @@ def dashboard():
 
             ① 거래대금 TOP{TOP_N}<br>
 
-            ② 1H EMA 10-30-60-120 정배열 필수<br>
+            ② 1H EMA 30-60-120 정배열 필수<br>
 
-            ③ 4H EMA 10-30-60-120 정배열 필수<br>
+            ③ 4H EMA 30-60-120 정배열 필수<br>
 
             ④ 1H EMA3 &gt; EMA10 연속 카운팅 → 🟢(N)<br>
 
@@ -3553,7 +3555,7 @@ def startup():
     )
 
     log.info(
-        "EMA = 10-30-60-120"
+        "EMA = 30-60-120"
     )
 
     log.info(
@@ -3562,7 +3564,9 @@ def startup():
 
     log.info(
         "비행기 시작 조건 = "
-        "1H 정배열 + 4H 정배열 + EMA3 > EMA10"
+        "1H 30-60-120 정배열 + "
+        "4H 30-60-120 정배열 + "
+        "EMA3 > EMA10"
     )
 
     log.info(
