@@ -2539,8 +2539,8 @@ def table_html(data):
                     <th>#</th>
                     <th>코인</th>
                     <th>거래대금</th>
-                    <th>EMA</th>
-                    <th>3-10선</th>
+                    <th>EMA 1</th>
+                    <th>EMA 2</th>
                     <th>경고</th>
                 </tr>
 
