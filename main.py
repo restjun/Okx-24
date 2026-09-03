@@ -82,6 +82,9 @@ air_state = {}
 # =========================================================
 # ★ 비트코인지수
 #
+# ★ OKX BTC-USDT-SWAP만 별도 사용
+# ★ 기존 OKX TOP30과 완전히 독립
+#
 # 1H + 4H EMA 30-60-120 기준
 #
 # 집중 = 1H 정배열 + 4H 정배열 → ☀️
@@ -91,7 +94,7 @@ air_state = {}
 
 latest_btc_index = {
     "mode": "관망",
-    "icon": "",
+    "icon": "🌥",
     "direction_1h": "none",
     "direction_4h": "none"
 }
@@ -761,11 +764,8 @@ def ema(
 # =========================================================
 # ★ 정배열 / 역배열
 #
-# 기존
-# EMA10 > EMA30 > EMA60 > EMA120
-#
-# 변경
-# EMA30 > EMA60 > EMA120
+# EMA30 > EMA60 > EMA120 = long
+# EMA30 < EMA60 < EMA120 = short
 # =========================================================
 
 def direction(df):
@@ -790,12 +790,10 @@ def direction(df):
             120
         ).iloc[-1]
 
-        # 30-60-120 정배열
         if e30 > e60 > e120:
 
             return "long"
 
-        # 30-60-120 역배열
         if e30 < e60 < e120:
 
             return "short"
@@ -843,12 +841,10 @@ def ema_alignment_count(df):
                 e120.iloc[i]
             )
 
-            # 30-60-120 정배열
             if b > c > d:
 
                 candle_direction = "long"
 
-            # 30-60-120 역배열
             elif b < c < d:
 
                 candle_direction = "short"
@@ -935,19 +931,20 @@ def ema_display(df):
 # =========================================================
 # ★ 비트코인지수 업데이트
 #
-# BTC = KRW-BTC
+# ★ OKX BTC-USDT-SWAP만 사용
+# ★ 기존 OKX TOP30과 독립
 #
-# 확정 1H / 4H 캔들 기준
-# EMA 30-60-120 기준
+# 확정 1H / 4H 캔들
+# EMA 30-60-120
 #
 # 1H long + 4H long
-# → 집중 / ☀️
+# → 집중 ☀️
 #
-# short가 하나라도 있으면
-# → 중지 / 🌧
+# 1H 또는 4H short
+# → 중지 🌧
 #
 # 그 외
-# → 관망 / 🌥
+# → 관망 🌥
 # =========================================================
 
 def update_btc_index():
@@ -956,14 +953,14 @@ def update_btc_index():
 
     try:
 
-        df1h = history_upbit(
-            "KRW-BTC",
-            60
+        df1h = history_okx(
+            "BTC-USDT-SWAP",
+            "1H"
         )
 
-        df4h = history_upbit(
-            "KRW-BTC",
-            240
+        df4h = history_okx(
+            "BTC-USDT-SWAP",
+            "4H"
         )
 
         if (
@@ -974,7 +971,7 @@ def update_btc_index():
         ):
 
             log.warning(
-                "비트코인지수 데이터 없음"
+                "[OKX BTC 지수] 데이터 없음"
             )
 
             return
@@ -1040,7 +1037,8 @@ def update_btc_index():
             }
 
         log.info(
-            f"비트코인지수 = {mode} {icon} / "
+            f"[OKX BTC 지수] "
+            f"{mode} {icon} / "
             f"1H={direction_1h} / "
             f"4H={direction_4h}"
         )
@@ -1048,7 +1046,7 @@ def update_btc_index():
     except Exception as e:
 
         log.exception(
-            f"비트코인지수 오류: {e}"
+            f"[OKX BTC 지수] 오류: {e}"
         )
 
 
@@ -1072,7 +1070,6 @@ def get_air_warning(
 
     try:
 
-        # ★ 1H 30-60-120 정배열 필수
         direction_1h = direction(
             df1h
         )
@@ -1080,7 +1077,6 @@ def get_air_warning(
         if direction_1h != "long":
             return None
 
-        # ★ 4H 30-60-120 정배열 필수
         direction_4h = direction(
             df4h
         )
@@ -1088,7 +1084,6 @@ def get_air_warning(
         if direction_4h != "long":
             return None
 
-        # ★ EMA3 > EMA10 조건은 기존 그대로 유지
         ema3_10_result = (
             ema3_10_cross_count(
                 df1h
@@ -1172,10 +1167,6 @@ def update_air_counter(
             )
         )
 
-        # =================================================
-        # ① 최초 비행기 포착
-        # =================================================
-
         if state is None:
 
             if new_warning is None:
@@ -1221,10 +1212,6 @@ def update_air_counter(
                     new_warning,
                 "count": 1
             }
-
-        # =================================================
-        # ② 이전 비행기가 종료된 상태
-        # =================================================
 
         if state.get(
             "ended",
@@ -1284,10 +1271,6 @@ def update_air_counter(
                     state.get("count", 0)
             }
 
-        # =================================================
-        # ③ 비행기 진행 상태가 아닌 경우
-        # =================================================
-
         if not state.get(
             "active",
             False
@@ -1305,10 +1288,6 @@ def update_air_counter(
                 "count":
                     state.get("count", 0)
             }
-
-        # =================================================
-        # ④ 같은 확정 캔들이면 카운트 증가 금지
-        # =================================================
 
         if candle_time <= state.get(
             "counted_candle"
@@ -1337,15 +1316,7 @@ def update_air_counter(
                     state.get("count", 1)
             }
 
-        # =================================================
-        # ⑤ 새로운 확정 1H 캔들
-        # =================================================
-
         state["counted_candle"] = candle_time
-
-        # =================================================
-        # EMA3 < EMA10 → 종료
-        # =================================================
 
         if current_ema_state == "short":
 
@@ -1361,10 +1332,6 @@ def update_air_counter(
                     state.get("count", 1)
             }
 
-        # =================================================
-        # EMA3 = EMA10
-        # =================================================
-
         if current_ema_state == "equal":
 
             return {
@@ -1375,12 +1342,6 @@ def update_air_counter(
                 "count":
                     state.get("count", 1)
             }
-
-        # =================================================
-        # EMA3 > EMA10
-        #
-        # 양봉/음봉 관계없이 +1
-        # =================================================
 
         if current_ema_state == "long":
 
@@ -2132,6 +2093,10 @@ def update_dashboard():
             f"========== 전체 조회 {kst()} =========="
         )
 
+        # =================================================
+        # ① 업비트
+        # =================================================
+
         if USE_UPBIT == "Y":
 
             try:
@@ -2144,23 +2109,32 @@ def update_dashboard():
                     f"업비트 업데이트 오류: {e}"
                 )
 
-            # =================================================
-            # ★ 비트코인지수 업데이트
-            # =================================================
-
-            try:
-
-                update_btc_index()
-
-            except Exception as e:
-
-                log.exception(
-                    f"비트코인지수 업데이트 오류: {e}"
-                )
-
         else:
 
             latest_upbit_data = []
+
+        # =================================================
+        # ★ ② 비트코인지수
+        #
+        # 업비트와 완전히 독립
+        # OKX BTC-USDT-SWAP만 사용
+        #
+        # USE_OKX = "N"이어도 작동
+        # =================================================
+
+        try:
+
+            update_btc_index()
+
+        except Exception as e:
+
+            log.exception(
+                f"OKX BTC 지수 업데이트 오류: {e}"
+            )
+
+        # =================================================
+        # ③ 기존 OKX TOP30
+        # =================================================
 
         if USE_OKX == "Y":
 
@@ -2194,11 +2168,10 @@ def update_dashboard():
 # =========================================================
 # ★ 비트코인지수 HTML
 #
-# 3칸 고정
-#
 # 집중 | 관망 | 중지
 #
-# 현재 상태에 해당하는 그림만 표시
+# 아이콘은 항상 표시
+# 현재 상태만 강조
 # =========================================================
 
 def bitcoin_index_section():
@@ -2212,41 +2185,13 @@ def bitcoin_index_section():
         "관망"
     )
 
-    current_icon = data.get(
-        "icon",
-        ""
-    )
+    def active(mode):
 
-    def mode_cell(
-        mode,
-        default_icon
-    ):
-
-        active = (
+        return (
             " btc-mode-active"
             if current_mode == mode
             else ""
         )
-
-        icon = (
-            current_icon
-            if current_mode == mode
-            else ""
-        )
-
-        return f"""
-        <div class="btc-mode-cell{active}">
-
-            <div class="btc-mode-name">
-                {mode}
-            </div>
-
-            <div class="btc-mode-icon">
-                {icon}
-            </div>
-
-        </div>
-        """
 
     return f"""
     <div class="btc-index">
@@ -2257,11 +2202,41 @@ def bitcoin_index_section():
 
         <div class="btc-mode-grid">
 
-            {mode_cell("집중", "☀️")}
+            <div class="btc-mode-cell{active("집중")}">
 
-            {mode_cell("관망", "🌥")}
+                <div class="btc-mode-name">
+                    집중
+                </div>
 
-            {mode_cell("중지", "🌧")}
+                <div class="btc-mode-icon">
+                    ☀️
+                </div>
+
+            </div>
+
+            <div class="btc-mode-cell{active("관망")}">
+
+                <div class="btc-mode-name">
+                    관망
+                </div>
+
+                <div class="btc-mode-icon">
+                    🌥
+                </div>
+
+            </div>
+
+            <div class="btc-mode-cell{active("중지")}">
+
+                <div class="btc-mode-name">
+                    중지
+                </div>
+
+                <div class="btc-mode-icon">
+                    🌧
+                </div>
+
+            </div>
 
         </div>
 
@@ -2271,10 +2246,6 @@ def bitcoin_index_section():
 
 # =========================================================
 # 경고 HTML
-#
-# 1 → 🛩✈️
-# 2 이상 → ✈️
-# 종료 → ⛔️
 # =========================================================
 
 def warning_html(
@@ -3534,12 +3505,12 @@ def dashboard():
     sections = ""
 
     # -----------------------------------------------------
-    # ★ ① 비트코인지수
+    # ① 비트코인지수
+    #
+    # ★ OKX BTC-USDT-SWAP 독립
     # -----------------------------------------------------
 
-    if USE_UPBIT == "Y":
-
-        sections += bitcoin_index_section()
+    sections += bitcoin_index_section()
 
     # -----------------------------------------------------
     # ② 상승 경고리스트
@@ -3795,19 +3766,20 @@ def startup():
     )
 
     log.info(
-        "비트코인지수 = 1H + 4H EMA 30-60-120"
+        "OKX BTC-USDT-SWAP = "
+        "비트코인지수 전용"
     )
 
     log.info(
-        "비트코인 정배열 = 집중 ☀️"
+        "BTC 1H + 4H 정배열 = 집중 ☀️"
     )
 
     log.info(
-        "비트코인 중립 = 관망 🌥"
+        "BTC 중립 = 관망 🌥"
     )
 
     log.info(
-        "비트코인 역배열 = 중지 🌧"
+        "BTC 1H 또는 4H 역배열 = 중지 🌧"
     )
 
     log.info(
