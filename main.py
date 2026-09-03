@@ -80,6 +80,18 @@ air_state = {}
 
 
 # =========================================================
+# ★ 종료 표시 관리
+#
+# 종료된 종목은 ⛔️를 한 번만 표시하고
+# 다음 대시보드 갱신부터 제거
+# =========================================================
+
+air_ended_displayed = set()
+
+air_ended_displayed_lock = threading.Lock()
+
+
+# =========================================================
 # 공통
 # =========================================================
 
@@ -1178,6 +1190,12 @@ def update_air_counter(
                     "count": 0
                 }
 
+            # ★ 새로운 비행기 시작
+            with air_ended_displayed_lock:
+                air_ended_displayed.discard(
+                    market
+                )
+
             air_state[market] = {
 
                 "active":
@@ -1224,6 +1242,12 @@ def update_air_counter(
                     )
                     != candle_time
                 ):
+
+                    # ★ 새로운 비행기 재시작
+                    with air_ended_displayed_lock:
+                        air_ended_displayed.discard(
+                            market
+                        )
 
                     air_state[market] = {
 
@@ -1796,6 +1820,12 @@ def make_row(
         "air_count":
             a["air_count"],
 
+        "air_active":
+            a.get(
+                "air_active",
+                False
+            ),
+
         "air_ended":
             a.get(
                 "air_ended",
@@ -2359,7 +2389,7 @@ def rows_html(data):
         )
 
         # =================================================
-        # ★ 화면에 표시되는 EMA3-EMA10 카운트 사용
+        # ★ 화면에 표시되는 EMA3-EMA10 카운트
         # =================================================
 
         ema3_data = x.get(
@@ -2545,10 +2575,45 @@ def section(
 
 
 # =========================================================
+# ★ 실제 화면용 비행기 카운트
+#
+# rows_html()과 동일한 기준
+# =========================================================
+
+def get_visual_air_count(x):
+
+    ema3_data = x.get(
+        "ema3_10_cross_1h",
+        {}
+    )
+
+    try:
+
+        return int(
+            ema3_data.get(
+                "count",
+                x.get(
+                    "air_count",
+                    0
+                )
+            )
+        )
+
+    except Exception:
+
+        return int(
+            x.get(
+                "air_count",
+                0
+            )
+        )
+
+
+# =========================================================
 # 🚀 상승 경고리스트
 #
 # ★ 현재 진행 중
-# ★ 비행기 카운트 = 정확히 1
+# ★ 비행기 카운트 = 1
 #
 # 🛩✈️만 표시되는 종목
 # =========================================================
@@ -2558,26 +2623,29 @@ def rising_focus_section(
     update_time
 ):
 
-    rising_data = [
-        x
-        for x in data
-        if (
-            x.get(
-                "air_active",
-                False
-            )
-            and not x.get(
-                "air_ended",
-                False
-            )
-            and int(
-                x.get(
-                    "air_count",
-                    0
-                )
-            ) == 1
+    rising_data = []
+
+    for x in data:
+
+        if x.get(
+            "air_ended",
+            False
+        ):
+            continue
+
+        if not x.get(
+            "air_active",
+            False
+        ):
+            continue
+
+        visual_air_count = (
+            get_visual_air_count(x)
         )
-    ]
+
+        if visual_air_count == 1:
+
+            rising_data.append(x)
 
     if not rising_data:
 
@@ -2648,10 +2716,12 @@ def rising_focus_section(
 # =========================================================
 # 🚨 경고리스트
 #
-# ★ 현재 진행 중인 비행기 카운트 2 이상
-# ★ 종료된 비행기
+# ★ 비행기 카운트 2 이상
+# ★ 종료 ⛔️는 한 번만 표시
 #
-# ✈️ / ⛔️ 표시
+# count 2 이상 → ✈️
+# 종료 최초 1회 → ⛔️
+# 이후 → 제거
 # =========================================================
 
 def warning_focus_section(
@@ -2659,29 +2729,60 @@ def warning_focus_section(
     update_time
 ):
 
-    warning_data = [
-        x
-        for x in data
-        if (
-            (
-                x.get(
-                    "air_active",
-                    False
-                )
-                and int(
-                    x.get(
-                        "air_count",
-                        0
-                    )
-                ) >= 2
-            )
-            or
-            x.get(
-                "air_ended",
-                False
-            )
+    warning_data = []
+
+    for x in data:
+
+        market = x.get(
+            "name",
+            ""
         )
-    ]
+
+        # =================================================
+        # ① 종료된 종목
+        #
+        # ★ ⛔️를 아직 표시하지 않은 경우에만 추가
+        # =================================================
+
+        if x.get(
+            "air_ended",
+            False
+        ):
+
+            with air_ended_displayed_lock:
+
+                if market in air_ended_displayed:
+
+                    # 이미 ⛔️ 표시 완료
+                    continue
+
+                air_ended_displayed.add(
+                    market
+                )
+
+            warning_data.append(x)
+
+            continue
+
+        # =================================================
+        # ② 현재 진행 중
+        #
+        # ★ 비행기 2개 이상
+        # =================================================
+
+        if not x.get(
+            "air_active",
+            False
+        ):
+            continue
+
+        visual_air_count = (
+            get_visual_air_count(x)
+        )
+
+        if visual_air_count >= 2:
+
+            warning_data.append(x)
 
     if not warning_data:
 
@@ -3317,7 +3418,7 @@ def dashboard():
     # ★ 대시보드 리스트 순서
     #
     # ① 상승 경고리스트 : 카운트 1
-    # ② 경고리스트      : 카운트 2 이상 + 종료
+    # ② 경고리스트      : 카운트 2 이상 + 종료 1회
     # ③ 전체 TOP30
     # =====================================================
 
@@ -3560,6 +3661,10 @@ def startup():
 
     log.info(
         "EMA3 < EMA10 역배열 종가 확정 = ⛔️ 종료"
+    )
+
+    log.info(
+        "종료 ⛔️ = 대시보드 1회만 표시"
     )
 
     log.info(
