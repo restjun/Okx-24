@@ -2692,6 +2692,95 @@ def rising_focus_section(
 
 
 # =========================================================
+# ⛔️ 상승 해지 리스트
+#
+# 현재 TOP30 안에서
+# air_ended=True인 종목만 표시
+# =========================================================
+
+def ended_focus_section(
+    data,
+    update_time
+):
+
+    ended_data = []
+
+    for x in data:
+
+        if x.get(
+            "air_ended",
+            False
+        ):
+
+            ended_data.append(x)
+
+    if not ended_data:
+
+        rows = """
+        <tr>
+            <td colspan="6" class="empty">
+                현재 상승 해지 코인 없음
+            </td>
+        </tr>
+        """
+
+        table = f"""
+        <div class="table-wrap focus-table ended-table">
+
+            <table>
+
+                <thead>
+
+                    <tr>
+                        <th>#</th>
+                        <th>코인</th>
+                        <th>거래대금</th>
+                        <th>EMA</th>
+                        <th>3-10선</th>
+                        <th>경고</th>
+                    </tr>
+
+                </thead>
+
+                <tbody>
+                    {rows}
+                </tbody>
+
+            </table>
+
+        </div>
+        """
+
+    else:
+
+        table = (
+            '<div class="focus-table ended-table">'
+            + table_html(
+                ended_data
+            ).replace(
+                '<div class="table-wrap">',
+                '',
+                1
+            )
+            + '</div>'
+        )
+
+    return f"""
+    <h2 class="focus-title ended-title">
+
+        ⛔️ 상승 해지 리스트
+
+        <small>
+            {update_time} KST
+        </small>
+
+    </h2>
+
+    {table}
+    """
+
+
+# =========================================================
 # 🚨 경고리스트
 # =========================================================
 
@@ -2704,28 +2793,15 @@ def warning_focus_section(
 
     for x in data:
 
-        market = x.get(
-            "name",
-            ""
-        )
+        # =================================================
+        # ★ 상승 해지 종목은
+        # 상승 진행 리스트에서 제외
+        # =================================================
 
         if x.get(
             "air_ended",
             False
         ):
-
-            with air_ended_displayed_lock:
-
-                if market in air_ended_displayed:
-
-                    continue
-
-                air_ended_displayed.add(
-                    market
-                )
-
-            warning_data.append(x)
-
             continue
 
         if not x.get(
@@ -3164,6 +3240,18 @@ td:nth-child(6){
 }
 
 /* =====================================================
+★ 상승 해지리스트
+===================================================== */
+
+.ended-title{
+    color:#ff4d4d;
+}
+
+.ended-table{
+    border:1px solid #ff4d4d;
+}
+
+/* =====================================================
 ★ 경고리스트
 ===================================================== */
 
@@ -3358,7 +3446,25 @@ def dashboard():
         )
 
     # -----------------------------------------------------
-    # ② 경고리스트
+    # ② 상승 해지 리스트
+    # -----------------------------------------------------
+
+    if USE_UPBIT == "Y":
+
+        sections += ended_focus_section(
+            latest_upbit_data,
+            latest_upbit_update_time
+        )
+
+    if USE_OKX == "Y":
+
+        sections += ended_focus_section(
+            latest_okx_data,
+            latest_okx_update_time
+        )
+
+    # -----------------------------------------------------
+    # ③ 상승 진행 리스트
     # -----------------------------------------------------
 
     if USE_UPBIT == "Y":
@@ -3376,7 +3482,7 @@ def dashboard():
         )
 
     # -----------------------------------------------------
-    # ③ 전체 TOP30
+    # ④ 전체 TOP30
     # -----------------------------------------------------
 
     if USE_UPBIT == "Y":
