@@ -2551,8 +2551,8 @@ def table_html(data):
                     <th>#</th>
                     <th>코인</th>
                     <th>거래대금</th>
-                    <th>EMA 1H</th>
-                    <th>3-10선</th>
+                    <th>EMA1</th>
+                    <th>EMA2선</th>
                     <th>경고</th>
                 </tr>
 
@@ -2680,8 +2680,8 @@ def rising_focus_section(
                         <th>#</th>
                         <th>코인</th>
                         <th>거래대금</th>
-                        <th>EMA</th>
-                        <th>3-10선</th>
+                        <th>EMA1</th>
+                        <th>EMA2</th>
                         <th>경고</th>
                     </tr>
 
@@ -2766,8 +2766,8 @@ def ended_focus_section(
                         <th>#</th>
                         <th>코인</th>
                         <th>거래대금</th>
-                        <th>EMA</th>
-                        <th>3-10선</th>
+                        <th>EMA1</th>
+                        <th>EMA2</th>
                         <th>경고</th>
                     </tr>
 
