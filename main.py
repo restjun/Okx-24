@@ -2870,8 +2870,8 @@ def warning_focus_section(
                         <th>#</th>
                         <th>코인</th>
                         <th>거래대금</th>
-                        <th>EMA</th>
-                        <th>3-10선</th>
+                        <th>EMA1</th>
+                        <th>EMA2</th>
                         <th>경고</th>
                     </tr>
 
