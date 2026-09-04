@@ -740,7 +740,7 @@ def ema(
 # =========================================================
 # ★ 정배열 / 역배열
 #
-# EMA30 > EMA60 > EMA120
+# EMA30 > EMA60
 # =========================================================
 
 def direction(df):
@@ -760,16 +760,11 @@ def direction(df):
             60
         ).iloc[-1]
 
-        e120 = ema(
-            df,
-            120
-        ).iloc[-1]
-
-        if e30 > e60 > e120:
+        if e30 > e60:
 
             return "long"
 
-        if e30 < e60 < e120:
+        if e30 < e60:
 
             return "short"
 
@@ -793,7 +788,6 @@ def ema_alignment_count(df):
 
         e30 = ema(df, 30)
         e60 = ema(df, 60)
-        e120 = ema(df, 120)
 
         current_direction = None
         count = 0
@@ -812,15 +806,11 @@ def ema_alignment_count(df):
                 e60.iloc[i]
             )
 
-            d = float(
-                e120.iloc[i]
-            )
-
-            if b > c > d:
+            if b > c:
 
                 candle_direction = "long"
 
-            elif b < c < d:
+            elif b < c:
 
                 candle_direction = "short"
 
@@ -862,7 +852,7 @@ def ema_alignment_count(df):
     except Exception as e:
 
         log.error(
-            f"EMA 카운팅 오류: {e}"
+            f"EMA 30-60 카운팅 오류: {e}"
         )
 
         return {
@@ -3446,9 +3436,9 @@ def dashboard():
 
             ① 거래대금 TOP{TOP_N}<br>
 
-            ② 1H EMA 30-60-120 정배열 필수<br>
+            ② 1H EMA 30-60 정배열 필수<br>
 
-            ③ 4H EMA 30-60-120 정배열 필수<br>
+            ③ 4H EMA 30-60 정배열 필수<br>
 
             ④ 1H EMA3 &gt; EMA10 연속 카운팅 → 🟢(N)<br>
 
@@ -3543,7 +3533,7 @@ def startup():
     )
 
     log.info(
-        "EMA = 30-60-120"
+        "EMA = 30-60"
     )
 
     log.info(
@@ -3552,8 +3542,8 @@ def startup():
 
     log.info(
         "비행기 시작 조건 = "
-        "1H 30-60-120 정배열 + "
-        "4H 30-60-120 정배열 + "
+        "1H 30-60 정배열 + "
+        "4H 30-60 정배열 + "
         "EMA3 > EMA10"
     )
 
