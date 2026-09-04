@@ -3256,7 +3256,7 @@ td:nth-child(6){
 ===================================================== */
 
 .warning-title{
-    color:#ff4d4d;
+    color:#00ff66;
 }
 
 .warning-table{
