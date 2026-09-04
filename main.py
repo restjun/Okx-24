@@ -2713,7 +2713,7 @@ def rising_focus_section(
     return f"""
     <h2 class="focus-title rising-title">
 
-        🚀 상승 체크 [EMA1(10)+EMA2(5)이상 = 첫번째 〽️]
+        🚀 상승 체크 [EMA1(10)+EMA2(5)이상= 1️⃣+〽️]
 
         <small>
             {update_time} KST
