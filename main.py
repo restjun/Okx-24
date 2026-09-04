@@ -77,9 +77,7 @@ last_request_time = 0
 
 
 # =========================================================
-# ★ 종료 표시 관리
-#
-# 같은 종료 캔들이 1분마다 반복 조회되는 것을 방지
+# 종료 표시 관리
 # =========================================================
 
 air_ended_displayed = set()
@@ -391,7 +389,7 @@ def get_upbit_candle(
         now = datetime.now(KST)
 
         # =================================================
-        # ★ 현재 진행 중인 캔들 제외
+        # 현재 진행 중인 캔들 제외
         # =================================================
 
         if unit == 60:
@@ -447,10 +445,8 @@ def get_upbit_1h(
     to=None
 ):
 
-    # =====================================================
     # 기존 함수명 유지
     # 실제 분석은 4H
-    # =====================================================
 
     return get_upbit_candle(
         market,
@@ -803,25 +799,10 @@ def ema_alignment_count(df):
 
     try:
 
-        e10 = ema(
-            df,
-            10
-        )
-
-        e30 = ema(
-            df,
-            30
-        )
-
-        e60 = ema(
-            df,
-            60
-        )
-
-        e120 = ema(
-            df,
-            120
-        )
+        e10 = ema(df, 10)
+        e30 = ema(df, 30)
+        e60 = ema(df, 60)
+        e120 = ema(df, 120)
 
         current_direction = None
         count = 0
@@ -946,8 +927,7 @@ def ema_display(df):
 
 
 # =========================================================
-# ★★★ EMA2 ★★★
-#
+# EMA2
 # 4H EMA3 + 이전 15개 EMA3 고점/저점 돌파
 # =========================================================
 
@@ -1663,7 +1643,7 @@ def analyze(
 ):
 
     # =================================================
-    # ★ 모든 EMA 분석 = 4H
+    # 모든 EMA 분석 = 4H
     # =================================================
 
     if okx:
@@ -2284,10 +2264,7 @@ def ema_html(e):
 
 
 # =========================================================
-# ★ EMA2 표시
-#
-# ★ 수정: EMA2 아래 ⛔️ 표시만 삭제
-# ★ EMA2 종료 판정 로직은 그대로 유지
+# EMA2 표시
 # =========================================================
 
 def ema3_10_cross_html(
@@ -2576,8 +2553,6 @@ def get_visual_air_count(
 
 # =========================================================
 # 🚀 상승 체크
-#
-# EMA2 돌파 시작점 = ①
 # =========================================================
 
 def rising_focus_section(
@@ -2684,10 +2659,9 @@ def rising_focus_section(
 
 
 # =========================================================
-# ⛔️ 상승 해지 리스트
-#
+# 상승 해지 리스트
 # ★ 함수는 유지
-# ★ 대시보드에서는 표시하지 않음
+# ★ 화면에는 표시하지 않음
 # =========================================================
 
 def ended_focus_section(
@@ -2887,12 +2861,14 @@ def warning_focus_section(
 
 # =========================================================
 # CSS
+# ★ 모바일 가독성 개선
 # =========================================================
 
 CSS = """
 
 *{
     box-sizing:border-box;
+    -webkit-tap-highlight-color:transparent;
 }
 
 html,
@@ -2900,116 +2876,223 @@ body{
     margin:0;
     padding:0;
     width:100%;
+    min-width:0;
     overflow-x:hidden;
 }
 
 body{
-    background:#0f1115;
-    color:#eee;
-    font-family:Arial,sans-serif;
-    font-size:9px;
-    padding:3px;
+    background:#0d1014;
+    color:#eeeeee;
+
+    font-family:
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        Arial,
+        sans-serif;
+
+    font-size:10px;
+
+    padding:6px 5px 14px;
+
+    line-height:1.3;
 }
 
+/* =========================================================
+   제목
+   ========================================================= */
+
 h1{
-    margin:2px 2px 4px;
-    font-size:13px;
+    margin:3px 3px 7px;
+
+    font-size:15px;
+    line-height:20px;
+
+    font-weight:800;
+
+    color:#f5f5f5;
 }
 
 h2{
-    margin:7px 2px 3px;
-    font-size:10px;
+    margin:13px 3px 5px;
+
+    font-size:12px;
+    line-height:17px;
+
+    font-weight:800;
+
+    color:#eeeeee;
 }
 
 h2 small{
-    color:#777;
-    font-size:6px;
+    color:#747b85;
+
+    font-size:7px;
     font-weight:normal;
-    margin-left:3px;
+
+    margin-left:4px;
+
+    white-space:nowrap;
 }
 
+/* =========================================================
+   설명 카드
+   ========================================================= */
+
 .info{
-    margin:0 2px 4px;
-    padding:3px 5px;
-    color:#8b9099;
-    background:#171a1f;
-    border:1px solid #252a31;
-    border-radius:7px;
-    font-size:7px;
-    line-height:1.25;
+    margin:0 2px 8px;
+
+    padding:8px 9px;
+
+    color:#aab0b8;
+
+    background:#15191f;
+
+    border:1px solid #252b33;
+
+    border-radius:9px;
+
+    font-size:8px;
+
+    line-height:1.55;
+
+    box-shadow:
+        0 2px 8px rgba(0,0,0,.18);
 }
 
 .status{
     display:flex;
+
     justify-content:center;
-    gap:8px;
-    margin-top:2px;
-    font-weight:bold;
+    align-items:center;
+
+    gap:14px;
+
+    margin-top:7px;
+
+    padding-top:6px;
+
+    border-top:1px solid #252a31;
+
+    font-size:8px;
+
+    font-weight:800;
 }
 
 .y{
-    color:#35e66d;
+    color:#42e878;
 }
 
 .n{
-    color:#ff4d4d;
+    color:#ff5757;
 }
+
+/* =========================================================
+   테이블 외곽
+   ========================================================= */
 
 .table-wrap{
     width:100%;
+
     overflow:hidden;
-    border-radius:8px;
-    border:1px solid #252a31;
+
+    border-radius:9px;
+
+    border:1px solid #282e36;
+
+    background:#171b20;
+
+    box-shadow:
+        0 2px 8px rgba(0,0,0,.18);
 }
+
+/* =========================================================
+   테이블
+   ========================================================= */
 
 table{
     width:100%;
+
     table-layout:fixed;
+
     border-collapse:collapse;
-    background:#181c21;
+
+    background:#171b20;
+}
+
+thead{
+    background:#111419;
 }
 
 th{
-    padding:4px 2px;
-    background:#12151a;
-    border-bottom:1px solid #2b3037;
-    color:#8f949d;
-    font-size:6px;
+    height:27px;
+
+    padding:5px 2px;
+
+    background:#111419;
+
+    border-bottom:1px solid #2c323a;
+
+    color:#9299a3;
+
+    font-size:7px;
+
+    line-height:10px;
+
+    font-weight:700;
+
     white-space:nowrap;
+
     text-align:center !important;
+
     vertical-align:middle;
 }
 
 td{
-    padding:3px 2px;
-    border-bottom:1px solid #272c32;
+    height:38px;
+
+    padding:5px 2px;
+
+    border-bottom:1px solid #272d34;
+
     text-align:center !important;
+
     vertical-align:middle;
+
+    overflow:hidden;
 }
+
+tbody tr:last-child td{
+    border-bottom:none;
+}
+
+/* =========================================================
+   열 너비
+   ========================================================= */
 
 th:nth-child(1),
 td:nth-child(1){
-    width:6%;
+    width:7%;
 }
 
 th:nth-child(2),
 td:nth-child(2){
-    width:21%;
+    width:22%;
 }
 
 th:nth-child(3),
 td:nth-child(3){
-    width:16%;
+    width:17%;
 }
 
 th:nth-child(4),
 td:nth-child(4){
-    width:24%;
+    width:22%;
 }
 
 th:nth-child(5),
 td:nth-child(5){
-    width:17%;
+    width:16%;
 }
 
 th:nth-child(6),
@@ -3017,358 +3100,667 @@ td:nth-child(6){
     width:16%;
 }
 
+/* =========================================================
+   순위
+   ========================================================= */
+
 .rank{
-    color:#8f949d;
-    font-size:7px;
+    color:#858c96;
+
+    font-size:8px;
+
+    font-weight:600;
 }
+
+/* =========================================================
+   코인
+   ========================================================= */
 
 .coin{
     overflow:hidden;
-    padding:1px 2px;
+
+    padding:3px 2px;
 }
 
 .coin-name{
-    font-size:8px;
-    font-weight:bold;
-    line-height:9px;
-    height:9px;
+    font-size:9px;
+
+    line-height:12px;
+
+    height:12px;
+
+    font-weight:800;
+
     white-space:nowrap;
+
     overflow:hidden;
+
     text-overflow:ellipsis;
 }
 
 .change{
-    margin-top:0;
-    line-height:7px;
-    height:7px;
+    margin-top:2px;
+
+    line-height:10px;
+
+    height:10px;
+
     font-size:7px;
+
+    font-weight:600;
+
     white-space:nowrap;
 }
 
 .up{
-    color:#35e66d;
-    font-weight:bold;
+    color:#39e875;
+
+    font-weight:800;
 }
 
 .down{
-    color:#ff4d4d;
-    font-weight:bold;
+    color:#ff5555;
+
+    font-weight:800;
 }
 
 .zero{
-    color:#999;
+    color:#8c929a;
 }
 
+/* =========================================================
+   거래대금
+   ========================================================= */
+
 .vol{
-    padding:1px 2px !important;
-    font-size:7px;
-    font-weight:bold;
-    line-height:16px;
-    height:16px;
+    padding:3px 1px !important;
+
+    font-size:8px;
+
+    font-weight:800;
+
+    line-height:18px;
+
+    height:38px;
+
     white-space:nowrap;
 }
 
+/* =========================================================
+   EMA1
+   ========================================================= */
+
 .ema-cell{
     overflow:hidden;
-    padding:1px !important;
+
+    padding:3px 1px !important;
 }
 
 .ema-row{
     display:flex;
+
     align-items:center;
+
     justify-content:center;
+
     width:100%;
-    height:13px;
-    line-height:13px;
+
+    height:20px;
+
+    line-height:20px;
+
     white-space:nowrap;
+
     overflow:hidden;
-    font-size:7px;
-    font-weight:bold;
+
+    font-size:8px;
+
+    font-weight:800;
 }
 
 .tf{
-    flex:0 0 20px;
-    width:20px;
-    color:#8f949d;
-    font-size:6px;
-    font-weight:bold;
+    flex:0 0 21px;
+
+    width:21px;
+
+    color:#777f89;
+
+    font-size:7px;
+
+    font-weight:700;
+
     text-align:center;
 }
 
 .ema-value-wrap{
     flex:1;
+
     min-width:0;
+
     display:flex;
+
     align-items:center;
+
     justify-content:center;
+
     overflow:hidden;
 }
 
 .ema-value{
     display:inline-block;
+
     width:auto;
+
     min-width:0;
+
     max-width:100%;
+
     text-align:center;
+
     white-space:nowrap;
-    font-size:7px;
-    font-weight:bold;
-    line-height:13px;
+
+    font-size:8px;
+
+    font-weight:800;
+
+    line-height:20px;
 }
 
 .ema-long{
-    color:#35e66d;
+    color:#3ee879;
 }
 
 .ema-short{
-    color:#ff4d4d;
+    color:#ff5555;
 }
 
 .ema-none{
-    color:#eee;
+    color:#eeeeee;
 }
+
+/* =========================================================
+   EMA2
+   ========================================================= */
 
 .close-ema10{
     text-align:center !important;
+
     vertical-align:middle !important;
+
     white-space:nowrap;
-    font-size:7px;
-    font-weight:bold;
+
+    font-size:8px;
+
+    font-weight:800;
+
     overflow:hidden;
 }
 
 .ema10-box{
     width:100%;
+
     display:flex;
+
     flex-direction:column;
+
     align-items:center;
+
     justify-content:center;
+
     text-align:center;
+
     white-space:nowrap;
-    line-height:10px;
+
+    line-height:14px;
 }
 
 .ema10-long{
-    color:#35e66d;
-    font-size:7px;
-    font-weight:bold;
-    line-height:10px;
+    color:#39e875;
+
+    font-size:8px;
+
+    font-weight:800;
+
+    line-height:14px;
+
     text-align:center;
 }
 
 .ema10-short{
-    color:#ff4d4d;
-    font-size:7px;
-    font-weight:bold;
-    line-height:10px;
-    text-align:center;
-}
+    color:#ff5555;
 
-.ema10-end{
-    color:#ff4d4d;
-    font-size:6px;
-    line-height:8px;
-    font-weight:bold;
+    font-size:8px;
+
+    font-weight:800;
+
+    line-height:14px;
+
+    text-align:center;
 }
 
 .ema10-none{
-    color:#777;
-    font-size:7px;
+    color:#686f78;
+
+    font-size:8px;
+
+    line-height:14px;
+
     text-align:center;
 }
 
+/* =========================================================
+   경고
+   ========================================================= */
+
 .warning{
     text-align:center !important;
+
     vertical-align:middle !important;
+
     white-space:nowrap;
-    padding:0 2px !important;
+
+    padding:2px !important;
 }
 
 .air-box{
     width:100%;
+
+    min-height:28px;
+
     display:flex;
+
     align-items:center;
+
     justify-content:center;
+
     text-align:center;
 }
 
 .air-main{
     display:flex;
+
     align-items:center;
+
     justify-content:center;
+
     width:100%;
 }
 
 .air-icon{
-    font-size:11px;
+    font-size:13px;
+
     font-weight:bold;
+
+    line-height:18px;
+
     display:inline-block;
 }
 
 .air-end{
     font-size:12px;
+
     font-weight:bold;
-    line-height:14px;
-    color:#ff4d4d;
+
+    line-height:18px;
+
+    color:#ff5555;
 }
+
+/* =========================================================
+   조건 만족 행
+   ========================================================= */
 
 .qualified{
-    background:rgba(255,255,255,.06);
+    background:rgba(255,255,255,.045);
 }
 
+/* =========================================================
+   포커스 제목
+   ========================================================= */
+
 .focus-title{
-    margin-top:5px;
-    margin-bottom:3px;
+    margin-top:12px;
+
+    margin-bottom:5px;
+
+    padding-left:3px;
 }
 
 .rising-title{
-    color:#35e66d;
-}
-
-.rising-table{
-    border:1px solid #35e66d;
+    color:#39e875;
 }
 
 .ended-title{
-    color:#ff4d4d;
-}
-
-.ended-table{
-    border:1px solid #ff4d4d;
+    color:#ff5555;
 }
 
 .warning-title{
-    color:#00ff66;
+    color:#39e875;
+}
+
+/* =========================================================
+   포커스 테이블
+   ========================================================= */
+
+.focus-table{
+    border-radius:9px;
+}
+
+.rising-table{
+    border:1px solid #35c96b;
+
+    box-shadow:
+        0 0 7px rgba(53,201,107,.08);
+}
+
+.ended-table{
+    border:1px solid #d84646;
 }
 
 .warning-table{
-    border:1px solid #343a42;
+    border:1px solid #303740;
 }
 
-.focus-table{
-    border:1px solid #343a42;
-}
+/* =========================================================
+   빈 데이터
+   ========================================================= */
 
 .empty{
-    color:#555;
-    padding:10px 4px;
+    color:#555d67;
+
+    padding:14px 5px !important;
+
+    font-size:8px;
+
+    height:48px;
 }
 
-@media(max-width:480px){
+/* =========================================================
+   모바일
+   ========================================================= */
+
+@media(max-width:600px){
 
     body{
-        padding:2px;
-        font-size:8px;
+        padding:5px 4px 14px;
+
+        font-size:10px;
     }
 
     h1{
-        font-size:12px;
-        margin:2px 2px 3px;
+        margin:3px 3px 7px;
+
+        font-size:15px;
+
+        line-height:20px;
     }
 
     h2{
-        font-size:9px;
-        margin:6px 2px 2px;
+        margin:12px 3px 5px;
+
+        font-size:11px;
+
+        line-height:16px;
+    }
+
+    h2 small{
+        display:block;
+
+        margin-left:0;
+
+        margin-top:1px;
+
+        font-size:6px;
+
+        line-height:9px;
     }
 
     .info{
-        font-size:6px;
-        padding:2px 4px;
-        line-height:1.2;
-        margin-bottom:3px;
+        padding:8px;
+
+        margin-bottom:7px;
+
+        font-size:7px;
+
+        line-height:1.55;
+    }
+
+    .status{
+        gap:12px;
+
+        margin-top:6px;
+
+        padding-top:5px;
+
+        font-size:7px;
     }
 
     th{
-        padding:3px 1px;
-        font-size:5px;
+        height:27px;
+
+        padding:5px 1px;
+
+        font-size:6px;
+
+        line-height:9px;
     }
 
     td{
-        padding:2px 1px;
+        height:40px;
+
+        padding:5px 1px;
+    }
+
+    .rank{
+        font-size:8px;
     }
 
     .coin{
-        padding:0 1px;
+        padding:3px 1px;
     }
 
     .coin-name{
-        font-size:7px;
-        line-height:8px;
-        height:8px;
+        font-size:8px;
+
+        line-height:12px;
+
+        height:12px;
     }
 
     .change{
+        margin-top:2px;
+
         font-size:6px;
-        line-height:6px;
-        height:6px;
+
+        line-height:9px;
+
+        height:9px;
     }
 
     .vol{
-        padding:0 1px !important;
-        font-size:6px;
-        line-height:14px;
-        height:14px;
+        padding:3px 1px !important;
+
+        font-size:7px;
+
+        line-height:18px;
+
+        height:40px;
     }
 
     .ema-cell{
-        padding:0 !important;
+        padding:3px 0 !important;
     }
 
     .ema-row{
-        height:12px;
-        line-height:12px;
-        font-size:6px;
+        height:20px;
+
+        line-height:20px;
+
+        font-size:7px;
     }
 
     .tf{
         flex:0 0 18px;
-        width:18px;
-        font-size:5px;
-    }
 
-    .ema-value-wrap{
-        flex:1;
-        min-width:0;
+        width:18px;
+
+        font-size:6px;
     }
 
     .ema-value{
-        font-size:6px;
-        line-height:12px;
+        font-size:7px;
+
+        line-height:20px;
     }
 
     .close-ema10{
-        font-size:6px;
+        font-size:7px;
     }
 
     .ema10-box{
-        line-height:9px;
+        line-height:14px;
     }
 
     .ema10-long,
     .ema10-short{
-        font-size:6px;
-        line-height:9px;
-        text-align:center;
+        font-size:7px;
+
+        line-height:14px;
     }
 
-    .ema10-end{
+    .ema10-none{
+        font-size:7px;
+
+        line-height:14px;
+    }
+
+    .air-box{
+        min-height:28px;
+    }
+
+    .air-icon{
+        font-size:12px;
+
+        line-height:18px;
+    }
+
+    .air-end{
+        font-size:11px;
+
+        line-height:18px;
+    }
+
+    .empty{
+        padding:13px 4px !important;
+
+        font-size:7px;
+
+        height:45px;
+    }
+}
+
+/* =========================================================
+   아주 작은 휴대폰
+   ========================================================= */
+
+@media(max-width:380px){
+
+    body{
+        padding:4px 3px 12px;
+    }
+
+    h1{
+        font-size:14px;
+    }
+
+    h2{
+        font-size:10px;
+    }
+
+    .info{
+        font-size:6.5px;
+    }
+
+    th{
+        height:25px;
+
         font-size:5px;
-        line-height:7px;
     }
 
+    td{
+        height:37px;
+    }
+
+    .coin-name{
+        font-size:7px;
+    }
+
+    .change{
+        font-size:5.5px;
+    }
+
+    .vol{
+        font-size:6px;
+    }
+
+    .ema-value{
+        font-size:6px;
+    }
+
+    .ema10-long,
+    .ema10-short,
     .ema10-none{
         font-size:6px;
     }
 
     .air-icon{
+        font-size:11px;
+    }
+}
+
+/* =========================================================
+   PC / 큰 화면
+   ========================================================= */
+
+@media(min-width:601px){
+
+    body{
+        max-width:900px;
+
+        margin:0 auto;
+
+        padding:8px;
+    }
+
+    th{
+        font-size:8px;
+    }
+
+    td{
+        height:42px;
+    }
+
+    .coin-name{
+        font-size:10px;
+    }
+
+    .change{
+        font-size:8px;
+    }
+
+    .vol{
         font-size:9px;
     }
 
-    .air-end{
-        font-size:10px;
-        line-height:12px;
+    .ema-value{
+        font-size:9px;
     }
 
+    .ema10-long,
+    .ema10-short,
+    .ema10-none{
+        font-size:9px;
+    }
 }
 
 """
@@ -3426,9 +3818,7 @@ def dashboard():
 
     # =====================================================
     # ② 상승 해지
-    #
-    # ★ 삭제됨
-    # ★ 화면에 상승 해지 리스트를 표시하지 않음
+    # ★ 화면 표시하지 않음
     # =====================================================
 
     # =====================================================
@@ -3480,12 +3870,17 @@ def dashboard():
 
         <meta
             name="viewport"
-            content="width=device-width,initial-scale=1"
+            content="width=device-width,initial-scale=1,maximum-scale=1"
         >
 
         <meta
             http-equiv="refresh"
             content="60"
+        >
+
+        <meta
+            name="theme-color"
+            content="#0d1014"
         >
 
         <title>
@@ -3505,11 +3900,6 @@ def dashboard():
         <h1>
             📊 트레이딩 전략
         </h1>
-
-        <!-- =================================================
-             ★ 수정 ②
-             트레이딩 전략 설명 간소화
-             ================================================= -->
 
         <div class="info">
 
@@ -3685,4 +4075,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-        )
+            )
