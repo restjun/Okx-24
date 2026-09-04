@@ -2970,7 +2970,7 @@ table{
 }
 
 th{
-    padding:4px 2px;
+    padding:4px 4px;
     background:#12151a;
     border-bottom:1px solid #2b3037;
     color:#8f949d;
