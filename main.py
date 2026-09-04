@@ -450,20 +450,6 @@ def get_upbit_1h(
     )
 
 
-def get_upbit_4h(
-    market,
-    count=200,
-    to=None
-):
-
-    return get_upbit_candle(
-        market,
-        240,
-        count,
-        to
-    )
-
-
 # =========================================================
 # OKX
 # =========================================================
@@ -738,9 +724,13 @@ def ema(
 
 
 # =========================================================
-# ★ 정배열 / 역배열
+# ★ 1H EMA 10-30-60-120 정배열 / 역배열
 #
-# EMA30 > EMA60
+# LONG
+# EMA10 > EMA30 > EMA60 > EMA120
+#
+# SHORT
+# EMA10 < EMA30 < EMA60 < EMA120
 # =========================================================
 
 def direction(df):
@@ -749,6 +739,11 @@ def direction(df):
         return "none"
 
     try:
+
+        e10 = ema(
+            df,
+            10
+        ).iloc[-1]
 
         e30 = ema(
             df,
@@ -760,11 +755,32 @@ def direction(df):
             60
         ).iloc[-1]
 
-        if e30 > e60:
+        e120 = ema(
+            df,
+            120
+        ).iloc[-1]
+
+        # =================================================
+        # 1H 완전 정배열
+        # =================================================
+
+        if (
+            e10 > e30
+            and e30 > e60
+            and e60 > e120
+        ):
 
             return "long"
 
-        if e30 < e60:
+        # =================================================
+        # 1H 완전 역배열
+        # =================================================
+
+        if (
+            e10 < e30
+            and e30 < e60
+            and e60 < e120
+        ):
 
             return "short"
 
@@ -786,8 +802,25 @@ def ema_alignment_count(df):
 
     try:
 
-        e30 = ema(df, 30)
-        e60 = ema(df, 60)
+        e10 = ema(
+            df,
+            10
+        )
+
+        e30 = ema(
+            df,
+            30
+        )
+
+        e60 = ema(
+            df,
+            60
+        )
+
+        e120 = ema(
+            df,
+            120
+        )
 
         current_direction = None
         count = 0
@@ -798,19 +831,35 @@ def ema_alignment_count(df):
             -1
         ):
 
-            b = float(
+            v10 = float(
+                e10.iloc[i]
+            )
+
+            v30 = float(
                 e30.iloc[i]
             )
 
-            c = float(
+            v60 = float(
                 e60.iloc[i]
             )
 
-            if b > c:
+            v120 = float(
+                e120.iloc[i]
+            )
+
+            if (
+                v10 > v30
+                and v30 > v60
+                and v60 > v120
+            ):
 
                 candle_direction = "long"
 
-            elif b < c:
+            elif (
+                v10 < v30
+                and v30 < v60
+                and v60 < v120
+            ):
 
                 candle_direction = "short"
 
@@ -852,7 +901,7 @@ def ema_alignment_count(df):
     except Exception as e:
 
         log.error(
-            f"EMA 30-60 카운팅 오류: {e}"
+            f"EMA 10-30-60-120 카운팅 오류: {e}"
         )
 
         return {
@@ -917,8 +966,15 @@ def ema3_10_cross_count(df):
 
     try:
 
-        e3 = ema(df, 3)
-        e10 = ema(df, 10)
+        e3 = ema(
+            df,
+            3
+        )
+
+        e10 = ema(
+            df,
+            10
+        )
 
         if (
             e3 is None
@@ -1064,37 +1120,37 @@ def ema3_10_cross_count(df):
 
 # =========================================================
 # ✈️ 비행기 경고 조건
+#
+# ① 1H EMA10 > EMA30 > EMA60 > EMA120
+# ② 1H EMA3 > EMA10
 # =========================================================
 
-def get_air_warning(
-    df1h,
-    df4h
-):
+def get_air_warning(df1h):
 
     if (
         df1h is None
         or df1h.empty
-        or df4h is None
-        or df4h.empty
     ):
 
         return None
 
     try:
 
+        # =================================================
+        # ① 1H EMA 10-30-60-120 정배열 필수
+        # =================================================
+
         direction_1h = direction(
             df1h
         )
 
         if direction_1h != "long":
+
             return None
 
-        direction_4h = direction(
-            df4h
-        )
-
-        if direction_4h != "long":
-            return None
+        # =================================================
+        # ② 1H EMA3 > EMA10 필수
+        # =================================================
 
         ema3_10_result = (
             ema3_10_cross_count(
@@ -1611,9 +1667,6 @@ def empty_analysis():
         "ema_1h":
             e.copy(),
 
-        "ema_4h":
-            e.copy(),
-
         "ema3_10_cross_1h": {
 
             "state":
@@ -1656,9 +1709,6 @@ def empty_analysis():
         "direction_1h":
             "none",
 
-        "direction_4h":
-            "none",
-
         "df1h":
             None
     }
@@ -1669,16 +1719,15 @@ def analyze(
     okx=False
 ):
 
+    # =================================================
+    # 1H 데이터만 사용
+    # =================================================
+
     if okx:
 
         df1 = history_okx(
             market,
             "1H"
-        )
-
-        df4 = history_okx(
-            market,
-            "4H"
         )
 
     else:
@@ -1688,30 +1737,41 @@ def analyze(
             60
         )
 
-        df4 = history_upbit(
-            market,
-            240
-        )
-
     if (
         df1 is None
         or df1.empty
-        or df4 is None
-        or df4.empty
     ):
 
         return None
 
-    e1 = ema_display(df1)
-    e4 = ema_display(df4)
+    # =================================================
+    # 1H EMA 10-30-60-120
+    # =================================================
 
-    ema3_10_cross = (
-        ema3_10_cross_count(df1)
+    e1 = ema_display(
+        df1
     )
 
+    # =================================================
+    # 1H EMA3-EMA10
+    # =================================================
+
+    ema3_10_cross = (
+        ema3_10_cross_count(
+            df1
+        )
+    )
+
+    # =================================================
+    # 비행기 조건
+    #
+    # 1H EMA10 > EMA30 > EMA60 > EMA120
+    # +
+    # EMA3 > EMA10
+    # =================================================
+
     new_warning = get_air_warning(
-        df1,
-        df4
+        df1
     )
 
     air = update_air_counter(
@@ -1730,9 +1790,6 @@ def analyze(
 
         "ema_1h":
             e1,
-
-        "ema_4h":
-            e4,
 
         "ema3_10_cross_1h":
             ema3_10_cross,
@@ -1763,9 +1820,6 @@ def analyze(
 
         "direction_1h":
             e1["direction"],
-
-        "direction_4h":
-            e4["direction"],
 
         "df1h":
             df1
@@ -1808,9 +1862,6 @@ def make_row(
 
         "ema_1h":
             a["ema_1h"],
-
-        "ema_4h":
-            a["ema_4h"],
 
         "ema3_10_cross_1h":
             a["ema3_10_cross_1h"],
@@ -2435,23 +2486,6 @@ def rows_html(data):
 
                     </div>
 
-                    <div class="ema-row">
-
-                        <span class="tf">
-                            4H
-                        </span>
-
-                        <span class="ema-value-wrap">
-                            {ema_html(
-                                x.get(
-                                    "ema_4h",
-                                    {}
-                                )
-                            )}
-                        </span>
-
-                    </div>
-
                 </td>
 
                 <td class="close-ema10">
@@ -2517,8 +2551,8 @@ def table_html(data):
                     <th>#</th>
                     <th>코인</th>
                     <th>거래대금</th>
-                    <th>EMA 1</th>
-                    <th>EMA 2</th>
+                    <th>EMA 1H</th>
+                    <th>3-10선</th>
                     <th>경고</th>
                 </tr>
 
@@ -2679,7 +2713,7 @@ def rising_focus_section(
     return f"""
     <h2 class="focus-title rising-title">
 
-        🚀 상승 경고 리스트 [1H(30)이상확인]
+        🚀 상승 경고 리스트 [1H EMA10-30-60-120]
 
         <small>
             {update_time} KST
@@ -2693,9 +2727,6 @@ def rising_focus_section(
 
 # =========================================================
 # ⛔️ 상승 해지 리스트
-#
-# 현재 TOP30 안에서
-# air_ended=True인 종목만 표시
 # =========================================================
 
 def ended_focus_section(
@@ -2781,7 +2812,7 @@ def ended_focus_section(
 
 
 # =========================================================
-# 🚨 경고리스트
+# 🚨 상승 진행 리스트
 # =========================================================
 
 def warning_focus_section(
@@ -2993,17 +3024,17 @@ td:nth-child(1){
 
 th:nth-child(2),
 td:nth-child(2){
-    width:19%;
+    width:21%;
 }
 
 th:nth-child(3),
 td:nth-child(3){
-    width:15%;
+    width:16%;
 }
 
 th:nth-child(4),
 td:nth-child(4){
-    width:23%;
+    width:24%;
 }
 
 th:nth-child(5),
@@ -3013,7 +3044,7 @@ td:nth-child(5){
 
 th:nth-child(6),
 td:nth-child(6){
-    width:20%;
+    width:16%;
 }
 
 .rank{
@@ -3099,7 +3130,7 @@ td:nth-child(6){
     min-width:0;
     display:flex;
     align-items:center;
-    justify-content:flex-start;
+    justify-content:center;
     overflow:hidden;
 }
 
@@ -3108,7 +3139,7 @@ td:nth-child(6){
     width:auto;
     min-width:0;
     max-width:100%;
-    text-align:left;
+    text-align:center;
     white-space:nowrap;
     font-size:7px;
     font-weight:bold;
@@ -3482,7 +3513,7 @@ def dashboard():
         )
 
     # -----------------------------------------------------
-    # ④ 전체 TOP30
+    # ④ 전체 TOP
     # -----------------------------------------------------
 
     if USE_UPBIT == "Y":
@@ -3521,7 +3552,7 @@ def dashboard():
         >
 
         <title>
-            1H EMA3-10 비행기 경고
+            1H EMA10-30-60-120 비행기 경고
         </title>
 
         <style>
@@ -3542,9 +3573,9 @@ def dashboard():
 
             ① 거래대금 TOP{TOP_N}<br>
 
-            ② 1H EMA 30-60 정배열 필수<br>
+            ② 1H EMA 10-30-60-120 정배열 필수<br>
 
-            ③ 4H EMA 30-60 정배열 필수<br>
+            ③ 1H EMA3 &gt; EMA10 필수<br>
 
             ④ 1H EMA3 &gt; EMA10 연속 카운팅 → 🟢(N)<br>
 
@@ -3627,7 +3658,7 @@ def startup():
     )
 
     log.info(
-        "1H + 4H EMA 비행기 경고 시스템 시작"
+        "1H EMA 비행기 경고 시스템 시작"
     )
 
     log.info(
@@ -3639,7 +3670,7 @@ def startup():
     )
 
     log.info(
-        "EMA = 30-60"
+        "1H EMA = 10-30-60-120"
     )
 
     log.info(
@@ -3648,8 +3679,7 @@ def startup():
 
     log.info(
         "비행기 시작 조건 = "
-        "1H 30-60 정배열 + "
-        "4H 30-60 정배열 + "
+        "1H EMA10 > EMA30 > EMA60 > EMA120 + "
         "EMA3 > EMA10"
     )
 
@@ -3668,6 +3698,14 @@ def startup():
 
     log.info(
         "양봉 필수 조건 = 사용 안 함"
+    )
+
+    log.info(
+        "4H EMA 조건 = 사용 안 함"
+    )
+
+    log.info(
+        "4H EMA 표시 = 삭제"
     )
 
     log.info(
