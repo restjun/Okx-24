@@ -980,7 +980,10 @@ def ema_display(df):
 # =========================================================
 # EMA2
 # 4H EMA3 + 이전 15개 EMA3 고점/저점 돌파
-# ★ 필수 EMA 배열도 3-10-30-60-120
+#
+# ★ 핵심 수정
+# 돌파 후 EMA 정배열/역배열이 깨지면
+# EMA2 카운트를 즉시 0으로 리셋
 # =========================================================
 
 def ema2_breakout_analysis(df):
@@ -1011,6 +1014,10 @@ def ema2_breakout_analysis(df):
             .reset_index(drop=True)
         )
 
+        # =================================================
+        # EMA 계산
+        # =================================================
+
         work["e3"] = ema(
             work,
             3
@@ -1036,6 +1043,11 @@ def ema2_breakout_analysis(df):
             120
         )
 
+        # =================================================
+        # 이전 15개 EMA3 최고값
+        # 현재 캔들은 제외
+        # =================================================
+
         work["hi15"] = (
             work["e3"]
             .shift(1)
@@ -1045,6 +1057,11 @@ def ema2_breakout_analysis(df):
             )
             .max()
         )
+
+        # =================================================
+        # 이전 15개 EMA3 최저값
+        # 현재 캔들은 제외
+        # =================================================
 
         work["lo15"] = (
             work["e3"]
@@ -1057,13 +1074,9 @@ def ema2_breakout_analysis(df):
         )
 
         # =================================================
-        # ★ 필수조건
+        # ★ EMA2 LONG 정배열
         #
-        # LONG:
         # EMA3 > EMA10 > EMA30 > EMA60 > EMA120
-        #
-        # SHORT:
-        # EMA3 < EMA10 < EMA30 < EMA60 < EMA120
         # =================================================
 
         bull = (
@@ -1074,7 +1087,13 @@ def ema2_breakout_analysis(df):
             (work["e30"] > work["e60"])
             &
             (work["e60"] > work["e120"])
-        )
+        ).fillna(False)
+
+        # =================================================
+        # ★ EMA2 SHORT 역배열
+        #
+        # EMA3 < EMA10 < EMA30 < EMA60 < EMA120
+        # =================================================
 
         bear = (
             (work["e3"] < work["e10"])
@@ -1084,7 +1103,14 @@ def ema2_breakout_analysis(df):
             (work["e30"] < work["e60"])
             &
             (work["e60"] < work["e120"])
-        )
+        ).fillna(False)
+
+        # =================================================
+        # EMA3 상향 돌파
+        #
+        # 현재 EMA3가 이전 15개 최고값 돌파
+        # 이전 캔들에서는 돌파하지 않았어야 함
+        # =================================================
 
         long_cross = (
             (work["e3"] > work["hi15"])
@@ -1094,7 +1120,11 @@ def ema2_breakout_analysis(df):
                 <=
                 work["hi15"].shift(1)
             )
-        )
+        ).fillna(False)
+
+        # =================================================
+        # EMA3 하향 돌파
+        # =================================================
 
         short_cross = (
             (work["e3"] < work["lo15"])
@@ -1104,7 +1134,13 @@ def ema2_breakout_analysis(df):
                 >=
                 work["lo15"].shift(1)
             )
-        )
+        ).fillna(False)
+
+        # =================================================
+        # ★ 돌파 신호
+        #
+        # 반드시 EMA 배열 조건까지 만족해야 함
+        # =================================================
 
         work["long_signal"] = (
             bull
@@ -1117,6 +1153,10 @@ def ema2_breakout_analysis(df):
             &
             short_cross
         ).fillna(False)
+
+        # =================================================
+        # 가장 최근 돌파 신호 찾기
+        # =================================================
 
         signal_indices = []
 
@@ -1160,6 +1200,10 @@ def ema2_breakout_analysis(df):
 
             return result
 
+        # =================================================
+        # 가장 최근 신호
+        # =================================================
+
         start_index, start_state = (
             signal_indices[-1]
         )
@@ -1173,6 +1217,93 @@ def ema2_breakout_analysis(df):
         current_index = (
             len(work) - 1
         )
+
+        # =================================================
+        # ★★★★★ 핵심 수정 부분 ★★★★★
+        #
+        # 돌파 이후 모든 캔들에서
+        # EMA 정배열/역배열이 계속 유지되어야 한다.
+        #
+        # LONG
+        # 3 > 10 > 30 > 60 > 120
+        #
+        # SHORT
+        # 3 < 10 < 30 < 60 < 120
+        #
+        # 하나라도 깨지면 즉시 0
+        # =================================================
+
+        alignment_broken = False
+        alignment_broken_index = None
+
+        for i in range(
+            start_index,
+            current_index + 1
+        ):
+
+            if start_state == "long":
+
+                # LONG 돌파 이후
+                # 정배열이 깨졌는지 확인
+
+                if not bool(
+                    bull.iloc[i]
+                ):
+
+                    alignment_broken = True
+
+                    alignment_broken_index = i
+
+                    break
+
+            elif start_state == "short":
+
+                # SHORT 돌파 이후
+                # 역배열이 깨졌는지 확인
+
+                if not bool(
+                    bear.iloc[i]
+                ):
+
+                    alignment_broken = True
+
+                    alignment_broken_index = i
+
+                    break
+
+        # =================================================
+        # ★ 배열이 깨졌으면 EMA2 카운트 0
+        #
+        # 더 이상 이전 돌파 카운트를 유지하지 않음
+        # =================================================
+
+        if alignment_broken:
+
+            result["state"] = "none"
+
+            result["count"] = 0
+
+            result["start_time"] = None
+
+            result["end_time"] = None
+
+            result["candle_time"] = (
+                work["datetime"].iloc[-1]
+            )
+
+            result["display"] = "⚪(0)"
+
+            result["breakout"] = False
+
+            result["ended"] = False
+
+            return result
+
+        # =================================================
+        # 돌파 이후 종료 조건
+        #
+        # 기존 로직 그대로 유지
+        # =================================================
 
         end_index = None
         end_time = None
@@ -1205,6 +1336,10 @@ def ema2_breakout_analysis(df):
                     ]
                 )
 
+                # =================================================
+                # LONG 종료
+                # =================================================
+
                 if (
                     start_state == "long"
                     and
@@ -1222,6 +1357,10 @@ def ema2_breakout_analysis(df):
 
                     break
 
+                # =================================================
+                # SHORT 종료
+                # =================================================
+
                 if (
                     start_state == "short"
                     and
@@ -1238,6 +1377,10 @@ def ema2_breakout_analysis(df):
                     )
 
                     break
+
+        # =================================================
+        # 종료된 경우
+        # =================================================
 
         if end_index is not None:
 
@@ -1263,6 +1406,7 @@ def ema2_breakout_analysis(df):
             )
 
             result["breakout"] = True
+
             result["ended"] = True
 
             if start_state == "long":
@@ -1278,6 +1422,17 @@ def ema2_breakout_analysis(df):
                 )
 
             return result
+
+        # =================================================
+        # 현재까지 진행 중
+        #
+        # 돌파 캔들 = 1
+        # 다음 캔들 = 2
+        # ...
+        #
+        # 단, 위에서 정배열이 깨졌으면
+        # 이미 0으로 return 되었음
+        # =================================================
 
         current_count = (
             current_index
@@ -1302,6 +1457,7 @@ def ema2_breakout_analysis(df):
         )
 
         result["breakout"] = True
+
         result["ended"] = False
 
         if start_state == "long":
@@ -1421,6 +1577,8 @@ def update_air_counter(
             "long",
             "short"
         )
+        and
+        count > 0
     ):
 
         return {
@@ -3989,7 +4147,7 @@ def startup():
     )
 
     # =====================================================
-    # ★ EMA1 변경
+    # ★ EMA1
     # =====================================================
 
     log.info(
@@ -4009,6 +4167,10 @@ def startup():
     log.info(
         "SHORT = EMA3 < EMA10 < EMA30 < EMA60 < EMA120 "
         "+ EMA3 이전 15개 최저값 하향 돌파 마감"
+    )
+
+    log.info(
+        "EMA2 정배열/역배열이 깨지면 카운트 = 0"
     )
 
     log.info(
