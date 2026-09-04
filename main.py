@@ -600,7 +600,7 @@ def get_okx_ohlcv(
 def history_upbit(
     market,
     unit,
-    required=125
+    required=200
 ):
 
     all_df = None
@@ -650,7 +650,7 @@ def history_upbit(
 def history_okx(
     inst,
     bar,
-    required=125
+    required=200
 ):
 
     all_df = None
@@ -3767,4 +3767,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-    )
+            )
