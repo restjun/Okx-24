@@ -2713,7 +2713,7 @@ def rising_focus_section(
     return f"""
     <h2 class="focus-title rising-title">
 
-        🚀 상승 경고 리스트 [1H(30) 이상 확인✨️]
+        🚀 상승 경고 리스트 [1H(10)이상/첫번째 〽️]
 
         <small>
             {update_time} KST
