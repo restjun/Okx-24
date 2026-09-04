@@ -33,10 +33,10 @@ logging.basicConfig(
 log = logging.getLogger("trading")
 
 VOLUME_HOURS = 24
-TOP_N = 30
+TOP_N = 20
 UPDATE_MINUTES = 1
 
-HISTORY_CHU7lNK = 200
+HISTORY_CHUNK = 200
 MAX_HISTORY_CHUNKS = 10
 
 USE_UPBIT = "Y"
@@ -2970,7 +2970,7 @@ table{
 }
 
 th{
-    padding:4px 4px;
+    padding:4px 2px;
     background:#12151a;
     border-bottom:1px solid #2b3037;
     color:#8f949d;
@@ -3685,4 +3685,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-    )
+        )
