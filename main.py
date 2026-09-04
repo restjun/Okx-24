@@ -2285,6 +2285,9 @@ def ema_html(e):
 
 # =========================================================
 # ★ EMA2 표시
+#
+# ★ 수정: EMA2 아래 ⛔️ 표시만 삭제
+# ★ EMA2 종료 판정 로직은 그대로 유지
 # =========================================================
 
 def ema3_10_cross_html(
@@ -2312,41 +2315,6 @@ def ema3_10_cross_html(
     except Exception:
 
         count = 0
-
-    ended = bool(
-        data.get(
-            "ended",
-            False
-        )
-    )
-
-    if ended:
-
-        if state == "long":
-
-            return (
-                '<div class="ema10-box">'
-                '<div class="ema10-long">'
-                f'🟢({count})'
-                '</div>'
-                '<div class="ema10-end">'
-                '⛔️'
-                '</div>'
-                '</div>'
-            )
-
-        if state == "short":
-
-            return (
-                '<div class="ema10-box">'
-                '<div class="ema10-short">'
-                f'🔴({count})'
-                '</div>'
-                '<div class="ema10-end">'
-                '⛔️'
-                '</div>'
-                '</div>'
-            )
 
     if state == "long":
 
@@ -3538,31 +3506,24 @@ def dashboard():
             📊 트레이딩 전략
         </h1>
 
+        <!-- =================================================
+             ★ 수정 ②
+             트레이딩 전략 설명 간소화
+             ================================================= -->
+
         <div class="info">
 
-            ① 거래대금 TOP{TOP_N}<br>
+            ① 4H 확정 캔들 기준<br>
 
-            ② 모든 EMA 분석은 4H 확정 캔들 기준<br>
+            ② EMA1 = EMA 10-30-60-120 배열<br>
 
-            ③ EMA1 = 4H EMA 10-30-60-120 배열<br>
+            ③ EMA2 = EMA3 이전 {EMA2_LOOKBACK}개 고점/저점 돌파<br>
 
-            ④ EMA2 = 4H EMA3 이전 {EMA2_LOOKBACK}개 고점/저점 돌파<br>
+            ④ LONG = 정배열 + EMA3 상향 돌파<br>
 
-            ⑤ LONG = EMA10 &gt; EMA30 &gt; EMA60 &gt; EMA120
-            + EMA3 이전 15개 최고값 상향 돌파 마감<br>
+            ⑤ SHORT = 역배열 + EMA3 하향 돌파<br>
 
-            ⑥ SHORT = EMA10 &lt; EMA30 &lt; EMA60 &lt; EMA120
-            + EMA3 이전 15개 최저값 하향 돌파 마감<br>
-
-            ⑦ 돌파 마감 캔들이 새로운 시작점 = ①<br>
-
-            ⑧ LONG 종료 = 시작점 이후 종가가 이전 캔들 저가보다 낮게 마감<br>
-
-            ⑨ SHORT 종료 = 시작점 이후 종가가 이전 캔들 고가보다 높게 마감<br>
-
-            ⑩ 종료 후 새로운 돌파 발생 시 다시 ①부터 시작<br>
-
-            ⑪ 업비트 : Y / OKX : N
+            ⑥ EMA2 돌파 시작 = ①부터 카운트
 
             {status}
 
@@ -3724,4 +3685,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-        )
+    )
