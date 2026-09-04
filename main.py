@@ -33,7 +33,7 @@ logging.basicConfig(
 log = logging.getLogger("trading")
 
 VOLUME_HOURS = 24
-TOP_N = 20
+TOP_N = 50
 UPDATE_MINUTES = 1
 
 HISTORY_CHUNK = 200
@@ -2679,7 +2679,7 @@ def rising_focus_section(
     return f"""
     <h2 class="focus-title rising-title">
 
-        🚀 상승 경고 리스트
+        🚀 상승 경고 리스트 [1H(30)이상확인]
 
         <small>
             {update_time} KST
