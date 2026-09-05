@@ -144,15 +144,6 @@ last_request_time = 0
 
 
 # =========================================================
-# 종료 표시 관리
-# =========================================================
-
-air_ended_displayed = set()
-
-air_ended_displayed_lock = threading.Lock()
-
-
-# =========================================================
 # 공통
 # =========================================================
 
@@ -1911,33 +1902,13 @@ def analyze(
         else daily_change_upbit(market)
     )
 
+    # =================================================
+    # 해지 리스트는 삭제
+    #
+    # air_ended는 화면 리스트에 사용하지 않음
+    # =================================================
+
     air_ended = False
-
-    if ema2_result.get(
-        "ended",
-        False
-    ):
-
-        end_time = ema2_result.get(
-            "end_time"
-        )
-
-        if end_time is not None:
-
-            key = (
-                market,
-                str(end_time)
-            )
-
-            with air_ended_displayed_lock:
-
-                if key not in air_ended_displayed:
-
-                    air_ended_displayed.add(
-                        key
-                    )
-
-                    air_ended = True
 
     return {
 
@@ -2115,18 +2086,9 @@ def update_upbit():
         for x in rows
     )
 
-    ended_count = sum(
-        x.get(
-            "air_ended",
-            False
-        )
-        for x in rows
-    )
-
     log.info(
         f"업비트 완료 / "
-        f"EMA2 진행 {active_count}개 / "
-        f"종료 ⛔️ {ended_count}개"
+        f"EMA2 진행 {active_count}개"
     )
 
 
@@ -2305,18 +2267,9 @@ def update_okx(
         for x in rows
     )
 
-    ended_count = sum(
-        x.get(
-            "air_ended",
-            False
-        )
-        for x in rows
-    )
-
     log.info(
         f"OKX 완료 / "
-        f"EMA2 진행 {active_count}개 / "
-        f"종료 ⛔️ {ended_count}개"
+        f"EMA2 진행 {active_count}개"
     )
 
     return True
@@ -2404,19 +2357,8 @@ def update_dashboard():
 def warning_html(
     air_warning,
     air_direction=None,
-    air_count=0,
-    air_ended=False
+    air_count=0
 ):
-
-    if air_ended:
-
-        return (
-            '<div class="air-box ended">'
-            '<div class="air-end">'
-            '⛔️'
-            '</div>'
-            '</div>'
-        )
 
     if not air_warning:
 
@@ -2644,11 +2586,7 @@ def rows_html(
                         x.get(
                             "air_direction"
                         ),
-                        visual_air_count,
-                        x.get(
-                            "air_ended",
-                            False
-                        )
+                        visual_air_count
                     )}
 
                 </td>
@@ -2787,13 +2725,6 @@ def rising_focus_section(
 
     for x in data:
 
-        if x.get(
-            "air_ended",
-            False
-        ):
-
-            continue
-
         if not x.get(
             "air_active",
             False
@@ -2883,98 +2814,6 @@ def rising_focus_section(
 
 
 # =========================================================
-# 상승 해지 리스트
-# =========================================================
-
-def ended_focus_section(
-    data,
-    update_time
-):
-
-    ended_data = []
-
-    for x in data:
-
-        if x.get(
-            "air_ended",
-            False
-        ):
-
-            ended_data.append(
-                x
-            )
-
-    if not ended_data:
-
-        rows = """
-        <tr>
-            <td colspan="6" class="empty">
-                현재 상승 해지 코인 없음
-            </td>
-        </tr>
-        """
-
-        table = f"""
-        <div class="table-wrap focus-table ended-table">
-
-            <table>
-
-                <thead>
-
-                    <tr>
-                        <th>#</th>
-                        <th>코인</th>
-                        <th>거래대금</th>
-                        <th>EMA1</th>
-                        <th>EMA2</th>
-                        <th>경고</th>
-                    </tr>
-
-                </thead>
-
-                <tbody>
-
-                    {rows}
-
-                </tbody>
-
-            </table>
-
-        </div>
-        """
-
-    else:
-
-        table = (
-            '<div class="focus-table ended-table">'
-            +
-            table_html(
-                ended_data
-            ).replace(
-                '<div class="table-wrap">',
-                '',
-                1
-            )
-            +
-            '</div>'
-        )
-
-    return f"""
-    <h2 class="focus-title ended-title">
-
-        ⛔️ 상승 해지 리스트
-
-        <small>
-            {update_time} KST
-        </small>
-
-    </h2>
-
-    {table}
-    """
-
-
-# =========================================================
 # 🚨 상승 진행 리스트
 # =========================================================
 
@@ -2986,13 +2825,6 @@ def warning_focus_section(
     warning_data = []
 
     for x in data:
-
-        if x.get(
-            "air_ended",
-            False
-        ):
-
-            continue
 
         if not x.get(
             "air_active",
@@ -3573,16 +3405,6 @@ td:nth-child(6){
     display:inline-block;
 }
 
-.air-end{
-    font-size:12px;
-
-    font-weight:bold;
-
-    line-height:18px;
-
-    color:#ff5555;
-}
-
 .qualified{
     background:rgba(255,255,255,.045);
 }
@@ -3599,16 +3421,8 @@ td:nth-child(6){
     color:#39e875;
 }
 
-.ended-title{
-    color:#ff5555;
-}
-
 .warning-title{
     color:#39e875;
-}
-
-.focus-table{
-    border-radius:9px;
 }
 
 .rising-table{
@@ -3616,10 +3430,6 @@ td:nth-child(6){
 
     box-shadow:
         0 0 7px rgba(53,201,107,.08);
-}
-
-.ended-table{
-    border:1px solid #d84646;
 }
 
 .warning-table{
@@ -3797,12 +3607,6 @@ td:nth-child(6){
 
     .air-icon{
         font-size:12px;
-
-        line-height:18px;
-    }
-
-    .air-end{
-        font-size:11px;
 
         line-height:18px;
     }
