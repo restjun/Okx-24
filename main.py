@@ -915,7 +915,7 @@ def get_okx_ohlcv(
         )
 
         # =================================================
-        # ★ 현재 진행 중인 캔들 제외
+        # ★ 현재 진행 중 캔들 제외
         # =================================================
 
         bar_minutes = (
@@ -1135,6 +1135,12 @@ def ema(
 #
 # 선택된 시간봉의
 # EMA 10-30-60-120
+#
+# ★ 추가
+# EMA10 ↔ EMA120 이격도
+#
+# 이격도 공식
+# (EMA10 - EMA120) / EMA120 × 100
 # =========================================================
 
 def direction(
@@ -1205,6 +1211,10 @@ def direction(
     return "none"
 
 
+# =========================================================
+# EMA1 배열 + 카운트 + 이격도
+# =========================================================
+
 def ema_alignment_count(
     df
 ):
@@ -1220,7 +1230,10 @@ def ema_alignment_count(
                 "none",
 
             "count":
-                0
+                0,
+
+            "spread":
+                0.0
         }
 
     try:
@@ -1245,8 +1258,52 @@ def ema_alignment_count(
             120
         )
 
+        # =================================================
+        # ★ 현재 확정 캔들의 EMA10 / EMA120
+        # =================================================
+
+        current_e10 = float(
+            e10.iloc[-1]
+        )
+
+        current_e120 = float(
+            e120.iloc[-1]
+        )
+
+        # =================================================
+        # ★ EMA10 - EMA120 이격도
+        #
+        # EMA120을 기준으로 계산
+        #
+        # (EMA10 - EMA120)
+        # ---------------- × 100
+        #       EMA120
+        # =================================================
+
+        if current_e120 != 0:
+
+            spread = (
+                (
+                    current_e10
+                    -
+                    current_e120
+                )
+                /
+                current_e120
+                *
+                100
+            )
+
+        else:
+
+            spread = 0.0
+
         current_direction = None
         count = 0
+
+        # =================================================
+        # 배열 연속 카운트
+        # =================================================
 
         for i in range(
             len(df) - 1,
@@ -1308,6 +1365,10 @@ def ema_alignment_count(
                     "none"
                 )
 
+            # =================================================
+            # 현재 캔들 방향 결정
+            # =================================================
+
             if i == len(df) - 1:
 
                 current_direction = (
@@ -1325,8 +1386,15 @@ def ema_alignment_count(
                             "none",
 
                         "count":
-                            0
+                            0,
+
+                        "spread":
+                            spread
                     }
+
+            # =================================================
+            # 연속 배열 카운트
+            # =================================================
 
             if (
                 candle_direction
@@ -1346,7 +1414,10 @@ def ema_alignment_count(
                 current_direction,
 
             "count":
-                count
+                count,
+
+            "spread":
+                spread
         }
 
     except Exception as e:
@@ -1361,9 +1432,22 @@ def ema_alignment_count(
                 "none",
 
             "count":
-                0
+                0,
+
+            "spread":
+                0.0
         }
 
+
+# =========================================================
+# EMA1 화면 표시
+#
+# 예:
+#
+# 🟢(15) +5.24%
+# 🔴(7) -3.18%
+# ⚪(0) 0.00%
+# =========================================================
 
 def ema_display(
     df
@@ -1383,6 +1467,11 @@ def ema_display(
         "count"
     ]
 
+    spread = result.get(
+        "spread",
+        0.0
+    )
+
     if d == "long":
 
         icon = "🟢"
@@ -1397,16 +1486,28 @@ def ema_display(
 
         count = 0
 
+    # =================================================
+    # ★ 이격도 표시
+    # =================================================
+
+    display = (
+        f"{icon}({count}) "
+        f"{spread:+.2f}%"
+    )
+
     return {
 
         "display":
-            f"{icon}({count})",
+            display,
 
         "direction":
             d,
 
         "count":
-            count
+            count,
+
+        "spread":
+            spread
     }
 
 
@@ -2423,13 +2524,16 @@ def empty_analysis():
     e = {
 
         "display":
-            "⚪(0)",
+            "⚪(0) 0.00%",
 
         "direction":
             "none",
 
         "count":
-            0
+            0,
+
+        "spread":
+            0.0
     }
 
     return {
@@ -3259,13 +3363,17 @@ def warning_html(
     )
 
 
+# =========================================================
+# ★ EMA1 표시 HTML
+# =========================================================
+
 def ema_html(
     e
 ):
 
     if not e:
 
-        return "⚪(0)"
+        return "⚪(0) 0.00%"
 
     direction_value = e.get(
         "direction",
@@ -3274,7 +3382,7 @@ def ema_html(
 
     display = e.get(
         "display",
-        "⚪(0)"
+        "⚪(0) 0.00%"
     )
 
     cls = {
@@ -5040,9 +5148,15 @@ def dashboard():
             EMA1 =
             {timeframe_label}
             EMA 10-30-60-120 배열
+            + EMA10·EMA120 이격도
             <br>
 
             ③
+            EMA1 이격도 =
+            (EMA10 - EMA120) / EMA120 × 100
+            <br>
+
+            ④
             EMA2 =
             {timeframe_label}
             EMA3 이전
@@ -5050,17 +5164,17 @@ def dashboard():
             개 고점/저점 돌파
             <br>
 
-            ④ LONG =
+            ⑤ LONG =
             EMA3 > EMA10 > EMA30 > EMA60 > EMA120
             + EMA3 상향 돌파
             <br>
 
-            ⑤ SHORT =
+            ⑥ SHORT =
             EMA3 < EMA10 < EMA30 < EMA60 < EMA120
             + EMA3 하향 돌파
             <br>
 
-            ⑥ EMA2 돌파 시작 =
+            ⑦ EMA2 돌파 시작 =
             ①부터 카운트
 
             {status}
@@ -5194,6 +5308,17 @@ def startup():
         f"EMA1 = "
         f"{timeframe_label} "
         "EMA 10-30-60-120"
+    )
+
+    log.info(
+        "EMA1 이격도 = "
+        "(EMA10 - EMA120) / EMA120 × 100"
+    )
+
+    log.info(
+        "EMA1 표시 = "
+        "정배열/역배열 + 연속 카운트 + "
+        "EMA10·EMA120 이격도"
     )
 
     # =================================================
