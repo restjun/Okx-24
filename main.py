@@ -1181,28 +1181,14 @@ def direction(
 
 
 # =========================================================
-# EMA1 배열 + 카운트 + 평균 이격도
+# EMA1 배열 + 카운트 + 이격도
 #
-# ★ 변경된 이격도
+# ★ 이격도 기준 변경
 #
-# ① EMA10 ↔ EMA30
-# ② EMA30 ↔ EMA60
-# ③ EMA60 ↔ EMA120
+# EMA60 ↔ EMA120
 #
-# 각각의 이격도를 계산한 뒤
-# 3개의 평균값을 최종 이격도로 사용
-#
-# 10-30 이격
-# = (EMA10 - EMA30) / EMA30 × 100
-#
-# 30-60 이격
-# = (EMA30 - EMA60) / EMA60 × 100
-#
-# 60-120 이격
-# = (EMA60 - EMA120) / EMA120 × 100
-#
-# 평균 이격도
-# = (10-30 + 30-60 + 60-120) / 3
+# 공식:
+# (EMA60 - EMA120) / EMA120 × 100
 # =========================================================
 
 def ema_alignment_count(
@@ -1223,18 +1209,6 @@ def ema_alignment_count(
                 0,
 
             "spread":
-                0.0,
-
-            "spread_10_30":
-                0.0,
-
-            "spread_30_60":
-                0.0,
-
-            "spread_60_120":
-                0.0,
-
-            "spread_average":
                 0.0
         }
 
@@ -1261,16 +1235,8 @@ def ema_alignment_count(
         )
 
         # =================================================
-        # ★ 현재 확정 캔들 EMA
+        # ★ 현재 확정 캔들 EMA60 / EMA120
         # =================================================
-
-        current_e10 = float(
-            e10.iloc[-1]
-        )
-
-        current_e30 = float(
-            e30.iloc[-1]
-        )
 
         current_e60 = float(
             e60.iloc[-1]
@@ -1281,63 +1247,7 @@ def ema_alignment_count(
         )
 
         # =================================================
-        # ★ 10-30 이격도
-        #
-        # (EMA10 - EMA30)
-        # ---------------- × 100
-        #       EMA30
-        # =================================================
-
-        if current_e30 != 0:
-
-            spread_10_30 = (
-
-                (
-                    current_e10
-                    -
-                    current_e30
-                )
-                /
-                current_e30
-                *
-                100
-
-            )
-
-        else:
-
-            spread_10_30 = 0.0
-
-        # =================================================
-        # ★ 30-60 이격도
-        #
-        # (EMA30 - EMA60)
-        # ---------------- × 100
-        #       EMA60
-        # =================================================
-
-        if current_e60 != 0:
-
-            spread_30_60 = (
-
-                (
-                    current_e30
-                    -
-                    current_e60
-                )
-                /
-                current_e60
-                *
-                100
-
-            )
-
-        else:
-
-            spread_30_60 = 0.0
-
-        # =================================================
-        # ★ 60-120 이격도
+        # ★ EMA60 - EMA120 이격도
         #
         # (EMA60 - EMA120)
         # ---------------- × 100
@@ -1346,8 +1256,7 @@ def ema_alignment_count(
 
         if current_e120 != 0:
 
-            spread_60_120 = (
-
+            spread = (
                 (
                     current_e60
                     -
@@ -1357,29 +1266,11 @@ def ema_alignment_count(
                 current_e120
                 *
                 100
-
             )
 
         else:
 
-            spread_60_120 = 0.0
-
-        # =================================================
-        # ★★★ 3개 이격도 평균 ★★★
-        # =================================================
-
-        spread_average = (
-
-            spread_10_30
-            +
-            spread_30_60
-            +
-            spread_60_120
-
-        ) / 3
-
-        # 기존 spread도 평균값으로 유지
-        spread = spread_average
+            spread = 0.0
 
         current_direction = None
 
@@ -1473,19 +1364,7 @@ def ema_alignment_count(
                             0,
 
                         "spread":
-                            spread,
-
-                        "spread_10_30":
-                            spread_10_30,
-
-                        "spread_30_60":
-                            spread_30_60,
-
-                        "spread_60_120":
-                            spread_60_120,
-
-                        "spread_average":
-                            spread_average
+                            spread
                     }
 
             # =================================================
@@ -1513,19 +1392,7 @@ def ema_alignment_count(
                 count,
 
             "spread":
-                spread,
-
-            "spread_10_30":
-                spread_10_30,
-
-            "spread_30_60":
-                spread_30_60,
-
-            "spread_60_120":
-                spread_60_120,
-
-            "spread_average":
-                spread_average
+                spread
         }
 
     except Exception as e:
@@ -1543,18 +1410,6 @@ def ema_alignment_count(
                 0,
 
             "spread":
-                0.0,
-
-            "spread_10_30":
-                0.0,
-
-            "spread_30_60":
-                0.0,
-
-            "spread_60_120":
-                0.0,
-
-            "spread_average":
                 0.0
         }
 
@@ -1562,10 +1417,10 @@ def ema_alignment_count(
 # =========================================================
 # EMA1 데이터
 #
-# 화면
+# 화면에서는 2줄
 #
-# 1줄 : 🟢(15)
-# 2줄 : 평균 +5.24%
+# 1줄: 🟢(15)
+# 2줄: +5.24%
 # =========================================================
 
 def ema_display(
@@ -1587,11 +1442,8 @@ def ema_display(
     ]
 
     spread = result.get(
-        "spread_average",
-        result.get(
-            "spread",
-            0.0
-        )
+        "spread",
+        0.0
     )
 
     if d == "long":
@@ -1626,7 +1478,7 @@ def ema_display(
 
         # 두 번째 줄
         "spread_display":
-            f"평균 {spread:+.2f}%",
+            f"{spread:+.2f}%",
 
         "direction":
             d,
@@ -1635,27 +1487,6 @@ def ema_display(
             count,
 
         "spread":
-            spread,
-
-        "spread_10_30":
-            result.get(
-                "spread_10_30",
-                0.0
-            ),
-
-        "spread_30_60":
-            result.get(
-                "spread_30_60",
-                0.0
-            ),
-
-        "spread_60_120":
-            result.get(
-                "spread_60_120",
-                0.0
-            ),
-
-        "spread_average":
             spread
     }
 
@@ -2656,7 +2487,7 @@ def empty_analysis():
             "⚪(0)",
 
         "spread_display":
-            "평균 0.00%",
+            "0.00%",
 
         "direction":
             "none",
@@ -2665,18 +2496,6 @@ def empty_analysis():
             0,
 
         "spread":
-            0.0,
-
-        "spread_10_30":
-            0.0,
-
-        "spread_30_60":
-            0.0,
-
-        "spread_60_120":
-            0.0,
-
-        "spread_average":
             0.0
     }
 
@@ -3504,7 +3323,7 @@ def warning_html(
 # ★ EMA1 표시 HTML
 #
 # 1줄 : 🟢(15)
-# 2줄 : 평균 +5.24%
+# 2줄 : +5.24%
 # =========================================================
 
 def ema_html(
@@ -3521,7 +3340,7 @@ def ema_html(
             </div>
 
             <div class="ema1-spread ema-none">
-                평균 0.00%
+                0.00%
             </div>
 
         </div>
@@ -3538,11 +3357,8 @@ def ema_html(
     )
 
     spread = e.get(
-        "spread_average",
-        e.get(
-            "spread",
-            0.0
-        )
+        "spread",
+        0.0
     )
 
     cls = {
@@ -3596,7 +3412,7 @@ def ema_html(
 
         <div class="ema1-spread {cls}">
 
-            평균 {spread:+.2f}%
+            {spread:+.2f}%
 
         </div>
 
@@ -5423,30 +5239,15 @@ def dashboard():
             EMA1 =
             {timeframe_label}
             EMA 10-30-60-120 배열
-            + 10-30 / 30-60 / 60-120 이격 평균
+            + EMA60·EMA120 이격도
             <br>
 
             ③
-            EMA1 평균 이격도 =
-            (10-30 이격 + 30-60 이격 + 60-120 이격) / 3
-            <br>
-
-            ④
-            10-30 이격 =
-            (EMA10 - EMA30) / EMA30 × 100
-            <br>
-
-            ⑤
-            30-60 이격 =
-            (EMA30 - EMA60) / EMA60 × 100
-            <br>
-
-            ⑥
-            60-120 이격 =
+            EMA1 이격도 =
             (EMA60 - EMA120) / EMA120 × 100
             <br>
 
-            ⑦
+            ④
             EMA2 =
             {timeframe_label}
             EMA3 이전
@@ -5454,17 +5255,17 @@ def dashboard():
             개 고점/저점 돌파
             <br>
 
-            ⑧ LONG =
+            ⑤ LONG =
             EMA3 > EMA10 > EMA30 > EMA60 > EMA120
             + EMA3 상향 돌파
             <br>
 
-            ⑨ SHORT =
+            ⑥ SHORT =
             EMA3 < EMA10 < EMA30 < EMA60 < EMA120
             + EMA3 하향 돌파
             <br>
 
-            ⑩ EMA2 돌파 시작 =
+            ⑦ EMA2 돌파 시작 =
             ①부터 카운트
 
             {status}
@@ -5598,28 +5399,13 @@ def startup():
 
     log.info(
         "EMA1 이격도 = "
-        "(10-30 + 30-60 + 60-120) / 3"
-    )
-
-    log.info(
-        "10-30 = "
-        "(EMA10 - EMA30) / EMA30 × 100"
-    )
-
-    log.info(
-        "30-60 = "
-        "(EMA30 - EMA60) / EMA60 × 100"
-    )
-
-    log.info(
-        "60-120 = "
         "(EMA60 - EMA120) / EMA120 × 100"
     )
 
     log.info(
         "EMA1 표시 = "
         "정배열/역배열 + 연속 카운트 + "
-        "3구간 이격 평균"
+        "EMA60·EMA120 이격도"
     )
 
     # =================================================
