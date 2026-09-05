@@ -775,6 +775,11 @@ def get_upbit_1h(
     to=None
 ):
 
+    # =================================================
+    # 기존 함수명 유지
+    # 실제 분석 시간봉은 EMA_TIMEFRAME
+    # =================================================
+
     return get_upbit_candle(
         market,
         EMA_TIMEFRAME,
@@ -874,6 +879,10 @@ def get_okx_ohlcv(
                 errors="coerce"
             )
 
+        # =================================================
+        # 확정 캔들만 사용
+        # =================================================
+
         df = df[
             df.confirm.astype(
                 str
@@ -883,6 +892,10 @@ def get_okx_ohlcv(
         if df.empty:
 
             return None
+
+        # =================================================
+        # 시간 변환
+        # =================================================
 
         df["datetime"] = (
 
@@ -900,6 +913,10 @@ def get_okx_ohlcv(
                 None
             )
         )
+
+        # =================================================
+        # ★ 현재 진행 중 캔들 제외
+        # =================================================
 
         bar_minutes = (
             get_okx_bar_minutes(
@@ -1114,10 +1131,16 @@ def ema(
 
 
 # =========================================================
-# EMA1 방향
+# EMA1
 #
-# EMA10 > EMA30 > EMA60 > EMA120
-# EMA10 < EMA30 < EMA60 < EMA120
+# 선택된 시간봉의
+# EMA 10-30-60-120
+#
+# ★ 추가
+# EMA10 ↔ EMA120 이격도
+#
+# 이격도 공식
+# (EMA10 - EMA120) / EMA120 × 100
 # =========================================================
 
 def direction(
@@ -1153,6 +1176,10 @@ def direction(
             120
         ).iloc[-1]
 
+        # =================================================
+        # LONG
+        # =================================================
+
         if (
             e10 > e30
             and
@@ -1162,6 +1189,10 @@ def direction(
         ):
 
             return "long"
+
+        # =================================================
+        # SHORT
+        # =================================================
 
         if (
             e10 < e30
@@ -1182,13 +1213,6 @@ def direction(
 
 # =========================================================
 # EMA1 배열 + 카운트 + 이격도
-#
-# ★ 이격도 기준 변경
-#
-# EMA60 ↔ EMA120
-#
-# 공식:
-# (EMA60 - EMA120) / EMA120 × 100
 # =========================================================
 
 def ema_alignment_count(
@@ -1235,11 +1259,11 @@ def ema_alignment_count(
         )
 
         # =================================================
-        # ★ 현재 확정 캔들 EMA60 / EMA120
+        # ★ 현재 확정 캔들의 EMA10 / EMA120
         # =================================================
 
-        current_e60 = float(
-            e60.iloc[-1]
+        current_e10 = float(
+            e10.iloc[-1]
         )
 
         current_e120 = float(
@@ -1247,9 +1271,11 @@ def ema_alignment_count(
         )
 
         # =================================================
-        # ★ EMA60 - EMA120 이격도
+        # ★ EMA10 - EMA120 이격도
         #
-        # (EMA60 - EMA120)
+        # EMA120을 기준으로 계산
+        #
+        # (EMA10 - EMA120)
         # ---------------- × 100
         #       EMA120
         # =================================================
@@ -1258,7 +1284,7 @@ def ema_alignment_count(
 
             spread = (
                 (
-                    current_e60
+                    current_e10
                     -
                     current_e120
                 )
@@ -1273,7 +1299,6 @@ def ema_alignment_count(
             spread = 0.0
 
         current_direction = None
-
         count = 0
 
         # =================================================
@@ -1341,7 +1366,7 @@ def ema_alignment_count(
                 )
 
             # =================================================
-            # 현재 캔들 방향
+            # 현재 캔들 방향 결정
             # =================================================
 
             if i == len(df) - 1:
@@ -1415,12 +1440,13 @@ def ema_alignment_count(
 
 
 # =========================================================
-# EMA1 데이터
+# EMA1 화면 표시
 #
-# 화면에서는 2줄
+# 예:
 #
-# 1줄: 🟢(15)
-# 2줄: +5.24%
+# 🟢(15) +5.24%
+# 🔴(7) -3.18%
+# ⚪(0) 0.00%
 # =========================================================
 
 def ema_display(
@@ -1460,25 +1486,19 @@ def ema_display(
 
         count = 0
 
-    try:
+    # =================================================
+    # ★ 이격도 표시
+    # =================================================
 
-        spread = float(
-            spread
-        )
-
-    except Exception:
-
-        spread = 0.0
+    display = (
+        f"{icon}({count}) "
+        f"{spread:+.2f}%"
+    )
 
     return {
 
-        # 첫 번째 줄
         "display":
-            f"{icon}({count})",
-
-        # 두 번째 줄
-        "spread_display":
-            f"{spread:+.2f}%",
+            display,
 
         "direction":
             d,
@@ -1493,6 +1513,16 @@ def ema_display(
 
 # =========================================================
 # EMA2
+#
+# 선택된 시간봉의
+#
+# EMA3
+# EMA10
+# EMA30
+# EMA60
+# EMA120
+#
+# 이전 EMA3 15개 고점/저점 돌파
 # =========================================================
 
 def ema2_breakout_analysis(
@@ -1576,6 +1606,8 @@ def ema2_breakout_analysis(
 
         # =================================================
         # 이전 15개 EMA3 최고값
+        #
+        # 현재 캔들은 제외
         # =================================================
 
         work["hi15"] = (
@@ -1591,6 +1623,8 @@ def ema2_breakout_analysis(
 
         # =================================================
         # 이전 15개 EMA3 최저값
+        #
+        # 현재 캔들은 제외
         # =================================================
 
         work["lo15"] = (
@@ -1605,7 +1639,9 @@ def ema2_breakout_analysis(
         )
 
         # =================================================
-        # EMA2 LONG
+        # EMA2 LONG 정배열
+        #
+        # EMA3 > EMA10 > EMA30 > EMA60 > EMA120
         # =================================================
 
         bull = (
@@ -1639,7 +1675,9 @@ def ema2_breakout_analysis(
         ).fillna(False)
 
         # =================================================
-        # EMA2 SHORT
+        # EMA2 SHORT 역배열
+        #
+        # EMA3 < EMA10 < EMA30 < EMA60 < EMA120
         # =================================================
 
         bear = (
@@ -1844,7 +1882,7 @@ def ema2_breakout_analysis(
                     break
 
         # =================================================
-        # 배열 깨지면 0
+        # 배열이 깨졌으면 카운트 0
         # =================================================
 
         if alignment_broken:
@@ -1895,7 +1933,7 @@ def ema2_breakout_analysis(
         end_time = None
 
         # =================================================
-        # 돌파 캔들 자체는 종료 검사 제외
+        # ★ 돌파 캔들 자체는 종료 검사 제외
         # =================================================
 
         if start_index < current_index:
@@ -1928,6 +1966,7 @@ def ema2_breakout_analysis(
 
                 # =================================================
                 # LONG 종료
+                # 종가 < 이전 캔들 저가
                 # =================================================
 
                 if (
@@ -1951,6 +1990,7 @@ def ema2_breakout_analysis(
 
                 # =================================================
                 # SHORT 종료
+                # 종가 > 이전 캔들 고가
                 # =================================================
 
                 if (
@@ -2032,7 +2072,7 @@ def ema2_breakout_analysis(
             return result
 
         # =================================================
-        # 현재 진행 중
+        # 현재까지 진행 중
         # =================================================
 
         current_count = (
@@ -2484,10 +2524,7 @@ def empty_analysis():
     e = {
 
         "display":
-            "⚪(0)",
-
-        "spread_display":
-            "0.00%",
+            "⚪(0) 0.00%",
 
         "direction":
             "none",
@@ -2564,7 +2601,10 @@ def empty_analysis():
 
 
 # =========================================================
-# 핵심 분석
+# ★★★ 핵심 분석 함수 ★★★
+#
+# EMA_TIMEFRAME 하나로
+# Upbit / OKX 모두 동일 시간봉 사용
 # =========================================================
 
 def analyze(
@@ -2974,6 +3014,10 @@ def get_okx_volume(
     usdt
 ):
 
+    # =================================================
+    # 거래대금은 기존대로 1H 24개
+    # =================================================
+
     df = get_okx_ohlcv(
         inst,
         "1H",
@@ -3321,9 +3365,6 @@ def warning_html(
 
 # =========================================================
 # ★ EMA1 표시 HTML
-#
-# 1줄 : 🟢(15)
-# 2줄 : +5.24%
 # =========================================================
 
 def ema_html(
@@ -3332,33 +3373,16 @@ def ema_html(
 
     if not e:
 
-        return """
-        <div class="ema1-cell">
-
-            <div class="ema1-main ema-none">
-                ⚪(0)
-            </div>
-
-            <div class="ema1-spread ema-none">
-                0.00%
-            </div>
-
-        </div>
-        """
+        return "⚪(0) 0.00%"
 
     direction_value = e.get(
         "direction",
         "none"
     )
 
-    count = e.get(
-        "count",
-        0
-    )
-
-    spread = e.get(
-        "spread",
-        0.0
+    display = e.get(
+        "display",
+        "⚪(0) 0.00%"
     )
 
     cls = {
@@ -3374,51 +3398,13 @@ def ema_html(
         "ema-none"
     )
 
-    if direction_value == "none":
+    return (
 
-        count = 0
-
-    try:
-
-        spread = float(
-            spread
-        )
-
-    except Exception:
-
-        spread = 0.0
-
-    if direction_value == "long":
-
-        icon = "🟢"
-
-    elif direction_value == "short":
-
-        icon = "🔴"
-
-    else:
-
-        icon = "⚪"
-
-    return f"""
-
-    <div class="ema1-cell">
-
-        <div class="ema1-main {cls}">
-
-            {icon}({count})
-
-        </div>
-
-        <div class="ema1-spread {cls}">
-
-            {spread:+.2f}%
-
-        </div>
-
-    </div>
-
-    """
+        f'<span '
+        f'class="ema-value {cls}">'
+        f'{display}'
+        '</span>'
+    )
 
 
 # =========================================================
@@ -4455,7 +4441,7 @@ td:nth-child(6){
 .ema-cell{
     overflow:hidden;
 
-    padding:2px 1px !important;
+    padding:3px 1px !important;
 }
 
 .ema-row{
@@ -4467,11 +4453,17 @@ td:nth-child(6){
 
     width:100%;
 
-    min-height:34px;
+    height:20px;
+
+    line-height:20px;
 
     white-space:nowrap;
 
     overflow:hidden;
+
+    font-size:8px;
+
+    font-weight:800;
 }
 
 .tf{
@@ -4502,65 +4494,24 @@ td:nth-child(6){
     overflow:hidden;
 }
 
+.ema-value{
+    display:inline-block;
 
-/* ========================================================
-   ★ EMA1 2줄 표시
-   ======================================================== */
-
-.ema1-cell{
-    display:flex;
-
-    flex-direction:column;
-
-    align-items:center;
-
-    justify-content:center;
-
-    width:100%;
+    width:auto;
 
     min-width:0;
 
-    height:34px;
+    max-width:100%;
 
-    line-height:1.1;
+    text-align:center;
 
     white-space:nowrap;
-
-    overflow:hidden;
-}
-
-.ema1-main{
-    display:block;
-
-    width:100%;
 
     font-size:8px;
 
     font-weight:800;
 
-    line-height:14px;
-
-    text-align:center;
-
-    white-space:nowrap;
-}
-
-.ema1-spread{
-    display:block;
-
-    width:100%;
-
-    margin-top:1px;
-
-    font-size:7px;
-
-    font-weight:800;
-
-    line-height:11px;
-
-    text-align:center;
-
-    white-space:nowrap;
+    line-height:20px;
 }
 
 .ema-long{
@@ -4574,11 +4525,6 @@ td:nth-child(6){
 .ema-none{
     color:#eeeeee;
 }
-
-
-/* ========================================================
-   EMA2
-   ======================================================== */
 
 .close-ema10{
     text-align:center !important;
@@ -4749,11 +4695,6 @@ td:nth-child(6){
     height:48px;
 }
 
-
-/* ========================================================
-   모바일
-   ======================================================== */
-
 @media(max-width:600px){
 
     body{
@@ -4823,7 +4764,7 @@ td:nth-child(6){
     td{
         height:40px;
 
-        padding:3px 1px;
+        padding:5px 1px;
     }
 
     .rank{
@@ -4863,11 +4804,15 @@ td:nth-child(6){
     }
 
     .ema-cell{
-        padding:2px 0 !important;
+        padding:3px 0 !important;
     }
 
     .ema-row{
-        min-height:34px;
+        height:20px;
+
+        line-height:20px;
+
+        font-size:7px;
     }
 
     .tf{
@@ -4878,20 +4823,10 @@ td:nth-child(6){
         font-size:6px;
     }
 
-    .ema1-cell{
-        height:34px;
-    }
-
-    .ema1-main{
+    .ema-value{
         font-size:7px;
 
-        line-height:14px;
-    }
-
-    .ema1-spread{
-        font-size:6.5px;
-
-        line-height:11px;
+        line-height:20px;
     }
 
     .close-ema10{
@@ -4940,11 +4875,6 @@ td:nth-child(6){
     }
 }
 
-
-/* ========================================================
-   아주 작은 화면
-   ======================================================== */
-
 @media(max-width:380px){
 
     body{
@@ -4970,7 +4900,7 @@ td:nth-child(6){
     }
 
     td{
-        height:40px;
+        height:37px;
     }
 
     .coin-name{
@@ -4985,20 +4915,8 @@ td:nth-child(6){
         font-size:6px;
     }
 
-    .tf{
-        font-size:5.5px;
-    }
-
-    .ema1-main{
+    .ema-value{
         font-size:6px;
-
-        line-height:13px;
-    }
-
-    .ema1-spread{
-        font-size:5.5px;
-
-        line-height:10px;
     }
 
     .ema10-long,
@@ -5011,11 +4929,6 @@ td:nth-child(6){
         font-size:11px;
     }
 }
-
-
-/* ========================================================
-   PC
-   ======================================================== */
 
 @media(min-width:601px){
 
@@ -5032,7 +4945,7 @@ td:nth-child(6){
     }
 
     td{
-        height:44px;
+        height:42px;
     }
 
     .coin-name{
@@ -5047,12 +4960,8 @@ td:nth-child(6){
         font-size:9px;
     }
 
-    .ema1-main{
+    .ema-value{
         font-size:9px;
-    }
-
-    .ema1-spread{
-        font-size:8px;
     }
 
     .ema10-long,
@@ -5239,12 +5148,12 @@ def dashboard():
             EMA1 =
             {timeframe_label}
             EMA 10-30-60-120 배열
-            + EMA60·EMA120 이격도
+            + EMA10·EMA120 이격도
             <br>
 
             ③
             EMA1 이격도 =
-            (EMA60 - EMA120) / EMA120 × 100
+            (EMA10 - EMA120) / EMA120 × 100
             <br>
 
             ④
@@ -5337,6 +5246,10 @@ def startup():
             "Y 또는 N만 가능합니다."
         )
 
+    # =================================================
+    # EMA 시간봉 검증
+    # =================================================
+
     validate_timeframe()
 
     timeframe_label = (
@@ -5369,7 +5282,7 @@ def startup():
     )
 
     # =================================================
-    # EMA 분석 시간봉
+    # ★ EMA 분석 시간봉
     # =================================================
 
     log.info(
@@ -5399,13 +5312,13 @@ def startup():
 
     log.info(
         "EMA1 이격도 = "
-        "(EMA60 - EMA120) / EMA120 × 100"
+        "(EMA10 - EMA120) / EMA120 × 100"
     )
 
     log.info(
         "EMA1 표시 = "
         "정배열/역배열 + 연속 카운트 + "
-        "EMA60·EMA120 이격도"
+        "EMA10·EMA120 이격도"
     )
 
     # =================================================
