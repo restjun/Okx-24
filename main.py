@@ -71,7 +71,7 @@ KST = ZoneInfo("Asia/Seoul")
 # "4H"  = 4시간봉
 #
 # 현재 기본값 = 4H
-EMA_TIMEFRAME = "4H"
+EMA_TIMEFRAME = "1H"
 
 
 # =========================================================
