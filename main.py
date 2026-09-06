@@ -98,22 +98,16 @@ SUPPORTED_OKX_TIMEFRAMES = {
 # 시간봉 표시
 # =========================================================
 
-def format_timeframe(
-    minutes
-):
+def format_timeframe(minutes):
 
     minutes = int(minutes)
 
     if minutes >= 1440:
-
         days = minutes // 1440
-
         return f"{days}D"
 
     if minutes >= 60:
-
         hours = minutes // 60
-
         return f"{hours}H"
 
     return f"{minutes}M"
@@ -123,12 +117,9 @@ def format_timeframe(
 # OKX 시간봉 변환
 # =========================================================
 
-def get_okx_bar(
-    minutes
-):
+def get_okx_bar(minutes):
 
     mapping = {
-
         5: "5m",
         15: "15m",
         30: "30m",
@@ -150,12 +141,9 @@ def get_okx_bar(
 # OKX bar → 분
 # =========================================================
 
-def get_okx_bar_minutes(
-    bar
-):
+def get_okx_bar_minutes(bar):
 
     mapping = {
-
         "1m": 1,
         "3m": 3,
         "5m": 5,
@@ -179,9 +167,7 @@ def get_okx_bar_minutes(
 # 현재 진행 중 캔들 시작시간
 # =========================================================
 
-def get_current_candle_start(
-    timeframe_minutes
-):
+def get_current_candle_start(timeframe_minutes):
 
     timeframe_minutes = int(
         timeframe_minutes
@@ -344,11 +330,7 @@ def wait_request():
         )
 
 
-def retry(
-    func,
-    *args,
-    **kwargs
-):
+def retry(func, *args, **kwargs):
 
     name = getattr(
         func,
@@ -472,7 +454,6 @@ def get_upbit_markets():
     )
 
     if r is None:
-
         return []
 
     try:
@@ -489,7 +470,6 @@ def get_upbit_markets():
             if not market.startswith(
                 "KRW-"
             ):
-
                 continue
 
             try:
@@ -500,11 +480,24 @@ def get_upbit_markets():
                     ]
                 )
 
+                # =================================================
+                # 실시간 현재가
+                # =================================================
+
+                current_price = float(
+                    x[
+                        "trade_price"
+                    ]
+                )
+
             except Exception:
 
                 continue
 
-            if volume > 0:
+            if (
+                volume > 0
+                and current_price > 0
+            ):
 
                 result.append({
 
@@ -512,13 +505,14 @@ def get_upbit_markets():
                         market,
 
                     "volume_24h":
-                        volume
+                        volume,
+
+                    "current_price":
+                        current_price
                 })
 
         latest_upbit_markets = [
-
             x["market"]
-
             for x in result
         ]
 
@@ -542,7 +536,6 @@ def get_usdt_krw():
     )
 
     if r is None:
-
         return None
 
     try:
@@ -571,9 +564,7 @@ def get_upbit_candle(
     to=None
 ):
 
-    unit = int(
-        unit
-    )
+    unit = int(unit)
 
     url = (
         "https://api.upbit.com/v1/candles/minutes/"
@@ -581,7 +572,6 @@ def get_upbit_candle(
     )
 
     params = {
-
         "market":
             market,
 
@@ -596,7 +586,6 @@ def get_upbit_candle(
     }
 
     if to:
-
         params["to"] = to
 
     r = retry(
@@ -607,7 +596,6 @@ def get_upbit_candle(
     )
 
     if r is None:
-
         return None
 
     try:
@@ -617,7 +605,6 @@ def get_upbit_candle(
         )
 
         if df.empty:
-
             return None
 
         df["o"] = pd.to_numeric(
@@ -661,7 +648,6 @@ def get_upbit_candle(
         )
 
         if df.empty:
-
             return None
 
         current = (
@@ -675,7 +661,6 @@ def get_upbit_candle(
         ]
 
         if df.empty:
-
             return None
 
         return (
@@ -759,7 +744,6 @@ def get_okx_ohlcv(
     )
 
     if r is None:
-
         return None
 
     try:
@@ -770,7 +754,6 @@ def get_okx_ohlcv(
         )
 
         if not data:
-
             return None
 
         df = pd.DataFrame(
@@ -789,7 +772,6 @@ def get_okx_ohlcv(
         )
 
         numeric_cols = [
-
             "ts",
             "o",
             "h",
@@ -814,21 +796,17 @@ def get_okx_ohlcv(
         ]
 
         if df.empty:
-
             return None
 
         df["datetime"] = (
-
             pd.to_datetime(
                 df["ts"],
                 unit="ms",
                 utc=True
             )
-
             .dt.tz_convert(
                 KST
             )
-
             .dt.tz_localize(
                 None
             )
@@ -853,7 +831,6 @@ def get_okx_ohlcv(
             ]
 
         if df.empty:
-
             return None
 
         return (
@@ -875,6 +852,54 @@ def get_okx_ohlcv(
             f"OKX "
             f"{inst} "
             f"{bar} 오류: {e}"
+        )
+
+        return None
+
+
+# =========================================================
+# OKX 현재가
+# =========================================================
+
+def get_okx_current_price(inst):
+
+    r = retry(
+        requests.get,
+        "https://www.okx.com/api/v5/market/ticker",
+        params={
+            "instId":
+                inst
+        },
+        timeout=15
+    )
+
+    if r is None:
+        return None
+
+    try:
+
+        data = r.json().get(
+            "data",
+            []
+        )
+
+        if not data:
+            return None
+
+        price = float(
+            data[0]["last"]
+        )
+
+        if price <= 0:
+            return None
+
+        return price
+
+    except Exception as e:
+
+        log.error(
+            f"OKX 현재가 오류 "
+            f"{inst}: {e}"
         )
 
         return None
@@ -908,15 +933,11 @@ def history_upbit(
             df is None
             or df.empty
         ):
-
             break
 
         all_df = (
-
             df.copy()
-
             if all_df is None
-
             else pd.concat(
                 [
                     df,
@@ -977,15 +998,11 @@ def history_okx(
             df is None
             or df.empty
         ):
-
             break
 
         all_df = (
-
             df.copy()
-
             if all_df is None
-
             else pd.concat(
                 [
                     df,
@@ -1023,10 +1040,7 @@ def history_okx(
 # EMA
 # =========================================================
 
-def ema(
-    df,
-    period
-):
+def ema(df, period):
 
     if (
         df is None
@@ -1050,9 +1064,7 @@ def ema(
 # EMA1 방향
 # =========================================================
 
-def direction(
-    df
-):
+def direction(df):
 
     if (
         df is None
@@ -1114,9 +1126,7 @@ def direction(
 # EMA1 배열 + 카운트 + 평균 이격도
 # =========================================================
 
-def ema_alignment_count(
-    df
-):
+def ema_alignment_count(df):
 
     if (
         df is None
@@ -1124,14 +1134,26 @@ def ema_alignment_count(
     ):
 
         return {
+            "direction":
+                "none",
 
-            "direction": "none",
-            "count": 0,
-            "spread": 0.0,
-            "spread_10_30": 0.0,
-            "spread_30_60": 0.0,
-            "spread_60_120": 0.0,
-            "spread_average": 0.0
+            "count":
+                0,
+
+            "spread":
+                0.0,
+
+            "spread_10_30":
+                0.0,
+
+            "spread_30_60":
+                0.0,
+
+            "spread_60_120":
+                0.0,
+
+            "spread_average":
+                0.0
         }
 
     try:
@@ -1297,16 +1319,24 @@ def ema_alignment_count(
                 ):
 
                     return {
+                        "direction":
+                            "none",
 
-                        "direction": "none",
-                        "count": 0,
-                        "spread": spread,
+                        "count":
+                            0,
+
+                        "spread":
+                            spread,
+
                         "spread_10_30":
                             spread_10_30,
+
                         "spread_30_60":
                             spread_30_60,
+
                         "spread_60_120":
                             spread_60_120,
+
                         "spread_average":
                             spread_average
                     }
@@ -1355,91 +1385,43 @@ def ema_alignment_count(
 
         return {
 
-            "direction": "none",
-            "count": 0,
-            "spread": 0.0,
-            "spread_10_30": 0.0,
-            "spread_30_60": 0.0,
-            "spread_60_120": 0.0,
-            "spread_average": 0.0
+            "direction":
+                "none",
+
+            "count":
+                0,
+
+            "spread":
+                0.0,
+
+            "spread_10_30":
+                0.0,
+
+            "spread_30_60":
+                0.0,
+
+            "spread_60_120":
+                0.0,
+
+            "spread_average":
+                0.0
         }
 
 
 # =========================================================
-# EMA120 기준 상승/하락률
-# =========================================================
-
-def ema120_change(
-    df
-):
-
-    if (
-        df is None
-        or df.empty
-        or "c" not in df
-    ):
-
-        return 0.0
-
-    try:
-
-        current_close = float(
-            df["c"].iloc[-1]
-        )
-
-        e120 = ema(
-            df,
-            120
-        )
-
-        if (
-            e120 is None
-            or e120.empty
-        ):
-
-            return 0.0
-
-        current_ema120 = float(
-            e120.iloc[-1]
-        )
-
-        if current_ema120 == 0:
-
-            return 0.0
-
-        return (
-            (
-                current_close
-                -
-                current_ema120
-            )
-            /
-            current_ema120
-            *
-            100
-        )
-
-    except Exception as e:
-
-        log.error(
-            f"EMA120 상승/하락률 계산 오류: {e}"
-        )
-
-        return 0.0
-
-
-# =========================================================
 # EMA1 데이터
+#
+# ★ 변경 핵심
+# 현재가와 EMA120의 이격률을 계산
 # =========================================================
 
 def ema_display(
-    df
+    df,
+    current_price=None
 ):
 
-    result = (
-        ema_alignment_count(
-            df
-        )
+    result = ema_alignment_count(
+        df
     )
 
     d = result[
@@ -1449,10 +1431,6 @@ def ema_display(
     count = result[
         "count"
     ]
-
-    ema120_rate = ema120_change(
-        df
-    )
 
     if d == "long":
 
@@ -1465,47 +1443,77 @@ def ema_display(
     else:
 
         icon = "⚪"
-
         count = 0
 
-    try:
+    # =====================================================
+    # EMA120
+    # =====================================================
 
-        ema120_rate = float(
-            ema120_rate
-        )
-
-    except Exception:
-
-        ema120_rate = 0.0
-
-    spread = result.get(
-        "spread_average",
-        result.get(
-            "spread",
-            0.0
-        )
-    )
+    current_rate = 0.0
 
     try:
 
-        spread = float(
-            spread
+        e120 = ema(
+            df,
+            120
         )
 
-    except Exception:
+        if (
+            e120 is not None
+            and not e120.empty
+        ):
 
-        spread = 0.0
+            ema120_value = float(
+                e120.iloc[-1]
+            )
+
+            if (
+                ema120_value != 0
+                and current_price is not None
+            ):
+
+                current_price = float(
+                    current_price
+                )
+
+                # 현재가 기준
+                current_rate = (
+                    (
+                        current_price
+                        -
+                        ema120_value
+                    )
+                    /
+                    ema120_value
+                    *
+                    100
+                )
+
+    except Exception as e:
+
+        log.error(
+            f"EMA120 현재가 이격도 오류: "
+            f"{e}"
+        )
 
     return {
 
         "display":
             f"{icon}({count})",
 
+        # 화면 표시용
+        # 기존 평균 이격도 대신
+        # EMA120 대비 현재가
         "spread_display":
-            f"{ema120_rate:+.2f}%",
-
-        "ema120_rate":
-            ema120_rate,
+            (
+                f"▲ +{current_rate:.2f}%"
+                if current_rate > 0
+                else
+                f"▼ {current_rate:.2f}%"
+                if current_rate < 0
+                else
+                "0.00%"
+            ),
 
         "direction":
             d,
@@ -1513,8 +1521,12 @@ def ema_display(
         "count":
             count,
 
+        # 기존 내부값은 유지
         "spread":
-            spread,
+            result.get(
+                "spread_average",
+                0.0
+            ),
 
         "spread_10_30":
             result.get(
@@ -1535,7 +1547,18 @@ def ema_display(
             ),
 
         "spread_average":
-            spread
+            result.get(
+                "spread_average",
+                0.0
+            ),
+
+        # ★ 현재가 기준 EMA120 이격률
+        "ema120_rate":
+            current_rate,
+
+        # 디버깅/확인용
+        "current_price":
+            current_price
     }
 
 
@@ -1543,20 +1566,33 @@ def ema_display(
 # EMA2
 # =========================================================
 
-def ema2_breakout_analysis(
-    df
-):
+def ema2_breakout_analysis(df):
 
     result = {
 
-        "state": "none",
-        "count": 0,
-        "start_time": None,
-        "end_time": None,
-        "candle_time": None,
-        "display": "⚪(0)",
-        "breakout": False,
-        "ended": False
+        "state":
+            "none",
+
+        "count":
+            0,
+
+        "start_time":
+            None,
+
+        "end_time":
+            None,
+
+        "candle_time":
+            None,
+
+        "display":
+            "⚪(0)",
+
+        "breakout":
+            False,
+
+        "ended":
+            False
     }
 
     if (
@@ -1624,31 +1660,58 @@ def ema2_breakout_analysis(
         )
 
         bull = (
-
-            (work["e3"] > work["e10"])
+            (
+                work["e3"]
+                >
+                work["e10"]
+            )
             &
-            (work["e10"] > work["e30"])
+            (
+                work["e10"]
+                >
+                work["e30"]
+            )
             &
-            (work["e30"] > work["e60"])
+            (
+                work["e30"]
+                >
+                work["e60"]
+            )
             &
-            (work["e60"] > work["e120"])
-
+            (
+                work["e60"]
+                >
+                work["e120"]
+            )
         ).fillna(False)
 
         bear = (
-
-            (work["e3"] < work["e10"])
+            (
+                work["e3"]
+                <
+                work["e10"]
+            )
             &
-            (work["e10"] < work["e30"])
+            (
+                work["e10"]
+                <
+                work["e30"]
+            )
             &
-            (work["e30"] < work["e60"])
+            (
+                work["e30"]
+                <
+                work["e60"]
+            )
             &
-            (work["e60"] < work["e120"])
-
+            (
+                work["e60"]
+                <
+                work["e120"]
+            )
         ).fillna(False)
 
         long_cross = (
-
             (
                 work["e3"]
                 >
@@ -1660,11 +1723,9 @@ def ema2_breakout_analysis(
                 <=
                 work["hi15"].shift(1)
             )
-
         ).fillna(False)
 
         short_cross = (
-
             (
                 work["e3"]
                 <
@@ -1676,7 +1737,6 @@ def ema2_breakout_analysis(
                 >=
                 work["lo15"].shift(1)
             )
-
         ).fillna(False)
 
         work["long_signal"] = (
@@ -1715,7 +1775,7 @@ def ema2_breakout_analysis(
                 work.loc[
                     i,
                     "short_signal"
-                )
+                ]
             ):
 
                 signal_indices.append(
@@ -1854,8 +1914,7 @@ def ema2_breakout_analysis(
 
                 if (
                     start_state
-                    ==
-                    "long"
+                    == "long"
                     and
                     current_close
                     <
@@ -1874,8 +1933,7 @@ def ema2_breakout_analysis(
 
                 if (
                     start_state
-                    ==
-                    "short"
+                    == "short"
                     and
                     current_close
                     >
@@ -1902,7 +1960,8 @@ def ema2_breakout_analysis(
                 "count"
             ] = (
                 end_index
-                - start_index
+                -
+                start_index
             )
 
             result[
@@ -1949,7 +2008,8 @@ def ema2_breakout_analysis(
 
         current_count = (
             current_index
-            - start_index
+            -
+            start_index
             + 1
         )
 
@@ -2017,21 +2077,18 @@ def get_air_warning(
 ):
 
     if not ema2_result:
-
         return False
 
     if ema2_result.get(
         "ended",
         False
     ):
-
         return False
 
     if not ema2_result.get(
         "breakout",
         False
     ):
-
         return False
 
     state = ema2_result.get(
@@ -2057,11 +2114,17 @@ def update_air_counter(
     if not ema2_result:
 
         return {
+            "active":
+                False,
 
-            "active": False,
-            "ended": False,
-            "direction": None,
-            "count": 0
+            "ended":
+                False,
+
+            "direction":
+                None,
+
+            "count":
+                0
         }
 
     state = ema2_result.get(
@@ -2093,11 +2156,17 @@ def update_air_counter(
     if ended:
 
         return {
+            "active":
+                False,
 
-            "active": False,
-            "ended": True,
-            "direction": state,
-            "count": count
+            "ended":
+                True,
+
+            "direction":
+                state,
+
+            "count":
+                count
         }
 
     if (
@@ -2112,19 +2181,31 @@ def update_air_counter(
     ):
 
         return {
+            "active":
+                True,
 
-            "active": True,
-            "ended": False,
-            "direction": state,
-            "count": count
+            "ended":
+                False,
+
+            "direction":
+                state,
+
+            "count":
+                count
         }
 
     return {
+        "active":
+            False,
 
-        "active": False,
-        "ended": False,
-        "direction": None,
-        "count": 0
+        "ended":
+            False,
+
+        "direction":
+            None,
+
+        "count":
+            0
     }
 
 
@@ -2142,6 +2223,7 @@ def daily_change_upbit(
         params={
             "market":
                 market,
+
             "count":
                 2
         },
@@ -2149,7 +2231,6 @@ def daily_change_upbit(
     )
 
     if r is None:
-
         return None
 
     try:
@@ -2157,7 +2238,6 @@ def daily_change_upbit(
         data = r.json()
 
         if len(data) < 2:
-
             return None
 
         current = float(
@@ -2173,17 +2253,18 @@ def daily_change_upbit(
         )
 
         if previous == 0:
-
             return None
 
         return [
             (
                 current
-                - previous
+                -
+                previous
             )
             /
             previous
-            * 100
+            *
+            100
         ]
 
     except Exception:
@@ -2191,9 +2272,7 @@ def daily_change_upbit(
         return None
 
 
-def daily_changes(
-    df
-):
+def daily_changes(df):
 
     if (
         df is None
@@ -2240,7 +2319,6 @@ def daily_changes(
         )
 
         if len(daily) < 2:
-
             return None
 
         current = float(
@@ -2252,17 +2330,18 @@ def daily_changes(
         )
 
         if previous == 0:
-
             return None
 
         return [
             (
                 current
-                - previous
+                -
+                previous
             )
             /
             previous
-            * 100
+            *
+            100
         ]
 
     except Exception:
@@ -2270,25 +2349,19 @@ def daily_changes(
         return None
 
 
-def format_change(
-    x
-):
+def format_change(x):
 
     if x is None:
-
         return "-"
 
     try:
 
         value = float(
-
             x[0]
-
             if isinstance(
                 x,
                 (list, tuple)
             )
-
             else x
         )
 
@@ -2319,12 +2392,9 @@ def format_change(
         return "-"
 
 
-def format_volume(
-    v
-):
+def format_volume(v):
 
     if v is None:
-
         return "-"
 
     try:
@@ -2370,9 +2440,6 @@ def empty_analysis():
         "spread_display":
             "0.00%",
 
-        "ema120_rate":
-            0.0,
-
         "direction":
             "none",
 
@@ -2392,7 +2459,13 @@ def empty_analysis():
             0.0,
 
         "spread_average":
-            0.0
+            0.0,
+
+        "ema120_rate":
+            0.0,
+
+        "current_price":
+            None
     }
 
     return {
@@ -2465,7 +2538,8 @@ def empty_analysis():
 
 def analyze(
     market,
-    okx=False
+    okx=False,
+    current_price=None
 ):
 
     if okx:
@@ -2502,9 +2576,20 @@ def analyze(
 
         return None
 
+    # =====================================================
+    # EMA1
+    # 현재가 전달
+    # =====================================================
+
     e1 = ema_display(
-        df1
+        df1,
+        current_price
     )
+
+    # =====================================================
+    # EMA2
+    # 기존 그대로
+    # =====================================================
 
     ema2_result = (
         ema2_breakout_analysis(
@@ -2518,16 +2603,9 @@ def analyze(
     )
 
     changes = (
-
-        daily_changes(
-            df1
-        )
-
+        daily_changes(df1)
         if okx
-
-        else
-
-        daily_change_upbit(
+        else daily_change_upbit(
             market
         )
     )
@@ -2548,12 +2626,8 @@ def analyze(
         if end_time is not None:
 
             key = (
-
                 market,
-
-                str(
-                    end_time
-                )
+                str(end_time)
             )
 
             with (
@@ -2652,19 +2726,13 @@ def make_row(
             ],
 
         "air_warning":
-            a[
-                "air_warning"
-            ],
+            a["air_warning"],
 
         "air_direction":
-            a[
-                "air_direction"
-            ],
+            a["air_direction"],
 
         "air_count":
-            a[
-                "air_count"
-            ],
+            a["air_count"],
 
         "air_active":
             a.get(
@@ -2724,8 +2792,15 @@ def update_upbit():
 
         try:
 
+            # =================================================
+            # ★ 현재가를 analyze에 전달
+            # =================================================
+
             a = analyze(
-                market
+                market,
+                current_price=item.get(
+                    "current_price"
+                )
             )
 
             rows.append(
@@ -2802,7 +2877,6 @@ def get_okx_symbols():
     )
 
     if r is None:
-
         return []
 
     try:
@@ -2858,7 +2932,6 @@ def get_okx_volume(
     try:
 
         volume = float(
-
             pd.to_numeric(
                 df.volCcyQuote,
                 errors="coerce"
@@ -2867,7 +2940,8 @@ def get_okx_volume(
 
         return (
             volume
-            * float(usdt)
+            *
+            float(usdt)
         )
 
     except Exception:
@@ -2875,9 +2949,7 @@ def get_okx_volume(
         return None
 
 
-def update_okx(
-    usdt
-):
+def update_okx(usdt):
 
     global latest_okx_data
     global latest_okx_update_time
@@ -2895,7 +2967,6 @@ def update_okx(
     )
 
     if not symbols:
-
         return False
 
     upbit_set = {
@@ -2947,20 +3018,28 @@ def update_okx(
         )
 
         name = (
-
             f"{coin} (업비트)"
-
             if coin
             in upbit_set
-
             else coin
         )
 
         try:
 
+            # =================================================
+            # ★ OKX 실시간 현재가
+            # =================================================
+
+            current_price = (
+                get_okx_current_price(
+                    symbol
+                )
+            )
+
             a = analyze(
                 symbol,
-                True
+                True,
+                current_price=current_price
             )
 
             rows.append(
@@ -3124,15 +3203,10 @@ def warning_html(
     if air_ended:
 
         return (
-
             '<div class="air-box ended">'
-
             '<div class="air-end">'
-
             '⛔️'
-
             '</div>'
-
             '</div>'
         )
 
@@ -3153,47 +3227,33 @@ def warning_html(
     if count <= 1:
 
         return (
-
             '<div class="air-box">'
-
             '<div class="air-main">'
-
             '<span class="air-icon">'
-
             '🛩✈️'
-
             '</span>'
-
             '</div>'
-
             '</div>'
         )
 
     return (
-
         '<div class="air-box">'
-
         '<div class="air-main">'
-
         '<span class="air-icon">'
-
         '✈️'
-
         '</span>'
-
         '</div>'
-
         '</div>'
     )
 
 
 # =========================================================
 # EMA1 표시 HTML
+#
+# ★ 두 번째 줄 = 현재가 / EMA120
 # =========================================================
 
-def ema_html(
-    e
-):
+def ema_html(e):
 
     if not e:
 
@@ -3221,15 +3281,6 @@ def ema_html(
         0
     )
 
-    # =====================================================
-    # ★ EMA120 기준 상승/하락률
-    # =====================================================
-
-    rate = e.get(
-        "ema120_rate",
-        0.0
-    )
-
     cls = {
 
         "long":
@@ -3247,16 +3298,6 @@ def ema_html(
 
         count = 0
 
-    try:
-
-        rate = float(
-            rate
-        )
-
-    except Exception:
-
-        rate = 0.0
-
     if direction_value == "long":
 
         icon = "🟢"
@@ -3270,49 +3311,50 @@ def ema_html(
         icon = "⚪"
 
     # =====================================================
-    # EMA120 기준 상승/하락 표시
+    # ★ 현재가 기준 EMA120 이격률
     # =====================================================
+
+    try:
+
+        rate = float(
+            e.get(
+                "ema120_rate",
+                0.0
+            )
+        )
+
+    except Exception:
+
+        rate = 0.0
 
     if rate > 0:
 
-        rate_text = (
+        rate_display = (
             f"▲ +{rate:.2f}%"
         )
 
-        rate_class = "ema-long"
-
     elif rate < 0:
 
-        rate_text = (
+        rate_display = (
             f"▼ {rate:.2f}%"
         )
 
-        rate_class = "ema-short"
-
     else:
 
-        rate_text = "0.00%"
-
-        rate_class = "ema-none"
+        rate_display = "0.00%"
 
     return f"""
-
     <div class="ema1-cell">
 
         <div class="ema1-main {cls}">
-
             {icon}({count})
-
         </div>
 
-        <div class="ema1-spread {rate_class}">
-
-            {rate_text}
-
+        <div class="ema1-spread {cls}">
+            {rate_display}
         </div>
 
     </div>
-
     """
 
 
@@ -3320,12 +3362,9 @@ def ema_html(
 # EMA2 표시
 # =========================================================
 
-def ema3_10_cross_html(
-    data
-):
+def ema3_10_cross_html(data):
 
     if not data:
-
         return "-"
 
     state = data.get(
@@ -3349,39 +3388,26 @@ def ema3_10_cross_html(
     if state == "long":
 
         return (
-
             '<div class="ema10-box">'
-
             '<div class="ema10-long">'
-
             f'🟢({count})'
-
             '</div>'
-
             '</div>'
         )
 
     if state == "short":
 
         return (
-
             '<div class="ema10-box">'
-
             '<div class="ema10-short">'
-
             f'🔴({count})'
-
             '</div>'
-
             '</div>'
         )
 
     return (
-
         '<div class="ema10-none">'
-
         '⚪(0)'
-
         '</div>'
     )
 
@@ -3390,9 +3416,7 @@ def ema3_10_cross_html(
 # Rows
 # =========================================================
 
-def rows_html(
-    data
-):
+def rows_html(data):
 
     out = []
 
@@ -3405,14 +3429,11 @@ def rows_html(
     for x in data:
 
         cls = (
-
             " qualified"
-
             if x.get(
                 "qualified",
                 False
             )
-
             else ""
         )
 
@@ -3424,7 +3445,6 @@ def rows_html(
         try:
 
             visual_air_count = int(
-
                 ema2_data.get(
                     "count",
                     x.get(
@@ -3439,7 +3459,6 @@ def rows_html(
             visual_air_count = 0
 
         out.append(
-
             f"""
             <tr class="{cls}">
 
@@ -3501,10 +3520,13 @@ def rows_html(
                             "air_warning",
                             False
                         ),
+
                         x.get(
                             "air_direction"
                         ),
+
                         visual_air_count,
+
                         x.get(
                             "air_ended",
                             False
@@ -3526,9 +3548,7 @@ def rows_html(
 # Table
 # =========================================================
 
-def table_html(
-    data
-):
+def table_html(data):
 
     rows = rows_html(
         data
@@ -3537,24 +3557,19 @@ def table_html(
     if not rows:
 
         rows = """
-
         <tr>
 
             <td
                 colspan="6"
                 class="empty"
             >
-
                 현재 조회 데이터 없음
-
             </td>
 
         </tr>
-
         """
 
     return f"""
-
     <div class="table-wrap">
 
         <table>
@@ -3583,7 +3598,6 @@ def table_html(
         </table>
 
     </div>
-
     """
 
 
@@ -3598,7 +3612,6 @@ def section(
 ):
 
     return f"""
-
     <h2>
 
         🏆 {title} TOP{TOP_N}
@@ -3610,7 +3623,6 @@ def section(
     </h2>
 
     {table_html(data)}
-
     """
 
 
@@ -3618,9 +3630,7 @@ def section(
 # 실제 화면용 EMA2 카운트
 # =========================================================
 
-def get_visual_air_count(
-    x
-):
+def get_visual_air_count(x):
 
     ema2_data = x.get(
         "ema3_10_cross_1h",
@@ -3691,24 +3701,19 @@ def rising_focus_section(
     if not rising_data:
 
         rows = """
-
         <tr>
 
             <td
                 colspan="6"
                 class="empty"
             >
-
                 현재 상승 돌파 코인 없음
-
             </td>
 
         </tr>
-
         """
 
         table = f"""
-
         <div
             class="table-wrap focus-table rising-table"
         >
@@ -3739,17 +3744,13 @@ def rising_focus_section(
             </table>
 
         </div>
-
         """
 
     else:
 
         table = (
-
             '<div class="focus-table rising-table">'
-
             +
-
             table_html(
                 rising_data
             ).replace(
@@ -3757,14 +3758,11 @@ def rising_focus_section(
                 '',
                 1
             )
-
             +
-
             '</div>'
         )
 
     return f"""
-
     <h2
         class="focus-title rising-title"
     >
@@ -3779,12 +3777,12 @@ def rising_focus_section(
     </h2>
 
     {table}
-
     """
 
 
 # =========================================================
 # 상승 해지 리스트
+#
 # 화면에는 표시하지 않음
 # =========================================================
 
@@ -3809,24 +3807,19 @@ def ended_focus_section(
     if not ended_data:
 
         rows = """
-
         <tr>
 
             <td
                 colspan="6"
                 class="empty"
             >
-
                 현재 상승 해지 코인 없음
-
             </td>
 
         </tr>
-
         """
 
         table = f"""
-
         <div
             class="table-wrap focus-table ended-table"
         >
@@ -3857,17 +3850,13 @@ def ended_focus_section(
             </table>
 
         </div>
-
         """
 
     else:
 
         table = (
-
             '<div class="focus-table ended-table">'
-
             +
-
             table_html(
                 ended_data
             ).replace(
@@ -3875,14 +3864,11 @@ def ended_focus_section(
                 '',
                 1
             )
-
             +
-
             '</div>'
         )
 
     return f"""
-
     <h2
         class="focus-title ended-title"
     >
@@ -3896,7 +3882,6 @@ def ended_focus_section(
     </h2>
 
     {table}
-
     """
 
 
@@ -3942,24 +3927,19 @@ def warning_focus_section(
     if not warning_data:
 
         rows = """
-
         <tr>
 
             <td
                 colspan="6"
                 class="empty"
             >
-
                 현재 경고 진행 코인 없음
-
             </td>
 
         </tr>
-
         """
 
         table = f"""
-
         <div
             class="table-wrap focus-table warning-table"
         >
@@ -3990,17 +3970,13 @@ def warning_focus_section(
             </table>
 
         </div>
-
         """
 
     else:
 
         table = (
-
             '<div class="focus-table warning-table">'
-
             +
-
             table_html(
                 warning_data
             ).replace(
@@ -4008,14 +3984,11 @@ def warning_focus_section(
                 '',
                 1
             )
-
             +
-
             '</div>'
         )
 
     return f"""
-
     <h2
         class="focus-title warning-title"
     >
@@ -4029,7 +4002,6 @@ def warning_focus_section(
     </h2>
 
     {table}
-
     """
 
 
@@ -4065,60 +4037,42 @@ body{
         sans-serif;
 
     font-size:10px;
-
     padding:6px 5px 14px;
-
     line-height:1.3;
 }
 
 h1{
     margin:3px 3px 7px;
-
     font-size:15px;
     line-height:20px;
-
     font-weight:800;
-
     color:#f5f5f5;
 }
 
 h2{
     margin:13px 3px 5px;
-
     font-size:12px;
     line-height:17px;
-
     font-weight:800;
-
     color:#eeeeee;
 }
 
 h2 small{
     color:#747b85;
-
     font-size:7px;
     font-weight:normal;
-
     margin-left:4px;
-
     white-space:nowrap;
 }
 
 .info{
     margin:0 2px 8px;
-
     padding:8px 9px;
-
     color:#aab0b8;
-
     background:#15191f;
-
     border:1px solid #252b33;
-
     border-radius:9px;
-
     font-size:8px;
-
     line-height:1.55;
 
     box-shadow:
@@ -4127,20 +4081,13 @@ h2 small{
 
 .status{
     display:flex;
-
     justify-content:center;
     align-items:center;
-
     gap:14px;
-
     margin-top:7px;
-
     padding-top:6px;
-
     border-top:1px solid #252a31;
-
     font-size:8px;
-
     font-weight:800;
 }
 
@@ -4154,13 +4101,9 @@ h2 small{
 
 .table-wrap{
     width:100%;
-
     overflow:hidden;
-
     border-radius:9px;
-
     border:1px solid #282e36;
-
     background:#171b20;
 
     box-shadow:
@@ -4169,11 +4112,8 @@ h2 small{
 
 table{
     width:100%;
-
     table-layout:fixed;
-
     border-collapse:collapse;
-
     background:#171b20;
 }
 
@@ -4183,39 +4123,24 @@ thead{
 
 th{
     height:27px;
-
     padding:5px 2px;
-
     background:#111419;
-
     border-bottom:1px solid #2c323a;
-
     color:#9299a3;
-
     font-size:7px;
-
     line-height:10px;
-
     font-weight:700;
-
     white-space:nowrap;
-
     text-align:center !important;
-
     vertical-align:middle;
 }
 
 td{
     height:38px;
-
     padding:5px 2px;
-
     border-bottom:1px solid #272d34;
-
     text-align:center !important;
-
     vertical-align:middle;
-
     overflow:hidden;
 }
 
@@ -4255,57 +4180,41 @@ td:nth-child(6){
 
 .rank{
     color:#858c96;
-
     font-size:8px;
-
     font-weight:600;
 }
 
 .coin{
     overflow:hidden;
-
     padding:3px 2px;
 }
 
 .coin-name{
     font-size:9px;
-
     line-height:12px;
-
     height:12px;
-
     font-weight:800;
-
     white-space:nowrap;
-
     overflow:hidden;
-
     text-overflow:ellipsis;
 }
 
 .change{
     margin-top:2px;
-
     line-height:10px;
-
     height:10px;
-
     font-size:7px;
-
     font-weight:600;
-
     white-space:nowrap;
 }
 
 .up{
     color:#39e875;
-
     font-weight:800;
 }
 
 .down{
     color:#ff5555;
-
     font-weight:800;
 }
 
@@ -4315,65 +4224,43 @@ td:nth-child(6){
 
 .vol{
     padding:3px 1px !important;
-
     font-size:8px;
-
     font-weight:800;
-
     line-height:18px;
-
     height:38px;
-
     white-space:nowrap;
 }
 
 .ema-cell{
     overflow:hidden;
-
     padding:2px 1px !important;
 }
 
 .ema-row{
     display:flex;
-
     align-items:center;
-
     justify-content:center;
-
     width:100%;
-
     min-height:34px;
-
     white-space:nowrap;
-
     overflow:hidden;
 }
 
 .tf{
     flex:0 0 21px;
-
     width:21px;
-
     color:#777f89;
-
     font-size:7px;
-
     font-weight:700;
-
     text-align:center;
 }
 
 .ema-value-wrap{
     flex:1;
-
     min-width:0;
-
     display:flex;
-
     align-items:center;
-
     justify-content:center;
-
     overflow:hidden;
 }
 
@@ -4384,57 +4271,35 @@ td:nth-child(6){
 
 .ema1-cell{
     display:flex;
-
     flex-direction:column;
-
     align-items:center;
-
     justify-content:center;
-
     width:100%;
-
     min-width:0;
-
     height:34px;
-
     line-height:1.1;
-
     white-space:nowrap;
-
     overflow:hidden;
 }
 
 .ema1-main{
     display:block;
-
     width:100%;
-
     font-size:8px;
-
     font-weight:800;
-
     line-height:14px;
-
     text-align:center;
-
     white-space:nowrap;
 }
 
 .ema1-spread{
     display:block;
-
     width:100%;
-
     margin-top:1px;
-
     font-size:7px;
-
     font-weight:800;
-
     line-height:11px;
-
     text-align:center;
-
     white-space:nowrap;
 }
 
@@ -4457,121 +4322,81 @@ td:nth-child(6){
 
 .close-ema10{
     text-align:center !important;
-
     vertical-align:middle !important;
-
     white-space:nowrap;
-
     font-size:8px;
-
     font-weight:800;
-
     overflow:hidden;
 }
 
 .ema10-box{
     width:100%;
-
     display:flex;
-
     flex-direction:column;
-
     align-items:center;
-
     justify-content:center;
-
     text-align:center;
-
     white-space:nowrap;
-
     line-height:14px;
 }
 
 .ema10-long{
     color:#39e875;
-
     font-size:8px;
-
     font-weight:800;
-
     line-height:14px;
-
     text-align:center;
 }
 
 .ema10-short{
     color:#ff5555;
-
     font-size:8px;
-
     font-weight:800;
-
     line-height:14px;
-
     text-align:center;
 }
 
 .ema10-none{
     color:#686f78;
-
     font-size:8px;
-
     line-height:14px;
-
     text-align:center;
 }
 
 .warning{
     text-align:center !important;
-
     vertical-align:middle !important;
-
     white-space:nowrap;
-
     padding:2px !important;
 }
 
 .air-box{
     width:100%;
-
     min-height:28px;
-
     display:flex;
-
     align-items:center;
-
     justify-content:center;
-
     text-align:center;
 }
 
 .air-main{
     display:flex;
-
     align-items:center;
-
     justify-content:center;
-
     width:100%;
 }
 
 .air-icon{
     font-size:13px;
-
     font-weight:bold;
-
     line-height:18px;
-
     display:inline-block;
 }
 
 .air-end{
     font-size:12px;
-
     font-weight:bold;
-
     line-height:18px;
-
     color:#ff5555;
 }
 
@@ -4581,9 +4406,7 @@ td:nth-child(6){
 
 .focus-title{
     margin-top:12px;
-
     margin-bottom:5px;
-
     padding-left:3px;
 }
 
@@ -4601,7 +4424,6 @@ td:nth-child(6){
 
 .rising-table{
     border:1px solid #35c96b;
-
     box-shadow:
         0 0 7px rgba(53,201,107,.08);
 }
@@ -4616,11 +4438,8 @@ td:nth-child(6){
 
 .empty{
     color:#555d67;
-
     padding:14px 5px !important;
-
     font-size:8px;
-
     height:48px;
 }
 
@@ -4633,71 +4452,52 @@ td:nth-child(6){
 
     body{
         padding:5px 4px 14px;
-
         font-size:10px;
     }
 
     h1{
         margin:3px 3px 7px;
-
         font-size:15px;
-
         line-height:20px;
     }
 
     h2{
         margin:12px 3px 5px;
-
         font-size:11px;
-
         line-height:16px;
     }
 
     h2 small{
         display:block;
-
         margin-left:0;
-
         margin-top:1px;
-
         font-size:6px;
-
         line-height:9px;
     }
 
     .info{
         padding:8px;
-
         margin-bottom:7px;
-
         font-size:7px;
-
         line-height:1.55;
     }
 
     .status{
         gap:12px;
-
         margin-top:6px;
-
         padding-top:5px;
-
         font-size:7px;
     }
 
     th{
         height:27px;
-
         padding:5px 1px;
-
         font-size:6px;
-
         line-height:9px;
     }
 
     td{
         height:40px;
-
         padding:3px 1px;
     }
 
@@ -4711,29 +4511,21 @@ td:nth-child(6){
 
     .coin-name{
         font-size:8px;
-
         line-height:12px;
-
         height:12px;
     }
 
     .change{
         margin-top:2px;
-
         font-size:6px;
-
         line-height:9px;
-
         height:9px;
     }
 
     .vol{
         padding:3px 1px !important;
-
         font-size:7px;
-
         line-height:18px;
-
         height:40px;
     }
 
@@ -4747,9 +4539,7 @@ td:nth-child(6){
 
     .tf{
         flex:0 0 18px;
-
         width:18px;
-
         font-size:6px;
     }
 
@@ -4759,13 +4549,11 @@ td:nth-child(6){
 
     .ema1-main{
         font-size:7px;
-
         line-height:14px;
     }
 
     .ema1-spread{
         font-size:6.5px;
-
         line-height:11px;
     }
 
@@ -4780,13 +4568,11 @@ td:nth-child(6){
     .ema10-long,
     .ema10-short{
         font-size:7px;
-
         line-height:14px;
     }
 
     .ema10-none{
         font-size:7px;
-
         line-height:14px;
     }
 
@@ -4796,21 +4582,17 @@ td:nth-child(6){
 
     .air-icon{
         font-size:12px;
-
         line-height:18px;
     }
 
     .air-end{
         font-size:11px;
-
         line-height:18px;
     }
 
     .empty{
         padding:13px 4px !important;
-
         font-size:7px;
-
         height:45px;
     }
 }
@@ -4840,7 +4622,6 @@ td:nth-child(6){
 
     th{
         height:25px;
-
         font-size:5px;
     }
 
@@ -4866,13 +4647,11 @@ td:nth-child(6){
 
     .ema1-main{
         font-size:6px;
-
         line-height:13px;
     }
 
     .ema1-spread{
         font-size:5.5px;
-
         line-height:10px;
     }
 
@@ -4896,9 +4675,7 @@ td:nth-child(6){
 
     body{
         max-width:900px;
-
         margin:0 auto;
-
         padding:8px;
     }
 
@@ -4957,31 +4734,23 @@ def dashboard():
     )
 
     status = f"""
-
     <div class="status">
 
         <span>
-
             업비트 :
-
             <b class="y">
                 {USE_UPBIT}
             </b>
-
         </span>
 
         <span>
-
             OKX :
-
             <b class="n">
                 {USE_OKX}
             </b>
-
         </span>
 
     </div>
-
     """
 
     sections = ""
@@ -5039,7 +4808,6 @@ def dashboard():
         )
 
     return f"""
-
     <!DOCTYPE html>
 
     <html lang="ko">
@@ -5064,16 +4832,12 @@ def dashboard():
         >
 
         <title>
-
             {timeframe_label}
             EMA3 돌파 시스템
-
         </title>
 
         <style>
-
             {CSS}
-
         </style>
 
     </head>
@@ -5084,26 +4848,36 @@ def dashboard():
             📊 트레이딩 전략
         </h1>
 
-        <!-- =================================================
-             ★ 전략 설명 - 초간단 버전
-             ================================================= -->
-
         <div class="info">
 
             {timeframe_label} 확정 캔들
+
             <br>
 
             EMA1 : 10·30·60·120 배열
+
             <br>
 
-            EMA2 : EMA3 이전 {EMA2_LOOKBACK}개 돌파
+            EMA1 두 번째 줄 :
+            현재가 ↔ EMA120 이격률
+
             <br>
 
-            🟢 LONG : 3&gt;10&gt;30&gt;60&gt;120
-            　🔴 SHORT : 3&lt;10&lt;30&lt;60&lt;120
+            EMA2 :
+            EMA3 이전 {EMA2_LOOKBACK}개 돌파
+
             <br>
 
-            돌파→카운트　배열이탈→0　종료→이전 고·저가 이탈
+            🟢 LONG :
+            3&gt;10&gt;30&gt;60&gt;120
+            　🔴 SHORT :
+            3&lt;10&lt;30&lt;60&lt;120
+
+            <br>
+
+            돌파→카운트
+           　배열이탈→0
+           　종료→이전 고·저가 이탈
 
             {status}
 
@@ -5114,7 +4888,6 @@ def dashboard():
     </body>
 
     </html>
-
     """
 
 
@@ -5222,16 +4995,25 @@ def startup():
         "EMA 10-30-60-120"
     )
 
-    # ★ 변경된 로그
+    # =====================================================
+    # ★ 변경된 EMA1 표시
+    # =====================================================
+
     log.info(
-        "EMA1 상승/하락률 = "
-        "(최근 확정 종가 - EMA120) / EMA120 × 100"
+        "EMA1 두 번째 줄 = "
+        "현재가 대비 EMA120 이격률"
+    )
+
+    log.info(
+        "EMA120 이격률 = "
+        "(현재가 - EMA120) "
+        "/ EMA120 × 100"
     )
 
     log.info(
         "EMA1 표시 = "
         "정배열/역배열 + 연속 카운트 + "
-        "EMA120 기준 상승/하락률"
+        "현재가/EMA120 이격률"
     )
 
     log.info(
@@ -5283,12 +5065,17 @@ def startup():
 
     log.info(
         "EMA2 카운트 = "
-        "돌파 캔드부터 1"
+        "돌파 캔들부터 1"
     )
 
     log.info(
         f"{timeframe_label} "
-        "확정 캔들만 사용"
+        "확정 캔들만 EMA 계산에 사용"
+    )
+
+    log.info(
+        "EMA1 두 번째 줄의 현재가는 "
+        "실시간 현재가 사용"
     )
 
     log.info(
