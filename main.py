@@ -65,10 +65,13 @@ EMA_TIMEFRAME = 60
 # EMA1 설정
 #
 # 정배열 기준
-# EMA10 > EMA60 > EMA120
+# EMA30 > EMA60 > EMA120
+#
+# 역배열 기준
+# EMA30 < EMA60 < EMA120
 # =========================================================
 
-EMA1_FAST = 10
+EMA1_FAST = 30
 EMA1_MID = 60
 EMA1_SLOW = 120
 
@@ -1056,7 +1059,7 @@ def ema(df, period):
 # =========================================================
 # EMA1 방향
 #
-# EMA10 / EMA60 / EMA120
+# EMA30 / EMA60 / EMA120
 # =========================================================
 
 def direction(df):
@@ -1069,7 +1072,7 @@ def direction(df):
 
     try:
 
-        e10 = ema(
+        e30 = ema(
             df,
             EMA1_FAST
         ).iloc[-1]
@@ -1086,7 +1089,7 @@ def direction(df):
 
         # 정배열
         if (
-            e10 > e60
+            e30 > e60
             and
             e60 > e120
         ):
@@ -1094,7 +1097,7 @@ def direction(df):
 
         # 역배열
         if (
-            e10 < e60
+            e30 < e60
             and
             e60 < e120
         ):
@@ -1110,10 +1113,10 @@ def direction(df):
 
 
 # =========================================================
-# EMA1 배열 + 카운트 + 이격도
+# EMA1 배열 + 카운트
 #
-# 기준:
-# EMA10 / EMA60 / EMA120
+# EMA30 / EMA60 / EMA120
+# 이격률 계산 없음
 # =========================================================
 
 def ema_alignment_count(df):
@@ -1128,24 +1131,12 @@ def ema_alignment_count(df):
                 "none",
 
             "count":
-                0,
-
-            "spread":
-                0.0,
-
-            "spread_10_60":
-                0.0,
-
-            "spread_60_120":
-                0.0,
-
-            "spread_average":
-                0.0
+                0
         }
 
     try:
 
-        e10 = ema(
+        e30 = ema(
             df,
             EMA1_FAST
         )
@@ -1160,8 +1151,8 @@ def ema_alignment_count(df):
             EMA1_SLOW
         )
 
-        current_e10 = float(
-            e10.iloc[-1]
+        current_e30 = float(
+            e30.iloc[-1]
         )
 
         current_e60 = float(
@@ -1173,61 +1164,11 @@ def ema_alignment_count(df):
         )
 
         # -------------------------------------------------
-        # EMA10 ↔ EMA60 이격
-        # -------------------------------------------------
-
-        if current_e60 != 0:
-
-            spread_10_60 = (
-                (
-                    current_e10
-                    -
-                    current_e60
-                )
-                /
-                current_e60
-                *
-                100
-            )
-
-        else:
-
-            spread_10_60 = 0.0
-
-        # -------------------------------------------------
-        # EMA60 ↔ EMA120 이격
-        # -------------------------------------------------
-
-        if current_e120 != 0:
-
-            spread_60_120 = (
-                (
-                    current_e60
-                    -
-                    current_e120
-                )
-                /
-                current_e120
-                *
-                100
-            )
-
-        else:
-
-            spread_60_120 = 0.0
-
-        spread_average = (
-            spread_10_60
-            +
-            spread_60_120
-        ) / 2
-
-        # -------------------------------------------------
         # 현재 방향
         # -------------------------------------------------
 
         if (
-            current_e10 > current_e60
+            current_e30 > current_e60
             and
             current_e60 > current_e120
         ):
@@ -1235,7 +1176,7 @@ def ema_alignment_count(df):
             current_direction = "long"
 
         elif (
-            current_e10 < current_e60
+            current_e30 < current_e60
             and
             current_e60 < current_e120
         ):
@@ -1258,8 +1199,8 @@ def ema_alignment_count(df):
             -1
         ):
 
-            v10 = float(
-                e10.iloc[i]
+            v30 = float(
+                e30.iloc[i]
             )
 
             v60 = float(
@@ -1271,7 +1212,7 @@ def ema_alignment_count(df):
             )
 
             if (
-                v10 > v60
+                v30 > v60
                 and
                 v60 > v120
             ):
@@ -1279,7 +1220,7 @@ def ema_alignment_count(df):
                 candle_direction = "long"
 
             elif (
-                v10 < v60
+                v30 < v60
                 and
                 v60 < v120
             ):
@@ -1311,19 +1252,7 @@ def ema_alignment_count(df):
                 current_direction,
 
             "count":
-                count,
-
-            "spread":
-                spread_average,
-
-            "spread_10_60":
-                spread_10_60,
-
-            "spread_60_120":
-                spread_60_120,
-
-            "spread_average":
-                spread_average
+                count
         }
 
     except Exception as e:
@@ -1337,19 +1266,7 @@ def ema_alignment_count(df):
                 "none",
 
             "count":
-                0,
-
-            "spread":
-                0.0,
-
-            "spread_10_60":
-                0.0,
-
-            "spread_60_120":
-                0.0,
-
-            "spread_average":
-                0.0
+                0
         }
 
 
@@ -1387,105 +1304,16 @@ def ema_display(
         icon = "⚪"
         count = 0
 
-    current_rate = 0.0
-
-    try:
-
-        e120 = ema(
-            df,
-            EMA1_SLOW
-        )
-
-        if (
-            e120 is not None
-            and not e120.empty
-            and current_price is not None
-        ):
-
-            ema120_value = float(
-                e120.iloc[-1]
-            )
-
-            current_price = float(
-                current_price
-            )
-
-            if ema120_value != 0:
-
-                current_rate = (
-                    (
-                        current_price
-                        -
-                        ema120_value
-                    )
-                    /
-                    ema120_value
-                    *
-                    100
-                )
-
-    except Exception as e:
-
-        log.error(
-            f"EMA120 이격도 오류: {e}"
-        )
-
-    if current_rate > 0:
-
-        spread_display = (
-            f"▲ +{current_rate:.2f}%"
-        )
-
-    elif current_rate < 0:
-
-        spread_display = (
-            f"▼ {current_rate:.2f}%"
-        )
-
-    else:
-
-        spread_display = "0.00%"
-
     return {
 
         "display":
             f"{icon}({count})",
-
-        "spread_display":
-            spread_display,
 
         "direction":
             d,
 
         "count":
             count,
-
-        "spread":
-            result.get(
-                "spread_average",
-                0.0
-            ),
-
-        "spread_10_60":
-            result.get(
-                "spread_10_60",
-                0.0
-            ),
-
-        "spread_60_120":
-            result.get(
-                "spread_60_120",
-                0.0
-            ),
-
-        "spread_average":
-            result.get(
-                "spread_average",
-                0.0
-            ),
-
-        "ema120_rate":
-            current_rate,
 
         "current_price":
             current_price
@@ -1495,8 +1323,8 @@ def ema_display(
 # =========================================================
 # EMA2 매수 분석
 #
-# EMA1 정배열:
-# EMA10 > EMA60 > EMA120
+# EMA1:
+# EMA30 > EMA60 > EMA120
 #
 # 매수 기준:
 # 1차 = EMA30
@@ -1521,9 +1349,6 @@ def ema2_buy_analysis(
 
         "display":
             "-",
-
-        "ema10":
-            None,
 
         "ema30":
             None,
@@ -1557,10 +1382,10 @@ def ema2_buy_analysis(
         )
 
         # -------------------------------------------------
-        # EMA1 배열용
+        # EMA1
         # -------------------------------------------------
 
-        e10 = ema(
+        e30 = ema(
             df,
             EMA1_FAST
         ).iloc[-1]
@@ -1575,23 +1400,9 @@ def ema2_buy_analysis(
             EMA1_SLOW
         ).iloc[-1]
 
-        # -------------------------------------------------
-        # 매수 1차용 EMA30
-        # -------------------------------------------------
-
-        e30 = ema(
-            df,
-            BUY_EMA_FIRST
-        ).iloc[-1]
-
-        e10 = float(e10)
         e30 = float(e30)
         e60 = float(e60)
         e120 = float(e120)
-
-        result[
-            "ema10"
-        ] = e10
 
         result[
             "ema30"
@@ -1612,11 +1423,11 @@ def ema2_buy_analysis(
         # =================================================
         # 핵심 조건
         #
-        # EMA10 > EMA60 > EMA120
+        # EMA30 > EMA60 > EMA120
         # =================================================
 
         if not (
-            e10 > e60
+            e30 > e60
             and
             e60 > e120
         ):
@@ -1831,47 +1642,59 @@ def daily_changes(df):
         return None
 
 
-def format_change(x):
+def get_change_value(change):
 
-    if x is None:
-        return "-"
+    if change is None:
+        return None
 
     try:
 
         value = float(
-            x[0]
+            change[0]
             if isinstance(
-                x,
+                change,
                 (list, tuple)
             )
-            else x
+            else change
         )
 
-        if value > 0:
-
-            return (
-                '<span class="up">'
-                f'▲ +{value:.2f}%'
-                '</span>'
-            )
-
-        if value < 0:
-
-            return (
-                '<span class="down">'
-                f'▼ {value:.2f}%'
-                '</span>'
-            )
-
-        return (
-            '<span class="zero">'
-            '0.00%'
-            '</span>'
-        )
+        return value
 
     except Exception:
 
+        return None
+
+
+def format_change(x):
+
+    value = get_change_value(
+        x
+    )
+
+    if value is None:
         return "-"
+
+    if value > 0:
+
+        return (
+            '<span class="up">'
+            f'▲ +{value:.2f}%'
+            '</span>'
+        )
+
+    if value < 0:
+
+        return (
+            '<span class="down">'
+            f'▼ {value:.2f}%'
+            '</span>'
+        )
+
+    return (
+        '<span class="zero">'
+        '0.00%'
+        '</span>'
+    )
 
 
 def format_volume(v):
@@ -1919,29 +1742,11 @@ def empty_analysis():
         "display":
             "⚪(0)",
 
-        "spread_display":
-            "0.00%",
-
         "direction":
             "none",
 
         "count":
             0,
-
-        "spread":
-            0.0,
-
-        "spread_10_60":
-            0.0,
-
-        "spread_60_120":
-            0.0,
-
-        "spread_average":
-            0.0,
-
-        "ema120_rate":
-            0.0,
 
         "current_price":
             None
@@ -1962,9 +1767,6 @@ def empty_analysis():
 
             "display":
                 "-",
-
-            "ema10":
-                None,
 
             "ema30":
                 None,
@@ -2111,6 +1913,11 @@ def make_row(
                 a["changes"]
             ),
 
+        "change_value":
+            get_change_value(
+                a["changes"]
+            ),
+
         "volume":
             format_volume(
                 volume
@@ -2123,8 +1930,115 @@ def make_row(
             a["ema2_buy"],
 
         "qualified":
-            a["qualified"]
+            a["qualified"],
+
+        "direction":
+            a.get(
+                "direction_1h",
+                "none"
+            )
     }
+
+
+# =========================================================
+# 매수 리스트 조건
+#
+# Upbit:
+# 당일 변동률 > 0
+# + EMA30 > EMA60 > EMA120
+#
+# OKX LONG:
+# 당일 변동률 > 0
+# + EMA30 > EMA60 > EMA120
+#
+# OKX SHORT:
+# 당일 변동률 < 0
+# + EMA30 < EMA60 < EMA120
+# =========================================================
+
+def is_upbit_buy_candidate(row):
+
+    if not row:
+        return False
+
+    change = row.get(
+        "change_value"
+    )
+
+    direction_value = row.get(
+        "direction",
+        "none"
+    )
+
+    return (
+        direction_value == "long"
+        and
+        change is not None
+        and
+        change > 0
+        and
+        row.get(
+            "ema2_buy",
+            {}
+        ).get(
+            "stage",
+            0
+        ) > 0
+    )
+
+
+def is_okx_long_candidate(row):
+
+    if not row:
+        return False
+
+    change = row.get(
+        "change_value"
+    )
+
+    direction_value = row.get(
+        "direction",
+        "none"
+    )
+
+    return (
+        direction_value == "long"
+        and
+        change is not None
+        and
+        change > 0
+        and
+        row.get(
+            "ema2_buy",
+            {}
+        ).get(
+            "stage",
+            0
+        ) > 0
+    )
+
+
+def is_okx_short_candidate(row):
+
+    if not row:
+        return False
+
+    change = row.get(
+        "change_value"
+    )
+
+    direction_value = row.get(
+        "direction",
+        "none"
+    )
+
+    return (
+        direction_value == "short"
+        and
+        change is not None
+        and
+        change < 0
+    )
 
 
 # =========================================================
@@ -2210,18 +2124,19 @@ def update_upbit():
         kst()
     )
 
-    buy_count = sum(
-        1
+    buy_rows = [
+        x
         for x in rows
-        if x.get(
-            "qualified",
-            False
-        )
+        if is_upbit_buy_candidate(x)
+    ]
+
+    buy_count = len(
+        buy_rows
     )
 
     stage1 = sum(
         1
-        for x in rows
+        for x in buy_rows
         if x.get(
             "ema2_buy",
             {}
@@ -2233,7 +2148,7 @@ def update_upbit():
 
     stage2 = sum(
         1
-        for x in rows
+        for x in buy_rows
         if x.get(
             "ema2_buy",
             {}
@@ -2245,7 +2160,7 @@ def update_upbit():
 
     stage3 = sum(
         1
-        for x in rows
+        for x in buy_rows
         if x.get(
             "ema2_buy",
             {}
@@ -2257,7 +2172,7 @@ def update_upbit():
 
     log.info(
         f"업비트 완료 / "
-        f"정배열 {buy_count}개 / "
+        f"매수후보(+변동률) {buy_count}개 / "
         f"1차 {stage1}개 / "
         f"2차 {stage2}개 / "
         f"3차 {stage3}개"
@@ -2471,18 +2386,29 @@ def update_okx(usdt):
         kst()
     )
 
-    buy_count = sum(
-        1
+    long_rows = [
+        x
         for x in rows
-        if x.get(
-            "qualified",
-            False
-        )
+        if is_okx_long_candidate(x)
+    ]
+
+    short_rows = [
+        x
+        for x in rows
+        if is_okx_short_candidate(x)
+    ]
+
+    long_count = len(
+        long_rows
     )
 
-    stage1 = sum(
+    short_count = len(
+        short_rows
+    )
+
+    long_stage1 = sum(
         1
-        for x in rows
+        for x in long_rows
         if x.get(
             "ema2_buy",
             {}
@@ -2492,9 +2418,9 @@ def update_okx(usdt):
         ) == 1
     )
 
-    stage2 = sum(
+    long_stage2 = sum(
         1
-        for x in rows
+        for x in long_rows
         if x.get(
             "ema2_buy",
             {}
@@ -2504,9 +2430,9 @@ def update_okx(usdt):
         ) == 2
     )
 
-    stage3 = sum(
+    long_stage3 = sum(
         1
-        for x in rows
+        for x in long_rows
         if x.get(
             "ema2_buy",
             {}
@@ -2518,10 +2444,11 @@ def update_okx(usdt):
 
     log.info(
         f"OKX 완료 / "
-        f"정배열 {buy_count}개 / "
-        f"1차 {stage1}개 / "
-        f"2차 {stage2}개 / "
-        f"3차 {stage3}개"
+        f"롱(+변동률) {long_count}개 / "
+        f"숏(-변동률) {short_count}개 / "
+        f"롱 1차 {long_stage1}개 / "
+        f"롱 2차 {long_stage2}개 / "
+        f"롱 3차 {long_stage3}개"
     )
 
     return True
@@ -2673,9 +2600,6 @@ def ema_html(e):
             <div class="ema1-main ema-none">
                 ⚪(0)
             </div>
-            <div class="ema1-spread ema-none">
-                0.00%
-            </div>
         </div>
         """
 
@@ -2715,43 +2639,10 @@ def ema_html(e):
 
         icon = "⚪"
 
-    try:
-
-        rate = float(
-            e.get(
-                "ema120_rate",
-                0.0
-            )
-        )
-
-    except Exception:
-
-        rate = 0.0
-
-    if rate > 0:
-
-        rate_display = (
-            f"▲ +{rate:.2f}%"
-        )
-
-    elif rate < 0:
-
-        rate_display = (
-            f"▼ {rate:.2f}%"
-        )
-
-    else:
-
-        rate_display = "0.00%"
-
     return f"""
     <div class="ema1-cell">
         <div class="ema1-main {cls}">
             {icon}({count})
-        </div>
-
-        <div class="ema1-spread {cls}">
-            {rate_display}
         </div>
     </div>
     """
@@ -2936,7 +2827,8 @@ def section(
 
 def buy_focus_section(
     data,
-    update_time
+    update_time,
+    exchange="upbit"
 ):
 
     stage1 = []
@@ -2944,6 +2836,23 @@ def buy_focus_section(
     stage3 = []
 
     for x in data:
+
+        if exchange == "upbit":
+
+            qualified = (
+                is_upbit_buy_candidate(x)
+            )
+
+        else:
+
+            qualified = (
+                is_okx_long_candidate(x)
+                or
+                is_okx_short_candidate(x)
+            )
+
+        if not qualified:
+            continue
 
         stage = x.get(
             "ema2_buy",
@@ -2986,6 +2895,79 @@ def buy_focus_section(
     )
 
     return result
+
+
+def okx_short_section(
+    data,
+    update_time
+):
+
+    short_rows = [
+        x
+        for x in data
+        if is_okx_short_candidate(x)
+    ]
+
+    if not short_rows:
+
+        rows = """
+        <tr>
+            <td
+                colspan="5"
+                class="empty"
+            >
+                해당 숏 종목 없음
+            </td>
+        </tr>
+        """
+
+    else:
+
+        rows = rows_html(
+            short_rows
+        )
+
+    return f"""
+    <h2
+        class="focus-title short-title"
+    >
+
+        🔴 OKX 숏 후보
+
+        <small>
+            {update_time} KST
+        </small>
+
+    </h2>
+
+    <div class="table-wrap buy-focus-table">
+
+        <table>
+
+            <thead>
+
+                <tr>
+
+                    <th>#</th>
+                    <th>코인</th>
+                    <th>거래대금</th>
+                    <th>EMA1</th>
+                    <th>EMA2</th>
+
+                </tr>
+
+            </thead>
+
+            <tbody>
+
+                {rows}
+
+            </tbody>
+
+        </table>
+
+    </div>
+    """
 
 
 def buy_stage_section(
@@ -3323,12 +3305,11 @@ td:nth-child(5){
 
 /* ========================================================
    EMA1
-   EMA10 · EMA60 · EMA120
+   EMA30 · EMA60 · EMA120
 ======================================================== */
 
 .ema1-cell{
     display:flex;
-    flex-direction:column;
     align-items:center;
     justify-content:center;
     width:100%;
@@ -3345,17 +3326,6 @@ td:nth-child(5){
     font-size:8px;
     font-weight:800;
     line-height:14px;
-    text-align:center;
-    white-space:nowrap;
-}
-
-.ema1-spread{
-    display:block;
-    width:100%;
-    margin-top:1px;
-    font-size:7px;
-    font-weight:800;
-    line-height:11px;
     text-align:center;
     white-space:nowrap;
 }
@@ -3426,6 +3396,10 @@ td:nth-child(5){
 
 .buy-title{
     color:#39e875;
+}
+
+.short-title{
+    color:#ff5555;
 }
 
 .buy-focus-table{
@@ -3553,11 +3527,6 @@ td:nth-child(5){
         line-height:14px;
     }
 
-    .ema1-spread{
-        font-size:6.5px;
-        line-height:11px;
-    }
-
     .close-ema10{
         font-size:7px;
     }
@@ -3631,11 +3600,6 @@ td:nth-child(5){
         line-height:13px;
     }
 
-    .ema1-spread{
-        font-size:5.5px;
-        line-height:10px;
-    }
-
     .buy-stage{
         font-size:6px;
     }
@@ -3680,10 +3644,6 @@ td:nth-child(5){
 
     .ema1-main{
         font-size:9px;
-    }
-
-    .ema1-spread{
-        font-size:8px;
     }
 
     .buy-stage{
@@ -3733,7 +3693,9 @@ def dashboard():
     sections = ""
 
     # =====================================================
-    # 매수 단계 요약
+    # 업비트 매수 단계
+    #
+    # 당일 변동률 양수만 표시
     # =====================================================
 
     if USE_UPBIT == "Y":
@@ -3741,14 +3703,30 @@ def dashboard():
         sections += (
             buy_focus_section(
                 latest_upbit_data,
-                latest_upbit_update_time
+                latest_upbit_update_time,
+                "upbit"
             )
         )
+
+    # =====================================================
+    # OKX 매수 / 숏 리스트
+    #
+    # 롱 = 양수
+    # 숏 = 음수
+    # =====================================================
 
     if USE_OKX == "Y":
 
         sections += (
             buy_focus_section(
+                latest_okx_data,
+                latest_okx_update_time,
+                "okx"
+            )
+        )
+
+        sections += (
+            okx_short_section(
                 latest_okx_data,
                 latest_okx_update_time
             )
@@ -3804,7 +3782,7 @@ def dashboard():
 
         <title>
             {timeframe_label}
-            EMA10·60·120 / EMA30·60·120 분할매수
+            EMA30·60·120 분할매수
         </title>
 
         <style>
@@ -3816,7 +3794,7 @@ def dashboard():
     <body>
 
         <h1>
-            📊 EMA3 분할매수 전략
+            📊 EMA30·60·120 분할매수 전략
         </h1>
 
         <div class="info">
@@ -3826,22 +3804,17 @@ def dashboard():
             <br>
 
             EMA1 :
-            EMA10 · EMA60 · EMA120 배열
+            EMA30 · EMA60 · EMA120 배열
 
             <br>
 
             정배열 :
-            EMA10 &gt; EMA60 &gt; EMA120
+            EMA30 &gt; EMA60 &gt; EMA120
 
             <br>
 
             역배열 :
-            EMA10 &lt; EMA60 &lt; EMA120
-
-            <br>
-
-            EMA1 두 번째 줄 :
-            현재가 ↔ EMA120 이격률
+            EMA30 &lt; EMA60 &lt; EMA120
 
             <br>
 
@@ -3865,9 +3838,22 @@ def dashboard():
 
             <br>
 
-            ※ EMA1 정배열
-            EMA10 &gt; EMA60 &gt; EMA120
-            상태에서만 매수 표시
+            ※ 업비트 매수 리스트 :
+            당일 변동률 양수(+)만 표시
+
+            <br>
+
+            ※ OKX 롱 :
+            정배열 + 당일 변동률 양수(+)
+
+            <br>
+
+            ※ OKX 숏 :
+            역배열 + 당일 변동률 음수(-)
+
+            <br>
+
+            ※ EMA1은 확정 캔들 기준
 
             <br>
 
@@ -3956,7 +3942,6 @@ def startup():
 
     log.info(
         f"{timeframe_label} "
-        "EMA10·60·120 / "
         "EMA30·60·120 분할매수 시스템 시작"
     )
 
@@ -3991,28 +3976,23 @@ def startup():
 
     log.info(
         "EMA1 = "
-        "EMA10-60-120"
+        "EMA30-60-120"
     )
 
     log.info(
         "정배열 = "
-        "EMA10 > EMA60 > EMA120"
+        "EMA30 > EMA60 > EMA120"
     )
 
     log.info(
         "역배열 = "
-        "EMA10 < EMA60 < EMA120"
+        "EMA30 < EMA60 < EMA120"
     )
 
     log.info(
         "EMA1 카운트 = "
-        "현재 10-60-120 배열이 "
+        "현재 30-60-120 배열이 "
         "연속된 확정 캔들 수"
-    )
-
-    log.info(
-        "EMA1 두 번째 줄 = "
-        "실시간 현재가 대비 EMA120 이격률"
     )
 
     # =====================================================
@@ -4021,7 +4001,7 @@ def startup():
 
     log.info(
         "EMA2 = "
-        "EMA10-60-120 정배열 상태에서 "
+        "EMA30-60-120 정배열 상태에서 "
         "현재가 기준 분할매수"
     )
 
@@ -4050,6 +4030,28 @@ def startup():
         "EMA2 매수 표시 제거"
     )
 
+    # =====================================================
+    # 거래소별 등락률 필터
+    # =====================================================
+
+    log.info(
+        "업비트 매수조건 = "
+        "EMA30 > EMA60 > EMA120 "
+        "+ 당일 변동률 > 0"
+    )
+
+    log.info(
+        "OKX 롱조건 = "
+        "EMA30 > EMA60 > EMA120 "
+        "+ 당일 변동률 > 0"
+    )
+
+    log.info(
+        "OKX 숏조건 = "
+        "EMA30 < EMA60 < EMA120 "
+        "+ 당일 변동률 < 0"
+    )
+
     log.info(
         f"{timeframe_label} "
         "확정 캔들만 EMA 계산에 사용"
@@ -4058,6 +4060,10 @@ def startup():
     log.info(
         "EMA2 현재가는 "
         "실시간 현재가 사용"
+    )
+
+    log.info(
+        "EMA120 이격률 계산/표시 = 삭제"
     )
 
     log.info(
