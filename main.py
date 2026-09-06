@@ -3767,7 +3767,7 @@ def rising_focus_section(
         class="focus-title rising-title"
     >
 
-        🚀 상승 체크
+        🚀 확인
         [EMA3 {EMA2_LOOKBACK}개 돌파 = ①]
 
         <small>
@@ -3993,7 +3993,7 @@ def warning_focus_section(
         class="focus-title warning-title"
     >
 
-        🚨 상승 진행 리스트
+        🚨 진행 
 
         <small>
             {update_time} KST
