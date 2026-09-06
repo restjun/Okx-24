@@ -38,7 +38,7 @@ log = logging.getLogger("trading")
 # =========================================================
 
 VOLUME_HOURS = 24
-TOP_N = 20
+TOP_N = 10
 UPDATE_MINUTES = 1
 
 HISTORY_CHUNK = 200
@@ -58,7 +58,7 @@ KST = ZoneInfo("Asia/Seoul")
 # EMA 분석 시간봉
 # =========================================================
 
-EMA_TIMEFRAME = 15
+EMA_TIMEFRAME = 60
 
 
 # =========================================================
