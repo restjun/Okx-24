@@ -38,7 +38,7 @@ log = logging.getLogger("trading")
 # =========================================================
 
 VOLUME_HOURS = 24
-TOP_N = 10
+TOP_N = 20
 UPDATE_MINUTES = 1
 
 HISTORY_CHUNK = 200
@@ -58,7 +58,7 @@ KST = ZoneInfo("Asia/Seoul")
 # EMA 분석 시간봉
 # =========================================================
 
-EMA_TIMEFRAME = 5
+EMA_TIMEFRAME = 15
 
 
 # =========================================================
@@ -3794,7 +3794,7 @@ def dashboard():
     <body>
 
         <h1>
-            📊 EMA30·60·120 분할매수 전략
+            📊 EMA 전략
         </h1>
 
         <div class="info">
