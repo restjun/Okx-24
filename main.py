@@ -88,7 +88,7 @@ EMA1_MAX_COUNT = 100
 # =========================================================
 # ROC
 #
-# ROC는 10 하나만 사용
+# ROC10 하나만 사용
 #
 # 매수:
 # 직전 ROC10 <= 0
@@ -1791,6 +1791,17 @@ def roc(
 #
 # 현재 진행 중 캔들의 현재가를 사용
 #
+# ROA10 카운트:
+# 현재 캔들부터 뒤로 가면서
+# ROC10 > 0 인 캔들을 연속으로 카운트
+#
+# 예:
+#
+# + + + -  → ROA10(3)
+# + + -    → ROA10(2)
+# + -      → ROA10(1)
+# -        → ROA10(0)
+#
 # 매수:
 # 직전 확정 ROC10 <= 0
 # 현재 ROC10 > 0
@@ -1812,6 +1823,9 @@ def roc_analysis(
 
         "roc10_previous":
             None,
+
+        "roc10_count":
+            0,
 
         "long_candidate":
             False,
@@ -1883,6 +1897,35 @@ def roc_analysis(
         result[
             "roc10_previous"
         ] = previous_10
+
+        # =================================================
+        # ROA10 0선 위 연속 카운트
+        #
+        # 현재 캔들부터 뒤로 이동
+        # ROC10 > 0 인 동안만 카운트
+        # =================================================
+
+        roc_count = 0
+
+        for value in reversed(
+            current_roc.tolist()
+        ):
+
+            if pd.isna(value):
+
+                break
+
+            if float(value) > 0:
+
+                roc_count += 1
+
+            else:
+
+                break
+
+        result[
+            "roc10_count"
+        ] = roc_count
 
         # =================================================
         # ROC10 0선 상향돌파
@@ -2237,6 +2280,9 @@ def empty_analysis():
 
                 "roc10_previous":
                     None,
+
+                "roc10_count":
+                    0,
 
                 "long_candidate":
                     False,
@@ -3057,12 +3103,18 @@ def update_dashboard():
 
 
 # =========================================================
-# ROC 표시 HTML
+# ROA10 표시 HTML
 #
 # 2줄 표시
 #
-# ROC10
-# +0.123% ↑0
+# ROA10(3)
+# +2.350% ↑0
+#
+# 첫 번째 숫자:
+# 현재 캔들부터 ROA10 > 0 연속 개수
+#
+# 두 번째 줄:
+# 현재 ROA10 값 + 0선 돌파 여부
 # =========================================================
 
 def roc_html(r):
@@ -3071,12 +3123,15 @@ def roc_html(r):
 
         return """
         <div class="roc-cell">
+
             <div class="roc-title">
-                ROC10
+                ROA10(0)
             </div>
+
             <div class="roc-value roc-zero">
                 -
             </div>
+
         </div>
         """
 
@@ -3088,25 +3143,33 @@ def roc_html(r):
         "roc10_previous"
     )
 
+    roc_count = r.get(
+        "roc10_count",
+        0
+    )
+
     if (
         r10 is None
         or
         previous is None
     ):
 
-        return """
+        return f"""
         <div class="roc-cell">
+
             <div class="roc-title">
-                ROC10
+                ROA10({roc_count})
             </div>
+
             <div class="roc-value roc-zero">
                 -
             </div>
+
         </div>
         """
 
     # =====================================================
-    # ROC 방향
+    # ROA10 방향
     # =====================================================
 
     if r10 > 0:
@@ -3124,8 +3187,6 @@ def roc_html(r):
     # =====================================================
     # 0선 돌파 표시
     # =====================================================
-
-    cross = ""
 
     if (
         previous <= 0
@@ -3163,7 +3224,7 @@ def roc_html(r):
     <div class="roc-cell">
 
         <div class="roc-title">
-            ROC10
+            ROA10({roc_count})
         </div>
 
         <div class="roc-value {cls}">
@@ -3434,7 +3495,7 @@ def table_html(data):
                     <th>코인</th>
                     <th>거래대금</th>
                     <th>EMA1</th>
-                    <th>ROC10</th>
+                    <th>ROA10</th>
                     <th>신호</th>
 
                 </tr>
@@ -3556,7 +3617,7 @@ def buy_focus_section(
                     <th>코인</th>
                     <th>거래대금</th>
                     <th>EMA1</th>
-                    <th>ROC10</th>
+                    <th>ROA10</th>
                     <th>신호</th>
 
                 </tr>
@@ -3638,7 +3699,7 @@ def okx_short_section(
                     <th>코인</th>
                     <th>거래대금</th>
                     <th>EMA1</th>
-                    <th>ROC10</th>
+                    <th>ROA10</th>
                     <th>신호</th>
 
                 </tr>
@@ -3965,7 +4026,7 @@ td:nth-child(6){
 
 
 /* =========================================================
-   ROC10
+   ROA10
    2줄 표시
    ========================================================= */
 
@@ -4476,7 +4537,7 @@ def dashboard():
 
         <title>
             {timeframe_label}
-            EMA1 · ROC10
+            EMA1 · ROA10
         </title>
 
         <style>
@@ -4488,12 +4549,12 @@ def dashboard():
     <body>
 
         <h1>
-            📊 EMA1 · ROC10 전략
+            📊 EMA1 · ROA10 전략
         </h1>
 
         <div class="info">
 
-            {timeframe_label} EMA1 + ROC10
+            {timeframe_label} EMA1 + ROA10
 
             <br>
 
@@ -4521,6 +4582,11 @@ def dashboard():
             <br>
 
             ※ ROC는 ROC10 하나만 사용
+
+            <br>
+
+            ※ ROA10(count)은
+            현재 캔들부터 0선 위 연속 캔들 수
 
             <br>
 
@@ -4634,7 +4700,7 @@ def startup():
 
     log.info(
         f"{timeframe_label} "
-        "EMA1 + ROC10 후보 시스템 시작"
+        "EMA1 + ROA10 후보 시스템 시작"
     )
 
     log.info(
@@ -4686,6 +4752,12 @@ def startup():
     )
 
     log.info(
+        "ROA10 count = "
+        "현재 캔들부터 ROC10 > 0 "
+        "연속 캔들 수"
+    )
+
+    log.info(
         "매수 = "
         "직전 확정 ROC10 <= 0 "
         "+ 현재 ROC10 > 0"
@@ -4711,7 +4783,8 @@ def startup():
     )
 
     log.info(
-        "ROC 표시 = 2줄"
+        "ROA10 표시 = "
+        "연속 카운트 + ROC값 2줄"
     )
 
     log.info(
