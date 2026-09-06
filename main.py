@@ -1456,7 +1456,6 @@ def buy_candidate_analysis(
             "current_price"
         ] = current_price
 
-        # 정배열이 아니면 매수 후보 아님
         if not (
             e30 > e60
             and
@@ -1469,7 +1468,6 @@ def buy_candidate_analysis(
             "state"
         ] = "long"
 
-        # 현재가가 EMA30 이하이면 매수 후보
         if current_price <= e30:
 
             result[
@@ -1493,6 +1491,9 @@ def buy_candidate_analysis(
 
 # =========================================================
 # 등락률
+#
+# 후보 판정에는 사용하지 않음
+# 화면 표시용으로만 유지
 # =========================================================
 
 def daily_change_upbit(market):
@@ -1904,7 +1905,6 @@ def make_row(
         or empty_analysis()
     )
 
-    # 분석 결과에 현재가가 있으면 우선 사용
     if current_price is None:
 
         current_price = (
@@ -1970,12 +1970,12 @@ def make_row(
 # 정배열
 # + EMA1 카운트 <= 100
 # + 현재가 <= EMA30
-# + 당일 변동률 +
 #
 # 숏:
 # 역배열
 # + EMA1 카운트 <= 100
-# + 당일 변동률 -
+#
+# 등락률은 후보 판정에 사용하지 않음
 # =========================================================
 
 def is_upbit_buy_candidate(row):
@@ -1983,10 +1983,6 @@ def is_upbit_buy_candidate(row):
     if not row:
 
         return False
-
-    change = row.get(
-        "change_value"
-    )
 
     direction_value = row.get(
         "direction",
@@ -2033,14 +2029,6 @@ def is_upbit_buy_candidate(row):
         and
 
         current_price <= ema30
-
-        and
-
-        change is not None
-
-        and
-
-        change > 0
 
     )
 
@@ -2051,10 +2039,6 @@ def is_okx_long_candidate(row):
 
         return False
 
-    change = row.get(
-        "change_value"
-    )
-
     direction_value = row.get(
         "direction",
         "none"
@@ -2101,14 +2085,6 @@ def is_okx_long_candidate(row):
 
         current_price <= ema30
 
-        and
-
-        change is not None
-
-        and
-
-        change > 0
-
     )
 
 
@@ -2117,10 +2093,6 @@ def is_okx_short_candidate(row):
     if not row:
 
         return False
-
-    change = row.get(
-        "change_value"
-    )
 
     direction_value = row.get(
         "direction",
@@ -2142,14 +2114,6 @@ def is_okx_short_candidate(row):
         and
 
         ema1_count <= EMA1_MAX_COUNT
-
-        and
-
-        change is not None
-
-        and
-
-        change < 0
 
     )
 
@@ -2257,7 +2221,7 @@ def update_upbit():
         f"업비트 완료 / "
         f"매수후보 "
         f"(정배열 + EMA1≤{EMA1_MAX_COUNT} "
-        f"+ 현재가≤EMA30 + 변동률+) "
+        f"+ 현재가≤EMA30) "
         f"{buy_count}개"
     )
 
@@ -2510,7 +2474,7 @@ def update_okx(usdt):
         f"OKX 완료 / "
         f"롱 {long_count}개 / "
         f"숏 {short_count}개 "
-        f"(둘 다 EMA1≤{EMA1_MAX_COUNT})"
+        f"(정배열/역배열 + EMA1≤{EMA1_MAX_COUNT})"
     )
 
     return True
@@ -3754,13 +3718,12 @@ def dashboard():
 
             🟢 매수 :
             정배열 · 카운트 ≤ {EMA1_MAX_COUNT}
-            · 현재가 ≤ EMA30 · 등락률 +
+            · 현재가 ≤ EMA30
 
             <br>
 
             🔴 숏 :
             역배열 · 카운트 ≤ {EMA1_MAX_COUNT}
-            · 등락률 -
 
             <br>
 
@@ -3903,14 +3866,12 @@ def startup():
     log.info(
         "매수 = "
         "정배열 + 카운트 제한 "
-        "+ 현재가 <= EMA30 "
-        "+ 등락률 > 0"
+        "+ 현재가 <= EMA30"
     )
 
     log.info(
         "숏 = "
-        "역배열 + 카운트 제한 "
-        "+ 등락률 < 0"
+        "역배열 + 카운트 제한"
     )
 
     log.info(
@@ -3928,6 +3889,10 @@ def startup():
 
     log.info(
         "EMA120 이격률 계산/표시 = 삭제"
+    )
+
+    log.info(
+        "등락률은 후보 판정에서 사용하지 않음"
     )
 
     log.info(
