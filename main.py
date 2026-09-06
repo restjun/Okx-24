@@ -1366,6 +1366,69 @@ def ema_alignment_count(
 
 
 # =========================================================
+# EMA120 기준 상승/하락률
+# =========================================================
+
+def ema120_change(
+    df
+):
+
+    if (
+        df is None
+        or df.empty
+        or "c" not in df
+    ):
+
+        return 0.0
+
+    try:
+
+        current_close = float(
+            df["c"].iloc[-1]
+        )
+
+        e120 = ema(
+            df,
+            120
+        )
+
+        if (
+            e120 is None
+            or e120.empty
+        ):
+
+            return 0.0
+
+        current_ema120 = float(
+            e120.iloc[-1]
+        )
+
+        if current_ema120 == 0:
+
+            return 0.0
+
+        return (
+            (
+                current_close
+                -
+                current_ema120
+            )
+            /
+            current_ema120
+            *
+            100
+        )
+
+    except Exception as e:
+
+        log.error(
+            f"EMA120 상승/하락률 계산 오류: {e}"
+        )
+
+        return 0.0
+
+
+# =========================================================
 # EMA1 데이터
 # =========================================================
 
@@ -1387,12 +1450,8 @@ def ema_display(
         "count"
     ]
 
-    spread = result.get(
-        "spread_average",
-        result.get(
-            "spread",
-            0.0
-        )
+    ema120_rate = ema120_change(
+        df
     )
 
     if d == "long":
@@ -1411,6 +1470,24 @@ def ema_display(
 
     try:
 
+        ema120_rate = float(
+            ema120_rate
+        )
+
+    except Exception:
+
+        ema120_rate = 0.0
+
+    spread = result.get(
+        "spread_average",
+        result.get(
+            "spread",
+            0.0
+        )
+    )
+
+    try:
+
         spread = float(
             spread
         )
@@ -1425,7 +1502,10 @@ def ema_display(
             f"{icon}({count})",
 
         "spread_display":
-            f"평균 {spread:+.2f}%",
+            f"{ema120_rate:+.2f}%",
+
+        "ema120_rate":
+            ema120_rate,
 
         "direction":
             d,
@@ -1635,7 +1715,7 @@ def ema2_breakout_analysis(
                 work.loc[
                     i,
                     "short_signal"
-                ]
+                )
             ):
 
                 signal_indices.append(
@@ -1774,7 +1854,8 @@ def ema2_breakout_analysis(
 
                 if (
                     start_state
-                    == "long"
+                    ==
+                    "long"
                     and
                     current_close
                     <
@@ -1793,7 +1874,8 @@ def ema2_breakout_analysis(
 
                 if (
                     start_state
-                    == "short"
+                    ==
+                    "short"
                     and
                     current_close
                     >
@@ -2286,7 +2368,10 @@ def empty_analysis():
             "⚪(0)",
 
         "spread_display":
-            "평균 0.00%",
+            "0.00%",
+
+        "ema120_rate":
+            0.0,
 
         "direction":
             "none",
@@ -3120,7 +3205,7 @@ def ema_html(
             </div>
 
             <div class="ema1-spread ema-none">
-                평균 0.00%
+                0.00%
             </div>
 
         </div>
@@ -3136,12 +3221,13 @@ def ema_html(
         0
     )
 
-    spread = e.get(
-        "spread_average",
-        e.get(
-            "spread",
-            0.0
-        )
+    # =====================================================
+    # ★ EMA120 기준 상승/하락률
+    # =====================================================
+
+    rate = e.get(
+        "ema120_rate",
+        0.0
     )
 
     cls = {
@@ -3163,13 +3249,13 @@ def ema_html(
 
     try:
 
-        spread = float(
-            spread
+        rate = float(
+            rate
         )
 
     except Exception:
 
-        spread = 0.0
+        rate = 0.0
 
     if direction_value == "long":
 
@@ -3183,6 +3269,32 @@ def ema_html(
 
         icon = "⚪"
 
+    # =====================================================
+    # EMA120 기준 상승/하락 표시
+    # =====================================================
+
+    if rate > 0:
+
+        rate_text = (
+            f"▲ +{rate:.2f}%"
+        )
+
+        rate_class = "ema-long"
+
+    elif rate < 0:
+
+        rate_text = (
+            f"▼ {rate:.2f}%"
+        )
+
+        rate_class = "ema-short"
+
+    else:
+
+        rate_text = "0.00%"
+
+        rate_class = "ema-none"
+
     return f"""
 
     <div class="ema1-cell">
@@ -3193,9 +3305,9 @@ def ema_html(
 
         </div>
 
-        <div class="ema1-spread {cls}">
+        <div class="ema1-spread {rate_class}">
 
-            평균 {spread:+.2f}%
+            {rate_text}
 
         </div>
 
@@ -5110,30 +5222,16 @@ def startup():
         "EMA 10-30-60-120"
     )
 
+    # ★ 변경된 로그
     log.info(
-        "EMA1 이격도 = "
-        "(10-30 + 30-60 + 60-120) / 3"
-    )
-
-    log.info(
-        "10-30 = "
-        "(EMA10 - EMA30) / EMA30 × 100"
-    )
-
-    log.info(
-        "30-60 = "
-        "(EMA30 - EMA60) / EMA60 × 100"
-    )
-
-    log.info(
-        "60-120 = "
-        "(EMA60 - EMA120) / EMA120 × 100"
+        "EMA1 상승/하락률 = "
+        "(최근 확정 종가 - EMA120) / EMA120 × 100"
     )
 
     log.info(
         "EMA1 표시 = "
         "정배열/역배열 + 연속 카운트 + "
-        "3구간 이격 평균"
+        "EMA120 기준 상승/하락률"
     )
 
     log.info(
