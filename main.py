@@ -64,6 +64,8 @@ EMA_TIMEFRAME = 60
 # =========================================================
 # EMA1
 #
+# 기존 EMA30-60-120 유지
+#
 # 정배열
 # EMA30 > EMA60 > EMA120
 #
@@ -79,11 +81,34 @@ EMA1_SLOW = 120
 # =========================================================
 # EMA1 후보 최대 카운트
 #
-# 롱 / 숏 동일 적용
-# 100 이하만 후보 표시
+# 화면의 EMA 배열 카운트 표시용
 # =========================================================
 
 EMA1_MAX_COUNT = 100
+
+
+# =========================================================
+# EMA2 = ROC
+#
+# 매수:
+#
+# ROC30 > 0
+# ROC60 > 0
+# ROC120 > 0
+# ROC10 0선 상향 돌파
+#
+# 숏:
+#
+# ROC30 < 0
+# ROC60 < 0
+# ROC120 < 0
+# ROC10 0선 하향 돌파
+# =========================================================
+
+ROC_FAST = 10
+ROC_MID = 30
+ROC_SLOW = 60
+ROC_LONG = 120
 
 
 # =========================================================
@@ -1366,124 +1391,290 @@ def ema_display(
 
 
 # =========================================================
-# 매수 후보 분석
+# ROC 계산
 #
-# 정배열 상태에서
-# 현재가 <= EMA30 이면 매수 후보
+# ROC = ((현재 종가 / N개 전 종가) - 1) × 100
 #
-# 1차 / 2차 / 3차 없음
+# 모든 값은 확정 캔들 기준
 # =========================================================
 
-def buy_candidate_analysis(
-    df,
-    current_price=None
-):
+def roc(df, period):
+
+    if (
+        df is None
+        or df.empty
+        or "c" not in df
+    ):
+
+        return None
+
+    try:
+
+        close = pd.to_numeric(
+            df["c"],
+            errors="coerce"
+        )
+
+        period = int(period)
+
+        if period <= 0:
+
+            return None
+
+        return (
+            (
+                close
+                /
+                close.shift(period)
+            )
+            - 1
+        ) * 100
+
+    except Exception as e:
+
+        log.error(
+            f"ROC 계산 오류 "
+            f"{period}: {e}"
+        )
+
+        return None
+
+
+# =========================================================
+# ROC 분석
+#
+# 매수:
+# ROC30 > 0
+# ROC60 > 0
+# ROC120 > 0
+# ROC10 직전 <= 0
+# ROC10 현재 > 0
+#
+# 숏:
+# ROC30 < 0
+# ROC60 < 0
+# ROC120 < 0
+# ROC10 직전 >= 0
+# ROC10 현재 < 0
+# =========================================================
+
+def roc_analysis(df):
 
     result = {
+
+        "roc10":
+            None,
+
+        "roc30":
+            None,
+
+        "roc60":
+            None,
+
+        "roc120":
+            None,
+
+        "roc10_previous":
+            None,
+
+        "long_candidate":
+            False,
+
+        "short_candidate":
+            False,
 
         "state":
             "none",
 
         "display":
-            "-",
-
-        "ema30":
-            None,
-
-        "ema60":
-            None,
-
-        "ema120":
-            None,
-
-        "current_price":
-            current_price,
-
-        "qualified":
-            False
+            "-"
 
     }
 
     if (
         df is None
         or df.empty
+        or len(df) < ROC_LONG + 2
     ):
-
-        return result
-
-    if current_price is None:
 
         return result
 
     try:
 
-        current_price = float(
-            current_price
+        r10 = roc(
+            df,
+            ROC_FAST
         )
 
-        e30 = ema(
+        r30 = roc(
             df,
-            EMA1_FAST
-        ).iloc[-1]
+            ROC_MID
+        )
 
-        e60 = ema(
+        r60 = roc(
             df,
-            EMA1_MID
-        ).iloc[-1]
+            ROC_SLOW
+        )
 
-        e120 = ema(
+        r120 = roc(
             df,
-            EMA1_SLOW
-        ).iloc[-1]
+            ROC_LONG
+        )
 
-        e30 = float(e30)
-        e60 = float(e60)
-        e120 = float(e120)
-
-        result[
-            "ema30"
-        ] = e30
-
-        result[
-            "ema60"
-        ] = e60
-
-        result[
-            "ema120"
-        ] = e120
-
-        result[
-            "current_price"
-        ] = current_price
-
-        if not (
-            e30 > e60
-            and
-            e60 > e120
+        if any(
+            x is None
+            for x in [
+                r10,
+                r30,
+                r60,
+                r120
+            ]
         ):
 
             return result
 
-        result[
-            "state"
-        ] = "long"
+        current_10 = float(
+            r10.iloc[-1]
+        )
 
-        if current_price <= e30:
+        previous_10 = float(
+            r10.iloc[-2]
+        )
+
+        current_30 = float(
+            r30.iloc[-1]
+        )
+
+        current_60 = float(
+            r60.iloc[-1]
+        )
+
+        current_120 = float(
+            r120.iloc[-1]
+        )
+
+        result[
+            "roc10"
+        ] = current_10
+
+        result[
+            "roc30"
+        ] = current_30
+
+        result[
+            "roc60"
+        ] = current_60
+
+        result[
+            "roc120"
+        ] = current_120
+
+        result[
+            "roc10_previous"
+        ] = previous_10
+
+        # -------------------------------------------------
+        # 롱
+        #
+        # ROC30 / 60 / 120 모두 0 위
+        # ROC10이 0선 상향 돌파
+        # -------------------------------------------------
+
+        long_condition = (
+
+            current_30 > 0
+
+            and
+
+            current_60 > 0
+
+            and
+
+            current_120 > 0
+
+            and
+
+            previous_10 <= 0
+
+            and
+
+            current_10 > 0
+
+        )
+
+        # -------------------------------------------------
+        # 숏
+        #
+        # ROC30 / 60 / 120 모두 0 아래
+        # ROC10이 0선 하향 돌파
+        # -------------------------------------------------
+
+        short_condition = (
+
+            current_30 < 0
+
+            and
+
+            current_60 < 0
+
+            and
+
+            current_120 < 0
+
+            and
+
+            previous_10 >= 0
+
+            and
+
+            current_10 < 0
+
+        )
+
+        result[
+            "long_candidate"
+        ] = long_condition
+
+        result[
+            "short_candidate"
+        ] = short_condition
+
+        if long_condition:
 
             result[
-                "qualified"
-            ] = True
+                "state"
+            ] = "long"
 
             result[
                 "display"
-            ] = "🟢 매수 후보"
+            ] = "🟢 매수"
+
+        elif short_condition:
+
+            result[
+                "state"
+            ] = "short"
+
+            result[
+                "display"
+            ] = "🔴 숏"
+
+        else:
+
+            result[
+                "state"
+            ] = "none"
+
+            result[
+                "display"
+            ] = "-"
 
         return result
 
     except Exception as e:
 
         log.error(
-            f"매수 후보 분석 오류: {e}"
+            f"ROC 분석 오류: {e}"
         )
 
         return result
@@ -1493,7 +1684,7 @@ def buy_candidate_analysis(
 # 등락률
 #
 # 후보 판정에는 사용하지 않음
-# 화면 표시용으로만 유지
+# 화면 표시용
 # =========================================================
 
 def daily_change_upbit(market):
@@ -1760,35 +1951,45 @@ def empty_analysis():
         "ema_1h":
             e.copy(),
 
-        "buy_candidate": {
+        "roc":
+            {
 
-            "state":
-                "none",
+                "roc10":
+                    None,
 
-            "display":
-                "-",
+                "roc30":
+                    None,
 
-            "ema30":
-                None,
+                "roc60":
+                    None,
 
-            "ema60":
-                None,
+                "roc120":
+                    None,
 
-            "ema120":
-                None,
+                "roc10_previous":
+                    None,
 
-            "current_price":
-                None,
+                "long_candidate":
+                    False,
 
-            "qualified":
-                False
+                "short_candidate":
+                    False,
 
-        },
+                "state":
+                    "none",
+
+                "display":
+                    "-"
+
+            },
 
         "changes":
             None,
 
         "qualified":
+            False,
+
+        "short_qualified":
             False,
 
         "direction_1h":
@@ -1849,9 +2050,8 @@ def analyze(
         current_price
     )
 
-    buy_candidate = buy_candidate_analysis(
-        df1,
-        current_price
+    roc_data = roc_analysis(
+        df1
     )
 
     changes = (
@@ -1867,15 +2067,21 @@ def analyze(
         "ema_1h":
             e1,
 
-        "buy_candidate":
-            buy_candidate,
+        "roc":
+            roc_data,
 
         "changes":
             changes,
 
         "qualified":
-            buy_candidate.get(
-                "qualified",
+            roc_data.get(
+                "long_candidate",
+                False
+            ),
+
+        "short_qualified":
+            roc_data.get(
+                "short_candidate",
                 False
             ),
 
@@ -1909,7 +2115,7 @@ def make_row(
 
         current_price = (
             a.get(
-                "buy_candidate",
+                "roc",
                 {}
             ).get(
                 "current_price"
@@ -1945,14 +2151,23 @@ def make_row(
         "ema_1h":
             a["ema_1h"],
 
-        "buy_candidate":
+        "roc":
             a.get(
-                "buy_candidate",
+                "roc",
                 {}
             ),
 
         "qualified":
-            a["qualified"],
+            a.get(
+                "qualified",
+                False
+            ),
+
+        "short_qualified":
+            a.get(
+                "short_qualified",
+                False
+            ),
 
         "direction":
             a.get(
@@ -1964,18 +2179,14 @@ def make_row(
 
 
 # =========================================================
-# 매수 / 숏 리스트 조건
+# 매수 후보
 #
-# 매수:
-# 정배열
-# + EMA1 카운트 <= 100
-# + 현재가 <= EMA30
+# ROC30 > 0
+# ROC60 > 0
+# ROC120 > 0
+# ROC10 0선 상향 돌파
 #
-# 숏:
-# 역배열
-# + EMA1 카운트 <= 100
-#
-# 등락률은 후보 판정에 사용하지 않음
+# EMA 배열 / 현재가 / EMA30 조건 삭제
 # =========================================================
 
 def is_upbit_buy_candidate(row):
@@ -1984,54 +2195,22 @@ def is_upbit_buy_candidate(row):
 
         return False
 
-    direction_value = row.get(
-        "direction",
-        "none"
-    )
-
-    ema1_count = row.get(
-        "ema_1h",
-        {}
-    ).get(
-        "count",
-        0
-    )
-
-    buy_data = row.get(
-        "buy_candidate",
+    roc_data = row.get(
+        "roc",
         {}
     )
 
-    current_price = buy_data.get(
-        "current_price"
+    return bool(
+        roc_data.get(
+            "long_candidate",
+            False
+        )
     )
 
-    ema30 = buy_data.get(
-        "ema30"
-    )
 
-    if (
-        current_price is None
-        or
-        ema30 is None
-    ):
-
-        return False
-
-    return (
-
-        direction_value == "long"
-
-        and
-
-        ema1_count <= EMA1_MAX_COUNT
-
-        and
-
-        current_price <= ema30
-
-    )
-
+# =========================================================
+# OKX 롱 후보
+# =========================================================
 
 def is_okx_long_candidate(row):
 
@@ -2039,54 +2218,27 @@ def is_okx_long_candidate(row):
 
         return False
 
-    direction_value = row.get(
-        "direction",
-        "none"
-    )
-
-    ema1_count = row.get(
-        "ema_1h",
-        {}
-    ).get(
-        "count",
-        0
-    )
-
-    buy_data = row.get(
-        "buy_candidate",
+    roc_data = row.get(
+        "roc",
         {}
     )
 
-    current_price = buy_data.get(
-        "current_price"
+    return bool(
+        roc_data.get(
+            "long_candidate",
+            False
+        )
     )
 
-    ema30 = buy_data.get(
-        "ema30"
-    )
 
-    if (
-        current_price is None
-        or
-        ema30 is None
-    ):
-
-        return False
-
-    return (
-
-        direction_value == "long"
-
-        and
-
-        ema1_count <= EMA1_MAX_COUNT
-
-        and
-
-        current_price <= ema30
-
-    )
-
+# =========================================================
+# OKX 숏 후보
+#
+# ROC30 < 0
+# ROC60 < 0
+# ROC120 < 0
+# ROC10 0선 하향 돌파
+# =========================================================
 
 def is_okx_short_candidate(row):
 
@@ -2094,27 +2246,16 @@ def is_okx_short_candidate(row):
 
         return False
 
-    direction_value = row.get(
-        "direction",
-        "none"
-    )
-
-    ema1_count = row.get(
-        "ema_1h",
+    roc_data = row.get(
+        "roc",
         {}
-    ).get(
-        "count",
-        0
     )
 
-    return (
-
-        direction_value == "short"
-
-        and
-
-        ema1_count <= EMA1_MAX_COUNT
-
+    return bool(
+        roc_data.get(
+            "short_candidate",
+            False
+        )
     )
 
 
@@ -2220,8 +2361,8 @@ def update_upbit():
     log.info(
         f"업비트 완료 / "
         f"매수후보 "
-        f"(정배열 + EMA1≤{EMA1_MAX_COUNT} "
-        f"+ 현재가≤EMA30) "
+        f"(ROC30/60/120 > 0 "
+        f"+ ROC10 0선 상향돌파) "
         f"{buy_count}개"
     )
 
@@ -2474,7 +2615,7 @@ def update_okx(usdt):
         f"OKX 완료 / "
         f"롱 {long_count}개 / "
         f"숏 {short_count}개 "
-        f"(정배열/역배열 + EMA1≤{EMA1_MAX_COUNT})"
+        f"(ROC30/60/120 + ROC10 0선 돌파)"
     )
 
     return True
@@ -2569,7 +2710,148 @@ def update_dashboard():
 
 
 # =========================================================
-# 매수 후보 HTML
+# ROC 표시 HTML
+# =========================================================
+
+def roc_html(r):
+
+    if not r:
+
+        return """
+        <div class="roc-cell">
+            -
+        </div>
+        """
+
+    r10 = r.get(
+        "roc10"
+    )
+
+    r30 = r.get(
+        "roc30"
+    )
+
+    r60 = r.get(
+        "roc60"
+    )
+
+    r120 = r.get(
+        "roc120"
+    )
+
+    if any(
+        x is None
+        for x in [
+            r10,
+            r30,
+            r60,
+            r120
+        ]
+    ):
+
+        return """
+        <div class="roc-cell">
+            -
+        </div>
+        """
+
+    r10_cls = (
+        "roc-positive"
+        if r10 > 0
+        else
+        "roc-negative"
+        if r10 < 0
+        else
+        "roc-zero"
+    )
+
+    r30_cls = (
+        "roc-positive"
+        if r30 > 0
+        else
+        "roc-negative"
+        if r30 < 0
+        else
+        "roc-zero"
+    )
+
+    r60_cls = (
+        "roc-positive"
+        if r60 > 0
+        else
+        "roc-negative"
+        if r60 < 0
+        else
+        "roc-zero"
+    )
+
+    r120_cls = (
+        "roc-positive"
+        if r120 > 0
+        else
+        "roc-negative"
+        if r120 < 0
+        else
+        "roc-zero"
+    )
+
+    return f"""
+    <div class="roc-cell">
+
+        <div class="roc-line">
+
+            <span class="roc-label">
+                10
+            </span>
+
+            <span class="{r10_cls}">
+                {r10:+.2f}
+            </span>
+
+        </div>
+
+        <div class="roc-line">
+
+            <span class="roc-label">
+                30
+            </span>
+
+            <span class="{r30_cls}">
+                {r30:+.2f}
+            </span>
+
+        </div>
+
+        <div class="roc-line">
+
+            <span class="roc-label">
+                60
+            </span>
+
+            <span class="{r60_cls}">
+                {r60:+.2f}
+            </span>
+
+        </div>
+
+        <div class="roc-line">
+
+            <span class="roc-label">
+                120
+            </span>
+
+            <span class="{r120_cls}">
+                {r120:+.2f}
+            </span>
+
+        </div>
+
+    </div>
+    """
+
+
+# =========================================================
+# 후보 HTML
 # =========================================================
 
 def buy_candidate_html(data):
@@ -2583,13 +2865,24 @@ def buy_candidate_html(data):
         )
 
     if data.get(
-        "qualified",
+        "long_candidate",
         False
     ):
 
         return (
             '<div class="buy-stage buy-candidate">'
             '🟢 매수 후보'
+            '</div>'
+        )
+
+    if data.get(
+        "short_candidate",
+        False
+    ):
+
+        return (
+            '<div class="buy-stage short-candidate">'
+            '🔴 숏 후보'
             '</div>'
         )
 
@@ -2657,9 +2950,11 @@ def ema_html(e):
 
     return f"""
     <div class="ema1-cell">
+
         <div class="ema1-main {cls}">
             {icon}({count})
         </div>
+
     </div>
     """
 
@@ -2680,21 +2975,24 @@ def rows_html(data):
 
     for x in data:
 
-        cls = (
+        cls = ""
 
-            " qualified"
+        if x.get(
+            "qualified",
+            False
+        ):
 
-            if x.get(
-                "qualified",
-                False
-            )
+            cls = " qualified"
 
-            else ""
+        elif x.get(
+            "short_qualified",
+            False
+        ):
 
-        )
+            cls = " short-qualified"
 
-        buy_data = x.get(
-            "buy_candidate",
+        roc_data = x.get(
+            "roc",
             {}
         )
 
@@ -2745,10 +3043,18 @@ def rows_html(data):
 
                 </td>
 
+                <td class="roc-column">
+
+                    {roc_html(
+                        roc_data
+                    )}
+
+                </td>
+
                 <td class="close-ema10">
 
                     {buy_candidate_html(
-                        buy_data
+                        roc_data
                     )}
 
                 </td>
@@ -2777,7 +3083,7 @@ def table_html(data):
         rows = """
         <tr>
             <td
-                colspan="5"
+                colspan="6"
                 class="empty"
             >
                 현재 조회 데이터 없음
@@ -2798,7 +3104,8 @@ def table_html(data):
                     <th>코인</th>
                     <th>거래대금</th>
                     <th>EMA1</th>
-                    <th>매수</th>
+                    <th>ROC</th>
+                    <th>후보</th>
 
                 </tr>
 
@@ -2877,7 +3184,7 @@ def buy_focus_section(
         <tr>
 
             <td
-                colspan="5"
+                colspan="6"
                 class="empty"
             >
                 현재 매수 후보 없음
@@ -2900,7 +3207,9 @@ def buy_focus_section(
         🟢 매수 후보
 
         <small>
-            {update_time} KST
+            ROC30·60·120 > 0
+            + ROC10 0선 상향돌파
+            · {update_time} KST
         </small>
 
     </h2>
@@ -2917,7 +3226,8 @@ def buy_focus_section(
                     <th>코인</th>
                     <th>거래대금</th>
                     <th>EMA1</th>
-                    <th>매수</th>
+                    <th>ROC</th>
+                    <th>후보</th>
 
                 </tr>
 
@@ -2957,7 +3267,7 @@ def okx_short_section(
         rows = """
         <tr>
             <td
-                colspan="5"
+                colspan="6"
                 class="empty"
             >
                 현재 숏 후보 없음
@@ -2979,7 +3289,9 @@ def okx_short_section(
         🔴 OKX 숏 후보
 
         <small>
-            {update_time} KST
+            ROC30·60·120 &lt; 0
+            + ROC10 0선 하향돌파
+            · {update_time} KST
         </small>
 
     </h2>
@@ -2996,7 +3308,8 @@ def okx_short_section(
                     <th>코인</th>
                     <th>거래대금</th>
                     <th>EMA1</th>
-                    <th>매수</th>
+                    <th>ROC</th>
+                    <th>후보</th>
 
                 </tr>
 
@@ -3147,7 +3460,7 @@ th{
 }
 
 td{
-    height:38px;
+    height:45px;
     padding:5px 2px;
     border-bottom:1px solid #272d34;
     text-align:center !important;
@@ -3159,30 +3472,39 @@ tbody tr:last-child td{
     border-bottom:none;
 }
 
+
+/* 6열 */
+
 th:nth-child(1),
 td:nth-child(1){
-    width:7%;
+    width:6%;
 }
 
 th:nth-child(2),
 td:nth-child(2){
-    width:22%;
+    width:20%;
 }
 
 th:nth-child(3),
 td:nth-child(3){
-    width:17%;
+    width:15%;
 }
 
 th:nth-child(4),
 td:nth-child(4){
-    width:27%;
+    width:19%;
 }
 
 th:nth-child(5),
 td:nth-child(5){
-    width:27%;
+    width:24%;
 }
+
+th:nth-child(6),
+td:nth-child(6){
+    width:16%;
+}
+
 
 .rank{
     color:#858c96;
@@ -3233,9 +3555,14 @@ td:nth-child(5){
     font-size:8px;
     font-weight:800;
     line-height:18px;
-    height:38px;
+    height:45px;
     white-space:nowrap;
 }
+
+
+/* =========================================================
+   EMA
+   ========================================================= */
 
 .ema-cell{
     overflow:hidden;
@@ -3304,6 +3631,64 @@ td:nth-child(5){
     color:#eeeeee;
 }
 
+
+/* =========================================================
+   ROC
+   ========================================================= */
+
+.roc-column{
+    padding:2px 1px !important;
+    overflow:hidden;
+}
+
+.roc-cell{
+    display:flex;
+    flex-direction:column;
+    justify-content:center;
+    align-items:center;
+    width:100%;
+    min-height:41px;
+    line-height:10px;
+}
+
+.roc-line{
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    width:100%;
+    height:10px;
+    font-size:6.5px;
+    font-weight:800;
+    white-space:nowrap;
+}
+
+.roc-label{
+    display:inline-block;
+    width:20px;
+    color:#777f89;
+    font-size:6px;
+    font-weight:700;
+    text-align:right;
+    margin-right:3px;
+}
+
+.roc-positive{
+    color:#39e875;
+}
+
+.roc-negative{
+    color:#ff5555;
+}
+
+.roc-zero{
+    color:#9aa1aa;
+}
+
+
+/* =========================================================
+   후보
+   ========================================================= */
+
 .close-ema10{
     text-align:center !important;
     vertical-align:middle !important;
@@ -3326,6 +3711,10 @@ td:nth-child(5){
     color:#39e875;
 }
 
+.short-candidate{
+    color:#ff5555;
+}
+
 .buy-none{
     color:#686f78;
     font-size:8px;
@@ -3335,6 +3724,10 @@ td:nth-child(5){
 
 .qualified{
     background:rgba(57,232,117,.055);
+}
+
+.short-qualified{
+    background:rgba(255,85,85,.055);
 }
 
 .focus-title{
@@ -3361,6 +3754,7 @@ td:nth-child(5){
     font-size:8px;
     height:48px;
 }
+
 
 @media(max-width:600px){
 
@@ -3411,12 +3805,12 @@ td:nth-child(5){
     }
 
     td{
-        height:40px;
+        height:45px;
         padding:3px 1px;
     }
 
     .rank{
-        font-size:8px;
+        font-size:7px;
     }
 
     .coin{
@@ -3440,7 +3834,7 @@ td:nth-child(5){
         padding:3px 1px !important;
         font-size:7px;
         line-height:18px;
-        height:40px;
+        height:45px;
     }
 
     .ema-cell{
@@ -3466,6 +3860,20 @@ td:nth-child(5){
         line-height:14px;
     }
 
+    .roc-cell{
+        min-height:41px;
+    }
+
+    .roc-line{
+        font-size:5.8px;
+    }
+
+    .roc-label{
+        width:17px;
+        font-size:5.5px;
+        margin-right:2px;
+    }
+
     .close-ema10{
         font-size:7px;
     }
@@ -3485,6 +3893,7 @@ td:nth-child(5){
         height:45px;
     }
 }
+
 
 @media(max-width:380px){
 
@@ -3510,7 +3919,7 @@ td:nth-child(5){
     }
 
     td{
-        height:40px;
+        height:45px;
     }
 
     .coin-name{
@@ -3534,6 +3943,15 @@ td:nth-child(5){
         line-height:13px;
     }
 
+    .roc-line{
+        font-size:5px;
+    }
+
+    .roc-label{
+        width:14px;
+        font-size:5px;
+    }
+
     .buy-stage{
         font-size:6px;
     }
@@ -3542,6 +3960,7 @@ td:nth-child(5){
         font-size:6px;
     }
 }
+
 
 @media(min-width:601px){
 
@@ -3556,7 +3975,7 @@ td:nth-child(5){
     }
 
     td{
-        height:44px;
+        height:48px;
     }
 
     .coin-name{
@@ -3573,6 +3992,14 @@ td:nth-child(5){
 
     .ema1-main{
         font-size:9px;
+    }
+
+    .roc-line{
+        font-size:8px;
+    }
+
+    .roc-label{
+        font-size:7px;
     }
 
     .buy-stage{
@@ -3690,7 +4117,7 @@ def dashboard():
 
         <title>
             {timeframe_label}
-            EMA30·60·120
+            EMA1 · ROC2
         </title>
 
         <style>
@@ -3702,7 +4129,7 @@ def dashboard():
     <body>
 
         <h1>
-            📊 EMA 전략
+            📊 EMA1 · ROC2 전략
         </h1>
 
         <div class="info">
@@ -3716,22 +4143,42 @@ def dashboard():
 
             <br>
 
+            ROC2 :
+            ROC10 · ROC30 · ROC60 · ROC120
+
+            <br>
+
             🟢 매수 :
-            정배열 · 카운트 ≤ {EMA1_MAX_COUNT}
-            · 현재가 ≤ EMA30
+            ROC30 · ROC60 · ROC120
+            모두 0선 위
+            +
+            ROC10 0선 상향 돌파
 
             <br>
 
             🔴 숏 :
-            역배열 · 카운트 ≤ {EMA1_MAX_COUNT}
+            ROC30 · ROC60 · ROC120
+            모두 0선 아래
+            +
+            ROC10 0선 하향 돌파
 
             <br>
 
-            ※ EMA1은 확정 캔들 기준
+            ※ ROC는 확정 캔들 기준
 
             <br>
 
-            ※ 현재가는 실시간 가격
+            ※ ROC10이 단순히 0선 위에 있는 경우는 후보가 아님
+
+            <br>
+
+            ※ 반드시 직전 캔들 ≤ 0 → 현재 캔들 > 0
+            상향돌파를 확인
+
+            <br>
+
+            ※ 숏은 직전 캔들 ≥ 0 → 현재 캔들 < 0
+            하향돌파를 확인
 
             {status}
 
@@ -3815,7 +4262,7 @@ def startup():
 
     log.info(
         f"{timeframe_label} "
-        "EMA30·60·120 매수 후보 시스템 시작"
+        "EMA1 + ROC2 후보 시스템 시작"
     )
 
     log.info(
@@ -3849,38 +4296,57 @@ def startup():
     )
 
     log.info(
-        "정배열 = "
+        "EMA1 정배열 = "
         "EMA30 > EMA60 > EMA120"
     )
 
     log.info(
-        "역배열 = "
+        "EMA1 역배열 = "
         "EMA30 < EMA60 < EMA120"
     )
 
     log.info(
-        f"후보 카운트 제한 = "
-        f"{EMA1_MAX_COUNT} 이하"
+        "ROC2 = "
+        "ROC10-30-60-120"
     )
 
     log.info(
         "매수 = "
-        "정배열 + 카운트 제한 "
-        "+ 현재가 <= EMA30"
+        "ROC30 > 0 "
+        "+ ROC60 > 0 "
+        "+ ROC120 > 0 "
+        "+ ROC10 0선 상향돌파"
     )
 
     log.info(
         "숏 = "
-        "역배열 + 카운트 제한"
+        "ROC30 < 0 "
+        "+ ROC60 < 0 "
+        "+ ROC120 < 0 "
+        "+ ROC10 0선 하향돌파"
+    )
+
+    log.info(
+        "ROC10 상향돌파 = "
+        "직전 <= 0 AND 현재 > 0"
+    )
+
+    log.info(
+        "ROC10 하향돌파 = "
+        "직전 >= 0 AND 현재 < 0"
     )
 
     log.info(
         f"{timeframe_label} "
-        "확정 캔들만 EMA 계산에 사용"
+        "확정 캔들만 ROC 계산에 사용"
     )
 
     log.info(
-        "현재가는 실시간 현재가 사용"
+        "현재가 <= EMA30 조건 = 삭제"
+    )
+
+    log.info(
+        "EMA1 카운트 후보 조건 = 삭제"
     )
 
     log.info(
