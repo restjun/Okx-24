@@ -62,7 +62,7 @@ EMA_TIMEFRAME = 15
 
 
 # =========================================================
-# EMA1 설정
+# EMA1
 #
 # 정배열
 # EMA30 > EMA60 > EMA120
@@ -77,28 +77,13 @@ EMA1_SLOW = 120
 
 
 # =========================================================
-# EMA1 후보 리스트 최대 카운트
+# EMA1 후보 최대 카운트
 #
-# 롱 / 숏 모두 동일하게 적용
-#
-# 100 이하  → 표시
-# 101 이상  → 후보 리스트 제외
+# 롱 / 숏 동일 적용
+# 100 이하만 후보 표시
 # =========================================================
 
 EMA1_MAX_COUNT = 100
-
-
-# =========================================================
-# EMA2 매수 기준
-#
-# 1차 = EMA30
-# 2차 = EMA60
-# 3차 = EMA120
-# =========================================================
-
-BUY_EMA_FIRST = 30
-BUY_EMA_SECOND = 60
-BUY_EMA_THIRD = 120
 
 
 # =========================================================
@@ -1381,10 +1366,15 @@ def ema_display(
 
 
 # =========================================================
-# EMA2 매수 분석
+# 매수 후보 분석
+#
+# 정배열 상태에서
+# 현재가 <= EMA30 이면 매수 후보
+#
+# 1차 / 2차 / 3차 없음
 # =========================================================
 
-def ema2_buy_analysis(
+def buy_candidate_analysis(
     df,
     current_price=None
 ):
@@ -1393,9 +1383,6 @@ def ema2_buy_analysis(
 
         "state":
             "none",
-
-        "stage":
-            0,
 
         "display":
             "-",
@@ -1469,6 +1456,7 @@ def ema2_buy_analysis(
             "current_price"
         ] = current_price
 
+        # 정배열이 아니면 매수 후보 아님
         if not (
             e30 > e60
             and
@@ -1481,52 +1469,23 @@ def ema2_buy_analysis(
             "state"
         ] = "long"
 
-        result[
-            "qualified"
-        ] = True
-
-        if current_price <= e120:
-
-            result[
-                "stage"
-            ] = 3
-
-            result[
-                "display"
-            ] = "🟢 ③ 3차매수"
-
-            return result
-
-        if current_price <= e60:
-
-            result[
-                "stage"
-            ] = 2
-
-            result[
-                "display"
-            ] = "🟢 ② 2차매수"
-
-            return result
-
+        # 현재가가 EMA30 이하이면 매수 후보
         if current_price <= e30:
 
             result[
-                "stage"
-            ] = 1
+                "qualified"
+            ] = True
 
             result[
                 "display"
-            ] = "🟢 ① 1차매수"
-
-            return result
+            ] = "🟢 매수 후보"
 
         return result
 
     except Exception as e:
 
         log.error(
-            f"EMA2 매수 분석 오류: {e}"
+            f"매수 후보 분석 오류: {e}"
         )
 
         return result
@@ -1800,13 +1759,10 @@ def empty_analysis():
         "ema_1h":
             e.copy(),
 
-        "ema2_buy": {
+        "buy_candidate": {
 
             "state":
                 "none",
-
-            "stage":
-                0,
 
             "display":
                 "-",
@@ -1892,7 +1848,7 @@ def analyze(
         current_price
     )
 
-    ema2 = ema2_buy_analysis(
+    buy_candidate = buy_candidate_analysis(
         df1,
         current_price
     )
@@ -1910,14 +1866,14 @@ def analyze(
         "ema_1h":
             e1,
 
-        "ema2_buy":
-            ema2,
+        "buy_candidate":
+            buy_candidate,
 
         "changes":
             changes,
 
         "qualified":
-            ema2.get(
+            buy_candidate.get(
                 "qualified",
                 False
             ),
@@ -1939,13 +1895,26 @@ def make_row(
     rank,
     name,
     volume,
-    analysis
+    analysis,
+    current_price=None
 ):
 
     a = (
         analysis
         or empty_analysis()
     )
+
+    # 분석 결과에 현재가가 있으면 우선 사용
+    if current_price is None:
+
+        current_price = (
+            a.get(
+                "buy_candidate",
+                {}
+            ).get(
+                "current_price"
+            )
+        )
 
     return {
 
@@ -1970,11 +1939,17 @@ def make_row(
                 volume
             ),
 
+        "current_price":
+            current_price,
+
         "ema_1h":
             a["ema_1h"],
 
-        "ema2_buy":
-            a["ema2_buy"],
+        "buy_candidate":
+            a.get(
+                "buy_candidate",
+                {}
+            ),
 
         "qualified":
             a["qualified"],
@@ -1991,22 +1966,16 @@ def make_row(
 # =========================================================
 # 매수 / 숏 리스트 조건
 #
-# ★ EMA1 카운트 100 이하 조건 추가
+# 매수:
+# 정배열
+# + EMA1 카운트 <= 100
+# + 현재가 <= EMA30
+# + 당일 변동률 +
 #
-# Upbit LONG:
-# 당일 변동률 > 0
-# + EMA30 > EMA60 > EMA120
-# + EMA1 count <= 100
-#
-# OKX LONG:
-# 당일 변동률 > 0
-# + EMA30 > EMA60 > EMA120
-# + EMA1 count <= 100
-#
-# OKX SHORT:
-# 당일 변동률 < 0
-# + EMA30 < EMA60 < EMA120
-# + EMA1 count <= 100
+# 숏:
+# 역배열
+# + EMA1 카운트 <= 100
+# + 당일 변동률 -
 # =========================================================
 
 def is_upbit_buy_candidate(row):
@@ -2032,6 +2001,27 @@ def is_upbit_buy_candidate(row):
         0
     )
 
+    buy_data = row.get(
+        "buy_candidate",
+        {}
+    )
+
+    current_price = buy_data.get(
+        "current_price"
+    )
+
+    ema30 = buy_data.get(
+        "ema30"
+    )
+
+    if (
+        current_price is None
+        or
+        ema30 is None
+    ):
+
+        return False
+
     return (
 
         direction_value == "long"
@@ -2042,21 +2032,15 @@ def is_upbit_buy_candidate(row):
 
         and
 
+        current_price <= ema30
+
+        and
+
         change is not None
 
         and
 
         change > 0
-
-        and
-
-        row.get(
-            "ema2_buy",
-            {}
-        ).get(
-            "stage",
-            0
-        ) > 0
 
     )
 
@@ -2084,6 +2068,27 @@ def is_okx_long_candidate(row):
         0
     )
 
+    buy_data = row.get(
+        "buy_candidate",
+        {}
+    )
+
+    current_price = buy_data.get(
+        "current_price"
+    )
+
+    ema30 = buy_data.get(
+        "ema30"
+    )
+
+    if (
+        current_price is None
+        or
+        ema30 is None
+    ):
+
+        return False
+
     return (
 
         direction_value == "long"
@@ -2094,21 +2099,15 @@ def is_okx_long_candidate(row):
 
         and
 
+        current_price <= ema30
+
+        and
+
         change is not None
 
         and
 
         change > 0
-
-        and
-
-        row.get(
-            "ema2_buy",
-            {}
-        ).get(
-            "stage",
-            0
-        ) > 0
 
     )
 
@@ -2194,13 +2193,15 @@ def update_upbit():
             ""
         )
 
+        current_price = item.get(
+            "current_price"
+        )
+
         try:
 
             a = analyze(
                 market,
-                current_price=item.get(
-                    "current_price"
-                )
+                current_price=current_price
             )
 
             rows.append(
@@ -2210,7 +2211,8 @@ def update_upbit():
                     item[
                         "volume_24h"
                     ],
-                    a
+                    a,
+                    current_price
                 )
             )
 
@@ -2228,7 +2230,8 @@ def update_upbit():
                     item[
                         "volume_24h"
                     ],
-                    None
+                    None,
+                    current_price
                 )
             )
 
@@ -2250,55 +2253,12 @@ def update_upbit():
         buy_rows
     )
 
-    stage1 = sum(
-
-        1
-        for x in buy_rows
-        if x.get(
-            "ema2_buy",
-            {}
-        ).get(
-            "stage",
-            0
-        ) == 1
-
-    )
-
-    stage2 = sum(
-
-        1
-        for x in buy_rows
-        if x.get(
-            "ema2_buy",
-            {}
-        ).get(
-            "stage",
-            0
-        ) == 2
-
-    )
-
-    stage3 = sum(
-
-        1
-        for x in buy_rows
-        if x.get(
-            "ema2_buy",
-            {}
-        ).get(
-            "stage",
-            0
-        ) == 3
-
-    )
-
     log.info(
         f"업비트 완료 / "
-        f"매수후보(+변동률, EMA1≤{EMA1_MAX_COUNT}) "
-        f"{buy_count}개 / "
-        f"1차 {stage1}개 / "
-        f"2차 {stage2}개 / "
-        f"3차 {stage3}개"
+        f"매수후보 "
+        f"(정배열 + EMA1≤{EMA1_MAX_COUNT} "
+        f"+ 현재가≤EMA30 + 변동률+) "
+        f"{buy_count}개"
     )
 
 
@@ -2492,7 +2452,8 @@ def update_okx(usdt):
                     volumes[
                         symbol
                     ],
-                    a
+                    a,
+                    current_price
                 )
             )
 
@@ -2510,7 +2471,8 @@ def update_okx(usdt):
                     volumes[
                         symbol
                     ],
-                    None
+                    None,
+                    current_price
                 )
             )
 
@@ -2544,57 +2506,11 @@ def update_okx(usdt):
         short_rows
     )
 
-    long_stage1 = sum(
-
-        1
-        for x in long_rows
-        if x.get(
-            "ema2_buy",
-            {}
-        ).get(
-            "stage",
-            0
-        ) == 1
-
-    )
-
-    long_stage2 = sum(
-
-        1
-        for x in long_rows
-        if x.get(
-            "ema2_buy",
-            {}
-        ).get(
-            "stage",
-            0
-        ) == 2
-
-    )
-
-    long_stage3 = sum(
-
-        1
-        for x in long_rows
-        if x.get(
-            "ema2_buy",
-            {}
-        ).get(
-            "stage",
-            0
-        ) == 3
-
-    )
-
     log.info(
         f"OKX 완료 / "
-        f"롱(+변동률, EMA1≤{EMA1_MAX_COUNT}) "
-        f"{long_count}개 / "
-        f"숏(-변동률, EMA1≤{EMA1_MAX_COUNT}) "
-        f"{short_count}개 / "
-        f"롱 1차 {long_stage1}개 / "
-        f"롱 2차 {long_stage2}개 / "
-        f"롱 3차 {long_stage3}개"
+        f"롱 {long_count}개 / "
+        f"숏 {short_count}개 "
+        f"(둘 다 EMA1≤{EMA1_MAX_COUNT})"
     )
 
     return True
@@ -2689,41 +2605,27 @@ def update_dashboard():
 
 
 # =========================================================
-# EMA2 매수 HTML
+# 매수 후보 HTML
 # =========================================================
 
-def ema2_buy_html(data):
+def buy_candidate_html(data):
 
     if not data:
 
-        return "-"
-
-    stage = data.get(
-        "stage",
-        0
-    )
-
-    if stage == 1:
-
         return (
-            '<div class="buy-stage buy-1">'
-            '🟢 ① 1차매수'
+            '<div class="buy-none">'
+            '-'
             '</div>'
         )
 
-    if stage == 2:
+    if data.get(
+        "qualified",
+        False
+    ):
 
         return (
-            '<div class="buy-stage buy-2">'
-            '🟢 ② 2차매수'
-            '</div>'
-        )
-
-    if stage == 3:
-
-        return (
-            '<div class="buy-stage buy-3">'
-            '🟢 ③ 3차매수'
+            '<div class="buy-stage buy-candidate">'
+            '🟢 매수 후보'
             '</div>'
         )
 
@@ -2827,8 +2729,8 @@ def rows_html(data):
 
         )
 
-        ema2_data = x.get(
-            "ema2_buy",
+        buy_data = x.get(
+            "buy_candidate",
             {}
         )
 
@@ -2881,8 +2783,8 @@ def rows_html(data):
 
                 <td class="close-ema10">
 
-                    {ema2_buy_html(
-                        ema2_data
+                    {buy_candidate_html(
+                        buy_data
                     )}
 
                 </td>
@@ -2932,7 +2834,7 @@ def table_html(data):
                     <th>코인</th>
                     <th>거래대금</th>
                     <th>EMA1</th>
-                    <th>EMA2</th>
+                    <th>매수</th>
 
                 </tr>
 
@@ -2976,7 +2878,7 @@ def section(
 
 
 # =========================================================
-# 1차 / 2차 / 3차 매수 리스트
+# 매수 후보 리스트
 # =========================================================
 
 def buy_focus_section(
@@ -2985,71 +2887,88 @@ def buy_focus_section(
     exchange="upbit"
 ):
 
-    stage1 = []
-    stage2 = []
-    stage3 = []
+    if exchange == "upbit":
 
-    for x in data:
+        candidate_rows = [
 
-        if exchange == "upbit":
+            x
+            for x in data
+            if is_upbit_buy_candidate(x)
 
-            qualified = (
-                is_upbit_buy_candidate(x)
-            )
+        ]
 
-        else:
+    else:
 
-            qualified = (
-                is_okx_long_candidate(x)
-                or
-                is_okx_short_candidate(x)
-            )
+        candidate_rows = [
 
-        if not qualified:
+            x
+            for x in data
+            if is_okx_long_candidate(x)
 
-            continue
+        ]
 
-        stage = x.get(
-            "ema2_buy",
-            {}
-        ).get(
-            "stage",
-            0
+    if not candidate_rows:
+
+        rows = """
+        <tr>
+
+            <td
+                colspan="5"
+                class="empty"
+            >
+                현재 매수 후보 없음
+            </td>
+
+        </tr>
+        """
+
+    else:
+
+        rows = rows_html(
+            candidate_rows
         )
 
-        if stage == 1:
+    return f"""
+    <h2
+        class="focus-title buy-title"
+    >
 
-            stage1.append(x)
+        🟢 매수 후보
 
-        elif stage == 2:
+        <small>
+            {update_time} KST
+        </small>
 
-            stage2.append(x)
+    </h2>
 
-        elif stage == 3:
+    <div class="table-wrap buy-focus-table">
 
-            stage3.append(x)
+        <table>
 
-    result = ""
+            <thead>
 
-    result += buy_stage_section(
-        "① 1차매수",
-        stage1,
-        update_time
-    )
+                <tr>
 
-    result += buy_stage_section(
-        "② 2차매수",
-        stage2,
-        update_time
-    )
+                    <th>#</th>
+                    <th>코인</th>
+                    <th>거래대금</th>
+                    <th>EMA1</th>
+                    <th>매수</th>
 
-    result += buy_stage_section(
-        "③ 3차매수",
-        stage3,
-        update_time
-    )
+                </tr>
 
-    return result
+            </thead>
+
+            <tbody>
+
+                {rows}
+
+            </tbody>
+
+        </table>
+
+    </div>
+    """
 
 
 # =========================================================
@@ -3077,7 +2996,7 @@ def okx_short_section(
                 colspan="5"
                 class="empty"
             >
-                해당 숏 종목 없음
+                현재 숏 후보 없음
             </td>
         </tr>
         """
@@ -3113,81 +3032,7 @@ def okx_short_section(
                     <th>코인</th>
                     <th>거래대금</th>
                     <th>EMA1</th>
-                    <th>EMA2</th>
-
-                </tr>
-
-            </thead>
-
-            <tbody>
-
-                {rows}
-
-            </tbody>
-
-        </table>
-
-    </div>
-    """
-
-
-# =========================================================
-# 매수 단계
-# =========================================================
-
-def buy_stage_section(
-    title,
-    data,
-    update_time
-):
-
-    if not data:
-
-        rows = """
-        <tr>
-
-            <td
-                colspan="5"
-                class="empty"
-            >
-                해당 매수 단계 없음
-            </td>
-
-        </tr>
-        """
-
-    else:
-
-        rows = rows_html(
-            data
-        )
-
-    return f"""
-    <h2
-        class="focus-title buy-title"
-    >
-
-        🟢 {title}
-
-        <small>
-            {update_time} KST
-        </small>
-
-    </h2>
-
-    <div class="table-wrap buy-focus-table">
-
-        <table>
-
-            <thead>
-
-                <tr>
-
-                    <th>#</th>
-                    <th>코인</th>
-                    <th>거래대금</th>
-                    <th>EMA1</th>
-                    <th>EMA2</th>
+                    <th>매수</th>
 
                 </tr>
 
@@ -3513,15 +3358,7 @@ td:nth-child(5){
     white-space:nowrap;
 }
 
-.buy-1{
-    color:#39e875;
-}
-
-.buy-2{
-    color:#39e875;
-}
-
-.buy-3{
+.buy-candidate{
     color:#39e875;
 }
 
@@ -3889,7 +3726,7 @@ def dashboard():
 
         <title>
             {timeframe_label}
-            EMA30·60·120 분할매수
+            EMA30·60·120
         </title>
 
         <style>
@@ -3911,55 +3748,19 @@ def dashboard():
             <br>
 
             EMA1 :
-            EMA30 · EMA60 · EMA120 배열
+            EMA30 · EMA60 · EMA120
 
             <br>
 
-            정배열 :
-            EMA30 &gt; EMA60 &gt; EMA120
+            🟢 매수 :
+            정배열 · 카운트 ≤ {EMA1_MAX_COUNT}
+            · 현재가 ≤ EMA30 · 등락률 +
 
             <br>
 
-            역배열 :
-            EMA30 &lt; EMA60 &lt; EMA120
-
-            <br>
-
-            EMA2 :
-            정배열 상태에서 현재가 기준 분할매수
-
-            <br>
-
-            현재가 ≤ EMA30
-            → ① 1차매수
-
-            <br>
-
-            현재가 ≤ EMA60
-            → ② 2차매수
-
-            <br>
-
-            현재가 ≤ EMA120
-            → ③ 3차매수
-
-            <br>
-
-            ※ 업비트 매수 리스트 :
-            당일 변동률 양수(+) +
-            EMA1 카운트 {EMA1_MAX_COUNT} 이하
-
-            <br>
-
-            ※ OKX 롱 :
-            정배열 + 당일 변동률 양수(+) +
-            EMA1 카운트 {EMA1_MAX_COUNT} 이하
-
-            <br>
-
-            ※ OKX 숏 :
-            역배열 + 당일 변동률 음수(-) +
-            EMA1 카운트 {EMA1_MAX_COUNT} 이하
+            🔴 숏 :
+            역배열 · 카운트 ≤ {EMA1_MAX_COUNT}
+            · 등락률 -
 
             <br>
 
@@ -3967,8 +3768,7 @@ def dashboard():
 
             <br>
 
-            ※ 가장 깊은 매수 단계
-            하나만 표시
+            ※ 현재가는 실시간 가격
 
             {status}
 
@@ -4052,7 +3852,7 @@ def startup():
 
     log.info(
         f"{timeframe_label} "
-        "EMA30·60·120 분할매수 시스템 시작"
+        "EMA30·60·120 매수 후보 시스템 시작"
     )
 
     log.info(
@@ -4096,70 +3896,21 @@ def startup():
     )
 
     log.info(
-        "EMA1 카운트 = "
-        "현재 30-60-120 배열이 "
-        "연속된 확정 캔들 수"
-    )
-
-    log.info(
-        f"후보 리스트 EMA1 카운트 제한 = "
+        f"후보 카운트 제한 = "
         f"{EMA1_MAX_COUNT} 이하"
     )
 
     log.info(
-        "롱 / 숏 모두 동일하게 적용"
+        "매수 = "
+        "정배열 + 카운트 제한 "
+        "+ 현재가 <= EMA30 "
+        "+ 등락률 > 0"
     )
 
     log.info(
-        "EMA2 = "
-        "EMA30-60-120 정배열 상태에서 "
-        "현재가 기준 분할매수"
-    )
-
-    log.info(
-        "1차매수 기준 = "
-        "현재가 <= EMA30"
-    )
-
-    log.info(
-        "2차매수 기준 = "
-        "현재가 <= EMA60"
-    )
-
-    log.info(
-        "3차매수 기준 = "
-        "현재가 <= EMA120"
-    )
-
-    log.info(
-        "3차 조건에서는 "
-        "③ 3차매수만 표시"
-    )
-
-    log.info(
-        "정배열이 깨지면 "
-        "EMA2 매수 표시 제거"
-    )
-
-    log.info(
-        "업비트 매수조건 = "
-        "EMA30 > EMA60 > EMA120 "
-        "+ 당일 변동률 > 0 "
-        f"+ EMA1 카운트 <= {EMA1_MAX_COUNT}"
-    )
-
-    log.info(
-        "OKX 롱조건 = "
-        "EMA30 > EMA60 > EMA120 "
-        "+ 당일 변동률 > 0 "
-        f"+ EMA1 카운트 <= {EMA1_MAX_COUNT}"
-    )
-
-    log.info(
-        "OKX 숏조건 = "
-        "EMA30 < EMA60 < EMA120 "
-        "+ 당일 변동률 < 0 "
-        f"+ EMA1 카운트 <= {EMA1_MAX_COUNT}"
+        "숏 = "
+        "역배열 + 카운트 제한 "
+        "+ 등락률 < 0"
     )
 
     log.info(
@@ -4168,8 +3919,11 @@ def startup():
     )
 
     log.info(
-        "EMA2 현재가는 "
-        "실시간 현재가 사용"
+        "현재가는 실시간 현재가 사용"
+    )
+
+    log.info(
+        "1차 / 2차 / 3차 분할매수 = 삭제"
     )
 
     log.info(
