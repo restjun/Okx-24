@@ -97,8 +97,6 @@ EMA1_MAX_COUNT = 100
 # 숏:
 # 직전 ROC10 >= 0
 # 현재 ROC10 < 0
-#
-# 현재 캔들 기준
 # =========================================================
 
 ROC_PERIOD = 10
@@ -601,9 +599,6 @@ def get_usdt_krw():
 
 # =========================================================
 # Upbit 확정 캔들
-#
-# EMA 분석용
-# 현재 진행 캔들 제외
 # =========================================================
 
 def get_upbit_candle(
@@ -745,11 +740,6 @@ def get_upbit_candle(
 
 # =========================================================
 # Upbit 현재 캔들 포함 데이터
-#
-# ROC10 실시간 계산용
-#
-# 현재 진행 캔들의 현재가는
-# ticker의 current_price 사용
 # =========================================================
 
 def get_upbit_current_roc_data(
@@ -785,8 +775,6 @@ def get_upbit_current_roc_data(
 
             return df
 
-        # 현재 진행 캔들이 이미 존재하면
-        # 현재가로 종가를 갱신
         mask = (
             df["datetime"]
             == current_start
@@ -845,9 +833,6 @@ def get_upbit_current_roc_data(
 
 # =========================================================
 # Upbit 현재 캔들 가져오기
-#
-# 기존 get_upbit_candle과 달리
-# 현재 진행 중 캔들을 제거하지 않음
 # =========================================================
 
 def get_upbit_candle_with_current(
@@ -1154,8 +1139,6 @@ def get_okx_ohlcv(
 
 # =========================================================
 # OKX 현재 캔들 포함
-#
-# ROC 실시간 계산용
 # =========================================================
 
 def get_okx_ohlcv_current(
@@ -1804,28 +1787,17 @@ def roc(
 
 
 # =========================================================
-# ROC10 현재 캔들 분석
+# ROC10 분석
 #
-# 중요:
+# 현재 진행 중 캔들의 현재가를 사용
 #
-# 현재 캔들의 ROC10 사용
+# 매수:
+# 직전 확정 ROC10 <= 0
+# 현재 ROC10 > 0
 #
-# 직전 캔들:
-# ROC10 <= 0
-#
-# 현재 캔들:
-# ROC10 > 0
-#
-# → 매수
-#
-#
-# 직전 캔들:
-# ROC10 >= 0
-#
-# 현재 캔들:
-# ROC10 < 0
-#
-# → 숏
+# 숏:
+# 직전 확정 ROC10 >= 0
+# 현재 ROC10 < 0
 # =========================================================
 
 def roc_analysis(
@@ -1871,10 +1843,6 @@ def roc_analysis(
 
     try:
 
-        # -------------------------------------------------
-        # 직전 값은 확정 캔들의 마지막 ROC
-        # -------------------------------------------------
-
         confirmed_roc = roc(
             df_confirmed,
             ROC_PERIOD
@@ -1916,12 +1884,9 @@ def roc_analysis(
             "roc10_previous"
         ] = previous_10
 
-        # -------------------------------------------------
-        # 매수
-        #
-        # 직전 확정 ROC <= 0
-        # 현재 실시간 ROC > 0
-        # -------------------------------------------------
+        # =================================================
+        # ROC10 0선 상향돌파
+        # =================================================
 
         long_condition = (
 
@@ -1933,12 +1898,9 @@ def roc_analysis(
 
         )
 
-        # -------------------------------------------------
-        # 숏
-        #
-        # 직전 확정 ROC >= 0
-        # 현재 실시간 ROC < 0
-        # -------------------------------------------------
+        # =================================================
+        # ROC10 0선 하향돌파
+        # =================================================
 
         short_condition = (
 
@@ -2001,8 +1963,6 @@ def roc_analysis(
 
 # =========================================================
 # 등락률
-#
-# 후보 판정에는 사용하지 않음
 # =========================================================
 
 def daily_change_upbit(market):
@@ -2370,7 +2330,7 @@ def analyze(
     )
 
     # =====================================================
-    # 현재 캔들 데이터
+    # 현재 캔들
     #
     # ROC10 실시간 계산
     # =====================================================
@@ -2447,16 +2407,6 @@ def analyze(
 
     # =====================================================
     # EMA1 + ROC10 최종 후보
-    #
-    # 매수:
-    # EMA30 > EMA60 > EMA120
-    # count <= 100
-    # ROC10 0선 상향돌파
-    #
-    # 숏:
-    # EMA30 < EMA60 < EMA120
-    # count <= 100
-    # ROC10 0선 하향돌파
     # =====================================================
 
     long_qualified = (
@@ -2604,10 +2554,6 @@ def make_row(
 
 # =========================================================
 # Upbit 매수 후보
-#
-# EMA1 정배열
-# EMA1 count <= 100
-# ROC10 0선 상향돌파
 # =========================================================
 
 def is_upbit_buy_candidate(row):
@@ -3112,6 +3058,11 @@ def update_dashboard():
 
 # =========================================================
 # ROC 표시 HTML
+#
+# 2줄 표시
+#
+# ROC10
+# +0.123% ↑0
 # =========================================================
 
 def roc_html(r):
@@ -3120,7 +3071,12 @@ def roc_html(r):
 
         return """
         <div class="roc-cell">
-            -
+            <div class="roc-title">
+                ROC10
+            </div>
+            <div class="roc-value roc-zero">
+                -
+            </div>
         </div>
         """
 
@@ -3140,9 +3096,18 @@ def roc_html(r):
 
         return """
         <div class="roc-cell">
-            -
+            <div class="roc-title">
+                ROC10
+            </div>
+            <div class="roc-value roc-zero">
+                -
+            </div>
         </div>
         """
+
+    # =====================================================
+    # ROC 방향
+    # =====================================================
 
     if r10 > 0:
 
@@ -3156,6 +3121,10 @@ def roc_html(r):
 
         cls = "roc-zero"
 
+    # =====================================================
+    # 0선 돌파 표시
+    # =====================================================
+
     cross = ""
 
     if (
@@ -3166,7 +3135,7 @@ def roc_html(r):
 
         cross = (
             '<span class="roc-cross-up">'
-            ' ↑0'
+            '↑0'
             '</span>'
         )
 
@@ -3178,16 +3147,27 @@ def roc_html(r):
 
         cross = (
             '<span class="roc-cross-down">'
-            ' ↓0'
+            '↓0'
+            '</span>'
+        )
+
+    else:
+
+        cross = (
+            '<span class="roc-no-cross">'
+            '—'
             '</span>'
         )
 
     return f"""
     <div class="roc-cell">
 
-        <div class="roc-main {cls}">
-
+        <div class="roc-title">
             ROC10
+        </div>
+
+        <div class="roc-value {cls}">
+
             {r10:+.3f}%
 
             {cross}
@@ -3200,11 +3180,13 @@ def roc_html(r):
 
 # =========================================================
 # 후보 HTML
+#
+# 최종 EMA1 + ROC10 조건 기준
 # =========================================================
 
-def buy_candidate_html(data):
+def signal_html(row):
 
-    if not data:
+    if not row:
 
         return (
             '<div class="buy-none">'
@@ -3212,8 +3194,8 @@ def buy_candidate_html(data):
             '</div>'
         )
 
-    if data.get(
-        "long_candidate",
+    if row.get(
+        "qualified",
         False
     ):
 
@@ -3223,8 +3205,8 @@ def buy_candidate_html(data):
             '</div>'
         )
 
-    if data.get(
-        "short_candidate",
+    if row.get(
+        "short_qualified",
         False
     ):
 
@@ -3401,8 +3383,8 @@ def rows_html(data):
 
                 <td class="close-ema10">
 
-                    {buy_candidate_html(
-                        roc_data
+                    {signal_html(
+                        x
                     )}
 
                 </td>
@@ -3821,7 +3803,9 @@ tbody tr:last-child td{
 }
 
 
-/* 6열 */
+/* =========================================================
+   6열
+   ========================================================= */
 
 th:nth-child(1),
 td:nth-child(1){
@@ -3982,6 +3966,7 @@ td:nth-child(6){
 
 /* =========================================================
    ROC10
+   2줄 표시
    ========================================================= */
 
 .roc-column{
@@ -3991,14 +3976,25 @@ td:nth-child(6){
 
 .roc-cell{
     display:flex;
+    flex-direction:column;
     align-items:center;
     justify-content:center;
     width:100%;
     min-height:41px;
+    line-height:1.15;
 }
 
-.roc-main{
+.roc-title{
+    font-size:7px;
+    line-height:11px;
+    font-weight:700;
+    color:#858c96;
+    white-space:nowrap;
+}
+
+.roc-value{
     font-size:8px;
+    line-height:14px;
     font-weight:900;
     white-space:nowrap;
 }
@@ -4019,12 +4015,21 @@ td:nth-child(6){
     color:#39e875;
     font-size:7px;
     font-weight:900;
+    margin-left:2px;
 }
 
 .roc-cross-down{
     color:#ff5555;
     font-size:7px;
     font-weight:900;
+    margin-left:2px;
+}
+
+.roc-no-cross{
+    color:#6f7680;
+    font-size:7px;
+    font-weight:800;
+    margin-left:2px;
 }
 
 
@@ -4207,12 +4212,19 @@ td:nth-child(6){
         min-height:41px;
     }
 
-    .roc-main{
+    .roc-title{
+        font-size:5.5px;
+        line-height:10px;
+    }
+
+    .roc-value{
         font-size:6.5px;
+        line-height:13px;
     }
 
     .roc-cross-up,
-    .roc-cross-down{
+    .roc-cross-down,
+    .roc-no-cross{
         font-size:5.5px;
     }
 
@@ -4285,8 +4297,18 @@ td:nth-child(6){
         line-height:13px;
     }
 
-    .roc-main{
+    .roc-title{
+        font-size:5px;
+    }
+
+    .roc-value{
         font-size:5.5px;
+    }
+
+    .roc-cross-up,
+    .roc-cross-down,
+    .roc-no-cross{
+        font-size:5px;
     }
 
     .buy-stage{
@@ -4331,7 +4353,11 @@ td:nth-child(6){
         font-size:9px;
     }
 
-    .roc-main{
+    .roc-title{
+        font-size:7px;
+    }
+
+    .roc-value{
         font-size:8px;
     }
 
@@ -4494,7 +4520,7 @@ def dashboard():
 
             <br>
 
-            ※ ROC는 10기간 ROC 하나만 사용
+            ※ ROC는 ROC10 하나만 사용
 
             <br>
 
@@ -4521,6 +4547,10 @@ def dashboard():
             <br>
 
             ※ 현재가 ≤ EMA30 조건 없음
+
+            <br>
+
+            ※ ROC30 / ROC60 / ROC120 없음
 
             {status}
 
@@ -4678,6 +4708,10 @@ def startup():
 
     log.info(
         "ROC30 / ROC60 / ROC120 = 삭제"
+    )
+
+    log.info(
+        "ROC 표시 = 2줄"
     )
 
     log.info(
