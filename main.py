@@ -38,14 +38,14 @@ log = logging.getLogger("trading")
 # =========================================================
 
 VOLUME_HOURS = 24
-TOP_N = 50
+TOP_N = 10
 UPDATE_MINUTES = 1
 
 HISTORY_CHUNK = 200
 MAX_HISTORY_CHUNKS = 10
 
 USE_UPBIT = "Y"
-USE_OKX = "Y"
+USE_OKX = "N"
 
 REQUEST_INTERVAL = 0.08
 RATE_LIMIT_WAIT = 3
@@ -58,7 +58,7 @@ KST = ZoneInfo("Asia/Seoul")
 # EMA 분석 시간봉
 # =========================================================
 
-EMA_TIMEFRAME = 60
+EMA_TIMEFRAME = 5
 
 
 # =========================================================
