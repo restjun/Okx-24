@@ -4851,7 +4851,7 @@ def dashboard():
     <body>
 
         <h1>
-            📊 EMA1 · ROC10
+            📊 TRADING SIGNAL CENTER
         </h1>
 
         <div class="info">
