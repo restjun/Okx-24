@@ -2041,7 +2041,7 @@ def make_row(
 
 
 # =========================================================
-# 후보 / 진행
+# 후보
 # =========================================================
 
 def is_upbit_buy_candidate(row):
@@ -2055,62 +2055,6 @@ def is_upbit_buy_candidate(row):
             False
         )
     )
-
-
-def is_upbit_progress(row):
-
-    if not row:
-        return False
-
-    ema_data = row.get(
-        "ema_1h",
-        {}
-    )
-
-    roc_data = row.get(
-        "roc",
-        {}
-    )
-
-    if row.get(
-        "qualified",
-        False
-    ):
-
-        return False
-
-    if ema_data.get(
-        "direction",
-        "none"
-    ) != "long":
-
-        return False
-
-    if ema_data.get(
-        "count",
-        0
-    ) > EMA1_MAX_COUNT:
-
-        return False
-
-    roc_value = roc_data.get(
-        "roc10"
-    )
-
-    if roc_value is None:
-        return False
-
-    if roc_value <= 0:
-        return False
-
-    if roc_data.get(
-        "roc10_count",
-        0
-    ) <= 0:
-
-        return False
-
-    return True
 
 
 def is_okx_long_candidate(row):
@@ -2136,13 +2080,6 @@ def is_okx_short_candidate(row):
             "short_qualified",
             False
         )
-    )
-
-
-def is_okx_progress(row):
-
-    return is_upbit_progress(
-        row
     )
 
 
@@ -2228,15 +2165,9 @@ def update_upbit():
         if is_upbit_buy_candidate(x)
     ]
 
-    progress_rows = [
-        x for x in rows
-        if is_upbit_progress(x)
-    ]
-
     log.info(
         f"업비트 완료 / "
-        f"매수 {len(buy_rows)}개 / "
-        f"진행 {len(progress_rows)}개"
+        f"매수 {len(buy_rows)}개"
     )
 
 
@@ -2438,15 +2369,9 @@ def update_okx(usdt):
         if is_okx_short_candidate(x)
     ]
 
-    progress_rows = [
-        x for x in rows
-        if is_okx_progress(x)
-    ]
-
     log.info(
         f"OKX 완료 / "
         f"롱 {len(long_rows)}개 / "
-        f"진행 {len(progress_rows)}개 / "
         f"숏 {len(short_rows)}개"
     )
 
@@ -2930,86 +2855,6 @@ def buy_focus_section(
     </h2>
 
     <div class="table-wrap buy-focus-table">
-
-        <table>
-
-            <thead>
-
-                <tr>
-                    <th>#</th>
-                    <th>코인</th>
-                    <th>거래대금</th>
-                    <th>EMA1</th>
-                    <th>ROC10</th>
-                    <th>신호</th>
-                </tr>
-
-            </thead>
-
-            <tbody>
-                {rows}
-            </tbody>
-
-        </table>
-
-    </div>
-    """
-
-
-# =========================================================
-# 진행 리스트
-# =========================================================
-
-def progress_focus_section(
-    data,
-    update_time,
-    exchange="upbit"
-):
-
-    if exchange == "upbit":
-
-        progress_rows = [
-            x for x in data
-            if is_upbit_progress(x)
-        ]
-
-    else:
-
-        progress_rows = [
-            x for x in data
-            if is_okx_progress(x)
-        ]
-
-    if not progress_rows:
-
-        rows = """
-        <tr>
-            <td colspan="6" class="empty">
-                현재 진행 종목 없음
-            </td>
-        </tr>
-        """
-
-    else:
-
-        rows = rows_html(
-            progress_rows
-        )
-
-    return f"""
-    <h2 class="focus-title progress-title">
-
-        🟡 진행 리스트
-
-        <small>
-            EMA 정배열 + ROC10 > 0
-            · ROC10 진행
-            · {update_time} KST
-        </small>
-
-    </h2>
-
-    <div class="table-wrap progress-focus-table">
 
         <table>
 
@@ -3524,14 +3369,6 @@ td:nth-child(6){
     color:#ff5555;
 }
 
-.progress-title{
-    color:#ffd84d;
-}
-
-.progress-focus-table{
-    border:1px solid #4a4220;
-}
-
 .buy-focus-table{
     border:1px solid #303740;
 }
@@ -3855,21 +3692,9 @@ def dashboard():
             "upbit"
         )
 
-        sections += progress_focus_section(
-            latest_upbit_data,
-            latest_upbit_update_time,
-            "upbit"
-        )
-
     if USE_OKX == "Y":
 
         sections += buy_focus_section(
-            latest_okx_data,
-            latest_okx_update_time,
-            "okx"
-        )
-
-        sections += progress_focus_section(
             latest_okx_data,
             latest_okx_update_time,
             "okx"
@@ -3950,13 +3775,6 @@ def dashboard():
             EMA 정배열 +
             count ≤ {EMA1_MAX_COUNT} +
             ROC10 0선 상향돌파
-
-            <br>
-
-            🟡 진행 =
-            EMA 정배열 +
-            count ≤ {EMA1_MAX_COUNT} +
-            ROC10 > 0
 
             <br>
 
@@ -4074,10 +3892,6 @@ def startup():
 
     log.info(
         "ROC10 0선 하향 = 숏"
-    )
-
-    log.info(
-        "ROC10 > 0 지속 = 진행"
     )
 
     log.info(
