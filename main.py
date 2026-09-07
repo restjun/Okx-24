@@ -3889,7 +3889,7 @@ def dashboard():
 
             <br>
 
-            ROC10 =
+            ROA10 =
             현재 진행 캔들의 현재가 기준
 
             {status}
