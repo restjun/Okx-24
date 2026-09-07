@@ -191,16 +191,19 @@ def validate_timeframe():
     global EMA_TIMEFRAME
 
     try:
+
         EMA_TIMEFRAME = int(
             EMA_TIMEFRAME
         )
 
     except Exception:
+
         raise ValueError(
             "EMA_TIMEFRAME은 숫자여야 합니다."
         )
 
     if EMA_TIMEFRAME not in SUPPORTED_UPBIT_TIMEFRAMES:
+
         raise ValueError(
             "EMA_TIMEFRAME 오류\n"
             f"현재값: {EMA_TIMEFRAME}\n"
@@ -212,6 +215,7 @@ def validate_timeframe():
     )
 
     if okx_bar is None:
+
         raise ValueError(
             f"OKX에서 지원하지 않는 시간봉: "
             f"{EMA_TIMEFRAME}"
@@ -317,9 +321,11 @@ def retry(
                 r,
                 "status_code"
             ):
+
                 return r
 
             if r.status_code == 200:
+
                 return r
 
             if r.status_code == 429:
@@ -352,7 +358,9 @@ def retry(
                 f"{wait}초"
             )
 
-            time.sleep(wait)
+            time.sleep(
+                wait
+            )
 
         except Exception as e:
 
@@ -425,6 +433,7 @@ def get_upbit_markets():
                 )
 
             except Exception:
+
                 continue
 
             if volume > 0 and current_price > 0:
@@ -475,6 +484,7 @@ def get_usdt_krw():
         )
 
     except Exception:
+
         return None
 
 
@@ -1185,6 +1195,7 @@ def ema(
         or df.empty
         or "c" not in df
     ):
+
         return None
 
     return pd.to_numeric(
@@ -1272,11 +1283,17 @@ def ema_alignment_count(df):
             e120.iloc[-1]
         )
 
-        if current_e30 > current_e60 and current_e60 > current_e120:
+        if (
+            current_e30 > current_e60
+            and current_e60 > current_e120
+        ):
 
             current_direction = "long"
 
-        elif current_e30 < current_e60 and current_e60 < current_e120:
+        elif (
+            current_e30 < current_e60
+            and current_e60 < current_e120
+        ):
 
             current_direction = "short"
 
@@ -1304,11 +1321,17 @@ def ema_alignment_count(df):
                 e120.iloc[i]
             )
 
-            if v30 > v60 and v60 > v120:
+            if (
+                v30 > v60
+                and v60 > v120
+            ):
 
                 candle_direction = "long"
 
-            elif v30 < v60 and v60 < v120:
+            elif (
+                v30 < v60
+                and v60 < v120
+            ):
 
                 candle_direction = "short"
 
@@ -1316,9 +1339,15 @@ def ema_alignment_count(df):
 
                 candle_direction = "none"
 
-            if candle_direction == current_direction:
+            if (
+                candle_direction
+                == current_direction
+            ):
+
                 count += 1
+
             else:
+
                 break
 
         if current_direction == "none":
@@ -1354,12 +1383,15 @@ def ema_display(
     count = result["count"]
 
     if d == "long":
+
         icon = "🟢"
 
     elif d == "short":
+
         icon = "🔴"
 
     else:
+
         icon = "⚪"
         count = 0
 
@@ -1394,6 +1426,7 @@ def roc(
         or df.empty
         or "c" not in df
     ):
+
         return None
 
     try:
@@ -1403,7 +1436,9 @@ def roc(
             errors="coerce"
         )
 
-        period = int(period)
+        period = int(
+            period
+        )
 
         if period <= 0:
             return None
@@ -1451,6 +1486,7 @@ def roc_analysis(
         or df_current is None
         or df_current.empty
     ):
+
         return result
 
     try:
@@ -1469,6 +1505,7 @@ def roc_analysis(
             confirmed_roc is None
             or current_roc is None
         ):
+
             return result
 
         previous_10 = float(
@@ -1483,6 +1520,7 @@ def roc_analysis(
             pd.isna(previous_10)
             or pd.isna(current_10)
         ):
+
             return result
 
         result["roc10"] = current_10
@@ -1499,8 +1537,11 @@ def roc_analysis(
                 break
 
             if float(value) > 0:
+
                 roc_count += 1
+
             else:
+
                 break
 
         result["roc10_count"] = roc_count
@@ -1593,6 +1634,7 @@ def daily_change_upbit(
         ]
 
     except Exception:
+
         return None
 
 
@@ -1659,6 +1701,7 @@ def daily_changes(df):
         ]
 
     except Exception:
+
         return None
 
 
@@ -1681,12 +1724,15 @@ def get_change_value(change):
         return value
 
     except Exception:
+
         return None
 
 
 def format_change(x):
 
-    value = get_change_value(x)
+    value = get_change_value(
+        x
+    )
 
     if value is None:
         return "-"
@@ -1720,8 +1766,11 @@ def format_volume(v):
         return "-"
 
     try:
+
         v = float(v)
+
     except Exception:
+
         return "-"
 
     if v >= 1e12:
@@ -1813,6 +1862,7 @@ def analyze(
         df_confirmed is None
         or df_confirmed.empty
     ):
+
         return None
 
     e1 = ema_display(
@@ -1904,9 +1954,13 @@ def analyze(
     )
 
     changes = (
-        daily_changes(df_confirmed)
+        daily_changes(
+            df_confirmed
+        )
         if okx
-        else daily_change_upbit(market)
+        else daily_change_upbit(
+            market
+        )
     )
 
     return {
@@ -2022,18 +2076,21 @@ def is_upbit_progress(row):
         "qualified",
         False
     ):
+
         return False
 
     if ema_data.get(
         "direction",
         "none"
     ) != "long":
+
         return False
 
     if ema_data.get(
         "count",
         0
     ) > EMA1_MAX_COUNT:
+
         return False
 
     roc_value = roc_data.get(
@@ -2050,6 +2107,7 @@ def is_upbit_progress(row):
         "roc10_count",
         0
     ) <= 0:
+
         return False
 
     return True
@@ -2225,6 +2283,7 @@ def get_okx_symbols():
         ]
 
     except Exception:
+
         return []
 
 
@@ -2257,6 +2316,7 @@ def get_okx_volume(
         )
 
     except Exception:
+
         return None
 
 
@@ -2420,6 +2480,7 @@ def update_dashboard():
         if USE_UPBIT == "Y":
 
             try:
+
                 update_upbit()
 
             except Exception as e:
@@ -2439,12 +2500,18 @@ def update_dashboard():
                 usdt = get_usdt_krw()
 
                 if usdt:
+
                     latest_usdt_krw = usdt
+
                 else:
+
                     usdt = latest_usdt_krw
 
                 if usdt > 0:
-                    update_okx(usdt)
+
+                    update_okx(
+                        usdt
+                    )
 
             except Exception as e:
 
@@ -2471,13 +2538,19 @@ def roc_html(r):
 
         return """
         <div class="roc-cell">
-            <div class="roc-title">ROA10(0)</div>
+            <div class="roc-title">ROC10(0)</div>
             <div class="roc-value roc-zero">-</div>
         </div>
         """
 
-    r10 = r.get("roc10")
-    previous = r.get("roc10_previous")
+    r10 = r.get(
+        "roc10"
+    )
+
+    previous = r.get(
+        "roc10_previous"
+    )
+
     roc_count = r.get(
         "roc10_count",
         0
@@ -2488,7 +2561,7 @@ def roc_html(r):
         return f"""
         <div class="roc-cell">
             <div class="roc-title">
-                ROA10({roc_count})
+                ROC10({roc_count})
             </div>
             <div class="roc-value roc-zero">
                 -
@@ -2497,12 +2570,15 @@ def roc_html(r):
         """
 
     if r10 > 0:
+
         cls = "roc-positive"
 
     elif r10 < 0:
+
         cls = "roc-negative"
 
     else:
+
         cls = "roc-zero"
 
     if previous <= 0 and r10 > 0:
@@ -2533,7 +2609,7 @@ def roc_html(r):
     <div class="roc-cell">
 
         <div class="roc-title">
-            ROA10({roc_count})
+            ROC10({roc_count})
         </div>
 
         <div class="roc-value {cls}">
@@ -2620,12 +2696,15 @@ def ema_html(e):
         count = 0
 
     if direction_value == "long":
+
         icon = "🟢"
 
     elif direction_value == "short":
+
         icon = "🔴"
 
     else:
+
         icon = "⚪"
 
     return f"""
@@ -2731,12 +2810,16 @@ def rows_html(data):
             """
         )
 
-    return "".join(out)
+    return "".join(
+        out
+    )
 
 
 def table_html(data):
 
-    rows = rows_html(data)
+    rows = rows_html(
+        data
+    )
 
     if not rows:
 
@@ -2760,7 +2843,7 @@ def table_html(data):
                     <th>코인</th>
                     <th>거래대금</th>
                     <th>EMA1</th>
-                    <th>ROA10</th>
+                    <th>ROC10</th>
                     <th>신호</th>
                 </tr>
 
@@ -2857,7 +2940,7 @@ def buy_focus_section(
                     <th>코인</th>
                     <th>거래대금</th>
                     <th>EMA1</th>
-                    <th>ROA10</th>
+                    <th>ROC10</th>
                     <th>신호</th>
                 </tr>
 
@@ -2920,7 +3003,7 @@ def progress_focus_section(
 
         <small>
             EMA 정배열 + ROC10 > 0
-            · ROA10 진행
+            · ROC10 진행
             · {update_time} KST
         </small>
 
@@ -2937,7 +3020,7 @@ def progress_focus_section(
                     <th>코인</th>
                     <th>거래대금</th>
                     <th>EMA1</th>
-                    <th>ROA10</th>
+                    <th>ROC10</th>
                     <th>신호</th>
                 </tr>
 
@@ -3006,7 +3089,7 @@ def okx_short_section(
                     <th>코인</th>
                     <th>거래대금</th>
                     <th>EMA1</th>
-                    <th>ROA10</th>
+                    <th>ROC10</th>
                     <th>신호</th>
                 </tr>
 
@@ -3315,7 +3398,7 @@ td:nth-child(6){
 }
 
 
-/* ROA10 */
+/* ROC10 */
 
 .roc-column{
     padding:2px 1px !important;
@@ -3838,7 +3921,7 @@ def dashboard():
         >
 
         <title>
-            {timeframe_label} EMA1 · ROA10
+            {timeframe_label} EMA1 · ROC10
         </title>
 
         <style>
@@ -3850,12 +3933,12 @@ def dashboard():
     <body>
 
         <h1>
-            📊 EMA1 · ROA10 전략
+            📊 EMA1 · ROC10 전략
         </h1>
 
         <div class="info">
 
-            {timeframe_label} EMA1 + ROA10
+            {timeframe_label} EMA1 + ROC10
 
             <br>
 
@@ -3884,12 +3967,12 @@ def dashboard():
 
             <br>
 
-            ROA10 =
+            ROC10 =
             ROC10이 0선 위인 연속 캔들 수
 
             <br>
 
-            ROA10 =
+            ROC10 =
             현재 진행 캔들의 현재가 기준
 
             {status}
@@ -3917,6 +4000,7 @@ def scheduler():
     while True:
 
         try:
+
             schedule.run_pending()
 
         except Exception as e:
@@ -3962,7 +4046,7 @@ def startup():
     )
 
     log.info(
-        f"{timeframe_label} EMA1 + ROA10 시작"
+        f"{timeframe_label} EMA1 + ROC10 시작"
     )
 
     log.info(
