@@ -4126,8 +4126,8 @@ td:nth-child(6){
 }
 
 .tf{
-    flex:0 0 21px;
-    width:21px;
+    flex:0 0 20px;
+    width:20px;
     color:#777f89;
     font-size:7px;
     font-weight:700;
