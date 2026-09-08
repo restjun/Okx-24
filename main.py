@@ -3632,6 +3632,10 @@ def roc_progress_section(
 
     ]
 
+    # =====================================================
+    # 수정: 진행 횟수 낮은 순 → 높은 순
+    # =====================================================
+
     candidate_rows = sorted(
         candidate_rows,
         key=lambda x:
@@ -3643,8 +3647,7 @@ def roc_progress_section(
                     "roc10_count",
                     0
                 )
-            ),
-        reverse=True
+            )
     )
 
     if not candidate_rows:
@@ -3798,6 +3801,10 @@ def okx_short_progress_section(
 
     ]
 
+    # =====================================================
+    # 수정: 숏 진행 횟수 낮은 순 → 높은 순
+    # =====================================================
+
     candidate_rows = sorted(
         candidate_rows,
         key=lambda x:
@@ -3809,8 +3816,7 @@ def okx_short_progress_section(
                     "roc10_negative_count",
                     0
                 )
-            ),
-        reverse=True
+            )
     )
 
     if not candidate_rows:
