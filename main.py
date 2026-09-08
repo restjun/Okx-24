@@ -33,14 +33,14 @@ logging.basicConfig(
 log = logging.getLogger("trading")
 
 VOLUME_HOURS = 24
-TOP_N = 30
+TOP_N = 20
 UPDATE_MINUTES = 1
 
 HISTORY_CHUNK = 200
 MAX_HISTORY_CHUNKS = 10
 
 USE_UPBIT = "Y"
-USE_OKX = "N"
+USE_OKX = "Y"
 
 REQUEST_INTERVAL = 0.08
 RATE_LIMIT_WAIT = 3
