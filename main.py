@@ -55,6 +55,14 @@ KST = ZoneInfo("Asia/Seoul")
 
 EMA_TIMEFRAME = 60
 
+# =====================================================
+# 고시간봉 EMA
+# 화면 표시 전용
+# ※ 매수 / 숏 / 진행 조건에는 사용하지 않음
+# =====================================================
+
+EMA_HIGH_TIMEFRAME = 240
+
 EMA1_FAST = 30
 EMA1_MID = 60
 EMA1_SLOW = 120
@@ -1940,6 +1948,12 @@ def empty_analysis():
 
         "ema_1h": e.copy(),
 
+        # =================================================
+        # 4H EMA 표시용
+        # =================================================
+
+        "ema_high": e.copy(),
+
         "roc": {
 
             "roc10": None,
@@ -2027,6 +2041,44 @@ def analyze(
 
     e1 = ema_display(
         df_confirmed,
+        current_price
+    )
+
+
+    # =====================================================
+    # HIGH EMA = 확정 캔들 / 표시 전용
+    #
+    # ※ 중요
+    # 4H EMA는 화면 표시만 함
+    # 롱 / 숏 / 진행 / ROC 조건에는 사용하지 않음
+    # =====================================================
+
+    if okx:
+
+        high_bar = get_okx_bar(
+            EMA_HIGH_TIMEFRAME
+        )
+
+        if high_bar is not None:
+
+            df_high = history_okx(
+                market,
+                high_bar
+            )
+
+        else:
+
+            df_high = None
+
+    else:
+
+        df_high = history_upbit(
+            market,
+            EMA_HIGH_TIMEFRAME
+        )
+
+    e_high = ema_display(
+        df_high,
         current_price
     )
 
@@ -2220,6 +2272,13 @@ def analyze(
 
         "ema_1h": e1,
 
+        # =================================================
+        # 4H EMA
+        # 표시 전용
+        # =================================================
+
+        "ema_high": e_high,
+
         "roc": roc_data,
 
         "changes": changes,
@@ -2296,6 +2355,21 @@ def make_row(
 
         "ema_1h":
             a["ema_1h"],
+
+        # =================================================
+        # 4H EMA
+        # =================================================
+
+        "ema_high":
+            a.get(
+                "ema_high",
+                {
+                    "display": "⚪(0)",
+                    "direction": "none",
+                    "count": 0,
+                    "current_price": None
+                }
+            ),
 
         "roc":
             a.get(
@@ -3256,10 +3330,16 @@ def rows_html(
 
                 <td class="ema-cell">
 
+                    <div class="ema-title">
+                        EMA
+                    </div>
+
                     <div class="ema-row">
 
                         <span class="tf">
-                            {timeframe_label}
+                            {format_timeframe(
+                                EMA_TIMEFRAME
+                            )}
                         </span>
 
                         <span class="ema-value-wrap">
@@ -3267,6 +3347,27 @@ def rows_html(
                             {ema_html(
                                 x.get(
                                     "ema_1h",
+                                    {}
+                                )
+                            )}
+
+                        </span>
+
+                    </div>
+
+                    <div class="ema-row">
+
+                        <span class="tf">
+                            {format_timeframe(
+                                EMA_HIGH_TIMEFRAME
+                            )}
+                        </span>
+
+                        <span class="ema-value-wrap">
+
+                            {ema_html(
+                                x.get(
+                                    "ema_high",
                                     {}
                                 )
                             )}
@@ -4134,12 +4235,22 @@ td:nth-child(6){
     padding:2px 1px !important;
 }
 
+.ema-title{
+    color:#858c96;
+    font-size:6px;
+    line-height:9px;
+    font-weight:700;
+    text-align:center;
+    white-space:nowrap;
+}
+
 .ema-row{
     display:flex;
     align-items:center;
     justify-content:center;
     width:100%;
-    min-height:34px;
+    min-height:16px;
+    height:16px;
     white-space:nowrap;
     overflow:hidden;
 }
@@ -4168,7 +4279,8 @@ td:nth-child(6){
     justify-content:center;
     width:100%;
     min-width:0;
-    height:34px;
+    height:16px;
+    min-height:16px;
     line-height:1.1;
     white-space:nowrap;
     overflow:hidden;
@@ -4179,7 +4291,7 @@ td:nth-child(6){
     width:100%;
     font-size:8px;
     font-weight:800;
-    line-height:14px;
+    line-height:12px;
     text-align:center;
     white-space:nowrap;
 }
@@ -4489,8 +4601,14 @@ td:nth-child(6){
         padding:2px 0 !important;
     }
 
+    .ema-title{
+        font-size:5.5px;
+        line-height:8px;
+    }
+
     .ema-row{
-        min-height:34px;
+        min-height:16px;
+        height:16px;
     }
 
     .tf{
@@ -4500,12 +4618,13 @@ td:nth-child(6){
     }
 
     .ema1-cell{
-        height:34px;
+        height:16px;
+        min-height:16px;
     }
 
     .ema1-main{
         font-size:7px;
-        line-height:14px;
+        line-height:12px;
     }
 
     .roc-cell{
@@ -4594,9 +4713,14 @@ td:nth-child(6){
         font-size:5.5px;
     }
 
+    .ema-title{
+        font-size:5px;
+        line-height:8px;
+    }
+
     .ema1-main{
         font-size:6px;
-        line-height:13px;
+        line-height:12px;
     }
 
     .roc-title{
@@ -4974,6 +5098,11 @@ def startup():
 
     log.info(
         f"OKX bar={okx_bar}"
+    )
+
+    log.info(
+        f"표시용 HIGH EMA="
+        f"{format_timeframe(EMA_HIGH_TIMEFRAME)}"
     )
 
     log.info(
