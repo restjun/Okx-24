@@ -4496,8 +4496,8 @@ td:nth-child(6){
     }
 
     .tf{
-        flex:0 0 17px;
-        width:17px;
+        flex:0 0 16px;
+        width:16px;
         font-size:6px;
         text-align:left;
     }
