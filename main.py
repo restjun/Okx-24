@@ -55,12 +55,6 @@ KST = ZoneInfo("Asia/Seoul")
 
 EMA_TIMEFRAME = 60
 
-# =====================================================
-# 고시간봉 EMA
-# 화면 표시 전용
-# ※ 매수 / 숏 / 진행 조건에는 사용하지 않음
-# =====================================================
-
 EMA_HIGH_TIMEFRAME = 240
 
 EMA1_FAST = 30
@@ -76,12 +70,8 @@ ROC_PERIOD = 10
 # ROC 설정
 # =========================================================
 
-# 롱 임박:
-# -0.30% ~ 0%
 ROC_NEAR_ZERO = -0.30
 
-# 숏 임박:
-# 0% ~ +0.30%
 ROC_SHORT_NEAR_ZERO = 0.30
 
 ROC_FOCUS_TOP = 10
@@ -1641,6 +1631,9 @@ def roc_analysis(
 
         # =====================================================
         # 숏 하락 임박
+        #
+        # 계산은 기존대로 유지
+        # 화면 표시 / 섹션에서는 사용하지 않음
         # =====================================================
 
         near_zero_short_condition = (
@@ -1713,13 +1706,7 @@ def roc_analysis(
                 "🔥 돌파"
             )
 
-        elif near_zero_short_condition:
-
-            result["state"] = "short_near"
-
-            result["display"] = (
-                "⚠️ 하락"
-            )
+        # ⚠️ 하락 표시 삭제
 
         return result
 
@@ -1948,10 +1935,6 @@ def empty_analysis():
 
         "ema_1h": e.copy(),
 
-        # =================================================
-        # 4H EMA 표시용
-        # =================================================
-
         "ema_high": e.copy(),
 
         "roc": {
@@ -2047,10 +2030,6 @@ def analyze(
 
     # =====================================================
     # HIGH EMA = 확정 캔들 / 표시 전용
-    #
-    # ※ 중요
-    # 4H EMA는 화면 표시만 함
-    # 롱 / 숏 / 진행 / ROC 조건에는 사용하지 않음
     # =====================================================
 
     if okx:
@@ -2195,7 +2174,10 @@ def analyze(
 
 
     # =====================================================
-    # ⚠️ 숏 하락 임박
+    # 숏 하락 임박
+    #
+    # 기존 계산 유지
+    # 대시보드에서는 표시하지 않음
     # =====================================================
 
     short_near_zero_qualified = (
@@ -2271,11 +2253,6 @@ def analyze(
     return {
 
         "ema_1h": e1,
-
-        # =================================================
-        # 4H EMA
-        # 표시 전용
-        # =================================================
 
         "ema_high": e_high,
 
@@ -2355,10 +2332,6 @@ def make_row(
 
         "ema_1h":
             a["ema_1h"],
-
-        # =================================================
-        # 4H EMA
-        # =================================================
 
         "ema_high":
             a.get(
@@ -2829,7 +2802,6 @@ def update_okx(usdt):
         f"매수 {len(long_rows)}개 / "
         f"돌파 {len(near_rows)}개 / "
         f"진행 {len(progress_rows)}개 / "
-        f"하락 {len(short_near_rows)}개 / "
         f"숏 {len(short_rows)}개 / "
         f"숏진행 {len(short_progress_rows)}개"
     )
@@ -3132,20 +3104,7 @@ def signal_html(row):
         )
 
 
-    # =====================================================
-    # ⚠️ 숏 하락
-    # =====================================================
-
-    if row.get(
-        "short_near_zero_qualified",
-        False
-    ):
-
-        return (
-            '<div class="buy-stage short-near-candidate">'
-            '⚠️ 하락'
-            '</div>'
-        )
+    # ⚠️ 숏 하락 표시 삭제
 
 
     return (
@@ -3290,10 +3249,6 @@ def rows_html(
 
             cls = " short-qualified"
 
-        elif focus_type == "short_near":
-
-            cls = " short-near-qualified"
-
         elif focus_type == "short_progress":
 
             cls = " short-progress-qualified"
@@ -3434,7 +3389,7 @@ def table_html(
                     <th>#</th>
                     <th>코인</th>
                     <th>거래대금</th>
-                    <th>EMA1</th>
+                    <th>EMA</th>
                     <th>ROC10</th>
                     <th>신호</th>
                 </tr>
@@ -3545,7 +3500,7 @@ def roc_near_zero_section(
                     <th>#</th>
                     <th>코인</th>
                     <th>거래대금</th>
-                    <th>EMA1</th>
+                    <th>EMA</th>
                     <th>ROC10</th>
                     <th>신호</th>
                 </tr>
@@ -3640,7 +3595,7 @@ def roc_buy_section(
                     <th>#</th>
                     <th>코인</th>
                     <th>거래대금</th>
-                    <th>EMA1</th>
+                    <th>EMA</th>
                     <th>ROC10</th>
                     <th>신호</th>
                 </tr>
@@ -3731,96 +3686,7 @@ def roc_progress_section(
                     <th>#</th>
                     <th>코인</th>
                     <th>거래대금</th>
-                    <th>EMA1</th>
-                    <th>ROC10</th>
-                    <th>신호</th>
-                </tr>
-
-            </thead>
-
-            <tbody>
-
-                {rows}
-
-            </tbody>
-
-        </table>
-
-    </div>
-    """
-
-
-# =========================================================
-# ⚠️ OKX 하락 임박
-# =========================================================
-
-def okx_short_near_section(
-    data,
-    update_time
-):
-
-    candidate_rows = [
-
-        x for x in data
-
-        if is_roc_short_near_zero_candidate(x)
-
-    ]
-
-    candidate_rows = sorted(
-        candidate_rows,
-        key=lambda x:
-            float(
-                x.get(
-                    "roc",
-                    {}
-                ).get(
-                    "roc10",
-                    999
-                )
-            )
-    )[:ROC_FOCUS_TOP]
-
-    if not candidate_rows:
-
-        rows = """
-        <tr>
-            <td colspan="6" class="empty">
-                현재 후보 없음
-            </td>
-        </tr>
-        """
-
-    else:
-
-        rows = rows_html(
-            candidate_rows,
-            "short_near"
-        )
-
-    return f"""
-    <h2 class="focus-title short-near-title">
-
-        ⚠️ 하락
-
-        <small>
-            ROC10 0선 근처 하락
-            · {update_time} KST
-        </small>
-
-    </h2>
-
-    <div class="table-wrap focus-short-near-table">
-
-        <table>
-
-            <thead>
-
-                <tr>
-                    <th>#</th>
-                    <th>코인</th>
-                    <th>거래대금</th>
-                    <th>EMA1</th>
+                    <th>EMA</th>
                     <th>ROC10</th>
                     <th>신호</th>
                 </tr>
@@ -3896,7 +3762,7 @@ def okx_short_section(
                     <th>#</th>
                     <th>코인</th>
                     <th>거래대금</th>
-                    <th>EMA1</th>
+                    <th>EMA</th>
                     <th>ROC10</th>
                     <th>신호</th>
                 </tr>
@@ -3986,7 +3852,7 @@ def okx_short_progress_section(
                     <th>#</th>
                     <th>코인</th>
                     <th>거래대금</th>
-                    <th>EMA1</th>
+                    <th>EMA</th>
                     <th>ROC10</th>
                     <th>신호</th>
                 </tr>
@@ -4162,6 +4028,7 @@ td:nth-child(3){
 th:nth-child(4),
 td:nth-child(4){
     width:19%;
+    text-align:left !important;
 }
 
 th:nth-child(5),
@@ -4228,11 +4095,14 @@ td:nth-child(6){
 }
 
 
-/* EMA */
+/* =====================================================
+   EMA - 왼쪽 정렬
+   ===================================================== */
 
 .ema-cell{
     overflow:hidden;
     padding:2px 1px !important;
+    text-align:left !important;
 }
 
 .ema-title{
@@ -4240,14 +4110,14 @@ td:nth-child(6){
     font-size:6px;
     line-height:9px;
     font-weight:700;
-    text-align:center;
+    text-align:left;
     white-space:nowrap;
 }
 
 .ema-row{
     display:flex;
     align-items:center;
-    justify-content:center;
+    justify-content:flex-start;
     width:100%;
     min-height:16px;
     height:16px;
@@ -4261,7 +4131,7 @@ td:nth-child(6){
     color:#777f89;
     font-size:7px;
     font-weight:700;
-    text-align:center;
+    text-align:left;
 }
 
 .ema-value-wrap{
@@ -4269,14 +4139,14 @@ td:nth-child(6){
     min-width:0;
     display:flex;
     align-items:center;
-    justify-content:center;
+    justify-content:flex-start;
     overflow:hidden;
 }
 
 .ema1-cell{
     display:flex;
     align-items:center;
-    justify-content:center;
+    justify-content:flex-start;
     width:100%;
     min-width:0;
     height:16px;
@@ -4284,6 +4154,7 @@ td:nth-child(6){
     line-height:1.1;
     white-space:nowrap;
     overflow:hidden;
+    text-align:left;
 }
 
 .ema1-main{
@@ -4292,7 +4163,7 @@ td:nth-child(6){
     font-size:8px;
     font-weight:800;
     line-height:12px;
-    text-align:center;
+    text-align:left;
     white-space:nowrap;
 }
 
@@ -4309,7 +4180,9 @@ td:nth-child(6){
 }
 
 
-/* ROC10 */
+/* =====================================================
+   ROC10
+   ===================================================== */
 
 .roc-column{
     padding:2px 1px !important;
@@ -4375,7 +4248,9 @@ td:nth-child(6){
 }
 
 
-/* 신호 */
+/* =====================================================
+   신호
+   ===================================================== */
 
 .close-ema10{
     text-align:center !important;
@@ -4427,7 +4302,9 @@ td:nth-child(6){
 }
 
 
-/* 행 */
+/* =====================================================
+   행
+   ===================================================== */
 
 .qualified{
     background:rgba(57,232,117,.055);
@@ -4454,7 +4331,9 @@ td:nth-child(6){
 }
 
 
-/* 제목 */
+/* =====================================================
+   제목
+   ===================================================== */
 
 .focus-title{
     margin-top:12px;
@@ -4514,7 +4393,9 @@ td:nth-child(6){
 }
 
 
-/* 모바일 */
+/* =====================================================
+   모바일
+   ===================================================== */
 
 @media(max-width:600px){
 
@@ -4599,32 +4480,43 @@ td:nth-child(6){
 
     .ema-cell{
         padding:2px 0 !important;
+        text-align:left !important;
     }
 
     .ema-title{
         font-size:5.5px;
         line-height:8px;
+        text-align:left;
     }
 
     .ema-row{
         min-height:16px;
         height:16px;
+        justify-content:flex-start;
     }
 
     .tf{
         flex:0 0 18px;
         width:18px;
         font-size:6px;
+        text-align:left;
+    }
+
+    .ema-value-wrap{
+        justify-content:flex-start;
     }
 
     .ema1-cell{
         height:16px;
         min-height:16px;
+        justify-content:flex-start;
+        text-align:left;
     }
 
     .ema1-main{
         font-size:7px;
         line-height:12px;
+        text-align:left;
     }
 
     .roc-cell{
@@ -4668,7 +4560,9 @@ td:nth-child(6){
 }
 
 
-/* 작은 화면 */
+/* =====================================================
+   작은 화면
+   ===================================================== */
 
 @media(max-width:380px){
 
@@ -4711,16 +4605,19 @@ td:nth-child(6){
 
     .tf{
         font-size:5.5px;
+        text-align:left;
     }
 
     .ema-title{
         font-size:5px;
         line-height:8px;
+        text-align:left;
     }
 
     .ema1-main{
         font-size:6px;
         line-height:12px;
+        text-align:left;
     }
 
     .roc-title{
@@ -4747,7 +4644,9 @@ td:nth-child(6){
 }
 
 
-/* PC */
+/* =====================================================
+   PC
+   ===================================================== */
 
 @media(min-width:601px){
 
@@ -4779,6 +4678,15 @@ td:nth-child(6){
 
     .ema1-main{
         font-size:9px;
+        text-align:left;
+    }
+
+    .ema-title{
+        text-align:left;
+    }
+
+    .tf{
+        text-align:left;
     }
 
     .roc-title{
@@ -4832,7 +4740,6 @@ def dashboard():
 
     # =====================================================
     # 업비트
-    # 🔥 돌파 섹션만 삭제
     # =====================================================
 
     if USE_UPBIT == "Y":
@@ -4852,7 +4759,6 @@ def dashboard():
 
     # =====================================================
     # OKX 롱
-    # 🔥 돌파 섹션만 삭제
     # =====================================================
 
     if USE_OKX == "Y":
@@ -4872,12 +4778,8 @@ def dashboard():
 
         # =================================================
         # OKX 숏
+        # ⚠️ 하락 섹션 삭제
         # =================================================
-
-        sections += okx_short_near_section(
-            latest_okx_data,
-            latest_okx_update_time
-        )
 
         sections += okx_short_section(
             latest_okx_data,
@@ -4963,10 +4865,6 @@ def dashboard():
             <br>
 
             🚀 진행 = 양수 유지 ②+
-
-            <br>
-
-            ⚠️ 하락 = 0선 근처 하락
 
             <br>
 
@@ -5078,7 +4976,7 @@ def startup():
     )
 
     log.info(
-        "숏: 하락 → 숏① → 진행②+"
+        "숏: 숏① → 진행②+"
     )
 
     log.info(
@@ -5086,13 +4984,10 @@ def startup():
         f"{ROC_NEAR_ZERO:.2f}% ~ 0%"
     )
 
-    log.info(
-        f"숏 하락 구간 = "
-        f"0% ~ +{ROC_SHORT_NEAR_ZERO:.2f}%"
-    )
+    # 숏 하락 경고 문구 삭제
 
     log.info(
-        f"돌파/하락 TOP = "
+        f"돌파 TOP = "
         f"{ROC_FOCUS_TOP}개"
     )
 
