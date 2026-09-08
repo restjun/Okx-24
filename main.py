@@ -53,7 +53,7 @@ KST = ZoneInfo("Asia/Seoul")
 # EMA / ROC 설정
 # =========================================================
 
-EMA_TIMEFRAME = 60
+EMA_TIMEFRAME = 240
 
 EMA1_FAST = 30
 EMA1_MID = 60
