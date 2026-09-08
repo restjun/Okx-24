@@ -1,35 +1,20 @@
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
-
-import schedule
-import time
-import requests
-import threading
-import uvicorn
-import logging
-import pandas as pd
-import warnings
-
+import schedule, time, requests, threading, uvicorn, logging, pandas as pd, warnings
 from datetime import datetime
 from zoneinfo import ZoneInfo
-
 
 # =========================================================
 # 기본 설정
 # =========================================================
 
-warnings.filterwarnings(
-    "ignore",
-    category=FutureWarning
-)
-
+warnings.filterwarnings("ignore", category=FutureWarning)
 app = FastAPI()
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s:%(name)s:%(message)s"
 )
-
 log = logging.getLogger("trading")
 
 VOLUME_HOURS = 24
@@ -48,206 +33,24 @@ MAX_RETRIES = 10
 
 KST = ZoneInfo("Asia/Seoul")
 
-
-# =========================================================
-# EMA / ROC 설정
-# =========================================================
-
 EMA_TIMEFRAME = 60
-
-# =====================================================
-# 고시간봉 EMA
-# 화면 표시 전용
-# ※ 매수 / 숏 / 진행 조건에는 사용하지 않음
-# =====================================================
-
 EMA_HIGH_TIMEFRAME = 240
 
 EMA1_FAST = 30
 EMA1_MID = 60
 EMA1_SLOW = 120
-
 EMA1_MAX_COUNT = 100
 
 ROC_PERIOD = 10
-
-
-# =========================================================
-# ROC 설정
-# =========================================================
-
-# 롱 임박:
-# -0.30% ~ 0%
 ROC_NEAR_ZERO = -0.30
-
-# 숏 임박:
-# 0% ~ +0.30%
 ROC_SHORT_NEAR_ZERO = 0.30
-
 ROC_FOCUS_TOP = 10
 
-
-# =========================================================
-# 지원 시간봉
-# =========================================================
-
-SUPPORTED_UPBIT_TIMEFRAMES = {
-    5,
-    15,
-    30,
-    60,
-    240
-}
-
+SUPPORTED_UPBIT_TIMEFRAMES = {5, 15, 30, 60, 240}
 SUPPORTED_OKX_TIMEFRAMES = {
-    5,
-    15,
-    30,
-    60,
-    120,
-    240,
-    360,
-    480,
-    720,
-    1440
+    5, 15, 30, 60, 120,
+    240, 360, 480, 720, 1440
 }
-
-
-# =========================================================
-# 시간봉
-# =========================================================
-
-def format_timeframe(minutes):
-
-    minutes = int(minutes)
-
-    if minutes >= 1440:
-        return f"{minutes // 1440}D"
-
-    if minutes >= 60:
-        return f"{minutes // 60}H"
-
-    return f"{minutes}M"
-
-
-def get_okx_bar(minutes):
-
-    mapping = {
-        5: "5m",
-        15: "15m",
-        30: "30m",
-        60: "1H",
-        120: "2H",
-        240: "4H",
-        360: "6H",
-        480: "8H",
-        720: "12H",
-        1440: "1D"
-    }
-
-    return mapping.get(int(minutes))
-
-
-def get_okx_bar_minutes(bar):
-
-    mapping = {
-        "1m": 1,
-        "3m": 3,
-        "5m": 5,
-        "15m": 15,
-        "30m": 30,
-        "1H": 60,
-        "2H": 120,
-        "4H": 240,
-        "6H": 360,
-        "8H": 480,
-        "12H": 720,
-        "1D": 1440
-    }
-
-    return mapping.get(str(bar))
-
-
-def get_current_candle_start(timeframe_minutes):
-
-    timeframe_minutes = int(
-        timeframe_minutes
-    )
-
-    now = datetime.now(KST)
-
-    total_minutes = (
-        now.hour * 60
-        + now.minute
-    )
-
-    block_minutes = (
-        total_minutes
-        // timeframe_minutes
-    ) * timeframe_minutes
-
-    day_offset = block_minutes // 1440
-
-    block_minutes %= 1440
-
-    hour = block_minutes // 60
-    minute = block_minutes % 60
-
-    current = now.replace(
-        hour=hour,
-        minute=minute,
-        second=0,
-        microsecond=0
-    )
-
-    if day_offset:
-
-        current -= pd.Timedelta(
-            days=day_offset
-        )
-
-    return current.replace(
-        tzinfo=None
-    )
-
-
-def validate_timeframe():
-
-    global EMA_TIMEFRAME
-
-    try:
-
-        EMA_TIMEFRAME = int(
-            EMA_TIMEFRAME
-        )
-
-    except Exception:
-
-        raise ValueError(
-            "EMA_TIMEFRAME은 숫자여야 합니다."
-        )
-
-    if EMA_TIMEFRAME not in SUPPORTED_UPBIT_TIMEFRAMES:
-
-        raise ValueError(
-            "EMA_TIMEFRAME 오류\n"
-            f"현재값: {EMA_TIMEFRAME}\n"
-            "Upbit 지원값: 5, 15, 30, 60, 240"
-        )
-
-    okx_bar = get_okx_bar(
-        EMA_TIMEFRAME
-    )
-
-    if okx_bar is None:
-
-        raise ValueError(
-            f"OKX에서 지원하지 않는 시간봉: "
-            f"{EMA_TIMEFRAME}"
-        )
-
-    return True
-
 
 # =========================================================
 # 전역 상태
@@ -257,155 +60,142 @@ latest_upbit_data = []
 latest_okx_data = []
 
 latest_usdt_krw = 0
-
 latest_upbit_update_time = "-"
 latest_okx_update_time = "-"
-
 latest_upbit_markets = []
 
 request_lock = threading.Lock()
 update_lock = threading.Lock()
-
 last_request_time = 0
-
 
 # =========================================================
 # 공통
 # =========================================================
 
 def kst():
+    return datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
 
-    return datetime.now(
-        KST
-    ).strftime(
-        "%Y-%m-%d %H:%M:%S"
-    )
+
+def format_timeframe(minutes):
+    minutes = int(minutes)
+    if minutes >= 1440:
+        return f"{minutes // 1440}D"
+    if minutes >= 60:
+        return f"{minutes // 60}H"
+    return f"{minutes}M"
+
+
+OKX_BARS = {
+    5: "5m",
+    15: "15m",
+    30: "30m",
+    60: "1H",
+    120: "2H",
+    240: "4H",
+    360: "6H",
+    480: "8H",
+    720: "12H",
+    1440: "1D"
+}
+
+OKX_BAR_MINUTES = {v: k for k, v in OKX_BARS.items()}
+
+
+def get_okx_bar(minutes):
+    return OKX_BARS.get(int(minutes))
+
+
+def get_okx_bar_minutes(bar):
+    return OKX_BAR_MINUTES.get(str(bar))
+
+
+def get_current_candle_start(minutes):
+    minutes = int(minutes)
+    now = datetime.now(KST)
+
+    total = now.hour * 60 + now.minute
+    block = (total // minutes) * minutes
+
+    return now.replace(
+        hour=block // 60,
+        minute=block % 60,
+        second=0,
+        microsecond=0
+    ).replace(tzinfo=None)
+
+
+def validate_timeframe():
+    global EMA_TIMEFRAME
+
+    try:
+        EMA_TIMEFRAME = int(EMA_TIMEFRAME)
+    except Exception:
+        raise ValueError("EMA_TIMEFRAME은 숫자여야 합니다.")
+
+    if EMA_TIMEFRAME not in SUPPORTED_UPBIT_TIMEFRAMES:
+        raise ValueError(
+            f"EMA_TIMEFRAME 오류: {EMA_TIMEFRAME}\n"
+            "Upbit 지원값: 5, 15, 30, 60, 240"
+        )
+
+    if get_okx_bar(EMA_TIMEFRAME) is None:
+        raise ValueError(
+            f"OKX에서 지원하지 않는 시간봉: {EMA_TIMEFRAME}"
+        )
 
 
 def wait_request():
-
     global last_request_time
 
     with request_lock:
-
-        gap = (
-            time.monotonic()
-            - last_request_time
-        )
+        gap = time.monotonic() - last_request_time
 
         if gap < REQUEST_INTERVAL:
+            time.sleep(REQUEST_INTERVAL - gap)
 
-            time.sleep(
-                REQUEST_INTERVAL - gap
-            )
-
-        last_request_time = (
-            time.monotonic()
-        )
+        last_request_time = time.monotonic()
 
 
 def retry(func, *args, **kwargs):
-
-    name = getattr(
-        func,
-        "__name__",
-        str(func)
-    )
+    name = getattr(func, "__name__", str(func))
 
     url = (
         args[0]
-        if args
-        and isinstance(
-            args[0],
-            str
-        )
-        else kwargs.get(
-            "url",
-            ""
-        )
+        if args and isinstance(args[0], str)
+        else kwargs.get("url", "")
     )
 
-    for n in range(
-        MAX_RETRIES
-    ):
-
+    for n in range(MAX_RETRIES):
         try:
-
             wait_request()
+            r = func(*args, **kwargs)
 
-            r = func(
-                *args,
-                **kwargs
-            )
-
-            if not hasattr(
-                r,
-                "status_code"
-            ):
-
+            if not hasattr(r, "status_code"):
                 return r
 
             if r.status_code == 200:
-
                 return r
 
             if r.status_code == 429:
-
-                wait = min(
-                    RATE_LIMIT_WAIT
-                    * 2 ** n,
-                    60
-                )
+                wait = min(RATE_LIMIT_WAIT * 2 ** n, 60)
 
             elif r.status_code >= 500:
-
-                wait = min(
-                    2 * 2 ** n,
-                    30
-                )
+                wait = min(2 * 2 ** n, 30)
 
             else:
-
-                log.warning(
-                    f"[HTTP {r.status_code}] "
-                    f"{url}"
-                )
-
+                log.warning(f"[HTTP {r.status_code}] {url}")
                 return r
 
-            log.warning(
-                f"[API 재시도] "
-                f"{url} "
-                f"{wait}초"
-            )
-
-            time.sleep(
-                wait
-            )
+            log.warning(f"[API 재시도] {url} {wait}초")
+            time.sleep(wait)
 
         except Exception as e:
-
-            log.error(
-                f"[API 오류] "
-                f"{name} "
-                f"{url}: {e}"
-            )
+            log.error(f"[API 오류] {name} {url}: {e}")
 
             if n < MAX_RETRIES - 1:
+                time.sleep(min(2 * (n + 1), 20))
 
-                time.sleep(
-                    min(
-                        2 * (n + 1),
-                        20
-                    )
-                )
-
-    log.error(
-        f"[API 최종 실패] "
-        f"{name} "
-        f"{url}"
-    )
-
+    log.error(f"[API 최종 실패] {name} {url}")
     return None
 
 
@@ -414,15 +204,12 @@ def retry(func, *args, **kwargs):
 # =========================================================
 
 def get_upbit_markets():
-
     global latest_upbit_markets
 
     r = retry(
         requests.get,
         "https://api.upbit.com/v1/ticker/all",
-        params={
-            "quote_currencies": "KRW"
-        },
+        params={"quote_currencies": "KRW"},
         timeout=15
     )
 
@@ -430,61 +217,39 @@ def get_upbit_markets():
         return []
 
     try:
-
         result = []
 
         for x in r.json():
+            market = x.get("market", "")
 
-            market = x.get(
-                "market",
-                ""
-            )
-
-            if not market.startswith(
-                "KRW-"
-            ):
+            if not market.startswith("KRW-"):
                 continue
 
             try:
-
-                volume = float(
-                    x["acc_trade_price_24h"]
-                )
-
-                current_price = float(
-                    x["trade_price"]
-                )
-
+                volume = float(x["acc_trade_price_24h"])
+                price = float(x["trade_price"])
             except Exception:
-
                 continue
 
-            if volume > 0 and current_price > 0:
-
+            if volume > 0 and price > 0:
                 result.append({
                     "market": market,
                     "volume_24h": volume,
-                    "current_price": current_price
+                    "current_price": price
                 })
 
         latest_upbit_markets = [
-            x["market"]
-            for x in result
+            x["market"] for x in result
         ]
 
         return result
 
     except Exception as e:
-
-        log.error(
-            f"업비트 마켓 오류: {e}"
-        )
-
+        log.error(f"업비트 마켓 오류: {e}")
         return []
 
 
 def get_usdt_krw():
-
     r = retry(
         requests.get,
         "https://api.upbit.com/v1/ticker?markets=KRW-USDT",
@@ -495,33 +260,19 @@ def get_usdt_krw():
         return None
 
     try:
-
-        price = float(
-            r.json()[0]["trade_price"]
-        )
-
-        return (
-            price
-            if price > 0
-            else None
-        )
-
+        price = float(r.json()[0]["trade_price"])
+        return price if price > 0 else None
     except Exception:
-
         return None
 
-
-# =========================================================
-# Upbit 캔들
-# =========================================================
 
 def get_upbit_candle(
     market,
     unit,
     count=200,
-    to=None
+    to=None,
+    include_current=False
 ):
-
     unit = int(unit)
 
     url = (
@@ -531,10 +282,7 @@ def get_upbit_candle(
 
     params = {
         "market": market,
-        "count": min(
-            max(int(count), 1),
-            200
-        )
+        "count": min(max(int(count), 1), 200)
     }
 
     if to:
@@ -551,82 +299,54 @@ def get_upbit_candle(
         return None
 
     try:
-
-        df = pd.DataFrame(
-            r.json()
-        )
+        df = pd.DataFrame(r.json())
 
         if df.empty:
             return None
 
-        df["o"] = pd.to_numeric(
-            df.opening_price,
-            errors="coerce"
-        )
+        mapping = {
+            "opening_price": "o",
+            "high_price": "h",
+            "low_price": "l",
+            "trade_price": "c",
+            "candle_acc_trade_price": "volume_krw",
+            "candle_date_time_kst": "datetime"
+        }
 
-        df["h"] = pd.to_numeric(
-            df.high_price,
-            errors="coerce"
-        )
-
-        df["l"] = pd.to_numeric(
-            df.low_price,
-            errors="coerce"
-        )
-
-        df["c"] = pd.to_numeric(
-            df.trade_price,
-            errors="coerce"
-        )
-
-        df["volume_krw"] = pd.to_numeric(
-            df.candle_acc_trade_price,
-            errors="coerce"
-        )
-
-        df["datetime"] = pd.to_datetime(
-            df.candle_date_time_kst,
-            errors="coerce"
-        )
+        for src, dst in mapping.items():
+            if src == "datetime":
+                df[dst] = pd.to_datetime(
+                    df[src],
+                    errors="coerce"
+                )
+            else:
+                df[dst] = pd.to_numeric(
+                    df[src],
+                    errors="coerce"
+                )
 
         df = df.dropna(
-            subset=[
-                "datetime",
-                "o",
-                "h",
-                "l",
-                "c"
-            ]
+            subset=["datetime", "o", "h", "l", "c"]
         )
 
         if df.empty:
             return None
 
-        current = get_current_candle_start(
-            unit
-        )
-
-        df = df[
-            df.datetime < current
-        ]
+        if not include_current:
+            current = get_current_candle_start(unit)
+            df = df[df.datetime < current]
 
         if df.empty:
             return None
 
         return (
-            df
-            .sort_values("datetime")
+            df.sort_values("datetime")
             .drop_duplicates("datetime")
             .reset_index(drop=True)
         )
 
     except Exception as e:
-
-        log.error(
-            f"업비트 {unit}분 오류 "
-            f"{market}: {e}"
-        )
-
+        log.error(f"업비트 {unit}분 오류 {market}: {e}")
         return None
 
 
@@ -636,190 +356,67 @@ def get_upbit_candle_with_current(
     count=200,
     to=None
 ):
-
-    unit = int(unit)
-
-    url = (
-        "https://api.upbit.com/v1/candles/minutes/"
-        f"{unit}"
-    )
-
-    params = {
-        "market": market,
-        "count": min(
-            max(int(count), 1),
-            200
-        )
-    }
-
-    if to:
-        params["to"] = to
-
-    r = retry(
-        requests.get,
-        url,
-        params=params,
-        timeout=15
-    )
-
-    if r is None:
-        return None
-
-    try:
-
-        df = pd.DataFrame(
-            r.json()
-        )
-
-        if df.empty:
-            return None
-
-        df["o"] = pd.to_numeric(
-            df.opening_price,
-            errors="coerce"
-        )
-
-        df["h"] = pd.to_numeric(
-            df.high_price,
-            errors="coerce"
-        )
-
-        df["l"] = pd.to_numeric(
-            df.low_price,
-            errors="coerce"
-        )
-
-        df["c"] = pd.to_numeric(
-            df.trade_price,
-            errors="coerce"
-        )
-
-        df["volume_krw"] = pd.to_numeric(
-            df.candle_acc_trade_price,
-            errors="coerce"
-        )
-
-        df["datetime"] = pd.to_datetime(
-            df.candle_date_time_kst,
-            errors="coerce"
-        )
-
-        df = df.dropna(
-            subset=[
-                "datetime",
-                "o",
-                "h",
-                "l",
-                "c"
-            ]
-        )
-
-        if df.empty:
-            return None
-
-        return (
-            df
-            .sort_values("datetime")
-            .drop_duplicates("datetime")
-            .reset_index(drop=True)
-        )
-
-    except Exception as e:
-
-        log.error(
-            f"업비트 현재캔들 오류 "
-            f"{unit}분 {market}: {e}"
-        )
-
-        return None
-
-
-def get_upbit_current_roc_data(
-    market,
-    current_price
-):
-
-    df = get_upbit_candle_with_current(
+    return get_upbit_candle(
         market,
-        EMA_TIMEFRAME
+        unit,
+        count,
+        to,
+        include_current=True
     )
 
-    if df is None or df.empty:
-        return None
 
-    try:
-
-        current_start = (
-            get_current_candle_start(
-                EMA_TIMEFRAME
-            )
-        )
-
-        current_price = float(
-            current_price
-        )
-
-        if current_price <= 0:
-            return df
-
-        mask = (
-            df["datetime"]
-            == current_start
-        )
-
-        if mask.any():
-
-            df.loc[
-                mask,
-                "c"
-            ] = current_price
-
-        else:
-
-            new_row = df.iloc[-1].copy()
-
-            new_row[
-                "datetime"
-            ] = current_start
-
-            new_row["c"] = current_price
-
-            df = pd.concat(
-                [
-                    df,
-                    pd.DataFrame([new_row])
-                ],
-                ignore_index=True
-            )
-
-        return (
-            df
-            .sort_values("datetime")
-            .reset_index(drop=True)
-        )
-
-    except Exception as e:
-
-        log.error(
-            f"업비트 현재 ROC 오류 "
-            f"{market}: {e}"
-        )
-
-        return df
-
-
-def get_upbit_1h(
-    market,
-    count=200,
-    to=None
-):
-
+def get_upbit_1h(market, count=200, to=None):
     return get_upbit_candle(
         market,
         EMA_TIMEFRAME,
         count,
         to
     )
+
+
+def get_upbit_current_roc_data(
+    market,
+    current_price
+):
+    df = get_upbit_candle(
+        market,
+        EMA_TIMEFRAME,
+        include_current=True
+    )
+
+    if df is None or df.empty:
+        return None
+
+    try:
+        start = get_current_candle_start(
+            EMA_TIMEFRAME
+        )
+
+        price = float(current_price)
+        mask = df.datetime == start
+
+        if mask.any():
+            df.loc[mask, "c"] = price
+        else:
+            row = df.iloc[-1].copy()
+            row["datetime"] = start
+            row["c"] = price
+
+            df = pd.concat(
+                [df, pd.DataFrame([row])],
+                ignore_index=True
+            )
+
+        return (
+            df.sort_values("datetime")
+            .reset_index(drop=True)
+        )
+
+    except Exception as e:
+        log.error(
+            f"업비트 현재 ROC 오류 {market}: {e}"
+        )
+        return df
 
 
 # =========================================================
@@ -830,16 +427,13 @@ def get_okx_ohlcv(
     inst,
     bar="1H",
     limit=200,
-    before=None
+    before=None,
+    include_current=False
 ):
-
     params = {
         "instId": inst,
         "bar": bar,
-        "limit": min(
-            max(int(limit), 1),
-            200
-        )
+        "limit": min(max(int(limit), 1), 200)
     }
 
     if before is not None:
@@ -856,11 +450,7 @@ def get_okx_ohlcv(
         return None
 
     try:
-
-        data = r.json().get(
-            "data",
-            []
-        )
+        data = r.json().get("data", [])
 
         if not data:
             return None
@@ -868,39 +458,25 @@ def get_okx_ohlcv(
         df = pd.DataFrame(
             data,
             columns=[
-                "ts",
-                "o",
-                "h",
-                "l",
-                "c",
-                "vol",
-                "volCcy",
-                "volCcyQuote",
-                "confirm"
+                "ts", "o", "h", "l", "c",
+                "vol", "volCcy",
+                "volCcyQuote", "confirm"
             ]
         )
 
-        numeric_cols = [
-            "ts",
-            "o",
-            "h",
-            "l",
-            "c",
-            "vol",
-            "volCcy",
-            "volCcyQuote"
-        ]
-
-        for col in numeric_cols:
-
+        for col in [
+            "ts", "o", "h", "l", "c",
+            "vol", "volCcy", "volCcyQuote"
+        ]:
             df[col] = pd.to_numeric(
                 df[col],
                 errors="coerce"
             )
 
-        df = df[
-            df.confirm.astype(str) == "1"
-        ]
+        if not include_current:
+            df = df[
+                df.confirm.astype(str) == "1"
+            ]
 
         if df.empty:
             return None
@@ -915,38 +491,31 @@ def get_okx_ohlcv(
             .dt.tz_localize(None)
         )
 
-        bar_minutes = get_okx_bar_minutes(
-            bar
-        )
+        if not include_current:
+            minutes = get_okx_bar_minutes(bar)
 
-        if bar_minutes is not None:
-
-            current = (
-                get_current_candle_start(
-                    bar_minutes
+            if minutes:
+                current = get_current_candle_start(
+                    minutes
                 )
-            )
 
-            df = df[
-                df.datetime < current
-            ]
+                df = df[
+                    df.datetime < current
+                ]
 
         if df.empty:
             return None
 
         return (
-            df
-            .sort_values("ts")
+            df.sort_values("ts")
             .drop_duplicates("ts")
             .reset_index(drop=True)
         )
 
     except Exception as e:
-
         log.error(
             f"OKX {inst} {bar} 오류: {e}"
         )
-
         return None
 
 
@@ -955,107 +524,19 @@ def get_okx_ohlcv_current(
     bar="1H",
     limit=200
 ):
-
-    params = {
-        "instId": inst,
-        "bar": bar,
-        "limit": min(
-            max(int(limit), 1),
-            200
-        )
-    }
-
-    r = retry(
-        requests.get,
-        "https://www.okx.com/api/v5/market/candles",
-        params=params,
-        timeout=15
+    return get_okx_ohlcv(
+        inst,
+        bar,
+        limit,
+        include_current=True
     )
-
-    if r is None:
-        return None
-
-    try:
-
-        data = r.json().get(
-            "data",
-            []
-        )
-
-        if not data:
-            return None
-
-        df = pd.DataFrame(
-            data,
-            columns=[
-                "ts",
-                "o",
-                "h",
-                "l",
-                "c",
-                "vol",
-                "volCcy",
-                "volCcyQuote",
-                "confirm"
-            ]
-        )
-
-        numeric_cols = [
-            "ts",
-            "o",
-            "h",
-            "l",
-            "c",
-            "vol",
-            "volCcy",
-            "volCcyQuote"
-        ]
-
-        for col in numeric_cols:
-
-            df[col] = pd.to_numeric(
-                df[col],
-                errors="coerce"
-            )
-
-        if df.empty:
-            return None
-
-        df["datetime"] = (
-            pd.to_datetime(
-                df["ts"],
-                unit="ms",
-                utc=True
-            )
-            .dt.tz_convert(KST)
-            .dt.tz_localize(None)
-        )
-
-        return (
-            df
-            .sort_values("ts")
-            .drop_duplicates("ts")
-            .reset_index(drop=True)
-        )
-
-    except Exception as e:
-
-        log.error(
-            f"OKX 현재캔들 오류 "
-            f"{inst}: {e}"
-        )
-
-        return None
 
 
 def get_okx_current_price(inst):
-
     r = retry(
         requests.get,
         "https://www.okx.com/api/v5/market/ticker",
-        params={
-            "instId": inst
-        },
+        params={"instId": inst},
         timeout=15
     )
 
@@ -1063,32 +544,18 @@ def get_okx_current_price(inst):
         return None
 
     try:
-
-        data = r.json().get(
-            "data",
-            []
-        )
+        data = r.json().get("data", [])
 
         if not data:
             return None
 
-        price = float(
-            data[0]["last"]
-        )
-
-        return (
-            price
-            if price > 0
-            else None
-        )
+        price = float(data[0]["last"])
+        return price if price > 0 else None
 
     except Exception as e:
-
         log.error(
-            f"OKX 현재가 오류 "
-            f"{inst}: {e}"
+            f"OKX 현재가 오류 {inst}: {e}"
         )
-
         return None
 
 
@@ -1101,14 +568,10 @@ def history_upbit(
     unit,
     required=200
 ):
-
     all_df = None
     to = None
 
-    for _ in range(
-        MAX_HISTORY_CHUNKS
-    ):
-
+    for _ in range(MAX_HISTORY_CHUNKS):
         df = get_upbit_candle(
             market,
             unit,
@@ -1123,10 +586,7 @@ def history_upbit(
             df.copy()
             if all_df is None
             else pd.concat(
-                [
-                    df,
-                    all_df
-                ],
+                [df, all_df],
                 ignore_index=True
             )
         )
@@ -1141,11 +601,8 @@ def history_upbit(
         if len(all_df) >= required:
             return all_df
 
-        to = (
-            all_df.datetime.iloc[0]
-            .strftime(
-                "%Y-%m-%dT%H:%M:%S"
-            )
+        to = all_df.datetime.iloc[0].strftime(
+            "%Y-%m-%dT%H:%M:%S"
         )
 
     return all_df
@@ -1156,14 +613,10 @@ def history_okx(
     bar,
     required=200
 ):
-
     all_df = None
     before = None
 
-    for _ in range(
-        MAX_HISTORY_CHUNKS
-    ):
-
+    for _ in range(MAX_HISTORY_CHUNKS):
         df = get_okx_ohlcv(
             inst,
             bar,
@@ -1178,10 +631,7 @@ def history_okx(
             df.copy()
             if all_df is None
             else pd.concat(
-                [
-                    df,
-                    all_df
-                ],
+                [df, all_df],
                 ignore_index=True
             )
         )
@@ -1196,9 +646,7 @@ def history_okx(
         if len(all_df) >= required:
             return all_df
 
-        before = int(
-            all_df.ts.iloc[0]
-        )
+        before = int(all_df.ts.iloc[0])
 
     return all_df
 
@@ -1208,7 +656,6 @@ def history_okx(
 # =========================================================
 
 def ema(df, period):
-
     if (
         df is None
         or df.empty
@@ -1217,7 +664,7 @@ def ema(df, period):
         return None
 
     return pd.to_numeric(
-        df.c,
+        df["c"],
         errors="coerce"
     ).ewm(
         span=period,
@@ -1227,160 +674,82 @@ def ema(df, period):
 
 
 def direction(df):
-
     if df is None or df.empty:
         return "none"
 
     try:
+        e30 = ema(df, EMA1_FAST).iloc[-1]
+        e60 = ema(df, EMA1_MID).iloc[-1]
+        e120 = ema(df, EMA1_SLOW).iloc[-1]
 
-        e30 = ema(
-            df,
-            EMA1_FAST
-        ).iloc[-1]
-
-        e60 = ema(
-            df,
-            EMA1_MID
-        ).iloc[-1]
-
-        e120 = ema(
-            df,
-            EMA1_SLOW
-        ).iloc[-1]
-
-        if e30 > e60 and e60 > e120:
+        if e30 > e60 > e120:
             return "long"
 
-        if e30 < e60 and e60 < e120:
+        if e30 < e60 < e120:
             return "short"
 
-    except Exception as e:
+        return "none"
 
-        log.error(
-            f"EMA 방향 오류: {e}"
-        )
-
-    return "none"
+    except Exception:
+        return "none"
 
 
 def ema_alignment_count(df):
-
     if df is None or df.empty:
-
         return {
             "direction": "none",
             "count": 0
         }
 
     try:
+        e30 = ema(df, EMA1_FAST)
+        e60 = ema(df, EMA1_MID)
+        e120 = ema(df, EMA1_SLOW)
 
-        e30 = ema(
-            df,
-            EMA1_FAST
-        )
+        a = float(e30.iloc[-1])
+        b = float(e60.iloc[-1])
+        c = float(e120.iloc[-1])
 
-        e60 = ema(
-            df,
-            EMA1_MID
-        )
-
-        e120 = ema(
-            df,
-            EMA1_SLOW
-        )
-
-        current_e30 = float(
-            e30.iloc[-1]
-        )
-
-        current_e60 = float(
-            e60.iloc[-1]
-        )
-
-        current_e120 = float(
-            e120.iloc[-1]
-        )
-
-        if (
-            current_e30 > current_e60
-            and current_e60 > current_e120
-        ):
-
-            current_direction = "long"
-
-        elif (
-            current_e30 < current_e60
-            and current_e60 < current_e120
-        ):
-
-            current_direction = "short"
-
+        if a > b > c:
+            current = "long"
+        elif a < b < c:
+            current = "short"
         else:
+            current = "none"
 
-            current_direction = "none"
+        if current == "none":
+            return {
+                "direction": "none",
+                "count": 0
+            }
 
         count = 0
 
-        for i in range(
-            len(df) - 1,
-            -1,
-            -1
-        ):
+        for i in range(len(df) - 1, -1, -1):
+            x = float(e30.iloc[i])
+            y = float(e60.iloc[i])
+            z = float(e120.iloc[i])
 
-            v30 = float(
-                e30.iloc[i]
+            candle = (
+                "long"
+                if x > y > z
+                else "short"
+                if x < y < z
+                else "none"
             )
 
-            v60 = float(
-                e60.iloc[i]
-            )
-
-            v120 = float(
-                e120.iloc[i]
-            )
-
-            if (
-                v30 > v60
-                and v60 > v120
-            ):
-
-                candle_direction = "long"
-
-            elif (
-                v30 < v60
-                and v60 < v120
-            ):
-
-                candle_direction = "short"
-
-            else:
-
-                candle_direction = "none"
-
-            if (
-                candle_direction
-                == current_direction
-            ):
-
-                count += 1
-
-            else:
-
+            if candle != current:
                 break
 
-        if current_direction == "none":
-            count = 0
+            count += 1
 
         return {
-            "direction": current_direction,
+            "direction": current,
             "count": count
         }
 
     except Exception as e:
-
-        log.error(
-            f"EMA 배열 오류: {e}"
-        )
+        log.error(f"EMA 배열 오류: {e}")
 
         return {
             "direction": "none",
@@ -1388,52 +757,33 @@ def ema_alignment_count(df):
         }
 
 
-def ema_display(
-    df,
-    current_price=None
-):
+def ema_display(df, current_price=None):
+    r = ema_alignment_count(df)
 
-    result = ema_alignment_count(
-        df
-    )
+    d = r["direction"]
+    count = r["count"]
 
-    d = result["direction"]
-    count = result["count"]
+    icon = {
+        "long": "🟢",
+        "short": "🔴"
+    }.get(d, "⚪")
 
-    if d == "long":
-        icon = "🟢"
-
-    elif d == "short":
-        icon = "🔴"
-
-    else:
-        icon = "⚪"
+    if d == "none":
         count = 0
 
     return {
-        "display":
-            f"{icon}({count})",
-
-        "direction":
-            d,
-
-        "count":
-            count,
-
-        "current_price":
-            current_price
+        "display": f"{icon}({count})",
+        "direction": d,
+        "count": count,
+        "current_price": current_price
     }
 
 
 # =========================================================
-# ROC10
+# ROC
 # =========================================================
 
-def roc(
-    df,
-    period=ROC_PERIOD
-):
-
+def roc(df, period=ROC_PERIOD):
     if (
         df is None
         or df.empty
@@ -1442,34 +792,22 @@ def roc(
         return None
 
     try:
+        period = int(period)
+
+        if period <= 0:
+            return None
 
         close = pd.to_numeric(
             df["c"],
             errors="coerce"
         )
 
-        period = int(
-            period
-        )
-
-        if period <= 0:
-            return None
-
         return (
-            (
-                close
-                /
-                close.shift(period)
-            )
-            - 1
+            close / close.shift(period) - 1
         ) * 100
 
     except Exception as e:
-
-        log.error(
-            f"ROC 계산 오류: {e}"
-        )
-
+        log.error(f"ROC 계산 오류: {e}")
         return None
 
 
@@ -1477,29 +815,17 @@ def roc_analysis(
     df_confirmed,
     df_current
 ):
-
     result = {
-
         "roc10": None,
-
         "roc10_previous": None,
-
         "roc10_count": 0,
-
         "roc10_negative_count": 0,
-
         "long_candidate": False,
-
         "short_candidate": False,
-
         "near_zero_long": False,
-
         "near_zero_short": False,
-
         "breakout_long": False,
-
         "state": "none",
-
         "display": "-"
     }
 
@@ -1509,237 +835,114 @@ def roc_analysis(
         or df_current is None
         or df_current.empty
     ):
-
         return result
 
     try:
-
-        confirmed_roc = roc(
+        confirmed = roc(
             df_confirmed,
             ROC_PERIOD
         )
 
-        current_roc = roc(
+        current = roc(
             df_current,
             ROC_PERIOD
         )
 
-        if (
-            confirmed_roc is None
-            or current_roc is None
-        ):
-
+        if confirmed is None or current is None:
             return result
 
-        previous_10 = float(
-            confirmed_roc.iloc[-1]
-        )
+        previous_10 = float(confirmed.iloc[-1])
+        current_10 = float(current.iloc[-1])
 
-        current_10 = float(
-            current_roc.iloc[-1]
-        )
-
-        if (
-            pd.isna(previous_10)
-            or pd.isna(current_10)
-        ):
-
+        if pd.isna(previous_10) or pd.isna(current_10):
             return result
 
         result["roc10"] = current_10
-
         result["roc10_previous"] = previous_10
 
+        positive_count = 0
 
-        # =====================================================
-        # 롱 카운터
-        # =====================================================
-
-        roc_count = 0
-
-        for value in reversed(
-            current_roc.tolist()
-        ):
-
-            if pd.isna(value):
+        for v in reversed(current.tolist()):
+            if pd.isna(v) or float(v) <= 0:
                 break
-
-            if float(value) > 0:
-
-                roc_count += 1
-
-            else:
-
-                break
-
-        result["roc10_count"] = roc_count
-
-
-        # =====================================================
-        # 숏 카운터
-        # =====================================================
+            positive_count += 1
 
         negative_count = 0
 
-        for value in reversed(
-            current_roc.tolist()
-        ):
-
-            if pd.isna(value):
+        for v in reversed(current.tolist()):
+            if pd.isna(v) or float(v) >= 0:
                 break
+            negative_count += 1
 
-            if float(value) < 0:
+        result["roc10_count"] = positive_count
+        result["roc10_negative_count"] = negative_count
 
-                negative_count += 1
-
-            else:
-
-                break
-
-        result[
-            "roc10_negative_count"
-        ] = negative_count
-
-
-        # =====================================================
-        # 0선 돌파
-        # =====================================================
-
-        long_condition = (
+        long_cross = (
             previous_10 <= 0
             and current_10 > 0
         )
 
-        short_condition = (
+        short_cross = (
             previous_10 >= 0
             and current_10 < 0
         )
 
-        result["long_candidate"] = (
-            long_condition
-        )
-
-        result["short_candidate"] = (
-            short_condition
-        )
-
-
-        # =====================================================
-        # 롱 돌파 임박
-        # =====================================================
-
-        near_zero_condition = (
+        near_long = (
             current_10 < 0
             and current_10 >= ROC_NEAR_ZERO
             and current_10 > previous_10
         )
 
-        result["near_zero_long"] = (
-            near_zero_condition
-        )
-
-
-        # =====================================================
-        # 숏 하락 임박
-        # =====================================================
-
-        near_zero_short_condition = (
+        near_short = (
             current_10 > 0
             and current_10 <= ROC_SHORT_NEAR_ZERO
             and current_10 < previous_10
         )
 
-        result["near_zero_short"] = (
-            near_zero_short_condition
-        )
+        result.update({
+            "long_candidate": long_cross,
+            "short_candidate": short_cross,
+            "near_zero_long": near_long,
+            "near_zero_short": near_short,
+            "breakout_long": long_cross
+        })
 
-
-        # =====================================================
-        # 실제 롱 돌파
-        # =====================================================
-
-        result["breakout_long"] = (
-            long_condition
-        )
-
-
-        # =====================================================
-        # 상태
-        # =====================================================
-
-        if long_condition:
-
+        if long_cross:
             result["state"] = "long"
+            result["display"] = "🟢 매수 ①"
 
-            result["display"] = (
-                "🟢 매수 ①"
-            )
-
-        elif short_condition:
-
+        elif short_cross:
             result["state"] = "short"
+            result["display"] = "🔴 숏 ①"
 
-            result["display"] = (
-                "🔴 숏 ①"
-            )
-
-        elif (
-            current_10 > 0
-            and roc_count >= 2
-        ):
-
+        elif current_10 > 0 and positive_count >= 2:
             result["state"] = "progress"
+            result["display"] = f"🚀 진행 {positive_count}"
 
-            result["display"] = (
-                f"🚀 진행 {roc_count}"
-            )
-
-        elif (
-            current_10 < 0
-            and negative_count >= 2
-        ):
-
+        elif current_10 < 0 and negative_count >= 2:
             result["state"] = "short_progress"
+            result["display"] = f"📉 진행 {negative_count}"
 
-            result["display"] = (
-                f"📉 진행 {negative_count}"
-            )
-
-        elif near_zero_condition:
-
+        elif near_long:
             result["state"] = "near"
+            result["display"] = "🔥 돌파"
 
-            result["display"] = (
-                "🔥 돌파"
-            )
-
-        elif near_zero_short_condition:
-
+        elif near_short:
             result["state"] = "short_near"
-
-            result["display"] = (
-                "⚠️ 하락"
-            )
+            result["display"] = "⚠️ 하락"
 
         return result
 
     except Exception as e:
-
-        log.error(
-            f"ROC 분석 오류: {e}"
-        )
-
+        log.error(f"ROC 분석 오류: {e}")
         return result
 
 
 # =========================================================
-# 등락률
+# 등락률 / 표시
 # =========================================================
 
-def daily_change_upbit(
-    market
-):
-
+def daily_change_upbit(market):
     r = retry(
         requests.get,
         "https://api.upbit.com/v1/candles/days",
@@ -1754,43 +957,30 @@ def daily_change_upbit(
         return None
 
     try:
-
         data = r.json()
 
         if len(data) < 2:
             return None
 
-        current = float(
-            data[0]["trade_price"]
-        )
-
-        previous = float(
-            data[1]["trade_price"]
-        )
+        current = float(data[0]["trade_price"])
+        previous = float(data[1]["trade_price"])
 
         if previous == 0:
             return None
 
         return [
-            (
-                current - previous
-            )
-            / previous
-            * 100
+            (current - previous) / previous * 100
         ]
 
     except Exception:
-
         return None
 
 
 def daily_changes(df):
-
     if df is None or df.empty:
         return None
 
     try:
-
         x = df.copy()
 
         x["datetime"] = pd.to_datetime(
@@ -1804,22 +994,15 @@ def daily_changes(df):
         )
 
         x = (
-            x
-            .dropna(
-                subset=[
-                    "datetime",
-                    "c"
-                ]
+            x.dropna(
+                subset=["datetime", "c"]
             )
             .set_index("datetime")
         )
 
         daily = (
             x["c"]
-            .resample(
-                "1D",
-                offset="9h"
-            )
+            .resample("1D", offset="9h")
             .last()
             .dropna()
         )
@@ -1827,96 +1010,65 @@ def daily_changes(df):
         if len(daily) < 2:
             return None
 
-        current = float(
-            daily.iloc[-1]
-        )
-
-        previous = float(
-            daily.iloc[-2]
-        )
+        previous = float(daily.iloc[-2])
 
         if previous == 0:
             return None
 
         return [
             (
-                current - previous
-            )
-            / previous
-            * 100
+                float(daily.iloc[-1]) - previous
+            ) / previous * 100
         ]
 
     except Exception:
-
         return None
 
 
 def get_change_value(change):
-
     if change is None:
         return None
 
     try:
-
-        value = float(
+        return float(
             change[0]
-            if isinstance(
-                change,
-                (list, tuple)
-            )
+            if isinstance(change, (list, tuple))
             else change
         )
-
-        return value
-
     except Exception:
-
         return None
 
 
 def format_change(x):
-
-    value = get_change_value(
-        x
-    )
+    value = get_change_value(x)
 
     if value is None:
         return "-"
 
     if value > 0:
-
         return (
-            '<span class="up">'
+            f'<span class="up">'
             f'▲ +{value:.2f}%'
-            '</span>'
+            f'</span>'
         )
 
     if value < 0:
-
         return (
-            '<span class="down">'
+            f'<span class="down">'
             f'▼ {value:.2f}%'
-            '</span>'
+            f'</span>'
         )
 
-    return (
-        '<span class="zero">'
-        '0.00%'
-        '</span>'
-    )
+    return '<span class="zero">0.00%</span>'
 
 
 def format_volume(v):
-
     if v is None:
         return "-"
 
     try:
-
         v = float(v)
-
     except Exception:
-
         return "-"
 
     if v >= 1e12:
@@ -1932,90 +1084,63 @@ def format_volume(v):
 
 
 # =========================================================
-# 분석
+# 기본 분석값
 # =========================================================
 
-def empty_analysis():
-
-    e = {
+def empty_ema():
+    return {
         "display": "⚪(0)",
         "direction": "none",
         "count": 0,
         "current_price": None
     }
 
+
+def empty_roc():
     return {
+        "roc10": None,
+        "roc10_previous": None,
+        "roc10_count": 0,
+        "roc10_negative_count": 0,
+        "long_candidate": False,
+        "short_candidate": False,
+        "near_zero_long": False,
+        "near_zero_short": False,
+        "breakout_long": False,
+        "state": "none",
+        "display": "-"
+    }
 
-        "ema_1h": e.copy(),
 
-        # =================================================
-        # 4H EMA 표시용
-        # =================================================
-
-        "ema_high": e.copy(),
-
-        "roc": {
-
-            "roc10": None,
-
-            "roc10_previous": None,
-
-            "roc10_count": 0,
-
-            "roc10_negative_count": 0,
-
-            "long_candidate": False,
-
-            "short_candidate": False,
-
-            "near_zero_long": False,
-
-            "near_zero_short": False,
-
-            "breakout_long": False,
-
-            "state": "none",
-
-            "display": "-"
-        },
-
+def empty_analysis():
+    return {
+        "ema_1h": empty_ema(),
+        "ema_high": empty_ema(),
+        "roc": empty_roc(),
         "changes": None,
-
         "qualified": False,
-
         "short_qualified": False,
-
         "near_zero_qualified": False,
-
         "short_near_zero_qualified": False,
-
         "breakout_qualified": False,
-
         "progress_qualified": False,
-
         "short_progress_qualified": False,
-
         "direction_1h": "none",
-
         "df1h": None
     }
 
+
+# =========================================================
+# 분석
+# =========================================================
 
 def analyze(
     market,
     okx=False,
     current_price=None
 ):
-
-    # =====================================================
-    # EMA = 확정 캔들
-    # =====================================================
-
     if okx:
-
-        bar = get_okx_bar(
-            EMA_TIMEFRAME
-        )
+        bar = get_okx_bar(EMA_TIMEFRAME)
 
         if bar is None:
             return None
@@ -2024,19 +1149,13 @@ def analyze(
             market,
             bar
         )
-
     else:
-
         df_confirmed = history_upbit(
             market,
             EMA_TIMEFRAME
         )
 
-    if (
-        df_confirmed is None
-        or df_confirmed.empty
-    ):
-
+    if df_confirmed is None or df_confirmed.empty:
         return None
 
     e1 = ema_display(
@@ -2044,34 +1163,18 @@ def analyze(
         current_price
     )
 
-
-    # =====================================================
-    # HIGH EMA = 확정 캔들 / 표시 전용
-    #
-    # ※ 중요
-    # 4H EMA는 화면 표시만 함
-    # 롱 / 숏 / 진행 / ROC 조건에는 사용하지 않음
-    # =====================================================
-
+    # 4H
     if okx:
-
         high_bar = get_okx_bar(
             EMA_HIGH_TIMEFRAME
         )
 
-        if high_bar is not None:
-
-            df_high = history_okx(
-                market,
-                high_bar
-            )
-
-        else:
-
-            df_high = None
-
+        df_high = (
+            history_okx(market, high_bar)
+            if high_bar
+            else None
+        )
     else:
-
         df_high = history_upbit(
             market,
             EMA_HIGH_TIMEFRAME
@@ -2082,23 +1185,14 @@ def analyze(
         current_price
     )
 
-
-    # =====================================================
-    # ROC = 현재 캔들
-    # =====================================================
-
+    # 현재 캔들 ROC
     if okx:
+        bar = get_okx_bar(EMA_TIMEFRAME)
 
-        bar = get_okx_bar(
-            EMA_TIMEFRAME
-        )
-
-        df_current = (
-            get_okx_ohlcv_current(
-                market,
-                bar,
-                200
-            )
+        df_current = get_okx_ohlcv_current(
+            market,
+            bar,
+            200
         )
 
         if (
@@ -2106,214 +1200,107 @@ def analyze(
             and not df_current.empty
             and current_price is not None
         ):
-
             try:
-
-                current_start = (
-                    get_current_candle_start(
-                        EMA_TIMEFRAME
-                    )
+                start = get_current_candle_start(
+                    EMA_TIMEFRAME
                 )
 
-                mask = (
-                    df_current["datetime"]
-                    == current_start
-                )
+                mask = df_current.datetime == start
 
                 if mask.any():
-
                     df_current.loc[
                         mask,
                         "c"
-                    ] = float(
-                        current_price
-                    )
+                    ] = float(current_price)
 
             except Exception as e:
-
                 log.error(
                     f"OKX ROC 가격 반영 오류 "
                     f"{market}: {e}"
                 )
 
     else:
-
-        df_current = (
-            get_upbit_current_roc_data(
-                market,
-                current_price
-            )
+        df_current = get_upbit_current_roc_data(
+            market,
+            current_price
         )
-
 
     roc_data = roc_analysis(
         df_confirmed,
         df_current
     )
 
-
-    # =====================================================
-    # 🟢 롱 매수
-    # =====================================================
-
     long_qualified = (
         e1["direction"] == "long"
         and e1["count"] <= EMA1_MAX_COUNT
-        and roc_data.get(
-            "long_candidate",
-            False
-        )
+        and roc_data["long_candidate"]
     )
-
-
-    # =====================================================
-    # 🔴 숏
-    # =====================================================
 
     short_qualified = (
         e1["direction"] == "short"
         and e1["count"] <= EMA1_MAX_COUNT
-        and roc_data.get(
-            "short_candidate",
-            False
-        )
+        and roc_data["short_candidate"]
     )
-
-
-    # =====================================================
-    # 🔥 롱 돌파 임박
-    # =====================================================
 
     near_zero_qualified = (
         e1["direction"] == "long"
         and e1["count"] <= EMA1_MAX_COUNT
-        and roc_data.get(
-            "near_zero_long",
-            False
-        )
+        and roc_data["near_zero_long"]
     )
-
-
-    # =====================================================
-    # ⚠️ 숏 하락 임박
-    # =====================================================
 
     short_near_zero_qualified = (
         e1["direction"] == "short"
         and e1["count"] <= EMA1_MAX_COUNT
-        and roc_data.get(
-            "near_zero_short",
-            False
-        )
+        and roc_data["near_zero_short"]
     )
-
-
-    # =====================================================
-    # 🚀 롱 진행
-    # =====================================================
 
     progress_qualified = (
         e1["direction"] == "long"
         and e1["count"] <= EMA1_MAX_COUNT
-        and roc_data.get(
-            "roc10",
-            None
-        ) is not None
-        and roc_data.get(
-            "roc10",
-            0
-        ) > 0
-        and roc_data.get(
-            "roc10_count",
-            0
-        ) >= 2
+        and roc_data["roc10"] is not None
+        and roc_data["roc10"] > 0
+        and roc_data["roc10_count"] >= 2
     )
-
-
-    # =====================================================
-    # 📉 숏 진행
-    # =====================================================
 
     short_progress_qualified = (
         e1["direction"] == "short"
         and e1["count"] <= EMA1_MAX_COUNT
-        and roc_data.get(
-            "roc10",
-            None
-        ) is not None
-        and roc_data.get(
-            "roc10",
-            0
-        ) < 0
-        and roc_data.get(
-            "roc10_negative_count",
-            0
-        ) >= 2
+        and roc_data["roc10"] is not None
+        and roc_data["roc10"] < 0
+        and roc_data["roc10_negative_count"] >= 2
     )
-
-
-    breakout_qualified = (
-        long_qualified
-    )
-
 
     changes = (
-        daily_changes(
-            df_confirmed
-        )
+        daily_changes(df_confirmed)
         if okx
-        else daily_change_upbit(
-            market
-        )
+        else daily_change_upbit(market)
     )
 
-
     return {
-
         "ema_1h": e1,
-
-        # =================================================
-        # 4H EMA
-        # 표시 전용
-        # =================================================
-
         "ema_high": e_high,
-
         "roc": roc_data,
-
         "changes": changes,
-
-        "qualified":
-            long_qualified,
-
-        "short_qualified":
-            short_qualified,
-
-        "near_zero_qualified":
-            near_zero_qualified,
-
+        "qualified": long_qualified,
+        "short_qualified": short_qualified,
+        "near_zero_qualified": near_zero_qualified,
         "short_near_zero_qualified":
             short_near_zero_qualified,
-
         "breakout_qualified":
-            breakout_qualified,
-
+            long_qualified,
         "progress_qualified":
             progress_qualified,
-
         "short_progress_qualified":
             short_progress_qualified,
-
         "direction_1h":
             e1["direction"],
-
         "df1h":
             df_confirmed
     }
 
 
 # =========================================================
-# 행
+# Row
 # =========================================================
 
 def make_row(
@@ -2323,188 +1310,74 @@ def make_row(
     analysis,
     current_price=None
 ):
-
-    a = (
-        analysis
-        or empty_analysis()
-    )
+    a = analysis or empty_analysis()
 
     return {
-
         "rank": rank,
-
         "name": name,
-
-        "change":
-            format_change(
-                a["changes"]
-            ),
-
+        "change": format_change(a["changes"]),
         "change_value":
-            get_change_value(
-                a["changes"]
-            ),
-
-        "volume":
-            format_volume(
-                volume
-            ),
-
-        "current_price":
-            current_price,
-
-        "ema_1h":
-            a["ema_1h"],
-
-        # =================================================
-        # 4H EMA
-        # =================================================
-
-        "ema_high":
-            a.get(
-                "ema_high",
-                {
-                    "display": "⚪(0)",
-                    "direction": "none",
-                    "count": 0,
-                    "current_price": None
-                }
-            ),
-
-        "roc":
-            a.get(
-                "roc",
-                {}
-            ),
-
-        "qualified":
-            a.get(
-                "qualified",
-                False
-            ),
-
+            get_change_value(a["changes"]),
+        "volume": format_volume(volume),
+        "current_price": current_price,
+        "ema_1h": a["ema_1h"],
+        "ema_high": a["ema_high"],
+        "roc": a["roc"],
+        "qualified": a["qualified"],
         "short_qualified":
-            a.get(
-                "short_qualified",
-                False
-            ),
-
+            a["short_qualified"],
         "near_zero_qualified":
-            a.get(
-                "near_zero_qualified",
-                False
-            ),
-
+            a["near_zero_qualified"],
         "short_near_zero_qualified":
-            a.get(
-                "short_near_zero_qualified",
-                False
-            ),
-
+            a["short_near_zero_qualified"],
         "breakout_qualified":
-            a.get(
-                "breakout_qualified",
-                False
-            ),
-
+            a["breakout_qualified"],
         "progress_qualified":
-            a.get(
-                "progress_qualified",
-                False
-            ),
-
+            a["progress_qualified"],
         "short_progress_qualified":
-            a.get(
-                "short_progress_qualified",
-                False
-            ),
-
+            a["short_progress_qualified"],
         "direction":
-            a.get(
-                "direction_1h",
-                "none"
-            )
+            a["direction_1h"]
     }
 
 
 # =========================================================
-# 후보
+# 후보 판정
 # =========================================================
 
-def is_upbit_buy_candidate(row):
+def is_upbit_buy_candidate(r):
+    return bool(r and r.get("qualified"))
 
+
+def is_okx_long_candidate(r):
+    return bool(r and r.get("qualified"))
+
+
+def is_okx_short_candidate(r):
+    return bool(r and r.get("short_qualified"))
+
+
+def is_roc_near_zero_candidate(r):
     return bool(
-        row
-        and row.get(
-            "qualified",
-            False
-        )
+        r and r.get("near_zero_qualified")
     )
 
 
-def is_okx_long_candidate(row):
-
+def is_roc_progress_candidate(r):
     return bool(
-        row
-        and row.get(
-            "qualified",
-            False
-        )
+        r and r.get("progress_qualified")
     )
 
 
-def is_okx_short_candidate(row):
-
+def is_roc_short_near_zero_candidate(r):
     return bool(
-        row
-        and row.get(
-            "short_qualified",
-            False
-        )
+        r and r.get("short_near_zero_qualified")
     )
 
 
-def is_roc_near_zero_candidate(row):
-
+def is_roc_short_progress_candidate(r):
     return bool(
-        row
-        and row.get(
-            "near_zero_qualified",
-            False
-        )
-    )
-
-
-def is_roc_progress_candidate(row):
-
-    return bool(
-        row
-        and row.get(
-            "progress_qualified",
-            False
-        )
-    )
-
-
-def is_roc_short_near_zero_candidate(row):
-
-    return bool(
-        row
-        and row.get(
-            "short_near_zero_qualified",
-            False
-        )
-    )
-
-
-def is_roc_short_progress_candidate(row):
-
-    return bool(
-        row
-        and row.get(
-            "short_progress_qualified",
-            False
-        )
+        r and r.get("short_progress_qualified")
     )
 
 
@@ -2513,7 +1386,6 @@ def is_roc_short_progress_candidate(row):
 # =========================================================
 
 def update_upbit():
-
     global latest_upbit_data
     global latest_upbit_update_time
 
@@ -2524,8 +1396,7 @@ def update_upbit():
     markets = get_upbit_markets()
 
     markets.sort(
-        key=lambda x:
-            x["volume_24h"],
+        key=lambda x: x["volume_24h"],
         reverse=True
     )
 
@@ -2535,76 +1406,40 @@ def update_upbit():
         markets[:TOP_N],
         1
     ):
-
         market = item["market"]
-
-        coin = market.replace(
-            "KRW-",
-            ""
-        )
-
-        current_price = item.get(
-            "current_price"
-        )
+        coin = market.replace("KRW-", "")
+        price = item.get("current_price")
 
         try:
-
             a = analyze(
                 market,
-                current_price=current_price
-            )
-
-            rows.append(
-                make_row(
-                    rank,
-                    coin,
-                    item["volume_24h"],
-                    a,
-                    current_price
-                )
+                current_price=price
             )
 
         except Exception as e:
-
             log.error(
-                f"업비트 상세 오류 "
-                f"{market}: {e}"
+                f"업비트 상세 오류 {market}: {e}"
             )
+            a = None
 
-            rows.append(
-                make_row(
-                    rank,
-                    coin,
-                    item["volume_24h"],
-                    None,
-                    current_price
-                )
+        rows.append(
+            make_row(
+                rank,
+                coin,
+                item["volume_24h"],
+                a,
+                price
             )
+        )
 
     latest_upbit_data = rows
-
     latest_upbit_update_time = kst()
-
-    buy_rows = [
-        x for x in rows
-        if is_upbit_buy_candidate(x)
-    ]
-
-    near_rows = [
-        x for x in rows
-        if is_roc_near_zero_candidate(x)
-    ]
-
-    progress_rows = [
-        x for x in rows
-        if is_roc_progress_candidate(x)
-    ]
 
     log.info(
         f"업비트 완료 / "
-        f"매수 {len(buy_rows)}개 / "
-        f"돌파 {len(near_rows)}개 / "
-        f"진행 {len(progress_rows)}개"
+        f"매수 {sum(is_upbit_buy_candidate(x) for x in rows)}개 / "
+        f"돌파 {sum(is_roc_near_zero_candidate(x) for x in rows)}개 / "
+        f"진행 {sum(is_roc_progress_candidate(x) for x in rows)}개"
     )
 
 
@@ -2613,13 +1448,10 @@ def update_upbit():
 # =========================================================
 
 def get_okx_symbols():
-
     r = retry(
         requests.get,
         "https://www.okx.com/api/v5/public/instruments",
-        params={
-            "instType": "SWAP"
-        },
+        params={"instType": "SWAP"},
         timeout=15
     )
 
@@ -2627,38 +1459,17 @@ def get_okx_symbols():
         return []
 
     try:
-
         return [
-
             x["instId"]
-
-            for x in r.json().get(
-                "data",
-                []
-            )
-
-            if x.get(
-                "instId",
-                ""
-            ).endswith(
-                "-USDT-SWAP"
-            )
-
-            and x.get(
-                "state"
-            ) == "live"
+            for x in r.json().get("data", [])
+            if x.get("instId", "").endswith("-USDT-SWAP")
+            and x.get("state") == "live"
         ]
-
     except Exception:
-
         return []
 
 
-def get_okx_volume(
-    inst,
-    usdt
-):
-
+def get_okx_volume(inst, usdt):
     df = get_okx_ohlcv(
         inst,
         "1H",
@@ -2669,7 +1480,6 @@ def get_okx_volume(
         return None
 
     try:
-
         volume = float(
             pd.to_numeric(
                 df.volCcyQuote,
@@ -2677,18 +1487,13 @@ def get_okx_volume(
             ).sum()
         )
 
-        return (
-            volume
-            * float(usdt)
-        )
+        return volume * float(usdt)
 
     except Exception:
-
         return None
 
 
 def update_okx(usdt):
-
     global latest_okx_data
     global latest_okx_update_time
 
@@ -2701,26 +1506,19 @@ def update_okx(usdt):
         return False
 
     upbit_set = {
-
-        x.replace(
-            "KRW-",
-            ""
-        )
-
+        x.replace("KRW-", "")
         for x in latest_upbit_markets
     }
 
     volumes = {}
 
     for symbol in symbols:
-
         v = get_okx_volume(
             symbol,
             usdt
         )
 
         if v and v > 0:
-
             volumes[symbol] = v
 
     top = sorted(
@@ -2731,11 +1529,7 @@ def update_okx(usdt):
 
     rows = []
 
-    for rank, symbol in enumerate(
-        top,
-        1
-    ):
-
+    for rank, symbol in enumerate(top, 1):
         coin = symbol.replace(
             "-USDT-SWAP",
             ""
@@ -2747,91 +1541,43 @@ def update_okx(usdt):
             else coin
         )
 
-        current_price = None
-
         try:
-
-            current_price = (
-                get_okx_current_price(
-                    symbol
-                )
-            )
+            price = get_okx_current_price(symbol)
 
             a = analyze(
                 symbol,
                 True,
-                current_price=current_price
-            )
-
-            rows.append(
-                make_row(
-                    rank,
-                    name,
-                    volumes[symbol],
-                    a,
-                    current_price
-                )
+                price
             )
 
         except Exception as e:
-
             log.error(
-                f"OKX 상세 오류 "
-                f"{symbol}: {e}"
+                f"OKX 상세 오류 {symbol}: {e}"
             )
+            price = None
+            a = None
 
-            rows.append(
-                make_row(
-                    rank,
-                    name,
-                    volumes[symbol],
-                    None,
-                    current_price
-                )
+        rows.append(
+            make_row(
+                rank,
+                name,
+                volumes[symbol],
+                a,
+                price
             )
+        )
 
     latest_okx_data = rows
-
     latest_okx_update_time = kst()
-
-    long_rows = [
-        x for x in rows
-        if is_okx_long_candidate(x)
-    ]
-
-    short_rows = [
-        x for x in rows
-        if is_okx_short_candidate(x)
-    ]
-
-    near_rows = [
-        x for x in rows
-        if is_roc_near_zero_candidate(x)
-    ]
-
-    progress_rows = [
-        x for x in rows
-        if is_roc_progress_candidate(x)
-    ]
-
-    short_near_rows = [
-        x for x in rows
-        if is_roc_short_near_zero_candidate(x)
-    ]
-
-    short_progress_rows = [
-        x for x in rows
-        if is_roc_short_progress_candidate(x)
-    ]
 
     log.info(
         f"OKX 완료 / "
-        f"매수 {len(long_rows)}개 / "
-        f"돌파 {len(near_rows)}개 / "
-        f"진행 {len(progress_rows)}개 / "
-        f"하락 {len(short_near_rows)}개 / "
-        f"숏 {len(short_rows)}개 / "
-        f"숏진행 {len(short_progress_rows)}개"
+        f"매수 {sum(is_okx_long_candidate(x) for x in rows)}개 / "
+        f"돌파 {sum(is_roc_near_zero_candidate(x) for x in rows)}개 / "
+        f"진행 {sum(is_roc_progress_candidate(x) for x in rows)}개 / "
+        f"하락 {sum(is_roc_short_near_zero_candidate(x) for x in rows)}개 / "
+        f"숏 {sum(is_okx_short_candidate(x) for x in rows)}개 / "
+        f"숏진행 {sum(is_roc_short_progress_candidate(x) for x in rows)}개"
     )
 
     return True
@@ -2842,579 +1588,286 @@ def update_okx(usdt):
 # =========================================================
 
 def update_dashboard():
-
     global latest_usdt_krw
     global latest_upbit_data
     global latest_okx_data
 
     if not update_lock.acquire(False):
-
         log.warning(
             "이전 조회 진행 중 → 건너뜀"
         )
-
         return
 
     try:
-
         log.info(
             f"========== 전체 조회 {kst()} =========="
         )
 
         if USE_UPBIT == "Y":
-
             try:
-
                 update_upbit()
-
             except Exception as e:
-
                 log.exception(
                     f"업비트 업데이트 오류: {e}"
                 )
-
         else:
-
             latest_upbit_data = []
 
         if USE_OKX == "Y":
-
             try:
-
-                usdt = get_usdt_krw()
-
-                if usdt:
-
-                    latest_usdt_krw = usdt
-
-                else:
-
-                    usdt = latest_usdt_krw
+                usdt = (
+                    get_usdt_krw()
+                    or latest_usdt_krw
+                )
 
                 if usdt > 0:
-
-                    update_okx(
-                        usdt
-                    )
+                    latest_usdt_krw = usdt
+                    update_okx(usdt)
 
             except Exception as e:
-
                 log.exception(
                     f"OKX 업데이트 오류: {e}"
                 )
-
         else:
-
             latest_okx_data = []
 
     finally:
-
         update_lock.release()
 
 
 # =========================================================
-# HTML - ROC
+# HTML
 # =========================================================
 
 def roc_html(r):
-
-    if not r:
-
+    if not r or r.get("roc10") is None:
         return """
         <div class="roc-cell">
-            <div class="roc-title">
-                ROC10(0)
-            </div>
-            <div class="roc-value roc-zero">
-                -
-            </div>
+            <div class="roc-title">ROC10(0)</div>
+            <div class="roc-value roc-zero">-</div>
         </div>
         """
 
-    r10 = r.get(
-        "roc10"
+    value = float(r["roc10"])
+    previous = float(r["roc10_previous"])
+
+    count = (
+        r["roc10_count"]
+        if value > 0
+        else r["roc10_negative_count"]
+        if value < 0
+        else 0
     )
 
-    previous = r.get(
-        "roc10_previous"
+    cls = (
+        "roc-positive"
+        if value > 0
+        else "roc-negative"
+        if value < 0
+        else "roc-zero"
     )
 
-    positive_count = r.get(
-        "roc10_count",
-        0
-    )
-
-    negative_count = r.get(
-        "roc10_negative_count",
-        0
-    )
-
-    if r10 is None or previous is None:
-
-        return f"""
-        <div class="roc-cell">
-            <div class="roc-title">
-                ROC10(0)
-            </div>
-            <div class="roc-value roc-zero">
-                -
-            </div>
-        </div>
-        """
-
-    if r10 > 0:
-
-        cls = "roc-positive"
-        roc_count = positive_count
-
-    elif r10 < 0:
-
-        cls = "roc-negative"
-        roc_count = negative_count
-
-    else:
-
-        cls = "roc-zero"
-        roc_count = 0
-
-    if previous <= 0 and r10 > 0:
-
+    if previous <= 0 and value > 0:
         cross = (
-            '<span class="roc-cross-up">'
-            '↑0'
-            '</span>'
+            '<span class="roc-cross-up">↑0</span>'
         )
-
-    elif previous >= 0 and r10 < 0:
-
+    elif previous >= 0 and value < 0:
         cross = (
-            '<span class="roc-cross-down">'
-            '↓0'
-            '</span>'
+            '<span class="roc-cross-down">↓0</span>'
         )
-
     else:
-
         cross = (
-            '<span class="roc-no-cross">'
-            '—'
-            '</span>'
+            '<span class="roc-no-cross">—</span>'
         )
 
     return f"""
     <div class="roc-cell">
-
         <div class="roc-title">
-            ROC10({roc_count})
+            ROC10({count})
         </div>
-
         <div class="roc-value {cls}">
-            {r10:+.3f}%
-            {cross}
+            {value:+.3f}% {cross}
         </div>
-
     </div>
     """
 
 
-# =========================================================
-# HTML - 신호
-# =========================================================
-
 def signal_html(row):
-
     if not row:
+        return '<div class="buy-none">-</div>'
 
-        return (
-            '<div class="buy-none">'
-            '-'
-            '</div>'
+    signals = [
+        (
+            "qualified",
+            "buy-candidate",
+            "🟢 매수 ①"
+        ),
+        (
+            "progress_qualified",
+            "progress-candidate",
+            f'🚀 진행 {row.get("roc", {}).get("roc10_count", 0)}'
+        ),
+        (
+            "short_qualified",
+            "short-candidate",
+            "🔴 숏 ①"
+        ),
+        (
+            "short_progress_qualified",
+            "short-progress-candidate",
+            f'📉 진행 {row.get("roc", {}).get("roc10_negative_count", 0)}'
+        ),
+        (
+            "near_zero_qualified",
+            "near-candidate",
+            "🔥 돌파"
+        ),
+        (
+            "short_near_zero_qualified",
+            "short-near-candidate",
+            "⚠️ 하락"
         )
+    ]
 
-
-    # =====================================================
-    # 🟢 매수 ①
-    # =====================================================
-
-    if row.get(
-        "qualified",
-        False
-    ):
-
-        return (
-            '<div class="buy-stage buy-candidate">'
-            '🟢 매수 ①'
-            '</div>'
-        )
-
-
-    # =====================================================
-    # 🚀 롱 진행
-    # =====================================================
-
-    if row.get(
-        "progress_qualified",
-        False
-    ):
-
-        count = (
-            row.get(
-                "roc",
-                {}
-            ).get(
-                "roc10_count",
-                0
+    for key, cls, text in signals:
+        if row.get(key):
+            return (
+                f'<div class="buy-stage {cls}">'
+                f'{text}</div>'
             )
-        )
 
-        return (
-            '<div class="buy-stage progress-candidate">'
-            f'🚀 진행 {count}'
-            '</div>'
-        )
-
-
-    # =====================================================
-    # 🔴 숏 ①
-    # =====================================================
-
-    if row.get(
-        "short_qualified",
-        False
-    ):
-
-        return (
-            '<div class="buy-stage short-candidate">'
-            '🔴 숏 ①'
-            '</div>'
-        )
-
-
-    # =====================================================
-    # 📉 숏 진행
-    # =====================================================
-
-    if row.get(
-        "short_progress_qualified",
-        False
-    ):
-
-        count = (
-            row.get(
-                "roc",
-                {}
-            ).get(
-                "roc10_negative_count",
-                0
-            )
-        )
-
-        return (
-            '<div class="buy-stage short-progress-candidate">'
-            f'📉 진행 {count}'
-            '</div>'
-        )
-
-
-    # =====================================================
-    # 🔥 롱 돌파
-    # =====================================================
-
-    if row.get(
-        "near_zero_qualified",
-        False
-    ):
-
-        return (
-            '<div class="buy-stage near-candidate">'
-            '🔥 돌파'
-            '</div>'
-        )
-
-
-    # =====================================================
-    # ⚠️ 숏 하락
-    # =====================================================
-
-    if row.get(
-        "short_near_zero_qualified",
-        False
-    ):
-
-        return (
-            '<div class="buy-stage short-near-candidate">'
-            '⚠️ 하락'
-            '</div>'
-        )
-
-
-    return (
-        '<div class="buy-none">'
-        '-'
-        '</div>'
-    )
+    return '<div class="buy-none">-</div>'
 
 
 # =========================================================
-# HTML - EMA
+# ★ EMA 표시
 # =========================================================
 
 def ema_html(e):
+    e = e or empty_ema()
 
-    if not e:
+    d = e.get("direction", "none")
+    count = e.get("count", 0)
 
-        return """
-        <div class="ema1-cell">
-            <div class="ema1-main ema-none">
-                ⚪(0)
-            </div>
-        </div>
-        """
+    icon = {
+        "long": "🟢",
+        "short": "🔴"
+    }.get(d, "⚪")
 
-    direction_value = e.get(
-        "direction",
-        "none"
-    )
-
-    count = e.get(
-        "count",
-        0
-    )
-
-    cls = {
-        "long": "ema-long",
-        "short": "ema-short"
-    }.get(
-        direction_value,
-        "ema-none"
-    )
-
-    if direction_value == "none":
+    if d == "none":
         count = 0
 
-    if direction_value == "long":
-        icon = "🟢"
-
-    elif direction_value == "short":
-        icon = "🔴"
-
-    else:
-        icon = "⚪"
-
-    return f"""
-    <div class="ema1-cell">
-
-        <div class="ema1-main {cls}">
-            {icon}({count})
-        </div>
-
-    </div>
-    """
+    return f'{icon}({count})'
 
 
 # =========================================================
-# Rows
+# Rows / Table
 # =========================================================
 
-def rows_html(
-    data,
-    focus_type=None
-):
-
+def rows_html(data, focus_type=None):
     out = []
-
-    timeframe_label = format_timeframe(
-        EMA_TIMEFRAME
-    )
 
     for x in data:
 
-        cls = ""
+        if focus_type:
+            cls = f" {focus_type}-qualified"
 
-        if x.get(
-            "qualified",
-            False
-        ):
-
+        elif x.get("qualified"):
             cls = " qualified"
 
-        elif x.get(
-            "progress_qualified",
-            False
-        ):
-
+        elif x.get("progress_qualified"):
             cls = " progress-qualified"
 
-        elif x.get(
-            "short_qualified",
-            False
-        ):
-
+        elif x.get("short_qualified"):
             cls = " short-qualified"
 
-        elif x.get(
-            "short_progress_qualified",
-            False
-        ):
-
+        elif x.get("short_progress_qualified"):
             cls = " short-progress-qualified"
 
-        elif x.get(
-            "near_zero_qualified",
-            False
-        ):
-
+        elif x.get("near_zero_qualified"):
             cls = " near-qualified"
 
-        elif x.get(
-            "short_near_zero_qualified",
-            False
-        ):
-
+        elif x.get("short_near_zero_qualified"):
             cls = " short-near-qualified"
 
+        else:
+            cls = ""
 
-        if focus_type == "near":
-
-            cls = " near-qualified"
-
-        elif focus_type == "buy":
-
-            cls = " qualified"
-
-        elif focus_type == "progress":
-
-            cls = " progress-qualified"
-
-        elif focus_type == "short":
-
-            cls = " short-qualified"
-
-        elif focus_type == "short_near":
-
-            cls = " short-near-qualified"
-
-        elif focus_type == "short_progress":
-
-            cls = " short-progress-qualified"
-
-
-        roc_data = x.get(
-            "roc",
-            {}
+        ema_1h = ema_html(
+            x.get("ema_1h")
         )
 
-        out.append(
-            f"""
-            <tr class="{cls}">
-
-                <td class="rank">
-                    {x.get("rank", "-")}
-                </td>
-
-                <td class="coin">
-
-                    <div class="coin-name">
-                        {x.get("name", "-")}
-                    </div>
-
-                    <div class="change">
-                        {x.get("change", "-")}
-                    </div>
-
-                </td>
-
-                <td class="vol">
-                    {x.get("volume", "-")}
-                </td>
-
-                <td class="ema-cell">
-
-                    <div class="ema-title">
-                        EMA
-                    </div>
-
-                    <div class="ema-row">
-
-                        <span class="tf">
-                            {format_timeframe(
-                                EMA_TIMEFRAME
-                            )}
-                        </span>
-
-                        <span class="ema-value-wrap">
-
-                            {ema_html(
-                                x.get(
-                                    "ema_1h",
-                                    {}
-                                )
-                            )}
-
-                        </span>
-
-                    </div>
-
-                    <div class="ema-row">
-
-                        <span class="tf">
-                            {format_timeframe(
-                                EMA_HIGH_TIMEFRAME
-                            )}
-                        </span>
-
-                        <span class="ema-value-wrap">
-
-                            {ema_html(
-                                x.get(
-                                    "ema_high",
-                                    {}
-                                )
-                            )}
-
-                        </span>
-
-                    </div>
-
-                </td>
-
-                <td class="roc-column">
-
-                    {roc_html(
-                        roc_data
-                    )}
-
-                </td>
-
-                <td class="close-ema10">
-
-                    {signal_html(
-                        x
-                    )}
-
-                </td>
-
-            </tr>
-            """
+        ema_4h = ema_html(
+            x.get("ema_high")
         )
 
-    return "".join(
-        out
-    )
+        out.append(f"""
+        <tr class="{cls}">
+
+            <td class="rank">
+                {x.get("rank", "-")}
+            </td>
+
+            <td class="coin">
+
+                <div class="coin-name">
+                    {x.get("name", "-")}
+                </div>
+
+                <div class="change">
+                    {x.get("change", "-")}
+                </div>
+
+            </td>
+
+            <td class="vol">
+                {x.get("volume", "-")}
+            </td>
+
+            <!-- ★ EMA -->
+            <td class="ema-cell">
+
+                <div class="ema-title">
+                    EMA
+                </div>
+
+                <div class="ema-row">
+                    <span class="tf">1H</span>
+                    <span class="ema-value">
+                        {ema_1h}
+                    </span>
+                </div>
+
+                <div class="ema-row">
+                    <span class="tf">4H</span>
+                    <span class="ema-value">
+                        {ema_4h}
+                    </span>
+                </div>
+
+            </td>
+
+            <td class="roc-column">
+                {roc_html(x.get("roc"))}
+            </td>
+
+            <td class="close-ema10">
+                {signal_html(x)}
+            </td>
+
+        </tr>
+        """)
+
+    return "".join(out)
 
 
-def table_html(
-    data,
-    focus_type=None
-):
-
+def table_html(data, focus_type=None):
     rows = rows_html(
         data,
         focus_type
     )
 
     if not rows:
-
         rows = """
         <tr>
             <td colspan="6" class="empty">
@@ -3429,22 +1882,18 @@ def table_html(
         <table>
 
             <thead>
-
                 <tr>
                     <th>#</th>
                     <th>코인</th>
                     <th>거래대금</th>
-                    <th>EMA1</th>
+                    <th>EMA</th>
                     <th>ROC10</th>
                     <th>신호</th>
                 </tr>
-
             </thead>
 
             <tbody>
-
                 {rows}
-
             </tbody>
 
         </table>
@@ -3453,19 +1902,285 @@ def table_html(
     """
 
 
-def section(
-    title,
+# =========================================================
+# 후보 Section
+# =========================================================
+
+SECTION_INFO = {
+    "buy": (
+        "🟢 매수",
+        "buy-title",
+        "ROC10 0선 상향돌파"
+    ),
+    "progress": (
+        "🚀 진행",
+        "progress-title",
+        "ROC10 양수 유지 · ② 이상"
+    ),
+    "near": (
+        "🔥 돌파",
+        "near-title",
+        "ROC10 0선 근처 상승"
+    ),
+    "short": (
+        "🔴 숏",
+        "short-title",
+        "ROC10 0선 하향돌파 · ①"
+    ),
+    "short_progress": (
+        "📉 진행",
+        "short-progress-title",
+        "ROC10 음수 유지 · ② 이상"
+    ),
+    "short_near": (
+        "⚠️ 하락",
+        "short-near-title",
+        "ROC10 0선 근처 하락"
+    )
+}
+
+
+def focus_section(
+    data,
+    update_time,
+    kind,
+    exchange="upbit"
+):
+    if kind == "buy":
+
+        candidates = [
+            x for x in data
+            if (
+                is_upbit_buy_candidate(x)
+                if exchange == "upbit"
+                else is_okx_long_candidate(x)
+            )
+        ]
+
+        candidates.sort(
+            key=lambda x: float(
+                x.get("roc", {}).get(
+                    "roc10",
+                    -999
+                )
+            ),
+            reverse=True
+        )
+
+    elif kind == "progress":
+
+        candidates = [
+            x for x in data
+            if is_roc_progress_candidate(x)
+        ]
+
+        candidates.sort(
+            key=lambda x: int(
+                x.get("roc", {}).get(
+                    "roc10_count",
+                    0
+                )
+            ),
+            reverse=True
+        )
+
+    elif kind == "near":
+
+        candidates = [
+            x for x in data
+            if is_roc_near_zero_candidate(x)
+        ]
+
+        candidates.sort(
+            key=lambda x: float(
+                x.get("roc", {}).get(
+                    "roc10",
+                    -999
+                )
+            ),
+            reverse=True
+        )
+
+        candidates = candidates[:ROC_FOCUS_TOP]
+
+    elif kind == "short":
+
+        candidates = [
+            x for x in data
+            if is_okx_short_candidate(x)
+        ]
+
+    elif kind == "short_progress":
+
+        candidates = [
+            x for x in data
+            if is_roc_short_progress_candidate(x)
+        ]
+
+        candidates.sort(
+            key=lambda x: int(
+                x.get("roc", {}).get(
+                    "roc10_negative_count",
+                    0
+                )
+            ),
+            reverse=True
+        )
+
+    elif kind == "short_near":
+
+        candidates = [
+            x for x in data
+            if is_roc_short_near_zero_candidate(x)
+        ]
+
+        candidates.sort(
+            key=lambda x: float(
+                x.get("roc", {}).get(
+                    "roc10",
+                    999
+                )
+            )
+        )
+
+        candidates = candidates[:ROC_FOCUS_TOP]
+
+    else:
+        candidates = []
+
+    title, title_class, sub = SECTION_INFO[kind]
+
+    if candidates:
+        rows = rows_html(
+            candidates,
+            kind
+        )
+    else:
+        rows = """
+        <tr>
+            <td colspan="6" class="empty">
+                현재 후보 없음
+            </td>
+        </tr>
+        """
+
+    return f"""
+    <h2 class="focus-title {title_class}">
+        {title}
+        <small>
+            {sub} · {update_time} KST
+        </small>
+    </h2>
+
+    <div class="table-wrap focus-{kind}-table">
+
+        <table>
+
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>코인</th>
+                    <th>거래대금</th>
+                    <th>EMA</th>
+                    <th>ROC10</th>
+                    <th>신호</th>
+                </tr>
+            </thead>
+
+            <tbody>
+                {rows}
+            </tbody>
+
+        </table>
+
+    </div>
+    """
+
+
+def roc_near_zero_section(
+    data,
+    update_time,
+    exchange="upbit"
+):
+    return focus_section(
+        data,
+        update_time,
+        "near",
+        exchange
+    )
+
+
+def roc_buy_section(
+    data,
+    update_time,
+    exchange="upbit"
+):
+    return focus_section(
+        data,
+        update_time,
+        "buy",
+        exchange
+    )
+
+
+def roc_progress_section(
+    data,
+    update_time,
+    exchange="upbit"
+):
+    return focus_section(
+        data,
+        update_time,
+        "progress",
+        exchange
+    )
+
+
+def okx_short_near_section(
     data,
     update_time
 ):
+    return focus_section(
+        data,
+        update_time,
+        "short_near",
+        "okx"
+    )
 
+
+def okx_short_section(
+    data,
+    update_time
+):
+    return focus_section(
+        data,
+        update_time,
+        "short",
+        "okx"
+    )
+
+
+def okx_short_progress_section(
+    data,
+    update_time
+):
+    return focus_section(
+        data,
+        update_time,
+        "short_progress",
+        "okx"
+    )
+
+
+# =========================================================
+# 전체 TOP
+# =========================================================
+
+def section(title, data, update_time):
     return f"""
     <h2>
         🏆 {title} TOP{TOP_N}
-
-        <small>
-            {update_time} KST
-        </small>
+        <small>{update_time} KST</small>
     </h2>
 
     {table_html(data)}
@@ -3473,551 +2188,16 @@ def section(
 
 
 # =========================================================
-# 🔥 롱 돌파
-# 원본 유지 - 현재 대시보드에서는 호출하지 않음
-# =========================================================
-
-def roc_near_zero_section(
-    data,
-    update_time,
-    exchange="upbit"
-):
-
-    candidate_rows = [
-
-        x for x in data
-
-        if is_roc_near_zero_candidate(x)
-
-    ]
-
-    candidate_rows = sorted(
-        candidate_rows,
-        key=lambda x:
-            float(
-                x.get(
-                    "roc",
-                    {}
-                ).get(
-                    "roc10",
-                    -999
-                )
-            ),
-        reverse=True
-    )[:ROC_FOCUS_TOP]
-
-    if not candidate_rows:
-
-        rows = """
-        <tr>
-            <td colspan="6" class="empty">
-                현재 후보 없음
-            </td>
-        </tr>
-        """
-
-    else:
-
-        rows = rows_html(
-            candidate_rows,
-            "near"
-        )
-
-    return f"""
-    <h2 class="focus-title near-title">
-
-        🔥 돌파
-
-        <small>
-            ROC10 0선 근처 상승
-            · {update_time} KST
-        </small>
-
-    </h2>
-
-    <div class="table-wrap focus-near-table">
-
-        <table>
-
-            <thead>
-
-                <tr>
-                    <th>#</th>
-                    <th>코인</th>
-                    <th>거래대금</th>
-                    <th>EMA1</th>
-                    <th>ROC10</th>
-                    <th>신호</th>
-                </tr>
-
-            </thead>
-
-            <tbody>
-
-                {rows}
-
-            </tbody>
-
-        </table>
-
-    </div>
-    """
-
-
-# =========================================================
-# 🟢 매수
-# =========================================================
-
-def roc_buy_section(
-    data,
-    update_time,
-    exchange="upbit"
-):
-
-    candidate_rows = [
-
-        x for x in data
-
-        if (
-            is_upbit_buy_candidate(x)
-            if exchange == "upbit"
-            else is_okx_long_candidate(x)
-        )
-
-    ]
-
-    candidate_rows = sorted(
-        candidate_rows,
-        key=lambda x:
-            float(
-                x.get(
-                    "roc",
-                    {}
-                ).get(
-                    "roc10",
-                    -999
-                )
-            ),
-        reverse=True
-    )
-
-    if not candidate_rows:
-
-        rows = """
-        <tr>
-            <td colspan="6" class="empty">
-                현재 후보 없음
-            </td>
-        </tr>
-        """
-
-    else:
-
-        rows = rows_html(
-            candidate_rows,
-            "buy"
-        )
-
-    return f"""
-    <h2 class="focus-title buy-title">
-
-        🟢 매수
-
-        <small>
-            ROC10 0선 상향돌파
-            · {update_time} KST
-        </small>
-
-    </h2>
-
-    <div class="table-wrap buy-focus-table">
-
-        <table>
-
-            <thead>
-
-                <tr>
-                    <th>#</th>
-                    <th>코인</th>
-                    <th>거래대금</th>
-                    <th>EMA1</th>
-                    <th>ROC10</th>
-                    <th>신호</th>
-                </tr>
-
-            </thead>
-
-            <tbody>
-
-                {rows}
-
-            </tbody>
-
-        </table>
-
-    </div>
-    """
-
-
-# =========================================================
-# 🚀 롱 진행
-# =========================================================
-
-def roc_progress_section(
-    data,
-    update_time,
-    exchange="upbit"
-):
-
-    candidate_rows = [
-
-        x for x in data
-
-        if is_roc_progress_candidate(x)
-
-    ]
-
-    candidate_rows = sorted(
-        candidate_rows,
-        key=lambda x:
-            int(
-                x.get(
-                    "roc",
-                    {}
-                ).get(
-                    "roc10_count",
-                    0
-                )
-            ),
-        reverse=True
-    )
-
-    if not candidate_rows:
-
-        rows = """
-        <tr>
-            <td colspan="6" class="empty">
-                현재 후보 없음
-            </td>
-        </tr>
-        """
-
-    else:
-
-        rows = rows_html(
-            candidate_rows,
-            "progress"
-        )
-
-    return f"""
-    <h2 class="focus-title progress-title">
-
-        🚀 진행
-
-        <small>
-            ROC10 양수 유지 · ② 이상
-            · {update_time} KST
-        </small>
-
-    </h2>
-
-    <div class="table-wrap focus-progress-table">
-
-        <table>
-
-            <thead>
-
-                <tr>
-                    <th>#</th>
-                    <th>코인</th>
-                    <th>거래대금</th>
-                    <th>EMA1</th>
-                    <th>ROC10</th>
-                    <th>신호</th>
-                </tr>
-
-            </thead>
-
-            <tbody>
-
-                {rows}
-
-            </tbody>
-
-        </table>
-
-    </div>
-    """
-
-
-# =========================================================
-# ⚠️ OKX 하락 임박
-# =========================================================
-
-def okx_short_near_section(
-    data,
-    update_time
-):
-
-    candidate_rows = [
-
-        x for x in data
-
-        if is_roc_short_near_zero_candidate(x)
-
-    ]
-
-    candidate_rows = sorted(
-        candidate_rows,
-        key=lambda x:
-            float(
-                x.get(
-                    "roc",
-                    {}
-                ).get(
-                    "roc10",
-                    999
-                )
-            )
-    )[:ROC_FOCUS_TOP]
-
-    if not candidate_rows:
-
-        rows = """
-        <tr>
-            <td colspan="6" class="empty">
-                현재 후보 없음
-            </td>
-        </tr>
-        """
-
-    else:
-
-        rows = rows_html(
-            candidate_rows,
-            "short_near"
-        )
-
-    return f"""
-    <h2 class="focus-title short-near-title">
-
-        ⚠️ 하락
-
-        <small>
-            ROC10 0선 근처 하락
-            · {update_time} KST
-        </small>
-
-    </h2>
-
-    <div class="table-wrap focus-short-near-table">
-
-        <table>
-
-            <thead>
-
-                <tr>
-                    <th>#</th>
-                    <th>코인</th>
-                    <th>거래대금</th>
-                    <th>EMA1</th>
-                    <th>ROC10</th>
-                    <th>신호</th>
-                </tr>
-
-            </thead>
-
-            <tbody>
-
-                {rows}
-
-            </tbody>
-
-        </table>
-
-    </div>
-    """
-
-
-# =========================================================
-# 🔴 OKX 숏
-# =========================================================
-
-def okx_short_section(
-    data,
-    update_time
-):
-
-    short_rows = [
-
-        x for x in data
-
-        if is_okx_short_candidate(x)
-
-    ]
-
-    if not short_rows:
-
-        rows = """
-        <tr>
-            <td colspan="6" class="empty">
-                현재 후보 없음
-            </td>
-        </tr>
-        """
-
-    else:
-
-        rows = rows_html(
-            short_rows,
-            "short"
-        )
-
-    return f"""
-    <h2 class="focus-title short-title">
-
-        🔴 숏
-
-        <small>
-            ROC10 0선 하향돌파
-            · ①
-            · {update_time} KST
-        </small>
-
-    </h2>
-
-    <div class="table-wrap buy-focus-table">
-
-        <table>
-
-            <thead>
-
-                <tr>
-                    <th>#</th>
-                    <th>코인</th>
-                    <th>거래대금</th>
-                    <th>EMA1</th>
-                    <th>ROC10</th>
-                    <th>신호</th>
-                </tr>
-
-            </thead>
-
-            <tbody>
-
-                {rows}
-
-            </tbody>
-
-        </table>
-
-    </div>
-    """
-
-
-# =========================================================
-# 📉 OKX 숏 진행
-# =========================================================
-
-def okx_short_progress_section(
-    data,
-    update_time
-):
-
-    candidate_rows = [
-
-        x for x in data
-
-        if is_roc_short_progress_candidate(x)
-
-    ]
-
-    candidate_rows = sorted(
-        candidate_rows,
-        key=lambda x:
-            int(
-                x.get(
-                    "roc",
-                    {}
-                ).get(
-                    "roc10_negative_count",
-                    0
-                )
-            ),
-        reverse=True
-    )
-
-    if not candidate_rows:
-
-        rows = """
-        <tr>
-            <td colspan="6" class="empty">
-                현재 후보 없음
-            </td>
-        </tr>
-        """
-
-    else:
-
-        rows = rows_html(
-            candidate_rows,
-            "short_progress"
-        )
-
-    return f"""
-    <h2 class="focus-title short-progress-title">
-
-        📉 진행
-
-        <small>
-            ROC10 음수 유지 · ② 이상
-            · {update_time} KST
-        </small>
-
-    </h2>
-
-    <div class="table-wrap focus-short-progress-table">
-
-        <table>
-
-            <thead>
-
-                <tr>
-                    <th>#</th>
-                    <th>코인</th>
-                    <th>거래대금</th>
-                    <th>EMA1</th>
-                    <th>ROC10</th>
-                    <th>신호</th>
-                </tr>
-
-            </thead>
-
-            <tbody>
-
-                {rows}
-
-            </tbody>
-
-        </table>
-
-    </div>
-    """
-
-
-# =========================================================
 # CSS
 # =========================================================
 
-CSS = """
-
+CSS = r"""
 *{
     box-sizing:border-box;
     -webkit-tap-highlight-color:transparent;
 }
 
-html,
-body{
+html,body{
     margin:0;
     padding:0;
     width:100%;
@@ -4027,7 +2207,7 @@ body{
 
 body{
     background:#0d1014;
-    color:#eeeeee;
+    color:#eee;
     font-family:
         -apple-system,
         BlinkMacSystemFont,
@@ -4044,7 +2224,6 @@ h1{
     font-size:15px;
     line-height:20px;
     font-weight:800;
-    color:#f5f5f5;
 }
 
 h2{
@@ -4052,7 +2231,6 @@ h2{
     font-size:12px;
     line-height:17px;
     font-weight:800;
-    color:#eeeeee;
 }
 
 h2 small{
@@ -4072,8 +2250,6 @@ h2 small{
     border-radius:9px;
     font-size:8px;
     line-height:1.45;
-    box-shadow:
-        0 2px 8px rgba(0,0,0,.18);
 }
 
 .status{
@@ -4088,13 +2264,8 @@ h2 small{
     font-weight:800;
 }
 
-.y{
-    color:#42e878;
-}
-
-.n{
-    color:#ff5757;
-}
+.y{color:#42e878}
+.n{color:#ff5757}
 
 .table-wrap{
     width:100%;
@@ -4102,8 +2273,6 @@ h2 small{
     border-radius:9px;
     border:1px solid #282e36;
     background:#171b20;
-    box-shadow:
-        0 2px 8px rgba(0,0,0,.18);
 }
 
 table{
@@ -4124,10 +2293,9 @@ th{
     border-bottom:1px solid #2c323a;
     color:#9299a3;
     font-size:7px;
-    line-height:10px;
     font-weight:700;
     white-space:nowrap;
-    text-align:center !important;
+    text-align:center!important;
     vertical-align:middle;
 }
 
@@ -4135,7 +2303,7 @@ td{
     height:45px;
     padding:5px 2px;
     border-bottom:1px solid #272d34;
-    text-align:center !important;
+    text-align:center!important;
     vertical-align:middle;
     overflow:hidden;
 }
@@ -4144,35 +2312,12 @@ tbody tr:last-child td{
     border-bottom:none;
 }
 
-th:nth-child(1),
-td:nth-child(1){
-    width:6%;
-}
-
-th:nth-child(2),
-td:nth-child(2){
-    width:20%;
-}
-
-th:nth-child(3),
-td:nth-child(3){
-    width:15%;
-}
-
-th:nth-child(4),
-td:nth-child(4){
-    width:19%;
-}
-
-th:nth-child(5),
-td:nth-child(5){
-    width:24%;
-}
-
-th:nth-child(6),
-td:nth-child(6){
-    width:16%;
-}
+th:nth-child(1),td:nth-child(1){width:6%}
+th:nth-child(2),td:nth-child(2){width:20%}
+th:nth-child(3),td:nth-child(3){width:15%}
+th:nth-child(4),td:nth-child(4){width:19%}
+th:nth-child(5),td:nth-child(5){width:24%}
+th:nth-child(6),td:nth-child(6){width:16%}
 
 .rank{
     color:#858c96;
@@ -4219,7 +2364,7 @@ td:nth-child(6){
 }
 
 .vol{
-    padding:3px 1px !important;
+    padding:3px 1px!important;
     font-size:8px;
     font-weight:800;
     line-height:18px;
@@ -4228,11 +2373,13 @@ td:nth-child(6){
 }
 
 
-/* EMA */
+/* =====================================================
+   EMA
+   ===================================================== */
 
 .ema-cell{
     overflow:hidden;
-    padding:2px 1px !important;
+    padding:2px 1px!important;
 }
 
 .ema-title{
@@ -4241,7 +2388,6 @@ td:nth-child(6){
     line-height:9px;
     font-weight:700;
     text-align:center;
-    white-space:nowrap;
 }
 
 .ema-row{
@@ -4264,36 +2410,15 @@ td:nth-child(6){
     text-align:center;
 }
 
-.ema-value-wrap{
+.ema-value{
     flex:1;
     min-width:0;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    overflow:hidden;
-}
-
-.ema1-cell{
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    width:100%;
-    min-width:0;
-    height:16px;
-    min-height:16px;
-    line-height:1.1;
-    white-space:nowrap;
-    overflow:hidden;
-}
-
-.ema1-main{
-    display:block;
-    width:100%;
     font-size:8px;
     font-weight:800;
     line-height:12px;
     text-align:center;
     white-space:nowrap;
+    overflow:hidden;
 }
 
 .ema-long{
@@ -4305,14 +2430,16 @@ td:nth-child(6){
 }
 
 .ema-none{
-    color:#eeeeee;
+    color:#eee;
 }
 
 
-/* ROC10 */
+/* =====================================================
+   ROC
+   ===================================================== */
 
 .roc-column{
-    padding:2px 1px !important;
+    padding:2px 1px!important;
     overflow:hidden;
 }
 
@@ -4331,7 +2458,6 @@ td:nth-child(6){
     line-height:11px;
     font-weight:700;
     color:#858c96;
-    white-space:nowrap;
 }
 
 .roc-value{
@@ -4353,33 +2479,34 @@ td:nth-child(6){
     color:#9aa1aa;
 }
 
-.roc-cross-up{
-    color:#39e875;
+.roc-cross-up,
+.roc-cross-down,
+.roc-no-cross{
     font-size:7px;
     font-weight:900;
     margin-left:2px;
+}
+
+.roc-cross-up{
+    color:#39e875;
 }
 
 .roc-cross-down{
     color:#ff5555;
-    font-size:7px;
-    font-weight:900;
-    margin-left:2px;
 }
 
 .roc-no-cross{
     color:#6f7680;
-    font-size:7px;
-    font-weight:800;
-    margin-left:2px;
 }
 
 
-/* 신호 */
+/* =====================================================
+   신호
+   ===================================================== */
 
 .close-ema10{
-    text-align:center !important;
-    vertical-align:middle !important;
+    text-align:center!important;
+    vertical-align:middle!important;
     white-space:nowrap;
     font-size:8px;
     font-weight:800;
@@ -4427,7 +2554,9 @@ td:nth-child(6){
 }
 
 
-/* 행 */
+/* =====================================================
+   행
+   ===================================================== */
 
 .qualified{
     background:rgba(57,232,117,.055);
@@ -4454,7 +2583,9 @@ td:nth-child(6){
 }
 
 
-/* 제목 */
+/* =====================================================
+   제목
+   ===================================================== */
 
 .focus-title{
     margin-top:12px;
@@ -4508,31 +2639,29 @@ td:nth-child(6){
 
 .empty{
     color:#555d67;
-    padding:14px 5px !important;
+    padding:14px 5px!important;
     font-size:8px;
     height:48px;
 }
 
 
-/* 모바일 */
+/* =====================================================
+   모바일
+   ===================================================== */
 
 @media(max-width:600px){
 
     body{
         padding:5px 4px 14px;
-        font-size:10px;
     }
 
     h1{
-        margin:3px 3px 7px;
         font-size:15px;
-        line-height:20px;
     }
 
     h2{
         margin:12px 3px 5px;
         font-size:11px;
-        line-height:16px;
     }
 
     h2 small{
@@ -4545,15 +2674,11 @@ td:nth-child(6){
 
     .info{
         padding:7px 8px;
-        margin-bottom:7px;
         font-size:7px;
-        line-height:1.45;
     }
 
     .status{
         gap:12px;
-        margin-top:6px;
-        padding-top:5px;
         font-size:7px;
     }
 
@@ -4561,7 +2686,6 @@ td:nth-child(6){
         height:27px;
         padding:5px 1px;
         font-size:6px;
-        line-height:9px;
     }
 
     td{
@@ -4580,35 +2704,24 @@ td:nth-child(6){
     .coin-name{
         font-size:8px;
         line-height:12px;
-        height:12px;
     }
 
     .change{
-        margin-top:2px;
         font-size:6px;
         line-height:9px;
         height:9px;
     }
 
     .vol{
-        padding:3px 1px !important;
         font-size:7px;
-        line-height:18px;
-        height:45px;
     }
 
     .ema-cell{
-        padding:2px 0 !important;
+        padding:2px 0!important;
     }
 
     .ema-title{
         font-size:5.5px;
-        line-height:8px;
-    }
-
-    .ema-row{
-        min-height:16px;
-        height:16px;
     }
 
     .tf{
@@ -4617,28 +2730,16 @@ td:nth-child(6){
         font-size:6px;
     }
 
-    .ema1-cell{
-        height:16px;
-        min-height:16px;
-    }
-
-    .ema1-main{
+    .ema-value{
         font-size:7px;
-        line-height:12px;
-    }
-
-    .roc-cell{
-        min-height:41px;
     }
 
     .roc-title{
         font-size:5.5px;
-        line-height:10px;
     }
 
     .roc-value{
         font-size:6.5px;
-        line-height:13px;
     }
 
     .roc-cross-up,
@@ -4647,28 +2748,21 @@ td:nth-child(6){
         font-size:5.5px;
     }
 
-    .close-ema10{
-        font-size:7px;
-    }
-
-    .buy-stage{
-        font-size:7px;
-        line-height:18px;
-    }
-
+    .close-ema10,
+    .buy-stage,
     .buy-none{
         font-size:7px;
     }
 
     .empty{
-        padding:13px 4px !important;
         font-size:7px;
-        height:45px;
     }
 }
 
 
-/* 작은 화면 */
+/* =====================================================
+   작은 화면
+   ===================================================== */
 
 @media(max-width:380px){
 
@@ -4715,12 +2809,10 @@ td:nth-child(6){
 
     .ema-title{
         font-size:5px;
-        line-height:8px;
     }
 
-    .ema1-main{
+    .ema-value{
         font-size:6px;
-        line-height:12px;
     }
 
     .roc-title{
@@ -4737,17 +2829,16 @@ td:nth-child(6){
         font-size:5px;
     }
 
-    .buy-stage{
-        font-size:6px;
-    }
-
+    .buy-stage,
     .buy-none{
         font-size:6px;
     }
 }
 
 
-/* PC */
+/* =====================================================
+   PC
+   ===================================================== */
 
 @media(min-width:601px){
 
@@ -4777,7 +2868,7 @@ td:nth-child(6){
         font-size:9px;
     }
 
-    .ema1-main{
+    .ema-value{
         font-size:9px;
     }
 
@@ -4793,7 +2884,6 @@ td:nth-child(6){
         font-size:9px;
     }
 }
-
 """
 
 
@@ -4801,10 +2891,7 @@ td:nth-child(6){
 # Dashboard
 # =========================================================
 
-@app.get(
-    "/",
-    response_class=HTMLResponse
-)
+@app.get("/", response_class=HTMLResponse)
 def dashboard():
 
     timeframe_label = format_timeframe(
@@ -4816,12 +2903,16 @@ def dashboard():
 
         <span>
             업비트 :
-            <b class="y">{USE_UPBIT}</b>
+            <b class="{'y' if USE_UPBIT == 'Y' else 'n'}">
+                {USE_UPBIT}
+            </b>
         </span>
 
         <span>
             OKX :
-            <b class="n">{USE_OKX}</b>
+            <b class="{'y' if USE_OKX == 'Y' else 'n'}">
+                {USE_OKX}
+            </b>
         </span>
 
     </div>
@@ -4829,12 +2920,7 @@ def dashboard():
 
     sections = ""
 
-
-    # =====================================================
-    # 업비트
-    # 🔥 돌파 섹션만 삭제
-    # =====================================================
-
+    # Upbit
     if USE_UPBIT == "Y":
 
         sections += roc_buy_section(
@@ -4849,12 +2935,7 @@ def dashboard():
             "upbit"
         )
 
-
-    # =====================================================
-    # OKX 롱
-    # 🔥 돌파 섹션만 삭제
-    # =====================================================
-
+    # OKX
     if USE_OKX == "Y":
 
         sections += roc_buy_section(
@@ -4868,11 +2949,6 @@ def dashboard():
             latest_okx_update_time,
             "okx"
         )
-
-
-        # =================================================
-        # OKX 숏
-        # =================================================
 
         sections += okx_short_near_section(
             latest_okx_data,
@@ -4889,13 +2965,8 @@ def dashboard():
             latest_okx_update_time
         )
 
-
-    # =====================================================
     # 전체 TOP
-    # =====================================================
-
     if USE_UPBIT == "Y":
-
         sections += section(
             "업비트",
             latest_upbit_data,
@@ -4903,13 +2974,11 @@ def dashboard():
         )
 
     if USE_OKX == "Y":
-
         sections += section(
             "OKX",
             latest_okx_data,
             latest_okx_update_time
         )
-
 
     return f"""
     <!DOCTYPE html>
@@ -4936,7 +3005,7 @@ def dashboard():
         >
 
         <title>
-            {timeframe_label} EMA1 · ROC10
+            {timeframe_label} EMA + ROC10
         </title>
 
         <style>
@@ -4998,18 +3067,14 @@ def dashboard():
 
 def scheduler():
 
-    log.info(
-        "스케줄러 시작"
-    )
+    log.info("스케줄러 시작")
 
     while True:
 
         try:
-
             schedule.run_pending()
 
         except Exception as e:
-
             log.exception(
                 f"스케줄러 오류: {e}"
             )
@@ -5025,13 +3090,11 @@ def scheduler():
 def startup():
 
     if USE_UPBIT not in ("Y", "N"):
-
         raise ValueError(
             "USE_UPBIT은 Y 또는 N만 가능합니다."
         )
 
     if USE_OKX not in ("Y", "N"):
-
         raise ValueError(
             "USE_OKX는 Y 또는 N만 가능합니다."
         )
@@ -5051,22 +3114,19 @@ def startup():
     )
 
     log.info(
-        f"{timeframe_label} EMA1 + ROC10 시작"
+        f"{timeframe_label} EMA + ROC10 시작"
     )
 
     log.info(
-        f"업비트={USE_UPBIT} / "
-        f"OKX={USE_OKX}"
+        f"업비트={USE_UPBIT} / OKX={USE_OKX}"
     )
 
     log.info(
-        f"TOP={TOP_N} / "
-        f"UPDATE={UPDATE_MINUTES}분"
+        f"TOP={TOP_N} / UPDATE={UPDATE_MINUTES}분"
     )
 
     log.info(
-        f"EMA={timeframe_label} / "
-        f"EMA30-60-120"
+        f"EMA={timeframe_label} / EMA30-60-120"
     )
 
     log.info(
@@ -5092,8 +3152,7 @@ def startup():
     )
 
     log.info(
-        f"돌파/하락 TOP = "
-        f"{ROC_FOCUS_TOP}개"
+        f"돌파/하락 TOP = {ROC_FOCUS_TOP}개"
     )
 
     log.info(
@@ -5109,12 +3168,10 @@ def startup():
         "========================================"
     )
 
-
     threading.Thread(
         target=update_dashboard,
         daemon=True
     ).start()
-
 
     schedule.every(
         UPDATE_MINUTES
