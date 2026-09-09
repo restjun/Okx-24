@@ -1390,22 +1390,18 @@ def roc_count(
 # =========================================================
 # ROC 분석
 # =========================================================
-# ROC10 실제 수치 표시용
+# 돌파 기능 완전 제거
 #
 # 유지:
 # 1. ROC 양수/음수
-# 2. ROC 진행 카운트 내부 계산
+# 2. ROC 진행 카운트
 # 3. 롱 눌림
 # 4. 숏 눌림
 #
-# 표시:
-# - ROC10 실제 수치
-#
 # 제거:
-# - ROC 상승/하락 문구
-# - 진행 n 표시
-# - 숏진행 n 표시
-# - ROC 0선 돌파 표시
+# - ROC 0선 상향돌파
+# - ROC 0선 하향돌파
+# - 돌파 후보
 # =========================================================
 
 def roc_analysis(
@@ -1478,7 +1474,7 @@ def roc_analysis(
         )
 
         # =================================================
-        # 눌림
+        # 눌림만 유지
         # =================================================
 
         long_pullback = (
@@ -1512,23 +1508,55 @@ def roc_analysis(
                 short_pullback
         })
 
-        # =================================================
-        # ROC 표시 문구 제거
-        #
-        # 실제 수치는 roc_html()에서 표시
-        # =================================================
+        if long_pullback:
 
-        result["state"] = "positive" \
-            if current_value > 0 \
-            else (
-                "negative"
-                if current_value < 0
-                else "zero"
-            )
+            result.update({
 
-        result["display"] = (
-            f"{current_value:+.2f}%"
-        )
+                "state":
+                    "long_pullback",
+
+                "display":
+                    "🟡 눌림 ①"
+            })
+
+        elif short_pullback:
+
+            result.update({
+
+                "state":
+                    "short_pullback",
+
+                "display":
+                    "🟠 숏 눌림 ①"
+            })
+
+        elif (
+            current_value > 0
+            and positive_count >= 2
+        ):
+
+            result.update({
+
+                "state":
+                    "progress",
+
+                "display":
+                    f"진행 {positive_count}"
+            })
+
+        elif (
+            current_value < 0
+            and negative_count >= 2
+        ):
+
+            result.update({
+
+                "state":
+                    "short_progress",
+
+                "display":
+                    f"숏진행 {negative_count}"
+            })
 
         return result
 
@@ -2534,17 +2562,13 @@ def market_direction_html(
     )
 
 
-# =========================================================
-# BTC ROC 실제 수치
-# =========================================================
-
 def market_roc_html(r):
 
     if not r:
 
         return (
             '<span class="market-zero">'
-            '-'
+            '⚪ -'
             '</span>'
         )
 
@@ -2556,7 +2580,7 @@ def market_roc_html(r):
 
         return (
             '<span class="market-zero">'
-            '-'
+            '⚪ -'
             '</span>'
         )
 
@@ -2568,29 +2592,49 @@ def market_roc_html(r):
 
         return (
             '<span class="market-zero">'
-            '-'
+            '⚪ -'
             '</span>'
         )
 
     if value > 0:
 
+        count = max(
+            int(
+                r.get(
+                    "roc10_count",
+                    0
+                )
+            ),
+            1
+        )
+
         return (
             '<span class="market-up">'
-            f'{value:+.2f}%'
+            f'🟢 상승 {count}'
             '</span>'
         )
 
     if value < 0:
 
+        count = max(
+            int(
+                r.get(
+                    "roc10_negative_count",
+                    0
+                )
+            ),
+            1
+        )
+
         return (
             '<span class="market-down">'
-            f'{value:+.2f}%'
+            f'🔴 하락 {count}'
             '</span>'
         )
 
     return (
         '<span class="market-zero">'
-        '0.00%'
+        '⚪ 0'
         '</span>'
     )
 
@@ -2671,6 +2715,16 @@ def market_change_html(value):
 # =========================================================
 # BTC 롱 / 숏 방향 판단
 # =========================================================
+#
+# 시각화용 판단
+#
+# 1. 1H + 4H 같은 방향
+# 2. ROC 같은 방향
+# 3. ROC 0선 전환이면 눌림
+# 4. 1H / 4H 불일치 = 관망
+#
+# ※ 자동매매 신호가 아님
+# =========================================================
 
 def btc_position_view(row):
 
@@ -2724,6 +2778,10 @@ def btc_position_view(row):
         )
     )
 
+    # -----------------------------------------------------
+    # 1H / 4H 불일치
+    # -----------------------------------------------------
+
     if (
         d1 == "none"
         or d4 == "none"
@@ -2734,6 +2792,10 @@ def btc_position_view(row):
             "text": "⚪ 관망",
             "class": "wait"
         }
+
+    # -----------------------------------------------------
+    # 롱
+    # -----------------------------------------------------
 
     if d1 == "long":
 
@@ -2758,6 +2820,10 @@ def btc_position_view(row):
             "text": "⚪ 롱 대기",
             "class": "wait"
         }
+
+    # -----------------------------------------------------
+    # 숏
+    # -----------------------------------------------------
 
     if d1 == "short":
 
@@ -2807,6 +2873,10 @@ def get_market_row(
 
 def market_summary_html():
 
+    # =====================================================
+    # BTC만 사용
+    # =====================================================
+
     btc = get_market_row(
         "BTC"
     )
@@ -2849,7 +2919,7 @@ def market_summary_html():
                     </span>
 
                     <span>
-                        ROC -
+                        ROC ⚪ -
                     </span>
 
                     <span class="btc-position wait">
@@ -2973,10 +3043,6 @@ def market_summary_html():
 # =========================================================
 # ROC HTML
 # =========================================================
-# 변경:
-# 상승 n / 하락 n 제거
-# 실제 ROC10 수치 표시
-# =========================================================
 
 def roc_html(r):
 
@@ -2985,7 +3051,7 @@ def roc_html(r):
         return (
             '<div class="roc-cell">'
             '<span class="roc-zero">'
-            '-'
+            '⚪ 0'
             '</span>'
             '</div>'
         )
@@ -2999,7 +3065,7 @@ def roc_html(r):
         return (
             '<div class="roc-cell">'
             '<span class="roc-zero">'
-            '-'
+            '⚪ 0'
             '</span>'
             '</div>'
         )
@@ -3013,27 +3079,51 @@ def roc_html(r):
         return (
             '<div class="roc-cell">'
             '<span class="roc-zero">'
-            '-'
+            '⚪ 0'
             '</span>'
             '</div>'
         )
 
     if value > 0:
 
+        count = int(
+            r.get(
+                "roc10_count",
+                0
+            )
+        )
+
+        count = max(
+            count,
+            1
+        )
+
         return f"""
         <div class="roc-cell">
             <span class="roc-positive">
-                {value:+.2f}%
+                🟢 상승 {count}
             </span>
         </div>
         """
 
     if value < 0:
 
+        count = int(
+            r.get(
+                "roc10_negative_count",
+                0
+            )
+        )
+
+        count = max(
+            count,
+            1
+        )
+
         return f"""
         <div class="roc-cell">
             <span class="roc-negative">
-                {value:+.2f}%
+                🔴 하락 {count}
             </span>
         </div>
         """
@@ -3041,7 +3131,7 @@ def roc_html(r):
     return """
     <div class="roc-cell">
         <span class="roc-zero">
-            0.00%
+            ⚪ 0
         </span>
     </div>
     """
@@ -3050,8 +3140,7 @@ def roc_html(r):
 # =========================================================
 # 신호 HTML
 # =========================================================
-# ROC 진행 문구 제거
-# 눌림 신호는 유지
+# 돌파 표시 제거
 # =========================================================
 
 def signal_html(row):
@@ -3076,9 +3165,25 @@ def signal_html(row):
             '</b>'
         )
 
-    # =====================================================
-    # 기존 ROC 진행 표시 제거
-    # =====================================================
+    if row.get(
+        "progress_qualified"
+    ):
+
+        return (
+            '<b class="progress">'
+            f'진행 {row.get("roc", {}).get("roc10_count", 0)}'
+            '</b>'
+        )
+
+    if row.get(
+        "short_progress_qualified"
+    ):
+
+        return (
+            '<b class="short-progress">'
+            f'숏진행 {row.get("roc", {}).get("roc10_negative_count", 0)}'
+            '</b>'
+        )
 
     return (
         '<span class="muted">-</span>'
@@ -4057,6 +4162,7 @@ td:nth-child(1){
         line-height:13px;
     }
 
+
     .market-summary{
 
         padding:
@@ -4126,6 +4232,7 @@ td:nth-child(1){
         line-height:8px;
 
     }
+
 
     h2{
         font-size:8px;
@@ -4555,11 +4662,7 @@ def startup():
     )
 
     log.info(
-        "ROC10 실제 수치 표시"
-    )
-
-    log.info(
-        "ROC 진행/상승/하락 문구 표시 제거"
+        "ROC 양수/음수 진행 카운트 유지"
     )
 
     log.info(
