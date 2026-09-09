@@ -3297,14 +3297,21 @@ def signal_html(row):
             '</span>'
         )
 
+    # =====================================================
+    # 진행 신호
+    # 숫자는 ROC10 칸에서 표시하므로
+    # 신호 칸에는 그림만 표시
+    # =====================================================
+
     if row.get(
         "progress_qualified"
     ):
 
         return (
-            '<span class="progress">'
-            f'진행 '
-            f'{row.get("roc", {}).get("roc10_count", 0)}'
+            '<span '
+            'class="signal-icon long-progress" '
+            'title="롱 진행">'
+            '☀️'
             '</span>'
         )
 
@@ -3313,9 +3320,10 @@ def signal_html(row):
     ):
 
         return (
-            '<span class="short-progress">'
-            f'숏진행 '
-            f'{row.get("roc", {}).get("roc10_negative_count", 0)}'
+            '<span '
+            'class="signal-icon short-progress" '
+            'title="숏 진행">'
+            '🌧️'
             '</span>'
         )
 
@@ -4210,6 +4218,40 @@ h2 small{
                 159,
                 67,
                 .30
+            )
+        );
+}
+
+
+/* =====================================================
+   진행 아이콘
+===================================================== */
+
+.signal-icon.long-progress{
+
+    filter:
+        drop-shadow(
+            0 0 2px
+            rgba(
+                255,
+                216,
+                77,
+                .25
+            )
+        );
+}
+
+
+.signal-icon.short-progress{
+
+    filter:
+        drop-shadow(
+            0 0 2px
+            rgba(
+                160,
+                190,
+                220,
+                .25
             )
         );
 }
@@ -5275,7 +5317,9 @@ def startup():
         "🚀 롱 돌파 / "
         "🔻 숏 돌파 / "
         "🧊 롱 눌림 / "
-        "☁️ 숏 눌림"
+        "☁️ 숏 눌림 / "
+        "☀️ 롱 진행 / "
+        "🌧️ 숏 진행"
     )
 
     log.info(
