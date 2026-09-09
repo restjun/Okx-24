@@ -35,7 +35,7 @@ log = logging.getLogger("trading")
 # =========================================================
 
 VOLUME_HOURS = 24
-TOP_N = 200
+TOP_N = 230
 UPDATE_MINUTES = 1
 
 HISTORY_CHUNK = 200
