@@ -66,6 +66,10 @@ EMA1_MAX_COUNT = 100
 
 ROC_PERIOD = 10
 
+# 돌파 / 눌림 표시 최대 카운트
+BREAKOUT_MAX_COUNT = 2
+PULLBACK_MAX_COUNT = 2
+
 SUPPORTED_UPBIT_TIMEFRAMES = {
     5, 15, 30, 60, 240
 }
@@ -1356,6 +1360,180 @@ def roc_count(
 
 
 # =========================================================
+# 돌파 / 눌림 카운트
+# =========================================================
+
+def roc_cross_count(
+    confirmed_series,
+    current_series,
+    cross_type,
+    max_count=2
+):
+
+    """
+    ROC 0선 돌파/눌림 이후 경과 카운트
+
+    cross_type
+
+    long_breakout
+        음수/0 -> 양수
+
+    short_breakout
+        양수/0 -> 음수
+
+    long_pullback
+        양수 -> 0 이하
+
+    short_pullback
+        음수 -> 0 이상
+
+    반환값
+
+        0 = 해당 없음
+        1 = 발생한 현재 구간
+        2 = 다음 1개 봉까지
+    """
+
+    try:
+
+        if (
+            confirmed_series is None
+            or current_series is None
+        ):
+            return 0
+
+        confirmed_values = [
+            float(x)
+            for x in confirmed_series.tolist()
+            if not pd.isna(x)
+        ]
+
+        current_values = [
+            float(x)
+            for x in current_series.tolist()
+            if not pd.isna(x)
+        ]
+
+        if len(confirmed_values) < 1:
+            return 0
+
+        if len(current_values) < 1:
+            return 0
+
+        # -------------------------------------------------
+        # 현재봉 포함 전체 ROC 시계열
+        #
+        # confirmed 마지막 값 = 직전 확정봉
+        # current 마지막 값   = 현재봉
+        # -------------------------------------------------
+
+        values = current_values
+
+        if len(values) < 2:
+            previous = confirmed_values[-1]
+            current = values[-1]
+
+            values = [
+                previous,
+                current
+            ]
+
+        # -------------------------------------------------
+        # 마지막 교차 발생 위치 탐색
+        # -------------------------------------------------
+
+        cross_index = None
+
+        for i in range(
+            len(values) - 1,
+            0,
+            -1
+        ):
+
+            prev = values[i - 1]
+            curr = values[i]
+
+            crossed = False
+
+            if cross_type == "long_breakout":
+
+                crossed = (
+                    prev <= 0
+                    and curr > 0
+                )
+
+            elif cross_type == "short_breakout":
+
+                crossed = (
+                    prev >= 0
+                    and curr < 0
+                )
+
+            elif cross_type == "long_pullback":
+
+                crossed = (
+                    prev > 0
+                    and curr <= 0
+                )
+
+            elif cross_type == "short_pullback":
+
+                crossed = (
+                    prev < 0
+                    and curr >= 0
+                )
+
+            if crossed:
+
+                cross_index = i
+
+                break
+
+        if cross_index is None:
+            return 0
+
+        # -------------------------------------------------
+        # 교차 이후 경과 봉 수
+        #
+        # 발생 봉 = 1
+        # 다음 봉   = 2
+        # 그 이후   = 3 이상 → 표시하지 않음
+        # -------------------------------------------------
+
+        count = (
+            len(values)
+            - cross_index
+        )
+
+        if count < 1:
+            return 0
+
+        if count > max_count:
+            return 0
+
+        return int(count)
+
+    except Exception as e:
+
+        log.error(
+            f"ROC 돌파/눌림 카운트 오류: {e}"
+        )
+
+        return 0
+
+
+def count_icon(count):
+
+    if count == 1:
+        return "①"
+
+    if count == 2:
+        return "②"
+
+    return ""
+
+
+# =========================================================
 # ROC 분석
 # =========================================================
 
@@ -1377,6 +1555,12 @@ def roc_analysis(
 
         "long_pullback": False,
         "short_pullback": False,
+
+        "long_breakout_count": 0,
+        "short_breakout_count": 0,
+
+        "long_pullback_count": 0,
+        "short_pullback_count": 0,
 
         "state": "none",
         "display": "-"
@@ -1434,6 +1618,50 @@ def roc_analysis(
         # ROC 0선 돌파
         # =================================================
 
+        long_breakout_count = (
+            roc_cross_count(
+                confirmed,
+                current,
+                "long_breakout",
+                BREAKOUT_MAX_COUNT
+            )
+        )
+
+        short_breakout_count = (
+            roc_cross_count(
+                confirmed,
+                current,
+                "short_breakout",
+                BREAKOUT_MAX_COUNT
+            )
+        )
+
+        # =================================================
+        # ROC 0선 눌림
+        # =================================================
+
+        long_pullback_count = (
+            roc_cross_count(
+                confirmed,
+                current,
+                "long_pullback",
+                PULLBACK_MAX_COUNT
+            )
+        )
+
+        short_pullback_count = (
+            roc_cross_count(
+                confirmed,
+                current,
+                "short_pullback",
+                PULLBACK_MAX_COUNT
+            )
+        )
+
+        # =================================================
+        # 현재봉의 실제 교차 여부
+        # =================================================
+
         long_breakout = (
             previous <= 0
             and current_value > 0
@@ -1443,10 +1671,6 @@ def roc_analysis(
             previous >= 0
             and current_value < 0
         )
-
-        # =================================================
-        # ROC 0선 눌림
-        # =================================================
 
         long_pullback = (
             previous > 0
@@ -1473,56 +1697,68 @@ def roc_analysis(
                 negative_count,
 
             "long_breakout":
-                long_breakout,
+                long_breakout_count > 0,
 
             "short_breakout":
-                short_breakout,
+                short_breakout_count > 0,
 
             "long_pullback":
-                long_pullback,
+                long_pullback_count > 0,
 
             "short_pullback":
-                short_pullback
+                short_pullback_count > 0,
+
+            "long_breakout_count":
+                long_breakout_count,
+
+            "short_breakout_count":
+                short_breakout_count,
+
+            "long_pullback_count":
+                long_pullback_count,
+
+            "short_pullback_count":
+                short_pullback_count
         })
 
         # =================================================
         # 표시 우선순위
         # =================================================
 
-        if long_breakout:
+        if long_breakout_count > 0:
 
             result.update({
                 "state":
                     "long_breakout",
                 "display":
-                    "🚀"
+                    f"🚀{count_icon(long_breakout_count)}"
             })
 
-        elif short_breakout:
+        elif short_breakout_count > 0:
 
             result.update({
                 "state":
                     "short_breakout",
                 "display":
-                    "🔻"
+                    f"🔻{count_icon(short_breakout_count)}"
             })
 
-        elif long_pullback:
+        elif long_pullback_count > 0:
 
             result.update({
                 "state":
                     "long_pullback",
                 "display":
-                    "🧊"
+                    f"🧊{count_icon(long_pullback_count)}"
             })
 
-        elif short_pullback:
+        elif short_pullback_count > 0:
 
             result.update({
                 "state":
                     "short_pullback",
                 "display":
-                    "☁️"
+                    f"☁️{count_icon(short_pullback_count)}"
             })
 
         elif (
@@ -1776,6 +2012,12 @@ def empty_analysis():
 
             "long_pullback": False,
             "short_pullback": False,
+
+            "long_breakout_count": 0,
+            "short_breakout_count": 0,
+
+            "long_pullback_count": 0,
+            "short_pullback_count": 0,
 
             "state": "none",
             "display": "-"
@@ -2852,15 +3094,31 @@ def btc_position_view(row):
 
         if long_breakout:
 
+            count = int(
+                r.get(
+                    "long_breakout_count",
+                    1
+                )
+            )
+
             return {
-                "text": "🚀",
+                "text":
+                    f"🚀{count_icon(count)}",
                 "class": "long"
             }
 
         if long_pullback:
 
+            count = int(
+                r.get(
+                    "long_pullback_count",
+                    1
+                )
+            )
+
             return {
-                "text": "🧊",
+                "text":
+                    f"🧊{count_icon(count)}",
                 "class": "long-pull"
             }
 
@@ -2887,15 +3145,31 @@ def btc_position_view(row):
 
         if short_breakout:
 
+            count = int(
+                r.get(
+                    "short_breakout_count",
+                    1
+                )
+            )
+
             return {
-                "text": "🔻",
+                "text":
+                    f"🔻{count_icon(count)}",
                 "class": "short"
             }
 
         if short_pullback:
 
+            count = int(
+                r.get(
+                    "short_pullback_count",
+                    1
+                )
+            )
+
             return {
-                "text": "☁️",
+                "text":
+                    f"☁️{count_icon(count)}",
                 "class": "short-pull"
             }
 
@@ -3141,6 +3415,82 @@ def roc_html(r):
             '</div>'
         )
 
+    # =====================================================
+    # 돌파 / 눌림을 먼저 표시
+    # =====================================================
+
+    long_breakout_count = int(
+        r.get(
+            "long_breakout_count",
+            0
+        )
+    )
+
+    short_breakout_count = int(
+        r.get(
+            "short_breakout_count",
+            0
+        )
+    )
+
+    long_pullback_count = int(
+        r.get(
+            "long_pullback_count",
+            0
+        )
+    )
+
+    short_pullback_count = int(
+        r.get(
+            "short_pullback_count",
+            0
+        )
+    )
+
+    if long_breakout_count > 0:
+
+        return f"""
+        <div class="roc-cell">
+            <span class="roc-positive">
+                🚀{count_icon(long_breakout_count)}
+            </span>
+        </div>
+        """
+
+    if short_breakout_count > 0:
+
+        return f"""
+        <div class="roc-cell">
+            <span class="roc-negative">
+                🔻{count_icon(short_breakout_count)}
+            </span>
+        </div>
+        """
+
+    if long_pullback_count > 0:
+
+        return f"""
+        <div class="roc-cell">
+            <span class="pullback">
+                🧊{count_icon(long_pullback_count)}
+            </span>
+        </div>
+        """
+
+    if short_pullback_count > 0:
+
+        return f"""
+        <div class="roc-cell">
+            <span class="short-pullback">
+                ☁️{count_icon(short_pullback_count)}
+            </span>
+        </div>
+        """
+
+    # =====================================================
+    # 기존 진행 카운트
+    # =====================================================
+
     if value > 0:
 
         count = int(
@@ -3200,53 +3550,106 @@ def roc_html(r):
 
 def signal_html(row):
 
+    r = row.get(
+        "roc",
+        {}
+    )
+
+    # =====================================================
+    # 롱 돌파
+    # =====================================================
+
     if row.get(
         "breakout_qualified"
     ):
+
+        count = int(
+            r.get(
+                "long_breakout_count",
+                1
+            )
+        )
 
         return (
             '<span '
             'class="signal-icon long-breakout" '
             'title="롱 돌파">'
-            '🚀'
+            f'🚀{count_icon(count)}'
             '</span>'
         )
+
+    # =====================================================
+    # 숏 돌파
+    # =====================================================
 
     if row.get(
         "short_breakout_qualified"
     ):
 
+        count = int(
+            r.get(
+                "short_breakout_count",
+                1
+            )
+        )
+
         return (
             '<span '
             'class="signal-icon short-breakout" '
             'title="숏 돌파">'
-            '🔻'
+            f'🔻{count_icon(count)}'
             '</span>'
         )
+
+    # =====================================================
+    # 롱 눌림
+    # =====================================================
 
     if row.get(
         "pullback_qualified"
     ):
 
+        count = int(
+            r.get(
+                "long_pullback_count",
+                1
+            )
+        )
+
         return (
             '<span '
             'class="signal-icon long-pullback" '
             'title="롱 눌림">'
-            '🧊'
+            f'🧊{count_icon(count)}'
             '</span>'
         )
+
+    # =====================================================
+    # 숏 눌림
+    # =====================================================
 
     if row.get(
         "short_pullback_qualified"
     ):
 
+        count = int(
+            r.get(
+                "short_pullback_count",
+                1
+            )
+        )
+
         return (
             '<span '
             'class="signal-icon short-pullback" '
             'title="숏 눌림">'
-            '☁️'
+            f'☁️{count_icon(count)}'
             '</span>'
         )
+
+    # =====================================================
+    # 롱 진행
+    # =====================================================
 
     if row.get(
         "progress_qualified"
@@ -3259,6 +3662,10 @@ def signal_html(row):
             '☀️'
             '</span>'
         )
+
+    # =====================================================
+    # 숏 진행
+    # =====================================================
 
     if row.get(
         "short_progress_qualified"
@@ -4797,7 +5204,7 @@ def dashboard():
             latest_upbit_update_time,
             is_breakout,
             "breakout",
-            "EMA30>60>120 · ROC10 음수→양수 ①"
+            "EMA30>60>120 · ROC10 음수→양수 ①②"
         )
 
         sections += focus_section(
@@ -4806,7 +5213,7 @@ def dashboard():
             latest_upbit_update_time,
             is_pullback,
             "pullback",
-            "EMA30>60>120 · ROC10 양수→0 이하 ①"
+            "EMA30>60>120 · ROC10 양수→0 이하 ①②"
         )
 
     # =====================================================
@@ -4821,7 +5228,7 @@ def dashboard():
             latest_okx_update_time,
             is_breakout,
             "breakout",
-            "EMA30>60>120 · ROC10 음수→양수 ①"
+            "EMA30>60>120 · ROC10 음수→양수 ①②"
         )
 
         sections += focus_section(
@@ -4830,7 +5237,7 @@ def dashboard():
             latest_okx_update_time,
             is_short_breakout,
             "short_breakout",
-            "EMA30<60<120 · ROC10 양수→음수 ①"
+            "EMA30<60<120 · ROC10 양수→음수 ①②"
         )
 
         sections += focus_section(
@@ -4839,7 +5246,7 @@ def dashboard():
             latest_okx_update_time,
             is_pullback,
             "pullback",
-            "EMA30>60>120 · ROC10 양수→0 이하 ①"
+            "EMA30>60>120 · ROC10 양수→0 이하 ①②"
         )
 
         sections += focus_section(
@@ -4848,7 +5255,7 @@ def dashboard():
             latest_okx_update_time,
             is_short_pullback,
             "short_pullback",
-            "EMA30<60<120 · ROC10 음수→0 이상 ①"
+            "EMA30<60<120 · ROC10 음수→0 이상 ①②"
         )
 
     # =====================================================
@@ -5022,22 +5429,26 @@ def startup():
 
     log.info(
         "롱 돌파: EMA30>60>120 + "
-        "ROC 음수→양수 ①"
+        "ROC 음수→양수 ①②"
     )
 
     log.info(
         "숏 돌파: EMA30<60<120 + "
-        "ROC 양수→음수 ①"
+        "ROC 양수→음수 ①②"
     )
 
     log.info(
         "롱 눌림: EMA30>60>120 + "
-        "ROC 양수→0 이하 ①"
+        "ROC 양수→0 이하 ①②"
     )
 
     log.info(
         "숏 눌림: EMA30<60<120 + "
-        "ROC 음수→0 이상 ①"
+        "ROC 음수→0 이상 ①②"
+    )
+
+    log.info(
+        "돌파/눌림 최대 카운트 = 2"
     )
 
     log.info(
@@ -5071,10 +5482,10 @@ def startup():
 
     log.info(
         "신호 아이콘: "
-        "🚀 롱 돌파 / "
-        "🔻 숏 돌파 / "
-        "🧊 롱 눌림 / "
-        "☁️ 숏 눌림 / "
+        "🚀①② 롱 돌파 / "
+        "🔻①② 숏 돌파 / "
+        "🧊①② 롱 눌림 / "
+        "☁️①② 숏 눌림 / "
         "☀️ 롱 진행 / "
         "🌧️ 숏 진행"
     )
