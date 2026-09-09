@@ -114,14 +114,10 @@ last_request_time = 0
 # OKX 캐시
 # =========================================================
 
-# 전체 ticker 1회 조회 결과
 okx_ticker_cache = {}
 
-# OKX 1H 확정봉 캐시
-# 거래대금 계산에 사용한 데이터를 TOP30 분석에서도 재사용
 okx_1h_cache = {}
 
-# 캐시 생성 시간
 okx_1h_cache_time = "-"
 
 
@@ -1055,10 +1051,6 @@ def get_okx_volume_cached(
 
     if df is None or df.empty:
         return None
-
-    # -----------------------------------------------------
-    # 거래대금 계산에 사용한 1H 데이터를 캐시
-    # -----------------------------------------------------
 
     okx_1h_cache[inst] = df.copy()
 
@@ -2691,10 +2683,9 @@ def roc_html(r):
             '</div>'
         )
 
-    # -----------------------------------------------------
-    # ROC10 > 0
-    # 숫자는 표시하지 않고 양수 카운팅만 표시
-    # -----------------------------------------------------
+    # =====================================================
+    # ROC10 양수 → 상승 카운팅
+    # =====================================================
 
     if value > 0:
 
@@ -2713,15 +2704,14 @@ def roc_html(r):
         return f"""
         <div class="roc-cell">
             <span class="roc-positive">
-                🟢 양수 {count}
+                🟢 상승 {count}
             </span>
         </div>
         """
 
-    # -----------------------------------------------------
-    # ROC10 < 0
-    # 숫자는 표시하지 않고 음수 카운팅만 표시
-    # -----------------------------------------------------
+    # =====================================================
+    # ROC10 음수 → 하락 카운팅
+    # =====================================================
 
     if value < 0:
 
@@ -2740,14 +2730,14 @@ def roc_html(r):
         return f"""
         <div class="roc-cell">
             <span class="roc-negative">
-                🔴 음수 {count}
+                🔴 하락 {count}
             </span>
         </div>
         """
 
-    # -----------------------------------------------------
+    # =====================================================
     # ROC10 = 0
-    # -----------------------------------------------------
+    # =====================================================
 
     return """
     <div class="roc-cell">
@@ -3174,31 +3164,6 @@ h2 small{
     margin-left:3px;
 }
 
-.info{
-    margin:
-        0
-        2px
-        3px;
-
-    padding:
-        3px
-        5px;
-
-    color:#9da4ad;
-
-    background:#15191f;
-
-    border:
-        1px solid
-        #242a31;
-
-    border-radius:5px;
-
-    font-size:5.5px;
-
-    line-height:8px;
-}
-
 .status{
     display:flex;
 
@@ -3206,11 +3171,20 @@ h2 small{
 
     gap:9px;
 
-    margin-top:2px;
+    margin:
+        2px
+        2px
+        3px;
 
-    padding-top:2px;
+    padding:
+        2px
+        0;
 
     border-top:
+        1px solid
+        #242a31;
+
+    border-bottom:
         1px solid
         #242a31;
 
@@ -3542,14 +3516,6 @@ td:nth-child(1){
         font-size:4.5px;
     }
 
-    .info{
-        padding:
-            2px
-            4px;
-        font-size:5px;
-        line-height:7px;
-    }
-
     .status{
         font-size:5.5px;
         line-height:6px;
@@ -3665,10 +3631,6 @@ td:nth-child(1){
     response_class=HTMLResponse
 )
 def dashboard():
-
-    tf = format_timeframe(
-        EMA_TIMEFRAME
-    )
 
     status = f"""
     <div class="status">
@@ -3792,7 +3754,7 @@ def dashboard():
 
             "short_pullback",
 
-            "EMA30<60<120 · ROC10 0선 상향전환 ①"
+            "EMA30<60>120 · ROC10 0선 상향전환 ①"
         )
 
 
@@ -3858,7 +3820,8 @@ def dashboard():
         >
 
         <title>
-            {tf} EMA30·60·120 · ROC10
+            {format_timeframe(EMA_TIMEFRAME)}
+            EMA30·60·120 · ROC10
         </title>
 
         <style>
@@ -3873,26 +3836,7 @@ def dashboard():
             📊 TRADING SIGNAL CENTER
         </h1>
 
-        <div class="info">
-
-            {tf} EMA30·60·120 + ROC10: 현재가 기준<br>
-
-            ROC10:
-            🟢 양수 ①·②·③...
-            /
-            🔴 음수 ①·②·③...
-            /
-            ⚪ 0<br>
-
-            🚀 돌파 = ROC10 0선 상향돌파 ① ·
-            🟡 눌림 = EMA30>60>120 + ROC10 0선 하향전환 ① ·<br>
-
-            🔴 숏 돌파 = ROC10 0선 하향돌파 ① ·
-            🟠 숏 눌림 = EMA30<60<120 + ROC10 0선 상향전환 ①
-
-            {status}
-
-        </div>
+        {status}
 
         {sections}
 
