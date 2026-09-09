@@ -34,8 +34,8 @@ log = logging.getLogger("trading")
 # 설정
 # =========================================================
 
-VOLUME_HOURS = 24
-TOP_N = 20
+VOLUME_HOURS = 24³
+TOP_N = 200
 UPDATE_MINUTES = 1
 
 HISTORY_CHUNK = 200
