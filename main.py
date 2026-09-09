@@ -1224,8 +1224,13 @@ def roc_analysis(
         "roc10_count": 0,
         "roc10_negative_count": 0,
 
+        # 돌파
         "long_candidate": False,
         "short_candidate": False,
+
+        # 눌림
+        "long_pullback": False,
+        "short_pullback": False,
 
         "state": "none",
 
@@ -1280,6 +1285,10 @@ def roc_analysis(
             False
         )
 
+        # =================================================
+        # 돌파
+        # =================================================
+
         long_cross = (
             previous <= 0
             and current_value > 0
@@ -1290,11 +1299,27 @@ def roc_analysis(
             and current_value < 0
         )
 
+        # =================================================
+        # 눌림
+        # =================================================
+
+        long_pullback = (
+            previous > 0
+            and current_value <= 0
+        )
+
+        short_pullback = (
+            previous < 0
+            and current_value >= 0
+        )
+
         result.update({
 
-            "roc10": current_value,
+            "roc10":
+                current_value,
 
-            "roc10_previous": previous,
+            "roc10_previous":
+                previous,
 
             "roc10_count":
                 positive_count,
@@ -1306,28 +1331,67 @@ def roc_analysis(
                 long_cross,
 
             "short_candidate":
-                short_cross
+                short_cross,
+
+            "long_pullback":
+                long_pullback,
+
+            "short_pullback":
+                short_pullback
         })
+
+        # =================================================
+        # 표시용 상태
+        # =================================================
 
         if long_cross:
 
             result.update({
 
-                "state": "long",
+                "state":
+                    "long",
 
                 "display":
-                    "🟢 매수 ①"
+                    "🚀 돌파 ①"
             })
 
         elif short_cross:
 
             result.update({
 
-                "state": "short",
+                "state":
+                    "short",
 
                 "display":
-                    "🔴 숏 ①"
+                    "🔴 숏 돌파 ①"
             })
+
+        elif long_pullback:
+
+            result.update({
+
+                "state":
+                    "long_pullback",
+
+                "display":
+                    "🟡 눌림 ①"
+            })
+
+        elif short_pullback:
+
+            result.update({
+
+                "state":
+                    "short_pullback",
+
+                "display":
+                    "🟠 숏 눌림 ①"
+            })
+
+        # =================================================
+        # 진행 계산은 유지
+        # 대시보드에서는 표시하지 않음
+        # =================================================
 
         elif (
             current_value > 0
@@ -1336,10 +1400,11 @@ def roc_analysis(
 
             result.update({
 
-                "state": "progress",
+                "state":
+                    "progress",
 
                 "display":
-                    f"🚀 진행 {positive_count}"
+                    f"진행 {positive_count}"
             })
 
         elif (
@@ -1353,7 +1418,7 @@ def roc_analysis(
                     "short_progress",
 
                 "display":
-                    f"📉 진행 {negative_count}"
+                    f"숏진행 {negative_count}"
             })
 
         return result
@@ -1585,6 +1650,10 @@ def empty_analysis():
 
             "short_candidate": False,
 
+            "long_pullback": False,
+
+            "short_pullback": False,
+
             "state": "none",
 
             "display": "-"
@@ -1595,6 +1664,10 @@ def empty_analysis():
         "qualified": False,
 
         "short_qualified": False,
+
+        "pullback_qualified": False,
+
+        "short_pullback_qualified": False,
 
         "progress_qualified": False,
 
@@ -1722,6 +1795,10 @@ def analyze(
         <= EMA1_MAX_COUNT
     )
 
+    # =====================================================
+    # 돌파
+    # =====================================================
+
     long_qualified = (
         base
         and
@@ -1738,9 +1815,29 @@ def analyze(
         r["short_candidate"]
     )
 
-    # -----------------------------------------------------
+    # =====================================================
+    # 눌림
+    # =====================================================
+
+    pullback_qualified = (
+        base
+        and
+        e1["direction"] == "long"
+        and
+        r["long_pullback"]
+    )
+
+    short_pullback_qualified = (
+        base
+        and
+        e1["direction"] == "short"
+        and
+        r["short_pullback"]
+    )
+
+    # =====================================================
     # 진행 계산은 그대로 유지
-    # -----------------------------------------------------
+    # =====================================================
 
     progress_qualified = (
         base
@@ -1781,6 +1878,12 @@ def analyze(
 
         "short_qualified":
             short_qualified,
+
+        "pullback_qualified":
+            pullback_qualified,
+
+        "short_pullback_qualified":
+            short_pullback_qualified,
 
         "progress_qualified":
             progress_qualified,
@@ -1852,6 +1955,12 @@ def make_row(
         "short_qualified":
             a["short_qualified"],
 
+        "pullback_qualified":
+            a["pullback_qualified"],
+
+        "short_pullback_qualified":
+            a["short_pullback_qualified"],
+
         "progress_qualified":
             a["progress_qualified"],
 
@@ -1889,8 +1998,28 @@ def is_short(row):
     )
 
 
+def is_pullback(row):
+
+    return bool(
+        row
+        and row.get(
+            "pullback_qualified"
+        )
+    )
+
+
+def is_short_pullback(row):
+
+    return bool(
+        row
+        and row.get(
+            "short_pullback_qualified"
+        )
+    )
+
+
 # ---------------------------------------------------------
-# 진행 계산 함수도 삭제하지 않음
+# 진행 계산 함수는 삭제하지 않음
 # ---------------------------------------------------------
 
 def is_progress(row):
@@ -1984,7 +2113,8 @@ def update_upbit():
     log.info(
         f"업비트 완료 / "
         f"매수 {sum(is_buy(x) for x in rows)}개 / "
-        f"진행 {sum(is_progress(x) for x in rows)}개"
+        f"진행 {sum(is_progress(x) for x in rows)}개 / "
+        f"눌림 {sum(is_pullback(x) for x in rows)}개"
     )
 
 
@@ -2092,8 +2222,10 @@ def update_okx(usdt):
         f"OKX 완료 / "
         f"매수 {sum(is_buy(x) for x in rows)}개 / "
         f"진행 {sum(is_progress(x) for x in rows)}개 / "
+        f"눌림 {sum(is_pullback(x) for x in rows)}개 / "
         f"숏 {sum(is_short(x) for x in rows)}개 / "
-        f"숏진행 {sum(is_short_progress(x) for x in rows)}개"
+        f"숏진행 {sum(is_short_progress(x) for x in rows)}개 / "
+        f"숏눌림 {sum(is_short_pullback(x) for x in rows)}개"
     )
 
     return True
@@ -2278,26 +2410,31 @@ def roc_html(r):
 def signal_html(row):
 
     # -----------------------------------------------------
-    # 매수만 표시
+    # 돌파
     # -----------------------------------------------------
 
     if row.get("qualified"):
 
         return (
             '<b class="buy">'
-            '🟢매수①'
+            '🚀돌파①'
             '</b>'
         )
 
     # -----------------------------------------------------
-    # 진행 표시 삭제
-    #
-    # progress_qualified 계산값은 그대로 존재하지만
-    # 대시보드에는 표시하지 않음
+    # 눌림
     # -----------------------------------------------------
 
+    if row.get("pullback_qualified"):
+
+        return (
+            '<b class="pullback">'
+            '🟡눌림①'
+            '</b>'
+        )
+
     # -----------------------------------------------------
-    # 숏만 표시
+    # 숏 돌파
     # -----------------------------------------------------
 
     if row.get(
@@ -2306,12 +2443,26 @@ def signal_html(row):
 
         return (
             '<b class="short">'
-            '🔴숏①'
+            '🔴숏 돌파①'
             '</b>'
         )
 
     # -----------------------------------------------------
-    # 숏 진행 표시 삭제
+    # 숏 눌림
+    # -----------------------------------------------------
+
+    if row.get(
+        "short_pullback_qualified"
+    ):
+
+        return (
+            '<b class="short-pullback">'
+            '🟠숏 눌림①'
+            '</b>'
+        )
+
+    # -----------------------------------------------------
+    # 진행은 대시보드 표시 안 함
     # -----------------------------------------------------
 
     return (
@@ -2360,18 +2511,27 @@ def row_class(x):
     if x.get("qualified"):
         return "qualified"
 
-    # 진행 클래스는 계산상 남겨둠
     if x.get(
-        "progress_qualified"
+        "pullback_qualified"
     ):
-        return "progress-qualified"
+        return "pullback-qualified"
 
     if x.get(
         "short_qualified"
     ):
         return "short-qualified"
 
-    # 숏 진행 클래스도 계산상 유지
+    if x.get(
+        "short_pullback_qualified"
+    ):
+        return "short-pullback-qualified"
+
+    # 진행 클래스는 계산상 유지
+    if x.get(
+        "progress_qualified"
+    ):
+        return "progress-qualified"
+
     if x.get(
         "short_progress_qualified"
     ):
@@ -2397,17 +2557,17 @@ def rows_html(
 
             cls = "qualified"
 
-        elif focus == "progress":
+        elif focus == "pullback":
 
-            cls = "progress-qualified"
+            cls = "pullback-qualified"
 
         elif focus == "short":
 
             cls = "short-qualified"
 
-        elif focus == "short_progress":
+        elif focus == "short_pullback":
 
-            cls = "short-progress-qualified"
+            cls = "short-pullback-qualified"
 
         else:
 
@@ -2761,6 +2921,16 @@ h2 small{
     font-weight:800;
 }
 
+.pullback{
+    color:#ffd84d!important;
+    font-weight:800;
+}
+
+.short-pullback{
+    color:#ff9f43!important;
+    font-weight:800;
+}
+
 .progress{
     color:#4cc9ff;
 }
@@ -3061,8 +3231,8 @@ td:nth-child(1){
 
 .buy,
 .short,
-.progress,
-.short-progress{
+.pullback,
+.short-pullback{
 
     font-size:5.8px;
 
@@ -3088,12 +3258,12 @@ td:nth-child(1){
         );
 }
 
-.progress-qualified{
+.pullback-qualified{
     background:
         rgba(
-            76,
-            201,
             255,
+            216,
+            77,
             .06
         );
 }
@@ -3104,6 +3274,26 @@ td:nth-child(1){
             255,
             85,
             85,
+            .06
+        );
+}
+
+.short-pullback-qualified{
+    background:
+        rgba(
+            255,
+            159,
+            67,
+            .06
+        );
+}
+
+.progress-qualified{
+    background:
+        rgba(
+            76,
+            201,
+            255,
             .06
         );
 }
@@ -3138,12 +3328,20 @@ td:nth-child(1){
     color:#39e875;
 }
 
-.progress-title{
-    color:#4cc9ff;
+.pullback-title{
+    color:#ffd84d;
 }
 
 .short-title{
     color:#ff5555;
+}
+
+.short_pullback-title{
+    color:#ff9f43;
+}
+
+.progress-title{
+    color:#4cc9ff;
 }
 
 .short_progress-title{
@@ -3246,8 +3444,8 @@ td:nth-child(1){
 
     .buy,
     .short,
-    .progress,
-    .short-progress{
+    .pullback,
+    .short-pullback{
 
         font-size:5.2px;
     }
@@ -3335,8 +3533,8 @@ td:nth-child(1){
 
     .buy,
     .short,
-    .progress,
-    .short-progress{
+    .pullback,
+    .short-pullback{
 
         font-size:7px;
     }
@@ -3382,14 +3580,18 @@ def dashboard():
     sections = ""
 
     # -----------------------------------------------------
-    # Upbit 후보
+    # Upbit
     # -----------------------------------------------------
 
     if USE_UPBIT == "Y":
 
+        # -----------------------------------------------
+        # 돌파
+        # -----------------------------------------------
+
         sections += focus_section(
 
-            "🟢 매수",
+            "🚀 돌파",
 
             latest_upbit_data,
 
@@ -3399,19 +3601,42 @@ def dashboard():
 
             "buy",
 
-            "ROC10 0선 상향돌파"
+            "ROC10 0선 상향돌파 ①"
+        )
+
+        # -----------------------------------------------
+        # 눌림
+        # -----------------------------------------------
+
+        sections += focus_section(
+
+            "🟡 눌림",
+
+            latest_upbit_data,
+
+            latest_upbit_update_time,
+
+            is_pullback,
+
+            "pullback",
+
+            "EMA30>60>120 · ROC10 0선 하향전환 ①"
         )
 
 
     # -----------------------------------------------------
-    # OKX 후보
+    # OKX
     # -----------------------------------------------------
 
     if USE_OKX == "Y":
 
+        # -----------------------------------------------
+        # 돌파
+        # -----------------------------------------------
+
         sections += focus_section(
 
-            "🟢 매수",
+            "🚀 돌파",
 
             latest_okx_data,
 
@@ -3421,12 +3646,35 @@ def dashboard():
 
             "buy",
 
-            "ROC10 0선 상향돌파"
+            "ROC10 0선 상향돌파 ①"
         )
+
+        # -----------------------------------------------
+        # 눌림
+        # -----------------------------------------------
 
         sections += focus_section(
 
-            "🔴 숏",
+            "🟡 눌림",
+
+            latest_okx_data,
+
+            latest_okx_update_time,
+
+            is_pullback,
+
+            "pullback",
+
+            "EMA30>60>120 · ROC10 0선 하향전환 ①"
+        )
+
+        # -----------------------------------------------
+        # 숏 돌파
+        # -----------------------------------------------
+
+        sections += focus_section(
+
+            "🔴 숏 돌파",
 
             latest_okx_data,
 
@@ -3436,7 +3684,26 @@ def dashboard():
 
             "short",
 
-            "ROC10 0선 하향돌파 · ①"
+            "ROC10 0선 하향돌파 ①"
+        )
+
+        # -----------------------------------------------
+        # 숏 눌림
+        # -----------------------------------------------
+
+        sections += focus_section(
+
+            "🟠 숏 눌림",
+
+            latest_okx_data,
+
+            latest_okx_update_time,
+
+            is_short_pullback,
+
+            "short_pullback",
+
+            "EMA30<60<120 · ROC10 0선 상향전환 ①"
         )
 
 
@@ -3521,8 +3788,11 @@ def dashboard():
 
             {tf} EMA30·60·120 + ROC10:현재가 기준<br>
 
-            🟢 매수 = 0선 상향돌파 ① ·
-            🔴 숏 = 0선 하향돌파 ①
+            🚀 돌파 = ROC10 0선 상향돌파 ① ·
+            🟡 눌림 = EMA30>60>120 + ROC10 0선 하향전환 ① ·<br>
+
+            🔴 숏 돌파 = ROC10 0선 하향돌파 ① ·
+            🟠 숏 눌림 = EMA30<60<120 + ROC10 0선 상향전환 ①
 
 
             {status}
@@ -3622,12 +3892,22 @@ def startup():
 
     log.info(
         "롱: ROC 0선 상향 → "
-        "매수① → 진행②+"
+        "돌파① → 진행②+"
+    )
+
+    log.info(
+        "롱 눌림: EMA30>60>120 + "
+        "ROC 0선 하향전환①"
     )
 
     log.info(
         "숏: ROC 0선 하향 → "
-        "숏① → 진행②+"
+        "숏 돌파① → 진행②+"
+    )
+
+    log.info(
+        "숏 눌림: EMA30<60<120 + "
+        "ROC 0선 상향전환①"
     )
 
     log.info(
