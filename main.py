@@ -1057,7 +1057,6 @@ def get_okx_volume_cached(
         return None
 
     # -----------------------------------------------------
-    # 중요:
     # 거래대금 계산에 사용한 1H 데이터를 캐시
     # -----------------------------------------------------
 
@@ -1878,12 +1877,6 @@ def analyze_okx(
     if not bar:
         return None
 
-    # -----------------------------------------------------
-    # 핵심 최적화
-    #
-    # 거래대금 계산 때 이미 받은 1H 데이터를 재사용
-    # -----------------------------------------------------
-
     df_confirmed = (
         okx_1h_cache.get(market)
     )
@@ -1898,22 +1891,12 @@ def analyze_okx(
             bar
         )
 
-    # -----------------------------------------------------
-    # 4H는 TOP30에서만 조회
-    # -----------------------------------------------------
-
     df_high = history_okx(
         market,
         get_okx_bar(
             EMA_HIGH_TIMEFRAME
         )
     )
-
-    # -----------------------------------------------------
-    # 현재 1H
-    #
-    # ROC는 현재가 반영
-    # -----------------------------------------------------
 
     df_current = get_okx_current_1h(
         market,
@@ -2061,10 +2044,6 @@ def analyze(
             market,
             current_price
         )
-
-    # -----------------------------------------------------
-    # Upbit
-    # -----------------------------------------------------
 
     df_confirmed = history_upbit(
         market,
@@ -2441,15 +2420,7 @@ def update_okx(usdt):
         "========== OKX 거래대금 조회 시작 =========="
     )
 
-    # -----------------------------------------------------
-    # 캐시 초기화
-    # -----------------------------------------------------
-
     okx_1h_cache = {}
-
-    # -----------------------------------------------------
-    # 전체 ticker 1회
-    # -----------------------------------------------------
 
     tickers = get_okx_tickers()
 
@@ -2460,10 +2431,6 @@ def update_okx(usdt):
         )
 
         return False
-
-    # -----------------------------------------------------
-    # Symbols
-    # -----------------------------------------------------
 
     symbols = get_okx_symbols()
 
@@ -2481,10 +2448,6 @@ def update_okx(usdt):
         f"OKX 대상 종목: {len(symbols)}개"
     )
 
-    # -----------------------------------------------------
-    # Upbit 상장 여부
-    # -----------------------------------------------------
-
     upbit_set = {
         x.replace(
             "KRW-",
@@ -2492,16 +2455,6 @@ def update_okx(usdt):
         )
         for x in latest_upbit_markets
     }
-
-    # -----------------------------------------------------
-    # 거래대금 계산
-    #
-    # 기존 방식 그대로
-    #
-    # 최근 확정 1H 24개
-    # volCcyQuote 합계
-    # × USDT/KRW
-    # -----------------------------------------------------
 
     volumes = {}
 
@@ -2540,10 +2493,6 @@ def update_okx(usdt):
         f"/ {elapsed:.1f}초"
     )
 
-    # -----------------------------------------------------
-    # TOP30
-    # -----------------------------------------------------
-
     top = sorted(
         volumes,
         key=volumes.get,
@@ -2572,7 +2521,6 @@ def update_okx(usdt):
             else coin
         )
 
-        # ticker에서 가져온 현재가
         price = get_okx_cached_price(
             symbol
         )
@@ -2709,7 +2657,9 @@ def roc_html(r):
 
         return (
             '<div class="roc-cell">'
-            '<span>-</span>'
+            '<span class="roc-zero">'
+            '⚪ 0'
+            '</span>'
             '</div>'
         )
 
@@ -2717,79 +2667,92 @@ def roc_html(r):
         "roc10"
     )
 
-    previous = r.get(
-        "roc10_previous"
-    )
-
-    if (
-        value is None
-        or previous is None
-    ):
+    if value is None:
 
         return (
             '<div class="roc-cell">'
-            '<span>-</span>'
+            '<span class="roc-zero">'
+            '⚪ 0'
+            '</span>'
             '</div>'
         )
 
-    count = (
+    try:
 
-        r.get(
-            "roc10_count",
-            0
+        value = float(value)
+
+    except Exception:
+
+        return (
+            '<div class="roc-cell">'
+            '<span class="roc-zero">'
+            '⚪ 0'
+            '</span>'
+            '</div>'
         )
 
-        if value > 0
+    # -----------------------------------------------------
+    # ROC10 > 0
+    # 숫자는 표시하지 않고 양수 카운팅만 표시
+    # -----------------------------------------------------
 
-        else
+    if value > 0:
 
-        r.get(
-            "roc10_negative_count",
-            0
+        count = int(
+            r.get(
+                "roc10_count",
+                0
+            )
         )
 
-        if value < 0
+        count = max(
+            count,
+            1
+        )
 
-        else 0
-    )
+        return f"""
+        <div class="roc-cell">
+            <span class="roc-positive">
+                🟢 양수 {count}
+            </span>
+        </div>
+        """
 
-    cls = (
+    # -----------------------------------------------------
+    # ROC10 < 0
+    # 숫자는 표시하지 않고 음수 카운팅만 표시
+    # -----------------------------------------------------
 
-        "roc-positive"
-        if value > 0
+    if value < 0:
 
-        else
+        count = int(
+            r.get(
+                "roc10_negative_count",
+                0
+            )
+        )
 
-        "roc-negative"
-        if value < 0
+        count = max(
+            count,
+            1
+        )
 
-        else
+        return f"""
+        <div class="roc-cell">
+            <span class="roc-negative">
+                🔴 음수 {count}
+            </span>
+        </div>
+        """
 
-        "roc-zero"
-    )
+    # -----------------------------------------------------
+    # ROC10 = 0
+    # -----------------------------------------------------
 
-    cross = (
-
-        '<i class="up">↑</i>'
-
-        if previous <= 0 < value
-
-        else
-
-        '<i class="down">↓</i>'
-
-        if previous >= 0 > value
-
-        else
-
-        '<i class="muted">—</i>'
-    )
-
-    return f"""
+    return """
     <div class="roc-cell">
-        <b>R{count}</b>
-        <span class="{cls}">
-            {value:+.1f}%{cross}
+        <span class="roc-zero">
+            ⚪ 0
         </span>
     </div>
     """
@@ -3447,24 +3410,11 @@ td:nth-child(1){
     white-space:nowrap;
 }
 
-.roc-cell b{
-    color:#7f8790;
-    font-size:5px;
-    line-height:8px;
-    font-weight:700;
-}
-
 .roc-cell span{
     font-size:5.8px;
     line-height:8px;
     font-weight:900;
     white-space:nowrap;
-}
-
-.roc-cell i{
-    font-style:normal;
-    font-size:5px;
-    margin-left:0;
 }
 
 .buy,
@@ -3632,16 +3582,8 @@ td:nth-child(1){
         font-size:5.3px;
     }
 
-    .roc-cell b{
-        font-size:4.5px;
-    }
-
     .roc-cell span{
         font-size:5.2px;
-    }
-
-    .roc-cell i{
-        font-size:4.5px;
     }
 
     .buy,
@@ -3697,10 +3639,6 @@ td:nth-child(1){
 
     .ema span{
         font-size:8px;
-    }
-
-    .roc-cell b{
-        font-size:6px;
     }
 
     .roc-cell span{
@@ -3811,10 +3749,6 @@ def dashboard():
 
             "ROC10 0선 상향돌파 ①"
         )
-
-        # -------------------------------------------------
-        # 오타 수정
-        # -------------------------------------------------
 
         sections += focus_section(
 
@@ -3943,6 +3877,13 @@ def dashboard():
 
             {tf} EMA30·60·120 + ROC10: 현재가 기준<br>
 
+            ROC10:
+            🟢 양수 ①·②·③...
+            /
+            🔴 음수 ①·②·③...
+            /
+            ⚪ 0<br>
+
             🚀 돌파 = ROC10 0선 상향돌파 ① ·
             🟡 눌림 = EMA30>60>120 + ROC10 0선 하향전환 ① ·<br>
 
@@ -4065,11 +4006,7 @@ def startup():
     )
 
     log.info(
-        "돌파 기능 = OFF"
-    )
-
-    log.info(
-        f"OKX bar="
+        "OKX bar="
         f"{get_okx_bar(EMA_TIMEFRAME)}"
     )
 
