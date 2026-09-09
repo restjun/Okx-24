@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+⁵from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
 import schedule
@@ -3231,7 +3231,7 @@ def roc_progress_section(
                     0
                 )
             ),
-        reverse=True
+        reverse=False
     )
 
     if not candidate_rows:
@@ -3365,7 +3365,7 @@ def okx_short_progress_section(
                     0
                 )
             ),
-        reverse=True
+        reverse=False
     )
 
     if not candidate_rows:
