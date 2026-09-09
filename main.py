@@ -2750,14 +2750,18 @@ h2 small{
 
 .y,
 .buy,
-.roc-positive{
-    color:#39e875;
+.roc-positive,
+.up{
+    color:#39e875!important;
+    font-weight:800;
 }
 
 .n,
 .short,
-.roc-negative{
-    color:#ff5555;
+.roc-negative,
+.down{
+    color:#ff5555!important;
+    font-weight:800;
 }
 
 .progress{
@@ -2769,8 +2773,9 @@ h2 small{
 }
 
 .muted,
-.roc-zero{
-    color:#68717b;
+.roc-zero,
+.zero{
+    color:#68717b!important;
 }
 
 
@@ -2862,7 +2867,7 @@ td:nth-child(1){
 
 th:nth-child(2),
 td:nth-child(2){
-    width:19%;
+    width:15%;
 }
 
 th:nth-child(3),
@@ -2872,7 +2877,7 @@ td:nth-child(3){
 
 th:nth-child(4),
 td:nth-child(4){
-    width:21%;
+    width:25%;
 }
 
 th:nth-child(5),
@@ -2976,12 +2981,12 @@ td:nth-child(1){
 
     white-space:nowrap;
 
-    overflow:hidden;
+    overflow:visible;
 }
 
 .ema span{
 
-    font-size:5.5px;
+    font-size:5.8px;
 
     line-height:8px;
 
@@ -3227,7 +3232,7 @@ td:nth-child(1){
     }
 
     .ema span{
-        font-size:5px;
+        font-size:5.3px;
     }
 
     .roc-cell b{
