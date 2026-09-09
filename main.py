@@ -1374,18 +1374,6 @@ def roc_count(
 # =========================================================
 # ROC 분석
 # =========================================================
-#
-# 유지
-# 1. ROC 양수/음수
-# 2. ROC 진행 카운트
-# 3. ROC 0선 돌파
-# 4. 롱 눌림
-# 5. 숏 눌림
-#
-# 돌파 기준
-# 롱  : 이전 ROC <= 0 → 현재 ROC > 0
-# 숏  : 이전 ROC >= 0 → 현재 ROC < 0
-# =========================================================
 
 def roc_analysis(
     df_confirmed,
@@ -1525,7 +1513,7 @@ def roc_analysis(
                     "long_breakout",
 
                 "display":
-                    "🟢 돌파 ①"
+                    "🚀"
             })
 
         elif short_breakout:
@@ -1536,7 +1524,7 @@ def roc_analysis(
                     "short_breakout",
 
                 "display":
-                    "🔴 숏 돌파 ①"
+                    "🔻"
             })
 
         elif long_pullback:
@@ -1547,7 +1535,7 @@ def roc_analysis(
                     "long_pullback",
 
                 "display":
-                    "🟡 눌림 ①"
+                    "🧊"
             })
 
         elif short_pullback:
@@ -1558,7 +1546,7 @@ def roc_analysis(
                     "short_pullback",
 
                 "display":
-                    "🟠 숏 눌림 ①"
+                    "☁️"
             })
 
         elif (
@@ -2911,14 +2899,14 @@ def btc_position_view(row):
         if long_breakout:
 
             return {
-                "text": "🟢 롱 돌파",
+                "text": "🚀",
                 "class": "long"
             }
 
         if long_pullback:
 
             return {
-                "text": "🟡 롱 눌림",
+                "text": "🧊",
                 "class": "long-pull"
             }
 
@@ -2946,14 +2934,14 @@ def btc_position_view(row):
         if short_breakout:
 
             return {
-                "text": "🔴 숏 돌파",
+                "text": "🔻",
                 "class": "short"
             }
 
         if short_pullback:
 
             return {
-                "text": "🟠 숏 눌림",
+                "text": "☁️",
                 "class": "short-pull"
             }
 
@@ -3266,9 +3254,11 @@ def signal_html(row):
     ):
 
         return (
-            '<b class="breakout">'
-            '🟢돌파①'
-            '</b>'
+            '<span '
+            'class="signal-icon long-breakout" '
+            'title="롱 돌파">'
+            '🚀'
+            '</span>'
         )
 
     if row.get(
@@ -3276,9 +3266,11 @@ def signal_html(row):
     ):
 
         return (
-            '<b class="short-breakout">'
-            '🔴숏 돌파①'
-            '</b>'
+            '<span '
+            'class="signal-icon short-breakout" '
+            'title="숏 돌파">'
+            '🔻'
+            '</span>'
         )
 
     if row.get(
@@ -3286,9 +3278,11 @@ def signal_html(row):
     ):
 
         return (
-            '<b class="pullback">'
-            '🟡눌림①'
-            '</b>'
+            '<span '
+            'class="signal-icon long-pullback" '
+            'title="롱 눌림">'
+            '🧊'
+            '</span>'
         )
 
     if row.get(
@@ -3296,9 +3290,11 @@ def signal_html(row):
     ):
 
         return (
-            '<b class="short-pullback">'
-            '🟠숏 눌림①'
-            '</b>'
+            '<span '
+            'class="signal-icon short-pullback" '
+            'title="숏 눌림">'
+            '☁️'
+            '</span>'
         )
 
     if row.get(
@@ -3306,9 +3302,10 @@ def signal_html(row):
     ):
 
         return (
-            '<b class="progress">'
-            f'진행 {row.get("roc", {}).get("roc10_count", 0)}'
-            '</b>'
+            '<span class="progress">'
+            f'진행 '
+            f'{row.get("roc", {}).get("roc10_count", 0)}'
+            '</span>'
         )
 
     if row.get(
@@ -3316,9 +3313,10 @@ def signal_html(row):
     ):
 
         return (
-            '<b class="short-progress">'
-            f'숏진행 {row.get("roc", {}).get("roc10_negative_count", 0)}'
-            '</b>'
+            '<span class="short-progress">'
+            f'숏진행 '
+            f'{row.get("roc", {}).get("roc10_negative_count", 0)}'
+            '</span>'
         )
 
     return (
@@ -3505,7 +3503,7 @@ def rows_html(
 
                 </td>
 
-                <td>
+                <td class="signal-cell">
                     {signal_html(x)}
                 </td>
 
@@ -4122,6 +4120,101 @@ h2 small{
 }
 
 
+/* =====================================================
+   신호 아이콘
+===================================================== */
+
+.signal-cell{
+
+    text-align:center!important;
+
+    vertical-align:middle;
+
+}
+
+
+.signal-icon{
+
+    display:inline-flex;
+
+    align-items:center;
+
+    justify-content:center;
+
+    width:100%;
+
+    min-height:21px;
+
+    font-size:16px;
+
+    line-height:18px;
+
+    font-weight:900;
+
+    white-space:nowrap;
+}
+
+
+.signal-icon.long-breakout{
+
+    filter:
+        drop-shadow(
+            0 0 2px
+            rgba(
+                57,
+                232,
+                117,
+                .35
+            )
+        );
+}
+
+
+.signal-icon.short-breakout{
+
+    filter:
+        drop-shadow(
+            0 0 2px
+            rgba(
+                255,
+                85,
+                85,
+                .35
+            )
+        );
+}
+
+
+.signal-icon.long-pullback{
+
+    filter:
+        drop-shadow(
+            0 0 2px
+            rgba(
+                255,
+                216,
+                77,
+                .30
+            )
+        );
+}
+
+
+.signal-icon.short-pullback{
+
+    filter:
+        drop-shadow(
+            0 0 2px
+            rgba(
+                255,
+                159,
+                67,
+                .30
+            )
+        );
+}
+
+
 .table-wrap{
 
     width:100%;
@@ -4659,6 +4752,15 @@ td:nth-child(1){
 
         font-size:5.2px;
     }
+
+    .signal-icon{
+
+        font-size:14px;
+
+        line-height:16px;
+
+        min-height:19px;
+    }
 }
 
 
@@ -4782,6 +4884,15 @@ td:nth-child(1){
     .short-breakout{
 
         font-size:7px;
+    }
+
+    .signal-icon{
+
+        font-size:21px;
+
+        line-height:23px;
+
+        min-height:28px;
     }
 }
 
@@ -5157,6 +5268,14 @@ def startup():
     log.info(
         "BTC 1H + 4H + ROC10 "
         "롱/숏 방향 시각화"
+    )
+
+    log.info(
+        "신호 아이콘: "
+        "🚀 롱 돌파 / "
+        "🔻 숏 돌파 / "
+        "🧊 롱 눌림 / "
+        "☁️ 숏 눌림"
     )
 
     log.info(
