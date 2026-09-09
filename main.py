@@ -126,6 +126,7 @@ okx_1h_cache_time = "-"
 # =========================================================
 
 def kst():
+
     return datetime.now(KST).strftime(
         "%Y-%m-%d %H:%M:%S"
     )
@@ -2525,7 +2526,7 @@ def update_dashboard():
 
 
 # =========================================================
-# BTC / ETH 시황
+# BTC 시황
 # =========================================================
 
 def market_direction_html(
@@ -2711,6 +2712,149 @@ def market_change_html(value):
     )
 
 
+# =========================================================
+# BTC 롱 / 숏 방향 판단
+# =========================================================
+#
+# 시각화용 판단
+#
+# 1. 1H + 4H 같은 방향
+# 2. ROC 같은 방향
+# 3. ROC 0선 전환이면 눌림
+# 4. 1H / 4H 불일치 = 관망
+#
+# ※ 자동매매 신호가 아님
+# =========================================================
+
+def btc_position_view(row):
+
+    if not row:
+
+        return {
+            "text": "⚪ 관망",
+            "class": "wait"
+        }
+
+    ema_1h = row.get(
+        "ema_1h",
+        {}
+    )
+
+    ema_4h = row.get(
+        "ema_high",
+        {}
+    )
+
+    r = row.get(
+        "roc",
+        {}
+    )
+
+    d1 = ema_1h.get(
+        "direction",
+        "none"
+    )
+
+    d4 = ema_4h.get(
+        "direction",
+        "none"
+    )
+
+    roc_value = r.get(
+        "roc10"
+    )
+
+    long_pullback = bool(
+        r.get(
+            "long_pullback",
+            False
+        )
+    )
+
+    short_pullback = bool(
+        r.get(
+            "short_pullback",
+            False
+        )
+    )
+
+    # -----------------------------------------------------
+    # 1H / 4H 불일치
+    # -----------------------------------------------------
+
+    if (
+        d1 == "none"
+        or d4 == "none"
+        or d1 != d4
+    ):
+
+        return {
+            "text": "⚪ 관망",
+            "class": "wait"
+        }
+
+    # -----------------------------------------------------
+    # 롱
+    # -----------------------------------------------------
+
+    if d1 == "long":
+
+        if long_pullback:
+
+            return {
+                "text": "🟡 롱 눌림",
+                "class": "long-pull"
+            }
+
+        if (
+            roc_value is not None
+            and float(roc_value) > 0
+        ):
+
+            return {
+                "text": "🟢 롱 우세",
+                "class": "long"
+            }
+
+        return {
+            "text": "⚪ 롱 대기",
+            "class": "wait"
+        }
+
+    # -----------------------------------------------------
+    # 숏
+    # -----------------------------------------------------
+
+    if d1 == "short":
+
+        if short_pullback:
+
+            return {
+                "text": "🟠 숏 눌림",
+                "class": "short-pull"
+            }
+
+        if (
+            roc_value is not None
+            and float(roc_value) < 0
+        ):
+
+            return {
+                "text": "🔴 숏 우세",
+                "class": "short"
+            }
+
+        return {
+            "text": "⚪ 숏 대기",
+            "class": "wait"
+        }
+
+    return {
+        "text": "⚪ 관망",
+        "class": "wait"
+    }
+
+
 def get_market_row(
     coin
 ):
@@ -2729,146 +2873,168 @@ def get_market_row(
 
 def market_summary_html():
 
+    # =====================================================
+    # BTC만 사용
+    # =====================================================
+
     btc = get_market_row(
         "BTC"
     )
 
-    eth = get_market_row(
-        "ETH"
-    )
+    if btc is None:
 
-    def make_market_line(
-        symbol,
-        icon,
-        row
-    ):
+        return """
+        <div class="market-summary">
 
-        if row is None:
+            <div class="market-title">
+                ₿ BTC 시장 시황
+            </div>
 
-            return f"""
-            <div class="market-line">
+            <div class="btc-mobile">
 
-                <span class="market-name">
-                    {icon} {symbol}
-                </span>
+                <div class="btc-top">
 
-                <span class="market-price">
-                    -
-                </span>
+                    <span class="btc-name">
+                        ₿ BTC
+                    </span>
 
-                <span class="market-change">
-                    -
-                </span>
+                    <span class="btc-price">
+                        -
+                    </span>
 
-                <span class="market-tf">
-                    1H ⚪ 0
-                </span>
+                    <span class="btc-change">
+                        -
+                    </span>
 
-                <span class="market-tf">
-                    4H ⚪ 0
-                </span>
+                </div>
 
-                <span class="market-roc">
-                    ROC ⚪ -
-                </span>
+                <div class="btc-bottom">
+
+                    <span>
+                        1H ⚪ 0
+                    </span>
+
+                    <span>
+                        4H ⚪ 0
+                    </span>
+
+                    <span>
+                        ROC ⚪ -
+                    </span>
+
+                    <span class="btc-position wait">
+                        ⚪ 관망
+                    </span>
+
+                </div>
 
             </div>
-            """
-
-        ema_1h = row.get(
-            "ema_1h",
-            {}
-        )
-
-        ema_high = row.get(
-            "ema_high",
-            {}
-        )
-
-        roc_data = row.get(
-            "roc",
-            {}
-        )
-
-        return f"""
-        <div class="market-line">
-
-            <span class="market-name">
-                {icon} {symbol}
-            </span>
-
-            <span class="market-price">
-                {format_market_price(
-                    row.get(
-                        "current_price"
-                    )
-                )}
-            </span>
-
-            <span class="market-change">
-                {market_change_html(
-                    row.get(
-                        "change_value"
-                    )
-                )}
-            </span>
-
-            <span class="market-tf">
-                1H
-                {market_direction_html(
-                    ema_1h.get(
-                        "direction",
-                        "none"
-                    ),
-                    ema_1h.get(
-                        "count",
-                        0
-                    )
-                )}
-            </span>
-
-            <span class="market-tf">
-                4H
-                {market_direction_html(
-                    ema_high.get(
-                        "direction",
-                        "none"
-                    ),
-                    ema_high.get(
-                        "count",
-                        0
-                    )
-                )}
-            </span>
-
-            <span class="market-roc">
-                ROC
-                {market_roc_html(
-                    roc_data
-                )}
-            </span>
 
         </div>
         """
+
+    ema_1h = btc.get(
+        "ema_1h",
+        {}
+    )
+
+    ema_4h = btc.get(
+        "ema_high",
+        {}
+    )
+
+    roc_data = btc.get(
+        "roc",
+        {}
+    )
+
+    position = btc_position_view(
+        btc
+    )
 
     return f"""
     <div class="market-summary">
 
         <div class="market-title">
-            시장 시황
+            ₿ BTC 시장 시황 · 롱/숏 방향 참고
         </div>
 
-        {make_market_line(
-            "BTC",
-            "₿",
-            btc
-        )}
+        <div class="btc-mobile">
 
-        {make_market_line(
-            "ETH",
-            "Ξ",
-            eth
-        )}
+            <div class="btc-top">
+
+                <span class="btc-name">
+                    ₿ BTC
+                </span>
+
+                <span class="btc-price">
+                    {format_market_price(
+                        btc.get(
+                            "current_price"
+                        )
+                    )}
+                </span>
+
+                <span class="btc-change">
+                    {market_change_html(
+                        btc.get(
+                            "change_value"
+                        )
+                    )}
+                </span>
+
+            </div>
+
+
+            <div class="btc-bottom">
+
+                <span>
+                    1H
+                    {market_direction_html(
+                        ema_1h.get(
+                            "direction",
+                            "none"
+                        ),
+                        ema_1h.get(
+                            "count",
+                            0
+                        )
+                    )}
+                </span>
+
+                <span>
+                    4H
+                    {market_direction_html(
+                        ema_4h.get(
+                            "direction",
+                            "none"
+                        ),
+                        ema_4h.get(
+                            "count",
+                            0
+                        )
+                    )}
+                </span>
+
+                <span>
+                    ROC
+                    {market_roc_html(
+                        roc_data
+                    )}
+                </span>
+
+                <span
+                    class="
+                        btc-position
+                        {position["class"]}
+                    "
+                >
+                    {position["text"]}
+                </span>
+
+            </div>
+
+        </div>
 
     </div>
     """
@@ -3368,6 +3534,11 @@ h1{
     line-height:14px;
 }
 
+
+/* =====================================================
+   BTC 시장 시황
+   ===================================================== */
+
 .market-summary{
 
     width:100%;
@@ -3391,7 +3562,9 @@ h1{
 
     background:#101419;
 
+    overflow:hidden;
 }
+
 
 .market-title{
 
@@ -3405,9 +3578,31 @@ h1{
 
     margin-bottom:2px;
 
+    white-space:nowrap;
+
+    overflow:hidden;
+
+    text-overflow:ellipsis;
 }
 
-.market-line{
+
+/* =====================================================
+   BTC 모바일 시황
+   ===================================================== */
+
+.btc-mobile{
+
+    width:100%;
+
+    overflow:hidden;
+}
+
+
+/* -----------------------------------------------------
+   BTC 1행
+   ----------------------------------------------------- */
+
+.btc-top{
 
     display:flex;
 
@@ -3415,101 +3610,229 @@ h1{
 
     width:100%;
 
-    min-height:15px;
+    min-height:16px;
 
     gap:4px;
 
     white-space:nowrap;
 
     overflow:hidden;
-
 }
 
-.market-name{
 
-    width:32px;
+.btc-name{
 
     flex:none;
+
+    width:34px;
 
     font-size:6.5px;
 
-    font-weight:900;
+    line-height:8px;
 
+    font-weight:900;
 }
 
-.market-price{
 
-    width:70px;
+.btc-price{
 
-    flex:none;
+    flex:1;
+
+    min-width:0;
 
     color:#e8edf2;
 
     font-size:6px;
 
+    line-height:8px;
+
+    font-weight:800;
+
+    text-align:left;
+
+    white-space:nowrap;
+
+    overflow:hidden;
+
+    text-overflow:ellipsis;
+}
+
+
+.btc-change{
+
+    flex:none;
+
+    width:48px;
+
+    font-size:5.5px;
+
+    line-height:8px;
+
     font-weight:800;
 
     text-align:right;
 
+    white-space:nowrap;
 }
 
-.market-change{
 
-    width:43px;
+/* -----------------------------------------------------
+   BTC 2행
+   ----------------------------------------------------- */
 
-    flex:none;
+.btc-bottom{
 
-    font-size:5.8px;
+    display:flex;
+
+    align-items:center;
+
+    width:100%;
+
+    min-height:17px;
+
+    gap:6px;
+
+    white-space:nowrap;
+
+    overflow:hidden;
+
+    font-size:5.3px;
+
+    line-height:8px;
 
     font-weight:800;
-
-    text-align:right;
-
 }
 
-.market-tf{
+
+.btc-bottom > span{
 
     flex:none;
 
-    font-size:5.5px;
-
-    font-weight:700;
-
+    white-space:nowrap;
 }
 
-.market-roc{
 
-    flex:none;
+/* =====================================================
+   BTC 롱 / 숏 판단
+   ===================================================== */
+
+.btc-position{
+
+    margin-left:auto;
+
+    min-width:58px;
+
+    padding:
+        1px
+        3px;
+
+    border-radius:3px;
+
+    text-align:center;
 
     font-size:5.5px;
 
-    font-weight:700;
+    line-height:9px;
 
+    font-weight:900;
+
+    white-space:nowrap;
 }
+
+
+.btc-position.long{
+
+    color:#39e875!important;
+
+    background:
+        rgba(
+            57,
+            232,
+            117,
+            .08
+        );
+}
+
+
+.btc-position.long-pull{
+
+    color:#ffd84d!important;
+
+    background:
+        rgba(
+            255,
+            216,
+            77,
+            .08
+        );
+}
+
+
+.btc-position.short{
+
+    color:#ff5555!important;
+
+    background:
+        rgba(
+            255,
+            85,
+            85,
+            .08
+        );
+}
+
+
+.btc-position.short-pull{
+
+    color:#ff9f43!important;
+
+    background:
+        rgba(
+            255,
+            159,
+            67,
+            .08
+        );
+}
+
+
+.btc-position.wait{
+
+    color:#68717b!important;
+
+    background:
+        rgba(
+            104,
+            113,
+            123,
+            .06
+        );
+}
+
 
 .market-up{
 
     color:#39e875!important;
 
     font-weight:900;
-
 }
+
 
 .market-down{
 
     color:#ff5555!important;
 
     font-weight:900;
-
 }
+
 
 .market-zero{
 
     color:#68717b!important;
 
     font-weight:800;
-
 }
+
 
 h2{
     margin:
@@ -3820,6 +4143,11 @@ td:nth-child(1){
     color:#ff6666;
 }
 
+
+/* =====================================================
+   작은 모바일
+   ===================================================== */
+
 @media(max-width:380px){
 
     body{
@@ -3834,33 +4162,77 @@ td:nth-child(1){
         line-height:13px;
     }
 
-    .market-line{
-        gap:3px;
-    }
 
-    .market-name{
-        width:29px;
-        font-size:6px;
-    }
+    .market-summary{
 
-    .market-price{
-        width:63px;
-        font-size:5.5px;
-    }
+        padding:
+            3px
+            3px;
 
-    .market-change{
-        width:39px;
-        font-size:5.2px;
-    }
-
-    .market-tf,
-    .market-roc{
-        font-size:4.9px;
     }
 
     .market-title{
+
         font-size:4.5px;
+
+        line-height:6px;
+
     }
+
+    .btc-top{
+
+        min-height:15px;
+
+        gap:3px;
+
+    }
+
+    .btc-name{
+
+        width:30px;
+
+        font-size:5.8px;
+
+    }
+
+    .btc-price{
+
+        font-size:5.4px;
+
+    }
+
+    .btc-change{
+
+        width:43px;
+
+        font-size:5px;
+
+    }
+
+    .btc-bottom{
+
+        min-height:16px;
+
+        gap:4px;
+
+        font-size:4.8px;
+
+    }
+
+    .btc-position{
+
+        min-width:53px;
+
+        padding:
+            1px
+            2px;
+
+        font-size:5px;
+
+        line-height:8px;
+
+    }
+
 
     h2{
         font-size:8px;
@@ -3916,6 +4288,11 @@ td:nth-child(1){
     }
 }
 
+
+/* =====================================================
+   PC / 큰 화면
+   ===================================================== */
+
 @media(min-width:601px){
 
     body{
@@ -3930,28 +4307,32 @@ td:nth-child(1){
         line-height:20px;
     }
 
-    .market-name{
+    .market-title{
+        font-size:6px;
+    }
+
+    .btc-name{
         width:42px;
         font-size:8px;
     }
 
-    .market-price{
-        width:100px;
+    .btc-price{
         font-size:8px;
     }
 
-    .market-change{
+    .btc-change{
         width:55px;
         font-size:7px;
     }
 
-    .market-tf,
-    .market-roc{
+    .btc-bottom{
         font-size:7px;
     }
 
-    .market-title{
-        font-size:6px;
+    .btc-position{
+        min-width:70px;
+        font-size:7px;
+        line-height:11px;
     }
 
     h2{
@@ -4300,8 +4681,13 @@ def startup():
     )
 
     log.info(
-        "BTC / ETH 시황: "
-        "기존 Upbit TOP 데이터 재활용"
+        "BTC 시황: "
+        "Upbit TOP 데이터 재활용"
+    )
+
+    log.info(
+        "BTC 1H + 4H + ROC10 "
+        "롱/숏 방향 시각화"
     )
 
     log.info(
