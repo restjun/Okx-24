@@ -219,11 +219,13 @@ def validate_timeframe():
     global EMA_TIMEFRAME
 
     try:
+
         EMA_TIMEFRAME = int(
             EMA_TIMEFRAME
         )
 
     except Exception:
+
         raise ValueError(
             "EMA_TIMEFRAME은 숫자여야 합니다."
         )
@@ -1736,6 +1738,10 @@ def analyze(
         r["short_candidate"]
     )
 
+    # -----------------------------------------------------
+    # 진행 계산은 그대로 유지
+    # -----------------------------------------------------
+
     progress_qualified = (
         base
         and
@@ -1882,6 +1888,10 @@ def is_short(row):
         )
     )
 
+
+# ---------------------------------------------------------
+# 진행 계산 함수도 삭제하지 않음
+# ---------------------------------------------------------
 
 def is_progress(row):
 
@@ -2267,6 +2277,10 @@ def roc_html(r):
 
 def signal_html(row):
 
+    # -----------------------------------------------------
+    # 매수만 표시
+    # -----------------------------------------------------
+
     if row.get("qualified"):
 
         return (
@@ -2275,22 +2289,16 @@ def signal_html(row):
             '</b>'
         )
 
-    if row.get(
-        "progress_qualified"
-    ):
+    # -----------------------------------------------------
+    # 진행 표시 삭제
+    #
+    # progress_qualified 계산값은 그대로 존재하지만
+    # 대시보드에는 표시하지 않음
+    # -----------------------------------------------------
 
-        count = row[
-            "roc"
-        ].get(
-            "roc10_count",
-            0
-        )
-
-        return (
-            f'<b class="progress">'
-            f'🚀진행{count}'
-            f'</b>'
-        )
+    # -----------------------------------------------------
+    # 숏만 표시
+    # -----------------------------------------------------
 
     if row.get(
         "short_qualified"
@@ -2302,22 +2310,9 @@ def signal_html(row):
             '</b>'
         )
 
-    if row.get(
-        "short_progress_qualified"
-    ):
-
-        count = row[
-            "roc"
-        ].get(
-            "roc10_negative_count",
-            0
-        )
-
-        return (
-            f'<b class="short-progress">'
-            f'📉진행{count}'
-            f'</b>'
-        )
+    # -----------------------------------------------------
+    # 숏 진행 표시 삭제
+    # -----------------------------------------------------
 
     return (
         '<span class="muted">-</span>'
@@ -2365,6 +2360,7 @@ def row_class(x):
     if x.get("qualified"):
         return "qualified"
 
+    # 진행 클래스는 계산상 남겨둠
     if x.get(
         "progress_qualified"
     ):
@@ -2375,6 +2371,7 @@ def row_class(x):
     ):
         return "short-qualified"
 
+    # 숏 진행 클래스도 계산상 유지
     if x.get(
         "short_progress_qualified"
     ):
@@ -3405,23 +3402,6 @@ def dashboard():
             "ROC10 0선 상향돌파"
         )
 
-        sections += focus_section(
-
-            "🚀 진행",
-
-            latest_upbit_data,
-
-            latest_upbit_update_time,
-
-            is_progress,
-
-            "progress",
-
-            "ROC10 양수 유지 · ②+",
-
-            "roc10_count"
-        )
-
 
     # -----------------------------------------------------
     # OKX 후보
@@ -3446,23 +3426,6 @@ def dashboard():
 
         sections += focus_section(
 
-            "🚀 진행",
-
-            latest_okx_data,
-
-            latest_okx_update_time,
-
-            is_progress,
-
-            "progress",
-
-            "ROC10 양수 유지 · ②+",
-
-            "roc10_count"
-        )
-
-        sections += focus_section(
-
             "🔴 숏",
 
             latest_okx_data,
@@ -3474,23 +3437,6 @@ def dashboard():
             "short",
 
             "ROC10 0선 하향돌파 · ①"
-        )
-
-        sections += focus_section(
-
-            "📉 진행",
-
-            latest_okx_data,
-
-            latest_okx_update_time,
-
-            is_short_progress,
-
-            "short_progress",
-
-            "ROC10 음수 유지 · ②+",
-
-            "roc10_negative_count"
         )
 
 
@@ -3576,9 +3522,7 @@ def dashboard():
             {tf} EMA30·60·120 + ROC10:현재가 기준<br>
 
             🟢 매수 = 0선 상향돌파 ① ·
-            🚀 진행 = 양수 유지 ②+ ·<br>
-            🔴 숏 = 0선 하향돌파 ① ·
-            📉 진행 = 음수 유지 ②+
+            🔴 숏 = 0선 하향돌파 ①
 
 
             {status}
