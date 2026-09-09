@@ -41,8 +41,8 @@ UPDATE_MINUTES = 1
 HISTORY_CHUNK = 200
 MAX_HISTORY_CHUNKS = 10
 
-USE_UPBIT = "N"
-USE_OKX = "Y"
+USE_UPBIT = "Y"
+USE_OKX = "N"
 
 REQUEST_INTERVAL = 0.08
 RATE_LIMIT_WAIT = 3
@@ -111,6 +111,21 @@ last_request_time = 0
 
 
 # =========================================================
+# OKX 캐시
+# =========================================================
+
+# 전체 ticker 1회 조회 결과
+okx_ticker_cache = {}
+
+# OKX 1H 확정봉 캐시
+# 거래대금 계산에 사용한 데이터를 TOP30 분석에서도 재사용
+okx_1h_cache = {}
+
+# 캐시 생성 시간
+okx_1h_cache_time = "-"
+
+
+# =========================================================
 # 공통
 # =========================================================
 
@@ -121,6 +136,7 @@ def kst():
 
 
 def format_timeframe(minutes):
+
     minutes = int(minutes)
 
     if minutes >= 1440:
@@ -133,6 +149,7 @@ def format_timeframe(minutes):
 
 
 def get_okx_bar(minutes):
+
     return {
         5: "5m",
         15: "15m",
@@ -148,6 +165,7 @@ def get_okx_bar(minutes):
 
 
 def get_okx_bar_minutes(bar):
+
     return {
         "1m": 1,
         "3m": 3,
@@ -169,16 +187,6 @@ def get_okx_bar_minutes(bar):
 # =========================================================
 
 def get_current_candle_start(minutes):
-    """
-    한국시간 기준 시간봉 경계.
-
-    60분봉
-    00:00 / 01:00 / 02:00 ...
-
-    240분봉
-    00:00 / 04:00 / 08:00 /
-    12:00 / 16:00 / 20:00
-    """
 
     minutes = int(minutes)
 
@@ -201,6 +209,7 @@ def get_current_candle_start(minutes):
     )
 
     if day_offset:
+
         current -= pd.Timedelta(
             days=day_offset
         )
@@ -741,6 +750,7 @@ def get_okx_ohlcv(
     }
 
     if before is not None:
+
         params["before"] = str(
             before
         )
@@ -904,37 +914,82 @@ def history_okx(
     return all_df
 
 
-def get_okx_current_price(inst):
+# =========================================================
+# OKX 전체 Ticker
+# =========================================================
+
+def get_okx_tickers():
+
+    global okx_ticker_cache
 
     r = retry(
         requests.get,
-        "https://www.okx.com/api/v5/market/ticker",
+        "https://www.okx.com/api/v5/market/tickers",
         params={
-            "instId": inst
+            "instType": "SWAP"
         },
         timeout=15
     )
 
     if r is None:
-        return None
+        return {}
 
     try:
 
-        price = float(
-            r.json()
-            ["data"][0]
-            ["last"]
+        data = r.json().get(
+            "data",
+            []
         )
 
-        return (
-            price
-            if price > 0
-            else None
+        result = {}
+
+        for x in data:
+
+            inst = x.get(
+                "instId",
+                ""
+            )
+
+            if not inst.endswith(
+                "-USDT-SWAP"
+            ):
+                continue
+
+            try:
+
+                last = float(
+                    x.get(
+                        "last",
+                        0
+                    )
+                )
+
+            except Exception:
+
+                last = 0
+
+            if last > 0:
+
+                result[inst] = {
+                    "last": last
+                }
+
+        okx_ticker_cache = result
+
+        return result
+
+    except Exception as e:
+
+        log.error(
+            f"OKX 전체 ticker 오류: {e}"
         )
 
-    except Exception:
-        return None
+        return {}
 
+
+# =========================================================
+# OKX Symbols
+# =========================================================
 
 def get_okx_symbols():
 
@@ -973,10 +1028,24 @@ def get_okx_symbols():
         return []
 
 
-def get_okx_volume(
+# =========================================================
+# OKX 거래대금 + 1H 캐시
+# =========================================================
+
+def get_okx_volume_cached(
     inst,
     usdt
 ):
+
+    """
+    거래대금 계산 방식은 기존과 동일.
+
+    최근 확정 1H VOLUME_HOURS개
+    volCcyQuote 합계
+    × USDT/KRW
+    """
+
+    global okx_1h_cache
 
     df = get_okx_ohlcv(
         inst,
@@ -986,6 +1055,13 @@ def get_okx_volume(
 
     if df is None or df.empty:
         return None
+
+    # -----------------------------------------------------
+    # 중요:
+    # 거래대금 계산에 사용한 1H 데이터를 캐시
+    # -----------------------------------------------------
+
+    okx_1h_cache[inst] = df.copy()
 
     try:
 
@@ -1001,6 +1077,121 @@ def get_okx_volume(
 
     except Exception:
         return None
+
+
+# =========================================================
+# OKX 현재가
+# =========================================================
+
+def get_okx_cached_price(inst):
+
+    try:
+
+        item = okx_ticker_cache.get(
+            inst
+        )
+
+        if not item:
+            return None
+
+        price = float(
+            item.get(
+                "last",
+                0
+            )
+        )
+
+        return (
+            price
+            if price > 0
+            else None
+        )
+
+    except Exception:
+        return None
+
+
+# =========================================================
+# OKX 현재 1H 데이터
+# =========================================================
+
+def get_okx_current_1h(
+    inst,
+    current_price
+):
+
+    df = get_okx_ohlcv(
+        inst,
+        "1H",
+        200,
+        include_current=True
+    )
+
+    if df is None or df.empty:
+        return None
+
+    try:
+
+        start = (
+            get_current_candle_start(
+                60
+            )
+        )
+
+        price = float(
+            current_price
+        )
+
+        if price <= 0:
+            return df
+
+        mask = (
+            df.datetime == start
+        )
+
+        if mask.any():
+
+            df.loc[
+                mask,
+                "c"
+            ] = price
+
+        else:
+
+            row = df.iloc[-1].copy()
+
+            row["datetime"] = start
+            row["c"] = price
+
+            df = pd.concat(
+                [
+                    df,
+                    pd.DataFrame(
+                        [row]
+                    )
+                ],
+                ignore_index=True
+            )
+
+        return (
+            df
+            .sort_values("datetime")
+            .drop_duplicates(
+                "datetime"
+            )
+            .reset_index(
+                drop=True
+            )
+        )
+
+    except Exception as e:
+
+        log.error(
+            f"OKX 현재 1H 오류 "
+            f"{inst}: {e}"
+        )
+
+        return df
 
 
 # =========================================================
@@ -1096,9 +1287,11 @@ def ema_alignment_count(df):
         ):
 
             if get_dir(i) == current:
+
                 count += 1
 
             else:
+
                 break
 
         return {
@@ -1206,6 +1399,7 @@ def roc_count(
             count += 1
 
         else:
+
             break
 
     return count
@@ -1224,11 +1418,9 @@ def roc_analysis(
         "roc10_count": 0,
         "roc10_negative_count": 0,
 
-        # 돌파
         "long_candidate": False,
         "short_candidate": False,
 
-        # 눌림
         "long_pullback": False,
         "short_pullback": False,
 
@@ -1340,10 +1532,6 @@ def roc_analysis(
                 short_pullback
         })
 
-        # =================================================
-        # 표시용 상태
-        # =================================================
-
         if long_cross:
 
             result.update({
@@ -1387,11 +1575,6 @@ def roc_analysis(
                 "display":
                     "🟠 숏 눌림 ①"
             })
-
-        # =================================================
-        # 진행 계산은 유지
-        # 대시보드에서는 표시하지 않음
-        # =================================================
 
         elif (
             current_value > 0
@@ -1679,6 +1862,193 @@ def empty_analysis():
     }
 
 
+# =========================================================
+# OKX 분석
+# =========================================================
+
+def analyze_okx(
+    market,
+    current_price=None
+):
+
+    bar = get_okx_bar(
+        EMA_TIMEFRAME
+    )
+
+    if not bar:
+        return None
+
+    # -----------------------------------------------------
+    # 핵심 최적화
+    #
+    # 거래대금 계산 때 이미 받은 1H 데이터를 재사용
+    # -----------------------------------------------------
+
+    df_confirmed = (
+        okx_1h_cache.get(market)
+    )
+
+    if (
+        df_confirmed is None
+        or df_confirmed.empty
+    ):
+
+        df_confirmed = history_okx(
+            market,
+            bar
+        )
+
+    # -----------------------------------------------------
+    # 4H는 TOP30에서만 조회
+    # -----------------------------------------------------
+
+    df_high = history_okx(
+        market,
+        get_okx_bar(
+            EMA_HIGH_TIMEFRAME
+        )
+    )
+
+    # -----------------------------------------------------
+    # 현재 1H
+    #
+    # ROC는 현재가 반영
+    # -----------------------------------------------------
+
+    df_current = get_okx_current_1h(
+        market,
+        current_price
+    )
+
+    if (
+        df_confirmed is None
+        or df_confirmed.empty
+    ):
+        return None
+
+    e1 = ema_display(
+        df_confirmed,
+        current_price
+    )
+
+    e_high = ema_display(
+        df_high,
+        current_price
+    )
+
+    r = roc_analysis(
+        df_confirmed,
+        df_current
+    )
+
+    changes = daily_changes(
+        df_confirmed
+    )
+
+    base = (
+        e1["direction"]
+        in ("long", "short")
+        and
+        e1["count"]
+        <= EMA1_MAX_COUNT
+    )
+
+    long_qualified = (
+        base
+        and
+        e1["direction"] == "long"
+        and
+        r["long_candidate"]
+    )
+
+    short_qualified = (
+        base
+        and
+        e1["direction"] == "short"
+        and
+        r["short_candidate"]
+    )
+
+    pullback_qualified = (
+        base
+        and
+        e1["direction"] == "long"
+        and
+        r["long_pullback"]
+    )
+
+    short_pullback_qualified = (
+        base
+        and
+        e1["direction"] == "short"
+        and
+        r["short_pullback"]
+    )
+
+    progress_qualified = (
+        base
+        and
+        e1["direction"] == "long"
+        and
+        r["roc10"] is not None
+        and
+        r["roc10"] > 0
+        and
+        r["roc10_count"] >= 2
+    )
+
+    short_progress_qualified = (
+        base
+        and
+        e1["direction"] == "short"
+        and
+        r["roc10"] is not None
+        and
+        r["roc10"] < 0
+        and
+        r["roc10_negative_count"] >= 2
+    )
+
+    return {
+
+        "ema_1h": e1,
+
+        "ema_high": e_high,
+
+        "roc": r,
+
+        "changes": changes,
+
+        "qualified":
+            long_qualified,
+
+        "short_qualified":
+            short_qualified,
+
+        "pullback_qualified":
+            pullback_qualified,
+
+        "short_pullback_qualified":
+            short_pullback_qualified,
+
+        "progress_qualified":
+            progress_qualified,
+
+        "short_progress_qualified":
+            short_progress_qualified,
+
+        "direction_1h":
+            e1["direction"],
+
+        "df1h":
+            df_confirmed
+    }
+
+
+# =========================================================
+# 통합 분석
+# =========================================================
+
 def analyze(
     market,
     okx=False,
@@ -1687,84 +2057,35 @@ def analyze(
 
     if okx:
 
-        bar = get_okx_bar(
-            EMA_TIMEFRAME
-        )
-
-        if not bar:
-            return None
-
-        df_confirmed = history_okx(
+        return analyze_okx(
             market,
-            bar
+            current_price
         )
 
-        df_high = history_okx(
+    # -----------------------------------------------------
+    # Upbit
+    # -----------------------------------------------------
+
+    df_confirmed = history_upbit(
+        market,
+        EMA_TIMEFRAME
+    )
+
+    df_high = history_upbit(
+        market,
+        EMA_HIGH_TIMEFRAME
+    )
+
+    df_current = (
+        get_upbit_current_roc_data(
             market,
-            get_okx_bar(
-                EMA_HIGH_TIMEFRAME
-            )
+            current_price
         )
+    )
 
-        df_current = get_okx_ohlcv(
-            market,
-            bar,
-            200,
-            include_current=True
-        )
-
-        if (
-            df_current is not None
-            and not df_current.empty
-            and current_price is not None
-        ):
-
-            start = (
-                get_current_candle_start(
-                    EMA_TIMEFRAME
-                )
-            )
-
-            mask = (
-                df_current.datetime
-                == start
-            )
-
-            if mask.any():
-
-                df_current.loc[
-                    mask,
-                    "c"
-                ] = float(
-                    current_price
-                )
-
-        changes = daily_changes(
-            df_confirmed
-        )
-
-    else:
-
-        df_confirmed = history_upbit(
-            market,
-            EMA_TIMEFRAME
-        )
-
-        df_high = history_upbit(
-            market,
-            EMA_HIGH_TIMEFRAME
-        )
-
-        df_current = (
-            get_upbit_current_roc_data(
-                market,
-                current_price
-            )
-        )
-
-        changes = daily_change_upbit(
-            market
-        )
+    changes = daily_change_upbit(
+        market
+    )
 
     if (
         df_confirmed is None
@@ -1795,10 +2116,6 @@ def analyze(
         <= EMA1_MAX_COUNT
     )
 
-    # =====================================================
-    # 돌파
-    # =====================================================
-
     long_qualified = (
         base
         and
@@ -1815,10 +2132,6 @@ def analyze(
         r["short_candidate"]
     )
 
-    # =====================================================
-    # 눌림
-    # =====================================================
-
     pullback_qualified = (
         base
         and
@@ -1834,10 +2147,6 @@ def analyze(
         and
         r["short_pullback"]
     )
-
-    # =====================================================
-    # 진행 계산은 그대로 유지
-    # =====================================================
 
     progress_qualified = (
         base
@@ -2018,10 +2327,6 @@ def is_short_pullback(row):
     )
 
 
-# ---------------------------------------------------------
-# 진행 계산 함수는 삭제하지 않음
-# ---------------------------------------------------------
-
 def is_progress(row):
 
     return bool(
@@ -2126,14 +2431,59 @@ def update_okx(usdt):
 
     global latest_okx_data
     global latest_okx_update_time
+    global okx_1h_cache
+    global okx_1h_cache_time
 
     if not usdt or usdt <= 0:
         return False
 
+    log.info(
+        "========== OKX 거래대금 조회 시작 =========="
+    )
+
+    # -----------------------------------------------------
+    # 캐시 초기화
+    # -----------------------------------------------------
+
+    okx_1h_cache = {}
+
+    # -----------------------------------------------------
+    # 전체 ticker 1회
+    # -----------------------------------------------------
+
+    tickers = get_okx_tickers()
+
+    if not tickers:
+
+        log.warning(
+            "OKX 전체 ticker 조회 실패"
+        )
+
+        return False
+
+    # -----------------------------------------------------
+    # Symbols
+    # -----------------------------------------------------
+
     symbols = get_okx_symbols()
 
     if not symbols:
+
         return False
+
+    symbols = [
+        x
+        for x in symbols
+        if x in tickers
+    ]
+
+    log.info(
+        f"OKX 대상 종목: {len(symbols)}개"
+    )
+
+    # -----------------------------------------------------
+    # Upbit 상장 여부
+    # -----------------------------------------------------
 
     upbit_set = {
         x.replace(
@@ -2143,11 +2493,26 @@ def update_okx(usdt):
         for x in latest_upbit_markets
     }
 
+    # -----------------------------------------------------
+    # 거래대금 계산
+    #
+    # 기존 방식 그대로
+    #
+    # 최근 확정 1H 24개
+    # volCcyQuote 합계
+    # × USDT/KRW
+    # -----------------------------------------------------
+
     volumes = {}
 
-    for symbol in symbols:
+    started = time.monotonic()
 
-        v = get_okx_volume(
+    for idx, symbol in enumerate(
+        symbols,
+        1
+    ):
+
+        v = get_okx_volume_cached(
             symbol,
             usdt
         )
@@ -2156,11 +2521,38 @@ def update_okx(usdt):
 
             volumes[symbol] = v
 
+        if idx % 50 == 0:
+
+            log.info(
+                f"OKX 거래대금 "
+                f"{idx}/{len(symbols)} "
+                f"완료"
+            )
+
+    elapsed = (
+        time.monotonic()
+        - started
+    )
+
+    log.info(
+        f"OKX 거래대금 완료 "
+        f"/ {len(volumes)}개 "
+        f"/ {elapsed:.1f}초"
+    )
+
+    # -----------------------------------------------------
+    # TOP30
+    # -----------------------------------------------------
+
     top = sorted(
         volumes,
         key=volumes.get,
         reverse=True
     )[:TOP_N]
+
+    log.info(
+        f"OKX TOP{TOP_N} 분석 시작"
+    )
 
     rows = []
 
@@ -2180,13 +2572,12 @@ def update_okx(usdt):
             else coin
         )
 
-        try:
+        # ticker에서 가져온 현재가
+        price = get_okx_cached_price(
+            symbol
+        )
 
-            price = (
-                get_okx_current_price(
-                    symbol
-                )
-            )
+        try:
 
             a = analyze(
                 symbol,
@@ -2201,7 +2592,6 @@ def update_okx(usdt):
                 f"{symbol}: {e}"
             )
 
-            price = None
             a = None
 
         rows.append(
@@ -2215,6 +2605,8 @@ def update_okx(usdt):
         )
 
     latest_okx_data = rows
+
+    okx_1h_cache_time = kst()
 
     latest_okx_update_time = kst()
 
@@ -2409,10 +2801,6 @@ def roc_html(r):
 
 def signal_html(row):
 
-    # -----------------------------------------------------
-    # 돌파
-    # -----------------------------------------------------
-
     if row.get("qualified"):
 
         return (
@@ -2421,10 +2809,6 @@ def signal_html(row):
             '</b>'
         )
 
-    # -----------------------------------------------------
-    # 눌림
-    # -----------------------------------------------------
-
     if row.get("pullback_qualified"):
 
         return (
@@ -2432,10 +2816,6 @@ def signal_html(row):
             '🟡눌림①'
             '</b>'
         )
-
-    # -----------------------------------------------------
-    # 숏 돌파
-    # -----------------------------------------------------
 
     if row.get(
         "short_qualified"
@@ -2447,10 +2827,6 @@ def signal_html(row):
             '</b>'
         )
 
-    # -----------------------------------------------------
-    # 숏 눌림
-    # -----------------------------------------------------
-
     if row.get(
         "short_pullback_qualified"
     ):
@@ -2460,10 +2836,6 @@ def signal_html(row):
             '🟠숏 눌림①'
             '</b>'
         )
-
-    # -----------------------------------------------------
-    # 진행은 대시보드 표시 안 함
-    # -----------------------------------------------------
 
     return (
         '<span class="muted">-</span>'
@@ -2526,7 +2898,6 @@ def row_class(x):
     ):
         return "short-pullback-qualified"
 
-    # 진행 클래스는 계산상 유지
     if x.get(
         "progress_qualified"
     ):
@@ -2776,7 +3147,7 @@ def section(
 
 
 # =========================================================
-# 모바일 최적화 CSS
+# CSS
 # =========================================================
 
 CSS = """
@@ -2813,11 +3184,6 @@ body{
         8px;
 }
 
-
-/* =========================================================
-   제목
-   ========================================================= */
-
 h1{
     margin:
         1px
@@ -2840,18 +3206,10 @@ h2{
 
 h2 small{
     color:#707780;
-
     font-size:5px;
-
     font-weight:normal;
-
     margin-left:3px;
 }
-
-
-/* =========================================================
-   설명
-   ========================================================= */
 
 .info{
     margin:
@@ -2900,11 +3258,6 @@ h2 small{
     font-weight:800;
 }
 
-
-/* =========================================================
-   색상
-   ========================================================= */
-
 .y,
 .buy,
 .roc-positive,
@@ -2945,34 +3298,20 @@ h2 small{
     color:#68717b!important;
 }
 
-
-/* =========================================================
-   테이블
-   ========================================================= */
-
 .table-wrap{
-
     width:100%;
-
     overflow:hidden;
-
     border-radius:5px;
-
     border:
         1px solid
         #272d34;
-
     background:#171b20;
 }
 
 table{
-
     width:100%;
-
     table-layout:fixed;
-
     border-collapse:collapse;
-
     background:#171b20;
 }
 
@@ -2981,51 +3320,32 @@ thead{
 }
 
 th{
-
     height:17px;
-
     padding:1px;
-
     border-bottom:
         1px solid
         #292f36;
-
     color:#7f8791;
-
     font-size:5px;
-
     line-height:6px;
-
     font-weight:700;
-
     text-align:center;
 }
 
 td{
-
     height:25px;
-
     padding:1px;
-
     border-bottom:
         1px solid
         #22282e;
-
     text-align:center;
-
     vertical-align:middle;
-
     overflow:hidden;
 }
 
 tr:last-child td{
     border-bottom:none;
 }
-
-
-/* =========================================================
-   열 비율
-   ========================================================= */
 
 th:nth-child(1),
 td:nth-child(1){
@@ -3057,196 +3377,105 @@ td:nth-child(6){
     width:17%;
 }
 
-
-/* =========================================================
-   순위
-   ========================================================= */
-
 td:nth-child(1){
-
     color:#8b929b;
-
     font-size:6px;
-
     font-weight:700;
 }
 
-
-/* =========================================================
-   코인
-   ========================================================= */
-
 .coin{
-
     text-align:left!important;
-
     line-height:9px;
 }
 
 .coin b{
-
     display:block;
-
     width:100%;
-
     font-size:6.5px;
-
     line-height:8px;
-
     font-weight:800;
-
     white-space:nowrap;
-
     overflow:hidden;
-
     text-overflow:ellipsis;
 }
 
 .coin small{
-
     display:block;
-
     margin:0;
-
     font-size:4.5px;
-
     line-height:6px;
-
     white-space:nowrap;
-
     overflow:hidden;
 }
 
-
-/* =========================================================
-   거래대금
-   ========================================================= */
-
 .vol{
-
     font-size:6px;
-
     line-height:8px;
-
     font-weight:800;
-
     white-space:nowrap;
 }
 
-
-/* =========================================================
-   EMA
-   ========================================================= */
-
 .ema{
-
     text-align:center!important;
-
     font-weight:800;
-
     line-height:8px;
-
     white-space:nowrap;
-
     overflow:visible;
 }
 
 .ema span{
-
     font-size:5.8px;
-
     line-height:8px;
-
     white-space:nowrap;
 }
 
 .ema-sep{
-
     color:#555c65;
-
     margin:
         0
         1px;
 }
 
-
-/* =========================================================
-   ROC
-   ========================================================= */
-
 .roc-cell{
-
     display:flex;
-
     flex-direction:row;
-
     align-items:center;
-
     justify-content:center;
-
     gap:1px;
-
     min-height:21px;
-
     line-height:8px;
-
     white-space:nowrap;
 }
 
 .roc-cell b{
-
     color:#7f8790;
-
     font-size:5px;
-
     line-height:8px;
-
     font-weight:700;
 }
 
 .roc-cell span{
-
     font-size:5.8px;
-
     line-height:8px;
-
     font-weight:900;
-
     white-space:nowrap;
 }
 
 .roc-cell i{
-
     font-style:normal;
-
     font-size:5px;
-
     margin-left:0;
 }
-
-
-/* =========================================================
-   신호
-   ========================================================= */
 
 .buy,
 .short,
 .pullback,
 .short-pullback{
-
     font-size:5.8px;
-
     line-height:8px;
-
     font-weight:800;
-
     white-space:nowrap;
 }
-
-
-/* =========================================================
-   후보 배경
-   ========================================================= */
 
 .qualified{
     background:
@@ -3309,20 +3538,11 @@ td:nth-child(1){
 }
 
 .empty{
-
     height:30px;
-
     padding:8px;
-
     color:#555d67;
-
     font-size:6px;
 }
-
-
-/* =========================================================
-   섹션 제목
-   ========================================================= */
 
 .buy-title{
     color:#39e875;
@@ -3348,11 +3568,6 @@ td:nth-child(1){
     color:#ff6666;
 }
 
-
-/* =========================================================
-   아주 작은 휴대폰
-   ========================================================= */
-
 @media(max-width:380px){
 
     body{
@@ -3370,7 +3585,6 @@ td:nth-child(1){
     h2{
         font-size:8px;
         line-height:10px;
-
         margin-top:4px;
     }
 
@@ -3379,46 +3593,34 @@ td:nth-child(1){
     }
 
     .info{
-
         padding:
             2px
             4px;
-
         font-size:5px;
-
         line-height:7px;
     }
 
     .status{
-
         font-size:5.5px;
-
         line-height:6px;
     }
 
     th{
-
         height:16px;
-
         font-size:4.5px;
     }
 
     td{
-
         height:23px;
     }
 
     .coin b{
-
         font-size:6px;
-
         line-height:7px;
     }
 
     .coin small{
-
         font-size:4px;
-
         line-height:5px;
     }
 
@@ -3446,88 +3648,62 @@ td:nth-child(1){
     .short,
     .pullback,
     .short-pullback{
-
         font-size:5.2px;
     }
 }
 
-
-/* =========================================================
-   PC
-   ========================================================= */
-
 @media(min-width:601px){
 
     body{
-
         max-width:900px;
-
         margin:auto;
-
         padding:8px;
-
         font-size:10px;
     }
 
     h1{
-
         font-size:15px;
-
         line-height:20px;
     }
 
     h2{
-
         font-size:12px;
-
         line-height:16px;
-
         margin-top:12px;
     }
 
     th{
-
         height:26px;
-
         font-size:7px;
     }
 
     td{
-
         height:38px;
-
         padding:3px;
     }
 
     .coin b{
-
         font-size:9px;
-
         line-height:11px;
     }
 
     .coin small{
-
         font-size:7px;
     }
 
     .vol{
-
         font-size:8px;
     }
 
     .ema span{
-
         font-size:8px;
     }
 
     .roc-cell b{
-
         font-size:6px;
     }
 
     .roc-cell span{
-
         font-size:7px;
     }
 
@@ -3535,7 +3711,6 @@ td:nth-child(1){
     .short,
     .pullback,
     .short-pullback{
-
         font-size:7px;
     }
 }
@@ -3579,15 +3754,11 @@ def dashboard():
 
     sections = ""
 
-    # -----------------------------------------------------
+    # =====================================================
     # Upbit
-    # -----------------------------------------------------
+    # =====================================================
 
     if USE_UPBIT == "Y":
-
-        # -----------------------------------------------
-        # 돌파
-        # -----------------------------------------------
 
         sections += focus_section(
 
@@ -3603,10 +3774,6 @@ def dashboard():
 
             "ROC10 0선 상향돌파 ①"
         )
-
-        # -----------------------------------------------
-        # 눌림
-        # -----------------------------------------------
 
         sections += focus_section(
 
@@ -3624,15 +3791,11 @@ def dashboard():
         )
 
 
-    # -----------------------------------------------------
+    # =====================================================
     # OKX
-    # -----------------------------------------------------
+    # =====================================================
 
     if USE_OKX == "Y":
-
-        # -----------------------------------------------
-        # 돌파
-        # -----------------------------------------------
 
         sections += focus_section(
 
@@ -3649,13 +3812,13 @@ def dashboard():
             "ROC10 0선 상향돌파 ①"
         )
 
-        # -----------------------------------------------
-        # 눌림
-        # -----------------------------------------------
+        # -------------------------------------------------
+        # 오타 수정
+        # -------------------------------------------------
 
         sections += focus_section(
 
-            "🟡 눌림 음보메서 발상",
+            "🟡 눌림 음봉에서 발생",
 
             latest_okx_data,
 
@@ -3667,10 +3830,6 @@ def dashboard():
 
             "EMA30>60>120 · ROC10 0선 하향전환 ①"
         )
-
-        # -----------------------------------------------
-        # 숏 돌파
-        # -----------------------------------------------
 
         sections += focus_section(
 
@@ -3686,10 +3845,6 @@ def dashboard():
 
             "ROC10 0선 하향돌파 ①"
         )
-
-        # -----------------------------------------------
-        # 숏 눌림
-        # -----------------------------------------------
 
         sections += focus_section(
 
@@ -3707,9 +3862,9 @@ def dashboard():
         )
 
 
-    # -----------------------------------------------------
+    # =====================================================
     # 전체 Upbit
-    # -----------------------------------------------------
+    # =====================================================
 
     if USE_UPBIT == "Y":
 
@@ -3723,9 +3878,9 @@ def dashboard():
         )
 
 
-    # -----------------------------------------------------
+    # =====================================================
     # 전체 OKX
-    # -----------------------------------------------------
+    # =====================================================
 
     if USE_OKX == "Y":
 
@@ -3786,14 +3941,13 @@ def dashboard():
 
         <div class="info">
 
-            {tf} EMA30·60·120 + ROC10:현재가 기준<br>
+            {tf} EMA30·60·120 + ROC10: 현재가 기준<br>
 
             🚀 돌파 = ROC10 0선 상향돌파 ① ·
             🟡 눌림 = EMA30>60>120 + ROC10 0선 하향전환 ① ·<br>
 
             🔴 숏 돌파 = ROC10 0선 하향돌파 ① ·
             🟠 숏 눌림 = EMA30<60<120 + ROC10 0선 상향전환 ①
-
 
             {status}
 
@@ -3906,7 +4060,7 @@ def startup():
     )
 
     log.info(
-        "숏 눌림: EMA30<60<120 + "
+        "숏 눌림: EMA30<60>120 + "
         "ROC 0선 상향전환①"
     )
 
@@ -3925,28 +4079,24 @@ def startup():
     )
 
     log.info(
-        "========================================"
+        "OKX 최적화: 전체 ticker 1회 + "
+        "1H 거래대금 데이터 캐시"
     )
 
-
-    # 최초 조회
+    log.info(
+        "========================================"
+    )
 
     threading.Thread(
         target=update_dashboard,
         daemon=True
     ).start()
 
-
-    # 1분마다 갱신
-
     schedule.every(
         UPDATE_MINUTES
     ).minutes.do(
         update_dashboard
     )
-
-
-    # 스케줄러
 
     threading.Thread(
         target=scheduler,
