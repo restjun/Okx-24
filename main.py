@@ -1,314 +1,242 @@
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
-import requests
-import uuid
-import jwt
-import hashlib
-import logging
-import sqlite3
-import threading
+import schedule
 import time
-import json
+import requests
+import threading
+import uvicorn
+import logging
+import pandas as pd
+import warnings
 
 from datetime import datetime
-from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
 
 
 # =========================================================
-# FastAPI
+# 기본 설정
 # =========================================================
+
+warnings.filterwarnings(
+    "ignore",
+    category=FutureWarning
+)
 
 app = FastAPI()
 
-
-# =========================================================
-# 로그
-# =========================================================
-
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(message)s"
+    format="%(asctime)s %(levelname)s:%(name)s:%(message)s"
 )
 
-logger = logging.getLogger(__name__)
+log = logging.getLogger("trading")
 
+VOLUME_HOURS = 24
+TOP_N = 50
+UPDATE_MINUTES = 1
 
-# =========================================================
-# 업비트
-# =========================================================
+HISTORY_CHUNK = 200
+MAX_HISTORY_CHUNKS = 10
 
-SERVER_URL = "https://api.upbit.com"
+USE_UPBIT = "Y"
+USE_OKX = "Y"
 
-REQUEST_TIMEOUT = 10
-ORDER_WAIT_TIMEOUT = 15
-ORDER_WAIT_INTERVAL = 0.5
-
-MIN_ORDER_KRW = 5000
-
-
-# =========================================================
-# 월 시작금액
-# =========================================================
-
-MONTH_START_AMOUNT = 2_500_000.0
-
-
-# =========================================================
-# 전체 시드 손실한도
-# 1%
-# =========================================================
-
-MAX_LOSS_RATE = 0.02
-
-
-# =========================================================
-# 한국시간
-# =========================================================
+REQUEST_INTERVAL = 0.08
+RATE_LIMIT_WAIT = 3
+MAX_RETRIES = 10
 
 KST = ZoneInfo("Asia/Seoul")
 
 
 # =========================================================
-# SQLite
+# EMA / ROC 설정
 # =========================================================
 
-DB_FILE = "trading.db"
+EMA_TIMEFRAME = 60
+EMA_HIGH_TIMEFRAME = 240
 
-db_lock = threading.Lock()
+EMA1_FAST = 30
+EMA1_MID = 60
+EMA1_SLOW = 120
 
+EMA1_MAX_COUNT = 100
 
-# =========================================================
-# 최신 업비트 자산
-# =========================================================
-
-latest_upbit_assets = []
-
-latest_upbit_total_krw = 0.0
-latest_upbit_available_krw = 0.0
-
-latest_upbit_update = "TradingView 신호 대기"
-
-latest_order_info = "주문 없음"
+ROC_PERIOD = 10
 
 
 # =========================================================
-# 마지막 매수 수수료율
+# ROC 설정
 # =========================================================
 
-latest_bid_fee_rate = 0.0
+ROC_NEAR_ZERO = -0.30
+ROC_SHORT_NEAR_ZERO = 0.30
 
-
-# =========================================================
-# 숫자 변환
-# =========================================================
-
-def safe_float(value, default=0.0):
-
-    if value is None:
-        return default
-
-    if isinstance(value, str):
-
-        value = value.strip()
-
-        if value == "":
-            return default
-
-    try:
-
-        return float(value)
-
-    except Exception:
-
-        return default
+ROC_FOCUS_TOP = 10
 
 
 # =========================================================
-# 문자열 변환
+# 지원 시간봉
 # =========================================================
 
-def safe_string(value, default=""):
+SUPPORTED_UPBIT_TIMEFRAMES = {
+    5, 15, 30, 60, 240
+}
 
-    if value is None:
-        return default
-
-    try:
-
-        return str(value).strip()
-
-    except Exception:
-
-        return default
+SUPPORTED_OKX_TIMEFRAMES = {
+    5, 15, 30, 60, 120, 240,
+    360, 480, 720, 1440
+}
 
 
 # =========================================================
-# TradingView 데이터 추출
+# 시간봉
 # =========================================================
 
-def get_payload_value(
-    data: dict,
-    names,
-    default=None
-):
+def format_timeframe(minutes):
+    minutes = int(minutes)
 
-    for name in names:
+    if minutes >= 1440:
+        return f"{minutes // 1440}D"
 
-        if name in data:
+    if minutes >= 60:
+        return f"{minutes // 60}H"
 
-            return data[name]
-
-    return default
+    return f"{minutes}M"
 
 
-# =========================================================
-# DB 연결
-# =========================================================
+def get_okx_bar(minutes):
+    mapping = {
+        5: "5m",
+        15: "15m",
+        30: "30m",
+        60: "1H",
+        120: "2H",
+        240: "4H",
+        360: "6H",
+        480: "8H",
+        720: "12H",
+        1440: "1D"
+    }
 
-def get_db():
+    return mapping.get(int(minutes))
 
-    conn = sqlite3.connect(
-        DB_FILE,
-        timeout=30
+
+def get_okx_bar_minutes(bar):
+    mapping = {
+        "1m": 1,
+        "3m": 3,
+        "5m": 5,
+        "15m": 15,
+        "30m": 30,
+        "1H": 60,
+        "2H": 120,
+        "4H": 240,
+        "6H": 360,
+        "8H": 480,
+        "12H": 720,
+        "1D": 1440
+    }
+
+    return mapping.get(str(bar))
+
+
+def get_current_candle_start(timeframe_minutes):
+    timeframe_minutes = int(timeframe_minutes)
+
+    now = datetime.now(KST)
+
+    total_minutes = (
+        now.hour * 60
+        + now.minute
     )
 
-    conn.row_factory = sqlite3.Row
+    block_minutes = (
+        total_minutes
+        // timeframe_minutes
+    ) * timeframe_minutes
 
-    return conn
+    day_offset = block_minutes // 1440
 
+    block_minutes %= 1440
 
-# =========================================================
-# DB 초기화
-# =========================================================
+    hour = block_minutes // 60
+    minute = block_minutes % 60
 
-def init_db():
-
-    with db_lock:
-
-        conn = get_db()
-
-        cursor = conn.cursor()
-
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS trades (
-
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-
-            uuid TEXT UNIQUE,
-
-            coin TEXT NOT NULL,
-
-            side TEXT NOT NULL,
-
-            order_amount REAL DEFAULT 0,
-
-            executed_funds REAL DEFAULT 0,
-
-            executed_volume REAL DEFAULT 0,
-
-            avg_price REAL DEFAULT 0,
-
-            fee REAL DEFAULT 0,
-
-            requested_ratio REAL DEFAULT 0,
-
-            created_at TEXT,
-
-            completed_at TEXT,
-
-            state TEXT,
-
-            realized_cost REAL DEFAULT 0,
-
-            realized_profit REAL DEFAULT 0,
-
-            realized_return REAL DEFAULT 0
-
-        )
-        """)
-
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS buy_lots (
-
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-
-            trade_id INTEGER NOT NULL,
-
-            coin TEXT NOT NULL,
-
-            original_volume REAL NOT NULL,
-
-            remaining_volume REAL NOT NULL,
-
-            cost_per_unit REAL NOT NULL,
-
-            total_cost REAL NOT NULL,
-
-            fee REAL DEFAULT 0,
-
-            created_at TEXT,
-
-            FOREIGN KEY(trade_id)
-                REFERENCES trades(id)
-
-        )
-        """)
-
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS sell_allocations (
-
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-
-            sell_trade_id INTEGER NOT NULL,
-
-            buy_lot_id INTEGER NOT NULL,
-
-            volume REAL NOT NULL,
-
-            cost REAL NOT NULL,
-
-            FOREIGN KEY(sell_trade_id)
-                REFERENCES trades(id),
-
-            FOREIGN KEY(buy_lot_id)
-                REFERENCES buy_lots(id)
-
-        )
-        """)
-
-        conn.commit()
-
-        conn.close()
-
-
-# =========================================================
-# 코인명 정리
-# =========================================================
-
-def clean_coin_name(coin):
-
-    coin = safe_string(coin).upper()
-
-    coin = (
-        coin
-        .replace("USDT.P", "")
-        .replace("USDT", "")
-        .replace("KRW-", "")
-        .replace("KRW", "")
-        .strip()
+    current = now.replace(
+        hour=hour,
+        minute=minute,
+        second=0,
+        microsecond=0
     )
 
-    return coin
+    if day_offset:
+        current -= pd.Timedelta(
+            days=day_offset
+        )
+
+    return current.replace(
+        tzinfo=None
+    )
+
+
+def validate_timeframe():
+    global EMA_TIMEFRAME
+
+    try:
+        EMA_TIMEFRAME = int(
+            EMA_TIMEFRAME
+        )
+    except Exception:
+        raise ValueError(
+            "EMA_TIMEFRAME은 숫자여야 합니다."
+        )
+
+    if EMA_TIMEFRAME not in SUPPORTED_UPBIT_TIMEFRAMES:
+        raise ValueError(
+            "EMA_TIMEFRAME 오류\n"
+            f"현재값: {EMA_TIMEFRAME}\n"
+            "Upbit 지원값: 5, 15, 30, 60, 240"
+        )
+
+    okx_bar = get_okx_bar(
+        EMA_TIMEFRAME
+    )
+
+    if okx_bar is None:
+        raise ValueError(
+            f"OKX에서 지원하지 않는 시간봉: "
+            f"{EMA_TIMEFRAME}"
+        )
+
+    return True
 
 
 # =========================================================
-# 현재시간
-# 한국시간 기준
+# 전역 상태
 # =========================================================
 
-def now_string():
+latest_upbit_data = []
+latest_okx_data = []
 
+latest_usdt_krw = 0
+
+latest_upbit_update_time = "-"
+latest_okx_update_time = "-"
+
+latest_upbit_markets = []
+
+request_lock = threading.Lock()
+update_lock = threading.Lock()
+
+last_request_time = 0
+
+
+# =========================================================
+# 공통
+# =========================================================
+
+def kst():
     return datetime.now(
         KST
     ).strftime(
@@ -316,4213 +244,4308 @@ def now_string():
     )
 
 
-# =========================================================
-# Query String
-# =========================================================
+def wait_request():
+    global last_request_time
 
-def build_query_string(data: dict):
+    with request_lock:
+        gap = (
+            time.monotonic()
+            - last_request_time
+        )
 
-    return urlencode(
-        data,
-        doseq=True
+        if gap < REQUEST_INTERVAL:
+            time.sleep(
+                REQUEST_INTERVAL - gap
+            )
+
+        last_request_time = (
+            time.monotonic()
+        )
+
+
+def retry(func, *args, **kwargs):
+    name = getattr(
+        func,
+        "__name__",
+        str(func)
     )
 
-
-# =========================================================
-# JWT
-# =========================================================
-
-def create_jwt(
-    api_key,
-    secret_key,
-    query_string=""
-):
-
-    payload = {
-        "access_key": api_key,
-        "nonce": str(uuid.uuid4())
-    }
-
-    if query_string:
-
-        query_hash = hashlib.sha512(
-            query_string.encode("utf-8")
-        ).hexdigest()
-
-        payload["query_hash"] = query_hash
-        payload["query_hash_alg"] = "SHA512"
-
-    token = jwt.encode(
-        payload,
-        secret_key,
-        algorithm="HS512"
+    url = (
+        args[0]
+        if args
+        and isinstance(
+            args[0],
+            str
+        )
+        else kwargs.get(
+            "url",
+            ""
+        )
     )
 
-    if isinstance(token, bytes):
+    for n in range(
+        MAX_RETRIES
+    ):
+        try:
+            wait_request()
 
-        token = token.decode("utf-8")
+            r = func(
+                *args,
+                **kwargs
+            )
 
-    return token
+            if not hasattr(
+                r,
+                "status_code"
+            ):
+                return r
 
+            if r.status_code == 200:
+                return r
 
-# =========================================================
-# 인증 Header
-# =========================================================
+            if r.status_code == 429:
+                wait = min(
+                    RATE_LIMIT_WAIT
+                    * 2 ** n,
+                    60
+                )
 
-def create_auth_headers(
-    api_key,
-    secret_key,
-    query_string=""
-):
+            elif r.status_code >= 500:
+                wait = min(
+                    2 * 2 ** n,
+                    30
+                )
 
-    token = create_jwt(
-        api_key,
-        secret_key,
-        query_string
+            else:
+                log.warning(
+                    f"[HTTP {r.status_code}] "
+                    f"{url}"
+                )
+                return r
+
+            log.warning(
+                f"[API 재시도] "
+                f"{url} "
+                f"{wait}초"
+            )
+
+            time.sleep(
+                wait
+            )
+
+        except Exception as e:
+            log.error(
+                f"[API 오류] "
+                f"{name} "
+                f"{url}: {e}"
+            )
+
+            if n < MAX_RETRIES - 1:
+                time.sleep(
+                    min(
+                        2 * (n + 1),
+                        20
+                    )
+                )
+
+    log.error(
+        f"[API 최종 실패] "
+        f"{name} "
+        f"{url}"
     )
 
-    return {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/json",
-        "Content-Type": "application/json"
-    }
+    return None
 
 
 # =========================================================
-# 오류 응답
+# Upbit
 # =========================================================
 
-def get_error_detail(response):
+def get_upbit_markets():
+    global latest_upbit_markets
+
+    r = retry(
+        requests.get,
+        "https://api.upbit.com/v1/ticker/all",
+        params={
+            "quote_currencies": "KRW"
+        },
+        timeout=15
+    )
+
+    if r is None:
+        return []
 
     try:
+        result = []
 
-        return response.json()
+        for x in r.json():
+            market = x.get(
+                "market",
+                ""
+            )
+
+            if not market.startswith(
+                "KRW-"
+            ):
+                continue
+
+            try:
+                volume = float(
+                    x["acc_trade_price_24h"]
+                )
+
+                current_price = float(
+                    x["trade_price"]
+                )
+
+            except Exception:
+                continue
+
+            if volume > 0 and current_price > 0:
+                result.append({
+                    "market": market,
+                    "volume_24h": volume,
+                    "current_price": current_price
+                })
+
+        latest_upbit_markets = [
+            x["market"]
+            for x in result
+        ]
+
+        return result
+
+    except Exception as e:
+        log.error(
+            f"업비트 마켓 오류: {e}"
+        )
+        return []
+
+
+def get_usdt_krw():
+    r = retry(
+        requests.get,
+        "https://api.upbit.com/v1/ticker?markets=KRW-USDT",
+        timeout=15
+    )
+
+    if r is None:
+        return None
+
+    try:
+        price = float(
+            r.json()[0]["trade_price"]
+        )
+
+        return (
+            price
+            if price > 0
+            else None
+        )
 
     except Exception:
-
-        return {
-            "status_code": response.status_code,
-            "text": response.text
-        }
+        return None
 
 
 # =========================================================
-# 수량 절삭
+# Upbit 캔들
 # =========================================================
 
-def truncate_volume(
-    volume,
-    decimals=8
-):
-
-    factor = 10 ** decimals
-
-    return int(
-        volume * factor
-    ) / factor
-
-
-# =========================================================
-# KRW 절삭
-# =========================================================
-
-def truncate_krw(amount):
-
-    return float(
-        int(amount)
-    )
-
-
-# =========================================================
-# 현재가 조회
-# =========================================================
-
-def get_ticker_price(market):
-
-    try:
-
-        response = requests.get(
-            f"{SERVER_URL}/v1/ticker",
-            params={
-                "markets": market
-            },
-            timeout=REQUEST_TIMEOUT
-        )
-
-        if response.status_code != 200:
-
-            logger.error(
-                f"Ticker error | "
-                f"{market} | "
-                f"{response.status_code}"
-            )
-
-            return 0.0
-
-        data = response.json()
-
-        if not data:
-
-            return 0.0
-
-        return float(
-            data[0]["trade_price"]
-        )
-
-    except Exception as e:
-
-        logger.error(
-            f"Ticker exception | "
-            f"{market} | {e}"
-        )
-
-        return 0.0
-
-
-# =========================================================
-# 업비트 주문 가능 정보 + 매수 수수료 조회
-# =========================================================
-
-def get_order_chance(
+def get_upbit_candle(
     market,
-    api_key,
-    secret_key
+    unit,
+    count=200,
+    to=None
 ):
+    unit = int(unit)
 
-    global latest_bid_fee_rate
+    url = (
+        "https://api.upbit.com/v1/candles/minutes/"
+        f"{unit}"
+    )
 
-    query = {
-        "market": market
+    params = {
+        "market": market,
+        "count": min(
+            max(int(count), 1),
+            200
+        )
     }
 
-    query_string = build_query_string(
-        query
+    if to:
+        params["to"] = to
+
+    r = retry(
+        requests.get,
+        url,
+        params=params,
+        timeout=15
     )
 
-    headers = create_auth_headers(
-        api_key,
-        secret_key,
-        query_string
-    )
+    if r is None:
+        return None
 
     try:
-
-        response = requests.get(
-            SERVER_URL + "/v1/orders/chance",
-            params=query,
-            headers=headers,
-            timeout=REQUEST_TIMEOUT
+        df = pd.DataFrame(
+            r.json()
         )
 
-    except requests.RequestException as e:
+        if df.empty:
+            return None
 
-        logger.error(
-            f"ORDER CHANCE REQUEST FAILED | "
-            f"{market} | {e}"
+        df["o"] = pd.to_numeric(
+            df.opening_price,
+            errors="coerce"
         )
 
-        return {
-            "bid_fee": 0.0,
-            "min_total": MIN_ORDER_KRW
-        }
-
-    if response.status_code != 200:
-
-        logger.error(
-            f"ORDER CHANCE ERROR | "
-            f"{market} | "
-            f"{response.status_code} | "
-            f"{response.text}"
+        df["h"] = pd.to_numeric(
+            df.high_price,
+            errors="coerce"
         )
 
-        return {
-            "bid_fee": 0.0,
-            "min_total": MIN_ORDER_KRW
-        }
+        df["l"] = pd.to_numeric(
+            df.low_price,
+            errors="coerce"
+        )
 
-    try:
+        df["c"] = pd.to_numeric(
+            df.trade_price,
+            errors="coerce"
+        )
 
-        data = response.json()
+        df["volume_krw"] = pd.to_numeric(
+            df.candle_acc_trade_price,
+            errors="coerce"
+        )
+
+        df["datetime"] = pd.to_datetime(
+            df.candle_date_time_kst,
+            errors="coerce"
+        )
+
+        df = df.dropna(
+            subset=[
+                "datetime",
+                "o",
+                "h",
+                "l",
+                "c"
+            ]
+        )
+
+        if df.empty:
+            return None
+
+        current = get_current_candle_start(
+            unit
+        )
+
+        df = df[
+            df.datetime < current
+        ]
+
+        if df.empty:
+            return None
+
+        return (
+            df
+            .sort_values("datetime")
+            .drop_duplicates("datetime")
+            .reset_index(drop=True)
+        )
 
     except Exception as e:
-
-        logger.error(
-            f"ORDER CHANCE JSON ERROR | "
-            f"{market} | {e}"
+        log.error(
+            f"업비트 {unit}분 오류 "
+            f"{market}: {e}"
         )
 
-        return {
-            "bid_fee": 0.0,
-            "min_total": MIN_ORDER_KRW
-        }
+        return None
 
-    bid_fee = safe_float(
-        data.get(
-            "bid_fee",
-            0
+
+def get_upbit_candle_with_current(
+    market,
+    unit,
+    count=200,
+    to=None
+):
+    unit = int(unit)
+
+    url = (
+        "https://api.upbit.com/v1/candles/minutes/"
+        f"{unit}"
+    )
+
+    params = {
+        "market": market,
+        "count": min(
+            max(int(count), 1),
+            200
         )
-    )
-
-    min_total = safe_float(
-        data
-        .get("market", {})
-        .get("bid", {})
-        .get(
-            "min_total",
-            MIN_ORDER_KRW
-        )
-    )
-
-    if min_total <= 0:
-
-        min_total = MIN_ORDER_KRW
-
-    latest_bid_fee_rate = bid_fee
-
-    logger.info(
-        f"ORDER CHANCE | "
-        f"{market} | "
-        f"bid_fee={bid_fee * 100:.4f}% | "
-        f"min_total={min_total:,.0f}"
-    )
-
-    return {
-        "bid_fee": bid_fee,
-        "min_total": min_total,
-        "data": data
     }
 
+    if to:
+        params["to"] = to
 
-# =========================================================
-# 수수료 포함 실제 최대 매수 가능금액
-# =========================================================
-
-def calculate_fee_safe_buy_amount(
-    available_krw,
-    bid_fee_rate
-):
-
-    if available_krw <= 0:
-
-        return 0.0
-
-    if bid_fee_rate < 0:
-
-        bid_fee_rate = 0.0
-
-    safe_amount = (
-        available_krw /
-        (1.0 + bid_fee_rate)
+    r = retry(
+        requests.get,
+        url,
+        params=params,
+        timeout=15
     )
 
-    safe_amount = truncate_krw(
-        safe_amount
-    )
-
-    if safe_amount > 1:
-
-        safe_amount -= 1
-
-    return max(
-        safe_amount,
-        0
-    )
-
-
-# =========================================================
-# 업비트 전체 자산조회
-# =========================================================
-
-def fetch_upbit_assets(
-    api_key,
-    secret_key
-):
-
-    global latest_upbit_assets
-    global latest_upbit_total_krw
-    global latest_upbit_available_krw
-    global latest_upbit_update
-
-    headers = create_auth_headers(
-        api_key,
-        secret_key
-    )
+    if r is None:
+        return None
 
     try:
-
-        response = requests.get(
-            SERVER_URL + "/v1/accounts",
-            headers=headers,
-            timeout=REQUEST_TIMEOUT
+        df = pd.DataFrame(
+            r.json()
         )
 
-    except requests.RequestException as e:
+        if df.empty:
+            return None
 
-        logger.error(
-            f"Account request failed: {e}"
+        df["o"] = pd.to_numeric(
+            df.opening_price,
+            errors="coerce"
         )
 
-        return -1
-
-    if response.status_code != 200:
-
-        logger.error(
-            f"Account fetch failed | "
-            f"{response.status_code} | "
-            f"{response.text}"
+        df["h"] = pd.to_numeric(
+            df.high_price,
+            errors="coerce"
         )
 
-        return -1
+        df["l"] = pd.to_numeric(
+            df.low_price,
+            errors="coerce"
+        )
 
-    try:
+        df["c"] = pd.to_numeric(
+            df.trade_price,
+            errors="coerce"
+        )
 
-        accounts = response.json()
+        df["volume_krw"] = pd.to_numeric(
+            df.candle_acc_trade_price,
+            errors="coerce"
+        )
+
+        df["datetime"] = pd.to_datetime(
+            df.candle_date_time_kst,
+            errors="coerce"
+        )
+
+        df = df.dropna(
+            subset=[
+                "datetime",
+                "o",
+                "h",
+                "l",
+                "c"
+            ]
+        )
+
+        if df.empty:
+            return None
+
+        return (
+            df
+            .sort_values("datetime")
+            .drop_duplicates("datetime")
+            .reset_index(drop=True)
+        )
 
     except Exception as e:
-
-        logger.error(
-            f"Account JSON error | {e}"
+        log.error(
+            f"업비트 현재캔들 오류 "
+            f"{unit}분 {market}: {e}"
         )
 
-        return -1
-
-    assets = []
-
-    total_krw = 0.0
-
-    available_krw = 0.0
+        return None
 
 
-    # =====================================================
-    # KRW
-    # =====================================================
+def get_upbit_current_roc_data(
+    market,
+    current_price
+):
+    df = get_upbit_candle_with_current(
+        market,
+        EMA_TIMEFRAME
+    )
 
-    for account in accounts:
+    if df is None or df.empty:
+        return None
 
-        currency = account.get(
-            "currency",
-            ""
-        )
-
-        if currency != "KRW":
-
-            continue
-
-        balance = safe_float(
-            account.get(
-                "balance",
-                0
+    try:
+        current_start = (
+            get_current_candle_start(
+                EMA_TIMEFRAME
             )
         )
 
-        locked = safe_float(
-            account.get(
-                "locked",
-                0
-            )
-        )
-
-        available_krw = max(
-            balance,
-            0
-        )
-
-        total_krw += (
-            balance +
-            locked
-        )
-
-        break
-
-
-    # =====================================================
-    # 코인
-    # =====================================================
-
-    for account in accounts:
-
-        currency = account.get(
-            "currency",
-            ""
-        )
-
-        if currency == "KRW":
-
-            continue
-
-        balance = safe_float(
-            account.get(
-                "balance",
-                0
-            )
-        )
-
-        locked = safe_float(
-            account.get(
-                "locked",
-                0
-            )
-        )
-
-        avg_buy_price = safe_float(
-            account.get(
-                "avg_buy_price",
-                0
-            )
-        )
-
-        if balance <= 0:
-
-            continue
-
-        market = f"KRW-{currency}"
-
-        current_price = get_ticker_price(
-            market
-        )
-
-        if current_price <= 0:
-
-            logger.info(
-                f"Hide unsupported asset | "
-                f"{currency}"
-            )
-
-            continue
-
-        evaluation = (
-            balance *
+        current_price = float(
             current_price
         )
 
-        total_krw += evaluation
+        if current_price <= 0:
+            return df
 
-        if evaluation < MIN_ORDER_KRW:
-
-            logger.info(
-                f"Hide small asset | "
-                f"{currency} | "
-                f"{evaluation:,.0f} KRW"
-            )
-
-            continue
-
-        profit_rate = 0.0
-
-        profit_amount = 0.0
-
-        if avg_buy_price > 0:
-
-            profit_rate = (
-                (
-                    current_price -
-                    avg_buy_price
-                )
-                /
-                avg_buy_price
-            ) * 100
-
-            profit_amount = (
-                current_price -
-                avg_buy_price
-            ) * balance
-
-        buy_amount_krw = (
-            avg_buy_price *
-            balance
+        mask = (
+            df["datetime"]
+            == current_start
         )
 
-        assets.append({
+        if mask.any():
+            df.loc[
+                mask,
+                "c"
+            ] = current_price
 
-            "currency":
-                currency,
+        else:
+            new_row = df.iloc[-1].copy()
 
-            "balance":
-                balance,
+            new_row[
+                "datetime"
+            ] = current_start
 
-            "locked":
-                locked,
+            new_row["c"] = current_price
 
-            "avg_buy_price":
-                avg_buy_price,
+            df = pd.concat(
+                [
+                    df,
+                    pd.DataFrame([new_row])
+                ],
+                ignore_index=True
+            )
 
-            "buy_amount_krw":
-                buy_amount_krw,
+        return (
+            df
+            .sort_values("datetime")
+            .reset_index(drop=True)
+        )
 
-            "current_price":
-                current_price,
+    except Exception as e:
+        log.error(
+            f"업비트 현재 ROC 오류 "
+            f"{market}: {e}"
+        )
 
-            "evaluation_krw":
-                evaluation,
-
-            "profit_rate":
-                profit_rate,
-
-            "profit_amount":
-                profit_amount,
-
-            "market":
-                market
-        })
-
-    assets.sort(
-        key=lambda x:
-            -x["evaluation_krw"]
-    )
-
-    latest_upbit_assets = assets
-
-    latest_upbit_total_krw = total_krw
-
-    latest_upbit_available_krw = available_krw
-
-    latest_upbit_update = now_string()
-
-    logger.info(
-        f"Assets updated | "
-        f"Total={total_krw:,.0f} KRW | "
-        f"Available={available_krw:,.0f} KRW | "
-        f"Visible coins={len(assets)}"
-    )
-
-    return total_krw
+        return df
 
 
-# =========================================================
-# 현재 저장값
-# =========================================================
-
-def log_current_dashboard_asset():
-
-    logger.info(
-        f"CURRENT DASHBOARD ASSET | "
-        f"Total={latest_upbit_total_krw:,.0f} | "
-        f"Available={latest_upbit_available_krw:,.0f} | "
-        f"Updated={latest_upbit_update}"
-    )
-
-
-# =========================================================
-# 특정 코인 실제 잔고
-# =========================================================
-
-def get_coin_balance(
-    coin,
-    api_key,
-    secret_key
+def get_upbit_1h(
+    market,
+    count=200,
+    to=None
 ):
-
-    coin = clean_coin_name(
-        coin
+    return get_upbit_candle(
+        market,
+        EMA_TIMEFRAME,
+        count,
+        to
     )
-
-    headers = create_auth_headers(
-        api_key,
-        secret_key
-    )
-
-    try:
-
-        response = requests.get(
-            SERVER_URL + "/v1/accounts",
-            headers=headers,
-            timeout=REQUEST_TIMEOUT
-        )
-
-    except requests.RequestException as e:
-
-        logger.error(
-            f"Coin balance request failed | "
-            f"{coin} | {e}"
-        )
-
-        raise HTTPException(
-            status_code=502,
-            detail=str(e)
-        )
-
-    if response.status_code != 200:
-
-        raise HTTPException(
-            status_code=response.status_code,
-            detail=get_error_detail(response)
-        )
-
-    for asset in response.json():
-
-        if asset.get("currency") == coin:
-
-            balance = safe_float(
-                asset.get(
-                    "balance",
-                    0
-                )
-            )
-
-            locked = safe_float(
-                asset.get(
-                    "locked",
-                    0
-                )
-            )
-
-            available = max(
-                balance,
-                0
-            )
-
-            logger.info(
-                f"REAL BALANCE | "
-                f"{coin} | "
-                f"balance={balance:.18f} | "
-                f"locked={locked:.18f} | "
-                f"available={available:.18f}"
-            )
-
-            return available
-
-    logger.info(
-        f"REAL BALANCE | "
-        f"{coin} | "
-        f"balance=0"
-    )
-
-    return 0.0
 
 
 # =========================================================
-# 매수금액 계산
+# OKX
 # =========================================================
 
-def calculate_buy_amount(
-    stop_loss
+def get_okx_ohlcv(
+    inst,
+    bar="1H",
+    limit=200,
+    before=None
 ):
-
-    if stop_loss <= 0:
-
-        return 0.0
-
-    loss_amount = (
-        MONTH_START_AMOUNT *
-        MAX_LOSS_RATE
-    )
-
-    stop_rate = (
-        stop_loss /
-        100
-    )
-
-    buy_amount = (
-        loss_amount /
-        stop_rate
-    )
-
-    return truncate_krw(
-        buy_amount
-    )
-
-
-# =========================================================
-# 매수 주문
-# =========================================================
-
-def place_bid_order(
-    coin,
-    krw_amount,
-    api_key,
-    secret_key
-):
-
-    coin = clean_coin_name(
-        coin
-    )
-
-    market = f"KRW-{coin}"
-
-    krw_amount = truncate_krw(
-        krw_amount
-    )
-
-    if krw_amount < MIN_ORDER_KRW:
-
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"매수금액 {krw_amount:,.0f}원이 "
-                f"최소 주문금액 "
-                f"{MIN_ORDER_KRW:,}원보다 작습니다."
-            )
+    params = {
+        "instId": inst,
+        "bar": bar,
+        "limit": min(
+            max(int(limit), 1),
+            200
         )
-
-    query = {
-
-        "market":
-            market,
-
-        "side":
-            "bid",
-
-        "price":
-            str(int(krw_amount)),
-
-        "ord_type":
-            "price"
     }
 
-    query_string = build_query_string(
-        query
+    if before is not None:
+        params["before"] = str(before)
+
+    r = retry(
+        requests.get,
+        "https://www.okx.com/api/v5/market/candles",
+        params=params,
+        timeout=15
     )
 
-    headers = create_auth_headers(
-        api_key,
-        secret_key,
-        query_string
-    )
-
-    logger.info(
-        f"BUY ORDER | "
-        f"market={market} | "
-        f"price={krw_amount:,.0f}"
-    )
+    if r is None:
+        return None
 
     try:
-
-        response = requests.post(
-            SERVER_URL + "/v1/orders",
-            json=query,
-            headers=headers,
-            timeout=REQUEST_TIMEOUT
+        data = r.json().get(
+            "data",
+            []
         )
 
-    except requests.RequestException as e:
+        if not data:
+            return None
 
-        logger.error(
-            f"BUY ORDER REQUEST FAILED | {e}"
+        df = pd.DataFrame(
+            data,
+            columns=[
+                "ts",
+                "o",
+                "h",
+                "l",
+                "c",
+                "vol",
+                "volCcy",
+                "volCcyQuote",
+                "confirm"
+            ]
         )
 
-        raise HTTPException(
-            status_code=502,
-            detail=str(e)
+        numeric_cols = [
+            "ts",
+            "o",
+            "h",
+            "l",
+            "c",
+            "vol",
+            "volCcy",
+            "volCcyQuote"
+        ]
+
+        for col in numeric_cols:
+            df[col] = pd.to_numeric(
+                df[col],
+                errors="coerce"
+            )
+
+        df = df[
+            df.confirm.astype(str) == "1"
+        ]
+
+        if df.empty:
+            return None
+
+        df["datetime"] = (
+            pd.to_datetime(
+                df["ts"],
+                unit="ms",
+                utc=True
+            )
+            .dt.tz_convert(KST)
+            .dt.tz_localize(None)
         )
 
-    if response.status_code not in (200, 201):
-
-        logger.error(
-            f"BUY ORDER ERROR | "
-            f"{response.status_code} | "
-            f"{response.text}"
+        bar_minutes = get_okx_bar_minutes(
+            bar
         )
 
-        raise HTTPException(
-            status_code=response.status_code,
-            detail=get_error_detail(response)
+        if bar_minutes is not None:
+            current = (
+                get_current_candle_start(
+                    bar_minutes
+                )
+            )
+
+            df = df[
+                df.datetime < current
+            ]
+
+        if df.empty:
+            return None
+
+        return (
+            df
+            .sort_values("ts")
+            .drop_duplicates("ts")
+            .reset_index(drop=True)
         )
 
-    return response.json()
+    except Exception as e:
+        log.error(
+            f"OKX {inst} {bar} 오류: {e}"
+        )
+
+        return None
 
 
-# =========================================================
-# 매도 주문
-# =========================================================
-
-def place_ask_order(
-    coin,
-    sell_volume,
-    api_key,
-    secret_key
+def get_okx_ohlcv_current(
+    inst,
+    bar="1H",
+    limit=200
 ):
+    params = {
+        "instId": inst,
+        "bar": bar,
+        "limit": min(
+            max(int(limit), 1),
+            200
+        )
+    }
 
-    coin = clean_coin_name(
-        coin
+    r = retry(
+        requests.get,
+        "https://www.okx.com/api/v5/market/candles",
+        params=params,
+        timeout=15
     )
 
-    market = f"KRW-{coin}"
+    if r is None:
+        return None
 
-    sell_volume = truncate_volume(
-        sell_volume,
-        8
+    try:
+        data = r.json().get(
+            "data",
+            []
+        )
+
+        if not data:
+            return None
+
+        df = pd.DataFrame(
+            data,
+            columns=[
+                "ts",
+                "o",
+                "h",
+                "l",
+                "c",
+                "vol",
+                "volCcy",
+                "volCcyQuote",
+                "confirm"
+            ]
+        )
+
+        numeric_cols = [
+            "ts",
+            "o",
+            "h",
+            "l",
+            "c",
+            "vol",
+            "volCcy",
+            "volCcyQuote"
+        ]
+
+        for col in numeric_cols:
+            df[col] = pd.to_numeric(
+                df[col],
+                errors="coerce"
+            )
+
+        if df.empty:
+            return None
+
+        df["datetime"] = (
+            pd.to_datetime(
+                df["ts"],
+                unit="ms",
+                utc=True
+            )
+            .dt.tz_convert(KST)
+            .dt.tz_localize(None)
+        )
+
+        return (
+            df
+            .sort_values("ts")
+            .drop_duplicates("ts")
+            .reset_index(drop=True)
+        )
+
+    except Exception as e:
+        log.error(
+            f"OKX 현재캔들 오류 "
+            f"{inst}: {e}"
+        )
+
+        return None
+
+
+def get_okx_current_price(inst):
+    r = retry(
+        requests.get,
+        "https://www.okx.com/api/v5/market/ticker",
+        params={
+            "instId": inst
+        },
+        timeout=15
     )
 
-    if sell_volume <= 0:
+    if r is None:
+        return None
 
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "volume=0 테스트입니다. "
-                "잔고 조회는 완료되었으며 "
-                "실제 SELL 주문은 실행하지 않았습니다."
+    try:
+        data = r.json().get(
+            "data",
+            []
+        )
+
+        if not data:
+            return None
+
+        price = float(
+            data[0]["last"]
+        )
+
+        return (
+            price
+            if price > 0
+            else None
+        )
+
+    except Exception as e:
+        log.error(
+            f"OKX 현재가 오류 "
+            f"{inst}: {e}"
+        )
+
+        return None
+
+
+# =========================================================
+# History
+# =========================================================
+
+def history_upbit(
+    market,
+    unit,
+    required=200
+):
+    all_df = None
+    to = None
+
+    for _ in range(
+        MAX_HISTORY_CHUNKS
+    ):
+        df = get_upbit_candle(
+            market,
+            unit,
+            HISTORY_CHUNK,
+            to
+        )
+
+        if df is None or df.empty:
+            break
+
+        all_df = (
+            df.copy()
+            if all_df is None
+            else pd.concat(
+                [
+                    df,
+                    all_df
+                ],
+                ignore_index=True
             )
         )
 
-    logger.info(
-        f"SELL ORDER | "
-        f"market={market} | "
-        f"volume={sell_volume:.8f}"
-    )
+        all_df = (
+            all_df
+            .drop_duplicates("datetime")
+            .sort_values("datetime")
+            .reset_index(drop=True)
+        )
 
-    query = {
+        if len(all_df) >= required:
+            return all_df
 
-        "market":
-            market,
+        to = (
+            all_df.datetime.iloc[0]
+            .strftime(
+                "%Y-%m-%dT%H:%M:%S"
+            )
+        )
 
-        "side":
-            "ask",
+    return all_df
 
-        "volume":
-            f"{sell_volume:.8f}",
 
-        "ord_type":
-            "market"
-    }
+def history_okx(
+    inst,
+    bar,
+    required=200
+):
+    all_df = None
+    before = None
 
-    query_string = build_query_string(
-        query
-    )
+    for _ in range(
+        MAX_HISTORY_CHUNKS
+    ):
+        df = get_okx_ohlcv(
+            inst,
+            bar,
+            HISTORY_CHUNK,
+            before
+        )
 
-    headers = create_auth_headers(
-        api_key,
-        secret_key,
-        query_string
-    )
+        if df is None or df.empty:
+            break
+
+        all_df = (
+            df.copy()
+            if all_df is None
+            else pd.concat(
+                [
+                    df,
+                    all_df
+                ],
+                ignore_index=True
+            )
+        )
+
+        all_df = (
+            all_df
+            .drop_duplicates("ts")
+            .sort_values("ts")
+            .reset_index(drop=True)
+        )
+
+        if len(all_df) >= required:
+            return all_df
+
+        before = int(
+            all_df.ts.iloc[0]
+        )
+
+    return all_df
+
+
+# =========================================================
+# EMA
+# =========================================================
+
+def ema(df, period):
+    if (
+        df is None
+        or df.empty
+        or "c" not in df
+    ):
+        return None
+
+    return pd.to_numeric(
+        df.c,
+        errors="coerce"
+    ).ewm(
+        span=period,
+        adjust=False,
+        min_periods=1
+    ).mean()
+
+
+def direction(df):
+    if df is None or df.empty:
+        return "none"
 
     try:
+        e30 = ema(
+            df,
+            EMA1_FAST
+        ).iloc[-1]
 
-        response = requests.post(
-            SERVER_URL + "/v1/orders",
-            json=query,
-            headers=headers,
-            timeout=REQUEST_TIMEOUT
+        e60 = ema(
+            df,
+            EMA1_MID
+        ).iloc[-1]
+
+        e120 = ema(
+            df,
+            EMA1_SLOW
+        ).iloc[-1]
+
+        if e30 > e60 and e60 > e120:
+            return "long"
+
+        if e30 < e60 and e60 < e120:
+            return "short"
+
+    except Exception as e:
+        log.error(
+            f"EMA 방향 오류: {e}"
         )
 
-    except requests.RequestException as e:
-
-        logger.error(
-            f"SELL ORDER REQUEST FAILED | "
-            f"{e}"
-        )
-
-        raise HTTPException(
-            status_code=502,
-            detail=str(e)
-        )
-
-    if response.status_code not in (200, 201):
-
-        logger.error(
-            f"SELL ORDER ERROR | "
-            f"{response.status_code} | "
-            f"{response.text}"
-        )
-
-        raise HTTPException(
-            status_code=response.status_code,
-            detail=get_error_detail(response)
-        )
-
-    return response.json()
+    return "none"
 
 
-# =========================================================
-# 주문 체결 대기
-# =========================================================
-
-def wait_for_order_complete(
-    order_uuid,
-    api_key,
-    secret_key
-):
-
-    start_time = time.time()
-
-    while True:
-
-        query = {
-            "uuid": order_uuid
+def ema_alignment_count(df):
+    if df is None or df.empty:
+        return {
+            "direction": "none",
+            "count": 0
         }
 
-        query_string = build_query_string(
-            query
+    try:
+        e30 = ema(
+            df,
+            EMA1_FAST
         )
 
-        headers = create_auth_headers(
-            api_key,
-            secret_key,
-            query_string
+        e60 = ema(
+            df,
+            EMA1_MID
+        )
+
+        e120 = ema(
+            df,
+            EMA1_SLOW
+        )
+
+        current_e30 = float(
+            e30.iloc[-1]
+        )
+
+        current_e60 = float(
+            e60.iloc[-1]
+        )
+
+        current_e120 = float(
+            e120.iloc[-1]
+        )
+
+        if (
+            current_e30 > current_e60
+            and current_e60 > current_e120
+        ):
+            current_direction = "long"
+
+        elif (
+            current_e30 < current_e60
+            and current_e60 < current_e120
+        ):
+            current_direction = "short"
+
+        else:
+            current_direction = "none"
+
+        count = 0
+
+        for i in range(
+            len(df) - 1,
+            -1,
+            -1
+        ):
+            v30 = float(
+                e30.iloc[i]
+            )
+
+            v60 = float(
+                e60.iloc[i]
+            )
+
+            v120 = float(
+                e120.iloc[i]
+            )
+
+            if (
+                v30 > v60
+                and v60 > v120
+            ):
+                candle_direction = "long"
+
+            elif (
+                v30 < v60
+                and v60 < v120
+            ):
+                candle_direction = "short"
+
+            else:
+                candle_direction = "none"
+
+            if (
+                candle_direction
+                == current_direction
+            ):
+                count += 1
+            else:
+                break
+
+        if current_direction == "none":
+            count = 0
+
+        return {
+            "direction": current_direction,
+            "count": count
+        }
+
+    except Exception as e:
+        log.error(
+            f"EMA 배열 오류: {e}"
+        )
+
+        return {
+            "direction": "none",
+            "count": 0
+        }
+
+
+def ema_display(
+    df,
+    current_price=None
+):
+    result = ema_alignment_count(
+        df
+    )
+
+    d = result["direction"]
+    count = result["count"]
+
+    if d == "long":
+        icon = "🟢"
+
+    elif d == "short":
+        icon = "🔴"
+
+    else:
+        icon = "⚪"
+        count = 0
+
+    return {
+        "display": f"{icon}({count})",
+        "direction": d,
+        "count": count,
+        "current_price": current_price
+    }
+
+
+# =========================================================
+# ROC10
+# =========================================================
+
+def roc(
+    df,
+    period=ROC_PERIOD
+):
+    if (
+        df is None
+        or df.empty
+        or "c" not in df
+    ):
+        return None
+
+    try:
+        close = pd.to_numeric(
+            df["c"],
+            errors="coerce"
+        )
+
+        period = int(period)
+
+        if period <= 0:
+            return None
+
+        return (
+            (
+                close
+                / close.shift(period)
+            )
+            - 1
+        ) * 100
+
+    except Exception as e:
+        log.error(
+            f"ROC 계산 오류: {e}"
+        )
+
+        return None
+
+
+def roc_analysis(
+    df_confirmed,
+    df_current
+):
+    result = {
+        "roc10": None,
+        "roc10_previous": None,
+        "roc10_count": 0,
+        "roc10_negative_count": 0,
+        "long_candidate": False,
+        "short_candidate": False,
+        "near_zero_long": False,
+        "near_zero_short": False,
+        "breakout_long": False,
+        "state": "none",
+        "display": "-"
+    }
+
+    if (
+        df_confirmed is None
+        or df_confirmed.empty
+        or df_current is None
+        or df_current.empty
+    ):
+        return result
+
+    try:
+        confirmed_roc = roc(
+            df_confirmed,
+            ROC_PERIOD
+        )
+
+        current_roc = roc(
+            df_current,
+            ROC_PERIOD
+        )
+
+        if (
+            confirmed_roc is None
+            or current_roc is None
+        ):
+            return result
+
+        previous_10 = float(
+            confirmed_roc.iloc[-1]
+        )
+
+        current_10 = float(
+            current_roc.iloc[-1]
+        )
+
+        if (
+            pd.isna(previous_10)
+            or pd.isna(current_10)
+        ):
+            return result
+
+        result["roc10"] = current_10
+        result["roc10_previous"] = previous_10
+
+        # =====================================================
+        # 롱 카운터
+        # =====================================================
+
+        roc_count = 0
+
+        for value in reversed(
+            current_roc.tolist()
+        ):
+            if pd.isna(value):
+                break
+
+            if float(value) > 0:
+                roc_count += 1
+            else:
+                break
+
+        result["roc10_count"] = roc_count
+
+        # =====================================================
+        # 숏 카운터
+        # =====================================================
+
+        negative_count = 0
+
+        for value in reversed(
+            current_roc.tolist()
+        ):
+            if pd.isna(value):
+                break
+
+            if float(value) < 0:
+                negative_count += 1
+            else:
+                break
+
+        result[
+            "roc10_negative_count"
+        ] = negative_count
+
+        # =====================================================
+        # 0선 돌파
+        # =====================================================
+
+        long_condition = (
+            previous_10 <= 0
+            and current_10 > 0
+        )
+
+        short_condition = (
+            previous_10 >= 0
+            and current_10 < 0
+        )
+
+        result["long_candidate"] = (
+            long_condition
+        )
+
+        result["short_candidate"] = (
+            short_condition
+        )
+
+        # =====================================================
+        # 롱 돌파 임박
+        # =====================================================
+
+        near_zero_condition = (
+            current_10 < 0
+            and current_10 >= ROC_NEAR_ZERO
+            and current_10 > previous_10
+        )
+
+        result["near_zero_long"] = (
+            near_zero_condition
+        )
+
+        # =====================================================
+        # 숏 하락 임박
+        # =====================================================
+
+        near_zero_short_condition = (
+            current_10 > 0
+            and current_10 <= ROC_SHORT_NEAR_ZERO
+            and current_10 < previous_10
+        )
+
+        result["near_zero_short"] = (
+            near_zero_short_condition
+        )
+
+        # =====================================================
+        # 실제 롱 돌파
+        # =====================================================
+
+        result["breakout_long"] = (
+            long_condition
+        )
+
+        # =====================================================
+        # 상태
+        # =====================================================
+
+        if long_condition:
+            result["state"] = "long"
+            result["display"] = "🟢 매수 ①"
+
+        elif short_condition:
+            result["state"] = "short"
+            result["display"] = "🔴 숏 ①"
+
+        elif (
+            current_10 > 0
+            and roc_count >= 2
+        ):
+            result["state"] = "progress"
+            result["display"] = (
+                f"🚀 진행 {roc_count}"
+            )
+
+        elif (
+            current_10 < 0
+            and negative_count >= 2
+        ):
+            result["state"] = "short_progress"
+            result["display"] = (
+                f"📉 진행 {negative_count}"
+            )
+
+        elif near_zero_condition:
+            result["state"] = "near"
+            result["display"] = "🔥 돌파"
+
+        return result
+
+    except Exception as e:
+        log.error(
+            f"ROC 분석 오류: {e}"
+        )
+
+        return result
+
+
+# =========================================================
+# 등락률
+# =========================================================
+
+def daily_change_upbit(market):
+    r = retry(
+        requests.get,
+        "https://api.upbit.com/v1/candles/days",
+        params={
+            "market": market,
+            "count": 2
+        },
+        timeout=15
+    )
+
+    if r is None:
+        return None
+
+    try:
+        data = r.json()
+
+        if len(data) < 2:
+            return None
+
+        current = float(
+            data[0]["trade_price"]
+        )
+
+        previous = float(
+            data[1]["trade_price"]
+        )
+
+        if previous == 0:
+            return None
+
+        return [
+            (
+                (current - previous)
+                / previous
+                * 100
+            )
+        ]
+
+    except Exception:
+        return None
+
+
+def daily_changes(df):
+    if df is None or df.empty:
+        return None
+
+    try:
+        x = df.copy()
+
+        x["datetime"] = pd.to_datetime(
+            x["datetime"],
+            errors="coerce"
+        )
+
+        x["c"] = pd.to_numeric(
+            x["c"],
+            errors="coerce"
+        )
+
+        x = (
+            x
+            .dropna(
+                subset=[
+                    "datetime",
+                    "c"
+                ]
+            )
+            .set_index("datetime")
+        )
+
+        daily = (
+            x["c"]
+            .resample(
+                "1D",
+                offset="9h"
+            )
+            .last()
+            .dropna()
+        )
+
+        if len(daily) < 2:
+            return None
+
+        current = float(
+            daily.iloc[-1]
+        )
+
+        previous = float(
+            daily.iloc[-2]
+        )
+
+        if previous == 0:
+            return None
+
+        return [
+            (
+                (current - previous)
+                / previous
+                * 100
+            )
+        ]
+
+    except Exception:
+        return None
+
+
+def get_change_value(change):
+    if change is None:
+        return None
+
+    try:
+        value = float(
+            change[0]
+            if isinstance(
+                change,
+                (list, tuple)
+            )
+            else change
+        )
+
+        return value
+
+    except Exception:
+        return None
+
+
+def format_change(x):
+    value = get_change_value(x)
+
+    if value is None:
+        return "-"
+
+    if value > 0:
+        return (
+            '<span class="up">'
+            f'▲ +{value:.2f}%'
+            '</span>'
+        )
+
+    if value < 0:
+        return (
+            '<span class="down">'
+            f'▼ {value:.2f}%'
+            '</span>'
+        )
+
+    return (
+        '<span class="zero">'
+        '0.00%'
+        '</span>'
+    )
+
+
+def format_volume(v):
+    if v is None:
+        return "-"
+
+    try:
+        v = float(v)
+    except Exception:
+        return "-"
+
+    if v >= 1e12:
+        return f"{v / 1e12:.2f}조"
+
+    if v >= 1e8:
+        return f"{v / 1e8:.0f}억"
+
+    if v >= 1e4:
+        return f"{v / 1e4:.0f}만"
+
+    return f"{v:,.0f}"
+
+
+# =========================================================
+# 분석
+# =========================================================
+
+def empty_analysis():
+    e = {
+        "display": "⚪(0)",
+        "direction": "none",
+        "count": 0,
+        "current_price": None
+    }
+
+    return {
+        "ema_1h": e.copy(),
+        "ema_high": e.copy(),
+
+        "roc": {
+            "roc10": None,
+            "roc10_previous": None,
+            "roc10_count": 0,
+            "roc10_negative_count": 0,
+            "long_candidate": False,
+            "short_candidate": False,
+            "near_zero_long": False,
+            "near_zero_short": False,
+            "breakout_long": False,
+            "state": "none",
+            "display": "-"
+        },
+
+        "changes": None,
+        "qualified": False,
+        "short_qualified": False,
+        "near_zero_qualified": False,
+        "short_near_zero_qualified": False,
+        "breakout_qualified": False,
+        "progress_qualified": False,
+        "short_progress_qualified": False,
+        "direction_1h": "none",
+        "df1h": None
+    }
+
+
+def analyze(
+    market,
+    okx=False,
+    current_price=None
+):
+    # =====================================================
+    # EMA = 확정 캔들
+    # =====================================================
+
+    if okx:
+        bar = get_okx_bar(
+            EMA_TIMEFRAME
+        )
+
+        if bar is None:
+            return None
+
+        df_confirmed = history_okx(
+            market,
+            bar
+        )
+
+    else:
+        df_confirmed = history_upbit(
+            market,
+            EMA_TIMEFRAME
+        )
+
+    if (
+        df_confirmed is None
+        or df_confirmed.empty
+    ):
+        return None
+
+    e1 = ema_display(
+        df_confirmed,
+        current_price
+    )
+
+    # =====================================================
+    # HIGH EMA = 확정 캔들 / 표시 전용
+    # =====================================================
+
+    if okx:
+        high_bar = get_okx_bar(
+            EMA_HIGH_TIMEFRAME
+        )
+
+        if high_bar is not None:
+            df_high = history_okx(
+                market,
+                high_bar
+            )
+        else:
+            df_high = None
+
+    else:
+        df_high = history_upbit(
+            market,
+            EMA_HIGH_TIMEFRAME
+        )
+
+    e_high = ema_display(
+        df_high,
+        current_price
+    )
+
+    # =====================================================
+    # ROC = 현재 캔들
+    # =====================================================
+
+    if okx:
+        bar = get_okx_bar(
+            EMA_TIMEFRAME
+        )
+
+        df_current = (
+            get_okx_ohlcv_current(
+                market,
+                bar,
+                200
+            )
+        )
+
+        if (
+            df_current is not None
+            and not df_current.empty
+            and current_price is not None
+        ):
+            try:
+                current_start = (
+                    get_current_candle_start(
+                        EMA_TIMEFRAME
+                    )
+                )
+
+                mask = (
+                    df_current["datetime"]
+                    == current_start
+                )
+
+                if mask.any():
+                    df_current.loc[
+                        mask,
+                        "c"
+                    ] = float(
+                        current_price
+                    )
+
+            except Exception as e:
+                log.error(
+                    f"OKX ROC 가격 반영 오류 "
+                    f"{market}: {e}"
+                )
+
+    else:
+        df_current = (
+            get_upbit_current_roc_data(
+                market,
+                current_price
+            )
+        )
+
+    roc_data = roc_analysis(
+        df_confirmed,
+        df_current
+    )
+
+    # =====================================================
+    # 🟢 롱 매수
+    # =====================================================
+
+    long_qualified = (
+        e1["direction"] == "long"
+        and e1["count"] <= EMA1_MAX_COUNT
+        and roc_data.get(
+            "long_candidate",
+            False
+        )
+    )
+
+    # =====================================================
+    # 🔴 숏
+    # =====================================================
+
+    short_qualified = (
+        e1["direction"] == "short"
+        and e1["count"] <= EMA1_MAX_COUNT
+        and roc_data.get(
+            "short_candidate",
+            False
+        )
+    )
+
+    # =====================================================
+    # 🔥 롱 돌파 임박
+    # =====================================================
+
+    near_zero_qualified = (
+        e1["direction"] == "long"
+        and e1["count"] <= EMA1_MAX_COUNT
+        and roc_data.get(
+            "near_zero_long",
+            False
+        )
+    )
+
+    # =====================================================
+    # 숏 하락 임박
+    # =====================================================
+
+    short_near_zero_qualified = (
+        e1["direction"] == "short"
+        and e1["count"] <= EMA1_MAX_COUNT
+        and roc_data.get(
+            "near_zero_short",
+            False
+        )
+    )
+
+    # =====================================================
+    # 🚀 롱 진행
+    # =====================================================
+
+    progress_qualified = (
+        e1["direction"] == "long"
+        and e1["count"] <= EMA1_MAX_COUNT
+        and roc_data.get(
+            "roc10",
+            None
+        ) is not None
+        and roc_data.get(
+            "roc10",
+            0
+        ) > 0
+        and roc_data.get(
+            "roc10_count",
+            0
+        ) >= 2
+    )
+
+    # =====================================================
+    # 📉 숏 진행
+    # =====================================================
+
+    short_progress_qualified = (
+        e1["direction"] == "short"
+        and e1["count"] <= EMA1_MAX_COUNT
+        and roc_data.get(
+            "roc10",
+            None
+        ) is not None
+        and roc_data.get(
+            "roc10",
+            0
+        ) < 0
+        and roc_data.get(
+            "roc10_negative_count",
+            0
+        ) >= 2
+    )
+
+    breakout_qualified = (
+        long_qualified
+    )
+
+    changes = (
+        daily_changes(
+            df_confirmed
+        )
+        if okx
+        else daily_change_upbit(
+            market
+        )
+    )
+
+    return {
+        "ema_1h": e1,
+        "ema_high": e_high,
+        "roc": roc_data,
+        "changes": changes,
+
+        "qualified":
+            long_qualified,
+
+        "short_qualified":
+            short_qualified,
+
+        "near_zero_qualified":
+            near_zero_qualified,
+
+        "short_near_zero_qualified":
+            short_near_zero_qualified,
+
+        "breakout_qualified":
+            breakout_qualified,
+
+        "progress_qualified":
+            progress_qualified,
+
+        "short_progress_qualified":
+            short_progress_qualified,
+
+        "direction_1h":
+            e1["direction"],
+
+        "df1h":
+            df_confirmed
+    }
+
+
+# =========================================================
+# 행
+# =========================================================
+
+def make_row(
+    rank,
+    name,
+    volume,
+    analysis,
+    current_price=None
+):
+    a = (
+        analysis
+        or empty_analysis()
+    )
+
+    return {
+        "rank": rank,
+        "name": name,
+
+        "change":
+            format_change(
+                a["changes"]
+            ),
+
+        "change_value":
+            get_change_value(
+                a["changes"]
+            ),
+
+        "volume":
+            format_volume(
+                volume
+            ),
+
+        "current_price":
+            current_price,
+
+        "ema_1h":
+            a["ema_1h"],
+
+        "ema_high":
+            a.get(
+                "ema_high",
+                {
+                    "display": "⚪(0)",
+                    "direction": "none",
+                    "count": 0,
+                    "current_price": None
+                }
+            ),
+
+        "roc":
+            a.get(
+                "roc",
+                {}
+            ),
+
+        "qualified":
+            a.get(
+                "qualified",
+                False
+            ),
+
+        "short_qualified":
+            a.get(
+                "short_qualified",
+                False
+            ),
+
+        "near_zero_qualified":
+            a.get(
+                "near_zero_qualified",
+                False
+            ),
+
+        "short_near_zero_qualified":
+            a.get(
+                "short_near_zero_qualified",
+                False
+            ),
+
+        "breakout_qualified":
+            a.get(
+                "breakout_qualified",
+                False
+            ),
+
+        "progress_qualified":
+            a.get(
+                "progress_qualified",
+                False
+            ),
+
+        "short_progress_qualified":
+            a.get(
+                "short_progress_qualified",
+                False
+            ),
+
+        "direction":
+            a.get(
+                "direction_1h",
+                "none"
+            )
+    }
+
+
+# =========================================================
+# 후보
+# =========================================================
+
+def is_upbit_buy_candidate(row):
+    return bool(
+        row
+        and row.get(
+            "qualified",
+            False
+        )
+    )
+
+
+def is_okx_long_candidate(row):
+    return bool(
+        row
+        and row.get(
+            "qualified",
+            False
+        )
+    )
+
+
+def is_okx_short_candidate(row):
+    return bool(
+        row
+        and row.get(
+            "short_qualified",
+            False
+        )
+    )
+
+
+def is_roc_near_zero_candidate(row):
+    return bool(
+        row
+        and row.get(
+            "near_zero_qualified",
+            False
+        )
+    )
+
+
+def is_roc_progress_candidate(row):
+    return bool(
+        row
+        and row.get(
+            "progress_qualified",
+            False
+        )
+    )
+
+
+def is_roc_short_near_zero_candidate(row):
+    return bool(
+        row
+        and row.get(
+            "short_near_zero_qualified",
+            False
+        )
+    )
+
+
+def is_roc_short_progress_candidate(row):
+    return bool(
+        row
+        and row.get(
+            "short_progress_qualified",
+            False
+        )
+    )
+
+
+# =========================================================
+# Upbit 업데이트
+# =========================================================
+
+def update_upbit():
+    global latest_upbit_data
+    global latest_upbit_update_time
+
+    log.info(
+        f"========== 업비트 TOP{TOP_N} =========="
+    )
+
+    markets = get_upbit_markets()
+
+    markets.sort(
+        key=lambda x:
+            x["volume_24h"],
+        reverse=True
+    )
+
+    rows = []
+
+    for rank, item in enumerate(
+        markets[:TOP_N],
+        1
+    ):
+        market = item["market"]
+
+        coin = market.replace(
+            "KRW-",
+            ""
+        )
+
+        current_price = item.get(
+            "current_price"
         )
 
         try:
-
-            response = requests.get(
-                SERVER_URL + "/v1/order",
-                params=query,
-                headers=headers,
-                timeout=REQUEST_TIMEOUT
+            a = analyze(
+                market,
+                current_price=current_price
             )
 
-        except requests.RequestException as e:
-
-            logger.error(
-                f"Order query failed: {e}"
+            rows.append(
+                make_row(
+                    rank,
+                    coin,
+                    item["volume_24h"],
+                    a,
+                    current_price
+                )
             )
 
-            time.sleep(
-                ORDER_WAIT_INTERVAL
+        except Exception as e:
+            log.error(
+                f"업비트 상세 오류 "
+                f"{market}: {e}"
             )
 
-            if (
-                time.time() -
-                start_time
-                >= ORDER_WAIT_TIMEOUT
-            ):
-
-                return {
-                    "uuid": order_uuid,
-                    "state": "timeout"
-                }
-
-            continue
-
-        if response.status_code != 200:
-
-            logger.error(
-                f"Order query error | "
-                f"{response.status_code} | "
-                f"{response.text}"
+            rows.append(
+                make_row(
+                    rank,
+                    coin,
+                    item["volume_24h"],
+                    None,
+                    current_price
+                )
             )
 
-            time.sleep(
-                ORDER_WAIT_INTERVAL
+    latest_upbit_data = rows
+    latest_upbit_update_time = kst()
+
+    buy_rows = [
+        x for x in rows
+        if is_upbit_buy_candidate(x)
+    ]
+
+    near_rows = [
+        x for x in rows
+        if is_roc_near_zero_candidate(x)
+    ]
+
+    progress_rows = [
+        x for x in rows
+        if is_roc_progress_candidate(x)
+    ]
+
+    log.info(
+        f"업비트 완료 / "
+        f"매수 {len(buy_rows)}개 / "
+        f"돌파 {len(near_rows)}개 / "
+        f"진행 {len(progress_rows)}개"
+    )
+
+
+# =========================================================
+# OKX
+# =========================================================
+
+def get_okx_symbols():
+    r = retry(
+        requests.get,
+        "https://www.okx.com/api/v5/public/instruments",
+        params={
+            "instType": "SWAP"
+        },
+        timeout=15
+    )
+
+    if r is None:
+        return []
+
+    try:
+        return [
+            x["instId"]
+            for x in r.json().get(
+                "data",
+                []
             )
+            if x.get(
+                "instId",
+                ""
+            ).endswith(
+                "-USDT-SWAP"
+            )
+            and x.get(
+                "state"
+            ) == "live"
+        ]
 
-            if (
-                time.time() -
-                start_time
-                >= ORDER_WAIT_TIMEOUT
-            ):
+    except Exception:
+        return []
 
-                return {
-                    "uuid": order_uuid,
-                    "state": "timeout"
-                }
 
-            continue
+def get_okx_volume(
+    inst,
+    usdt
+):
+    df = get_okx_ohlcv(
+        inst,
+        "1H",
+        VOLUME_HOURS
+    )
 
-        order = response.json()
+    if df is None or df.empty:
+        return None
 
-        state = order.get(
-            "state",
+    try:
+        volume = float(
+            pd.to_numeric(
+                df.volCcyQuote,
+                errors="coerce"
+            ).sum()
+        )
+
+        return (
+            volume
+            * float(usdt)
+        )
+
+    except Exception:
+        return None
+
+
+def update_okx(usdt):
+    global latest_okx_data
+    global latest_okx_update_time
+
+    if not usdt or usdt <= 0:
+        return False
+
+    symbols = get_okx_symbols()
+
+    if not symbols:
+        return False
+
+    upbit_set = {
+        x.replace(
+            "KRW-",
+            ""
+        )
+        for x in latest_upbit_markets
+    }
+
+    volumes = {}
+
+    for symbol in symbols:
+        v = get_okx_volume(
+            symbol,
+            usdt
+        )
+
+        if v and v > 0:
+            volumes[symbol] = v
+
+    top = sorted(
+        volumes,
+        key=volumes.get,
+        reverse=True
+    )[:TOP_N]
+
+    rows = []
+
+    for rank, symbol in enumerate(
+        top,
+        1
+    ):
+        coin = symbol.replace(
+            "-USDT-SWAP",
             ""
         )
 
-        logger.info(
-            f"Order {order_uuid} | "
-            f"state={state}"
+        name = (
+            f"{coin} (업비트)"
+            if coin in upbit_set
+            else coin
         )
 
-        if state in (
-            "done",
-            "cancel"
-        ):
+        current_price = None
 
-            return order
-
-        if (
-            time.time() -
-            start_time
-            >= ORDER_WAIT_TIMEOUT
-        ):
-
-            return order
-
-        time.sleep(
-            ORDER_WAIT_INTERVAL
-        )
-
-
-# =========================================================
-# 주문 결과 파싱
-# =========================================================
-
-def parse_order_result(order):
-
-    executed_volume = safe_float(
-        order.get(
-            "executed_volume",
-            0
-        )
-    )
-
-    executed_funds = safe_float(
-        order.get(
-            "executed_funds",
-            0
-        )
-    )
-
-    paid_fee = safe_float(
-        order.get(
-            "paid_fee",
-            0
-        )
-    )
-
-    if executed_volume > 0:
-
-        avg_price = (
-            executed_funds /
-            executed_volume
-        )
-
-    else:
-
-        avg_price = 0.0
-
-    return {
-
-        "uuid":
-            order.get("uuid"),
-
-        "market":
-            order.get("market"),
-
-        "side":
-            order.get("side"),
-
-        "state":
-            order.get("state"),
-
-        "executed_volume":
-            executed_volume,
-
-        "executed_funds":
-            executed_funds,
-
-        "paid_fee":
-            paid_fee,
-
-        "avg_price":
-            avg_price,
-
-        "created_at":
-            order.get("created_at"),
-
-        "trades":
-            order.get("trades", [])
-    }
-
-
-# =========================================================
-# 매수 기록
-# =========================================================
-
-def save_buy_trade(
-    result,
-    requested_amount,
-    stop_loss
-):
-
-    coin = result["market"].replace(
-        "KRW-",
-        ""
-    )
-
-    created_at = (
-        result["created_at"]
-        or now_string()
-    )
-
-    completed_at = now_string()
-
-    with db_lock:
-
-        conn = get_db()
-
-        cursor = conn.cursor()
-
-        cursor.execute("""
-        INSERT INTO trades (
-            uuid,
-            coin,
-            side,
-            order_amount,
-            executed_funds,
-            executed_volume,
-            avg_price,
-            fee,
-            requested_ratio,
-            created_at,
-            completed_at,
-            state
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-
-            result["uuid"],
-            coin,
-            "buy",
-            requested_amount,
-            result["executed_funds"],
-            result["executed_volume"],
-            result["avg_price"],
-            result["paid_fee"],
-            stop_loss,
-            created_at,
-            completed_at,
-            result["state"]
-        ))
-
-        trade_id = cursor.lastrowid
-
-        total_cost = (
-            result["executed_funds"]
-            +
-            result["paid_fee"]
-        )
-
-        if result["executed_volume"] > 0:
-
-            cost_per_unit = (
-                total_cost /
-                result["executed_volume"]
+        try:
+            current_price = (
+                get_okx_current_price(
+                    symbol
+                )
             )
+
+            a = analyze(
+                symbol,
+                True,
+                current_price=current_price
+            )
+
+            rows.append(
+                make_row(
+                    rank,
+                    name,
+                    volumes[symbol],
+                    a,
+                    current_price
+                )
+            )
+
+        except Exception as e:
+            log.error(
+                f"OKX 상세 오류 "
+                f"{symbol}: {e}"
+            )
+
+            rows.append(
+                make_row(
+                    rank,
+                    name,
+                    volumes[symbol],
+                    None,
+                    current_price
+                )
+            )
+
+    latest_okx_data = rows
+    latest_okx_update_time = kst()
+
+    long_rows = [
+        x for x in rows
+        if is_okx_long_candidate(x)
+    ]
+
+    short_rows = [
+        x for x in rows
+        if is_okx_short_candidate(x)
+    ]
+
+    near_rows = [
+        x for x in rows
+        if is_roc_near_zero_candidate(x)
+    ]
+
+    progress_rows = [
+        x for x in rows
+        if is_roc_progress_candidate(x)
+    ]
+
+    short_near_rows = [
+        x for x in rows
+        if is_roc_short_near_zero_candidate(x)
+    ]
+
+    short_progress_rows = [
+        x for x in rows
+        if is_roc_short_progress_candidate(x)
+    ]
+
+    log.info(
+        f"OKX 완료 / "
+        f"매수 {len(long_rows)}개 / "
+        f"돌파 {len(near_rows)}개 / "
+        f"진행 {len(progress_rows)}개 / "
+        f"숏 {len(short_rows)}개 / "
+        f"숏진행 {len(short_progress_rows)}개"
+    )
+
+    return True
+
+
+# =========================================================
+# 전체 업데이트
+# =========================================================
+
+def update_dashboard():
+    global latest_usdt_krw
+    global latest_upbit_data
+    global latest_okx_data
+
+    if not update_lock.acquire(False):
+        log.warning(
+            "이전 조회 진행 중 → 건너뜀"
+        )
+        return
+
+    try:
+        log.info(
+            f"========== 전체 조회 {kst()} =========="
+        )
+
+        if USE_UPBIT == "Y":
+            try:
+                update_upbit()
+
+            except Exception as e:
+                log.exception(
+                    f"업비트 업데이트 오류: {e}"
+                )
 
         else:
+            latest_upbit_data = []
 
-            cost_per_unit = 0
+        if USE_OKX == "Y":
+            try:
+                usdt = get_usdt_krw()
 
-        cursor.execute("""
-        INSERT INTO buy_lots (
-            trade_id,
-            coin,
-            original_volume,
-            remaining_volume,
-            cost_per_unit,
-            total_cost,
-            fee,
-            created_at
+                if usdt:
+                    latest_usdt_krw = usdt
+                else:
+                    usdt = latest_usdt_krw
+
+                if usdt > 0:
+                    update_okx(
+                        usdt
+                    )
+
+            except Exception as e:
+                log.exception(
+                    f"OKX 업데이트 오류: {e}"
+                )
+
+        else:
+            latest_okx_data = []
+
+    finally:
+        update_lock.release()
+
+
+# =========================================================
+# HTML - ROC
+# =========================================================
+
+def roc_html(r):
+    if not r:
+        return """
+        <div class="roc-cell">
+            <div class="roc-title">
+                ROC10(0)
+            </div>
+            <div class="roc-value roc-zero">
+                -
+            </div>
+        </div>
+        """
+
+    r10 = r.get(
+        "roc10"
+    )
+
+    previous = r.get(
+        "roc10_previous"
+    )
+
+    positive_count = r.get(
+        "roc10_count",
+        0
+    )
+
+    negative_count = r.get(
+        "roc10_negative_count",
+        0
+    )
+
+    if r10 is None or previous is None:
+        return f"""
+        <div class="roc-cell">
+            <div class="roc-title">
+                ROC10(0)
+            </div>
+            <div class="roc-value roc-zero">
+                -
+            </div>
+        </div>
+        """
+
+    if r10 > 0:
+        cls = "roc-positive"
+        roc_count = positive_count
+
+    elif r10 < 0:
+        cls = "roc-negative"
+        roc_count = negative_count
+
+    else:
+        cls = "roc-zero"
+        roc_count = 0
+
+    if previous <= 0 and r10 > 0:
+        cross = (
+            '<span class="roc-cross-up">'
+            '↑0'
+            '</span>'
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
 
-            trade_id,
-            coin,
-            result["executed_volume"],
-            result["executed_volume"],
-            cost_per_unit,
-            total_cost,
-            result["paid_fee"],
-            completed_at
-        ))
-
-        conn.commit()
-
-        conn.close()
-
-    logger.info(
-        f"BUY saved | "
-        f"{coin} | "
-        f"{result['executed_funds']:,.0f} KRW | "
-        f"SL={stop_loss:.2f}%"
-    )
-
-
-# =========================================================
-# FIFO 매도 원가
-# =========================================================
-
-def calculate_fifo_cost(
-    coin,
-    sell_volume,
-    sell_trade_id
-):
-
-    remaining_to_sell = sell_volume
-
-    total_cost = 0.0
-
-    allocations = []
-
-    with db_lock:
-
-        conn = get_db()
-
-        cursor = conn.cursor()
-
-        cursor.execute("""
-        SELECT *
-        FROM buy_lots
-        WHERE coin = ?
-          AND remaining_volume > 0
-        ORDER BY id ASC
-        """, (coin,))
-
-        lots = cursor.fetchall()
-
-        for lot in lots:
-
-            if remaining_to_sell <= 0:
-
-                break
-
-            available = safe_float(
-                lot["remaining_volume"]
-            )
-
-            use_volume = min(
-                remaining_to_sell,
-                available
-            )
-
-            cost_per_unit = safe_float(
-                lot["cost_per_unit"]
-            )
-
-            cost = (
-                use_volume *
-                cost_per_unit
-            )
-
-            total_cost += cost
-
-            allocations.append({
-
-                "lot_id":
-                    lot["id"],
-
-                "volume":
-                    use_volume,
-
-                "cost":
-                    cost
-            })
-
-            new_remaining = (
-                available -
-                use_volume
-            )
-
-            cursor.execute("""
-            UPDATE buy_lots
-            SET remaining_volume = ?
-            WHERE id = ?
-            """, (
-                new_remaining,
-                lot["id"]
-            ))
-
-            remaining_to_sell -= use_volume
-
-        if remaining_to_sell > 0:
-
-            logger.warning(
-                f"FIFO cost insufficient | "
-                f"coin={coin} | "
-                f"remaining={remaining_to_sell}"
-            )
-
-        for allocation in allocations:
-
-            cursor.execute("""
-            INSERT INTO sell_allocations (
-                sell_trade_id,
-                buy_lot_id,
-                volume,
-                cost
-            )
-            VALUES (?, ?, ?, ?)
-            """, (
-
-                sell_trade_id,
-                allocation["lot_id"],
-                allocation["volume"],
-                allocation["cost"]
-            ))
-
-        conn.commit()
-
-        conn.close()
-
-    return total_cost
-
-
-# =========================================================
-# 매도 기록
-# =========================================================
-
-def save_sell_trade(
-    result,
-    ratio
-):
-
-    coin = result["market"].replace(
-        "KRW-",
-        ""
-    )
-
-    created_at = (
-        result["created_at"]
-        or now_string()
-    )
-
-    completed_at = now_string()
-
-    with db_lock:
-
-        conn = get_db()
-
-        cursor = conn.cursor()
-
-        cursor.execute("""
-        INSERT INTO trades (
-            uuid,
-            coin,
-            side,
-            order_amount,
-            executed_funds,
-            executed_volume,
-            avg_price,
-            fee,
-            requested_ratio,
-            created_at,
-            completed_at,
-            state
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-
-            result["uuid"],
-            coin,
-            "sell",
-            result["executed_funds"],
-            result["executed_funds"],
-            result["executed_volume"],
-            result["avg_price"],
-            result["paid_fee"],
-            ratio,
-            created_at,
-            completed_at,
-            result["state"]
-        ))
-
-        trade_id = cursor.lastrowid
-
-        conn.commit()
-
-        conn.close()
-
-    realized_cost = calculate_fifo_cost(
-        coin,
-        result["executed_volume"],
-        trade_id
-    )
-
-    net_sell_amount = (
-        result["executed_funds"]
-        -
-        result["paid_fee"]
-    )
-
-    realized_profit = (
-        net_sell_amount
-        -
-        realized_cost
-    )
-
-    if realized_cost > 0:
-
-        realized_return = (
-            realized_profit
-            /
-            realized_cost
-            *
-            100
+    elif previous >= 0 and r10 < 0:
+        cross = (
+            '<span class="roc-cross-down">'
+            '↓0'
+            '</span>'
         )
 
     else:
+        cross = (
+            '<span class="roc-no-cross">'
+            '—'
+            '</span>'
+        )
 
-        realized_return = 0.0
+    return f"""
+    <div class="roc-cell">
+        <div class="roc-title">
+            ROC10({roc_count})
+        </div>
 
-    with db_lock:
-
-        conn = get_db()
-
-        cursor = conn.cursor()
-
-        cursor.execute("""
-        UPDATE trades
-        SET
-            realized_cost = ?,
-            realized_profit = ?,
-            realized_return = ?
-        WHERE id = ?
-        """, (
-
-            realized_cost,
-            realized_profit,
-            realized_return,
-            trade_id
-        ))
-
-        conn.commit()
-
-        conn.close()
-
-    return {
-
-        "trade_id":
-            trade_id,
-
-        "coin":
-            coin,
-
-        "sell_volume":
-            result["executed_volume"],
-
-        "gross_sell":
-            result["executed_funds"],
-
-        "fee":
-            result["paid_fee"],
-
-        "net_sell":
-            net_sell_amount,
-
-        "cost":
-            realized_cost,
-
-        "profit":
-            realized_profit,
-
-        "return":
-            realized_return,
-
-        "avg_price":
-            result["avg_price"],
-
-        "completed_at":
-            completed_at
-    }
+        <div class="roc-value {cls}">
+            {r10:+.3f}%
+            {cross}
+        </div>
+    </div>
+    """
 
 
 # =========================================================
-# 주문 전 자산 조회
+# HTML - 신호
 # =========================================================
 
-def refresh_before_order(
-    api_key,
-    secret_key,
-    action
-):
-
-    logger.info(
-        f"========== BEFORE {action.upper()} ASSET =========="
-    )
-
-    result = fetch_upbit_assets(
-        api_key,
-        secret_key
-    )
-
-    if result < 0:
-
-        logger.error(
-            f"BEFORE {action.upper()} ASSET FAILED"
+def signal_html(row):
+    if not row:
+        return (
+            '<div class="buy-none">'
+            '-'
+            '</div>'
         )
 
-        return False
+    # =====================================================
+    # 🟢 매수 ①
+    # =====================================================
 
-    logger.info(
-        f"BEFORE {action.upper()} ASSET | "
-        f"Total={latest_upbit_total_krw:,.0f} | "
-        f"Available={latest_upbit_available_krw:,.0f}"
-    )
-
-    return True
-
-
-# =========================================================
-# 주문 후 자산 조회
-# =========================================================
-
-def refresh_after_order(
-    api_key,
-    secret_key,
-    action
-):
-
-    logger.info(
-        f"========== AFTER {action.upper()} ASSET =========="
-    )
-
-    result = fetch_upbit_assets(
-        api_key,
-        secret_key
-    )
-
-    if result < 0:
-
-        logger.error(
-            f"AFTER {action.upper()} ASSET FAILED"
-        )
-
-        log_current_dashboard_asset()
-
-        return False
-
-    logger.info(
-        f"AFTER {action.upper()} ASSET | "
-        f"Total={latest_upbit_total_krw:,.0f} | "
-        f"Available={latest_upbit_available_krw:,.0f}"
-    )
-
-    return True
-
-
-# =========================================================
-# TradingView Webhook
-# =========================================================
-
-@app.post("/tradingview_webhook")
-async def tradingview_webhook(
-    request: Request
-):
-
-    global latest_order_info
-
-    try:
-
-        raw_body = await request.body()
-
-    except Exception as e:
-
-        logger.error(
-            f"Webhook body read error | {e}"
-        )
-
-        raise HTTPException(
-            status_code=400,
-            detail="Webhook body를 읽을 수 없습니다."
-        )
-
-    if not raw_body:
-
-        raise HTTPException(
-            status_code=400,
-            detail="Webhook body가 비어 있습니다."
-        )
-
-    try:
-
-        payload = json.loads(
-            raw_body.decode("utf-8")
-        )
-
-    except Exception as e:
-
-        logger.error(
-            f"Webhook JSON error | "
-            f"{e} | "
-            f"body={raw_body[:500]!r}"
-        )
-
-        raise HTTPException(
-            status_code=400,
-            detail="올바른 JSON 형식이 아닙니다."
-        )
-
-    if not isinstance(payload, dict):
-
-        raise HTTPException(
-            status_code=400,
-            detail="Webhook JSON은 객체 형식이어야 합니다."
-        )
-
-    action = safe_string(
-        get_payload_value(
-            payload,
-            [
-                "Action",
-                "action",
-                "ACTION"
-            ],
-            ""
-        )
-    ).lower()
-
-    coin = clean_coin_name(
-        get_payload_value(
-            payload,
-            [
-                "coin",
-                "Coin",
-                "COIN",
-                "ticker",
-                "Ticker",
-                "symbol",
-                "Symbol"
-            ],
-            ""
-        )
-    )
-
-    volume = safe_float(
-        get_payload_value(
-            payload,
-            [
-                "volume",
-                "Volume",
-                "VOLUME"
-            ],
-            0
-        )
-    )
-
-    stop_loss = safe_float(
-        get_payload_value(
-            payload,
-            [
-                "stop_loss",
-                "StopLoss",
-                "stopLoss",
-                "STOP_LOSS"
-            ],
-            0
-        )
-    )
-
-    api_key = safe_string(
-        get_payload_value(
-            payload,
-            [
-                "api_key",
-                "API_KEY",
-                "ApiKey"
-            ],
-            ""
-        )
-    )
-
-    secret_key = safe_string(
-        get_payload_value(
-            payload,
-            [
-                "secret_key",
-                "SECRET_KEY",
-                "SecretKey"
-            ],
-            ""
-        )
-    )
-
-    logger.info(
-        "========== TRADINGVIEW WEBHOOK =========="
-    )
-
-    logger.info(
-        f"Action={action} | "
-        f"Coin={coin} | "
-        f"Volume={volume} | "
-        f"StopLoss={stop_loss:.2f}%"
-    )
-
-    if not action:
-
-        raise HTTPException(
-            status_code=400,
-            detail="Action 값이 없습니다."
-        )
-
-    if action not in (
-        "buy",
-        "sell"
+    if row.get(
+        "qualified",
+        False
     ):
-
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Action은 Buy 또는 Sell만 "
-                "사용할 수 있습니다."
-            )
+        return (
+            '<div class="buy-stage buy-candidate">'
+            '🟢 매수 ①'
+            '</div>'
         )
-
-    if not api_key or not secret_key:
-
-        raise HTTPException(
-            status_code=400,
-            detail="API key가 없습니다."
-        )
-
 
     # =====================================================
-    # BUY
+    # 🚀 롱 진행
     # =====================================================
 
-    if action == "buy":
-
-        before_ok = refresh_before_order(
-            api_key,
-            secret_key,
-            "BUY"
-        )
-
-        if not before_ok:
-
-            raise HTTPException(
-                status_code=502,
-                detail="BUY 전 업비트 잔고 조회 실패"
-            )
-
-        if not coin:
-
-            raise HTTPException(
-                status_code=400,
-                detail="BUY 코인이 없습니다."
-            )
-
-        if stop_loss <= 0:
-
-            latest_order_info = (
-                f"🟡 BUY 조회 테스트 | "
-                f"{coin} | "
-                f"StopLoss=0 | "
-                f"주문하지 않음"
-            )
-
-            return {
-
-                "status": "test",
-
-                "message":
-                    "BUY 조회 테스트입니다. "
-                    "실제 주문은 실행하지 않았습니다.",
-
-                "Action": "Buy",
-
-                "Coin": coin,
-
-                "StopLoss": stop_loss,
-
-                "Total KRW":
-                    latest_upbit_total_krw,
-
-                "Available KRW":
-                    latest_upbit_available_krw,
-
-                "Updated At":
-                    latest_upbit_update,
-
-                "Order Executed":
-                    False
-            }
-
-        target_buy_amount = calculate_buy_amount(
-            stop_loss
-        )
-
-        available_krw = (
-            latest_upbit_available_krw
-        )
-
-        if available_krw <= 0:
-
-            raise HTTPException(
-                status_code=400,
-                detail="현재 매수 가능한 KRW가 없습니다."
-            )
-
-        market = f"KRW-{coin}"
-
-        order_chance = get_order_chance(
-            market,
-            api_key,
-            secret_key
-        )
-
-        bid_fee_rate = safe_float(
-            order_chance.get(
-                "bid_fee",
+    if row.get(
+        "progress_qualified",
+        False
+    ):
+        count = (
+            row.get(
+                "roc",
+                {}
+            ).get(
+                "roc10_count",
                 0
             )
         )
 
-        min_order_total = safe_float(
-            order_chance.get(
-                "min_total",
-                MIN_ORDER_KRW
-            )
+        return (
+            '<div class="buy-stage progress-candidate">'
+            f'🚀 진행 {count}'
+            '</div>'
         )
-
-        if min_order_total <= 0:
-
-            min_order_total = MIN_ORDER_KRW
-
-        fee_safe_available = (
-            calculate_fee_safe_buy_amount(
-                available_krw,
-                bid_fee_rate
-            )
-        )
-
-        amount_to_invest = min(
-            target_buy_amount,
-            fee_safe_available
-        )
-
-        amount_to_invest = truncate_krw(
-            amount_to_invest
-        )
-
-        if amount_to_invest < min_order_total:
-
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f"실제 주문가능금액 "
-                    f"{amount_to_invest:,.0f}원이 "
-                    f"최소 주문금액 "
-                    f"{min_order_total:,.0f}원보다 작습니다."
-                )
-            )
-
-        loss_limit_amount = (
-            MONTH_START_AMOUNT *
-            MAX_LOSS_RATE
-        )
-
-        estimated_fee = (
-            amount_to_invest *
-            bid_fee_rate
-        )
-
-        estimated_total_required = (
-            amount_to_invest +
-            estimated_fee
-        )
-
-        logger.info(
-            f"BUY CALC | "
-            f"MonthStart={MONTH_START_AMOUNT:,.0f} | "
-            f"LossLimit={loss_limit_amount:,.0f} | "
-            f"StopLoss={stop_loss:.2f}% | "
-            f"Target={target_buy_amount:,.0f} | "
-            f"Available={available_krw:,.0f} | "
-            f"BidFee={bid_fee_rate * 100:.4f}% | "
-            f"FeeSafeAvailable={fee_safe_available:,.0f} | "
-            f"Actual={amount_to_invest:,.0f} | "
-            f"EstimatedFee={estimated_fee:,.0f} | "
-            f"EstimatedTotal={estimated_total_required:,.0f}"
-        )
-
-        try:
-
-            order = place_bid_order(
-                coin,
-                amount_to_invest,
-                api_key,
-                secret_key
-            )
-
-            completed_order = wait_for_order_complete(
-                order["uuid"],
-                api_key,
-                secret_key
-            )
-
-            result = parse_order_result(
-                completed_order
-            )
-
-            if result["state"] != "done":
-
-                raise HTTPException(
-                    status_code=400,
-                    detail={
-                        "message":
-                            "BUY 주문이 완료되지 않았습니다.",
-
-                        "order":
-                            completed_order
-                    }
-                )
-
-            save_buy_trade(
-                result,
-                amount_to_invest,
-                stop_loss
-            )
-
-            latest_order_info = (
-                f"🟢 BUY {coin} | "
-                f"손절 {stop_loss:.2f}% | "
-                f"목표 {target_buy_amount:,.0f}원 | "
-                f"주문 {amount_to_invest:,.0f}원 | "
-                f"체결 {result['executed_funds']:,.0f}원 | "
-                f"수수료 {result['paid_fee']:,.0f}원"
-            )
-
-            return {
-
-                "status": "success",
-
-                "Action": "Buy",
-
-                "Coin": coin,
-
-                "Stop Loss Percent":
-                    stop_loss,
-
-                "Month Start Amount":
-                    MONTH_START_AMOUNT,
-
-                "Maximum Loss Amount":
-                    loss_limit_amount,
-
-                "Target Buy KRW":
-                    target_buy_amount,
-
-                "Available KRW Before Buy":
-                    available_krw,
-
-                "Bid Fee Rate":
-                    bid_fee_rate,
-
-                "Fee Safe Available KRW":
-                    fee_safe_available,
-
-                "Actual Order KRW":
-                    amount_to_invest,
-
-                "Estimated Fee":
-                    estimated_fee,
-
-                "Estimated Total Required":
-                    estimated_total_required,
-
-                "Actual Executed KRW":
-                    result["executed_funds"],
-
-                "Executed Volume":
-                    result["executed_volume"],
-
-                "Average Price":
-                    result["avg_price"],
-
-                "Fee":
-                    result["paid_fee"],
-
-                "Order UUID":
-                    result["uuid"],
-
-                "Order Executed":
-                    True
-            }
-
-        finally:
-
-            refresh_after_order(
-                api_key,
-                secret_key,
-                "BUY"
-            )
-
 
     # =====================================================
-    # SELL
+    # 🔴 숏 ①
     # =====================================================
 
-    if action == "sell":
-
-        before_ok = refresh_before_order(
-            api_key,
-            secret_key,
-            "SELL"
+    if row.get(
+        "short_qualified",
+        False
+    ):
+        return (
+            '<div class="buy-stage short-candidate">'
+            '🔴 숏 ①'
+            '</div>'
         )
 
-        if not before_ok:
+    # =====================================================
+    # 📉 숏 진행
+    # =====================================================
 
-            raise HTTPException(
-                status_code=502,
-                detail="SELL 전 업비트 잔고 조회 실패"
+    if row.get(
+        "short_progress_qualified",
+        False
+    ):
+        count = (
+            row.get(
+                "roc",
+                {}
+            ).get(
+                "roc10_negative_count",
+                0
             )
-
-        if not coin:
-
-            raise HTTPException(
-                status_code=400,
-                detail="SELL 코인이 없습니다."
-            )
-
-        if volume <= 0:
-
-            latest_order_info = (
-                f"🟡 SELL 조회 테스트 | "
-                f"{coin} | "
-                f"Volume=0 | "
-                f"주문하지 않음"
-            )
-
-            return {
-
-                "status": "test",
-
-                "message":
-                    "SELL 조회 테스트입니다. "
-                    "실제 주문은 실행하지 않았습니다.",
-
-                "Action": "Sell",
-
-                "Coin": coin,
-
-                "Volume": volume,
-
-                "Total KRW":
-                    latest_upbit_total_krw,
-
-                "Available KRW":
-                    latest_upbit_available_krw,
-
-                "Updated At":
-                    latest_upbit_update,
-
-                "Order Executed":
-                    False
-            }
-
-        if volume > 1:
-
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "SELL volume은 "
-                    "0보다 크고 1 이하여야 합니다."
-                )
-            )
-
-        current_coin_balance = get_coin_balance(
-            coin,
-            api_key,
-            secret_key
         )
 
-        if current_coin_balance <= 0:
-
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f"{coin} 실제 업비트 "
-                    f"보유수량이 없습니다."
-                )
-            )
-
-        if volume >= 1.0:
-
-            sell_volume = current_coin_balance
-
-            sell_label = "100% 전체매도"
-
-        else:
-
-            sell_volume = (
-                current_coin_balance *
-                volume
-            )
-
-            sell_label = (
-                f"{volume * 100:.0f}%"
-            )
-
-        sell_volume = truncate_volume(
-            sell_volume,
-            8
+        return (
+            '<div class="buy-stage short-progress-candidate">'
+            f'📉 진행 {count}'
+            '</div>'
         )
 
-        if sell_volume <= 0:
+    # =====================================================
+    # 🔥 롱 돌파
+    # =====================================================
 
-            raise HTTPException(
-                status_code=400,
-                detail="매도수량이 0입니다."
-            )
-
-        logger.info(
-            f"REAL SELL BALANCE | "
-            f"{coin} | "
-            f"balance={current_coin_balance:.18f} | "
-            f"ratio={volume:.4f} | "
-            f"sell={sell_volume:.8f}"
+    if row.get(
+        "near_zero_qualified",
+        False
+    ):
+        return (
+            '<div class="buy-stage near-candidate">'
+            '🔥 돌파'
+            '</div>'
         )
 
-        try:
-
-            order = place_ask_order(
-                coin,
-                sell_volume,
-                api_key,
-                secret_key
-            )
-
-            completed_order = wait_for_order_complete(
-                order["uuid"],
-                api_key,
-                secret_key
-            )
-
-            result = parse_order_result(
-                completed_order
-            )
-
-            if result["state"] != "done":
-
-                raise HTTPException(
-                    status_code=400,
-                    detail={
-                        "message":
-                            "SELL 주문이 완료되지 않았습니다.",
-
-                        "order":
-                            completed_order
-                    }
-                )
-
-            sell_result = save_sell_trade(
-                result,
-                volume
-            )
-
-            latest_order_info = (
-                f"🔴 SELL {coin} | "
-                f"{sell_label} | "
-                f"수량 "
-                f"{sell_result['sell_volume']:,.6f} | "
-                f"체결금액 "
-                f"{sell_result['gross_sell']:,.0f}원 | "
-                f"수익 "
-                f"{sell_result['profit']:+,.0f}원 "
-                f"({sell_result['return']:+.2f}%)"
-            )
-
-            return {
-
-                "status": "success",
-
-                "Action": "Sell",
-
-                "Coin": coin,
-
-                "Real Balance Before Sell":
-                    current_coin_balance,
-
-                "Sell Ratio":
-                    volume,
-
-                "Requested Sell Volume":
-                    sell_volume,
-
-                "Executed Volume":
-                    sell_result["sell_volume"],
-
-                "Gross Sell Amount":
-                    sell_result["gross_sell"],
-
-                "Fee":
-                    sell_result["fee"],
-
-                "Net Sell Amount":
-                    sell_result["net_sell"],
-
-                "Cost":
-                    sell_result["cost"],
-
-                "Realized Profit":
-                    sell_result["profit"],
-
-                "Return Percent":
-                    sell_result["return"],
-
-                "Average Sell Price":
-                    sell_result["avg_price"],
-
-                "Order UUID":
-                    result["uuid"],
-
-                "Order Executed":
-                    True
-            }
-
-        finally:
-
-            refresh_after_order(
-                api_key,
-                secret_key,
-                "SELL"
-            )
+    return (
+        '<div class="buy-none">'
+        '-'
+        '</div>'
+    )
 
 
 # =========================================================
-# 자산 API
+# HTML - EMA
 # =========================================================
 
-@app.get("/api/upbit-assets")
-async def api_upbit_assets():
+def ema_html(e):
+    if not e:
+        return """
+        <div class="ema1-cell">
+            <div class="ema1-main ema-none">
+                ⚪(0)
+            </div>
+        </div>
+        """
 
-    return {
+    direction_value = e.get(
+        "direction",
+        "none"
+    )
 
-        "month_start_amount":
-            MONTH_START_AMOUNT,
+    count = e.get(
+        "count",
+        0
+    )
 
-        "max_loss_rate":
-            MAX_LOSS_RATE,
+    cls = {
+        "long": "ema-long",
+        "short": "ema-short"
+    }.get(
+        direction_value,
+        "ema-none"
+    )
 
-        "max_loss_amount":
-            MONTH_START_AMOUNT *
-            MAX_LOSS_RATE,
+    if direction_value == "none":
+        count = 0
 
-        "total_krw":
-            latest_upbit_total_krw,
+    if direction_value == "long":
+        icon = "🟢"
 
-        "available_krw":
-            latest_upbit_available_krw,
+    elif direction_value == "short":
+        icon = "🔴"
 
-        "updated_at":
-            latest_upbit_update,
+    else:
+        icon = "⚪"
 
-        "bid_fee_rate":
-            latest_bid_fee_rate,
+    return f"""
+    <div class="ema1-cell">
+        <div class="ema1-main {cls}">
+            {icon}({count})
+        </div>
+    </div>
+    """
 
-        "assets":
-            latest_upbit_assets,
 
-        "latest_order":
-            latest_order_info
+# =========================================================
+# Rows
+# =========================================================
+
+def rows_html(
+    data,
+    focus_type=None
+):
+    out = []
+
+    for x in data:
+        cls = ""
+
+        if x.get(
+            "qualified",
+            False
+        ):
+            cls = " qualified"
+
+        elif x.get(
+            "progress_qualified",
+            False
+        ):
+            cls = " progress-qualified"
+
+        elif x.get(
+            "short_qualified",
+            False
+        ):
+            cls = " short-qualified"
+
+        elif x.get(
+            "short_progress_qualified",
+            False
+        ):
+            cls = " short-progress-qualified"
+
+        elif x.get(
+            "near_zero_qualified",
+            False
+        ):
+            cls = " near-qualified"
+
+        elif x.get(
+            "short_near_zero_qualified",
+            False
+        ):
+            cls = " short-near-qualified"
+
+        if focus_type == "near":
+            cls = " near-qualified"
+
+        elif focus_type == "buy":
+            cls = " qualified"
+
+        elif focus_type == "progress":
+            cls = " progress-qualified"
+
+        elif focus_type == "short":
+            cls = " short-qualified"
+
+        elif focus_type == "short_progress":
+            cls = " short-progress-qualified"
+
+        roc_data = x.get(
+            "roc",
+            {}
+        )
+
+        out.append(
+            f"""
+            <tr class="{cls}">
+                <td class="rank">
+                    {x.get("rank", "-")}
+                </td>
+
+                <td class="coin">
+                    <div class="coin-name">
+                        {x.get("name", "-")}
+                    </div>
+
+                    <div class="change">
+                        {x.get("change", "-")}
+                    </div>
+                </td>
+
+                <td class="vol">
+                    {x.get("volume", "-")}
+                </td>
+
+                <td class="ema-cell">
+                    <div class="ema-title">
+                        EMA
+                    </div>
+
+                    <div class="ema-row">
+                        <span class="tf">
+                            {format_timeframe(
+                                EMA_TIMEFRAME
+                            )}
+                        </span>
+
+                        <span class="ema-value-wrap">
+                            {ema_html(
+                                x.get(
+                                    "ema_1h",
+                                    {}
+                                )
+                            )}
+                        </span>
+                    </div>
+
+                    <div class="ema-row">
+                        <span class="tf">
+                            {format_timeframe(
+                                EMA_HIGH_TIMEFRAME
+                            )}
+                        </span>
+
+                        <span class="ema-value-wrap">
+                            {ema_html(
+                                x.get(
+                                    "ema_high",
+                                    {}
+                                )
+                            )}
+                        </span>
+                    </div>
+                </td>
+
+                <td class="roc-column">
+                    {roc_html(
+                        roc_data
+                    )}
+                </td>
+
+                <td class="close-ema10">
+                    {signal_html(
+                        x
+                    )}
+                </td>
+            </tr>
+            """
+        )
+
+    return "".join(out)
+
+
+def table_html(
+    data,
+    focus_type=None
+):
+    rows = rows_html(
+        data,
+        focus_type
+    )
+
+    if not rows:
+        rows = """
+        <tr>
+            <td colspan="6" class="empty">
+                현재 조회 데이터 없음
+            </td>
+        </tr>
+        """
+
+    return f"""
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>코인</th>
+                    <th>거래대금</th>
+                    <th>EMA</th>
+                    <th>ROC10</th>
+                    <th>신호</th>
+                </tr>
+            </thead>
+
+            <tbody>
+                {rows}
+            </tbody>
+        </table>
+    </div>
+    """
+
+
+def section(
+    title,
+    data,
+    update_time
+):
+    return f"""
+    <h2>
+        🏆 {title} TOP{TOP_N}
+
+        <small>
+            {update_time} KST
+        </small>
+    </h2>
+
+    {table_html(data)}
+    """
+
+
+# =========================================================
+# 🔥 롱 돌파
+# =========================================================
+
+def roc_near_zero_section(
+    data,
+    update_time,
+    exchange="upbit"
+):
+    candidate_rows = [
+        x for x in data
+        if is_roc_near_zero_candidate(x)
+    ]
+
+    candidate_rows = sorted(
+        candidate_rows,
+        key=lambda x:
+            float(
+                x.get(
+                    "roc",
+                    {}
+                ).get(
+                    "roc10",
+                    -999
+                )
+            ),
+        reverse=True
+    )[:ROC_FOCUS_TOP]
+
+    if not candidate_rows:
+        rows = """
+        <tr>
+            <td colspan="6" class="empty">
+                현재 후보 없음
+            </td>
+        </tr>
+        """
+
+    else:
+        rows = rows_html(
+            candidate_rows,
+            "near"
+        )
+
+    return f"""
+    <h2 class="focus-title near-title">
+        🔥 돌파
+
+        <small>
+            ROC10 0선 근처 상승
+            · {update_time} KST
+        </small>
+    </h2>
+
+    <div class="table-wrap focus-near-table">
+        <table>
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>코인</th>
+                    <th>거래대금</th>
+                    <th>EMA</th>
+                    <th>ROC10</th>
+                    <th>신호</th>
+                </tr>
+            </thead>
+
+            <tbody>
+                {rows}
+            </tbody>
+        </table>
+    </div>
+    """
+
+
+# =========================================================
+# 🟢 매수
+# =========================================================
+
+def roc_buy_section(
+    data,
+    update_time,
+    exchange="upbit"
+):
+    candidate_rows = [
+        x for x in data
+        if (
+            is_upbit_buy_candidate(x)
+            if exchange == "upbit"
+            else is_okx_long_candidate(x)
+        )
+    ]
+
+    candidate_rows = sorted(
+        candidate_rows,
+        key=lambda x:
+            float(
+                x.get(
+                    "roc",
+                    {}
+                ).get(
+                    "roc10",
+                    -999
+                )
+            ),
+        reverse=True
+    )
+
+    if not candidate_rows:
+        rows = """
+        <tr>
+            <td colspan="6" class="empty">
+                현재 후보 없음
+            </td>
+        </tr>
+        """
+
+    else:
+        rows = rows_html(
+            candidate_rows,
+            "buy"
+        )
+
+    return f"""
+    <h2 class="focus-title buy-title">
+        🟢 매수
+
+        <small>
+            ROC10 0선 상향돌파
+            · {update_time} KST
+        </small>
+    </h2>
+
+    <div class="table-wrap buy-focus-table">
+        <table>
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>코인</th>
+                    <th>거래대금</th>
+                    <th>EMA</th>
+                    <th>ROC10</th>
+                    <th>신호</th>
+                </tr>
+            </thead>
+
+            <tbody>
+                {rows}
+            </tbody>
+        </table>
+    </div>
+    """
+
+
+# =========================================================
+# 🚀 롱 진행
+# =========================================================
+
+def roc_progress_section(
+    data,
+    update_time,
+    exchange="upbit"
+):
+    candidate_rows = [
+        x for x in data
+        if is_roc_progress_candidate(x)
+    ]
+
+    candidate_rows = sorted(
+        candidate_rows,
+        key=lambda x:
+            int(
+                x.get(
+                    "roc",
+                    {}
+                ).get(
+                    "roc10_count",
+                    0
+                )
+            ),
+        reverse=True
+    )
+
+    if not candidate_rows:
+        rows = """
+        <tr>
+            <td colspan="6" class="empty">
+                현재 후보 없음
+            </td>
+        </tr>
+        """
+
+    else:
+        rows = rows_html(
+            candidate_rows,
+            "progress"
+        )
+
+    return f"""
+    <h2 class="focus-title progress-title">
+        🚀 진행
+
+        <small>
+            ROC10 양수 유지 · ② 이상
+            · {update_time} KST
+        </small>
+    </h2>
+
+    <div class="table-wrap focus-progress-table">
+        <table>
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>코인</th>
+                    <th>거래대금</th>
+                    <th>EMA</th>
+                    <th>ROC10</th>
+                    <th>신호</th>
+                </tr>
+            </thead>
+
+            <tbody>
+                {rows}
+            </tbody>
+        </table>
+    </div>
+    """
+
+
+# =========================================================
+# 🔴 OKX 숏
+# =========================================================
+
+def okx_short_section(
+    data,
+    update_time
+):
+    short_rows = [
+        x for x in data
+        if is_okx_short_candidate(x)
+    ]
+
+    if not short_rows:
+        rows = """
+        <tr>
+            <td colspan="6" class="empty">
+                현재 후보 없음
+            </td>
+        </tr>
+        """
+
+    else:
+        rows = rows_html(
+            short_rows,
+            "short"
+        )
+
+    return f"""
+    <h2 class="focus-title short-title">
+        🔴 숏
+
+        <small>
+            ROC10 0선 하향돌파
+            · ①
+            · {update_time} KST
+        </small>
+    </h2>
+
+    <div class="table-wrap buy-focus-table">
+        <table>
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>코인</th>
+                    <th>거래대금</th>
+                    <th>EMA</th>
+                    <th>ROC10</th>
+                    <th>신호</th>
+                </tr>
+            </thead>
+
+            <tbody>
+                {rows}
+            </tbody>
+        </table>
+    </div>
+    """
+
+
+# =========================================================
+# 📉 OKX 숏 진행
+# =========================================================
+
+def okx_short_progress_section(
+    data,
+    update_time
+):
+    candidate_rows = [
+        x for x in data
+        if is_roc_short_progress_candidate(x)
+    ]
+
+    candidate_rows = sorted(
+        candidate_rows,
+        key=lambda x:
+            int(
+                x.get(
+                    "roc",
+                    {}
+                ).get(
+                    "roc10_negative_count",
+                    0
+                )
+            ),
+        reverse=True
+    )
+
+    if not candidate_rows:
+        rows = """
+        <tr>
+            <td colspan="6" class="empty">
+                현재 후보 없음
+            </td>
+        </tr>
+        """
+
+    else:
+        rows = rows_html(
+            candidate_rows,
+            "short_progress"
+        )
+
+    return f"""
+    <h2 class="focus-title short-progress-title">
+        📉 진행
+
+        <small>
+            ROC10 음수 유지 · ② 이상
+            · {update_time} KST
+        </small>
+    </h2>
+
+    <div class="table-wrap focus-short-progress-table">
+        <table>
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>코인</th>
+                    <th>거래대금</th>
+                    <th>EMA</th>
+                    <th>ROC10</th>
+                    <th>신호</th>
+                </tr>
+            </thead>
+
+            <tbody>
+                {rows}
+            </tbody>
+        </table>
+    </div>
+    """
+
+
+# =========================================================
+# CSS
+# =========================================================
+
+CSS = """
+
+*{
+    box-sizing:border-box;
+    -webkit-tap-highlight-color:transparent;
+}
+
+html,
+body{
+    margin:0;
+    padding:0;
+    width:100%;
+    min-width:0;
+    overflow-x:hidden;
+}
+
+body{
+    background:#0d1014;
+    color:#eeeeee;
+    font-family:
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        Arial,
+        sans-serif;
+    font-size:10px;
+    padding:6px 5px 14px;
+    line-height:1.3;
+}
+
+h1{
+    margin:3px 3px 7px;
+    font-size:15px;
+    line-height:20px;
+    font-weight:800;
+    color:#f5f5f5;
+}
+
+h2{
+    margin:13px 3px 5px;
+    font-size:12px;
+    line-height:17px;
+    font-weight:800;
+    color:#eeeeee;
+}
+
+h2 small{
+    color:#747b85;
+    font-size:7px;
+    font-weight:normal;
+    margin-left:4px;
+    white-space:nowrap;
+}
+
+.info{
+    margin:0 2px 8px;
+    padding:7px 9px;
+    color:#aab0b8;
+    background:#15191f;
+    border:1px solid #252b33;
+    border-radius:9px;
+    font-size:8px;
+    line-height:1.45;
+    box-shadow:
+        0 2px 8px rgba(0,0,0,.18);
+}
+
+.status{
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    gap:14px;
+    margin-top:7px;
+    padding-top:6px;
+    border-top:1px solid #252a31;
+    font-size:8px;
+    font-weight:800;
+}
+
+.y{
+    color:#42e878;
+}
+
+.n{
+    color:#ff5757;
+}
+
+.table-wrap{
+    width:100%;
+    overflow:hidden;
+    border-radius:9px;
+    border:1px solid #282e36;
+    background:#171b20;
+    box-shadow:
+        0 2px 8px rgba(0,0,0,.18);
+}
+
+table{
+    width:100%;
+    table-layout:fixed;
+    border-collapse:collapse;
+    background:#171b20;
+}
+
+thead{
+    background:#111419;
+}
+
+th{
+    height:27px;
+    padding:5px 2px;
+    background:#111419;
+    border-bottom:1px solid #2c323a;
+    color:#9299a3;
+    font-size:7px;
+    line-height:10px;
+    font-weight:700;
+    white-space:nowrap;
+    text-align:center !important;
+    vertical-align:middle;
+}
+
+td{
+    height:45px;
+    padding:5px 2px;
+    border-bottom:1px solid #272d34;
+    text-align:center !important;
+    vertical-align:middle;
+    overflow:hidden;
+}
+
+tbody tr:last-child td{
+    border-bottom:none;
+}
+
+th:nth-child(1),
+td:nth-child(1){
+    width:6%;
+}
+
+th:nth-child(2),
+td:nth-child(2){
+    width:20%;
+}
+
+th:nth-child(3),
+td:nth-child(3){
+    width:15%;
+}
+
+th:nth-child(4),
+td:nth-child(4){
+    width:19%;
+    text-align:left !important;
+}
+
+th:nth-child(5),
+td:nth-child(5){
+    width:24%;
+}
+
+th:nth-child(6),
+td:nth-child(6){
+    width:16%;
+}
+
+.rank{
+    color:#858c96;
+    font-size:8px;
+    font-weight:600;
+}
+
+.coin{
+    overflow:hidden;
+    padding:3px 2px;
+}
+
+.coin-name{
+    font-size:9px;
+    line-height:12px;
+    height:12px;
+    font-weight:800;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+}
+
+.change{
+    margin-top:2px;
+    line-height:10px;
+    height:10px;
+    font-size:7px;
+    font-weight:600;
+    white-space:nowrap;
+}
+
+.up{
+    color:#39e875;
+    font-weight:800;
+}
+
+.down{
+    color:#ff5555;
+    font-weight:800;
+}
+
+.zero{
+    color:#8c929a;
+}
+
+.vol{
+    padding:3px 1px !important;
+    font-size:8px;
+    font-weight:800;
+    line-height:18px;
+    height:45px;
+    white-space:nowrap;
+}
+
+
+/* =====================================================
+   EMA - 왼쪽 정렬
+   ===================================================== */
+
+.ema-cell{
+    overflow:hidden;
+    padding:2px 1px !important;
+    text-align:left !important;
+}
+
+.ema-title{
+    color:#858c96;
+    font-size:6px;
+    line-height:9px;
+    font-weight:700;
+    text-align:left;
+    white-space:nowrap;
+}
+
+.ema-row{
+    display:flex;
+    align-items:center;
+    justify-content:flex-start;
+    width:100%;
+    min-height:16px;
+    height:16px;
+    white-space:nowrap;
+    overflow:hidden;
+}
+
+.tf{
+    flex:0 0 21px;
+    width:21px;
+    color:#777f89;
+    font-size:7px;
+    font-weight:700;
+    text-align:left;
+}
+
+.ema-value-wrap{
+    flex:1;
+    min-width:0;
+    display:flex;
+    align-items:center;
+    justify-content:flex-start;
+    overflow:hidden;
+}
+
+.ema1-cell{
+    display:flex;
+    align-items:center;
+    justify-content:flex-start;
+    width:100%;
+    min-width:0;
+    height:16px;
+    min-height:16px;
+    line-height:1.1;
+    white-space:nowrap;
+    overflow:hidden;
+    text-align:left;
+}
+
+.ema1-main{
+    display:block;
+    width:100%;
+    font-size:8px;
+    font-weight:800;
+    line-height:12px;
+    text-align:left;
+    white-space:nowrap;
+}
+
+.ema-long{
+    color:#3ee879;
+}
+
+.ema-short{
+    color:#ff5555;
+}
+
+.ema-none{
+    color:#eeeeee;
+}
+
+
+/* =====================================================
+   ROC10
+   ===================================================== */
+
+.roc-column{
+    padding:2px 1px !important;
+    overflow:hidden;
+}
+
+.roc-cell{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    width:100%;
+    min-height:41px;
+    line-height:1.15;
+}
+
+.roc-title{
+    font-size:7px;
+    line-height:11px;
+    font-weight:700;
+    color:#858c96;
+    white-space:nowrap;
+}
+
+.roc-value{
+    font-size:8px;
+    line-height:14px;
+    font-weight:900;
+    white-space:nowrap;
+}
+
+.roc-positive{
+    color:#39e875;
+}
+
+.roc-negative{
+    color:#ff5555;
+}
+
+.roc-zero{
+    color:#9aa1aa;
+}
+
+.roc-cross-up{
+    color:#39e875;
+    font-size:7px;
+    font-weight:900;
+    margin-left:2px;
+}
+
+.roc-cross-down{
+    color:#ff5555;
+    font-size:7px;
+    font-weight:900;
+    margin-left:2px;
+}
+
+.roc-no-cross{
+    color:#6f7680;
+    font-size:7px;
+    font-weight:800;
+    margin-left:2px;
+}
+
+
+/* =====================================================
+   신호
+   ===================================================== */
+
+.close-ema10{
+    text-align:center !important;
+    vertical-align:middle !important;
+    white-space:nowrap;
+    font-size:8px;
+    font-weight:800;
+    overflow:hidden;
+}
+
+.buy-stage{
+    width:100%;
+    text-align:center;
+    font-size:8px;
+    font-weight:900;
+    line-height:18px;
+    white-space:nowrap;
+}
+
+.buy-candidate{
+    color:#39e875;
+}
+
+.short-candidate{
+    color:#ff5555;
+}
+
+.near-candidate{
+    color:#ff9f43;
+}
+
+.progress-candidate{
+    color:#4cc9ff;
+}
+
+.short-near-candidate{
+    color:#ffb347;
+}
+
+.short-progress-candidate{
+    color:#ff6666;
+}
+
+.buy-none{
+    color:#686f78;
+    font-size:8px;
+    font-weight:700;
+    text-align:center;
+}
+
+
+/* =====================================================
+   행
+   ===================================================== */
+
+.qualified{
+    background:rgba(57,232,117,.055);
+}
+
+.short-qualified{
+    background:rgba(255,85,85,.055);
+}
+
+.near-qualified{
+    background:rgba(255,159,67,.055);
+}
+
+.progress-qualified{
+    background:rgba(76,201,255,.055);
+}
+
+.short-near-qualified{
+    background:rgba(255,159,67,.055);
+}
+
+.short-progress-qualified{
+    background:rgba(255,85,85,.035);
+}
+
+
+/* =====================================================
+   제목
+   ===================================================== */
+
+.focus-title{
+    margin-top:12px;
+    margin-bottom:5px;
+    padding-left:3px;
+}
+
+.buy-title{
+    color:#39e875;
+}
+
+.short-title{
+    color:#ff5555;
+}
+
+.near-title{
+    color:#ff9f43;
+}
+
+.progress-title{
+    color:#4cc9ff;
+}
+
+.short-near-title{
+    color:#ffb347;
+}
+
+.short-progress-title{
+    color:#ff6666;
+}
+
+.buy-focus-table{
+    border:1px solid #303740;
+}
+
+.focus-near-table{
+    border:1px solid #4b3925;
+}
+
+.focus-progress-table{
+    border:1px solid #254457;
+}
+
+.focus-short-near-table{
+    border:1px solid #4b3925;
+}
+
+.focus-short-progress-table{
+    border:1px solid #4a2727;
+}
+
+.empty{
+    color:#555d67;
+    padding:14px 5px !important;
+    font-size:8px;
+    height:48px;
+}
+
+
+/* =====================================================
+   모바일
+   ===================================================== */
+
+@media(max-width:600px){
+
+    body{
+        padding:5px 4px 14px;
+        font-size:10px;
     }
 
+    h1{
+        margin:3px 3px 7px;
+        font-size:15px;
+        line-height:20px;
+    }
+
+    h2{
+        margin:12px 3px 5px;
+        font-size:11px;
+        line-height:16px;
+    }
+
+    h2 small{
+        display:block;
+        margin-left:0;
+        margin-top:1px;
+        font-size:6px;
+        line-height:9px;
+    }
+
+    .info{
+        padding:7px 8px;
+        margin-bottom:7px;
+        font-size:7px;
+        line-height:1.45;
+    }
+
+    .status{
+        gap:12px;
+        margin-top:6px;
+        padding-top:5px;
+        font-size:7px;
+    }
+
+    th{
+        height:27px;
+        padding:5px 1px;
+        font-size:6px;
+        line-height:9px;
+    }
+
+    td{
+        height:45px;
+        padding:3px 1px;
+    }
+
+    .rank{
+        font-size:7px;
+    }
+
+    .coin{
+        padding:3px 1px;
+    }
+
+    .coin-name{
+        font-size:8px;
+        line-height:12px;
+        height:12px;
+    }
+
+    .change{
+        margin-top:2px;
+        font-size:6px;
+        line-height:9px;
+        height:9px;
+    }
+
+    .vol{
+        padding:3px 1px !important;
+        font-size:7px;
+        line-height:18px;
+        height:45px;
+    }
+
+    .ema-cell{
+        padding:2px 0 !important;
+        text-align:left !important;
+    }
+
+    .ema-title{
+        font-size:5.5px;
+        line-height:8px;
+        text-align:left;
+    }
+
+    .ema-row{
+        min-height:16px;
+        height:16px;
+        justify-content:flex-start;
+    }
+
+    .tf{
+        flex:0 0 16px;
+        width:16px;
+        font-size:6px;
+        text-align:left;
+    }
+
+    .ema-value-wrap{
+        justify-content:flex-start;
+    }
+
+    .ema1-cell{
+        height:16px;
+        min-height:16px;
+        justify-content:flex-start;
+        text-align:left;
+    }
+
+    .ema1-main{
+        font-size:7px;
+        line-height:12px;
+        text-align:left;
+    }
+
+    .roc-cell{
+        min-height:41px;
+    }
+
+    .roc-title{
+        font-size:5.5px;
+        line-height:10px;
+    }
+
+    .roc-value{
+        font-size:6.5px;
+        line-height:13px;
+    }
+
+    .roc-cross-up,
+    .roc-cross-down,
+    .roc-no-cross{
+        font-size:5.5px;
+    }
+
+    .close-ema10{
+        font-size:7px;
+    }
+
+    .buy-stage{
+        font-size:7px;
+        line-height:18px;
+    }
+
+    .buy-none{
+        font-size:7px;
+    }
+
+    .empty{
+        padding:13px 4px !important;
+        font-size:7px;
+        height:45px;
+    }
+}
+
+
+/* =====================================================
+   작은 화면
+   ===================================================== */
+
+@media(max-width:380px){
+
+    body{
+        padding:4px 3px 12px;
+    }
+
+    h1{
+        font-size:14px;
+    }
+
+    h2{
+        font-size:10px;
+    }
+
+    .info{
+        font-size:6.5px;
+    }
+
+    th{
+        height:25px;
+        font-size:5px;
+    }
+
+    td{
+        height:45px;
+    }
+
+    .coin-name{
+        font-size:7px;
+    }
+
+    .change{
+        font-size:5.5px;
+    }
+
+    .vol{
+        font-size:6px;
+    }
+
+    .tf{
+        font-size:5.5px;
+        text-align:left;
+    }
+
+    .ema-title{
+        font-size:5px;
+        line-height:8px;
+        text-align:left;
+    }
+
+    .ema1-main{
+        font-size:6px;
+        line-height:12px;
+        text-align:left;
+    }
+
+    .roc-title{
+        font-size:5px;
+    }
+
+    .roc-value{
+        font-size:5.5px;
+    }
+
+    .roc-cross-up,
+    .roc-cross-down,
+    .roc-no-cross{
+        font-size:5px;
+    }
+
+    .buy-stage{
+        font-size:6px;
+    }
+
+    .buy-none{
+        font-size:6px;
+    }
+}
+
+
+/* =====================================================
+   PC
+   ===================================================== */
+
+@media(min-width:601px){
+
+    body{
+        max-width:900px;
+        margin:0 auto;
+        padding:8px;
+    }
+
+    th{
+        font-size:8px;
+    }
+
+    td{
+        height:48px;
+    }
+
+    .coin-name{
+        font-size:10px;
+    }
+
+    .change{
+        font-size:8px;
+    }
+
+    .vol{
+        font-size:9px;
+    }
+
+    .ema1-main{
+        font-size:9px;
+        text-align:left;
+    }
+
+    .ema-title{
+        text-align:left;
+    }
+
+    .tf{
+        text-align:left;
+    }
+
+    .roc-title{
+        font-size:7px;
+    }
+
+    .roc-value{
+        font-size:8px;
+    }
+
+    .buy-stage{
+        font-size:9px;
+    }
+}
+
+"""
+
 
 # =========================================================
-# 대시보드
+# Dashboard
 # =========================================================
 
 @app.get(
     "/",
     response_class=HTMLResponse
 )
-async def dashboard():
+def dashboard():
 
-    return HTMLResponse("""
-<!DOCTYPE html>
+    timeframe_label = format_timeframe(
+        EMA_TIMEFRAME
+    )
 
-<html lang="ko">
-
-<head>
-
-<meta charset="UTF-8">
-
-<meta
-    name="viewport"
-    content="width=device-width, initial-scale=1.0"
->
-
-<title>업비트 잔고 확인</title>
-
-<style>
-
-* {
-    box-sizing: border-box;
-}
-
-body {
-
-    margin: 0;
-
-    padding: 20px;
-
-    background: #111827;
-
-    color: #f3f4f6;
-
-    font-family:
-        Arial,
-        "Noto Sans KR",
-        sans-serif;
-}
-
-.container {
-
-    max-width: 900px;
-
-    margin: 0 auto;
-}
-
-h1 {
-
-    margin: 0 0 6px 0;
-
-    font-size: 25px;
-}
-
-.subtitle {
-
-    color: #9ca3af;
-
-    font-size: 13px;
-
-    margin-bottom: 20px;
-}
-
-
-/* =====================================================
-   상단 8개 카드
-   ===================================================== */
-
-.grid {
-
-    display: grid;
-
-    grid-template-columns:
-        repeat(2, 1fr);
-
-    gap: 12px;
-}
-
-.card {
-
-    background: #1f2937;
-
-    border: 1px solid #374151;
-
-    border-radius: 12px;
-
-    padding: 16px;
-}
-
-.title {
-
-    color: #9ca3af;
-
-    font-size: 13px;
-
-    margin-bottom: 8px;
-}
-
-.value {
-
-    font-size: 21px;
-
-    font-weight: bold;
-
-    word-break: break-all;
-}
-
-.red {
-
-    color: #ef4444;
-}
-
-.green {
-
-    color: #22c55e;
-}
-
-
-/* =====================================================
-   오늘 시작금액 / 당일 수익금
-   ===================================================== */
-
-.today-card {
-
-    grid-column: span 2;
-
-    display: grid;
-
-    grid-template-columns:
-        1fr 1fr;
-
-    gap: 12px;
-}
-
-.today-box {
-
-    background: #111827;
-
-    border: 1px solid #374151;
-
-    border-radius: 10px;
-
-    padding: 14px;
-}
-
-.today-title {
-
-    color: #9ca3af;
-
-    font-size: 13px;
-
-    margin-bottom: 8px;
-}
-
-.today-input {
-
-    width: 100%;
-
-    padding: 11px;
-
-    border-radius: 8px;
-
-    border: 1px solid #4b5563;
-
-    background: #1f2937;
-
-    color: #ffffff;
-
-    font-size: 18px;
-
-    font-weight: bold;
-
-    outline: none;
-}
-
-.today-input:focus {
-
-    border-color: #60a5fa;
-}
-
-
-/* =====================================================
-   보유자산
-   ===================================================== */
-
-.section {
-
-    margin-top: 18px;
-
-    background: #1f2937;
-
-    border: 1px solid #374151;
-
-    border-radius: 12px;
-
-    padding: 16px;
-}
-
-.section-header {
-
-    display: flex;
-
-    justify-content: space-between;
-
-    align-items: center;
-
-    margin-bottom: 14px;
-
-    font-weight: bold;
-}
-
-.section-coin {
-
-    color: #60a5fa;
-
-    font-size: 13px;
-}
-
-.asset {
-
-    border-bottom: 1px solid #374151;
-
-    padding: 13px 0;
-}
-
-.asset:last-child {
-
-    border-bottom: none;
-}
-
-.asset-name {
-
-    font-size: 18px;
-
-    font-weight: bold;
-
-    margin-bottom: 8px;
-}
-
-.asset-grid {
-
-    display: grid;
-
-    grid-template-columns:
-        repeat(2, 1fr);
-
-    gap: 7px;
-
-    font-size: 13px;
-}
-
-.asset-row {
-
-    color: #d1d5db;
-}
-
-.asset-row span {
-
-    color: #9ca3af;
-}
-
-.profit-positive {
-
-    color: #22c55e;
-
-    font-weight: bold;
-}
-
-.profit-negative {
-
-    color: #ef4444;
-
-    font-weight: bold;
-}
-
-
-/* =====================================================
-   보유자산 강조
-   ===================================================== */
-
-.asset-profit {
-
-    font-size: 17px;
-
-    font-weight: 900;
-}
-
-.asset-risk {
-
-    font-size: 16px;
-
-    font-weight: 900;
-}
-
-.asset-risk .target-check {
-
-    font-size: 18px;
-
-    font-weight: 900;
-}
-
-
-/* =====================================================
-   손절폭별 진입금액
-   ===================================================== */
-
-table {
-
-    width: 100%;
-
-    border-collapse: collapse;
-
-    font-size: 13px;
-}
-
-th,
-td {
-
-    padding: 10px 6px;
-
-    border-bottom: 1px solid #374151;
-
-    text-align: right;
-}
-
-th:first-child,
-td:first-child {
-
-    text-align: center;
-}
-
-th {
-
-    color: #9ca3af;
-}
-
-
-/* =====================================================
-   리스크 기준 목표수익금
-   ===================================================== */
-
-.target-profit-box {
-
-    margin-top: 15px;
-
-    padding: 13px;
-
-    background: #111827;
-
-    border: 1px solid #374151;
-
-    border-radius: 10px;
-}
-
-.target-profit-title {
-
-    color: #9ca3af;
-
-    font-size: 12px;
-
-    margin-bottom: 9px;
-}
-
-.target-profit-grid {
-
-    display: grid;
-
-    grid-template-columns:
-        repeat(4, 1fr);
-
-    gap: 8px;
-}
-
-.target-profit-item {
-
-    background: #1f2937;
-
-    border-radius: 8px;
-
-    padding: 10px 6px;
-
-    text-align: center;
-}
-
-.target-profit-label {
-
-    color: #9ca3af;
-
-    font-size: 11px;
-
-    margin-bottom: 5px;
-}
-
-.target-profit-value {
-
-    font-size: 14px;
-
-    font-weight: bold;
-}
-
-
-/* =====================================================
-   목표 달성 체크
-   ===================================================== */
-
-.target-check {
-
-    margin-left: 4px;
-
-    color: #22c55e;
-
-    font-size: 15px;
-
-    font-weight: bold;
-}
-
-
-/* =====================================================
-   설명
-   ===================================================== */
-
-.notes {
-
-    margin-top: 18px;
-
-    background: #1f2937;
-
-    border: 1px solid #374151;
-
-    border-radius: 12px;
-
-    padding: 15px;
-
-    color: #9ca3af;
-
-    font-size: 12px;
-
-    line-height: 1.7;
-}
-
-.empty {
-
-    color: #9ca3af;
-
-    text-align: center;
-
-    padding: 20px 0;
-}
-
-
-/* =====================================================
-   휴대폰
-   ===================================================== */
-
-@media (max-width: 600px) {
-
-    body {
-
-        padding: 10px;
-    }
-
-    .container {
-
-        width: 100%;
-    }
-
-    h1 {
-
-        font-size: 21px;
-    }
-
-    .subtitle {
-
-        font-size: 11px;
-
-        margin-bottom: 12px;
-    }
-
-
-    .grid {
-
-        grid-template-columns:
-            repeat(2, minmax(0, 1fr));
-
-        gap: 8px;
-    }
-
-
-    .card {
-
-        min-width: 0;
-
-        padding: 12px 9px;
-
-        border-radius: 10px;
-    }
-
-
-    .title {
-
-        font-size: 11px;
-
-        margin-bottom: 6px;
-
-        white-space: nowrap;
-    }
-
-
-    .value {
-
-        font-size: 15px;
-
-        line-height: 1.25;
-    }
-
-
-    .today-card {
-
-        grid-column: span 2;
-
-        grid-template-columns:
-            repeat(2, minmax(0, 1fr));
-
-        gap: 8px;
-    }
-
-
-    .today-box {
-
-        min-width: 0;
-
-        padding: 11px 8px;
-
-        border-radius: 9px;
-    }
-
-
-    .today-title {
-
-        font-size: 11px;
-
-        margin-bottom: 6px;
-
-        white-space: nowrap;
-    }
-
-
-    .today-input {
-
-        width: 100%;
-
-        padding: 8px;
-
-        font-size: 14px;
-    }
-
-
-    .section {
-
-        margin-top: 12px;
-
-        padding: 12px;
-
-        border-radius: 10px;
-    }
-
-
-    .section-header {
-
-        margin-bottom: 10px;
-
-        font-size: 14px;
-    }
-
-
-    .section-coin {
-
-        font-size: 11px;
-
-        max-width: 50%;
-
-        overflow: hidden;
-
-        text-overflow: ellipsis;
-
-        white-space: nowrap;
-    }
-
-
-    .asset {
-
-        padding: 11px 0;
-    }
-
-
-    .asset-name {
-
-        font-size: 16px;
-
-        margin-bottom: 7px;
-    }
-
-
-    .asset-grid {
-
-        grid-template-columns:
-            repeat(2, minmax(0, 1fr));
-
-        gap: 6px;
-
-        font-size: 11px;
-    }
-
-
-    .asset-profit {
-
-        font-size: 17px;
-    }
-
-
-    .asset-risk {
-
-        font-size: 16px;
-    }
-
-
-    .asset-risk .target-check {
-
-        font-size: 18px;
-    }
-
-
-    table {
-
-        font-size: 11px;
-    }
-
-
-    th,
-    td {
-
-        padding: 8px 3px;
-    }
-
-
-    .target-profit-grid {
-
-        grid-template-columns:
-            repeat(4, 1fr);
-
-        gap: 5px;
-    }
-
-
-    .target-profit-item {
-
-        padding: 9px 3px;
-    }
-
-
-    .target-profit-label {
-
-        font-size: 10px;
-    }
-
-
-    .target-profit-value {
-
-        font-size: 12px;
-    }
-
-
-    .target-check {
-
-        margin-left: 2px;
-
-        font-size: 13px;
-    }
-
-
-    .notes {
-
-        margin-top: 12px;
-
-        padding: 12px;
-
-        font-size: 10px;
-
-        line-height: 1.6;
-    }
-
-}
-
-</style>
-
-</head>
-
-
-<body>
-
-<div class="container">
-
-<h1>TRADING CONTROL CENTER</h1>
-
-<div class="subtitle">
-    TradingView BUY / SELL 신호 기준 실시간 조회
-</div>
-
-
-<!-- =====================================================
-     상단 카드
-     ===================================================== -->
-
-<div class="grid">
-
-
-    <div class="card">
-
-        <div class="title">
-            월 시작금액
-        </div>
-
-        <div
-            class="value"
-            id="month-start"
-        >
-            -
-        </div>
-
-    </div>
-
-
-    <div class="card">
-
-        <div class="title">
-            현재 총자산
-        </div>
-
-        <div
-            class="value"
-            id="total"
-        >
-            -
-        </div>
-
-    </div>
-
-
-    <div class="card">
-
-        <div class="title">
-            월 수익금
-        </div>
-
-        <div
-            class="value"
-            id="month-profit"
-        >
-            -
-        </div>
-
-    </div>
-
-
-    <div class="card">
-
-        <div class="title">
-            월 수익률
-        </div>
-
-        <div
-            class="value"
-            id="month-return"
-        >
-            -
-        </div>
-
-    </div>
-
-
-    <div class="card">
-
-        <div class="title">
-            현재 매수 가능금액
-        </div>
-
-        <div
-            class="value"
-            id="available"
-        >
-            -
-        </div>
-
-    </div>
-
-
-    <div class="card">
-
-        <div class="title">
-            손절한도
-        </div>
-
-        <div
-            class="value red"
-            id="loss-limit-top"
-        >
-            -
-        </div>
-
-    </div>
-
-
-    <div class="card today-card">
-
-        <div class="today-box">
-
-            <div class="today-title">
-                오늘 시작금액
-            </div>
-
-            <input
-                type="number"
-                id="today-start"
-                class="today-input"
-                placeholder="금액 입력"
-                step="1000"
-                inputmode="numeric"
-            >
-
-        </div>
-
-
-        <div class="today-box">
-
-            <div class="today-title">
-                당일 수익금
-            </div>
-
-            <div
-                class="value"
-                id="today-profit"
-            >
-                -
-            </div>
-
-        </div>
-
-    </div>
-
-</div>
-
-
-<!-- =====================================================
-     보유자산
-     ===================================================== -->
-
-<div class="section">
-
-    <div class="section-header">
+    status = f"""
+    <div class="status">
 
         <span>
-            보유자산
+            업비트 :
+            <b class="y">{USE_UPBIT}</b>
         </span>
 
-        <span
-            class="section-coin"
-            id="asset-coin"
+        <span>
+            OKX :
+            <b class="n">{USE_OKX}</b>
+        </span>
+
+    </div>
+    """
+
+    sections = ""
+
+    # =====================================================
+    # 업비트
+    # =====================================================
+
+    if USE_UPBIT == "Y":
+
+        sections += roc_buy_section(
+            latest_upbit_data,
+            latest_upbit_update_time,
+            "upbit"
+        )
+
+        sections += roc_progress_section(
+            latest_upbit_data,
+            latest_upbit_update_time,
+            "upbit"
+        )
+
+    # =====================================================
+    # OKX 롱 / 숏
+    # =====================================================
+
+    if USE_OKX == "Y":
+
+        sections += roc_buy_section(
+            latest_okx_data,
+            latest_okx_update_time,
+            "okx"
+        )
+
+        sections += roc_progress_section(
+            latest_okx_data,
+            latest_okx_update_time,
+            "okx"
+        )
+
+        sections += okx_short_section(
+            latest_okx_data,
+            latest_okx_update_time
+        )
+
+        sections += okx_short_progress_section(
+            latest_okx_data,
+            latest_okx_update_time
+        )
+
+    # =====================================================
+    # 전체 TOP
+    # =====================================================
+
+    if USE_UPBIT == "Y":
+
+        sections += section(
+            "업비트",
+            latest_upbit_data,
+            latest_upbit_update_time
+        )
+
+    if USE_OKX == "Y":
+
+        sections += section(
+            "OKX",
+            latest_okx_data,
+            latest_okx_update_time
+        )
+
+    return f"""
+    <!DOCTYPE html>
+
+    <html lang="ko">
+
+    <head>
+
+        <meta charset="UTF-8">
+
+        <meta
+            name="viewport"
+            content="width=device-width,initial-scale=1,maximum-scale=1"
         >
-            보유 없음
-        </span>
 
-    </div>
+        <meta
+            http-equiv="refresh"
+            content="60"
+        >
 
-    <div id="assets">
+        <meta
+            name="theme-color"
+            content="#0d1014"
+        >
 
-        <div class="empty">
-            보유자산 없음
-        </div>
+        <title>
+            {timeframe_label} EMA1 · ROC10
+        </title>
 
-    </div>
+        <style>
+            {CSS}
+        </style>
 
-</div>
+    </head>
 
+    <body>
 
-<!-- =====================================================
-     리스크 기준 목표수익금
-     보유자산 바로 아래
-     ===================================================== -->
+        <h1>
+            📊 TRADING SIGNAL CENTER
+        </h1>
 
-<div class="section">
+        <div class="info">
 
-    <div class="section-header">
+            {timeframe_label}
+            EMA30·60·120 + ROC10
 
-        <span>
-            리스크 기준 목표수익금
-        </span>
+            <br>
 
-    </div>
+            🟢 매수 = 0선 상향돌파 ①
 
-    <div class="target-profit-grid">
+            <br>
 
-        <div class="target-profit-item">
+            🚀 진행 = 양수 유지 ②+
 
-            <div class="target-profit-label">
-                1:1
-            </div>
+            <br>
 
-            <div
-                class="target-profit-value"
-                id="profit-1x"
-            >
-                -
-            </div>
+            🔴 숏 = 0선 하향돌파 ①
 
-        </div>
+            <br>
 
+            📉 진행 = 음수 유지 ②+
 
-        <div class="target-profit-item">
+            <br>
 
-            <div class="target-profit-label">
-                1:2
-            </div>
+            ROC10 = 현재가 기준
 
-            <div
-                class="target-profit-value"
-                id="profit-2x"
-            >
-                -
-            </div>
+            {status}
 
         </div>
 
+        {sections}
 
-        <div class="target-profit-item">
+    </body>
 
-            <div class="target-profit-label">
-                1:3
-            </div>
-
-            <div
-                class="target-profit-value"
-                id="profit-3x"
-            >
-                -
-            </div>
-
-        </div>
-
-
-        <div class="target-profit-item">
-
-            <div class="target-profit-label">
-                1:4
-            </div>
-
-            <div
-                class="target-profit-value"
-                id="profit-4x"
-            >
-                -
-            </div>
-
-        </div>
-
-    </div>
-
-</div>
-
-
-<!-- =====================================================
-     손절폭별 진입금액
-     손절금액은 표시하지 않음
-     ===================================================== -->
-
-<div class="section">
-
-    <div class="section-header">
-
-        <span>
-            손절폭별 진입금액
-        </span>
-
-    </div>
-
-    <table>
-
-        <thead>
-
-            <tr>
-
-                <th>
-                    손절폭
-                </th>
-
-                <th>
-                    진입금액
-                </th>
-
-            </tr>
-
-        </thead>
-
-        <tbody id="risk-table">
-
-        </tbody>
-
-    </table>
-
-</div>
-
-
-<!-- =====================================================
-     정보
-     ===================================================== -->
-
-<div class="notes">
-
-    <div>
-        월 시작금액:
-        <strong id="month-start-note">-</strong>
-    </div>
-
-    <div>
-        전체 시드 손실기준:
-        <strong>1%</strong>
-    </div>
-
-    <div>
-        마지막 조회:
-        <strong id="updated">TradingView 신호 대기</strong>
-    </div>
-
-    <div>
-        마지막 주문:
-        <strong id="latest-order">주문 없음</strong>
-    </div>
-
-    <br>
-
-    ※ 오늘 시작금액은 이 화면에서 직접 입력합니다.
-    <br>
-
-    ※ 당일 수익금 = 현재 총자산 - 오늘 시작금액입니다.
-    <br>
-
-    ※ 입력한 오늘 시작금액은 이 브라우저에 저장되어 새로고침 후에도 유지됩니다.
-    <br>
-
-    ※ 현재 보유 중인 코인의 평가손익은 월 수익금에 별도로 반영되는 평가손익입니다.
-    <br>
-
-    ※ BUY/SELL 신호가 들어오면 주문 전 업비트 자산을 먼저 조회합니다.
-    <br>
-
-    ※ 실제 주문 후 업비트 자산을 다시 조회합니다.
-    <br>
-
-    ※ BUY stop_loss=0은 조회 테스트이며 실제 주문하지 않습니다.
-    <br>
-
-    ※ SELL volume=0은 조회 테스트이며 실제 주문하지 않습니다.
-    <br>
-
-    ※ BUY 주문은 업비트 현재 매수 수수료를 조회한 뒤 수수료를 제외하고 실제 주문 가능한 금액을 계산합니다.
-    <br>
-
-    ※ 리스크 기준 목표수익금은 손실한도 1%를 기준으로 계산합니다.
-    <br>
-
-    ※ 1:1 / 1:2 / 1:3 / 1:4 목표 달성 여부는 현재 보유 코인의 평가수익금으로 표시합니다.
-    <br>
-
-    ※ 목표 달성 시 ✓ 표시가 나타납니다.
-    <br>
-
-    ※ 대시보드 자체에서는 업비트 API를 직접 호출하지 않습니다.
-
-</div>
-
-
-</div>
-
-
-<script>
-
-
-// =========================================================
-// 숫자
-// =========================================================
-
-function money(value) {
-
-    const number = Number(value || 0);
-
-    return Math.round(number).toLocaleString(
-        "ko-KR"
-    ) + "원";
-}
-
-
-function number(value, digits = 8) {
-
-    const numberValue = Number(value || 0);
-
-    return numberValue.toLocaleString(
-        "ko-KR",
-        {
-            minimumFractionDigits: 0,
-            maximumFractionDigits: digits
-        }
-    );
-}
-
-
-function price(value) {
-
-    const numberValue = Number(value || 0);
-
-    return numberValue.toLocaleString(
-        "ko-KR",
-        {
-            minimumFractionDigits: 0,
-            maximumFractionDigits: 8
-        }
-    ) + "원";
-}
-
-
-function profitRate(value) {
-
-    const numberValue = Number(value || 0);
-
-    return (
-        numberValue >= 0 ? "+" : ""
-    )
-    +
-    numberValue.toFixed(2)
-    +
-    "%";
-}
-
-
-function profitMoney(value) {
-
-    const numberValue = Number(value || 0);
-
-    return (
-        numberValue >= 0 ? "+" : ""
-    )
-    +
-    Math.round(numberValue).toLocaleString(
-        "ko-KR"
-    )
-    +
-    "원";
-}
-
-
-// =========================================================
-// 오늘 시작금액 저장
-// =========================================================
-
-const TODAY_START_KEY =
-    "upbit_today_start_amount";
-
-
-function loadTodayStartAmount() {
-
-    const input =
-        document.getElementById(
-            "today-start"
-        );
-
-    const saved =
-        localStorage.getItem(
-            TODAY_START_KEY
-        );
-
-    if (
-        saved !== null &&
-        saved !== ""
-    ) {
-
-        input.value = saved;
-    }
-
-    updateTodayProfit(
-        window.currentTotal || 0
-    );
-}
-
-
-function updateTodayProfit(
-    currentTotal
-) {
-
-    const input =
-        document.getElementById(
-            "today-start"
-        );
-
-    const profitElement =
-        document.getElementById(
-            "today-profit"
-        );
-
-    const startAmount =
-        Number(input.value || 0);
-
-    const total =
-        Number(currentTotal || 0);
-
-    if (
-        startAmount <= 0
-    ) {
-
-        profitElement.textContent = "-";
-
-        profitElement.className =
-            "value";
-
-        return;
-    }
-
-    const profit =
-        total - startAmount;
-
-    profitElement.textContent =
-        profitMoney(profit);
-
-    if (profit > 0) {
-
-        profitElement.className =
-            "value green";
-
-    } else if (profit < 0) {
-
-        profitElement.className =
-            "value red";
-
-    } else {
-
-        profitElement.className =
-            "value";
-    }
-}
-
-
-document
-    .getElementById("today-start")
-    .addEventListener(
-        "input",
-        function () {
-
-            localStorage.setItem(
-                TODAY_START_KEY,
-                this.value
-            );
-
-            updateTodayProfit(
-                window.currentTotal || 0
-            );
-        }
-    );
-
-
-// =========================================================
-// 보유자산
-// =========================================================
-
-function renderAssets(assets) {
-
-    const container =
-        document.getElementById(
-            "assets"
-        );
-
-    const coinElement =
-        document.getElementById(
-            "asset-coin"
-        );
-
-
-    if (
-        !assets ||
-        assets.length === 0
-    ) {
-
-        container.innerHTML =
-            '<div class="empty">보유자산 없음</div>';
-
-        coinElement.textContent =
-            "보유 없음";
-
-        return;
-    }
-
-
-    coinElement.textContent =
-        assets
-            .map(
-                asset =>
-                    asset.currency
-            )
-            .join(" / ");
-
-
-    let html = "";
-
-
-    assets.forEach(
-        asset => {
-
-            const buyAmount =
-                Number(
-                    asset.buy_amount_krw || 0
-                );
-
-            const avgPrice =
-                Number(
-                    asset.avg_buy_price || 0
-                );
-
-            const currentPrice =
-                Number(
-                    asset.current_price || 0
-                );
-
-            const currentProfit =
-                Number(
-                    asset.profit_amount || 0
-                );
-
-
-            const target10Rate =
-                buyAmount > 0
-                    ? 100000 /
-                      buyAmount *
-                      100
-                    : 0;
-
-            const target20Rate =
-                buyAmount > 0
-                    ? 200000 /
-                      buyAmount *
-                      100
-                    : 0;
-
-            const target30Rate =
-                buyAmount > 0
-                    ? 300000 /
-                      buyAmount *
-                      100
-                    : 0;
-
-
-            const target10Price =
-                avgPrice *
-                (
-                    1 +
-                    target10Rate /
-                    100
-                );
-
-            const target20Price =
-                avgPrice *
-                (
-                    1 +
-                    target20Rate /
-                    100
-                );
-
-            const target30Price =
-                avgPrice *
-                (
-                    1 +
-                    target30Rate /
-                    100
-                );
-
-
-            const profitClass =
-                currentProfit >= 0
-                    ? "profit-positive"
-                    : "profit-negative";
-
-
-            // =================================================
-            // 리스크 기준 목표 달성 체크
-            // =================================================
-
-            const riskLimit =
-                Number(
-                    window.riskLossLimit || 0
-                );
-
-
-            const target1 =
-                riskLimit;
-
-            const target2 =
-                riskLimit * 2;
-
-            const target3 =
-                riskLimit * 3;
-
-            const target4 =
-                riskLimit * 4;
-
-
-            const check1 =
-                currentProfit >= target1;
-
-            const check2 =
-                currentProfit >= target2;
-
-            const check3 =
-                currentProfit >= target3;
-
-            const check4 =
-                currentProfit >= target4;
-
-
-            html += `
-
-            <div class="asset">
-
-                <div class="asset-name">
-                    ${asset.currency}
-                </div>
-
-
-                <div class="asset-grid">
-
-                    <div class="asset-row">
-                        <span>보유수량</span>
-                        ${number(asset.balance)}
-                    </div>
-
-
-                    <div class="asset-row">
-                        <span>매수단가</span>
-                        ${price(avgPrice)}
-                    </div>
-
-
-                    <div class="asset-row">
-                        <span>현재가</span>
-                        ${price(currentPrice)}
-                    </div>
-
-
-                    <div class="asset-row">
-                        <span>매수금액</span>
-                        ${money(buyAmount)}
-                    </div>
-
-
-                    <div class="asset-row">
-                        <span>평가금액</span>
-                        ${money(asset.evaluation_krw)}
-                    </div>
-
-
-                    <div class="asset-row">
-                        <span>수익률</span>
-
-                        <strong class="${profitClass}">
-                            ${profitRate(asset.profit_rate)}
-                        </strong>
-
-                    </div>
-
-
-                    <div class="asset-row">
-                        <span>수익금</span>
-
-                        <strong class="${profitClass} asset-profit">
-                            ${profitMoney(currentProfit)}
-                        </strong>
-
-                    </div>
-
-
-                    <div class="asset-row">
-                        <span>+10만원 목표가</span>
-                        ${price(target10Price)}
-                    </div>
-
-
-                    <div class="asset-row">
-                        <span>+20만원 목표가</span>
-                        ${price(target20Price)}
-                    </div>
-
-
-                    <div class="asset-row">
-                        <span>+30만원 목표가</span>
-                        ${price(target30Price)}
-                    </div>
-
-
-                    <!-- =======================================
-                         리스크 목표 달성 현황
-                         ======================================= -->
-
-                    <div
-                        class="asset-row"
-                        style="grid-column: span 2;"
-                    >
-
-                        <span>
-                            리스크 목표
-                        </span>
-
-                        <strong
-                            class="${profitClass} asset-risk"
-                        >
-
-                            1:1
-                            ${check1
-                                ? '<span class="target-check">✓</span>'
-                                : '<span>-</span>'
-                            }
-
-                            &nbsp;&nbsp;
-
-                            1:2
-                            ${check2
-                                ? '<span class="target-check">✓</span>'
-                                : '<span>-</span>'
-                            }
-
-                            &nbsp;&nbsp;
-
-                            1:3
-                            ${check3
-                                ? '<span class="target-check">✓</span>'
-                                : '<span>-</span>'
-                            }
-
-                            &nbsp;&nbsp;
-
-                            1:4
-                            ${check4
-                                ? '<span class="target-check">✓</span>'
-                                : '<span>-</span>'
-                            }
-
-                        </strong>
-
-                    </div>
-
-                </div>
-
-            </div>
-
-            `;
-        }
-    );
-
-
-    container.innerHTML = html;
-}
-
-
-// =========================================================
-// 손절폭별 진입금액
-// =========================================================
-
-function renderRiskTable(
-    monthStart,
-    maxLossRate
-) {
-
-    const table =
-        document.getElementById(
-            "risk-table"
-        );
-
-
-    const lossLimit =
-        monthStart *
-        maxLossRate;
-
-
-    // 다른 함수에서 현재 리스크 기준을
-    // 사용할 수 있도록 저장
-    window.riskLossLimit =
-        lossLimit;
-
-
-    let html = "";
-
-
-    for (
-        let stop = 1;
-        stop <= 10;
-        stop++
-    ) {
-
-        const entry =
-            lossLimit /
-            (stop / 100);
-
-
-        html += `
-
-        <tr>
-
-            <td>
-                ${stop}%
-            </td>
-
-            <td>
-                ${money(entry)}
-            </td>
-
-        </tr>
-
-        `;
-    }
-
-
-    table.innerHTML =
-        html;
-
-
-    // =====================================================
-    // 1:1 ~ 1:4 목표수익금
-    // =====================================================
-
-    document
-        .getElementById(
-            "profit-1x"
-        )
-        .textContent =
-        money(lossLimit);
-
-
-    document
-        .getElementById(
-            "profit-2x"
-        )
-        .textContent =
-        money(lossLimit * 2);
-
-
-    document
-        .getElementById(
-            "profit-3x"
-        )
-        .textContent =
-        money(lossLimit * 3);
-
-
-    document
-        .getElementById(
-            "profit-4x"
-        )
-        .textContent =
-        money(lossLimit * 4);
-
-
-    // =====================================================
-    // 목표금액이 변경되었으므로
-    // 보유코인 체크표시도 다시 계산
-    // =====================================================
-
-    if (
-        window.currentAssets
-    ) {
-
-        renderAssets(
-            window.currentAssets
-        );
-    }
-}
-
-
-// =========================================================
-// 데이터 조회
-// =========================================================
-
-async function loadData() {
-
-    try {
-
-        const response =
-            await fetch(
-                "/api/upbit-assets"
-            );
-
-
-        if (!response.ok) {
-
-            throw new Error(
-                "API error"
-            );
-        }
-
-
-        const data =
-            await response.json();
-
-
-        // =================================================
-        // 현재 총자산
-        // =================================================
-
-        const total =
-            Number(
-                data.total_krw || 0
-            );
-
-
-        window.currentTotal =
-            total;
-
-
-        // =================================================
-        // 월 시작금액
-        // =================================================
-
-        const monthStart =
-            Number(
-                data.month_start_amount || 0
-            );
-
-
-        // =================================================
-        // 현재 리스크 기준
-        // =================================================
-
-        window.riskLossLimit =
-            monthStart *
-            Number(
-                data.max_loss_rate || 0
-            );
-
-
-        // =================================================
-        // 월 수익금
-        // =================================================
-
-        const monthProfit =
-            total -
-            monthStart;
-
-
-        const monthReturn =
-            monthStart > 0
-                ? monthProfit /
-                  monthStart *
-                  100
-                : 0;
-
-
-        // =================================================
-        // 화면
-        // =================================================
-
-        document
-            .getElementById(
-                "month-start"
-            )
-            .textContent =
-            money(monthStart);
-
-
-        document
-            .getElementById(
-                "total"
-            )
-            .textContent =
-            money(total);
-
-
-        document
-            .getElementById(
-                "month-profit"
-            )
-            .textContent =
-            profitMoney(monthProfit);
-
-
-        document
-            .getElementById(
-                "month-return"
-            )
-            .textContent =
-            profitRate(monthReturn);
-
-
-        document
-            .getElementById(
-                "available"
-            )
-            .textContent =
-            money(
-                data.available_krw
-            );
-
-
-        document
-            .getElementById(
-                "loss-limit-top"
-            )
-            .textContent =
-            money(
-                data.max_loss_amount
-            );
-
-
-        document
-            .getElementById(
-                "month-start-note"
-            )
-            .textContent =
-            money(monthStart);
-
-
-        document
-            .getElementById(
-                "updated"
-            )
-            .textContent =
-            data.updated_at ||
-            "TradingView 신호 대기";
-
-
-        document
-            .getElementById(
-                "latest-order"
-            )
-            .textContent =
-            data.latest_order ||
-            "주문 없음";
-
-
-        // =================================================
-        // 오늘 시작금액 / 당일 수익금
-        // =================================================
-
-        updateTodayProfit(
-            total
-        );
-
-
-        // =================================================
-        // 보유자산 저장
-        // =================================================
-
-        window.currentAssets =
-            data.assets || [];
-
-
-        // =================================================
-        // 보유자산
-        // =================================================
-
-        renderAssets(
-            window.currentAssets
-        );
-
-
-        // =================================================
-        // 손절폭별 진입금액
-        // =================================================
-
-        renderRiskTable(
-            monthStart,
-            Number(
-                data.max_loss_rate || 0
-            )
-        );
-
-
-    } catch (error) {
-
-        console.error(
-            error
-        );
-    }
-}
-
-
-// =========================================================
-// 최초 실행
-// =========================================================
-
-loadTodayStartAmount();
-
-loadData();
-
-
-// =========================================================
-// 30초마다 갱신
-// =========================================================
-
-setInterval(
-    loadData,
-    30000
-);
-
-
-</script>
-
-</body>
-
-</html>
-""")
+    </html>
+    """
 
 
 # =========================================================
-# DB 생성
+# Scheduler
 # =========================================================
 
-init_db()
+def scheduler():
+
+    log.info(
+        "스케줄러 시작"
+    )
+
+    while True:
+
+        try:
+            schedule.run_pending()
+
+        except Exception as e:
+            log.exception(
+                f"스케줄러 오류: {e}"
+            )
+
+        time.sleep(1)
+
+
+# =========================================================
+# Startup
+# =========================================================
+
+@app.on_event("startup")
+def startup():
+
+    if USE_UPBIT not in ("Y", "N"):
+        raise ValueError(
+            "USE_UPBIT은 Y 또는 N만 가능합니다."
+        )
+
+    if USE_OKX not in ("Y", "N"):
+        raise ValueError(
+            "USE_OKX는 Y 또는 N만 가능합니다."
+        )
+
+    validate_timeframe()
+
+    timeframe_label = format_timeframe(
+        EMA_TIMEFRAME
+    )
+
+    okx_bar = get_okx_bar(
+        EMA_TIMEFRAME
+    )
+
+    log.info(
+        "========================================"
+    )
+
+    log.info(
+        f"{timeframe_label} EMA1 + ROC10 시작"
+    )
+
+    log.info(
+        f"업비트={USE_UPBIT} / "
+        f"OKX={USE_OKX}"
+    )
+
+    log.info(
+        f"TOP={TOP_N} / "
+        f"UPDATE={UPDATE_MINUTES}분"
+    )
+
+    log.info(
+        f"EMA={timeframe_label} / "
+        f"EMA30-60-120"
+    )
+
+    log.info(
+        f"EMA count <= {EMA1_MAX_COUNT}"
+    )
+
+    log.info(
+        "롱: 돌파 → 매수① → 진행②+"
+    )
+
+    log.info(
+        "숏: 숏① → 진행②+"
+    )
+
+    log.info(
+        f"롱 돌파 구간 = "
+        f"{ROC_NEAR_ZERO:.2f}% ~ 0%"
+    )
+
+    log.info(
+        f"돌파 TOP = "
+        f"{ROC_FOCUS_TOP}개"
+    )
+
+    log.info(
+        f"OKX bar={okx_bar}"
+    )
+
+    log.info(
+        f"표시용 HIGH EMA="
+        f"{format_timeframe(EMA_HIGH_TIMEFRAME)}"
+    )
+
+    log.info(
+        "========================================"
+    )
+
+    threading.Thread(
+        target=update_dashboard,
+        daemon=True
+    ).start()
+
+    schedule.every(
+        UPDATE_MINUTES
+    ).minutes.do(
+        update_dashboard
+    )
+
+    threading.Thread(
+        target=scheduler,
+        daemon=True
+    ).start()
 
 
 # =========================================================
@@ -4530,8 +4553,6 @@ init_db()
 # =========================================================
 
 if __name__ == "__main__":
-
-    import uvicorn
 
     uvicorn.run(
         app,
