@@ -1033,16 +1033,6 @@ def get_okx_volume_cached(
     usdt
 ):
 
-    """
-    거래대금 계산 방식은 기존과 동일.
-
-    최근 확정 1H VOLUME_HOURS개
-    volCcyQuote 합계
-    × USDT/KRW
-    """
-
-    global okx_1h_cache
-
     df = get_okx_ohlcv(
         inst,
         "1H",
@@ -1468,10 +1458,6 @@ def roc_analysis(
             False
         )
 
-        # =================================================
-        # 돌파
-        # =================================================
-
         long_cross = (
             previous <= 0
             and current_value > 0
@@ -1481,10 +1467,6 @@ def roc_analysis(
             previous >= 0
             and current_value < 0
         )
-
-        # =================================================
-        # 눌림
-        # =================================================
 
         long_pullback = (
             previous > 0
@@ -2640,6 +2622,356 @@ def update_dashboard():
 
 
 # =========================================================
+# BTC / ETH 시황
+# =========================================================
+
+def market_direction_html(
+    direction,
+    count
+):
+
+    try:
+        count = int(count)
+    except Exception:
+        count = 0
+
+    if direction == "long":
+
+        return (
+            '<span class="market-up">'
+            f'🟢 {count}'
+            '</span>'
+        )
+
+    if direction == "short":
+
+        return (
+            '<span class="market-down">'
+            f'🔴 {count}'
+            '</span>'
+        )
+
+    return (
+        '<span class="market-zero">'
+        '⚪ 0'
+        '</span>'
+    )
+
+
+def market_roc_html(r):
+
+    if not r:
+
+        return (
+            '<span class="market-zero">'
+            '⚪ -'
+            '</span>'
+        )
+
+    value = r.get(
+        "roc10"
+    )
+
+    if value is None:
+
+        return (
+            '<span class="market-zero">'
+            '⚪ -'
+            '</span>'
+        )
+
+    try:
+
+        value = float(value)
+
+    except Exception:
+
+        return (
+            '<span class="market-zero">'
+            '⚪ -'
+            '</span>'
+        )
+
+    if value > 0:
+
+        count = max(
+            int(
+                r.get(
+                    "roc10_count",
+                    0
+                )
+            ),
+            1
+        )
+
+        return (
+            '<span class="market-up">'
+            f'🟢 상승 {count}'
+            '</span>'
+        )
+
+    if value < 0:
+
+        count = max(
+            int(
+                r.get(
+                    "roc10_negative_count",
+                    0
+                )
+            ),
+            1
+        )
+
+        return (
+            '<span class="market-down">'
+            f'🔴 하락 {count}'
+            '</span>'
+        )
+
+    return (
+        '<span class="market-zero">'
+        '⚪ 0'
+        '</span>'
+    )
+
+
+def format_market_price(price):
+
+    if price is None:
+        return "-"
+
+    try:
+
+        price = float(price)
+
+    except Exception:
+
+        return "-"
+
+    if price >= 100000000:
+
+        return f"{price / 100000000:.2f}억"
+
+    if price >= 10000:
+
+        return f"{price:,.0f}"
+
+    if price >= 1:
+
+        return f"{price:,.2f}"
+
+    return f"{price:.6f}"
+
+
+def market_change_html(value):
+
+    if value is None:
+
+        return (
+            '<span class="market-zero">'
+            '-'
+            '</span>'
+        )
+
+    try:
+
+        value = float(value)
+
+    except Exception:
+
+        return (
+            '<span class="market-zero">'
+            '-'
+            '</span>'
+        )
+
+    if value > 0:
+
+        return (
+            '<span class="market-up">'
+            f'▲+{value:.1f}%'
+            '</span>'
+        )
+
+    if value < 0:
+
+        return (
+            '<span class="market-down">'
+            f'▼{value:.1f}%'
+            '</span>'
+        )
+
+    return (
+        '<span class="market-zero">'
+        '0.0%'
+        '</span>'
+    )
+
+
+def get_market_row(
+    coin
+):
+
+    for row in latest_upbit_data:
+
+        if (
+            row.get("name")
+            == coin
+        ):
+
+            return row
+
+    return None
+
+
+def market_summary_html():
+
+    btc = get_market_row(
+        "BTC"
+    )
+
+    eth = get_market_row(
+        "ETH"
+    )
+
+    def make_market_line(
+        symbol,
+        icon,
+        row
+    ):
+
+        if row is None:
+
+            return f"""
+            <div class="market-line">
+
+                <span class="market-name">
+                    {icon} {symbol}
+                </span>
+
+                <span class="market-price">
+                    -
+                </span>
+
+                <span class="market-change">
+                    -
+                </span>
+
+                <span class="market-tf">
+                    1H ⚪ 0
+                </span>
+
+                <span class="market-tf">
+                    4H ⚪ 0
+                </span>
+
+                <span class="market-roc">
+                    ROC ⚪ -
+                </span>
+
+            </div>
+            """
+
+        ema_1h = row.get(
+            "ema_1h",
+            {}
+        )
+
+        ema_high = row.get(
+            "ema_high",
+            {}
+        )
+
+        roc_data = row.get(
+            "roc",
+            {}
+        )
+
+        return f"""
+        <div class="market-line">
+
+            <span class="market-name">
+                {icon} {symbol}
+            </span>
+
+            <span class="market-price">
+                {format_market_price(
+                    row.get(
+                        "current_price"
+                    )
+                )}
+            </span>
+
+            <span class="market-change">
+                {market_change_html(
+                    row.get(
+                        "change_value"
+                    )
+                )}
+            </span>
+
+            <span class="market-tf">
+                1H
+                {market_direction_html(
+                    ema_1h.get(
+                        "direction",
+                        "none"
+                    ),
+                    ema_1h.get(
+                        "count",
+                        0
+                    )
+                )}
+            </span>
+
+            <span class="market-tf">
+                4H
+                {market_direction_html(
+                    ema_high.get(
+                        "direction",
+                        "none"
+                    ),
+                    ema_high.get(
+                        "count",
+                        0
+                    )
+                )}
+            </span>
+
+            <span class="market-roc">
+                ROC
+                {market_roc_html(
+                    roc_data
+                )}
+            </span>
+
+        </div>
+        """
+
+    return f"""
+    <div class="market-summary">
+
+        <div class="market-title">
+            시장 시황
+        </div>
+
+        {make_market_line(
+            "BTC",
+            "₿",
+            btc
+        )}
+
+        {make_market_line(
+            "ETH",
+            "Ξ",
+            eth
+        )}
+
+    </div>
+    """
+
+
+# =========================================================
 # ROC HTML
 # =========================================================
 
@@ -2683,10 +3015,6 @@ def roc_html(r):
             '</div>'
         )
 
-    # =====================================================
-    # ROC10 양수 → 상승 카운팅
-    # =====================================================
-
     if value > 0:
 
         count = int(
@@ -2709,10 +3037,6 @@ def roc_html(r):
         </div>
         """
 
-    # =====================================================
-    # ROC10 음수 → 하락 카운팅
-    # =====================================================
-
     if value < 0:
 
         count = int(
@@ -2734,10 +3058,6 @@ def roc_html(r):
             </span>
         </div>
         """
-
-    # =====================================================
-    # ROC10 = 0
-    # =====================================================
 
     return """
     <div class="roc-cell">
@@ -3147,6 +3467,155 @@ h1{
     line-height:14px;
 }
 
+
+/* =====================================================
+   BTC / ETH 시황
+   ===================================================== */
+
+.market-summary{
+
+    width:100%;
+
+    margin:
+        2px
+        0
+        3px;
+
+    padding:
+        3px
+        4px;
+
+    border-top:
+        1px solid
+        #242a31;
+
+    border-bottom:
+        1px solid
+        #242a31;
+
+    background:#101419;
+
+}
+
+.market-title{
+
+    color:#7f8791;
+
+    font-size:5px;
+
+    line-height:7px;
+
+    font-weight:800;
+
+    margin-bottom:2px;
+
+}
+
+.market-line{
+
+    display:flex;
+
+    align-items:center;
+
+    width:100%;
+
+    min-height:15px;
+
+    gap:4px;
+
+    white-space:nowrap;
+
+    overflow:hidden;
+
+}
+
+.market-name{
+
+    width:32px;
+
+    flex:none;
+
+    font-size:6.5px;
+
+    font-weight:900;
+
+}
+
+.market-price{
+
+    width:70px;
+
+    flex:none;
+
+    color:#e8edf2;
+
+    font-size:6px;
+
+    font-weight:800;
+
+    text-align:right;
+
+}
+
+.market-change{
+
+    width:43px;
+
+    flex:none;
+
+    font-size:5.8px;
+
+    font-weight:800;
+
+    text-align:right;
+
+}
+
+.market-tf{
+
+    flex:none;
+
+    font-size:5.5px;
+
+    font-weight:700;
+
+}
+
+.market-roc{
+
+    flex:none;
+
+    font-size:5.5px;
+
+    font-weight:700;
+
+}
+
+.market-up{
+
+    color:#39e875!important;
+
+    font-weight:900;
+
+}
+
+.market-down{
+
+    color:#ff5555!important;
+
+    font-weight:900;
+
+}
+
+.market-zero{
+
+    color:#68717b!important;
+
+    font-weight:800;
+
+}
+
+
 h2{
     margin:
         5px
@@ -3492,6 +3961,7 @@ td:nth-child(1){
     color:#ff6666;
 }
 
+
 @media(max-width:380px){
 
     body{
@@ -3504,6 +3974,34 @@ td:nth-child(1){
     h1{
         font-size:11px;
         line-height:13px;
+    }
+
+    .market-line{
+        gap:3px;
+    }
+
+    .market-name{
+        width:29px;
+        font-size:6px;
+    }
+
+    .market-price{
+        width:63px;
+        font-size:5.5px;
+    }
+
+    .market-change{
+        width:39px;
+        font-size:5.2px;
+    }
+
+    .market-tf,
+    .market-roc{
+        font-size:4.9px;
+    }
+
+    .market-title{
+        font-size:4.5px;
     }
 
     h2{
@@ -3560,6 +4058,7 @@ td:nth-child(1){
     }
 }
 
+
 @media(min-width:601px){
 
     body{
@@ -3572,6 +4071,30 @@ td:nth-child(1){
     h1{
         font-size:15px;
         line-height:20px;
+    }
+
+    .market-name{
+        width:42px;
+        font-size:8px;
+    }
+
+    .market-price{
+        width:100px;
+        font-size:8px;
+    }
+
+    .market-change{
+        width:55px;
+        font-size:7px;
+    }
+
+    .market-tf,
+    .market-roc{
+        font-size:7px;
+    }
+
+    .market-title{
+        font-size:6px;
     }
 
     h2{
@@ -3836,6 +4359,8 @@ def dashboard():
             📊 TRADING SIGNAL CENTER
         </h1>
 
+        {market_summary_html()}
+
         {status}
 
         {sections}
@@ -3962,6 +4487,11 @@ def startup():
     log.info(
         "OKX 최적화: 전체 ticker 1회 + "
         "1H 거래대금 데이터 캐시"
+    )
+
+    log.info(
+        "BTC / ETH 시황: "
+        "기존 Upbit TOP 데이터 재활용"
     )
 
     log.info(
