@@ -3591,7 +3591,7 @@ def dashboard():
 
         sections += focus_section(
 
-            "🚀 돌파",
+            "🚀 돌파 양봉에서 발생",
 
             latest_upbit_data,
 
@@ -3610,7 +3610,7 @@ def dashboard():
 
         sections += focus_section(
 
-            "🟡 눌림",
+            "🟡 눌림 음봉에서 발생",
 
             latest_upbit_data,
 
@@ -3636,7 +3636,7 @@ def dashboard():
 
         sections += focus_section(
 
-            "🚀 돌파",
+            "🚀 돌파 양봉에서 발생",
 
             latest_okx_data,
 
@@ -3655,7 +3655,7 @@ def dashboard():
 
         sections += focus_section(
 
-            "🟡 눌림",
+            "🟡 눌림 음보메서 발상",
 
             latest_okx_data,
 
