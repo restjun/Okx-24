@@ -1,8 +1,22 @@
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
-import schedule, time, requests, threading, uvicorn, logging, pandas as pd, warnings
+
+import schedule
+import time
+import requests
+import threading
+import uvicorn
+import logging
+import pandas as pd
+import warnings
+
 from datetime import datetime
 from zoneinfo import ZoneInfo
+
+
+# =========================================================
+# 기본 설정
+# =========================================================
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
@@ -36,23 +50,42 @@ MAX_RETRIES = 10
 
 KST = ZoneInfo("Asia/Seoul")
 
+
+# =========================================================
+# 시간봉
+# =========================================================
+
 EMA_TIMEFRAME = 60
 EMA_HIGH_TIMEFRAME = 240
 
 EMA1_FAST = 30
 EMA1_MID = 60
 EMA1_SLOW = 120
+
 EMA1_MAX_COUNT = 100
 
 ROC_PERIOD = 10
 
+
 SUPPORTED_UPBIT_TIMEFRAMES = {
-    5, 15, 30, 60, 240
+    5,
+    15,
+    30,
+    60,
+    240
 }
 
 SUPPORTED_OKX_TIMEFRAMES = {
-    5, 15, 30, 60, 120, 240,
-    360, 480, 720, 1440
+    5,
+    15,
+    30,
+    60,
+    120,
+    240,
+    360,
+    480,
+    720,
+    1440
 }
 
 
@@ -69,6 +102,7 @@ latest_upbit_update_time = "-"
 latest_okx_update_time = "-"
 
 latest_upbit_markets = []
+
 
 request_lock = threading.Lock()
 update_lock = threading.Lock()
@@ -130,15 +164,20 @@ def get_okx_bar_minutes(bar):
     }.get(str(bar))
 
 
+# =========================================================
+# 현재 캔들 시작 시간
+# =========================================================
+
 def get_current_candle_start(minutes):
     """
-    KST 기준 시간봉 경계.
+    한국시간 기준 시간봉 경계.
 
     60분봉
-    00 / 01 / 02 ... 매시 정각
+    00:00 / 01:00 / 02:00 ...
 
     240분봉
-    00 / 04 / 08 / 12 / 16 / 20시
+    00:00 / 04:00 / 08:00 /
+    12:00 / 16:00 / 20:00
     """
 
     minutes = int(minutes)
@@ -171,32 +210,45 @@ def get_current_candle_start(minutes):
     )
 
 
+# =========================================================
+# 시간봉 검증
+# =========================================================
+
 def validate_timeframe():
+
     global EMA_TIMEFRAME
 
     try:
         EMA_TIMEFRAME = int(
             EMA_TIMEFRAME
         )
+
     except Exception:
         raise ValueError(
             "EMA_TIMEFRAME은 숫자여야 합니다."
         )
 
     if EMA_TIMEFRAME not in SUPPORTED_UPBIT_TIMEFRAMES:
+
         raise ValueError(
             f"EMA_TIMEFRAME 오류: {EMA_TIMEFRAME}\n"
             "Upbit 지원값: 5, 15, 30, 60, 240"
         )
 
     if get_okx_bar(EMA_TIMEFRAME) is None:
+
         raise ValueError(
             f"OKX에서 지원하지 않는 시간봉: "
             f"{EMA_TIMEFRAME}"
         )
 
 
+# =========================================================
+# API 요청 제어
+# =========================================================
+
 def wait_request():
+
     global last_request_time
 
     with request_lock:
@@ -207,6 +259,7 @@ def wait_request():
         )
 
         if gap < REQUEST_INTERVAL:
+
             time.sleep(
                 REQUEST_INTERVAL - gap
             )
@@ -245,12 +298,14 @@ def retry(func, *args, **kwargs):
                 return r
 
             if r.status_code == 429:
+
                 wait = min(
                     RATE_LIMIT_WAIT * 2 ** n,
                     60
                 )
 
             elif r.status_code >= 500:
+
                 wait = min(
                     2 * 2 ** n,
                     30
@@ -259,7 +314,8 @@ def retry(func, *args, **kwargs):
             else:
 
                 log.warning(
-                    f"[HTTP {r.status_code}] {url}"
+                    f"[HTTP {r.status_code}] "
+                    f"{url}"
                 )
 
                 return r
@@ -393,6 +449,10 @@ def get_usdt_krw():
         return None
 
 
+# =========================================================
+# Upbit 캔들
+# =========================================================
+
 def get_upbit_candle(
     market,
     unit,
@@ -403,21 +463,24 @@ def get_upbit_candle(
 
     unit = int(unit)
 
-    params = {
-        "market": market,
-        "count": min(
-            max(int(count), 1),
-            200
-        )
-    }
-
-    if to:
-        params["to"] = to
-
     r = retry(
         requests.get,
         f"https://api.upbit.com/v1/candles/minutes/{unit}",
-        params=params,
+        params={
+            "market": market,
+            "count": min(
+                max(
+                    int(count),
+                    1
+                ),
+                200
+            ),
+            **(
+                {"to": to}
+                if to
+                else {}
+            )
+        },
         timeout=15
     )
 
@@ -492,8 +555,12 @@ def get_upbit_candle(
         return (
             df
             .sort_values("datetime")
-            .drop_duplicates("datetime")
-            .reset_index(drop=True)
+            .drop_duplicates(
+                "datetime"
+            )
+            .reset_index(
+                drop=True
+            )
         )
 
     except Exception as e:
@@ -543,16 +610,24 @@ def history_upbit(
 
         all_df = (
             all_df
-            .drop_duplicates("datetime")
-            .sort_values("datetime")
-            .reset_index(drop=True)
+            .drop_duplicates(
+                "datetime"
+            )
+            .sort_values(
+                "datetime"
+            )
+            .reset_index(
+                drop=True
+            )
         )
 
         if len(all_df) >= required:
             return all_df
 
         to = (
-            all_df.datetime.iloc[0]
+            all_df
+            .datetime
+            .iloc[0]
             .strftime(
                 "%Y-%m-%dT%H:%M:%S"
             )
@@ -611,7 +686,9 @@ def get_upbit_current_roc_data(
             df = pd.concat(
                 [
                     df,
-                    pd.DataFrame([row])
+                    pd.DataFrame(
+                        [row]
+                    )
                 ],
                 ignore_index=True
             )
@@ -619,8 +696,12 @@ def get_upbit_current_roc_data(
         return (
             df
             .sort_values("datetime")
-            .drop_duplicates("datetime")
-            .reset_index(drop=True)
+            .drop_duplicates(
+                "datetime"
+            )
+            .reset_index(
+                drop=True
+            )
         )
 
     except Exception as e:
@@ -649,7 +730,10 @@ def get_okx_ohlcv(
         "instId": inst,
         "bar": bar,
         "limit": min(
-            max(int(limit), 1),
+            max(
+                int(limit),
+                1
+            ),
             200
         )
     }
@@ -730,7 +814,9 @@ def get_okx_ohlcv(
         if not include_current:
 
             minutes = (
-                get_okx_bar_minutes(bar)
+                get_okx_bar_minutes(
+                    bar
+                )
             )
 
             if minutes:
@@ -833,7 +919,9 @@ def get_okx_current_price(inst):
     try:
 
         price = float(
-            r.json()["data"][0]["last"]
+            r.json()
+            ["data"][0]
+            ["last"]
         )
 
         return (
@@ -943,6 +1031,7 @@ def ema(df, period):
 def ema_alignment_count(df):
 
     if df is None or df.empty:
+
         return {
             "direction": "none",
             "count": 0
@@ -1006,6 +1095,7 @@ def ema_alignment_count(df):
 
             if get_dir(i) == current:
                 count += 1
+
             else:
                 break
 
@@ -1125,13 +1215,18 @@ def roc_analysis(
 ):
 
     result = {
+
         "roc10": None,
         "roc10_previous": None,
+
         "roc10_count": 0,
         "roc10_negative_count": 0,
+
         "long_candidate": False,
         "short_candidate": False,
+
         "state": "none",
+
         "display": "-"
     }
 
@@ -1173,18 +1268,14 @@ def roc_analysis(
         ):
             return result
 
-        positive_count = (
-            roc_count(
-                current,
-                True
-            )
+        positive_count = roc_count(
+            current,
+            True
         )
 
-        negative_count = (
-            roc_count(
-                current,
-                False
-            )
+        negative_count = roc_count(
+            current,
+            False
         )
 
         long_cross = (
@@ -1219,7 +1310,9 @@ def roc_analysis(
         if long_cross:
 
             result.update({
+
                 "state": "long",
+
                 "display":
                     "🟢 매수 ①"
             })
@@ -1227,7 +1320,9 @@ def roc_analysis(
         elif short_cross:
 
             result.update({
+
                 "state": "short",
+
                 "display":
                     "🔴 숏 ①"
             })
@@ -1238,7 +1333,9 @@ def roc_analysis(
         ):
 
             result.update({
+
                 "state": "progress",
+
                 "display":
                     f"🚀 진행 {positive_count}"
             })
@@ -1249,6 +1346,7 @@ def roc_analysis(
         ):
 
             result.update({
+
                 "state":
                     "short_progress",
 
@@ -1271,7 +1369,9 @@ def roc_analysis(
 # 등락률
 # =========================================================
 
-def daily_change_upbit(market):
+def daily_change_upbit(
+    market
+):
 
     r = retry(
         requests.get,
@@ -1335,15 +1435,13 @@ def daily_changes(df):
             errors="coerce"
         )
 
-        x = (
-            x
-            .dropna(
-                subset=[
-                    "datetime",
-                    "c"
-                ]
-            )
-            .set_index("datetime")
+        x = x.dropna(
+            subset=[
+                "datetime",
+                "c"
+            ]
+        ).set_index(
+            "datetime"
         )
 
         daily = (
@@ -1413,7 +1511,7 @@ def format_change(x):
 
         return (
             '<span class="up">'
-            f'▲ +{x:.2f}%'
+            f'▲+{x:.1f}%'
             '</span>'
         )
 
@@ -1421,13 +1519,13 @@ def format_change(x):
 
         return (
             '<span class="down">'
-            f'▼ {x:.2f}%'
+            f'▼{x:.1f}%'
             '</span>'
         )
 
     return (
         '<span class="zero">'
-        '0.00%'
+        '0.0%'
         '</span>'
     )
 
@@ -1436,23 +1534,18 @@ def format_volume(v):
 
     try:
         v = float(v)
+
     except Exception:
         return "-"
 
     if v >= 1e12:
-        return (
-            f"{v / 1e12:.2f}조"
-        )
+        return f"{v / 1e12:.1f}조"
 
     if v >= 1e8:
-        return (
-            f"{v / 1e8:.0f}억"
-        )
+        return f"{v / 1e8:.0f}억"
 
     if v >= 1e4:
-        return (
-            f"{v / 1e4:.0f}만"
-        )
+        return f"{v / 1e4:.0f}만"
 
     return f"{v:,.0f}"
 
@@ -1477,13 +1570,21 @@ def empty_analysis():
         "ema_high": e.copy(),
 
         "roc": {
+
             "roc10": None,
+
             "roc10_previous": None,
+
             "roc10_count": 0,
+
             "roc10_negative_count": 0,
+
             "long_candidate": False,
+
             "short_candidate": False,
+
             "state": "none",
+
             "display": "-"
         },
 
@@ -1518,29 +1619,23 @@ def analyze(
         if not bar:
             return None
 
-        df_confirmed = (
-            history_okx(
-                market,
-                bar
+        df_confirmed = history_okx(
+            market,
+            bar
+        )
+
+        df_high = history_okx(
+            market,
+            get_okx_bar(
+                EMA_HIGH_TIMEFRAME
             )
         )
 
-        df_high = (
-            history_okx(
-                market,
-                get_okx_bar(
-                    EMA_HIGH_TIMEFRAME
-                )
-            )
-        )
-
-        df_current = (
-            get_okx_ohlcv(
-                market,
-                bar,
-                200,
-                include_current=True
-            )
+        df_current = get_okx_ohlcv(
+            market,
+            bar,
+            200,
+            include_current=True
         )
 
         if (
@@ -1575,18 +1670,14 @@ def analyze(
 
     else:
 
-        df_confirmed = (
-            history_upbit(
-                market,
-                EMA_TIMEFRAME
-            )
+        df_confirmed = history_upbit(
+            market,
+            EMA_TIMEFRAME
         )
 
-        df_high = (
-            history_upbit(
-                market,
-                EMA_HIGH_TIMEFRAME
-            )
+        df_high = history_upbit(
+            market,
+            EMA_HIGH_TIMEFRAME
         )
 
         df_current = (
@@ -1596,10 +1687,8 @@ def analyze(
             )
         )
 
-        changes = (
-            daily_change_upbit(
-                market
-            )
+        changes = daily_change_upbit(
+            market
         )
 
     if (
@@ -1626,40 +1715,49 @@ def analyze(
     base = (
         e1["direction"]
         in ("long", "short")
-        and e1["count"]
+        and
+        e1["count"]
         <= EMA1_MAX_COUNT
     )
 
     long_qualified = (
         base
-        and e1["direction"]
-        == "long"
-        and r["long_candidate"]
+        and
+        e1["direction"] == "long"
+        and
+        r["long_candidate"]
     )
 
     short_qualified = (
         base
-        and e1["direction"]
-        == "short"
-        and r["short_candidate"]
+        and
+        e1["direction"] == "short"
+        and
+        r["short_candidate"]
     )
 
     progress_qualified = (
         base
-        and e1["direction"]
-        == "long"
-        and r["roc10"] is not None
-        and r["roc10"] > 0
-        and r["roc10_count"] >= 2
+        and
+        e1["direction"] == "long"
+        and
+        r["roc10"] is not None
+        and
+        r["roc10"] > 0
+        and
+        r["roc10_count"] >= 2
     )
 
     short_progress_qualified = (
         base
-        and e1["direction"]
-        == "short"
-        and r["roc10"] is not None
-        and r["roc10"] < 0
-        and r["roc10_negative_count"] >= 2
+        and
+        e1["direction"] == "short"
+        and
+        r["roc10"] is not None
+        and
+        r["roc10"] < 0
+        and
+        r["roc10_negative_count"] >= 2
     )
 
     return {
@@ -1692,6 +1790,10 @@ def analyze(
     }
 
 
+# =========================================================
+# 행
+# =========================================================
+
 def make_row(
     rank,
     name,
@@ -1722,7 +1824,9 @@ def make_row(
             ),
 
         "volume":
-            format_volume(volume),
+            format_volume(
+                volume
+            ),
 
         "current_price":
             current_price,
@@ -1746,7 +1850,9 @@ def make_row(
             a["progress_qualified"],
 
         "short_progress_qualified":
-            a["short_progress_qualified"],
+            a[
+                "short_progress_qualified"
+            ],
 
         "direction":
             a["direction_1h"]
@@ -1758,32 +1864,40 @@ def make_row(
 # =========================================================
 
 def is_buy(row):
+
     return bool(
-        row and row.get(
+        row
+        and row.get(
             "qualified"
         )
     )
 
 
 def is_short(row):
+
     return bool(
-        row and row.get(
+        row
+        and row.get(
             "short_qualified"
         )
     )
 
 
 def is_progress(row):
+
     return bool(
-        row and row.get(
+        row
+        and row.get(
             "progress_qualified"
         )
     )
 
 
 def is_short_progress(row):
+
     return bool(
-        row and row.get(
+        row
+        and row.get(
             "short_progress_qualified"
         )
     )
@@ -1799,8 +1913,7 @@ def update_upbit():
     global latest_upbit_update_time
 
     log.info(
-        f"========== "
-        f"업비트 TOP{TOP_N} =========="
+        f"========== 업비트 TOP{TOP_N} =========="
     )
 
     markets = sorted(
@@ -1856,16 +1969,12 @@ def update_upbit():
 
     latest_upbit_data = rows
 
-    latest_upbit_update_time = (
-        kst()
-    )
+    latest_upbit_update_time = kst()
 
     log.info(
         f"업비트 완료 / "
-        f"매수 "
-        f"{sum(is_buy(x) for x in rows)}개 / "
-        f"진행 "
-        f"{sum(is_progress(x) for x in rows)}개"
+        f"매수 {sum(is_buy(x) for x in rows)}개 / "
+        f"진행 {sum(is_progress(x) for x in rows)}개"
     )
 
 
@@ -1904,6 +2013,7 @@ def update_okx(usdt):
         )
 
         if v and v > 0:
+
             volumes[symbol] = v
 
     top = sorted(
@@ -1966,20 +2076,14 @@ def update_okx(usdt):
 
     latest_okx_data = rows
 
-    latest_okx_update_time = (
-        kst()
-    )
+    latest_okx_update_time = kst()
 
     log.info(
         f"OKX 완료 / "
-        f"매수 "
-        f"{sum(is_buy(x) for x in rows)}개 / "
-        f"진행 "
-        f"{sum(is_progress(x) for x in rows)}개 / "
-        f"숏 "
-        f"{sum(is_short(x) for x in rows)}개 / "
-        f"숏진행 "
-        f"{sum(is_short_progress(x) for x in rows)}개"
+        f"매수 {sum(is_buy(x) for x in rows)}개 / "
+        f"진행 {sum(is_progress(x) for x in rows)}개 / "
+        f"숏 {sum(is_short(x) for x in rows)}개 / "
+        f"숏진행 {sum(is_short_progress(x) for x in rows)}개"
     )
 
     return True
@@ -2006,13 +2110,14 @@ def update_dashboard():
     try:
 
         log.info(
-            f"========== "
-            f"전체 조회 {kst()} =========="
+            f"========== 전체 조회 "
+            f"{kst()} =========="
         )
 
         if USE_UPBIT == "Y":
 
             try:
+
                 update_upbit()
 
             except Exception as e:
@@ -2032,12 +2137,18 @@ def update_dashboard():
                 usdt = get_usdt_krw()
 
                 if usdt:
+
                     latest_usdt_krw = usdt
+
                 else:
+
                     usdt = latest_usdt_krw
 
                 if usdt > 0:
-                    update_okx(usdt)
+
+                    update_okx(
+                        usdt
+                    )
 
             except Exception as e:
 
@@ -2064,7 +2175,6 @@ def roc_html(r):
 
         return (
             '<div class="roc-cell">'
-            '<b>ROC10(0)</b>'
             '<span>-</span>'
             '</div>'
         )
@@ -2084,45 +2194,55 @@ def roc_html(r):
 
         return (
             '<div class="roc-cell">'
-            '<b>ROC10(0)</b>'
             '<span>-</span>'
             '</div>'
         )
 
     count = (
+
         r.get(
             "roc10_count",
             0
         )
+
         if value > 0
+
         else
+
         r.get(
             "roc10_negative_count",
             0
         )
+
         if value < 0
+
         else 0
     )
 
     cls = (
+
         "roc-positive"
         if value > 0
+
         else
+
         "roc-negative"
         if value < 0
+
         else
+
         "roc-zero"
     )
 
     cross = (
 
-        '<i class="up">↑0</i>'
+        '<i class="up">↑</i>'
 
         if previous <= 0 < value
 
         else
 
-        '<i class="down">↓0</i>'
+        '<i class="down">↓</i>'
 
         if previous >= 0 > value
 
@@ -2133,9 +2253,9 @@ def roc_html(r):
 
     return f"""
     <div class="roc-cell">
-        <b>ROC10({count})</b>
+        <b>R{count}</b>
         <span class="{cls}">
-            {value:+.3f}% {cross}
+            {value:+.1f}%{cross}
         </span>
     </div>
     """
@@ -2151,7 +2271,7 @@ def signal_html(row):
 
         return (
             '<b class="buy">'
-            '🟢 매수 ①'
+            '🟢매수①'
             '</b>'
         )
 
@@ -2159,16 +2279,16 @@ def signal_html(row):
         "progress_qualified"
     ):
 
-        count = (
-            row["roc"].get(
-                "roc10_count",
-                0
-            )
+        count = row[
+            "roc"
+        ].get(
+            "roc10_count",
+            0
         )
 
         return (
             f'<b class="progress">'
-            f'🚀 진행 {count}'
+            f'🚀진행{count}'
             f'</b>'
         )
 
@@ -2178,7 +2298,7 @@ def signal_html(row):
 
         return (
             '<b class="short">'
-            '🔴 숏 ①'
+            '🔴숏①'
             '</b>'
         )
 
@@ -2186,16 +2306,16 @@ def signal_html(row):
         "short_progress_qualified"
     ):
 
-        count = (
-            row["roc"].get(
-                "roc10_negative_count",
-                0
-            )
+        count = row[
+            "roc"
+        ].get(
+            "roc10_negative_count",
+            0
         )
 
         return (
             f'<b class="short-progress">'
-            f'📉 진행 {count}'
+            f'📉진행{count}'
             f'</b>'
         )
 
@@ -2232,7 +2352,7 @@ def ema_html(e):
     )
 
     return (
-        f"{icon}({count})"
+        f"{icon}{count}"
     )
 
 
@@ -2264,7 +2384,7 @@ def row_class(x):
 
 
 # =========================================================
-# PC 테이블
+# 행 HTML
 # =========================================================
 
 def rows_html(
@@ -2277,35 +2397,43 @@ def rows_html(
     for x in data:
 
         if focus == "buy":
+
             cls = "qualified"
 
         elif focus == "progress":
+
             cls = "progress-qualified"
 
         elif focus == "short":
+
             cls = "short-qualified"
 
         elif focus == "short_progress":
+
             cls = "short-progress-qualified"
 
         else:
+
             cls = row_class(x)
 
         out.append(
             f"""
             <tr class="{cls}">
 
-                <td class="rank">
+                <td>
                     {x.get("rank", "-")}
                 </td>
 
                 <td class="coin">
+
                     <b>
                         {x.get("name", "-")}
                     </b>
+
                     <small>
                         {x.get("change", "-")}
                     </small>
+
                 </td>
 
                 <td class="vol">
@@ -2314,31 +2442,36 @@ def rows_html(
 
                 <td class="ema">
 
-                    <small>EMA</small>
-
-                    <div>
+                    <span>
                         {format_timeframe(
                             EMA_TIMEFRAME
                         )}
                         {ema_html(
                             x.get("ema_1h")
                         )}
-                    </div>
+                    </span>
 
-                    <div>
+                    <span class="ema-sep">
+                        /
+                    </span>
+
+                    <span>
                         {format_timeframe(
                             EMA_HIGH_TIMEFRAME
                         )}
                         {ema_html(
                             x.get("ema_high")
                         )}
-                    </div>
+                    </span>
 
                 </td>
 
                 <td>
                     {roc_html(
-                        x.get("roc", {})
+                        x.get(
+                            "roc",
+                            {}
+                        )
                     )}
                 </td>
 
@@ -2352,6 +2485,10 @@ def rows_html(
 
     return "".join(out)
 
+
+# =========================================================
+# 테이블
+# =========================================================
 
 def table_html(
     data,
@@ -2367,8 +2504,10 @@ def table_html(
 
         rows = """
         <tr>
-            <td colspan="6"
-                class="empty">
+            <td
+                colspan="6"
+                class="empty"
+            >
                 현재 후보 없음
             </td>
         </tr>
@@ -2380,14 +2519,18 @@ def table_html(
         <table>
 
             <thead>
+
                 <tr>
+
                     <th>#</th>
                     <th>코인</th>
                     <th>거래대금</th>
                     <th>EMA</th>
                     <th>ROC10</th>
                     <th>신호</th>
+
                 </tr>
+
             </thead>
 
             <tbody>
@@ -2401,226 +2544,7 @@ def table_html(
 
 
 # =========================================================
-# 모바일 카드
-# =========================================================
-
-def mobile_card_html(
-    x,
-    focus=None
-):
-
-    if focus == "buy":
-        cls = "mobile-buy"
-
-    elif focus == "progress":
-        cls = "mobile-progress"
-
-    elif focus == "short":
-        cls = "mobile-short"
-
-    elif focus == "short_progress":
-        cls = "mobile-short-progress"
-
-    else:
-        cls = row_class(x)
-
-    ema1 = x.get(
-        "ema_1h",
-        {}
-    )
-
-    ema_high = x.get(
-        "ema_high",
-        {}
-    )
-
-    roc_data = x.get(
-        "roc",
-        {}
-    )
-
-    roc_value = roc_data.get(
-        "roc10"
-    )
-
-    roc_count_value = (
-        roc_data.get(
-            "roc10_count",
-            0
-        )
-        if roc_value is not None
-        and roc_value > 0
-        else
-        roc_data.get(
-            "roc10_negative_count",
-            0
-        )
-        if roc_value is not None
-        and roc_value < 0
-        else 0
-    )
-
-    if roc_value is None:
-
-        roc_value_html = (
-            '<span class="mobile-roc-none">'
-            '-'
-            '</span>'
-        )
-
-    elif roc_value > 0:
-
-        roc_value_html = (
-            f'<span class="mobile-roc-positive">'
-            f'{roc_value:+.3f}%'
-            f'</span>'
-        )
-
-    elif roc_value < 0:
-
-        roc_value_html = (
-            f'<span class="mobile-roc-negative">'
-            f'{roc_value:+.3f}%'
-            f'</span>'
-        )
-
-    else:
-
-        roc_value_html = (
-            '<span class="mobile-roc-zero">'
-            '0.000%'
-            '</span>'
-        )
-
-    return f"""
-    <div class="mobile-card {cls}">
-
-        <div class="mobile-top">
-
-            <div class="mobile-rank">
-                #{x.get("rank", "-")}
-            </div>
-
-            <div class="mobile-coin">
-                <b>
-                    {x.get("name", "-")}
-                </b>
-
-                <span>
-                    {x.get("change", "-")}
-                </span>
-            </div>
-
-            <div class="mobile-volume">
-                <small>거래대금</small>
-                <strong>
-                    {x.get("volume", "-")}
-                </strong>
-            </div>
-
-        </div>
-
-
-        <div class="mobile-middle">
-
-            <div class="mobile-box">
-
-                <small>EMA {format_timeframe(
-                    EMA_TIMEFRAME
-                )}</small>
-
-                <strong class="ema-value">
-                    {ema_html(ema1)}
-                </strong>
-
-            </div>
-
-
-            <div class="mobile-box">
-
-                <small>EMA {format_timeframe(
-                    EMA_HIGH_TIMEFRAME
-                )}</small>
-
-                <strong class="ema-value">
-                    {ema_html(ema_high)}
-                </strong>
-
-            </div>
-
-
-            <div class="mobile-box roc-mobile-box">
-
-                <small>
-                    ROC10({roc_count_value})
-                </small>
-
-                {roc_value_html}
-
-            </div>
-
-        </div>
-
-
-        <div class="mobile-bottom">
-
-            <div class="mobile-signal">
-                {signal_html(x)}
-            </div>
-
-        </div>
-
-    </div>
-    """
-
-
-def mobile_cards_html(
-    data,
-    focus=None
-):
-
-    rows = [
-        x for x in data
-        if (
-            focus is None
-            or (
-                focus == "buy"
-                and is_buy(x)
-            )
-            or (
-                focus == "progress"
-                and is_progress(x)
-            )
-            or (
-                focus == "short"
-                and is_short(x)
-            )
-            or (
-                focus == "short_progress"
-                and is_short_progress(x)
-            )
-        )
-    ]
-
-    if not rows:
-
-        return """
-        <div class="mobile-empty">
-            현재 후보 없음
-        </div>
-        """
-
-    return "".join(
-        mobile_card_html(
-            x,
-            focus
-        )
-        for x in rows
-    )
-
-
-# =========================================================
-# 섹션
+# 후보 섹션
 # =========================================================
 
 def focus_section(
@@ -2635,7 +2559,8 @@ def focus_section(
 ):
 
     rows = [
-        x for x in data
+        x
+        for x in data
         if checker(x)
     ]
 
@@ -2654,44 +2579,21 @@ def focus_section(
         )
 
     return f"""
+    <h2 class="{focus}-title">
 
-    <section class="signal-section">
+        {title}
 
-        <h2 class="{focus}-title">
+        <small>
+            {description}
+            · {update_time} KST
+        </small>
 
-            <span>
-                {title}
-            </span>
+    </h2>
 
-            <small>
-                {description}
-                · {update_time} KST
-            </small>
-
-        </h2>
-
-
-        <div class="desktop-only">
-
-            {table_html(
-                rows,
-                focus
-            )}
-
-        </div>
-
-
-        <div class="mobile-only">
-
-            {mobile_cards_html(
-                rows,
-                focus
-            )}
-
-        </div>
-
-    </section>
-
+    {table_html(
+        rows,
+        focus
+    )}
     """
 
 
@@ -2702,68 +2604,42 @@ def section(
 ):
 
     return f"""
+    <h2>
 
-    <section class="signal-section">
+        🏆 {title} TOP{TOP_N}
 
-        <h2>
+        <small>
+            {update_time} KST
+        </small>
 
-            <span>
-                🏆 {title} TOP{TOP_N}
-            </span>
+    </h2>
 
-            <small>
-                {update_time} KST
-            </small>
-
-        </h2>
-
-
-        <div class="desktop-only">
-
-            {table_html(data)}
-
-        </div>
-
-
-        <div class="mobile-only">
-
-            {mobile_cards_html(data)}
-
-        </div>
-
-    </section>
-
+    {table_html(data)}
     """
 
 
 # =========================================================
-# CSS
+# 모바일 최적화 CSS
 # =========================================================
 
 CSS = """
 
-/* =======================================================
-   기본
-   ======================================================= */
-
-* {
-    box-sizing: border-box;
-    -webkit-tap-highlight-color: transparent;
+*{
+    box-sizing:border-box;
+    -webkit-tap-highlight-color:transparent;
 }
 
 html,
-body {
-    margin: 0;
-    padding: 0;
-    width: 100%;
-    min-height: 100%;
-    overflow-x: hidden;
+body{
+    margin:0;
+    padding:0;
+    width:100%;
+    overflow-x:hidden;
 }
 
-body {
-
-    background: #0d1014;
-    color: #eee;
+body{
+    background:#0d1014;
+    color:#eee;
 
     font-family:
         -apple-system,
@@ -2772,1119 +2648,695 @@ body {
         Arial,
         sans-serif;
 
-    font-size: 10px;
+    font-size:8px;
 
     padding:
-        7px
-        6px
-        18px;
-}
-
-
-/* =======================================================
-   제목
-   ======================================================= */
-
-h1 {
-
-    margin:
-        3px
+        2px
         2px
         8px;
-
-    font-size: 15px;
-    line-height: 20px;
-
-    font-weight: 800;
 }
 
 
-h2 {
+/* =========================================================
+   제목
+   ========================================================= */
 
-    display: flex;
-
-    align-items: baseline;
-    justify-content: space-between;
-
-    gap: 6px;
-
+h1{
     margin:
-        15px
+        1px
         2px
-        6px;
+        2px;
 
-    font-size: 12px;
-    line-height: 17px;
+    font-size:12px;
+    line-height:14px;
+}
 
-    font-weight: 800;
+h2{
+    margin:
+        5px
+        2px
+        2px;
+
+    font-size:9px;
+    line-height:11px;
+}
+
+h2 small{
+    color:#707780;
+
+    font-size:5px;
+
+    font-weight:normal;
+
+    margin-left:3px;
 }
 
 
-h2 small {
-
-    color: #747b85;
-
-    font-size: 7px;
-
-    font-weight: 400;
-
-    white-space: nowrap;
-}
-
-
-/* =======================================================
+/* =========================================================
    설명
-   ======================================================= */
+   ========================================================= */
 
-.info {
-
+.info{
     margin:
         0
         2px
-        9px;
+        3px;
 
     padding:
-        8px
-        10px;
+        3px
+        5px;
 
-    color: #aab0b8;
+    color:#9da4ad;
 
-    background: #15191f;
+    background:#15191f;
 
     border:
         1px solid
-        #252b33;
+        #242a31;
 
-    border-radius: 9px;
+    border-radius:5px;
 
-    font-size: 8px;
+    font-size:5.5px;
 
-    line-height: 1.55;
+    line-height:8px;
 }
 
+.status{
+    display:flex;
 
-/* =======================================================
-   상태
-   ======================================================= */
+    justify-content:center;
 
-.status {
+    gap:9px;
 
-    display: flex;
+    margin-top:2px;
 
-    justify-content: center;
-
-    gap: 16px;
-
-    margin-top: 7px;
-
-    padding-top: 6px;
+    padding-top:2px;
 
     border-top:
         1px solid
-        #252a31;
+        #242a31;
 
-    font-weight: 800;
+    font-size:6px;
+
+    line-height:7px;
+
+    font-weight:800;
 }
 
+
+/* =========================================================
+   색상
+   ========================================================= */
 
 .y,
 .buy,
-.roc-positive {
-    color: #39e875;
+.roc-positive{
+    color:#39e875;
 }
-
 
 .n,
 .short,
-.roc-negative {
-    color: #ff5555;
+.roc-negative{
+    color:#ff5555;
 }
 
-
-.progress {
-    color: #4cc9ff;
+.progress{
+    color:#4cc9ff;
 }
 
-
-.short-progress {
-    color: #ff6666;
+.short-progress{
+    color:#ff6666;
 }
-
 
 .muted,
-.roc-zero {
-    color: #747b85;
+.roc-zero{
+    color:#68717b;
 }
 
 
-/* =======================================================
-   PC / 공통 테이블
-   ======================================================= */
+/* =========================================================
+   테이블
+   ========================================================= */
 
-.table-wrap {
+.table-wrap{
 
-    width: 100%;
+    width:100%;
 
-    overflow: hidden;
+    overflow:hidden;
 
-    border-radius: 9px;
+    border-radius:5px;
 
     border:
         1px solid
-        #282e36;
-
-    background: #171b20;
-}
-
-
-table {
-
-    width: 100%;
-
-    table-layout: fixed;
-
-    border-collapse: collapse;
-
-    background: #171b20;
-}
-
-
-thead {
-    background: #111419;
-}
-
-
-th {
-
-    height: 28px;
-
-    padding:
-        5px
-        2px;
-
-    border-bottom:
-        1px solid
-        #2c323a;
-
-    color: #9299a3;
-
-    font-size: 7px;
-
-    text-align: center;
-
-    font-weight: 700;
-}
-
-
-td {
-
-    height: 45px;
-
-    padding:
-        5px
-        2px;
-
-    border-bottom:
-        1px solid
         #272d34;
 
-    text-align: center;
+    background:#171b20;
+}
 
-    vertical-align: middle;
+table{
 
-    overflow: hidden;
+    width:100%;
+
+    table-layout:fixed;
+
+    border-collapse:collapse;
+
+    background:#171b20;
+}
+
+thead{
+    background:#111419;
+}
+
+th{
+
+    height:17px;
+
+    padding:1px;
+
+    border-bottom:
+        1px solid
+        #292f36;
+
+    color:#7f8791;
+
+    font-size:5px;
+
+    line-height:6px;
+
+    font-weight:700;
+
+    text-align:center;
+}
+
+td{
+
+    height:25px;
+
+    padding:1px;
+
+    border-bottom:
+        1px solid
+        #22282e;
+
+    text-align:center;
+
+    vertical-align:middle;
+
+    overflow:hidden;
+}
+
+tr:last-child td{
+    border-bottom:none;
 }
 
 
-tr:last-child td {
-    border-bottom: none;
-}
-
+/* =========================================================
+   열 비율
+   ========================================================= */
 
 th:nth-child(1),
-td:nth-child(1) {
-    width: 6%;
+td:nth-child(1){
+    width:6%;
 }
-
 
 th:nth-child(2),
-td:nth-child(2) {
-    width: 20%;
+td:nth-child(2){
+    width:19%;
 }
-
 
 th:nth-child(3),
-td:nth-child(3) {
-    width: 15%;
+td:nth-child(3){
+    width:15%;
 }
-
 
 th:nth-child(4),
-td:nth-child(4) {
-    width: 19%;
+td:nth-child(4){
+    width:21%;
 }
-
 
 th:nth-child(5),
-td:nth-child(5) {
-    width: 24%;
+td:nth-child(5){
+    width:22%;
 }
-
 
 th:nth-child(6),
-td:nth-child(6) {
-    width: 16%;
+td:nth-child(6){
+    width:17%;
 }
 
 
-/* =======================================================
-   랭크
-   ======================================================= */
+/* =========================================================
+   순위
+   ========================================================= */
 
-.rank {
+td:nth-child(1){
 
-    font-size: 7px;
+    color:#8b929b;
 
-    color: #89919c;
+    font-size:6px;
 
-    font-weight: 600;
+    font-weight:700;
 }
 
 
-/* =======================================================
+/* =========================================================
    코인
-   ======================================================= */
+   ========================================================= */
 
-.coin b {
+.coin{
 
-    display: block;
+    text-align:left!important;
 
-    font-size: 9px;
+    line-height:9px;
+}
 
-    font-weight: 800;
+.coin b{
 
-    white-space: nowrap;
+    display:block;
 
-    overflow: hidden;
+    width:100%;
 
-    text-overflow: ellipsis;
+    font-size:6.5px;
+
+    line-height:8px;
+
+    font-weight:800;
+
+    white-space:nowrap;
+
+    overflow:hidden;
+
+    text-overflow:ellipsis;
+}
+
+.coin small{
+
+    display:block;
+
+    margin:0;
+
+    font-size:4.5px;
+
+    line-height:6px;
+
+    white-space:nowrap;
+
+    overflow:hidden;
 }
 
 
-.coin small {
-
-    display: block;
-
-    margin-top: 2px;
-
-    font-size: 7px;
-
-    white-space: nowrap;
-}
-
-
-/* =======================================================
+/* =========================================================
    거래대금
-   ======================================================= */
+   ========================================================= */
 
-.vol {
+.vol{
 
-    font-size: 8px;
+    font-size:6px;
 
-    font-weight: 700;
+    line-height:8px;
 
-    white-space: nowrap;
+    font-weight:800;
+
+    white-space:nowrap;
 }
 
 
-/* =======================================================
+/* =========================================================
    EMA
-   ======================================================= */
+   ========================================================= */
 
-.ema {
+.ema{
 
-    text-align: left !important;
+    text-align:center!important;
 
-    font-weight: 700;
+    font-weight:800;
+
+    line-height:8px;
+
+    white-space:nowrap;
+
+    overflow:hidden;
+}
+
+.ema span{
+
+    font-size:5.5px;
+
+    line-height:8px;
+
+    white-space:nowrap;
+}
+
+.ema-sep{
+
+    color:#555c65;
+
+    margin:
+        0
+        1px;
 }
 
 
-.ema small {
-
-    display: block;
-
-    color: #858c96;
-
-    font-size: 6px;
-}
-
-
-.ema div {
-
-    line-height: 16px;
-
-    white-space: nowrap;
-
-    font-size: 8px;
-}
-
-
-/* =======================================================
+/* =========================================================
    ROC
-   ======================================================= */
+   ========================================================= */
 
-.roc-cell {
+.roc-cell{
 
-    display: flex;
+    display:flex;
 
-    flex-direction: column;
+    flex-direction:row;
 
-    align-items: center;
+    align-items:center;
 
-    justify-content: center;
+    justify-content:center;
 
-    min-height: 41px;
+    gap:1px;
+
+    min-height:21px;
+
+    line-height:8px;
+
+    white-space:nowrap;
+}
+
+.roc-cell b{
+
+    color:#7f8790;
+
+    font-size:5px;
+
+    line-height:8px;
+
+    font-weight:700;
+}
+
+.roc-cell span{
+
+    font-size:5.8px;
+
+    line-height:8px;
+
+    font-weight:900;
+
+    white-space:nowrap;
+}
+
+.roc-cell i{
+
+    font-style:normal;
+
+    font-size:5px;
+
+    margin-left:0;
 }
 
 
-.roc-cell b {
+/* =========================================================
+   신호
+   ========================================================= */
 
-    color: #858c96;
+.buy,
+.short,
+.progress,
+.short-progress{
 
-    font-size: 7px;
+    font-size:5.8px;
 
-    font-weight: 700;
+    line-height:8px;
+
+    font-weight:800;
+
+    white-space:nowrap;
 }
 
 
-.roc-cell span {
-
-    font-size: 8px;
-
-    font-weight: 800;
-
-    white-space: nowrap;
-}
-
-
-.roc-cell i {
-
-    font-style: normal;
-
-    font-size: 7px;
-
-    margin-left: 2px;
-}
-
-
-/* =======================================================
+/* =========================================================
    후보 배경
-   ======================================================= */
+   ========================================================= */
 
-.qualified {
+.qualified{
     background:
-        rgba(57,232,117,.055);
+        rgba(
+            57,
+            232,
+            117,
+            .06
+        );
 }
 
-
-.progress-qualified {
+.progress-qualified{
     background:
-        rgba(76,201,255,.055);
+        rgba(
+            76,
+            201,
+            255,
+            .06
+        );
 }
 
-
-.short-qualified {
+.short-qualified{
     background:
-        rgba(255,85,85,.055);
+        rgba(
+            255,
+            85,
+            85,
+            .06
+        );
 }
 
-
-.short-progress-qualified {
+.short-progress-qualified{
     background:
-        rgba(255,85,85,.035);
+        rgba(
+            255,
+            85,
+            85,
+            .035
+        );
+}
+
+.empty{
+
+    height:30px;
+
+    padding:8px;
+
+    color:#555d67;
+
+    font-size:6px;
 }
 
 
-.empty {
+/* =========================================================
+   섹션 제목
+   ========================================================= */
 
-    padding: 15px;
+.buy-title{
+    color:#39e875;
+}
 
-    color: #555d67;
+.progress-title{
+    color:#4cc9ff;
+}
 
-    text-align: center;
+.short-title{
+    color:#ff5555;
+}
+
+.short_progress-title{
+    color:#ff6666;
 }
 
 
-/* =======================================================
-   제목 색상
-   ======================================================= */
+/* =========================================================
+   아주 작은 휴대폰
+   ========================================================= */
 
-.buy-title {
-    color: #39e875;
-}
+@media(max-width:380px){
 
-
-.progress-title {
-    color: #4cc9ff;
-}
-
-
-.short-title {
-    color: #ff5555;
-}
-
-
-.short_progress-title {
-    color: #ff6666;
-}
-
-
-/* =======================================================
-   모바일 / PC 표시
-   ======================================================= */
-
-.mobile-only {
-    display: none;
-}
-
-
-.desktop-only {
-    display: block;
-}
-
-
-/* =======================================================
-   모바일
-   ======================================================= */
-
-@media (max-width: 600px) {
-
-    body {
-
+    body{
         padding:
-            5px
-            5px
-            16px;
-
-        font-size: 9px;
-    }
-
-
-    h1 {
-
-        margin:
-            2px
-            2px
-            7px;
-
-        font-size: 14px;
-
-        line-height: 19px;
-    }
-
-
-    h2 {
-
-        display: flex;
-
-        align-items: flex-start;
-
-        margin:
-            13px
-            2px
+            1px
+            1px
             6px;
-
-        font-size: 11px;
-
-        line-height: 15px;
     }
 
-
-    h2 small {
-
-        font-size: 6px;
-
-        white-space: normal;
-
-        text-align: right;
-
-        line-height: 12px;
+    h1{
+        font-size:11px;
+        line-height:13px;
     }
 
+    h2{
+        font-size:8px;
+        line-height:10px;
 
-    .info {
+        margin-top:4px;
+    }
+
+    h2 small{
+        font-size:4.5px;
+    }
+
+    .info{
 
         padding:
-            7px
-            9px;
-
-        font-size: 7px;
-
-        line-height: 1.5;
-    }
-
-
-    .desktop-only {
-        display: none;
-    }
-
-
-    .mobile-only {
-        display: block;
-    }
-
-
-    /* ================================================
-       모바일 카드
-       ================================================ */
-
-    .mobile-card {
-
-        width: 100%;
-
-        margin-bottom: 6px;
-
-        padding:
-            8px
-            9px
-            8px;
-
-        background: #171b20;
-
-        border:
-            1px solid
-            #282e36;
-
-        border-radius: 9px;
-
-        overflow: hidden;
-    }
-
-
-    .mobile-card.qualified,
-    .mobile-buy {
-
-        border-left:
-            3px solid
-            #39e875;
-    }
-
-
-    .mobile-card.progress-qualified,
-    .mobile-progress {
-
-        border-left:
-            3px solid
-            #4cc9ff;
-    }
-
-
-    .mobile-card.short-qualified,
-    .mobile-short {
-
-        border-left:
-            3px solid
-            #ff5555;
-    }
-
-
-    .mobile-card.short-progress-qualified,
-    .mobile-short-progress {
-
-        border-left:
-            3px solid
-            #ff6666;
-    }
-
-
-    /* ================================================
-       모바일 상단
-       ================================================ */
-
-    .mobile-top {
-
-        display: grid;
-
-        grid-template-columns:
-            28px
-            minmax(0, 1fr)
-            auto;
-
-        align-items: center;
-
-        gap: 7px;
-
-        min-height: 30px;
-    }
-
-
-    .mobile-rank {
-
-        color: #747b85;
-
-        font-size: 7px;
-
-        font-weight: 700;
-
-        text-align: center;
-    }
-
-
-    .mobile-coin {
-
-        min-width: 0;
-    }
-
-
-    .mobile-coin b {
-
-        display: block;
-
-        font-size: 10px;
-
-        line-height: 13px;
-
-        font-weight: 800;
-
-        white-space: nowrap;
-
-        overflow: hidden;
-
-        text-overflow: ellipsis;
-    }
-
-
-    .mobile-coin span {
-
-        display: block;
-
-        margin-top: 1px;
-
-        font-size: 7px;
-
-        line-height: 10px;
-
-        white-space: nowrap;
-    }
-
-
-    /* ================================================
-       모바일 거래대금
-       ================================================ */
-
-    .mobile-volume {
-
-        min-width: 48px;
-
-        text-align: right;
-    }
-
-
-    .mobile-volume small {
-
-        display: block;
-
-        color: #747b85;
-
-        font-size: 5.5px;
-
-        line-height: 8px;
-    }
-
-
-    .mobile-volume strong {
-
-        display: block;
-
-        margin-top: 1px;
-
-        color: #d7dce2;
-
-        font-size: 8px;
-
-        line-height: 11px;
-
-        font-weight: 800;
-
-        white-space: nowrap;
-    }
-
-
-    /* ================================================
-       모바일 중간
-       ================================================ */
-
-    .mobile-middle {
-
-        display: grid;
-
-        grid-template-columns:
-            1fr
-            1fr
-            1.25fr;
-
-        gap: 5px;
-
-        margin-top: 7px;
-
-        padding-top: 6px;
-
-        border-top:
-            1px solid
-            #282e36;
-    }
-
-
-    .mobile-box {
-
-        min-width: 0;
-
-        padding:
-            5px
+            2px
             4px;
 
-        background: #111419;
+        font-size:5px;
 
-        border-radius: 6px;
-
-        text-align: center;
+        line-height:7px;
     }
 
+    .status{
 
-    .mobile-box small {
+        font-size:5.5px;
 
-        display: block;
-
-        color: #747b85;
-
-        font-size: 5.5px;
-
-        line-height: 8px;
-
-        white-space: nowrap;
+        line-height:6px;
     }
 
+    th{
 
-    .ema-value {
+        height:16px;
 
-        display: block;
-
-        margin-top: 2px;
-
-        font-size: 8px;
-
-        line-height: 11px;
-
-        font-weight: 800;
+        font-size:4.5px;
     }
 
+    td{
 
-    /* ================================================
-       모바일 ROC
-       ================================================ */
-
-    .roc-mobile-box {
-
-        display: flex;
-
-        flex-direction: column;
-
-        justify-content: center;
+        height:23px;
     }
 
+    .coin b{
 
-    .mobile-roc-positive {
+        font-size:6px;
 
-        display: block;
-
-        margin-top: 2px;
-
-        color: #39e875;
-
-        font-size: 9px;
-
-        line-height: 12px;
-
-        font-weight: 900;
-
-        white-space: nowrap;
+        line-height:7px;
     }
 
+    .coin small{
 
-    .mobile-roc-negative {
+        font-size:4px;
 
-        display: block;
-
-        margin-top: 2px;
-
-        color: #ff5555;
-
-        font-size: 9px;
-
-        line-height: 12px;
-
-        font-weight: 900;
-
-        white-space: nowrap;
+        line-height:5px;
     }
 
-
-    .mobile-roc-zero,
-    .mobile-roc-none {
-
-        display: block;
-
-        margin-top: 2px;
-
-        color: #747b85;
-
-        font-size: 8px;
-
-        line-height: 12px;
-
-        font-weight: 700;
+    .vol{
+        font-size:5.5px;
     }
 
-
-    /* ================================================
-       모바일 신호
-       ================================================ */
-
-    .mobile-bottom {
-
-        display: flex;
-
-        justify-content: center;
-
-        align-items: center;
-
-        min-height: 24px;
-
-        margin-top: 6px;
-
-        padding-top: 5px;
-
-        border-top:
-            1px solid
-            #252a31;
+    .ema span{
+        font-size:5px;
     }
 
-
-    .mobile-signal {
-
-        text-align: center;
-
-        line-height: 14px;
+    .roc-cell b{
+        font-size:4.5px;
     }
 
-
-    .mobile-signal .buy,
-    .mobile-signal .progress,
-    .mobile-signal .short,
-    .mobile-signal .short-progress {
-
-        font-size: 8px;
-
-        font-weight: 800;
+    .roc-cell span{
+        font-size:5.2px;
     }
 
+    .roc-cell i{
+        font-size:4.5px;
+    }
 
-    .mobile-empty {
+    .buy,
+    .short,
+    .progress,
+    .short-progress{
 
-        padding:
-            16px
-            8px;
-
-        background: #171b20;
-
-        border:
-            1px solid
-            #282e36;
-
-        border-radius: 9px;
-
-        color: #555d67;
-
-        text-align: center;
-
-        font-size: 8px;
+        font-size:5.2px;
     }
 }
 
 
-/* =======================================================
-   아주 작은 휴대폰
-   ======================================================= */
-
-@media (max-width: 380px) {
-
-    body {
-
-        padding:
-            4px
-            4px
-            14px;
-    }
-
-
-    h1 {
-        font-size: 13px;
-    }
-
-
-    h2 {
-
-        font-size: 10px;
-
-        margin-top: 11px;
-    }
-
-
-    h2 small {
-        font-size: 5.5px;
-    }
-
-
-    .info {
-        font-size: 6.5px;
-    }
-
-
-    .mobile-card {
-
-        padding:
-            7px
-            8px;
-    }
-
-
-    .mobile-top {
-
-        grid-template-columns:
-            24px
-            minmax(0, 1fr)
-            auto;
-
-        gap: 5px;
-    }
-
-
-    .mobile-rank {
-        font-size: 6px;
-    }
-
-
-    .mobile-coin b {
-        font-size: 9px;
-    }
-
-
-    .mobile-coin span {
-        font-size: 6px;
-    }
-
-
-    .mobile-volume small {
-        font-size: 5px;
-    }
-
-
-    .mobile-volume strong {
-        font-size: 7px;
-    }
-
-
-    .mobile-middle {
-        gap: 4px;
-    }
-
-
-    .mobile-box {
-        padding:
-            4px
-            3px;
-    }
-
-
-    .mobile-box small {
-        font-size: 5px;
-    }
-
-
-    .ema-value {
-        font-size: 7px;
-    }
-
-
-    .mobile-roc-positive,
-    .mobile-roc-negative {
-        font-size: 8px;
-    }
-
-
-    .mobile-signal .buy,
-    .mobile-signal .progress,
-    .mobile-signal .short,
-    .mobile-signal .short-progress {
-
-        font-size: 7.5px;
-    }
-}
-
-
-/* =======================================================
+/* =========================================================
    PC
-   ======================================================= */
+   ========================================================= */
 
-@media (min-width: 601px) {
+@media(min-width:601px){
 
-    body {
+    body{
 
-        max-width: 900px;
+        max-width:900px;
 
-        margin: auto;
+        margin:auto;
 
-        padding: 8px;
+        padding:8px;
+
+        font-size:10px;
     }
 
+    h1{
 
-    th {
-        font-size: 8px;
+        font-size:15px;
+
+        line-height:20px;
     }
 
+    h2{
 
-    .rank {
-        font-size: 8px;
+        font-size:12px;
+
+        line-height:16px;
+
+        margin-top:12px;
     }
 
+    th{
 
-    .coin b {
-        font-size: 10px;
+        height:26px;
+
+        font-size:7px;
     }
 
+    td{
 
-    .coin small {
-        font-size: 8px;
+        height:38px;
+
+        padding:3px;
     }
 
+    .coin b{
 
-    .vol {
-        font-size: 9px;
+        font-size:9px;
+
+        line-height:11px;
     }
 
+    .coin small{
 
-    .ema div {
-        font-size: 9px;
+        font-size:7px;
     }
 
+    .vol{
 
-    .roc-cell b {
-        font-size: 7px;
+        font-size:8px;
     }
 
+    .ema span{
 
-    .roc-cell span {
-        font-size: 8px;
+        font-size:8px;
+    }
+
+    .roc-cell b{
+
+        font-size:6px;
+    }
+
+    .roc-cell span{
+
+        font-size:7px;
+    }
+
+    .buy,
+    .short,
+    .progress,
+    .short-progress{
+
+        font-size:7px;
     }
 }
 
@@ -3927,104 +3379,144 @@ def dashboard():
 
     sections = ""
 
-
-    # =====================================================
+    # -----------------------------------------------------
     # Upbit 후보
-    # =====================================================
+    # -----------------------------------------------------
 
     if USE_UPBIT == "Y":
 
         sections += focus_section(
+
             "🟢 매수",
+
             latest_upbit_data,
+
             latest_upbit_update_time,
+
             is_buy,
+
             "buy",
+
             "ROC10 0선 상향돌파"
         )
 
-
         sections += focus_section(
+
             "🚀 진행",
+
             latest_upbit_data,
+
             latest_upbit_update_time,
+
             is_progress,
+
             "progress",
+
             "ROC10 양수 유지 · ②+",
+
             "roc10_count"
         )
 
 
-    # =====================================================
+    # -----------------------------------------------------
     # OKX 후보
-    # =====================================================
+    # -----------------------------------------------------
 
     if USE_OKX == "Y":
 
         sections += focus_section(
+
             "🟢 매수",
+
             latest_okx_data,
+
             latest_okx_update_time,
+
             is_buy,
+
             "buy",
+
             "ROC10 0선 상향돌파"
         )
 
-
         sections += focus_section(
+
             "🚀 진행",
+
             latest_okx_data,
+
             latest_okx_update_time,
+
             is_progress,
+
             "progress",
+
             "ROC10 양수 유지 · ②+",
+
             "roc10_count"
         )
 
-
         sections += focus_section(
+
             "🔴 숏",
+
             latest_okx_data,
+
             latest_okx_update_time,
+
             is_short,
+
             "short",
+
             "ROC10 0선 하향돌파 · ①"
         )
 
-
         sections += focus_section(
+
             "📉 진행",
+
             latest_okx_data,
+
             latest_okx_update_time,
+
             is_short_progress,
+
             "short_progress",
+
             "ROC10 음수 유지 · ②+",
+
             "roc10_negative_count"
         )
 
 
-    # =====================================================
+    # -----------------------------------------------------
     # 전체 Upbit
-    # =====================================================
+    # -----------------------------------------------------
 
     if USE_UPBIT == "Y":
 
         sections += section(
+
             "업비트",
+
             latest_upbit_data,
+
             latest_upbit_update_time
         )
 
 
-    # =====================================================
+    # -----------------------------------------------------
     # 전체 OKX
-    # =====================================================
+    # -----------------------------------------------------
 
     if USE_OKX == "Y":
 
         sections += section(
+
             "OKX",
+
             latest_okx_data,
+
             latest_okx_update_time
         )
 
@@ -4040,10 +3532,12 @@ def dashboard():
 
         <meta
             name="viewport"
-            content="width=device-width,
-                     initial-scale=1,
-                     maximum-scale=1,
-                     user-scalable=no"
+            content="
+                width=device-width,
+                initial-scale=1,
+                maximum-scale=1,
+                user-scalable=no
+            "
         >
 
         <meta
@@ -4066,30 +3560,20 @@ def dashboard():
 
     </head>
 
-
     <body>
 
         <h1>
             📊 TRADING SIGNAL CENTER
         </h1>
 
-
         <div class="info">
 
-            {tf} EMA30·60·120 + ROC10
-            <br>
+            {tf} EMA30·60·120 + ROC10<br>
 
-            🟢 매수 = 0선 상향돌파 ①
-            <br>
-
-            🚀 진행 = 양수 유지 ②+
-            <br>
-
-            🔴 숏 = 0선 하향돌파 ①
-            <br>
-
-            📉 진행 = 음수 유지 ②+
-            <br>
+            🟢 매수 = 0선 상향돌파 ① ·
+            🚀 진행 = 양수 유지 ②+ ·
+            🔴 숏 = 0선 하향돌파 ① ·
+            📉 진행 = 음수 유지 ②+<br>
 
             ROC10 = 현재가 기준
 
@@ -4097,9 +3581,7 @@ def dashboard():
 
         </div>
 
-
         {sections}
-
 
     </body>
 
@@ -4148,7 +3630,6 @@ def startup():
             "USE_UPBIT은 Y 또는 N만 가능합니다."
         )
 
-
     if USE_OKX not in (
         "Y",
         "N"
@@ -4158,14 +3639,11 @@ def startup():
             "USE_OKX는 Y 또는 N만 가능합니다."
         )
 
-
     validate_timeframe()
-
 
     tf = format_timeframe(
         EMA_TIMEFRAME
     )
-
 
     log.info(
         "========================================"
@@ -4219,13 +3697,11 @@ def startup():
     )
 
     log.info(
-        "모바일 전용 카드 UI = ON"
-    )
-
-    log.info(
         "========================================"
     )
 
+
+    # 최초 조회
 
     threading.Thread(
         target=update_dashboard,
@@ -4233,12 +3709,16 @@ def startup():
     ).start()
 
 
+    # 1분마다 갱신
+
     schedule.every(
         UPDATE_MINUTES
     ).minutes.do(
         update_dashboard
     )
 
+
+    # 스케줄러
 
     threading.Thread(
         target=scheduler,
