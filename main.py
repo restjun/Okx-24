@@ -35,7 +35,7 @@ log = logging.getLogger("trading")
 # =========================================================
 
 VOLUME_HOURS = 24
-TOP_N = 30
+TOP_N = 50
 UPDATE_MINUTES = 1
 
 HISTORY_CHUNK = 200
@@ -62,7 +62,7 @@ EMA1_FAST = 30
 EMA1_MID = 60
 EMA1_SLOW = 120
 
-EMA1_MAX_COUNT = 60
+EMA1_MAX_COUNT = 30
 
 ROC_PERIOD = 10
 
