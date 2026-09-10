@@ -52,11 +52,27 @@ KST = ZoneInfo("Asia/Seoul")
 
 
 # =========================================================
-# 시간봉
+# 시간봉 설정
 # =========================================================
 
 EMA_TIMEFRAME = 15
 EMA_HIGH_TIMEFRAME = 60
+
+
+# =========================================================
+# 이평 시간봉 필터 사용 여부
+#
+# USE_EMA_TIMEFRAME      = 첫 번째 시간봉 필터
+# USE_EMA_HIGH_TIMEFRAME = 두 번째 시간봉 필터
+#
+# Y / Y → 두 시간봉 모두 필터
+# Y / N → 첫 번째 시간봉만 필터
+# N / Y → 두 번째 시간봉만 필터
+# N / N → 이평 배열 필터 사용 안 함
+# =========================================================
+
+USE_EMA_TIMEFRAME = "Y"
+USE_EMA_HIGH_TIMEFRAME = "Y"
 
 
 # =========================================================
@@ -180,6 +196,7 @@ def get_okx_bar_minutes(bar):
 # =========================================================
 
 def get_current_candle_start(minutes):
+
     minutes = int(minutes)
 
     now = datetime.now(KST)
@@ -215,28 +232,65 @@ def get_current_candle_start(minutes):
 # =========================================================
 
 def validate_timeframe():
+
     global EMA_TIMEFRAME
+    global EMA_HIGH_TIMEFRAME
 
     try:
+
         EMA_TIMEFRAME = int(
             EMA_TIMEFRAME
         )
 
+        EMA_HIGH_TIMEFRAME = int(
+            EMA_HIGH_TIMEFRAME
+        )
+
     except Exception:
+
         raise ValueError(
-            "EMA_TIMEFRAME은 숫자여야 합니다."
+            "EMA 시간봉은 숫자여야 합니다."
         )
 
     if EMA_TIMEFRAME not in SUPPORTED_UPBIT_TIMEFRAMES:
+
         raise ValueError(
             f"EMA_TIMEFRAME 오류: {EMA_TIMEFRAME}\n"
             "Upbit 지원값: 5, 15, 30, 60, 240"
         )
 
+    if EMA_HIGH_TIMEFRAME not in SUPPORTED_UPBIT_TIMEFRAMES:
+
+        raise ValueError(
+            f"EMA_HIGH_TIMEFRAME 오류: "
+            f"{EMA_HIGH_TIMEFRAME}\n"
+            "Upbit 지원값: 5, 15, 30, 60, 240"
+        )
+
     if get_okx_bar(EMA_TIMEFRAME) is None:
+
         raise ValueError(
             f"OKX에서 지원하지 않는 시간봉: "
             f"{EMA_TIMEFRAME}"
+        )
+
+    if get_okx_bar(EMA_HIGH_TIMEFRAME) is None:
+
+        raise ValueError(
+            f"OKX에서 지원하지 않는 HIGH 시간봉: "
+            f"{EMA_HIGH_TIMEFRAME}"
+        )
+
+    if USE_EMA_TIMEFRAME not in ("Y", "N"):
+
+        raise ValueError(
+            "USE_EMA_TIMEFRAME은 Y 또는 N만 가능합니다."
+        )
+
+    if USE_EMA_HIGH_TIMEFRAME not in ("Y", "N"):
+
+        raise ValueError(
+            "USE_EMA_HIGH_TIMEFRAME은 Y 또는 N만 가능합니다."
         )
 
 
@@ -245,6 +299,7 @@ def validate_timeframe():
 # =========================================================
 
 def wait_request():
+
     global last_request_time
 
     with request_lock:
@@ -1257,11 +1312,9 @@ def ema_alignment_count(df):
                 e120.iloc[i]
             )
 
-            # 정배열
             if a > b > c > d:
                 return "long"
 
-            # 역배열
             if a < b < c < d:
                 return "short"
 
@@ -1334,6 +1387,130 @@ def ema_display(
         "count": x["count"],
         "current_price": current_price
     }
+
+
+# =========================================================
+# EMA 필터
+#
+# 설정된 시간봉만 사용
+# =========================================================
+
+def ema_filter_direction(
+    e1,
+    e_high
+):
+
+    selected = []
+
+    if USE_EMA_TIMEFRAME == "Y":
+
+        selected.append(
+            e1
+        )
+
+    if USE_EMA_HIGH_TIMEFRAME == "Y":
+
+        selected.append(
+            e_high
+        )
+
+    # 둘 다 N이면 필터 사용 안 함
+    if not selected:
+
+        return {
+            "direction": "none",
+            "valid": True
+        }
+
+    directions = [
+        x.get(
+            "direction",
+            "none"
+        )
+        for x in selected
+    ]
+
+    # 선택된 모든 시간봉이 같은 방향이어야 함
+    if all(
+        d == "long"
+        for d in directions
+    ):
+
+        return {
+            "direction": "long",
+            "valid": True
+        }
+
+    if all(
+        d == "short"
+        for d in directions
+    ):
+
+        return {
+            "direction": "short",
+            "valid": True
+        }
+
+    return {
+        "direction": "none",
+        "valid": False
+    }
+
+
+def ema_filter_pass(
+    e1,
+    e_high
+):
+
+    selected = []
+
+    if USE_EMA_TIMEFRAME == "Y":
+
+        selected.append(
+            e1
+        )
+
+    if USE_EMA_HIGH_TIMEFRAME == "Y":
+
+        selected.append(
+            e_high
+        )
+
+    # 둘 다 N이면 이평 필터 없음
+    if not selected:
+        return True
+
+    for e in selected:
+
+        if e.get(
+            "direction",
+            "none"
+        ) not in (
+            "long",
+            "short"
+        ):
+
+            return False
+
+        if e.get(
+            "count",
+            0
+        ) > EMA1_MAX_COUNT:
+
+            return False
+
+    directions = [
+        e.get(
+            "direction",
+            "none"
+        )
+        for e in selected
+    ]
+
+    # 선택된 이평 방향이 모두 같아야 함
+    return len(
+        set(directions)
+    ) == 1
 
 
 # =========================================================
@@ -1458,8 +1635,6 @@ def roc_cross_state(
 
             return False
 
-        # 현재 진행봉 ⓪
-
         if len(current) >= 2:
 
             prev = current[-2]
@@ -1474,8 +1649,6 @@ def roc_cross_state(
                     "state": "current",
                     "count": 0
                 }
-
-        # 현재 데이터가 1개인 경우
 
         if len(current) == 1:
 
@@ -1492,8 +1665,6 @@ def roc_cross_state(
                     "count": 0
                 }
 
-        # 가장 최근 확정봉 ①
-
         if len(confirmed) >= 2:
 
             prev = confirmed[-2]
@@ -1508,8 +1679,6 @@ def roc_cross_state(
                     "state": "confirmed",
                     "count": 1
                 }
-
-        # 그 이전 확정봉 ②
 
         if len(confirmed) >= 3:
 
@@ -1991,43 +2160,83 @@ def empty_analysis():
 
 # =========================================================
 # 공통 자격조건
+#
+# 설정된 이평 시간봉만 필터
 # =========================================================
 
-def get_signal_qualified(e1, r):
+def get_signal_qualified(
+    e1,
+    e_high,
+    r
+):
 
-    base = (
-        e1["direction"]
-        in ("long", "short")
-        and
-        e1["count"]
-        <= EMA1_MAX_COUNT
+    # -----------------------------------------------------
+    # 선택된 이평 시간봉의 공통 방향
+    # -----------------------------------------------------
+
+    filter_info = ema_filter_direction(
+        e1,
+        e_high
     )
+
+    filter_direction = (
+        filter_info["direction"]
+    )
+
+    filter_pass = ema_filter_pass(
+        e1,
+        e_high
+    )
+
+    # -----------------------------------------------------
+    # EMA 필터를 사용하지 않으면
+    # ROC 방향을 기준으로 판단
+    # -----------------------------------------------------
+
+    if (
+        USE_EMA_TIMEFRAME == "N"
+        and USE_EMA_HIGH_TIMEFRAME == "N"
+    ):
+
+        long_base = True
+        short_base = True
+
+    else:
+
+        long_base = (
+            filter_pass
+            and filter_direction == "long"
+        )
+
+        short_base = (
+            filter_pass
+            and filter_direction == "short"
+        )
 
     return {
 
         "breakout_qualified":
-            base
-            and e1["direction"] == "long"
+            long_base
             and r["long_breakout"],
 
         "short_breakout_qualified":
-            base
-            and e1["direction"] == "short"
+            short_base
             and r["short_breakout"],
 
         "progress_qualified":
-            base
-            and e1["direction"] == "long"
+            long_base
             and r["roc10"] is not None
             and r["roc10"] > 0
             and r["roc10_count"] >= 2,
 
         "short_progress_qualified":
-            base
-            and e1["direction"] == "short"
+            short_base
             and r["roc10"] is not None
             and r["roc10"] < 0
-            and r["roc10_negative_count"] >= 2
+            and r["roc10_negative_count"] >= 2,
+
+        "filter_direction":
+            filter_direction
     }
 
 
@@ -2044,7 +2253,11 @@ def analyze_okx(
         EMA_TIMEFRAME
     )
 
-    if not bar:
+    high_bar = get_okx_bar(
+        EMA_HIGH_TIMEFRAME
+    )
+
+    if not bar or not high_bar:
         return None
 
     df_confirmed = (
@@ -2063,9 +2276,7 @@ def analyze_okx(
 
     df_high = history_okx(
         market,
-        get_okx_bar(
-            EMA_HIGH_TIMEFRAME
-        )
+        high_bar
     )
 
     df_current = get_okx_current_1h(
@@ -2100,6 +2311,7 @@ def analyze_okx(
 
     q = get_signal_qualified(
         e1,
+        e_high,
         r
     )
 
@@ -2113,7 +2325,7 @@ def analyze_okx(
         **q,
 
         "direction_1h":
-            e1["direction"],
+            q["filter_direction"],
 
         "df1h":
             df_confirmed
@@ -2181,6 +2393,7 @@ def analyze(
 
     q = get_signal_qualified(
         e1,
+        e_high,
         r
     )
 
@@ -2194,7 +2407,7 @@ def analyze(
         **q,
 
         "direction_1h":
-            e1["direction"],
+            q["filter_direction"],
 
         "df1h":
             df_confirmed
@@ -2795,6 +3008,8 @@ def market_change_html(value):
 
 # =========================================================
 # BTC 롱 / 숏 방향 판단
+#
+# Y/N 설정에 따라 선택된 이평만 사용
 # =========================================================
 
 def btc_position_view(row):
@@ -2806,12 +3021,12 @@ def btc_position_view(row):
             "class": "wait"
         }
 
-    ema_1h = row.get(
+    ema_1 = row.get(
         "ema_1h",
         {}
     )
 
-    ema_4h = row.get(
+    ema_high = row.get(
         "ema_high",
         {}
     )
@@ -2821,15 +3036,56 @@ def btc_position_view(row):
         {}
     )
 
-    d1 = ema_1h.get(
-        "direction",
-        "none"
-    )
+    selected = []
 
-    d4 = ema_4h.get(
-        "direction",
-        "none"
-    )
+    if USE_EMA_TIMEFRAME == "Y":
+
+        selected.append(
+            ema_1
+        )
+
+    if USE_EMA_HIGH_TIMEFRAME == "Y":
+
+        selected.append(
+            ema_high
+        )
+
+    # -----------------------------------------------------
+    # 선택된 이평이 하나도 없으면
+    # ROC만으로 판단
+    # -----------------------------------------------------
+
+    if not selected:
+
+        d = None
+
+    else:
+
+        directions = [
+            x.get(
+                "direction",
+                "none"
+            )
+            for x in selected
+        ]
+
+        if all(
+            d == "long"
+            for d in directions
+        ):
+
+            d = "long"
+
+        elif all(
+            d == "short"
+            for d in directions
+        ):
+
+            d = "short"
+
+        else:
+
+            d = "none"
 
     roc_value = r.get(
         "roc10"
@@ -2845,18 +3101,93 @@ def btc_position_view(row):
         "none"
     )
 
-    if (
-        d1 == "none"
-        or d4 == "none"
-        or d1 != d4
-    ):
+    # -----------------------------------------------------
+    # 이평 필터 없음
+    # -----------------------------------------------------
+
+    if not selected:
+
+        if (
+            long_breakout_state != "none"
+        ):
+
+            count = {
+                "current": 0,
+                "confirmed": 1,
+                "next": 2
+            }.get(
+                long_breakout_state,
+                0
+            )
+
+            return {
+                "text":
+                    "🚀"
+                    + count_icon(count),
+                "class": "long"
+            }
+
+        if (
+            short_breakout_state != "none"
+        ):
+
+            count = {
+                "current": 0,
+                "confirmed": 1,
+                "next": 2
+            }.get(
+                short_breakout_state,
+                0
+            )
+
+            return {
+                "text":
+                    "🔻"
+                    + count_icon(count),
+                "class": "short"
+            }
+
+        if (
+            roc_value is not None
+            and float(roc_value) > 0
+        ):
+
+            return {
+                "text": "🟢 롱 우세",
+                "class": "long"
+            }
+
+        if (
+            roc_value is not None
+            and float(roc_value) < 0
+        ):
+
+            return {
+                "text": "🔴 숏 우세",
+                "class": "short"
+            }
 
         return {
             "text": "⚪ 관망",
             "class": "wait"
         }
 
-    if d1 == "long":
+    # -----------------------------------------------------
+    # 이평 방향 불일치
+    # -----------------------------------------------------
+
+    if d == "none":
+
+        return {
+            "text": "⚪ 관망",
+            "class": "wait"
+        }
+
+    # -----------------------------------------------------
+    # 롱
+    # -----------------------------------------------------
+
+    if d == "long":
 
         if long_breakout_state != "none":
 
@@ -2891,7 +3222,11 @@ def btc_position_view(row):
             "class": "wait"
         }
 
-    if d1 == "short":
+    # -----------------------------------------------------
+    # 숏
+    # -----------------------------------------------------
+
+    if d == "short":
 
         if short_breakout_state != "none":
 
@@ -2942,13 +3277,17 @@ def get_market_row(coin):
     return None
 
 
+# =========================================================
+# BTC 시황
+# =========================================================
+
 def market_summary_html():
 
     btc = get_market_row("BTC")
 
     if btc is None:
 
-        return """
+        return f"""
         <div class="market-summary">
 
             <div class="market-title">
@@ -2984,11 +3323,15 @@ def market_summary_html():
                 <div class="btc-bottom">
 
                     <span>
-                        1H ⚪ 0
+                        {format_timeframe(
+                            EMA_TIMEFRAME
+                        )} ⚪ 0
                     </span>
 
                     <span>
-                        4H ⚪ 0
+                        {format_timeframe(
+                            EMA_HIGH_TIMEFRAME
+                        )} ⚪ 0
                     </span>
 
                     <span>
@@ -3006,12 +3349,12 @@ def market_summary_html():
         </div>
         """
 
-    ema_1h = btc.get(
+    ema_1 = btc.get(
         "ema_1h",
         {}
     )
 
-    ema_4h = btc.get(
+    ema_high = btc.get(
         "ema_high",
         {}
     )
@@ -3069,13 +3412,15 @@ def market_summary_html():
             <div class="btc-bottom">
 
                 <span>
-                    1H
+                    {format_timeframe(
+                        EMA_TIMEFRAME
+                    )}
                     {market_direction_html(
-                        ema_1h.get(
+                        ema_1.get(
                             "direction",
                             "none"
                         ),
-                        ema_1h.get(
+                        ema_1.get(
                             "count",
                             0
                         )
@@ -3083,13 +3428,15 @@ def market_summary_html():
                 </span>
 
                 <span>
-                    4H
+                    {format_timeframe(
+                        EMA_HIGH_TIMEFRAME
+                    )}
                     {market_direction_html(
-                        ema_4h.get(
+                        ema_high.get(
                             "direction",
                             "none"
                         ),
-                        ema_4h.get(
+                        ema_high.get(
                             "count",
                             0
                         )
@@ -3163,8 +3510,6 @@ def roc_html(r):
             '</div>'
         )
 
-    # 롱 돌파
-
     state = r.get(
         "long_breakout_state",
         "none"
@@ -3191,8 +3536,6 @@ def roc_html(r):
         </div>
         """
 
-    # 숏 돌파
-
     state = r.get(
         "short_breakout_state",
         "none"
@@ -3218,8 +3561,6 @@ def roc_html(r):
 
         </div>
         """
-
-    # ROC 진행
 
     if value > 0:
 
@@ -3291,8 +3632,6 @@ def signal_html(row):
         {}
     )
 
-    # 롱 돌파
-
     state = r.get(
         "long_breakout_state",
         "none"
@@ -3322,8 +3661,6 @@ def signal_html(row):
             f'🚀{count_icon(count)}'
             '</span>'
         )
-
-    # 숏 돌파
 
     state = r.get(
         "short_breakout_state",
@@ -3355,8 +3692,6 @@ def signal_html(row):
             '</span>'
         )
 
-    # 롱 진행
-
     if row.get(
         "progress_qualified",
         False
@@ -3369,8 +3704,6 @@ def signal_html(row):
             '☀️'
             '</span>'
         )
-
-    # 숏 진행
 
     if row.get(
         "short_progress_qualified",
@@ -4865,6 +5198,13 @@ def dashboard():
             </b>
         </span>
 
+        <span>
+            이평필터 :
+            <b class="y">
+                {USE_EMA_TIMEFRAME}/{USE_EMA_HIGH_TIMEFRAME}
+            </b>
+        </span>
+
     </div>
     """
 
@@ -4878,7 +5218,13 @@ def dashboard():
             latest_upbit_update_time,
             is_breakout,
             "breakout",
-            "EMA10>30>60>120 · ROC10 음수→양수 ⓪①②"
+            (
+                f"{format_timeframe(EMA_TIMEFRAME)}"
+                f"/"
+                f"{format_timeframe(EMA_HIGH_TIMEFRAME)} "
+                f"EMA10>30>60>120 · "
+                f"ROC10 음수→양수 ⓪①②"
+            )
         )
 
     if USE_OKX == "Y":
@@ -4889,7 +5235,13 @@ def dashboard():
             latest_okx_update_time,
             is_breakout,
             "breakout",
-            "EMA10>30>60>120 · ROC10 음수→양수 ⓪①②"
+            (
+                f"{format_timeframe(EMA_TIMEFRAME)}"
+                f"/"
+                f"{format_timeframe(EMA_HIGH_TIMEFRAME)} "
+                f"EMA10>30>60>120 · "
+                f"ROC10 음수→양수 ⓪①②"
+            )
         )
 
         sections += focus_section(
@@ -4898,7 +5250,13 @@ def dashboard():
             latest_okx_update_time,
             is_short_breakout,
             "short_breakout",
-            "EMA10<30<60<120 · ROC10 양수→음수 ⓪①②"
+            (
+                f"{format_timeframe(EMA_TIMEFRAME)}"
+                f"/"
+                f"{format_timeframe(EMA_HIGH_TIMEFRAME)} "
+                f"EMA10<30<60<120 · "
+                f"ROC10 양수→음수 ⓪①②"
+            )
         )
 
     if USE_UPBIT == "Y":
@@ -4948,6 +5306,8 @@ def dashboard():
 
         <title>
             {format_timeframe(EMA_TIMEFRAME)}
+            /
+            {format_timeframe(EMA_HIGH_TIMEFRAME)}
             EMA10·30·60·120 · ROC10
         </title>
 
@@ -5025,12 +5385,17 @@ def startup():
         EMA_TIMEFRAME
     )
 
+    high_tf = format_timeframe(
+        EMA_HIGH_TIMEFRAME
+    )
+
     log.info(
         "========================================"
     )
 
     log.info(
-        f"{tf} EMA10·30·60·120 + ROC10 시작"
+        f"{tf}/{high_tf} "
+        f"EMA10·30·60·120 + ROC10 시작"
     )
 
     log.info(
@@ -5044,12 +5409,44 @@ def startup():
     )
 
     log.info(
-        f"EMA={tf} / EMA10-30-60-120"
+        f"EMA1={tf} / "
+        f"사용={USE_EMA_TIMEFRAME}"
+    )
+
+    log.info(
+        f"EMA2={high_tf} / "
+        f"사용={USE_EMA_HIGH_TIMEFRAME}"
+    )
+
+    log.info(
+        f"EMA10-30-60-120"
     )
 
     log.info(
         f"EMA count <= "
         f"{EMA1_MAX_COUNT}"
+    )
+
+    log.info(
+        "이평 필터:"
+        f" {USE_EMA_TIMEFRAME}/"
+        f"{USE_EMA_HIGH_TIMEFRAME}"
+    )
+
+    log.info(
+        "Y/Y → 두 시간봉 모두 필터"
+    )
+
+    log.info(
+        "Y/N → 첫 번째 시간봉만 필터"
+    )
+
+    log.info(
+        "N/Y → 두 번째 시간봉만 필터"
+    )
+
+    log.info(
+        "N/N → 이평 필터 사용 안 함"
     )
 
     log.info(
@@ -5090,8 +5487,8 @@ def startup():
     )
 
     log.info(
-        f"표시용 HIGH EMA="
-        f"{format_timeframe(EMA_HIGH_TIMEFRAME)}"
+        "표시용 HIGH EMA="
+        f"{get_okx_bar(EMA_HIGH_TIMEFRAME)}"
     )
 
     log.info(
@@ -5105,8 +5502,13 @@ def startup():
     )
 
     log.info(
-        "BTC 1H + 4H + ROC10 "
-        "롱/숏 방향 시각화"
+        "BTC 시황 이평 시간봉도 "
+        "설정값 자동 반영"
+    )
+
+    log.info(
+        "BTC 방향 판단도 "
+        "이평 Y/N 설정 자동 반영"
     )
 
     log.info(
