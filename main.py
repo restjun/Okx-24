@@ -2929,6 +2929,9 @@ def market_summary_html():
 
             <div class="market-title">
                 ₿ BTC 시장 시황
+                <span class="market-title-sub">
+                    · 롱/숏 방향 참고
+                </span>
             </div>
 
             <div class="btc-mobile">
@@ -2997,7 +3000,15 @@ def market_summary_html():
     <div class="market-summary">
 
         <div class="market-title">
-            ₿ BTC 시장 시황 · 롱/숏 방향 참고
+
+            <span class="market-title-main">
+                ₿ BTC 시장 시황
+            </span>
+
+            <span class="market-title-sub">
+                롱/숏 방향 참고
+            </span>
+
         </div>
 
         <div class="btc-mobile">
@@ -3692,16 +3703,74 @@ BTC 시장 시황
     overflow:hidden;
 }
 
+
+/* =====================================================
+BTC 시황 제목 강조
+===================================================== */
+
 .market-title{
+
+    display:flex;
+
+    align-items:center;
+
+    gap:5px;
+
+    width:100%;
+
+    min-height:18px;
+
+    color:#ffffff;
+
+    font-size:8px;
+    line-height:10px;
+
+    font-weight:900;
+
+    margin-bottom:4px;
+
+    padding:
+        3px
+        5px;
+
+    border-left:
+        3px solid
+        #39e875;
+
+    background:
+        rgba(
+            57,
+            232,
+            117,
+            .08
+        );
+
+    border-radius:3px;
+
+    white-space:nowrap;
+    overflow:hidden;
+}
+
+.market-title-main{
+
+    color:#ffffff;
+
+    font-size:8px;
+    line-height:10px;
+
+    font-weight:900;
+
+    flex:none;
+}
+
+.market-title-sub{
 
     color:#7f8791;
 
-    font-size:5px;
-    line-height:7px;
+    font-size:5.5px;
+    line-height:8px;
 
-    font-weight:800;
-
-    margin-bottom:2px;
+    font-weight:700;
 
     white-space:nowrap;
     overflow:hidden;
@@ -4582,8 +4651,32 @@ td:nth-child(1){
 
     .market-title{
 
-        font-size:4.5px;
-        line-height:6px;
+        min-height:17px;
+
+        gap:4px;
+
+        font-size:7px;
+        line-height:9px;
+
+        padding:
+            3px
+            4px;
+
+        margin-bottom:3px;
+
+        border-left-width:3px;
+    }
+
+    .market-title-main{
+
+        font-size:7px;
+        line-height:9px;
+    }
+
+    .market-title-sub{
+
+        font-size:4.8px;
+        line-height:7px;
     }
 
     .btc-top{
@@ -4735,6 +4828,29 @@ PC / 큰 화면
     }
 
     .market-title{
+
+        min-height:23px;
+
+        gap:6px;
+
+        font-size:9px;
+
+        padding:
+            4px
+            6px;
+
+        margin-bottom:5px;
+
+        border-left-width:3px;
+    }
+
+    .market-title-main{
+
+        font-size:9px;
+    }
+
+    .market-title-sub{
+
         font-size:6px;
     }
 
