@@ -1364,7 +1364,7 @@ def roc_count(
 # ① = 교차가 발생한 현재 봉
 # ② = 교차 발생 후 다음 봉
 #
-# 즉 최대 2개 봉까지만 신호 유지
+# 최대 2개 봉까지만 신호 유지
 # =========================================================
 
 def roc_cross_count(
@@ -1399,24 +1399,6 @@ def roc_cross_count(
 
         if not current_values:
             return 0
-
-        # -------------------------------------------------
-        # 현재 ROC 데이터의 마지막 봉 기준
-        # -------------------------------------------------
-
-        # current_series는
-        # 확정봉 + 현재 진행봉 구조이므로
-        # 마지막 2개의 교차 가능 구간만 확인한다.
-        #
-        # 마지막 봉에서 교차
-        # → ①
-        #
-        # 마지막에서 한 봉 전에서 교차
-        # → ②
-        #
-        # 그보다 오래된 교차
-        # → 신호 없음
-        # -------------------------------------------------
 
         values = current_values
 
@@ -1485,8 +1467,8 @@ def roc_cross_count(
                 return 2
 
         # -------------------------------------------------
-        # 현재 데이터 시작점이
-        # confirmed 마지막 봉과 연결되는 경우
+        # 현재 데이터가 1개인 경우
+        # 확정봉 마지막 값과 비교
         # -------------------------------------------------
 
         if len(values) == 1:
@@ -1512,7 +1494,16 @@ def roc_cross_count(
         return 0
 
 
+# =========================================================
+# 카운트 아이콘
+# =========================================================
+
 def count_icon(count):
+
+    try:
+        count = int(count)
+    except Exception:
+        return ""
 
     if count == 1:
         return "①"
@@ -1649,14 +1640,7 @@ def roc_analysis(
         )
 
         # -------------------------------------------------
-        # 중요
-        #
-        # 신호 여부를 별도의 현재봉 교차 조건으로
-        # 판단하지 않고 "카운트"와 직접 연결한다.
-        #
-        # 따라서
-        # count = 1 또는 2 → 신호
-        # count = 0          → 신호 없음
+        # 카운트와 신호를 동일 기준으로 연결
         # -------------------------------------------------
 
         long_breakout = (
@@ -1727,9 +1711,10 @@ def roc_analysis(
                     "long_breakout",
 
                 "display":
-                    f"🚀{count_icon(
+                    "🚀"
+                    + count_icon(
                         long_breakout_count
-                    )}"
+                    )
             })
 
         elif short_breakout:
@@ -1739,9 +1724,10 @@ def roc_analysis(
                     "short_breakout",
 
                 "display":
-                    f"🔻{count_icon(
+                    "🔻"
+                    + count_icon(
                         short_breakout_count
-                    )}"
+                    )
             })
 
         elif long_pullback:
@@ -1751,9 +1737,10 @@ def roc_analysis(
                     "long_pullback",
 
                 "display":
-                    f"🧊{count_icon(
+                    "🧊"
+                    + count_icon(
                         long_pullback_count
-                    )}"
+                    )
             })
 
         elif short_pullback:
@@ -1763,9 +1750,10 @@ def roc_analysis(
                     "short_pullback",
 
                 "display":
-                    f"☁️{count_icon(
+                    "☁️"
+                    + count_icon(
                         short_pullback_count
-                    )}"
+                    )
             })
 
         elif (
@@ -2031,6 +2019,8 @@ def empty_analysis():
             "state": "none",
             "display": "-"
         },
+
+        "changes": None,
 
         "breakout_qualified":
             False,
@@ -2340,8 +2330,8 @@ def make_row(
     return {
         "rank": rank,
         "name": name,
-        "change": format_change(a["changes"]),
-        "change_value": get_change_value(a["changes"]),
+        "change": format_change(a.get("changes")),
+        "change_value": get_change_value(a.get("changes")),
         "volume": format_volume(volume),
         "current_price": current_price,
         "ema_1h": a["ema_1h"],
@@ -2995,9 +2985,10 @@ def btc_position_view(row):
 
             return {
                 "text":
-                    f"🚀{count_icon(
+                    "🚀"
+                    + count_icon(
                         long_breakout_count
-                    )}",
+                    ),
                 "class": "long"
             }
 
@@ -3005,9 +2996,10 @@ def btc_position_view(row):
 
             return {
                 "text":
-                    f"🧊{count_icon(
+                    "🧊"
+                    + count_icon(
                         long_pullback_count
-                    )}",
+                    ),
                 "class": "long-pull"
             }
 
@@ -3032,9 +3024,10 @@ def btc_position_view(row):
 
             return {
                 "text":
-                    f"🔻{count_icon(
+                    "🔻"
+                    + count_icon(
                         short_breakout_count
-                    )}",
+                    ),
                 "class": "short"
             }
 
@@ -3042,9 +3035,10 @@ def btc_position_view(row):
 
             return {
                 "text":
-                    f"☁️{count_icon(
+                    "☁️"
+                    + count_icon(
                         short_pullback_count
-                    )}",
+                    ),
                 "class": "short-pull"
             }
 
@@ -3464,16 +3458,22 @@ def signal_html(row):
 
     if (
         row.get(
-            "breakout_qualified"
+            "breakout_qualified",
+            False
         )
         and count in (1, 2)
     ):
+
+        icon = (
+            "🚀"
+            + count_icon(count)
+        )
 
         return (
             '<span '
             'class="signal-icon long-breakout" '
             'title="롱 돌파">'
-            f'🚀{count_icon(count)}'
+            f'{icon}'
             '</span>'
         )
 
@@ -3490,16 +3490,22 @@ def signal_html(row):
 
     if (
         row.get(
-            "short_breakout_qualified"
+            "short_breakout_qualified",
+            False
         )
         and count in (1, 2)
     ):
+
+        icon = (
+            "🔻"
+            + count_icon(count)
+        )
 
         return (
             '<span '
             'class="signal-icon short-breakout" '
             'title="숏 돌파">'
-            f'🔻{count_icon(count)}'
+            f'{icon}'
             '</span>'
         )
 
@@ -3516,16 +3522,22 @@ def signal_html(row):
 
     if (
         row.get(
-            "pullback_qualified"
+            "pullback_qualified",
+            False
         )
         and count in (1, 2)
     ):
+
+        icon = (
+            "🧊"
+            + count_icon(count)
+        )
 
         return (
             '<span '
             'class="signal-icon long-pullback" '
             'title="롱 눌림">'
-            f'🧊{count_icon(count)}'
+            f'{icon}'
             '</span>'
         )
 
@@ -3542,16 +3554,22 @@ def signal_html(row):
 
     if (
         row.get(
-            "short_pullback_qualified"
+            "short_pullback_qualified",
+            False
         )
         and count in (1, 2)
     ):
+
+        icon = (
+            "☁️"
+            + count_icon(count)
+        )
 
         return (
             '<span '
             'class="signal-icon short-pullback" '
             'title="숏 눌림">'
-            f'☁️{count_icon(count)}'
+            f'{icon}'
             '</span>'
         )
 
@@ -3560,7 +3578,8 @@ def signal_html(row):
     # -----------------------------------------------------
 
     if row.get(
-        "progress_qualified"
+        "progress_qualified",
+        False
     ):
 
         return (
@@ -3576,7 +3595,8 @@ def signal_html(row):
     # -----------------------------------------------------
 
     if row.get(
-        "short_progress_qualified"
+        "short_progress_qualified",
+        False
     ):
 
         return (
@@ -4130,11 +4150,6 @@ BTC 모바일
     overflow:hidden;
     text-overflow:ellipsis;
 }
-
-
-/* =====================================================
-BTC 변동률 강조
-===================================================== */
 
 .btc-change{
 
