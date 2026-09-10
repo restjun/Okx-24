@@ -66,7 +66,25 @@ EMA1_MAX_COUNT = 200
 
 ROC_PERIOD = 10
 
+
+# =========================================================
+# 직전 고점 / 저점 돌파 설정
+#
+# 10 = 현재봉을 제외한 직전 10개 확정봉 기준
+#
+# 롱:
+# 현재 종가 > 직전 10개봉 최고가
+#
+# 숏:
+# 현재 종가 < 직전 10개봉 최저가
+#
+# 숫자만 변경하면 기준 봉 수 변경 가능
+# =========================================================
+
+BREAKOUT_LOOKBACK = 10
+
 BREAKOUT_MAX_COUNT = 2
+
 
 SUPPORTED_UPBIT_TIMEFRAMES = {
     5, 15, 30, 60, 240
@@ -119,6 +137,7 @@ def kst():
 
 
 def format_timeframe(minutes):
+
     minutes = int(minutes)
 
     if minutes >= 1440:
@@ -131,6 +150,7 @@ def format_timeframe(minutes):
 
 
 def get_okx_bar(minutes):
+
     return {
         5: "5m",
         15: "15m",
@@ -146,6 +166,7 @@ def get_okx_bar(minutes):
 
 
 def get_okx_bar_minutes(bar):
+
     return {
         "1m": 1,
         "3m": 3,
@@ -1803,6 +1824,173 @@ def roc_analysis(
 
 
 # =========================================================
+# 직전 고점 / 저점 종가 돌파
+#
+# BREAKOUT_LOOKBACK = 10
+#
+# 현재 진행봉은 기준에 포함하지 않음.
+#
+# 롱:
+# 현재 종가 > 직전 10개 확정봉 최고가
+#
+# 숏:
+# 현재 종가 < 직전 10개 확정봉 최저가
+# =========================================================
+
+def price_breakout_analysis(
+    df_confirmed,
+    df_current,
+    lookback=BREAKOUT_LOOKBACK
+):
+
+    result = {
+
+        "long_price_breakout": False,
+        "short_price_breakdown": False,
+
+        "breakout_high": None,
+        "breakdown_low": None,
+
+        "current_close": None
+    }
+
+    if (
+        df_confirmed is None
+        or df_confirmed.empty
+        or df_current is None
+        or df_current.empty
+    ):
+
+        return result
+
+    try:
+
+        lookback = int(
+            lookback
+        )
+
+        if lookback < 1:
+
+            return result
+
+        # -------------------------------------------------
+        # 확정봉 데이터 복사
+        # -------------------------------------------------
+
+        df = df_confirmed.copy()
+
+        df["h"] = pd.to_numeric(
+            df["h"],
+            errors="coerce"
+        )
+
+        df["l"] = pd.to_numeric(
+            df["l"],
+            errors="coerce"
+        )
+
+        df["c"] = pd.to_numeric(
+            df["c"],
+            errors="coerce"
+        )
+
+        df = df.dropna(
+            subset=[
+                "h",
+                "l",
+                "c"
+            ]
+        )
+
+        if len(df) < lookback:
+
+            return result
+
+        # -------------------------------------------------
+        # 직전 N개 확정봉
+        #
+        # 현재 진행봉은 df_confirmed에 포함되지 않음
+        # -------------------------------------------------
+
+        previous = df.iloc[
+            -lookback:
+        ]
+
+        highest_high = float(
+            previous["h"].max()
+        )
+
+        lowest_low = float(
+            previous["l"].min()
+        )
+
+        # -------------------------------------------------
+        # 현재 진행봉 종가
+        # -------------------------------------------------
+
+        current = df_current.copy()
+
+        current["c"] = pd.to_numeric(
+            current["c"],
+            errors="coerce"
+        )
+
+        current = current.dropna(
+            subset=["c"]
+        )
+
+        if current.empty:
+
+            return result
+
+        current_close = float(
+            current["c"].iloc[-1]
+        )
+
+        # -------------------------------------------------
+        # 종가 기준 돌파
+        # -------------------------------------------------
+
+        long_breakout = (
+            current_close
+            > highest_high
+        )
+
+        short_breakdown = (
+            current_close
+            < lowest_low
+        )
+
+        result.update({
+
+            "long_price_breakout":
+                long_breakout,
+
+            "short_price_breakdown":
+                short_breakdown,
+
+            "breakout_high":
+                highest_high,
+
+            "breakdown_low":
+                lowest_low,
+
+            "current_close":
+                current_close
+        })
+
+        return result
+
+    except Exception as e:
+
+        log.error(
+            f"가격 돌파 분석 오류: {e}"
+        )
+
+        return result
+
+
+# =========================================================
 # 등락률
 # =========================================================
 
@@ -2044,6 +2232,14 @@ def empty_analysis():
 
         "changes": None,
 
+        "long_price_breakout": False,
+        "short_price_breakdown": False,
+
+        "breakout_high": None,
+        "breakdown_low": None,
+
+        "current_close": None,
+
         "breakout_qualified": False,
         "short_breakout_qualified": False,
 
@@ -2058,11 +2254,22 @@ def empty_analysis():
 
 # =========================================================
 # 공통 자격조건
+#
+# 롱 돌파:
+# EMA30 > EMA60 > EMA120
+# + ROC 음수 → 양수
+# + 현재 종가 > 직전 N개 최고가
+#
+# 숏 돌파:
+# EMA30 < EMA60 < EMA120
+# + ROC 양수 → 음수
+# + 현재 종가 < 직전 N개 최저가
 # =========================================================
 
 def get_signal_qualified(
     e1,
-    r
+    r,
+    price_breakout
 ):
 
     base = (
@@ -2075,15 +2282,33 @@ def get_signal_qualified(
 
     return {
 
+        # -------------------------------------------------
+        # 롱 돌파
+        # -------------------------------------------------
+
         "breakout_qualified":
             base
             and e1["direction"] == "long"
-            and r["long_breakout"],
+            and r["long_breakout"]
+            and price_breakout[
+                "long_price_breakout"
+            ],
+
+        # -------------------------------------------------
+        # 숏 돌파
+        # -------------------------------------------------
 
         "short_breakout_qualified":
             base
             and e1["direction"] == "short"
-            and r["short_breakout"],
+            and r["short_breakout"]
+            and price_breakout[
+                "short_price_breakdown"
+            ],
+
+        # -------------------------------------------------
+        # 롱 진행
+        # -------------------------------------------------
 
         "progress_qualified":
             base
@@ -2091,6 +2316,10 @@ def get_signal_qualified(
             and r["roc10"] is not None
             and r["roc10"] > 0
             and r["roc10_count"] >= 2,
+
+        # -------------------------------------------------
+        # 숏 진행
+        # -------------------------------------------------
 
         "short_progress_qualified":
             base
@@ -2170,16 +2399,56 @@ def analyze_okx(
         df_confirmed
     )
 
+    # -----------------------------------------------------
+    # 직전 고점 / 저점 돌파
+    # -----------------------------------------------------
+
+    price_breakout = price_breakout_analysis(
+        df_confirmed,
+        df_current,
+        BREAKOUT_LOOKBACK
+    )
+
     q = get_signal_qualified(
         e1,
-        r
+        r,
+        price_breakout
     )
 
     return {
+
         "ema_1h": e1,
+
         "ema_high": e_high,
+
         "roc": r,
+
         "changes": changes,
+
+        "long_price_breakout":
+            price_breakout[
+                "long_price_breakout"
+            ],
+
+        "short_price_breakdown":
+            price_breakout[
+                "short_price_breakdown"
+            ],
+
+        "breakout_high":
+            price_breakout[
+                "breakout_high"
+            ],
+
+        "breakdown_low":
+            price_breakout[
+                "breakdown_low"
+            ],
+
+        "current_close":
+            price_breakout[
+                "current_close"
+            ],
 
         **q,
 
@@ -2251,16 +2520,56 @@ def analyze(
         df_current
     )
 
+    # -----------------------------------------------------
+    # 직전 고점 / 저점 돌파
+    # -----------------------------------------------------
+
+    price_breakout = price_breakout_analysis(
+        df_confirmed,
+        df_current,
+        BREAKOUT_LOOKBACK
+    )
+
     q = get_signal_qualified(
         e1,
-        r
+        r,
+        price_breakout
     )
 
     return {
+
         "ema_1h": e1,
+
         "ema_high": e_high,
+
         "roc": r,
+
         "changes": changes,
+
+        "long_price_breakout":
+            price_breakout[
+                "long_price_breakout"
+            ],
+
+        "short_price_breakdown":
+            price_breakout[
+                "short_price_breakdown"
+            ],
+
+        "breakout_high":
+            price_breakout[
+                "breakout_high"
+            ],
+
+        "breakdown_low":
+            price_breakout[
+                "breakdown_low"
+            ],
+
+        "current_close":
+            price_breakout[
+                "current_close"
+            ],
 
         **q,
 
@@ -2290,8 +2599,12 @@ def make_row(
     )
 
     return {
-        "rank": rank,
-        "name": name,
+
+        "rank":
+            rank,
+
+        "name":
+            name,
 
         "change":
             format_change(
@@ -2317,6 +2630,33 @@ def make_row(
 
         "roc":
             a["roc"],
+
+        "long_price_breakout":
+            a.get(
+                "long_price_breakout",
+                False
+            ),
+
+        "short_price_breakdown":
+            a.get(
+                "short_price_breakdown",
+                False
+            ),
+
+        "breakout_high":
+            a.get(
+                "breakout_high"
+            ),
+
+        "breakdown_low":
+            a.get(
+                "breakdown_low"
+            ),
+
+        "current_close":
+            a.get(
+                "current_close"
+            ),
 
         "breakout_qualified":
             a["breakout_qualified"],
@@ -2424,7 +2764,8 @@ def update_upbit():
         except Exception as e:
 
             log.error(
-                f"업비트 상세 오류 {market}: {e}"
+                f"업비트 상세 오류 "
+                f"{market}: {e}"
             )
 
             a = None
@@ -2440,14 +2781,19 @@ def update_upbit():
         )
 
     latest_upbit_data = rows
+
     latest_upbit_update_time = kst()
 
     log.info(
         f"업비트 완료 / "
-        f"롱돌파 {sum(is_breakout(x) for x in rows)}개 / "
-        f"숏돌파 {sum(is_short_breakout(x) for x in rows)}개 / "
-        f"롱진행 {sum(is_progress(x) for x in rows)}개 / "
-        f"숏진행 {sum(is_short_progress(x) for x in rows)}개"
+        f"롱돌파 "
+        f"{sum(is_breakout(x) for x in rows)}개 / "
+        f"숏돌파 "
+        f"{sum(is_short_breakout(x) for x in rows)}개 / "
+        f"롱진행 "
+        f"{sum(is_progress(x) for x in rows)}개 / "
+        f"숏진행 "
+        f"{sum(is_short_progress(x) for x in rows)}개"
     )
 
 
@@ -2584,7 +2930,8 @@ def update_okx(usdt):
         except Exception as e:
 
             log.error(
-                f"OKX 상세 오류 {symbol}: {e}"
+                f"OKX 상세 오류 "
+                f"{symbol}: {e}"
             )
 
             a = None
@@ -2600,15 +2947,21 @@ def update_okx(usdt):
         )
 
     latest_okx_data = rows
+
     okx_1h_cache_time = kst()
+
     latest_okx_update_time = kst()
 
     log.info(
         f"OKX 완료 / "
-        f"롱돌파 {sum(is_breakout(x) for x in rows)}개 / "
-        f"숏돌파 {sum(is_short_breakout(x) for x in rows)}개 / "
-        f"롱진행 {sum(is_progress(x) for x in rows)}개 / "
-        f"숏진행 {sum(is_short_progress(x) for x in rows)}개"
+        f"롱돌파 "
+        f"{sum(is_breakout(x) for x in rows)}개 / "
+        f"숏돌파 "
+        f"{sum(is_short_breakout(x) for x in rows)}개 / "
+        f"롱진행 "
+        f"{sum(is_progress(x) for x in rows)}개 / "
+        f"숏진행 "
+        f"{sum(is_short_progress(x) for x in rows)}개"
     )
 
     return True
@@ -2635,7 +2988,8 @@ def update_dashboard():
     try:
 
         log.info(
-            f"========== 전체 조회 {kst()} =========="
+            f"========== 전체 조회 "
+            f"{kst()} =========="
         )
 
         if USE_UPBIT == "Y":
@@ -3411,7 +3765,8 @@ def signal_html(row):
         return (
             '<span '
             'class="signal-icon long-breakout" '
-            'title="롱 돌파">'
+            'title="EMA 정배열 + ROC 돌파 + '
+            f'직전 {BREAKOUT_LOOKBACK}개봉 고점 종가 돌파">'
             f'🚀{count_icon(count)}'
             '</span>'
         )
@@ -3445,7 +3800,8 @@ def signal_html(row):
         return (
             '<span '
             'class="signal-icon short-breakout" '
-            'title="숏 돌파">'
+            'title="EMA 역배열 + ROC 돌파 + '
+            f'직전 {BREAKOUT_LOOKBACK}개봉 저점 종가 이탈">'
             f'🔻{count_icon(count)}'
             '</span>'
         )
@@ -4954,7 +5310,9 @@ def dashboard():
             latest_upbit_update_time,
             is_breakout,
             "breakout",
-            "EMA30>60>120 · ROC10 음수→양수 ⓪①②"
+            f"EMA30>60>120 · "
+            f"ROC10 음수→양수 · "
+            f"직전 {BREAKOUT_LOOKBACK}개봉 고점 종가 돌파"
         )
 
     if USE_OKX == "Y":
@@ -4965,7 +5323,9 @@ def dashboard():
             latest_okx_update_time,
             is_breakout,
             "breakout",
-            "EMA30>60>120 · ROC10 음수→양수 ⓪①②"
+            f"EMA30>60>120 · "
+            f"ROC10 음수→양수 · "
+            f"직전 {BREAKOUT_LOOKBACK}개봉 고점 종가 돌파"
         )
 
         sections += focus_section(
@@ -4974,7 +5334,9 @@ def dashboard():
             latest_okx_update_time,
             is_short_breakout,
             "short_breakout",
-            "EMA30<60<120 · ROC10 양수→음수 ⓪①②"
+            f"EMA30<60<120 · "
+            f"ROC10 양수→음수 · "
+            f"직전 {BREAKOUT_LOOKBACK}개봉 저점 종가 이탈"
         )
 
     if USE_UPBIT == "Y":
@@ -5024,7 +5386,8 @@ def dashboard():
 
         <title>
             {format_timeframe(EMA_TIMEFRAME)}
-            EMA30·60·120 · ROC10
+            EMA30·60·120 · ROC10 ·
+            직전 {BREAKOUT_LOOKBACK}개봉 돌파
         </title>
 
         <style>
@@ -5146,12 +5509,19 @@ def startup():
 
     log.info(
         "롱 돌파: EMA30>60>120 + "
-        "ROC 음수→양수"
+        "ROC 음수→양수 + "
+        f"직전 {BREAKOUT_LOOKBACK}개봉 최고가 종가 돌파"
     )
 
     log.info(
         "숏 돌파: EMA30<60<120 + "
-        "ROC 양수→음수"
+        "ROC 양수→음수 + "
+        f"직전 {BREAKOUT_LOOKBACK}개봉 최저가 종가 이탈"
+    )
+
+    log.info(
+        f"가격 돌파 기준 봉 수="
+        f"{BREAKOUT_LOOKBACK}"
     )
 
     log.info(
