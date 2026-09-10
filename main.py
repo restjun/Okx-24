@@ -4178,8 +4178,9 @@ h2 small{
 
     min-height:21px;
 
-    font-size:16px;
-    line-height:18px;
+    /* 기존 16px → 15px */
+    font-size:15px;
+    line-height:17px;
 
     font-weight:900;
 
@@ -4795,9 +4796,10 @@ td:nth-child(1){
 
     .signal-icon{
 
-        font-size:14px;
+        /* 기존 14px → 13px */
+        font-size:13px;
 
-        line-height:16px;
+        line-height:15px;
 
         min-height:19px;
     }
@@ -4943,9 +4945,10 @@ PC / 큰 화면
 
     .signal-icon{
 
-        font-size:21px;
+        /* 기존 21px → 20px */
+        font-size:20px;
 
-        line-height:23px;
+        line-height:22px;
 
         min-height:28px;
     }
