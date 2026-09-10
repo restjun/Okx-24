@@ -1361,8 +1361,15 @@ def roc_count(
 # =========================================================
 # 돌파 / 눌림 카운트
 #
-# ① = 교차가 발생한 현재 봉
-# ② = 교차 발생 후 다음 봉
+# ① = 현재 진행봉에서 교차
+# ② = 직전 확정봉에서 교차
+#
+# ★ 수정:
+# ②는 current_series가 아니라
+# confirmed_series의 마지막 확정봉 교차를 기준으로 계산
+#
+# 따라서 현재봉 ROC가 다시 움직여도
+# 직전 확정봉에서 발생한 ②가 누락되지 않음
 #
 # 최대 2개 봉까지만 신호 유지
 # =========================================================
@@ -1400,7 +1407,9 @@ def roc_cross_count(
         if not current_values:
             return 0
 
-        values = current_values
+        # -------------------------------------------------
+        # 교차 판정
+        # -------------------------------------------------
 
         def crossed(prev, curr):
 
@@ -1435,13 +1444,15 @@ def roc_cross_count(
             return False
 
         # -------------------------------------------------
-        # ① 현재 봉에서 교차
+        # ① 현재 진행봉에서 교차
+        #
+        # 현재봉 직전 값 → 현재봉 값
         # -------------------------------------------------
 
-        if len(values) >= 2:
+        if len(current_values) >= 2:
 
-            prev = values[-2]
-            curr = values[-1]
+            prev = current_values[-2]
+            curr = current_values[-1]
 
             if crossed(
                 prev,
@@ -1451,30 +1462,50 @@ def roc_cross_count(
                 return 1
 
         # -------------------------------------------------
-        # ② 한 봉 전에서 교차
+        # ② 직전 확정봉에서 교차
+        #
+        # ★ 핵심 수정
+        #
+        # 확정봉의 마지막 두 값을 비교한다.
+        #
+        # 예:
+        #
+        # 확정봉 N-1 = -0.20
+        # 확정봉 N   = +0.10
+        # 현재봉 N+1 = +0.05
+        #
+        # → N에서 교차 발생
+        # → 현재는 ②
+        #
+        # 현재봉 값이 이후 움직여도
+        # 확정봉 N의 교차는 유지된다.
         # -------------------------------------------------
 
-        if len(values) >= 3:
+        if len(confirmed_values) >= 2:
 
-            prev = values[-3]
-            curr = values[-2]
+            prev = confirmed_values[-2]
+            curr = confirmed_values[-1]
 
             if crossed(
                 prev,
                 curr
             ):
 
-                return 2
+                return min(
+                    2,
+                    int(max_count)
+                )
 
         # -------------------------------------------------
         # 현재 데이터가 1개인 경우
-        # 확정봉 마지막 값과 비교
+        #
+        # 확정봉 마지막 값 → 현재봉 값
         # -------------------------------------------------
 
-        if len(values) == 1:
+        if len(current_values) == 1:
 
             previous = confirmed_values[-1]
-            current = values[-1]
+            current = current_values[-1]
 
             if crossed(
                 previous,
