@@ -9,6 +9,7 @@ import uvicorn
 import logging
 import pandas as pd
 import warnings
+import copy
 
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -125,6 +126,24 @@ request_lock = threading.Lock()
 update_lock = threading.Lock()
 
 last_request_time = 0
+
+
+# =========================================================
+# 돌파 이후 추적
+#
+# key:
+#   UPBIT:KRW-BTC
+#   OKX:BTC-USDT-SWAP
+#
+# 돌파 발생 → 등록
+# 숏 돌파 발생 → 삭제
+#
+# TOP30에서 빠져도 계속 보관
+# =========================================================
+
+tracked_breakout_coins = {}
+
+tracking_lock = threading.Lock()
 
 
 # =========================================================
@@ -1255,12 +1274,6 @@ def ema(df, period):
 
 # =========================================================
 # EMA 정배열 / 역배열
-#
-# 정배열:
-# EMA10 > EMA30 > EMA60 > EMA120
-#
-# 역배열:
-# EMA10 < EMA30 < EMA60 < EMA120
 # =========================================================
 
 def ema_alignment_count(df):
@@ -1391,8 +1404,6 @@ def ema_display(
 
 # =========================================================
 # EMA 필터
-#
-# 설정된 시간봉만 사용
 # =========================================================
 
 def ema_filter_direction(
@@ -1414,7 +1425,6 @@ def ema_filter_direction(
             e_high
         )
 
-    # 둘 다 N이면 필터 사용 안 함
     if not selected:
 
         return {
@@ -1430,7 +1440,6 @@ def ema_filter_direction(
         for x in selected
     ]
 
-    # 선택된 모든 시간봉이 같은 방향이어야 함
     if all(
         d == "long"
         for d in directions
@@ -1476,7 +1485,6 @@ def ema_filter_pass(
             e_high
         )
 
-    # 둘 다 N이면 이평 필터 없음
     if not selected:
         return True
 
@@ -1507,7 +1515,6 @@ def ema_filter_pass(
         for e in selected
     ]
 
-    # 선택된 이평 방향이 모두 같아야 함
     return len(
         set(directions)
     ) == 1
@@ -2160,8 +2167,6 @@ def empty_analysis():
 
 # =========================================================
 # 공통 자격조건
-#
-# 설정된 이평 시간봉만 필터
 # =========================================================
 
 def get_signal_qualified(
@@ -2169,10 +2174,6 @@ def get_signal_qualified(
     e_high,
     r
 ):
-
-    # -----------------------------------------------------
-    # 선택된 이평 시간봉의 공통 방향
-    # -----------------------------------------------------
 
     filter_info = ema_filter_direction(
         e1,
@@ -2187,11 +2188,6 @@ def get_signal_qualified(
         e1,
         e_high
     )
-
-    # -----------------------------------------------------
-    # EMA 필터를 사용하지 않으면
-    # ROC 방향을 기준으로 판단
-    # -----------------------------------------------------
 
     if (
         USE_EMA_TIMEFRAME == "N"
@@ -2523,6 +2519,256 @@ def is_short_progress(row):
 
 
 # =========================================================
+# 돌파 이후 추적 등록 / 종료
+# =========================================================
+
+def update_breakout_tracking(
+    source,
+    market,
+    row
+):
+
+    key = (
+        f"{source}:{market}"
+    )
+
+    now = kst()
+
+    # -----------------------------------------------------
+    # 1. 하락돌파 발생
+    #    → 기존 추적 종료
+    # -----------------------------------------------------
+
+    if is_short_breakout(row):
+
+        with tracking_lock:
+
+            if key in tracked_breakout_coins:
+
+                tracked_breakout_coins.pop(
+                    key,
+                    None
+                )
+
+                log.info(
+                    f"[돌파 추적 종료] "
+                    f"{source} / {market} / "
+                    f"하락돌파"
+                )
+
+        return
+
+    # -----------------------------------------------------
+    # 2. 롱 돌파 발생
+    #    → 추적 시작
+    # -----------------------------------------------------
+
+    if is_breakout(row):
+
+        with tracking_lock:
+
+            if key not in tracked_breakout_coins:
+
+                tracked_breakout_coins[key] = {
+
+                    "source":
+                        source,
+
+                    "market":
+                        market,
+
+                    "name":
+                        row.get(
+                            "name",
+                            market
+                        ),
+
+                    "started_at":
+                        now,
+
+                    "row":
+                        copy.deepcopy(
+                            row
+                        )
+                }
+
+                log.info(
+                    f"[돌파 추적 시작] "
+                    f"{source} / {market}"
+                )
+
+            else:
+
+                # 기존 시작시간은 유지
+                tracked_breakout_coins[key][
+                    "row"
+                ] = copy.deepcopy(
+                    row
+                )
+
+        return
+
+    # -----------------------------------------------------
+    # 3. 이미 추적 중이면
+    #    돌파 조건이 사라져도 계속 최신 데이터 저장
+    # -----------------------------------------------------
+
+    with tracking_lock:
+
+        if key in tracked_breakout_coins:
+
+            tracked_breakout_coins[key][
+                "row"
+            ] = copy.deepcopy(
+                row
+            )
+
+
+# =========================================================
+# 현재 추적 목록
+# =========================================================
+
+def get_tracked_breakout_rows(
+    source=None
+):
+
+    result = []
+
+    with tracking_lock:
+
+        items = list(
+            tracked_breakout_coins.values()
+        )
+
+    for item in items:
+
+        if (
+            source is not None
+            and item.get("source") != source
+        ):
+            continue
+
+        row = copy.deepcopy(
+            item.get(
+                "row",
+                {}
+            )
+        )
+
+        row["tracking_started_at"] = (
+            item.get(
+                "started_at",
+                "-"
+            )
+        )
+
+        row["tracking_market"] = (
+            item.get(
+                "market",
+                "-"
+            )
+        )
+
+        result.append(row)
+
+    result.sort(
+        key=lambda x:
+            x.get(
+                "tracking_started_at",
+                "-"
+            )
+    )
+
+    return result
+
+
+# =========================================================
+# 추적 중인 Upbit 코인 재분석
+#
+# TOP30에서 빠져도 하락돌파를 감지하기 위해
+# 추적 중인 종목은 별도로 계속 분석
+# =========================================================
+
+def update_upbit_tracking_outside_top(
+    markets,
+    top_markets
+):
+
+    with tracking_lock:
+
+        tracked_markets = [
+            item.get("market")
+            for item in tracked_breakout_coins.values()
+            if item.get("source") == "UPBIT"
+        ]
+
+    market_map = {
+        x["market"]: x
+        for x in markets
+    }
+
+    top_set = set(
+        top_markets
+    )
+
+    for market in tracked_markets:
+
+        # TOP30 안에 있으면 이미 update_upbit에서 갱신
+        if market in top_set:
+            continue
+
+        item = market_map.get(
+            market
+        )
+
+        if not item:
+            continue
+
+        price = item.get(
+            "current_price"
+        )
+
+        try:
+
+            a = analyze(
+                market,
+                current_price=price
+            )
+
+            if a is None:
+                continue
+
+            coin = market.replace(
+                "KRW-",
+                ""
+            )
+
+            row = make_row(
+                "-",
+                coin,
+                item.get(
+                    "volume_24h",
+                    0
+                ),
+                a,
+                price
+            )
+
+            update_breakout_tracking(
+                "UPBIT",
+                market,
+                row
+            )
+
+        except Exception as e:
+
+            log.error(
+                f"[돌파 추적 재분석 오류] "
+                f"{market}: {e}"
+            )
+
+
+# =========================================================
 # Upbit 업데이트
 # =========================================================
 
@@ -2543,12 +2789,18 @@ def update_upbit():
 
     rows = []
 
+    top_markets = []
+
     for rank, item in enumerate(
         markets[:TOP_N],
         1
     ):
 
         market = item["market"]
+
+        top_markets.append(
+            market
+        )
 
         coin = market.replace(
             "KRW-",
@@ -2572,26 +2824,54 @@ def update_upbit():
 
             a = None
 
+        row = make_row(
+            rank,
+            coin,
+            item["volume_24h"],
+            a,
+            price
+        )
+
         rows.append(
-            make_row(
-                rank,
-                coin,
-                item["volume_24h"],
-                a,
-                price
-            )
+            row
+        )
+
+        # -------------------------------------------------
+        # 돌파 추적
+        # -------------------------------------------------
+
+        update_breakout_tracking(
+            "UPBIT",
+            market,
+            row
         )
 
     latest_upbit_data = rows
 
     latest_upbit_update_time = kst()
 
+    # -----------------------------------------------------
+    # TOP30 밖의 추적 코인도 계속 감시
+    # -----------------------------------------------------
+
+    update_upbit_tracking_outside_top(
+        markets,
+        top_markets
+    )
+
+    tracked_count = len(
+        get_tracked_breakout_rows(
+            "UPBIT"
+        )
+    )
+
     log.info(
         f"업비트 완료 / "
         f"롱돌파 {sum(is_breakout(x) for x in rows)}개 / "
         f"숏돌파 {sum(is_short_breakout(x) for x in rows)}개 / "
         f"롱진행 {sum(is_progress(x) for x in rows)}개 / "
-        f"숏진행 {sum(is_short_progress(x) for x in rows)}개"
+        f"숏진행 {sum(is_short_progress(x) for x in rows)}개 / "
+        f"돌파이후 추적 {tracked_count}개"
     )
 
 
@@ -2730,14 +3010,26 @@ def update_okx(usdt):
 
             a = None
 
+        row = make_row(
+            rank,
+            name,
+            volumes[symbol],
+            a,
+            price
+        )
+
         rows.append(
-            make_row(
-                rank,
-                name,
-                volumes[symbol],
-                a,
-                price
-            )
+            row
+        )
+
+        # -------------------------------------------------
+        # OKX도 돌파 이후 추적 등록
+        # -------------------------------------------------
+
+        update_breakout_tracking(
+            "OKX",
+            symbol,
+            row
         )
 
     latest_okx_data = rows
@@ -3008,8 +3300,6 @@ def market_change_html(value):
 
 # =========================================================
 # BTC 롱 / 숏 방향 판단
-#
-# Y/N 설정에 따라 선택된 이평만 사용
 # =========================================================
 
 def btc_position_view(row):
@@ -3049,11 +3339,6 @@ def btc_position_view(row):
         selected.append(
             ema_high
         )
-
-    # -----------------------------------------------------
-    # 선택된 이평이 하나도 없으면
-    # ROC만으로 판단
-    # -----------------------------------------------------
 
     if not selected:
 
@@ -3100,10 +3385,6 @@ def btc_position_view(row):
         "short_breakout_state",
         "none"
     )
-
-    # -----------------------------------------------------
-    # 이평 필터 없음
-    # -----------------------------------------------------
 
     if not selected:
 
@@ -3172,20 +3453,12 @@ def btc_position_view(row):
             "class": "wait"
         }
 
-    # -----------------------------------------------------
-    # 이평 방향 불일치
-    # -----------------------------------------------------
-
     if d == "none":
 
         return {
             "text": "⚪ 관망",
             "class": "wait"
         }
-
-    # -----------------------------------------------------
-    # 롱
-    # -----------------------------------------------------
 
     if d == "long":
 
@@ -3221,10 +3494,6 @@ def btc_position_view(row):
             "text": "⚪ 롱 대기",
             "class": "wait"
         }
-
-    # -----------------------------------------------------
-    # 숏
-    # -----------------------------------------------------
 
     if d == "short":
 
@@ -3811,6 +4080,10 @@ def rows_html(
 
             cls = "short-progress-qualified"
 
+        elif focus == "tracking":
+
+            cls = "tracking-qualified"
+
         else:
 
             cls = row_class(x)
@@ -4011,6 +4284,37 @@ def focus_section(
     """
 
 
+# =========================================================
+# 돌파 이후 추적 섹션
+# =========================================================
+
+def tracking_section():
+
+    rows = get_tracked_breakout_rows()
+
+    update_time = kst()
+
+    return f"""
+    <div class="section-title tracking-section-title">
+
+        <span class="section-title-main">
+            📈 돌파 이후 추적
+        </span>
+
+        <span class="section-title-sub">
+            돌파 이후 계속 추적 · 하락돌파 발생 시 종료 ·
+            {len(rows)}개 · {update_time} KST
+        </span>
+
+    </div>
+
+    {table_html(
+        rows,
+        "tracking"
+    )}
+    """
+
+
 def section(
     title,
     data,
@@ -4157,7 +4461,6 @@ h1{
 
 /* =====================================================
    일반 제목
-   BTC 시장 시황과 동일한 디자인
    ===================================================== */
 
 .section-title{
@@ -4249,6 +4552,33 @@ h1{
 
 .short_progress-section-title{
     border-left-color:#ff6666;
+}
+
+
+/* =====================================================
+   돌파 이후 추적
+   ===================================================== */
+
+.tracking-section-title{
+    border-left-color:#ffd84d;
+
+    background:
+        rgba(
+            255,
+            216,
+            77,
+            .08
+        );
+}
+
+.tracking-qualified{
+    background:
+        rgba(
+            255,
+            216,
+            77,
+            .07
+        );
 }
 
 
@@ -5210,6 +5540,10 @@ def dashboard():
 
     sections = ""
 
+    # -----------------------------------------------------
+    # 업비트 돌파 정배열
+    # -----------------------------------------------------
+
     if USE_UPBIT == "Y":
 
         sections += focus_section(
@@ -5226,6 +5560,16 @@ def dashboard():
                 f"ROC10 음수→양수 ⓪①②"
             )
         )
+
+        # -------------------------------------------------
+        # 돌파 정배열 바로 아래
+        # -------------------------------------------------
+
+        sections += tracking_section()
+
+    # -----------------------------------------------------
+    # OKX
+    # -----------------------------------------------------
 
     if USE_OKX == "Y":
 
@@ -5258,6 +5602,10 @@ def dashboard():
                 f"ROC10 양수→음수 ⓪①②"
             )
         )
+
+    # -----------------------------------------------------
+    # 일반 TOP
+    # -----------------------------------------------------
 
     if USE_UPBIT == "Y":
 
@@ -5419,7 +5767,7 @@ def startup():
     )
 
     log.info(
-        f"EMA10-30-60-120"
+        "EMA10-30-60-120"
     )
 
     log.info(
@@ -5479,6 +5827,19 @@ def startup():
 
     log.info(
         "ROC 양수/음수 진행 카운트 유지"
+    )
+
+    log.info(
+        "돌파 이후 추적 기능 활성화"
+    )
+
+    log.info(
+        "돌파 등록 → 하락돌파 발생 시 종료"
+    )
+
+    log.info(
+        "TOP30 밖으로 이동한 추적 코인도 "
+        "계속 감시"
     )
 
     log.info(
