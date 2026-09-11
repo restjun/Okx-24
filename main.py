@@ -5622,7 +5622,7 @@ def dashboard():
     if USE_UPBIT == "Y":
 
         sections += focus_section(
-            "🚀 ROC 롱 돌파 정배열",
+            "🚀 ROC 롱 돌파 정배열 (추세선확인 돌파인가 반등인가)",
             latest_upbit_data,
             latest_upbit_update_time,
             is_breakout,
@@ -5724,7 +5724,7 @@ def dashboard():
         # -----------------------------------------------
 
         sections += focus_section(
-            "🚀 ROC 롱 돌파 정배열(------- 선 필수! 돒파? 되될림?",
+            "🚀 ROC 롱 돌파 정배열",
             latest_okx_data,
             latest_okx_update_time,
             is_breakout,
