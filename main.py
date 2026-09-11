@@ -62,9 +62,6 @@ EMA_HIGH_TIMEFRAME = 240
 # =========================================================
 # 이평 시간봉 필터 사용 여부
 #
-# USE_EMA_TIMEFRAME      = 첫 번째 시간봉 필터
-# USE_EMA_HIGH_TIMEFRAME = 두 번째 시간봉 필터
-#
 # Y / Y → 두 시간봉 모두 필터
 # Y / N → 첫 번째 시간봉만 필터
 # N / Y → 두 번째 시간봉만 필터
@@ -95,6 +92,14 @@ EMA1_MAX_COUNT = 200
 ROC_PERIOD = 10
 
 BREAKOUT_MAX_COUNT = 2
+
+# =========================================================
+# ROC 진행 리스트 기준
+#
+# ROC10 양수 상태가 3개 이상 연속이면 표시
+# =========================================================
+
+ROC_PROGRESS_MIN_COUNT = 3
 
 
 SUPPORTED_UPBIT_TIMEFRAMES = {
@@ -148,6 +153,7 @@ def kst():
 
 
 def format_timeframe(minutes):
+
     minutes = int(minutes)
 
     if minutes >= 1440:
@@ -160,6 +166,7 @@ def format_timeframe(minutes):
 
 
 def get_okx_bar(minutes):
+
     return {
         5: "5m",
         15: "15m",
@@ -175,6 +182,7 @@ def get_okx_bar(minutes):
 
 
 def get_okx_bar_minutes(bar):
+
     return {
         "1m": 1,
         "3m": 3,
@@ -218,6 +226,7 @@ def get_current_candle_start(minutes):
     )
 
     if day_offset:
+
         current -= pd.Timedelta(
             days=day_offset
         )
@@ -349,9 +358,11 @@ def retry(func, *args, **kwargs):
                 r,
                 "status_code"
             ):
+
                 return r
 
             if r.status_code == 200:
+
                 return r
 
             if r.status_code == 429:
@@ -440,6 +451,7 @@ def get_upbit_markets():
             if not market.startswith(
                 "KRW-"
             ):
+
                 continue
 
             try:
@@ -453,6 +465,7 @@ def get_upbit_markets():
                 )
 
             except Exception:
+
                 continue
 
             if volume > 0 and price > 0:
@@ -503,6 +516,7 @@ def get_usdt_krw():
         )
 
     except Exception:
+
         return None
 
 
@@ -681,6 +695,7 @@ def history_upbit(
         )
 
         if len(all_df) >= required:
+
             return all_df
 
         to = (
@@ -953,6 +968,7 @@ def history_okx(
         )
 
         if len(all_df) >= required:
+
             return all_df
 
         before = int(
@@ -1001,6 +1017,7 @@ def get_okx_tickers():
             if not inst.endswith(
                 "-USDT-SWAP"
             ):
+
                 continue
 
             try:
@@ -1013,6 +1030,7 @@ def get_okx_tickers():
                 )
 
             except Exception:
+
                 last = 0
 
             if last > 0:
@@ -1072,6 +1090,7 @@ def get_okx_symbols():
         ]
 
     except Exception:
+
         return []
 
 
@@ -1108,6 +1127,7 @@ def get_okx_volume_cached(
         )
 
     except Exception:
+
         return None
 
 
@@ -1140,6 +1160,7 @@ def get_okx_cached_price(inst):
         )
 
     except Exception:
+
         return None
 
 
@@ -1237,6 +1258,7 @@ def ema(df, period):
         or df.empty
         or "c" not in df
     ):
+
         return None
 
     return (
@@ -1255,12 +1277,6 @@ def ema(df, period):
 
 # =========================================================
 # EMA 정배열 / 역배열
-#
-# 정배열:
-# EMA10 > EMA30 > EMA60 > EMA120
-#
-# 역배열:
-# EMA10 < EMA30 < EMA60 < EMA120
 # =========================================================
 
 def ema_alignment_count(df):
@@ -1313,9 +1329,11 @@ def ema_alignment_count(df):
             )
 
             if a > b > c > d:
+
                 return "long"
 
             if a < b < c < d:
+
                 return "short"
 
             return "none"
@@ -1338,9 +1356,11 @@ def ema_alignment_count(df):
         ):
 
             if get_dir(i) == current:
+
                 count += 1
 
             else:
+
                 break
 
         return {
@@ -1391,8 +1411,6 @@ def ema_display(
 
 # =========================================================
 # EMA 필터
-#
-# 설정된 시간봉만 사용
 # =========================================================
 
 def ema_filter_direction(
@@ -1414,7 +1432,6 @@ def ema_filter_direction(
             e_high
         )
 
-    # 둘 다 N이면 필터 사용 안 함
     if not selected:
 
         return {
@@ -1430,7 +1447,6 @@ def ema_filter_direction(
         for x in selected
     ]
 
-    # 선택된 모든 시간봉이 같은 방향이어야 함
     if all(
         d == "long"
         for d in directions
@@ -1476,8 +1492,8 @@ def ema_filter_pass(
             e_high
         )
 
-    # 둘 다 N이면 이평 필터 없음
     if not selected:
+
         return True
 
     for e in selected:
@@ -1507,7 +1523,6 @@ def ema_filter_pass(
         for e in selected
     ]
 
-    # 선택된 이평 방향이 모두 같아야 함
     return len(
         set(directions)
     ) == 1
@@ -1527,6 +1542,7 @@ def roc(
         or df.empty
         or "c" not in df
     ):
+
         return None
 
     try:
@@ -1565,6 +1581,7 @@ def roc_count(
     ):
 
         if pd.isna(value):
+
             break
 
         if (
@@ -1574,6 +1591,7 @@ def roc_count(
             count += 1
 
         else:
+
             break
 
     return count
@@ -1600,6 +1618,7 @@ def roc_cross_state(
             confirmed_series is None
             or current_series is None
         ):
+
             return result
 
         confirmed = [
@@ -1615,6 +1634,7 @@ def roc_cross_state(
         ]
 
         if not confirmed or not current:
+
             return result
 
         def crossed(prev, curr):
@@ -1713,9 +1733,11 @@ def roc_cross_state(
 def count_icon(count):
 
     try:
+
         count = int(count)
 
     except Exception:
+
         return ""
 
     if count == 0:
@@ -1747,6 +1769,12 @@ def roc_analysis(
         "roc10_count": 0,
         "roc10_negative_count": 0,
 
+        # -------------------------------------------------
+        # ROC 양수 진행이 시작된 캔들 시간
+        # 최신 진행순 정렬에 사용
+        # -------------------------------------------------
+        "roc_progress_start_time": None,
+
         "long_breakout": False,
         "short_breakout": False,
 
@@ -1766,6 +1794,7 @@ def roc_analysis(
         or df_current is None
         or df_current.empty
     ):
+
         return result
 
     try:
@@ -1782,6 +1811,7 @@ def roc_analysis(
             confirmed is None
             or current is None
         ):
+
             return result
 
         previous = float(
@@ -1796,6 +1826,7 @@ def roc_analysis(
             pd.isna(previous)
             or pd.isna(current_value)
         ):
+
             return result
 
         positive_count = roc_count(
@@ -1807,6 +1838,51 @@ def roc_analysis(
             current,
             False
         )
+
+        # -------------------------------------------------
+        # ROC 양수 진행 시작 시간 계산
+        #
+        # 예:
+        # 현재 ROC가 양수 3개 연속
+        #
+        # [양수][양수][양수]
+        #     ↑
+        # 가장 오래된 양수 캔들의 시간
+        #
+        # 이 시간이 최신인 코인을 위쪽에 표시
+        # -------------------------------------------------
+
+        roc_progress_start_time = None
+
+        try:
+
+            if positive_count > 0:
+
+                start_index = (
+                    len(current)
+                    - positive_count
+                )
+
+                if (
+                    start_index >= 0
+                    and start_index < len(
+                        df_current
+                    )
+                ):
+
+                    roc_progress_start_time = (
+                        df_current[
+                            "datetime"
+                        ].iloc[
+                            start_index
+                        ]
+                    )
+
+        except Exception as e:
+
+            log.error(
+                f"ROC 진행 시작시간 오류: {e}"
+            )
 
         lb = roc_cross_state(
             confirmed,
@@ -1833,6 +1909,9 @@ def roc_analysis(
 
             "roc10_negative_count":
                 negative_count,
+
+            "roc_progress_start_time":
+                roc_progress_start_time,
 
             "long_breakout":
                 lb["state"] != "none",
@@ -1966,6 +2045,7 @@ def daily_change_upbit(market):
         ]
 
     except Exception:
+
         return None
 
 
@@ -2032,6 +2112,7 @@ def daily_changes(df):
         ]
 
     except Exception:
+
         return None
 
 
@@ -2052,6 +2133,7 @@ def get_change_value(x):
         )
 
     except Exception:
+
         return None
 
 
@@ -2088,9 +2170,11 @@ def format_change(x):
 def format_volume(v):
 
     try:
+
         v = float(v)
 
     except Exception:
+
         return "-"
 
     if v >= 1e12:
@@ -2131,6 +2215,8 @@ def empty_analysis():
             "roc10_count": 0,
             "roc10_negative_count": 0,
 
+            "roc_progress_start_time": None,
+
             "long_breakout": False,
             "short_breakout": False,
 
@@ -2160,8 +2246,6 @@ def empty_analysis():
 
 # =========================================================
 # 공통 자격조건
-#
-# 설정된 이평 시간봉만 필터
 # =========================================================
 
 def get_signal_qualified(
@@ -2169,10 +2253,6 @@ def get_signal_qualified(
     e_high,
     r
 ):
-
-    # -----------------------------------------------------
-    # 선택된 이평 시간봉의 공통 방향
-    # -----------------------------------------------------
 
     filter_info = ema_filter_direction(
         e1,
@@ -2187,11 +2267,6 @@ def get_signal_qualified(
         e1,
         e_high
     )
-
-    # -----------------------------------------------------
-    # EMA 필터를 사용하지 않으면
-    # ROC 방향을 기준으로 판단
-    # -----------------------------------------------------
 
     if (
         USE_EMA_TIMEFRAME == "N"
@@ -2288,6 +2363,7 @@ def analyze_okx(
         df_confirmed is None
         or df_confirmed.empty
     ):
+
         return None
 
     e1 = ema_display(
@@ -2374,6 +2450,7 @@ def analyze(
         df_confirmed is None
         or df_confirmed.empty
     ):
+
         return None
 
     e1 = ema_display(
@@ -2523,6 +2600,53 @@ def is_short_progress(row):
 
 
 # =========================================================
+# ROC 3+ 진행중
+#
+# TOP 리스트 정보를 그대로 사용
+#
+# 조건:
+# ROC10 > 0
+# ROC 양수 연속 카운트 >= 3
+#
+# 정렬:
+# ROC 양수 진행 시작 시간이 최신인 코인부터
+# =========================================================
+
+def is_roc3_progress(row):
+
+    if not row:
+        return False
+
+    r = row.get(
+        "roc",
+        {}
+    )
+
+    try:
+
+        roc_value = r.get(
+            "roc10"
+        )
+
+        roc_count = int(
+            r.get(
+                "roc10_count",
+                0
+            )
+        )
+
+        return (
+            roc_value is not None
+            and float(roc_value) > 0
+            and roc_count >= ROC_PROGRESS_MIN_COUNT
+        )
+
+    except Exception:
+
+        return False
+
+
+# =========================================================
 # Upbit 업데이트
 # =========================================================
 
@@ -2591,7 +2715,8 @@ def update_upbit():
         f"롱돌파 {sum(is_breakout(x) for x in rows)}개 / "
         f"숏돌파 {sum(is_short_breakout(x) for x in rows)}개 / "
         f"롱진행 {sum(is_progress(x) for x in rows)}개 / "
-        f"숏진행 {sum(is_short_progress(x) for x in rows)}개"
+        f"숏진행 {sum(is_short_progress(x) for x in rows)}개 / "
+        f"ROC3+ {sum(is_roc3_progress(x) for x in rows)}개"
     )
 
 
@@ -2662,6 +2787,7 @@ def update_okx(usdt):
         )
 
         if v and v > 0:
+
             volumes[symbol] = v
 
         if idx % 50 == 0:
@@ -2750,7 +2876,8 @@ def update_okx(usdt):
         f"롱돌파 {sum(is_breakout(x) for x in rows)}개 / "
         f"숏돌파 {sum(is_short_breakout(x) for x in rows)}개 / "
         f"롱진행 {sum(is_progress(x) for x in rows)}개 / "
-        f"숏진행 {sum(is_short_progress(x) for x in rows)}개"
+        f"숏진행 {sum(is_short_progress(x) for x in rows)}개 / "
+        f"ROC3+ {sum(is_roc3_progress(x) for x in rows)}개"
     )
 
     return True
@@ -2783,6 +2910,7 @@ def update_dashboard():
         if USE_UPBIT == "Y":
 
             try:
+
                 update_upbit()
 
             except Exception as e:
@@ -2802,12 +2930,15 @@ def update_dashboard():
                 usdt = get_usdt_krw()
 
                 if usdt:
+
                     latest_usdt_krw = usdt
 
                 else:
+
                     usdt = latest_usdt_krw
 
                 if usdt > 0:
+
                     update_okx(usdt)
 
             except Exception as e:
@@ -2835,9 +2966,11 @@ def market_direction_html(
 ):
 
     try:
+
         count = int(count)
 
     except Exception:
+
         count = 0
 
     if direction == "long":
@@ -2886,6 +3019,7 @@ def market_roc_html(r):
         )
 
     try:
+
         value = float(value)
 
     except Exception:
@@ -2945,18 +3079,23 @@ def format_market_price(price):
         return "-"
 
     try:
+
         price = float(price)
 
     except Exception:
+
         return "-"
 
     if price >= 100000000:
+
         return f"{price / 100000000:.2f}억"
 
     if price >= 10000:
+
         return f"{price:,.0f}"
 
     if price >= 1:
+
         return f"{price:,.2f}"
 
     return f"{price:.6f}"
@@ -2973,6 +3112,7 @@ def market_change_html(value):
         )
 
     try:
+
         value = float(value)
 
     except Exception:
@@ -3008,8 +3148,6 @@ def market_change_html(value):
 
 # =========================================================
 # BTC 롱 / 숏 방향 판단
-#
-# Y/N 설정에 따라 선택된 이평만 사용
 # =========================================================
 
 def btc_position_view(row):
@@ -3049,11 +3187,6 @@ def btc_position_view(row):
         selected.append(
             ema_high
         )
-
-    # -----------------------------------------------------
-    # 선택된 이평이 하나도 없으면
-    # ROC만으로 판단
-    # -----------------------------------------------------
 
     if not selected:
 
@@ -3101,15 +3234,9 @@ def btc_position_view(row):
         "none"
     )
 
-    # -----------------------------------------------------
-    # 이평 필터 없음
-    # -----------------------------------------------------
-
     if not selected:
 
-        if (
-            long_breakout_state != "none"
-        ):
+        if long_breakout_state != "none":
 
             count = {
                 "current": 0,
@@ -3127,9 +3254,7 @@ def btc_position_view(row):
                 "class": "long"
             }
 
-        if (
-            short_breakout_state != "none"
-        ):
+        if short_breakout_state != "none":
 
             count = {
                 "current": 0,
@@ -3172,20 +3297,12 @@ def btc_position_view(row):
             "class": "wait"
         }
 
-    # -----------------------------------------------------
-    # 이평 방향 불일치
-    # -----------------------------------------------------
-
     if d == "none":
 
         return {
             "text": "⚪ 관망",
             "class": "wait"
         }
-
-    # -----------------------------------------------------
-    # 롱
-    # -----------------------------------------------------
 
     if d == "long":
 
@@ -3221,10 +3338,6 @@ def btc_position_view(row):
             "text": "⚪ 롱 대기",
             "class": "wait"
         }
-
-    # -----------------------------------------------------
-    # 숏
-    # -----------------------------------------------------
 
     if d == "short":
 
@@ -3272,6 +3385,7 @@ def get_market_row(coin):
     for row in latest_upbit_data:
 
         if row.get("name") == coin:
+
             return row
 
     return None
@@ -3498,6 +3612,7 @@ def roc_html(r):
         )
 
     try:
+
         value = float(value)
 
     except Exception:
@@ -3762,21 +3877,25 @@ def row_class(x):
     if x.get(
         "breakout_qualified"
     ):
+
         return "breakout-qualified"
 
     if x.get(
         "short_breakout_qualified"
     ):
+
         return "short-breakout-qualified"
 
     if x.get(
         "progress_qualified"
     ):
+
         return "progress-qualified"
 
     if x.get(
         "short_progress_qualified"
     ):
+
         return "short-progress-qualified"
 
     return ""
@@ -3810,6 +3929,10 @@ def rows_html(
         elif focus == "short_progress":
 
             cls = "short-progress-qualified"
+
+        elif focus == "roc3_progress":
+
+            cls = "roc3-progress-qualified"
 
         else:
 
@@ -3979,15 +4102,41 @@ def focus_section(
 
     if sort_key:
 
-        rows.sort(
-            key=lambda x:
+        def get_sort_value(x):
+
+            value = (
                 x.get(
                     "roc",
                     {}
                 ).get(
-                    sort_key,
-                    0
-                ) or 0,
+                    sort_key
+                )
+            )
+
+            if value is None:
+
+                if reverse:
+
+                    return pd.Timestamp.min
+
+                return pd.Timestamp.max
+
+            try:
+
+                return pd.Timestamp(
+                    value
+                )
+
+            except Exception:
+
+                if reverse:
+
+                    return pd.Timestamp.min
+
+                return pd.Timestamp.max
+
+        rows.sort(
+            key=get_sort_value,
             reverse=reverse
         )
 
@@ -4157,7 +4306,6 @@ h1{
 
 /* =====================================================
    일반 제목
-   BTC 시장 시황과 동일한 디자인
    ===================================================== */
 
 .section-title{
@@ -4249,6 +4397,10 @@ h1{
 
 .short_progress-section-title{
     border-left-color:#ff6666;
+}
+
+.roc3_progress-section-title{
+    border-left-color:#ffd84d;
 }
 
 
@@ -4606,6 +4758,21 @@ h1{
                 220,
                 .25
             )
+        );
+}
+
+
+/* =====================================================
+   ROC 3+ 행
+   ===================================================== */
+
+.roc3-progress-qualified{
+    background:
+        rgba(
+            255,
+            216,
+            77,
+            .06
         );
 }
 
@@ -5210,6 +5377,10 @@ def dashboard():
 
     sections = ""
 
+    # =====================================================
+    # ① 돌파 리스트
+    # =====================================================
+
     if USE_UPBIT == "Y":
 
         sections += focus_section(
@@ -5226,6 +5397,35 @@ def dashboard():
                 f"ROC10 음수→양수 ⓪①②"
             )
         )
+
+    # =====================================================
+    # ② ROC 3+ 진행중
+    #
+    # 돌파 리스트 바로 아래
+    # TOP30 안에서만 검색
+    # 최신 진행 시작시간 순
+    # =====================================================
+
+    if USE_UPBIT == "Y":
+
+        sections += focus_section(
+            "🔥 ROC 3+ 진행중",
+            latest_upbit_data,
+            latest_upbit_update_time,
+            is_roc3_progress,
+            "roc3_progress",
+            (
+                f"TOP{TOP_N} 기준 · "
+                f"ROC10 양수 {ROC_PROGRESS_MIN_COUNT}개 이상 연속 · "
+                f"최신 진행순"
+            ),
+            sort_key="roc_progress_start_time",
+            reverse=True
+        )
+
+    # =====================================================
+    # OKX
+    # =====================================================
 
     if USE_OKX == "Y":
 
@@ -5258,6 +5458,10 @@ def dashboard():
                 f"ROC10 양수→음수 ⓪①②"
             )
         )
+
+    # =====================================================
+    # 전체 TOP
+    # =====================================================
 
     if USE_UPBIT == "Y":
 
@@ -5419,7 +5623,7 @@ def startup():
     )
 
     log.info(
-        f"EMA10-30-60-120"
+        "EMA10-30-60-120"
     )
 
     log.info(
@@ -5451,6 +5655,16 @@ def startup():
 
     log.info(
         "ROC 0선 선진입 기능 활성화"
+    )
+
+    log.info(
+        f"ROC 진행 리스트: "
+        f"양수 {ROC_PROGRESS_MIN_COUNT}개 이상"
+    )
+
+    log.info(
+        "ROC 진행 리스트 정렬: "
+        "진행 시작시간 최신순"
     )
 
     log.info(
