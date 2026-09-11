@@ -82,7 +82,7 @@ USE_EMA_HIGH_TIMEFRAME = "Y"
 # EMA10 < EMA30 < EMA60 < EMA120
 # =========================================================
 
-EMA1_FASTEST = 10
+EMA1_FASTEST = 1
 EMA1_FAST = 30
 EMA1_MID = 60
 EMA1_SLOW = 120
