@@ -64,7 +64,7 @@ EMA_HIGH_TIMEFRAME = 240
 # =========================================================
 
 USE_EMA_TIMEFRAME = "Y"
-USE_EMA_HIGH_TIMEFRAME = "Y"
+USE_EMA_HIGH_TIMEFRAME = "N"
 
 
 # =========================================================
