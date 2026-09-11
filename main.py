@@ -61,11 +61,6 @@ EMA_HIGH_TIMEFRAME = 240
 
 # =========================================================
 # 이평 시간봉 필터
-#
-# Y / Y → 두 시간봉 모두 필터
-# Y / N → 첫 번째 시간봉만 필터
-# N / Y → 두 번째 시간봉만 필터
-# N / N → 이평 배열 필터 사용 안 함
 # =========================================================
 
 USE_EMA_TIMEFRAME = "Y"
@@ -98,7 +93,6 @@ ROC_PERIOD = 10
 
 BREAKOUT_MAX_COUNT = 2
 
-# ROC 양수/음수 진행 최소 연속 개수
 ROC_PROGRESS_MIN_COUNT = 3
 
 
@@ -1419,15 +1413,6 @@ def ema_display(
 
 # =========================================================
 # EMA 필터 방향
-#
-# 롱:
-# 선택된 시간봉 모두 정배열
-#
-# 숏:
-# 선택된 시간봉 모두 역배열
-#
-# 혼합:
-# 통과하지 않음
 # =========================================================
 
 def ema_filter_direction(
@@ -1464,10 +1449,6 @@ def ema_filter_direction(
         for x in selected
     ]
 
-    # -----------------------------------------
-    # 롱 = 전부 정배열
-    # -----------------------------------------
-
     if all(
         d == "long"
         for d in directions
@@ -1478,10 +1459,6 @@ def ema_filter_direction(
             "valid": True
         }
 
-    # -----------------------------------------
-    # 숏 = 전부 역배열
-    # -----------------------------------------
-
     if all(
         d == "short"
         for d in directions
@@ -1491,10 +1468,6 @@ def ema_filter_direction(
             "direction": "short",
             "valid": True
         }
-
-    # -----------------------------------------
-    # 한쪽이라도 반대면 통과 안 함
-    # -----------------------------------------
 
     return {
         "direction": "none",
@@ -1521,7 +1494,6 @@ def ema_filter_pass(
             e_high
         )
 
-    # 필터를 사용하지 않는 경우
     if not selected:
 
         return True
@@ -1553,7 +1525,6 @@ def ema_filter_pass(
         for e in selected
     ]
 
-    # 모든 시간봉 방향이 같아야 통과
     return len(
         set(directions)
     ) == 1
@@ -1690,7 +1661,6 @@ def roc_cross_state(
 
             return False
 
-        # 현재 진행봉에서 돌파
         if len(current) >= 2:
 
             prev = current[-2]
@@ -1706,7 +1676,6 @@ def roc_cross_state(
                     "count": 0
                 }
 
-        # 현재봉과 직전 확정봉 비교
         if len(current) == 1:
 
             prev = confirmed[-1]
@@ -1722,7 +1691,6 @@ def roc_cross_state(
                     "count": 0
                 }
 
-        # 확정 돌파
         if len(confirmed) >= 2:
 
             prev = confirmed[-2]
@@ -1738,7 +1706,6 @@ def roc_cross_state(
                     "count": 1
                 }
 
-        # 다음 봉
         if len(confirmed) >= 3:
 
             prev = confirmed[-3]
@@ -1866,27 +1833,15 @@ def roc_analysis(
 
             return result
 
-        # -----------------------------------------
-        # 양수 연속
-        # -----------------------------------------
-
         positive_count = roc_count(
             current,
             True
         )
 
-        # -----------------------------------------
-        # 음수 연속
-        # -----------------------------------------
-
         negative_count = roc_count(
             current,
             False
         )
-
-        # -----------------------------------------
-        # 양수 진행 시작시간
-        # -----------------------------------------
 
         roc_progress_start_time = None
 
@@ -1919,10 +1874,6 @@ def roc_analysis(
                 f"ROC 양수 시작시간 오류: {e}"
             )
 
-        # -----------------------------------------
-        # 음수 진행 시작시간
-        # -----------------------------------------
-
         roc_negative_progress_start_time = None
 
         try:
@@ -1953,10 +1904,6 @@ def roc_analysis(
             log.error(
                 f"ROC 음수 시작시간 오류: {e}"
             )
-
-        # -----------------------------------------
-        # 돌파 상태
-        # -----------------------------------------
 
         lb = roc_cross_state(
             confirmed,
@@ -2009,10 +1956,6 @@ def roc_analysis(
                 sb["state"]
         })
 
-        # -----------------------------------------
-        # 롱 돌파
-        # -----------------------------------------
-
         if lb["state"] != "none":
 
             result.update({
@@ -2026,10 +1969,6 @@ def roc_analysis(
                         lb["count"]
                     )
             })
-
-        # -----------------------------------------
-        # 숏 돌파
-        # -----------------------------------------
 
         elif sb["state"] != "none":
 
@@ -2045,10 +1984,6 @@ def roc_analysis(
                     )
             })
 
-        # -----------------------------------------
-        # 롱 진행
-        # -----------------------------------------
-
         elif (
             current_value > 0
             and positive_count >= 2
@@ -2062,10 +1997,6 @@ def roc_analysis(
                 "display":
                     f"진행 {positive_count}"
             })
-
-        # -----------------------------------------
-        # 숏 진행
-        # -----------------------------------------
 
         elif (
             current_value < 0
@@ -2343,18 +2274,6 @@ def empty_analysis():
 
 # =========================================================
 # 공통 자격조건
-#
-# 핵심:
-#
-# LONG
-# → 정배열만 통과
-#
-# SHORT
-# → 역배열만 통과
-#
-# ROC 3+
-# → 롱은 정배열 + ROC 양수 3개 이상
-# → 숏은 역배열 + ROC 음수 3개 이상
 # =========================================================
 
 def get_signal_qualified(
@@ -2387,28 +2306,15 @@ def get_signal_qualified(
 
     else:
 
-        # =========================================
-        # 롱 = 정배열
-        # =========================================
-
         long_base = (
             filter_pass
             and filter_direction == "long"
         )
 
-        # =========================================
-        # 숏 = 역배열
-        # =========================================
-
         short_base = (
             filter_pass
             and filter_direction == "short"
         )
-
-    # =========================================
-    # ROC 3+ 롱
-    # 정배열 + ROC 양수 3개 이상
-    # =========================================
 
     roc3_long = (
         long_base
@@ -2421,11 +2327,6 @@ def get_signal_qualified(
             )
         ) >= ROC_PROGRESS_MIN_COUNT
     )
-
-    # =========================================
-    # ROC 3+ 숏
-    # 역배열 + ROC 음수 3개 이상
-    # =========================================
 
     roc3_short = (
         short_base
@@ -2441,41 +2342,20 @@ def get_signal_qualified(
 
     return {
 
-        # =========================================
-        # 롱 돌파
-        # 정배열 + ROC 상향 돌파
-        # =========================================
-
         "breakout_qualified":
             long_base
             and r["long_breakout"],
-
-        # =========================================
-        # 숏 돌파
-        # 역배열 + ROC 하향 돌파
-        # =========================================
 
         "short_breakout_qualified":
             short_base
             and r["short_breakout"],
 
-        # =========================================
-        # 기존 롱 진행
-        # 정배열 + ROC 양수 3개 이상
-        # =========================================
-
         "progress_qualified":
             roc3_long,
-
-        # =========================================
-        # 기존 숏 진행
-        # 역배열 + ROC 음수 3개 이상
-        # =========================================
 
         "short_progress_qualified":
             roc3_short,
 
-        # 명확한 ROC 3+ 플래그
         "roc3_long_progress_qualified":
             roc3_long,
 
@@ -2788,12 +2668,6 @@ def is_short_progress(row):
     )
 
 
-# =========================================================
-# ROC 3+ 롱 진행중
-#
-# 반드시 정배열
-# =========================================================
-
 def is_roc3_progress(row):
 
     if not row:
@@ -2806,12 +2680,6 @@ def is_roc3_progress(row):
         )
     )
 
-
-# =========================================================
-# ROC 3+ 숏 진행중
-#
-# 반드시 역배열
-# =========================================================
 
 def is_roc3_short_progress(row):
 
@@ -3155,6 +3023,8 @@ def update_dashboard():
 
 # =========================================================
 # BTC 시황
+#
+# EMA 배열 + ROC 조합
 # =========================================================
 
 def market_direction_html(
@@ -3344,7 +3214,25 @@ def market_change_html(value):
 
 
 # =========================================================
-# BTC 롱 / 숏 방향 판단
+# BTC 시황 최종 판단
+#
+# 정배열 + ROC 상승
+#     → 매우 좋음
+#
+# 정배열 + ROC 하락/0
+#     → 상승 준비
+#
+# 역배열 + ROC 상승
+#     → 상승 / 조심
+#
+# 역배열 + ROC 하락/0
+#     → 안좋음
+#
+# 혼합 + ROC 상승
+#     → 상승 / 확인
+#
+# 혼합 + ROC 하락/0
+#     → 관망
 # =========================================================
 
 def btc_position_view(row):
@@ -3371,6 +3259,10 @@ def btc_position_view(row):
         {}
     )
 
+    # -----------------------------------------
+    # 사용 중인 EMA 시간봉
+    # -----------------------------------------
+
     selected = []
 
     if USE_EMA_TIMEFRAME == "Y":
@@ -3385,191 +3277,146 @@ def btc_position_view(row):
             ema_high
         )
 
-    if not selected:
+    directions = [
+        x.get(
+            "direction",
+            "none"
+        )
+        for x in selected
+    ]
 
-        d = None
+    # -----------------------------------------
+    # EMA 최종 방향
+    # -----------------------------------------
+
+    if (
+        directions
+        and all(
+            d == "long"
+            for d in directions
+        )
+    ):
+
+        ema_direction = "long"
+
+    elif (
+        directions
+        and all(
+            d == "short"
+            for d in directions
+        )
+    ):
+
+        ema_direction = "short"
 
     else:
 
-        directions = [
-            x.get(
-                "direction",
-                "none"
-            )
-            for x in selected
-        ]
+        ema_direction = "none"
 
-        if all(
-            d == "long"
-            for d in directions
-        ):
-
-            d = "long"
-
-        elif all(
-            d == "short"
-            for d in directions
-        ):
-
-            d = "short"
-
-        else:
-
-            d = "none"
+    # -----------------------------------------
+    # ROC
+    # -----------------------------------------
 
     roc_value = r.get(
         "roc10"
     )
 
-    long_breakout_state = r.get(
-        "long_breakout_state",
-        "none"
-    )
-
-    short_breakout_state = r.get(
-        "short_breakout_state",
-        "none"
-    )
-
-    if not selected:
-
-        if long_breakout_state != "none":
-
-            count = {
-                "current": 0,
-                "confirmed": 1,
-                "next": 2
-            }.get(
-                long_breakout_state,
-                0
-            )
-
-            return {
-                "text":
-                    "🚀"
-                    + count_icon(count),
-                "class": "long"
-            }
-
-        if short_breakout_state != "none":
-
-            count = {
-                "current": 0,
-                "confirmed": 1,
-                "next": 2
-            }.get(
-                short_breakout_state,
-                0
-            )
-
-            return {
-                "text":
-                    "🔻"
-                    + count_icon(count),
-                "class": "short"
-            }
-
-        if (
-            roc_value is not None
-            and float(roc_value) > 0
-        ):
-
-            return {
-                "text": "🟢 롱 우세",
-                "class": "long"
-            }
-
-        if (
-            roc_value is not None
-            and float(roc_value) < 0
-        ):
-
-            return {
-                "text": "🔴 숏 우세",
-                "class": "short"
-            }
+    if roc_value is None:
 
         return {
             "text": "⚪ 관망",
             "class": "wait"
         }
 
-    if d == "none":
+    try:
+
+        roc_value = float(
+            roc_value
+        )
+
+    except Exception:
 
         return {
             "text": "⚪ 관망",
             "class": "wait"
         }
 
-    if d == "long":
+    # =====================================================
+    # 정배열 + ROC 상승
+    # =====================================================
 
-        if long_breakout_state != "none":
-
-            count = {
-                "current": 0,
-                "confirmed": 1,
-                "next": 2
-            }.get(
-                long_breakout_state,
-                0
-            )
-
-            return {
-                "text":
-                    "🚀"
-                    + count_icon(count),
-                "class": "long"
-            }
-
-        if (
-            roc_value is not None
-            and float(roc_value) > 0
-        ):
-
-            return {
-                "text": "🟢 롱 우세",
-                "class": "long"
-            }
+    if (
+        ema_direction == "long"
+        and roc_value > 0
+    ):
 
         return {
-            "text": "⚪ 롱 대기",
+            "text": "🟢 매우 좋음",
+            "class": "long"
+        }
+
+    # =====================================================
+    # 정배열 + ROC 0 이하
+    # =====================================================
+
+    if (
+        ema_direction == "long"
+        and roc_value <= 0
+    ):
+
+        return {
+            "text": "🟡 상승 준비",
             "class": "wait"
         }
 
-    if d == "short":
+    # =====================================================
+    # 역배열 + ROC 상승
+    #
+    # 상승 중이지만 추세와 반대
+    # → 조심
+    # =====================================================
 
-        if short_breakout_state != "none":
-
-            count = {
-                "current": 0,
-                "confirmed": 1,
-                "next": 2
-            }.get(
-                short_breakout_state,
-                0
-            )
-
-            return {
-                "text":
-                    "🔻"
-                    + count_icon(count),
-                "class": "short"
-            }
-
-        if (
-            roc_value is not None
-            and float(roc_value) < 0
-        ):
-
-            return {
-                "text": "🔴 숏 우세",
-                "class": "short"
-            }
+    if (
+        ema_direction == "short"
+        and roc_value > 0
+    ):
 
         return {
-            "text": "⚪ 숏 대기",
+            "text": "🟠 상승 / 조심",
+            "class": "short"
+        }
+
+    # =====================================================
+    # 역배열 + ROC 0 이하
+    # =====================================================
+
+    if (
+        ema_direction == "short"
+        and roc_value <= 0
+    ):
+
+        return {
+            "text": "🔴 안좋음",
+            "class": "short"
+        }
+
+    # =====================================================
+    # 혼합 + ROC 상승
+    # =====================================================
+
+    if (
+        ema_direction == "none"
+        and roc_value > 0
+    ):
+
+        return {
+            "text": "🟡 상승 / 확인",
             "class": "wait"
         }
+
+    # =====================================================
+    # 혼합 + ROC 0 이하
+    # =====================================================
 
     return {
         "text": "⚪ 관망",
@@ -3608,7 +3455,7 @@ def market_summary_html():
                 </span>
 
                 <span class="market-title-sub">
-                    롱/숏 방향 참고
+                    EMA 배열 + ROC10 기준
                 </span>
 
             </div>
@@ -3689,7 +3536,7 @@ def market_summary_html():
             </span>
 
             <span class="market-title-sub">
-                롱/숏 방향 참고
+                EMA 배열 + ROC10 기준
             </span>
 
         </div>
@@ -3944,11 +3791,6 @@ def signal_html(row):
         {}
     )
 
-    # =========================================
-    # 롱 돌파
-    # 정배열만
-    # =========================================
-
     state = r.get(
         "long_breakout_state",
         "none"
@@ -3978,11 +3820,6 @@ def signal_html(row):
             f'🚀{count_icon(count)}'
             '</span>'
         )
-
-    # =========================================
-    # 숏 돌파
-    # 역배열만
-    # =========================================
 
     state = r.get(
         "short_breakout_state",
@@ -4014,11 +3851,6 @@ def signal_html(row):
             '</span>'
         )
 
-    # =========================================
-    # 롱 진행
-    # 정배열 + ROC 양수 3+
-    # =========================================
-
     if row.get(
         "roc3_long_progress_qualified",
         False
@@ -4031,11 +3863,6 @@ def signal_html(row):
             '☀️'
             '</span>'
         )
-
-    # =========================================
-    # 숏 진행
-    # 역배열 + ROC 음수 3+
-    # =========================================
 
     if row.get(
         "roc3_short_progress_qualified",
@@ -5615,8 +5442,6 @@ def dashboard():
 
     # =====================================================
     # ① ROC 롱 돌파
-    #
-    # 정배열만
     # =====================================================
 
     if USE_UPBIT == "Y":
@@ -5638,10 +5463,6 @@ def dashboard():
 
     # =====================================================
     # ② ROC 3+ 롱 진행중
-    #
-    # 정배열만
-    #
-    # 최신 진행 시작시간 순
     # =====================================================
 
     if USE_UPBIT == "Y":
@@ -5665,8 +5486,6 @@ def dashboard():
 
     # =====================================================
     # ③ ROC 숏 돌파
-    #
-    # 역배열만
     # =====================================================
 
     if USE_UPBIT == "Y":
@@ -5688,10 +5507,6 @@ def dashboard():
 
     # =====================================================
     # ④ ROC 3+ 숏 진행중
-    #
-    # 역배열만
-    #
-    # 최신 진행 시작시간 순
     # =====================================================
 
     if USE_UPBIT == "Y":
@@ -5719,10 +5534,6 @@ def dashboard():
 
     if USE_OKX == "Y":
 
-        # -----------------------------------------------
-        # 롱 돌파
-        # -----------------------------------------------
-
         sections += focus_section(
             "🚀 ROC 롱 돌파 정배열",
             latest_okx_data,
@@ -5737,10 +5548,6 @@ def dashboard():
                 f"ROC10 음수→양수 ⓪①②"
             )
         )
-
-        # -----------------------------------------------
-        # 롱 진행
-        # -----------------------------------------------
 
         sections += focus_section(
             "🔥 ROC 3+ 롱 진행중",
@@ -5759,10 +5566,6 @@ def dashboard():
             reverse=True
         )
 
-        # -----------------------------------------------
-        # 숏 돌파
-        # -----------------------------------------------
-
         sections += focus_section(
             "🔻 ROC 숏 돌파 역배열",
             latest_okx_data,
@@ -5777,10 +5580,6 @@ def dashboard():
                 f"ROC10 양수→음수 ⓪①②"
             )
         )
-
-        # -----------------------------------------------
-        # 숏 진행
-        # -----------------------------------------------
 
         sections += focus_section(
             "🌧️ ROC 3+ 숏 진행중",
@@ -6079,13 +5878,31 @@ def startup():
     )
 
     log.info(
-        "BTC 시황: "
-        "Upbit TOP 데이터 재활용"
+        "BTC 시황:"
     )
 
     log.info(
-        "BTC 방향 판단도 "
-        "이평 Y/N 설정 자동 반영"
+        "정배열 + ROC 상승 = 매우 좋음"
+    )
+
+    log.info(
+        "정배열 + ROC 0 이하 = 상승 준비"
+    )
+
+    log.info(
+        "역배열 + ROC 상승 = 상승 / 조심"
+    )
+
+    log.info(
+        "역배열 + ROC 0 이하 = 안좋음"
+    )
+
+    log.info(
+        "혼합 + ROC 상승 = 상승 / 확인"
+    )
+
+    log.info(
+        "혼합 + ROC 0 이하 = 관망"
     )
 
     log.info(
