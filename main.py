@@ -5647,7 +5647,7 @@ def dashboard():
     if USE_UPBIT == "Y":
 
         sections += focus_section(
-            "🔥 ROC 3+ 롱 진행중",
+            "🔥 ROC 3+ 롱 진행중 (추세가 확실하면 도전해라)",
             latest_upbit_data,
             latest_upbit_update_time,
             is_roc3_progress,
