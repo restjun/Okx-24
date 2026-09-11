@@ -5724,7 +5724,7 @@ def dashboard():
         # -----------------------------------------------
 
         sections += focus_section(
-            "🚀 ROC 롱 돌파 정배열",
+            "🚀 ROC 롱 돌파 정배열(------- 선 필수! 돒파? 되될림?",
             latest_okx_data,
             latest_okx_update_time,
             is_breakout,
