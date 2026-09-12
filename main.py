@@ -86,14 +86,15 @@ EMA1_MAX_COUNT = 200
 
 
 # =========================================================
-# ROC
+# RSI
 # =========================================================
 
-ROC_PERIOD = 10
+RSI_PERIOD = 14
 
-BREAKOUT_MAX_COUNT = 2
+RSI_LONG_LEVEL = 70
+RSI_SHORT_LEVEL = 30
 
-ROC_PROGRESS_MIN_COUNT = 3
+RSI_PROGRESS_MIN_COUNT = 3
 
 
 SUPPORTED_UPBIT_TIMEFRAMES = {
@@ -712,7 +713,7 @@ def history_upbit(
     return all_df
 
 
-def get_upbit_current_roc_data(
+def get_upbit_current_rsi_data(
     market,
     current_price
 ):
@@ -783,7 +784,7 @@ def get_upbit_current_roc_data(
     except Exception as e:
 
         log.error(
-            f"업비트 현재 ROC 오류 "
+            f"업비트 현재 RSI 오류 "
             f"{market}: {e}"
         )
 
@@ -1531,12 +1532,12 @@ def ema_filter_pass(
 
 
 # =========================================================
-# ROC
+# RSI
 # =========================================================
 
-def roc(
+def rsi(
     df,
-    period=ROC_PERIOD
+    period=RSI_PERIOD
 ):
 
     if (
@@ -1554,60 +1555,135 @@ def roc(
             errors="coerce"
         )
 
-        return (
-            close
-            / close.shift(
-                int(period)
+        delta = close.diff()
+
+        gain = delta.clip(
+            lower=0
+        )
+
+        loss = -delta.clip(
+            upper=0
+        )
+
+        avg_gain = (
+            gain
+            .ewm(
+                alpha=1 / int(period),
+                adjust=False,
+                min_periods=int(period)
             )
-            - 1
-        ) * 100
+            .mean()
+        )
+
+        avg_loss = (
+            loss
+            .ewm(
+                alpha=1 / int(period),
+                adjust=False,
+                min_periods=int(period)
+            )
+            .mean()
+        )
+
+        rs = (
+            avg_gain
+            / avg_loss
+        )
+
+        result = (
+            100
+            - (
+                100
+                / (1 + rs)
+            )
+        )
+
+        result = result.clip(
+            0,
+            100
+        )
+
+        # 상승만 지속되는 경우 RSI=100
+        result = result.where(
+            avg_loss != 0,
+            100
+        )
+
+        # 하락만 지속되는 경우 RSI=0
+        result = result.where(
+            avg_gain != 0,
+            0
+        )
+
+        return result
 
     except Exception as e:
 
         log.error(
-            f"ROC 계산 오류: {e}"
+            f"RSI 계산 오류: {e}"
         )
 
         return None
 
 
 # =========================================================
-# ROC 연속 카운트
+# RSI 연속 카운트
 # =========================================================
 
-def roc_count(
+def rsi_count(
     series,
-    positive=True
+    level,
+    above=True
 ):
 
     count = 0
 
-    for value in reversed(
-        series.tolist()
-    ):
+    if series is None:
+        return 0
 
-        if pd.isna(value):
+    try:
 
-            break
+        values = series.tolist()
 
-        if (
-            float(value) > 0
-        ) == positive:
+        for value in reversed(values):
 
-            count += 1
+            if pd.isna(value):
+                break
 
-        else:
+            value = float(value)
 
-            break
+            if above:
+
+                condition = (
+                    value >= level
+                )
+
+            else:
+
+                condition = (
+                    value <= level
+                )
+
+            if condition:
+
+                count += 1
+
+            else:
+
+                break
+
+    except Exception:
+
+        return 0
 
     return count
 
 
 # =========================================================
-# ROC 교차
+# RSI 돌파 상태
 # =========================================================
 
-def roc_cross_state(
+def rsi_cross_state(
     confirmed_series,
     current_series,
     cross_type
@@ -1645,22 +1721,23 @@ def roc_cross_state(
 
         def crossed(prev, curr):
 
-            if cross_type == "long_breakout":
+            if cross_type == "long":
 
                 return (
-                    prev <= 0
-                    and curr > 0
+                    prev < RSI_LONG_LEVEL
+                    and curr >= RSI_LONG_LEVEL
                 )
 
-            if cross_type == "short_breakout":
+            if cross_type == "short":
 
                 return (
-                    prev >= 0
-                    and curr < 0
+                    prev > RSI_SHORT_LEVEL
+                    and curr <= RSI_SHORT_LEVEL
                 )
 
             return False
 
+        # 현재 진행 중인 캔들에서 발생
         if len(current) >= 2:
 
             prev = current[-2]
@@ -1676,6 +1753,7 @@ def roc_cross_state(
                     "count": 0
                 }
 
+        # 현재 데이터가 현재봉 하나만 존재할 경우
         if len(current) == 1:
 
             prev = confirmed[-1]
@@ -1691,6 +1769,7 @@ def roc_cross_state(
                     "count": 0
                 }
 
+        # 직전 확정봉에서 돌파
         if len(confirmed) >= 2:
 
             prev = confirmed[-2]
@@ -1706,6 +1785,7 @@ def roc_cross_state(
                     "count": 1
                 }
 
+        # 그 다음 봉
         if len(confirmed) >= 3:
 
             prev = confirmed[-3]
@@ -1726,7 +1806,7 @@ def roc_cross_state(
     except Exception as e:
 
         log.error(
-            f"ROC 교차 상태 오류: {e}"
+            f"RSI 교차 상태 오류: {e}"
         )
 
         return result
@@ -1759,25 +1839,24 @@ def count_icon(count):
 
 
 # =========================================================
-# ROC 분석
+# RSI 분석
 # =========================================================
 
-def roc_analysis(
+def rsi_analysis(
     df_confirmed,
     df_current
 ):
 
     result = {
 
-        "roc10": None,
-        "roc10_previous": None,
+        "rsi14": None,
+        "rsi14_previous": None,
 
-        "roc10_count": 0,
-        "roc10_negative_count": 0,
+        "rsi14_count": 0,
+        "rsi14_short_count": 0,
 
-        "roc_progress_start_time": None,
-
-        "roc_negative_progress_start_time": None,
+        "rsi_progress_start_time": None,
+        "rsi_short_progress_start_time": None,
 
         "long_breakout": False,
         "short_breakout": False,
@@ -1803,11 +1882,11 @@ def roc_analysis(
 
     try:
 
-        confirmed = roc(
+        confirmed = rsi(
             df_confirmed
         )
 
-        current = roc(
+        current = rsi(
             df_current
         )
 
@@ -1833,25 +1912,31 @@ def roc_analysis(
 
             return result
 
-        positive_count = roc_count(
+        long_count = rsi_count(
             current,
+            RSI_LONG_LEVEL,
             True
         )
 
-        negative_count = roc_count(
+        short_count = rsi_count(
             current,
+            RSI_SHORT_LEVEL,
             False
         )
 
-        roc_progress_start_time = None
+        # -------------------------------------------------
+        # RSI 70 이상 진행 시작시간
+        # -------------------------------------------------
+
+        rsi_progress_start_time = None
 
         try:
 
-            if positive_count > 0:
+            if long_count > 0:
 
                 start_index = (
                     len(current)
-                    - positive_count
+                    - long_count
                 )
 
                 if (
@@ -1860,7 +1945,7 @@ def roc_analysis(
                     < len(df_current)
                 ):
 
-                    roc_progress_start_time = (
+                    rsi_progress_start_time = (
                         df_current[
                             "datetime"
                         ].iloc[
@@ -1871,18 +1956,22 @@ def roc_analysis(
         except Exception as e:
 
             log.error(
-                f"ROC 양수 시작시간 오류: {e}"
+                f"RSI 롱 시작시간 오류: {e}"
             )
 
-        roc_negative_progress_start_time = None
+        # -------------------------------------------------
+        # RSI 30 이하 진행 시작시간
+        # -------------------------------------------------
+
+        rsi_short_progress_start_time = None
 
         try:
 
-            if negative_count > 0:
+            if short_count > 0:
 
                 start_index = (
                     len(current)
-                    - negative_count
+                    - short_count
                 )
 
                 if (
@@ -1891,7 +1980,7 @@ def roc_analysis(
                     < len(df_current)
                 ):
 
-                    roc_negative_progress_start_time = (
+                    rsi_short_progress_start_time = (
                         df_current[
                             "datetime"
                         ].iloc[
@@ -1902,40 +1991,48 @@ def roc_analysis(
         except Exception as e:
 
             log.error(
-                f"ROC 음수 시작시간 오류: {e}"
+                f"RSI 숏 시작시간 오류: {e}"
             )
 
-        lb = roc_cross_state(
+        # -------------------------------------------------
+        # RSI 70 돌파
+        # -------------------------------------------------
+
+        lb = rsi_cross_state(
             confirmed,
             current,
-            "long_breakout"
+            "long"
         )
 
-        sb = roc_cross_state(
+        # -------------------------------------------------
+        # RSI 30 이탈
+        # -------------------------------------------------
+
+        sb = rsi_cross_state(
             confirmed,
             current,
-            "short_breakout"
+            "short"
         )
 
         result.update({
 
-            "roc10":
+            "rsi14":
                 current_value,
 
-            "roc10_previous":
+            "rsi14_previous":
                 previous,
 
-            "roc10_count":
-                positive_count,
+            "rsi14_count":
+                long_count,
 
-            "roc10_negative_count":
-                negative_count,
+            "rsi14_short_count":
+                short_count,
 
-            "roc_progress_start_time":
-                roc_progress_start_time,
+            "rsi_progress_start_time":
+                rsi_progress_start_time,
 
-            "roc_negative_progress_start_time":
-                roc_negative_progress_start_time,
+            "rsi_short_progress_start_time":
+                rsi_short_progress_start_time,
 
             "long_breakout":
                 lb["state"] != "none",
@@ -1985,8 +2082,8 @@ def roc_analysis(
             })
 
         elif (
-            current_value > 0
-            and positive_count >= 2
+            current_value >= RSI_LONG_LEVEL
+            and long_count >= RSI_PROGRESS_MIN_COUNT
         ):
 
             result.update({
@@ -1995,12 +2092,12 @@ def roc_analysis(
                     "progress",
 
                 "display":
-                    f"진행 {positive_count}"
+                    f"RSI 70+ {long_count}"
             })
 
         elif (
-            current_value < 0
-            and negative_count >= 2
+            current_value <= RSI_SHORT_LEVEL
+            and short_count >= RSI_PROGRESS_MIN_COUNT
         ):
 
             result.update({
@@ -2009,7 +2106,7 @@ def roc_analysis(
                     "short_progress",
 
                 "display":
-                    f"숏진행 {negative_count}"
+                    f"RSI 30- {short_count}"
             })
 
         return result
@@ -2017,7 +2114,7 @@ def roc_analysis(
     except Exception as e:
 
         log.error(
-            f"ROC 분석 오류: {e}"
+            f"RSI 분석 오류: {e}"
         )
 
         return result
@@ -2162,9 +2259,7 @@ def get_change_value(x):
 
 
 # =========================================================
-# 대시보드용 당일 등락 방향 필터
-#
-# 분석/신호 계산에는 영향을 주지 않음
+# 당일 등락 방향
 # =========================================================
 
 def is_positive_day(row):
@@ -2280,16 +2375,16 @@ def empty_analysis():
         "ema_1h": e.copy(),
         "ema_high": e.copy(),
 
-        "roc": {
+        "rsi": {
 
-            "roc10": None,
-            "roc10_previous": None,
+            "rsi14": None,
+            "rsi14_previous": None,
 
-            "roc10_count": 0,
-            "roc10_negative_count": 0,
+            "rsi14_count": 0,
+            "rsi14_short_count": 0,
 
-            "roc_progress_start_time": None,
-            "roc_negative_progress_start_time": None,
+            "rsi_progress_start_time": None,
+            "rsi_short_progress_start_time": None,
 
             "long_breakout": False,
             "short_breakout": False,
@@ -2312,8 +2407,8 @@ def empty_analysis():
         "progress_qualified": False,
         "short_progress_qualified": False,
 
-        "roc3_long_progress_qualified": False,
-        "roc3_short_progress_qualified": False,
+        "rsi3_long_progress_qualified": False,
+        "rsi3_short_progress_qualified": False,
 
         "direction_1h": "none",
 
@@ -2365,28 +2460,30 @@ def get_signal_qualified(
             and filter_direction == "short"
         )
 
-    roc3_long = (
+    rsi_long = (
         long_base
-        and r.get("roc10") is not None
-        and float(r.get("roc10")) > 0
+        and r.get("rsi14") is not None
+        and float(r.get("rsi14"))
+        >= RSI_LONG_LEVEL
         and int(
             r.get(
-                "roc10_count",
+                "rsi14_count",
                 0
             )
-        ) >= ROC_PROGRESS_MIN_COUNT
+        ) >= RSI_PROGRESS_MIN_COUNT
     )
 
-    roc3_short = (
+    rsi_short = (
         short_base
-        and r.get("roc10") is not None
-        and float(r.get("roc10")) < 0
+        and r.get("rsi14") is not None
+        and float(r.get("rsi14"))
+        <= RSI_SHORT_LEVEL
         and int(
             r.get(
-                "roc10_negative_count",
+                "rsi14_short_count",
                 0
             )
-        ) >= ROC_PROGRESS_MIN_COUNT
+        ) >= RSI_PROGRESS_MIN_COUNT
     )
 
     return {
@@ -2400,16 +2497,16 @@ def get_signal_qualified(
             and r["short_breakout"],
 
         "progress_qualified":
-            roc3_long,
+            rsi_long,
 
         "short_progress_qualified":
-            roc3_short,
+            rsi_short,
 
-        "roc3_long_progress_qualified":
-            roc3_long,
+        "rsi3_long_progress_qualified":
+            rsi_long,
 
-        "roc3_short_progress_qualified":
-            roc3_short,
+        "rsi3_short_progress_qualified":
+            rsi_short,
 
         "filter_direction":
             filter_direction
@@ -2477,7 +2574,7 @@ def analyze_okx(
         current_price
     )
 
-    r = roc_analysis(
+    r = rsi_analysis(
         df_confirmed,
         df_current
     )
@@ -2497,7 +2594,7 @@ def analyze_okx(
         "ema_1h": e1,
         "ema_high": e_high,
 
-        "roc": r,
+        "rsi": r,
 
         "changes": changes,
 
@@ -2539,7 +2636,7 @@ def analyze(
     )
 
     df_current = (
-        get_upbit_current_roc_data(
+        get_upbit_current_rsi_data(
             market,
             current_price
         )
@@ -2566,7 +2663,7 @@ def analyze(
         current_price
     )
 
-    r = roc_analysis(
+    r = rsi_analysis(
         df_confirmed,
         df_current
     )
@@ -2582,7 +2679,7 @@ def analyze(
         "ema_1h": e1,
         "ema_high": e_high,
 
-        "roc": r,
+        "rsi": r,
 
         "changes": changes,
 
@@ -2641,8 +2738,8 @@ def make_row(
         "ema_high":
             a["ema_high"],
 
-        "roc":
-            a["roc"],
+        "rsi":
+            a["rsi"],
 
         "breakout_qualified":
             a["breakout_qualified"],
@@ -2656,15 +2753,15 @@ def make_row(
         "short_progress_qualified":
             a["short_progress_qualified"],
 
-        "roc3_long_progress_qualified":
+        "rsi3_long_progress_qualified":
             a.get(
-                "roc3_long_progress_qualified",
+                "rsi3_long_progress_qualified",
                 False
             ),
 
-        "roc3_short_progress_qualified":
+        "rsi3_short_progress_qualified":
             a.get(
-                "roc3_short_progress_qualified",
+                "rsi3_short_progress_qualified",
                 False
             ),
 
@@ -2717,27 +2814,27 @@ def is_short_progress(row):
     )
 
 
-def is_roc3_progress(row):
+def is_rsi3_progress(row):
 
     if not row:
         return False
 
     return bool(
         row.get(
-            "roc3_long_progress_qualified",
+            "rsi3_long_progress_qualified",
             False
         )
     )
 
 
-def is_roc3_short_progress(row):
+def is_rsi3_short_progress(row):
 
     if not row:
         return False
 
     return bool(
         row.get(
-            "roc3_short_progress_qualified",
+            "rsi3_short_progress_qualified",
             False
         )
     )
@@ -2810,18 +2907,14 @@ def update_upbit():
 
     log.info(
         f"업비트 완료 / "
+        f"RSI70+ 롱 "
+        f"{sum(is_rsi3_progress(x) for x in rows)}개 / "
+        f"RSI30- 숏 "
+        f"{sum(is_rsi3_short_progress(x) for x in rows)}개 / "
         f"롱돌파 "
         f"{sum(is_breakout(x) for x in rows)}개 / "
         f"숏돌파 "
-        f"{sum(is_short_breakout(x) for x in rows)}개 / "
-        f"롱진행 "
-        f"{sum(is_progress(x) for x in rows)}개 / "
-        f"숏진행 "
-        f"{sum(is_short_progress(x) for x in rows)}개 / "
-        f"ROC3+롱 "
-        f"{sum(is_roc3_progress(x) for x in rows)}개 / "
-        f"ROC3+숏 "
-        f"{sum(is_roc3_short_progress(x) for x in rows)}개"
+        f"{sum(is_short_breakout(x) for x in rows)}개"
     )
 
 
@@ -2980,18 +3073,14 @@ def update_okx(usdt):
 
     log.info(
         f"OKX 완료 / "
+        f"RSI70+ 롱 "
+        f"{sum(is_rsi3_progress(x) for x in rows)}개 / "
+        f"RSI30- 숏 "
+        f"{sum(is_rsi3_short_progress(x) for x in rows)}개 / "
         f"롱돌파 "
         f"{sum(is_breakout(x) for x in rows)}개 / "
         f"숏돌파 "
-        f"{sum(is_short_breakout(x) for x in rows)}개 / "
-        f"롱진행 "
-        f"{sum(is_progress(x) for x in rows)}개 / "
-        f"숏진행 "
-        f"{sum(is_short_progress(x) for x in rows)}개 / "
-        f"ROC3+롱 "
-        f"{sum(is_roc3_progress(x) for x in rows)}개 / "
-        f"ROC3+숏 "
-        f"{sum(is_roc3_short_progress(x) for x in rows)}개"
+        f"{sum(is_short_breakout(x) for x in rows)}개"
     )
 
     return True
@@ -3072,8 +3161,6 @@ def update_dashboard():
 
 # =========================================================
 # BTC 시황
-#
-# EMA 배열 + ROC 조합
 # =========================================================
 
 def market_direction_html(
@@ -3112,7 +3199,7 @@ def market_direction_html(
     )
 
 
-def market_roc_html(r):
+def market_rsi_html(r):
 
     if not r:
 
@@ -3123,7 +3210,7 @@ def market_roc_html(r):
         )
 
     value = r.get(
-        "roc10"
+        "rsi14"
     )
 
     if value is None:
@@ -3146,12 +3233,12 @@ def market_roc_html(r):
             '</span>'
         )
 
-    if value > 0:
+    if value >= RSI_LONG_LEVEL:
 
         count = max(
             int(
                 r.get(
-                    "roc10_count",
+                    "rsi14_count",
                     0
                 )
             ),
@@ -3160,16 +3247,16 @@ def market_roc_html(r):
 
         return (
             '<span class="market-up">'
-            f'🟢 상승 {count}'
+            f'🟢 과매수 {count}'
             '</span>'
         )
 
-    if value < 0:
+    if value <= RSI_SHORT_LEVEL:
 
         count = max(
             int(
                 r.get(
-                    "roc10_negative_count",
+                    "rsi14_short_count",
                     0
                 )
             ),
@@ -3178,13 +3265,13 @@ def market_roc_html(r):
 
         return (
             '<span class="market-down">'
-            f'🔴 하락 {count}'
+            f'🔴 과매도 {count}'
             '</span>'
         )
 
     return (
         '<span class="market-zero">'
-        '0.0%'
+        f'{value:.1f}'
         '</span>'
     )
 
@@ -3286,7 +3373,7 @@ def btc_position_view(row):
     )
 
     r = row.get(
-        "roc",
+        "rsi",
         {}
     )
 
@@ -3336,11 +3423,11 @@ def btc_position_view(row):
 
         ema_direction = "none"
 
-    roc_value = r.get(
-        "roc10"
+    rsi_value = r.get(
+        "rsi14"
     )
 
-    if roc_value is None:
+    if rsi_value is None:
 
         return {
             "text": "⚪ 관망",
@@ -3349,8 +3436,8 @@ def btc_position_view(row):
 
     try:
 
-        roc_value = float(
-            roc_value
+        rsi_value = float(
+            rsi_value
         )
 
     except Exception:
@@ -3362,7 +3449,7 @@ def btc_position_view(row):
 
     if (
         ema_direction == "long"
-        and roc_value > 0
+        and rsi_value >= RSI_LONG_LEVEL
     ):
 
         return {
@@ -3372,7 +3459,7 @@ def btc_position_view(row):
 
     if (
         ema_direction == "long"
-        and roc_value <= 0
+        and rsi_value < RSI_LONG_LEVEL
     ):
 
         return {
@@ -3382,17 +3469,7 @@ def btc_position_view(row):
 
     if (
         ema_direction == "short"
-        and roc_value > 0
-    ):
-
-        return {
-            "text": "🟠 상승 / 조심",
-            "class": "short"
-        }
-
-    if (
-        ema_direction == "short"
-        and roc_value <= 0
+        and rsi_value <= RSI_SHORT_LEVEL
     ):
 
         return {
@@ -3401,12 +3478,32 @@ def btc_position_view(row):
         }
 
     if (
-        ema_direction == "none"
-        and roc_value > 0
+        ema_direction == "short"
+        and rsi_value > RSI_SHORT_LEVEL
     ):
 
         return {
-            "text": "🟡 상승 / 확인",
+            "text": "🟠 상승 / 조심",
+            "class": "short"
+        }
+
+    if (
+        ema_direction == "none"
+        and rsi_value >= RSI_LONG_LEVEL
+    ):
+
+        return {
+            "text": "🟡 과매수 / 확인",
+            "class": "wait"
+        }
+
+    if (
+        ema_direction == "none"
+        and rsi_value <= RSI_SHORT_LEVEL
+    ):
+
+        return {
+            "text": "🟠 과매도 / 확인",
             "class": "wait"
         }
 
@@ -3447,7 +3544,7 @@ def market_summary_html():
                 </span>
 
                 <span class="market-title-sub">
-                    EMA 배열 + ROC10 기준
+                    EMA 배열 + RSI14 기준
                 </span>
 
             </div>
@@ -3485,7 +3582,7 @@ def market_summary_html():
                     </span>
 
                     <span>
-                        ROC -
+                        RSI -
                     </span>
 
                     <span class="btc-position wait">
@@ -3509,8 +3606,8 @@ def market_summary_html():
         {}
     )
 
-    roc_data = btc.get(
-        "roc",
+    rsi_data = btc.get(
+        "rsi",
         {}
     )
 
@@ -3528,7 +3625,7 @@ def market_summary_html():
             </span>
 
             <span class="market-title-sub">
-                EMA 배열 + ROC10 기준
+                EMA 배열 + RSI14 기준
             </span>
 
         </div>
@@ -3594,9 +3691,9 @@ def market_summary_html():
                 </span>
 
                 <span>
-                    ROC
-                    {market_roc_html(
-                        roc_data
+                    RSI
+                    {market_rsi_html(
+                        rsi_data
                     )}
                 </span>
 
@@ -3618,30 +3715,30 @@ def market_summary_html():
 
 
 # =========================================================
-# ROC HTML
+# RSI HTML
 # =========================================================
 
-def roc_html(r):
+def rsi_html(r):
 
     if not r:
 
         return (
-            '<div class="roc-cell">'
-            '<span class="roc-zero">'
+            '<div class="rsi-cell">'
+            '<span class="rsi-zero">'
             '-'
             '</span>'
             '</div>'
         )
 
     value = r.get(
-        "roc10"
+        "rsi14"
     )
 
     if value is None:
 
         return (
-            '<div class="roc-cell">'
-            '<span class="roc-zero">'
+            '<div class="rsi-cell">'
+            '<span class="rsi-zero">'
             '-'
             '</span>'
             '</div>'
@@ -3654,8 +3751,8 @@ def roc_html(r):
     except Exception:
 
         return (
-            '<div class="roc-cell">'
-            '<span class="roc-zero">'
+            '<div class="rsi-cell">'
+            '<span class="rsi-zero">'
             '-'
             '</span>'
             '</div>'
@@ -3678,9 +3775,9 @@ def roc_html(r):
         )
 
         return f"""
-        <div class="roc-cell">
+        <div class="rsi-cell">
 
-            <span class="roc-positive">
+            <span class="rsi-positive">
                 🚀{count_icon(count)}
             </span>
 
@@ -3704,68 +3801,58 @@ def roc_html(r):
         )
 
         return f"""
-        <div class="roc-cell">
+        <div class="rsi-cell">
 
-            <span class="roc-negative">
+            <span class="rsi-negative">
                 🔻{count_icon(count)}
             </span>
 
         </div>
         """
 
-    if value > 0:
+    if value >= RSI_LONG_LEVEL:
 
         count = int(
             r.get(
-                "roc10_count",
+                "rsi14_count",
                 0
             )
         )
 
-        count = max(
-            count,
-            1
-        )
-
         return f"""
-        <div class="roc-cell">
+        <div class="rsi-cell">
 
-            <span class="roc-positive">
-                🟢 상승 {count}
+            <span class="rsi-positive">
+                🟢 70+ {count}
             </span>
 
         </div>
         """
 
-    if value < 0:
+    if value <= RSI_SHORT_LEVEL:
 
         count = int(
             r.get(
-                "roc10_negative_count",
+                "rsi14_short_count",
                 0
             )
         )
 
-        count = max(
-            count,
-            1
-        )
-
         return f"""
-        <div class="roc-cell">
+        <div class="rsi-cell">
 
-            <span class="roc-negative">
-                🔴 하락 {count}
+            <span class="rsi-negative">
+                🔴 30- {count}
             </span>
 
         </div>
         """
 
-    return """
-    <div class="roc-cell">
+    return f"""
+    <div class="rsi-cell">
 
-        <span class="roc-zero">
-            -
+        <span class="rsi-neutral">
+            {value:.1f}
         </span>
 
     </div>
@@ -3779,7 +3866,7 @@ def roc_html(r):
 def signal_html(row):
 
     r = row.get(
-        "roc",
+        "rsi",
         {}
     )
 
@@ -3808,7 +3895,7 @@ def signal_html(row):
         return (
             '<span '
             'class="signal-icon long-breakout" '
-            'title="롱 돌파 / 정배열">'
+            'title="롱 돌파 / 정배열 / RSI70">'
             f'🚀{count_icon(count)}'
             '</span>'
         )
@@ -3838,33 +3925,33 @@ def signal_html(row):
         return (
             '<span '
             'class="signal-icon short-breakout" '
-            'title="숏 돌파 / 역배열">'
+            'title="숏 돌파 / 역배열 / RSI30">'
             f'🔻{count_icon(count)}'
             '</span>'
         )
 
     if row.get(
-        "roc3_long_progress_qualified",
+        "rsi3_long_progress_qualified",
         False
     ):
 
         return (
             '<span '
             'class="signal-icon long-progress" '
-            'title="롱 진행 / 정배열 / ROC 3+">'
+            'title="롱 진행 / 정배열 / RSI70+ 3개 이상">'
             '☀️'
             '</span>'
         )
 
     if row.get(
-        "roc3_short_progress_qualified",
+        "rsi3_short_progress_qualified",
         False
     ):
 
         return (
             '<span '
             'class="signal-icon short-progress" '
-            'title="숏 진행 / 역배열 / ROC 3+">'
+            'title="숏 진행 / 역배열 / RSI30- 3개 이상">'
             '🌧️'
             '</span>'
         )
@@ -3923,13 +4010,13 @@ def row_class(x):
         return "short-breakout-qualified"
 
     if x.get(
-        "roc3_long_progress_qualified"
+        "rsi3_long_progress_qualified"
     ):
 
         return "progress-qualified"
 
     if x.get(
-        "roc3_short_progress_qualified"
+        "rsi3_short_progress_qualified"
     ):
 
         return "short-progress-qualified"
@@ -3966,11 +4053,11 @@ def rows_html(
 
             cls = "short-progress-qualified"
 
-        elif focus == "roc3_progress":
+        elif focus == "rsi3_progress":
 
             cls = "progress-qualified"
 
-        elif focus == "roc3_short_progress":
+        elif focus == "rsi3_short_progress":
 
             cls = "short-progress-qualified"
 
@@ -4036,9 +4123,9 @@ def rows_html(
 
                 <td>
 
-                    {roc_html(
+                    {rsi_html(
                         x.get(
-                            "roc",
+                            "rsi",
                             {}
                         )
                     )}
@@ -4100,7 +4187,7 @@ def table_html(
                     <th>코인</th>
                     <th>거래대금</th>
                     <th>EMA</th>
-                    <th>ROC10</th>
+                    <th>RSI14</th>
                     <th>신호</th>
 
                 </tr>
@@ -4146,7 +4233,7 @@ def focus_section(
 
             value = (
                 x.get(
-                    "roc",
+                    "rsi",
                     {}
                 ).get(
                     sort_key
@@ -4262,82 +4349,12 @@ body{
 }
 
 h1{
-    margin:
-        1px
-        2px
-        2px;
-
+    margin:1px 2px 2px;
     font-size:12px;
     line-height:14px;
 }
 
-.market-title{
-    display:flex;
-    align-items:center;
-
-    gap:5px;
-
-    width:100%;
-    min-height:18px;
-
-    color:#ffffff;
-
-    font-size:8px;
-    line-height:10px;
-
-    font-weight:900;
-
-    margin-bottom:4px;
-
-    padding:
-        3px
-        5px;
-
-    border-left:
-        3px solid
-        #39e875;
-
-    background:
-        rgba(
-            57,
-            232,
-            117,
-            .08
-        );
-
-    border-radius:3px;
-
-    white-space:nowrap;
-
-    overflow:hidden;
-}
-
-.market-title-main{
-    color:#ffffff;
-
-    font-size:8px;
-    line-height:10px;
-
-    font-weight:900;
-
-    flex:none;
-}
-
-.market-title-sub{
-    color:#7f8791;
-
-    font-size:5.5px;
-    line-height:8px;
-
-    font-weight:700;
-
-    white-space:nowrap;
-
-    overflow:hidden;
-
-    text-overflow:ellipsis;
-}
-
+.market-title,
 .section-title{
     display:flex;
     align-items:center;
@@ -4347,33 +4364,20 @@ h1{
     width:100%;
     min-height:18px;
 
-    color:#ffffff;
+    color:#fff;
 
     font-size:8px;
     line-height:10px;
 
     font-weight:900;
 
-    margin:
-        5px
-        0
-        4px;
+    margin-bottom:4px;
 
-    padding:
-        3px
-        5px;
+    padding:3px 5px;
 
-    border-left:
-        3px solid
-        #39e875;
+    border-left:3px solid #39e875;
 
-    background:
-        rgba(
-            57,
-            232,
-            117,
-            .08
-        );
+    background:rgba(57,232,117,.08);
 
     border-radius:3px;
 
@@ -4382,8 +4386,16 @@ h1{
     overflow:hidden;
 }
 
+.section-title{
+    margin:
+        5px
+        0
+        4px;
+}
+
+.market-title-main,
 .section-title-main{
-    color:#ffffff;
+    color:#fff;
 
     font-size:8px;
     line-height:10px;
@@ -4393,6 +4405,7 @@ h1{
     flex:none;
 }
 
+.market-title-sub,
 .section-title-sub{
     color:#7f8791;
 
@@ -4408,57 +4421,26 @@ h1{
     text-overflow:ellipsis;
 }
 
-.breakout-section-title{
-    border-left-color:#39e875;
-}
-
 .short_breakout-section-title{
     border-left-color:#ff5555;
-}
-
-.progress-section-title{
-    border-left-color:#4cc9ff;
 }
 
 .short_progress-section-title{
     border-left-color:#ff6666;
 }
 
-.roc3_progress-section-title{
-    border-left-color:#39e875;
-}
-
-.roc3_short_progress-section-title{
-    border-left-color:#ff5555;
-}
-
 .market-summary{
     width:100%;
 
-    margin:
-        2px
-        0
-        3px;
+    margin:2px 0 3px;
 
-    padding:
-        3px
-        4px;
+    padding:3px 4px;
 
-    border-top:
-        1px solid
-        #242a31;
-
-    border-bottom:
-        1px solid
-        #242a31;
+    border-top:1px solid #242a31;
+    border-bottom:1px solid #242a31;
 
     background:#101419;
 
-    overflow:hidden;
-}
-
-.btc-mobile{
-    width:100%;
     overflow:hidden;
 }
 
@@ -4478,7 +4460,6 @@ h1{
 
 .btc-name{
     flex:none;
-
     width:34px;
 
     font-size:6.5px;
@@ -4544,7 +4525,6 @@ h1{
 
 .btc-bottom > span{
     flex:none;
-
     white-space:nowrap;
 }
 
@@ -4553,9 +4533,7 @@ h1{
 
     min-width:72px;
 
-    padding:
-        3px
-        5px;
+    padding:3px 5px;
 
     border-radius:4px;
 
@@ -4568,135 +4546,44 @@ h1{
 
     white-space:nowrap;
 
-    border:
-        1px solid
-        rgba(
-            255,
-            255,
-            255,
-            .08
-        );
+    border:1px solid rgba(255,255,255,.08);
 }
 
 .btc-position.long{
     color:#39e875!important;
-
-    background:
-        rgba(
-            57,
-            232,
-            117,
-            .12
-        );
+    background:rgba(57,232,117,.12);
 }
 
 .btc-position.short{
     color:#ff5555!important;
-
-    background:
-        rgba(
-            255,
-            85,
-            85,
-            .12
-        );
+    background:rgba(255,85,85,.12);
 }
 
 .btc-position.wait{
     color:#b0b7bf!important;
-
-    background:
-        rgba(
-            104,
-            113,
-            123,
-            .12
-        );
+    background:rgba(104,113,123,.12);
 }
 
-.market-up{
-    color:#39e875!important;
-    font-weight:900;
-}
-
-.market-down{
-    color:#ff5555!important;
-    font-weight:900;
-}
-
-.market-zero{
-    color:#68717b!important;
-    font-weight:800;
-}
-
-.status{
-    display:flex;
-
-    justify-content:center;
-
-    gap:9px;
-
-    margin:
-        2px
-        2px
-        3px;
-
-    padding:
-        2px
-        0;
-
-    border-top:
-        1px solid
-        #242a31;
-
-    border-bottom:
-        1px solid
-        #242a31;
-
-    font-size:6px;
-    line-height:7px;
-
-    font-weight:800;
-}
-
-.y,
-.buy,
-.roc-positive,
+.market-up,
+.rsi-positive,
 .up{
     color:#39e875!important;
-    font-weight:800;
+    font-weight:900;
 }
 
-.n,
-.short,
-.roc-negative,
+.market-down,
+.rsi-negative,
 .down{
     color:#ff5555!important;
-    font-weight:800;
-}
-
-.breakout{
-    color:#39e875!important;
     font-weight:900;
 }
 
-.short-breakout{
-    color:#ff5555!important;
-    font-weight:900;
-}
-
-.progress{
-    color:#4cc9ff;
-}
-
-.short-progress{
-    color:#ff6666;
-}
-
-.muted,
-.roc-zero,
+.market-zero,
+.rsi-zero,
+.rsi-neutral,
 .zero{
     color:#68717b!important;
+    font-weight:800;
 }
 
 .signal-cell{
@@ -4708,7 +4595,6 @@ h1{
     display:inline-flex;
 
     align-items:center;
-
     justify-content:center;
 
     width:100%;
@@ -4723,78 +4609,6 @@ h1{
     white-space:nowrap;
 }
 
-.signal-icon.long-breakout{
-    filter:
-        drop-shadow(
-            0 0 2px
-            rgba(
-                57,
-                232,
-                117,
-                .35
-            )
-        );
-}
-
-.signal-icon.short-breakout{
-    filter:
-        drop-shadow(
-            0 0 2px
-            rgba(
-                255,
-                85,
-                85,
-                .35
-            )
-        );
-}
-
-.signal-icon.long-progress{
-    filter:
-        drop-shadow(
-            0 0 2px
-            rgba(
-                255,
-                216,
-                77,
-                .25
-            )
-        );
-}
-
-.signal-icon.short-progress{
-    filter:
-        drop-shadow(
-            0 0 2px
-            rgba(
-                160,
-                190,
-                220,
-                .25
-            )
-        );
-}
-
-.roc3-progress-qualified{
-    background:
-        rgba(
-            57,
-            232,
-            117,
-            .06
-        );
-}
-
-.roc3-short-progress-qualified{
-    background:
-        rgba(
-            255,
-            85,
-            85,
-            .06
-        );
-}
-
 .table-wrap{
     width:100%;
 
@@ -4802,9 +4616,7 @@ h1{
 
     border-radius:5px;
 
-    border:
-        1px solid
-        #272d34;
+    border:1px solid #272d34;
 
     background:#171b20;
 }
@@ -4828,9 +4640,7 @@ th{
 
     padding:1px;
 
-    border-bottom:
-        1px solid
-        #292f36;
+    border-bottom:1px solid #292f36;
 
     color:#7f8791;
 
@@ -4847,9 +4657,7 @@ td{
 
     padding:1px;
 
-    border-bottom:
-        1px solid
-        #22282e;
+    border-bottom:1px solid #22282e;
 
     text-align:center;
 
@@ -4894,15 +4702,12 @@ td:nth-child(6){
 
 td:nth-child(1){
     color:#8b929b;
-
     font-size:6px;
-
     font-weight:700;
 }
 
 .coin{
     text-align:left!important;
-
     line-height:9px;
 }
 
@@ -4967,18 +4772,15 @@ td:nth-child(1){
 .ema-sep{
     color:#555c65;
 
-    margin:
-        0
-        1px;
+    margin:0 1px;
 }
 
-.roc-cell{
+.rsi-cell{
     display:flex;
 
     flex-direction:row;
 
     align-items:center;
-
     justify-content:center;
 
     gap:1px;
@@ -4990,7 +4792,7 @@ td:nth-child(1){
     white-space:nowrap;
 }
 
-.roc-cell span{
+.rsi-cell span{
     font-size:5.8px;
     line-height:8px;
 
@@ -4999,56 +4801,20 @@ td:nth-child(1){
     white-space:nowrap;
 }
 
-.buy,
-.short,
-.breakout,
-.short-breakout{
-    font-size:5.8px;
-    line-height:8px;
-
-    font-weight:800;
-
-    white-space:nowrap;
-}
-
 .breakout-qualified{
-    background:
-        rgba(
-            57,
-            232,
-            117,
-            .08
-        );
+    background:rgba(57,232,117,.08);
 }
 
 .short-breakout-qualified{
-    background:
-        rgba(
-            255,
-            85,
-            85,
-            .05
-        );
+    background:rgba(255,85,85,.05);
 }
 
 .progress-qualified{
-    background:
-        rgba(
-            76,
-            201,
-            255,
-            .06
-        );
+    background:rgba(76,201,255,.06);
 }
 
 .short-progress-qualified{
-    background:
-        rgba(
-            255,
-            85,
-            85,
-            .035
-        );
+    background:rgba(255,85,85,.035);
 }
 
 .empty{
@@ -5064,10 +4830,7 @@ td:nth-child(1){
 @media(max-width:380px){
 
     body{
-        padding:
-            1px
-            1px
-            6px;
+        padding:1px 1px 6px;
     }
 
     h1{
@@ -5076,9 +4839,7 @@ td:nth-child(1){
     }
 
     .market-summary{
-        padding:
-            3px
-            3px;
+        padding:3px;
     }
 
     .market-title,
@@ -5091,9 +4852,7 @@ td:nth-child(1){
         font-size:7px;
         line-height:9px;
 
-        padding:
-            3px
-            4px;
+        padding:3px 4px;
 
         margin-bottom:3px;
 
@@ -5101,22 +4860,17 @@ td:nth-child(1){
     }
 
     .section-title{
-        margin:
-            4px
-            0
-            3px;
+        margin:4px 0 3px;
     }
 
     .market-title-main,
     .section-title-main{
-
         font-size:7px;
         line-height:9px;
     }
 
     .market-title-sub,
     .section-title-sub{
-
         font-size:4.8px;
         line-height:7px;
     }
@@ -5140,8 +4894,6 @@ td:nth-child(1){
 
         font-size:6.5px;
         line-height:9px;
-
-        font-weight:900;
     }
 
     .btc-bottom{
@@ -5155,19 +4907,10 @@ td:nth-child(1){
     .btc-position{
         min-width:64px;
 
-        padding:
-            2px
-            4px;
+        padding:2px 4px;
 
         font-size:7px;
         line-height:10px;
-
-        border-radius:4px;
-    }
-
-    .status{
-        font-size:5.5px;
-        line-height:6px;
     }
 
     th{
@@ -5197,14 +4940,7 @@ td:nth-child(1){
         font-size:5.3px;
     }
 
-    .roc-cell span{
-        font-size:5.2px;
-    }
-
-    .buy,
-    .short,
-    .breakout,
-    .short-breakout{
+    .rsi-cell span{
         font-size:5.2px;
     }
 
@@ -5241,9 +4977,7 @@ td:nth-child(1){
 
         font-size:9px;
 
-        padding:
-            4px
-            6px;
+        padding:4px 6px;
 
         margin-bottom:5px;
 
@@ -5251,21 +4985,16 @@ td:nth-child(1){
     }
 
     .section-title{
-        margin:
-            10px
-            0
-            5px;
+        margin:10px 0 5px;
     }
 
     .market-title-main,
     .section-title-main{
-
         font-size:9px;
     }
 
     .market-title-sub,
     .section-title-sub{
-
         font-size:6px;
     }
 
@@ -5321,14 +5050,7 @@ td:nth-child(1){
         font-size:8px;
     }
 
-    .roc-cell span{
-        font-size:7px;
-    }
-
-    .buy,
-    .short,
-    .breakout,
-    .short-breakout{
+    .rsi-cell span{
         font-size:7px;
     }
 
@@ -5383,47 +5105,41 @@ def dashboard():
     sections = ""
 
     # =====================================================
-    # ① 업비트 ROC 3+ 롱 진행중
-    #
-    # 진행중을 돌파보다 먼저 표시
-    # 당일 등락률 양수만 표시
+    # ① 업비트 RSI 70+ 롱 진행
     # =====================================================
 
     if USE_UPBIT == "Y":
 
         sections += focus_section(
-            "🔥 ROC 3+ 롱 진행중 (추세가 확실하면 도전해라)",
+            "🔥 RSI 70+ 롱 진행중",
             [
                 x
                 for x in latest_upbit_data
                 if is_positive_day(x)
             ],
             latest_upbit_update_time,
-            is_roc3_progress,
-            "roc3_progress",
+            is_rsi3_progress,
+            "rsi3_progress",
             (
                 f"TOP{TOP_N} 기준 · "
                 f"정배열 EMA10>30>60>120 · "
-                f"ROC10 양수 "
-                f"{ROC_PROGRESS_MIN_COUNT}개 이상 연속 · "
+                f"RSI14 ≥ {RSI_LONG_LEVEL} · "
+                f"{RSI_PROGRESS_MIN_COUNT}개 이상 연속 · "
                 f"당일 양수 · "
                 f"최신 진행순"
             ),
-            sort_key="roc_progress_start_time",
+            sort_key="rsi_progress_start_time",
             reverse=True
         )
 
     # =====================================================
-    # ② 업비트 ROC 롱 돌파
-    #
-    # 진행중 다음에 표시
-    # 당일 등락률 양수만 표시
+    # ② 업비트 RSI 롱 돌파
     # =====================================================
 
     if USE_UPBIT == "Y":
 
         sections += focus_section(
-            "🚀 ROC 롱 돌파 정배열 (추세선확인 돌파인가 반등인가)",
+            "🚀 RSI 70 롱 돌파 정배열",
             [
                 x
                 for x in latest_upbit_data
@@ -5437,77 +5153,45 @@ def dashboard():
                 f"/"
                 f"{format_timeframe(EMA_HIGH_TIMEFRAME)} "
                 f"EMA10>30>60>120 · "
-                f"ROC10 음수→양수 ⓪①② · "
+                f"RSI14 {RSI_LONG_LEVEL} 돌파 · "
                 f"당일 양수"
             )
         )
 
     # =====================================================
-    # 업비트 숏 돌파
-    #
-    # 표시하지 않음
+    # 업비트 숏은 기존처럼 화면 표시하지 않음
     # =====================================================
-
-    # 업비트 숏 돌파 섹션은 표시하지 않음.
-    #
-    # 단, 내부 short_breakout_qualified 계산은
-    # 기존 코드 그대로 유지됨.
-
-
-    # =====================================================
-    # 업비트 숏 진행
-    #
-    # 표시하지 않음
-    # =====================================================
-
-    # 업비트 숏 진행 섹션은 표시하지 않음.
-    #
-    # 단, 내부 roc3_short_progress_qualified 계산은
-    # 기존 코드 그대로 유지됨.
-
 
     # =====================================================
     # ③ OKX
-    #
-    # 진행중 → 돌파 순서
-    # 롱 = 당일 양수
-    # 숏 = 당일 음수
     # =====================================================
 
     if USE_OKX == "Y":
 
-        # -------------------------------------------------
-        # OKX 롱 진행
-        # -------------------------------------------------
-
         sections += focus_section(
-            "🔥 ROC 3+ 롱 진행중",
+            "🔥 RSI 70+ 롱 진행중",
             [
                 x
                 for x in latest_okx_data
                 if is_positive_day(x)
             ],
             latest_okx_update_time,
-            is_roc3_progress,
-            "roc3_progress",
+            is_rsi3_progress,
+            "rsi3_progress",
             (
                 f"TOP{TOP_N} 기준 · "
                 f"정배열 EMA10>30>60>120 · "
-                f"ROC10 양수 "
-                f"{ROC_PROGRESS_MIN_COUNT}개 이상 연속 · "
+                f"RSI14 ≥ {RSI_LONG_LEVEL} · "
+                f"{RSI_PROGRESS_MIN_COUNT}개 이상 연속 · "
                 f"당일 양수 · "
                 f"최신 진행순"
             ),
-            sort_key="roc_progress_start_time",
+            sort_key="rsi_progress_start_time",
             reverse=True
         )
 
-        # -------------------------------------------------
-        # OKX 롱 돌파
-        # -------------------------------------------------
-
         sections += focus_section(
-            "🚀 ROC 롱 돌파 정배열",
+            "🚀 RSI 70 롱 돌파 정배열",
             [
                 x
                 for x in latest_okx_data
@@ -5521,43 +5205,35 @@ def dashboard():
                 f"/"
                 f"{format_timeframe(EMA_HIGH_TIMEFRAME)} "
                 f"EMA10>30>60>120 · "
-                f"ROC10 음수→양수 ⓪①② · "
+                f"RSI14 {RSI_LONG_LEVEL} 돌파 · "
                 f"당일 양수"
             )
         )
 
-        # -------------------------------------------------
-        # OKX 숏 진행
-        # -------------------------------------------------
-
         sections += focus_section(
-            "🌧️ ROC 3+ 숏 진행중",
+            "🌧️ RSI 30- 숏 진행중",
             [
                 x
                 for x in latest_okx_data
                 if is_negative_day(x)
             ],
             latest_okx_update_time,
-            is_roc3_short_progress,
-            "roc3_short_progress",
+            is_rsi3_short_progress,
+            "rsi3_short_progress",
             (
                 f"TOP{TOP_N} 기준 · "
                 f"역배열 EMA10<30<60<120 · "
-                f"ROC10 음수 "
-                f"{ROC_PROGRESS_MIN_COUNT}개 이상 연속 · "
+                f"RSI14 ≤ {RSI_SHORT_LEVEL} · "
+                f"{RSI_PROGRESS_MIN_COUNT}개 이상 연속 · "
                 f"당일 음수 · "
                 f"최신 진행순"
             ),
-            sort_key="roc_negative_progress_start_time",
+            sort_key="rsi_short_progress_start_time",
             reverse=True
         )
 
-        # -------------------------------------------------
-        # OKX 숏 돌파
-        # -------------------------------------------------
-
         sections += focus_section(
-            "🔻 ROC 숏 돌파 역배열",
+            "🔻 RSI 30 숏 돌파 역배열",
             [
                 x
                 for x in latest_okx_data
@@ -5571,15 +5247,13 @@ def dashboard():
                 f"/"
                 f"{format_timeframe(EMA_HIGH_TIMEFRAME)} "
                 f"EMA10<30<60<120 · "
-                f"ROC10 양수→음수 ⓪①② · "
+                f"RSI14 {RSI_SHORT_LEVEL} 이탈 · "
                 f"당일 음수"
             )
         )
 
     # =====================================================
     # 전체 TOP30
-    #
-    # 당일 양수/음수 필터 적용하지 않음
     # =====================================================
 
     if USE_UPBIT == "Y":
@@ -5631,7 +5305,7 @@ def dashboard():
             {format_timeframe(EMA_TIMEFRAME)}
             /
             {format_timeframe(EMA_HIGH_TIMEFRAME)}
-            EMA10·30·60·120 · ROC10
+            EMA10·30·60·120 · RSI14
         </title>
 
         <style>
@@ -5718,7 +5392,7 @@ def startup():
 
     log.info(
         f"{tf}/{high_tf} "
-        f"EMA10·30·60·120 + ROC10 시작"
+        f"EMA10·30·60·120 + RSI14 시작"
     )
 
     log.info(
@@ -5785,12 +5459,16 @@ def startup():
     )
 
     log.info(
-        "ROC 음수→양수 돌파"
+        f"RSI14 >= {RSI_LONG_LEVEL}"
     )
 
     log.info(
-        f"롱 진행: ROC 양수 "
-        f"{ROC_PROGRESS_MIN_COUNT}개 이상"
+        f"롱 진행: RSI14 >= {RSI_LONG_LEVEL} "
+        f"{RSI_PROGRESS_MIN_COUNT}개 이상 연속"
+    )
+
+    log.info(
+        f"롱 돌파: RSI14 {RSI_LONG_LEVEL} 돌파"
     )
 
     log.info(
@@ -5806,12 +5484,16 @@ def startup():
     )
 
     log.info(
-        "ROC 양수→음수 돌파"
+        f"RSI14 <= {RSI_SHORT_LEVEL}"
     )
 
     log.info(
-        f"숏 진행: ROC 음수 "
-        f"{ROC_PROGRESS_MIN_COUNT}개 이상"
+        f"숏 진행: RSI14 <= {RSI_SHORT_LEVEL} "
+        f"{RSI_PROGRESS_MIN_COUNT}개 이상 연속"
+    )
+
+    log.info(
+        f"숏 돌파: RSI14 {RSI_SHORT_LEVEL} 이탈"
     )
 
     log.info(
@@ -5819,15 +5501,15 @@ def startup():
     )
 
     log.info(
-        "ROC 진행 리스트 정렬:"
+        "RSI 진행 리스트 정렬:"
     )
 
     log.info(
-        "양수 진행 시작시간 최신순"
+        "RSI70+ 진행 시작시간 최신순"
     )
 
     log.info(
-        "음수 진행 시작시간 최신순"
+        "RSI30- 진행 시작시간 최신순"
     )
 
     log.info(
@@ -5862,27 +5544,27 @@ def startup():
     )
 
     log.info(
-        "정배열 + ROC 상승 = 매우 좋음"
+        f"정배열 + RSI{RSI_LONG_LEVEL}+ = 매우 좋음"
     )
 
     log.info(
-        "정배열 + ROC 0 이하 = 상승 준비"
+        f"정배열 + RSI{RSI_LONG_LEVEL} 미만 = 상승 준비"
     )
 
     log.info(
-        "역배열 + ROC 상승 = 상승 / 조심"
+        f"역배열 + RSI{RSI_SHORT_LEVEL}- = 안좋음"
     )
 
     log.info(
-        "역배열 + ROC 0 이하 = 안좋음"
+        f"역배열 + RSI{RSI_SHORT_LEVEL} 초과 = 상승 / 조심"
     )
 
     log.info(
-        "혼합 + ROC 상승 = 상승 / 확인"
+        "혼합 + RSI70+ = 과매수 / 확인"
     )
 
     log.info(
-        "혼합 + ROC 0 이하 = 관망"
+        "혼합 + RSI30- = 과매도 / 확인"
     )
 
     log.info(
@@ -5890,10 +5572,10 @@ def startup():
     )
 
     log.info(
-        "🚀 롱 돌파 / "
-        "🔻 숏 돌파 / "
-        "☀️ 롱 진행 / "
-        "🌧️ 숏 진행"
+        "🚀 RSI 롱 돌파 / "
+        "🔻 RSI 숏 돌파 / "
+        "☀️ RSI70+ 롱 진행 / "
+        "🌧️ RSI30- 숏 진행"
     )
 
     log.info(
