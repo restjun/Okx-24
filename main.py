@@ -4713,10 +4713,10 @@ h1{
 
     width:100%;
 
-    min-height:19px;
+    min-height:18px;
 
-    font-size:13px;
-    line-height:15px;
+    font-size:12px;
+    line-height:14px;
 
     font-weight:900;
 
@@ -5209,9 +5209,9 @@ td:nth-child(1){
     }
 
     .signal-icon{
-        font-size:11px;
-        line-height:13px;
-        min-height:17px;
+        font-size:10px;
+        line-height:12px;
+        min-height:16px;
     }
 }
 
@@ -5333,9 +5333,9 @@ td:nth-child(1){
     }
 
     .signal-icon{
-        font-size:18px;
-        line-height:20px;
-        min-height:26px;
+        font-size:17px;
+        line-height:19px;
+        min-height:25px;
     }
 }
 
@@ -5383,36 +5383,9 @@ def dashboard():
     sections = ""
 
     # =====================================================
-    # ① 업비트 ROC 롱 돌파
+    # ① 업비트 ROC 3+ 롱 진행중
     #
-    # 당일 등락률 양수만 표시
-    # =====================================================
-
-    if USE_UPBIT == "Y":
-
-        sections += focus_section(
-            "🚀 ROC 롱 돌파 정배열 (추세선확인 돌파인가 반등인가)",
-            [
-                x
-                for x in latest_upbit_data
-                if is_positive_day(x)
-            ],
-            latest_upbit_update_time,
-            is_breakout,
-            "breakout",
-            (
-                f"{format_timeframe(EMA_TIMEFRAME)}"
-                f"/"
-                f"{format_timeframe(EMA_HIGH_TIMEFRAME)} "
-                f"EMA10>30>60>120 · "
-                f"ROC10 음수→양수 ⓪①② · "
-                f"당일 양수"
-            )
-        )
-
-    # =====================================================
-    # ② 업비트 ROC 3+ 롱 진행중
-    #
+    # 진행중을 돌파보다 먼저 표시
     # 당일 등락률 양수만 표시
     # =====================================================
 
@@ -5438,6 +5411,35 @@ def dashboard():
             ),
             sort_key="roc_progress_start_time",
             reverse=True
+        )
+
+    # =====================================================
+    # ② 업비트 ROC 롱 돌파
+    #
+    # 진행중 다음에 표시
+    # 당일 등락률 양수만 표시
+    # =====================================================
+
+    if USE_UPBIT == "Y":
+
+        sections += focus_section(
+            "🚀 ROC 롱 돌파 정배열 (추세선확인 돌파인가 반등인가)",
+            [
+                x
+                for x in latest_upbit_data
+                if is_positive_day(x)
+            ],
+            latest_upbit_update_time,
+            is_breakout,
+            "breakout",
+            (
+                f"{format_timeframe(EMA_TIMEFRAME)}"
+                f"/"
+                f"{format_timeframe(EMA_HIGH_TIMEFRAME)} "
+                f"EMA10>30>60>120 · "
+                f"ROC10 음수→양수 ⓪①② · "
+                f"당일 양수"
+            )
         )
 
     # =====================================================
@@ -5467,6 +5469,7 @@ def dashboard():
     # =====================================================
     # ③ OKX
     #
+    # 진행중 → 돌파 순서
     # 롱 = 당일 양수
     # 숏 = 당일 음수
     # =====================================================
@@ -5474,33 +5477,7 @@ def dashboard():
     if USE_OKX == "Y":
 
         # -------------------------------------------------
-        # OKX 롱 돌파
-        # 당일 양수만
-        # -------------------------------------------------
-
-        sections += focus_section(
-            "🚀 ROC 롱 돌파 정배열",
-            [
-                x
-                for x in latest_okx_data
-                if is_positive_day(x)
-            ],
-            latest_okx_update_time,
-            is_breakout,
-            "breakout",
-            (
-                f"{format_timeframe(EMA_TIMEFRAME)}"
-                f"/"
-                f"{format_timeframe(EMA_HIGH_TIMEFRAME)} "
-                f"EMA10>30>60>120 · "
-                f"ROC10 음수→양수 ⓪①② · "
-                f"당일 양수"
-            )
-        )
-
-        # -------------------------------------------------
         # OKX 롱 진행
-        # 당일 양수만
         # -------------------------------------------------
 
         sections += focus_section(
@@ -5526,33 +5503,31 @@ def dashboard():
         )
 
         # -------------------------------------------------
-        # OKX 숏 돌파
-        # 당일 음수만
+        # OKX 롱 돌파
         # -------------------------------------------------
 
         sections += focus_section(
-            "🔻 ROC 숏 돌파 역배열",
+            "🚀 ROC 롱 돌파 정배열",
             [
                 x
                 for x in latest_okx_data
-                if is_negative_day(x)
+                if is_positive_day(x)
             ],
             latest_okx_update_time,
-            is_short_breakout,
-            "short_breakout",
+            is_breakout,
+            "breakout",
             (
                 f"{format_timeframe(EMA_TIMEFRAME)}"
                 f"/"
                 f"{format_timeframe(EMA_HIGH_TIMEFRAME)} "
-                f"EMA10<30<60<120 · "
-                f"ROC10 양수→음수 ⓪①② · "
-                f"당일 음수"
+                f"EMA10>30>60>120 · "
+                f"ROC10 음수→양수 ⓪①② · "
+                f"당일 양수"
             )
         )
 
         # -------------------------------------------------
         # OKX 숏 진행
-        # 당일 음수만
         # -------------------------------------------------
 
         sections += focus_section(
@@ -5575,6 +5550,30 @@ def dashboard():
             ),
             sort_key="roc_negative_progress_start_time",
             reverse=True
+        )
+
+        # -------------------------------------------------
+        # OKX 숏 돌파
+        # -------------------------------------------------
+
+        sections += focus_section(
+            "🔻 ROC 숏 돌파 역배열",
+            [
+                x
+                for x in latest_okx_data
+                if is_negative_day(x)
+            ],
+            latest_okx_update_time,
+            is_short_breakout,
+            "short_breakout",
+            (
+                f"{format_timeframe(EMA_TIMEFRAME)}"
+                f"/"
+                f"{format_timeframe(EMA_HIGH_TIMEFRAME)} "
+                f"EMA10<30<60<120 · "
+                f"ROC10 양수→음수 ⓪①② · "
+                f"당일 음수"
+            )
         )
 
     # =====================================================
