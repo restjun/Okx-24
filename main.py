@@ -1603,13 +1603,11 @@ def rsi(
             100
         )
 
-        # 상승만 지속되는 경우 RSI=100
         result = result.where(
             avg_loss != 0,
             100
         )
 
-        # 하락만 지속되는 경우 RSI=0
         result = result.where(
             avg_gain != 0,
             0
@@ -1737,7 +1735,6 @@ def rsi_cross_state(
 
             return False
 
-        # 현재 진행 중인 캔들에서 발생
         if len(current) >= 2:
 
             prev = current[-2]
@@ -1753,7 +1750,6 @@ def rsi_cross_state(
                     "count": 0
                 }
 
-        # 현재 데이터가 현재봉 하나만 존재할 경우
         if len(current) == 1:
 
             prev = confirmed[-1]
@@ -1769,7 +1765,6 @@ def rsi_cross_state(
                     "count": 0
                 }
 
-        # 직전 확정봉에서 돌파
         if len(confirmed) >= 2:
 
             prev = confirmed[-2]
@@ -1785,7 +1780,6 @@ def rsi_cross_state(
                     "count": 1
                 }
 
-        # 그 다음 봉
         if len(confirmed) >= 3:
 
             prev = confirmed[-3]
@@ -1924,10 +1918,6 @@ def rsi_analysis(
             False
         )
 
-        # -------------------------------------------------
-        # RSI 70 이상 진행 시작시간
-        # -------------------------------------------------
-
         rsi_progress_start_time = None
 
         try:
@@ -1958,10 +1948,6 @@ def rsi_analysis(
             log.error(
                 f"RSI 롱 시작시간 오류: {e}"
             )
-
-        # -------------------------------------------------
-        # RSI 30 이하 진행 시작시간
-        # -------------------------------------------------
 
         rsi_short_progress_start_time = None
 
@@ -1994,19 +1980,11 @@ def rsi_analysis(
                 f"RSI 숏 시작시간 오류: {e}"
             )
 
-        # -------------------------------------------------
-        # RSI 70 돌파
-        # -------------------------------------------------
-
         lb = rsi_cross_state(
             confirmed,
             current,
             "long"
         )
-
-        # -------------------------------------------------
-        # RSI 30 이탈
-        # -------------------------------------------------
 
         sb = rsi_cross_state(
             confirmed,
@@ -2837,6 +2815,23 @@ def is_rsi3_short_progress(row):
             "rsi3_short_progress_qualified",
             False
         )
+    )
+
+
+# =========================================================
+# RSI 통합 후보
+# =========================================================
+
+def is_rsi_signal(row):
+
+    if not row:
+        return False
+
+    return (
+        is_breakout(row)
+        or is_short_breakout(row)
+        or is_rsi3_progress(row)
+        or is_rsi3_short_progress(row)
     )
 
 
@@ -5059,6 +5054,7 @@ td:nth-child(1){
         line-height:19px;
         min-height:25px;
     }
+
 }
 
 """
@@ -5105,150 +5101,72 @@ def dashboard():
     sections = ""
 
     # =====================================================
-    # ① 업비트 RSI 70+ 롱 진행
+    # ① 업비트 RSI 통합 신호
+    #
+    # 기존:
+    #   RSI 70+ 롱 진행중
+    #   RSI 70 롱 돌파 정배열
+    #
+    # 변경:
+    #   하나의 리스트에서 통합 표시
+    #
+    # 업비트 숏은 기존처럼 화면 표시하지 않음
     # =====================================================
 
     if USE_UPBIT == "Y":
 
         sections += focus_section(
-            "🔥 RSI 70+ 롱 진행중",
+            "🔥 RSI 추세 신호",
             [
                 x
                 for x in latest_upbit_data
                 if is_positive_day(x)
             ],
             latest_upbit_update_time,
-            is_rsi3_progress,
-            "rsi3_progress",
+            is_rsi_signal,
+            "rsi_signal",
             (
                 f"TOP{TOP_N} 기준 · "
-                f"정배열 EMA10>30>60>120 · "
-                f"RSI14 ≥ {RSI_LONG_LEVEL} · "
-                f"{RSI_PROGRESS_MIN_COUNT}개 이상 연속 · "
-                f"당일 양수 · "
-                f"최신 진행순"
-            ),
-            sort_key="rsi_progress_start_time",
-            reverse=True
-        )
-
-    # =====================================================
-    # ② 업비트 RSI 롱 돌파
-    # =====================================================
-
-    if USE_UPBIT == "Y":
-
-        sections += focus_section(
-            "🚀 RSI 70 롱 돌파 정배열",
-            [
-                x
-                for x in latest_upbit_data
-                if is_positive_day(x)
-            ],
-            latest_upbit_update_time,
-            is_breakout,
-            "breakout",
-            (
                 f"{format_timeframe(EMA_TIMEFRAME)}"
                 f"/"
-                f"{format_timeframe(EMA_HIGH_TIMEFRAME)} "
+                f"{format_timeframe(EMA_HIGH_TIMEFRAME)} · "
                 f"EMA10>30>60>120 · "
-                f"RSI14 {RSI_LONG_LEVEL} 돌파 · "
+                f"RSI14 {RSI_LONG_LEVEL}+ "
+                f"돌파/진행 통합 · "
                 f"당일 양수"
             )
         )
 
     # =====================================================
-    # 업비트 숏은 기존처럼 화면 표시하지 않음
-    # =====================================================
-
-    # =====================================================
-    # ③ OKX
+    # ② OKX RSI 통합 신호
+    #
+    # 롱:
+    #   🚀 RSI70 돌파
+    #   ☀️ RSI70+ 진행
+    #
+    # 숏:
+    #   🔻 RSI30 이탈
+    #   🌧️ RSI30- 진행
+    #
+    # 전부 하나의 리스트에 표시
     # =====================================================
 
     if USE_OKX == "Y":
 
         sections += focus_section(
-            "🔥 RSI 70+ 롱 진행중",
-            [
-                x
-                for x in latest_okx_data
-                if is_positive_day(x)
-            ],
+            "🔥 RSI 추세 신호",
+            latest_okx_data,
             latest_okx_update_time,
-            is_rsi3_progress,
-            "rsi3_progress",
+            is_rsi_signal,
+            "rsi_signal",
             (
                 f"TOP{TOP_N} 기준 · "
-                f"정배열 EMA10>30>60>120 · "
-                f"RSI14 ≥ {RSI_LONG_LEVEL} · "
-                f"{RSI_PROGRESS_MIN_COUNT}개 이상 연속 · "
-                f"당일 양수 · "
-                f"최신 진행순"
-            ),
-            sort_key="rsi_progress_start_time",
-            reverse=True
-        )
-
-        sections += focus_section(
-            "🚀 RSI 70 롱 돌파 정배열",
-            [
-                x
-                for x in latest_okx_data
-                if is_positive_day(x)
-            ],
-            latest_okx_update_time,
-            is_breakout,
-            "breakout",
-            (
                 f"{format_timeframe(EMA_TIMEFRAME)}"
                 f"/"
-                f"{format_timeframe(EMA_HIGH_TIMEFRAME)} "
-                f"EMA10>30>60>120 · "
-                f"RSI14 {RSI_LONG_LEVEL} 돌파 · "
-                f"당일 양수"
-            )
-        )
-
-        sections += focus_section(
-            "🌧️ RSI 30- 숏 진행중",
-            [
-                x
-                for x in latest_okx_data
-                if is_negative_day(x)
-            ],
-            latest_okx_update_time,
-            is_rsi3_short_progress,
-            "rsi3_short_progress",
-            (
-                f"TOP{TOP_N} 기준 · "
-                f"역배열 EMA10<30<60<120 · "
-                f"RSI14 ≤ {RSI_SHORT_LEVEL} · "
-                f"{RSI_PROGRESS_MIN_COUNT}개 이상 연속 · "
-                f"당일 음수 · "
-                f"최신 진행순"
-            ),
-            sort_key="rsi_short_progress_start_time",
-            reverse=True
-        )
-
-        sections += focus_section(
-            "🔻 RSI 30 숏 돌파 역배열",
-            [
-                x
-                for x in latest_okx_data
-                if is_negative_day(x)
-            ],
-            latest_okx_update_time,
-            is_short_breakout,
-            "short_breakout",
-            (
-                f"{format_timeframe(EMA_TIMEFRAME)}"
-                f"/"
-                f"{format_timeframe(EMA_HIGH_TIMEFRAME)} "
-                f"EMA10<30<60<120 · "
-                f"RSI14 {RSI_SHORT_LEVEL} 이탈 · "
-                f"당일 음수"
+                f"{format_timeframe(EMA_HIGH_TIMEFRAME)} · "
+                f"정배열/역배열 · "
+                f"RSI14 {RSI_LONG_LEVEL}/{RSI_SHORT_LEVEL} · "
+                f"돌파/진행 통합"
             )
         )
 
@@ -5501,15 +5419,11 @@ def startup():
     )
 
     log.info(
-        "RSI 진행 리스트 정렬:"
+        "RSI 진행 리스트:"
     )
 
     log.info(
-        "RSI70+ 진행 시작시간 최신순"
-    )
-
-    log.info(
-        "RSI30- 진행 시작시간 최신순"
+        "돌파 + 진행중 통합 표시"
     )
 
     log.info(
