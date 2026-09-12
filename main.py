@@ -89,7 +89,7 @@ EMA1_MAX_COUNT = 200
 # ROC
 # =========================================================
 
-ROC_PERIOD = 10
+ROC_PERIOD = 9
 
 BREAKOUT_MAX_COUNT = 2
 
