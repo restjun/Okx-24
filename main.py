@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+  from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
 import schedule
@@ -2162,7 +2162,6 @@ def get_change_value(x):
 
 
 # =========================================================
-# ★ 추가
 # 대시보드용 당일 등락 방향 필터
 #
 # 분석/신호 계산에는 영향을 주지 않음
@@ -2215,6 +2214,7 @@ def format_change(x):
     x = get_change_value(x)
 
     if x is None:
+
         return "-"
 
     if x > 0:
@@ -3118,7 +3118,7 @@ def market_roc_html(r):
 
         return (
             '<span class="market-zero">'
-            '⚪ -'
+            '-'
             '</span>'
         )
 
@@ -3130,7 +3130,7 @@ def market_roc_html(r):
 
         return (
             '<span class="market-zero">'
-            '⚪ -'
+            '-'
             '</span>'
         )
 
@@ -3142,7 +3142,7 @@ def market_roc_html(r):
 
         return (
             '<span class="market-zero">'
-            '⚪ -'
+            '-'
             '</span>'
         )
 
@@ -3184,7 +3184,7 @@ def market_roc_html(r):
 
     return (
         '<span class="market-zero">'
-        '⚪ 0'
+        '0.0%'
         '</span>'
     )
 
@@ -3485,7 +3485,7 @@ def market_summary_html():
                     </span>
 
                     <span>
-                        ROC ⚪ -
+                        ROC -
                     </span>
 
                     <span class="btc-position wait">
@@ -3628,7 +3628,7 @@ def roc_html(r):
         return (
             '<div class="roc-cell">'
             '<span class="roc-zero">'
-            '⚪ 0'
+            '-'
             '</span>'
             '</div>'
         )
@@ -3642,7 +3642,7 @@ def roc_html(r):
         return (
             '<div class="roc-cell">'
             '<span class="roc-zero">'
-            '⚪ 0'
+            '-'
             '</span>'
             '</div>'
         )
@@ -3656,7 +3656,7 @@ def roc_html(r):
         return (
             '<div class="roc-cell">'
             '<span class="roc-zero">'
-            '⚪ 0'
+            '-'
             '</span>'
             '</div>'
         )
@@ -3765,7 +3765,7 @@ def roc_html(r):
     <div class="roc-cell">
 
         <span class="roc-zero">
-            ⚪ 0
+            -
         </span>
 
     </div>
@@ -4713,10 +4713,10 @@ h1{
 
     width:100%;
 
-    min-height:21px;
+    min-height:19px;
 
-    font-size:15px;
-    line-height:17px;
+    font-size:13px;
+    line-height:15px;
 
     font-weight:900;
 
@@ -5209,9 +5209,9 @@ td:nth-child(1){
     }
 
     .signal-icon{
-        font-size:13px;
-        line-height:15px;
-        min-height:19px;
+        font-size:11px;
+        line-height:13px;
+        min-height:17px;
     }
 }
 
@@ -5333,9 +5333,9 @@ td:nth-child(1){
     }
 
     .signal-icon{
-        font-size:20px;
-        line-height:22px;
-        min-height:28px;
+        font-size:18px;
+        line-height:20px;
+        min-height:26px;
     }
 }
 
@@ -5385,7 +5385,7 @@ def dashboard():
     # =====================================================
     # ① 업비트 ROC 롱 돌파
     #
-    # ★ 당일 등락률 양수만 표시
+    # 당일 등락률 양수만 표시
     # =====================================================
 
     if USE_UPBIT == "Y":
@@ -5413,7 +5413,7 @@ def dashboard():
     # =====================================================
     # ② 업비트 ROC 3+ 롱 진행중
     #
-    # ★ 당일 등락률 양수만 표시
+    # 당일 등락률 양수만 표시
     # =====================================================
 
     if USE_UPBIT == "Y":
@@ -5443,7 +5443,7 @@ def dashboard():
     # =====================================================
     # 업비트 숏 돌파
     #
-    # ★ 삭제
+    # 표시하지 않음
     # =====================================================
 
     # 업비트 숏 돌파 섹션은 표시하지 않음.
@@ -5455,7 +5455,7 @@ def dashboard():
     # =====================================================
     # 업비트 숏 진행
     #
-    # ★ 삭제
+    # 표시하지 않음
     # =====================================================
 
     # 업비트 숏 진행 섹션은 표시하지 않음.
@@ -5578,9 +5578,7 @@ def dashboard():
         )
 
     # =====================================================
-    # 전체 TOP50
-    #
-    # ★ 기존 그대로
+    # 전체 TOP30
     #
     # 당일 양수/음수 필터 적용하지 않음
     # =====================================================
