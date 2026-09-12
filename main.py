@@ -2161,6 +2161,55 @@ def get_change_value(x):
         return None
 
 
+# =========================================================
+# ★ 추가
+# 대시보드용 당일 등락 방향 필터
+#
+# 분석/신호 계산에는 영향을 주지 않음
+# =========================================================
+
+def is_positive_day(row):
+
+    if not row:
+        return False
+
+    value = row.get(
+        "change_value"
+    )
+
+    try:
+
+        return (
+            value is not None
+            and float(value) > 0
+        )
+
+    except Exception:
+
+        return False
+
+
+def is_negative_day(row):
+
+    if not row:
+        return False
+
+    value = row.get(
+        "change_value"
+    )
+
+    try:
+
+        return (
+            value is not None
+            and float(value) < 0
+        )
+
+    except Exception:
+
+        return False
+
+
 def format_change(x):
 
     x = get_change_value(x)
@@ -3215,24 +3264,6 @@ def market_change_html(value):
 
 # =========================================================
 # BTC 시황 최종 판단
-#
-# 정배열 + ROC 상승
-#     → 매우 좋음
-#
-# 정배열 + ROC 하락/0
-#     → 상승 준비
-#
-# 역배열 + ROC 상승
-#     → 상승 / 조심
-#
-# 역배열 + ROC 하락/0
-#     → 안좋음
-#
-# 혼합 + ROC 상승
-#     → 상승 / 확인
-#
-# 혼합 + ROC 하락/0
-#     → 관망
 # =========================================================
 
 def btc_position_view(row):
@@ -3259,10 +3290,6 @@ def btc_position_view(row):
         {}
     )
 
-    # -----------------------------------------
-    # 사용 중인 EMA 시간봉
-    # -----------------------------------------
-
     selected = []
 
     if USE_EMA_TIMEFRAME == "Y":
@@ -3284,10 +3311,6 @@ def btc_position_view(row):
         )
         for x in selected
     ]
-
-    # -----------------------------------------
-    # EMA 최종 방향
-    # -----------------------------------------
 
     if (
         directions
@@ -3313,10 +3336,6 @@ def btc_position_view(row):
 
         ema_direction = "none"
 
-    # -----------------------------------------
-    # ROC
-    # -----------------------------------------
-
     roc_value = r.get(
         "roc10"
     )
@@ -3341,10 +3360,6 @@ def btc_position_view(row):
             "class": "wait"
         }
 
-    # =====================================================
-    # 정배열 + ROC 상승
-    # =====================================================
-
     if (
         ema_direction == "long"
         and roc_value > 0
@@ -3354,10 +3369,6 @@ def btc_position_view(row):
             "text": "🟢 매우 좋음",
             "class": "long"
         }
-
-    # =====================================================
-    # 정배열 + ROC 0 이하
-    # =====================================================
 
     if (
         ema_direction == "long"
@@ -3369,13 +3380,6 @@ def btc_position_view(row):
             "class": "wait"
         }
 
-    # =====================================================
-    # 역배열 + ROC 상승
-    #
-    # 상승 중이지만 추세와 반대
-    # → 조심
-    # =====================================================
-
     if (
         ema_direction == "short"
         and roc_value > 0
@@ -3385,10 +3389,6 @@ def btc_position_view(row):
             "text": "🟠 상승 / 조심",
             "class": "short"
         }
-
-    # =====================================================
-    # 역배열 + ROC 0 이하
-    # =====================================================
 
     if (
         ema_direction == "short"
@@ -3400,10 +3400,6 @@ def btc_position_view(row):
             "class": "short"
         }
 
-    # =====================================================
-    # 혼합 + ROC 상승
-    # =====================================================
-
     if (
         ema_direction == "none"
         and roc_value > 0
@@ -3413,10 +3409,6 @@ def btc_position_view(row):
             "text": "🟡 상승 / 확인",
             "class": "wait"
         }
-
-    # =====================================================
-    # 혼합 + ROC 0 이하
-    # =====================================================
 
     return {
         "text": "⚪ 관망",
@@ -4279,11 +4271,6 @@ h1{
     line-height:14px;
 }
 
-
-/* =====================================================
-   BTC 시장 시황 제목
-   ===================================================== */
-
 .market-title{
     display:flex;
     align-items:center;
@@ -4350,11 +4337,6 @@ h1{
 
     text-overflow:ellipsis;
 }
-
-
-/* =====================================================
-   일반 제목
-   ===================================================== */
 
 .section-title{
     display:flex;
@@ -4426,11 +4408,6 @@ h1{
     text-overflow:ellipsis;
 }
 
-
-/* =====================================================
-   제목별 왼쪽 포인트
-   ===================================================== */
-
 .breakout-section-title{
     border-left-color:#39e875;
 }
@@ -4454,11 +4431,6 @@ h1{
 .roc3_short_progress-section-title{
     border-left-color:#ff5555;
 }
-
-
-/* =====================================================
-   BTC 영역
-   ===================================================== */
 
 .market-summary{
     width:100%;
@@ -4642,11 +4614,6 @@ h1{
         );
 }
 
-
-/* =====================================================
-   색상
-   ===================================================== */
-
 .market-up{
     color:#39e875!important;
     font-weight:900;
@@ -4732,11 +4699,6 @@ h1{
     color:#68717b!important;
 }
 
-
-/* =====================================================
-   신호
-   ===================================================== */
-
 .signal-cell{
     text-align:center!important;
     vertical-align:middle;
@@ -4813,11 +4775,6 @@ h1{
         );
 }
 
-
-/* =====================================================
-   ROC 3+ 행
-   ===================================================== */
-
 .roc3-progress-qualified{
     background:
         rgba(
@@ -4837,11 +4794,6 @@ h1{
             .06
         );
 }
-
-
-/* =====================================================
-   테이블
-   ===================================================== */
 
 .table-wrap{
     width:100%;
@@ -5109,11 +5061,6 @@ td:nth-child(1){
     font-size:6px;
 }
 
-
-/* =====================================================
-   모바일
-   ===================================================== */
-
 @media(max-width:380px){
 
     body{
@@ -5267,11 +5214,6 @@ td:nth-child(1){
         min-height:19px;
     }
 }
-
-
-/* =====================================================
-   PC
-   ===================================================== */
 
 @media(min-width:601px){
 
@@ -5441,14 +5383,20 @@ def dashboard():
     sections = ""
 
     # =====================================================
-    # ① ROC 롱 돌파
+    # ① 업비트 ROC 롱 돌파
+    #
+    # ★ 당일 등락률 양수만 표시
     # =====================================================
 
     if USE_UPBIT == "Y":
 
         sections += focus_section(
             "🚀 ROC 롱 돌파 정배열 (추세선확인 돌파인가 반등인가)",
-            latest_upbit_data,
+            [
+                x
+                for x in latest_upbit_data
+                if is_positive_day(x)
+            ],
             latest_upbit_update_time,
             is_breakout,
             "breakout",
@@ -5457,19 +5405,26 @@ def dashboard():
                 f"/"
                 f"{format_timeframe(EMA_HIGH_TIMEFRAME)} "
                 f"EMA10>30>60>120 · "
-                f"ROC10 음수→양수 ⓪①②"
+                f"ROC10 음수→양수 ⓪①② · "
+                f"당일 양수"
             )
         )
 
     # =====================================================
-    # ② ROC 3+ 롱 진행중
+    # ② 업비트 ROC 3+ 롱 진행중
+    #
+    # ★ 당일 등락률 양수만 표시
     # =====================================================
 
     if USE_UPBIT == "Y":
 
         sections += focus_section(
             "🔥 ROC 3+ 롱 진행중 (추세가 확실하면 도전해라)",
-            latest_upbit_data,
+            [
+                x
+                for x in latest_upbit_data
+                if is_positive_day(x)
+            ],
             latest_upbit_update_time,
             is_roc3_progress,
             "roc3_progress",
@@ -5478,6 +5433,7 @@ def dashboard():
                 f"정배열 EMA10>30>60>120 · "
                 f"ROC10 양수 "
                 f"{ROC_PROGRESS_MIN_COUNT}개 이상 연속 · "
+                f"당일 양수 · "
                 f"최신 진행순"
             ),
             sort_key="roc_progress_start_time",
@@ -5485,58 +5441,50 @@ def dashboard():
         )
 
     # =====================================================
-    # ③ ROC 숏 돌파
+    # 업비트 숏 돌파
+    #
+    # ★ 삭제
     # =====================================================
 
-    if USE_UPBIT == "Y":
+    # 업비트 숏 돌파 섹션은 표시하지 않음.
+    #
+    # 단, 내부 short_breakout_qualified 계산은
+    # 기존 코드 그대로 유지됨.
 
-        sections += focus_section(
-            "🔻 ROC 숏 돌파 역배열",
-            latest_upbit_data,
-            latest_upbit_update_time,
-            is_short_breakout,
-            "short_breakout",
-            (
-                f"{format_timeframe(EMA_TIMEFRAME)}"
-                f"/"
-                f"{format_timeframe(EMA_HIGH_TIMEFRAME)} "
-                f"EMA10<30<60<120 · "
-                f"ROC10 양수→음수 ⓪①②"
-            )
-        )
 
     # =====================================================
-    # ④ ROC 3+ 숏 진행중
+    # 업비트 숏 진행
+    #
+    # ★ 삭제
     # =====================================================
 
-    if USE_UPBIT == "Y":
+    # 업비트 숏 진행 섹션은 표시하지 않음.
+    #
+    # 단, 내부 roc3_short_progress_qualified 계산은
+    # 기존 코드 그대로 유지됨.
 
-        sections += focus_section(
-            "🌧️ ROC 3+ 숏 진행중",
-            latest_upbit_data,
-            latest_upbit_update_time,
-            is_roc3_short_progress,
-            "roc3_short_progress",
-            (
-                f"TOP{TOP_N} 기준 · "
-                f"역배열 EMA10<30<60<120 · "
-                f"ROC10 음수 "
-                f"{ROC_PROGRESS_MIN_COUNT}개 이상 연속 · "
-                f"최신 진행순"
-            ),
-            sort_key="roc_negative_progress_start_time",
-            reverse=True
-        )
 
     # =====================================================
-    # OKX
+    # ③ OKX
+    #
+    # 롱 = 당일 양수
+    # 숏 = 당일 음수
     # =====================================================
 
     if USE_OKX == "Y":
 
+        # -------------------------------------------------
+        # OKX 롱 돌파
+        # 당일 양수만
+        # -------------------------------------------------
+
         sections += focus_section(
             "🚀 ROC 롱 돌파 정배열",
-            latest_okx_data,
+            [
+                x
+                for x in latest_okx_data
+                if is_positive_day(x)
+            ],
             latest_okx_update_time,
             is_breakout,
             "breakout",
@@ -5545,13 +5493,23 @@ def dashboard():
                 f"/"
                 f"{format_timeframe(EMA_HIGH_TIMEFRAME)} "
                 f"EMA10>30>60>120 · "
-                f"ROC10 음수→양수 ⓪①②"
+                f"ROC10 음수→양수 ⓪①② · "
+                f"당일 양수"
             )
         )
 
+        # -------------------------------------------------
+        # OKX 롱 진행
+        # 당일 양수만
+        # -------------------------------------------------
+
         sections += focus_section(
             "🔥 ROC 3+ 롱 진행중",
-            latest_okx_data,
+            [
+                x
+                for x in latest_okx_data
+                if is_positive_day(x)
+            ],
             latest_okx_update_time,
             is_roc3_progress,
             "roc3_progress",
@@ -5560,15 +5518,25 @@ def dashboard():
                 f"정배열 EMA10>30>60>120 · "
                 f"ROC10 양수 "
                 f"{ROC_PROGRESS_MIN_COUNT}개 이상 연속 · "
+                f"당일 양수 · "
                 f"최신 진행순"
             ),
             sort_key="roc_progress_start_time",
             reverse=True
         )
 
+        # -------------------------------------------------
+        # OKX 숏 돌파
+        # 당일 음수만
+        # -------------------------------------------------
+
         sections += focus_section(
             "🔻 ROC 숏 돌파 역배열",
-            latest_okx_data,
+            [
+                x
+                for x in latest_okx_data
+                if is_negative_day(x)
+            ],
             latest_okx_update_time,
             is_short_breakout,
             "short_breakout",
@@ -5577,13 +5545,23 @@ def dashboard():
                 f"/"
                 f"{format_timeframe(EMA_HIGH_TIMEFRAME)} "
                 f"EMA10<30<60<120 · "
-                f"ROC10 양수→음수 ⓪①②"
+                f"ROC10 양수→음수 ⓪①② · "
+                f"당일 음수"
             )
         )
 
+        # -------------------------------------------------
+        # OKX 숏 진행
+        # 당일 음수만
+        # -------------------------------------------------
+
         sections += focus_section(
             "🌧️ ROC 3+ 숏 진행중",
-            latest_okx_data,
+            [
+                x
+                for x in latest_okx_data
+                if is_negative_day(x)
+            ],
             latest_okx_update_time,
             is_roc3_short_progress,
             "roc3_short_progress",
@@ -5592,6 +5570,7 @@ def dashboard():
                 f"역배열 EMA10<30<60<120 · "
                 f"ROC10 음수 "
                 f"{ROC_PROGRESS_MIN_COUNT}개 이상 연속 · "
+                f"당일 음수 · "
                 f"최신 진행순"
             ),
             sort_key="roc_negative_progress_start_time",
@@ -5599,7 +5578,11 @@ def dashboard():
         )
 
     # =====================================================
-    # 전체 TOP
+    # 전체 TOP50
+    #
+    # ★ 기존 그대로
+    #
+    # 당일 양수/음수 필터 적용하지 않음
     # =====================================================
 
     if USE_UPBIT == "Y":
