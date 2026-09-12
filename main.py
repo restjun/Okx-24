@@ -1760,10 +1760,6 @@ def count_icon(count):
 
 # =========================================================
 # ROC 분석
-#
-# ★ 변경:
-# 돌파를 별도 상태로 표시하지 않고
-# ROC가 양수/음수가 되는 순간부터 진행으로 통합
 # =========================================================
 
 def roc_analysis(
@@ -1783,7 +1779,6 @@ def roc_analysis(
 
         "roc_negative_progress_start_time": None,
 
-        # 호환성 때문에 내부적으로 유지
         "long_breakout": False,
         "short_breakout": False,
 
@@ -1848,10 +1843,6 @@ def roc_analysis(
             False
         )
 
-        # ---------------------------------------------
-        # 양수 진행 시작시간
-        # ---------------------------------------------
-
         roc_progress_start_time = None
 
         try:
@@ -1883,10 +1874,6 @@ def roc_analysis(
                 f"ROC 양수 시작시간 오류: {e}"
             )
 
-        # ---------------------------------------------
-        # 음수 진행 시작시간
-        # ---------------------------------------------
-
         roc_negative_progress_start_time = None
 
         try:
@@ -1917,13 +1904,6 @@ def roc_analysis(
             log.error(
                 f"ROC 음수 시작시간 오류: {e}"
             )
-
-        # ---------------------------------------------
-        # ROC 돌파 확인
-        #
-        # 내부 계산은 유지
-        # 단, 별도 신호/섹션으로 사용하지 않음
-        # ---------------------------------------------
 
         lb = roc_cross_state(
             confirmed,
@@ -1976,22 +1956,38 @@ def roc_analysis(
                 sb["state"]
         })
 
-        # =================================================
-        # ★ 핵심
-        #
-        # 돌파도 진행으로 통합
-        #
-        # ROC > 0
-        # → 롱 진행
-        #
-        # ROC < 0
-        # → 숏 진행
-        #
-        # 즉 음수→양수 돌파 순간도
-        # 양수 1개 진행으로 바로 포함
-        # =================================================
+        if lb["state"] != "none":
 
-        if current_value > 0:
+            result.update({
+
+                "state":
+                    "long_breakout",
+
+                "display":
+                    "🚀"
+                    + count_icon(
+                        lb["count"]
+                    )
+            })
+
+        elif sb["state"] != "none":
+
+            result.update({
+
+                "state":
+                    "short_breakout",
+
+                "display":
+                    "🔻"
+                    + count_icon(
+                        sb["count"]
+                    )
+            })
+
+        elif (
+            current_value > 0
+            and positive_count >= 2
+        ):
 
             result.update({
 
@@ -1999,13 +1995,13 @@ def roc_analysis(
                     "progress",
 
                 "display":
-                    f"☀️ {max(
-                        positive_count,
-                        1
-                    )}"
+                    f"진행 {positive_count}"
             })
 
-        elif current_value < 0:
+        elif (
+            current_value < 0
+            and negative_count >= 2
+        ):
 
             result.update({
 
@@ -2013,10 +2009,7 @@ def roc_analysis(
                     "short_progress",
 
                 "display":
-                    f"🌧️ {max(
-                        negative_count,
-                        1
-                    )}"
+                    f"숏진행 {negative_count}"
             })
 
         return result
@@ -2170,6 +2163,8 @@ def get_change_value(x):
 
 # =========================================================
 # 대시보드용 당일 등락 방향 필터
+#
+# 분석/신호 계산에는 영향을 주지 않음
 # =========================================================
 
 def is_positive_day(row):
@@ -2311,7 +2306,6 @@ def empty_analysis():
 
         "changes": None,
 
-        # 호환성 유지
         "breakout_qualified": False,
         "short_breakout_qualified": False,
 
@@ -2329,8 +2323,6 @@ def empty_analysis():
 
 # =========================================================
 # 공통 자격조건
-#
-# ★ 돌파를 진행에 통합
 # =========================================================
 
 def get_signal_qualified(
@@ -2373,134 +2365,51 @@ def get_signal_qualified(
             and filter_direction == "short"
         )
 
-    # =====================================================
-    # ROC 현재 방향
-    # =====================================================
-
-    roc_value = r.get(
-        "roc10"
-    )
-
-    roc_positive = (
-        roc_value is not None
-        and float(
-            roc_value
-        ) > 0
-    )
-
-    roc_negative = (
-        roc_value is not None
-        and float(
-            roc_value
-        ) < 0
-    )
-
-    # =====================================================
-    # ROC 연속 개수
-    # =====================================================
-
-    roc_positive_count = int(
-        r.get(
-            "roc10_count",
-            0
-        )
-    )
-
-    roc_negative_count = int(
-        r.get(
-            "roc10_negative_count",
-            0
-        )
-    )
-
-    # =====================================================
-    # ROC 돌파 여부
-    #
-    # 돌파도 진행에 포함
-    # =====================================================
-
-    long_breakout = bool(
-        r.get(
-            "long_breakout",
-            False
-        )
-    )
-
-    short_breakout = bool(
-        r.get(
-            "short_breakout",
-            False
-        )
-    )
-
-    # =====================================================
-    # ★ 롱 진행
-    #
-    # 조건:
-    # ① 정배열
-    # ② ROC 양수
-    # ③ 돌파 발생 OR ROC 3개 이상 연속
-    #
-    # 따라서 돌파 직후도 진행 리스트에 들어감
-    # =====================================================
-
-    long_progress = (
+    roc3_long = (
         long_base
-        and roc_positive
-        and (
-            long_breakout
-            or roc_positive_count
-            >= ROC_PROGRESS_MIN_COUNT
-        )
+        and r.get("roc10") is not None
+        and float(r.get("roc10")) > 0
+        and int(
+            r.get(
+                "roc10_count",
+                0
+            )
+        ) >= ROC_PROGRESS_MIN_COUNT
     )
 
-    # =====================================================
-    # ★ 숏 진행
-    #
-    # 조건:
-    # ① 역배열
-    # ② ROC 음수
-    # ③ 돌파 발생 OR ROC 3개 이상 연속
-    # =====================================================
-
-    short_progress = (
+    roc3_short = (
         short_base
-        and roc_negative
-        and (
-            short_breakout
-            or roc_negative_count
-            >= ROC_PROGRESS_MIN_COUNT
-        )
+        and r.get("roc10") is not None
+        and float(r.get("roc10")) < 0
+        and int(
+            r.get(
+                "roc10_negative_count",
+                0
+            )
+        ) >= ROC_PROGRESS_MIN_COUNT
     )
 
     return {
 
-        # -------------------------------------------------
-        # 기존 breakout 변수는 호환성 유지
-        # 별도 분류에는 사용하지 않음
-        # -------------------------------------------------
-
         "breakout_qualified":
-            False,
+            long_base
+            and r["long_breakout"],
 
         "short_breakout_qualified":
-            False,
-
-        # -------------------------------------------------
-        # 진행에 통합
-        # -------------------------------------------------
+            short_base
+            and r["short_breakout"],
 
         "progress_qualified":
-            long_progress,
+            roc3_long,
 
         "short_progress_qualified":
-            short_progress,
+            roc3_short,
 
         "roc3_long_progress_qualified":
-            long_progress,
+            roc3_long,
 
         "roc3_short_progress_qualified":
-            short_progress,
+            roc3_short,
 
         "filter_direction":
             filter_direction
@@ -2766,18 +2675,26 @@ def make_row(
 
 # =========================================================
 # 후보
-#
-# ★ 돌파는 별도 후보로 사용하지 않음
 # =========================================================
 
 def is_breakout(row):
 
-    return False
+    return bool(
+        row
+        and row.get(
+            "breakout_qualified"
+        )
+    )
 
 
 def is_short_breakout(row):
 
-    return False
+    return bool(
+        row
+        and row.get(
+            "short_breakout_qualified"
+        )
+    )
 
 
 def is_progress(row):
@@ -2785,8 +2702,7 @@ def is_progress(row):
     return bool(
         row
         and row.get(
-            "progress_qualified",
-            False
+            "progress_qualified"
         )
     )
 
@@ -2796,8 +2712,7 @@ def is_short_progress(row):
     return bool(
         row
         and row.get(
-            "short_progress_qualified",
-            False
+            "short_progress_qualified"
         )
     )
 
@@ -2895,6 +2810,10 @@ def update_upbit():
 
     log.info(
         f"업비트 완료 / "
+        f"롱돌파 "
+        f"{sum(is_breakout(x) for x in rows)}개 / "
+        f"숏돌파 "
+        f"{sum(is_short_breakout(x) for x in rows)}개 / "
         f"롱진행 "
         f"{sum(is_progress(x) for x in rows)}개 / "
         f"숏진행 "
@@ -3061,6 +2980,10 @@ def update_okx(usdt):
 
     log.info(
         f"OKX 완료 / "
+        f"롱돌파 "
+        f"{sum(is_breakout(x) for x in rows)}개 / "
+        f"숏돌파 "
+        f"{sum(is_short_breakout(x) for x in rows)}개 / "
         f"롱진행 "
         f"{sum(is_progress(x) for x in rows)}개 / "
         f"숏진행 "
@@ -3149,6 +3072,8 @@ def update_dashboard():
 
 # =========================================================
 # BTC 시황
+#
+# EMA 배열 + ROC 조합
 # =========================================================
 
 def market_direction_html(
@@ -3694,8 +3619,6 @@ def market_summary_html():
 
 # =========================================================
 # ROC HTML
-#
-# ★ 돌파 아이콘 대신 ROC 방향/진행 개수 표시
 # =========================================================
 
 def roc_html(r):
@@ -3738,9 +3661,57 @@ def roc_html(r):
             '</div>'
         )
 
-    # =====================================================
-    # 롱
-    # =====================================================
+    state = r.get(
+        "long_breakout_state",
+        "none"
+    )
+
+    if state != "none":
+
+        count = {
+            "current": 0,
+            "confirmed": 1,
+            "next": 2
+        }.get(
+            state,
+            0
+        )
+
+        return f"""
+        <div class="roc-cell">
+
+            <span class="roc-positive">
+                🚀{count_icon(count)}
+            </span>
+
+        </div>
+        """
+
+    state = r.get(
+        "short_breakout_state",
+        "none"
+    )
+
+    if state != "none":
+
+        count = {
+            "current": 0,
+            "confirmed": 1,
+            "next": 2
+        }.get(
+            state,
+            0
+        )
+
+        return f"""
+        <div class="roc-cell">
+
+            <span class="roc-negative">
+                🔻{count_icon(count)}
+            </span>
+
+        </div>
+        """
 
     if value > 0:
 
@@ -3765,10 +3736,6 @@ def roc_html(r):
 
         </div>
         """
-
-    # =====================================================
-    # 숏
-    # =====================================================
 
     if value < 0:
 
@@ -3807,9 +3774,6 @@ def roc_html(r):
 
 # =========================================================
 # 신호 HTML
-#
-# ★ 돌파 별도 표시 삭제
-# ★ 돌파 발생도 진행으로 표시
 # =========================================================
 
 def signal_html(row):
@@ -3819,67 +3783,89 @@ def signal_html(row):
         {}
     )
 
-    # =====================================================
-    # 롱 진행
-    #
-    # 돌파 직후에도 여기로 들어옴
-    # =====================================================
+    state = r.get(
+        "long_breakout_state",
+        "none"
+    )
 
-    if row.get(
-        "progress_qualified",
-        False
+    if (
+        row.get(
+            "breakout_qualified",
+            False
+        )
+        and state != "none"
     ):
 
-        count = int(
-            r.get(
-                "roc10_count",
-                0
-            )
+        count = {
+            "current": 0,
+            "confirmed": 1,
+            "next": 2
+        }.get(
+            state,
+            0
         )
 
-        count = max(
-            count,
-            1
+        return (
+            '<span '
+            'class="signal-icon long-breakout" '
+            'title="롱 돌파 / 정배열">'
+            f'🚀{count_icon(count)}'
+            '</span>'
         )
+
+    state = r.get(
+        "short_breakout_state",
+        "none"
+    )
+
+    if (
+        row.get(
+            "short_breakout_qualified",
+            False
+        )
+        and state != "none"
+    ):
+
+        count = {
+            "current": 0,
+            "confirmed": 1,
+            "next": 2
+        }.get(
+            state,
+            0
+        )
+
+        return (
+            '<span '
+            'class="signal-icon short-breakout" '
+            'title="숏 돌파 / 역배열">'
+            f'🔻{count_icon(count)}'
+            '</span>'
+        )
+
+    if row.get(
+        "roc3_long_progress_qualified",
+        False
+    ):
 
         return (
             '<span '
             'class="signal-icon long-progress" '
-            'title="롱 진행 / 정배열 / ROC 양수">'
+            'title="롱 진행 / 정배열 / ROC 3+">'
             '☀️'
-            f'<small>{count}</small>'
             '</span>'
         )
 
-    # =====================================================
-    # 숏 진행
-    #
-    # 돌파 직후에도 여기로 들어옴
-    # =====================================================
-
     if row.get(
-        "short_progress_qualified",
+        "roc3_short_progress_qualified",
         False
     ):
-
-        count = int(
-            r.get(
-                "roc10_negative_count",
-                0
-            )
-        )
-
-        count = max(
-            count,
-            1
-        )
 
         return (
             '<span '
             'class="signal-icon short-progress" '
-            'title="숏 진행 / 역배열 / ROC 음수">'
+            'title="숏 진행 / 역배열 / ROC 3+">'
             '🌧️'
-            f'<small>{count}</small>'
             '</span>'
         )
 
@@ -3920,22 +3906,30 @@ def ema_html(e):
 
 # =========================================================
 # 행 클래스
-#
-# ★ 돌파 클래스 삭제
 # =========================================================
 
 def row_class(x):
 
     if x.get(
-        "progress_qualified",
-        False
+        "breakout_qualified"
+    ):
+
+        return "breakout-qualified"
+
+    if x.get(
+        "short_breakout_qualified"
+    ):
+
+        return "short-breakout-qualified"
+
+    if x.get(
+        "roc3_long_progress_qualified"
     ):
 
         return "progress-qualified"
 
     if x.get(
-        "short_progress_qualified",
-        False
+        "roc3_short_progress_qualified"
     ):
 
         return "short-progress-qualified"
@@ -3956,7 +3950,15 @@ def rows_html(
 
     for x in data:
 
-        if focus == "progress":
+        if focus == "breakout":
+
+            cls = "breakout-qualified"
+
+        elif focus == "short_breakout":
+
+            cls = "short-breakout-qualified"
+
+        elif focus == "progress":
 
             cls = "progress-qualified"
 
@@ -4406,6 +4408,14 @@ h1{
     text-overflow:ellipsis;
 }
 
+.breakout-section-title{
+    border-left-color:#39e875;
+}
+
+.short_breakout-section-title{
+    border-left-color:#ff5555;
+}
+
 .progress-section-title{
     border-left-color:#4cc9ff;
 }
@@ -4665,6 +4675,16 @@ h1{
     font-weight:800;
 }
 
+.breakout{
+    color:#39e875!important;
+    font-weight:900;
+}
+
+.short-breakout{
+    color:#ff5555!important;
+    font-weight:900;
+}
+
 .progress{
     color:#4cc9ff;
 }
@@ -4703,13 +4723,30 @@ h1{
     white-space:nowrap;
 }
 
-.signal-icon small{
-    margin-left:1px;
+.signal-icon.long-breakout{
+    filter:
+        drop-shadow(
+            0 0 2px
+            rgba(
+                57,
+                232,
+                117,
+                .35
+            )
+        );
+}
 
-    font-size:6px;
-    line-height:8px;
-
-    font-weight:900;
+.signal-icon.short-breakout{
+    filter:
+        drop-shadow(
+            0 0 2px
+            rgba(
+                255,
+                85,
+                85,
+                .35
+            )
+        );
 }
 
 .signal-icon.long-progress{
@@ -4738,23 +4775,23 @@ h1{
         );
 }
 
-.progress-qualified{
+.roc3-progress-qualified{
     background:
         rgba(
-            76,
-            201,
-            255,
+            57,
+            232,
+            117,
             .06
         );
 }
 
-.short-progress-qualified{
+.roc3-short-progress-qualified{
     background:
         rgba(
             255,
             85,
             85,
-            .035
+            .06
         );
 }
 
@@ -4963,13 +5000,65 @@ td:nth-child(1){
 }
 
 .buy,
-.short{
+.short,
+.breakout,
+.short-breakout{
     font-size:5.8px;
     line-height:8px;
 
     font-weight:800;
 
     white-space:nowrap;
+}
+
+.breakout-qualified{
+    background:
+        rgba(
+            57,
+            232,
+            117,
+            .08
+        );
+}
+
+.short-breakout-qualified{
+    background:
+        rgba(
+            255,
+            85,
+            85,
+            .05
+        );
+}
+
+.progress-qualified{
+    background:
+        rgba(
+            76,
+            201,
+            255,
+            .06
+        );
+}
+
+.short-progress-qualified{
+    background:
+        rgba(
+            255,
+            85,
+            85,
+            .035
+        );
+}
+
+.empty{
+    height:30px;
+
+    padding:8px;
+
+    color:#555d67;
+
+    font-size:6px;
 }
 
 @media(max-width:380px){
@@ -5113,7 +5202,9 @@ td:nth-child(1){
     }
 
     .buy,
-    .short{
+    .short,
+    .breakout,
+    .short-breakout{
         font-size:5.2px;
     }
 
@@ -5121,10 +5212,6 @@ td:nth-child(1){
         font-size:10px;
         line-height:12px;
         min-height:16px;
-    }
-
-    .signal-icon small{
-        font-size:5px;
     }
 }
 
@@ -5239,7 +5326,9 @@ td:nth-child(1){
     }
 
     .buy,
-    .short{
+    .short,
+    .breakout,
+    .short-breakout{
         font-size:7px;
     }
 
@@ -5247,10 +5336,6 @@ td:nth-child(1){
         font-size:17px;
         line-height:19px;
         min-height:25px;
-    }
-
-    .signal-icon small{
-        font-size:7px;
     }
 }
 
@@ -5298,29 +5383,28 @@ def dashboard():
     sections = ""
 
     # =====================================================
-    # ① 업비트 롱 진행
+    # ① 업비트 ROC 3+ 롱 진행중
     #
-    # ★ 돌파도 여기 포함
-    # ★ 당일 등락률 양수만 표시
+    # 진행중을 돌파보다 먼저 표시
+    # 당일 등락률 양수만 표시
     # =====================================================
 
     if USE_UPBIT == "Y":
 
         sections += focus_section(
-            "☀️ ROC 롱 진행중",
+            "🔥 ROC 3+ 롱 진행중 (추세가 확실하면 도전해라)",
             [
                 x
                 for x in latest_upbit_data
                 if is_positive_day(x)
             ],
             latest_upbit_update_time,
-            is_progress,
-            "progress",
+            is_roc3_progress,
+            "roc3_progress",
             (
                 f"TOP{TOP_N} 기준 · "
                 f"정배열 EMA10>30>60>120 · "
-                f"ROC 음수→양수 돌파 또는 "
-                f"ROC 양수 "
+                f"ROC10 양수 "
                 f"{ROC_PROGRESS_MIN_COUNT}개 이상 연속 · "
                 f"당일 양수 · "
                 f"최신 진행순"
@@ -5330,10 +5414,64 @@ def dashboard():
         )
 
     # =====================================================
-    # ② OKX
+    # ② 업비트 ROC 롱 돌파
     #
-    # ★ 돌파 섹션 없음
-    # ★ 돌파도 진행에 포함
+    # 진행중 다음에 표시
+    # 당일 등락률 양수만 표시
+    # =====================================================
+
+    if USE_UPBIT == "Y":
+
+        sections += focus_section(
+            "🚀 ROC 롱 돌파 정배열 (추세선확인 돌파인가 반등인가)",
+            [
+                x
+                for x in latest_upbit_data
+                if is_positive_day(x)
+            ],
+            latest_upbit_update_time,
+            is_breakout,
+            "breakout",
+            (
+                f"{format_timeframe(EMA_TIMEFRAME)}"
+                f"/"
+                f"{format_timeframe(EMA_HIGH_TIMEFRAME)} "
+                f"EMA10>30>60>120 · "
+                f"ROC10 음수→양수 ⓪①② · "
+                f"당일 양수"
+            )
+        )
+
+    # =====================================================
+    # 업비트 숏 돌파
+    #
+    # 표시하지 않음
+    # =====================================================
+
+    # 업비트 숏 돌파 섹션은 표시하지 않음.
+    #
+    # 단, 내부 short_breakout_qualified 계산은
+    # 기존 코드 그대로 유지됨.
+
+
+    # =====================================================
+    # 업비트 숏 진행
+    #
+    # 표시하지 않음
+    # =====================================================
+
+    # 업비트 숏 진행 섹션은 표시하지 않음.
+    #
+    # 단, 내부 roc3_short_progress_qualified 계산은
+    # 기존 코드 그대로 유지됨.
+
+
+    # =====================================================
+    # ③ OKX
+    #
+    # 진행중 → 돌파 순서
+    # 롱 = 당일 양수
+    # 숏 = 당일 음수
     # =====================================================
 
     if USE_OKX == "Y":
@@ -5343,20 +5481,19 @@ def dashboard():
         # -------------------------------------------------
 
         sections += focus_section(
-            "☀️ ROC 롱 진행중",
+            "🔥 ROC 3+ 롱 진행중",
             [
                 x
                 for x in latest_okx_data
                 if is_positive_day(x)
             ],
             latest_okx_update_time,
-            is_progress,
-            "progress",
+            is_roc3_progress,
+            "roc3_progress",
             (
                 f"TOP{TOP_N} 기준 · "
                 f"정배열 EMA10>30>60>120 · "
-                f"ROC 음수→양수 돌파 또는 "
-                f"ROC 양수 "
+                f"ROC10 양수 "
                 f"{ROC_PROGRESS_MIN_COUNT}개 이상 연속 · "
                 f"당일 양수 · "
                 f"최신 진행순"
@@ -5366,30 +5503,77 @@ def dashboard():
         )
 
         # -------------------------------------------------
+        # OKX 롱 돌파
+        # -------------------------------------------------
+
+        sections += focus_section(
+            "🚀 ROC 롱 돌파 정배열",
+            [
+                x
+                for x in latest_okx_data
+                if is_positive_day(x)
+            ],
+            latest_okx_update_time,
+            is_breakout,
+            "breakout",
+            (
+                f"{format_timeframe(EMA_TIMEFRAME)}"
+                f"/"
+                f"{format_timeframe(EMA_HIGH_TIMEFRAME)} "
+                f"EMA10>30>60>120 · "
+                f"ROC10 음수→양수 ⓪①② · "
+                f"당일 양수"
+            )
+        )
+
+        # -------------------------------------------------
         # OKX 숏 진행
         # -------------------------------------------------
 
         sections += focus_section(
-            "🌧️ ROC 숏 진행중",
+            "🌧️ ROC 3+ 숏 진행중",
             [
                 x
                 for x in latest_okx_data
                 if is_negative_day(x)
             ],
             latest_okx_update_time,
-            is_short_progress,
-            "short_progress",
+            is_roc3_short_progress,
+            "roc3_short_progress",
             (
                 f"TOP{TOP_N} 기준 · "
                 f"역배열 EMA10<30<60<120 · "
-                f"ROC 양수→음수 돌파 또는 "
-                f"ROC 음수 "
+                f"ROC10 음수 "
                 f"{ROC_PROGRESS_MIN_COUNT}개 이상 연속 · "
                 f"당일 음수 · "
                 f"최신 진행순"
             ),
             sort_key="roc_negative_progress_start_time",
             reverse=True
+        )
+
+        # -------------------------------------------------
+        # OKX 숏 돌파
+        # -------------------------------------------------
+
+        sections += focus_section(
+            "🔻 ROC 숏 돌파 역배열",
+            [
+                x
+                for x in latest_okx_data
+                if is_negative_day(x)
+            ],
+            latest_okx_update_time,
+            is_short_breakout,
+            "short_breakout",
+            (
+                f"{format_timeframe(EMA_TIMEFRAME)}"
+                f"/"
+                f"{format_timeframe(EMA_HIGH_TIMEFRAME)} "
+                f"EMA10<30<60<120 · "
+                f"ROC10 양수→음수 ⓪①② · "
+                f"당일 음수"
+            )
         )
 
     # =====================================================
@@ -5601,7 +5785,7 @@ def startup():
     )
 
     log.info(
-        "ROC 음수→양수 돌파도 롱 진행에 포함"
+        "ROC 음수→양수 돌파"
     )
 
     log.info(
@@ -5622,7 +5806,7 @@ def startup():
     )
 
     log.info(
-        "ROC 양수→음수 돌파도 숏 진행에 포함"
+        "ROC 양수→음수 돌파"
     )
 
     log.info(
@@ -5647,15 +5831,15 @@ def startup():
     )
 
     log.info(
-        "돌파는 별도 분류하지 않고 진행에 포함"
+        "현재 진행봉: ⓪"
     )
 
     log.info(
-        "현재 ROC 양수 진행: ☀️"
+        "확정 돌파봉: ①"
     )
 
     log.info(
-        "현재 ROC 음수 진행: 🌧️"
+        "다음 봉: ②"
     )
 
     log.info(
@@ -5706,6 +5890,8 @@ def startup():
     )
 
     log.info(
+        "🚀 롱 돌파 / "
+        "🔻 숏 돌파 / "
         "☀️ 롱 진행 / "
         "🌧️ 숏 진행"
     )
