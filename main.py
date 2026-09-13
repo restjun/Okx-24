@@ -81,9 +81,9 @@ KST = ZoneInfo("Asia/Seoul")
 # 1440 = 1D
 # =========================================================
 
-EMA_TIMEFRAME = 1440
+EMA_TIMEFRAME = 240
 
-EMA_HIGH_TIMEFRAME = 240
+EMA_HIGH_TIMEFRAME = 1440
 
 USE_EMA_TIMEFRAME = "Y"
 
@@ -102,9 +102,9 @@ USE_EMA_HIGH_TIMEFRAME = "N"
 # 자유롭게 수정 가능
 # =========================================================
 
-RSI_TIMEFRAME = 1440
+RSI_TIMEFRAME = 240
 
-RSI_HIGH_TIMEFRAME = 240
+RSI_HIGH_TIMEFRAME = 1440
 
 
 # =========================================================
