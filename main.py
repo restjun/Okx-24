@@ -18,7 +18,10 @@ from zoneinfo import ZoneInfo
 # 기본 설정
 # =========================================================
 
-warnings.filterwarnings("ignore", category=FutureWarning)
+warnings.filterwarnings(
+    "ignore",
+    category=FutureWarning
+)
 
 app = FastAPI()
 
@@ -31,44 +34,69 @@ log = logging.getLogger("trading")
 
 
 # =========================================================
-# 설정
+# 기본 설정
 # =========================================================
 
 VOLUME_HOURS = 24
+
 TOP_N = 50
+
 UPDATE_MINUTES = 1
 
 HISTORY_CHUNK = 200
+
 MAX_HISTORY_CHUNKS = 10
-
-USE_UPBIT = "Y"
-USE_OKX = "N"
-
-REQUEST_INTERVAL = 0.08
-RATE_LIMIT_WAIT = 3
-MAX_RETRIES = 10
-
-KST = ZoneInfo("Asia/Seoul")
 
 
 # =========================================================
-# 시간봉
+# 거래소 사용
+# =========================================================
+
+USE_UPBIT = "Y"
+
+USE_OKX = "N"
+
+
+# =========================================================
+# API 설정
+# =========================================================
+
+REQUEST_INTERVAL = 0.08
+
+RATE_LIMIT_WAIT = 3
+
+MAX_RETRIES = 10
+
+
+KST = ZoneInfo(
+    "Asia/Seoul"
+)
+
+
+# =========================================================
+# EMA 시간봉
 # =========================================================
 
 EMA_TIMEFRAME = 240
+
 EMA_HIGH_TIMEFRAME = 60
 
+
 USE_EMA_TIMEFRAME = "Y"
+
 USE_EMA_HIGH_TIMEFRAME = "N"
 
 
 # =========================================================
-# EMA
+# EMA 기간
 # =========================================================
 
 EMA1_FASTEST = 10
+
 EMA1_FAST = 30
+
 EMA1_MID = 60
+
 EMA1_SLOW = 120
 
 EMA1_MAX_COUNT = 200
@@ -81,58 +109,87 @@ EMA1_MAX_COUNT = 200
 RSI_PERIOD = 14
 
 RSI_LONG_LEVEL = 70
+
 RSI_SHORT_LEVEL = 30
 
 RSI_PROGRESS_MIN_COUNT = 3
 
 
+# =========================================================
+# 지원 시간봉
+# =========================================================
+
 SUPPORTED_UPBIT_TIMEFRAMES = {
-    5, 15, 30, 60, 240
+    5,
+    15,
+    30,
+    60,
+    240
 }
 
+
 SUPPORTED_OKX_TIMEFRAMES = {
-    5, 15, 30, 60, 120,
-    240, 360, 480, 720, 1440
+    5,
+    15,
+    30,
+    60,
+    120,
+    240,
+    360,
+    480,
+    720,
+    1440
 }
 
 
 # =========================================================
-# 전역
+# 전역 데이터
 # =========================================================
 
 latest_upbit_data = []
+
 latest_okx_data = []
 
 latest_usdt_krw = 0
 
 latest_upbit_update_time = "-"
+
 latest_okx_update_time = "-"
 
 latest_upbit_markets = []
 
+
+# =========================================================
+# 캐시
+# =========================================================
+
+okx_ticker_cache = {}
+
+okx_1h_cache = {}
+
+okx_1h_cache_time = "-"
+
+
+# =========================================================
+# 락
+# =========================================================
+
 request_lock = threading.Lock()
+
 update_lock = threading.Lock()
 
 last_request_time = 0
 
 
 # =========================================================
-# OKX 캐시
-# =========================================================
-
-okx_ticker_cache = {}
-
-okx_1h_cache = {}
-okx_1h_cache_time = "-"
-
-
-# =========================================================
-# 공통
+# 시간
 # =========================================================
 
 def kst():
 
-    return datetime.now(KST).strftime(
+    return datetime.now(
+        KST
+    ).strftime(
         "%Y-%m-%d %H:%M:%S"
     )
 
@@ -142,53 +199,99 @@ def format_timeframe(minutes):
     minutes = int(minutes)
 
     if minutes >= 1440:
-        return f"{minutes // 1440}D"
+
+        return (
+            f"{minutes // 1440}D"
+        )
 
     if minutes >= 60:
-        return f"{minutes // 60}H"
 
-    return f"{minutes}M"
+        return (
+            f"{minutes // 60}H"
+        )
 
+    return (
+        f"{minutes}M"
+    )
+
+
+# =========================================================
+# OKX 시간봉
+# =========================================================
 
 def get_okx_bar(minutes):
 
     return {
+
         5: "5m",
+
         15: "15m",
+
         30: "30m",
+
         60: "1H",
+
         120: "2H",
+
         240: "4H",
+
         360: "6H",
+
         480: "8H",
+
         720: "12H",
+
         1440: "1D"
-    }.get(int(minutes))
+
+    }.get(
+        int(minutes)
+    )
 
 
 def get_okx_bar_minutes(bar):
 
     return {
+
         "1m": 1,
+
         "3m": 3,
+
         "5m": 5,
+
         "15m": 15,
+
         "30m": 30,
+
         "1H": 60,
+
         "2H": 120,
+
         "4H": 240,
+
         "6H": 360,
+
         "8H": 480,
+
         "12H": 720,
+
         "1D": 1440
-    }.get(str(bar))
+
+    }.get(
+        str(bar)
+    )
 
 
 # =========================================================
 # 현재 캔들 시작
 #
-# 4H KST:
-# 01 / 05 / 09 / 13 / 17 / 21
+# 4H
+#
+# 01:00
+# 05:00
+# 09:00
+# 13:00
+# 17:00
+# 21:00
 # =========================================================
 
 def get_current_candle_start(minutes):
@@ -273,6 +376,7 @@ def get_current_candle_start(minutes):
 def validate_timeframe():
 
     global EMA_TIMEFRAME
+
     global EMA_HIGH_TIMEFRAME
 
     EMA_TIMEFRAME = int(
@@ -283,47 +387,53 @@ def validate_timeframe():
         EMA_HIGH_TIMEFRAME
     )
 
-    if EMA_TIMEFRAME not in SUPPORTED_UPBIT_TIMEFRAMES:
+    if (
+        EMA_TIMEFRAME
+        not in SUPPORTED_UPBIT_TIMEFRAMES
+    ):
 
         raise ValueError(
-            f"EMA_TIMEFRAME 오류: {EMA_TIMEFRAME}"
+            f"EMA_TIMEFRAME 오류: "
+            f"{EMA_TIMEFRAME}"
         )
 
-    if EMA_HIGH_TIMEFRAME not in SUPPORTED_UPBIT_TIMEFRAMES:
+    if (
+        EMA_HIGH_TIMEFRAME
+        not in SUPPORTED_UPBIT_TIMEFRAMES
+    ):
 
         raise ValueError(
             f"EMA_HIGH_TIMEFRAME 오류: "
             f"{EMA_HIGH_TIMEFRAME}"
         )
 
-    if get_okx_bar(EMA_TIMEFRAME) is None:
+    if (
+        get_okx_bar(
+            EMA_TIMEFRAME
+        )
+        is None
+    ):
 
         raise ValueError(
-            f"OKX 시간봉 오류: {EMA_TIMEFRAME}"
+            f"OKX 시간봉 오류: "
+            f"{EMA_TIMEFRAME}"
         )
 
-    if get_okx_bar(EMA_HIGH_TIMEFRAME) is None:
+    if (
+        get_okx_bar(
+            EMA_HIGH_TIMEFRAME
+        )
+        is None
+    ):
 
         raise ValueError(
             f"OKX HIGH 시간봉 오류: "
             f"{EMA_HIGH_TIMEFRAME}"
         )
 
-    if USE_EMA_TIMEFRAME not in ("Y", "N"):
-
-        raise ValueError(
-            "USE_EMA_TIMEFRAME은 Y/N"
-        )
-
-    if USE_EMA_HIGH_TIMEFRAME not in ("Y", "N"):
-
-        raise ValueError(
-            "USE_EMA_HIGH_TIMEFRAME은 Y/N"
-        )
-
 
 # =========================================================
-# API 요청
+# API 요청 제어
 # =========================================================
 
 def wait_request():
@@ -343,48 +453,50 @@ def wait_request():
                 REQUEST_INTERVAL - gap
             )
 
-        last_request_time = time.monotonic()
+        last_request_time = (
+            time.monotonic()
+        )
 
 
-def retry(func, *args, **kwargs):
+def retry(
+    func,
+    *args,
+    **kwargs
+):
 
-    url = (
-        args[0]
-        if args
-        and isinstance(args[0], str)
-        else kwargs.get("url", "")
-    )
-
-    for n in range(MAX_RETRIES):
+    for n in range(
+        MAX_RETRIES
+    ):
 
         try:
 
             wait_request()
 
-            r = func(
+            response = func(
                 *args,
                 **kwargs
             )
 
             if not hasattr(
-                r,
+                response,
                 "status_code"
             ):
 
-                return r
+                return response
 
-            if r.status_code == 200:
+            if response.status_code == 200:
 
-                return r
+                return response
 
-            if r.status_code == 429:
+            if response.status_code == 429:
 
                 wait = min(
-                    RATE_LIMIT_WAIT * 2 ** n,
+                    RATE_LIMIT_WAIT
+                    * 2 ** n,
                     60
                 )
 
-            elif r.status_code >= 500:
+            elif response.status_code >= 500:
 
                 wait = min(
                     2 * 2 ** n,
@@ -393,25 +505,22 @@ def retry(func, *args, **kwargs):
 
             else:
 
-                log.warning(
-                    f"[HTTP {r.status_code}] {url}"
-                )
+                return response
 
-                return r
-
-            log.warning(
-                f"[API 재시도] {url} {wait}초"
+            time.sleep(
+                wait
             )
-
-            time.sleep(wait)
 
         except Exception as e:
 
             log.error(
-                f"[API 오류] {url}: {e}"
+                f"API 오류: {e}"
             )
 
-            if n < MAX_RETRIES - 1:
+            if (
+                n
+                < MAX_RETRIES - 1
+            ):
 
                 time.sleep(
                     min(
@@ -424,14 +533,14 @@ def retry(func, *args, **kwargs):
 
 
 # =========================================================
-# Upbit
+# UPBIT
 # =========================================================
 
 def get_upbit_markets():
 
     global latest_upbit_markets
 
-    r = retry(
+    response = retry(
         requests.get,
         "https://api.upbit.com/v1/ticker/all",
         params={
@@ -440,48 +549,66 @@ def get_upbit_markets():
         timeout=15
     )
 
-    if r is None:
+    if response is None:
+
         return []
 
     try:
 
         result = []
 
-        for x in r.json():
+        for item in response.json():
 
-            market = x.get(
+            market = item.get(
                 "market",
                 ""
             )
 
-            if not market.startswith("KRW-"):
+            if not market.startswith(
+                "KRW-"
+            ):
+
                 continue
 
             try:
 
                 volume = float(
-                    x["acc_trade_price_24h"]
+                    item[
+                        "acc_trade_price_24h"
+                    ]
                 )
 
                 price = float(
-                    x["trade_price"]
+                    item[
+                        "trade_price"
+                    ]
                 )
 
             except Exception:
 
                 continue
 
-            if volume > 0 and price > 0:
+            if (
+                volume > 0
+                and price > 0
+            ):
 
                 result.append({
+
                     "market": market,
+
                     "volume_24h": volume,
+
                     "current_price": price
+
                 })
 
         latest_upbit_markets = [
-            x["market"]
-            for x in result
+
+            item["market"]
+
+            for item in result
+
         ]
 
         return result
@@ -495,32 +622,43 @@ def get_upbit_markets():
         return []
 
 
+# =========================================================
+# UPBIT USDT
+# =========================================================
+
 def get_usdt_krw():
 
-    r = retry(
+    response = retry(
         requests.get,
         "https://api.upbit.com/v1/ticker?markets=KRW-USDT",
         timeout=15
     )
 
-    if r is None:
+    if response is None:
+
         return None
 
     try:
 
         price = float(
-            r.json()[0]["trade_price"]
+            response.json()[0][
+                "trade_price"
+            ]
         )
 
-        return price if price > 0 else None
+        if price > 0:
+
+            return price
 
     except Exception:
 
-        return None
+        pass
+
+    return None
 
 
 # =========================================================
-# Upbit 캔들
+# UPBIT 캔들
 # =========================================================
 
 def get_upbit_candle(
@@ -531,36 +669,45 @@ def get_upbit_candle(
     include_current=False
 ):
 
-    unit = int(unit)
-
-    r = retry(
+    response = retry(
         requests.get,
-        f"https://api.upbit.com/v1/candles/minutes/{unit}",
+        f"https://api.upbit.com/v1/candles/minutes/{int(unit)}",
         params={
+
             "market": market,
+
             "count": min(
-                max(int(count), 1),
+                max(
+                    int(count),
+                    1
+                ),
                 200
             ),
+
             **(
-                {"to": to}
+                {
+                    "to": to
+                }
                 if to
                 else {}
             )
+
         },
         timeout=15
     )
 
-    if r is None:
+    if response is None:
+
         return None
 
     try:
 
         df = pd.DataFrame(
-            r.json()
+            response.json()
         )
 
         if df.empty:
+
             return None
 
         df["o"] = pd.to_numeric(
@@ -614,24 +761,33 @@ def get_upbit_candle(
             ]
 
         if df.empty:
+
             return None
 
         return (
             df
             .sort_values("datetime")
-            .drop_duplicates("datetime")
-            .reset_index(drop=True)
+            .drop_duplicates(
+                "datetime"
+            )
+            .reset_index(
+                drop=True
+            )
         )
 
     except Exception as e:
 
         log.error(
-            f"업비트 {unit}분 오류 "
+            f"UPBIT candle 오류 "
             f"{market}: {e}"
         )
 
         return None
 
+
+# =========================================================
+# UPBIT history
+# =========================================================
 
 def history_upbit(
     market,
@@ -640,9 +796,12 @@ def history_upbit(
 ):
 
     all_df = None
+
     to = None
 
-    for _ in range(MAX_HISTORY_CHUNKS):
+    for _ in range(
+        MAX_HISTORY_CHUNKS
+    ):
 
         df = get_upbit_candle(
             market,
@@ -651,35 +810,57 @@ def history_upbit(
             to
         )
 
-        if df is None or df.empty:
+        if (
+            df is None
+            or df.empty
+        ):
+
             break
 
-        all_df = (
-            df.copy()
-            if all_df is None
-            else pd.concat(
-                [df, all_df],
+        if all_df is None:
+
+            all_df = df.copy()
+
+        else:
+
+            all_df = pd.concat(
+                [
+                    df,
+                    all_df
+                ],
                 ignore_index=True
             )
-        )
 
         all_df = (
             all_df
-            .drop_duplicates("datetime")
-            .sort_values("datetime")
-            .reset_index(drop=True)
+            .drop_duplicates(
+                "datetime"
+            )
+            .sort_values(
+                "datetime"
+            )
+            .reset_index(
+                drop=True
+            )
         )
 
         if len(all_df) >= required:
+
             return all_df
 
         to = (
             all_df.datetime.iloc[0]
-            .strftime("%Y-%m-%dT%H:%M:%S")
+            .strftime(
+                "%Y-%m-%dT%H:%M:%S"
+            )
         )
 
     return all_df
 
+
+# =========================================================
+# UPBIT 현재 RSI 캔들
+# =========================================================
 
 def get_upbit_current_rsi_data(
     market,
@@ -692,7 +873,11 @@ def get_upbit_current_rsi_data(
         include_current=True
     )
 
-    if df is None or df.empty:
+    if (
+        df is None
+        or df.empty
+    ):
+
         return None
 
     try:
@@ -701,37 +886,50 @@ def get_upbit_current_rsi_data(
             EMA_TIMEFRAME
         )
 
-        price = float(current_price)
+        price = float(
+            current_price
+        )
 
-        if price <= 0:
-            return df
-
-        mask = df.datetime == start
+        mask = (
+            df.datetime == start
+        )
 
         if mask.any():
 
-            df.loc[mask, "c"] = price
+            df.loc[
+                mask,
+                "c"
+            ] = price
 
         else:
 
             row = df.iloc[-1].copy()
 
             row["datetime"] = start
+
             row["c"] = price
 
             df = pd.concat(
                 [
                     df,
-                    pd.DataFrame([row])
+                    pd.DataFrame(
+                        [row]
+                    )
                 ],
                 ignore_index=True
             )
 
         return (
             df
-            .sort_values("datetime")
-            .drop_duplicates("datetime")
-            .reset_index(drop=True)
+            .sort_values(
+                "datetime"
+            )
+            .drop_duplicates(
+                "datetime"
+            )
+            .reset_index(
+                drop=True
+            )
         )
 
     except Exception:
@@ -752,53 +950,76 @@ def get_okx_ohlcv(
 ):
 
     params = {
+
         "instId": inst,
+
         "bar": bar,
+
         "limit": min(
-            max(int(limit), 1),
+            max(
+                int(limit),
+                1
+            ),
             200
         )
+
     }
 
     if before is not None:
-        params["before"] = str(before)
 
-    r = retry(
+        params[
+            "before"
+        ] = str(before)
+
+    response = retry(
         requests.get,
         "https://www.okx.com/api/v5/market/candles",
         params=params,
         timeout=15
     )
 
-    if r is None:
+    if response is None:
+
         return None
 
     try:
 
-        data = r.json().get(
+        data = response.json().get(
             "data",
             []
         )
 
         if not data:
+
             return None
 
         df = pd.DataFrame(
             data,
             columns=[
+
                 "ts",
+
                 "o",
+
                 "h",
+
                 "l",
+
                 "c",
+
                 "vol",
+
                 "volCcy",
+
                 "volCcyQuote",
+
                 "confirm"
+
             ]
         )
 
         for col in [
+
             "ts",
             "o",
             "h",
@@ -807,6 +1028,7 @@ def get_okx_ohlcv(
             "vol",
             "volCcy",
             "volCcyQuote"
+
         ]:
 
             df[col] = pd.to_numeric(
@@ -817,7 +1039,9 @@ def get_okx_ohlcv(
         if not include_current:
 
             df = df[
-                df.confirm.astype(str) == "1"
+                df.confirm.astype(
+                    str
+                ) == "1"
             ]
 
         df["datetime"] = (
@@ -832,12 +1056,16 @@ def get_okx_ohlcv(
 
         if not include_current:
 
-            minutes = get_okx_bar_minutes(bar)
+            minutes = get_okx_bar_minutes(
+                bar
+            )
 
             if minutes:
 
-                current = get_current_candle_start(
-                    minutes
+                current = (
+                    get_current_candle_start(
+                        minutes
+                    )
                 )
 
                 df = df[
@@ -845,23 +1073,31 @@ def get_okx_ohlcv(
                 ]
 
         if df.empty:
+
             return None
 
         return (
             df
             .sort_values("ts")
             .drop_duplicates("ts")
-            .reset_index(drop=True)
+            .reset_index(
+                drop=True
+            )
         )
 
     except Exception as e:
 
         log.error(
-            f"OKX {inst} {bar} 오류: {e}"
+            f"OKX 오류 "
+            f"{inst} {bar}: {e}"
         )
 
         return None
 
+
+# =========================================================
+# OKX history
+# =========================================================
 
 def history_okx(
     inst,
@@ -870,9 +1106,12 @@ def history_okx(
 ):
 
     all_df = None
+
     before = None
 
-    for _ in range(MAX_HISTORY_CHUNKS):
+    for _ in range(
+        MAX_HISTORY_CHUNKS
+    ):
 
         df = get_okx_ohlcv(
             inst,
@@ -881,26 +1120,38 @@ def history_okx(
             before
         )
 
-        if df is None or df.empty:
+        if (
+            df is None
+            or df.empty
+        ):
+
             break
 
-        all_df = (
-            df.copy()
-            if all_df is None
-            else pd.concat(
-                [df, all_df],
+        if all_df is None:
+
+            all_df = df.copy()
+
+        else:
+
+            all_df = pd.concat(
+                [
+                    df,
+                    all_df
+                ],
                 ignore_index=True
             )
-        )
 
         all_df = (
             all_df
             .drop_duplicates("ts")
             .sort_values("ts")
-            .reset_index(drop=True)
+            .reset_index(
+                drop=True
+            )
         )
 
         if len(all_df) >= required:
+
             return all_df
 
         before = int(
@@ -910,11 +1161,15 @@ def history_okx(
     return all_df
 
 
+# =========================================================
+# OKX ticker
+# =========================================================
+
 def get_okx_tickers():
 
     global okx_ticker_cache
 
-    r = retry(
+    response = retry(
         requests.get,
         "https://www.okx.com/api/v5/market/tickers",
         params={
@@ -923,31 +1178,41 @@ def get_okx_tickers():
         timeout=15
     )
 
-    if r is None:
+    if response is None:
+
         return {}
 
     try:
 
         result = {}
 
-        for x in r.json().get(
+        for item in response.json().get(
             "data",
             []
         ):
 
-            inst = x.get(
+            inst = item.get(
                 "instId",
                 ""
             )
 
-            if not inst.endswith("-USDT-SWAP"):
+            if not inst.endswith(
+                "-USDT-SWAP"
+            ):
+
                 continue
 
             try:
+
                 last = float(
-                    x.get("last", 0)
+                    item.get(
+                        "last",
+                        0
+                    )
                 )
+
             except Exception:
+
                 last = 0
 
             if last > 0:
@@ -965,9 +1230,13 @@ def get_okx_tickers():
         return {}
 
 
+# =========================================================
+# OKX symbols
+# =========================================================
+
 def get_okx_symbols():
 
-    r = retry(
+    response = retry(
         requests.get,
         "https://www.okx.com/api/v5/public/instruments",
         params={
@@ -976,28 +1245,42 @@ def get_okx_symbols():
         timeout=15
     )
 
-    if r is None:
+    if response is None:
+
         return []
 
     try:
 
         return [
-            x["instId"]
-            for x in r.json().get(
+
+            item["instId"]
+
+            for item in response.json().get(
                 "data",
                 []
             )
-            if x.get(
+
+            if item.get(
                 "instId",
                 ""
-            ).endswith("-USDT-SWAP")
-            and x.get("state") == "live"
+            ).endswith(
+                "-USDT-SWAP"
+            )
+
+            and item.get(
+                "state"
+            ) == "live"
+
         ]
 
     except Exception:
 
         return []
 
+
+# =========================================================
+# OKX 1H 거래대금
+# =========================================================
 
 def get_okx_volume_cached(
     inst,
@@ -1010,10 +1293,16 @@ def get_okx_volume_cached(
         VOLUME_HOURS
     )
 
-    if df is None or df.empty:
+    if (
+        df is None
+        or df.empty
+    ):
+
         return None
 
-    okx_1h_cache[inst] = df.copy()
+    okx_1h_cache[
+        inst
+    ] = df.copy()
 
     try:
 
@@ -1036,21 +1325,35 @@ def get_okx_cached_price(inst):
 
     try:
 
-        item = okx_ticker_cache.get(inst)
+        item = okx_ticker_cache.get(
+            inst
+        )
 
         if not item:
+
             return None
 
         price = float(
-            item.get("last", 0)
+            item.get(
+                "last",
+                0
+            )
         )
 
-        return price if price > 0 else None
+        return (
+            price
+            if price > 0
+            else None
+        )
 
     except Exception:
 
         return None
 
+
+# =========================================================
+# OKX 현재 1H
+# =========================================================
 
 def get_okx_current_1h(
     inst,
@@ -1064,32 +1367,48 @@ def get_okx_current_1h(
         include_current=True
     )
 
-    if df is None or df.empty:
+    if (
+        df is None
+        or df.empty
+    ):
+
         return None
 
     try:
 
-        start = get_current_candle_start(60)
+        start = get_current_candle_start(
+            60
+        )
 
-        price = float(current_price)
+        price = float(
+            current_price
+        )
 
-        mask = df.datetime == start
+        mask = (
+            df.datetime == start
+        )
 
         if mask.any():
 
-            df.loc[mask, "c"] = price
+            df.loc[
+                mask,
+                "c"
+            ] = price
 
         else:
 
             row = df.iloc[-1].copy()
 
             row["datetime"] = start
+
             row["c"] = price
 
             df = pd.concat(
                 [
                     df,
-                    pd.DataFrame([row])
+                    pd.DataFrame(
+                        [row]
+                    )
                 ],
                 ignore_index=True
             )
@@ -1097,8 +1416,12 @@ def get_okx_current_1h(
         return (
             df
             .sort_values("datetime")
-            .drop_duplicates("datetime")
-            .reset_index(drop=True)
+            .drop_duplicates(
+                "datetime"
+            )
+            .reset_index(
+                drop=True
+            )
         )
 
     except Exception:
@@ -1110,13 +1433,17 @@ def get_okx_current_1h(
 # EMA
 # =========================================================
 
-def ema(df, period):
+def ema(
+    df,
+    period
+):
 
     if (
         df is None
         or df.empty
         or "c" not in df
     ):
+
         return None
 
     return (
@@ -1133,33 +1460,71 @@ def ema(df, period):
     )
 
 
+# =========================================================
+# EMA 배열
+# =========================================================
+
 def ema_alignment_count(df):
 
-    if df is None or df.empty:
+    if (
+        df is None
+        or df.empty
+    ):
 
         return {
+
             "direction": "none",
+
             "count": 0
+
         }
 
     try:
 
-        e10 = ema(df, EMA1_FASTEST)
-        e30 = ema(df, EMA1_FAST)
-        e60 = ema(df, EMA1_MID)
-        e120 = ema(df, EMA1_SLOW)
+        e10 = ema(
+            df,
+            EMA1_FASTEST
+        )
+
+        e30 = ema(
+            df,
+            EMA1_FAST
+        )
+
+        e60 = ema(
+            df,
+            EMA1_MID
+        )
+
+        e120 = ema(
+            df,
+            EMA1_SLOW
+        )
 
         def get_dir(i):
 
-            a = float(e10.iloc[i])
-            b = float(e30.iloc[i])
-            c = float(e60.iloc[i])
-            d = float(e120.iloc[i])
+            a = float(
+                e10.iloc[i]
+            )
+
+            b = float(
+                e30.iloc[i]
+            )
+
+            c = float(
+                e60.iloc[i]
+            )
+
+            d = float(
+                e120.iloc[i]
+            )
 
             if a > b > c > d:
+
                 return "long"
 
             if a < b < c < d:
+
                 return "short"
 
             return "none"
@@ -1169,8 +1534,11 @@ def ema_alignment_count(df):
         if current == "none":
 
             return {
+
                 "direction": "none",
+
                 "count": 0
+
             }
 
         count = 0
@@ -1181,48 +1549,84 @@ def ema_alignment_count(df):
             -1
         ):
 
-            if get_dir(i) == current:
+            if (
+                get_dir(i)
+                == current
+            ):
+
                 count += 1
+
             else:
+
                 break
 
         return {
+
             "direction": current,
+
             "count": count
+
         }
 
     except Exception:
 
         return {
+
             "direction": "none",
+
             "count": 0
+
         }
 
+
+# =========================================================
+# EMA 표시
+# =========================================================
 
 def ema_display(
     df,
     current_price=None
 ):
 
-    x = ema_alignment_count(df)
+    x = ema_alignment_count(
+        df
+    )
 
-    d = x["direction"]
+    direction = x[
+        "direction"
+    ]
 
     icon = {
+
         "long": "🟢",
+
         "short": "🔴"
+
     }.get(
-        d,
+        direction,
         "⚪"
     )
 
     return {
-        "display": f"{icon}({x['count']})",
-        "direction": d,
-        "count": x["count"],
-        "current_price": current_price
+
+        "display":
+            f"{icon}({x['count']})",
+
+        "direction":
+            direction,
+
+        "count":
+            x["count"],
+
+        "current_price":
+            current_price
+
     }
 
+
+# =========================================================
+# EMA 필터
+# =========================================================
 
 def ema_filter_direction(
     e1,
@@ -1232,21 +1636,36 @@ def ema_filter_direction(
     selected = []
 
     if USE_EMA_TIMEFRAME == "Y":
-        selected.append(e1)
+
+        selected.append(
+            e1
+        )
 
     if USE_EMA_HIGH_TIMEFRAME == "Y":
-        selected.append(e_high)
+
+        selected.append(
+            e_high
+        )
 
     if not selected:
 
         return {
+
             "direction": "none",
+
             "valid": True
+
         }
 
     directions = [
-        x.get("direction", "none")
+
+        x.get(
+            "direction",
+            "none"
+        )
+
         for x in selected
+
     ]
 
     if all(
@@ -1255,8 +1674,11 @@ def ema_filter_direction(
     ):
 
         return {
+
             "direction": "long",
+
             "valid": True
+
         }
 
     if all(
@@ -1265,13 +1687,19 @@ def ema_filter_direction(
     ):
 
         return {
+
             "direction": "short",
+
             "valid": True
+
         }
 
     return {
+
         "direction": "none",
+
         "valid": False
+
     }
 
 
@@ -1283,12 +1711,19 @@ def ema_filter_pass(
     selected = []
 
     if USE_EMA_TIMEFRAME == "Y":
-        selected.append(e1)
+
+        selected.append(
+            e1
+        )
 
     if USE_EMA_HIGH_TIMEFRAME == "Y":
-        selected.append(e_high)
+
+        selected.append(
+            e_high
+        )
 
     if not selected:
+
         return True
 
     for e in selected:
@@ -1300,23 +1735,33 @@ def ema_filter_pass(
             "long",
             "short"
         ):
+
             return False
 
         if e.get(
             "count",
             0
         ) > EMA1_MAX_COUNT:
+
             return False
 
     directions = [
+
         e.get(
             "direction",
             "none"
         )
+
         for e in selected
+
     ]
 
-    return len(set(directions)) == 1
+    return (
+        len(
+            set(directions)
+        )
+        == 1
+    )
 
 
 # =========================================================
@@ -1333,6 +1778,7 @@ def rsi(
         or df.empty
         or "c" not in df
     ):
+
         return None
 
     try:
@@ -1372,17 +1818,24 @@ def rsi(
             .mean()
         )
 
-        rs = avg_gain / avg_loss
+        rs = (
+            avg_gain
+            / avg_loss
+        )
 
         result = (
             100
-            - (
+            -
+            (
                 100
                 / (1 + rs)
             )
         )
 
-        result = result.clip(0, 100)
+        result = result.clip(
+            0,
+            100
+        )
 
         result = result.where(
             avg_loss != 0,
@@ -1401,6 +1854,10 @@ def rsi(
         return None
 
 
+# =========================================================
+# RSI 연속 개수
+# =========================================================
+
 def rsi_count(
     series,
     level,
@@ -1410,6 +1867,7 @@ def rsi_count(
     count = 0
 
     if series is None:
+
         return 0
 
     try:
@@ -1419,18 +1877,31 @@ def rsi_count(
         ):
 
             if pd.isna(value):
+
                 break
 
-            value = float(value)
+            value = float(
+                value
+            )
 
             if above:
-                condition = value >= level
+
+                condition = (
+                    value >= level
+                )
+
             else:
-                condition = value <= level
+
+                condition = (
+                    value <= level
+                )
 
             if condition:
+
                 count += 1
+
             else:
+
                 break
 
     except Exception:
@@ -1445,7 +1916,10 @@ def rsi_count(
 #
 # current   = ⓪
 # confirmed = ①
-# next      = 내부 ②
+# next      = 기존 ②
+#
+# ★ 사용자 표시에서는
+# next → ☀️ / 🌧️
 # =========================================================
 
 def rsi_cross_state(
@@ -1455,8 +1929,11 @@ def rsi_cross_state(
 ):
 
     result = {
+
         "state": "none",
+
         "count": 0
+
     }
 
     try:
@@ -1465,106 +1942,212 @@ def rsi_cross_state(
             confirmed_series is None
             or current_series is None
         ):
+
             return result
 
         confirmed = [
+
             float(x)
-            for x in confirmed_series.tolist()
+
+            for x
+            in confirmed_series.tolist()
+
             if not pd.isna(x)
+
         ]
 
         current = [
+
             float(x)
-            for x in current_series.tolist()
+
+            for x
+            in current_series.tolist()
+
             if not pd.isna(x)
+
         ]
 
-        if not confirmed or not current:
+        if (
+            not confirmed
+            or not current
+        ):
+
             return result
 
-        previous_confirmed = confirmed[-1]
-        current_value = current[-1]
+        previous_confirmed = float(
+            confirmed[-1]
+        )
+
+        current_value = float(
+            current[-1]
+        )
+
+        # ---------------------------------------------
+        # 현재 돌파
+        # ---------------------------------------------
 
         if cross_type == "long":
 
             if (
-                previous_confirmed < RSI_LONG_LEVEL
-                and current_value >= RSI_LONG_LEVEL
+                previous_confirmed
+                < RSI_LONG_LEVEL
+
+                and
+
+                current_value
+                >= RSI_LONG_LEVEL
             ):
 
                 return {
-                    "state": "current",
-                    "count": 0
+
+                    "state":
+                        "current",
+
+                    "count":
+                        0
+
                 }
 
         elif cross_type == "short":
 
             if (
-                previous_confirmed > RSI_SHORT_LEVEL
-                and current_value <= RSI_SHORT_LEVEL
+                previous_confirmed
+                > RSI_SHORT_LEVEL
+
+                and
+
+                current_value
+                <= RSI_SHORT_LEVEL
             ):
 
                 return {
-                    "state": "current",
-                    "count": 0
+
+                    "state":
+                        "current",
+
+                    "count":
+                        0
+
                 }
+
+        # ---------------------------------------------
+        # 확정 돌파
+        # ---------------------------------------------
 
         if len(confirmed) >= 2:
 
-            prev = confirmed[-2]
-            curr = confirmed[-1]
+            prev = float(
+                confirmed[-2]
+            )
+
+            curr = float(
+                confirmed[-1]
+            )
 
             if cross_type == "long":
 
                 if (
-                    prev < RSI_LONG_LEVEL
-                    and curr >= RSI_LONG_LEVEL
+                    prev
+                    < RSI_LONG_LEVEL
+
+                    and
+
+                    curr
+                    >= RSI_LONG_LEVEL
                 ):
 
                     return {
-                        "state": "confirmed",
-                        "count": 1
+
+                        "state":
+                            "confirmed",
+
+                        "count":
+                            1
+
                     }
 
             elif cross_type == "short":
 
                 if (
-                    prev > RSI_SHORT_LEVEL
-                    and curr <= RSI_SHORT_LEVEL
+                    prev
+                    > RSI_SHORT_LEVEL
+
+                    and
+
+                    curr
+                    <= RSI_SHORT_LEVEL
                 ):
 
                     return {
-                        "state": "confirmed",
-                        "count": 1
+
+                        "state":
+                            "confirmed",
+
+                        "count":
+                            1
+
                     }
+
+        # ---------------------------------------------
+        # 기존 ② 단계
+        #
+        # ★ 표시:
+        # 롱 → ☀️
+        # 숏 → 🌧️
+        # ---------------------------------------------
 
         if len(confirmed) >= 3:
 
-            prev = confirmed[-3]
-            curr = confirmed[-2]
+            prev = float(
+                confirmed[-3]
+            )
+
+            curr = float(
+                confirmed[-2]
+            )
 
             if cross_type == "long":
 
                 if (
-                    prev < RSI_LONG_LEVEL
-                    and curr >= RSI_LONG_LEVEL
+                    prev
+                    < RSI_LONG_LEVEL
+
+                    and
+
+                    curr
+                    >= RSI_LONG_LEVEL
                 ):
 
                     return {
-                        "state": "next",
-                        "count": 2
+
+                        "state":
+                            "next",
+
+                        "count":
+                            2
+
                     }
 
             elif cross_type == "short":
 
                 if (
-                    prev > RSI_SHORT_LEVEL
-                    and curr <= RSI_SHORT_LEVEL
+                    prev
+                    > RSI_SHORT_LEVEL
+
+                    and
+
+                    curr
+                    <= RSI_SHORT_LEVEL
                 ):
 
                     return {
-                        "state": "next",
-                        "count": 2
+
+                        "state":
+                            "next",
+
+                        "count":
+                            2
+
                     }
 
         return result
@@ -1572,22 +2155,6 @@ def rsi_cross_state(
     except Exception:
 
         return result
-
-
-def count_icon(count):
-
-    try:
-        count = int(count)
-    except Exception:
-        return ""
-
-    if count == 0:
-        return "⓪"
-
-    if count == 1:
-        return "①"
-
-    return ""
 
 
 # =========================================================
@@ -1602,25 +2169,33 @@ def rsi_analysis(
     result = {
 
         "rsi14": None,
+
         "rsi14_previous": None,
 
         "rsi14_count": 0,
+
         "rsi14_short_count": 0,
 
         "rsi_progress_start_time": None,
+
         "rsi_short_progress_start_time": None,
 
         "long_breakout": False,
+
         "short_breakout": False,
 
         "long_breakout_count": 0,
+
         "short_breakout_count": 0,
 
         "long_breakout_state": "none",
+
         "short_breakout_state": "none",
 
         "state": "none",
+
         "display": "-"
+
     }
 
     if (
@@ -1629,50 +2204,68 @@ def rsi_analysis(
         or df_current is None
         or df_current.empty
     ):
+
         return result
 
     try:
 
-        confirmed = rsi(df_confirmed)
-        current = rsi(df_current)
+        confirmed_rsi = rsi(
+            df_confirmed
+        )
 
-        if confirmed is None or current is None:
+        current_rsi = rsi(
+            df_current
+        )
+
+        if (
+            confirmed_rsi is None
+            or current_rsi is None
+        ):
+
             return result
 
         previous = float(
-            confirmed.iloc[-1]
+            confirmed_rsi.iloc[-1]
         )
 
         current_value = float(
-            current.iloc[-1]
+            current_rsi.iloc[-1]
         )
 
         if (
             pd.isna(previous)
             or pd.isna(current_value)
         ):
+
             return result
 
         long_count = rsi_count(
-            current,
+            current_rsi,
             RSI_LONG_LEVEL,
             True
         )
 
         short_count = rsi_count(
-            current,
+            current_rsi,
             RSI_SHORT_LEVEL,
             False
         )
 
         long_start = None
+
         short_start = None
 
         if long_count > 0:
 
-            index = len(current) - long_count
+            index = (
+                len(current_rsi)
+                - long_count
+            )
 
-            if 0 <= index < len(df_current):
+            if (
+                0 <= index
+                < len(df_current)
+            ):
 
                 long_start = (
                     df_current[
@@ -1682,9 +2275,15 @@ def rsi_analysis(
 
         if short_count > 0:
 
-            index = len(current) - short_count
+            index = (
+                len(current_rsi)
+                - short_count
+            )
 
-            if 0 <= index < len(df_current):
+            if (
+                0 <= index
+                < len(df_current)
+            ):
 
                 short_start = (
                     df_current[
@@ -1692,90 +2291,194 @@ def rsi_analysis(
                     ].iloc[index]
                 )
 
-        lb = rsi_cross_state(
-            confirmed,
-            current,
+        long_state = rsi_cross_state(
+            confirmed_rsi,
+            current_rsi,
             "long"
         )
 
-        sb = rsi_cross_state(
-            confirmed,
-            current,
+        short_state = rsi_cross_state(
+            confirmed_rsi,
+            current_rsi,
             "short"
         )
 
         result.update({
 
-            "rsi14": current_value,
-            "rsi14_previous": previous,
+            "rsi14":
+                current_value,
 
-            "rsi14_count": long_count,
-            "rsi14_short_count": short_count,
+            "rsi14_previous":
+                previous,
 
-            "rsi_progress_start_time": long_start,
-            "rsi_short_progress_start_time": short_start,
+            "rsi14_count":
+                long_count,
+
+            "rsi14_short_count":
+                short_count,
+
+            "rsi_progress_start_time":
+                long_start,
+
+            "rsi_short_progress_start_time":
+                short_start,
 
             "long_breakout":
-                lb["state"] != "none",
+                long_state["state"] != "none",
 
             "short_breakout":
-                sb["state"] != "none",
+                short_state["state"] != "none",
 
             "long_breakout_count":
-                lb["count"],
+                long_state["count"],
 
             "short_breakout_count":
-                sb["count"],
+                short_state["count"],
 
             "long_breakout_state":
-                lb["state"],
+                long_state["state"],
 
             "short_breakout_state":
-                sb["state"]
+                short_state["state"]
+
         })
 
-        if lb["state"] != "none":
+        # ---------------------------------------------
+        # 표시용 상태
+        # ---------------------------------------------
 
-            result.update({
-                "state": "long_breakout",
-                "display":
-                    "🚀"
-                    + count_icon(
-                        lb["count"]
-                    )
-            })
-
-        elif sb["state"] != "none":
-
-            result.update({
-                "state": "short_breakout",
-                "display":
-                    "🔻"
-                    + count_icon(
-                        sb["count"]
-                    )
-            })
-
-        elif (
-            current_value >= RSI_LONG_LEVEL
-            and long_count >= RSI_PROGRESS_MIN_COUNT
+        if (
+            long_state["state"]
+            == "current"
         ):
 
             result.update({
-                "state": "progress",
+
+                "state":
+                    "long_breakout",
+
+                "display":
+                    "🚀⓪"
+
+            })
+
+        elif (
+            long_state["state"]
+            == "confirmed"
+        ):
+
+            result.update({
+
+                "state":
+                    "long_breakout",
+
+                "display":
+                    "🚀①"
+
+            })
+
+        elif (
+            long_state["state"]
+            == "next"
+        ):
+
+            # ★ 기존 ② → ☀️
+
+            result.update({
+
+                "state":
+                    "long_progress",
+
+                "display":
+                    "☀️"
+
+            })
+
+        elif (
+            short_state["state"]
+            == "current"
+        ):
+
+            result.update({
+
+                "state":
+                    "short_breakout",
+
+                "display":
+                    "🔻⓪"
+
+            })
+
+        elif (
+            short_state["state"]
+            == "confirmed"
+        ):
+
+            result.update({
+
+                "state":
+                    "short_breakout",
+
+                "display":
+                    "🔻①"
+
+            })
+
+        elif (
+            short_state["state"]
+            == "next"
+        ):
+
+            # ★ 기존 ② → 🌧️
+
+            result.update({
+
+                "state":
+                    "short_progress",
+
+                "display":
+                    "🌧️"
+
+            })
+
+        elif (
+            current_value
+            >= RSI_LONG_LEVEL
+
+            and
+
+            long_count
+            >= RSI_PROGRESS_MIN_COUNT
+        ):
+
+            result.update({
+
+                "state":
+                    "progress",
+
                 "display":
                     f"RSI 70+ {long_count}"
+
             })
 
         elif (
-            current_value <= RSI_SHORT_LEVEL
-            and short_count >= RSI_PROGRESS_MIN_COUNT
+            current_value
+            <= RSI_SHORT_LEVEL
+
+            and
+
+            short_count
+            >= RSI_PROGRESS_MIN_COUNT
         ):
 
             result.update({
-                "state": "short_progress",
+
+                "state":
+                    "short_progress",
+
                 "display":
                     f"RSI 30- {short_count}"
+
             })
 
         return result
@@ -1786,49 +2489,59 @@ def rsi_analysis(
 
 
 # =========================================================
-# 등락률
+# 일간 등락
 # =========================================================
 
-def daily_change_upbit(market):
+def daily_change_upbit(
+    market
+):
 
-    r = retry(
+    response = retry(
         requests.get,
         "https://api.upbit.com/v1/candles/days",
         params={
+
             "market": market,
+
             "count": 2
+
         },
         timeout=15
     )
 
-    if r is None:
+    if response is None:
+
         return None
 
     try:
 
-        data = r.json()
+        data = response.json()
 
         if len(data) < 2:
+
             return None
 
         current = float(
-            data[0]["trade_price"]
+            data[0][
+                "trade_price"
+            ]
         )
 
         previous = float(
-            data[1]["trade_price"]
+            data[1][
+                "trade_price"
+            ]
         )
 
         if previous == 0:
+
             return None
 
-        return [
-            (
-                current - previous
-            )
-            / previous
-            * 100
-        ]
+        return (
+
+            current - previous
+
+        ) / previous * 100
 
     except Exception:
 
@@ -1837,7 +2550,11 @@ def daily_change_upbit(market):
 
 def daily_changes(df):
 
-    if df is None or df.empty:
+    if (
+        df is None
+        or df.empty
+    ):
+
         return None
 
     try:
@@ -1862,7 +2579,9 @@ def daily_changes(df):
                     "c"
                 ]
             )
-            .set_index("datetime")
+            .set_index(
+                "datetime"
+            )
         )
 
         daily = (
@@ -1876,6 +2595,7 @@ def daily_changes(df):
         )
 
         if len(daily) < 2:
+
             return None
 
         previous = float(
@@ -1887,36 +2607,40 @@ def daily_changes(df):
         )
 
         if previous == 0:
+
             return None
 
-        return [
-            (
-                current - previous
-            )
-            / previous
-            * 100
-        ]
+        return (
+            current - previous
+        ) / previous * 100
 
     except Exception:
 
         return None
 
 
+# =========================================================
+# 등락률
+# =========================================================
+
 def get_change_value(x):
+
+    if x is None:
+
+        return None
 
     try:
 
-        if x is None:
-            return None
+        if isinstance(
+            x,
+            (list, tuple)
+        ):
 
-        return float(
-            x[0]
-            if isinstance(
-                x,
-                (list, tuple)
+            return float(
+                x[0]
             )
-            else x
-        )
+
+        return float(x)
 
     except Exception:
 
@@ -1926,43 +2650,19 @@ def get_change_value(x):
 def is_positive_day(row):
 
     if not row:
+
         return False
 
-    value = row.get(
-        "change_value"
+    value = get_change_value(
+        row.get(
+            "change_value"
+        )
     )
 
-    try:
-
-        return (
-            value is not None
-            and float(value) > 0
-        )
-
-    except Exception:
-
-        return False
-
-
-def is_negative_day(row):
-
-    if not row:
-        return False
-
-    value = row.get(
-        "change_value"
+    return (
+        value is not None
+        and value > 0
     )
-
-    try:
-
-        return (
-            value is not None
-            and float(value) < 0
-        )
-
-    except Exception:
-
-        return False
 
 
 def format_change(x):
@@ -1970,6 +2670,7 @@ def format_change(x):
     x = get_change_value(x)
 
     if x is None:
+
         return "-"
 
     if x > 0:
@@ -1995,23 +2696,41 @@ def format_change(x):
     )
 
 
+# =========================================================
+# 거래대금
+# =========================================================
+
 def format_volume(v):
 
     try:
+
         v = float(v)
+
     except Exception:
+
         return "-"
 
     if v >= 1e12:
-        return f"{v / 1e12:.1f}조"
+
+        return (
+            f"{v / 1e12:.1f}조"
+        )
 
     if v >= 1e8:
-        return f"{v / 1e8:.0f}억"
+
+        return (
+            f"{v / 1e8:.0f}억"
+        )
 
     if v >= 1e4:
-        return f"{v / 1e4:.0f}만"
 
-    return f"{v:,.0f}"
+        return (
+            f"{v / 1e4:.0f}만"
+        )
+
+    return (
+        f"{v:,.0f}"
+    )
 
 
 # =========================================================
@@ -2021,60 +2740,99 @@ def format_volume(v):
 def empty_analysis():
 
     e = {
+
         "display": "⚪(0)",
+
         "direction": "none",
+
         "count": 0,
+
         "current_price": None
+
     }
 
     return {
 
-        "ema_1h": e.copy(),
-        "ema_high": e.copy(),
+        "ema_1h":
+            e.copy(),
+
+        "ema_high":
+            e.copy(),
 
         "rsi": {
 
             "rsi14": None,
+
             "rsi14_previous": None,
 
             "rsi14_count": 0,
+
             "rsi14_short_count": 0,
 
-            "rsi_progress_start_time": None,
-            "rsi_short_progress_start_time": None,
+            "rsi_progress_start_time":
+                None,
 
-            "long_breakout": False,
-            "short_breakout": False,
+            "rsi_short_progress_start_time":
+                None,
 
-            "long_breakout_count": 0,
-            "short_breakout_count": 0,
+            "long_breakout":
+                False,
 
-            "long_breakout_state": "none",
-            "short_breakout_state": "none",
+            "short_breakout":
+                False,
 
-            "state": "none",
-            "display": "-"
+            "long_breakout_count":
+                0,
+
+            "short_breakout_count":
+                0,
+
+            "long_breakout_state":
+                "none",
+
+            "short_breakout_state":
+                "none",
+
+            "state":
+                "none",
+
+            "display":
+                "-"
+
         },
 
-        "changes": None,
+        "changes":
+            None,
 
-        "breakout_qualified": False,
-        "short_breakout_qualified": False,
+        "breakout_qualified":
+            False,
 
-        "progress_qualified": False,
-        "short_progress_qualified": False,
+        "short_breakout_qualified":
+            False,
 
-        "rsi3_long_progress_qualified": False,
-        "rsi3_short_progress_qualified": False,
+        "progress_qualified":
+            False,
 
-        "direction_1h": "none",
+        "short_progress_qualified":
+            False,
 
-        "df1h": None
+        "rsi3_long_progress_qualified":
+            False,
+
+        "rsi3_short_progress_qualified":
+            False,
+
+        "direction_1h":
+            "none",
+
+        "df1h":
+            None
+
     }
 
 
 # =========================================================
-# 자격조건
+# 신호 자격
 # =========================================================
 
 def get_signal_qualified(
@@ -2083,18 +2841,22 @@ def get_signal_qualified(
     r
 ):
 
-    filter_info = ema_filter_direction(
-        e1,
-        e_high
+    filter_info = (
+        ema_filter_direction(
+            e1,
+            e_high
+        )
     )
 
-    filter_direction = filter_info[
+    direction = filter_info[
         "direction"
     ]
 
-    filter_pass = ema_filter_pass(
-        e1,
-        e_high
+    filter_pass = (
+        ema_filter_pass(
+            e1,
+            e_high
+        )
     )
 
     if (
@@ -2103,55 +2865,100 @@ def get_signal_qualified(
     ):
 
         long_base = True
+
         short_base = True
 
     else:
 
         long_base = (
             filter_pass
-            and filter_direction == "long"
+            and direction == "long"
         )
 
         short_base = (
             filter_pass
-            and filter_direction == "short"
+            and direction == "short"
         )
 
     rsi_long = (
+
         long_base
-        and r.get("rsi14") is not None
-        and float(r.get("rsi14"))
+
+        and
+
+        r.get(
+            "rsi14"
+        ) is not None
+
+        and
+
+        float(
+            r.get("rsi14")
+        )
         >= RSI_LONG_LEVEL
-        and int(
+
+        and
+
+        int(
             r.get(
                 "rsi14_count",
                 0
             )
-        ) >= RSI_PROGRESS_MIN_COUNT
+        )
+        >= RSI_PROGRESS_MIN_COUNT
+
     )
 
     rsi_short = (
+
         short_base
-        and r.get("rsi14") is not None
-        and float(r.get("rsi14"))
+
+        and
+
+        r.get(
+            "rsi14"
+        ) is not None
+
+        and
+
+        float(
+            r.get("rsi14")
+        )
         <= RSI_SHORT_LEVEL
-        and int(
+
+        and
+
+        int(
             r.get(
                 "rsi14_short_count",
                 0
             )
-        ) >= RSI_PROGRESS_MIN_COUNT
+        )
+        >= RSI_PROGRESS_MIN_COUNT
+
     )
 
     return {
 
         "breakout_qualified":
-            long_base
-            and r["long_breakout"],
+            (
+                long_base
+                and
+                r.get(
+                    "long_breakout",
+                    False
+                )
+            ),
 
         "short_breakout_qualified":
-            short_base
-            and r["short_breakout"],
+            (
+                short_base
+                and
+                r.get(
+                    "short_breakout",
+                    False
+                )
+            ),
 
         "progress_qualified":
             rsi_long,
@@ -2166,12 +2973,13 @@ def get_signal_qualified(
             rsi_short,
 
         "filter_direction":
-            filter_direction
+            direction
+
     }
 
 
 # =========================================================
-# 분석
+# OKX 분석
 # =========================================================
 
 def analyze_okx(
@@ -2187,11 +2995,17 @@ def analyze_okx(
         EMA_HIGH_TIMEFRAME
     )
 
-    if not bar or not high_bar:
+    if (
+        not bar
+        or not high_bar
+    ):
+
         return None
 
-    df_confirmed = okx_1h_cache.get(
-        market
+    df_confirmed = (
+        okx_1h_cache.get(
+            market
+        )
     )
 
     if (
@@ -2209,15 +3023,18 @@ def analyze_okx(
         high_bar
     )
 
-    df_current = get_okx_current_1h(
-        market,
-        current_price
+    df_current = (
+        get_okx_current_1h(
+            market,
+            current_price
+        )
     )
 
     if (
         df_confirmed is None
         or df_confirmed.empty
     ):
+
         return None
 
     e1 = ema_display(
@@ -2247,12 +3064,17 @@ def analyze_okx(
 
     return {
 
-        "ema_1h": e1,
-        "ema_high": e_high,
+        "ema_1h":
+            e1,
 
-        "rsi": r,
+        "ema_high":
+            e_high,
 
-        "changes": changes,
+        "rsi":
+            r,
+
+        "changes":
+            changes,
 
         **q,
 
@@ -2261,8 +3083,13 @@ def analyze_okx(
 
         "df1h":
             df_confirmed
+
     }
 
+
+# =========================================================
+# 통합 분석
+# =========================================================
 
 def analyze(
     market,
@@ -2277,14 +3104,18 @@ def analyze(
             current_price
         )
 
-    df_confirmed = history_upbit(
-        market,
-        EMA_TIMEFRAME
+    df_confirmed = (
+        history_upbit(
+            market,
+            EMA_TIMEFRAME
+        )
     )
 
-    df_high = history_upbit(
-        market,
-        EMA_HIGH_TIMEFRAME
+    df_high = (
+        history_upbit(
+            market,
+            EMA_HIGH_TIMEFRAME
+        )
     )
 
     df_current = (
@@ -2294,14 +3125,17 @@ def analyze(
         )
     )
 
-    changes = daily_change_upbit(
-        market
+    changes = (
+        daily_change_upbit(
+            market
+        )
     )
 
     if (
         df_confirmed is None
         or df_confirmed.empty
     ):
+
         return None
 
     e1 = ema_display(
@@ -2327,12 +3161,17 @@ def analyze(
 
     return {
 
-        "ema_1h": e1,
-        "ema_high": e_high,
+        "ema_1h":
+            e1,
 
-        "rsi": r,
+        "ema_high":
+            e_high,
 
-        "changes": changes,
+        "rsi":
+            r,
+
+        "changes":
+            changes,
 
         **q,
 
@@ -2341,11 +3180,12 @@ def analyze(
 
         "df1h":
             df_confirmed
+
     }
 
 
 # =========================================================
-# 행
+# ROW 생성
 # =========================================================
 
 def make_row(
@@ -2363,45 +3203,68 @@ def make_row(
 
     return {
 
-        "rank": rank,
-        "name": name,
+        "rank":
+            rank,
+
+        "name":
+            name,
 
         "change":
             format_change(
-                a.get("changes")
+                a.get(
+                    "changes"
+                )
             ),
 
         "change_value":
             get_change_value(
-                a.get("changes")
+                a.get(
+                    "changes"
+                )
             ),
 
         "volume":
-            format_volume(volume),
+            format_volume(
+                volume
+            ),
 
         "current_price":
             current_price,
 
         "ema_1h":
-            a["ema_1h"],
+            a[
+                "ema_1h"
+            ],
 
         "ema_high":
-            a["ema_high"],
+            a[
+                "ema_high"
+            ],
 
         "rsi":
-            a["rsi"],
+            a[
+                "rsi"
+            ],
 
         "breakout_qualified":
-            a["breakout_qualified"],
+            a[
+                "breakout_qualified"
+            ],
 
         "short_breakout_qualified":
-            a["short_breakout_qualified"],
+            a[
+                "short_breakout_qualified"
+            ],
 
         "progress_qualified":
-            a["progress_qualified"],
+            a[
+                "progress_qualified"
+            ],
 
         "short_progress_qualified":
-            a["short_progress_qualified"],
+            a[
+                "short_progress_qualified"
+            ],
 
         "rsi3_long_progress_qualified":
             a.get(
@@ -2416,19 +3279,25 @@ def make_row(
             ),
 
         "direction":
-            a["direction_1h"]
+            a[
+                "direction_1h"
+            ]
+
     }
 
 
 # =========================================================
-# 후보
+# 기본 신호 판정
 # =========================================================
 
 def is_breakout(row):
 
+    if not row:
+
+        return False
+
     return bool(
-        row
-        and row.get(
+        row.get(
             "breakout_qualified"
         )
     )
@@ -2436,56 +3305,13 @@ def is_breakout(row):
 
 def is_short_breakout(row):
 
+    if not row:
+
+        return False
+
     return bool(
-        row
-        and row.get(
+        row.get(
             "short_breakout_qualified"
-        )
-    )
-
-
-def is_progress(row):
-
-    return bool(
-        row
-        and row.get(
-            "progress_qualified"
-        )
-    )
-
-
-def is_short_progress(row):
-
-    return bool(
-        row
-        and row.get(
-            "short_progress_qualified"
-        )
-    )
-
-
-def is_rsi3_progress(row):
-
-    if not row:
-        return False
-
-    return bool(
-        row.get(
-            "rsi3_long_progress_qualified",
-            False
-        )
-    )
-
-
-def is_rsi3_short_progress(row):
-
-    if not row:
-        return False
-
-    return bool(
-        row.get(
-            "rsi3_short_progress_qualified",
-            False
         )
     )
 
@@ -2493,59 +3319,133 @@ def is_rsi3_short_progress(row):
 # =========================================================
 # ★ RSI 추세 신호
 #
-# 돌파만 표시
+# 여기서 중요한 부분
 #
-# ☀️ / 🌧️ 제외
+# 🚀⓪
+# 🚀①
+# ☀️
+# 🔻⓪
+# 🔻①
+# 🌧️
+#
+# 전부 추세 신호 대시보드에 들어감
 # =========================================================
 
 def is_rsi_signal(row):
 
     if not row:
+
         return False
 
-    return (
-        is_breakout(row)
-        or is_short_breakout(row)
+    r = row.get(
+        "rsi",
+        {}
     )
 
+    return (
+
+        r.get(
+            "long_breakout_state"
+        )
+        in (
+            "current",
+            "confirmed",
+            "next"
+        )
+
+        or
+
+        r.get(
+            "short_breakout_state"
+        )
+        in (
+            "current",
+            "confirmed",
+            "next"
+        )
+
+    )
+
+
+# =========================================================
+# UPBIT 롱 신호
+# =========================================================
 
 def is_upbit_long_signal(row):
 
     if not row:
+
         return False
 
-    return is_breakout(row)
+    r = row.get(
+        "rsi",
+        {}
+    )
+
+    return (
+
+        r.get(
+            "long_breakout_state"
+        )
+        in (
+            "current",
+            "confirmed",
+            "next"
+        )
+
+    )
 
 
 # =========================================================
-# ★ 해·구름 전용 후보
+# ★ 추세 진행 판정
 #
-# 별도 대시보드에서 사용
+# 반드시 RSI 추세 신호의 next를 그대로 사용
+#
+# 별도의 RSI 조건 재계산 안 함
 # =========================================================
 
 def is_sun_cloud_signal(row):
 
     if not row:
+
         return False
 
+    r = row.get(
+        "rsi",
+        {}
+    )
+
     return (
-        is_rsi3_progress(row)
-        or is_rsi3_short_progress(row)
+
+        r.get(
+            "long_breakout_state"
+        )
+        == "next"
+
+        or
+
+        r.get(
+            "short_breakout_state"
+        )
+        == "next"
+
     )
 
 
 # =========================================================
-# Upbit 업데이트
+# UPBIT 업데이트
 # =========================================================
 
 def update_upbit():
 
     global latest_upbit_data
+
     global latest_upbit_update_time
 
     markets = sorted(
         get_upbit_markets(),
-        key=lambda x: x["volume_24h"],
+        key=lambda x:
+            x["volume_24h"],
         reverse=True
     )
 
@@ -2556,18 +3456,22 @@ def update_upbit():
         1
     ):
 
-        market = item["market"]
+        market = item[
+            "market"
+        ]
 
         coin = market.replace(
             "KRW-",
             ""
         )
 
-        price = item["current_price"]
+        price = item[
+            "current_price"
+        ]
 
         try:
 
-            a = analyze(
+            analysis = analyze(
                 market,
                 current_price=price
             )
@@ -2575,18 +3479,20 @@ def update_upbit():
         except Exception as e:
 
             log.error(
-                f"업비트 상세 오류 "
+                f"UPBIT 분석 오류 "
                 f"{market}: {e}"
             )
 
-            a = None
+            analysis = None
 
         rows.append(
             make_row(
                 rank,
                 coin,
-                item["volume_24h"],
-                a,
+                item[
+                    "volume_24h"
+                ],
+                analysis,
                 price
             )
         )
@@ -2596,12 +3502,12 @@ def update_upbit():
     latest_upbit_update_time = kst()
 
     log.info(
-        f"업비트 완료 / "
+        "UPBIT 완료 / "
         f"TOP{TOP_N} / "
-        f"롱돌파={sum(is_breakout(x) for x in rows)} / "
-        f"숏돌파={sum(is_short_breakout(x) for x in rows)} / "
-        f"☀️={sum(is_rsi3_progress(x) for x in rows)} / "
-        f"🌧️={sum(is_rsi3_short_progress(x) for x in rows)}"
+        f"RSI신호="
+        f"{sum(is_rsi_signal(x) for x in rows)} / "
+        f"해구름="
+        f"{sum(is_sun_cloud_signal(x) for x in rows)}"
     )
 
 
@@ -2609,14 +3515,23 @@ def update_upbit():
 # OKX 업데이트
 # =========================================================
 
-def update_okx(usdt):
+def update_okx(
+    usdt
+):
 
     global latest_okx_data
+
     global latest_okx_update_time
+
     global okx_1h_cache
+
     global okx_1h_cache_time
 
-    if not usdt or usdt <= 0:
+    if (
+        not usdt
+        or usdt <= 0
+    ):
+
         return False
 
     okx_1h_cache = {}
@@ -2624,38 +3539,53 @@ def update_okx(usdt):
     tickers = get_okx_tickers()
 
     if not tickers:
+
         return False
 
     symbols = get_okx_symbols()
 
     if not symbols:
+
         return False
 
     symbols = [
+
         x
+
         for x in symbols
+
         if x in tickers
+
     ]
 
     upbit_set = {
+
         x.replace(
             "KRW-",
             ""
         )
+
         for x in latest_upbit_markets
+
     }
 
     volumes = {}
 
     for symbol in symbols:
 
-        v = get_okx_volume_cached(
+        volume = get_okx_volume_cached(
             symbol,
             usdt
         )
 
-        if v and v > 0:
-            volumes[symbol] = v
+        if (
+            volume
+            and volume > 0
+        ):
+
+            volumes[
+                symbol
+            ] = volume
 
     top = sorted(
         volumes,
@@ -2676,18 +3606,24 @@ def update_okx(usdt):
         )
 
         name = (
+
             f"{coin} (업비트)"
+
             if coin in upbit_set
+
             else coin
+
         )
 
-        price = get_okx_cached_price(
-            symbol
+        price = (
+            get_okx_cached_price(
+                symbol
+            )
         )
 
         try:
 
-            a = analyze(
+            analysis = analyze(
                 symbol,
                 True,
                 price
@@ -2696,18 +3632,20 @@ def update_okx(usdt):
         except Exception as e:
 
             log.error(
-                f"OKX 상세 오류 "
+                f"OKX 분석 오류 "
                 f"{symbol}: {e}"
             )
 
-            a = None
+            analysis = None
 
         rows.append(
             make_row(
                 rank,
                 name,
-                volumes[symbol],
-                a,
+                volumes[
+                    symbol
+                ],
+                analysis,
                 price
             )
         )
@@ -2715,6 +3653,7 @@ def update_okx(usdt):
     latest_okx_data = rows
 
     okx_1h_cache_time = kst()
+
     latest_okx_update_time = kst()
 
     return True
@@ -2727,10 +3666,14 @@ def update_okx(usdt):
 def update_dashboard():
 
     global latest_usdt_krw
+
     global latest_upbit_data
+
     global latest_okx_data
 
-    if not update_lock.acquire(False):
+    if not update_lock.acquire(
+        False
+    ):
 
         log.warning(
             "이전 조회 진행 중 → 건너뜀"
@@ -2743,10 +3686,13 @@ def update_dashboard():
         if USE_UPBIT == "Y":
 
             try:
+
                 update_upbit()
+
             except Exception as e:
+
                 log.exception(
-                    f"업비트 업데이트 오류: {e}"
+                    f"UPBIT 업데이트 오류: {e}"
                 )
 
         else:
@@ -2760,12 +3706,18 @@ def update_dashboard():
                 usdt = get_usdt_krw()
 
                 if usdt:
+
                     latest_usdt_krw = usdt
+
                 else:
+
                     usdt = latest_usdt_krw
 
                 if usdt > 0:
-                    update_okx(usdt)
+
+                    update_okx(
+                        usdt
+                    )
 
             except Exception as e:
 
@@ -2792,133 +3744,57 @@ def rsi_html(r):
 
         return (
             '<div class="rsi-cell">'
-            '<span class="rsi-zero">-</span>'
+            '<span class="rsi-zero">'
+            '-'
+            '</span>'
             '</div>'
         )
 
-    value = r.get("rsi14")
+    value = r.get(
+        "rsi14"
+    )
 
     if value is None:
+
         return (
             '<div class="rsi-cell">'
-            '<span class="rsi-zero">-</span>'
+            '<span class="rsi-zero">'
+            '-'
+            '</span>'
             '</div>'
         )
 
     try:
-        value = float(value)
+
+        value = float(
+            value
+        )
+
     except Exception:
+
         return (
             '<div class="rsi-cell">'
-            '<span class="rsi-zero">-</span>'
+            '<span class="rsi-zero">'
+            '-'
+            '</span>'
             '</div>'
         )
 
-    state = r.get(
-        "long_breakout_state",
-        "none"
-    )
-
-    if state == "current":
-
-        return """
-        <div class="rsi-cell">
-            <span class="rsi-positive">🚀⓪</span>
-        </div>
-        """
-
-    if state == "confirmed":
-
-        return """
-        <div class="rsi-cell">
-            <span class="rsi-positive">🚀①</span>
-        </div>
-        """
-
-    if state == "next":
-
-        return """
-        <div class="rsi-cell">
-            <span class="rsi-positive">☀️</span>
-        </div>
-        """
-
-    state = r.get(
-        "short_breakout_state",
-        "none"
-    )
-
-    if state == "current":
-
-        return """
-        <div class="rsi-cell">
-            <span class="rsi-negative">🔻⓪</span>
-        </div>
-        """
-
-    if state == "confirmed":
-
-        return """
-        <div class="rsi-cell">
-            <span class="rsi-negative">🔻①</span>
-        </div>
-        """
-
-    if state == "next":
-
-        return """
-        <div class="rsi-cell">
-            <span class="rsi-negative">🌧️</span>
-        </div>
-        """
-
-    if value >= RSI_LONG_LEVEL:
-
-        count = int(
-            r.get(
-                "rsi14_count",
-                0
-            )
-        )
-
-        return f"""
-        <div class="rsi-cell">
-            <span class="rsi-positive">
-                🟢 70+ {count}
-            </span>
-        </div>
-        """
-
-    if value <= RSI_SHORT_LEVEL:
-
-        count = int(
-            r.get(
-                "rsi14_short_count",
-                0
-            )
-        )
-
-        return f"""
-        <div class="rsi-cell">
-            <span class="rsi-negative">
-                🔴 30- {count}
-            </span>
-        </div>
-        """
-
     return f"""
     <div class="rsi-cell">
+
         <span class="rsi-neutral">
             {value:.1f}
         </span>
+
     </div>
     """
 
 
 # =========================================================
-# TOP50 신호
+# ★ 추세 신호 HTML
 #
-# ★ 이 함수는 해·구름 포함
+# next → ☀️ / 🌧️
 # =========================================================
 
 def signal_html(row):
@@ -2928,12 +3804,16 @@ def signal_html(row):
         {}
     )
 
-    state = r.get(
-        "long_breakout_state",
-        "none"
-    )
+    # ---------------------------------------------
+    # 롱 현재
+    # ---------------------------------------------
 
-    if state == "current":
+    if (
+        r.get(
+            "long_breakout_state"
+        )
+        == "current"
+    ):
 
         if row.get(
             "breakout_qualified",
@@ -2943,7 +3823,7 @@ def signal_html(row):
             return (
                 '<span '
                 'class="signal-icon long-breakout" '
-                'title="롱 RSI70 현재 진행 돌파 / EMA 정배열">'
+                'title="롱 RSI70 현재 돌파">'
                 '🚀⓪'
                 '</span>'
             )
@@ -2951,12 +3831,21 @@ def signal_html(row):
         return (
             '<span '
             'class="signal-icon rsi-warning-qualified" '
-            'title="RSI70 현재 진행 돌파 / EMA 조건 미충족">'
+            'title="RSI70 현재 돌파 / EMA 조건 미충족">'
             '⚠️⓪'
             '</span>'
         )
 
-    if state == "confirmed":
+    # ---------------------------------------------
+    # 롱 확정
+    # ---------------------------------------------
+
+    if (
+        r.get(
+            "long_breakout_state"
+        )
+        == "confirmed"
+    ):
 
         if row.get(
             "breakout_qualified",
@@ -2966,7 +3855,7 @@ def signal_html(row):
             return (
                 '<span '
                 'class="signal-icon long-breakout" '
-                'title="롱 RSI70 돌파 확정 / EMA 정배열">'
+                'title="롱 RSI70 돌파 확정">'
                 '🚀①'
                 '</span>'
             )
@@ -2979,22 +3868,35 @@ def signal_html(row):
             '</span>'
         )
 
-    if state == "next":
+    # ---------------------------------------------
+    # ★ 롱 ② → ☀️
+    # ---------------------------------------------
+
+    if (
+        r.get(
+            "long_breakout_state"
+        )
+        == "next"
+    ):
 
         return (
             '<span '
             'class="signal-icon long-progress" '
-            'title="롱 다음 단계 / RSI70 돌파 후">'
+            'title="롱 추세 진행 / 기존 ② 단계">'
             '☀️'
             '</span>'
         )
 
-    state = r.get(
-        "short_breakout_state",
-        "none"
-    )
+    # ---------------------------------------------
+    # 숏 현재
+    # ---------------------------------------------
 
-    if state == "current":
+    if (
+        r.get(
+            "short_breakout_state"
+        )
+        == "current"
+    ):
 
         if row.get(
             "short_breakout_qualified",
@@ -3004,7 +3906,7 @@ def signal_html(row):
             return (
                 '<span '
                 'class="signal-icon short-breakout" '
-                'title="숏 RSI30 현재 진행 / EMA 역배열">'
+                'title="숏 RSI30 현재 하향 돌파">'
                 '🔻⓪'
                 '</span>'
             )
@@ -3012,12 +3914,21 @@ def signal_html(row):
         return (
             '<span '
             'class="signal-icon rsi-warning-qualified" '
-            'title="RSI30 하향 돌파 현재 진행 / EMA 조건 미충족">'
+            'title="RSI30 하향 돌파 / EMA 조건 미충족">'
             '⚠️⓪'
             '</span>'
         )
 
-    if state == "confirmed":
+    # ---------------------------------------------
+    # 숏 확정
+    # ---------------------------------------------
+
+    if (
+        r.get(
+            "short_breakout_state"
+        )
+        == "confirmed"
+    ):
 
         if row.get(
             "short_breakout_qualified",
@@ -3027,7 +3938,7 @@ def signal_html(row):
             return (
                 '<span '
                 'class="signal-icon short-breakout" '
-                'title="숏 RSI30 돌파 확정 / EMA 역배열">'
+                'title="숏 RSI30 하향 돌파 확정">'
                 '🔻①'
                 '</span>'
             )
@@ -3040,44 +3951,79 @@ def signal_html(row):
             '</span>'
         )
 
-    if state == "next":
+    # ---------------------------------------------
+    # ★ 숏 ② → 🌧️
+    # ---------------------------------------------
 
-        return (
-            '<span '
-            'class="signal-icon short-progress" '
-            'title="숏 다음 단계 / RSI30 돌파 후">'
-            '🌧️'
-            '</span>'
+    if (
+        r.get(
+            "short_breakout_state"
         )
-
-    if row.get(
-        "rsi3_long_progress_qualified",
-        False
-    ):
-
-        return (
-            '<span '
-            'class="signal-icon long-progress" '
-            'title="롱 진행 / 정배열 / RSI70+ 3개 이상">'
-            '☀️'
-            '</span>'
-        )
-
-    if row.get(
-        "rsi3_short_progress_qualified",
-        False
+        == "next"
     ):
 
         return (
             '<span '
             'class="signal-icon short-progress" '
-            'title="숏 진행 / 역배열 / RSI30- 3개 이상">'
+            'title="숏 추세 진행 / 기존 ② 단계">'
             '🌧️'
             '</span>'
         )
 
     return (
-        '<span class="muted">-</span>'
+        '<span class="muted">'
+        '-'
+        '</span>'
+    )
+
+
+# =========================================================
+# ★ 진행 리스트 전용 신호
+#
+# 추세 신호의 next와 완전히 동일한 데이터 사용
+# =========================================================
+
+def progress_signal_html(row):
+
+    r = row.get(
+        "rsi",
+        {}
+    )
+
+    if (
+        r.get(
+            "long_breakout_state"
+        )
+        == "next"
+    ):
+
+        return (
+            '<span '
+            'class="signal-icon long-progress" '
+            'title="추세 신호 ② → ☀️">'
+            '☀️'
+            '</span>'
+        )
+
+    if (
+        r.get(
+            "short_breakout_state"
+        )
+        == "next"
+    ):
+
+        return (
+            '<span '
+            'class="signal-icon short-progress" '
+            'title="추세 신호 ② → 🌧️">'
+            '🌧️'
+            '</span>'
+        )
+
+    return (
+        '<span class="muted">'
+        '-'
+        '</span>'
     )
 
 
@@ -3088,9 +4034,10 @@ def signal_html(row):
 def ema_html(e):
 
     if not e:
+
         return "⚪0"
 
-    d = e.get(
+    direction = e.get(
         "direction",
         "none"
     )
@@ -3101,18 +4048,23 @@ def ema_html(e):
     )
 
     icon = {
+
         "long": "🟢",
+
         "short": "🔴"
+
     }.get(
-        d,
+        direction,
         "⚪"
     )
 
-    return f"{icon}{count}"
+    return (
+        f"{icon}{count}"
+    )
 
 
 # =========================================================
-# 행 클래스
+# ROW CSS
 # =========================================================
 
 def row_class(x):
@@ -3125,74 +4077,95 @@ def row_class(x):
     if x.get(
         "breakout_qualified"
     ):
+
         return "breakout-qualified"
 
     if x.get(
         "short_breakout_qualified"
     ):
+
         return "short-breakout-qualified"
 
-    if r.get(
-        "long_breakout_state",
-        "none"
-    ) != "none":
-        return "rsi-warning-row"
-
-    if r.get(
-        "short_breakout_state",
-        "none"
-    ) != "none":
-        return "rsi-warning-row"
-
-    if x.get(
-        "rsi3_long_progress_qualified"
+    if (
+        r.get(
+            "long_breakout_state"
+        )
+        == "next"
     ):
+
         return "progress-qualified"
 
-    if x.get(
-        "rsi3_short_progress_qualified"
+    if (
+        r.get(
+            "short_breakout_state"
+        )
+        == "next"
     ):
+
         return "short-progress-qualified"
+
+    if (
+        r.get(
+            "long_breakout_state"
+        )
+        in (
+            "current",
+            "confirmed"
+        )
+    ):
+
+        return "rsi-warning-row"
+
+    if (
+        r.get(
+            "short_breakout_state"
+        )
+        in (
+            "current",
+            "confirmed"
+        )
+    ):
+
+        return "rsi-warning-row"
 
     return ""
 
 
 # =========================================================
-# 행 HTML
+# ★ 공통 6열 ROW
+#
+# 추세 신호와 진행 리스트가
+# 반드시 동일한 틀을 사용
 # =========================================================
 
 def rows_html(
     data,
-    focus=None
+    signal_mode="normal"
 ):
 
-    out = []
+    output = []
 
     for x in data:
 
-        if focus == "breakout":
+        if signal_mode == "progress":
 
-            cls = "breakout-qualified"
-
-        elif focus == "short_breakout":
-
-            cls = "short-breakout-qualified"
-
-        elif focus == "progress":
-
-            cls = "progress-qualified"
-
-        elif focus == "short_progress":
-
-            cls = "short-progress-qualified"
+            signal = (
+                progress_signal_html(
+                    x
+                )
+            )
 
         else:
 
-            cls = row_class(x)
+            signal = (
+                signal_html(
+                    x
+                )
+            )
 
-        out.append(
+        output.append(
             f"""
-            <tr class="{cls}">
+            <tr class="{row_class(x)}">
 
                 <td>
                     {x.get("rank", "-")}
@@ -3254,35 +4227,42 @@ def rows_html(
                 </td>
 
                 <td class="signal-cell">
-                    {signal_html(x)}
+                    {signal}
                 </td>
 
             </tr>
             """
         )
 
-    return "".join(out)
+    return "".join(
+        output
+    )
 
 
 # =========================================================
-# 테이블
+# ★ 공통 테이블
+#
+# 두 대시보드 모두 동일한 틀
 # =========================================================
 
 def table_html(
     data,
-    focus=None
+    signal_mode="normal"
 ):
 
     rows = rows_html(
         data,
-        focus
+        signal_mode
     )
 
     if not rows:
 
         rows = """
         <tr>
-            <td colspan="6" class="empty">
+            <td
+                colspan="6"
+                class="empty"
+            >
                 현재 후보 없음
             </td>
         </tr>
@@ -3296,18 +4276,27 @@ def table_html(
             <thead>
 
                 <tr>
+
                     <th>#</th>
+
                     <th>코인</th>
+
                     <th>거래대금</th>
+
                     <th>EMA</th>
+
                     <th>RSI14</th>
+
                     <th>신호</th>
+
                 </tr>
 
             </thead>
 
             <tbody>
+
                 {rows}
+
             </tbody>
 
         </table>
@@ -3317,160 +4306,12 @@ def table_html(
 
 
 # =========================================================
-# 후보 섹션
-# =========================================================
-
-def focus_section(
-    title,
-    data,
-    update_time,
-    checker,
-    focus,
-    description
-):
-
-    rows = [
-        x
-        for x in data
-        if checker(x)
-    ]
-
-    return f"""
-    <div class="section-title {focus}-section-title">
-
-        <span class="section-title-main">
-            {title}
-        </span>
-
-        <span class="section-title-sub">
-            {description} · {update_time} KST
-        </span>
-
-    </div>
-
-    {table_html(
-        rows,
-        focus
-    )}
-    """
-
-
-# =========================================================
-# ★ 해·구름 별도 대시보드
+# ★ RSI 추세 신호 섹션
 #
-# 롱 = ☀️
-# 숏 = 🌧️
+# ☀️🌧️도 포함
 # =========================================================
 
-def sun_cloud_row_html(row):
-
-    r = row.get(
-        "rsi",
-        {}
-    )
-
-    long_progress = row.get(
-        "rsi3_long_progress_qualified",
-        False
-    )
-
-    short_progress = row.get(
-        "rsi3_short_progress_qualified",
-        False
-    )
-
-    if long_progress:
-
-        icon = "☀️"
-        direction = "롱 진행"
-        cls = "sun-row"
-
-    elif short_progress:
-
-        icon = "🌧️"
-        direction = "숏 진행"
-        cls = "cloud-row"
-
-    else:
-
-        return ""
-
-    rsi_value = r.get(
-        "rsi14"
-    )
-
-    if rsi_value is None:
-        rsi_text = "-"
-    else:
-        rsi_text = f"{float(rsi_value):.1f}"
-
-    ema = row.get(
-        "ema_1h",
-        {}
-    )
-
-    ema_direction = ema.get(
-        "direction",
-        "none"
-    )
-
-    ema_count = ema.get(
-        "count",
-        0
-    )
-
-    ema_icon = {
-        "long": "🟢",
-        "short": "🔴"
-    }.get(
-        ema_direction,
-        "⚪"
-    )
-
-    return f"""
-    <tr class="{cls}">
-
-        <td>
-            {row.get("rank", "-")}
-        </td>
-
-        <td class="sun-coin">
-
-            <b>
-                {row.get("name", "-")}
-            </b>
-
-            <small>
-                {row.get("change", "-")}
-            </small>
-
-        </td>
-
-        <td>
-            {icon}
-        </td>
-
-        <td>
-            {direction}
-        </td>
-
-        <td>
-            RSI {rsi_text}
-        </td>
-
-        <td>
-            {ema_icon}{ema_count}
-        </td>
-
-        <td>
-            {row.get("volume", "-")}
-        </td>
-
-    </tr>
-    """
-
-
-def sun_cloud_section(
+def rsi_signal_section(
     title,
     data,
     update_time,
@@ -3479,816 +4320,156 @@ def sun_cloud_section(
 
     rows = []
 
-    for row in data:
+    for x in data:
 
-        if upbit and not is_positive_day(row):
-            continue
+        if upbit:
 
-        html = sun_cloud_row_html(row)
+            if not is_positive_day(x):
 
-        if html:
-            rows.append(html)
+                continue
 
-    body = "".join(rows)
+        if is_rsi_signal(x):
 
-    if not body:
-
-        body = """
-        <tr>
-            <td colspan="7" class="empty">
-                현재 해·구름 추세 진행 종목 없음
-            </td>
-        </tr>
-        """
+            rows.append(x)
 
     return f"""
-    <div class="section-title sun-cloud-title">
+    <div class="section-title rsi-section-title">
 
         <span class="section-title-main">
             {title}
         </span>
 
         <span class="section-title-sub">
-            RSI14 {RSI_LONG_LEVEL}+ / {RSI_SHORT_LEVEL}-
-            · {format_timeframe(EMA_TIMEFRAME)}
-            · 추세 진행 전용
+            TOP{TOP_N} ·
+            {format_timeframe(EMA_TIMEFRAME)}
+            RSI14 ·
+            🚀⓪/🚀①/☀️/🔻⓪/🔻①/🌧️
             · {update_time} KST
         </span>
 
     </div>
 
-    <div class="table-wrap">
-
-        <table class="sun-cloud-table">
-
-            <thead>
-
-                <tr>
-                    <th>#</th>
-                    <th>코인</th>
-                    <th>추세</th>
-                    <th>방향</th>
-                    <th>RSI</th>
-                    <th>EMA</th>
-                    <th>거래대금</th>
-                </tr>
-
-            </thead>
-
-            <tbody>
-                {body}
-            </tbody>
-
-        </table>
-
-    </div>
+    {table_html(
+        rows,
+        "normal"
+    )}
     """
 
 
 # =========================================================
-# CSS
+# ★ 추세 진행 리스트
+#
+# RSI 추세 신호에서 next가 된 종목만
+# 그대로 가져옴
+#
+# 순서도 원본 그대로
 # =========================================================
 
-CSS = """
-
-*{
-    box-sizing:border-box;
-    -webkit-tap-highlight-color:transparent;
-}
-
-html,
-body{
-    margin:0;
-    padding:0;
-    width:100%;
-    overflow-x:hidden;
-}
-
-body{
-    background:#0d1014;
-    color:#eee;
-
-    font-family:
-        -apple-system,
-        BlinkMacSystemFont,
-        "Segoe UI",
-        Arial,
-        sans-serif;
-
-    font-size:8px;
-
-    padding:2px 2px 8px;
-}
-
-h1{
-    margin:1px 2px 2px;
-    font-size:12px;
-    line-height:14px;
-}
-
-.market-title,
-.section-title{
-    display:flex;
-    align-items:center;
-    gap:5px;
-
-    width:100%;
-    min-height:18px;
-
-    color:#fff;
-
-    font-size:8px;
-    line-height:10px;
-
-    font-weight:900;
-
-    margin-bottom:4px;
-
-    padding:3px 5px;
-
-    border-left:3px solid #39e875;
-
-    background:rgba(57,232,117,.08);
-
-    border-radius:3px;
-
-    white-space:nowrap;
-    overflow:hidden;
-}
-
-.section-title{
-    margin:5px 0 4px;
-}
-
-.market-title-main,
-.section-title-main{
-    color:#fff;
-
-    font-size:8px;
-    line-height:10px;
-
-    font-weight:900;
-
-    flex:none;
-}
-
-.market-title-sub,
-.section-title-sub{
-    color:#7f8791;
-
-    font-size:5.5px;
-    line-height:8px;
-
-    font-weight:700;
-
-    white-space:nowrap;
-    overflow:hidden;
-    text-overflow:ellipsis;
-}
-
-.rsi_signal-section-title{
-    border-left-color:#39e875;
-}
-
-.sun-cloud-title{
-    border-left-color:#ffd166;
-
-    background:rgba(255,209,102,.07);
-}
-
-.sun-row{
-    background:rgba(255,209,102,.07);
-}
-
-.cloud-row{
-    background:rgba(120,160,255,.06);
-}
-
-.sun-coin b{
-    color:#fff;
-}
-
-.market-summary{
-    width:100%;
-
-    margin:2px 0 3px;
-
-    padding:3px 4px;
-
-    border-top:1px solid #242a31;
-    border-bottom:1px solid #242a31;
-
-    background:#101419;
-
-    overflow:hidden;
-}
-
-.status{
-    display:flex;
-    gap:10px;
-
-    margin:3px 2px;
-
-    color:#777f89;
-
-    font-size:6px;
-    font-weight:700;
-}
-
-.status .y{
-    color:#39e875;
-}
-
-.status .n{
-    color:#ff5555;
-}
-
-.table-wrap{
-    width:100%;
-
-    overflow:hidden;
-
-    border-radius:5px;
-
-    border:1px solid #272d34;
-
-    background:#171b20;
-}
-
-table{
-    width:100%;
-
-    table-layout:fixed;
-
-    border-collapse:collapse;
-
-    background:#171b20;
-}
-
-thead{
-    background:#111419;
-}
-
-th{
-    height:17px;
-
-    padding:1px;
-
-    border-bottom:1px solid #292f36;
-
-    color:#7f8791;
-
-    font-size:5px;
-    line-height:6px;
-
-    font-weight:700;
-
-    text-align:center;
-}
-
-td{
-    height:25px;
-
-    padding:1px;
-
-    border-bottom:1px solid #22282e;
-
-    text-align:center;
-
-    vertical-align:middle;
-
-    overflow:hidden;
-}
-
-tr:last-child td{
-    border-bottom:none;
-}
-
-th:nth-child(1),
-td:nth-child(1){
-    width:6%;
-}
-
-th:nth-child(2),
-td:nth-child(2){
-    width:15%;
-}
-
-th:nth-child(3),
-td:nth-child(3){
-    width:15%;
-}
-
-th:nth-child(4),
-td:nth-child(4){
-    width:25%;
-}
-
-th:nth-child(5),
-td:nth-child(5){
-    width:22%;
-}
-
-th:nth-child(6),
-td:nth-child(6){
-    width:17%;
-}
-
-.coin{
-    text-align:left!important;
-    line-height:9px;
-}
-
-.coin b,
-.sun-coin b{
-    display:block;
-
-    width:100%;
-
-    font-size:6.5px;
-    line-height:8px;
-
-    font-weight:800;
-
-    white-space:nowrap;
-    overflow:hidden;
-    text-overflow:ellipsis;
-}
-
-.coin small,
-.sun-coin small{
-    display:block;
-
-    margin:0;
-
-    font-size:4.5px;
-    line-height:6px;
-
-    white-space:nowrap;
-    overflow:hidden;
-}
-
-.vol{
-    font-size:6px;
-    line-height:8px;
-
-    font-weight:800;
-
-    white-space:nowrap;
-}
-
-.ema{
-    text-align:center!important;
-
-    font-weight:800;
-
-    line-height:8px;
-
-    white-space:nowrap;
-    overflow:visible;
-}
-
-.ema span{
-    font-size:5.8px;
-    line-height:8px;
-
-    white-space:nowrap;
-}
-
-.ema-sep{
-    color:#555c65;
-    margin:0 1px;
-}
-
-.rsi-cell{
-    display:flex;
-
-    flex-direction:row;
-
-    align-items:center;
-    justify-content:center;
-
-    gap:1px;
-
-    min-height:21px;
-
-    line-height:8px;
-
-    white-space:nowrap;
-}
-
-.rsi-cell span{
-    font-size:5.8px;
-    line-height:8px;
-
-    font-weight:900;
-
-    white-space:nowrap;
-}
-
-.signal-cell{
-    text-align:center!important;
-    vertical-align:middle;
-}
-
-.signal-icon{
-    display:inline-flex;
-
-    align-items:center;
-    justify-content:center;
-
-    width:100%;
-
-    min-height:18px;
-
-    font-size:12px;
-    line-height:14px;
-
-    font-weight:900;
-
-    white-space:nowrap;
-}
-
-.rsi-positive,
-.up{
-    color:#39e875!important;
-    font-weight:900;
-}
-
-.rsi-negative,
-.down{
-    color:#ff5555!important;
-    font-weight:900;
-}
-
-.rsi-neutral,
-.rsi-zero,
-.zero{
-    color:#68717b!important;
-    font-weight:800;
-}
-
-.rsi-warning-qualified{
-    color:#ffd166!important;
-}
-
-.rsi-warning-row{
-    background:rgba(255,209,102,.055);
-}
-
-.breakout-qualified{
-    background:rgba(57,232,117,.08);
-}
-
-.short-breakout-qualified{
-    background:rgba(255,85,85,.05);
-}
-
-.progress-qualified{
-    background:rgba(255,209,102,.06);
-}
-
-.short-progress-qualified{
-    background:rgba(120,160,255,.05);
-}
-
-.empty{
-    height:30px;
-
-    padding:8px;
-
-    color:#555d67;
-
-    font-size:6px;
-}
-
-.sun-cloud-table th:nth-child(1),
-.sun-cloud-table td:nth-child(1){
-    width:6%;
-}
-
-.sun-cloud-table th:nth-child(2),
-.sun-cloud-table td:nth-child(2){
-    width:20%;
-}
-
-.sun-cloud-table th:nth-child(3),
-.sun-cloud-table td:nth-child(3){
-    width:12%;
-}
-
-.sun-cloud-table th:nth-child(4),
-.sun-cloud-table td:nth-child(4){
-    width:16%;
-}
-
-.sun-cloud-table th:nth-child(5),
-.sun-cloud-table td:nth-child(5){
-    width:15%;
-}
-
-.sun-cloud-table th:nth-child(6),
-.sun-cloud-table td:nth-child(6){
-    width:13%;
-}
-
-.sun-cloud-table th:nth-child(7),
-.sun-cloud-table td:nth-child(7){
-    width:18%;
-}
-
-@media(max-width:380px){
-
-    body{
-        padding:1px 1px 6px;
-    }
-
-    h1{
-        font-size:11px;
-        line-height:13px;
-    }
-
-    .market-title,
-    .section-title{
-
-        min-height:17px;
-
-        gap:4px;
-
-        font-size:7px;
-        line-height:9px;
-
-        padding:3px 4px;
-
-        margin-bottom:3px;
-    }
-
-    .section-title{
-        margin:4px 0 3px;
-    }
-
-    .market-title-main,
-    .section-title-main{
-        font-size:7px;
-        line-height:9px;
-    }
-
-    .market-title-sub,
-    .section-title-sub{
-        font-size:4.8px;
-        line-height:7px;
-    }
-
-    th{
-        height:16px;
-        font-size:4.5px;
-    }
-
-    td{
-        height:23px;
-    }
-
-    .coin b,
-    .sun-coin b{
-        font-size:6px;
-        line-height:7px;
-    }
-
-    .coin small,
-    .sun-coin small{
-        font-size:4px;
-        line-height:5px;
-    }
-
-    .vol{
-        font-size:5.5px;
-    }
-
-    .ema span{
-        font-size:5.3px;
-    }
-
-    .rsi-cell span{
-        font-size:5.2px;
-    }
-
-    .signal-icon{
-        font-size:10px;
-        line-height:12px;
-        min-height:16px;
-    }
-}
-
-@media(min-width:601px){
-
-    body{
-        max-width:900px;
-        margin:auto;
-        padding:8px;
-        font-size:10px;
-    }
-
-    h1{
-        font-size:15px;
-        line-height:20px;
-    }
-
-    .market-title,
-    .section-title{
-
-        min-height:23px;
-
-        gap:6px;
-
-        font-size:9px;
-
-        padding:4px 6px;
-
-        margin-bottom:5px;
-    }
-
-    .section-title{
-        margin:10px 0 5px;
-    }
-
-    .market-title-main,
-    .section-title-main{
-        font-size:9px;
-    }
-
-    .market-title-sub,
-    .section-title-sub{
-        font-size:6px;
-    }
-
-    th{
-        height:26px;
-        font-size:7px;
-    }
-
-    td{
-        height:38px;
-        padding:3px;
-    }
-
-    .coin b,
-    .sun-coin b{
-        font-size:9px;
-        line-height:11px;
-    }
-
-    .coin small,
-    .sun-coin small{
-        font-size:7px;
-    }
-
-    .vol{
-        font-size:8px;
-    }
-
-    .ema span{
-        font-size:8px;
-    }
-
-    .rsi-cell span{
-        font-size:7px;
-    }
-
-    .signal-icon{
-        font-size:17px;
-        line-height:19px;
-        min-height:25px;
-    }
-}
-
-"""
-
-
-# =========================================================
-# BTC 시황
-# =========================================================
-
-def market_direction_html(
-    direction,
-    count
+def progress_section(
+    title,
+    data,
+    update_time,
+    upbit=False
 ):
 
-    try:
-        count = int(count)
-    except Exception:
-        count = 0
+    rows = []
 
-    if direction == "long":
+    for x in data:
 
-        return (
-            '<span class="market-up">'
-            f'🟢 {count}'
-            '</span>'
-        )
+        if upbit:
 
-    if direction == "short":
+            if not is_positive_day(x):
 
-        return (
-            '<span class="market-down">'
-            f'🔴 {count}'
-            '</span>'
-        )
+                continue
 
-    return (
-        '<span class="market-zero">'
-        '⚪ 0'
-        '</span>'
-    )
+        # -----------------------------------------
+        # ★ 여기서 별도 조건 계산 안 함
+        # RSI 추세 신호와 동일한 next 사용
+        # -----------------------------------------
 
+        if is_sun_cloud_signal(x):
 
-def market_rsi_html(r):
+            rows.append(x)
 
-    if not r:
-        return "-"
+    return f"""
+    <div class="section-title progress-section-title">
 
-    value = r.get("rsi14")
+        <span class="section-title-main">
+            ☀️🌧️ 추세 진행 리스트
+        </span>
 
-    if value is None:
-        return "-"
+        <span class="section-title-sub">
+            RSI 추세 신호의 ②단계만 표시 ·
+            동일 순서 · 동일 표 ·
+            {update_time} KST
+        </span>
 
-    try:
-        value = float(value)
-    except Exception:
-        return "-"
+    </div>
 
-    if value >= RSI_LONG_LEVEL:
-
-        count = max(
-            int(
-                r.get(
-                    "rsi14_count",
-                    0
-                )
-            ),
-            1
-        )
-
-        return (
-            '<span class="market-up">'
-            f'🟢 과매수 {count}'
-            '</span>'
-        )
-
-    if value <= RSI_SHORT_LEVEL:
-
-        count = max(
-            int(
-                r.get(
-                    "rsi14_short_count",
-                    0
-                )
-            ),
-            1
-        )
-
-        return (
-            '<span class="market-down">'
-            f'🔴 과매도 {count}'
-            '</span>'
-        )
-
-    return (
-        '<span class="market-zero">'
-        f'{value:.1f}'
-        '</span>'
-    )
+    {table_html(
+        rows,
+        "progress"
+    )}
+    """
 
 
-def format_market_price(price):
+# =========================================================
+# BTC 시장 시황
+# =========================================================
+
+def format_market_price(
+    price
+):
 
     if price is None:
+
         return "-"
 
     try:
+
         price = float(price)
+
     except Exception:
+
         return "-"
 
     if price >= 100000000:
-        return f"{price / 100000000:.2f}억"
+
+        return (
+            f"{price / 100000000:.2f}억"
+        )
 
     if price >= 10000:
-        return f"{price:,.0f}"
+
+        return (
+            f"{price:,.0f}"
+        )
 
     if price >= 1:
-        return f"{price:,.2f}"
 
-    return f"{price:.6f}"
+        return (
+            f"{price:,.2f}"
+        )
+
+    return (
+        f"{price:.6f}"
+    )
 
 
-def market_change_html(value):
+def market_change_html(
+    value
+):
 
     if value is None:
+
         return "-"
 
     try:
+
         value = float(value)
+
     except Exception:
+
         return "-"
 
     if value > 0:
@@ -4314,152 +4495,99 @@ def market_change_html(value):
     )
 
 
-def btc_position_view(row):
-
-    if not row:
-
-        return {
-            "text": "⚪ 관망",
-            "class": "wait"
-        }
-
-    ema_1 = row.get(
-        "ema_1h",
-        {}
-    )
-
-    ema_high = row.get(
-        "ema_high",
-        {}
-    )
-
-    r = row.get(
-        "rsi",
-        {}
-    )
-
-    selected = []
-
-    if USE_EMA_TIMEFRAME == "Y":
-        selected.append(ema_1)
-
-    if USE_EMA_HIGH_TIMEFRAME == "Y":
-        selected.append(ema_high)
-
-    directions = [
-        x.get(
-            "direction",
-            "none"
-        )
-        for x in selected
-    ]
-
-    if directions and all(
-        d == "long"
-        for d in directions
-    ):
-
-        ema_direction = "long"
-
-    elif directions and all(
-        d == "short"
-        for d in directions
-    ):
-
-        ema_direction = "short"
-
-    else:
-
-        ema_direction = "none"
-
-    rsi_value = r.get("rsi14")
-
-    if rsi_value is None:
-
-        return {
-            "text": "⚪ 관망",
-            "class": "wait"
-        }
+def market_direction_html(
+    direction,
+    count
+):
 
     try:
-        rsi_value = float(rsi_value)
+
+        count = int(count)
+
     except Exception:
-        return {
-            "text": "⚪ 관망",
-            "class": "wait"
-        }
 
-    if (
-        ema_direction == "long"
-        and rsi_value >= RSI_LONG_LEVEL
-    ):
+        count = 0
 
-        return {
-            "text": "🟢 매우 좋음",
-            "class": "long"
-        }
+    if direction == "long":
 
-    if (
-        ema_direction == "long"
-        and rsi_value < RSI_LONG_LEVEL
-    ):
+        return (
+            '<span class="market-up">'
+            f'🟢 {count}'
+            '</span>'
+        )
 
-        return {
-            "text": "🟡 상승 준비",
-            "class": "wait"
-        }
+    if direction == "short":
 
-    if (
-        ema_direction == "short"
-        and rsi_value <= RSI_SHORT_LEVEL
-    ):
+        return (
+            '<span class="market-down">'
+            f'🔴 {count}'
+            '</span>'
+        )
 
-        return {
-            "text": "🔴 안좋음",
-            "class": "short"
-        }
-
-    if (
-        ema_direction == "short"
-        and rsi_value > RSI_SHORT_LEVEL
-    ):
-
-        return {
-            "text": "🟠 상승 / 조심",
-            "class": "short"
-        }
-
-    if (
-        ema_direction == "none"
-        and rsi_value >= RSI_LONG_LEVEL
-    ):
-
-        return {
-            "text": "🟡 과매수 / 확인",
-            "class": "wait"
-        }
-
-    if (
-        ema_direction == "none"
-        and rsi_value <= RSI_SHORT_LEVEL
-    ):
-
-        return {
-            "text": "🟠 과매도 / 확인",
-            "class": "wait"
-        }
-
-    return {
-        "text": "⚪ 관망",
-        "class": "wait"
-    }
+    return (
+        '<span class="market-zero">'
+        '⚪ 0'
+        '</span>'
+    )
 
 
-def get_market_row(coin):
+def market_rsi_html(
+    r
+):
+
+    if not r:
+
+        return "-"
+
+    value = r.get(
+        "rsi14"
+    )
+
+    if value is None:
+
+        return "-"
+
+    try:
+
+        value = float(value)
+
+    except Exception:
+
+        return "-"
+
+    if value >= RSI_LONG_LEVEL:
+
+        return (
+            '<span class="market-up">'
+            f'🟢 {value:.1f}'
+            '</span>'
+        )
+
+    if value <= RSI_SHORT_LEVEL:
+
+        return (
+            '<span class="market-down">'
+            f'🔴 {value:.1f}'
+            '</span>'
+        )
+
+    return (
+        '<span class="market-zero">'
+        f'{value:.1f}'
+        '</span>'
+    )
+
+
+def get_market_row(
+    coin
+):
 
     for row in latest_upbit_data:
 
-        if row.get("name") == coin:
+        if row.get(
+            "name"
+        ) == coin:
+
             return row
 
     return None
@@ -4467,7 +4595,9 @@ def get_market_row(coin):
 
 def market_summary_html():
 
-    btc = get_market_row("BTC")
+    btc = get_market_row(
+        "BTC"
+    )
 
     if btc is None:
 
@@ -4481,13 +4611,9 @@ def market_summary_html():
                 </span>
 
                 <span class="market-title-sub">
-                    4H EMA 배열 + RSI14 기준
+                    데이터 대기
                 </span>
 
-            </div>
-
-            <div>
-                ₿ BTC · 데이터 대기
             </div>
 
         </div>
@@ -4508,10 +4634,6 @@ def market_summary_html():
         {}
     )
 
-    position = btc_position_view(
-        btc
-    )
-
     return f"""
     <div class="market-summary">
 
@@ -4522,8 +4644,7 @@ def market_summary_html():
             </span>
 
             <span class="market-title-sub">
-                {format_timeframe(EMA_TIMEFRAME)}
-                EMA 배열 + RSI14 기준
+                EMA 배열 + RSI14
             </span>
 
         </div>
@@ -4542,7 +4663,7 @@ def market_summary_html():
                 )}
             </span>
 
-            <span class="btc-change">
+            <span>
                 {market_change_html(
                     btc.get(
                         "change_value"
@@ -4593,10 +4714,6 @@ def market_summary_html():
                 )}
             </span>
 
-            <span>
-                {position["text"]}
-            </span>
-
         </div>
 
     </div>
@@ -4604,7 +4721,769 @@ def market_summary_html():
 
 
 # =========================================================
-# Dashboard
+# CSS
+# =========================================================
+
+CSS = """
+
+*{
+    box-sizing:border-box;
+    -webkit-tap-highlight-color:transparent;
+}
+
+html,
+body{
+    margin:0;
+    padding:0;
+    width:100%;
+    overflow-x:hidden;
+}
+
+body{
+    background:#0d1014;
+    color:#eee;
+
+    font-family:
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        Arial,
+        sans-serif;
+
+    font-size:8px;
+
+    padding:2px 2px 8px;
+}
+
+h1{
+    margin:1px 2px 2px;
+
+    font-size:12px;
+
+    line-height:14px;
+}
+
+.market-title,
+.section-title{
+
+    display:flex;
+
+    align-items:center;
+
+    gap:5px;
+
+    width:100%;
+
+    min-height:18px;
+
+    color:#fff;
+
+    font-size:8px;
+
+    line-height:10px;
+
+    font-weight:900;
+
+    margin-bottom:4px;
+
+    padding:3px 5px;
+
+    border-left:3px solid #39e875;
+
+    background:
+        rgba(57,232,117,.08);
+
+    border-radius:3px;
+
+    white-space:nowrap;
+
+    overflow:hidden;
+}
+
+.section-title{
+    margin:5px 0 4px;
+}
+
+.section-title-main{
+    color:#fff;
+
+    font-size:8px;
+
+    line-height:10px;
+
+    font-weight:900;
+
+    flex:none;
+}
+
+.section-title-sub{
+    color:#7f8791;
+
+    font-size:5.5px;
+
+    line-height:8px;
+
+    font-weight:700;
+
+    white-space:nowrap;
+
+    overflow:hidden;
+
+    text-overflow:ellipsis;
+}
+
+.rsi-section-title{
+    border-left-color:#39e875;
+
+    background:
+        rgba(57,232,117,.08);
+}
+
+.progress-section-title{
+    border-left-color:#ffd166;
+
+    background:
+        rgba(255,209,102,.08);
+}
+
+.market-summary{
+
+    width:100%;
+
+    margin:2px 0 3px;
+
+    padding:3px 4px;
+
+    border-top:
+        1px solid #242a31;
+
+    border-bottom:
+        1px solid #242a31;
+
+    background:#101419;
+
+    overflow:hidden;
+}
+
+.status{
+
+    display:flex;
+
+    gap:10px;
+
+    margin:3px 2px;
+
+    color:#777f89;
+
+    font-size:6px;
+
+    font-weight:700;
+}
+
+.status .y{
+    color:#39e875;
+}
+
+.status .n{
+    color:#ff5555;
+}
+
+.btc-top{
+
+    display:flex;
+
+    align-items:center;
+
+    gap:8px;
+
+    margin:2px 0;
+}
+
+.btc-name{
+    font-weight:900;
+}
+
+.btc-price{
+    font-weight:800;
+}
+
+.btc-bottom{
+
+    display:flex;
+
+    gap:12px;
+
+    color:#89919a;
+
+    font-size:5.5px;
+
+    line-height:9px;
+}
+
+.market-up{
+    color:#39e875!important;
+
+    font-weight:900;
+}
+
+.market-down{
+    color:#ff5555!important;
+
+    font-weight:900;
+}
+
+.market-zero{
+    color:#68717b!important;
+
+    font-weight:800;
+}
+
+.table-wrap{
+
+    width:100%;
+
+    overflow:hidden;
+
+    border-radius:5px;
+
+    border:
+        1px solid #272d34;
+
+    background:#171b20;
+}
+
+table{
+
+    width:100%;
+
+    table-layout:fixed;
+
+    border-collapse:collapse;
+
+    background:#171b20;
+}
+
+thead{
+    background:#111419;
+}
+
+th{
+
+    height:17px;
+
+    padding:1px;
+
+    border-bottom:
+        1px solid #292f36;
+
+    color:#7f8791;
+
+    font-size:5px;
+
+    line-height:6px;
+
+    font-weight:700;
+
+    text-align:center;
+}
+
+td{
+
+    height:25px;
+
+    padding:1px;
+
+    border-bottom:
+        1px solid #22282e;
+
+    text-align:center;
+
+    vertical-align:middle;
+
+    overflow:hidden;
+}
+
+tr:last-child td{
+    border-bottom:none;
+}
+
+th:nth-child(1),
+td:nth-child(1){
+    width:6%;
+}
+
+th:nth-child(2),
+td:nth-child(2){
+    width:15%;
+}
+
+th:nth-child(3),
+td:nth-child(3){
+    width:15%;
+}
+
+th:nth-child(4),
+td:nth-child(4){
+    width:25%;
+}
+
+th:nth-child(5),
+td:nth-child(5){
+    width:22%;
+}
+
+th:nth-child(6),
+td:nth-child(6){
+    width:17%;
+}
+
+.coin{
+
+    text-align:left!important;
+
+    line-height:9px;
+}
+
+.coin b{
+
+    display:block;
+
+    width:100%;
+
+    font-size:6.5px;
+
+    line-height:8px;
+
+    font-weight:800;
+
+    white-space:nowrap;
+
+    overflow:hidden;
+
+    text-overflow:ellipsis;
+}
+
+.coin small{
+
+    display:block;
+
+    margin:0;
+
+    font-size:4.5px;
+
+    line-height:6px;
+
+    white-space:nowrap;
+
+    overflow:hidden;
+}
+
+.vol{
+
+    font-size:6px;
+
+    line-height:8px;
+
+    font-weight:800;
+
+    white-space:nowrap;
+}
+
+.ema{
+
+    text-align:center!important;
+
+    font-weight:800;
+
+    line-height:8px;
+
+    white-space:nowrap;
+
+    overflow:visible;
+}
+
+.ema span{
+
+    font-size:5.8px;
+
+    line-height:8px;
+
+    white-space:nowrap;
+}
+
+.ema-sep{
+
+    color:#555c65;
+
+    margin:0 1px;
+}
+
+.rsi-cell{
+
+    display:flex;
+
+    flex-direction:row;
+
+    align-items:center;
+
+    justify-content:center;
+
+    min-height:21px;
+
+    line-height:8px;
+
+    white-space:nowrap;
+}
+
+.rsi-cell span{
+
+    font-size:5.8px;
+
+    line-height:8px;
+
+    font-weight:900;
+
+    white-space:nowrap;
+}
+
+.rsi-neutral{
+
+    color:#68717b!important;
+
+}
+
+.rsi-zero{
+
+    color:#68717b!important;
+
+}
+
+.signal-cell{
+
+    text-align:center!important;
+
+    vertical-align:middle;
+}
+
+.signal-icon{
+
+    display:inline-flex;
+
+    align-items:center;
+
+    justify-content:center;
+
+    width:100%;
+
+    min-height:18px;
+
+    font-size:12px;
+
+    line-height:14px;
+
+    font-weight:900;
+
+    white-space:nowrap;
+}
+
+.long-breakout{
+
+    color:#39e875;
+}
+
+.short-breakout{
+
+    color:#ff5555;
+}
+
+.long-progress{
+
+    color:#ffd166;
+}
+
+.short-progress{
+
+    color:#91a7ff;
+}
+
+.rsi-warning-qualified{
+
+    color:#ffd166!important;
+}
+
+.up{
+
+    color:#39e875!important;
+
+    font-weight:900;
+}
+
+.down{
+
+    color:#ff5555!important;
+
+    font-weight:900;
+}
+
+.zero{
+
+    color:#68717b!important;
+}
+
+.muted{
+
+    color:#555d67;
+}
+
+.breakout-qualified{
+
+    background:
+        rgba(57,232,117,.08);
+}
+
+.short-breakout-qualified{
+
+    background:
+        rgba(255,85,85,.05);
+}
+
+.progress-qualified{
+
+    background:
+        rgba(255,209,102,.07);
+}
+
+.short-progress-qualified{
+
+    background:
+        rgba(120,160,255,.06);
+}
+
+.rsi-warning-row{
+
+    background:
+        rgba(255,209,102,.04);
+}
+
+.empty{
+
+    height:30px;
+
+    padding:8px;
+
+    color:#555d67;
+
+    font-size:6px;
+}
+
+@media(max-width:380px){
+
+    body{
+
+        padding:
+            1px 1px 6px;
+    }
+
+    h1{
+
+        font-size:11px;
+
+        line-height:13px;
+    }
+
+    .market-title,
+    .section-title{
+
+        min-height:17px;
+
+        gap:4px;
+
+        font-size:7px;
+
+        line-height:9px;
+
+        padding:3px 4px;
+
+        margin-bottom:3px;
+    }
+
+    .section-title{
+
+        margin:4px 0 3px;
+    }
+
+    .section-title-main{
+
+        font-size:7px;
+
+        line-height:9px;
+    }
+
+    .section-title-sub{
+
+        font-size:4.8px;
+
+        line-height:7px;
+    }
+
+    th{
+
+        height:16px;
+
+        font-size:4.5px;
+    }
+
+    td{
+
+        height:23px;
+    }
+
+    .coin b{
+
+        font-size:6px;
+
+        line-height:7px;
+    }
+
+    .coin small{
+
+        font-size:4px;
+
+        line-height:5px;
+    }
+
+    .vol{
+
+        font-size:5.5px;
+    }
+
+    .ema span{
+
+        font-size:5.3px;
+    }
+
+    .rsi-cell span{
+
+        font-size:5.2px;
+    }
+
+    .signal-icon{
+
+        font-size:10px;
+
+        line-height:12px;
+
+        min-height:16px;
+    }
+
+}
+
+@media(min-width:601px){
+
+    body{
+
+        max-width:900px;
+
+        margin:auto;
+
+        padding:8px;
+
+        font-size:10px;
+    }
+
+    h1{
+
+        font-size:15px;
+
+        line-height:20px;
+    }
+
+    .market-title,
+    .section-title{
+
+        min-height:23px;
+
+        gap:6px;
+
+        font-size:9px;
+
+        padding:4px 6px;
+
+        margin-bottom:5px;
+    }
+
+    .section-title{
+
+        margin:10px 0 5px;
+    }
+
+    .section-title-main{
+
+        font-size:9px;
+    }
+
+    .section-title-sub{
+
+        font-size:6px;
+    }
+
+    th{
+
+        height:26px;
+
+        font-size:7px;
+    }
+
+    td{
+
+        height:38px;
+
+        padding:3px;
+    }
+
+    .coin b{
+
+        font-size:9px;
+
+        line-height:11px;
+    }
+
+    .coin small{
+
+        font-size:7px;
+    }
+
+    .vol{
+
+        font-size:8px;
+    }
+
+    .ema span{
+
+        font-size:8px;
+    }
+
+    .rsi-cell span{
+
+        font-size:7px;
+    }
+
+    .signal-icon{
+
+        font-size:17px;
+
+        line-height:19px;
+
+        min-height:25px;
+    }
+
+}
+
+"""
+
+
+# =========================================================
+# DASHBOARD
 # =========================================================
 
 @app.get(
@@ -4616,82 +5495,89 @@ def dashboard():
     sections = ""
 
     # =====================================================
-    # ① RSI 돌파 신호
-    # =====================================================
-
-    if USE_UPBIT == "Y":
-
-        sections += focus_section(
-            "🔥 RSI 추세 신호",
-            [
-                x
-                for x in latest_upbit_data
-                if is_positive_day(x)
-            ],
-            latest_upbit_update_time,
-            is_upbit_long_signal,
-            "rsi_signal",
-            (
-                f"TOP{TOP_N} 기준 · "
-                f"{format_timeframe(EMA_TIMEFRAME)} "
-                f"RSI14 · "
-                f"EMA10>30>60>120 · "
-                f"RSI14 {RSI_LONG_LEVEL} 돌파 · "
-                f"당일 양수 · "
-                f"숏 돌파는 TOP50에서 표시"
-            )
-        )
-
-    if USE_OKX == "Y":
-
-        sections += focus_section(
-            "🔥 RSI 추세 신호",
-            latest_okx_data,
-            latest_okx_update_time,
-            is_rsi_signal,
-            "rsi_signal",
-            (
-                f"TOP{TOP_N} 기준 · "
-                f"{format_timeframe(EMA_TIMEFRAME)} · "
-                f"RSI14 {RSI_LONG_LEVEL}/"
-                f"{RSI_SHORT_LEVEL} 돌파만 표시"
-            )
-        )
-
-    # =====================================================
-    # ② ★ 해·구름 추세 진행 대시보드
+    # ① RSI 추세 신호
     #
-    # 기존 TOP50에서 분리
+    # ★ ②가 ☀️/🌧️로 표시됨
     # =====================================================
 
     if USE_UPBIT == "Y":
 
-        sections += sun_cloud_section(
-            "☀️🌧️ 해·구름 추세 진행",
+        sections += rsi_signal_section(
+
+            "🔥 RSI 추세 신호",
+
             latest_upbit_data,
+
             latest_upbit_update_time,
+
             upbit=True
+
         )
 
     if USE_OKX == "Y":
 
-        sections += sun_cloud_section(
-            "☀️🌧️ 해·구름 추세 진행",
+        sections += rsi_signal_section(
+
+            "🔥 RSI 추세 신호",
+
             latest_okx_data,
+
             latest_okx_update_time,
+
             upbit=False
+
         )
+
+
+    # =====================================================
+    # ② ★ 추세 진행 리스트
+    #
+    # RSI 추세 신호의 ☀️/🌧️와
+    # 완전히 동일한 데이터
+    #
+    # 순서 동일
+    # 표 동일
+    # =====================================================
+
+    if USE_UPBIT == "Y":
+
+        sections += progress_section(
+
+            "☀️🌧️ 추세 진행 리스트",
+
+            latest_upbit_data,
+
+            latest_upbit_update_time,
+
+            upbit=True
+
+        )
+
+    if USE_OKX == "Y":
+
+        sections += progress_section(
+
+            "☀️🌧️ 추세 진행 리스트",
+
+            latest_okx_data,
+
+            latest_okx_update_time,
+
+            upbit=False
+
+        )
+
 
     # =====================================================
     # ③ TOP50
     #
-    # ★ 기존 신호 그대로 유지
-    # ☀️ / 🌧️ 포함
+    # 기존 전체 신호 유지
     # =====================================================
 
     if USE_UPBIT == "Y":
 
         sections += f"""
+
         <div class="section-title">
 
             <span class="section-title-main">
@@ -4700,20 +5586,23 @@ def dashboard():
 
             <span class="section-title-sub">
                 거래대금 순위 ·
-                RSI 돌파 + ☀️🌧️ 진행 포함 ·
-                {latest_upbit_update_time} KST
+                기존 신호 전체
+                · {latest_upbit_update_time} KST
             </span>
 
         </div>
 
         {table_html(
-            latest_upbit_data
+            latest_upbit_data,
+            "normal"
         )}
+
         """
 
     if USE_OKX == "Y":
 
         sections += f"""
+
         <div class="section-title">
 
             <span class="section-title-main">
@@ -4722,18 +5611,26 @@ def dashboard():
 
             <span class="section-title-sub">
                 거래대금 순위 ·
-                RSI 돌파 + ☀️🌧️ 진행 포함 ·
-                {latest_okx_update_time} KST
+                기존 신호 전체
+                · {latest_okx_update_time} KST
             </span>
 
         </div>
 
         {table_html(
-            latest_okx_data
+            latest_okx_data,
+            "normal"
         )}
+
         """
 
+
+    # =====================================================
+    # 상태
+    # =====================================================
+
     status = f"""
+
     <div class="status">
 
         <span>
@@ -4751,10 +5648,11 @@ def dashboard():
         </span>
 
         <span>
-            이평필터 :
+            EMA :
             <b class="y">
-                {USE_EMA_TIMEFRAME}/
-                {USE_EMA_HIGH_TIMEFRAME}
+                {format_timeframe(
+                    EMA_TIMEFRAME
+                )}
             </b>
         </span>
 
@@ -4766,9 +5664,12 @@ def dashboard():
         </span>
 
     </div>
+
     """
 
+
     return f"""
+
     <!DOCTYPE html>
 
     <html lang="ko">
@@ -4798,9 +5699,7 @@ def dashboard():
         >
 
         <title>
-            TOP{TOP_N}
-            · EMA10·30·60·120
-            · RSI14
+            RSI 추세 신호
         </title>
 
         <style>
@@ -4824,6 +5723,7 @@ def dashboard():
     </body>
 
     </html>
+
     """
 
 
@@ -4856,7 +5756,9 @@ def scheduler():
 # Startup
 # =========================================================
 
-@app.on_event("startup")
+@app.on_event(
+    "startup"
+)
 def startup():
 
     validate_timeframe()
@@ -4866,57 +5768,41 @@ def startup():
     )
 
     log.info(
-        f"{format_timeframe(EMA_TIMEFRAME)} / "
-        f"{format_timeframe(EMA_HIGH_TIMEFRAME)} "
-        f"EMA10·30·60·120 + RSI14 시작"
+        "TRADING SIGNAL CENTER 시작"
     )
 
     log.info(
-        f"업비트={USE_UPBIT} / "
-        f"OKX={USE_OKX}"
+        f"EMA TIMEFRAME = "
+        f"{format_timeframe(EMA_TIMEFRAME)}"
     )
 
     log.info(
-        f"TOP={TOP_N} / "
-        f"UPDATE={UPDATE_MINUTES}분"
+        f"EMA HIGH TIMEFRAME = "
+        f"{format_timeframe(EMA_HIGH_TIMEFRAME)}"
     )
 
     log.info(
-        f"RSI{RSI_PERIOD} >= "
-        f"{RSI_LONG_LEVEL} → 롱"
+        f"EMA = "
+        f"{EMA1_FASTEST}/"
+        f"{EMA1_FAST}/"
+        f"{EMA1_MID}/"
+        f"{EMA1_SLOW}"
     )
 
     log.info(
-        f"RSI{RSI_PERIOD} <= "
-        f"{RSI_SHORT_LEVEL} → 숏"
+        f"RSI = {RSI_PERIOD}"
     )
 
     log.info(
-        "========================================"
+        f"RSI LONG = {RSI_LONG_LEVEL}"
     )
 
     log.info(
-        "RSI 돌파 대시보드:"
+        f"RSI SHORT = {RSI_SHORT_LEVEL}"
     )
 
     log.info(
-        "🚀⓪ 현재 롱 돌파"
-    )
-
-    log.info(
-        "🚀① 확정 롱 돌파"
-    )
-
-    log.info(
-        "🔻⓪ 현재 숏 돌파"
-    )
-
-    log.info(
-        "🔻① 확정 숏 돌파"
-    )
-
-    log.info(
-        "② 표시 안 함"
+        f"TOP = {TOP_N}"
     )
 
     log.info(
@@ -4924,36 +5810,31 @@ def startup():
     )
 
     log.info(
-        "해·구름 별도 대시보드:"
+        "RSI 추세 신호:"
     )
 
     log.info(
-        "☀️ = 롱 추세 진행"
+        "🚀⓪ = 현재 돌파"
     )
 
     log.info(
-        "🌧️ = 숏 추세 진행"
+        "🚀① = 확정 돌파"
     )
 
     log.info(
-        "RSI 진행 대시보드는 돌파 신호와 분리"
+        "☀️ = 기존 ② / 롱 추세 진행"
     )
 
     log.info(
-        "========================================"
+        "🔻⓪ = 현재 하락 돌파"
     )
 
     log.info(
-        "TOP50:"
+        "🔻① = 확정 하락 돌파"
     )
 
     log.info(
-        "TOP50은 기존 신호 전체 표시"
-    )
-
-    log.info(
-        "🚀⓪ / 🚀① / ☀️ / "
-        "🔻⓪ / 🔻① / 🌧️ 모두 유지"
+        "🌧️ = 기존 ② / 숏 추세 진행"
     )
 
     log.info(
@@ -4961,8 +5842,16 @@ def startup():
     )
 
     log.info(
-        "4시간봉 KST:"
-        " 01 / 05 / 09 / 13 / 17 / 21"
+        "추세 진행 리스트:"
+    )
+
+    log.info(
+        "RSI 추세 신호의 ☀️/🌧️를 "
+        "그대로 가져옴"
+    )
+
+    log.info(
+        "순서/표/데이터 동일"
     )
 
     log.info(
@@ -4993,7 +5882,11 @@ def startup():
 if __name__ == "__main__":
 
     uvicorn.run(
+
         app,
+
         host="0.0.0.0",
+
         port=8000
+
     )
