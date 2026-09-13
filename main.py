@@ -73,15 +73,45 @@ KST = ZoneInfo("Asia/Seoul")
 
 # =========================================================
 # EMA 시간봉
+#
+# 숫자를 자유롭게 변경
+#
+# 5    = 5M
+# 15   = 15M
+# 30   = 30M
+# 60   = 1H
+# 120  = 2H
+# 240  = 4H
+# 360  = 6H
+# 480  = 8H
+# 720  = 12H
+# 1440 = 1D
 # =========================================================
 
-EMA_TIMEFRAME = 1440
+EMA_TIMEFRAME = 240
 
-EMA_HIGH_TIMEFRAME = 240
+EMA_HIGH_TIMEFRAME = 1440
 
 USE_EMA_TIMEFRAME = "Y"
 
 USE_EMA_HIGH_TIMEFRAME = "N"
+
+
+# =========================================================
+# RSI 시간봉
+#
+# RSI_TIMEFRAME
+#   → 실제 RSI 신호 / 카운트 기준
+#
+# RSI_HIGH_TIMEFRAME
+#   → 참고용 표시만
+#
+# 둘 다 자유롭게 변경 가능
+# =========================================================
+
+RSI_TIMEFRAME = 240
+
+RSI_HIGH_TIMEFRAME = 1440
 
 
 # =========================================================
@@ -143,9 +173,11 @@ latest_upbit_markets = []
 
 okx_ticker_cache = {}
 
-okx_1h_cache = {}
+okx_volume_cache = {}
 
-okx_1h_cache_time = "-"
+okx_rsi_cache = {}
+
+okx_rsi_cache_time = "-"
 
 
 # =========================================================
@@ -178,7 +210,13 @@ def format_timeframe(minutes):
 
     if minutes >= 1440:
 
-        return f"{minutes // 1440}D"
+        days = minutes // 1440
+
+        if days == 1:
+
+            return "1D"
+
+        return f"{days}D"
 
     if minutes >= 60:
 
@@ -189,12 +227,16 @@ def format_timeframe(minutes):
 
 # =========================================================
 # OKX 시간봉
+#
+# 자유 설정값 → OKX bar 자동 변환
 # =========================================================
 
 def get_okx_bar(minutes):
 
     return {
 
+        1: "1m",
+        3: "3m",
         5: "5m",
         15: "15m",
         30: "30m",
@@ -234,97 +276,14 @@ def get_okx_bar_minutes(bar):
 
 
 # =========================================================
-# 현재 캔들 시작
-#
-# 4H KST 기준
-#
-# 01:00
-# 05:00
-# 09:00
-# 13:00
-# 17:00
-# 21:00
+# 업비트 지원 시간봉
 # =========================================================
 
-def get_current_candle_start(minutes):
-
-    minutes = int(minutes)
-
-    now = datetime.now(KST)
-
-    if minutes == 240:
-
-        anchor = now.replace(
-            hour=1,
-            minute=0,
-            second=0,
-            microsecond=0
-        )
-
-        if now < anchor:
-
-            anchor -= pd.Timedelta(days=1)
-
-        elapsed_minutes = int(
-            (
-                now - anchor
-            ).total_seconds()
-            // 60
-        )
-
-        block = (
-            elapsed_minutes // 240
-        ) * 240
-
-        current = (
-            anchor
-            + pd.Timedelta(
-                minutes=block
-            )
-        )
-
-        return current.replace(
-            tzinfo=None
-        )
-
-    total = (
-        now.hour * 60
-        + now.minute
-    )
-
-    block = (
-        total // minutes
-    ) * minutes
-
-    day_offset, block = divmod(
-        block,
-        1440
-    )
-
-    current = now.replace(
-        hour=block // 60,
-        minute=block % 60,
-        second=0,
-        microsecond=0
-    )
-
-    if day_offset:
-
-        current -= pd.Timedelta(
-            days=day_offset
-        )
-
-    return current.replace(
-        tzinfo=None
-    )
-
-
-# =========================================================
-# 시간봉 검증
-# =========================================================
-
-SUPPORTED_UPBIT_TIMEFRAMES = {
+SUPPORTED_UPBIT_MINUTE_TIMEFRAMES = {
+    1,
+    3,
     5,
+    10,
     15,
     30,
     60,
@@ -332,7 +291,14 @@ SUPPORTED_UPBIT_TIMEFRAMES = {
 }
 
 
+SUPPORTED_SPECIAL_TIMEFRAMES = {
+    1440
+}
+
+
 SUPPORTED_OKX_TIMEFRAMES = {
+    1,
+    3,
     5,
     15,
     30,
@@ -346,50 +312,136 @@ SUPPORTED_OKX_TIMEFRAMES = {
 }
 
 
+# =========================================================
+# 시간봉 검증
+# =========================================================
+
+def validate_single_timeframe(
+    value,
+    name
+):
+
+    value = int(value)
+
+    if value <= 0:
+
+        raise ValueError(
+            f"{name}은 0보다 커야 합니다."
+        )
+
+    # 업비트는 1440을 일봉으로 별도 처리
+    if (
+        value not in SUPPORTED_UPBIT_MINUTE_TIMEFRAMES
+        and value not in SUPPORTED_SPECIAL_TIMEFRAMES
+    ):
+
+        raise ValueError(
+            f"{name} 오류: {value}\n"
+            f"업비트 지원값: "
+            f"{sorted(SUPPORTED_UPBIT_MINUTE_TIMEFRAMES)} "
+            f"+ 1440"
+        )
+
+    if (
+        value not in SUPPORTED_OKX_TIMEFRAMES
+    ):
+
+        raise ValueError(
+            f"{name} OKX 시간봉 오류: {value}"
+        )
+
+
 def validate_timeframe():
 
-    if (
-        EMA_TIMEFRAME
-        not in SUPPORTED_UPBIT_TIMEFRAMES
-    ):
+    validate_single_timeframe(
+        EMA_TIMEFRAME,
+        "EMA_TIMEFRAME"
+    )
 
-        raise ValueError(
-            f"EMA_TIMEFRAME 오류: {EMA_TIMEFRAME}"
+    validate_single_timeframe(
+        EMA_HIGH_TIMEFRAME,
+        "EMA_HIGH_TIMEFRAME"
+    )
+
+    validate_single_timeframe(
+        RSI_TIMEFRAME,
+        "RSI_TIMEFRAME"
+    )
+
+    validate_single_timeframe(
+        RSI_HIGH_TIMEFRAME,
+        "RSI_HIGH_TIMEFRAME"
+    )
+
+
+# =========================================================
+# 현재 캔들 시작
+#
+# KST 기준
+#
+# 일봉:
+# 09:00 ~ 다음날 09:00
+#
+# 기타:
+# 설정된 분 단위 기준
+# =========================================================
+
+def get_current_candle_start(minutes):
+
+    minutes = int(minutes)
+
+    now = datetime.now(KST)
+
+    # -----------------------------------------------------
+    # 일봉
+    # -----------------------------------------------------
+
+    if minutes == 1440:
+
+        anchor = now.replace(
+            hour=9,
+            minute=0,
+            second=0,
+            microsecond=0
         )
 
-    if (
-        EMA_HIGH_TIMEFRAME
-        not in SUPPORTED_UPBIT_TIMEFRAMES
-    ):
+        if now < anchor:
 
-        raise ValueError(
-            f"EMA_HIGH_TIMEFRAME 오류: "
-            f"{EMA_HIGH_TIMEFRAME}"
+            anchor -= pd.Timedelta(
+                days=1
+            )
+
+        return anchor.replace(
+            tzinfo=None
         )
 
-    if (
-        get_okx_bar(
-            EMA_TIMEFRAME
-        )
-        is None
-    ):
+    # -----------------------------------------------------
+    # 일반 시간봉
+    # -----------------------------------------------------
 
-        raise ValueError(
-            f"OKX 시간봉 오류: "
-            f"{EMA_TIMEFRAME}"
-        )
+    total = (
+        now.hour * 60
+        + now.minute
+    )
 
-    if (
-        get_okx_bar(
-            EMA_HIGH_TIMEFRAME
-        )
-        is None
-    ):
+    block = (
+        total // minutes
+    ) * minutes
 
-        raise ValueError(
-            f"OKX HIGH 시간봉 오류: "
-            f"{EMA_HIGH_TIMEFRAME}"
-        )
+    current = now.replace(
+        hour=0,
+        minute=0,
+        second=0,
+        microsecond=0
+    )
+
+    current += pd.Timedelta(
+        minutes=block
+    )
+
+    return current.replace(
+        tzinfo=None
+    )
 
 
 # =========================================================
@@ -613,10 +665,10 @@ def get_usdt_krw():
 
 
 # =========================================================
-# UPBIT 캔들
+# UPBIT 분봉
 # =========================================================
 
-def get_upbit_candle(
+def get_upbit_minute_candle(
     market,
     unit,
     count=200,
@@ -629,7 +681,8 @@ def get_upbit_candle(
         f"https://api.upbit.com/v1/candles/minutes/{int(unit)}",
         params={
 
-            "market": market,
+            "market":
+                market,
 
             "count":
                 min(
@@ -730,11 +783,182 @@ def get_upbit_candle(
     except Exception as e:
 
         log.error(
-            f"UPBIT candle 오류 "
+            f"UPBIT minute candle 오류 "
+            f"{market} {unit}: {e}"
+        )
+
+        return None
+
+
+# =========================================================
+# UPBIT 일봉
+#
+# 1440 전용
+#
+# 업비트 일봉은 minutes API를 사용하지 않음
+# =========================================================
+
+def get_upbit_daily_candle(
+    market,
+    count=200,
+    to=None,
+    include_current=False
+):
+
+    response = retry(
+        requests.get,
+        "https://api.upbit.com/v1/candles/days",
+        params={
+
+            "market":
+                market,
+
+            "count":
+                min(
+                    max(
+                        int(count),
+                        1
+                    ),
+                    200
+                ),
+
+            **(
+                {"to": to}
+                if to
+                else {}
+            )
+
+        },
+        timeout=15
+    )
+
+    if response is None:
+
+        return None
+
+    try:
+
+        df = pd.DataFrame(
+            response.json()
+        )
+
+        if df.empty:
+
+            return None
+
+        df["o"] = pd.to_numeric(
+            df.opening_price,
+            errors="coerce"
+        )
+
+        df["h"] = pd.to_numeric(
+            df.high_price,
+            errors="coerce"
+        )
+
+        df["l"] = pd.to_numeric(
+            df.low_price,
+            errors="coerce"
+        )
+
+        df["c"] = pd.to_numeric(
+            df.trade_price,
+            errors="coerce"
+        )
+
+        df["volume_krw"] = pd.to_numeric(
+            df.candle_acc_trade_price,
+            errors="coerce"
+        )
+
+        df["datetime"] = pd.to_datetime(
+            df.candle_date_time_kst,
+            errors="coerce"
+        )
+
+        df = df.dropna(
+            subset=[
+                "datetime",
+                "o",
+                "h",
+                "l",
+                "c"
+            ]
+        )
+
+        if not include_current:
+
+            current = (
+                get_current_candle_start(
+                    1440
+                )
+            )
+
+            df = df[
+                df.datetime < current
+            ]
+
+        if df.empty:
+
+            return None
+
+        return (
+            df
+            .sort_values("datetime")
+            .drop_duplicates("datetime")
+            .reset_index(drop=True)
+        )
+
+    except Exception as e:
+
+        log.error(
+            f"UPBIT daily candle 오류 "
             f"{market}: {e}"
         )
 
         return None
+
+
+# =========================================================
+# UPBIT 공통 캔들
+#
+# 설정값에 따라 자동 선택
+# =========================================================
+
+def get_upbit_candle(
+    market,
+    unit,
+    count=200,
+    to=None,
+    include_current=False
+):
+
+    unit = int(unit)
+
+    # -----------------------------------------------------
+    # 1440 = 일봉
+    # -----------------------------------------------------
+
+    if unit == 1440:
+
+        return get_upbit_daily_candle(
+            market,
+            count,
+            to,
+            include_current
+        )
+
+    # -----------------------------------------------------
+    # 그 외 = 분봉
+    # -----------------------------------------------------
+
+    return get_upbit_minute_candle(
+        market,
+        unit,
+        count,
+        to,
+        include_current
+    )
 
 
 # =========================================================
@@ -805,7 +1029,9 @@ def history_upbit(
 
 
 # =========================================================
-# UPBIT 현재 캔들
+# UPBIT 현재 RSI 캔들
+#
+# RSI_TIMEFRAME을 그대로 사용
 # =========================================================
 
 def get_upbit_current_rsi_data(
@@ -815,7 +1041,7 @@ def get_upbit_current_rsi_data(
 
     df = get_upbit_candle(
         market,
-        EMA_TIMEFRAME,
+        RSI_TIMEFRAME,
         include_current=True
     )
 
@@ -830,7 +1056,7 @@ def get_upbit_current_rsi_data(
 
         start = (
             get_current_candle_start(
-                EMA_TIMEFRAME
+                RSI_TIMEFRAME
             )
         )
 
@@ -891,9 +1117,11 @@ def get_okx_ohlcv(
 
     params = {
 
-        "instId": inst,
+        "instId":
+            inst,
 
-        "bar": bar,
+        "bar":
+            bar,
 
         "limit":
             min(
@@ -1221,10 +1449,6 @@ def get_okx_volume_cached(
 
         return None
 
-    okx_1h_cache[
-        inst
-    ] = df.copy()
-
     try:
 
         volume = pd.to_numeric(
@@ -1273,17 +1497,27 @@ def get_okx_cached_price(inst):
 
 
 # =========================================================
-# OKX 현재 1H
+# OKX 현재 RSI 캔들
+#
+# RSI_TIMEFRAME을 사용
 # =========================================================
 
-def get_okx_current_1h(
+def get_okx_current_rsi_data(
     inst,
     current_price
 ):
 
+    bar = get_okx_bar(
+        RSI_TIMEFRAME
+    )
+
+    if not bar:
+
+        return None
+
     df = get_okx_ohlcv(
         inst,
-        "1H",
+        bar,
         200,
         include_current=True
     )
@@ -1299,7 +1533,7 @@ def get_okx_current_1h(
 
         start = (
             get_current_candle_start(
-                60
+                RSI_TIMEFRAME
             )
         )
 
@@ -1417,13 +1651,21 @@ def ema_alignment_count(df):
 
         def get_dir(i):
 
-            a = float(e10.iloc[i])
+            a = float(
+                e10.iloc[i]
+            )
 
-            b = float(e30.iloc[i])
+            b = float(
+                e30.iloc[i]
+            )
 
-            c = float(e60.iloc[i])
+            c = float(
+                e60.iloc[i]
+            )
 
-            d = float(e120.iloc[i])
+            d = float(
+                e120.iloc[i]
+            )
 
             if a > b > c > d:
 
@@ -1461,8 +1703,13 @@ def ema_alignment_count(df):
                 break
 
         return {
-            "direction": current,
-            "count": count
+
+            "direction":
+                current,
+
+            "count":
+                count
+
         }
 
     except Exception:
@@ -1725,15 +1972,6 @@ def rsi(
 
 # =========================================================
 # RSI 연속 카운트
-#
-# 위에서부터 현재까지가 아니라
-# 현재 캔들부터 과거로 확인
-#
-# 70 이상:
-# 1, 2, 3...
-#
-# 30 이하:
-# 1, 2, 3...
 # =========================================================
 
 def rsi_count(
@@ -1794,15 +2032,7 @@ def rsi_count(
 # =========================================================
 # RSI 분석
 #
-# 새로운 방식
-#
-# 70 이상:
-#   1 = RSI 70 진입
-#   2+ = RSI 과매수 진행
-#
-# 30 이하:
-#   1 = RSI 30 진입
-#   2+ = RSI 과매도 진행
+# RSI_TIMEFRAME만 실제 신호 기준
 # =========================================================
 
 def rsi_analysis(
@@ -1891,25 +2121,13 @@ def rsi_analysis(
             False
         )
 
-        # -------------------------------------------------
-        # 롱
-        # -------------------------------------------------
-
         if current_value >= RSI_LONG_LEVEL:
 
             state = "long"
 
-        # -------------------------------------------------
-        # 숏
-        # -------------------------------------------------
-
         elif current_value <= RSI_SHORT_LEVEL:
 
             state = "short"
-
-        # -------------------------------------------------
-        # 중립
-        # -------------------------------------------------
 
         else:
 
@@ -1957,8 +2175,7 @@ def rsi_analysis(
         else:
 
             result["display"] = (
-                f"{current_value:.1f}"
-                f"(0)"
+                f"{current_value:.1f}(0)"
             )
 
         return result
@@ -1973,7 +2190,91 @@ def rsi_analysis(
 
 
 # =========================================================
-# 일간 등락률
+# RSI 참고용 분석
+#
+# RSI_HIGH_TIMEFRAME
+# 신호/카운트에는 절대 사용하지 않음
+# =========================================================
+
+def rsi_reference_analysis(
+    df
+):
+
+    result = {
+
+        "value":
+            None,
+
+        "direction":
+            "neutral",
+
+        "display":
+            "-"
+
+    }
+
+    if (
+        df is None
+        or df.empty
+    ):
+
+        return result
+
+    try:
+
+        series = rsi(
+            df
+        )
+
+        if (
+            series is None
+            or series.empty
+        ):
+
+            return result
+
+        value = float(
+            series.iloc[-1]
+        )
+
+        if pd.isna(value):
+
+            return result
+
+        if value >= RSI_LONG_LEVEL:
+
+            direction = "long"
+
+        elif value <= RSI_SHORT_LEVEL:
+
+            direction = "short"
+
+        else:
+
+            direction = "neutral"
+
+        result.update({
+
+            "value":
+                value,
+
+            "direction":
+                direction,
+
+            "display":
+                f"{value:.1f}"
+
+        })
+
+        return result
+
+    except Exception:
+
+        return result
+
+
+# =========================================================
+# 일간 등락률 - UPBIT
 # =========================================================
 
 def daily_change_upbit(
@@ -2024,7 +2325,7 @@ def daily_change_upbit(
 
 
 # =========================================================
-# 등락률
+# OKX / 공통 등락률
 # =========================================================
 
 def daily_changes(df):
@@ -2202,6 +2503,8 @@ def format_volume(v):
 
 # =========================================================
 # EMA + RSI 자격
+#
+# RSI는 RSI_TIMEFRAME만 사용
 # =========================================================
 
 def get_signal_qualified(
@@ -2284,73 +2587,140 @@ def analyze_okx(
     current_price=None
 ):
 
-    bar = get_okx_bar(
+    ema_bar = get_okx_bar(
         EMA_TIMEFRAME
     )
 
-    high_bar = get_okx_bar(
+    ema_high_bar = get_okx_bar(
         EMA_HIGH_TIMEFRAME
     )
 
+    rsi_bar = get_okx_bar(
+        RSI_TIMEFRAME
+    )
+
+    rsi_high_bar = get_okx_bar(
+        RSI_HIGH_TIMEFRAME
+    )
+
     if (
-        not bar
-        or not high_bar
+        not ema_bar
+        or not ema_high_bar
+        or not rsi_bar
+        or not rsi_high_bar
     ):
 
         return None
 
-    df_confirmed = (
-        okx_1h_cache.get(
-            market
-        )
-    )
+    # -----------------------------------------------------
+    # EMA 1차
+    # -----------------------------------------------------
 
-    if (
-        df_confirmed is None
-        or df_confirmed.empty
-    ):
-
-        df_confirmed = history_okx(
-            market,
-            bar
-        )
-
-    df_high = history_okx(
+    df_ema = history_okx(
         market,
-        high_bar
+        ema_bar
     )
 
-    df_current = (
-        get_okx_current_1h(
+    # -----------------------------------------------------
+    # EMA 참고
+    # -----------------------------------------------------
+
+    df_ema_high = history_okx(
+        market,
+        ema_high_bar
+    )
+
+    # -----------------------------------------------------
+    # RSI 1차
+    # -----------------------------------------------------
+
+    if RSI_TIMEFRAME == EMA_TIMEFRAME:
+
+        df_rsi = (
+            df_ema.copy()
+            if df_ema is not None
+            else None
+        )
+
+    else:
+
+        df_rsi = history_okx(
+            market,
+            rsi_bar
+        )
+
+    # -----------------------------------------------------
+    # RSI 참고
+    # -----------------------------------------------------
+
+    if RSI_HIGH_TIMEFRAME == EMA_HIGH_TIMEFRAME:
+
+        df_rsi_high = (
+            df_ema_high.copy()
+            if df_ema_high is not None
+            else None
+        )
+
+    else:
+
+        df_rsi_high = history_okx(
+            market,
+            rsi_high_bar
+        )
+
+    # -----------------------------------------------------
+    # 현재 RSI
+    # -----------------------------------------------------
+
+    df_rsi_current = (
+        get_okx_current_rsi_data(
             market,
             current_price
         )
     )
 
     if (
-        df_confirmed is None
-        or df_confirmed.empty
+        df_ema is None
+        or df_ema.empty
+        or df_ema_high is None
+        or df_ema_high.empty
+        or df_rsi is None
+        or df_rsi.empty
+        or df_rsi_high is None
+        or df_rsi_high.empty
     ):
 
         return None
 
+    # -----------------------------------------------------
+    # EMA
+    # -----------------------------------------------------
+
     e1 = ema_display(
-        df_confirmed,
+        df_ema,
         current_price
     )
 
     e_high = ema_display(
-        df_high,
+        df_ema_high,
         current_price
     )
 
+    # -----------------------------------------------------
+    # RSI
+    # -----------------------------------------------------
+
     r = rsi_analysis(
-        df_confirmed,
-        df_current
+        df_rsi,
+        df_rsi_current
+    )
+
+    r_high = rsi_reference_analysis(
+        df_rsi_high
     )
 
     changes = daily_changes(
-        df_confirmed
+        df_rsi
     )
 
     q = get_signal_qualified(
@@ -2361,13 +2731,20 @@ def analyze_okx(
 
     return {
 
-        "ema_1h": e1,
+        "ema_1h":
+            e1,
 
-        "ema_high": e_high,
+        "ema_high":
+            e_high,
 
-        "rsi": r,
+        "rsi":
+            r,
 
-        "changes": changes,
+        "rsi_high":
+            r_high,
+
+        "changes":
+            changes,
 
         **q,
 
@@ -2375,7 +2752,7 @@ def analyze_okx(
             q["filter_direction"],
 
         "df1h":
-            df_confirmed
+            df_ema
 
     }
 
@@ -2397,49 +2774,117 @@ def analyze(
             current_price
         )
 
-    df_confirmed = history_upbit(
+    # -----------------------------------------------------
+    # EMA 1차
+    # -----------------------------------------------------
+
+    df_ema = history_upbit(
         market,
         EMA_TIMEFRAME
     )
 
-    df_high = history_upbit(
+    # -----------------------------------------------------
+    # EMA 참고
+    # -----------------------------------------------------
+
+    df_ema_high = history_upbit(
         market,
         EMA_HIGH_TIMEFRAME
     )
 
-    df_current = (
+    # -----------------------------------------------------
+    # RSI 1차
+    # -----------------------------------------------------
+
+    if RSI_TIMEFRAME == EMA_TIMEFRAME:
+
+        df_rsi = (
+            df_ema.copy()
+            if df_ema is not None
+            else None
+        )
+
+    else:
+
+        df_rsi = history_upbit(
+            market,
+            RSI_TIMEFRAME
+        )
+
+    # -----------------------------------------------------
+    # RSI 참고
+    # -----------------------------------------------------
+
+    if RSI_HIGH_TIMEFRAME == EMA_HIGH_TIMEFRAME:
+
+        df_rsi_high = (
+            df_ema_high.copy()
+            if df_ema_high is not None
+            else None
+        )
+
+    else:
+
+        df_rsi_high = history_upbit(
+            market,
+            RSI_HIGH_TIMEFRAME
+        )
+
+    # -----------------------------------------------------
+    # 현재 RSI
+    # -----------------------------------------------------
+
+    df_rsi_current = (
         get_upbit_current_rsi_data(
             market,
             current_price
         )
     )
 
-    changes = (
-        daily_change_upbit(
-            market
-        )
-    )
-
     if (
-        df_confirmed is None
-        or df_confirmed.empty
+        df_ema is None
+        or df_ema.empty
+        or df_ema_high is None
+        or df_ema_high.empty
+        or df_rsi is None
+        or df_rsi.empty
+        or df_rsi_high is None
+        or df_rsi_high.empty
     ):
 
         return None
 
+    # -----------------------------------------------------
+    # EMA
+    # -----------------------------------------------------
+
     e1 = ema_display(
-        df_confirmed,
+        df_ema,
         current_price
     )
 
     e_high = ema_display(
-        df_high,
+        df_ema_high,
         current_price
     )
 
+    # -----------------------------------------------------
+    # RSI
+    # -----------------------------------------------------
+
     r = rsi_analysis(
-        df_confirmed,
-        df_current
+        df_rsi,
+        df_rsi_current
+    )
+
+    r_high = rsi_reference_analysis(
+        df_rsi_high
+    )
+
+    changes = (
+        daily_change_upbit(
+            market
+        )
     )
 
     q = get_signal_qualified(
@@ -2450,13 +2895,20 @@ def analyze(
 
     return {
 
-        "ema_1h": e1,
+        "ema_1h":
+            e1,
 
-        "ema_high": e_high,
+        "ema_high":
+            e_high,
 
-        "rsi": r,
+        "rsi":
+            r,
 
-        "changes": changes,
+        "rsi_high":
+            r_high,
+
+        "changes":
+            changes,
 
         **q,
 
@@ -2464,7 +2916,7 @@ def analyze(
             q["filter_direction"],
 
         "df1h":
-            df_confirmed
+            df_ema
 
     }
 
@@ -2499,6 +2951,11 @@ def make_row(
                 "rsi14": None,
                 "long_count": 0,
                 "short_count": 0
+            },
+
+            "rsi_high": {
+                "value": None,
+                "direction": "neutral"
             },
 
             "changes": None,
@@ -2559,6 +3016,12 @@ def make_row(
                 {}
             ),
 
+        "rsi_high":
+            analysis.get(
+                "rsi_high",
+                {}
+            ),
+
         "breakout_qualified":
             analysis.get(
                 "breakout_qualified",
@@ -2583,7 +3046,7 @@ def make_row(
 # =========================================================
 # RSI 추세 신호
 #
-# 카운트 1만
+# RSI_TIMEFRAME의 카운트 1만
 # =========================================================
 
 def is_rsi_signal(row):
@@ -2622,9 +3085,6 @@ def is_rsi_signal(row):
 
 # =========================================================
 # UPBIT 롱 신호
-#
-# 기존 양수 조건 유지
-# RSI 70 최초 진입
 # =========================================================
 
 def is_upbit_long_signal(row):
@@ -2654,7 +3114,7 @@ def is_upbit_long_signal(row):
 # =========================================================
 # 추세 진행
 #
-# 2 이상
+# RSI_TIMEFRAME 기준
 # =========================================================
 
 def is_sun_cloud_signal(row):
@@ -2778,18 +3238,12 @@ def update_okx(usdt):
 
     global latest_okx_update_time
 
-    global okx_1h_cache
-
-    global okx_1h_cache_time
-
     if (
         not usdt
         or usdt <= 0
     ):
 
         return False
-
-    okx_1h_cache = {}
 
     tickers = get_okx_tickers()
 
@@ -2903,8 +3357,6 @@ def update_okx(usdt):
 
     latest_okx_data = rows
 
-    okx_1h_cache_time = kst()
-
     latest_okx_update_time = kst()
 
     return True
@@ -2984,7 +3436,7 @@ def update_dashboard():
 # =========================================================
 # RSI HTML
 #
-# 숫자 + 괄호 카운트
+# 실제 신호 기준 RSI
 # =========================================================
 
 def rsi_html(r):
@@ -3067,6 +3519,63 @@ def rsi_html(r):
 
 
 # =========================================================
+# RSI 참고용 HTML
+#
+# 카운트 없음
+# =========================================================
+
+def rsi_reference_html(r):
+
+    if not r:
+
+        return (
+            '<span class="rsi-reference">-</span>'
+        )
+
+    value = r.get(
+        "value"
+    )
+
+    if value is None:
+
+        return (
+            '<span class="rsi-reference">-</span>'
+        )
+
+    try:
+
+        value = float(value)
+
+    except Exception:
+
+        return (
+            '<span class="rsi-reference">-</span>'
+        )
+
+    if value >= RSI_LONG_LEVEL:
+
+        return (
+            '<span class="rsi-reference-long">'
+            f'{value:.1f}'
+            '</span>'
+        )
+
+    if value <= RSI_SHORT_LEVEL:
+
+        return (
+            '<span class="rsi-reference-short">'
+            f'{value:.1f}'
+            '</span>'
+        )
+
+    return (
+        '<span class="rsi-reference">'
+        f'{value:.1f}'
+        '</span>'
+    )
+
+
+# =========================================================
 # RSI 추세 신호 HTML
 #
 # 카운트 1
@@ -3095,10 +3604,6 @@ def signal_html(row):
         or 0
     )
 
-    # -----------------------------------------------------
-    # RSI 70 최초 진입
-    # -----------------------------------------------------
-
     if long_count == 1:
 
         if row.get(
@@ -3121,10 +3626,6 @@ def signal_html(row):
             '⚠️①'
             '</span>'
         )
-
-    # -----------------------------------------------------
-    # RSI 30 최초 진입
-    # -----------------------------------------------------
 
     if short_count == 1:
 
@@ -3149,10 +3650,6 @@ def signal_html(row):
             '</span>'
         )
 
-    # -----------------------------------------------------
-    # 2 이상은 추세 진행으로 이동
-    # -----------------------------------------------------
-
     return (
         '<span class="muted">-</span>'
     )
@@ -3161,7 +3658,7 @@ def signal_html(row):
 # =========================================================
 # 추세 진행 HTML
 #
-# 2 이상
+# 카운트 2 이상
 # =========================================================
 
 def progress_signal_html(row):
@@ -3318,6 +3815,14 @@ def row_class(x):
 
 # =========================================================
 # 공통 ROW
+#
+# EMA
+#   1차
+#   참고
+#
+# RSI
+#   1차
+#   참고
 # =========================================================
 
 def rows_html(
@@ -3369,48 +3874,81 @@ def rows_html(
                     {x.get("volume", "-")}
                 </td>
 
-                <td class="ema">
+                <td class="indicator-cell">
 
-                    <span>
-                        {format_timeframe(
-                            EMA_TIMEFRAME
-                        )}
+                    <div class="indicator-line">
 
-                        {ema_html(
-                            x.get(
-                                "ema_1h"
-                            )
-                        )}
+                        <span class="indicator-label">
+                            {format_timeframe(
+                                EMA_TIMEFRAME
+                            )}
+                        </span>
 
-                    </span>
+                        <span>
+                            {ema_html(
+                                x.get(
+                                    "ema_1h"
+                                )
+                            )}
+                        </span>
 
-                    <span class="ema-sep">
-                        /
-                    </span>
+                    </div>
 
-                    <span>
-                        {format_timeframe(
-                            EMA_HIGH_TIMEFRAME
-                        )}
+                    <div class="indicator-line">
 
-                        {ema_html(
-                            x.get(
-                                "ema_high"
-                            )
-                        )}
+                        <span class="indicator-label reference-label">
+                            {format_timeframe(
+                                EMA_HIGH_TIMEFRAME
+                            )}
+                        </span>
 
-                    </span>
+                        <span>
+                            {ema_html(
+                                x.get(
+                                    "ema_high"
+                                )
+                            )}
+                        </span>
+
+                    </div>
 
                 </td>
 
-                <td>
+                <td class="indicator-cell">
 
-                    {rsi_html(
-                        x.get(
-                            "rsi",
-                            {}
-                        )
-                    )}
+                    <div class="indicator-line">
+
+                        <span class="indicator-label">
+                            {format_timeframe(
+                                RSI_TIMEFRAME
+                            )}
+                        </span>
+
+                        {rsi_html(
+                            x.get(
+                                "rsi",
+                                {}
+                            )
+                        )}
+
+                    </div>
+
+                    <div class="indicator-line">
+
+                        <span class="indicator-label reference-label">
+                            {format_timeframe(
+                                RSI_HIGH_TIMEFRAME
+                            )}
+                        </span>
+
+                        {rsi_reference_html(
+                            x.get(
+                                "rsi_high",
+                                {}
+                            )
+                        )}
+
+                    </div>
 
                 </td>
 
@@ -3474,7 +4012,7 @@ def table_html(
 
                     <th>EMA</th>
 
-                    <th>RSI14</th>
+                    <th>RSI</th>
 
                     <th>신호</th>
 
@@ -3497,8 +4035,6 @@ def table_html(
 
 # =========================================================
 # RSI 추세 신호 섹션
-#
-# 카운트 1만
 # =========================================================
 
 def rsi_signal_section(
@@ -3533,7 +4069,7 @@ def rsi_signal_section(
         <span class="section-title-sub">
 
             TOP{TOP_N} ·
-            {format_timeframe(EMA_TIMEFRAME)}
+            {format_timeframe(RSI_TIMEFRAME)}
             RSI14 ·
             카운트 1 ·
             {update_time} KST
@@ -3552,8 +4088,6 @@ def rsi_signal_section(
 
 # =========================================================
 # 추세 진행
-#
-# 카운트 2 이상
 # =========================================================
 
 def progress_section(
@@ -3586,6 +4120,7 @@ def progress_section(
 
         <span class="section-title-sub">
 
+            {format_timeframe(RSI_TIMEFRAME)}
             RSI 카운트 2 이상 ·
             동일 순서 · 동일 표 ·
             {update_time} KST
@@ -3771,6 +4306,51 @@ def market_rsi_html(r):
     )
 
 
+def market_rsi_reference_html(r):
+
+    if not r:
+
+        return "-"
+
+    value = r.get(
+        "value"
+    )
+
+    if value is None:
+
+        return "-"
+
+    try:
+
+        value = float(value)
+
+    except Exception:
+
+        return "-"
+
+    if value >= RSI_LONG_LEVEL:
+
+        return (
+            '<span class="market-up">'
+            f'🟢 {value:.1f}'
+            '</span>'
+        )
+
+    if value <= RSI_SHORT_LEVEL:
+
+        return (
+            '<span class="market-down">'
+            f'🔴 {value:.1f}'
+            '</span>'
+        )
+
+    return (
+        '<span class="market-zero">'
+        f'{value:.1f}'
+        '</span>'
+    )
+
+
 def get_market_row(coin):
 
     for row in latest_upbit_data:
@@ -3825,6 +4405,11 @@ def market_summary_html():
         {}
     )
 
+    rsi_high = btc.get(
+        "rsi_high",
+        {}
+    )
+
     return f"""
 
     <div class="market-summary">
@@ -3836,7 +4421,7 @@ def market_summary_html():
             </span>
 
             <span class="market-title-sub">
-                EMA 배열 + RSI14
+                EMA + RSI 참고
             </span>
 
         </div>
@@ -3869,6 +4454,7 @@ def market_summary_html():
 
             <span>
 
+                EMA
                 {format_timeframe(
                     EMA_TIMEFRAME
                 )}
@@ -3888,6 +4474,7 @@ def market_summary_html():
 
             <span>
 
+                EMA
                 {format_timeframe(
                     EMA_HIGH_TIMEFRAME
                 )}
@@ -3908,9 +4495,25 @@ def market_summary_html():
             <span>
 
                 RSI
+                {format_timeframe(
+                    RSI_TIMEFRAME
+                )}
 
                 {market_rsi_html(
                     rsi_data
+                )}
+
+            </span>
+
+            <span>
+
+                RSI
+                {format_timeframe(
+                    RSI_HIGH_TIMEFRAME
+                )}
+
+                {market_rsi_reference_html(
+                    rsi_high
                 )}
 
             </span>
@@ -4079,6 +4682,8 @@ h1{
 
     display:flex;
 
+    flex-wrap:wrap;
+
     gap:10px;
 
     margin:3px 2px;
@@ -4125,7 +4730,9 @@ h1{
 
     display:flex;
 
-    gap:12px;
+    flex-wrap:wrap;
+
+    gap:8px 12px;
 
     color:#89919a;
 
@@ -4207,7 +4814,7 @@ th{
 
 td{
 
-    height:25px;
+    height:32px;
 
     padding:1px;
 
@@ -4241,7 +4848,7 @@ td:nth-child(2){
 th:nth-child(3),
 td:nth-child(3){
 
-    width:15%;
+    width:14%;
 }
 
 th:nth-child(4),
@@ -4253,7 +4860,7 @@ td:nth-child(4){
 th:nth-child(5),
 td:nth-child(5){
 
-    width:22%;
+    width:23%;
 }
 
 th:nth-child(6),
@@ -4314,6 +4921,52 @@ td:nth-child(6){
     white-space:nowrap;
 }
 
+.indicator-cell{
+
+    text-align:center!important;
+
+    vertical-align:middle;
+
+    line-height:9px;
+
+    white-space:nowrap;
+
+    overflow:hidden;
+}
+
+.indicator-line{
+
+    display:flex;
+
+    align-items:center;
+
+    justify-content:center;
+
+    gap:3px;
+
+    height:14px;
+
+    white-space:nowrap;
+}
+
+.indicator-label{
+
+    color:#aeb5bd;
+
+    font-size:5px;
+
+    font-weight:700;
+
+    min-width:18px;
+
+    text-align:right;
+}
+
+.reference-label{
+
+    color:#646c76;
+}
+
 .ema{
 
     text-align:center!important;
@@ -4336,16 +4989,9 @@ td:nth-child(6){
     white-space:nowrap;
 }
 
-.ema-sep{
-
-    color:#555c65;
-
-    margin:0 1px;
-}
-
 .rsi-cell{
 
-    display:flex;
+    display:inline-flex;
 
     flex-direction:row;
 
@@ -4353,7 +4999,7 @@ td:nth-child(6){
 
     justify-content:center;
 
-    min-height:21px;
+    min-height:12px;
 
     line-height:8px;
 
@@ -4374,25 +5020,48 @@ td:nth-child(6){
 .rsi-long{
 
     color:#39e875!important;
-
 }
 
 .rsi-short{
 
     color:#ff5555!important;
-
 }
 
 .rsi-neutral{
 
     color:#68717b!important;
-
 }
 
 .rsi-zero{
 
     color:#68717b!important;
+}
 
+.rsi-reference{
+
+    color:#68717b!important;
+
+    font-size:6px;
+
+    font-weight:800;
+}
+
+.rsi-reference-long{
+
+    color:#39e875!important;
+
+    font-size:6px;
+
+    font-weight:900;
+}
+
+.rsi-reference-short{
+
+    color:#ff5555!important;
+
+    font-size:6px;
+
+    font-weight:900;
 }
 
 .signal-cell{
@@ -4572,7 +5241,7 @@ td:nth-child(6){
 
     td{
 
-        height:23px;
+        height:29px;
     }
 
     .coin b{
@@ -4594,12 +5263,28 @@ td:nth-child(6){
         font-size:5.5px;
     }
 
-    .ema span{
+    .indicator-line{
 
-        font-size:5.3px;
+        height:12px;
+
+        gap:2px;
+    }
+
+    .indicator-label{
+
+        font-size:4.5px;
+
+        min-width:16px;
     }
 
     .rsi-cell span{
+
+        font-size:5.2px;
+    }
+
+    .rsi-reference,
+    .rsi-reference-long,
+    .rsi-reference-short{
 
         font-size:5.2px;
     }
@@ -4673,7 +5358,7 @@ td:nth-child(6){
 
     td{
 
-        height:38px;
+        height:44px;
 
         padding:3px;
     }
@@ -4695,12 +5380,31 @@ td:nth-child(6){
         font-size:8px;
     }
 
+    .indicator-line{
+
+        height:18px;
+    }
+
+    .indicator-label{
+
+        font-size:6px;
+
+        min-width:25px;
+    }
+
     .ema span{
 
         font-size:8px;
     }
 
     .rsi-cell span{
+
+        font-size:7px;
+    }
+
+    .rsi-reference,
+    .rsi-reference-long,
+    .rsi-reference-short{
 
         font-size:7px;
     }
@@ -4733,8 +5437,6 @@ def dashboard():
 
     # =====================================================
     # ① RSI 추세 신호
-    #
-    # 카운트 1
     # =====================================================
 
     if USE_UPBIT == "Y":
@@ -4757,8 +5459,6 @@ def dashboard():
 
     # =====================================================
     # ② 추세 진행
-    #
-    # 카운트 2+
     # =====================================================
 
     if USE_UPBIT == "Y":
@@ -4778,7 +5478,7 @@ def dashboard():
         )
 
     # =====================================================
-    # ③ TOP50
+    # ③ UPBIT TOP
     # =====================================================
 
     if USE_UPBIT == "Y":
@@ -4807,6 +5507,10 @@ def dashboard():
         )}
 
         """
+
+    # =====================================================
+    # ④ OKX TOP
+    # =====================================================
 
     if USE_OKX == "Y":
 
@@ -4862,6 +5566,23 @@ def dashboard():
             <b class="y">
                 {format_timeframe(
                     EMA_TIMEFRAME
+                )}
+                /
+                {format_timeframe(
+                    EMA_HIGH_TIMEFRAME
+                )}
+            </b>
+        </span>
+
+        <span>
+            RSI :
+            <b class="y">
+                {format_timeframe(
+                    RSI_TIMEFRAME
+                )}
+                /
+                {format_timeframe(
+                    RSI_HIGH_TIMEFRAME
                 )}
             </b>
         </span>
@@ -5006,6 +5727,16 @@ def startup():
     )
 
     log.info(
+        f"RSI TIMEFRAME = "
+        f"{format_timeframe(RSI_TIMEFRAME)}"
+    )
+
+    log.info(
+        f"RSI HIGH TIMEFRAME = "
+        f"{format_timeframe(RSI_HIGH_TIMEFRAME)}"
+    )
+
+    log.info(
         f"EMA = "
         f"{EMA1_FASTEST}/"
         f"{EMA1_FAST}/"
@@ -5030,7 +5761,31 @@ def startup():
     )
 
     log.info(
-        "RSI 카운팅 구조:"
+        "시간봉 구조:"
+    )
+
+    log.info(
+        "EMA_TIMEFRAME = 실제 EMA 기준"
+    )
+
+    log.info(
+        "EMA_HIGH_TIMEFRAME = EMA 참고/선택 필터"
+    )
+
+    log.info(
+        "RSI_TIMEFRAME = 실제 RSI 신호 기준"
+    )
+
+    log.info(
+        "RSI_HIGH_TIMEFRAME = RSI 참고용"
+    )
+
+    log.info(
+        "========================================"
+    )
+
+    log.info(
+        "RSI 카운팅:"
     )
 
     log.info(
