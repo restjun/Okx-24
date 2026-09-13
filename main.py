@@ -53,6 +53,9 @@ KST = ZoneInfo("Asia/Seoul")
 
 # =========================================================
 # 시간봉 설정
+#
+# 240 = 4시간
+# 60  = 1시간
 # =========================================================
 
 EMA_TIMEFRAME = 240
@@ -61,6 +64,10 @@ EMA_HIGH_TIMEFRAME = 60
 
 # =========================================================
 # 이평 시간봉 필터
+#
+# 현재:
+# 4시간봉 사용
+# 1시간봉 미사용
 # =========================================================
 
 USE_EMA_TIMEFRAME = "Y"
@@ -87,6 +94,9 @@ EMA1_MAX_COUNT = 200
 
 # =========================================================
 # RSI
+#
+# EMA_TIMEFRAME = 240 이므로
+# RSI14도 4시간봉 기준
 # =========================================================
 
 RSI_PERIOD = 14
@@ -1679,6 +1689,10 @@ def rsi_count(
 
 # =========================================================
 # RSI 돌파 상태
+#
+# 현재 진행봉 = ⓪
+# 확정 돌파봉 = ①
+# 다음 봉 = ②
 # =========================================================
 
 def rsi_cross_state(
@@ -1735,6 +1749,10 @@ def rsi_cross_state(
 
             return False
 
+        # ---------------------------------------------
+        # 현재 진행 중인 4시간봉
+        # ---------------------------------------------
+
         if len(current) >= 2:
 
             prev = current[-2]
@@ -1749,6 +1767,10 @@ def rsi_cross_state(
                     "state": "current",
                     "count": 0
                 }
+
+        # ---------------------------------------------
+        # 현재 데이터가 1개뿐인 경우
+        # ---------------------------------------------
 
         if len(current) == 1:
 
@@ -1765,6 +1787,10 @@ def rsi_cross_state(
                     "count": 0
                 }
 
+        # ---------------------------------------------
+        # 확정봉
+        # ---------------------------------------------
+
         if len(confirmed) >= 2:
 
             prev = confirmed[-2]
@@ -1779,6 +1805,10 @@ def rsi_cross_state(
                     "state": "confirmed",
                     "count": 1
                 }
+
+        # ---------------------------------------------
+        # 다음 봉
+        # ---------------------------------------------
 
         if len(confirmed) >= 3:
 
@@ -1906,17 +1936,29 @@ def rsi_analysis(
 
             return result
 
+        # ---------------------------------------------
+        # RSI70+ 연속
+        # ---------------------------------------------
+
         long_count = rsi_count(
             current,
             RSI_LONG_LEVEL,
             True
         )
 
+        # ---------------------------------------------
+        # RSI30- 연속
+        # ---------------------------------------------
+
         short_count = rsi_count(
             current,
             RSI_SHORT_LEVEL,
             False
         )
+
+        # ---------------------------------------------
+        # RSI70+ 시작시간
+        # ---------------------------------------------
 
         rsi_progress_start_time = None
 
@@ -1949,6 +1991,10 @@ def rsi_analysis(
                 f"RSI 롱 시작시간 오류: {e}"
             )
 
+        # ---------------------------------------------
+        # RSI30- 시작시간
+        # ---------------------------------------------
+
         rsi_short_progress_start_time = None
 
         try:
@@ -1979,6 +2025,10 @@ def rsi_analysis(
             log.error(
                 f"RSI 숏 시작시간 오류: {e}"
             )
+
+        # ---------------------------------------------
+        # RSI 돌파
+        # ---------------------------------------------
 
         lb = rsi_cross_state(
             confirmed,
@@ -2031,6 +2081,10 @@ def rsi_analysis(
                 sb["state"]
         })
 
+        # ---------------------------------------------
+        # 롱 돌파
+        # ---------------------------------------------
+
         if lb["state"] != "none":
 
             result.update({
@@ -2044,6 +2098,10 @@ def rsi_analysis(
                         lb["count"]
                     )
             })
+
+        # ---------------------------------------------
+        # 숏 돌파
+        # ---------------------------------------------
 
         elif sb["state"] != "none":
 
@@ -2059,6 +2117,10 @@ def rsi_analysis(
                     )
             })
 
+        # ---------------------------------------------
+        # 롱 진행
+        # ---------------------------------------------
+
         elif (
             current_value >= RSI_LONG_LEVEL
             and long_count >= RSI_PROGRESS_MIN_COUNT
@@ -2072,6 +2134,10 @@ def rsi_analysis(
                 "display":
                     f"RSI 70+ {long_count}"
             })
+
+        # ---------------------------------------------
+        # 숏 진행
+        # ---------------------------------------------
 
         elif (
             current_value <= RSI_SHORT_LEVEL
@@ -2603,6 +2669,11 @@ def analyze(
             current_price
         )
 
+    # -----------------------------------------------------
+    # EMA 기준 = 4시간봉
+    # RSI 기준 = 4시간봉
+    # -----------------------------------------------------
+
     df_confirmed = history_upbit(
         market,
         EMA_TIMEFRAME
@@ -2836,6 +2907,24 @@ def is_rsi_signal(row):
 
 
 # =========================================================
+# 업비트 롱 전용 후보
+#
+# 업비트에서는 숏을 후보 리스트에 표시하지 않음.
+# 숏은 TOP50 표에서 경고만 표시.
+# =========================================================
+
+def is_upbit_long_signal(row):
+
+    if not row:
+        return False
+
+    return (
+        is_breakout(row)
+        or is_rsi3_progress(row)
+    )
+
+
+# =========================================================
 # Upbit 업데이트
 # =========================================================
 
@@ -2904,11 +2993,11 @@ def update_upbit():
         f"업비트 완료 / "
         f"RSI70+ 롱 "
         f"{sum(is_rsi3_progress(x) for x in rows)}개 / "
-        f"RSI30- 숏 "
+        f"RSI30- 숏 경고 "
         f"{sum(is_rsi3_short_progress(x) for x in rows)}개 / "
         f"롱돌파 "
         f"{sum(is_breakout(x) for x in rows)}개 / "
-        f"숏돌파 "
+        f"숏돌파 경고 "
         f"{sum(is_short_breakout(x) for x in rows)}개"
     )
 
@@ -3539,7 +3628,7 @@ def market_summary_html():
                 </span>
 
                 <span class="market-title-sub">
-                    EMA 배열 + RSI14 기준
+                    {format_timeframe(EMA_TIMEFRAME)} EMA 배열 + RSI14 기준
                 </span>
 
             </div>
@@ -3620,7 +3709,7 @@ def market_summary_html():
             </span>
 
             <span class="market-title-sub">
-                EMA 배열 + RSI14 기준
+                {format_timeframe(EMA_TIMEFRAME)} EMA 배열 + RSI14 기준
             </span>
 
         </div>
@@ -3753,6 +3842,10 @@ def rsi_html(r):
             '</div>'
         )
 
+    # -----------------------------------------------------
+    # 롱 돌파
+    # -----------------------------------------------------
+
     state = r.get(
         "long_breakout_state",
         "none"
@@ -3778,6 +3871,10 @@ def rsi_html(r):
 
         </div>
         """
+
+    # -----------------------------------------------------
+    # 숏 돌파
+    # -----------------------------------------------------
 
     state = r.get(
         "short_breakout_state",
@@ -3805,6 +3902,10 @@ def rsi_html(r):
         </div>
         """
 
+    # -----------------------------------------------------
+    # RSI70+
+    # -----------------------------------------------------
+
     if value >= RSI_LONG_LEVEL:
 
         count = int(
@@ -3823,6 +3924,10 @@ def rsi_html(r):
 
         </div>
         """
+
+    # -----------------------------------------------------
+    # RSI30-
+    # -----------------------------------------------------
 
     if value <= RSI_SHORT_LEVEL:
 
@@ -3865,6 +3970,10 @@ def signal_html(row):
         {}
     )
 
+    # =====================================================
+    # 롱 돌파
+    # =====================================================
+
     state = r.get(
         "long_breakout_state",
         "none"
@@ -3895,6 +4004,13 @@ def signal_html(row):
             '</span>'
         )
 
+    # =====================================================
+    # 숏 돌파
+    #
+    # 업비트에서는 매매 후보가 아니라
+    # 경고용으로만 표시
+    # =====================================================
+
     state = r.get(
         "short_breakout_state",
         "none"
@@ -3920,10 +4036,14 @@ def signal_html(row):
         return (
             '<span '
             'class="signal-icon short-breakout" '
-            'title="숏 돌파 / 역배열 / RSI30">'
+            'title="숏 경고 / 역배열 / RSI30">'
             f'🔻{count_icon(count)}'
             '</span>'
         )
+
+    # =====================================================
+    # 롱 진행
+    # =====================================================
 
     if row.get(
         "rsi3_long_progress_qualified",
@@ -3938,6 +4058,12 @@ def signal_html(row):
             '</span>'
         )
 
+    # =====================================================
+    # 숏 진행
+    #
+    # 업비트에서는 경고로만 표시
+    # =====================================================
+
     if row.get(
         "rsi3_short_progress_qualified",
         False
@@ -3946,7 +4072,7 @@ def signal_html(row):
         return (
             '<span '
             'class="signal-icon short-progress" '
-            'title="숏 진행 / 역배열 / RSI30- 3개 이상">'
+            'title="숏 경고 / 역배열 / RSI30- 3개 이상">'
             '🌧️'
             '</span>'
         )
@@ -3992,24 +4118,28 @@ def ema_html(e):
 
 def row_class(x):
 
+    # 롱 돌파
     if x.get(
         "breakout_qualified"
     ):
 
         return "breakout-qualified"
 
+    # 숏 돌파 → 경고
     if x.get(
         "short_breakout_qualified"
     ):
 
         return "short-breakout-qualified"
 
+    # 롱 진행
     if x.get(
         "rsi3_long_progress_qualified"
     ):
 
         return "progress-qualified"
 
+    # 숏 진행 → 경고
     if x.get(
         "rsi3_short_progress_qualified"
     ):
@@ -5101,16 +5231,12 @@ def dashboard():
     sections = ""
 
     # =====================================================
-    # ① 업비트 RSI 통합 신호
+    # ① 업비트
     #
-    # 기존:
-    #   RSI 70+ 롱 진행중
-    #   RSI 70 롱 돌파 정배열
+    # 숏은 후보 리스트에 표시하지 않음.
+    # 롱 신호만 별도 리스트에 표시.
     #
-    # 변경:
-    #   하나의 리스트에서 통합 표시
-    #
-    # 업비트 숏은 기존처럼 화면 표시하지 않음
+    # 숏은 TOP50 전체표의 신호칸에서 경고.
     # =====================================================
 
     if USE_UPBIT == "Y":
@@ -5123,32 +5249,24 @@ def dashboard():
                 if is_positive_day(x)
             ],
             latest_upbit_update_time,
-            is_rsi_signal,
+            is_upbit_long_signal,
             "rsi_signal",
             (
                 f"TOP{TOP_N} 기준 · "
                 f"{format_timeframe(EMA_TIMEFRAME)}"
-                f"/"
-                f"{format_timeframe(EMA_HIGH_TIMEFRAME)} · "
+                f" RSI14 · "
                 f"EMA10>30>60>120 · "
                 f"RSI14 {RSI_LONG_LEVEL}+ "
-                f"돌파/진행 통합 · "
-                f"당일 양수"
+                f"롱 돌파/진행 · "
+                f"당일 양수 · "
+                f"숏은 TOP50에서 경고"
             )
         )
 
     # =====================================================
-    # ② OKX RSI 통합 신호
+    # ② OKX
     #
-    # 롱:
-    #   🚀 RSI70 돌파
-    #   ☀️ RSI70+ 진행
-    #
-    # 숏:
-    #   🔻 RSI30 이탈
-    #   🌧️ RSI30- 진행
-    #
-    # 전부 하나의 리스트에 표시
+    # OKX는 롱/숏 모두 기존 방식 유지
     # =====================================================
 
     if USE_OKX == "Y":
@@ -5171,7 +5289,7 @@ def dashboard():
         )
 
     # =====================================================
-    # 전체 TOP30
+    # 전체 TOP50
     # =====================================================
 
     if USE_UPBIT == "Y":
@@ -5369,15 +5487,18 @@ def startup():
     )
 
     log.info(
-        "롱 조건:"
+        "현재 RSI 기준 시간봉:"
+        f" {tf}"
     )
 
     log.info(
-        "정배열 EMA10>EMA30>EMA60>EMA120"
+        f"RSI{RSI_PERIOD} >= "
+        f"{RSI_LONG_LEVEL} → 롱"
     )
 
     log.info(
-        f"RSI14 >= {RSI_LONG_LEVEL}"
+        f"RSI{RSI_PERIOD} <= "
+        f"{RSI_SHORT_LEVEL} → 숏 경고"
     )
 
     log.info(
@@ -5386,32 +5507,16 @@ def startup():
     )
 
     log.info(
-        f"롱 돌파: RSI14 {RSI_LONG_LEVEL} 돌파"
-    )
-
-    log.info(
-        "========================================"
-    )
-
-    log.info(
-        "숏 조건:"
-    )
-
-    log.info(
-        "역배열 EMA10<EMA30<EMA60<EMA120"
-    )
-
-    log.info(
-        f"RSI14 <= {RSI_SHORT_LEVEL}"
-    )
-
-    log.info(
-        f"숏 진행: RSI14 <= {RSI_SHORT_LEVEL} "
+        f"숏 경고: RSI14 <= {RSI_SHORT_LEVEL} "
         f"{RSI_PROGRESS_MIN_COUNT}개 이상 연속"
     )
 
     log.info(
-        f"숏 돌파: RSI14 {RSI_SHORT_LEVEL} 이탈"
+        f"롱 돌파: RSI14 {RSI_LONG_LEVEL} 돌파"
+    )
+
+    log.info(
+        f"숏 경고: RSI14 {RSI_SHORT_LEVEL} 이탈"
     )
 
     log.info(
@@ -5423,7 +5528,15 @@ def startup():
     )
 
     log.info(
-        "돌파 + 진행중 통합 표시"
+        "업비트 → 롱만 후보 리스트 표시"
+    )
+
+    log.info(
+        "업비트 → 숏은 TOP50 신호칸에서 경고"
+    )
+
+    log.info(
+        "OKX → 롱/숏 모두 후보 리스트 표시"
     )
 
     log.info(
@@ -5487,9 +5600,9 @@ def startup():
 
     log.info(
         "🚀 RSI 롱 돌파 / "
-        "🔻 RSI 숏 돌파 / "
+        "🔻 RSI 숏 경고 / "
         "☀️ RSI70+ 롱 진행 / "
-        "🌧️ RSI30- 숏 진행"
+        "🌧️ RSI30- 숏 경고"
     )
 
     log.info(
