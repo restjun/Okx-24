@@ -81,13 +81,13 @@ KST = ZoneInfo("Asia/Seoul")
 # 1440 = 1D
 # =========================================================
 
-EMA_TIMEFRAME = 240
+EMA_TIMEFRAME = 1440
 
-EMA_HIGH_TIMEFRAME = 1440
+EMA_HIGH_TIMEFRAME = 240
 
 USE_EMA_TIMEFRAME = "Y"
 
-USE_EMA_HIGH_TIMEFRAME = "Y"
+USE_EMA_HIGH_TIMEFRAME = "N"
 
 
 # =========================================================
