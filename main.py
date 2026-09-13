@@ -814,12 +814,6 @@ def get_upbit_candle(
 
         # -------------------------------------------------
         # 시간
-        #
-        # 일봉:
-        # candle_date_time_kst 사용
-        #
-        # 분봉:
-        # candle_date_time_kst 사용
         # -------------------------------------------------
 
         df["datetime"] = pd.to_datetime(
@@ -2565,10 +2559,13 @@ def format_volume(v):
 # =========================================================
 # EMA + RSI 자격
 #
-# RSI 신호는 RSI_TIMEFRAME만 사용
+# 1D EMA 정배열/역배열 → 실제 필터
 #
-# RSI_HIGH_TIMEFRAME은 참고용이므로
-# 여기에는 사용하지 않음
+# 4H EMA → 확인용
+#
+# RSI_TIMEFRAME → 실제 신호
+#
+# RSI_HIGH_TIMEFRAME → 확인용
 # =========================================================
 
 def get_signal_qualified(
@@ -2577,47 +2574,97 @@ def get_signal_qualified(
     r
 ):
 
-    filter_info = (
-        ema_filter_direction(
-            e1,
-            e_high
-        )
+    # -----------------------------------------------------
+    # 실제 필터는 EMA_TIMEFRAME
+    #
+    # 현재 설정:
+    # EMA_TIMEFRAME = 1440 → 1D
+    #
+    # e1:
+    # EMA10 / EMA30 / EMA60 / EMA120
+    #
+    # long:
+    # 10 > 30 > 60 > 120
+    #
+    # short:
+    # 10 < 30 < 60 < 120
+    # -----------------------------------------------------
+
+    ema_direction = e1.get(
+        "direction",
+        "none"
     )
 
-    direction = filter_info[
-        "direction"
-    ]
-
-    filter_pass = (
-        ema_filter_pass(
-            e1,
-            e_high
+    ema_count = int(
+        e1.get(
+            "count",
+            0
         )
+        or 0
     )
 
-    if (
-        USE_EMA_TIMEFRAME == "N"
+    # -----------------------------------------------------
+    # 정배열 / 역배열 필터
+    # -----------------------------------------------------
+
+    long_base = (
+        ema_direction == "long"
         and
-        USE_EMA_HIGH_TIMEFRAME == "N"
-    ):
+        ema_count > 0
+        and
+        ema_count <= EMA1_MAX_COUNT
+    )
 
-        long_base = True
+    short_base = (
+        ema_direction == "short"
+        and
+        ema_count > 0
+        and
+        ema_count <= EMA1_MAX_COUNT
+    )
 
-        short_base = True
+    # -----------------------------------------------------
+    # RSI_TIMEFRAME만 실제 신호 판단
+    #
+    # 현재 설정:
+    # RSI_TIMEFRAME = 1440 → 1D
+    #
+    # 4H RSI는 사용하지 않음
+    # -----------------------------------------------------
 
-    else:
+    long_rsi = (
+        int(
+            r.get(
+                "long_count",
+                0
+            )
+            or 0
+        ) >= 1
+    )
 
-        long_base = (
-            filter_pass
-            and
-            direction == "long"
-        )
+    short_rsi = (
+        int(
+            r.get(
+                "short_count",
+                0
+            )
+            or 0
+        ) >= 1
+    )
 
-        short_base = (
-            filter_pass
-            and
-            direction == "short"
-        )
+    # -----------------------------------------------------
+    # 최종 신호
+    #
+    # LONG:
+    # 1D EMA 정배열
+    # +
+    # 1D RSI 70 이상
+    #
+    # SHORT:
+    # 1D EMA 역배열
+    # +
+    # 1D RSI 30 이하
+    # -----------------------------------------------------
 
     return {
 
@@ -2625,24 +2672,18 @@ def get_signal_qualified(
             (
                 long_base
                 and
-                r.get(
-                    "long_count",
-                    0
-                ) >= 1
+                long_rsi
             ),
 
         "short_breakout_qualified":
             (
                 short_base
                 and
-                r.get(
-                    "short_count",
-                    0
-                ) >= 1
+                short_rsi
             ),
 
         "filter_direction":
-            direction
+            ema_direction
 
     }
 
@@ -3801,112 +3842,6 @@ def progress_signal_html(
 
     return (
         '<span class="muted">-</span>'
-    )
-
-
-# =========================================================
-# EMA HTML
-#
-# 4H
-# 1D
-#
-# 동일한 들여쓰기
-# =========================================================
-
-def ema_html(
-    e,
-    label
-):
-
-    if not e:
-
-        return (
-            '<div class="indicator-line">'
-            f'<span class="indicator-label">'
-            f'{label}'
-            '</span>'
-            '<span class="indicator-value">'
-            '⚪0'
-            '</span>'
-            '</div>'
-        )
-
-    direction = e.get(
-        "direction",
-        "none"
-    )
-
-    count = int(
-        e.get(
-            "count",
-            0
-        )
-        or 0
-    )
-
-    icon = {
-
-        "long":
-            "🟢",
-
-        "short":
-            "🔴"
-
-    }.get(
-        direction,
-        "⚪"
-    )
-
-    return (
-        '<div class="indicator-line">'
-        f'<span class="indicator-label">'
-        f'{label}'
-        '</span>'
-        f'<span class="indicator-value">'
-        f'{icon}{count}'
-        '</span>'
-        '</div>'
-    )
-
-
-# =========================================================
-# RSI HTML
-#
-# 4H
-# 1D
-#
-# 동일한 들여쓰기
-# =========================================================
-
-def rsi_lines_html(
-    r,
-    r_high
-):
-
-    return (
-
-        '<div class="rsi-indicator">'
-
-        '<div class="indicator-line">'
-        '<span class="indicator-label">'
-        f'{format_timeframe(RSI_TIMEFRAME)}'
-        '</span>'
-        '<span class="indicator-value">'
-        f'{rsi_html(r)}'
-        '</span>'
-        '</div>'
-
-        '<div class="indicator-line">'
-        '<span class="indicator-label">'
-        f'{format_timeframe(RSI_HIGH_TIMEFRAME)}'
-        '</span>'
-        '<span class="indicator-value">'
-        f'{rsi_reference_html(r_high)}'
-        '</span>'
-        '</div>'
-
-        '</div>'
-
     )
 
 
@@ -5569,6 +5504,7 @@ td:nth-child(6){
 
     }
 
+
 }
 
 
@@ -6073,6 +6009,14 @@ def startup():
 
     log.info(
         "RSI_HIGH_TIMEFRAME → 참고용 표시 + 카운트"
+    )
+
+    log.info(
+        "EMA_TIMEFRAME → 정배열/역배열 실제 필터"
+    )
+
+    log.info(
+        "EMA_HIGH_TIMEFRAME → 확인용"
     )
 
     log.info(
