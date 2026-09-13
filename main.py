@@ -723,6 +723,10 @@ def history_upbit(
     return all_df
 
 
+# =========================================================
+# 현재 4시간봉 RSI 데이터
+# =========================================================
+
 def get_upbit_current_rsi_data(
     market,
     current_price
@@ -1690,9 +1694,18 @@ def rsi_count(
 # =========================================================
 # RSI 돌파 상태
 #
+# 중요 수정:
+#
 # 현재 진행봉 = ⓪
 # 확정 돌파봉 = ①
 # 다음 봉 = ②
+#
+# 현재봉은
+# "직전 확정봉 RSI"와
+# "현재 진행봉 RSI"를 직접 비교한다.
+#
+# 따라서 EMA 조건 때문에
+# 현재 RSI 돌파가 사라지지 않는다.
 # =========================================================
 
 def rsi_cross_state(
@@ -1731,36 +1744,22 @@ def rsi_cross_state(
 
             return result
 
-        def crossed(prev, curr):
+        # =================================================
+        # 현재 진행봉 = ⓪
+        #
+        # 반드시
+        # 직전 확정봉 -> 현재 진행봉
+        # 비교
+        # =================================================
 
-            if cross_type == "long":
+        previous_confirmed = confirmed[-1]
+        current_value = current[-1]
 
-                return (
-                    prev < RSI_LONG_LEVEL
-                    and curr >= RSI_LONG_LEVEL
-                )
+        if cross_type == "long":
 
-            if cross_type == "short":
-
-                return (
-                    prev > RSI_SHORT_LEVEL
-                    and curr <= RSI_SHORT_LEVEL
-                )
-
-            return False
-
-        # ---------------------------------------------
-        # 현재 진행 중인 4시간봉
-        # ---------------------------------------------
-
-        if len(current) >= 2:
-
-            prev = current[-2]
-            curr = current[-1]
-
-            if crossed(
-                prev,
-                curr
+            if (
+                previous_confirmed < RSI_LONG_LEVEL
+                and current_value >= RSI_LONG_LEVEL
             ):
 
                 return {
@@ -1768,18 +1767,11 @@ def rsi_cross_state(
                     "count": 0
                 }
 
-        # ---------------------------------------------
-        # 현재 데이터가 1개뿐인 경우
-        # ---------------------------------------------
+        elif cross_type == "short":
 
-        if len(current) == 1:
-
-            prev = confirmed[-1]
-            curr = current[-1]
-
-            if crossed(
-                prev,
-                curr
+            if (
+                previous_confirmed > RSI_SHORT_LEVEL
+                and current_value <= RSI_SHORT_LEVEL
             ):
 
                 return {
@@ -1787,43 +1779,75 @@ def rsi_cross_state(
                     "count": 0
                 }
 
-        # ---------------------------------------------
-        # 확정봉
-        # ---------------------------------------------
+        # =================================================
+        # 확정봉 = ①
+        #
+        # confirmed[-2] -> confirmed[-1]
+        # =================================================
 
         if len(confirmed) >= 2:
 
             prev = confirmed[-2]
             curr = confirmed[-1]
 
-            if crossed(
-                prev,
-                curr
-            ):
+            if cross_type == "long":
 
-                return {
-                    "state": "confirmed",
-                    "count": 1
-                }
+                if (
+                    prev < RSI_LONG_LEVEL
+                    and curr >= RSI_LONG_LEVEL
+                ):
 
-        # ---------------------------------------------
-        # 다음 봉
-        # ---------------------------------------------
+                    return {
+                        "state": "confirmed",
+                        "count": 1
+                    }
+
+            elif cross_type == "short":
+
+                if (
+                    prev > RSI_SHORT_LEVEL
+                    and curr <= RSI_SHORT_LEVEL
+                ):
+
+                    return {
+                        "state": "confirmed",
+                        "count": 1
+                    }
+
+        # =================================================
+        # 다음 봉 = ②
+        #
+        # confirmed[-3] -> confirmed[-2]
+        # =================================================
 
         if len(confirmed) >= 3:
 
             prev = confirmed[-3]
             curr = confirmed[-2]
 
-            if crossed(
-                prev,
-                curr
-            ):
+            if cross_type == "long":
 
-                return {
-                    "state": "next",
-                    "count": 2
-                }
+                if (
+                    prev < RSI_LONG_LEVEL
+                    and curr >= RSI_LONG_LEVEL
+                ):
+
+                    return {
+                        "state": "next",
+                        "count": 2
+                    }
+
+            elif cross_type == "short":
+
+                if (
+                    prev > RSI_SHORT_LEVEL
+                    and curr <= RSI_SHORT_LEVEL
+                ):
+
+                    return {
+                        "state": "next",
+                        "count": 2
+                    }
 
         return result
 
@@ -3961,6 +3985,18 @@ def rsi_html(r):
 
 # =========================================================
 # 신호 HTML
+#
+# ★ 핵심 수정 부분 ★
+#
+# RSI 돌파 자체는 EMA 자격조건과 독립적으로 표시한다.
+#
+# EMA 조건 만족:
+#   RSI70 돌파 → 🚀⓪
+#
+# RSI70 돌파했지만 EMA 조건 불충족:
+#   → ⚠️⓪
+#
+# 따라서 현재 진행봉 RSI70 돌파가 절대 사라지지 않는다.
 # =========================================================
 
 def signal_html(row):
@@ -3971,7 +4007,7 @@ def signal_html(row):
     )
 
     # =====================================================
-    # 롱 돌파
+    # 롱 RSI 돌파
     # =====================================================
 
     state = r.get(
@@ -3979,13 +4015,7 @@ def signal_html(row):
         "none"
     )
 
-    if (
-        row.get(
-            "breakout_qualified",
-            False
-        )
-        and state != "none"
-    ):
+    if state != "none":
 
         count = {
             "current": 0,
@@ -3996,19 +4026,41 @@ def signal_html(row):
             0
         )
 
+        # ---------------------------------------------
+        # EMA 조건까지 만족
+        # ---------------------------------------------
+
+        if row.get(
+            "breakout_qualified",
+            False
+        ):
+
+            return (
+                '<span '
+                'class="signal-icon long-breakout" '
+                'title="롱 돌파 / EMA 정배열 / RSI70">'
+                f'🚀{count_icon(count)}'
+                '</span>'
+            )
+
+        # ---------------------------------------------
+        # RSI70 돌파는 했지만 EMA 조건 불충족
+        #
+        # ★ 이번 수정 핵심
+        # ---------------------------------------------
+
         return (
             '<span '
-            'class="signal-icon long-breakout" '
-            'title="롱 돌파 / 정배열 / RSI70">'
-            f'🚀{count_icon(count)}'
+            'class="signal-icon rsi-warning-qualified" '
+            'title="RSI70 돌파 경고 / EMA 조건 미충족">'
+            f'⚠️{count_icon(count)}'
             '</span>'
         )
 
     # =====================================================
-    # 숏 돌파
+    # 숏 RSI 돌파
     #
-    # 업비트에서는 매매 후보가 아니라
-    # 경고용으로만 표시
+    # 업비트에서는 매매 후보가 아니라 경고.
     # =====================================================
 
     state = r.get(
@@ -4016,13 +4068,7 @@ def signal_html(row):
         "none"
     )
 
-    if (
-        row.get(
-            "short_breakout_qualified",
-            False
-        )
-        and state != "none"
-    ):
+    if state != "none":
 
         count = {
             "current": 0,
@@ -4033,11 +4079,32 @@ def signal_html(row):
             0
         )
 
+        # ---------------------------------------------
+        # EMA 역배열 조건까지 만족
+        # ---------------------------------------------
+
+        if row.get(
+            "short_breakout_qualified",
+            False
+        ):
+
+            return (
+                '<span '
+                'class="signal-icon short-breakout" '
+                'title="숏 경고 / EMA 역배열 / RSI30">'
+                f'🔻{count_icon(count)}'
+                '</span>'
+            )
+
+        # ---------------------------------------------
+        # RSI30 하향 돌파했지만 EMA 조건 불충족
+        # ---------------------------------------------
+
         return (
             '<span '
-            'class="signal-icon short-breakout" '
-            'title="숏 경고 / 역배열 / RSI30">'
-            f'🔻{count_icon(count)}'
+            'class="signal-icon rsi-warning-qualified" '
+            'title="RSI30 하향 돌파 경고 / EMA 조건 미충족">'
+            f'⚠️{count_icon(count)}'
             '</span>'
         )
 
@@ -4114,32 +4181,76 @@ def ema_html(e):
 
 # =========================================================
 # 행 클래스
+#
+# RSI 돌파가 EMA 조건을 만족하지 않아도
+# 경고 배경을 표시
 # =========================================================
 
 def row_class(x):
 
-    # 롱 돌파
+    r = x.get(
+        "rsi",
+        {}
+    )
+
+    # ---------------------------------------------
+    # 롱 돌파 + EMA 조건 만족
+    # ---------------------------------------------
+
     if x.get(
         "breakout_qualified"
     ):
 
         return "breakout-qualified"
 
-    # 숏 돌파 → 경고
+    # ---------------------------------------------
+    # 숏 돌파 + EMA 조건 만족
+    # ---------------------------------------------
+
     if x.get(
         "short_breakout_qualified"
     ):
 
         return "short-breakout-qualified"
 
+    # ---------------------------------------------
+    # RSI70 돌파 자체
+    #
+    # EMA 조건과 관계없이 경고 배경
+    # ---------------------------------------------
+
+    if r.get(
+        "long_breakout_state",
+        "none"
+    ) != "none":
+
+        return "rsi-warning-row"
+
+    # ---------------------------------------------
+    # RSI30 돌파 자체
+    # ---------------------------------------------
+
+    if r.get(
+        "short_breakout_state",
+        "none"
+    ) != "none":
+
+        return "rsi-warning-row"
+
+    # ---------------------------------------------
     # 롱 진행
+    # ---------------------------------------------
+
     if x.get(
         "rsi3_long_progress_qualified"
     ):
 
         return "progress-qualified"
 
-    # 숏 진행 → 경고
+    # ---------------------------------------------
+    # 숏 진행
+    # ---------------------------------------------
+
     if x.get(
         "rsi3_short_progress_qualified"
     ):
@@ -4732,6 +4843,20 @@ h1{
     font-weight:900;
 
     white-space:nowrap;
+}
+
+/* =======================================================
+   RSI 돌파 경고
+   ======================================================= */
+
+.rsi-warning-qualified{
+    color:#ffd166!important;
+    text-shadow:
+        0 0 4px rgba(255,209,102,.25);
+}
+
+.rsi-warning-row{
+    background:rgba(255,209,102,.055);
 }
 
 .table-wrap{
@@ -5540,7 +5665,7 @@ def startup():
     )
 
     log.info(
-        "현재 진행봉: ⓪"
+        "현재 진행봉 RSI 돌파: ⓪"
     )
 
     log.info(
@@ -5549,6 +5674,14 @@ def startup():
 
     log.info(
         "다음 봉: ②"
+    )
+
+    log.info(
+        "EMA 조건 만족 RSI70 돌파: 🚀"
+    )
+
+    log.info(
+        "EMA 조건 불충족 RSI70 돌파: ⚠️"
     )
 
     log.info(
@@ -5600,6 +5733,7 @@ def startup():
 
     log.info(
         "🚀 RSI 롱 돌파 / "
+        "⚠️ RSI 돌파 경고 / "
         "🔻 RSI 숏 경고 / "
         "☀️ RSI70+ 롱 진행 / "
         "🌧️ RSI30- 숏 경고"
