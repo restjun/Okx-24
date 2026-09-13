@@ -3550,6 +3550,75 @@ def update_dashboard():
 
 
 # =========================================================
+# EMA HTML
+# =========================================================
+
+def ema_html(
+    e,
+    timeframe
+):
+
+    if not e:
+
+        return (
+            '<div class="indicator-line">'
+            f'<span class="indicator-label">'
+            f'{timeframe}'
+            '</span>'
+            '<span class="indicator-value">'
+            '-'
+            '</span>'
+            '</div>'
+        )
+
+    direction = e.get(
+        "direction",
+        "none"
+    )
+
+    count = int(
+        e.get(
+            "count",
+            0
+        )
+        or 0
+    )
+
+    if direction == "long":
+
+        value = (
+            '<span class="indicator-value market-up">'
+            f'🟢({count})'
+            '</span>'
+        )
+
+    elif direction == "short":
+
+        value = (
+            '<span class="indicator-value market-down">'
+            f'🔴({count})'
+            '</span>'
+        )
+
+    else:
+
+        value = (
+            '<span class="indicator-value market-zero">'
+            f'⚪({count})'
+            '</span>'
+        )
+
+    return (
+        '<div class="indicator-line">'
+        f'<span class="indicator-label">'
+        f'{timeframe}'
+        '</span>'
+        f'{value}'
+        '</div>'
+    )
+
+
+# =========================================================
 # RSI HTML
 #
 # 메인 RSI
@@ -3706,6 +3775,51 @@ def rsi_reference_html(
         '<span class="rsi-reference">'
         f'{value:.1f}(0)'
         '</span>'
+    )
+
+
+# =========================================================
+# RSI 두 시간봉 HTML
+#
+# 메인 RSI
+# 참고 RSI
+# =========================================================
+
+def rsi_lines_html(
+    r,
+    r_high
+):
+
+    main = rsi_html(
+        r
+    )
+
+    reference = rsi_reference_html(
+        r_high
+    )
+
+    return (
+
+        '<div class="indicator-line">'
+
+        '<span class="indicator-label">'
+        f'{format_timeframe(RSI_TIMEFRAME)}'
+        '</span>'
+
+        f'{main}'
+
+        '</div>'
+
+        '<div class="indicator-line">'
+
+        '<span class="indicator-label">'
+        f'{format_timeframe(RSI_HIGH_TIMEFRAME)}'
+        '</span>'
+
+        f'{reference}'
+
+        '</div>'
+
     )
 
 
