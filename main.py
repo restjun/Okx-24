@@ -53,9 +53,6 @@ KST = ZoneInfo("Asia/Seoul")
 
 # =========================================================
 # 시간봉 설정
-#
-# 240 = 4시간
-# 60  = 1시간
 # =========================================================
 
 EMA_TIMEFRAME = 240
@@ -64,10 +61,6 @@ EMA_HIGH_TIMEFRAME = 60
 
 # =========================================================
 # 이평 시간봉 필터
-#
-# 현재:
-# 4시간봉 사용
-# 1시간봉 미사용
 # =========================================================
 
 USE_EMA_TIMEFRAME = "Y"
@@ -95,7 +88,7 @@ EMA1_MAX_COUNT = 200
 # =========================================================
 # RSI
 #
-# EMA_TIMEFRAME = 240 이므로
+# EMA_TIMEFRAME = 240
 # RSI14도 4시간봉 기준
 # =========================================================
 
@@ -208,11 +201,8 @@ def get_okx_bar_minutes(bar):
 # =========================================================
 # 현재 캔들 시작 시간
 #
-# ★ 수정
+# ★ 4시간봉 KST 기준
 #
-# 4시간봉:
-#
-# KST
 # 01:00
 # 05:00
 # 09:00
@@ -220,9 +210,7 @@ def get_okx_bar_minutes(bar):
 # 17:00
 # 21:00
 #
-# 를 캔들 시작으로 사용
-#
-# 따라서 마감:
+# 마감:
 #
 # 05:00
 # 09:00
@@ -231,7 +219,7 @@ def get_okx_bar_minutes(bar):
 # 21:00
 # 01:00
 #
-# 1시간봉 및 기타 시간봉은 기존 방식 유지
+# 1시간봉 및 기타 시간봉은 기존 방식
 # =========================================================
 
 def get_current_candle_start(minutes):
@@ -242,7 +230,6 @@ def get_current_candle_start(minutes):
 
     # =====================================================
     # 4시간봉 KST 기준
-    # 01 / 05 / 09 / 13 / 17 / 21
     # =====================================================
 
     if minutes == 240:
@@ -254,8 +241,6 @@ def get_current_candle_start(minutes):
             microsecond=0
         )
 
-        # 현재 시간이 01:00 이전이면
-        # 전날 01:00을 기준으로 계산
         if now < anchor:
 
             anchor -= pd.Timedelta(
@@ -285,8 +270,7 @@ def get_current_candle_start(minutes):
         )
 
     # =====================================================
-    # 1시간봉 및 기타 시간봉
-    # 기존 방식 유지
+    # 기타 시간봉
     # =====================================================
 
     total = (
@@ -699,10 +683,8 @@ def get_upbit_candle(
 
         if not include_current:
 
-            current = (
-                get_current_candle_start(
-                    unit
-                )
+            current = get_current_candle_start(
+                unit
             )
 
             df = df[
@@ -817,10 +799,8 @@ def get_upbit_current_rsi_data(
 
     try:
 
-        start = (
-            get_current_candle_start(
-                EMA_TIMEFRAME
-            )
+        start = get_current_candle_start(
+            EMA_TIMEFRAME
         )
 
         price = float(
@@ -979,18 +959,14 @@ def get_okx_ohlcv(
 
         if not include_current:
 
-            minutes = (
-                get_okx_bar_minutes(
-                    bar
-                )
+            minutes = get_okx_bar_minutes(
+                bar
             )
 
             if minutes:
 
-                current = (
-                    get_current_candle_start(
-                        minutes
-                    )
+                current = get_current_candle_start(
+                    minutes
                 )
 
                 df = df[
@@ -1276,10 +1252,8 @@ def get_okx_current_1h(
 
     try:
 
-        start = (
-            get_current_candle_start(
-                60
-            )
+        start = get_current_candle_start(
+            60
         )
 
         price = float(
@@ -1770,9 +1744,9 @@ def rsi_count(
 #
 # 현재 진행봉 = ⓪
 # 확정 돌파봉 = ①
-# 다음 봉 = 2번째 상태
+# 다음 단계 = 내부적으로 2
 #
-# ★ 표시 숫자는 ①까지만 표시
+# ★ 화면에는 ②를 표시하지 않음
 # =========================================================
 
 def rsi_cross_state(
@@ -1876,10 +1850,10 @@ def rsi_cross_state(
                     }
 
         # =================================================
-        # 그 이후 상태
+        # 다음 단계
         #
-        # 내부적으로는 2를 유지하지만
-        # 화면에서는 숫자를 표시하지 않음
+        # 내부 count = 2
+        # 화면에는 ②를 표시하지 않음
         # =================================================
 
         if len(confirmed) >= 3:
@@ -1925,11 +1899,9 @@ def rsi_cross_state(
 # =========================================================
 # 카운트 아이콘
 #
-# ★ 수정
-#
 # 0 = ⓪
 # 1 = ①
-# 2 이상 = 표시 안 함
+# 2 이상 = 없음
 # =========================================================
 
 def count_icon(count):
@@ -1942,15 +1914,13 @@ def count_icon(count):
 
         return ""
 
-    if count <= 0:
+    if count == 0:
 
         return "⓪"
 
     if count == 1:
 
         return "①"
-
-    # 2 이상은 숫자를 표시하지 않음
 
     return ""
 
@@ -3658,7 +3628,7 @@ def get_market_row(coin):
 
 
 # =========================================================
-# BTC 시황
+# BTC 시황 HTML
 # =========================================================
 
 def market_summary_html():
@@ -3677,7 +3647,8 @@ def market_summary_html():
                 </span>
 
                 <span class="market-title-sub">
-                    {format_timeframe(EMA_TIMEFRAME)} EMA 배열 + RSI14 기준
+                    {format_timeframe(EMA_TIMEFRAME)}
+                    EMA 배열 + RSI14 기준
                 </span>
 
             </div>
@@ -3758,7 +3729,8 @@ def market_summary_html():
             </span>
 
             <span class="market-title-sub">
-                {format_timeframe(EMA_TIMEFRAME)} EMA 배열 + RSI14 기준
+                {format_timeframe(EMA_TIMEFRAME)}
+                EMA 배열 + RSI14 기준
             </span>
 
         </div>
@@ -3849,6 +3821,23 @@ def market_summary_html():
 
 # =========================================================
 # RSI HTML
+#
+# ★ 최종 수정
+#
+# 현재 진행봉:
+#   롱 = 🚀⓪
+#   숏 = 🔻⓪
+#
+# 확정 돌파봉:
+#   롱 = 🚀①
+#   숏 = 🔻①
+#
+# 다음 단계:
+#   롱 = ☀️
+#   숏 = 🌧️
+#
+# ★ ② 없음
+# ★ 다음 단계에서 🚀 / 🔻 없음
 # =========================================================
 
 def rsi_html(r):
@@ -3892,7 +3881,7 @@ def rsi_html(r):
         )
 
     # =====================================================
-    # 롱 돌파
+    # 롱 돌파 현재봉
     # =====================================================
 
     state = r.get(
@@ -3900,29 +3889,52 @@ def rsi_html(r):
         "none"
     )
 
-    if state != "none":
+    if state == "current":
 
-        count = {
-            "current": 0,
-            "confirmed": 1,
-            "next": 2
-        }.get(
-            state,
-            0
-        )
-
-        return f"""
+        return """
         <div class="rsi-cell">
 
             <span class="rsi-positive">
-                🚀{count_icon(count)}
+                🚀⓪
             </span>
 
         </div>
         """
 
     # =====================================================
-    # 숏 돌파
+    # 롱 돌파 확정봉
+    # =====================================================
+
+    if state == "confirmed":
+
+        return """
+        <div class="rsi-cell">
+
+            <span class="rsi-positive">
+                🚀①
+            </span>
+
+        </div>
+        """
+
+    # =====================================================
+    # 롱 다음 단계
+    # =====================================================
+
+    if state == "next":
+
+        return """
+        <div class="rsi-cell">
+
+            <span class="rsi-positive">
+                ☀️
+            </span>
+
+        </div>
+        """
+
+    # =====================================================
+    # 숏 돌파 현재봉
     # =====================================================
 
     state = r.get(
@@ -3930,22 +3942,45 @@ def rsi_html(r):
         "none"
     )
 
-    if state != "none":
+    if state == "current":
 
-        count = {
-            "current": 0,
-            "confirmed": 1,
-            "next": 2
-        }.get(
-            state,
-            0
-        )
-
-        return f"""
+        return """
         <div class="rsi-cell">
 
             <span class="rsi-negative">
-                🔻{count_icon(count)}
+                🔻⓪
+            </span>
+
+        </div>
+        """
+
+    # =====================================================
+    # 숏 돌파 확정봉
+    # =====================================================
+
+    if state == "confirmed":
+
+        return """
+        <div class="rsi-cell">
+
+            <span class="rsi-negative">
+                🔻①
+            </span>
+
+        </div>
+        """
+
+    # =====================================================
+    # 숏 다음 단계
+    # =====================================================
+
+    if state == "next":
+
+        return """
+        <div class="rsi-cell">
+
+            <span class="rsi-negative">
+                🌧️
             </span>
 
         </div>
@@ -4010,6 +4045,8 @@ def rsi_html(r):
 
 # =========================================================
 # 신호 HTML
+#
+# ★ 최종 수정
 # =========================================================
 
 def signal_html(row):
@@ -4020,7 +4057,7 @@ def signal_html(row):
     )
 
     # =====================================================
-    # 롱 RSI 돌파
+    # 롱 현재 진행봉
     # =====================================================
 
     state = r.get(
@@ -4028,16 +4065,7 @@ def signal_html(row):
         "none"
     )
 
-    if state != "none":
-
-        count = {
-            "current": 0,
-            "confirmed": 1,
-            "next": 2
-        }.get(
-            state,
-            0
-        )
+    if state == "current":
 
         if row.get(
             "breakout_qualified",
@@ -4047,21 +4075,62 @@ def signal_html(row):
             return (
                 '<span '
                 'class="signal-icon long-breakout" '
-                'title="롱 돌파 / EMA 정배열 / RSI70">'
-                f'🚀{count_icon(count)}'
+                'title="롱 RSI70 현재 진행 돌파 / EMA 정배열">'
+                '🚀⓪'
                 '</span>'
             )
 
         return (
             '<span '
             'class="signal-icon rsi-warning-qualified" '
-            'title="RSI70 돌파 경고 / EMA 조건 미충족">'
-            f'⚠️{count_icon(count)}'
+            'title="RSI70 현재 진행 돌파 / EMA 조건 미충족">'
+            '⚠️⓪'
             '</span>'
         )
 
     # =====================================================
-    # 숏 RSI 돌파
+    # 롱 확정 돌파봉
+    # =====================================================
+
+    if state == "confirmed":
+
+        if row.get(
+            "breakout_qualified",
+            False
+        ):
+
+            return (
+                '<span '
+                'class="signal-icon long-breakout" '
+                'title="롱 RSI70 돌파 확정 / EMA 정배열">'
+                '🚀①'
+                '</span>'
+            )
+
+        return (
+            '<span '
+            'class="signal-icon rsi-warning-qualified" '
+            'title="RSI70 돌파 확정 / EMA 조건 미충족">'
+            '⚠️①'
+            '</span>'
+        )
+
+    # =====================================================
+    # 롱 다음 단계
+    # =====================================================
+
+    if state == "next":
+
+        return (
+            '<span '
+            'class="signal-icon long-progress" '
+            'title="롱 다음 단계 / RSI70 돌파 후">'
+            '☀️'
+            '</span>'
+        )
+
+    # =====================================================
+    # 숏 현재 진행봉
     # =====================================================
 
     state = r.get(
@@ -4069,16 +4138,7 @@ def signal_html(row):
         "none"
     )
 
-    if state != "none":
-
-        count = {
-            "current": 0,
-            "confirmed": 1,
-            "next": 2
-        }.get(
-            state,
-            0
-        )
+    if state == "current":
 
         if row.get(
             "short_breakout_qualified",
@@ -4088,21 +4148,62 @@ def signal_html(row):
             return (
                 '<span '
                 'class="signal-icon short-breakout" '
-                'title="숏 경고 / EMA 역배열 / RSI30">'
-                f'🔻{count_icon(count)}'
+                'title="숏 RSI30 현재 진행 / EMA 역배열">'
+                '🔻⓪'
                 '</span>'
             )
 
         return (
             '<span '
             'class="signal-icon rsi-warning-qualified" '
-            'title="RSI30 하향 돌파 경고 / EMA 조건 미충족">'
-            f'⚠️{count_icon(count)}'
+            'title="RSI30 하향 돌파 현재 진행 / EMA 조건 미충족">'
+            '⚠️⓪'
             '</span>'
         )
 
     # =====================================================
-    # 롱 진행
+    # 숏 확정 돌파봉
+    # =====================================================
+
+    if state == "confirmed":
+
+        if row.get(
+            "short_breakout_qualified",
+            False
+        ):
+
+            return (
+                '<span '
+                'class="signal-icon short-breakout" '
+                'title="숏 RSI30 돌파 확정 / EMA 역배열">'
+                '🔻①'
+                '</span>'
+            )
+
+        return (
+            '<span '
+            'class="signal-icon rsi-warning-qualified" '
+            'title="RSI30 하향 돌파 확정 / EMA 조건 미충족">'
+            '⚠️①'
+            '</span>'
+        )
+
+    # =====================================================
+    # 숏 다음 단계
+    # =====================================================
+
+    if state == "next":
+
+        return (
+            '<span '
+            'class="signal-icon short-progress" '
+            'title="숏 다음 단계 / RSI30 돌파 후">'
+            '🌧️'
+            '</span>'
+        )
+
+    # =====================================================
+    # 일반 롱 진행
     # =====================================================
 
     if row.get(
@@ -4119,7 +4220,7 @@ def signal_html(row):
         )
 
     # =====================================================
-    # 숏 진행
+    # 일반 숏 진행
     # =====================================================
 
     if row.get(
@@ -5604,27 +5705,35 @@ def startup():
     )
 
     # =====================================================
-    # ★ 숫자 표시 규칙 수정
+    # ★ RSI 표시 규칙
     # =====================================================
 
     log.info(
-        "현재 진행봉 RSI 돌파: ⓪"
+        "현재 진행봉 → 🚀⓪ / 🔻⓪"
     )
 
     log.info(
-        "확정 돌파봉: ①"
+        "확정 돌파봉 → 🚀① / 🔻①"
     )
 
     log.info(
-        "2회 이상: 숫자 표시 안 함"
+        "다음 단계 → ☀️ / 🌧️"
     )
 
     log.info(
-        "EMA 조건 만족 RSI70 돌파: 🚀"
+        "② 숫자 표시 안 함"
     )
 
     log.info(
-        "EMA 조건 불충족 RSI70 돌파: ⚠️"
+        "다음 단계에서는 🚀 / 🔻 표시 안 함"
+    )
+
+    log.info(
+        "EMA 조건 만족 RSI70 돌파 → 🚀"
+    )
+
+    log.info(
+        "EMA 조건 불충족 RSI70 돌파 → ⚠️"
     )
 
     log.info(
@@ -5675,11 +5784,12 @@ def startup():
     )
 
     log.info(
-        "🚀 RSI 롱 돌파 / "
-        "⚠️ RSI 돌파 경고 / "
-        "🔻 RSI 숏 경고 / "
-        "☀️ RSI70+ 롱 진행 / "
-        "🌧️ RSI30- 숏 경고"
+        "🚀⓪ 현재 롱 돌파 / "
+        "🚀① 확정 롱 돌파 / "
+        "☀️ 다음 롱 단계 / "
+        "🔻⓪ 현재 숏 돌파 / "
+        "🔻① 확정 숏 돌파 / "
+        "🌧️ 다음 숏 단계"
     )
 
     log.info(
