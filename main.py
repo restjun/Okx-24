@@ -102,9 +102,9 @@ USE_EMA_HIGH_TIMEFRAME = "Y"
 # 자유롭게 수정 가능
 # =========================================================
 
-RSI_TIMEFRAME = 240
+RSI_TIMEFRAME = 1440
 
-RSI_HIGH_TIMEFRAME = 1440
+RSI_HIGH_TIMEFRAME = 240
 
 
 # =========================================================
