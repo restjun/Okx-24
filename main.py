@@ -75,9 +75,9 @@ KST = ZoneInfo("Asia/Seoul")
 # EMA 시간봉
 # =========================================================
 
-EMA_TIMEFRAME = 240
+EMA_TIMEFRAME = 1440
 
-EMA_HIGH_TIMEFRAME = 60
+EMA_HIGH_TIMEFRAME = 240
 
 USE_EMA_TIMEFRAME = "Y"
 
