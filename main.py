@@ -18,10 +18,7 @@ from zoneinfo import ZoneInfo
 # 기본 설정
 # =========================================================
 
-warnings.filterwarnings(
-    "ignore",
-    category=FutureWarning
-)
+warnings.filterwarnings("ignore", category=FutureWarning)
 
 app = FastAPI()
 
@@ -34,27 +31,18 @@ log = logging.getLogger("trading")
 
 
 # =========================================================
-# 기본 설정
+# 설정
 # =========================================================
 
 VOLUME_HOURS = 24
-TOP_N = 30
+TOP_N = 50
 UPDATE_MINUTES = 1
+
 HISTORY_CHUNK = 200
 MAX_HISTORY_CHUNKS = 10
 
-
-# =========================================================
-# 거래소
-# =========================================================
-
 USE_UPBIT = "Y"
 USE_OKX = "N"
-
-
-# =========================================================
-# API
-# =========================================================
 
 REQUEST_INTERVAL = 0.08
 RATE_LIMIT_WAIT = 3
@@ -64,42 +52,36 @@ KST = ZoneInfo("Asia/Seoul")
 
 
 # =========================================================
-# EMA 시간봉
+# 시간봉 설정
 # =========================================================
 
 EMA_TIMEFRAME = 60
 EMA_HIGH_TIMEFRAME = 240
-EMA_DAILY_TIMEFRAME = 1440
+
+
+# =========================================================
+# 이평 시간봉 필터
+# =========================================================
 
 USE_EMA_TIMEFRAME = "Y"
 USE_EMA_HIGH_TIMEFRAME = "Y"
-USE_EMA_DAILY_TIMEFRAME = "N"
 
 
 # =========================================================
-# ROC 시간봉
-# =========================================================
-
-ROC_TIMEFRAME = 60
-ROC_HIGH_TIMEFRAME = 240
-ROC_DAILY_TIMEFRAME = 1440
-
-# ROC 필터 적용 여부
-# Y = 실제 필터
-# N = 참고용
-USE_ROC_TIMEFRAME = "Y"
-USE_ROC_HIGH_TIMEFRAME = "Y"
-USE_ROC_DAILY_TIMEFRAME = "N"
-
-
-# =========================================================
-# EMA 기간
+# EMA 설정
+#
+# 정배열:
+# EMA10 > EMA30 > EMA60 > EMA120
+#
+# 역배열:
+# EMA10 < EMA30 < EMA60 < EMA120
 # =========================================================
 
 EMA1_FASTEST = 10
 EMA1_FAST = 30
 EMA1_MID = 60
 EMA1_SLOW = 120
+
 EMA1_MAX_COUNT = 200
 
 
@@ -109,39 +91,23 @@ EMA1_MAX_COUNT = 200
 
 ROC_PERIOD = 10
 
-# ROC 0선
-ROC_LONG_LEVEL = 0
-ROC_SHORT_LEVEL = 0
+BREAKOUT_MAX_COUNT = 2
+
+ROC_PROGRESS_MIN_COUNT = 3
+
+
+SUPPORTED_UPBIT_TIMEFRAMES = {
+    5, 15, 30, 60, 240
+}
+
+SUPPORTED_OKX_TIMEFRAMES = {
+    5, 15, 30, 60, 120,
+    240, 360, 480, 720, 1440
+}
 
 
 # =========================================================
-# ROC 이평선 기간
-#
-# ROC10 자체에 EMA를 적용
-#
-# ROC EMA 10
-# ROC EMA 30
-# ROC EMA 60
-# ROC EMA 120
-# =========================================================
-
-ROC_MA_FASTEST = 10
-ROC_MA_FAST = 30
-ROC_MA_MID = 60
-ROC_MA_SLOW = 120
-
-ROC_MA_MAX_COUNT = 200
-
-
-# =========================================================
-# ROC 진행 시작
-# =========================================================
-
-ROC_PROGRESS_START_COUNT = 2
-
-
-# =========================================================
-# 전역 데이터
+# 전역 변수
 # =========================================================
 
 latest_upbit_data = []
@@ -154,28 +120,6 @@ latest_okx_update_time = "-"
 
 latest_upbit_markets = []
 
-
-# =========================================================
-# 시장 시황 데이터
-# =========================================================
-
-latest_market_source = "-"
-latest_market_data = {}
-
-
-# =========================================================
-# OKX 캐시
-# =========================================================
-
-okx_ticker_cache = {}
-okx_1h_cache = {}
-okx_1h_cache_time = "-"
-
-
-# =========================================================
-# 락
-# =========================================================
-
 request_lock = threading.Lock()
 update_lock = threading.Lock()
 
@@ -183,14 +127,22 @@ last_request_time = 0
 
 
 # =========================================================
-# 시간
+# OKX 캐시
+# =========================================================
+
+okx_ticker_cache = {}
+
+okx_1h_cache = {}
+okx_1h_cache_time = "-"
+
+
+# =========================================================
+# 공통
 # =========================================================
 
 def kst():
 
-    return datetime.now(
-        KST
-    ).strftime(
+    return datetime.now(KST).strftime(
         "%Y-%m-%d %H:%M:%S"
     )
 
@@ -208,184 +160,9 @@ def format_timeframe(minutes):
     return f"{minutes}M"
 
 
-# =========================================================
-# EMA 시간봉 표시
-# =========================================================
-
-def ema_timeframe_label(
-    minutes,
-    use_flag
-):
-
-    label = format_timeframe(minutes)
-
-    if use_flag == "Y":
-        return f"{label}"
-
-    return f"{label} 참고"
-
-
-# =========================================================
-# EMA 필터 설정 표시
-# =========================================================
-
-def get_ema_filter_labels():
-
-    result = []
-
-    settings = [
-        (
-            EMA_TIMEFRAME,
-            USE_EMA_TIMEFRAME
-        ),
-        (
-            EMA_HIGH_TIMEFRAME,
-            USE_EMA_HIGH_TIMEFRAME
-        ),
-        (
-            EMA_DAILY_TIMEFRAME,
-            USE_EMA_DAILY_TIMEFRAME
-        )
-    ]
-
-    for timeframe, flag in settings:
-
-        label = format_timeframe(timeframe)
-
-        if flag == "Y":
-
-            result.append(
-                f"{label} 적용"
-            )
-
-        else:
-
-            result.append(
-                f"{label} 참고"
-            )
-
-    return " / ".join(result)
-
-
-def get_ema_filter_timeframes():
-
-    result = []
-
-    settings = [
-        (
-            EMA_TIMEFRAME,
-            USE_EMA_TIMEFRAME
-        ),
-        (
-            EMA_HIGH_TIMEFRAME,
-            USE_EMA_HIGH_TIMEFRAME
-        ),
-        (
-            EMA_DAILY_TIMEFRAME,
-            USE_EMA_DAILY_TIMEFRAME
-        )
-    ]
-
-    for timeframe, flag in settings:
-
-        if flag == "Y":
-
-            result.append(
-                format_timeframe(timeframe)
-            )
-
-    if not result:
-
-        return "없음"
-
-    return " / ".join(result)
-
-
-# =========================================================
-# ROC 필터 설정 표시
-# =========================================================
-
-def get_roc_filter_labels():
-
-    result = []
-
-    settings = [
-        (
-            ROC_TIMEFRAME,
-            USE_ROC_TIMEFRAME
-        ),
-        (
-            ROC_HIGH_TIMEFRAME,
-            USE_ROC_HIGH_TIMEFRAME
-        ),
-        (
-            ROC_DAILY_TIMEFRAME,
-            USE_ROC_DAILY_TIMEFRAME
-        )
-    ]
-
-    for timeframe, flag in settings:
-
-        label = format_timeframe(timeframe)
-
-        if flag == "Y":
-
-            result.append(
-                f"{label} 적용"
-            )
-
-        else:
-
-            result.append(
-                f"{label} 참고"
-            )
-
-    return " / ".join(result)
-
-
-def get_roc_filter_timeframes():
-
-    result = []
-
-    settings = [
-        (
-            ROC_TIMEFRAME,
-            USE_ROC_TIMEFRAME
-        ),
-        (
-            ROC_HIGH_TIMEFRAME,
-            USE_ROC_HIGH_TIMEFRAME
-        ),
-        (
-            ROC_DAILY_TIMEFRAME,
-            USE_ROC_DAILY_TIMEFRAME
-        )
-    ]
-
-    for timeframe, flag in settings:
-
-        if flag == "Y":
-
-            result.append(
-                format_timeframe(timeframe)
-            )
-
-    if not result:
-
-        return "없음"
-
-    return " / ".join(result)
-
-
-# =========================================================
-# OKX 시간봉
-# =========================================================
-
 def get_okx_bar(minutes):
 
     return {
-        1: "1m",
-        3: "3m",
         5: "5m",
         15: "15m",
         30: "30m",
@@ -396,9 +173,7 @@ def get_okx_bar(minutes):
         480: "8H",
         720: "12H",
         1440: "1D"
-    }.get(
-        int(minutes)
-    )
+    }.get(int(minutes))
 
 
 def get_okx_bar_minutes(bar):
@@ -416,13 +191,11 @@ def get_okx_bar_minutes(bar):
         "8H": 480,
         "12H": 720,
         "1D": 1440
-    }.get(
-        str(bar)
-    )
+    }.get(str(bar))
 
 
 # =========================================================
-# 현재 캔들 시작
+# 현재 캔들 시작 시간
 # =========================================================
 
 def get_current_candle_start(minutes):
@@ -430,62 +203,6 @@ def get_current_candle_start(minutes):
     minutes = int(minutes)
 
     now = datetime.now(KST)
-
-    if minutes == 1440:
-
-        anchor = now.replace(
-            hour=9,
-            minute=0,
-            second=0,
-            microsecond=0
-        )
-
-        if now < anchor:
-
-            anchor -= pd.Timedelta(
-                days=1
-            )
-
-        return anchor.replace(
-            tzinfo=None
-        )
-
-    if minutes == 240:
-
-        anchor = now.replace(
-            hour=1,
-            minute=0,
-            second=0,
-            microsecond=0
-        )
-
-        if now < anchor:
-
-            anchor -= pd.Timedelta(
-                days=1
-            )
-
-        elapsed_minutes = int(
-            (
-                now - anchor
-            ).total_seconds()
-            // 60
-        )
-
-        block = (
-            elapsed_minutes // 240
-        ) * 240
-
-        current = (
-            anchor
-            + pd.Timedelta(
-                minutes=block
-            )
-        )
-
-        return current.replace(
-            tzinfo=None
-        )
 
     total = (
         now.hour * 60
@@ -523,64 +240,71 @@ def get_current_candle_start(minutes):
 # 시간봉 검증
 # =========================================================
 
-SUPPORTED_UPBIT_TIMEFRAMES = {
-    1,
-    3,
-    5,
-    15,
-    30,
-    60,
-    240,
-    1440
-}
-
-SUPPORTED_OKX_TIMEFRAMES = {
-    1,
-    3,
-    5,
-    15,
-    30,
-    60,
-    120,
-    240,
-    360,
-    480,
-    720,
-    1440
-}
-
-
 def validate_timeframe():
 
-    timeframe_list = [
+    global EMA_TIMEFRAME
+    global EMA_HIGH_TIMEFRAME
 
-        ("EMA_TIMEFRAME", EMA_TIMEFRAME),
-        ("EMA_HIGH_TIMEFRAME", EMA_HIGH_TIMEFRAME),
-        ("EMA_DAILY_TIMEFRAME", EMA_DAILY_TIMEFRAME),
+    try:
 
-        ("ROC_TIMEFRAME", ROC_TIMEFRAME),
-        ("ROC_HIGH_TIMEFRAME", ROC_HIGH_TIMEFRAME),
-        ("ROC_DAILY_TIMEFRAME", ROC_DAILY_TIMEFRAME)
+        EMA_TIMEFRAME = int(
+            EMA_TIMEFRAME
+        )
 
-    ]
+        EMA_HIGH_TIMEFRAME = int(
+            EMA_HIGH_TIMEFRAME
+        )
 
-    for name, value in timeframe_list:
+    except Exception:
 
-        if value not in SUPPORTED_UPBIT_TIMEFRAMES:
+        raise ValueError(
+            "EMA 시간봉은 숫자여야 합니다."
+        )
 
-            raise ValueError(
-                f"{name} 오류: {value}"
-            )
+    if EMA_TIMEFRAME not in SUPPORTED_UPBIT_TIMEFRAMES:
 
-        if get_okx_bar(value) is None:
+        raise ValueError(
+            f"EMA_TIMEFRAME 오류: {EMA_TIMEFRAME}\n"
+            "Upbit 지원값: 5, 15, 30, 60, 240"
+        )
 
-            raise ValueError(
-                f"OKX {name} 오류: {value}"
-            )
+    if EMA_HIGH_TIMEFRAME not in SUPPORTED_UPBIT_TIMEFRAMES:
+
+        raise ValueError(
+            f"EMA_HIGH_TIMEFRAME 오류: "
+            f"{EMA_HIGH_TIMEFRAME}\n"
+            "Upbit 지원값: 5, 15, 30, 60, 240"
+        )
+
+    if get_okx_bar(EMA_TIMEFRAME) is None:
+
+        raise ValueError(
+            f"OKX에서 지원하지 않는 시간봉: "
+            f"{EMA_TIMEFRAME}"
+        )
+
+    if get_okx_bar(EMA_HIGH_TIMEFRAME) is None:
+
+        raise ValueError(
+            f"OKX에서 지원하지 않는 HIGH 시간봉: "
+            f"{EMA_HIGH_TIMEFRAME}"
+        )
+
+    if USE_EMA_TIMEFRAME not in ("Y", "N"):
+
+        raise ValueError(
+            "USE_EMA_TIMEFRAME은 Y 또는 N만 가능합니다."
+        )
+
+    if USE_EMA_HIGH_TIMEFRAME not in ("Y", "N"):
+
+        raise ValueError(
+            "USE_EMA_HIGH_TIMEFRAME은 Y 또는 N만 가능합니다."
+        )
 
 
 # =========================================================
-# API 요청
+# API 요청 제어
 # =========================================================
 
 def wait_request():
@@ -605,11 +329,20 @@ def wait_request():
         )
 
 
-def retry(
-    func,
-    *args,
-    **kwargs
-):
+def retry(func, *args, **kwargs):
+
+    url = (
+        args[0]
+        if args
+        and isinstance(
+            args[0],
+            str
+        )
+        else kwargs.get(
+            "url",
+            ""
+        )
+    )
 
     for n in range(MAX_RETRIES):
 
@@ -617,30 +350,31 @@ def retry(
 
             wait_request()
 
-            response = func(
+            r = func(
                 *args,
                 **kwargs
             )
 
             if not hasattr(
-                response,
+                r,
                 "status_code"
             ):
 
-                return response
+                return r
 
-            if response.status_code == 200:
+            if r.status_code == 200:
 
-                return response
+                return r
 
-            if response.status_code == 429:
+            if r.status_code == 429:
 
                 wait = min(
-                    RATE_LIMIT_WAIT * 2 ** n,
+                    RATE_LIMIT_WAIT
+                    * 2 ** n,
                     60
                 )
 
-            elif response.status_code >= 500:
+            elif r.status_code >= 500:
 
                 wait = min(
                     2 * 2 ** n,
@@ -649,14 +383,24 @@ def retry(
 
             else:
 
-                return response
+                log.warning(
+                    f"[HTTP {r.status_code}] "
+                    f"{url}"
+                )
+
+                return r
+
+            log.warning(
+                f"[API 재시도] "
+                f"{url} {wait}초"
+            )
 
             time.sleep(wait)
 
         except Exception as e:
 
             log.error(
-                f"API 오류: {e}"
+                f"[API 오류] {url}: {e}"
             )
 
             if n < MAX_RETRIES - 1:
@@ -668,18 +412,22 @@ def retry(
                     )
                 )
 
+    log.error(
+        f"[API 최종 실패] {url}"
+    )
+
     return None
 
 
 # =========================================================
-# UPBIT 마켓
+# Upbit
 # =========================================================
 
 def get_upbit_markets():
 
     global latest_upbit_markets
 
-    response = retry(
+    r = retry(
         requests.get,
         "https://api.upbit.com/v1/ticker/all",
         params={
@@ -688,31 +436,34 @@ def get_upbit_markets():
         timeout=15
     )
 
-    if response is None:
+    if r is None:
         return []
 
     try:
 
         result = []
 
-        for item in response.json():
+        for x in r.json():
 
-            market = item.get(
+            market = x.get(
                 "market",
                 ""
             )
 
-            if not market.startswith("KRW-"):
+            if not market.startswith(
+                "KRW-"
+            ):
+
                 continue
 
             try:
 
                 volume = float(
-                    item["acc_trade_price_24h"]
+                    x["acc_trade_price_24h"]
                 )
 
                 price = float(
-                    item["trade_price"]
+                    x["trade_price"]
                 )
 
             except Exception:
@@ -722,11 +473,9 @@ def get_upbit_markets():
             if volume > 0 and price > 0:
 
                 result.append({
-
                     "market": market,
                     "volume_24h": volume,
                     "current_price": price
-
                 })
 
         latest_upbit_markets = [
@@ -739,44 +488,42 @@ def get_upbit_markets():
     except Exception as e:
 
         log.error(
-            f"UPBIT 마켓 오류: {e}"
+            f"업비트 마켓 오류: {e}"
         )
 
         return []
 
 
-# =========================================================
-# USDT/KRW
-# =========================================================
-
 def get_usdt_krw():
 
-    response = retry(
+    r = retry(
         requests.get,
         "https://api.upbit.com/v1/ticker?markets=KRW-USDT",
         timeout=15
     )
 
-    if response is None:
+    if r is None:
         return None
 
     try:
 
         price = float(
-            response.json()[0]["trade_price"]
+            r.json()[0]["trade_price"]
         )
 
-        if price > 0:
-            return price
+        return (
+            price
+            if price > 0
+            else None
+        )
 
     except Exception:
-        pass
 
-    return None
+        return None
 
 
 # =========================================================
-# UPBIT 캔들
+# Upbit 캔들
 # =========================================================
 
 def get_upbit_candle(
@@ -789,54 +536,35 @@ def get_upbit_candle(
 
     unit = int(unit)
 
-    if unit == 1440:
-
-        url = (
-            "https://api.upbit.com/v1/candles/days"
-        )
-
-    else:
-
-        url = (
-            "https://api.upbit.com/v1/candles/minutes/"
-            f"{unit}"
-        )
-
-    params = {
-
-        "market": market,
-
-        "count": min(
-            max(
-                int(count),
-                1
-            ),
-            200
-        )
-
-    }
-
-    if to:
-        params["to"] = to
-
-    response = retry(
+    r = retry(
         requests.get,
-        url,
-        params=params,
+        f"https://api.upbit.com/v1/candles/minutes/{unit}",
+        params={
+            "market": market,
+            "count": min(
+                max(
+                    int(count),
+                    1
+                ),
+                200
+            ),
+            **(
+                {"to": to}
+                if to
+                else {}
+            )
+        },
         timeout=15
     )
 
-    if response is None:
+    if r is None:
         return None
 
     try:
 
-        data = response.json()
-
-        if not data:
-            return None
-
-        df = pd.DataFrame(data)
+        df = pd.DataFrame(
+            r.json()
+        )
 
         if df.empty:
             return None
@@ -881,10 +609,15 @@ def get_upbit_candle(
             ]
         )
 
+        if df.empty:
+            return None
+
         if not include_current:
 
-            current = get_current_candle_start(
-                unit
+            current = (
+                get_current_candle_start(
+                    unit
+                )
             )
 
             df = df[
@@ -897,23 +630,23 @@ def get_upbit_candle(
         return (
             df
             .sort_values("datetime")
-            .drop_duplicates("datetime")
-            .reset_index(drop=True)
+            .drop_duplicates(
+                "datetime"
+            )
+            .reset_index(
+                drop=True
+            )
         )
 
     except Exception as e:
 
         log.error(
-            f"UPBIT candle 오류 "
-            f"{market} {unit}: {e}"
+            f"업비트 {unit}분 오류 "
+            f"{market}: {e}"
         )
 
         return None
 
-
-# =========================================================
-# UPBIT HISTORY
-# =========================================================
 
 def history_upbit(
     market,
@@ -924,7 +657,9 @@ def history_upbit(
     all_df = None
     to = None
 
-    for _ in range(MAX_HISTORY_CHUNKS):
+    for _ in range(
+        MAX_HISTORY_CHUNKS
+    ):
 
         df = get_upbit_candle(
             market,
@@ -936,32 +671,39 @@ def history_upbit(
         if df is None or df.empty:
             break
 
-        if all_df is None:
-
-            all_df = df.copy()
-
-        else:
-
-            all_df = pd.concat(
+        all_df = (
+            df.copy()
+            if all_df is None
+            else pd.concat(
                 [
                     df,
                     all_df
                 ],
                 ignore_index=True
             )
+        )
 
         all_df = (
             all_df
-            .drop_duplicates("datetime")
-            .sort_values("datetime")
-            .reset_index(drop=True)
+            .drop_duplicates(
+                "datetime"
+            )
+            .sort_values(
+                "datetime"
+            )
+            .reset_index(
+                drop=True
+            )
         )
 
         if len(all_df) >= required:
+
             return all_df
 
         to = (
-            all_df.datetime.iloc[0]
+            all_df
+            .datetime
+            .iloc[0]
             .strftime(
                 "%Y-%m-%dT%H:%M:%S"
             )
@@ -970,20 +712,14 @@ def history_upbit(
     return all_df
 
 
-# =========================================================
-# UPBIT 현재 캔들
-# =========================================================
-
-def get_upbit_current_candle(
+def get_upbit_current_roc_data(
     market,
-    timeframe,
     current_price
 ):
 
     df = get_upbit_candle(
         market,
-        timeframe,
-        200,
+        EMA_TIMEFRAME,
         include_current=True
     )
 
@@ -992,11 +728,18 @@ def get_upbit_current_candle(
 
     try:
 
-        start = get_current_candle_start(
-            timeframe
+        start = (
+            get_current_candle_start(
+                EMA_TIMEFRAME
+            )
         )
 
-        price = float(current_price)
+        price = float(
+            current_price
+        )
+
+        if price <= 0:
+            return df
 
         mask = (
             df.datetime == start
@@ -1019,7 +762,9 @@ def get_upbit_current_candle(
             df = pd.concat(
                 [
                     df,
-                    pd.DataFrame([row])
+                    pd.DataFrame(
+                        [row]
+                    )
                 ],
                 ignore_index=True
             )
@@ -1027,17 +772,26 @@ def get_upbit_current_candle(
         return (
             df
             .sort_values("datetime")
-            .drop_duplicates("datetime")
-            .reset_index(drop=True)
+            .drop_duplicates(
+                "datetime"
+            )
+            .reset_index(
+                drop=True
+            )
         )
 
-    except Exception:
+    except Exception as e:
+
+        log.error(
+            f"업비트 현재 ROC 오류 "
+            f"{market}: {e}"
+        )
 
         return df
 
 
 # =========================================================
-# OKX OHLCV
+# OKX
 # =========================================================
 
 def get_okx_ohlcv(
@@ -1049,10 +803,8 @@ def get_okx_ohlcv(
 ):
 
     params = {
-
         "instId": inst,
         "bar": bar,
-
         "limit": min(
             max(
                 int(limit),
@@ -1060,25 +812,27 @@ def get_okx_ohlcv(
             ),
             200
         )
-
     }
 
     if before is not None:
-        params["before"] = str(before)
 
-    response = retry(
+        params["before"] = str(
+            before
+        )
+
+    r = retry(
         requests.get,
         "https://www.okx.com/api/v5/market/candles",
         params=params,
         timeout=15
     )
 
-    if response is None:
+    if r is None:
         return None
 
     try:
 
-        data = response.json().get(
+        data = r.json().get(
             "data",
             []
         )
@@ -1120,7 +874,8 @@ def get_okx_ohlcv(
         if not include_current:
 
             df = df[
-                df.confirm.astype(str) == "1"
+                df.confirm.astype(str)
+                == "1"
             ]
 
         df["datetime"] = (
@@ -1135,8 +890,10 @@ def get_okx_ohlcv(
 
         if not include_current:
 
-            minutes = get_okx_bar_minutes(
-                bar
+            minutes = (
+                get_okx_bar_minutes(
+                    bar
+                )
             )
 
             if minutes:
@@ -1164,16 +921,11 @@ def get_okx_ohlcv(
     except Exception as e:
 
         log.error(
-            f"OKX 오류 "
-            f"{inst} {bar}: {e}"
+            f"OKX {inst} {bar} 오류: {e}"
         )
 
         return None
 
-
-# =========================================================
-# OKX HISTORY
-# =========================================================
 
 def history_okx(
     inst,
@@ -1184,7 +936,9 @@ def history_okx(
     all_df = None
     before = None
 
-    for _ in range(MAX_HISTORY_CHUNKS):
+    for _ in range(
+        MAX_HISTORY_CHUNKS
+    ):
 
         df = get_okx_ohlcv(
             inst,
@@ -1196,19 +950,17 @@ def history_okx(
         if df is None or df.empty:
             break
 
-        if all_df is None:
-
-            all_df = df.copy()
-
-        else:
-
-            all_df = pd.concat(
+        all_df = (
+            df.copy()
+            if all_df is None
+            else pd.concat(
                 [
                     df,
                     all_df
                 ],
                 ignore_index=True
             )
+        )
 
         all_df = (
             all_df
@@ -1218,6 +970,7 @@ def history_okx(
         )
 
         if len(all_df) >= required:
+
             return all_df
 
         before = int(
@@ -1228,14 +981,14 @@ def history_okx(
 
 
 # =========================================================
-# OKX TICKER
+# OKX 전체 Ticker
 # =========================================================
 
 def get_okx_tickers():
 
     global okx_ticker_cache
 
-    response = retry(
+    r = retry(
         requests.get,
         "https://www.okx.com/api/v5/market/tickers",
         params={
@@ -1244,19 +997,21 @@ def get_okx_tickers():
         timeout=15
     )
 
-    if response is None:
+    if r is None:
         return {}
 
     try:
 
-        result = {}
-
-        for item in response.json().get(
+        data = r.json().get(
             "data",
             []
-        ):
+        )
 
-            inst = item.get(
+        result = {}
+
+        for x in data:
+
+            inst = x.get(
                 "instId",
                 ""
             )
@@ -1264,12 +1019,13 @@ def get_okx_tickers():
             if not inst.endswith(
                 "-USDT-SWAP"
             ):
+
                 continue
 
             try:
 
                 last = float(
-                    item.get(
+                    x.get(
                         "last",
                         0
                     )
@@ -1289,18 +1045,22 @@ def get_okx_tickers():
 
         return result
 
-    except Exception:
+    except Exception as e:
+
+        log.error(
+            f"OKX 전체 ticker 오류: {e}"
+        )
 
         return {}
 
 
 # =========================================================
-# OKX SYMBOL
+# OKX Symbols
 # =========================================================
 
 def get_okx_symbols():
 
-    response = retry(
+    r = retry(
         requests.get,
         "https://www.okx.com/api/v5/public/instruments",
         params={
@@ -1309,31 +1069,26 @@ def get_okx_symbols():
         timeout=15
     )
 
-    if response is None:
+    if r is None:
         return []
 
     try:
 
         return [
-
             x["instId"]
-
-            for x in response.json().get(
+            for x in r.json().get(
                 "data",
                 []
             )
-
             if x.get(
                 "instId",
                 ""
             ).endswith(
                 "-USDT-SWAP"
             )
-
             and x.get(
                 "state"
             ) == "live"
-
         ]
 
     except Exception:
@@ -1342,7 +1097,7 @@ def get_okx_symbols():
 
 
 # =========================================================
-# OKX 거래대금
+# OKX 거래대금 + 1H 캐시
 # =========================================================
 
 def get_okx_volume_cached(
@@ -1359,9 +1114,7 @@ def get_okx_volume_cached(
     if df is None or df.empty:
         return None
 
-    okx_1h_cache[
-        inst
-    ] = df.copy()
+    okx_1h_cache[inst] = df.copy()
 
     try:
 
@@ -1380,9 +1133,11 @@ def get_okx_volume_cached(
         return None
 
 
-def get_okx_cached_price(
-    inst
-):
+# =========================================================
+# OKX 현재가
+# =========================================================
+
+def get_okx_cached_price(inst):
 
     try:
 
@@ -1412,25 +1167,17 @@ def get_okx_cached_price(
 
 
 # =========================================================
-# OKX 현재 캔들
+# OKX 현재 1H 데이터
 # =========================================================
 
-def get_okx_current_candle(
+def get_okx_current_1h(
     inst,
-    timeframe,
     current_price
 ):
 
-    bar = get_okx_bar(
-        timeframe
-    )
-
-    if not bar:
-        return None
-
     df = get_okx_ohlcv(
         inst,
-        bar,
+        "1H",
         200,
         include_current=True
     )
@@ -1440,11 +1187,18 @@ def get_okx_current_candle(
 
     try:
 
-        start = get_current_candle_start(
-            timeframe
+        start = (
+            get_current_candle_start(
+                60
+            )
         )
 
-        price = float(current_price)
+        price = float(
+            current_price
+        )
+
+        if price <= 0:
+            return df
 
         mask = (
             df.datetime == start
@@ -1467,31 +1221,39 @@ def get_okx_current_candle(
             df = pd.concat(
                 [
                     df,
-                    pd.DataFrame([row])
+                    pd.DataFrame(
+                        [row]
+                    )
                 ],
                 ignore_index=True
             )
 
         return (
             df
-            .sort_values("ts")
-            .drop_duplicates("ts")
-            .reset_index(drop=True)
+            .sort_values("datetime")
+            .drop_duplicates(
+                "datetime"
+            )
+            .reset_index(
+                drop=True
+            )
         )
 
-    except Exception:
+    except Exception as e:
+
+        log.error(
+            f"OKX 현재 1H 오류 "
+            f"{inst}: {e}"
+        )
 
         return df
 
 
 # =========================================================
-# EMA 계산
+# EMA
 # =========================================================
 
-def ema(
-    df,
-    period
-):
+def ema(df, period):
 
     if (
         df is None
@@ -1516,59 +1278,7 @@ def ema(
 
 
 # =========================================================
-# EMA 실제 수치
-# =========================================================
-
-def ema_values(df):
-
-    result = {
-        "10": None,
-        "30": None,
-        "60": None,
-        "120": None
-    }
-
-    if df is None or df.empty:
-        return result
-
-    try:
-
-        periods = {
-            "10": EMA1_FASTEST,
-            "30": EMA1_FAST,
-            "60": EMA1_MID,
-            "120": EMA1_SLOW
-        }
-
-        for key, period in periods.items():
-
-            series = ema(
-                df,
-                period
-            )
-
-            if (
-                series is not None
-                and not series.empty
-            ):
-
-                value = float(
-                    series.iloc[-1]
-                )
-
-                if not pd.isna(value):
-
-                    result[key] = value
-
-        return result
-
-    except Exception:
-
-        return result
-
-
-# =========================================================
-# EMA 배열
+# EMA 정배열 / 역배열
 # =========================================================
 
 def ema_alignment_count(df):
@@ -1577,8 +1287,7 @@ def ema_alignment_count(df):
 
         return {
             "direction": "none",
-            "count": 0,
-            "values": ema_values(df)
+            "count": 0
         }
 
     try:
@@ -1605,15 +1314,28 @@ def ema_alignment_count(df):
 
         def get_dir(i):
 
-            a = float(e10.iloc[i])
-            b = float(e30.iloc[i])
-            c = float(e60.iloc[i])
-            d = float(e120.iloc[i])
+            a = float(
+                e10.iloc[i]
+            )
+
+            b = float(
+                e30.iloc[i]
+            )
+
+            c = float(
+                e60.iloc[i]
+            )
+
+            d = float(
+                e120.iloc[i]
+            )
 
             if a > b > c > d:
+
                 return "long"
 
             if a < b < c < d:
+
                 return "short"
 
             return "none"
@@ -1624,8 +1346,7 @@ def ema_alignment_count(df):
 
             return {
                 "direction": "none",
-                "count": 0,
-                "values": ema_values(df)
+                "count": 0
             }
 
         count = 0
@@ -1646,58 +1367,47 @@ def ema_alignment_count(df):
 
         return {
             "direction": current,
-            "count": count,
-            "values": ema_values(df)
+            "count": count
         }
 
-    except Exception:
+    except Exception as e:
+
+        log.error(
+            f"EMA 배열 오류: {e}"
+        )
 
         return {
             "direction": "none",
-            "count": 0,
-            "values": ema_values(df)
+            "count": 0
         }
 
-
-# =========================================================
-# EMA 표시
-# =========================================================
 
 def ema_display(
     df,
     current_price=None
 ):
 
-    x = ema_alignment_count(df)
+    x = ema_alignment_count(
+        df
+    )
 
-    direction = x["direction"]
+    d = x["direction"]
 
     icon = {
         "long": "🟢",
         "short": "🔴"
     }.get(
-        direction,
+        d,
         "⚪"
     )
 
     return {
-        "display":
-            f"{icon}({x['count']})",
-
-        "direction":
-            direction,
-
-        "count":
-            x["count"],
-
-        "values":
-            x.get(
-                "values",
-                {}
-            ),
-
-        "current_price":
-            current_price
+        "display": (
+            f"{icon}({x['count']})"
+        ),
+        "direction": d,
+        "count": x["count"],
+        "current_price": current_price
     }
 
 
@@ -1707,20 +1417,22 @@ def ema_display(
 
 def ema_filter_direction(
     e1,
-    e_high,
-    e_daily=None
+    e_high
 ):
 
     selected = []
 
     if USE_EMA_TIMEFRAME == "Y":
-        selected.append(e1)
+
+        selected.append(
+            e1
+        )
 
     if USE_EMA_HIGH_TIMEFRAME == "Y":
-        selected.append(e_high)
 
-    if USE_EMA_DAILY_TIMEFRAME == "Y":
-        selected.append(e_daily)
+        selected.append(
+            e_high
+        )
 
     if not selected:
 
@@ -1763,28 +1475,27 @@ def ema_filter_direction(
     }
 
 
-# =========================================================
-# EMA 필터 통과
-# =========================================================
-
 def ema_filter_pass(
     e1,
-    e_high,
-    e_daily=None
+    e_high
 ):
 
     selected = []
 
     if USE_EMA_TIMEFRAME == "Y":
-        selected.append(e1)
+
+        selected.append(
+            e1
+        )
 
     if USE_EMA_HIGH_TIMEFRAME == "Y":
-        selected.append(e_high)
 
-    if USE_EMA_DAILY_TIMEFRAME == "Y":
-        selected.append(e_daily)
+        selected.append(
+            e_high
+        )
 
     if not selected:
+
         return True
 
     for e in selected:
@@ -1814,13 +1525,13 @@ def ema_filter_pass(
         for e in selected
     ]
 
-    return (
-        len(set(directions)) == 1
-    )
+    return len(
+        set(directions)
+    ) == 1
 
 
 # =========================================================
-# ROC 계산
+# ROC
 # =========================================================
 
 def roc(
@@ -1843,696 +1554,212 @@ def roc(
             errors="coerce"
         )
 
-        period = int(period)
-
-        if period <= 0:
-            return None
-
-        result = (
-            (
-                close
-                / close.shift(period)
+        return (
+            close
+            / close.shift(
+                int(period)
             )
             - 1
         ) * 100
 
-        return result
+    except Exception as e:
 
-    except Exception:
+        log.error(
+            f"ROC 계산 오류: {e}"
+        )
 
         return None
 
 
 # =========================================================
-# ROC EMA 계산
-#
-# ROC 값에 EMA를 적용
-# =========================================================
-
-def roc_ema(
-    roc_series,
-    period
-):
-
-    if (
-        roc_series is None
-        or len(roc_series) == 0
-    ):
-
-        return None
-
-    try:
-
-        return (
-            pd.to_numeric(
-                roc_series,
-                errors="coerce"
-            )
-            .ewm(
-                span=int(period),
-                adjust=False,
-                min_periods=1
-            )
-            .mean()
-        )
-
-    except Exception:
-
-        return None
-
-
-# =========================================================
-# ROC 이평선 실제 수치
-# =========================================================
-
-def roc_ma_values(
-    df
-):
-
-    result = {
-        "10": None,
-        "30": None,
-        "60": None,
-        "120": None
-    }
-
-    if df is None or df.empty:
-        return result
-
-    try:
-
-        roc_series = roc(
-            df,
-            ROC_PERIOD
-        )
-
-        if roc_series is None:
-            return result
-
-        periods = {
-
-            "10":
-                ROC_MA_FASTEST,
-
-            "30":
-                ROC_MA_FAST,
-
-            "60":
-                ROC_MA_MID,
-
-            "120":
-                ROC_MA_SLOW
-
-        }
-
-        for key, period in periods.items():
-
-            series = roc_ema(
-                roc_series,
-                period
-            )
-
-            if (
-                series is not None
-                and not series.empty
-            ):
-
-                value = float(
-                    series.iloc[-1]
-                )
-
-                if not pd.isna(value):
-
-                    result[key] = value
-
-        return result
-
-    except Exception:
-
-        return result
-
-
-# =========================================================
-# ROC 이평선 배열
-#
-# ROC EMA10
-# ROC EMA30
-# ROC EMA60
-# ROC EMA120
-#
-# LONG:
-# 10 > 30 > 60 > 120
-#
-# SHORT:
-# 10 < 30 < 60 < 120
-# =========================================================
-
-def roc_alignment_count(
-    df
-):
-
-    if df is None or df.empty:
-
-        return {
-            "direction": "none",
-            "count": 0,
-            "values": roc_ma_values(df)
-        }
-
-    try:
-
-        roc_series = roc(
-            df,
-            ROC_PERIOD
-        )
-
-        if roc_series is None:
-            raise ValueError(
-                "ROC 계산 실패"
-            )
-
-        r10 = roc_ema(
-            roc_series,
-            ROC_MA_FASTEST
-        )
-
-        r30 = roc_ema(
-            roc_series,
-            ROC_MA_FAST
-        )
-
-        r60 = roc_ema(
-            roc_series,
-            ROC_MA_MID
-        )
-
-        r120 = roc_ema(
-            roc_series,
-            ROC_MA_SLOW
-        )
-
-        def get_dir(i):
-
-            a = float(r10.iloc[i])
-            b = float(r30.iloc[i])
-            c = float(r60.iloc[i])
-            d = float(r120.iloc[i])
-
-            if a > b > c > d:
-
-                return "long"
-
-            if a < b < c < d:
-
-                return "short"
-
-            return "none"
-
-        current = get_dir(-1)
-
-        if current == "none":
-
-            return {
-                "direction": "none",
-                "count": 0,
-                "values": roc_ma_values(df)
-            }
-
-        count = 0
-
-        for i in range(
-            len(df) - 1,
-            -1,
-            -1
-        ):
-
-            if get_dir(i) == current:
-
-                count += 1
-
-            else:
-
-                break
-
-        return {
-
-            "direction":
-                current,
-
-            "count":
-                count,
-
-            "values":
-                roc_ma_values(df)
-
-        }
-
-    except Exception:
-
-        return {
-
-            "direction":
-                "none",
-
-            "count":
-                0,
-
-            "values":
-                roc_ma_values(df)
-
-        }
-
-
-# =========================================================
-# ROC 필터 방향
-# =========================================================
-
-def roc_filter_direction(
-    r1,
-    r_high,
-    r_daily=None
-):
-
-    selected = []
-
-    if USE_ROC_TIMEFRAME == "Y":
-
-        selected.append(
-            r1
-        )
-
-    if USE_ROC_HIGH_TIMEFRAME == "Y":
-
-        selected.append(
-            r_high
-        )
-
-    if USE_ROC_DAILY_TIMEFRAME == "Y":
-
-        selected.append(
-            r_daily
-        )
-
-    if not selected:
-
-        return {
-            "direction": "none",
-            "valid": True
-        }
-
-    directions = [
-
-        x.get(
-            "direction",
-            "none"
-        )
-
-        for x in selected
-
-    ]
-
-    if all(
-        d == "long"
-        for d in directions
-    ):
-
-        return {
-
-            "direction":
-                "long",
-
-            "valid":
-                True
-
-        }
-
-    if all(
-        d == "short"
-        for d in directions
-    ):
-
-        return {
-
-            "direction":
-                "short",
-
-            "valid":
-                True
-
-        }
-
-    return {
-
-        "direction":
-            "none",
-
-        "valid":
-            False
-
-    }
-
-
-# =========================================================
-# ROC 필터 통과
-# =========================================================
-
-def roc_filter_pass(
-    r1,
-    r_high,
-    r_daily=None
-):
-
-    selected = []
-
-    if USE_ROC_TIMEFRAME == "Y":
-
-        selected.append(
-            r1
-        )
-
-    if USE_ROC_HIGH_TIMEFRAME == "Y":
-
-        selected.append(
-            r_high
-        )
-
-    if USE_ROC_DAILY_TIMEFRAME == "Y":
-
-        selected.append(
-            r_daily
-        )
-
-    if not selected:
-
-        return True
-
-    for r in selected:
-
-        if r.get(
-            "direction",
-            "none"
-        ) not in (
-            "long",
-            "short"
-        ):
-
-            return False
-
-        if r.get(
-            "count",
-            0
-        ) > ROC_MA_MAX_COUNT:
-
-            return False
-
-    directions = [
-
-        r.get(
-            "direction",
-            "none"
-        )
-
-        for r in selected
-
-    ]
-
-    return (
-        len(set(directions)) == 1
-    )
-
-
-# =========================================================
-# ROC 필터 종합
-# =========================================================
-
-def roc_filter_analysis(
-    r1,
-    r_high,
-    r_daily=None
-):
-
-    direction_data = (
-        roc_filter_direction(
-            r1,
-            r_high,
-            r_daily
-        )
-    )
-
-    passed = (
-        direction_data["valid"]
-        and
-        roc_filter_pass(
-            r1,
-            r_high,
-            r_daily
-        )
-    )
-
-    return {
-
-        "direction":
-            direction_data["direction"],
-
-        "valid":
-            passed
-
-    }
-
-
-# =========================================================
-# ROC 카운트
-#
-# 0선 위 연속 캔들 수
-# 0선 아래 연속 캔들 수
+# ROC 연속 카운트
 # =========================================================
 
 def roc_count(
     series,
-    level,
-    above=True
+    positive=True
 ):
 
-    if series is None:
-        return 0
+    count = 0
 
-    try:
+    for value in reversed(
+        series.tolist()
+    ):
 
-        values = list(
-            reversed(
-                series.tolist()
-            )
-        )
+        if pd.isna(value):
 
-        count = 0
+            break
 
-        for value in values:
+        if (
+            float(value) > 0
+        ) == positive:
 
-            if pd.isna(value):
-                break
+            count += 1
 
-            value = float(value)
+        else:
 
-            if above:
+            break
 
-                if value > level:
-
-                    count += 1
-
-                else:
-
-                    break
-
-            else:
-
-                if value < level:
-
-                    count += 1
-
-                else:
-
-                    break
-
-        return count
-
-    except Exception:
-
-        return 0
+    return count
 
 
 # =========================================================
-# ROC 참고 분석
+# ROC 교차
 # =========================================================
 
-def roc_reference_analysis(
-    df
+def roc_cross_state(
+    confirmed_series,
+    current_series,
+    cross_type
 ):
 
     result = {
-
-        "value":
-            None,
-
-        "previous":
-            None,
-
-        "long_count":
-            0,
-
-        "short_count":
-            0,
-
-        "direction":
-            "flat",
-
-        "change":
-            0.0,
-
-        "state":
-            "neutral",
-
-        "display":
-            "-",
-
-        "ma_direction":
-            "none",
-
-        "ma_count":
-            0,
-
-        "ma_values":
-            {}
-
+        "state": "none",
+        "count": 0
     }
-
-    if df is None or df.empty:
-        return result
 
     try:
 
-        series = roc(df)
+        if (
+            confirmed_series is None
+            or current_series is None
+        ):
 
-        if series is None or series.empty:
             return result
 
-        valid = series.dropna()
+        confirmed = [
+            float(x)
+            for x in confirmed_series.tolist()
+            if not pd.isna(x)
+        ]
 
-        if valid.empty:
+        current = [
+            float(x)
+            for x in current_series.tolist()
+            if not pd.isna(x)
+        ]
+
+        if not confirmed or not current:
+
             return result
 
-        value = float(
-            valid.iloc[-1]
-        )
+        def crossed(prev, curr):
 
-        previous = None
+            if cross_type == "long_breakout":
 
-        if len(valid) >= 2:
+                return (
+                    prev <= 0
+                    and curr > 0
+                )
 
-            previous = float(
-                valid.iloc[-2]
-            )
+            if cross_type == "short_breakout":
 
-        if previous is not None:
+                return (
+                    prev >= 0
+                    and curr < 0
+                )
 
-            change = (
-                value
-                - previous
-            )
+            return False
 
-        else:
+        if len(current) >= 2:
 
-            change = 0.0
+            prev = current[-2]
+            curr = current[-1]
 
-        if change > 0:
+            if crossed(
+                prev,
+                curr
+            ):
 
-            direction = "up"
+                return {
+                    "state": "current",
+                    "count": 0
+                }
 
-        elif change < 0:
+        if len(current) == 1:
 
-            direction = "down"
+            prev = confirmed[-1]
+            curr = current[-1]
 
-        else:
+            if crossed(
+                prev,
+                curr
+            ):
 
-            direction = "flat"
+                return {
+                    "state": "current",
+                    "count": 0
+                }
 
-        long_count = roc_count(
-            series,
-            ROC_LONG_LEVEL,
-            True
-        )
+        if len(confirmed) >= 2:
 
-        short_count = roc_count(
-            series,
-            ROC_SHORT_LEVEL,
-            False
-        )
+            prev = confirmed[-2]
+            curr = confirmed[-1]
 
-        if value > ROC_LONG_LEVEL:
+            if crossed(
+                prev,
+                curr
+            ):
 
-            state = "long"
+                return {
+                    "state": "confirmed",
+                    "count": 1
+                }
 
-        elif value < ROC_SHORT_LEVEL:
+        if len(confirmed) >= 3:
 
-            state = "short"
+            prev = confirmed[-3]
+            curr = confirmed[-2]
 
-        else:
+            if crossed(
+                prev,
+                curr
+            ):
 
-            state = "neutral"
-
-        ma = roc_alignment_count(
-            df
-        )
-
-        result.update({
-
-            "value":
-                value,
-
-            "previous":
-                previous,
-
-            "long_count":
-                long_count,
-
-            "short_count":
-                short_count,
-
-            "direction":
-                direction,
-
-            "change":
-                change,
-
-            "state":
-                state,
-
-            "display":
-                f"{value:.2f}%",
-
-            "ma_direction":
-                ma["direction"],
-
-            "ma_count":
-                ma["count"],
-
-            "ma_values":
-                ma["values"]
-
-        })
+                return {
+                    "state": "next",
+                    "count": 2
+                }
 
         return result
 
     except Exception as e:
 
         log.error(
-            f"ROC 참고 분석 오류: {e}"
+            f"ROC 교차 상태 오류: {e}"
         )
 
         return result
 
 
 # =========================================================
-# ROC 신호용 분석
+# 카운트 아이콘
+# =========================================================
+
+def count_icon(count):
+
+    try:
+
+        count = int(count)
+
+    except Exception:
+
+        return ""
+
+    if count == 0:
+        return "⓪"
+
+    if count == 1:
+        return "①"
+
+    if count == 2:
+        return "②"
+
+    return ""
+
+
+# =========================================================
+# ROC 분석
 # =========================================================
 
 def roc_analysis(
@@ -2542,45 +1769,27 @@ def roc_analysis(
 
     result = {
 
-        "roc10":
-            None,
+        "roc10": None,
+        "roc10_previous": None,
 
-        "roc10_previous":
-            None,
+        "roc10_count": 0,
+        "roc10_negative_count": 0,
 
-        "roc10_count":
-            0,
+        "roc_progress_start_time": None,
 
-        "roc10_short_count":
-            0,
+        "roc_negative_progress_start_time": None,
 
-        "long_count":
-            0,
+        "long_breakout": False,
+        "short_breakout": False,
 
-        "short_count":
-            0,
+        "long_breakout_count": 0,
+        "short_breakout_count": 0,
 
-        "state":
-            "none",
+        "long_breakout_state": "none",
+        "short_breakout_state": "none",
 
-        "direction":
-            "flat",
-
-        "change":
-            0.0,
-
-        "display":
-            "-",
-
-        "ma_direction":
-            "none",
-
-        "ma_count":
-            0,
-
-        "ma_values":
-            {}
-
+        "state": "none",
+        "display": "-"
     }
 
     if (
@@ -2594,87 +1803,118 @@ def roc_analysis(
 
     try:
 
-        confirmed_roc = roc(
+        confirmed = roc(
             df_confirmed
         )
 
-        current_roc = roc(
+        current = roc(
             df_current
         )
 
         if (
-            confirmed_roc is None
-            or current_roc is None
-        ):
-
-            return result
-
-        confirmed_valid = (
-            confirmed_roc.dropna()
-        )
-
-        current_valid = (
-            current_roc.dropna()
-        )
-
-        if (
-            confirmed_valid.empty
-            or current_valid.empty
+            confirmed is None
+            or current is None
         ):
 
             return result
 
         previous = float(
-            confirmed_valid.iloc[-1]
+            confirmed.iloc[-1]
         )
 
         current_value = float(
-            current_valid.iloc[-1]
+            current.iloc[-1]
         )
 
-        change = (
-            current_value
-            - previous
-        )
+        if (
+            pd.isna(previous)
+            or pd.isna(current_value)
+        ):
 
-        if change > 0:
+            return result
 
-            direction = "up"
-
-        elif change < 0:
-
-            direction = "down"
-
-        else:
-
-            direction = "flat"
-
-        long_count = roc_count(
-            current_roc,
-            ROC_LONG_LEVEL,
+        positive_count = roc_count(
+            current,
             True
         )
 
-        short_count = roc_count(
-            current_roc,
-            ROC_SHORT_LEVEL,
+        negative_count = roc_count(
+            current,
             False
         )
 
-        if current_value > ROC_LONG_LEVEL:
+        roc_progress_start_time = None
 
-            state = "long"
+        try:
 
-        elif current_value < ROC_SHORT_LEVEL:
+            if positive_count > 0:
 
-            state = "short"
+                start_index = (
+                    len(current)
+                    - positive_count
+                )
 
-        else:
+                if (
+                    0
+                    <= start_index
+                    < len(df_current)
+                ):
 
-            state = "neutral"
+                    roc_progress_start_time = (
+                        df_current[
+                            "datetime"
+                        ].iloc[
+                            start_index
+                        ]
+                    )
 
-        ma = roc_alignment_count(
-            df_current
+        except Exception as e:
+
+            log.error(
+                f"ROC 양수 시작시간 오류: {e}"
+            )
+
+        roc_negative_progress_start_time = None
+
+        try:
+
+            if negative_count > 0:
+
+                start_index = (
+                    len(current)
+                    - negative_count
+                )
+
+                if (
+                    0
+                    <= start_index
+                    < len(df_current)
+                ):
+
+                    roc_negative_progress_start_time = (
+                        df_current[
+                            "datetime"
+                        ].iloc[
+                            start_index
+                        ]
+                    )
+
+        except Exception as e:
+
+            log.error(
+                f"ROC 음수 시작시간 오류: {e}"
+            )
+
+        lb = roc_cross_state(
+            confirmed,
+            current,
+            "long_breakout"
+        )
+
+        sb = roc_cross_state(
+            confirmed,
+            current,
+            "short_breakout"
         )
 
         result.update({
@@ -2686,39 +1926,91 @@ def roc_analysis(
                 previous,
 
             "roc10_count":
-                long_count,
+                positive_count,
 
-            "roc10_short_count":
-                short_count,
+            "roc10_negative_count":
+                negative_count,
 
-            "long_count":
-                long_count,
+            "roc_progress_start_time":
+                roc_progress_start_time,
 
-            "short_count":
-                short_count,
+            "roc_negative_progress_start_time":
+                roc_negative_progress_start_time,
 
-            "state":
-                state,
+            "long_breakout":
+                lb["state"] != "none",
 
-            "direction":
-                direction,
+            "short_breakout":
+                sb["state"] != "none",
 
-            "change":
-                change,
+            "long_breakout_count":
+                lb["count"],
 
-            "display":
-                f"{current_value:.2f}%",
+            "short_breakout_count":
+                sb["count"],
 
-            "ma_direction":
-                ma["direction"],
+            "long_breakout_state":
+                lb["state"],
 
-            "ma_count":
-                ma["count"],
-
-            "ma_values":
-                ma["values"]
-
+            "short_breakout_state":
+                sb["state"]
         })
+
+        if lb["state"] != "none":
+
+            result.update({
+
+                "state":
+                    "long_breakout",
+
+                "display":
+                    "🚀"
+                    + count_icon(
+                        lb["count"]
+                    )
+            })
+
+        elif sb["state"] != "none":
+
+            result.update({
+
+                "state":
+                    "short_breakout",
+
+                "display":
+                    "🔻"
+                    + count_icon(
+                        sb["count"]
+                    )
+            })
+
+        elif (
+            current_value > 0
+            and positive_count >= 2
+        ):
+
+            result.update({
+
+                "state":
+                    "progress",
+
+                "display":
+                    f"진행 {positive_count}"
+            })
+
+        elif (
+            current_value < 0
+            and negative_count >= 2
+        ):
+
+            result.update({
+
+                "state":
+                    "short_progress",
+
+                "display":
+                    f"숏진행 {negative_count}"
+            })
 
         return result
 
@@ -2732,14 +2024,12 @@ def roc_analysis(
 
 
 # =========================================================
-# 일간 등락률 UPBIT
+# 등락률
 # =========================================================
 
-def daily_change_upbit(
-    market
-):
+def daily_change_upbit(market):
 
-    response = retry(
+    r = retry(
         requests.get,
         "https://api.upbit.com/v1/candles/days",
         params={
@@ -2749,12 +2039,12 @@ def daily_change_upbit(
         timeout=15
     )
 
-    if response is None:
+    if r is None:
         return None
 
     try:
 
-        data = response.json()
+        data = r.json()
 
         if len(data) < 2:
             return None
@@ -2770,18 +2060,18 @@ def daily_change_upbit(
         if previous == 0:
             return None
 
-        return (
-            current - previous
-        ) / previous * 100
+        return [
+            (
+                current - previous
+            )
+            / previous
+            * 100
+        ]
 
     except Exception:
 
         return None
 
-
-# =========================================================
-# OKX 일간 등락률
-# =========================================================
 
 def daily_changes(df):
 
@@ -2837,57 +2127,38 @@ def daily_changes(df):
         if previous == 0:
             return None
 
-        return (
-            current - previous
-        ) / previous * 100
+        return [
+            (
+                current - previous
+            )
+            / previous
+            * 100
+        ]
 
     except Exception:
 
         return None
 
-
-# =========================================================
-# 등락률
-# =========================================================
 
 def get_change_value(x):
 
-    if x is None:
-        return None
-
     try:
 
-        if isinstance(
-            x,
-            (list, tuple)
-        ):
+        if x is None:
+            return None
 
-            return float(
-                x[0]
+        return float(
+            x[0]
+            if isinstance(
+                x,
+                (list, tuple)
             )
-
-        return float(x)
+            else x
+        )
 
     except Exception:
 
         return None
-
-
-def is_positive_day(row):
-
-    if not row:
-        return False
-
-    value = get_change_value(
-        row.get(
-            "change_value"
-        )
-    )
-
-    return (
-        value is not None
-        and value > 0
-    )
 
 
 def format_change(x):
@@ -2920,10 +2191,6 @@ def format_change(x):
     )
 
 
-# =========================================================
-# 거래대금
-# =========================================================
-
 def format_volume(v):
 
     try:
@@ -2935,181 +2202,173 @@ def format_volume(v):
         return "-"
 
     if v >= 1e12:
-
         return f"{v / 1e12:.1f}조"
 
     if v >= 1e8:
-
         return f"{v / 1e8:.0f}억"
 
     if v >= 1e4:
-
         return f"{v / 1e4:.0f}만"
 
     return f"{v:,.0f}"
 
 
 # =========================================================
-# EMA + ROC 자격
-#
-# 최종 LONG:
-#
-# 1H EMA 정배열
-# 4H EMA 정배열
-# +
-# 1H ROC 이평 정배열
-# 4H ROC 이평 정배열
-# +
-1H ROC10 0선 상방
+# 분석 기본값
+# =========================================================
+
+def empty_analysis():
+
+    e = {
+        "display": "⚪(0)",
+        "direction": "none",
+        "count": 0,
+        "current_price": None
+    }
+
+    return {
+
+        "ema_1h": e.copy(),
+        "ema_high": e.copy(),
+
+        "roc": {
+
+            "roc10": None,
+            "roc10_previous": None,
+
+            "roc10_count": 0,
+            "roc10_negative_count": 0,
+
+            "roc_progress_start_time": None,
+            "roc_negative_progress_start_time": None,
+
+            "long_breakout": False,
+            "short_breakout": False,
+
+            "long_breakout_count": 0,
+            "short_breakout_count": 0,
+
+            "long_breakout_state": "none",
+            "short_breakout_state": "none",
+
+            "state": "none",
+            "display": "-"
+        },
+
+        "changes": None,
+
+        "breakout_qualified": False,
+        "short_breakout_qualified": False,
+
+        "progress_qualified": False,
+        "short_progress_qualified": False,
+
+        "roc3_long_progress_qualified": False,
+        "roc3_short_progress_qualified": False,
+
+        "direction_1h": "none",
+
+        "df1h": None
+    }
+
+
+# =========================================================
+# 공통 자격조건
 # =========================================================
 
 def get_signal_qualified(
     e1,
     e_high,
-    e_daily,
-    r,
-    r_high,
-    r_daily
+    r
 ):
 
-    # =====================================================
-    # EMA 필터
-    # =====================================================
-
-    ema_filter = ema_filter_direction(
+    filter_info = ema_filter_direction(
         e1,
-        e_high,
-        e_daily
+        e_high
     )
 
-    ema_direction = ema_filter.get(
-        "direction",
-        "none"
+    filter_direction = (
+        filter_info["direction"]
     )
 
-    ema_valid = ema_filter.get(
-        "valid",
-        False
+    filter_pass = ema_filter_pass(
+        e1,
+        e_high
     )
 
-    ema_filter_count_valid = (
-        ema_filter_pass(
-            e1,
-            e_high,
-            e_daily
+    if (
+        USE_EMA_TIMEFRAME == "N"
+        and USE_EMA_HIGH_TIMEFRAME == "N"
+    ):
+
+        long_base = True
+        short_base = True
+
+    else:
+
+        long_base = (
+            filter_pass
+            and filter_direction == "long"
         )
-    )
 
-    ema_ready = (
-        ema_valid
-        and
-        ema_filter_count_valid
-    )
+        short_base = (
+            filter_pass
+            and filter_direction == "short"
+        )
 
-
-    # =====================================================
-    # ROC 이평 필터
-    # =====================================================
-
-    roc_filter = roc_filter_analysis(
-        r,
-        r_high,
-        r_daily
-    )
-
-    roc_direction = roc_filter.get(
-        "direction",
-        "none"
-    )
-
-    roc_ready = roc_filter.get(
-        "valid",
-        False
-    )
-
-
-    # =====================================================
-    # ROC 0선
-    # =====================================================
-
-    long_roc = (
-        int(
+    roc3_long = (
+        long_base
+        and r.get("roc10") is not None
+        and float(r.get("roc10")) > 0
+        and int(
             r.get(
-                "long_count",
+                "roc10_count",
                 0
             )
-            or 0
-        ) >= 1
+        ) >= ROC_PROGRESS_MIN_COUNT
     )
 
-    short_roc = (
-        int(
+    roc3_short = (
+        short_base
+        and r.get("roc10") is not None
+        and float(r.get("roc10")) < 0
+        and int(
             r.get(
-                "short_count",
+                "roc10_negative_count",
                 0
             )
-            or 0
-        ) >= 1
-    )
-
-
-    # =====================================================
-    # 최종
-    # =====================================================
-
-    long_ready = (
-        ema_ready
-        and
-        roc_ready
-        and
-        ema_direction == "long"
-        and
-        roc_direction == "long"
-    )
-
-    short_ready = (
-        ema_ready
-        and
-        roc_ready
-        and
-        ema_direction == "short"
-        and
-        roc_direction == "short"
+        ) >= ROC_PROGRESS_MIN_COUNT
     )
 
     return {
 
         "breakout_qualified":
-            (
-                long_ready
-                and
-                long_roc
-            ),
+            long_base
+            and r["long_breakout"],
 
         "short_breakout_qualified":
-            (
-                short_ready
-                and
-                short_roc
-            ),
+            short_base
+            and r["short_breakout"],
+
+        "progress_qualified":
+            roc3_long,
+
+        "short_progress_qualified":
+            roc3_short,
+
+        "roc3_long_progress_qualified":
+            roc3_long,
+
+        "roc3_short_progress_qualified":
+            roc3_short,
 
         "filter_direction":
-            ema_direction,
-
-        "roc_filter_direction":
-            roc_direction,
-
-        "ema_filter_valid":
-            ema_ready,
-
-        "roc_filter_valid":
-            roc_ready
-
+            filter_direction
     }
 
 
 # =========================================================
-# 분석 - OKX
+# OKX 분석
 # =========================================================
 
 def analyze_okx(
@@ -3117,151 +2376,81 @@ def analyze_okx(
     current_price=None
 ):
 
-    ema_bar = get_okx_bar(
+    bar = get_okx_bar(
         EMA_TIMEFRAME
     )
 
-    ema_high_bar = get_okx_bar(
+    high_bar = get_okx_bar(
         EMA_HIGH_TIMEFRAME
     )
 
-    ema_daily_bar = get_okx_bar(
-        EMA_DAILY_TIMEFRAME
-    )
-
-    roc_bar = get_okx_bar(
-        ROC_TIMEFRAME
-    )
-
-    roc_high_bar = get_okx_bar(
-        ROC_HIGH_TIMEFRAME
-    )
-
-    roc_daily_bar = get_okx_bar(
-        ROC_DAILY_TIMEFRAME
-    )
-
-    if not all([
-        ema_bar,
-        ema_high_bar,
-        ema_daily_bar,
-        roc_bar,
-        roc_high_bar,
-        roc_daily_bar
-    ]):
-
+    if not bar or not high_bar:
         return None
 
-    df_ema = history_okx(
-        market,
-        ema_bar
-    )
-
-    df_ema_high = history_okx(
-        market,
-        ema_high_bar
-    )
-
-    df_ema_daily = history_okx(
-        market,
-        ema_daily_bar
-    )
-
-    df_roc = history_okx(
-        market,
-        roc_bar
-    )
-
-    df_roc_current = (
-        get_okx_current_candle(
-            market,
-            ROC_TIMEFRAME,
-            current_price
-        )
-    )
-
-    df_roc_high = history_okx(
-        market,
-        roc_high_bar
-    )
-
-    df_roc_daily = history_okx(
-        market,
-        roc_daily_bar
+    df_confirmed = (
+        okx_1h_cache.get(market)
     )
 
     if (
-        df_ema is None
-        or df_ema.empty
-        or df_roc is None
-        or df_roc.empty
+        df_confirmed is None
+        or df_confirmed.empty
+    ):
+
+        df_confirmed = history_okx(
+            market,
+            bar
+        )
+
+    df_high = history_okx(
+        market,
+        high_bar
+    )
+
+    df_current = get_okx_current_1h(
+        market,
+        current_price
+    )
+
+    if (
+        df_confirmed is None
+        or df_confirmed.empty
     ):
 
         return None
 
     e1 = ema_display(
-        df_ema,
+        df_confirmed,
         current_price
     )
 
     e_high = ema_display(
-        df_ema_high,
-        current_price
-    )
-
-    e_daily = ema_display(
-        df_ema_daily,
+        df_high,
         current_price
     )
 
     r = roc_analysis(
-        df_roc,
-        df_roc_current
-    )
-
-    r_high = roc_reference_analysis(
-        df_roc_high
-    )
-
-    r_daily = roc_reference_analysis(
-        df_roc_daily
+        df_confirmed,
+        df_current
     )
 
     changes = daily_changes(
-        df_ema
+        df_confirmed
     )
 
     q = get_signal_qualified(
         e1,
         e_high,
-        e_daily,
-        r,
-        r_high,
-        r_daily
+        r
     )
 
     return {
 
-        "ema_1h":
-            e1,
+        "ema_1h": e1,
+        "ema_high": e_high,
 
-        "ema_high":
-            e_high,
+        "roc": r,
 
-        "ema_daily":
-            e_daily,
-
-        "roc":
-            r,
-
-        "roc_high":
-            r_high,
-
-        "roc_daily":
-            r_daily,
-
-        "changes":
-            changes,
+        "changes": changes,
 
         **q,
 
@@ -3269,13 +2458,12 @@ def analyze_okx(
             q["filter_direction"],
 
         "df1h":
-            df_ema
-
+            df_confirmed
     }
 
 
 # =========================================================
-# 분석 - UPBIT
+# 통합 분석
 # =========================================================
 
 def analyze(
@@ -3291,42 +2479,21 @@ def analyze(
             current_price
         )
 
-    df_ema = history_upbit(
+    df_confirmed = history_upbit(
         market,
         EMA_TIMEFRAME
     )
 
-    df_ema_high = history_upbit(
+    df_high = history_upbit(
         market,
         EMA_HIGH_TIMEFRAME
     )
 
-    df_ema_daily = history_upbit(
-        market,
-        EMA_DAILY_TIMEFRAME
-    )
-
-    df_roc = history_upbit(
-        market,
-        ROC_TIMEFRAME
-    )
-
-    df_roc_current = (
-        get_upbit_current_candle(
+    df_current = (
+        get_upbit_current_roc_data(
             market,
-            ROC_TIMEFRAME,
             current_price
         )
-    )
-
-    df_roc_high = history_upbit(
-        market,
-        ROC_HIGH_TIMEFRAME
-    )
-
-    df_roc_daily = history_upbit(
-        market,
-        ROC_DAILY_TIMEFRAME
     )
 
     changes = daily_change_upbit(
@@ -3334,73 +2501,41 @@ def analyze(
     )
 
     if (
-        df_ema is None
-        or df_ema.empty
-        or df_roc is None
-        or df_roc.empty
+        df_confirmed is None
+        or df_confirmed.empty
     ):
 
         return None
 
     e1 = ema_display(
-        df_ema,
+        df_confirmed,
         current_price
     )
 
     e_high = ema_display(
-        df_ema_high,
-        current_price
-    )
-
-    e_daily = ema_display(
-        df_ema_daily,
+        df_high,
         current_price
     )
 
     r = roc_analysis(
-        df_roc,
-        df_roc_current
-    )
-
-    r_high = roc_reference_analysis(
-        df_roc_high
-    )
-
-    r_daily = roc_reference_analysis(
-        df_roc_daily
+        df_confirmed,
+        df_current
     )
 
     q = get_signal_qualified(
         e1,
         e_high,
-        e_daily,
-        r,
-        r_high,
-        r_daily
+        r
     )
 
     return {
 
-        "ema_1h":
-            e1,
+        "ema_1h": e1,
+        "ema_high": e_high,
 
-        "ema_high":
-            e_high,
+        "roc": r,
 
-        "ema_daily":
-            e_daily,
-
-        "roc":
-            r,
-
-        "roc_high":
-            r_high,
-
-        "roc_daily":
-            r_daily,
-
-        "changes":
-            changes,
+        "changes": changes,
 
         **q,
 
@@ -3408,13 +2543,12 @@ def analyze(
             q["filter_direction"],
 
         "df1h":
-            df_ema
-
+            df_confirmed
     }
 
 
 # =========================================================
-# ROW
+# 행
 # =========================================================
 
 def make_row(
@@ -3425,209 +2559,143 @@ def make_row(
     current_price=None
 ):
 
-    if analysis is None:
-
-        analysis = {
-
-            "ema_1h": {},
-            "ema_high": {},
-            "ema_daily": {},
-
-            "roc": {},
-            "roc_high": {},
-            "roc_daily": {},
-
-            "changes": None,
-
-            "breakout_qualified":
-                False,
-
-            "short_breakout_qualified":
-                False,
-
-            "roc_filter_direction":
-                "none",
-
-            "roc_filter_valid":
-                False
-
-        }
+    a = (
+        analysis
+        or empty_analysis()
+    )
 
     return {
 
-        "rank":
-            rank,
+        "rank": rank,
 
-        "name":
-            name,
+        "name": name,
 
         "change":
             format_change(
-                analysis.get(
-                    "changes"
-                )
+                a.get("changes")
             ),
 
         "change_value":
             get_change_value(
-                analysis.get(
-                    "changes"
-                )
+                a.get("changes")
             ),
 
         "volume":
-            format_volume(
-                volume
-            ),
+            format_volume(volume),
 
         "current_price":
             current_price,
 
         "ema_1h":
-            analysis.get(
-                "ema_1h",
-                {}
-            ),
+            a["ema_1h"],
 
         "ema_high":
-            analysis.get(
-                "ema_high",
-                {}
-            ),
-
-        "ema_daily":
-            analysis.get(
-                "ema_daily",
-                {}
-            ),
+            a["ema_high"],
 
         "roc":
-            analysis.get(
-                "roc",
-                {}
-            ),
-
-        "roc_high":
-            analysis.get(
-                "roc_high",
-                {}
-            ),
-
-        "roc_daily":
-            analysis.get(
-                "roc_daily",
-                {}
-            ),
+            a["roc"],
 
         "breakout_qualified":
-            analysis.get(
-                "breakout_qualified",
+            a["breakout_qualified"],
+
+        "short_breakout_qualified":
+            a["short_breakout_qualified"],
+
+        "progress_qualified":
+            a["progress_qualified"],
+
+        "short_progress_qualified":
+            a["short_progress_qualified"],
+
+        "roc3_long_progress_qualified":
+            a.get(
+                "roc3_long_progress_qualified",
                 False
             ),
 
-        "short_breakout_qualified":
-            analysis.get(
-                "short_breakout_qualified",
+        "roc3_short_progress_qualified":
+            a.get(
+                "roc3_short_progress_qualified",
                 False
             ),
 
         "direction":
-            analysis.get(
-                "direction_1h",
-                "none"
-            ),
-
-        "roc_filter_direction":
-            analysis.get(
-                "roc_filter_direction",
-                "none"
-            ),
-
-        "roc_filter_valid":
-            analysis.get(
-                "roc_filter_valid",
-                False
-            )
-
+            a["direction_1h"]
     }
 
 
 # =========================================================
-# ROC 신호
+# 후보
 # =========================================================
 
-def is_roc_signal(row):
+def is_breakout(row):
+
+    return bool(
+        row
+        and row.get(
+            "breakout_qualified"
+        )
+    )
+
+
+def is_short_breakout(row):
+
+    return bool(
+        row
+        and row.get(
+            "short_breakout_qualified"
+        )
+    )
+
+
+def is_progress(row):
+
+    return bool(
+        row
+        and row.get(
+            "progress_qualified"
+        )
+    )
+
+
+def is_short_progress(row):
+
+    return bool(
+        row
+        and row.get(
+            "short_progress_qualified"
+        )
+    )
+
+
+def is_roc3_progress(row):
 
     if not row:
         return False
 
-    r = row.get(
-        "roc",
-        {}
-    )
-
-    long_count = int(
-        r.get(
-            "long_count",
-            0
+    return bool(
+        row.get(
+            "roc3_long_progress_qualified",
+            False
         )
-        or 0
-    )
-
-    short_count = int(
-        r.get(
-            "short_count",
-            0
-        )
-        or 0
-    )
-
-    return (
-        long_count == 1
-        or
-        short_count == 1
     )
 
 
-# =========================================================
-# 추세 진행
-# =========================================================
-
-def is_sun_cloud_signal(row):
+def is_roc3_short_progress(row):
 
     if not row:
         return False
 
-    r = row.get(
-        "roc",
-        {}
-    )
-
-    long_count = int(
-        r.get(
-            "long_count",
-            0
+    return bool(
+        row.get(
+            "roc3_short_progress_qualified",
+            False
         )
-        or 0
-    )
-
-    short_count = int(
-        r.get(
-            "short_count",
-            0
-        )
-        or 0
-    )
-
-    return (
-        long_count >= ROC_PROGRESS_START_COUNT
-        or
-        short_count >= ROC_PROGRESS_START_COUNT
     )
 
 
 # =========================================================
-# UPBIT 업데이트
+# Upbit 업데이트
 # =========================================================
 
 def update_upbit():
@@ -3635,10 +2703,13 @@ def update_upbit():
     global latest_upbit_data
     global latest_upbit_update_time
 
+    log.info(
+        f"========== 업비트 TOP{TOP_N} =========="
+    )
+
     markets = sorted(
         get_upbit_markets(),
-        key=lambda x:
-            x["volume_24h"],
+        key=lambda x: x["volume_24h"],
         reverse=True
     )
 
@@ -3656,13 +2727,11 @@ def update_upbit():
             ""
         )
 
-        price = item[
-            "current_price"
-        ]
+        price = item["current_price"]
 
         try:
 
-            analysis = analyze(
+            a = analyze(
                 market,
                 current_price=price
             )
@@ -3670,18 +2739,18 @@ def update_upbit():
         except Exception as e:
 
             log.error(
-                f"UPBIT 분석 오류 "
+                f"업비트 상세 오류 "
                 f"{market}: {e}"
             )
 
-            analysis = None
+            a = None
 
         rows.append(
             make_row(
                 rank,
                 coin,
                 item["volume_24h"],
-                analysis,
+                a,
                 price
             )
         )
@@ -3691,12 +2760,19 @@ def update_upbit():
     latest_upbit_update_time = kst()
 
     log.info(
-        "UPBIT 완료 / "
-        f"TOP{TOP_N} / "
-        f"ROC신호="
-        f"{sum(is_roc_signal(x) for x in rows)} / "
-        f"진행="
-        f"{sum(is_sun_cloud_signal(x) for x in rows)}"
+        f"업비트 완료 / "
+        f"롱돌파 "
+        f"{sum(is_breakout(x) for x in rows)}개 / "
+        f"숏돌파 "
+        f"{sum(is_short_breakout(x) for x in rows)}개 / "
+        f"롱진행 "
+        f"{sum(is_progress(x) for x in rows)}개 / "
+        f"숏진행 "
+        f"{sum(is_short_progress(x) for x in rows)}개 / "
+        f"ROC3+롱 "
+        f"{sum(is_roc3_progress(x) for x in rows)}개 / "
+        f"ROC3+숏 "
+        f"{sum(is_roc3_short_progress(x) for x in rows)}개"
     )
 
 
@@ -3711,18 +2787,23 @@ def update_okx(usdt):
     global okx_1h_cache
     global okx_1h_cache_time
 
-    if (
-        not usdt
-        or usdt <= 0
-    ):
-
+    if not usdt or usdt <= 0:
         return False
+
+    log.info(
+        "========== OKX 거래대금 조회 시작 =========="
+    )
 
     okx_1h_cache = {}
 
     tickers = get_okx_tickers()
 
     if not tickers:
+
+        log.warning(
+            "OKX 전체 ticker 조회 실패"
+        )
+
         return False
 
     symbols = get_okx_symbols()
@@ -3731,47 +2812,67 @@ def update_okx(usdt):
         return False
 
     symbols = [
-        x
-        for x in symbols
+        x for x in symbols
         if x in tickers
     ]
 
-    upbit_set = {
+    log.info(
+        f"OKX 대상 종목: {len(symbols)}개"
+    )
 
+    upbit_set = {
         x.replace(
             "KRW-",
             ""
         )
-
         for x in latest_upbit_markets
-
     }
 
     volumes = {}
 
-    for symbol in symbols:
+    started = time.monotonic()
 
-        volume = (
-            get_okx_volume_cached(
-                symbol,
-                usdt
-            )
+    for idx, symbol in enumerate(
+        symbols,
+        1
+    ):
+
+        v = get_okx_volume_cached(
+            symbol,
+            usdt
         )
 
-        if (
-            volume
-            and volume > 0
-        ):
+        if v and v > 0:
 
-            volumes[
-                symbol
-            ] = volume
+            volumes[symbol] = v
+
+        if idx % 50 == 0:
+
+            log.info(
+                f"OKX 거래대금 "
+                f"{idx}/{len(symbols)} 완료"
+            )
+
+    elapsed = (
+        time.monotonic()
+        - started
+    )
+
+    log.info(
+        f"OKX 거래대금 완료 / "
+        f"{len(volumes)}개 / "
+        f"{elapsed:.1f}초"
+    )
 
     top = sorted(
         volumes,
         key=volumes.get,
         reverse=True
     )[:TOP_N]
+
+    log.info(
+        f"OKX TOP{TOP_N} 분석 시작"
+    )
 
     rows = []
 
@@ -3786,24 +2887,18 @@ def update_okx(usdt):
         )
 
         name = (
-
             f"{coin} (업비트)"
-
             if coin in upbit_set
-
             else coin
-
         )
 
-        price = (
-            get_okx_cached_price(
-                symbol
-            )
+        price = get_okx_cached_price(
+            symbol
         )
 
         try:
 
-            analysis = analyze(
+            a = analyze(
                 symbol,
                 True,
                 price
@@ -3812,18 +2907,18 @@ def update_okx(usdt):
         except Exception as e:
 
             log.error(
-                f"OKX 분석 오류 "
+                f"OKX 상세 오류 "
                 f"{symbol}: {e}"
             )
 
-            analysis = None
+            a = None
 
         rows.append(
             make_row(
                 rank,
                 name,
                 volumes[symbol],
-                analysis,
+                a,
                 price
             )
         )
@@ -3831,68 +2926,26 @@ def update_okx(usdt):
     latest_okx_data = rows
 
     okx_1h_cache_time = kst()
+
     latest_okx_update_time = kst()
 
+    log.info(
+        f"OKX 완료 / "
+        f"롱돌파 "
+        f"{sum(is_breakout(x) for x in rows)}개 / "
+        f"숏돌파 "
+        f"{sum(is_short_breakout(x) for x in rows)}개 / "
+        f"롱진행 "
+        f"{sum(is_progress(x) for x in rows)}개 / "
+        f"숏진행 "
+        f"{sum(is_short_progress(x) for x in rows)}개 / "
+        f"ROC3+롱 "
+        f"{sum(is_roc3_progress(x) for x in rows)}개 / "
+        f"ROC3+숏 "
+        f"{sum(is_roc3_short_progress(x) for x in rows)}개"
+    )
+
     return True
-
-
-# =========================================================
-# 시장 시황 데이터 생성
-# =========================================================
-
-def update_market_summary():
-
-    global latest_market_source
-    global latest_market_data
-
-    latest_market_data = {}
-
-    if USE_OKX == "Y":
-
-        for row in latest_okx_data:
-
-            name = row.get(
-                "name",
-                ""
-            )
-
-            coin = name.split(" ")[0]
-
-            if coin in (
-                "BTC",
-                "ETH"
-            ):
-
-                latest_market_data[
-                    coin
-                ] = row
-
-        if (
-            "BTC" in latest_market_data
-            or
-            "ETH" in latest_market_data
-        ):
-
-            latest_market_source = "OKX"
-
-            return
-
-    for row in latest_upbit_data:
-
-        coin = row.get(
-            "name"
-        )
-
-        if coin in (
-            "BTC",
-            "ETH"
-        ):
-
-            latest_market_data[
-                coin
-            ] = row
-
-    latest_market_source = "UPBIT"
 
 
 # =========================================================
@@ -3915,6 +2968,10 @@ def update_dashboard():
 
     try:
 
+        log.info(
+            f"========== 전체 조회 {kst()} =========="
+        )
+
         if USE_UPBIT == "Y":
 
             try:
@@ -3924,7 +2981,7 @@ def update_dashboard():
             except Exception as e:
 
                 log.exception(
-                    f"UPBIT 업데이트 오류: {e}"
+                    f"업비트 업데이트 오류: {e}"
                 )
 
         else:
@@ -3947,9 +3004,7 @@ def update_dashboard():
 
                 if usdt > 0:
 
-                    update_okx(
-                        usdt
-                    )
+                    update_okx(usdt)
 
             except Exception as e:
 
@@ -3961,1024 +3016,16 @@ def update_dashboard():
 
             latest_okx_data = []
 
-        update_market_summary()
-
     finally:
 
         update_lock.release()
 
 
 # =========================================================
-# 숫자 표시
+# BTC 시황
+#
+# EMA 배열 + ROC 조합
 # =========================================================
-
-def format_indicator_value(value):
-
-    if value is None:
-        return "-"
-
-    try:
-
-        return f"{float(value):,.2f}"
-
-    except Exception:
-
-        return "-"
-
-
-# =========================================================
-# EMA HTML
-# =========================================================
-
-def ema_detail_html(
-    e,
-    timeframe,
-    use_flag="Y"
-):
-
-    if not e:
-
-        suffix = ""
-
-        if use_flag != "Y":
-
-            suffix = " 참고"
-
-        return (
-            '<div class="indicator-line">'
-            f'<span class="indicator-label">'
-            f'{timeframe}{suffix}'
-            '</span>'
-            '<span class="ema-direction">'
-            '⚪(0)'
-            '</span>'
-            '</div>'
-        )
-
-    direction = e.get(
-        "direction",
-        "none"
-    )
-
-    count = int(
-        e.get(
-            "count",
-            0
-        )
-        or 0
-    )
-
-    if direction == "long":
-
-        icon = "🟢"
-
-    elif direction == "short":
-
-        icon = "🔴"
-
-    else:
-
-        icon = "⚪"
-
-    label = timeframe
-
-    if use_flag != "Y":
-
-        label += " 참고"
-
-    return f"""
-    <div class="indicator-line ema-detail-line">
-
-        <span class="indicator-label">
-            {label}
-        </span>
-
-        <span class="ema-direction">
-            {icon}({count})
-        </span>
-
-    </div>
-    """
-
-
-# =========================================================
-# ROC 방향 HTML
-# =========================================================
-
-def roc_direction_html(r):
-
-    if not r:
-        return ""
-
-    direction = r.get(
-        "direction",
-        "flat"
-    )
-
-    change = r.get(
-        "change",
-        0
-    )
-
-    try:
-
-        change = float(change)
-
-    except Exception:
-
-        change = 0.0
-
-    if direction == "up":
-
-        return (
-            '<span class="roc-up">'
-            f'↗ +{change:.2f}'
-            '</span>'
-        )
-
-    if direction == "down":
-
-        return (
-            '<span class="roc-down">'
-            f'↘ {change:.2f}'
-            '</span>'
-        )
-
-    return (
-        '<span class="roc-flat">'
-        '→ 0.00'
-        '</span>'
-    )
-
-
-# =========================================================
-# ROC 이평 배열 HTML
-# =========================================================
-
-def roc_ma_direction_html(r):
-
-    if not r:
-
-        return ""
-
-    direction = r.get(
-        "ma_direction",
-        "none"
-    )
-
-    count = int(
-        r.get(
-            "ma_count",
-            0
-        )
-        or 0
-    )
-
-    if direction == "long":
-
-        return (
-            '<span class="roc-ma-long">'
-            f'🟢({count})'
-            '</span>'
-        )
-
-    if direction == "short":
-
-        return (
-            '<span class="roc-ma-short">'
-            f'🔴({count})'
-            '</span>'
-        )
-
-    return (
-        '<span class="roc-ma-neutral">'
-        '⚪(0)'
-        '</span>'
-    )
-
-
-# =========================================================
-# ROC HTML
-# =========================================================
-
-def roc_html(r):
-
-    if not r:
-
-        return (
-            '<span class="roc-zero">-</span>'
-        )
-
-    value = r.get(
-        "roc10"
-    )
-
-    if value is None:
-
-        return (
-            '<span class="roc-zero">-</span>'
-        )
-
-    try:
-
-        value = float(value)
-
-    except Exception:
-
-        return (
-            '<span class="roc-zero">-</span>'
-        )
-
-    long_count = int(
-        r.get(
-            "long_count",
-            0
-        )
-        or 0
-    )
-
-    short_count = int(
-        r.get(
-            "short_count",
-            0
-        )
-        or 0
-    )
-
-    slope = roc_direction_html(
-        r
-    )
-
-    ma_direction = (
-        roc_ma_direction_html(
-            r
-        )
-    )
-
-    if value > ROC_LONG_LEVEL:
-
-        return (
-            '<span class="roc-long">'
-            f'🟢{value:+.2f}% '
-            f'{slope}'
-            f' ({long_count}) '
-            f'{ma_direction}'
-            '</span>'
-        )
-
-    if value < ROC_SHORT_LEVEL:
-
-        return (
-            '<span class="roc-short">'
-            f'🔴{value:+.2f}% '
-            f'{slope}'
-            f' ({short_count}) '
-            f'{ma_direction}'
-            '</span>'
-        )
-
-    return (
-        '<span class="roc-neutral">'
-        f'{value:+.2f}% '
-        f'{slope}'
-        ' (0) '
-        f'{ma_direction}'
-        '</span>'
-    )
-
-
-# =========================================================
-# ROC 참고 HTML
-# =========================================================
-
-def roc_reference_html(r):
-
-    if not r:
-
-        return (
-            '<span class="roc-reference">-</span>'
-        )
-
-    value = r.get(
-        "value"
-    )
-
-    if value is None:
-
-        return (
-            '<span class="roc-reference">-</span>'
-        )
-
-    try:
-
-        value = float(value)
-
-    except Exception:
-
-        return (
-            '<span class="roc-reference">-</span>'
-        )
-
-    long_count = int(
-        r.get(
-            "long_count",
-            0
-        )
-        or 0
-    )
-
-    short_count = int(
-        r.get(
-            "short_count",
-            0
-        )
-        or 0
-    )
-
-    slope = roc_direction_html(
-        r
-    )
-
-    ma_direction = (
-        roc_ma_direction_html(
-            r
-        )
-    )
-
-    if value > ROC_LONG_LEVEL:
-
-        return (
-            '<span class="roc-reference-long">'
-            f'🟢{value:+.2f}% '
-            f'{slope}'
-            f' ({long_count}) '
-            f'{ma_direction}'
-            '</span>'
-        )
-
-    if value < ROC_SHORT_LEVEL:
-
-        return (
-            '<span class="roc-reference-short">'
-            f'🔴{value:+.2f}% '
-            f'{slope}'
-            f' ({short_count}) '
-            f'{ma_direction}'
-            '</span>'
-        )
-
-    return (
-        '<span class="roc-reference">'
-        f'{value:+.2f}% '
-        f'{slope}'
-        ' (0) '
-        f'{ma_direction}'
-        '</span>'
-    )
-
-
-# =========================================================
-# ROC 시간봉
-# =========================================================
-
-def roc_lines_html(
-    r,
-    r_high,
-    r_daily
-):
-
-    return (
-
-        '<div class="indicator-line">'
-
-        '<span class="indicator-label">'
-        f'{format_timeframe(ROC_TIMEFRAME)}'
-        '</span>'
-
-        f'{roc_html(r)}'
-
-        '</div>'
-
-
-        '<div class="indicator-line">'
-
-        '<span class="indicator-label">'
-        f'{format_timeframe(ROC_HIGH_TIMEFRAME)}'
-        '</span>'
-
-        f'{roc_reference_html(r_high)}'
-
-        '</div>'
-
-
-        '<div class="indicator-line">'
-
-        '<span class="indicator-label">'
-        f'{format_timeframe(ROC_DAILY_TIMEFRAME)}'
-        '</span>'
-
-        f'{roc_reference_html(r_daily)}'
-
-        '</div>'
-
-    )
-
-
-# =========================================================
-# 신호 HTML
-# =========================================================
-
-def signal_html(row):
-
-    r = row.get(
-        "roc",
-        {}
-    )
-
-    long_count = int(
-        r.get(
-            "long_count",
-            0
-        )
-        or 0
-    )
-
-    short_count = int(
-        r.get(
-            "short_count",
-            0
-        )
-        or 0
-    )
-
-    if long_count == 1:
-
-        if row.get(
-            "breakout_qualified",
-            False
-        ):
-
-            return (
-                '<span '
-                'class="signal-icon long-breakout" '
-                'title="ROC10 0선 상방 진입 · EMA 1H/4H 정배열 · ROC 이평 1H/4H 정배열">'
-                '🚀①'
-                '</span>'
-            )
-
-        return (
-            '<span '
-            'class="signal-icon roc-warning-qualified" '
-            'title="ROC10 0선 상방 진입 · EMA 또는 ROC 이평 필터 미충족">'
-            '⚠️①'
-            '</span>'
-        )
-
-    if short_count == 1:
-
-        if row.get(
-            "short_breakout_qualified",
-            False
-        ):
-
-            return (
-                '<span '
-                'class="signal-icon short-breakout" '
-                'title="ROC10 0선 하방 진입 · EMA 1H/4H 역배열 · ROC 이평 1H/4H 역배열">'
-                '🔻①'
-                '</span>'
-            )
-
-        return (
-            '<span '
-            'class="signal-icon roc-warning-qualified" '
-            'title="ROC10 0선 하방 진입 · EMA 또는 ROC 이평 필터 미충족">'
-            '⚠️①'
-            '</span>'
-        )
-
-    return (
-        '<span class="muted">-</span>'
-    )
-
-
-# =========================================================
-# 추세 진행 HTML
-# =========================================================
-
-def progress_signal_html(row):
-
-    r = row.get(
-        "roc",
-        {}
-    )
-
-    long_count = int(
-        r.get(
-            "long_count",
-            0
-        )
-        or 0
-    )
-
-    short_count = int(
-        r.get(
-            "short_count",
-            0
-        )
-        or 0
-    )
-
-    if long_count >= 2:
-
-        return (
-            '<span '
-            'class="signal-icon long-progress" '
-            f'title="ROC10 0선 상방 추세 진행 · {long_count}">'
-            '☀️'
-            '</span>'
-        )
-
-    if short_count >= 2:
-
-        return (
-            '<span '
-            'class="signal-icon short-progress" '
-            f'title="ROC10 0선 하방 추세 진행 · {short_count}">'
-            '🌧️'
-            '</span>'
-        )
-
-    return (
-        '<span class="muted">-</span>'
-    )
-
-
-# =========================================================
-# ROW CLASS
-# =========================================================
-
-def row_class(x):
-
-    r = x.get(
-        "roc",
-        {}
-    )
-
-    long_count = int(
-        r.get(
-            "long_count",
-            0
-        )
-        or 0
-    )
-
-    short_count = int(
-        r.get(
-            "short_count",
-            0
-        )
-        or 0
-    )
-
-    if (
-        long_count == 1
-        and
-        x.get(
-            "breakout_qualified",
-            False
-        )
-    ):
-
-        return "breakout-qualified"
-
-    if (
-        short_count == 1
-        and
-        x.get(
-            "short_breakout_qualified",
-            False
-        )
-    ):
-
-        return "short-breakout-qualified"
-
-    if long_count >= 2:
-
-        return "progress-qualified"
-
-    if short_count >= 2:
-
-        return "short-progress-qualified"
-
-    if long_count == 1:
-
-        return "roc-warning-row"
-
-    if short_count == 1:
-
-        return "roc-warning-row"
-
-    return ""
-
-
-# =========================================================
-# ROW HTML
-# =========================================================
-
-def rows_html(
-    data,
-    signal_mode="normal"
-):
-
-    output = []
-
-    for x in data:
-
-        if signal_mode == "progress":
-
-            signal = progress_signal_html(
-                x
-            )
-
-        else:
-
-            signal = signal_html(
-                x
-            )
-
-        ema_content = (
-
-            ema_detail_html(
-                x.get(
-                    "ema_1h",
-                    {}
-                ),
-                format_timeframe(
-                    EMA_TIMEFRAME
-                ),
-                USE_EMA_TIMEFRAME
-            )
-
-            +
-
-            ema_detail_html(
-                x.get(
-                    "ema_high",
-                    {}
-                ),
-                format_timeframe(
-                    EMA_HIGH_TIMEFRAME
-                ),
-                USE_EMA_HIGH_TIMEFRAME
-            )
-
-            +
-
-            ema_detail_html(
-                x.get(
-                    "ema_daily",
-                    {}
-                ),
-                format_timeframe(
-                    EMA_DAILY_TIMEFRAME
-                ),
-                USE_EMA_DAILY_TIMEFRAME
-            )
-
-        )
-
-        roc_content = roc_lines_html(
-
-            x.get(
-                "roc",
-                {}
-            ),
-
-            x.get(
-                "roc_high",
-                {}
-            ),
-
-            x.get(
-                "roc_daily",
-                {}
-            )
-
-        )
-
-        output.append(
-            f"""
-            <tr class="{row_class(x)}">
-
-                <td>
-                    {x.get("rank", "-")}
-                </td>
-
-                <td class="coin">
-
-                    <b>
-                        {x.get("name", "-")}
-                    </b>
-
-                    <small>
-                        {x.get("change", "-")}
-                    </small>
-
-                </td>
-
-                <td class="vol">
-                    {x.get("volume", "-")}
-                </td>
-
-                <td class="ema-cell">
-
-                    <div class="indicator-title">
-                        EMA
-                    </div>
-
-                    {ema_content}
-
-                </td>
-
-                <td class="roc-column">
-
-                    <div class="indicator-title">
-                        ROC10 / ROC MA
-                    </div>
-
-                    {roc_content}
-
-                </td>
-
-                <td class="signal-cell">
-
-                    {signal}
-
-                </td>
-
-            </tr>
-            """
-        )
-
-    return "".join(
-        output
-    )
-
-
-# =========================================================
-# TABLE
-# =========================================================
-
-def table_html(
-    data,
-    signal_mode="normal"
-):
-
-    rows = rows_html(
-        data,
-        signal_mode
-    )
-
-    if not rows:
-
-        rows = """
-        <tr>
-            <td
-                colspan="6"
-                class="empty"
-            >
-                현재 후보 없음
-            </td>
-        </tr>
-        """
-
-    return f"""
-
-    <div class="table-wrap">
-
-        <table>
-
-            <thead>
-
-                <tr>
-
-                    <th>#</th>
-
-                    <th>코인</th>
-
-                    <th>거래대금</th>
-
-                    <th>
-                        EMA<br>
-                        {format_timeframe(EMA_TIMEFRAME)}/
-                        {format_timeframe(EMA_HIGH_TIMEFRAME)}/
-                        {format_timeframe(EMA_DAILY_TIMEFRAME)}
-                    </th>
-
-                    <th>
-                        ROC10 / ROC MA<br>
-                        {format_timeframe(ROC_TIMEFRAME)}/
-                        {format_timeframe(ROC_HIGH_TIMEFRAME)}/
-                        {format_timeframe(ROC_DAILY_TIMEFRAME)}
-                    </th>
-
-                    <th>신호</th>
-
-                </tr>
-
-            </thead>
-
-            <tbody>
-
-                {rows}
-
-            </tbody>
-
-        </table>
-
-    </div>
-
-    """
-
-
-# =========================================================
-# ROC 신호
-# =========================================================
-
-def roc_signal_section(
-    title,
-    data,
-    update_time,
-    upbit=False
-):
-
-    rows = []
-
-    for x in data:
-
-        if upbit:
-
-            if not is_positive_day(x):
-
-                continue
-
-        if is_roc_signal(x):
-
-            rows.append(x)
-
-    return f"""
-
-    <div class="section-title roc-section-title">
-
-        <span class="section-title-main">
-            🔥 ROC 추세 신호
-        </span>
-
-        <span class="section-title-sub">
-
-            TOP{TOP_N} ·
-            {format_timeframe(ROC_TIMEFRAME)}
-            ROC10 ·
-            0선 진입 ·
-            카운트 1 ·
-            ROC 이평 {get_roc_filter_timeframes()} 필터 ·
-            {update_time} KST
-
-        </span>
-
-    </div>
-
-    {table_html(
-        rows,
-        "normal"
-    )}
-
-    """
-
-
-# =========================================================
-# 추세 진행
-# =========================================================
-
-def progress_section(
-    data,
-    update_time,
-    upbit=False
-):
-
-    rows = []
-
-    for x in data:
-
-        if upbit:
-
-            if not is_positive_day(x):
-
-                continue
-
-        if is_sun_cloud_signal(x):
-
-            rows.append(x)
-
-    return f"""
-
-    <div class="section-title progress-section-title">
-
-        <span class="section-title-main">
-            ☀️🌧️ 추세 진행 리스트
-        </span>
-
-        <span class="section-title-sub">
-
-            {format_timeframe(ROC_TIMEFRAME)}
-            ROC10 0선 카운트 2 이상 ·
-            EMA {get_ema_filter_timeframes()} 적용 ·
-            ROC 이평 {get_roc_filter_timeframes()} 적용 ·
-            {format_timeframe(ROC_DAILY_TIMEFRAME)} 참고 ·
-            {update_time} KST
-
-        </span>
-
-    </div>
-
-    {table_html(
-        rows,
-        "progress"
-    )}
-
-    """
-
-
-# =========================================================
-# 시장 시황
-# =========================================================
-
-def format_market_price(price):
-
-    if price is None:
-
-        return "-"
-
-    try:
-
-        price = float(price)
-
-    except Exception:
-
-        return "-"
-
-    if price >= 100000000:
-
-        return f"{price / 100000000:.2f}억"
-
-    if price >= 10000:
-
-        return f"{price:,.0f}"
-
-    if price >= 1:
-
-        return f"{price:,.2f}"
-
-    return f"{price:.6f}"
-
-
-def market_change_html(value):
-
-    if value is None:
-
-        return "-"
-
-    try:
-
-        value = float(value)
-
-    except Exception:
-
-        return "-"
-
-    if value > 0:
-
-        return (
-            '<span class="market-up">'
-            f'▲+{value:.1f}%'
-            '</span>'
-        )
-
-    if value < 0:
-
-        return (
-            '<span class="market-down">'
-            f'▼{value:.1f}%'
-            '</span>'
-        )
-
-    return (
-        '<span class="market-zero">'
-        '0.0%'
-        '</span>'
-    )
-
 
 def market_direction_html(
     direction,
@@ -5016,15 +3063,15 @@ def market_direction_html(
     )
 
 
-# =========================================================
-# 시장 ROC
-# =========================================================
-
 def market_roc_html(r):
 
     if not r:
 
-        return "-"
+        return (
+            '<span class="market-zero">'
+            '⚪ -'
+            '</span>'
+        )
 
     value = r.get(
         "roc10"
@@ -5032,7 +3079,11 @@ def market_roc_html(r):
 
     if value is None:
 
-        return "-"
+        return (
+            '<span class="market-zero">'
+            '⚪ -'
+            '</span>'
+        )
 
     try:
 
@@ -5040,116 +3091,92 @@ def market_roc_html(r):
 
     except Exception:
 
-        return "-"
-
-    direction = r.get(
-        "direction",
-        "flat"
-    )
-
-    change = r.get(
-        "change",
-        0
-    )
-
-    try:
-
-        change = float(change)
-
-    except Exception:
-
-        change = 0.0
-
-    if direction == "up":
-
-        slope = (
-            '<span class="roc-up">'
-            f'↗ +{change:.2f}'
+        return (
+            '<span class="market-zero">'
+            '⚪ -'
             '</span>'
         )
 
-    elif direction == "down":
+    if value > 0:
 
-        slope = (
-            '<span class="roc-down">'
-            f'↘ {change:.2f}'
-            '</span>'
-        )
-
-    else:
-
-        slope = (
-            '<span class="roc-flat">'
-            '→ 0.00'
-            '</span>'
-        )
-
-    ma = roc_ma_direction_html(
-        r
-    )
-
-    if value > ROC_LONG_LEVEL:
-
-        count = int(
-            r.get(
-                "long_count",
-                0
-            )
-            or 0
+        count = max(
+            int(
+                r.get(
+                    "roc10_count",
+                    0
+                )
+            ),
+            1
         )
 
         return (
             '<span class="market-up">'
-            f'🟢 {value:+.2f}% '
-            f'{slope} ({count}) '
-            f'{ma}'
+            f'🟢 상승 {count}'
             '</span>'
         )
 
-    if value < ROC_SHORT_LEVEL:
+    if value < 0:
 
-        count = int(
-            r.get(
-                "short_count",
-                0
-            )
-            or 0
+        count = max(
+            int(
+                r.get(
+                    "roc10_negative_count",
+                    0
+                )
+            ),
+            1
         )
 
         return (
             '<span class="market-down">'
-            f'🔴 {value:+.2f}% '
-            f'{slope} ({count}) '
-            f'{ma}'
+            f'🔴 하락 {count}'
             '</span>'
         )
 
     return (
         '<span class="market-zero">'
-        f'{value:+.2f}% '
-        f'{slope} (0) '
-        f'{ma}'
+        '⚪ 0'
         '</span>'
     )
 
 
-# =========================================================
-# 시장 ROC 참고
-# =========================================================
+def format_market_price(price):
 
-def market_roc_reference_html(r):
+    if price is None:
+        return "-"
 
-    if not r:
+    try:
+
+        price = float(price)
+
+    except Exception:
 
         return "-"
 
-    value = r.get(
-        "value"
-    )
+    if price >= 100000000:
+
+        return f"{price / 100000000:.2f}억"
+
+    if price >= 10000:
+
+        return f"{price:,.0f}"
+
+    if price >= 1:
+
+        return f"{price:,.2f}"
+
+    return f"{price:.6f}"
+
+
+def market_change_html(value):
 
     if value is None:
 
-        return "-"
+        return (
+            '<span class="market-zero">'
+            '-'
+            '</span>'
+        )
 
     try:
 
@@ -5157,139 +3184,65 @@ def market_roc_reference_html(r):
 
     except Exception:
 
-        return "-"
-
-    direction = r.get(
-        "direction",
-        "flat"
-    )
-
-    change = r.get(
-        "change",
-        0
-    )
-
-    try:
-
-        change = float(change)
-
-    except Exception:
-
-        change = 0.0
-
-    if direction == "up":
-
-        slope = (
-            '<span class="roc-up">'
-            f'↗ +{change:.2f}'
+        return (
+            '<span class="market-zero">'
+            '-'
             '</span>'
         )
 
-    elif direction == "down":
-
-        slope = (
-            '<span class="roc-down">'
-            f'↘ {change:.2f}'
-            '</span>'
-        )
-
-    else:
-
-        slope = (
-            '<span class="roc-flat">'
-            '→ 0.00'
-            '</span>'
-        )
-
-    ma = roc_ma_direction_html(
-        r
-    )
-
-    if value > ROC_LONG_LEVEL:
-
-        count = int(
-            r.get(
-                "long_count",
-                0
-            )
-            or 0
-        )
+    if value > 0:
 
         return (
             '<span class="market-up">'
-            f'🟢 {value:+.2f}% '
-            f'{slope} ({count}) '
-            f'{ma}'
+            f'▲+{value:.1f}%'
             '</span>'
         )
 
-    if value < ROC_SHORT_LEVEL:
-
-        count = int(
-            r.get(
-                "short_count",
-                0
-            )
-            or 0
-        )
+    if value < 0:
 
         return (
             '<span class="market-down">'
-            f'🔴 {value:+.2f}% '
-            f'{slope} ({count}) '
-            f'{ma}'
+            f'▼{value:.1f}%'
             '</span>'
         )
 
     return (
         '<span class="market-zero">'
-        f'{value:+.2f}% '
-        f'{slope} (0) '
-        f'{ma}'
+        '0.0%'
         '</span>'
     )
 
 
 # =========================================================
-# 시장 EMA 실제 수치
+# BTC 시황 최종 판단
+#
+# 정배열 + ROC 상승
+#     → 매우 좋음
+#
+# 정배열 + ROC 하락/0
+#     → 상승 준비
+#
+# 역배열 + ROC 상승
+#     → 상승 / 조심
+#
+# 역배열 + ROC 하락/0
+#     → 안좋음
+#
+# 혼합 + ROC 상승
+#     → 상승 / 확인
+#
+# 혼합 + ROC 하락/0
+#     → 관망
 # =========================================================
 
-def market_ema_numbers(e):
+def btc_position_view(row):
 
-    return ""
+    if not row:
 
-
-# =========================================================
-# 시장 패널
-# =========================================================
-
-def market_panel(
-    row,
-    symbol,
-    icon
-):
-
-    if row is None:
-
-        return f"""
-
-        <div class="market-panel">
-
-            <div class="market-panel-title">
-
-                <span class="market-panel-name">
-                    {icon} {symbol}
-                </span>
-
-                <span class="market-panel-sub">
-                    데이터 대기
-                </span>
-
-            </div>
-
-        </div>
-
-        """
+        return {
+            "text": "⚪ 관망",
+            "class": "wait"
+        }
 
     ema_1 = row.get(
         "ema_1h",
@@ -5301,274 +3254,980 @@ def market_panel(
         {}
     )
 
-    ema_daily = row.get(
-        "ema_daily",
-        {}
-    )
-
-    roc_data = row.get(
+    r = row.get(
         "roc",
         {}
     )
 
-    roc_high = row.get(
-        "roc_high",
-        {}
+    # -----------------------------------------
+    # 사용 중인 EMA 시간봉
+    # -----------------------------------------
+
+    selected = []
+
+    if USE_EMA_TIMEFRAME == "Y":
+
+        selected.append(
+            ema_1
+        )
+
+    if USE_EMA_HIGH_TIMEFRAME == "Y":
+
+        selected.append(
+            ema_high
+        )
+
+    directions = [
+        x.get(
+            "direction",
+            "none"
+        )
+        for x in selected
+    ]
+
+    # -----------------------------------------
+    # EMA 최종 방향
+    # -----------------------------------------
+
+    if (
+        directions
+        and all(
+            d == "long"
+            for d in directions
+        )
+    ):
+
+        ema_direction = "long"
+
+    elif (
+        directions
+        and all(
+            d == "short"
+            for d in directions
+        )
+    ):
+
+        ema_direction = "short"
+
+    else:
+
+        ema_direction = "none"
+
+    # -----------------------------------------
+    # ROC
+    # -----------------------------------------
+
+    roc_value = r.get(
+        "roc10"
     )
 
-    roc_daily = row.get(
-        "roc_daily",
-        {}
-    )
+    if roc_value is None:
 
-    return f"""
+        return {
+            "text": "⚪ 관망",
+            "class": "wait"
+        }
 
-    <div class="market-panel">
+    try:
 
-        <div class="market-panel-title">
+        roc_value = float(
+            roc_value
+        )
 
-            <span class="market-panel-name">
-                {icon} {symbol}
-            </span>
+    except Exception:
 
-            <span class="market-panel-sub">
-                {latest_market_source}
-            </span>
+        return {
+            "text": "⚪ 관망",
+            "class": "wait"
+        }
 
-        </div>
+    # =====================================================
+    # 정배열 + ROC 상승
+    # =====================================================
 
+    if (
+        ema_direction == "long"
+        and roc_value > 0
+    ):
 
-        <div class="market-top">
+        return {
+            "text": "🟢 매우 좋음",
+            "class": "long"
+        }
 
-            <span class="market-price">
+    # =====================================================
+    # 정배열 + ROC 0 이하
+    # =====================================================
 
-                {format_market_price(
-                    row.get(
-                        "current_price"
-                    )
-                )}
+    if (
+        ema_direction == "long"
+        and roc_value <= 0
+    ):
 
-            </span>
+        return {
+            "text": "🟡 상승 준비",
+            "class": "wait"
+        }
 
-            <span>
+    # =====================================================
+    # 역배열 + ROC 상승
+    #
+    # 상승 중이지만 추세와 반대
+    # → 조심
+    # =====================================================
 
-                {market_change_html(
-                    row.get(
-                        "change_value"
-                    )
-                )}
+    if (
+        ema_direction == "short"
+        and roc_value > 0
+    ):
 
-            </span>
+        return {
+            "text": "🟠 상승 / 조심",
+            "class": "short"
+        }
 
-        </div>
+    # =====================================================
+    # 역배열 + ROC 0 이하
+    # =====================================================
 
+    if (
+        ema_direction == "short"
+        and roc_value <= 0
+    ):
 
-        <div class="market-indicators">
+        return {
+            "text": "🔴 안좋음",
+            "class": "short"
+        }
 
+    # =====================================================
+    # 혼합 + ROC 상승
+    # =====================================================
 
-            <!-- EMA -->
+    if (
+        ema_direction == "none"
+        and roc_value > 0
+    ):
 
-            <div class="market-indicator-group">
+        return {
+            "text": "🟡 상승 / 확인",
+            "class": "wait"
+        }
 
-                <span class="market-label">
-                    EMA
-                </span>
+    # =====================================================
+    # 혼합 + ROC 0 이하
+    # =====================================================
 
-
-                <div class="market-indicator-line">
-
-                    <span class="market-timeframe">
-                        {format_timeframe(
-                            EMA_TIMEFRAME
-                        )}
-                    </span>
-
-                    {market_direction_html(
-                        ema_1.get(
-                            "direction",
-                            "none"
-                        ),
-                        ema_1.get(
-                            "count",
-                            0
-                        )
-                    )}
-
-                </div>
-
-
-                <div class="market-indicator-line">
-
-                    <span class="market-timeframe">
-                        {format_timeframe(
-                            EMA_HIGH_TIMEFRAME
-                        )}
-                    </span>
-
-                    {market_direction_html(
-                        ema_high.get(
-                            "direction",
-                            "none"
-                        ),
-                        ema_high.get(
-                            "count",
-                            0
-                        )
-                    )}
-
-                </div>
-
-
-                <div class="market-indicator-line">
-
-                    <span class="market-timeframe">
-                        {format_timeframe(
-                            EMA_DAILY_TIMEFRAME
-                        )}
-                    </span>
-
-                    {market_direction_html(
-                        ema_daily.get(
-                            "direction",
-                            "none"
-                        ),
-                        ema_daily.get(
-                            "count",
-                            0
-                        )
-                    )}
-
-                </div>
-
-            </div>
+    return {
+        "text": "⚪ 관망",
+        "class": "wait"
+    }
 
 
-            <!-- ROC -->
+def get_market_row(coin):
 
-            <div class="market-indicator-group">
+    for row in latest_upbit_data:
 
-                <span class="market-label">
-                    ROC10 / MA
-                </span>
+        if row.get("name") == coin:
 
+            return row
 
-                <div class="market-indicator-line">
-
-                    <span class="market-timeframe">
-                        {format_timeframe(
-                            ROC_TIMEFRAME
-                        )}
-                    </span>
-
-                    {market_roc_html(
-                        roc_data
-                    )}
-
-                </div>
-
-
-                <div class="market-indicator-line">
-
-                    <span class="market-timeframe">
-                        {format_timeframe(
-                            ROC_HIGH_TIMEFRAME
-                        )}
-                    </span>
-
-                    {market_roc_reference_html(
-                        roc_high
-                    )}
-
-                </div>
-
-
-                <div class="market-indicator-line">
-
-                    <span class="market-timeframe">
-                        {format_timeframe(
-                            ROC_DAILY_TIMEFRAME
-                        )}
-                    </span>
-
-                    {market_roc_reference_html(
-                        roc_daily
-                    )}
-
-                </div>
-
-            </div>
-
-
-        </div>
-
-    </div>
-
-    """
+    return None
 
 
 # =========================================================
-# BTC + ETH 시장 시황
+# BTC 시황
 # =========================================================
 
 def market_summary_html():
 
-    btc = latest_market_data.get(
-        "BTC"
+    btc = get_market_row("BTC")
+
+    if btc is None:
+
+        return f"""
+        <div class="market-summary">
+
+            <div class="market-title">
+
+                <span class="market-title-main">
+                    ₿ BTC 시장 시황
+                </span>
+
+                <span class="market-title-sub">
+                    EMA 배열 + ROC10 기준
+                </span>
+
+            </div>
+
+            <div class="btc-mobile">
+
+                <div class="btc-top">
+
+                    <span class="btc-name">
+                        ₿ BTC
+                    </span>
+
+                    <span class="btc-price">
+                        -
+                    </span>
+
+                    <span class="btc-change">
+                        -
+                    </span>
+
+                </div>
+
+                <div class="btc-bottom">
+
+                    <span>
+                        {format_timeframe(
+                            EMA_TIMEFRAME
+                        )} ⚪ 0
+                    </span>
+
+                    <span>
+                        {format_timeframe(
+                            EMA_HIGH_TIMEFRAME
+                        )} ⚪ 0
+                    </span>
+
+                    <span>
+                        ROC ⚪ -
+                    </span>
+
+                    <span class="btc-position wait">
+                        ⚪ 관망
+                    </span>
+
+                </div>
+
+            </div>
+
+        </div>
+        """
+
+    ema_1 = btc.get(
+        "ema_1h",
+        {}
     )
 
-    eth = latest_market_data.get(
-        "ETH"
+    ema_high = btc.get(
+        "ema_high",
+        {}
+    )
+
+    roc_data = btc.get(
+        "roc",
+        {}
+    )
+
+    position = btc_position_view(
+        btc
     )
 
     return f"""
-
     <div class="market-summary">
-
 
         <div class="market-title">
 
             <span class="market-title-main">
-                📊 시장 시황
+                ₿ BTC 시장 시황
             </span>
 
             <span class="market-title-sub">
-
-                {latest_market_source} ·
-
-                EMA {format_timeframe(EMA_TIMEFRAME)}/
-                {format_timeframe(EMA_HIGH_TIMEFRAME)}/
-                {format_timeframe(EMA_DAILY_TIMEFRAME)}
-
-                +
-
-                ROC10 {format_timeframe(ROC_TIMEFRAME)}/
-                {format_timeframe(ROC_HIGH_TIMEFRAME)}/
-                {format_timeframe(ROC_DAILY_TIMEFRAME)}
-
+                EMA 배열 + ROC10 기준
             </span>
 
         </div>
 
+        <div class="btc-mobile">
 
-        <div class="market-grid">
+            <div class="btc-top">
 
-            {market_panel(
-                btc,
-                "BTC",
-                "₿"
-            )}
+                <span class="btc-name">
+                    ₿ BTC
+                </span>
 
-            {market_panel(
-                eth,
-                "ETH",
-                "◆"
-            )}
+                <span class="btc-price">
+                    {format_market_price(
+                        btc.get(
+                            "current_price"
+                        )
+                    )}
+                </span>
+
+                <span class="btc-change">
+                    {market_change_html(
+                        btc.get(
+                            "change_value"
+                        )
+                    )}
+                </span>
+
+            </div>
+
+            <div class="btc-bottom">
+
+                <span>
+                    {format_timeframe(
+                        EMA_TIMEFRAME
+                    )}
+                    {market_direction_html(
+                        ema_1.get(
+                            "direction",
+                            "none"
+                        ),
+                        ema_1.get(
+                            "count",
+                            0
+                        )
+                    )}
+                </span>
+
+                <span>
+                    {format_timeframe(
+                        EMA_HIGH_TIMEFRAME
+                    )}
+                    {market_direction_html(
+                        ema_high.get(
+                            "direction",
+                            "none"
+                        ),
+                        ema_high.get(
+                            "count",
+                            0
+                        )
+                    )}
+                </span>
+
+                <span>
+                    ROC
+                    {market_roc_html(
+                        roc_data
+                    )}
+                </span>
+
+                <span
+                    class="
+                        btc-position
+                        {position["class"]}
+                    "
+                >
+                    {position["text"]}
+                </span>
+
+            </div>
 
         </div>
 
+    </div>
+    """
+
+
+# =========================================================
+# ROC HTML
+# =========================================================
+
+def roc_html(r):
+
+    if not r:
+
+        return (
+            '<div class="roc-cell">'
+            '<span class="roc-zero">'
+            '⚪ 0'
+            '</span>'
+            '</div>'
+        )
+
+    value = r.get(
+        "roc10"
+    )
+
+    if value is None:
+
+        return (
+            '<div class="roc-cell">'
+            '<span class="roc-zero">'
+            '⚪ 0'
+            '</span>'
+            '</div>'
+        )
+
+    try:
+
+        value = float(value)
+
+    except Exception:
+
+        return (
+            '<div class="roc-cell">'
+            '<span class="roc-zero">'
+            '⚪ 0'
+            '</span>'
+            '</div>'
+        )
+
+    state = r.get(
+        "long_breakout_state",
+        "none"
+    )
+
+    if state != "none":
+
+        count = {
+            "current": 0,
+            "confirmed": 1,
+            "next": 2
+        }.get(
+            state,
+            0
+        )
+
+        return f"""
+        <div class="roc-cell">
+
+            <span class="roc-positive">
+                🚀{count_icon(count)}
+            </span>
+
+        </div>
+        """
+
+    state = r.get(
+        "short_breakout_state",
+        "none"
+    )
+
+    if state != "none":
+
+        count = {
+            "current": 0,
+            "confirmed": 1,
+            "next": 2
+        }.get(
+            state,
+            0
+        )
+
+        return f"""
+        <div class="roc-cell">
+
+            <span class="roc-negative">
+                🔻{count_icon(count)}
+            </span>
+
+        </div>
+        """
+
+    if value > 0:
+
+        count = int(
+            r.get(
+                "roc10_count",
+                0
+            )
+        )
+
+        count = max(
+            count,
+            1
+        )
+
+        return f"""
+        <div class="roc-cell">
+
+            <span class="roc-positive">
+                🟢 상승 {count}
+            </span>
+
+        </div>
+        """
+
+    if value < 0:
+
+        count = int(
+            r.get(
+                "roc10_negative_count",
+                0
+            )
+        )
+
+        count = max(
+            count,
+            1
+        )
+
+        return f"""
+        <div class="roc-cell">
+
+            <span class="roc-negative">
+                🔴 하락 {count}
+            </span>
+
+        </div>
+        """
+
+    return """
+    <div class="roc-cell">
+
+        <span class="roc-zero">
+            ⚪ 0
+        </span>
+
+    </div>
+    """
+
+
+# =========================================================
+# 신호 HTML
+# =========================================================
+
+def signal_html(row):
+
+    r = row.get(
+        "roc",
+        {}
+    )
+
+    state = r.get(
+        "long_breakout_state",
+        "none"
+    )
+
+    if (
+        row.get(
+            "breakout_qualified",
+            False
+        )
+        and state != "none"
+    ):
+
+        count = {
+            "current": 0,
+            "confirmed": 1,
+            "next": 2
+        }.get(
+            state,
+            0
+        )
+
+        return (
+            '<span '
+            'class="signal-icon long-breakout" '
+            'title="롱 돌파 / 정배열">'
+            f'🚀{count_icon(count)}'
+            '</span>'
+        )
+
+    state = r.get(
+        "short_breakout_state",
+        "none"
+    )
+
+    if (
+        row.get(
+            "short_breakout_qualified",
+            False
+        )
+        and state != "none"
+    ):
+
+        count = {
+            "current": 0,
+            "confirmed": 1,
+            "next": 2
+        }.get(
+            state,
+            0
+        )
+
+        return (
+            '<span '
+            'class="signal-icon short-breakout" '
+            'title="숏 돌파 / 역배열">'
+            f'🔻{count_icon(count)}'
+            '</span>'
+        )
+
+    if row.get(
+        "roc3_long_progress_qualified",
+        False
+    ):
+
+        return (
+            '<span '
+            'class="signal-icon long-progress" '
+            'title="롱 진행 / 정배열 / ROC 3+">'
+            '☀️'
+            '</span>'
+        )
+
+    if row.get(
+        "roc3_short_progress_qualified",
+        False
+    ):
+
+        return (
+            '<span '
+            'class="signal-icon short-progress" '
+            'title="숏 진행 / 역배열 / ROC 3+">'
+            '🌧️'
+            '</span>'
+        )
+
+    return (
+        '<span class="muted">-</span>'
+    )
+
+
+# =========================================================
+# EMA HTML
+# =========================================================
+
+def ema_html(e):
+
+    if not e:
+        return "⚪(0)"
+
+    d = e.get(
+        "direction",
+        "none"
+    )
+
+    count = e.get(
+        "count",
+        0
+    )
+
+    icon = {
+        "long": "🟢",
+        "short": "🔴"
+    }.get(
+        d,
+        "⚪"
+    )
+
+    return f"{icon}{count}"
+
+
+# =========================================================
+# 행 클래스
+# =========================================================
+
+def row_class(x):
+
+    if x.get(
+        "breakout_qualified"
+    ):
+
+        return "breakout-qualified"
+
+    if x.get(
+        "short_breakout_qualified"
+    ):
+
+        return "short-breakout-qualified"
+
+    if x.get(
+        "roc3_long_progress_qualified"
+    ):
+
+        return "progress-qualified"
+
+    if x.get(
+        "roc3_short_progress_qualified"
+    ):
+
+        return "short-progress-qualified"
+
+    return ""
+
+
+# =========================================================
+# 행 HTML
+# =========================================================
+
+def rows_html(
+    data,
+    focus=None
+):
+
+    out = []
+
+    for x in data:
+
+        if focus == "breakout":
+
+            cls = "breakout-qualified"
+
+        elif focus == "short_breakout":
+
+            cls = "short-breakout-qualified"
+
+        elif focus == "progress":
+
+            cls = "progress-qualified"
+
+        elif focus == "short_progress":
+
+            cls = "short-progress-qualified"
+
+        elif focus == "roc3_progress":
+
+            cls = "progress-qualified"
+
+        elif focus == "roc3_short_progress":
+
+            cls = "short-progress-qualified"
+
+        else:
+
+            cls = row_class(x)
+
+        out.append(
+            f"""
+            <tr class="{cls}">
+
+                <td>
+                    {x.get("rank", "-")}
+                </td>
+
+                <td class="coin">
+
+                    <b>
+                        {x.get("name", "-")}
+                    </b>
+
+                    <small>
+                        {x.get("change", "-")}
+                    </small>
+
+                </td>
+
+                <td class="vol">
+                    {x.get("volume", "-")}
+                </td>
+
+                <td class="ema">
+
+                    <span>
+                        {format_timeframe(
+                            EMA_TIMEFRAME
+                        )}
+
+                        {ema_html(
+                            x.get(
+                                "ema_1h"
+                            )
+                        )}
+                    </span>
+
+                    <span class="ema-sep">
+                        /
+                    </span>
+
+                    <span>
+                        {format_timeframe(
+                            EMA_HIGH_TIMEFRAME
+                        )}
+
+                        {ema_html(
+                            x.get(
+                                "ema_high"
+                            )
+                        )}
+                    </span>
+
+                </td>
+
+                <td>
+
+                    {roc_html(
+                        x.get(
+                            "roc",
+                            {}
+                        )
+                    )}
+
+                </td>
+
+                <td class="signal-cell">
+
+                    {signal_html(x)}
+
+                </td>
+
+            </tr>
+            """
+        )
+
+    return "".join(out)
+
+
+# =========================================================
+# 테이블
+# =========================================================
+
+def table_html(
+    data,
+    focus=None
+):
+
+    rows = rows_html(
+        data,
+        focus
+    )
+
+    if not rows:
+
+        rows = """
+        <tr>
+
+            <td
+                colspan="6"
+                class="empty"
+            >
+                현재 후보 없음
+            </td>
+
+        </tr>
+        """
+
+    return f"""
+    <div class="table-wrap">
+
+        <table>
+
+            <thead>
+
+                <tr>
+
+                    <th>#</th>
+                    <th>코인</th>
+                    <th>거래대금</th>
+                    <th>EMA</th>
+                    <th>ROC10</th>
+                    <th>신호</th>
+
+                </tr>
+
+            </thead>
+
+            <tbody>
+
+                {rows}
+
+            </tbody>
+
+        </table>
+
+    </div>
+    """
+
+
+# =========================================================
+# 후보 섹션
+# =========================================================
+
+def focus_section(
+    title,
+    data,
+    update_time,
+    checker,
+    focus,
+    description,
+    sort_key=None,
+    reverse=False
+):
+
+    rows = [
+        x
+        for x in data
+        if checker(x)
+    ]
+
+    if sort_key:
+
+        def get_sort_value(x):
+
+            value = (
+                x.get(
+                    "roc",
+                    {}
+                ).get(
+                    sort_key
+                )
+            )
+
+            if value is None:
+
+                if reverse:
+
+                    return pd.Timestamp.min
+
+                return pd.Timestamp.max
+
+            try:
+
+                return pd.Timestamp(
+                    value
+                )
+
+            except Exception:
+
+                if reverse:
+
+                    return pd.Timestamp.min
+
+                return pd.Timestamp.max
+
+        rows.sort(
+            key=get_sort_value,
+            reverse=reverse
+        )
+
+    return f"""
+    <div class="section-title {focus}-section-title">
+
+        <span class="section-title-main">
+            {title}
+        </span>
+
+        <span class="section-title-sub">
+            {description} · {update_time} KST
+        </span>
 
     </div>
 
+    {table_html(
+        rows,
+        focus
+    )}
+    """
+
+
+def section(
+    title,
+    data,
+    update_time
+):
+
+    return f"""
+    <div class="section-title">
+
+        <span class="section-title-main">
+            🏆 {title} TOP{TOP_N}
+        </span>
+
+        <span class="section-title-sub">
+            {update_time} KST
+        </span>
+
+    </div>
+
+    {table_html(data)}
     """
 
 
@@ -5594,224 +4253,399 @@ body{
 body{
     background:#0d1014;
     color:#eee;
+
     font-family:
         -apple-system,
         BlinkMacSystemFont,
         "Segoe UI",
         Arial,
         sans-serif;
+
     font-size:8px;
-    padding:2px 2px 8px;
+
+    padding:
+        2px
+        2px
+        8px;
 }
 
 h1{
-    margin:1px 2px 2px;
+    margin:
+        1px
+        2px
+        2px;
+
     font-size:12px;
     line-height:14px;
 }
 
 
-/* =========================================================
-   제목
-   ========================================================= */
+/* =====================================================
+   BTC 시장 시황 제목
+   ===================================================== */
 
-.market-title,
-.section-title{
+.market-title{
     display:flex;
     align-items:center;
+
     gap:5px;
+
     width:100%;
     min-height:18px;
-    color:#fff;
+
+    color:#ffffff;
+
     font-size:8px;
     line-height:10px;
+
     font-weight:900;
+
     margin-bottom:4px;
-    padding:3px 5px;
-    border-left:3px solid #39e875;
-    background:rgba(57,232,117,.08);
+
+    padding:
+        3px
+        5px;
+
+    border-left:
+        3px solid
+        #39e875;
+
+    background:
+        rgba(
+            57,
+            232,
+            117,
+            .08
+        );
+
     border-radius:3px;
+
     white-space:nowrap;
+
     overflow:hidden;
 }
 
+.market-title-main{
+    color:#ffffff;
+
+    font-size:8px;
+    line-height:10px;
+
+    font-weight:900;
+
+    flex:none;
+}
+
+.market-title-sub{
+    color:#7f8791;
+
+    font-size:5.5px;
+    line-height:8px;
+
+    font-weight:700;
+
+    white-space:nowrap;
+
+    overflow:hidden;
+
+    text-overflow:ellipsis;
+}
+
+
+/* =====================================================
+   일반 제목
+   ===================================================== */
+
 .section-title{
-    margin:5px 0 4px;
+    display:flex;
+    align-items:center;
+
+    gap:5px;
+
+    width:100%;
+    min-height:18px;
+
+    color:#ffffff;
+
+    font-size:8px;
+    line-height:10px;
+
+    font-weight:900;
+
+    margin:
+        5px
+        0
+        4px;
+
+    padding:
+        3px
+        5px;
+
+    border-left:
+        3px solid
+        #39e875;
+
+    background:
+        rgba(
+            57,
+            232,
+            117,
+            .08
+        );
+
+    border-radius:3px;
+
+    white-space:nowrap;
+
+    overflow:hidden;
 }
 
 .section-title-main{
-    color:#fff;
+    color:#ffffff;
+
     font-size:8px;
     line-height:10px;
+
     font-weight:900;
+
     flex:none;
 }
 
 .section-title-sub{
     color:#7f8791;
+
     font-size:5.5px;
     line-height:8px;
+
     font-weight:700;
+
     white-space:nowrap;
+
     overflow:hidden;
+
     text-overflow:ellipsis;
 }
 
-.roc-section-title{
+
+/* =====================================================
+   제목별 왼쪽 포인트
+   ===================================================== */
+
+.breakout-section-title{
     border-left-color:#39e875;
-    background:rgba(57,232,117,.08);
+}
+
+.short_breakout-section-title{
+    border-left-color:#ff5555;
 }
 
 .progress-section-title{
-    border-left-color:#ffd166;
-    background:rgba(255,209,102,.08);
+    border-left-color:#4cc9ff;
+}
+
+.short_progress-section-title{
+    border-left-color:#ff6666;
+}
+
+.roc3_progress-section-title{
+    border-left-color:#39e875;
+}
+
+.roc3_short_progress-section-title{
+    border-left-color:#ff5555;
 }
 
 
-/* =========================================================
-   상태
-   ========================================================= */
-
-.status{
-    display:flex;
-    gap:10px;
-    margin:3px 2px;
-    color:#777f89;
-    font-size:6px;
-    font-weight:700;
-    white-space:nowrap;
-    overflow:hidden;
-}
-
-.status .y{
-    color:#39e875;
-}
-
-.status .n{
-    color:#ff5555;
-}
-
-
-/* =========================================================
-   시장 시황
-   ========================================================= */
+/* =====================================================
+   BTC 영역
+   ===================================================== */
 
 .market-summary{
     width:100%;
-    margin:2px 0 3px;
-    padding:3px 4px;
-    border-top:1px solid #242a31;
-    border-bottom:1px solid #242a31;
+
+    margin:
+        2px
+        0
+        3px;
+
+    padding:
+        3px
+        4px;
+
+    border-top:
+        1px solid
+        #242a31;
+
+    border-bottom:
+        1px solid
+        #242a31;
+
     background:#101419;
+
     overflow:hidden;
 }
 
-.market-grid{
-    display:grid;
-    grid-template-columns:
-        minmax(0,1fr)
-        minmax(0,1fr);
-    gap:8px;
+.btc-mobile{
     width:100%;
-}
-
-.market-panel{
-    min-width:0;
     overflow:hidden;
 }
 
-.market-panel + .market-panel{
-    border-left:1px solid #242a31;
-    padding-left:8px;
-}
-
-.market-panel-title{
+.btc-top{
     display:flex;
     align-items:center;
-    gap:4px;
+
     width:100%;
-    margin:1px 0 2px;
+    min-height:16px;
+
+    gap:4px;
+
     white-space:nowrap;
+
     overflow:hidden;
 }
 
-.market-panel-name{
-    color:#fff;
-    font-size:7px;
-    line-height:9px;
-    font-weight:900;
+.btc-name{
     flex:none;
+
+    width:34px;
+
+    font-size:6.5px;
+    line-height:8px;
+
+    font-weight:900;
 }
 
-.market-panel-sub{
-    color:#737b85;
-    font-size:4.8px;
-    line-height:7px;
-    font-weight:700;
+.btc-price{
+    flex:1;
+
+    min-width:0;
+
+    color:#e8edf2;
+
+    font-size:6px;
+    line-height:8px;
+
+    font-weight:800;
+
+    text-align:left;
+
     white-space:nowrap;
+
     overflow:hidden;
+
     text-overflow:ellipsis;
 }
 
-.market-top{
-    display:flex;
-    align-items:center;
-    gap:7px;
-    margin:2px 0 3px;
-    min-height:10px;
-    white-space:nowrap;
-    overflow:hidden;
-}
-
-.market-price{
-    color:#eee;
-    font-size:7px;
-    line-height:9px;
-    font-weight:900;
-    white-space:nowrap;
-}
-
-.market-indicators{
-    display:flex;
-    align-items:flex-start;
-    gap:10px;
-    width:100%;
-    color:#89919a;
-    font-size:5.3px;
-    line-height:9px;
-}
-
-.market-indicator-group{
-    min-width:0;
+.btc-change{
     flex:none;
-}
 
-.market-label{
-    display:block;
-    color:#aaa;
-    font-size:5px;
-    line-height:7px;
+    width:58px;
+
+    font-size:7.5px;
+    line-height:10px;
+
     font-weight:900;
-    margin-bottom:1px;
-}
 
-.market-indicator-line{
-    display:flex;
-    align-items:center;
-    gap:3px;
-    min-height:10px;
-    padding-left:2px;
+    text-align:right;
+
     white-space:nowrap;
 }
 
-.market-timeframe{
-    color:#89919a;
-    font-size:5px;
+.btc-bottom{
+    display:flex;
+    align-items:center;
+
+    width:100%;
+    min-height:17px;
+
+    gap:6px;
+
+    white-space:nowrap;
+
+    overflow:hidden;
+
+    font-size:5.3px;
     line-height:8px;
-    font-weight:700;
-    width:18px;
-    min-width:18px;
+
+    font-weight:800;
 }
+
+.btc-bottom > span{
+    flex:none;
+
+    white-space:nowrap;
+}
+
+.btc-position{
+    margin-left:auto;
+
+    min-width:72px;
+
+    padding:
+        3px
+        5px;
+
+    border-radius:4px;
+
+    text-align:center;
+
+    font-size:8px;
+    line-height:12px;
+
+    font-weight:900;
+
+    white-space:nowrap;
+
+    border:
+        1px solid
+        rgba(
+            255,
+            255,
+            255,
+            .08
+        );
+}
+
+.btc-position.long{
+    color:#39e875!important;
+
+    background:
+        rgba(
+            57,
+            232,
+            117,
+            .12
+        );
+}
+
+.btc-position.short{
+    color:#ff5555!important;
+
+    background:
+        rgba(
+            255,
+            85,
+            85,
+            .12
+        );
+}
+
+.btc-position.wait{
+    color:#b0b7bf!important;
+
+    background:
+        rgba(
+            104,
+            113,
+            123,
+            .12
+        );
+}
+
+
+/* =====================================================
+   색상
+   ===================================================== */
 
 .market-up{
     color:#39e875!important;
@@ -5828,23 +4662,208 @@ h1{
     font-weight:800;
 }
 
+.status{
+    display:flex;
 
-/* =========================================================
-   TABLE
-   ========================================================= */
+    justify-content:center;
+
+    gap:9px;
+
+    margin:
+        2px
+        2px
+        3px;
+
+    padding:
+        2px
+        0;
+
+    border-top:
+        1px solid
+        #242a31;
+
+    border-bottom:
+        1px solid
+        #242a31;
+
+    font-size:6px;
+    line-height:7px;
+
+    font-weight:800;
+}
+
+.y,
+.buy,
+.roc-positive,
+.up{
+    color:#39e875!important;
+    font-weight:800;
+}
+
+.n,
+.short,
+.roc-negative,
+.down{
+    color:#ff5555!important;
+    font-weight:800;
+}
+
+.breakout{
+    color:#39e875!important;
+    font-weight:900;
+}
+
+.short-breakout{
+    color:#ff5555!important;
+    font-weight:900;
+}
+
+.progress{
+    color:#4cc9ff;
+}
+
+.short-progress{
+    color:#ff6666;
+}
+
+.muted,
+.roc-zero,
+.zero{
+    color:#68717b!important;
+}
+
+
+/* =====================================================
+   신호
+   ===================================================== */
+
+.signal-cell{
+    text-align:center!important;
+    vertical-align:middle;
+}
+
+.signal-icon{
+    display:inline-flex;
+
+    align-items:center;
+
+    justify-content:center;
+
+    width:100%;
+
+    min-height:21px;
+
+    font-size:15px;
+    line-height:17px;
+
+    font-weight:900;
+
+    white-space:nowrap;
+}
+
+.signal-icon.long-breakout{
+    filter:
+        drop-shadow(
+            0 0 2px
+            rgba(
+                57,
+                232,
+                117,
+                .35
+            )
+        );
+}
+
+.signal-icon.short-breakout{
+    filter:
+        drop-shadow(
+            0 0 2px
+            rgba(
+                255,
+                85,
+                85,
+                .35
+            )
+        );
+}
+
+.signal-icon.long-progress{
+    filter:
+        drop-shadow(
+            0 0 2px
+            rgba(
+                255,
+                216,
+                77,
+                .25
+            )
+        );
+}
+
+.signal-icon.short-progress{
+    filter:
+        drop-shadow(
+            0 0 2px
+            rgba(
+                160,
+                190,
+                220,
+                .25
+            )
+        );
+}
+
+
+/* =====================================================
+   ROC 3+ 행
+   ===================================================== */
+
+.roc3-progress-qualified{
+    background:
+        rgba(
+            57,
+            232,
+            117,
+            .06
+        );
+}
+
+.roc3-short-progress-qualified{
+    background:
+        rgba(
+            255,
+            85,
+            85,
+            .06
+        );
+}
+
+
+/* =====================================================
+   테이블
+   ===================================================== */
 
 .table-wrap{
     width:100%;
+
     overflow:hidden;
+
     border-radius:5px;
-    border:1px solid #272d34;
+
+    border:
+        1px solid
+        #272d34;
+
     background:#171b20;
 }
 
 table{
     width:100%;
+
     table-layout:fixed;
+
     border-collapse:collapse;
+
     background:#171b20;
 }
 
@@ -5854,21 +4873,36 @@ thead{
 
 th{
     height:17px;
+
     padding:1px;
-    border-bottom:1px solid #292f36;
+
+    border-bottom:
+        1px solid
+        #292f36;
+
     color:#7f8791;
+
     font-size:5px;
     line-height:6px;
+
     font-weight:700;
+
     text-align:center;
 }
 
 td{
-    height:55px;
+    height:25px;
+
     padding:1px;
-    border-bottom:1px solid #22282e;
+
+    border-bottom:
+        1px solid
+        #22282e;
+
     text-align:center;
+
     vertical-align:middle;
+
     overflow:hidden;
 }
 
@@ -5876,14 +4910,9 @@ tr:last-child td{
     border-bottom:none;
 }
 
-
-/* =========================================================
-   컬럼
-   ========================================================= */
-
 th:nth-child(1),
 td:nth-child(1){
-    width:5%;
+    width:6%;
 }
 
 th:nth-child(2),
@@ -5893,303 +4922,205 @@ td:nth-child(2){
 
 th:nth-child(3),
 td:nth-child(3){
-    width:13%;
+    width:15%;
 }
 
 th:nth-child(4),
 td:nth-child(4){
-    width:19%;
+    width:25%;
 }
 
 th:nth-child(5),
 td:nth-child(5){
-    width:34%;
+    width:22%;
 }
 
 th:nth-child(6),
 td:nth-child(6){
-    width:14%;
+    width:17%;
 }
 
+td:nth-child(1){
+    color:#8b929b;
 
-/* =========================================================
-   코인
-   ========================================================= */
+    font-size:6px;
+
+    font-weight:700;
+}
 
 .coin{
     text-align:left!important;
+
     line-height:9px;
 }
 
 .coin b{
     display:block;
+
     width:100%;
+
     font-size:6.5px;
     line-height:8px;
+
     font-weight:800;
+
     white-space:nowrap;
+
     overflow:hidden;
+
     text-overflow:ellipsis;
 }
 
 .coin small{
     display:block;
+
     margin:0;
+
     font-size:4.5px;
     line-height:6px;
+
     white-space:nowrap;
+
     overflow:hidden;
 }
-
-
-/* =========================================================
-   거래대금
-   ========================================================= */
 
 .vol{
     font-size:6px;
     line-height:8px;
+
     font-weight:800;
+
     white-space:nowrap;
 }
 
-
-/* =========================================================
-   EMA / ROC
-   ========================================================= */
-
-.ema-cell,
-.roc-column{
-    text-align:left!important;
-    vertical-align:middle;
-}
-
-.indicator-title{
-    color:#737b85;
-    font-size:5px;
-    line-height:5px;
-    font-weight:900;
-    margin-top:0;
-    margin-bottom:0;
-    padding-left:4px;
-}
-
-.indicator-line{
-    display:flex;
-    align-items:center;
-    justify-content:flex-start;
-    gap:3px;
-    min-height:12px;
-    padding-left:4px;
-    white-space:nowrap;
-}
-
-.indicator-label{
-    color:#9da5ae;
-    font-size:5px;
-    line-height:6px;
-    font-weight:700;
-    width:16px;
-    min-width:16px;
-    text-align:left;
-}
-
-
-/* =========================================================
-   EMA / ROC 수치
-   ========================================================= */
-
-.ema-direction,
-.roc-long,
-.roc-short,
-.roc-neutral,
-.roc-zero,
-.roc-reference,
-.roc-reference-long,
-.roc-reference-short{
-    font-size:6px;
-    line-height:7px;
-    font-weight:900;
-    white-space:nowrap;
-}
-
-.ema-direction{
-    min-width:18px;
-}
-
-
-/* =========================================================
-   ROC
-   ========================================================= */
-
-.roc-long,
-.roc-reference-long{
-    color:#39e875!important;
-}
-
-.roc-short,
-.roc-reference-short{
-    color:#ff5555!important;
-}
-
-.roc-neutral,
-.roc-zero,
-.roc-reference{
-    color:#68717b!important;
-}
-
-
-/* =========================================================
-   ROC 이평선
-   ========================================================= */
-
-.roc-ma-long{
-    color:#39e875!important;
-    font-weight:900;
-}
-
-.roc-ma-short{
-    color:#ff5555!important;
-    font-weight:900;
-}
-
-.roc-ma-neutral{
-    color:#68717b!important;
-    font-weight:800;
-}
-
-
-/* =========================================================
-   ROC 상승 / 하락
-   ========================================================= */
-
-.roc-up{
-    color:#39e875!important;
-    font-weight:900;
-}
-
-.roc-down{
-    color:#ff5555!important;
-    font-weight:900;
-}
-
-.roc-flat{
-    color:#8b929b!important;
-    font-weight:800;
-}
-
-
-/* =========================================================
-   신호
-   ========================================================= */
-
-.signal-cell{
+.ema{
     text-align:center!important;
-    vertical-align:middle;
-    padding-left:2px;
-    padding-right:2px;
-}
 
-.signal-icon{
-    display:inline-flex;
-    align-items:center;
-    justify-content:center;
-    width:100%;
-    min-height:18px;
-    font-size:11px;
-    line-height:14px;
-    font-weight:900;
-    white-space:nowrap;
-}
+    font-weight:800;
 
-.long-breakout{
-    color:#39e875;
-}
-
-.short-breakout{
-    color:#ff5555;
-}
-
-.roc-warning-qualified{
-    color:#ffd166!important;
-    font-size:6px!important;
     line-height:8px;
-    font-weight:900;
+
+    white-space:nowrap;
+
+    overflow:visible;
+}
+
+.ema span{
+    font-size:5.8px;
+    line-height:8px;
+
     white-space:nowrap;
 }
 
-.long-progress{
-    color:#ffd166;
+.ema-sep{
+    color:#555c65;
+
+    margin:
+        0
+        1px;
 }
 
-.short-progress{
-    color:#91a7ff;
+.roc-cell{
+    display:flex;
+
+    flex-direction:row;
+
+    align-items:center;
+
+    justify-content:center;
+
+    gap:1px;
+
+    min-height:21px;
+
+    line-height:8px;
+
+    white-space:nowrap;
 }
 
+.roc-cell span{
+    font-size:5.8px;
+    line-height:8px;
 
-/* =========================================================
-   등락
-   ========================================================= */
-
-.up{
-    color:#39e875!important;
     font-weight:900;
+
+    white-space:nowrap;
 }
 
-.down{
-    color:#ff5555!important;
-    font-weight:900;
+.buy,
+.short,
+.breakout,
+.short-breakout{
+    font-size:5.8px;
+    line-height:8px;
+
+    font-weight:800;
+
+    white-space:nowrap;
 }
-
-.zero{
-    color:#68717b!important;
-}
-
-.muted{
-    color:#555d67;
-}
-
-
-/* =========================================================
-   행
-   ========================================================= */
 
 .breakout-qualified{
-    background:rgba(57,232,117,.08);
+    background:
+        rgba(
+            57,
+            232,
+            117,
+            .08
+        );
 }
 
 .short-breakout-qualified{
-    background:rgba(255,85,85,.05);
+    background:
+        rgba(
+            255,
+            85,
+            85,
+            .05
+        );
 }
 
 .progress-qualified{
-    background:rgba(255,209,102,.07);
+    background:
+        rgba(
+            76,
+            201,
+            255,
+            .06
+        );
 }
 
 .short-progress-qualified{
-    background:rgba(120,160,255,.06);
-}
-
-.roc-warning-row{
-    background:rgba(255,209,102,.04);
+    background:
+        rgba(
+            255,
+            85,
+            85,
+            .035
+        );
 }
 
 .empty{
     height:30px;
+
     padding:8px;
+
     color:#555d67;
+
     font-size:6px;
 }
 
 
-/* =========================================================
+/* =====================================================
    모바일
-   ========================================================= */
+   ===================================================== */
 
 @media(max-width:380px){
 
     body{
-        padding:1px 1px 6px;
+        padding:
+            1px
+            1px
+            6px;
     }
 
     h1{
@@ -6197,83 +5128,99 @@ td:nth-child(6){
         line-height:13px;
     }
 
+    .market-summary{
+        padding:
+            3px
+            3px;
+    }
+
     .market-title,
     .section-title{
+
         min-height:17px;
+
         gap:4px;
+
         font-size:7px;
         line-height:9px;
-        padding:3px 4px;
+
+        padding:
+            3px
+            4px;
+
         margin-bottom:3px;
+
+        border-left-width:3px;
     }
 
     .section-title{
-        margin:4px 0 3px;
+        margin:
+            4px
+            0
+            3px;
     }
 
+    .market-title-main,
     .section-title-main{
+
         font-size:7px;
         line-height:9px;
     }
 
+    .market-title-sub,
     .section-title-sub{
+
         font-size:4.8px;
         line-height:7px;
     }
 
-    .market-grid{
-        gap:4px;
-    }
-
-    .market-panel + .market-panel{
-        padding-left:4px;
-    }
-
-    .market-panel-title{
+    .btc-top{
+        min-height:15px;
         gap:3px;
     }
 
-    .market-panel-name{
-        font-size:6px;
-        line-height:8px;
+    .btc-name{
+        width:30px;
+        font-size:5.8px;
     }
 
-    .market-panel-sub{
-        font-size:4px;
-        line-height:6px;
+    .btc-price{
+        font-size:5.4px;
     }
 
-    .market-top{
-        gap:5px;
-        margin:1px 0 2px;
+    .btc-change{
+        width:50px;
+
+        font-size:6.5px;
+        line-height:9px;
+
+        font-weight:900;
     }
 
-    .market-price{
-        font-size:6px;
-        line-height:8px;
-    }
+    .btc-bottom{
+        min-height:16px;
 
-    .market-indicators{
-        gap:5px;
+        gap:4px;
+
         font-size:4.8px;
-        line-height:8px;
     }
 
-    .market-label{
-        font-size:4.5px;
+    .btc-position{
+        min-width:64px;
+
+        padding:
+            2px
+            4px;
+
+        font-size:7px;
+        line-height:10px;
+
+        border-radius:4px;
+    }
+
+    .status{
+        font-size:5.5px;
         line-height:6px;
-    }
-
-    .market-indicator-line{
-        gap:2px;
-        min-height:9px;
-    }
-
-    .market-timeframe{
-        font-size:4.5px;
-        line-height:7px;
-        width:15px;
-        min-width:15px;
     }
 
     th{
@@ -6282,37 +5229,7 @@ td:nth-child(6){
     }
 
     td{
-        height:55px;
-    }
-
-    th:nth-child(1),
-    td:nth-child(1){
-        width:5%;
-    }
-
-    th:nth-child(2),
-    td:nth-child(2){
-        width:15%;
-    }
-
-    th:nth-child(3),
-    td:nth-child(3){
-        width:13%;
-    }
-
-    th:nth-child(4),
-    td:nth-child(4){
-        width:19%;
-    }
-
-    th:nth-child(5),
-    td:nth-child(5){
-        width:34%;
-    }
-
-    th:nth-child(6),
-    td:nth-child(6){
-        width:14%;
+        height:23px;
     }
 
     .coin b{
@@ -6329,66 +5246,42 @@ td:nth-child(6){
         font-size:5.5px;
     }
 
-    .indicator-title{
-        font-size:4.5px;
-        line-height:5px;
-        margin-top:0;
-        margin-bottom:0;
+    .ema span{
+        font-size:5.3px;
     }
 
-    .indicator-line{
-        min-height:11px;
-        padding-left:2px;
-        gap:2px;
+    .roc-cell span{
+        font-size:5.2px;
     }
 
-    .indicator-label{
-        font-size:4.5px;
-        line-height:6px;
-        width:13px;
-        min-width:13px;
-    }
-
-    .ema-direction,
-    .roc-long,
-    .roc-short,
-    .roc-neutral,
-    .roc-zero,
-    .roc-reference,
-    .roc-reference-long,
-    .roc-reference-short{
-        font-size:5px;
-        line-height:7px;
-    }
-
-    .ema-direction{
-        min-width:16px;
-    }
-
-    .roc-warning-qualified{
-        font-size:5px!important;
-        line-height:7px;
+    .buy,
+    .short,
+    .breakout,
+    .short-breakout{
+        font-size:5.2px;
     }
 
     .signal-icon{
-        font-size:9px;
-        line-height:11px;
-        min-height:15px;
+        font-size:13px;
+        line-height:15px;
+        min-height:19px;
     }
-
 }
 
 
-/* =========================================================
+/* =====================================================
    PC
-   ========================================================= */
+   ===================================================== */
 
 @media(min-width:601px){
 
     body{
-        max-width:1100px;
+        max-width:900px;
+
         margin:auto;
+
         padding:8px;
+
         font-size:10px;
     }
 
@@ -6399,69 +5292,64 @@ td:nth-child(6){
 
     .market-title,
     .section-title{
+
         min-height:23px;
+
         gap:6px;
+
         font-size:9px;
-        padding:4px 6px;
+
+        padding:
+            4px
+            6px;
+
         margin-bottom:5px;
+
+        border-left-width:3px;
     }
 
     .section-title{
-        margin:10px 0 5px;
+        margin:
+            10px
+            0
+            5px;
     }
 
+    .market-title-main,
     .section-title-main{
+
         font-size:9px;
     }
 
+    .market-title-sub,
     .section-title-sub{
+
         font-size:6px;
     }
 
-    .market-grid{
-        gap:12px;
+    .btc-name{
+        width:42px;
+        font-size:8px;
     }
 
-    .market-panel + .market-panel{
-        padding-left:12px;
+    .btc-price{
+        font-size:8px;
     }
 
-    .market-panel-name{
-        font-size:9px;
-        line-height:11px;
+    .btc-change{
+        width:55px;
+        font-size:7px;
     }
 
-    .market-panel-sub{
-        font-size:6px;
-        line-height:8px;
+    .btc-bottom{
+        font-size:7px;
     }
 
-    .market-price{
-        font-size:9px;
-        line-height:11px;
-    }
+    .btc-position{
+        min-width:70px;
 
-    .market-indicators{
-        gap:18px;
         font-size:7px;
         line-height:11px;
-    }
-
-    .market-label{
-        font-size:7px;
-        line-height:9px;
-    }
-
-    .market-indicator-line{
-        min-height:13px;
-        gap:4px;
-    }
-
-    .market-timeframe{
-        font-size:7px;
-        line-height:10px;
-        width:24px;
-        min-width:24px;
     }
 
     th{
@@ -6470,38 +5358,8 @@ td:nth-child(6){
     }
 
     td{
-        height:70px;
+        height:38px;
         padding:3px;
-    }
-
-    th:nth-child(1),
-    td:nth-child(1){
-        width:5%;
-    }
-
-    th:nth-child(2),
-    td:nth-child(2){
-        width:15%;
-    }
-
-    th:nth-child(3),
-    td:nth-child(3){
-        width:13%;
-    }
-
-    th:nth-child(4),
-    td:nth-child(4){
-        width:19%;
-    }
-
-    th:nth-child(5),
-    td:nth-child(5){
-        width:34%;
-    }
-
-    th:nth-child(6),
-    td:nth-child(6){
-        width:14%;
     }
 
     .coin b{
@@ -6517,79 +5375,33 @@ td:nth-child(6){
         font-size:8px;
     }
 
-    .indicator-title{
-        font-size:7px;
-        line-height:7px;
-        margin-top:0;
-        margin-bottom:0;
-    }
-
-    .indicator-line{
-        min-height:16px;
-        padding-left:5px;
-    }
-
-    .indicator-label{
-        font-size:7px;
-        line-height:8px;
-        width:16px;
-        min-width:16px;
-    }
-
-    .ema-direction,
-    .roc-long,
-    .roc-short,
-    .roc-neutral,
-    .roc-zero,
-    .roc-reference,
-    .roc-reference-long,
-    .roc-reference-short{
+    .ema span{
         font-size:8px;
-        line-height:10px;
     }
 
-    .ema-direction{
-        min-width:25px;
+    .roc-cell span{
+        font-size:7px;
     }
 
-    .roc-warning-qualified{
-        font-size:8px!important;
-        line-height:10px;
+    .buy,
+    .short,
+    .breakout,
+    .short-breakout{
+        font-size:7px;
     }
 
     .signal-icon{
-        font-size:17px;
-        line-height:19px;
-        min-height:25px;
+        font-size:20px;
+        line-height:22px;
+        min-height:28px;
     }
-
-}
-
-
-/* =========================================================
-   ROC 상승 / 하락 색상
-   ========================================================= */
-
-.roc-up{
-    color:#39e875!important;
-    font-weight:900;
-}
-
-.roc-down{
-    color:#ff5555!important;
-    font-weight:900;
-}
-
-.roc-flat{
-    color:#8b929b!important;
-    font-weight:800;
 }
 
 """
 
 
 # =========================================================
-# DASHBOARD
+# Dashboard
 # =========================================================
 
 @app.get(
@@ -6598,131 +5410,7 @@ td:nth-child(6){
 )
 def dashboard():
 
-    sections = ""
-
-
-    # =====================================================
-    # ① ROC 추세 신호
-    # =====================================================
-
-    if USE_UPBIT == "Y":
-
-        sections += roc_signal_section(
-            "🔥 ROC 추세 신호",
-            latest_upbit_data,
-            latest_upbit_update_time,
-            upbit=True
-        )
-
-
-    if USE_OKX == "Y":
-
-        sections += roc_signal_section(
-            "🔥 ROC 추세 신호",
-            latest_okx_data,
-            latest_okx_update_time,
-            upbit=False
-        )
-
-
-    # =====================================================
-    # ② 추세 진행
-    # =====================================================
-
-    if USE_UPBIT == "Y":
-
-        sections += progress_section(
-            latest_upbit_data,
-            latest_upbit_update_time,
-            upbit=True
-        )
-
-
-    if USE_OKX == "Y":
-
-        sections += progress_section(
-            latest_okx_data,
-            latest_okx_update_time,
-            upbit=False
-        )
-
-
-    # =====================================================
-    # ③ UPBIT TOP
-    # =====================================================
-
-    if USE_UPBIT == "Y":
-
-        sections += f"""
-
-        <div class="section-title">
-
-            <span class="section-title-main">
-                🏆 업비트 TOP{TOP_N}
-            </span>
-
-            <span class="section-title-sub">
-
-                거래대금 순위 ·
-                EMA {get_ema_filter_labels()} ·
-                ROC 이평 {get_roc_filter_labels()} ·
-                ROC10 참고 ·
-                {latest_upbit_update_time} KST
-
-            </span>
-
-        </div>
-
-
-        {table_html(
-            latest_upbit_data,
-            "normal"
-        )}
-
-        """
-
-
-    # =====================================================
-    # ④ OKX TOP
-    # =====================================================
-
-    if USE_OKX == "Y":
-
-        sections += f"""
-
-        <div class="section-title">
-
-            <span class="section-title-main">
-                🏆 OKX TOP{TOP_N}
-            </span>
-
-            <span class="section-title-sub">
-
-                거래대금 순위 ·
-                EMA {get_ema_filter_labels()} ·
-                ROC 이평 {get_roc_filter_labels()} ·
-                ROC10 참고 ·
-                {latest_okx_update_time} KST
-
-            </span>
-
-        </div>
-
-
-        {table_html(
-            latest_okx_data,
-            "normal"
-        )}
-
-        """
-
-
-    # =====================================================
-    # 상태
-    # =====================================================
-
     status = f"""
-
     <div class="status">
 
         <span>
@@ -6734,69 +5422,203 @@ def dashboard():
 
         <span>
             OKX :
-            <b class="{'y' if USE_OKX == 'Y' else 'n'}">
+            <b class="n">
                 {USE_OKX}
             </b>
         </span>
 
         <span>
-            EMA :
+            이평필터 :
             <b class="y">
-                {get_ema_filter_labels()}
-            </b>
-        </span>
-
-        <span>
-            ROC MA :
-            <b class="y">
-                {get_roc_filter_labels()}
-            </b>
-        </span>
-
-        <span>
-            ROC :
-            <b class="y">
-                {format_timeframe(ROC_TIMEFRAME)} /
-                {format_timeframe(ROC_HIGH_TIMEFRAME)} /
-                {format_timeframe(ROC_DAILY_TIMEFRAME)}
-            </b>
-        </span>
-
-        <span>
-            기준 :
-            <b class="y">
-                0선
-            </b>
-        </span>
-
-        <span>
-            진행 :
-            <b class="y">
-                2+
-            </b>
-        </span>
-
-        <span>
-            시장 :
-            <b class="y">
-                {latest_market_source}
-            </b>
-        </span>
-
-        <span>
-            TOP :
-            <b class="y">
-                {TOP_N}
+                {USE_EMA_TIMEFRAME}/
+                {USE_EMA_HIGH_TIMEFRAME}
             </b>
         </span>
 
     </div>
-
     """
 
+    sections = ""
+
+    # =====================================================
+    # ① ROC 롱 돌파
+    # =====================================================
+
+    if USE_UPBIT == "Y":
+
+        sections += focus_section(
+            "🚀 ROC 롱 돌파 정배열 (추세선확인 돌파인가 반등인가)",
+            latest_upbit_data,
+            latest_upbit_update_time,
+            is_breakout,
+            "breakout",
+            (
+                f"{format_timeframe(EMA_TIMEFRAME)}"
+                f"/"
+                f"{format_timeframe(EMA_HIGH_TIMEFRAME)} "
+                f"EMA10>30>60>120 · "
+                f"ROC10 음수→양수 ⓪①②"
+            )
+        )
+
+    # =====================================================
+    # ② ROC 3+ 롱 진행중
+    # =====================================================
+
+    if USE_UPBIT == "Y":
+
+        sections += focus_section(
+            "🔥 ROC 3+ 롱 진행중 (추세가 확실하면 도전해라)",
+            latest_upbit_data,
+            latest_upbit_update_time,
+            is_roc3_progress,
+            "roc3_progress",
+            (
+                f"TOP{TOP_N} 기준 · "
+                f"정배열 EMA10>30>60>120 · "
+                f"ROC10 양수 "
+                f"{ROC_PROGRESS_MIN_COUNT}개 이상 연속 · "
+                f"최신 진행순"
+            ),
+            sort_key="roc_progress_start_time",
+            reverse=True
+        )
+
+    # =====================================================
+    # ③ ROC 숏 돌파
+    # =====================================================
+
+    if USE_UPBIT == "Y":
+
+        sections += focus_section(
+            "🔻 ROC 숏 돌파 역배열",
+            latest_upbit_data,
+            latest_upbit_update_time,
+            is_short_breakout,
+            "short_breakout",
+            (
+                f"{format_timeframe(EMA_TIMEFRAME)}"
+                f"/"
+                f"{format_timeframe(EMA_HIGH_TIMEFRAME)} "
+                f"EMA10<30<60<120 · "
+                f"ROC10 양수→음수 ⓪①②"
+            )
+        )
+
+    # =====================================================
+    # ④ ROC 3+ 숏 진행중
+    # =====================================================
+
+    if USE_UPBIT == "Y":
+
+        sections += focus_section(
+            "🌧️ ROC 3+ 숏 진행중",
+            latest_upbit_data,
+            latest_upbit_update_time,
+            is_roc3_short_progress,
+            "roc3_short_progress",
+            (
+                f"TOP{TOP_N} 기준 · "
+                f"역배열 EMA10<30<60<120 · "
+                f"ROC10 음수 "
+                f"{ROC_PROGRESS_MIN_COUNT}개 이상 연속 · "
+                f"최신 진행순"
+            ),
+            sort_key="roc_negative_progress_start_time",
+            reverse=True
+        )
+
+    # =====================================================
+    # OKX
+    # =====================================================
+
+    if USE_OKX == "Y":
+
+        sections += focus_section(
+            "🚀 ROC 롱 돌파 정배열",
+            latest_okx_data,
+            latest_okx_update_time,
+            is_breakout,
+            "breakout",
+            (
+                f"{format_timeframe(EMA_TIMEFRAME)}"
+                f"/"
+                f"{format_timeframe(EMA_HIGH_TIMEFRAME)} "
+                f"EMA10>30>60>120 · "
+                f"ROC10 음수→양수 ⓪①②"
+            )
+        )
+
+        sections += focus_section(
+            "🔥 ROC 3+ 롱 진행중",
+            latest_okx_data,
+            latest_okx_update_time,
+            is_roc3_progress,
+            "roc3_progress",
+            (
+                f"TOP{TOP_N} 기준 · "
+                f"정배열 EMA10>30>60>120 · "
+                f"ROC10 양수 "
+                f"{ROC_PROGRESS_MIN_COUNT}개 이상 연속 · "
+                f"최신 진행순"
+            ),
+            sort_key="roc_progress_start_time",
+            reverse=True
+        )
+
+        sections += focus_section(
+            "🔻 ROC 숏 돌파 역배열",
+            latest_okx_data,
+            latest_okx_update_time,
+            is_short_breakout,
+            "short_breakout",
+            (
+                f"{format_timeframe(EMA_TIMEFRAME)}"
+                f"/"
+                f"{format_timeframe(EMA_HIGH_TIMEFRAME)} "
+                f"EMA10<30<60<120 · "
+                f"ROC10 양수→음수 ⓪①②"
+            )
+        )
+
+        sections += focus_section(
+            "🌧️ ROC 3+ 숏 진행중",
+            latest_okx_data,
+            latest_okx_update_time,
+            is_roc3_short_progress,
+            "roc3_short_progress",
+            (
+                f"TOP{TOP_N} 기준 · "
+                f"역배열 EMA10<30<60<120 · "
+                f"ROC10 음수 "
+                f"{ROC_PROGRESS_MIN_COUNT}개 이상 연속 · "
+                f"최신 진행순"
+            ),
+            sort_key="roc_negative_progress_start_time",
+            reverse=True
+        )
+
+    # =====================================================
+    # 전체 TOP
+    # =====================================================
+
+    if USE_UPBIT == "Y":
+
+        sections += section(
+            "업비트",
+            latest_upbit_data,
+            latest_upbit_update_time
+        )
+
+    if USE_OKX == "Y":
+
+        sections += section(
+            "OKX",
+            latest_okx_data,
+            latest_okx_update_time
+        )
 
     return f"""
-
     <!DOCTYPE html>
 
     <html lang="ko">
@@ -6826,17 +5648,17 @@ def dashboard():
         >
 
         <title>
-            ROC 추세 신호
+            {format_timeframe(EMA_TIMEFRAME)}
+            /
+            {format_timeframe(EMA_HIGH_TIMEFRAME)}
+            EMA10·30·60·120 · ROC10
         </title>
 
         <style>
-
             {CSS}
-
         </style>
 
     </head>
-
 
     <body>
 
@@ -6844,20 +5666,15 @@ def dashboard():
             📊 TRADING SIGNAL CENTER
         </h1>
 
-
         {market_summary_html()}
-
 
         {status}
 
-
         {sections}
-
 
     </body>
 
     </html>
-
     """
 
 
@@ -6887,96 +5704,32 @@ def scheduler():
 
 
 # =========================================================
-# STARTUP
+# Startup
 # =========================================================
 
-@app.on_event(
-    "startup"
-)
+@app.on_event("startup")
 def startup():
+
+    if USE_UPBIT not in ("Y", "N"):
+
+        raise ValueError(
+            "USE_UPBIT은 Y 또는 N만 가능합니다."
+        )
+
+    if USE_OKX not in ("Y", "N"):
+
+        raise ValueError(
+            "USE_OKX는 Y 또는 N만 가능합니다."
+        )
 
     validate_timeframe()
 
-    log.info(
-        "========================================"
+    tf = format_timeframe(
+        EMA_TIMEFRAME
     )
 
-    log.info(
-        "TRADING SIGNAL CENTER 시작"
-    )
-
-    log.info(
-        f"EMA TIMEFRAME = "
-        f"{format_timeframe(EMA_TIMEFRAME)} "
-        f"[{USE_EMA_TIMEFRAME}]"
-    )
-
-    log.info(
-        f"EMA HIGH TIMEFRAME = "
-        f"{format_timeframe(EMA_HIGH_TIMEFRAME)} "
-        f"[{USE_EMA_HIGH_TIMEFRAME}]"
-    )
-
-    log.info(
-        f"EMA DAILY TIMEFRAME = "
-        f"{format_timeframe(EMA_DAILY_TIMEFRAME)} "
-        f"[{USE_EMA_DAILY_TIMEFRAME}]"
-    )
-
-    log.info(
-        f"EMA 실제 필터 = "
-        f"{get_ema_filter_timeframes()}"
-    )
-
-    log.info(
-        f"ROC TIMEFRAME = "
-        f"{format_timeframe(ROC_TIMEFRAME)} "
-        f"[{USE_ROC_TIMEFRAME}]"
-    )
-
-    log.info(
-        f"ROC HIGH TIMEFRAME = "
-        f"{format_timeframe(ROC_HIGH_TIMEFRAME)} "
-        f"[{USE_ROC_HIGH_TIMEFRAME}]"
-    )
-
-    log.info(
-        f"ROC DAILY TIMEFRAME = "
-        f"{format_timeframe(ROC_DAILY_TIMEFRAME)} "
-        f"[{USE_ROC_DAILY_TIMEFRAME}]"
-    )
-
-    log.info(
-        f"ROC 실제 필터 = "
-        f"{get_roc_filter_timeframes()}"
-    )
-
-    log.info(
-        f"EMA = "
-        f"{EMA1_FASTEST}/"
-        f"{EMA1_FAST}/"
-        f"{EMA1_MID}/"
-        f"{EMA1_SLOW}"
-    )
-
-    log.info(
-        f"ROC = {ROC_PERIOD}"
-    )
-
-    log.info(
-        "ROC 이평 = "
-        f"{ROC_MA_FASTEST}/"
-        f"{ROC_MA_FAST}/"
-        f"{ROC_MA_MID}/"
-        f"{ROC_MA_SLOW}"
-    )
-
-    log.info(
-        "ROC LONG = 0선 상방"
-    )
-
-    log.info(
-        "ROC SHORT = 0선 하방"
+    high_tf = format_timeframe(
+        EMA_HIGH_TIMEFRAME
     )
 
     log.info(
@@ -6984,65 +5737,59 @@ def startup():
     )
 
     log.info(
-        "ROC 카운팅 구조:"
+        f"{tf}/{high_tf} "
+        f"EMA10·30·60·120 + ROC10 시작"
     )
 
     log.info(
-        "ROC10 > 0 → 🟢 상승"
+        f"업비트={USE_UPBIT} / "
+        f"OKX={USE_OKX}"
     )
 
     log.info(
-        "ROC10 < 0 → 🔴 하락"
+        f"TOP={TOP_N} / "
+        f"UPDATE={UPDATE_MINUTES}분"
     )
 
     log.info(
-        "ROC10 = 0 → ⚪ 중립"
+        f"EMA1={tf} / "
+        f"사용={USE_EMA_TIMEFRAME}"
     )
 
     log.info(
-        f"{format_timeframe(ROC_TIMEFRAME)} "
-        f"ROC10 0선 진입 카운트 1 → 🔥 ROC 추세 신호"
+        f"EMA2={high_tf} / "
+        f"사용={USE_EMA_HIGH_TIMEFRAME}"
     )
 
     log.info(
-        f"{format_timeframe(ROC_TIMEFRAME)} "
-        f"ROC10 0선 상방/하방 카운트 2 이상 → ☀️ / 🌧️ 추세 진행"
+        "EMA10-30-60-120"
     )
 
     log.info(
-        "ROC 이평 LONG:"
+        f"EMA count <= "
+        f"{EMA1_MAX_COUNT}"
     )
 
     log.info(
-        "ROC EMA10 > ROC EMA30 > ROC EMA60 > ROC EMA120"
+        "이평 필터:"
+        f" {USE_EMA_TIMEFRAME}/"
+        f"{USE_EMA_HIGH_TIMEFRAME}"
     )
 
     log.info(
-        "ROC 이평 SHORT:"
+        "Y/Y → 두 시간봉 모두 정배열/역배열 방향 일치 필요"
     )
 
     log.info(
-        "ROC EMA10 < ROC EMA30 < ROC EMA60 < ROC EMA120"
+        "Y/N → 첫 번째 시간봉만 방향 판단"
     )
 
     log.info(
-        f"{format_timeframe(ROC_HIGH_TIMEFRAME)} "
-        f"ROC 이평 → 필터"
+        "N/Y → 두 번째 시간봉만 방향 판단"
     )
 
     log.info(
-        f"{format_timeframe(ROC_DAILY_TIMEFRAME)} "
-        f"ROC 이평 → 참고용"
-    )
-
-    log.info(
-        f"EMA 실제 필터 → "
-        f"{get_ema_filter_timeframes()}"
-    )
-
-    log.info(
-        f"ROC 실제 필터 → "
-        f"{get_roc_filter_timeframes()}"
+        "N/N → 이평 필터 사용 안 함"
     )
 
     log.info(
@@ -7050,27 +5797,20 @@ def startup():
     )
 
     log.info(
-        "최종 LONG 조건:"
+        "롱 조건:"
     )
 
     log.info(
-        "EMA 1H 정배열"
+        "정배열 EMA10>EMA30>EMA60>EMA120"
     )
 
     log.info(
-        "EMA 4H 정배열"
+        "ROC 음수→양수 돌파"
     )
 
     log.info(
-        "ROC 1H 이평 정배열"
-    )
-
-    log.info(
-        "ROC 4H 이평 정배열"
-    )
-
-    log.info(
-        "ROC10 0선 상방 진입"
+        f"롱 진행: ROC 양수 "
+        f"{ROC_PROGRESS_MIN_COUNT}개 이상"
     )
 
     log.info(
@@ -7078,27 +5818,20 @@ def startup():
     )
 
     log.info(
-        "최종 SHORT 조건:"
+        "숏 조건:"
     )
 
     log.info(
-        "EMA 1H 역배열"
+        "역배열 EMA10<EMA30<EMA60<EMA120"
     )
 
     log.info(
-        "EMA 4H 역배열"
+        "ROC 양수→음수 돌파"
     )
 
     log.info(
-        "ROC 1H 이평 역배열"
-    )
-
-    log.info(
-        "ROC 4H 이평 역배열"
-    )
-
-    log.info(
-        "ROC10 0선 하방 진입"
+        f"숏 진행: ROC 음수 "
+        f"{ROC_PROGRESS_MIN_COUNT}개 이상"
     )
 
     log.info(
@@ -7106,38 +5839,97 @@ def startup():
     )
 
     log.info(
-        "시장 시황 거래소 우선순위:"
+        "ROC 진행 리스트 정렬:"
     )
 
-    if USE_OKX == "Y":
+    log.info(
+        "양수 진행 시작시간 최신순"
+    )
 
-        log.info(
-            "OKX ON → OKX BTC / ETH 우선"
-        )
+    log.info(
+        "음수 진행 시작시간 최신순"
+    )
 
-    else:
+    log.info(
+        "현재 진행봉: ⓪"
+    )
 
-        log.info(
-            "OKX OFF → UPBIT BTC / ETH 사용"
-        )
+    log.info(
+        "확정 돌파봉: ①"
+    )
+
+    log.info(
+        "다음 봉: ②"
+    )
+
+    log.info(
+        "OKX bar="
+        f"{get_okx_bar(EMA_TIMEFRAME)}"
+    )
+
+    log.info(
+        "표시용 HIGH EMA="
+        f"{get_okx_bar(EMA_HIGH_TIMEFRAME)}"
+    )
+
+    log.info(
+        "OKX 최적화: 전체 ticker 1회 + "
+        "1H 거래대금 데이터 캐시"
+    )
+
+    log.info(
+        "BTC 시황:"
+    )
+
+    log.info(
+        "정배열 + ROC 상승 = 매우 좋음"
+    )
+
+    log.info(
+        "정배열 + ROC 0 이하 = 상승 준비"
+    )
+
+    log.info(
+        "역배열 + ROC 상승 = 상승 / 조심"
+    )
+
+    log.info(
+        "역배열 + ROC 0 이하 = 안좋음"
+    )
+
+    log.info(
+        "혼합 + ROC 상승 = 상승 / 확인"
+    )
+
+    log.info(
+        "혼합 + ROC 0 이하 = 관망"
+    )
+
+    log.info(
+        "신호 아이콘:"
+    )
+
+    log.info(
+        "🚀 롱 돌파 / "
+        "🔻 숏 돌파 / "
+        "☀️ 롱 진행 / "
+        "🌧️ 숏 진행"
+    )
 
     log.info(
         "========================================"
     )
-
 
     threading.Thread(
         target=update_dashboard,
         daemon=True
     ).start()
 
-
     schedule.every(
         UPDATE_MINUTES
     ).minutes.do(
         update_dashboard
     )
-
 
     threading.Thread(
         target=scheduler,
@@ -7152,11 +5944,7 @@ def startup():
 if __name__ == "__main__":
 
     uvicorn.run(
-
         app,
-
         host="0.0.0.0",
-
         port=8000
-
     )
