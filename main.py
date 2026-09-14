@@ -3958,7 +3958,7 @@ def progress_signal_html(
             '<span '
             'class="signal-icon long-progress" '
             f'title="RSI70 추세 진행 · {long_count}">'
-            f'☀️({long_count})'
+            '☀️'
             '</span>'
         )
 
@@ -3968,7 +3968,7 @@ def progress_signal_html(
             '<span '
             'class="signal-icon short-progress" '
             f'title="RSI30 추세 진행 · {short_count}">'
-            f'🌧️({short_count})'
+            '🌧️'
             '</span>'
         )
 
