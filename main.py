@@ -74,11 +74,11 @@ KST = ZoneInfo("Asia/Seoul")
 # EMA 시간봉
 # =========================================================
 
-EMA_TIMEFRAME = 15
+EMA_TIMEFRAME = 60
 
-EMA_HIGH_TIMEFRAME = 60
+EMA_HIGH_TIMEFRAME = 240
 
-EMA_DAILY_TIMEFRAME = 240
+EMA_DAILY_TIMEFRAME = 1440
 
 USE_EMA_TIMEFRAME = "Y"
 
@@ -91,11 +91,11 @@ USE_EMA_DAILY_TIMEFRAME = "N"
 # RSI 시간봉
 # =========================================================
 
-RSI_TIMEFRAME = 15
+RSI_TIMEFRAME = 60
 
-RSI_HIGH_TIMEFRAME = 60
+RSI_HIGH_TIMEFRAME = 240
 
-RSI_DAILY_TIMEFRAME = 240
+RSI_DAILY_TIMEFRAME = 1440
 
 
 # =========================================================
