@@ -92,7 +92,6 @@ USE_EMA_TIMEFRAME = "Y"
 
 USE_EMA_HIGH_TIMEFRAME = "Y"
 
-# 1D는 확인용이므로 필터에는 사용하지 않음
 USE_EMA_DAILY_TIMEFRAME = "N"
 
 
@@ -163,8 +162,6 @@ latest_upbit_markets = []
 
 # =========================================================
 # 시장 시황 데이터
-#
-# OKX 조회 여부에 따라 우선 거래소를 선택
 # =========================================================
 
 latest_market_source = "-"
@@ -1473,9 +1470,6 @@ def ema(
 
 # =========================================================
 # EMA 실제 수치
-#
-# 계산에는 계속 사용
-# 대시보드에서는 표시하지 않음
 # =========================================================
 
 def ema_values(
@@ -1671,9 +1665,6 @@ def ema_alignment_count(
 
 # =========================================================
 # EMA 표시
-#
-# 계산 결과는 유지
-# 대시보드에는 방향 + 카운트만 표시
 # =========================================================
 
 def ema_display(
@@ -3357,9 +3348,6 @@ def update_okx(
 
 # =========================================================
 # 시장 시황 데이터 생성
-#
-# OKX 조회 ON  → OKX 우선
-# OKX 조회 OFF → UPBIT 우선
 # =========================================================
 
 def update_market_summary():
@@ -3369,10 +3357,6 @@ def update_market_summary():
     global latest_market_data
 
     latest_market_data = {}
-
-    # -----------------------------------------------------
-    # OKX 사용 시 OKX BTC / ETH 우선
-    # -----------------------------------------------------
 
     if USE_OKX == "Y":
 
@@ -3405,10 +3389,6 @@ def update_market_summary():
             latest_market_source = "OKX"
 
             return
-
-    # -----------------------------------------------------
-    # OKX가 꺼져 있거나 OKX 데이터가 없으면 UPBIT
-    # -----------------------------------------------------
 
     for row in latest_upbit_data:
 
@@ -3496,10 +3476,6 @@ def update_dashboard():
 
             latest_okx_data = []
 
-        # -------------------------------------------------
-        # 시장 시황은 모든 업데이트가 끝난 후 결정
-        # -------------------------------------------------
-
         update_market_summary()
 
     finally:
@@ -3509,9 +3485,6 @@ def update_dashboard():
 
 # =========================================================
 # 숫자 표시
-#
-# RSI 가격/수치는 사용
-# EMA 가격 수치는 화면에서 사용하지 않음
 # =========================================================
 
 def format_indicator_value(
@@ -3533,14 +3506,6 @@ def format_indicator_value(
 
 # =========================================================
 # EMA HTML
-#
-# EMA 가격 숫자는 대시보드에서 완전히 생략
-# 방향 + 카운트만 표시
-#
-# 예:
-# 1H 🟢(15)
-# 4H 🔴(3)
-# 1D ⚪(0)
 # =========================================================
 
 def ema_detail_html(
@@ -4202,7 +4167,7 @@ def table_html(
 
 
 # =========================================================
-# RSI 추세 신호
+# RSI 신호
 # =========================================================
 
 def rsi_signal_section(
@@ -4545,8 +4510,6 @@ def market_rsi_reference_html(
 
 # =========================================================
 # 시장 EMA 실제 수치
-#
-# 대시보드에서는 EMA 가격 수치를 표시하지 않음
 # =========================================================
 
 def market_ema_numbers(
@@ -5155,6 +5118,17 @@ tr:last-child td{
 
 /* =========================================================
    컬럼
+   =========================================================
+   
+   총 100%
+   
+   #        5%
+   코인     15%
+   거래대금 13%
+   EMA      32%
+   RSI      25%
+   신호     10%
+   
    ========================================================= */
 
 th:nth-child(1),
@@ -5164,7 +5138,7 @@ td:nth-child(1){
 
 th:nth-child(2),
 td:nth-child(2){
-    width:14%;
+    width:15%;
 }
 
 th:nth-child(3),
@@ -5174,12 +5148,12 @@ td:nth-child(3){
 
 th:nth-child(4),
 td:nth-child(4){
-    width:35%;
+    width:32%;
 }
 
 th:nth-child(5),
 td:nth-child(5){
-    width:23%;
+    width:25%;
 }
 
 th:nth-child(6),
@@ -5269,18 +5243,12 @@ td:nth-child(6){
     text-align:left;
 }
 
-.ema-direction{
-    font-size:5.2px;
-    line-height:7px;
-    font-weight:900;
-    min-width:18px;
-}
-
 
 /* =========================================================
-   RSI
+   EMA / RSI 수치 크기 통일
    ========================================================= */
 
+.ema-direction,
 .rsi-long,
 .rsi-short,
 .rsi-neutral,
@@ -5293,6 +5261,15 @@ td:nth-child(6){
     font-weight:900;
     white-space:nowrap;
 }
+
+.ema-direction{
+    min-width:18px;
+}
+
+
+/* =========================================================
+   RSI
+   ========================================================= */
 
 .rsi-long,
 .rsi-reference-long{
@@ -5318,6 +5295,8 @@ td:nth-child(6){
 .signal-cell{
     text-align:center!important;
     vertical-align:middle;
+    padding-left:2px;
+    padding-right:2px;
 }
 
 .signal-icon{
@@ -5515,6 +5494,42 @@ td:nth-child(6){
         height:55px;
     }
 
+
+    /* ---------------------------------------------
+       모바일 컬럼
+       --------------------------------------------- */
+
+    th:nth-child(1),
+    td:nth-child(1){
+        width:5%;
+    }
+
+    th:nth-child(2),
+    td:nth-child(2){
+        width:15%;
+    }
+
+    th:nth-child(3),
+    td:nth-child(3){
+        width:13%;
+    }
+
+    th:nth-child(4),
+    td:nth-child(4){
+        width:32%;
+    }
+
+    th:nth-child(5),
+    td:nth-child(5){
+        width:25%;
+    }
+
+    th:nth-child(6),
+    td:nth-child(6){
+        width:10%;
+    }
+
+
     .coin b{
         font-size:6px;
         line-height:7px;
@@ -5545,11 +5560,12 @@ td:nth-child(6){
         min-width:15px;
     }
 
-    .ema-direction{
-        font-size:4.5px;
-        min-width:16px;
-    }
 
+    /* ---------------------------------------------
+       모바일 EMA / RSI 동일 크기
+       --------------------------------------------- */
+
+    .ema-direction,
     .rsi-long,
     .rsi-short,
     .rsi-neutral,
@@ -5561,6 +5577,11 @@ td:nth-child(6){
         line-height:7px;
     }
 
+    .ema-direction{
+        min-width:16px;
+    }
+
+
     .rsi-warning-qualified{
         font-size:5px!important;
         line-height:7px;
@@ -5571,6 +5592,7 @@ td:nth-child(6){
         line-height:11px;
         min-height:15px;
     }
+
 }
 
 
@@ -5669,6 +5691,42 @@ td:nth-child(6){
         padding:3px;
     }
 
+
+    /* ---------------------------------------------
+       PC 컬럼
+       --------------------------------------------- */
+
+    th:nth-child(1),
+    td:nth-child(1){
+        width:5%;
+    }
+
+    th:nth-child(2),
+    td:nth-child(2){
+        width:15%;
+    }
+
+    th:nth-child(3),
+    td:nth-child(3){
+        width:13%;
+    }
+
+    th:nth-child(4),
+    td:nth-child(4){
+        width:32%;
+    }
+
+    th:nth-child(5),
+    td:nth-child(5){
+        width:25%;
+    }
+
+    th:nth-child(6),
+    td:nth-child(6){
+        width:10%;
+    }
+
+
     .coin b{
         font-size:9px;
         line-height:11px;
@@ -5698,11 +5756,12 @@ td:nth-child(6){
         min-width:24px;
     }
 
-    .ema-direction{
-        font-size:7px;
-        min-width:25px;
-    }
 
+    /* ---------------------------------------------
+       PC EMA / RSI 동일 크기
+       --------------------------------------------- */
+
+    .ema-direction,
     .rsi-long,
     .rsi-short,
     .rsi-neutral,
@@ -5714,6 +5773,11 @@ td:nth-child(6){
         line-height:10px;
     }
 
+    .ema-direction{
+        min-width:25px;
+    }
+
+
     .rsi-warning-qualified{
         font-size:8px!important;
         line-height:10px;
@@ -5724,6 +5788,7 @@ td:nth-child(6){
         line-height:19px;
         min-height:25px;
     }
+
 }
 
 """
