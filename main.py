@@ -5307,9 +5307,9 @@ tr:last-child td{
    #        5%
    코인     15%
    거래대금 13%
-   EMA      30%
-   RSI      25%
-   신호     12%
+   EMA      24%
+   RSI      29%
+   신호     14%
 
    ========================================================= */
 
@@ -5330,17 +5330,17 @@ td:nth-child(3){
 
 th:nth-child(4),
 td:nth-child(4){
-    width:30%;
+    width:24%;
 }
 
 th:nth-child(5),
 td:nth-child(5){
-    width:25%;
+    width:29%;
 }
 
 th:nth-child(6),
 td:nth-child(6){
-    width:12%;
+    width:14%;
 }
 
 
@@ -5717,17 +5717,17 @@ td:nth-child(6){
 
     th:nth-child(4),
     td:nth-child(4){
-        width:30%;
+        width:24%;
     }
 
     th:nth-child(5),
     td:nth-child(5){
-        width:25%;
+        width:29%;
     }
 
     th:nth-child(6),
     td:nth-child(6){
-        width:12%;
+        width:14%;
     }
 
 
@@ -5917,17 +5917,17 @@ td:nth-child(6){
 
     th:nth-child(4),
     td:nth-child(4){
-        width:30%;
+        width:24%;
     }
 
     th:nth-child(5),
     td:nth-child(5){
-        width:25%;
+        width:29%;
     }
 
     th:nth-child(6),
     td:nth-child(6){
-        width:12%;
+        width:14%;
     }
 
 
