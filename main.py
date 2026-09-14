@@ -91,8 +91,11 @@ EMA1_MAX_COUNT = 200
 
 ROC_PERIOD = 10
 
+# ROC 0선 돌파 후
+# 0 / 1 / 2 단계 표시
 BREAKOUT_MAX_COUNT = 2
 
+# 3개부터 진행중 표시
 ROC_PROGRESS_MIN_COUNT = 3
 
 
@@ -1573,6 +1576,14 @@ def roc(
 
 # =========================================================
 # ROC 연속 카운트
+#
+# 마지막 값부터 역순으로 계산
+#
+# 양수:
+# 0보다 큰 ROC가 몇 개 연속인지
+#
+# 음수:
+# 0보다 작은 ROC가 몇 개 연속인지
 # =========================================================
 
 def roc_count(
@@ -1582,9 +1593,19 @@ def roc_count(
 
     count = 0
 
-    for value in reversed(
-        series.tolist()
-    ):
+    if series is None:
+
+        return 0
+
+    try:
+
+        values = series.tolist()
+
+    except Exception:
+
+        return 0
+
+    for value in reversed(values):
 
         if pd.isna(value):
 
@@ -1605,6 +1626,17 @@ def roc_count(
 
 # =========================================================
 # ROC 교차
+#
+# current
+#   현재 진행중인 캔들에서 0선 돌파
+#
+# confirmed
+#   확정된 캔들에서 0선 돌파
+#
+# count:
+#   현재봉 = 0
+#   확정봉 = 1
+#   다음봉 = 2
 # =========================================================
 
 def roc_cross_state(
@@ -1661,6 +1693,11 @@ def roc_cross_state(
 
             return False
 
+        # -------------------------------------------------
+        # 현재 진행봉
+        # 0
+        # -------------------------------------------------
+
         if len(current) >= 2:
 
             prev = current[-2]
@@ -1675,6 +1712,11 @@ def roc_cross_state(
                     "state": "current",
                     "count": 0
                 }
+
+        # -------------------------------------------------
+        # 현재 데이터가 한 개뿐인 경우
+        # 확정 마지막값과 비교
+        # -------------------------------------------------
 
         if len(current) == 1:
 
@@ -1691,6 +1733,11 @@ def roc_cross_state(
                     "count": 0
                 }
 
+        # -------------------------------------------------
+        # 확정 돌파봉
+        # 1
+        # -------------------------------------------------
+
         if len(confirmed) >= 2:
 
             prev = confirmed[-2]
@@ -1705,6 +1752,11 @@ def roc_cross_state(
                     "state": "confirmed",
                     "count": 1
                 }
+
+        # -------------------------------------------------
+        # 다음 봉
+        # 2
+        # -------------------------------------------------
 
         if len(confirmed) >= 3:
 
@@ -1760,6 +1812,24 @@ def count_icon(count):
 
 # =========================================================
 # ROC 분석
+#
+# 핵심 표시 규칙
+#
+# 0선 돌파:
+#   0 → 🚀⓪
+#
+# 확정:
+#   1 → 🚀①
+#
+# 다음:
+#   2 → 🚀②
+#
+# 3개 이상:
+#   🟢 상승 3
+#   🟢 상승 4
+#   ...
+#
+# 숏도 동일
 # =========================================================
 
 def roc_analysis(
@@ -1833,6 +1903,10 @@ def roc_analysis(
 
             return result
 
+        # -------------------------------------------------
+        # 양수/음수 연속 카운트
+        # -------------------------------------------------
+
         positive_count = roc_count(
             current,
             True
@@ -1842,6 +1916,10 @@ def roc_analysis(
             current,
             False
         )
+
+        # -------------------------------------------------
+        # 양수 진행 시작 시간
+        # -------------------------------------------------
 
         roc_progress_start_time = None
 
@@ -1874,6 +1952,10 @@ def roc_analysis(
                 f"ROC 양수 시작시간 오류: {e}"
             )
 
+        # -------------------------------------------------
+        # 음수 진행 시작 시간
+        # -------------------------------------------------
+
         roc_negative_progress_start_time = None
 
         try:
@@ -1904,6 +1986,10 @@ def roc_analysis(
             log.error(
                 f"ROC 음수 시작시간 오류: {e}"
             )
+
+        # -------------------------------------------------
+        # 0선 돌파 확인
+        # -------------------------------------------------
 
         lb = roc_cross_state(
             confirmed,
@@ -1956,6 +2042,11 @@ def roc_analysis(
                 sb["state"]
         })
 
+        # =================================================
+        # ① 롱 0선 돌파
+        # 0 / 1 / 2만 돌파 아이콘으로 표시
+        # =================================================
+
         if lb["state"] != "none":
 
             result.update({
@@ -1969,6 +2060,11 @@ def roc_analysis(
                         lb["count"]
                     )
             })
+
+        # =================================================
+        # ② 숏 0선 돌파
+        # 0 / 1 / 2만 돌파 아이콘으로 표시
+        # =================================================
 
         elif sb["state"] != "none":
 
@@ -1984,9 +2080,18 @@ def roc_analysis(
                     )
             })
 
+        # =================================================
+        # ③ 롱 진행
+        #
+        # 반드시 3개부터 표시
+        #
+        # 1, 2에서는
+        # "상승 1", "상승 2" 표시하지 않음
+        # =================================================
+
         elif (
             current_value > 0
-            and positive_count >= 2
+            and positive_count >= ROC_PROGRESS_MIN_COUNT
         ):
 
             result.update({
@@ -1995,12 +2100,18 @@ def roc_analysis(
                     "progress",
 
                 "display":
-                    f"진행 {positive_count}"
+                    f"🟢 상승 {positive_count}"
             })
+
+        # =================================================
+        # ④ 숏 진행
+        #
+        # 반드시 3개부터 표시
+        # =================================================
 
         elif (
             current_value < 0
-            and negative_count >= 2
+            and negative_count >= ROC_PROGRESS_MIN_COUNT
         ):
 
             result.update({
@@ -2009,7 +2120,7 @@ def roc_analysis(
                     "short_progress",
 
                 "display":
-                    f"숏진행 {negative_count}"
+                    f"🔴 하락 {negative_count}"
             })
 
         return result
@@ -3023,8 +3134,6 @@ def update_dashboard():
 
 # =========================================================
 # BTC 시황
-#
-# EMA 배열 + ROC 조합
 # =========================================================
 
 def market_direction_html(
@@ -3097,41 +3206,101 @@ def market_roc_html(r):
             '</span>'
         )
 
-    if value > 0:
+    # -----------------------------------------
+    # 롱 돌파
+    # -----------------------------------------
 
-        count = max(
-            int(
-                r.get(
-                    "roc10_count",
-                    0
-                )
-            ),
-            1
+    state = r.get(
+        "long_breakout_state",
+        "none"
+    )
+
+    if state != "none":
+
+        count = {
+            "current": 0,
+            "confirmed": 1,
+            "next": 2
+        }.get(
+            state,
+            0
         )
 
         return (
             '<span class="market-up">'
-            f'🟢 상승 {count}'
+            f'🚀{count_icon(count)}'
             '</span>'
         )
 
-    if value < 0:
+    # -----------------------------------------
+    # 숏 돌파
+    # -----------------------------------------
 
-        count = max(
-            int(
-                r.get(
-                    "roc10_negative_count",
-                    0
-                )
-            ),
-            1
+    state = r.get(
+        "short_breakout_state",
+        "none"
+    )
+
+    if state != "none":
+
+        count = {
+            "current": 0,
+            "confirmed": 1,
+            "next": 2
+        }.get(
+            state,
+            0
         )
 
         return (
             '<span class="market-down">'
-            f'🔴 하락 {count}'
+            f'🔻{count_icon(count)}'
             '</span>'
         )
+
+    # -----------------------------------------
+    # 롱 진행
+    # 3개부터 표시
+    # -----------------------------------------
+
+    if value > 0:
+
+        count = int(
+            r.get(
+                "roc10_count",
+                0
+            )
+        )
+
+        if count >= ROC_PROGRESS_MIN_COUNT:
+
+            return (
+                '<span class="market-up">'
+                f'🟢 상승 {count}'
+                '</span>'
+            )
+
+    # -----------------------------------------
+    # 숏 진행
+    # 3개부터 표시
+    # -----------------------------------------
+
+    if value < 0:
+
+        count = int(
+            r.get(
+                "roc10_negative_count",
+                0
+            )
+        )
+
+        if count >= ROC_PROGRESS_MIN_COUNT:
+
+            return (
+                '<span class="market-down">'
+                f'🔴 하락 {count}'
+                '</span>'
+            )
 
     return (
         '<span class="market-zero">'
@@ -3215,24 +3384,6 @@ def market_change_html(value):
 
 # =========================================================
 # BTC 시황 최종 판단
-#
-# 정배열 + ROC 상승
-#     → 매우 좋음
-#
-# 정배열 + ROC 하락/0
-#     → 상승 준비
-#
-# 역배열 + ROC 상승
-#     → 상승 / 조심
-#
-# 역배열 + ROC 하락/0
-#     → 안좋음
-#
-# 혼합 + ROC 상승
-#     → 상승 / 확인
-#
-# 혼합 + ROC 하락/0
-#     → 관망
 # =========================================================
 
 def btc_position_view(row):
@@ -3259,10 +3410,6 @@ def btc_position_view(row):
         {}
     )
 
-    # -----------------------------------------
-    # 사용 중인 EMA 시간봉
-    # -----------------------------------------
-
     selected = []
 
     if USE_EMA_TIMEFRAME == "Y":
@@ -3284,10 +3431,6 @@ def btc_position_view(row):
         )
         for x in selected
     ]
-
-    # -----------------------------------------
-    # EMA 최종 방향
-    # -----------------------------------------
 
     if (
         directions
@@ -3313,10 +3456,6 @@ def btc_position_view(row):
 
         ema_direction = "none"
 
-    # -----------------------------------------
-    # ROC
-    # -----------------------------------------
-
     roc_value = r.get(
         "roc10"
     )
@@ -3341,10 +3480,6 @@ def btc_position_view(row):
             "class": "wait"
         }
 
-    # =====================================================
-    # 정배열 + ROC 상승
-    # =====================================================
-
     if (
         ema_direction == "long"
         and roc_value > 0
@@ -3354,10 +3489,6 @@ def btc_position_view(row):
             "text": "🟢 매우 좋음",
             "class": "long"
         }
-
-    # =====================================================
-    # 정배열 + ROC 0 이하
-    # =====================================================
 
     if (
         ema_direction == "long"
@@ -3369,13 +3500,6 @@ def btc_position_view(row):
             "class": "wait"
         }
 
-    # =====================================================
-    # 역배열 + ROC 상승
-    #
-    # 상승 중이지만 추세와 반대
-    # → 조심
-    # =====================================================
-
     if (
         ema_direction == "short"
         and roc_value > 0
@@ -3385,10 +3509,6 @@ def btc_position_view(row):
             "text": "🟠 상승 / 조심",
             "class": "short"
         }
-
-    # =====================================================
-    # 역배열 + ROC 0 이하
-    # =====================================================
 
     if (
         ema_direction == "short"
@@ -3400,10 +3520,6 @@ def btc_position_view(row):
             "class": "short"
         }
 
-    # =====================================================
-    # 혼합 + ROC 상승
-    # =====================================================
-
     if (
         ema_direction == "none"
         and roc_value > 0
@@ -3413,10 +3529,6 @@ def btc_position_view(row):
             "text": "🟡 상승 / 확인",
             "class": "wait"
         }
-
-    # =====================================================
-    # 혼합 + ROC 0 이하
-    # =====================================================
 
     return {
         "text": "⚪ 관망",
@@ -3449,7 +3561,6 @@ def market_summary_html():
         <div class="market-summary">
 
             <div class="market-title">
-
                 <span class="market-title-main">
                     ₿ BTC 시장 시황
                 </span>
@@ -3457,7 +3568,6 @@ def market_summary_html():
                 <span class="market-title-sub">
                     EMA 배열 + ROC10 기준
                 </span>
-
             </div>
 
             <div class="btc-mobile">
@@ -3627,6 +3737,18 @@ def market_summary_html():
 
 # =========================================================
 # ROC HTML
+#
+# 핵심:
+#
+# 돌파:
+# 0 = 🚀⓪
+# 1 = 🚀①
+# 2 = 🚀②
+#
+# 진행:
+# 3 이상 = 🟢 상승 3+
+#
+# 1, 2에서는 상승/하락 숫자를 표시하지 않음
 # =========================================================
 
 def roc_html(r):
@@ -3669,6 +3791,11 @@ def roc_html(r):
             '</div>'
         )
 
+    # =====================================================
+    # 롱 0선 돌파
+    # 0 / 1 / 2
+    # =====================================================
+
     state = r.get(
         "long_breakout_state",
         "none"
@@ -3694,6 +3821,11 @@ def roc_html(r):
 
         </div>
         """
+
+    # =====================================================
+    # 숏 0선 돌파
+    # 0 / 1 / 2
+    # =====================================================
 
     state = r.get(
         "short_breakout_state",
@@ -3721,18 +3853,27 @@ def roc_html(r):
         </div>
         """
 
-    if value > 0:
+    # =====================================================
+    # 롱 진행
+    #
+    # 반드시 3부터 표시
+    # =====================================================
+
+    if (
+        value > 0
+        and int(
+            r.get(
+                "roc10_count",
+                0
+            )
+        ) >= ROC_PROGRESS_MIN_COUNT
+    ):
 
         count = int(
             r.get(
                 "roc10_count",
                 0
             )
-        )
-
-        count = max(
-            count,
-            1
         )
 
         return f"""
@@ -3745,18 +3886,27 @@ def roc_html(r):
         </div>
         """
 
-    if value < 0:
+    # =====================================================
+    # 숏 진행
+    #
+    # 반드시 3부터 표시
+    # =====================================================
+
+    if (
+        value < 0
+        and int(
+            r.get(
+                "roc10_negative_count",
+                0
+            )
+        ) >= ROC_PROGRESS_MIN_COUNT
+    ):
 
         count = int(
             r.get(
                 "roc10_negative_count",
                 0
             )
-        )
-
-        count = max(
-            count,
-            1
         )
 
         return f"""
@@ -3768,6 +3918,12 @@ def roc_html(r):
 
         </div>
         """
+
+    # =====================================================
+    # 1 / 2 진행이지만 돌파 상태가 아닌 경우
+    #
+    # 숫자 표시하지 않음
+    # =====================================================
 
     return """
     <div class="roc-cell">
@@ -3790,6 +3946,10 @@ def signal_html(row):
         "roc",
         {}
     )
+
+    # -----------------------------------------------------
+    # 롱 돌파
+    # -----------------------------------------------------
 
     state = r.get(
         "long_breakout_state",
@@ -3821,6 +3981,10 @@ def signal_html(row):
             '</span>'
         )
 
+    # -----------------------------------------------------
+    # 숏 돌파
+    # -----------------------------------------------------
+
     state = r.get(
         "short_breakout_state",
         "none"
@@ -3851,6 +4015,10 @@ def signal_html(row):
             '</span>'
         )
 
+    # -----------------------------------------------------
+    # ROC 3+ 롱 진행
+    # -----------------------------------------------------
+
     if row.get(
         "roc3_long_progress_qualified",
         False
@@ -3863,6 +4031,10 @@ def signal_html(row):
             '☀️'
             '</span>'
         )
+
+    # -----------------------------------------------------
+    # ROC 3+ 숏 진행
+    # -----------------------------------------------------
 
     if row.get(
         "roc3_short_progress_qualified",
@@ -4253,183 +4425,95 @@ body{
 body{
     background:#0d1014;
     color:#eee;
-
     font-family:
         -apple-system,
         BlinkMacSystemFont,
         "Segoe UI",
         Arial,
         sans-serif;
-
     font-size:8px;
-
-    padding:
-        2px
-        2px
-        8px;
+    padding:2px 2px 8px;
 }
 
 h1{
-    margin:
-        1px
-        2px
-        2px;
-
+    margin:1px 2px 2px;
     font-size:12px;
     line-height:14px;
 }
 
-
-/* =====================================================
-   BTC 시장 시황 제목
-   ===================================================== */
-
 .market-title{
     display:flex;
     align-items:center;
-
     gap:5px;
-
     width:100%;
     min-height:18px;
-
     color:#ffffff;
-
     font-size:8px;
     line-height:10px;
-
     font-weight:900;
-
     margin-bottom:4px;
-
-    padding:
-        3px
-        5px;
-
-    border-left:
-        3px solid
-        #39e875;
-
-    background:
-        rgba(
-            57,
-            232,
-            117,
-            .08
-        );
-
+    padding:3px 5px;
+    border-left:3px solid #39e875;
+    background:rgba(57,232,117,.08);
     border-radius:3px;
-
     white-space:nowrap;
-
     overflow:hidden;
 }
 
 .market-title-main{
     color:#ffffff;
-
     font-size:8px;
     line-height:10px;
-
     font-weight:900;
-
     flex:none;
 }
 
 .market-title-sub{
     color:#7f8791;
-
     font-size:5.5px;
     line-height:8px;
-
     font-weight:700;
-
     white-space:nowrap;
-
     overflow:hidden;
-
     text-overflow:ellipsis;
 }
-
-
-/* =====================================================
-   일반 제목
-   ===================================================== */
 
 .section-title{
     display:flex;
     align-items:center;
-
     gap:5px;
-
     width:100%;
     min-height:18px;
-
     color:#ffffff;
-
     font-size:8px;
     line-height:10px;
-
     font-weight:900;
-
-    margin:
-        5px
-        0
-        4px;
-
-    padding:
-        3px
-        5px;
-
-    border-left:
-        3px solid
-        #39e875;
-
-    background:
-        rgba(
-            57,
-            232,
-            117,
-            .08
-        );
-
+    margin:5px 0 4px;
+    padding:3px 5px;
+    border-left:3px solid #39e875;
+    background:rgba(57,232,117,.08);
     border-radius:3px;
-
     white-space:nowrap;
-
     overflow:hidden;
 }
 
 .section-title-main{
     color:#ffffff;
-
     font-size:8px;
     line-height:10px;
-
     font-weight:900;
-
     flex:none;
 }
 
 .section-title-sub{
     color:#7f8791;
-
     font-size:5.5px;
     line-height:8px;
-
     font-weight:700;
-
     white-space:nowrap;
-
     overflow:hidden;
-
     text-overflow:ellipsis;
 }
-
-
-/* =====================================================
-   제목별 왼쪽 포인트
-   ===================================================== */
 
 .breakout-section-title{
     border-left-color:#39e875;
@@ -4455,33 +4539,13 @@ h1{
     border-left-color:#ff5555;
 }
 
-
-/* =====================================================
-   BTC 영역
-   ===================================================== */
-
 .market-summary{
     width:100%;
-
-    margin:
-        2px
-        0
-        3px;
-
-    padding:
-        3px
-        4px;
-
-    border-top:
-        1px solid
-        #242a31;
-
-    border-bottom:
-        1px solid
-        #242a31;
-
+    margin:2px 0 3px;
+    padding:3px 4px;
+    border-top:1px solid #242a31;
+    border-bottom:1px solid #242a31;
     background:#101419;
-
     overflow:hidden;
 }
 
@@ -4493,159 +4557,89 @@ h1{
 .btc-top{
     display:flex;
     align-items:center;
-
     width:100%;
     min-height:16px;
-
     gap:4px;
-
     white-space:nowrap;
-
     overflow:hidden;
 }
 
 .btc-name{
     flex:none;
-
     width:34px;
-
     font-size:6.5px;
     line-height:8px;
-
     font-weight:900;
 }
 
 .btc-price{
     flex:1;
-
     min-width:0;
-
     color:#e8edf2;
-
     font-size:6px;
     line-height:8px;
-
     font-weight:800;
-
     text-align:left;
-
     white-space:nowrap;
-
     overflow:hidden;
-
     text-overflow:ellipsis;
 }
 
 .btc-change{
     flex:none;
-
     width:58px;
-
     font-size:7.5px;
     line-height:10px;
-
     font-weight:900;
-
     text-align:right;
-
     white-space:nowrap;
 }
 
 .btc-bottom{
     display:flex;
     align-items:center;
-
     width:100%;
     min-height:17px;
-
     gap:6px;
-
     white-space:nowrap;
-
     overflow:hidden;
-
     font-size:5.3px;
     line-height:8px;
-
     font-weight:800;
 }
 
 .btc-bottom > span{
     flex:none;
-
     white-space:nowrap;
 }
 
 .btc-position{
     margin-left:auto;
-
     min-width:72px;
-
-    padding:
-        3px
-        5px;
-
+    padding:3px 5px;
     border-radius:4px;
-
     text-align:center;
-
     font-size:8px;
     line-height:12px;
-
     font-weight:900;
-
     white-space:nowrap;
-
-    border:
-        1px solid
-        rgba(
-            255,
-            255,
-            255,
-            .08
-        );
+    border:1px solid rgba(255,255,255,.08);
 }
 
 .btc-position.long{
     color:#39e875!important;
-
-    background:
-        rgba(
-            57,
-            232,
-            117,
-            .12
-        );
+    background:rgba(57,232,117,.12);
 }
 
 .btc-position.short{
     color:#ff5555!important;
-
-    background:
-        rgba(
-            255,
-            85,
-            85,
-            .12
-        );
+    background:rgba(255,85,85,.12);
 }
 
 .btc-position.wait{
     color:#b0b7bf!important;
-
-    background:
-        rgba(
-            104,
-            113,
-            123,
-            .12
-        );
+    background:rgba(104,113,123,.12);
 }
-
-
-/* =====================================================
-   색상
-   ===================================================== */
 
 .market-up{
     color:#39e875!important;
@@ -4664,31 +4658,14 @@ h1{
 
 .status{
     display:flex;
-
     justify-content:center;
-
     gap:9px;
-
-    margin:
-        2px
-        2px
-        3px;
-
-    padding:
-        2px
-        0;
-
-    border-top:
-        1px solid
-        #242a31;
-
-    border-bottom:
-        1px solid
-        #242a31;
-
+    margin:2px 2px 3px;
+    padding:2px 0;
+    border-top:1px solid #242a31;
+    border-bottom:1px solid #242a31;
     font-size:6px;
     line-height:7px;
-
     font-weight:800;
 }
 
@@ -4732,11 +4709,6 @@ h1{
     color:#68717b!important;
 }
 
-
-/* =====================================================
-   신호
-   ===================================================== */
-
 .signal-cell{
     text-align:center!important;
     vertical-align:middle;
@@ -4744,126 +4716,64 @@ h1{
 
 .signal-icon{
     display:inline-flex;
-
     align-items:center;
-
     justify-content:center;
-
     width:100%;
-
     min-height:21px;
-
     font-size:15px;
     line-height:17px;
-
     font-weight:900;
-
     white-space:nowrap;
 }
 
 .signal-icon.long-breakout{
-    filter:
-        drop-shadow(
-            0 0 2px
-            rgba(
-                57,
-                232,
-                117,
-                .35
-            )
-        );
+    filter:drop-shadow(
+        0 0 2px
+        rgba(57,232,117,.35)
+    );
 }
 
 .signal-icon.short-breakout{
-    filter:
-        drop-shadow(
-            0 0 2px
-            rgba(
-                255,
-                85,
-                85,
-                .35
-            )
-        );
+    filter:drop-shadow(
+        0 0 2px
+        rgba(255,85,85,.35)
+    );
 }
 
 .signal-icon.long-progress{
-    filter:
-        drop-shadow(
-            0 0 2px
-            rgba(
-                255,
-                216,
-                77,
-                .25
-            )
-        );
+    filter:drop-shadow(
+        0 0 2px
+        rgba(255,216,77,.25)
+    );
 }
 
 .signal-icon.short-progress{
-    filter:
-        drop-shadow(
-            0 0 2px
-            rgba(
-                160,
-                190,
-                220,
-                .25
-            )
-        );
+    filter:drop-shadow(
+        0 0 2px
+        rgba(160,190,220,.25)
+    );
 }
 
-
-/* =====================================================
-   ROC 3+ 행
-   ===================================================== */
-
 .roc3-progress-qualified{
-    background:
-        rgba(
-            57,
-            232,
-            117,
-            .06
-        );
+    background:rgba(57,232,117,.06);
 }
 
 .roc3-short-progress-qualified{
-    background:
-        rgba(
-            255,
-            85,
-            85,
-            .06
-        );
+    background:rgba(255,85,85,.06);
 }
-
-
-/* =====================================================
-   테이블
-   ===================================================== */
 
 .table-wrap{
     width:100%;
-
     overflow:hidden;
-
     border-radius:5px;
-
-    border:
-        1px solid
-        #272d34;
-
+    border:1px solid #272d34;
     background:#171b20;
 }
 
 table{
     width:100%;
-
     table-layout:fixed;
-
     border-collapse:collapse;
-
     background:#171b20;
 }
 
@@ -4873,36 +4783,21 @@ thead{
 
 th{
     height:17px;
-
     padding:1px;
-
-    border-bottom:
-        1px solid
-        #292f36;
-
+    border-bottom:1px solid #292f36;
     color:#7f8791;
-
     font-size:5px;
     line-height:6px;
-
     font-weight:700;
-
     text-align:center;
 }
 
 td{
     height:25px;
-
     padding:1px;
-
-    border-bottom:
-        1px solid
-        #22282e;
-
+    border-bottom:1px solid #22282e;
     text-align:center;
-
     vertical-align:middle;
-
     overflow:hidden;
 }
 
@@ -4942,108 +4837,76 @@ td:nth-child(6){
 
 td:nth-child(1){
     color:#8b929b;
-
     font-size:6px;
-
     font-weight:700;
 }
 
 .coin{
     text-align:left!important;
-
     line-height:9px;
 }
 
 .coin b{
     display:block;
-
     width:100%;
-
     font-size:6.5px;
     line-height:8px;
-
     font-weight:800;
-
     white-space:nowrap;
-
     overflow:hidden;
-
     text-overflow:ellipsis;
 }
 
 .coin small{
     display:block;
-
     margin:0;
-
     font-size:4.5px;
     line-height:6px;
-
     white-space:nowrap;
-
     overflow:hidden;
 }
 
 .vol{
     font-size:6px;
     line-height:8px;
-
     font-weight:800;
-
     white-space:nowrap;
 }
 
 .ema{
     text-align:center!important;
-
     font-weight:800;
-
     line-height:8px;
-
     white-space:nowrap;
-
     overflow:visible;
 }
 
 .ema span{
     font-size:5.8px;
     line-height:8px;
-
     white-space:nowrap;
 }
 
 .ema-sep{
     color:#555c65;
-
-    margin:
-        0
-        1px;
+    margin:0 1px;
 }
 
 .roc-cell{
     display:flex;
-
     flex-direction:row;
-
     align-items:center;
-
     justify-content:center;
-
     gap:1px;
-
     min-height:21px;
-
     line-height:8px;
-
     white-space:nowrap;
 }
 
 .roc-cell span{
     font-size:5.8px;
     line-height:8px;
-
     font-weight:900;
-
     white-space:nowrap;
 }
 
@@ -5053,74 +4916,37 @@ td:nth-child(1){
 .short-breakout{
     font-size:5.8px;
     line-height:8px;
-
     font-weight:800;
-
     white-space:nowrap;
 }
 
 .breakout-qualified{
-    background:
-        rgba(
-            57,
-            232,
-            117,
-            .08
-        );
+    background:rgba(57,232,117,.08);
 }
 
 .short-breakout-qualified{
-    background:
-        rgba(
-            255,
-            85,
-            85,
-            .05
-        );
+    background:rgba(255,85,85,.05);
 }
 
 .progress-qualified{
-    background:
-        rgba(
-            76,
-            201,
-            255,
-            .06
-        );
+    background:rgba(76,201,255,.06);
 }
 
 .short-progress-qualified{
-    background:
-        rgba(
-            255,
-            85,
-            85,
-            .035
-        );
+    background:rgba(255,85,85,.035);
 }
 
 .empty{
     height:30px;
-
     padding:8px;
-
     color:#555d67;
-
     font-size:6px;
 }
-
-
-/* =====================================================
-   모바일
-   ===================================================== */
 
 @media(max-width:380px){
 
     body{
-        padding:
-            1px
-            1px
-            6px;
+        padding:1px 1px 6px;
     }
 
     h1{
@@ -5129,47 +4955,32 @@ td:nth-child(1){
     }
 
     .market-summary{
-        padding:
-            3px
-            3px;
+        padding:3px 3px;
     }
 
     .market-title,
     .section-title{
-
         min-height:17px;
-
         gap:4px;
-
         font-size:7px;
         line-height:9px;
-
-        padding:
-            3px
-            4px;
-
+        padding:3px 4px;
         margin-bottom:3px;
-
         border-left-width:3px;
     }
 
     .section-title{
-        margin:
-            4px
-            0
-            3px;
+        margin:4px 0 3px;
     }
 
     .market-title-main,
     .section-title-main{
-
         font-size:7px;
         line-height:9px;
     }
 
     .market-title-sub,
     .section-title-sub{
-
         font-size:4.8px;
         line-height:7px;
     }
@@ -5190,31 +5001,22 @@ td:nth-child(1){
 
     .btc-change{
         width:50px;
-
         font-size:6.5px;
         line-height:9px;
-
         font-weight:900;
     }
 
     .btc-bottom{
         min-height:16px;
-
         gap:4px;
-
         font-size:4.8px;
     }
 
     .btc-position{
         min-width:64px;
-
-        padding:
-            2px
-            4px;
-
+        padding:2px 4px;
         font-size:7px;
         line-height:10px;
-
         border-radius:4px;
     }
 
@@ -5268,20 +5070,12 @@ td:nth-child(1){
     }
 }
 
-
-/* =====================================================
-   PC
-   ===================================================== */
-
 @media(min-width:601px){
 
     body{
         max-width:900px;
-
         margin:auto;
-
         padding:8px;
-
         font-size:10px;
     }
 
@@ -5292,38 +5086,25 @@ td:nth-child(1){
 
     .market-title,
     .section-title{
-
         min-height:23px;
-
         gap:6px;
-
         font-size:9px;
-
-        padding:
-            4px
-            6px;
-
+        padding:4px 6px;
         margin-bottom:5px;
-
         border-left-width:3px;
     }
 
     .section-title{
-        margin:
-            10px
-            0
-            5px;
+        margin:10px 0 5px;
     }
 
     .market-title-main,
     .section-title-main{
-
         font-size:9px;
     }
 
     .market-title-sub,
     .section-title-sub{
-
         font-size:6px;
     }
 
@@ -5347,7 +5128,6 @@ td:nth-child(1){
 
     .btc-position{
         min-width:70px;
-
         font-size:7px;
         line-height:11px;
     }
@@ -5396,7 +5176,6 @@ td:nth-child(1){
         min-height:28px;
     }
 }
-
 """
 
 
@@ -5447,7 +5226,7 @@ def dashboard():
     if USE_UPBIT == "Y":
 
         sections += focus_section(
-            "🚀 ROC 롱 돌파 정배열 (추세선확인 돌파인가 반등인가)",
+            "🚀 ROC 롱 돌파 정배열",
             latest_upbit_data,
             latest_upbit_update_time,
             is_breakout,
@@ -5468,7 +5247,7 @@ def dashboard():
     if USE_UPBIT == "Y":
 
         sections += focus_section(
-            "🔥 ROC 3+ 롱 진행중 (추세가 확실하면 도전해라)",
+            "🔥 ROC 3+ 롱 진행중",
             latest_upbit_data,
             latest_upbit_update_time,
             is_roc3_progress,
@@ -5839,6 +5618,28 @@ def startup():
     )
 
     log.info(
+        "ROC 표시 규칙:"
+    )
+
+    log.info(
+        "0선 현재 돌파봉 = ⓪"
+    )
+
+    log.info(
+        "확정 돌파봉 = ①"
+    )
+
+    log.info(
+        "다음 봉 = ②"
+    )
+
+    log.info(
+        f"3개부터 진행중 표시 = "
+        f"상승 3 / 상승 4 / ... "
+        f"하락 3 / 하락 4 / ..."
+    )
+
+    log.info(
         "ROC 진행 리스트 정렬:"
     )
 
@@ -5848,18 +5649,6 @@ def startup():
 
     log.info(
         "음수 진행 시작시간 최신순"
-    )
-
-    log.info(
-        "현재 진행봉: ⓪"
-    )
-
-    log.info(
-        "확정 돌파봉: ①"
-    )
-
-    log.info(
-        "다음 봉: ②"
     )
 
     log.info(
