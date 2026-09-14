@@ -3501,7 +3501,7 @@ def rsi_html(r):
 
         return (
             '<span class="rsi-long">'
-            f'{value:.1f}({long_count})'
+            f'🟢{value:.1f}({long_count})'
             '</span>'
         )
 
@@ -3509,7 +3509,7 @@ def rsi_html(r):
 
         return (
             '<span class="rsi-short">'
-            f'{value:.1f}({short_count})'
+            f'🔴{value:.1f}({short_count})'
             '</span>'
         )
 
