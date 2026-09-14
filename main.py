@@ -84,6 +84,13 @@ ROC_TIMEFRAME = 60
 ROC_HIGH_TIMEFRAME = 240
 ROC_DAILY_TIMEFRAME = 1440
 
+# ROC 필터 적용 여부
+# Y = 실제 필터
+# N = 참고용
+USE_ROC_TIMEFRAME = "Y"
+USE_ROC_HIGH_TIMEFRAME = "Y"
+USE_ROC_DAILY_TIMEFRAME = "N"
+
 
 # =========================================================
 # EMA 기간
@@ -102,10 +109,28 @@ EMA1_MAX_COUNT = 200
 
 ROC_PERIOD = 10
 
-# ROC는 RSI처럼 70/30을 사용하지 않고
-# 0선을 기준으로 상승/하락을 판단
+# ROC 0선
 ROC_LONG_LEVEL = 0
 ROC_SHORT_LEVEL = 0
+
+
+# =========================================================
+# ROC 이평선 기간
+#
+# ROC10 자체에 EMA를 적용
+#
+# ROC EMA 10
+# ROC EMA 30
+# ROC EMA 60
+# ROC EMA 120
+# =========================================================
+
+ROC_MA_FASTEST = 10
+ROC_MA_FAST = 30
+ROC_MA_MID = 60
+ROC_MA_SLOW = 120
+
+ROC_MA_MAX_COUNT = 200
 
 
 # =========================================================
@@ -228,10 +253,13 @@ def get_ema_filter_labels():
         label = format_timeframe(timeframe)
 
         if flag == "Y":
+
             result.append(
                 f"{label} 적용"
             )
+
         else:
+
             result.append(
                 f"{label} 참고"
             )
@@ -267,6 +295,83 @@ def get_ema_filter_timeframes():
             )
 
     if not result:
+
+        return "없음"
+
+    return " / ".join(result)
+
+
+# =========================================================
+# ROC 필터 설정 표시
+# =========================================================
+
+def get_roc_filter_labels():
+
+    result = []
+
+    settings = [
+        (
+            ROC_TIMEFRAME,
+            USE_ROC_TIMEFRAME
+        ),
+        (
+            ROC_HIGH_TIMEFRAME,
+            USE_ROC_HIGH_TIMEFRAME
+        ),
+        (
+            ROC_DAILY_TIMEFRAME,
+            USE_ROC_DAILY_TIMEFRAME
+        )
+    ]
+
+    for timeframe, flag in settings:
+
+        label = format_timeframe(timeframe)
+
+        if flag == "Y":
+
+            result.append(
+                f"{label} 적용"
+            )
+
+        else:
+
+            result.append(
+                f"{label} 참고"
+            )
+
+    return " / ".join(result)
+
+
+def get_roc_filter_timeframes():
+
+    result = []
+
+    settings = [
+        (
+            ROC_TIMEFRAME,
+            USE_ROC_TIMEFRAME
+        ),
+        (
+            ROC_HIGH_TIMEFRAME,
+            USE_ROC_HIGH_TIMEFRAME
+        ),
+        (
+            ROC_DAILY_TIMEFRAME,
+            USE_ROC_DAILY_TIMEFRAME
+        )
+    ]
+
+    for timeframe, flag in settings:
+
+        if flag == "Y":
+
+            result.append(
+                format_timeframe(timeframe)
+            )
+
+    if not result:
+
         return "없음"
 
     return " / ".join(result)
@@ -337,7 +442,9 @@ def get_current_candle_start(minutes):
 
         if now < anchor:
 
-            anchor -= pd.Timedelta(days=1)
+            anchor -= pd.Timedelta(
+                days=1
+            )
 
         return anchor.replace(
             tzinfo=None
@@ -354,7 +461,9 @@ def get_current_candle_start(minutes):
 
         if now < anchor:
 
-            anchor -= pd.Timedelta(days=1)
+            anchor -= pd.Timedelta(
+                days=1
+            )
 
         elapsed_minutes = int(
             (
@@ -1389,6 +1498,7 @@ def ema(
         or df.empty
         or "c" not in df
     ):
+
         return None
 
     return (
@@ -1447,6 +1557,7 @@ def ema_values(df):
                 )
 
                 if not pd.isna(value):
+
                     result[key] = value
 
         return result
@@ -1526,8 +1637,11 @@ def ema_alignment_count(df):
         ):
 
             if get_dir(i) == current:
+
                 count += 1
+
             else:
+
                 break
 
         return {
@@ -1682,12 +1796,14 @@ def ema_filter_pass(
             "long",
             "short"
         ):
+
             return False
 
         if e.get(
             "count",
             0
         ) > EMA1_MAX_COUNT:
+
             return False
 
     directions = [
@@ -1748,7 +1864,447 @@ def roc(
 
 
 # =========================================================
+# ROC EMA 계산
+#
+# ROC 값에 EMA를 적용
+# =========================================================
+
+def roc_ema(
+    roc_series,
+    period
+):
+
+    if (
+        roc_series is None
+        or len(roc_series) == 0
+    ):
+
+        return None
+
+    try:
+
+        return (
+            pd.to_numeric(
+                roc_series,
+                errors="coerce"
+            )
+            .ewm(
+                span=int(period),
+                adjust=False,
+                min_periods=1
+            )
+            .mean()
+        )
+
+    except Exception:
+
+        return None
+
+
+# =========================================================
+# ROC 이평선 실제 수치
+# =========================================================
+
+def roc_ma_values(
+    df
+):
+
+    result = {
+        "10": None,
+        "30": None,
+        "60": None,
+        "120": None
+    }
+
+    if df is None or df.empty:
+        return result
+
+    try:
+
+        roc_series = roc(
+            df,
+            ROC_PERIOD
+        )
+
+        if roc_series is None:
+            return result
+
+        periods = {
+
+            "10":
+                ROC_MA_FASTEST,
+
+            "30":
+                ROC_MA_FAST,
+
+            "60":
+                ROC_MA_MID,
+
+            "120":
+                ROC_MA_SLOW
+
+        }
+
+        for key, period in periods.items():
+
+            series = roc_ema(
+                roc_series,
+                period
+            )
+
+            if (
+                series is not None
+                and not series.empty
+            ):
+
+                value = float(
+                    series.iloc[-1]
+                )
+
+                if not pd.isna(value):
+
+                    result[key] = value
+
+        return result
+
+    except Exception:
+
+        return result
+
+
+# =========================================================
+# ROC 이평선 배열
+#
+# ROC EMA10
+# ROC EMA30
+# ROC EMA60
+# ROC EMA120
+#
+# LONG:
+# 10 > 30 > 60 > 120
+#
+# SHORT:
+# 10 < 30 < 60 < 120
+# =========================================================
+
+def roc_alignment_count(
+    df
+):
+
+    if df is None or df.empty:
+
+        return {
+            "direction": "none",
+            "count": 0,
+            "values": roc_ma_values(df)
+        }
+
+    try:
+
+        roc_series = roc(
+            df,
+            ROC_PERIOD
+        )
+
+        if roc_series is None:
+            raise ValueError(
+                "ROC 계산 실패"
+            )
+
+        r10 = roc_ema(
+            roc_series,
+            ROC_MA_FASTEST
+        )
+
+        r30 = roc_ema(
+            roc_series,
+            ROC_MA_FAST
+        )
+
+        r60 = roc_ema(
+            roc_series,
+            ROC_MA_MID
+        )
+
+        r120 = roc_ema(
+            roc_series,
+            ROC_MA_SLOW
+        )
+
+        def get_dir(i):
+
+            a = float(r10.iloc[i])
+            b = float(r30.iloc[i])
+            c = float(r60.iloc[i])
+            d = float(r120.iloc[i])
+
+            if a > b > c > d:
+
+                return "long"
+
+            if a < b < c < d:
+
+                return "short"
+
+            return "none"
+
+        current = get_dir(-1)
+
+        if current == "none":
+
+            return {
+                "direction": "none",
+                "count": 0,
+                "values": roc_ma_values(df)
+            }
+
+        count = 0
+
+        for i in range(
+            len(df) - 1,
+            -1,
+            -1
+        ):
+
+            if get_dir(i) == current:
+
+                count += 1
+
+            else:
+
+                break
+
+        return {
+
+            "direction":
+                current,
+
+            "count":
+                count,
+
+            "values":
+                roc_ma_values(df)
+
+        }
+
+    except Exception:
+
+        return {
+
+            "direction":
+                "none",
+
+            "count":
+                0,
+
+            "values":
+                roc_ma_values(df)
+
+        }
+
+
+# =========================================================
+# ROC 필터 방향
+# =========================================================
+
+def roc_filter_direction(
+    r1,
+    r_high,
+    r_daily=None
+):
+
+    selected = []
+
+    if USE_ROC_TIMEFRAME == "Y":
+
+        selected.append(
+            r1
+        )
+
+    if USE_ROC_HIGH_TIMEFRAME == "Y":
+
+        selected.append(
+            r_high
+        )
+
+    if USE_ROC_DAILY_TIMEFRAME == "Y":
+
+        selected.append(
+            r_daily
+        )
+
+    if not selected:
+
+        return {
+            "direction": "none",
+            "valid": True
+        }
+
+    directions = [
+
+        x.get(
+            "direction",
+            "none"
+        )
+
+        for x in selected
+
+    ]
+
+    if all(
+        d == "long"
+        for d in directions
+    ):
+
+        return {
+
+            "direction":
+                "long",
+
+            "valid":
+                True
+
+        }
+
+    if all(
+        d == "short"
+        for d in directions
+    ):
+
+        return {
+
+            "direction":
+                "short",
+
+            "valid":
+                True
+
+        }
+
+    return {
+
+        "direction":
+            "none",
+
+        "valid":
+            False
+
+    }
+
+
+# =========================================================
+# ROC 필터 통과
+# =========================================================
+
+def roc_filter_pass(
+    r1,
+    r_high,
+    r_daily=None
+):
+
+    selected = []
+
+    if USE_ROC_TIMEFRAME == "Y":
+
+        selected.append(
+            r1
+        )
+
+    if USE_ROC_HIGH_TIMEFRAME == "Y":
+
+        selected.append(
+            r_high
+        )
+
+    if USE_ROC_DAILY_TIMEFRAME == "Y":
+
+        selected.append(
+            r_daily
+        )
+
+    if not selected:
+
+        return True
+
+    for r in selected:
+
+        if r.get(
+            "direction",
+            "none"
+        ) not in (
+            "long",
+            "short"
+        ):
+
+            return False
+
+        if r.get(
+            "count",
+            0
+        ) > ROC_MA_MAX_COUNT:
+
+            return False
+
+    directions = [
+
+        r.get(
+            "direction",
+            "none"
+        )
+
+        for r in selected
+
+    ]
+
+    return (
+        len(set(directions)) == 1
+    )
+
+
+# =========================================================
+# ROC 필터 종합
+# =========================================================
+
+def roc_filter_analysis(
+    r1,
+    r_high,
+    r_daily=None
+):
+
+    direction_data = (
+        roc_filter_direction(
+            r1,
+            r_high,
+            r_daily
+        )
+    )
+
+    passed = (
+        direction_data["valid"]
+        and
+        roc_filter_pass(
+            r1,
+            r_high,
+            r_daily
+        )
+    )
+
+    return {
+
+        "direction":
+            direction_data["direction"],
+
+        "valid":
+            passed
+
+    }
+
+
+# =========================================================
 # ROC 카운트
+#
+# 0선 위 연속 캔들 수
+# 0선 아래 연속 캔들 수
 # =========================================================
 
 def roc_count(
@@ -1780,15 +2336,21 @@ def roc_count(
             if above:
 
                 if value > level:
+
                     count += 1
+
                 else:
+
                     break
 
             else:
 
                 if value < level:
+
                     count += 1
+
                 else:
+
                     break
 
         return count
@@ -1808,17 +2370,38 @@ def roc_reference_analysis(
 
     result = {
 
-        "value": None,
-        "previous": None,
+        "value":
+            None,
 
-        "long_count": 0,
-        "short_count": 0,
+        "previous":
+            None,
 
-        "direction": "flat",
-        "change": 0.0,
+        "long_count":
+            0,
 
-        "state": "neutral",
-        "display": "-"
+        "short_count":
+            0,
+
+        "direction":
+            "flat",
+
+        "change":
+            0.0,
+
+        "state":
+            "neutral",
+
+        "display":
+            "-",
+
+        "ma_direction":
+            "none",
+
+        "ma_count":
+            0,
+
+        "ma_values":
+            {}
 
     }
 
@@ -1861,12 +2444,15 @@ def roc_reference_analysis(
             change = 0.0
 
         if change > 0:
+
             direction = "up"
 
         elif change < 0:
+
             direction = "down"
 
         else:
+
             direction = "flat"
 
         long_count = roc_count(
@@ -1893,10 +2479,17 @@ def roc_reference_analysis(
 
             state = "neutral"
 
+        ma = roc_alignment_count(
+            df
+        )
+
         result.update({
 
-            "value": value,
-            "previous": previous,
+            "value":
+                value,
+
+            "previous":
+                previous,
 
             "long_count":
                 long_count,
@@ -1914,7 +2507,16 @@ def roc_reference_analysis(
                 state,
 
             "display":
-                f"{value:.2f}%"
+                f"{value:.2f}%",
+
+            "ma_direction":
+                ma["direction"],
+
+            "ma_count":
+                ma["count"],
+
+            "ma_values":
+                ma["values"]
 
         })
 
@@ -1940,20 +2542,44 @@ def roc_analysis(
 
     result = {
 
-        "roc10": None,
-        "roc10_previous": None,
+        "roc10":
+            None,
 
-        "roc10_count": 0,
-        "roc10_short_count": 0,
+        "roc10_previous":
+            None,
 
-        "long_count": 0,
-        "short_count": 0,
+        "roc10_count":
+            0,
 
-        "state": "none",
-        "direction": "flat",
+        "roc10_short_count":
+            0,
 
-        "change": 0.0,
-        "display": "-"
+        "long_count":
+            0,
+
+        "short_count":
+            0,
+
+        "state":
+            "none",
+
+        "direction":
+            "flat",
+
+        "change":
+            0.0,
+
+        "display":
+            "-",
+
+        "ma_direction":
+            "none",
+
+        "ma_count":
+            0,
+
+        "ma_values":
+            {}
 
     }
 
@@ -2047,6 +2673,10 @@ def roc_analysis(
 
             state = "neutral"
 
+        ma = roc_alignment_count(
+            df_current
+        )
+
         result.update({
 
             "roc10":
@@ -2077,7 +2707,16 @@ def roc_analysis(
                 change,
 
             "display":
-                f"{current_value:.2f}%"
+                f"{current_value:.2f}%",
+
+            "ma_direction":
+                ma["direction"],
+
+            "ma_count":
+                ma["count"],
+
+            "ma_values":
+                ma["values"]
 
         })
 
@@ -2223,7 +2862,9 @@ def get_change_value(x):
             (list, tuple)
         ):
 
-            return float(x[0])
+            return float(
+                x[0]
+            )
 
         return float(x)
 
@@ -2238,7 +2879,9 @@ def is_positive_day(row):
         return False
 
     value = get_change_value(
-        row.get("change_value")
+        row.get(
+            "change_value"
+        )
     )
 
     return (
@@ -2292,12 +2935,15 @@ def format_volume(v):
         return "-"
 
     if v >= 1e12:
+
         return f"{v / 1e12:.1f}조"
 
     if v >= 1e8:
+
         return f"{v / 1e8:.0f}억"
 
     if v >= 1e4:
+
         return f"{v / 1e4:.0f}만"
 
     return f"{v:,.0f}"
@@ -2305,14 +2951,30 @@ def format_volume(v):
 
 # =========================================================
 # EMA + ROC 자격
+#
+# 최종 LONG:
+#
+# 1H EMA 정배열
+# 4H EMA 정배열
+# +
+# 1H ROC 이평 정배열
+# 4H ROC 이평 정배열
+# +
+1H ROC10 0선 상방
 # =========================================================
 
 def get_signal_qualified(
     e1,
     e_high,
     e_daily,
-    r
+    r,
+    r_high,
+    r_daily
 ):
+
+    # =====================================================
+    # EMA 필터
+    # =====================================================
 
     ema_filter = ema_filter_direction(
         e1,
@@ -2344,8 +3006,30 @@ def get_signal_qualified(
         ema_filter_count_valid
     )
 
+
     # =====================================================
-    # ROC
+    # ROC 이평 필터
+    # =====================================================
+
+    roc_filter = roc_filter_analysis(
+        r,
+        r_high,
+        r_daily
+    )
+
+    roc_direction = roc_filter.get(
+        "direction",
+        "none"
+    )
+
+    roc_ready = roc_filter.get(
+        "valid",
+        False
+    )
+
+
+    # =====================================================
+    # ROC 0선
     # =====================================================
 
     long_roc = (
@@ -2368,22 +3052,43 @@ def get_signal_qualified(
         ) >= 1
     )
 
+
+    # =====================================================
+    # 최종
+    # =====================================================
+
+    long_ready = (
+        ema_ready
+        and
+        roc_ready
+        and
+        ema_direction == "long"
+        and
+        roc_direction == "long"
+    )
+
+    short_ready = (
+        ema_ready
+        and
+        roc_ready
+        and
+        ema_direction == "short"
+        and
+        roc_direction == "short"
+    )
+
     return {
 
         "breakout_qualified":
             (
-                ema_ready
-                and
-                ema_direction == "long"
+                long_ready
                 and
                 long_roc
             ),
 
         "short_breakout_qualified":
             (
-                ema_ready
-                and
-                ema_direction == "short"
+                short_ready
                 and
                 short_roc
             ),
@@ -2391,8 +3096,14 @@ def get_signal_qualified(
         "filter_direction":
             ema_direction,
 
+        "roc_filter_direction":
+            roc_direction,
+
         "ema_filter_valid":
-            ema_ready
+            ema_ready,
+
+        "roc_filter_valid":
+            roc_ready
 
     }
 
@@ -2524,7 +3235,9 @@ def analyze_okx(
         e1,
         e_high,
         e_daily,
-        r
+        r,
+        r_high,
+        r_daily
     )
 
     return {
@@ -2661,7 +3374,9 @@ def analyze(
         e1,
         e_high,
         e_daily,
-        r
+        r,
+        r_high,
+        r_daily
     )
 
     return {
@@ -2728,6 +3443,12 @@ def make_row(
                 False,
 
             "short_breakout_qualified":
+                False,
+
+            "roc_filter_direction":
+                "none",
+
+            "roc_filter_valid":
                 False
 
         }
@@ -2814,6 +3535,18 @@ def make_row(
             analysis.get(
                 "direction_1h",
                 "none"
+            ),
+
+        "roc_filter_direction":
+            analysis.get(
+                "roc_filter_direction",
+                "none"
+            ),
+
+        "roc_filter_valid":
+            analysis.get(
+                "roc_filter_valid",
+                False
             )
 
     }
@@ -2982,6 +3715,7 @@ def update_okx(usdt):
         not usdt
         or usdt <= 0
     ):
+
         return False
 
     okx_1h_cache = {}
@@ -3204,8 +3938,11 @@ def update_dashboard():
                 usdt = get_usdt_krw()
 
                 if usdt:
+
                     latest_usdt_krw = usdt
+
                 else:
+
                     usdt = latest_usdt_krw
 
                 if usdt > 0:
@@ -3241,8 +3978,11 @@ def format_indicator_value(value):
         return "-"
 
     try:
+
         return f"{float(value):,.2f}"
+
     except Exception:
+
         return "-"
 
 
@@ -3261,6 +4001,7 @@ def ema_detail_html(
         suffix = ""
 
         if use_flag != "Y":
+
             suffix = " 참고"
 
         return (
@@ -3268,7 +4009,9 @@ def ema_detail_html(
             f'<span class="indicator-label">'
             f'{timeframe}{suffix}'
             '</span>'
-            '<span class="ema-direction">⚪(0)</span>'
+            '<span class="ema-direction">'
+            '⚪(0)'
+            '</span>'
             '</div>'
         )
 
@@ -3286,27 +4029,34 @@ def ema_detail_html(
     )
 
     if direction == "long":
+
         icon = "🟢"
 
     elif direction == "short":
+
         icon = "🔴"
 
     else:
+
         icon = "⚪"
 
     label = timeframe
 
     if use_flag != "Y":
+
         label += " 참고"
 
     return f"""
     <div class="indicator-line ema-detail-line">
+
         <span class="indicator-label">
             {label}
         </span>
+
         <span class="ema-direction">
             {icon}({count})
         </span>
+
     </div>
     """
 
@@ -3331,8 +4081,11 @@ def roc_direction_html(r):
     )
 
     try:
+
         change = float(change)
+
     except Exception:
+
         change = 0.0
 
     if direction == "up":
@@ -3354,6 +4107,52 @@ def roc_direction_html(r):
     return (
         '<span class="roc-flat">'
         '→ 0.00'
+        '</span>'
+    )
+
+
+# =========================================================
+# ROC 이평 배열 HTML
+# =========================================================
+
+def roc_ma_direction_html(r):
+
+    if not r:
+
+        return ""
+
+    direction = r.get(
+        "ma_direction",
+        "none"
+    )
+
+    count = int(
+        r.get(
+            "ma_count",
+            0
+        )
+        or 0
+    )
+
+    if direction == "long":
+
+        return (
+            '<span class="roc-ma-long">'
+            f'🟢({count})'
+            '</span>'
+        )
+
+    if direction == "short":
+
+        return (
+            '<span class="roc-ma-short">'
+            f'🔴({count})'
+            '</span>'
+        )
+
+    return (
+        '<span class="roc-ma-neutral">'
+        '⚪(0)'
         '</span>'
     )
 
@@ -3381,7 +4180,9 @@ def roc_html(r):
         )
 
     try:
+
         value = float(value)
+
     except Exception:
 
         return (
@@ -3408,13 +4209,20 @@ def roc_html(r):
         r
     )
 
+    ma_direction = (
+        roc_ma_direction_html(
+            r
+        )
+    )
+
     if value > ROC_LONG_LEVEL:
 
         return (
             '<span class="roc-long">'
             f'🟢{value:+.2f}% '
             f'{slope}'
-            f' ({long_count})'
+            f' ({long_count}) '
+            f'{ma_direction}'
             '</span>'
         )
 
@@ -3424,7 +4232,8 @@ def roc_html(r):
             '<span class="roc-short">'
             f'🔴{value:+.2f}% '
             f'{slope}'
-            f' ({short_count})'
+            f' ({short_count}) '
+            f'{ma_direction}'
             '</span>'
         )
 
@@ -3432,7 +4241,8 @@ def roc_html(r):
         '<span class="roc-neutral">'
         f'{value:+.2f}% '
         f'{slope}'
-        ' (0)'
+        ' (0) '
+        f'{ma_direction}'
         '</span>'
     )
 
@@ -3460,7 +4270,9 @@ def roc_reference_html(r):
         )
 
     try:
+
         value = float(value)
+
     except Exception:
 
         return (
@@ -3487,13 +4299,20 @@ def roc_reference_html(r):
         r
     )
 
+    ma_direction = (
+        roc_ma_direction_html(
+            r
+        )
+    )
+
     if value > ROC_LONG_LEVEL:
 
         return (
             '<span class="roc-reference-long">'
             f'🟢{value:+.2f}% '
             f'{slope}'
-            f' ({long_count})'
+            f' ({long_count}) '
+            f'{ma_direction}'
             '</span>'
         )
 
@@ -3503,7 +4322,8 @@ def roc_reference_html(r):
             '<span class="roc-reference-short">'
             f'🔴{value:+.2f}% '
             f'{slope}'
-            f' ({short_count})'
+            f' ({short_count}) '
+            f'{ma_direction}'
             '</span>'
         )
 
@@ -3511,7 +4331,8 @@ def roc_reference_html(r):
         '<span class="roc-reference">'
         f'{value:+.2f}% '
         f'{slope}'
-        ' (0)'
+        ' (0) '
+        f'{ma_direction}'
         '</span>'
     )
 
@@ -3538,6 +4359,7 @@ def roc_lines_html(
 
         '</div>'
 
+
         '<div class="indicator-line">'
 
         '<span class="indicator-label">'
@@ -3547,6 +4369,7 @@ def roc_lines_html(
         f'{roc_reference_html(r_high)}'
 
         '</div>'
+
 
         '<div class="indicator-line">'
 
@@ -3598,7 +4421,7 @@ def signal_html(row):
             return (
                 '<span '
                 'class="signal-icon long-breakout" '
-                'title="ROC10 0선 상방 진입 · Y EMA 필터 정배열">'
+                'title="ROC10 0선 상방 진입 · EMA 1H/4H 정배열 · ROC 이평 1H/4H 정배열">'
                 '🚀①'
                 '</span>'
             )
@@ -3606,7 +4429,7 @@ def signal_html(row):
         return (
             '<span '
             'class="signal-icon roc-warning-qualified" '
-            'title="ROC10 0선 상방 진입 · EMA 필터 미충족">'
+            'title="ROC10 0선 상방 진입 · EMA 또는 ROC 이평 필터 미충족">'
             '⚠️①'
             '</span>'
         )
@@ -3621,7 +4444,7 @@ def signal_html(row):
             return (
                 '<span '
                 'class="signal-icon short-breakout" '
-                'title="ROC10 0선 하방 진입 · Y EMA 필터 역배열">'
+                'title="ROC10 0선 하방 진입 · EMA 1H/4H 역배열 · ROC 이평 1H/4H 역배열">'
                 '🔻①'
                 '</span>'
             )
@@ -3629,7 +4452,7 @@ def signal_html(row):
         return (
             '<span '
             'class="signal-icon roc-warning-qualified" '
-            'title="ROC10 0선 하방 진입 · EMA 필터 미충족">'
+            'title="ROC10 0선 하방 진입 · EMA 또는 ROC 이평 필터 미충족">'
             '⚠️①'
             '</span>'
         )
@@ -3741,15 +4564,19 @@ def row_class(x):
         return "short-breakout-qualified"
 
     if long_count >= 2:
+
         return "progress-qualified"
 
     if short_count >= 2:
+
         return "short-progress-qualified"
 
     if long_count == 1:
+
         return "roc-warning-row"
 
     if short_count == 1:
+
         return "roc-warning-row"
 
     return ""
@@ -3877,7 +4704,7 @@ def rows_html(
                 <td class="roc-column">
 
                     <div class="indicator-title">
-                        ROC10
+                        ROC10 / ROC MA
                     </div>
 
                     {roc_content}
@@ -3950,7 +4777,7 @@ def table_html(
                     </th>
 
                     <th>
-                        ROC10<br>
+                        ROC10 / ROC MA<br>
                         {format_timeframe(ROC_TIMEFRAME)}/
                         {format_timeframe(ROC_HIGH_TIMEFRAME)}/
                         {format_timeframe(ROC_DAILY_TIMEFRAME)}
@@ -3993,9 +4820,11 @@ def roc_signal_section(
         if upbit:
 
             if not is_positive_day(x):
+
                 continue
 
         if is_roc_signal(x):
+
             rows.append(x)
 
     return f"""
@@ -4013,6 +4842,7 @@ def roc_signal_section(
             ROC10 ·
             0선 진입 ·
             카운트 1 ·
+            ROC 이평 {get_roc_filter_timeframes()} 필터 ·
             {update_time} KST
 
         </span>
@@ -4044,9 +4874,11 @@ def progress_section(
         if upbit:
 
             if not is_positive_day(x):
+
                 continue
 
         if is_sun_cloud_signal(x):
+
             rows.append(x)
 
     return f"""
@@ -4062,6 +4894,7 @@ def progress_section(
             {format_timeframe(ROC_TIMEFRAME)}
             ROC10 0선 카운트 2 이상 ·
             EMA {get_ema_filter_timeframes()} 적용 ·
+            ROC 이평 {get_roc_filter_timeframes()} 적용 ·
             {format_timeframe(ROC_DAILY_TIMEFRAME)} 참고 ·
             {update_time} KST
 
@@ -4084,20 +4917,27 @@ def progress_section(
 def format_market_price(price):
 
     if price is None:
+
         return "-"
 
     try:
+
         price = float(price)
+
     except Exception:
+
         return "-"
 
     if price >= 100000000:
+
         return f"{price / 100000000:.2f}억"
 
     if price >= 10000:
+
         return f"{price:,.0f}"
 
     if price >= 1:
+
         return f"{price:,.2f}"
 
     return f"{price:.6f}"
@@ -4106,11 +4946,15 @@ def format_market_price(price):
 def market_change_html(value):
 
     if value is None:
+
         return "-"
 
     try:
+
         value = float(value)
+
     except Exception:
+
         return "-"
 
     if value > 0:
@@ -4142,8 +4986,11 @@ def market_direction_html(
 ):
 
     try:
+
         count = int(count)
+
     except Exception:
+
         count = 0
 
     if direction == "long":
@@ -4176,6 +5023,7 @@ def market_direction_html(
 def market_roc_html(r):
 
     if not r:
+
         return "-"
 
     value = r.get(
@@ -4183,11 +5031,15 @@ def market_roc_html(r):
     )
 
     if value is None:
+
         return "-"
 
     try:
+
         value = float(value)
+
     except Exception:
+
         return "-"
 
     direction = r.get(
@@ -4201,8 +5053,11 @@ def market_roc_html(r):
     )
 
     try:
+
         change = float(change)
+
     except Exception:
+
         change = 0.0
 
     if direction == "up":
@@ -4229,6 +5084,10 @@ def market_roc_html(r):
             '</span>'
         )
 
+    ma = roc_ma_direction_html(
+        r
+    )
+
     if value > ROC_LONG_LEVEL:
 
         count = int(
@@ -4242,7 +5101,8 @@ def market_roc_html(r):
         return (
             '<span class="market-up">'
             f'🟢 {value:+.2f}% '
-            f'{slope} ({count})'
+            f'{slope} ({count}) '
+            f'{ma}'
             '</span>'
         )
 
@@ -4259,14 +5119,16 @@ def market_roc_html(r):
         return (
             '<span class="market-down">'
             f'🔴 {value:+.2f}% '
-            f'{slope} ({count})'
+            f'{slope} ({count}) '
+            f'{ma}'
             '</span>'
         )
 
     return (
         '<span class="market-zero">'
         f'{value:+.2f}% '
-        f'{slope} (0)'
+        f'{slope} (0) '
+        f'{ma}'
         '</span>'
     )
 
@@ -4278,6 +5140,7 @@ def market_roc_html(r):
 def market_roc_reference_html(r):
 
     if not r:
+
         return "-"
 
     value = r.get(
@@ -4285,11 +5148,15 @@ def market_roc_reference_html(r):
     )
 
     if value is None:
+
         return "-"
 
     try:
+
         value = float(value)
+
     except Exception:
+
         return "-"
 
     direction = r.get(
@@ -4303,8 +5170,11 @@ def market_roc_reference_html(r):
     )
 
     try:
+
         change = float(change)
+
     except Exception:
+
         change = 0.0
 
     if direction == "up":
@@ -4331,6 +5201,10 @@ def market_roc_reference_html(r):
             '</span>'
         )
 
+    ma = roc_ma_direction_html(
+        r
+    )
+
     if value > ROC_LONG_LEVEL:
 
         count = int(
@@ -4344,7 +5218,8 @@ def market_roc_reference_html(r):
         return (
             '<span class="market-up">'
             f'🟢 {value:+.2f}% '
-            f'{slope} ({count})'
+            f'{slope} ({count}) '
+            f'{ma}'
             '</span>'
         )
 
@@ -4361,14 +5236,16 @@ def market_roc_reference_html(r):
         return (
             '<span class="market-down">'
             f'🔴 {value:+.2f}% '
-            f'{slope} ({count})'
+            f'{slope} ({count}) '
+            f'{ma}'
             '</span>'
         )
 
     return (
         '<span class="market-zero">'
         f'{value:+.2f}% '
-        f'{slope} (0)'
+        f'{slope} (0) '
+        f'{ma}'
         '</span>'
     )
 
@@ -4571,7 +5448,7 @@ def market_panel(
             <div class="market-indicator-group">
 
                 <span class="market-label">
-                    ROC10
+                    ROC10 / MA
                 </span>
 
 
@@ -4655,13 +5532,19 @@ def market_summary_html():
             </span>
 
             <span class="market-title-sub">
+
                 {latest_market_source} ·
+
                 EMA {format_timeframe(EMA_TIMEFRAME)}/
                 {format_timeframe(EMA_HIGH_TIMEFRAME)}/
-                {format_timeframe(EMA_DAILY_TIMEFRAME)} +
+                {format_timeframe(EMA_DAILY_TIMEFRAME)}
+
+                +
+
                 ROC10 {format_timeframe(ROC_TIMEFRAME)}/
                 {format_timeframe(ROC_HIGH_TIMEFRAME)}/
                 {format_timeframe(ROC_DAILY_TIMEFRAME)}
+
             </span>
 
         </div>
@@ -5153,6 +6036,26 @@ td:nth-child(6){
 .roc-zero,
 .roc-reference{
     color:#68717b!important;
+}
+
+
+/* =========================================================
+   ROC 이평선
+   ========================================================= */
+
+.roc-ma-long{
+    color:#39e875!important;
+    font-weight:900;
+}
+
+.roc-ma-short{
+    color:#ff5555!important;
+    font-weight:900;
+}
+
+.roc-ma-neutral{
+    color:#68717b!important;
+    font-weight:800;
 }
 
 
@@ -5762,6 +6665,7 @@ def dashboard():
 
                 거래대금 순위 ·
                 EMA {get_ema_filter_labels()} ·
+                ROC 이평 {get_roc_filter_labels()} ·
                 ROC10 참고 ·
                 {latest_upbit_update_time} KST
 
@@ -5796,6 +6700,7 @@ def dashboard():
 
                 거래대금 순위 ·
                 EMA {get_ema_filter_labels()} ·
+                ROC 이평 {get_roc_filter_labels()} ·
                 ROC10 참고 ·
                 {latest_okx_update_time} KST
 
@@ -5838,6 +6743,13 @@ def dashboard():
             EMA :
             <b class="y">
                 {get_ema_filter_labels()}
+            </b>
+        </span>
+
+        <span>
+            ROC MA :
+            <b class="y">
+                {get_roc_filter_labels()}
             </b>
         </span>
 
@@ -6018,18 +6930,25 @@ def startup():
 
     log.info(
         f"ROC TIMEFRAME = "
-        f"{format_timeframe(ROC_TIMEFRAME)}"
+        f"{format_timeframe(ROC_TIMEFRAME)} "
+        f"[{USE_ROC_TIMEFRAME}]"
     )
 
     log.info(
         f"ROC HIGH TIMEFRAME = "
-        f"{format_timeframe(ROC_HIGH_TIMEFRAME)}"
+        f"{format_timeframe(ROC_HIGH_TIMEFRAME)} "
+        f"[{USE_ROC_HIGH_TIMEFRAME}]"
     )
 
     log.info(
         f"ROC DAILY TIMEFRAME = "
         f"{format_timeframe(ROC_DAILY_TIMEFRAME)} "
-        f"(확인용)"
+        f"[{USE_ROC_DAILY_TIMEFRAME}]"
+    )
+
+    log.info(
+        f"ROC 실제 필터 = "
+        f"{get_roc_filter_timeframes()}"
     )
 
     log.info(
@@ -6042,6 +6961,14 @@ def startup():
 
     log.info(
         f"ROC = {ROC_PERIOD}"
+    )
+
+    log.info(
+        "ROC 이평 = "
+        f"{ROC_MA_FASTEST}/"
+        f"{ROC_MA_FAST}/"
+        f"{ROC_MA_MID}/"
+        f"{ROC_MA_SLOW}"
     )
 
     log.info(
@@ -6083,13 +7010,29 @@ def startup():
     )
 
     log.info(
+        "ROC 이평 LONG:"
+    )
+
+    log.info(
+        "ROC EMA10 > ROC EMA30 > ROC EMA60 > ROC EMA120"
+    )
+
+    log.info(
+        "ROC 이평 SHORT:"
+    )
+
+    log.info(
+        "ROC EMA10 < ROC EMA30 < ROC EMA60 < ROC EMA120"
+    )
+
+    log.info(
         f"{format_timeframe(ROC_HIGH_TIMEFRAME)} "
-        f"ROC10 → 참고용"
+        f"ROC 이평 → 필터"
     )
 
     log.info(
         f"{format_timeframe(ROC_DAILY_TIMEFRAME)} "
-        f"ROC10 → 참고용"
+        f"ROC 이평 → 참고용"
     )
 
     log.info(
@@ -6098,8 +7041,64 @@ def startup():
     )
 
     log.info(
-        f"EMA 설정 → "
-        f"{get_ema_filter_labels()}"
+        f"ROC 실제 필터 → "
+        f"{get_roc_filter_timeframes()}"
+    )
+
+    log.info(
+        "========================================"
+    )
+
+    log.info(
+        "최종 LONG 조건:"
+    )
+
+    log.info(
+        "EMA 1H 정배열"
+    )
+
+    log.info(
+        "EMA 4H 정배열"
+    )
+
+    log.info(
+        "ROC 1H 이평 정배열"
+    )
+
+    log.info(
+        "ROC 4H 이평 정배열"
+    )
+
+    log.info(
+        "ROC10 0선 상방 진입"
+    )
+
+    log.info(
+        "========================================"
+    )
+
+    log.info(
+        "최종 SHORT 조건:"
+    )
+
+    log.info(
+        "EMA 1H 역배열"
+    )
+
+    log.info(
+        "EMA 4H 역배열"
+    )
+
+    log.info(
+        "ROC 1H 이평 역배열"
+    )
+
+    log.info(
+        "ROC 4H 이평 역배열"
+    )
+
+    log.info(
+        "ROC10 0선 하방 진입"
     )
 
     log.info(
