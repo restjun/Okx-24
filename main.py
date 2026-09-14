@@ -99,7 +99,7 @@ ROC_PERIOD = 5
 BREAKOUT_MAX_COUNT = 2
 
 # 진행중 시작 기준
-ROC_PROGRESS_MIN_COUNT = 3
+ROC_PROGRESS_MIN_COUNT = 1
 
 
 # =========================================================
