@@ -75,17 +75,11 @@ USE_EMA_HIGH_TIMEFRAME = "Y"
 #
 # ★ 여기만 수정하면 계산 + 대시보드가 같이 변경됨
 #
-# 예:
-# EMA1_FASTEST = 1
-# EMA1_FAST = 30
-# EMA1_MID = 60
-# EMA1_SLOW = 120
-#
 # 정배열:
-# EMA1 > EMA30 > EMA60 > EMA120
+# EMA9 > EMA30 > EMA60 > EMA120
 #
 # 역배열:
-# EMA1 < EMA30 < EMA60 < EMA120
+# EMA9 < EMA30 < EMA60 < EMA120
 # =========================================================
 
 EMA1_FASTEST = 9
@@ -100,9 +94,6 @@ EMA1_MAX_COUNT = 200
 # ROC 설정
 #
 # ★ 여기만 수정하면 계산 + 대시보드가 같이 변경됨
-#
-# 현재:
-# ROC 9
 # =========================================================
 
 ROC_PERIOD = 9
@@ -1358,8 +1349,6 @@ def ema(df, period):
 
 # =========================================================
 # EMA 정배열 / 역배열
-#
-# ★ EMA 기준값을 설정값에서 직접 가져옴
 # =========================================================
 
 def ema_alignment_count(df):
@@ -1713,7 +1702,7 @@ def roc_count(
 #
 # 현재봉 = ⓪
 # 확정봉 = ①
-# 다음봉 = ②
+# 다음 봉 = ②
 # =========================================================
 
 def roc_cross_state(
@@ -1892,31 +1881,6 @@ def count_icon(count):
 
 # =========================================================
 # ROC 분석
-#
-# ★ 핵심
-#
-# 0선 돌파:
-#   🚀⓪
-#   🚀①
-#   🚀②
-#
-# 3부터:
-#   🟢 상승 3
-#   🟢 상승 4
-#   🟢 상승 5...
-#
-# 숏:
-#   🔻⓪
-#   🔻①
-#   🔻②
-#
-# 3부터:
-#   🔴 하락 3
-#   🔴 하락 4
-#   🔴 하락 5...
-#
-# ★ 연속 ROC가 3 이상이면
-#   돌파 상태를 강제로 종료한다.
 # =========================================================
 
 def roc_analysis(
@@ -2099,27 +2063,9 @@ def roc_analysis(
             "short_breakout"
         )
 
-        # =================================================
-        # ★ 핵심 전환
-        #
-        # ROC가 3개 이상 연속 양수이면
-        # 롱 돌파 상태 종료
-        #
-        # ROC가 3개 이상 연속 음수이면
-        # 숏 돌파 상태 종료
-        #
-        # 따라서:
-        #
-        # 🚀②
-        #   ↓
-        # 🟢 상승 3
-        #
-        # 🔻②
-        #   ↓
-        # 🔴 하락 3
-        #
-        # 로 전환됨.
-        # =================================================
+        # -------------------------------------------------
+        # ROC 3개 이상이면 돌파 상태 종료
+        # -------------------------------------------------
 
         if positive_count >= ROC_PROGRESS_MIN_COUNT:
 
@@ -2260,10 +2206,6 @@ def roc_analysis(
                     f"🔴 하락 {negative_count}"
 
             })
-
-        # =================================================
-        # 나머지
-        # =================================================
 
         else:
 
@@ -3042,6 +2984,40 @@ def is_roc3_short_progress(row):
             "roc3_short_progress_qualified",
             False
         )
+    )
+
+
+# =========================================================
+# ★ 롱 통합 후보
+#
+# 롱 돌파 또는 ROC 3+ 롱 진행중이면 표시
+# =========================================================
+
+def is_long_combined(row):
+
+    if not row:
+        return False
+
+    return (
+        is_breakout(row)
+        or is_roc3_progress(row)
+    )
+
+
+# =========================================================
+# ★ 숏 통합 후보
+#
+# 숏 돌파 또는 ROC 3+ 숏 진행중이면 표시
+# =========================================================
+
+def is_short_combined(row):
+
+    if not row:
+        return False
+
+    return (
+        is_short_breakout(row)
+        or is_roc3_short_progress(row)
     )
 
 
@@ -4055,8 +4031,6 @@ def roc_html(r):
 
     # =====================================================
     # 롱 돌파
-    #
-    # ★ ROC 3 이상이면 절대 여기로 들어오지 않음
     # =====================================================
 
     state = r.get(
@@ -4427,7 +4401,35 @@ def rows_html(
 
     for x in data:
 
-        if focus == "breakout":
+        if focus == "long_combined":
+
+            if is_breakout(x):
+
+                cls = "breakout-qualified"
+
+            elif is_roc3_progress(x):
+
+                cls = "progress-qualified"
+
+            else:
+
+                cls = ""
+
+        elif focus == "short_combined":
+
+            if is_short_breakout(x):
+
+                cls = "short-breakout-qualified"
+
+            elif is_roc3_short_progress(x):
+
+                cls = "short-progress-qualified"
+
+            else:
+
+                cls = ""
+
+        elif focus == "breakout":
 
             cls = "breakout-qualified"
 
@@ -4817,6 +4819,14 @@ h1{
     white-space:nowrap;
     overflow:hidden;
     text-overflow:ellipsis;
+}
+
+.long_combined-section-title{
+    border-left-color:#39e875;
+}
+
+.short_combined-section-title{
+    border-left-color:#ff5555;
 }
 
 .breakout-section-title{
@@ -5520,57 +5530,34 @@ def dashboard():
     sections = ""
 
     # =====================================================
-    # ① ROC 롱 돌파
+    # ① 🚀 롱 진행 통합
+    #
+    # 롱 돌파 + ROC 3+ 롱 진행중
+    # 하나의 대시보드 섹션으로 표시
     # =====================================================
 
     if USE_UPBIT == "Y":
 
         sections += focus_section(
 
-            "🚀 ROC 롱 돌파 정배열",
+            "🚀 롱 진행",
 
             latest_upbit_data,
 
             latest_upbit_update_time,
 
-            is_breakout,
+            is_long_combined,
 
-            "breakout",
+            "long_combined",
 
             (
                 f"{format_timeframe(EMA_TIMEFRAME)}"
                 f"/"
                 f"{format_timeframe(EMA_HIGH_TIMEFRAME)} "
                 f"{get_ema_period_text_long()} · "
-                f"{get_roc_text()} 음수→양수 ⓪①②"
-            )
-
-        )
-
-    # =====================================================
-    # ② ROC 3+ 롱 진행중
-    # =====================================================
-
-    if USE_UPBIT == "Y":
-
-        sections += focus_section(
-
-            "🔥 ROC 3+ 롱 진행중",
-
-            latest_upbit_data,
-
-            latest_upbit_update_time,
-
-            is_roc3_progress,
-
-            "roc3_progress",
-
-            (
-                f"TOP{TOP_N} 기준 · "
-                f"정배열 {get_ema_period_text_long()} · "
-                f"{get_roc_text()} 양수 "
-                f"{ROC_PROGRESS_MIN_COUNT}개 이상 연속 · "
-                f"최신 진행순"
+                f"{get_roc_text()} "
+                f"음수→양수 ⓪①② "
+                f"→ 양수 {ROC_PROGRESS_MIN_COUNT}+"
             ),
 
             sort_key="roc_progress_start_time",
@@ -5580,57 +5567,34 @@ def dashboard():
         )
 
     # =====================================================
-    # ③ ROC 숏 돌파
+    # ② 🔻 숏 진행 통합
+    #
+    # 숏 돌파 + ROC 3+ 숏 진행중
+    # 하나의 대시보드 섹션으로 표시
     # =====================================================
 
     if USE_UPBIT == "Y":
 
         sections += focus_section(
 
-            "🔻 ROC 숏 돌파 역배열",
+            "🔻 숏 진행",
 
             latest_upbit_data,
 
             latest_upbit_update_time,
 
-            is_short_breakout,
+            is_short_combined,
 
-            "short_breakout",
+            "short_combined",
 
             (
                 f"{format_timeframe(EMA_TIMEFRAME)}"
                 f"/"
                 f"{format_timeframe(EMA_HIGH_TIMEFRAME)} "
                 f"{get_ema_period_text_short()} · "
-                f"{get_roc_text()} 양수→음수 ⓪①②"
-            )
-
-        )
-
-    # =====================================================
-    # ④ ROC 3+ 숏 진행중
-    # =====================================================
-
-    if USE_UPBIT == "Y":
-
-        sections += focus_section(
-
-            "🌧️ ROC 3+ 숏 진행중",
-
-            latest_upbit_data,
-
-            latest_upbit_update_time,
-
-            is_roc3_short_progress,
-
-            "roc3_short_progress",
-
-            (
-                f"TOP{TOP_N} 기준 · "
-                f"역배열 {get_ema_period_text_short()} · "
-                f"{get_roc_text()} 음수 "
-                f"{ROC_PROGRESS_MIN_COUNT}개 이상 연속 · "
-                f"최신 진행순"
+                f"{get_roc_text()} "
+                f"양수→음수 ⓪①② "
+                f"→ 음수 {ROC_PROGRESS_MIN_COUNT}+"
             ),
 
             sort_key="roc_negative_progress_start_time",
@@ -5647,44 +5611,24 @@ def dashboard():
 
         sections += focus_section(
 
-            "🚀 ROC 롱 돌파 정배열",
+            "🚀 롱 진행",
 
             latest_okx_data,
 
             latest_okx_update_time,
 
-            is_breakout,
+            is_long_combined,
 
-            "breakout",
+            "long_combined",
 
             (
                 f"{format_timeframe(EMA_TIMEFRAME)}"
                 f"/"
                 f"{format_timeframe(EMA_HIGH_TIMEFRAME)} "
                 f"{get_ema_period_text_long()} · "
-                f"{get_roc_text()} 음수→양수 ⓪①②"
-            )
-
-        )
-
-        sections += focus_section(
-
-            "🔥 ROC 3+ 롱 진행중",
-
-            latest_okx_data,
-
-            latest_okx_update_time,
-
-            is_roc3_progress,
-
-            "roc3_progress",
-
-            (
-                f"TOP{TOP_N} 기준 · "
-                f"정배열 {get_ema_period_text_long()} · "
-                f"{get_roc_text()} 양수 "
-                f"{ROC_PROGRESS_MIN_COUNT}개 이상 연속 · "
-                f"최신 진행순"
+                f"{get_roc_text()} "
+                f"음수→양수 ⓪①② "
+                f"→ 양수 {ROC_PROGRESS_MIN_COUNT}+"
             ),
 
             sort_key="roc_progress_start_time",
@@ -5695,44 +5639,24 @@ def dashboard():
 
         sections += focus_section(
 
-            "🔻 ROC 숏 돌파 역배열",
+            "🔻 숏 진행",
 
             latest_okx_data,
 
             latest_okx_update_time,
 
-            is_short_breakout,
+            is_short_combined,
 
-            "short_breakout",
+            "short_combined",
 
             (
                 f"{format_timeframe(EMA_TIMEFRAME)}"
                 f"/"
                 f"{format_timeframe(EMA_HIGH_TIMEFRAME)} "
                 f"{get_ema_period_text_short()} · "
-                f"{get_roc_text()} 양수→음수 ⓪①②"
-            )
-
-        )
-
-        sections += focus_section(
-
-            "🌧️ ROC 3+ 숏 진행중",
-
-            latest_okx_data,
-
-            latest_okx_update_time,
-
-            is_roc3_short_progress,
-
-            "roc3_short_progress",
-
-            (
-                f"TOP{TOP_N} 기준 · "
-                f"역배열 {get_ema_period_text_short()} · "
-                f"{get_roc_text()} 음수 "
-                f"{ROC_PROGRESS_MIN_COUNT}개 이상 연속 · "
-                f"최신 진행순"
+                f"{get_roc_text()} "
+                f"양수→음수 ⓪①② "
+                f"→ 음수 {ROC_PROGRESS_MIN_COUNT}+"
             ),
 
             sort_key="roc_negative_progress_start_time",
@@ -6103,6 +6027,18 @@ def startup():
         "🔻 숏 돌파 / "
         "☀️ 롱 진행 / "
         "🌧️ 숏 진행"
+    )
+
+    log.info(
+        "대시보드:"
+    )
+
+    log.info(
+        "★ 롱 돌파 + 롱 진행중 → 🚀 롱 진행 하나로 통합"
+    )
+
+    log.info(
+        "★ 숏 돌파 + 숏 진행중 → 🔻 숏 진행 하나로 통합"
     )
 
     log.info(
