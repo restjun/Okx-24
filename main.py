@@ -1652,7 +1652,7 @@ def ema_display(
     return {
 
         "display":
-            f"{icon}({x['count']})",
+            f"{icon}({x['count']}",
 
         "direction":
             direction,
@@ -4384,9 +4384,70 @@ def market_rsi_reference_html(
     )
 
 
+# =========================================================
+# 시장 시황 데이터 선택
+#
+# 중요:
+#
+# USE_OKX = "N"
+#     → UPBIT BTC / ETH 사용
+#
+# USE_OKX = "Y"
+#     → OKX BTC / ETH 사용
+#
+# OKX 사용 중 OKX 데이터가 없으면
+# UPBIT 데이터로 섞어서 대체하지 않음
+# =========================================================
+
 def get_market_row(
     coin
 ):
+
+    # -----------------------------------------------------
+    # OKX 조회 ON
+    # -----------------------------------------------------
+
+    if USE_OKX == "Y":
+
+        for row in latest_okx_data:
+
+            name = str(
+                row.get(
+                    "name",
+                    ""
+                )
+            )
+
+            # OKX 이름이
+            #
+            # BTC
+            # BTC (업비트)
+            #
+            # 어느 형태이든 BTC로 인식
+
+            symbol = (
+                name
+                .replace(
+                    " (업비트)",
+                    ""
+                )
+                .strip()
+            )
+
+            if symbol == coin:
+
+                return row
+
+        # -------------------------------------------------
+        # OKX가 켜져 있으면
+        # OKX 데이터가 없는 경우 업비트 사용 안 함
+        # -------------------------------------------------
+
+        return None
+
+    # -----------------------------------------------------
+    # OKX 조회 OFF
+    # -----------------------------------------------------
 
     for row in latest_upbit_data:
 
@@ -4405,12 +4466,34 @@ def get_market_row(
 
 def market_summary_html():
 
+    # -----------------------------------------------------
+    # 데이터 출처 자동 선택
+    #
+    # OKX Y → OKX
+    # OKX N → UPBIT
+    # -----------------------------------------------------
+
     btc = get_market_row(
         "BTC"
     )
 
     eth = get_market_row(
         "ETH"
+    )
+
+
+    # -----------------------------------------------------
+    # 시장 시황 출처 표시
+    # -----------------------------------------------------
+
+    market_source = (
+
+        "OKX"
+
+        if USE_OKX == "Y"
+
+        else "UPBIT"
+
     )
 
 
@@ -4437,7 +4520,7 @@ def market_summary_html():
                     </span>
 
                     <span class="market-panel-sub">
-                        데이터 대기
+                        {market_source} 데이터 대기
                     </span>
 
                 </div>
@@ -4477,7 +4560,7 @@ def market_summary_html():
                 </span>
 
                 <span class="market-panel-sub">
-                    EMA + RSI14
+                    {market_source} · EMA + RSI14
                 </span>
 
             </div>
@@ -4638,7 +4721,7 @@ def market_summary_html():
             </span>
 
             <span class="market-title-sub">
-                EMA 배열 + RSI14
+                {market_source} · EMA 배열 + RSI14
             </span>
 
         </div>
@@ -6692,6 +6775,21 @@ def startup():
 
     log.info(
         "BTC + ETH 시장 시황 2열 표시"
+    )
+
+
+    log.info(
+        "시장 시황 데이터 우선순위:"
+    )
+
+
+    log.info(
+        "OKX=Y → OKX BTC/ETH"
+    )
+
+
+    log.info(
+        "OKX=N → UPBIT BTC/ETH"
     )
 
 
