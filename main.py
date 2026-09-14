@@ -72,14 +72,6 @@ KST = ZoneInfo("Asia/Seoul")
 
 # =========================================================
 # EMA 시간봉
-#
-# 60   = 1H
-# 240  = 4H
-# 1440 = 1D
-#
-# 1H  = 실제 신호 판단
-# 4H  = 확인용
-# 1D  = 확인용
 # =========================================================
 
 EMA_TIMEFRAME = 60
@@ -97,10 +89,6 @@ USE_EMA_DAILY_TIMEFRAME = "N"
 
 # =========================================================
 # RSI 시간봉
-#
-# 1H  = 실제 신호 판단
-# 4H  = 참고용
-# 1D  = 참고용
 # =========================================================
 
 RSI_TIMEFRAME = 60
@@ -5307,8 +5295,8 @@ tr:last-child td{
    #        5%
    코인     15%
    거래대금 13%
-   EMA      23%
-   RSI      30%
+   EMA      19%
+   RSI      34%
    신호     14%
 
    ========================================================= */
@@ -5330,12 +5318,12 @@ td:nth-child(3){
 
 th:nth-child(4),
 td:nth-child(4){
-    width:23%;
+    width:19%;
 }
 
 th:nth-child(5),
 td:nth-child(5){
-    width:30%;
+    width:34%;
 }
 
 th:nth-child(6),
@@ -5422,7 +5410,6 @@ td:nth-child(6){
     line-height:6px;
     font-weight:700;
 
-    /* 시간과 수치 사이 간격 축소 */
     width:16px;
     min-width:16px;
 
@@ -5474,7 +5461,9 @@ td:nth-child(6){
 }
 
 
-/* RSI 상승 / 하락 표시 */
+/* =========================================================
+   RSI 상승 / 하락
+   ========================================================= */
 
 .rsi-up{
     color:#39e875!important;
@@ -5720,12 +5709,12 @@ td:nth-child(6){
 
     th:nth-child(4),
     td:nth-child(4){
-        width:23%;
+        width:19%;
     }
 
     th:nth-child(5),
     td:nth-child(5){
-        width:30%;
+        width:34%;
     }
 
     th:nth-child(6),
@@ -5764,8 +5753,6 @@ td:nth-child(6){
     .indicator-label{
         font-size:4.5px;
         line-height:6px;
-
-        /* 모바일 시간과 수치 사이 간격 축소 */
         width:13px;
         min-width:13px;
     }
@@ -5922,12 +5909,12 @@ td:nth-child(6){
 
     th:nth-child(4),
     td:nth-child(4){
-        width:23%;
+        width:19%;
     }
 
     th:nth-child(5),
     td:nth-child(5){
-        width:30%;
+        width:34%;
     }
 
     th:nth-child(6),
@@ -5964,8 +5951,6 @@ td:nth-child(6){
     .indicator-label{
         font-size:7px;
         line-height:8px;
-
-        /* PC 시간과 수치 사이 간격 축소 */
         width:16px;
         min-width:16px;
     }
