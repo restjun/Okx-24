@@ -208,6 +208,114 @@ def format_timeframe(minutes):
 
 
 # =========================================================
+# EMA 시간봉 표시
+# =========================================================
+
+def ema_timeframe_label(
+    minutes,
+    use_flag
+):
+
+    label = format_timeframe(
+        minutes
+    )
+
+    if use_flag == "Y":
+
+        return f"{label}"
+
+    return f"{label} 참고"
+
+
+# =========================================================
+# EMA 필터 설정 표시
+# =========================================================
+
+def get_ema_filter_labels():
+
+    result = []
+
+    settings = [
+
+        (
+            EMA_TIMEFRAME,
+            USE_EMA_TIMEFRAME
+        ),
+
+        (
+            EMA_HIGH_TIMEFRAME,
+            USE_EMA_HIGH_TIMEFRAME
+        ),
+
+        (
+            EMA_DAILY_TIMEFRAME,
+            USE_EMA_DAILY_TIMEFRAME
+        )
+
+    ]
+
+    for timeframe, flag in settings:
+
+        label = format_timeframe(
+            timeframe
+        )
+
+        if flag == "Y":
+
+            result.append(
+                f"{label} 적용"
+            )
+
+        else:
+
+            result.append(
+                f"{label} 참고"
+            )
+
+    return " / ".join(result)
+
+
+def get_ema_filter_timeframes():
+
+    result = []
+
+    settings = [
+
+        (
+            EMA_TIMEFRAME,
+            USE_EMA_TIMEFRAME
+        ),
+
+        (
+            EMA_HIGH_TIMEFRAME,
+            USE_EMA_HIGH_TIMEFRAME
+        ),
+
+        (
+            EMA_DAILY_TIMEFRAME,
+            USE_EMA_DAILY_TIMEFRAME
+        )
+
+    ]
+
+    for timeframe, flag in settings:
+
+        if flag == "Y":
+
+            result.append(
+                format_timeframe(
+                    timeframe
+                )
+            )
+
+    if not result:
+
+        return "없음"
+
+    return " / ".join(result)
+
+
+# =========================================================
 # OKX 시간봉
 # =========================================================
 
@@ -1692,12 +1800,13 @@ def ema_display(
 
 
 # =========================================================
-# EMA 필터
+# EMA 필터 방향
 # =========================================================
 
 def ema_filter_direction(
     e1,
-    e_high
+    e_high,
+    e_daily=None
 ):
 
     selected = []
@@ -1709,6 +1818,10 @@ def ema_filter_direction(
     if USE_EMA_HIGH_TIMEFRAME == "Y":
 
         selected.append(e_high)
+
+    if USE_EMA_DAILY_TIMEFRAME == "Y":
+
+        selected.append(e_daily)
 
     if not selected:
 
@@ -1774,9 +1887,14 @@ def ema_filter_direction(
     }
 
 
+# =========================================================
+# EMA 필터 통과
+# =========================================================
+
 def ema_filter_pass(
     e1,
-    e_high
+    e_high,
+    e_daily=None
 ):
 
     selected = []
@@ -1788,6 +1906,10 @@ def ema_filter_pass(
     if USE_EMA_HIGH_TIMEFRAME == "Y":
 
         selected.append(e_high)
+
+    if USE_EMA_DAILY_TIMEFRAME == "Y":
+
+        selected.append(e_daily)
 
     if not selected:
 
@@ -2556,37 +2678,51 @@ def format_volume(v):
 def get_signal_qualified(
     e1,
     e_high,
+    e_daily,
     r
 ):
 
-    ema_direction = e1.get(
+    # -----------------------------------------------------
+    # Y로 설정된 EMA만 실제 필터에 사용
+    # -----------------------------------------------------
+
+    ema_filter = ema_filter_direction(
+        e1,
+        e_high,
+        e_daily
+    )
+
+    ema_direction = ema_filter.get(
         "direction",
         "none"
     )
 
-    ema_count = int(
-        e1.get(
-            "count",
-            0
+    ema_valid = ema_filter.get(
+        "valid",
+        False
+    )
+
+    # -----------------------------------------------------
+    # EMA 카운트 확인
+    # -----------------------------------------------------
+
+    ema_filter_count_valid = (
+        ema_filter_pass(
+            e1,
+            e_high,
+            e_daily
         )
-        or 0
     )
 
-    long_base = (
-        ema_direction == "long"
+    ema_ready = (
+        ema_valid
         and
-        ema_count > 0
-        and
-        ema_count <= EMA1_MAX_COUNT
+        ema_filter_count_valid
     )
 
-    short_base = (
-        ema_direction == "short"
-        and
-        ema_count > 0
-        and
-        ema_count <= EMA1_MAX_COUNT
-    )
+    # -----------------------------------------------------
+    # RSI
+    # -----------------------------------------------------
 
     long_rsi = (
         int(
@@ -2608,24 +2744,35 @@ def get_signal_qualified(
         ) >= 1
     )
 
+    # -----------------------------------------------------
+    # 최종 신호
+    # -----------------------------------------------------
+
     return {
 
         "breakout_qualified":
             (
-                long_base
+                ema_ready
+                and
+                ema_direction == "long"
                 and
                 long_rsi
             ),
 
         "short_breakout_qualified":
             (
-                short_base
+                ema_ready
+                and
+                ema_direction == "short"
                 and
                 short_rsi
             ),
 
         "filter_direction":
-            ema_direction
+            ema_direction,
+
+        "ema_filter_valid":
+            ema_ready
 
     }
 
@@ -2756,6 +2903,7 @@ def analyze_okx(
     q = get_signal_qualified(
         e1,
         e_high,
+        e_daily,
         r
     )
 
@@ -2894,6 +3042,7 @@ def analyze(
     q = get_signal_qualified(
         e1,
         e_high,
+        e_daily,
         r
     )
 
@@ -3515,15 +3664,23 @@ def format_indicator_value(
 
 def ema_detail_html(
     e,
-    timeframe
+    timeframe,
+    use_flag="Y"
 ):
 
     if not e:
+
+        suffix = ""
+
+        if use_flag != "Y":
+
+            suffix = " 참고"
 
         return (
             '<div class="indicator-line">'
             f'<span class="indicator-label">'
             f'{timeframe}'
+            f'{suffix}'
             '</span>'
             '<span class="ema-direction">⚪(0)</span>'
             '</div>'
@@ -3554,12 +3711,18 @@ def ema_detail_html(
 
         icon = "⚪"
 
+    label = timeframe
+
+    if use_flag != "Y":
+
+        label += " 참고"
+
     return f"""
 
     <div class="indicator-line ema-detail-line">
 
         <span class="indicator-label">
-            {timeframe}
+            {label}
         </span>
 
         <span class="ema-direction">
@@ -3787,7 +3950,7 @@ def rsi_reference_html(
 
 
 # =========================================================
-# RSI 1H / 4H / 1D
+# RSI 시간봉
 # =========================================================
 
 def rsi_lines_html(
@@ -3870,7 +4033,7 @@ def signal_html(
             return (
                 '<span '
                 'class="signal-icon long-breakout" '
-                'title="RSI70 진입 · EMA 정배열">'
+                'title="RSI70 진입 · Y EMA 필터 정배열">'
                 '🚀①'
                 '</span>'
             )
@@ -3878,7 +4041,7 @@ def signal_html(
         return (
             '<span '
             'class="signal-icon rsi-warning-qualified" '
-            'title="RSI70 진입 · EMA 미충족">'
+            'title="RSI70 진입 · EMA 필터 미충족">'
             '⚠️①'
             '</span>'
         )
@@ -3893,7 +4056,7 @@ def signal_html(
             return (
                 '<span '
                 'class="signal-icon short-breakout" '
-                'title="RSI30 진입 · EMA 역배열">'
+                'title="RSI30 진입 · Y EMA 필터 역배열">'
                 '🔻①'
                 '</span>'
             )
@@ -3901,7 +4064,7 @@ def signal_html(
         return (
             '<span '
             'class="signal-icon rsi-warning-qualified" '
-            'title="RSI30 진입 · EMA 미충족">'
+            'title="RSI30 진입 · EMA 필터 미충족">'
             '⚠️①'
             '</span>'
         )
@@ -4073,7 +4236,8 @@ def rows_html(
                 ),
                 format_timeframe(
                     EMA_TIMEFRAME
-                )
+                ),
+                USE_EMA_TIMEFRAME
             )
 
             +
@@ -4085,7 +4249,8 @@ def rows_html(
                 ),
                 format_timeframe(
                     EMA_HIGH_TIMEFRAME
-                )
+                ),
+                USE_EMA_HIGH_TIMEFRAME
             )
 
             +
@@ -4097,7 +4262,8 @@ def rows_html(
                 ),
                 format_timeframe(
                     EMA_DAILY_TIMEFRAME
-                )
+                ),
+                USE_EMA_DAILY_TIMEFRAME
             )
 
         )
@@ -4223,9 +4389,19 @@ def table_html(
 
                     <th>거래대금</th>
 
-                    <th>EMA<br>1H/4H/1D</th>
+                    <th>
+                        EMA<br>
+                        {format_timeframe(EMA_TIMEFRAME)}/
+                        {format_timeframe(EMA_HIGH_TIMEFRAME)}/
+                        {format_timeframe(EMA_DAILY_TIMEFRAME)}
+                    </th>
 
-                    <th>RSI14<br>1H/4H/1D</th>
+                    <th>
+                        RSI14<br>
+                        {format_timeframe(RSI_TIMEFRAME)}/
+                        {format_timeframe(RSI_HIGH_TIMEFRAME)}/
+                        {format_timeframe(RSI_DAILY_TIMEFRAME)}
+                    </th>
 
                     <th>신호</th>
 
@@ -4335,7 +4511,8 @@ def progress_section(
 
             {format_timeframe(RSI_TIMEFRAME)}
             RSI 카운트 2 이상 ·
-            1H/4H/1D 확인 ·
+            EMA {get_ema_filter_timeframes()} 적용 ·
+            {format_timeframe(EMA_DAILY_TIMEFRAME)} 참고 ·
             {update_time} KST
 
         </span>
@@ -4808,7 +4985,9 @@ def market_panel(
                 <div class="market-indicator-line">
 
                     <span class="market-timeframe">
-                        1H
+                        {format_timeframe(
+                            EMA_TIMEFRAME
+                        )}
                     </span>
 
                     {market_direction_html(
@@ -4828,7 +5007,9 @@ def market_panel(
                 <div class="market-indicator-line">
 
                     <span class="market-timeframe">
-                        4H
+                        {format_timeframe(
+                            EMA_HIGH_TIMEFRAME
+                        )}
                     </span>
 
                     {market_direction_html(
@@ -4848,7 +5029,9 @@ def market_panel(
                 <div class="market-indicator-line">
 
                     <span class="market-timeframe">
-                        1D
+                        {format_timeframe(
+                            EMA_DAILY_TIMEFRAME
+                        )}
                     </span>
 
                     {market_direction_html(
@@ -4879,7 +5062,9 @@ def market_panel(
                 <div class="market-indicator-line">
 
                     <span class="market-timeframe">
-                        1H
+                        {format_timeframe(
+                            RSI_TIMEFRAME
+                        )}
                     </span>
 
                     {market_rsi_html(
@@ -4892,7 +5077,9 @@ def market_panel(
                 <div class="market-indicator-line">
 
                     <span class="market-timeframe">
-                        4H
+                        {format_timeframe(
+                            RSI_HIGH_TIMEFRAME
+                        )}
                     </span>
 
                     {market_rsi_reference_html(
@@ -4905,7 +5092,9 @@ def market_panel(
                 <div class="market-indicator-line">
 
                     <span class="market-timeframe">
-                        1D
+                        {format_timeframe(
+                            RSI_DAILY_TIMEFRAME
+                        )}
                     </span>
 
                     {market_rsi_reference_html(
@@ -4951,8 +5140,12 @@ def market_summary_html():
 
             <span class="market-title-sub">
                 {latest_market_source} ·
-                EMA 1H/4H/1D +
-                RSI14 1H/4H/1D
+                EMA {format_timeframe(EMA_TIMEFRAME)}/
+                {format_timeframe(EMA_HIGH_TIMEFRAME)}/
+                {format_timeframe(EMA_DAILY_TIMEFRAME)} +
+                RSI14 {format_timeframe(RSI_TIMEFRAME)}/
+                {format_timeframe(RSI_HIGH_TIMEFRAME)}/
+                {format_timeframe(RSI_DAILY_TIMEFRAME)}
             </span>
 
         </div>
@@ -5290,8 +5483,6 @@ tr:last-child td{
    컬럼
    =========================================================
 
-   총 100%
-
    #        5%
    코인     15%
    거래대금 13%
@@ -5409,10 +5600,8 @@ td:nth-child(6){
     font-size:5px;
     line-height:6px;
     font-weight:700;
-
     width:16px;
     min-width:16px;
-
     text-align:left;
 }
 
@@ -6088,7 +6277,8 @@ def dashboard():
             <span class="section-title-sub">
 
                 거래대금 순위 ·
-                EMA + RSI 참고 ·
+                EMA {get_ema_filter_labels()} ·
+                RSI 참고 ·
                 {latest_upbit_update_time} KST
 
             </span>
@@ -6121,7 +6311,8 @@ def dashboard():
             <span class="section-title-sub">
 
                 거래대금 순위 ·
-                EMA + RSI 참고 ·
+                EMA {get_ema_filter_labels()} ·
+                RSI 참고 ·
                 {latest_okx_update_time} KST
 
             </span>
@@ -6162,14 +6353,16 @@ def dashboard():
         <span>
             EMA :
             <b class="y">
-                1H / 4H / 1D
+                {get_ema_filter_labels()}
             </b>
         </span>
 
         <span>
             RSI :
             <b class="y">
-                1H / 4H / 1D
+                {format_timeframe(RSI_TIMEFRAME)} /
+                {format_timeframe(RSI_HIGH_TIMEFRAME)} /
+                {format_timeframe(RSI_DAILY_TIMEFRAME)}
             </b>
         </span>
 
@@ -6319,18 +6512,25 @@ def startup():
 
     log.info(
         f"EMA TIMEFRAME = "
-        f"{format_timeframe(EMA_TIMEFRAME)}"
+        f"{format_timeframe(EMA_TIMEFRAME)} "
+        f"[{USE_EMA_TIMEFRAME}]"
     )
 
     log.info(
         f"EMA HIGH TIMEFRAME = "
-        f"{format_timeframe(EMA_HIGH_TIMEFRAME)}"
+        f"{format_timeframe(EMA_HIGH_TIMEFRAME)} "
+        f"[{USE_EMA_HIGH_TIMEFRAME}]"
     )
 
     log.info(
         f"EMA DAILY TIMEFRAME = "
         f"{format_timeframe(EMA_DAILY_TIMEFRAME)} "
-        f"(확인용)"
+        f"[{USE_EMA_DAILY_TIMEFRAME}]"
+    )
+
+    log.info(
+        f"EMA 실제 필터 = "
+        f"{get_ema_filter_timeframes()}"
     )
 
     log.info(
@@ -6390,31 +6590,31 @@ def startup():
     )
 
     log.info(
-        "1H RSI 카운트 1 → 🔥 RSI 추세 신호"
+        f"{format_timeframe(RSI_TIMEFRAME)} "
+        f"RSI 카운트 1 → 🔥 RSI 추세 신호"
     )
 
     log.info(
-        "1H RSI 카운트 2 이상 → ☀️ / 🌧️ 추세 진행"
+        f"{format_timeframe(RSI_TIMEFRAME)} "
+        f"RSI 카운트 2 이상 → ☀️ / 🌧️ 추세 진행"
     )
 
     log.info(
-        "4H RSI → 참고용"
+        f"{format_timeframe(RSI_HIGH_TIMEFRAME)} RSI → 참고용"
     )
 
     log.info(
-        "1D RSI → 참고용"
+        f"{format_timeframe(RSI_DAILY_TIMEFRAME)} RSI → 참고용"
     )
 
     log.info(
-        "1H EMA → 실제 신호 필터"
+        f"EMA 실제 필터 → "
+        f"{get_ema_filter_timeframes()}"
     )
 
     log.info(
-        "4H EMA → 확인용"
-    )
-
-    log.info(
-        "1D EMA → 확인용"
+        f"EMA 설정 → "
+        f"{get_ema_filter_labels()}"
     )
 
     log.info(
