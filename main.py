@@ -52,9 +52,9 @@ MAX_HISTORY_CHUNKS = 10
 # 거래소
 # =========================================================
 
-USE_UPBIT = "N"
+USE_UPBIT = "Y"
 
-USE_OKX = "Y"
+USE_OKX = "N"
 
 
 # =========================================================
@@ -67,7 +67,6 @@ RATE_LIMIT_WAIT = 3
 
 MAX_RETRIES = 10
 
-
 KST = ZoneInfo("Asia/Seoul")
 
 
@@ -78,31 +77,38 @@ KST = ZoneInfo("Asia/Seoul")
 # 240  = 4H
 # 1440 = 1D
 #
-# 현재:
-# EMA_TIMEFRAME      = 1H
-# EMA_HIGH_TIMEFRAME = 4H
+# 1H  = 실제 신호 판단
+# 4H  = 확인용
+# 1D  = 확인용
 # =========================================================
 
 EMA_TIMEFRAME = 60
 
 EMA_HIGH_TIMEFRAME = 240
 
+EMA_DAILY_TIMEFRAME = 1440
+
 USE_EMA_TIMEFRAME = "Y"
 
 USE_EMA_HIGH_TIMEFRAME = "Y"
+
+# 1D는 확인용이므로 필터에는 사용하지 않음
+USE_EMA_DAILY_TIMEFRAME = "N"
 
 
 # =========================================================
 # RSI 시간봉
 #
-# 현재:
-# RSI_TIMEFRAME      = 1H
-# RSI_HIGH_TIMEFRAME = 4H
+# 1H  = 실제 신호 판단
+# 4H  = 참고용
+# 1D  = 참고용
 # =========================================================
 
 RSI_TIMEFRAME = 60
 
 RSI_HIGH_TIMEFRAME = 240
+
+RSI_DAILY_TIMEFRAME = 1440
 
 
 # =========================================================
@@ -133,9 +139,6 @@ RSI_SHORT_LEVEL = 30
 
 # =========================================================
 # RSI 진행 시작
-#
-# 1 = 최초 진입
-# 2 이상 = 추세 진행
 # =========================================================
 
 RSI_PROGRESS_START_COUNT = 2
@@ -159,7 +162,18 @@ latest_upbit_markets = []
 
 
 # =========================================================
-# 캐시
+# 시장 시황 데이터
+#
+# OKX 조회 여부에 따라 우선 거래소를 선택
+# =========================================================
+
+latest_market_source = "-"
+
+latest_market_data = {}
+
+
+# =========================================================
+# OKX 캐시
 # =========================================================
 
 okx_ticker_cache = {}
@@ -268,6 +282,7 @@ def get_current_candle_start(minutes):
 
     # -----------------------------------------------------
     # 1D
+    # 한국시간 09:00 기준
     # -----------------------------------------------------
 
     if minutes == 1440:
@@ -331,7 +346,7 @@ def get_current_candle_start(minutes):
         )
 
     # -----------------------------------------------------
-    # 기타 시간봉
+    # 기타
     # -----------------------------------------------------
 
     total = (
@@ -371,7 +386,6 @@ def get_current_candle_start(minutes):
 # =========================================================
 
 SUPPORTED_UPBIT_TIMEFRAMES = {
-
     1,
     3,
     5,
@@ -380,12 +394,10 @@ SUPPORTED_UPBIT_TIMEFRAMES = {
     60,
     240,
     1440
-
 }
 
 
 SUPPORTED_OKX_TIMEFRAMES = {
-
     1,
     3,
     5,
@@ -398,7 +410,6 @@ SUPPORTED_OKX_TIMEFRAMES = {
     480,
     720,
     1440
-
 }
 
 
@@ -408,35 +419,27 @@ def validate_timeframe():
 
         ("EMA_TIMEFRAME", EMA_TIMEFRAME),
 
-        (
-            "EMA_HIGH_TIMEFRAME",
-            EMA_HIGH_TIMEFRAME
-        ),
+        ("EMA_HIGH_TIMEFRAME", EMA_HIGH_TIMEFRAME),
+
+        ("EMA_DAILY_TIMEFRAME", EMA_DAILY_TIMEFRAME),
 
         ("RSI_TIMEFRAME", RSI_TIMEFRAME),
 
-        (
-            "RSI_HIGH_TIMEFRAME",
-            RSI_HIGH_TIMEFRAME
-        )
+        ("RSI_HIGH_TIMEFRAME", RSI_HIGH_TIMEFRAME),
+
+        ("RSI_DAILY_TIMEFRAME", RSI_DAILY_TIMEFRAME)
 
     ]
 
     for name, value in timeframe_list:
 
-        if (
-            value not in
-            SUPPORTED_UPBIT_TIMEFRAMES
-        ):
+        if value not in SUPPORTED_UPBIT_TIMEFRAMES:
 
             raise ValueError(
                 f"{name} 오류: {value}"
             )
 
-        if (
-            get_okx_bar(value)
-            is None
-        ):
+        if get_okx_bar(value) is None:
 
             raise ValueError(
                 f"OKX {name} 오류: {value}"
@@ -683,26 +686,6 @@ def get_upbit_candle(
             "https://api.upbit.com/v1/candles/days"
         )
 
-        params = {
-
-            "market":
-                market,
-
-            "count":
-                min(
-                    max(
-                        int(count),
-                        1
-                    ),
-                    200
-                )
-
-        }
-
-        if to:
-
-            params["to"] = to
-
     else:
 
         url = (
@@ -710,25 +693,25 @@ def get_upbit_candle(
             f"{unit}"
         )
 
-        params = {
+    params = {
 
-            "market":
-                market,
+        "market":
+            market,
 
-            "count":
-                min(
-                    max(
-                        int(count),
-                        1
-                    ),
-                    200
-                )
+        "count":
+            min(
+                max(
+                    int(count),
+                    1
+                ),
+                200
+            )
 
-        }
+    }
 
-        if to:
+    if to:
 
-            params["to"] = to
+        params["to"] = to
 
     response = retry(
         requests.get,
@@ -749,9 +732,7 @@ def get_upbit_candle(
 
             return None
 
-        df = pd.DataFrame(
-            data
-        )
+        df = pd.DataFrame(data)
 
         if df.empty:
 
@@ -1449,8 +1430,8 @@ def get_okx_current_candle(
 
         return (
             df
-            .sort_values("datetime")
-            .drop_duplicates("datetime")
+            .sort_values("ts")
+            .drop_duplicates("ts")
             .reset_index(drop=True)
         )
 
@@ -1460,7 +1441,7 @@ def get_okx_current_candle(
 
 
 # =========================================================
-# EMA
+# EMA 계산
 # =========================================================
 
 def ema(
@@ -1491,6 +1472,68 @@ def ema(
 
 
 # =========================================================
+# EMA 실제 수치
+# =========================================================
+
+def ema_values(
+    df
+):
+
+    result = {
+
+        "10": None,
+        "30": None,
+        "60": None,
+        "120": None
+
+    }
+
+    if (
+        df is None
+        or df.empty
+    ):
+
+        return result
+
+    try:
+
+        periods = {
+
+            "10": EMA1_FASTEST,
+            "30": EMA1_FAST,
+            "60": EMA1_MID,
+            "120": EMA1_SLOW
+
+        }
+
+        for key, period in periods.items():
+
+            series = ema(
+                df,
+                period
+            )
+
+            if (
+                series is not None
+                and not series.empty
+            ):
+
+                value = float(
+                    series.iloc[-1]
+                )
+
+                if not pd.isna(value):
+
+                    result[key] = value
+
+        return result
+
+    except Exception:
+
+        return result
+
+
+# =========================================================
 # EMA 배열
 # =========================================================
 
@@ -1509,7 +1552,10 @@ def ema_alignment_count(
                 "none",
 
             "count":
-                0
+                0,
+
+            "values":
+                ema_values(df)
 
         }
 
@@ -1537,21 +1583,13 @@ def ema_alignment_count(
 
         def get_dir(i):
 
-            a = float(
-                e10.iloc[i]
-            )
+            a = float(e10.iloc[i])
 
-            b = float(
-                e30.iloc[i]
-            )
+            b = float(e30.iloc[i])
 
-            c = float(
-                e60.iloc[i]
-            )
+            c = float(e60.iloc[i])
 
-            d = float(
-                e120.iloc[i]
-            )
+            d = float(e120.iloc[i])
 
             if a > b > c > d:
 
@@ -1573,7 +1611,10 @@ def ema_alignment_count(
                     "none",
 
                 "count":
-                    0
+                    0,
+
+                "values":
+                    ema_values(df)
 
             }
 
@@ -1602,7 +1643,10 @@ def ema_alignment_count(
                 current,
 
             "count":
-                count
+                count,
+
+            "values":
+                ema_values(df)
 
         }
 
@@ -1614,7 +1658,10 @@ def ema_alignment_count(
                 "none",
 
             "count":
-                0
+                0,
+
+            "values":
+                ema_values(df)
 
         }
 
@@ -1652,13 +1699,19 @@ def ema_display(
     return {
 
         "display":
-            f"{icon}({x['count']}",
+            f"{icon}({x['count']})",
 
         "direction":
             direction,
 
         "count":
             x["count"],
+
+        "values":
+            x.get(
+                "values",
+                {}
+            ),
 
         "current_price":
             current_price
@@ -1667,7 +1720,7 @@ def ema_display(
 
 
 # =========================================================
-# EMA 필터 방향
+# EMA 필터
 # =========================================================
 
 def ema_filter_direction(
@@ -1748,10 +1801,6 @@ def ema_filter_direction(
 
     }
 
-
-# =========================================================
-# EMA 필터
-# =========================================================
 
 def ema_filter_pass(
     e1,
@@ -1898,7 +1947,7 @@ def rsi(
 
 
 # =========================================================
-# RSI 연속 카운트
+# RSI 카운트
 # =========================================================
 
 def rsi_count(
@@ -1954,6 +2003,150 @@ def rsi_count(
     except Exception:
 
         return 0
+
+
+# =========================================================
+# RSI 참고 분석
+# =========================================================
+
+def rsi_reference_analysis(
+    df
+):
+
+    result = {
+
+        "value":
+            None,
+
+        "previous":
+            None,
+
+        "long_count":
+            0,
+
+        "short_count":
+            0,
+
+        "direction":
+            "neutral",
+
+        "display":
+            "-"
+
+    }
+
+    if (
+        df is None
+        or df.empty
+    ):
+
+        return result
+
+    try:
+
+        series = rsi(
+            df
+        )
+
+        if (
+            series is None
+            or series.empty
+        ):
+
+            return result
+
+        value = float(
+            series.iloc[-1]
+        )
+
+        if pd.isna(value):
+
+            return result
+
+        previous = None
+
+        if len(series) >= 2:
+
+            previous = float(
+                series.iloc[-2]
+            )
+
+            if pd.isna(previous):
+
+                previous = None
+
+        long_count = rsi_count(
+            series,
+            RSI_LONG_LEVEL,
+            True
+        )
+
+        short_count = rsi_count(
+            series,
+            RSI_SHORT_LEVEL,
+            False
+        )
+
+        if value >= RSI_LONG_LEVEL:
+
+            direction = "long"
+
+        elif value <= RSI_SHORT_LEVEL:
+
+            direction = "short"
+
+        else:
+
+            direction = "neutral"
+
+        result.update({
+
+            "value":
+                value,
+
+            "previous":
+                previous,
+
+            "long_count":
+                long_count,
+
+            "short_count":
+                short_count,
+
+            "direction":
+                direction
+
+        })
+
+        if direction == "long":
+
+            result["display"] = (
+                f"🟢{value:.1f}"
+                f"({long_count})"
+            )
+
+        elif direction == "short":
+
+            result["display"] = (
+                f"🔴{value:.1f}"
+                f"({short_count})"
+            )
+
+        else:
+
+            result["display"] = (
+                f"{value:.1f}(0)"
+            )
+
+        return result
+
+    except Exception as e:
+
+        log.error(
+            f"RSI 참고 분석 오류: {e}"
+        )
+
+        return result
 
 
 # =========================================================
@@ -2115,151 +2308,7 @@ def rsi_analysis(
 
 
 # =========================================================
-# RSI 참고용 분석
-# =========================================================
-
-def rsi_reference_analysis(
-    df
-):
-
-    result = {
-
-        "value":
-            None,
-
-        "previous":
-            None,
-
-        "long_count":
-            0,
-
-        "short_count":
-            0,
-
-        "direction":
-            "neutral",
-
-        "display":
-            "-"
-
-    }
-
-    if (
-        df is None
-        or df.empty
-    ):
-
-        return result
-
-    try:
-
-        series = rsi(
-            df
-        )
-
-        if (
-            series is None
-            or series.empty
-        ):
-
-            return result
-
-        value = float(
-            series.iloc[-1]
-        )
-
-        if pd.isna(value):
-
-            return result
-
-        previous = None
-
-        if len(series) >= 2:
-
-            previous = float(
-                series.iloc[-2]
-            )
-
-            if pd.isna(previous):
-
-                previous = None
-
-        long_count = rsi_count(
-            series,
-            RSI_LONG_LEVEL,
-            True
-        )
-
-        short_count = rsi_count(
-            series,
-            RSI_SHORT_LEVEL,
-            False
-        )
-
-        if value >= RSI_LONG_LEVEL:
-
-            direction = "long"
-
-        elif value <= RSI_SHORT_LEVEL:
-
-            direction = "short"
-
-        else:
-
-            direction = "neutral"
-
-        result.update({
-
-            "value":
-                value,
-
-            "previous":
-                previous,
-
-            "long_count":
-                long_count,
-
-            "short_count":
-                short_count,
-
-            "direction":
-                direction
-
-        })
-
-        if direction == "long":
-
-            result["display"] = (
-                f"🟢{value:.1f}"
-                f"({long_count})"
-            )
-
-        elif direction == "short":
-
-            result["display"] = (
-                f"🔴{value:.1f}"
-                f"({short_count})"
-            )
-
-        else:
-
-            result["display"] = (
-                f"{value:.1f}(0)"
-            )
-
-        return result
-
-    except Exception as e:
-
-        log.error(
-            f"RSI 참고 분석 오류: {e}"
-        )
-
-        return result
-
-
-# =========================================================
-# 일간 등락률 - UPBIT
+# 일간 등락률 UPBIT
 # =========================================================
 
 def daily_change_upbit(
@@ -2310,7 +2359,7 @@ def daily_change_upbit(
 
 
 # =========================================================
-# 등락률 - OKX
+# OKX 일간 등락률
 # =========================================================
 
 def daily_changes(
@@ -2385,7 +2434,7 @@ def daily_changes(
 
 
 # =========================================================
-# 등락률 보조
+# 등락률
 # =========================================================
 
 def get_change_value(x):
@@ -2596,6 +2645,10 @@ def analyze_okx(
         EMA_HIGH_TIMEFRAME
     )
 
+    ema_daily_bar = get_okx_bar(
+        EMA_DAILY_TIMEFRAME
+    )
+
     rsi_bar = get_okx_bar(
         RSI_TIMEFRAME
     )
@@ -2604,12 +2657,18 @@ def analyze_okx(
         RSI_HIGH_TIMEFRAME
     )
 
-    if (
-        not ema_bar
-        or not ema_high_bar
-        or not rsi_bar
-        or not rsi_high_bar
-    ):
+    rsi_daily_bar = get_okx_bar(
+        RSI_DAILY_TIMEFRAME
+    )
+
+    if not all([
+        ema_bar,
+        ema_high_bar,
+        ema_daily_bar,
+        rsi_bar,
+        rsi_high_bar,
+        rsi_daily_bar
+    ]):
 
         return None
 
@@ -2621,6 +2680,11 @@ def analyze_okx(
     df_ema_high = history_okx(
         market,
         ema_high_bar
+    )
+
+    df_ema_daily = history_okx(
+        market,
+        ema_daily_bar
     )
 
     df_rsi = history_okx(
@@ -2639,6 +2703,11 @@ def analyze_okx(
     df_rsi_high = history_okx(
         market,
         rsi_high_bar
+    )
+
+    df_rsi_daily = history_okx(
+        market,
+        rsi_daily_bar
     )
 
     if (
@@ -2660,6 +2729,11 @@ def analyze_okx(
         current_price
     )
 
+    e_daily = ema_display(
+        df_ema_daily,
+        current_price
+    )
+
     r = rsi_analysis(
         df_rsi,
         df_rsi_current
@@ -2667,6 +2741,10 @@ def analyze_okx(
 
     r_high = rsi_reference_analysis(
         df_rsi_high
+    )
+
+    r_daily = rsi_reference_analysis(
+        df_rsi_daily
     )
 
     changes = daily_changes(
@@ -2687,11 +2765,17 @@ def analyze_okx(
         "ema_high":
             e_high,
 
+        "ema_daily":
+            e_daily,
+
         "rsi":
             r,
 
         "rsi_high":
             r_high,
+
+        "rsi_daily":
+            r_daily,
 
         "changes":
             changes,
@@ -2734,6 +2818,11 @@ def analyze(
         EMA_HIGH_TIMEFRAME
     )
 
+    df_ema_daily = history_upbit(
+        market,
+        EMA_DAILY_TIMEFRAME
+    )
+
     df_rsi = history_upbit(
         market,
         RSI_TIMEFRAME
@@ -2750,6 +2839,11 @@ def analyze(
     df_rsi_high = history_upbit(
         market,
         RSI_HIGH_TIMEFRAME
+    )
+
+    df_rsi_daily = history_upbit(
+        market,
+        RSI_DAILY_TIMEFRAME
     )
 
     changes = (
@@ -2777,6 +2871,11 @@ def analyze(
         current_price
     )
 
+    e_daily = ema_display(
+        df_ema_daily,
+        current_price
+    )
+
     r = rsi_analysis(
         df_rsi,
         df_rsi_current
@@ -2784,6 +2883,10 @@ def analyze(
 
     r_high = rsi_reference_analysis(
         df_rsi_high
+    )
+
+    r_daily = rsi_reference_analysis(
+        df_rsi_daily
     )
 
     q = get_signal_qualified(
@@ -2800,11 +2903,17 @@ def analyze(
         "ema_high":
             e_high,
 
+        "ema_daily":
+            e_daily,
+
         "rsi":
             r,
 
         "rsi_high":
             r_high,
+
+        "rsi_daily":
+            r_daily,
 
         "changes":
             changes,
@@ -2821,7 +2930,7 @@ def analyze(
 
 
 # =========================================================
-# ROW 생성
+# ROW
 # =========================================================
 
 def make_row(
@@ -2836,54 +2945,15 @@ def make_row(
 
         analysis = {
 
-            "ema_1h": {
+            "ema_1h": {},
+            "ema_high": {},
+            "ema_daily": {},
 
-                "direction":
-                    "none",
+            "rsi": {},
+            "rsi_high": {},
+            "rsi_daily": {},
 
-                "count":
-                    0
-
-            },
-
-            "ema_high": {
-
-                "direction":
-                    "none",
-
-                "count":
-                    0
-
-            },
-
-            "rsi": {
-
-                "rsi14":
-                    None,
-
-                "long_count":
-                    0,
-
-                "short_count":
-                    0
-
-            },
-
-            "rsi_high": {
-
-                "value":
-                    None,
-
-                "long_count":
-                    0,
-
-                "short_count":
-                    0
-
-            },
-
-            "changes":
-                None,
+            "changes": None,
 
             "breakout_qualified":
                 False,
@@ -2935,6 +3005,12 @@ def make_row(
                 {}
             ),
 
+        "ema_daily":
+            analysis.get(
+                "ema_daily",
+                {}
+            ),
+
         "rsi":
             analysis.get(
                 "rsi",
@@ -2944,6 +3020,12 @@ def make_row(
         "rsi_high":
             analysis.get(
                 "rsi_high",
+                {}
+            ),
+
+        "rsi_daily":
+            analysis.get(
+                "rsi_daily",
                 {}
             ),
 
@@ -2969,7 +3051,7 @@ def make_row(
 
 
 # =========================================================
-# RSI 추세 신호
+# RSI 신호
 # =========================================================
 
 def is_rsi_signal(row):
@@ -3003,36 +3085,6 @@ def is_rsi_signal(row):
         long_count == 1
         or
         short_count == 1
-    )
-
-
-# =========================================================
-# UPBIT 롱 신호
-# =========================================================
-
-def is_upbit_long_signal(
-    row
-):
-
-    if not row:
-
-        return False
-
-    r = row.get(
-        "rsi",
-        {}
-    )
-
-    return (
-        is_positive_day(row)
-        and
-        int(
-            r.get(
-                "long_count",
-                0
-            )
-            or 0
-        ) == 1
     )
 
 
@@ -3191,13 +3243,9 @@ def update_okx(
         return False
 
     symbols = [
-
         x
-
         for x in symbols
-
         if x in tickers
-
     ]
 
     upbit_set = {
@@ -3302,6 +3350,79 @@ def update_okx(
 
 
 # =========================================================
+# 시장 시황 데이터 생성
+#
+# OKX 조회 ON  → OKX 우선
+# OKX 조회 OFF → UPBIT 우선
+# =========================================================
+
+def update_market_summary():
+
+    global latest_market_source
+
+    global latest_market_data
+
+    latest_market_data = {}
+
+    # -----------------------------------------------------
+    # OKX 사용 시 OKX BTC / ETH 우선
+    # -----------------------------------------------------
+
+    if USE_OKX == "Y":
+
+        for row in latest_okx_data:
+
+            name = row.get(
+                "name",
+                ""
+            )
+
+            coin = name.split(
+                " "
+            )[0]
+
+            if coin in (
+                "BTC",
+                "ETH"
+            ):
+
+                latest_market_data[
+                    coin
+                ] = row
+
+        if (
+            "BTC" in latest_market_data
+            or
+            "ETH" in latest_market_data
+        ):
+
+            latest_market_source = "OKX"
+
+            return
+
+    # -----------------------------------------------------
+    # OKX가 꺼져 있거나 OKX 데이터가 없으면 UPBIT
+    # -----------------------------------------------------
+
+    for row in latest_upbit_data:
+
+        coin = row.get(
+            "name"
+        )
+
+        if coin in (
+            "BTC",
+            "ETH"
+        ):
+
+            latest_market_data[
+                coin
+            ] = row
+
+    latest_market_source = "UPBIT"
+
+
+# =========================================================
 # 전체 업데이트
 # =========================================================
 
@@ -3369,16 +3490,45 @@ def update_dashboard():
 
             latest_okx_data = []
 
+        # -------------------------------------------------
+        # 시장 시황은 모든 업데이트가 끝난 후 결정
+        # -------------------------------------------------
+
+        update_market_summary()
+
     finally:
 
         update_lock.release()
 
 
 # =========================================================
-# EMA HTML
+# 숫자 표시
 # =========================================================
 
-def ema_html(
+def format_indicator_value(
+    value
+):
+
+    if value is None:
+
+        return "-"
+
+    try:
+
+        return f"{float(value):,.2f}"
+
+    except Exception:
+
+        return "-"
+
+
+# =========================================================
+# EMA HTML
+#
+# 1H / 4H / 1D 모두 실제 EMA 수치 표시
+# =========================================================
+
+def ema_detail_html(
     e,
     timeframe
 ):
@@ -3390,9 +3540,7 @@ def ema_html(
             f'<span class="indicator-label">'
             f'{timeframe}'
             '</span>'
-            '<span class="indicator-value">'
-            '-'
-            '</span>'
+            '<span class="ema-numbers">-</span>'
             '</div>'
         )
 
@@ -3409,38 +3557,54 @@ def ema_html(
         or 0
     )
 
+    values = e.get(
+        "values",
+        {}
+    )
+
     if direction == "long":
 
-        value = (
-            '<span class="indicator-value market-up">'
-            f'🟢({count})'
-            '</span>'
-        )
+        icon = "🟢"
 
     elif direction == "short":
 
-        value = (
-            '<span class="indicator-value market-down">'
-            f'🔴({count})'
-            '</span>'
-        )
+        icon = "🔴"
 
     else:
 
-        value = (
-            '<span class="indicator-value market-zero">'
-            f'⚪({count})'
-            '</span>'
-        )
+        icon = "⚪"
 
-    return (
-        '<div class="indicator-line">'
-        f'<span class="indicator-label">'
-        f'{timeframe}'
-        '</span>'
-        f'{value}'
-        '</div>'
-    )
+    return f"""
+
+    <div class="indicator-line ema-detail-line">
+
+        <span class="indicator-label">
+            {timeframe}
+        </span>
+
+        <span class="ema-direction">
+            {icon}({count})
+        </span>
+
+        <span class="ema-number">
+            10:{format_indicator_value(values.get("10"))}
+        </span>
+
+        <span class="ema-number">
+            30:{format_indicator_value(values.get("30"))}
+        </span>
+
+        <span class="ema-number">
+            60:{format_indicator_value(values.get("60"))}
+        </span>
+
+        <span class="ema-number">
+            120:{format_indicator_value(values.get("120"))}
+        </span>
+
+    </div>
+
+    """
 
 
 # =========================================================
@@ -3452,9 +3616,7 @@ def rsi_html(r):
     if not r:
 
         return (
-            '<span class="rsi-zero">'
-            '-'
-            '</span>'
+            '<span class="rsi-zero">-</span>'
         )
 
     value = r.get(
@@ -3464,9 +3626,7 @@ def rsi_html(r):
     if value is None:
 
         return (
-            '<span class="rsi-zero">'
-            '-'
-            '</span>'
+            '<span class="rsi-zero">-</span>'
         )
 
     try:
@@ -3476,9 +3636,7 @@ def rsi_html(r):
     except Exception:
 
         return (
-            '<span class="rsi-zero">'
-            '-'
-            '</span>'
+            '<span class="rsi-zero">-</span>'
         )
 
     long_count = int(
@@ -3520,10 +3678,6 @@ def rsi_html(r):
     )
 
 
-# =========================================================
-# RSI 참고용 HTML
-# =========================================================
-
 def rsi_reference_html(
     r
 ):
@@ -3531,9 +3685,7 @@ def rsi_reference_html(
     if not r:
 
         return (
-            '<span class="rsi-reference">'
-            '-'
-            '</span>'
+            '<span class="rsi-reference">-</span>'
         )
 
     value = r.get(
@@ -3543,9 +3695,7 @@ def rsi_reference_html(
     if value is None:
 
         return (
-            '<span class="rsi-reference">'
-            '-'
-            '</span>'
+            '<span class="rsi-reference">-</span>'
         )
 
     try:
@@ -3555,9 +3705,7 @@ def rsi_reference_html(
     except Exception:
 
         return (
-            '<span class="rsi-reference">'
-            '-'
-            '</span>'
+            '<span class="rsi-reference">-</span>'
         )
 
     long_count = int(
@@ -3600,21 +3748,14 @@ def rsi_reference_html(
 
 
 # =========================================================
-# RSI 두 시간봉 HTML
+# RSI 1H / 4H / 1D
 # =========================================================
 
 def rsi_lines_html(
     r,
-    r_high
+    r_high,
+    r_daily
 ):
-
-    main = rsi_html(
-        r
-    )
-
-    reference = rsi_reference_html(
-        r_high
-    )
 
     return (
 
@@ -3624,7 +3765,7 @@ def rsi_lines_html(
         f'{format_timeframe(RSI_TIMEFRAME)}'
         '</span>'
 
-        f'{main}'
+        f'{rsi_html(r)}'
 
         '</div>'
 
@@ -3634,7 +3775,17 @@ def rsi_lines_html(
         f'{format_timeframe(RSI_HIGH_TIMEFRAME)}'
         '</span>'
 
-        f'{reference}'
+        f'{rsi_reference_html(r_high)}'
+
+        '</div>'
+
+        '<div class="indicator-line">'
+
+        '<span class="indicator-label">'
+        f'{format_timeframe(RSI_DAILY_TIMEFRAME)}'
+        '</span>'
+
+        f'{rsi_reference_html(r_daily)}'
 
         '</div>'
 
@@ -3642,7 +3793,7 @@ def rsi_lines_html(
 
 
 # =========================================================
-# RSI 추세 신호 HTML
+# 신호 HTML
 # =========================================================
 
 def signal_html(
@@ -3846,7 +3997,7 @@ def row_class(
 
 
 # =========================================================
-# 공통 ROW
+# ROW HTML
 # =========================================================
 
 def rows_html(
@@ -3876,45 +4027,59 @@ def rows_html(
 
         ema_content = (
 
-            ema_html(
-
+            ema_detail_html(
                 x.get(
-                    "ema_1h"
+                    "ema_1h",
+                    {}
                 ),
-
                 format_timeframe(
                     EMA_TIMEFRAME
                 )
-
             )
 
             +
 
-            ema_html(
-
+            ema_detail_html(
                 x.get(
-                    "ema_high"
+                    "ema_high",
+                    {}
                 ),
-
                 format_timeframe(
                     EMA_HIGH_TIMEFRAME
                 )
+            )
 
+            +
+
+            ema_detail_html(
+                x.get(
+                    "ema_daily",
+                    {}
+                ),
+                format_timeframe(
+                    EMA_DAILY_TIMEFRAME
+                )
             )
 
         )
 
-        rsi_content = (
-            rsi_lines_html(
-                x.get(
-                    "rsi",
-                    {}
-                ),
-                x.get(
-                    "rsi_high",
-                    {}
-                )
+        rsi_content = rsi_lines_html(
+
+            x.get(
+                "rsi",
+                {}
+            ),
+
+            x.get(
+                "rsi_high",
+                {}
+            ),
+
+            x.get(
+                "rsi_daily",
+                {}
             )
+
         )
 
         output.append(
@@ -3977,7 +4142,7 @@ def rows_html(
 
 
 # =========================================================
-# 공통 TABLE
+# TABLE
 # =========================================================
 
 def table_html(
@@ -4019,9 +4184,9 @@ def table_html(
 
                     <th>거래대금</th>
 
-                    <th>EMA</th>
+                    <th>EMA<br>1H/4H/1D</th>
 
-                    <th>RSI14</th>
+                    <th>RSI14<br>1H/4H/1D</th>
 
                     <th>신호</th>
 
@@ -4043,7 +4208,7 @@ def table_html(
 
 
 # =========================================================
-# RSI 추세 신호 섹션
+# RSI 추세 신호
 # =========================================================
 
 def rsi_signal_section(
@@ -4131,7 +4296,7 @@ def progress_section(
 
             {format_timeframe(RSI_TIMEFRAME)}
             RSI 카운트 2 이상 ·
-            동일 순서 · 동일 표 ·
+            1H/4H/1D 확인 ·
             {update_time} KST
 
         </span>
@@ -4385,169 +4550,46 @@ def market_rsi_reference_html(
 
 
 # =========================================================
-# 시장 시황 데이터 선택
-#
-# 중요:
-#
-# USE_OKX = "N"
-#     → UPBIT BTC / ETH 사용
-#
-# USE_OKX = "Y"
-#     → OKX BTC / ETH 사용
-#
-# OKX 사용 중 OKX 데이터가 없으면
-# UPBIT 데이터로 섞어서 대체하지 않음
+# 시장 EMA 실제 수치
 # =========================================================
 
-def get_market_row(
-    coin
+def market_ema_numbers(
+    e
 ):
 
-    # -----------------------------------------------------
-    # OKX 조회 ON
-    # -----------------------------------------------------
+    if not e:
 
-    if USE_OKX == "Y":
+        return "-"
 
-        for row in latest_okx_data:
+    values = e.get(
+        "values",
+        {}
+    )
 
-            name = str(
-                row.get(
-                    "name",
-                    ""
-                )
-            )
-
-            # OKX 이름이
-            #
-            # BTC
-            # BTC (업비트)
-            #
-            # 어느 형태이든 BTC로 인식
-
-            symbol = (
-                name
-                .replace(
-                    " (업비트)",
-                    ""
-                )
-                .strip()
-            )
-
-            if symbol == coin:
-
-                return row
-
-        # -------------------------------------------------
-        # OKX가 켜져 있으면
-        # OKX 데이터가 없는 경우 업비트 사용 안 함
-        # -------------------------------------------------
-
-        return None
-
-    # -----------------------------------------------------
-    # OKX 조회 OFF
-    # -----------------------------------------------------
-
-    for row in latest_upbit_data:
-
-        if row.get(
-            "name"
-        ) == coin:
-
-            return row
-
-    return None
+    return f"""
+        <div class="market-ema-values">
+            10:{format_indicator_value(values.get("10"))}
+            &nbsp;
+            30:{format_indicator_value(values.get("30"))}
+            &nbsp;
+            60:{format_indicator_value(values.get("60"))}
+            &nbsp;
+            120:{format_indicator_value(values.get("120"))}
+        </div>
+    """
 
 
 # =========================================================
-# BTC + ETH 시장 시황
+# 시장 패널
 # =========================================================
 
-def market_summary_html():
+def market_panel(
+    row,
+    symbol,
+    icon
+):
 
-    # -----------------------------------------------------
-    # 데이터 출처 자동 선택
-    #
-    # OKX Y → OKX
-    # OKX N → UPBIT
-    # -----------------------------------------------------
-
-    btc = get_market_row(
-        "BTC"
-    )
-
-    eth = get_market_row(
-        "ETH"
-    )
-
-
-    # -----------------------------------------------------
-    # 시장 시황 출처 표시
-    # -----------------------------------------------------
-
-    market_source = (
-
-        "OKX"
-
-        if USE_OKX == "Y"
-
-        else "UPBIT"
-
-    )
-
-
-    # -----------------------------------------------------
-    # 개별 시장 패널
-    # -----------------------------------------------------
-
-    def market_panel(
-        row,
-        symbol,
-        icon
-    ):
-
-        if row is None:
-
-            return f"""
-
-            <div class="market-panel">
-
-                <div class="market-panel-title">
-
-                    <span class="market-panel-name">
-                        {icon} {symbol}
-                    </span>
-
-                    <span class="market-panel-sub">
-                        {market_source} 데이터 대기
-                    </span>
-
-                </div>
-
-            </div>
-
-            """
-
-        ema_1 = row.get(
-            "ema_1h",
-            {}
-        )
-
-        ema_high = row.get(
-            "ema_high",
-            {}
-        )
-
-        rsi_data = row.get(
-            "rsi",
-            {}
-        )
-
-        rsi_high = row.get(
-            "rsi_high",
-            {}
-        )
+    if row is None:
 
         return f"""
 
@@ -4560,143 +4602,8 @@ def market_summary_html():
                 </span>
 
                 <span class="market-panel-sub">
-                    {market_source} · EMA + RSI14
+                    데이터 대기
                 </span>
-
-            </div>
-
-
-            <div class="market-top">
-
-                <span class="market-price">
-
-                    {format_market_price(
-                        row.get(
-                            "current_price"
-                        )
-                    )}
-
-                </span>
-
-                <span>
-
-                    {market_change_html(
-                        row.get(
-                            "change_value"
-                        )
-                    )}
-
-                </span>
-
-            </div>
-
-
-            <div class="market-indicators">
-
-
-                <!-- EMA -->
-
-                <div class="market-indicator-group">
-
-                    <span class="market-label">
-                        EMA
-                    </span>
-
-
-                    <div class="market-indicator-line">
-
-                        <span class="market-timeframe">
-
-                            {format_timeframe(
-                                EMA_TIMEFRAME
-                            )}
-
-                        </span>
-
-                        {market_direction_html(
-                            ema_1.get(
-                                "direction",
-                                "none"
-                            ),
-                            ema_1.get(
-                                "count",
-                                0
-                            )
-                        )}
-
-                    </div>
-
-
-                    <div class="market-indicator-line">
-
-                        <span class="market-timeframe">
-
-                            {format_timeframe(
-                                EMA_HIGH_TIMEFRAME
-                            )}
-
-                        </span>
-
-                        {market_direction_html(
-                            ema_high.get(
-                                "direction",
-                                "none"
-                            ),
-                            ema_high.get(
-                                "count",
-                                0
-                            )
-                        )}
-
-                    </div>
-
-                </div>
-
-
-                <!-- RSI -->
-
-                <div class="market-indicator-group">
-
-                    <span class="market-label">
-                        RSI
-                    </span>
-
-
-                    <div class="market-indicator-line">
-
-                        <span class="market-timeframe">
-
-                            {format_timeframe(
-                                RSI_TIMEFRAME
-                            )}
-
-                        </span>
-
-                        {market_rsi_html(
-                            rsi_data
-                        )}
-
-                    </div>
-
-
-                    <div class="market-indicator-line">
-
-                        <span class="market-timeframe">
-
-                            {format_timeframe(
-                                RSI_HIGH_TIMEFRAME
-                            )}
-
-                        </span>
-
-                        {market_rsi_reference_html(
-                            rsi_high
-                        )}
-
-                    </div>
-
-                </div>
-
 
             </div>
 
@@ -4704,10 +4611,234 @@ def market_summary_html():
 
         """
 
+    ema_1 = row.get(
+        "ema_1h",
+        {}
+    )
 
-    # -----------------------------------------------------
-    # BTC + ETH
-    # -----------------------------------------------------
+    ema_high = row.get(
+        "ema_high",
+        {}
+    )
+
+    ema_daily = row.get(
+        "ema_daily",
+        {}
+    )
+
+    rsi_data = row.get(
+        "rsi",
+        {}
+    )
+
+    rsi_high = row.get(
+        "rsi_high",
+        {}
+    )
+
+    rsi_daily = row.get(
+        "rsi_daily",
+        {}
+    )
+
+    return f"""
+
+    <div class="market-panel">
+
+        <div class="market-panel-title">
+
+            <span class="market-panel-name">
+                {icon} {symbol}
+            </span>
+
+            <span class="market-panel-sub">
+                {latest_market_source}
+            </span>
+
+        </div>
+
+
+        <div class="market-top">
+
+            <span class="market-price">
+
+                {format_market_price(
+                    row.get(
+                        "current_price"
+                    )
+                )}
+
+            </span>
+
+            <span>
+
+                {market_change_html(
+                    row.get(
+                        "change_value"
+                    )
+                )}
+
+            </span>
+
+        </div>
+
+
+        <div class="market-indicators">
+
+
+            <!-- EMA -->
+
+            <div class="market-indicator-group">
+
+                <span class="market-label">
+                    EMA
+                </span>
+
+
+                <div class="market-indicator-line">
+
+                    <span class="market-timeframe">
+                        1H
+                    </span>
+
+                    {market_direction_html(
+                        ema_1.get(
+                            "direction",
+                            "none"
+                        ),
+                        ema_1.get(
+                            "count",
+                            0
+                        )
+                    )}
+
+                </div>
+
+                {market_ema_numbers(
+                    ema_1
+                )}
+
+
+                <div class="market-indicator-line">
+
+                    <span class="market-timeframe">
+                        4H
+                    </span>
+
+                    {market_direction_html(
+                        ema_high.get(
+                            "direction",
+                            "none"
+                        ),
+                        ema_high.get(
+                            "count",
+                            0
+                        )
+                    )}
+
+                </div>
+
+                {market_ema_numbers(
+                    ema_high
+                )}
+
+
+                <div class="market-indicator-line">
+
+                    <span class="market-timeframe">
+                        1D
+                    </span>
+
+                    {market_direction_html(
+                        ema_daily.get(
+                            "direction",
+                            "none"
+                        ),
+                        ema_daily.get(
+                            "count",
+                            0
+                        )
+                    )}
+
+                </div>
+
+                {market_ema_numbers(
+                    ema_daily
+                )}
+
+            </div>
+
+
+            <!-- RSI -->
+
+            <div class="market-indicator-group">
+
+                <span class="market-label">
+                    RSI14
+                </span>
+
+
+                <div class="market-indicator-line">
+
+                    <span class="market-timeframe">
+                        1H
+                    </span>
+
+                    {market_rsi_html(
+                        rsi_data
+                    )}
+
+                </div>
+
+
+                <div class="market-indicator-line">
+
+                    <span class="market-timeframe">
+                        4H
+                    </span>
+
+                    {market_rsi_reference_html(
+                        rsi_high
+                    )}
+
+                </div>
+
+
+                <div class="market-indicator-line">
+
+                    <span class="market-timeframe">
+                        1D
+                    </span>
+
+                    {market_rsi_reference_html(
+                        rsi_daily
+                    )}
+
+                </div>
+
+            </div>
+
+
+        </div>
+
+    </div>
+
+    """
+
+
+# =========================================================
+# BTC + ETH 시장 시황
+# =========================================================
+
+def market_summary_html():
+
+    btc = latest_market_data.get(
+        "BTC"
+    )
+
+    eth = latest_market_data.get(
+        "ETH"
+    )
 
     return f"""
 
@@ -4721,7 +4852,9 @@ def market_summary_html():
             </span>
 
             <span class="market-title-sub">
-                {market_source} · EMA 배열 + RSI14
+                {latest_market_source} ·
+                EMA 1H/4H/1D +
+                RSI14 1H/4H/1D
             </span>
 
         </div>
@@ -4757,56 +4890,35 @@ def market_summary_html():
 CSS = """
 
 *{
-
     box-sizing:border-box;
-
     -webkit-tap-highlight-color:transparent;
-
 }
-
 
 html,
 body{
-
     margin:0;
-
     padding:0;
-
     width:100%;
-
     overflow-x:hidden;
-
 }
 
-
 body{
-
     background:#0d1014;
-
     color:#eee;
-
     font-family:
         -apple-system,
         BlinkMacSystemFont,
         "Segoe UI",
         Arial,
         sans-serif;
-
     font-size:8px;
-
     padding:2px 2px 8px;
-
 }
 
-
 h1{
-
     margin:1px 2px 2px;
-
     font-size:12px;
-
     line-height:14px;
-
 }
 
 
@@ -4816,101 +4928,54 @@ h1{
 
 .market-title,
 .section-title{
-
     display:flex;
-
     align-items:center;
-
     gap:5px;
-
     width:100%;
-
     min-height:18px;
-
     color:#fff;
-
     font-size:8px;
-
     line-height:10px;
-
     font-weight:900;
-
     margin-bottom:4px;
-
     padding:3px 5px;
-
     border-left:3px solid #39e875;
-
-    background:
-        rgba(57,232,117,.08);
-
+    background:rgba(57,232,117,.08);
     border-radius:3px;
-
     white-space:nowrap;
-
     overflow:hidden;
-
 }
-
 
 .section-title{
-
     margin:5px 0 4px;
-
 }
-
 
 .section-title-main{
-
     color:#fff;
-
     font-size:8px;
-
     line-height:10px;
-
     font-weight:900;
-
     flex:none;
-
 }
-
 
 .section-title-sub{
-
     color:#7f8791;
-
     font-size:5.5px;
-
     line-height:8px;
-
     font-weight:700;
-
     white-space:nowrap;
-
     overflow:hidden;
-
     text-overflow:ellipsis;
-
 }
-
 
 .rsi-section-title{
-
     border-left-color:#39e875;
-
-    background:
-        rgba(57,232,117,.08);
-
+    background:rgba(57,232,117,.08);
 }
 
-
 .progress-section-title{
-
     border-left-color:#ffd166;
-
-    background:
-        rgba(255,209,102,.08);
-
+    background:rgba(255,209,102,.08);
 }
 
 
@@ -4919,309 +4984,168 @@ h1{
    ========================================================= */
 
 .status{
-
     display:flex;
-
     gap:10px;
-
     margin:3px 2px;
-
     color:#777f89;
-
     font-size:6px;
-
     font-weight:700;
-
     white-space:nowrap;
-
     overflow:hidden;
-
 }
-
 
 .status .y{
-
     color:#39e875;
-
 }
 
-
 .status .n{
-
     color:#ff5555;
-
 }
 
 
 /* =========================================================
-   BTC + ETH 시장 시황
+   시장 시황
    ========================================================= */
 
 .market-summary{
-
     width:100%;
-
     margin:2px 0 3px;
-
     padding:3px 4px;
-
-    border-top:
-        1px solid #242a31;
-
-    border-bottom:
-        1px solid #242a31;
-
+    border-top:1px solid #242a31;
+    border-bottom:1px solid #242a31;
     background:#101419;
-
     overflow:hidden;
-
 }
 
-
-/* =========================================================
-   BTC / ETH 2열
-   ========================================================= */
-
 .market-grid{
-
     display:grid;
-
     grid-template-columns:
         minmax(0,1fr)
         minmax(0,1fr);
-
     gap:8px;
-
     width:100%;
-
 }
-
-
-/* =========================================================
-   개별 패널
-   ========================================================= */
 
 .market-panel{
-
     min-width:0;
-
     overflow:hidden;
-
 }
-
 
 .market-panel + .market-panel{
-
-    border-left:
-        1px solid #242a31;
-
+    border-left:1px solid #242a31;
     padding-left:8px;
-
 }
-
-
-/* =========================================================
-   패널 제목
-   ========================================================= */
 
 .market-panel-title{
-
     display:flex;
-
     align-items:center;
-
     gap:4px;
-
     width:100%;
-
     margin:1px 0 2px;
-
     white-space:nowrap;
-
     overflow:hidden;
-
 }
-
 
 .market-panel-name{
-
     color:#fff;
-
     font-size:7px;
-
     line-height:9px;
-
     font-weight:900;
-
     flex:none;
-
 }
-
 
 .market-panel-sub{
-
     color:#737b85;
-
     font-size:4.8px;
-
     line-height:7px;
-
     font-weight:700;
-
     white-space:nowrap;
-
     overflow:hidden;
-
     text-overflow:ellipsis;
-
 }
-
-
-/* =========================================================
-   가격 / 등락
-   ========================================================= */
 
 .market-top{
-
     display:flex;
-
     align-items:center;
-
     gap:7px;
-
     margin:2px 0 3px;
-
     min-height:10px;
-
     white-space:nowrap;
-
     overflow:hidden;
-
 }
-
 
 .market-price{
-
     color:#eee;
-
     font-size:7px;
-
     line-height:9px;
-
     font-weight:900;
-
     white-space:nowrap;
-
 }
-
-
-/* =========================================================
-   EMA / RSI
-   ========================================================= */
 
 .market-indicators{
-
     display:flex;
-
     align-items:flex-start;
-
-    gap:12px;
-
+    gap:10px;
     width:100%;
-
     color:#89919a;
-
     font-size:5.3px;
-
     line-height:9px;
-
 }
-
 
 .market-indicator-group{
-
     min-width:0;
-
     flex:none;
-
 }
-
 
 .market-label{
-
     display:block;
-
     color:#aaa;
-
     font-size:5px;
-
     line-height:7px;
-
     font-weight:900;
-
     margin-bottom:1px;
-
 }
-
 
 .market-indicator-line{
-
     display:flex;
-
     align-items:center;
-
     gap:3px;
-
     min-height:10px;
-
     padding-left:2px;
-
     white-space:nowrap;
-
 }
-
 
 .market-timeframe{
-
     color:#89919a;
-
     font-size:5px;
-
     line-height:8px;
-
     font-weight:700;
-
     width:18px;
-
     min-width:18px;
-
 }
 
+.market-ema-values{
+    color:#7f8791;
+    font-size:4.1px;
+    line-height:7px;
+    white-space:nowrap;
+    padding-left:20px;
+    margin-bottom:1px;
+}
 
 .market-up{
-
     color:#39e875!important;
-
     font-weight:900;
-
 }
-
 
 .market-down{
-
     color:#ff5555!important;
-
     font-weight:900;
-
 }
 
-
 .market-zero{
-
     color:#68717b!important;
-
     font-weight:800;
-
 }
 
 
@@ -5230,85 +5154,46 @@ h1{
    ========================================================= */
 
 .table-wrap{
-
     width:100%;
-
     overflow:hidden;
-
     border-radius:5px;
-
-    border:
-        1px solid #272d34;
-
+    border:1px solid #272d34;
     background:#171b20;
-
 }
-
 
 table{
-
     width:100%;
-
     table-layout:fixed;
-
     border-collapse:collapse;
-
     background:#171b20;
-
 }
-
 
 thead{
-
     background:#111419;
-
 }
-
 
 th{
-
     height:17px;
-
     padding:1px;
-
-    border-bottom:
-        1px solid #292f36;
-
+    border-bottom:1px solid #292f36;
     color:#7f8791;
-
     font-size:5px;
-
     line-height:6px;
-
     font-weight:700;
-
     text-align:center;
-
 }
-
 
 td{
-
-    height:43px;
-
+    height:55px;
     padding:1px;
-
-    border-bottom:
-        1px solid #22282e;
-
+    border-bottom:1px solid #22282e;
     text-align:center;
-
     vertical-align:middle;
-
     overflow:hidden;
-
 }
 
-
 tr:last-child td{
-
     border-bottom:none;
-
 }
 
 
@@ -5318,49 +5203,32 @@ tr:last-child td{
 
 th:nth-child(1),
 td:nth-child(1){
-
-    width:6%;
-
+    width:5%;
 }
-
 
 th:nth-child(2),
 td:nth-child(2){
-
-    width:15%;
-
+    width:14%;
 }
-
 
 th:nth-child(3),
 td:nth-child(3){
-
-    width:14%;
-
+    width:13%;
 }
-
 
 th:nth-child(4),
 td:nth-child(4){
-
-    width:22%;
-
+    width:35%;
 }
-
 
 th:nth-child(5),
 td:nth-child(5){
-
-    width:26%;
-
+    width:23%;
 }
-
 
 th:nth-child(6),
 td:nth-child(6){
-
-    width:17%;
-
+    width:10%;
 }
 
 
@@ -5369,49 +5237,28 @@ td:nth-child(6){
    ========================================================= */
 
 .coin{
-
     text-align:left!important;
-
     line-height:9px;
-
 }
-
 
 .coin b{
-
     display:block;
-
     width:100%;
-
     font-size:6.5px;
-
     line-height:8px;
-
     font-weight:800;
-
     white-space:nowrap;
-
     overflow:hidden;
-
     text-overflow:ellipsis;
-
 }
 
-
 .coin small{
-
     display:block;
-
     margin:0;
-
     font-size:4.5px;
-
     line-height:6px;
-
     white-space:nowrap;
-
     overflow:hidden;
-
 }
 
 
@@ -5420,116 +5267,70 @@ td:nth-child(6){
    ========================================================= */
 
 .vol{
-
     font-size:6px;
-
     line-height:8px;
-
     font-weight:800;
-
     white-space:nowrap;
-
 }
 
 
 /* =========================================================
-   EMA / RSI 공통
+   EMA / RSI
    ========================================================= */
 
 .ema-cell,
 .rsi-column{
-
     text-align:left!important;
-
     vertical-align:middle;
-
 }
-
 
 .indicator-title{
-
     color:#737b85;
-
     font-size:5px;
-
     line-height:6px;
-
     font-weight:900;
-
     margin-bottom:1px;
-
     padding-left:4px;
-
 }
-
 
 .indicator-line{
-
     display:flex;
-
     align-items:center;
-
     justify-content:flex-start;
-
     gap:3px;
-
-    height:13px;
-
+    min-height:13px;
     padding-left:4px;
-
     white-space:nowrap;
-
 }
-
 
 .indicator-label{
-
     color:#9da5ae;
-
-    font-size:5.3px;
-
+    font-size:5px;
     line-height:7px;
-
     font-weight:700;
-
-    width:20px;
-
-    min-width:20px;
-
+    width:18px;
+    min-width:18px;
     text-align:left;
-
 }
 
-
-/* =========================================================
-   EMA 표시
-   ========================================================= */
-
-.indicator-value{
-
-    font-size:6px;
-
-    line-height:8px;
-
+.ema-direction{
+    font-size:5.2px;
+    line-height:7px;
     font-weight:900;
+    min-width:18px;
+}
 
+.ema-number{
+    color:#8c949d;
+    font-size:4.6px;
+    line-height:7px;
     white-space:nowrap;
-
 }
 
 
 /* =========================================================
-   RSI 표시
+   RSI
    ========================================================= */
-
-.rsi-column .indicator-label{
-
-    width:20px;
-
-    min-width:20px;
-
-}
-
 
 .rsi-long,
 .rsi-short,
@@ -5538,68 +5339,26 @@ td:nth-child(6){
 .rsi-reference,
 .rsi-reference-long,
 .rsi-reference-short{
-
     font-size:6px;
-
     line-height:8px;
-
     font-weight:900;
-
     white-space:nowrap;
-
 }
 
-
-/* =========================================================
-   RSI 색상
-   ========================================================= */
-
-.rsi-long{
-
-    color:#39e875!important;
-
-}
-
-
-.rsi-short{
-
-    color:#ff5555!important;
-
-}
-
-
-.rsi-neutral{
-
-    color:#68717b!important;
-
-}
-
-
-.rsi-zero{
-
-    color:#68717b!important;
-
-}
-
-
-.rsi-reference{
-
-    color:#68717b!important;
-
-}
-
-
+.rsi-long,
 .rsi-reference-long{
-
     color:#39e875!important;
-
 }
 
-
+.rsi-short,
 .rsi-reference-short{
-
     color:#ff5555!important;
+}
 
+.rsi-neutral,
+.rsi-zero,
+.rsi-reference{
+    color:#68717b!important;
 }
 
 
@@ -5608,178 +5367,99 @@ td:nth-child(6){
    ========================================================= */
 
 .signal-cell{
-
     text-align:center!important;
-
     vertical-align:middle;
-
 }
-
 
 .signal-icon{
-
     display:inline-flex;
-
     align-items:center;
-
     justify-content:center;
-
     width:100%;
-
     min-height:18px;
-
-    font-size:12px;
-
+    font-size:11px;
     line-height:14px;
-
     font-weight:900;
-
     white-space:nowrap;
-
 }
-
 
 .long-breakout{
-
     color:#39e875;
-
 }
-
 
 .short-breakout{
-
     color:#ff5555;
-
 }
-
-
-/* =========================================================
-   RSI 경고
-   ========================================================= */
 
 .rsi-warning-qualified{
-
     color:#ffd166!important;
-
     font-size:6px!important;
-
     line-height:8px;
-
     font-weight:900;
-
     white-space:nowrap;
-
 }
-
-
-/* =========================================================
-   진행
-   ========================================================= */
 
 .long-progress{
-
     color:#ffd166;
-
 }
 
-
 .short-progress{
-
     color:#91a7ff;
-
 }
 
 
 /* =========================================================
-   등락률
+   등락
    ========================================================= */
 
 .up{
-
     color:#39e875!important;
-
     font-weight:900;
-
 }
-
 
 .down{
-
     color:#ff5555!important;
-
     font-weight:900;
-
 }
-
 
 .zero{
-
     color:#68717b!important;
-
 }
 
-
 .muted{
-
     color:#555d67;
-
 }
 
 
 /* =========================================================
-   행 색상
+   행
    ========================================================= */
 
 .breakout-qualified{
-
-    background:
-        rgba(57,232,117,.08);
-
+    background:rgba(57,232,117,.08);
 }
-
 
 .short-breakout-qualified{
-
-    background:
-        rgba(255,85,85,.05);
-
+    background:rgba(255,85,85,.05);
 }
-
 
 .progress-qualified{
-
-    background:
-        rgba(255,209,102,.07);
-
+    background:rgba(255,209,102,.07);
 }
-
 
 .short-progress-qualified{
-
-    background:
-        rgba(120,160,255,.06);
-
+    background:rgba(120,160,255,.06);
 }
-
 
 .rsi-warning-row{
-
-    background:
-        rgba(255,209,102,.04);
-
+    background:rgba(255,209,102,.04);
 }
 
-
 .empty{
-
     height:30px;
-
     padding:8px;
-
     color:#555d67;
-
     font-size:6px;
-
 }
 
 
@@ -5790,244 +5470,147 @@ td:nth-child(6){
 @media(max-width:380px){
 
     body{
-
-        padding:
-            1px 1px 6px;
-
+        padding:1px 1px 6px;
     }
-
 
     h1{
-
         font-size:11px;
-
         line-height:13px;
-
     }
-
 
     .market-title,
     .section-title{
-
         min-height:17px;
-
         gap:4px;
-
         font-size:7px;
-
         line-height:9px;
-
         padding:3px 4px;
-
         margin-bottom:3px;
-
     }
-
 
     .section-title{
-
         margin:4px 0 3px;
-
     }
-
 
     .section-title-main{
-
         font-size:7px;
-
         line-height:9px;
-
     }
-
 
     .section-title-sub{
-
         font-size:4.8px;
-
         line-height:7px;
-
     }
-
-
-    /* -----------------------------------------
-       BTC + ETH
-       ----------------------------------------- */
 
     .market-grid{
-
         gap:4px;
-
     }
-
 
     .market-panel + .market-panel{
-
         padding-left:4px;
-
     }
-
 
     .market-panel-title{
-
         gap:3px;
-
     }
-
 
     .market-panel-name{
-
         font-size:6px;
-
         line-height:8px;
-
     }
-
 
     .market-panel-sub{
-
         font-size:4px;
-
         line-height:6px;
-
     }
-
 
     .market-top{
-
         gap:5px;
-
         margin:1px 0 2px;
-
     }
-
 
     .market-price{
-
         font-size:6px;
-
         line-height:8px;
-
     }
-
 
     .market-indicators{
-
-        gap:6px;
-
+        gap:5px;
         font-size:4.8px;
-
         line-height:8px;
-
     }
-
 
     .market-label{
-
         font-size:4.5px;
-
         line-height:6px;
-
     }
-
 
     .market-indicator-line{
-
         gap:2px;
-
         min-height:9px;
-
     }
-
 
     .market-timeframe{
-
         font-size:4.5px;
-
         line-height:7px;
-
-        width:16px;
-
-        min-width:16px;
-
+        width:15px;
+        min-width:15px;
     }
 
+    .market-ema-values{
+        font-size:3.7px;
+        padding-left:17px;
+        line-height:6px;
+    }
 
     th{
-
         height:16px;
-
         font-size:4.5px;
-
     }
-
 
     td{
-
-        height:40px;
-
+        height:55px;
     }
-
 
     .coin b{
-
         font-size:6px;
-
         line-height:7px;
-
     }
-
 
     .coin small{
-
         font-size:4px;
-
         line-height:5px;
-
     }
-
 
     .vol{
-
         font-size:5.5px;
-
     }
-
 
     .indicator-title{
-
         font-size:4.5px;
-
     }
-
 
     .indicator-line{
-
-        height:12px;
-
-        padding-left:3px;
-
+        min-height:12px;
+        padding-left:2px;
+        gap:2px;
     }
-
 
     .indicator-label{
-
-        font-size:4.8px;
-
-        width:18px;
-
-        min-width:18px;
-
+        font-size:4.5px;
+        width:15px;
+        min-width:15px;
     }
 
-
-    .indicator-value{
-
-        font-size:5.3px;
-
-        line-height:8px;
-
+    .ema-direction{
+        font-size:4.5px;
+        min-width:16px;
     }
 
+    .ema-number{
+        font-size:3.8px;
+        line-height:6px;
+    }
 
     .rsi-long,
     .rsi-short,
@@ -6036,272 +5619,162 @@ td:nth-child(6){
     .rsi-reference,
     .rsi-reference-long,
     .rsi-reference-short{
-
-        font-size:5.3px;
-
-        line-height:8px;
-
-        font-weight:900;
-
-        white-space:nowrap;
-
+        font-size:5px;
+        line-height:7px;
     }
-
 
     .rsi-warning-qualified{
-
-        font-size:5.3px!important;
-
-        line-height:8px;
-
-        font-weight:900;
-
+        font-size:5px!important;
+        line-height:7px;
     }
-
 
     .signal-icon{
-
-        font-size:10px;
-
-        line-height:12px;
-
-        min-height:16px;
-
+        font-size:9px;
+        line-height:11px;
+        min-height:15px;
     }
-
 }
 
 
 /* =========================================================
-   PC / 큰 화면
+   PC
    ========================================================= */
 
 @media(min-width:601px){
 
     body{
-
-        max-width:900px;
-
+        max-width:1100px;
         margin:auto;
-
         padding:8px;
-
         font-size:10px;
-
     }
-
 
     h1{
-
         font-size:15px;
-
         line-height:20px;
-
     }
-
 
     .market-title,
     .section-title{
-
         min-height:23px;
-
         gap:6px;
-
         font-size:9px;
-
         padding:4px 6px;
-
         margin-bottom:5px;
-
     }
-
 
     .section-title{
-
         margin:10px 0 5px;
-
     }
-
 
     .section-title-main{
-
         font-size:9px;
-
     }
-
 
     .section-title-sub{
-
         font-size:6px;
-
     }
-
-
-    /* -----------------------------------------
-       BTC + ETH
-       ----------------------------------------- */
 
     .market-grid{
-
         gap:12px;
-
     }
-
 
     .market-panel + .market-panel{
-
         padding-left:12px;
-
     }
-
 
     .market-panel-name{
-
         font-size:9px;
-
         line-height:11px;
-
     }
-
 
     .market-panel-sub{
-
         font-size:6px;
-
         line-height:8px;
-
     }
-
 
     .market-price{
-
         font-size:9px;
-
         line-height:11px;
-
     }
-
 
     .market-indicators{
-
         gap:18px;
-
         font-size:7px;
-
         line-height:11px;
-
     }
-
 
     .market-label{
-
         font-size:7px;
-
         line-height:9px;
-
     }
-
 
     .market-indicator-line{
-
         min-height:13px;
-
         gap:4px;
-
     }
-
 
     .market-timeframe{
-
         font-size:7px;
-
         line-height:10px;
-
         width:24px;
-
         min-width:24px;
-
     }
 
+    .market-ema-values{
+        font-size:5px;
+        line-height:8px;
+        padding-left:28px;
+    }
 
     th{
-
         height:26px;
-
         font-size:7px;
-
     }
-
 
     td{
-
-        height:55px;
-
+        height:70px;
         padding:3px;
-
     }
-
 
     .coin b{
-
         font-size:9px;
-
         line-height:11px;
-
     }
-
 
     .coin small{
-
         font-size:7px;
-
     }
-
 
     .vol{
-
         font-size:8px;
-
     }
-
 
     .indicator-title{
-
         font-size:7px;
-
         line-height:8px;
-
     }
-
 
     .indicator-line{
-
-        height:17px;
-
-        padding-left:7px;
-
+        min-height:18px;
+        padding-left:5px;
     }
-
 
     .indicator-label{
-
         font-size:7px;
-
-        width:28px;
-
-        min-width:28px;
-
+        width:24px;
+        min-width:24px;
     }
 
-
-    .indicator-value{
-
-        font-size:8px;
-
-        line-height:10px;
-
+    .ema-direction{
+        font-size:7px;
+        min-width:25px;
     }
 
+    .ema-number{
+        font-size:6px;
+        line-height:9px;
+    }
 
     .rsi-long,
     .rsi-short,
@@ -6310,39 +5783,20 @@ td:nth-child(6){
     .rsi-reference,
     .rsi-reference-long,
     .rsi-reference-short{
-
         font-size:8px;
-
         line-height:10px;
-
-        font-weight:900;
-
-        white-space:nowrap;
-
     }
-
 
     .rsi-warning-qualified{
-
         font-size:8px!important;
-
         line-height:10px;
-
-        font-weight:900;
-
     }
-
 
     .signal-icon{
-
         font-size:17px;
-
         line-height:19px;
-
         min-height:25px;
-
     }
-
 }
 
 """
@@ -6481,7 +5935,6 @@ def dashboard():
 
     <div class="status">
 
-
         <span>
             업비트 :
             <b class="y">
@@ -6489,42 +5942,26 @@ def dashboard():
             </b>
         </span>
 
-
         <span>
             OKX :
-            <b class="n">
+            <b class="{'y' if USE_OKX == 'Y' else 'n'}">
                 {USE_OKX}
             </b>
         </span>
 
-
         <span>
             EMA :
             <b class="y">
-                {format_timeframe(
-                    EMA_TIMEFRAME
-                )}
-                /
-                {format_timeframe(
-                    EMA_HIGH_TIMEFRAME
-                )}
+                1H / 4H / 1D
             </b>
         </span>
-
 
         <span>
             RSI :
             <b class="y">
-                {format_timeframe(
-                    RSI_TIMEFRAME
-                )}
-                /
-                {format_timeframe(
-                    RSI_HIGH_TIMEFRAME
-                )}
+                1H / 4H / 1D
             </b>
         </span>
-
 
         <span>
             기준 :
@@ -6534,7 +5971,6 @@ def dashboard():
             </b>
         </span>
 
-
         <span>
             진행 :
             <b class="y">
@@ -6542,6 +5978,12 @@ def dashboard():
             </b>
         </span>
 
+        <span>
+            시장 :
+            <b class="y">
+                {latest_market_source}
+            </b>
+        </span>
 
         <span>
             TOP :
@@ -6549,7 +5991,6 @@ def dashboard():
                 {TOP_N}
             </b>
         </span>
-
 
     </div>
 
@@ -6566,7 +6007,6 @@ def dashboard():
 
         <meta charset="UTF-8">
 
-
         <meta
             name="viewport"
             content="
@@ -6577,23 +6017,19 @@ def dashboard():
             "
         >
 
-
         <meta
             http-equiv="refresh"
             content="60"
         >
-
 
         <meta
             name="theme-color"
             content="#0d1014"
         >
 
-
         <title>
             RSI 추세 신호
         </title>
-
 
         <style>
 
@@ -6605,7 +6041,6 @@ def dashboard():
 
 
     <body>
-
 
         <h1>
             📊 TRADING SIGNAL CENTER
@@ -6664,40 +6099,45 @@ def startup():
 
     validate_timeframe()
 
-
     log.info(
         "========================================"
     )
 
-
     log.info(
         "TRADING SIGNAL CENTER 시작"
     )
-
 
     log.info(
         f"EMA TIMEFRAME = "
         f"{format_timeframe(EMA_TIMEFRAME)}"
     )
 
-
     log.info(
         f"EMA HIGH TIMEFRAME = "
         f"{format_timeframe(EMA_HIGH_TIMEFRAME)}"
     )
 
+    log.info(
+        f"EMA DAILY TIMEFRAME = "
+        f"{format_timeframe(EMA_DAILY_TIMEFRAME)} "
+        f"(확인용)"
+    )
 
     log.info(
         f"RSI TIMEFRAME = "
         f"{format_timeframe(RSI_TIMEFRAME)}"
     )
 
-
     log.info(
         f"RSI HIGH TIMEFRAME = "
         f"{format_timeframe(RSI_HIGH_TIMEFRAME)}"
     )
 
+    log.info(
+        f"RSI DAILY TIMEFRAME = "
+        f"{format_timeframe(RSI_DAILY_TIMEFRAME)} "
+        f"(확인용)"
+    )
 
     log.info(
         f"EMA = "
@@ -6707,91 +6147,85 @@ def startup():
         f"{EMA1_SLOW}"
     )
 
-
     log.info(
         f"RSI = {RSI_PERIOD}"
     )
-
 
     log.info(
         f"RSI LONG = {RSI_LONG_LEVEL}"
     )
 
-
     log.info(
         f"RSI SHORT = {RSI_SHORT_LEVEL}"
     )
-
 
     log.info(
         "========================================"
     )
 
-
     log.info(
         "RSI 카운팅 구조:"
     )
-
 
     log.info(
         "RSI >= 70 → 🟢 숫자(연속개수)"
     )
 
-
     log.info(
         "RSI <= 30 → 🔴 숫자(연속개수)"
     )
-
 
     log.info(
         "30 < RSI < 70 → 회색 숫자(0)"
     )
 
-
     log.info(
-        "RSI_TIMEFRAME 카운트 1 → 🔥 RSI 추세 신호"
+        "1H RSI 카운트 1 → 🔥 RSI 추세 신호"
     )
 
-
     log.info(
-        "RSI_TIMEFRAME 카운트 2 이상 → ☀️ / 🌧️ 추세 진행"
+        "1H RSI 카운트 2 이상 → ☀️ / 🌧️ 추세 진행"
     )
 
-
     log.info(
-        "RSI_HIGH_TIMEFRAME → 참고용 표시 + 카운트"
+        "4H RSI → 참고용"
     )
 
-
     log.info(
-        "EMA_TIMEFRAME → 정배열/역배열 실제 필터"
+        "1D RSI → 참고용"
     )
 
-
     log.info(
-        "EMA_HIGH_TIMEFRAME → 확인용"
+        "1H EMA → 실제 신호 필터"
     )
 
-
     log.info(
-        "BTC + ETH 시장 시황 2열 표시"
+        "4H EMA → 확인용"
     )
 
-
     log.info(
-        "시장 시황 데이터 우선순위:"
+        "1D EMA → 확인용"
     )
 
-
     log.info(
-        "OKX=Y → OKX BTC/ETH"
+        "========================================"
     )
 
-
     log.info(
-        "OKX=N → UPBIT BTC/ETH"
+        "시장 시황 거래소 우선순위:"
     )
 
+    if USE_OKX == "Y":
+
+        log.info(
+            "OKX ON → OKX BTC / ETH 우선"
+        )
+
+    else:
+
+        log.info(
+            "OKX OFF → UPBIT BTC / ETH 사용"
+        )
 
     log.info(
         "========================================"
