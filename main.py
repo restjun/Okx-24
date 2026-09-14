@@ -5307,8 +5307,8 @@ tr:last-child td{
    #        5%
    코인     15%
    거래대금 13%
-   EMA      24%
-   RSI      29%
+   EMA      23%
+   RSI      30%
    신호     14%
 
    ========================================================= */
@@ -5330,12 +5330,12 @@ td:nth-child(3){
 
 th:nth-child(4),
 td:nth-child(4){
-    width:24%;
+    width:23%;
 }
 
 th:nth-child(5),
 td:nth-child(5){
-    width:29%;
+    width:30%;
 }
 
 th:nth-child(6),
@@ -5421,8 +5421,11 @@ td:nth-child(6){
     font-size:5px;
     line-height:6px;
     font-weight:700;
-    width:18px;
-    min-width:18px;
+
+    /* 시간과 수치 사이 간격 축소 */
+    width:16px;
+    min-width:16px;
+
     text-align:left;
 }
 
@@ -5717,12 +5720,12 @@ td:nth-child(6){
 
     th:nth-child(4),
     td:nth-child(4){
-        width:24%;
+        width:23%;
     }
 
     th:nth-child(5),
     td:nth-child(5){
-        width:29%;
+        width:30%;
     }
 
     th:nth-child(6),
@@ -5761,8 +5764,10 @@ td:nth-child(6){
     .indicator-label{
         font-size:4.5px;
         line-height:6px;
-        width:15px;
-        min-width:15px;
+
+        /* 모바일 시간과 수치 사이 간격 축소 */
+        width:13px;
+        min-width:13px;
     }
 
 
@@ -5917,12 +5922,12 @@ td:nth-child(6){
 
     th:nth-child(4),
     td:nth-child(4){
-        width:24%;
+        width:23%;
     }
 
     th:nth-child(5),
     td:nth-child(5){
-        width:29%;
+        width:30%;
     }
 
     th:nth-child(6),
@@ -5959,6 +5964,10 @@ td:nth-child(6){
     .indicator-label{
         font-size:7px;
         line-height:8px;
+
+        /* PC 시간과 수치 사이 간격 축소 */
+        width:16px;
+        min-width:16px;
     }
 
 
