@@ -58,8 +58,8 @@ KST = ZoneInfo("Asia/Seoul")
 # 시간봉 설정
 # =========================================================
 
-EMA_TIMEFRAME = 15
-EMA_HIGH_TIMEFRAME = 60
+EMA_TIMEFRAME = 60
+EMA_HIGH_TIMEFRAME = 240
 
 
 # =========================================================
