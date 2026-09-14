@@ -94,29 +94,25 @@ EMA1_MAX_COUNT = 200
 
 ROC_PERIOD = 5
 
-# 내부적으로 0 / 1 / 2 돌파 상태를 계산
+# 0선 돌파 상태 확인 범위
+#
+# 현재봉 돌파 = ⓪
+#
+# ※ ① / ② 진행표시는 사용하지 않음
 BREAKOUT_MAX_COUNT = 2
-
-# ★ 핵심
-# ROC 양수/음수가 1개 이상이면 진행중(구름)
-#
-# 0 = 🚀⓪ / 🔻⓪
-# 1 이상 = ☀️ / 🌧️
-#
-# ① / ②는 표시하지 않음
-ROC_PROGRESS_MIN_COUNT = 1
 
 
 # =========================================================
-# ★ 진행중 섹션 돌파 표시 단계
+# ★ 현재 돌파만 표시
 #
-# 0 = ⓪만 표시
-# 1 = ⓪ + ① 표시
-# 2 = ⓪ + ① + ② 표시
+# 롱:
+# ROC 음수 → 양수 현재 돌파 = 🚀⓪
 #
-# 현재 설정:
-# 롱 = ⓪만
-# 숏 = ⓪만
+# 숏:
+# ROC 양수 → 음수 현재 돌파 = 🔻⓪
+#
+# ☀️ / 🌧️ 구름 표시 없음
+# ① / ② 표시 없음
 # =========================================================
 
 LONG_PROGRESS_BREAKOUT_MAX_COUNT = 0
@@ -405,13 +401,6 @@ def validate_timeframe():
         raise ValueError(
             "SHORT_PROGRESS_BREAKOUT_MAX_COUNT는 "
             "BREAKOUT_MAX_COUNT보다 클 수 없습니다."
-        )
-
-    if int(ROC_PROGRESS_MIN_COUNT) <= 0:
-
-        raise ValueError(
-            "ROC_PROGRESS_MIN_COUNT는 "
-            "1 이상이어야 합니다."
         )
 
 
@@ -1703,6 +1692,9 @@ def roc(
 
 # =========================================================
 # ROC 연속 카운트
+#
+# 내부 계산용
+# 화면의 구름 표시에는 사용하지 않음
 # =========================================================
 
 def roc_count(
@@ -1746,8 +1738,8 @@ def roc_count(
 # ROC 교차 상태
 #
 # 현재봉 = ⓪
-# 확정봉 = ①
-# 다음 봉 = ②
+#
+# ※ ① / ②는 화면에 표시하지 않음
 # =========================================================
 
 def roc_cross_state(
@@ -1850,7 +1842,10 @@ def roc_cross_state(
                 }
 
         # -------------------------------------------------
-        # 확정 돌파봉 = ①
+        # 확정 돌파봉
+        #
+        # 내부 상태만 유지
+        # 화면 표시하지 않음
         # -------------------------------------------------
 
         if len(confirmed) >= 2:
@@ -1869,7 +1864,10 @@ def roc_cross_state(
                 }
 
         # -------------------------------------------------
-        # 다음 봉 = ②
+        # 다음 봉
+        #
+        # 내부 상태만 유지
+        # 화면 표시하지 않음
         # -------------------------------------------------
 
         if len(confirmed) >= 3:
@@ -1900,6 +1898,8 @@ def roc_cross_state(
 
 # =========================================================
 # 카운트 아이콘
+#
+# 현재 코드에서는 화면 표시용으로 사용하지 않음
 # =========================================================
 
 def count_icon(count):
@@ -2010,6 +2010,8 @@ def roc_analysis(
 
         # -------------------------------------------------
         # ROC 양수 / 음수 연속 카운트
+        #
+        # 내부 데이터용
         # -------------------------------------------------
 
         positive_count = roc_count(
@@ -2024,6 +2026,8 @@ def roc_analysis(
 
         # -------------------------------------------------
         # 양수 진행 시작 시간
+        #
+        # 정렬용 내부 데이터
         # -------------------------------------------------
 
         roc_progress_start_time = None
@@ -2059,6 +2063,8 @@ def roc_analysis(
 
         # -------------------------------------------------
         # 음수 진행 시작 시간
+        #
+        # 정렬용 내부 데이터
         # -------------------------------------------------
 
         roc_negative_progress_start_time = None
@@ -2109,25 +2115,26 @@ def roc_analysis(
         )
 
         # -------------------------------------------------
-        # ★ 1개 이상이면 돌파 상태 종료
+        # ★ 중요
         #
-        # 0 = 돌파 ⓪
-        # 1 이상 = 구름
+        # 기존 코드에서는
+        #
+        # positive_count >= 1
+        #
+        # 인 경우 현재 돌파 상태를 none으로 바꿔버렸음.
+        #
+        # 현재봉이 실제로 0선을 돌파했다면
+        # 반드시 current 상태를 유지해야 하므로
+        # 이 부분을 제거함.
+        #
+        # 따라서:
+        #
+        # 현재 롱 돌파 + ROC > 0
+        # → 🚀⓪
+        #
+        # 현재 숏 돌파 + ROC < 0
+        # → 🔻⓪
         # -------------------------------------------------
-
-        if positive_count >= ROC_PROGRESS_MIN_COUNT:
-
-            lb = {
-                "state": "none",
-                "count": 0
-            }
-
-        if negative_count >= ROC_PROGRESS_MIN_COUNT:
-
-            sb = {
-                "state": "none",
-                "count": 0
-            }
 
         # -------------------------------------------------
         # 결과 저장
@@ -2174,12 +2181,15 @@ def roc_analysis(
         })
 
         # =================================================
-        # 롱 돌파
+        # ★ 롱 현재 돌파
+        #
+        # 반드시 ROC > 0
+        # 반드시 현재봉 돌파
         # =================================================
 
         if (
-            lb["state"] != "none"
-            and lb["count"] == 0
+            lb["state"] == "current"
+            and current_value > 0
         ):
 
             result.update({
@@ -2193,12 +2203,15 @@ def roc_analysis(
             })
 
         # =================================================
-        # 숏 돌파
+        # ★ 숏 현재 돌파
+        #
+        # 반드시 ROC < 0
+        # 반드시 현재봉 돌파
         # =================================================
 
         elif (
-            sb["state"] != "none"
-            and sb["count"] == 0
+            sb["state"] == "current"
+            and current_value < 0
         ):
 
             result.update({
@@ -2212,42 +2225,10 @@ def roc_analysis(
             })
 
         # =================================================
-        # 롱 진행
+        # ★ 현재 돌파가 아닌 경우
+        #
+        # ☀️ / 🌧️ 표시하지 않음
         # =================================================
-
-        elif (
-            current_value > 0
-            and positive_count >= ROC_PROGRESS_MIN_COUNT
-        ):
-
-            result.update({
-
-                "state":
-                    "progress",
-
-                "display":
-                    "☀️"
-
-            })
-
-        # =================================================
-        # 숏 진행
-        # =================================================
-
-        elif (
-            current_value < 0
-            and negative_count >= ROC_PROGRESS_MIN_COUNT
-        ):
-
-            result.update({
-
-                "state":
-                    "short_progress",
-
-                "display":
-                    "🌧️"
-
-            })
 
         else:
 
@@ -2537,7 +2518,7 @@ def empty_analysis():
                 "none",
 
             "display":
-                "-"
+                "⚪ 0"
 
         },
 
@@ -2573,6 +2554,14 @@ def empty_analysis():
 
 # =========================================================
 # 공통 자격조건
+#
+# ★ 진행중 조건은 완전히 제거
+#
+# 롱:
+# EMA 정배열 + 현재 ROC 0선 상향돌파
+#
+# 숏:
+# EMA 역배열 + 현재 ROC 0선 하향돌파
 # =========================================================
 
 def get_signal_qualified(
@@ -2616,10 +2605,13 @@ def get_signal_qualified(
         )
 
     # =====================================================
-    # ★ 1개 이상부터 구름
+    # ★ 롱 0선 현재 돌파
+    #
+    # ROC > 0
+    # current state
     # =====================================================
 
-    roc3_long = (
+    long_breakout_qualified = (
 
         long_base
 
@@ -2628,19 +2620,26 @@ def get_signal_qualified(
         ) is not None
 
         and float(
-            r.get("roc10")
+            r.get(
+                "roc10"
+            )
         ) > 0
 
-        and int(
-            r.get(
-                "roc10_count",
-                0
-            )
-        ) >= ROC_PROGRESS_MIN_COUNT
+        and r.get(
+            "long_breakout_state",
+            "none"
+        ) == "current"
 
     )
 
-    roc3_short = (
+    # =====================================================
+    # ★ 숏 0선 현재 돌파
+    #
+    # ROC < 0
+    # current state
+    # =====================================================
+
+    short_breakout_qualified = (
 
         short_base
 
@@ -2649,39 +2648,41 @@ def get_signal_qualified(
         ) is not None
 
         and float(
-            r.get("roc10")
+            r.get(
+                "roc10"
+            )
         ) < 0
 
-        and int(
-            r.get(
-                "roc10_negative_count",
-                0
-            )
-        ) >= ROC_PROGRESS_MIN_COUNT
+        and r.get(
+            "short_breakout_state",
+            "none"
+        ) == "current"
 
     )
 
     return {
 
         "breakout_qualified":
-            long_base
-            and r["long_breakout"],
+            long_breakout_qualified,
 
         "short_breakout_qualified":
-            short_base
-            and r["short_breakout"],
+            short_breakout_qualified,
+
+        # -------------------------------------------------
+        # 진행 조건 완전 제거
+        # -------------------------------------------------
 
         "progress_qualified":
-            roc3_long,
+            False,
 
         "short_progress_qualified":
-            roc3_short,
+            False,
 
         "roc3_long_progress_qualified":
-            roc3_long,
+            False,
 
         "roc3_short_progress_qualified":
-            roc3_short,
+            False,
 
         "filter_direction":
             filter_direction
@@ -2939,23 +2940,18 @@ def make_row(
         "short_breakout_qualified":
             a["short_breakout_qualified"],
 
+        # 진행 조건은 항상 False
         "progress_qualified":
-            a["progress_qualified"],
+            False,
 
         "short_progress_qualified":
-            a["short_progress_qualified"],
+            False,
 
         "roc3_long_progress_qualified":
-            a.get(
-                "roc3_long_progress_qualified",
-                False
-            ),
+            False,
 
         "roc3_short_progress_qualified":
-            a.get(
-                "roc3_short_progress_qualified",
-                False
-            ),
+            False,
 
         "direction":
             a["direction_1h"]
@@ -2969,75 +2965,110 @@ def make_row(
 
 def is_breakout(row):
 
-    return bool(
-        row
-        and row.get(
-            "breakout_qualified"
+    if not row:
+        return False
+
+    r = row.get(
+        "roc",
+        {}
+    )
+
+    try:
+
+        value = float(
+            r.get(
+                "roc10"
+            )
         )
+
+    except Exception:
+
+        return False
+
+    return (
+        row.get(
+            "breakout_qualified",
+            False
+        )
+        and value > 0
+        and r.get(
+            "long_breakout_state",
+            "none"
+        ) == "current"
     )
 
 
 def is_short_breakout(row):
 
-    return bool(
-        row
-        and row.get(
-            "short_breakout_qualified"
-        )
+    if not row:
+        return False
+
+    r = row.get(
+        "roc",
+        {}
     )
 
+    try:
+
+        value = float(
+            r.get(
+                "roc10"
+            )
+        )
+
+    except Exception:
+
+        return False
+
+    return (
+        row.get(
+            "short_breakout_qualified",
+            False
+        )
+        and value < 0
+        and r.get(
+            "short_breakout_state",
+            "none"
+        ) == "current"
+    )
+
+
+# =========================================================
+# ★ 구름/진행 조건 완전 제거
+# =========================================================
 
 def is_progress(row):
 
-    return bool(
-        row
-        and row.get(
-            "progress_qualified"
-        )
-    )
+    return False
 
 
 def is_short_progress(row):
 
-    return bool(
-        row
-        and row.get(
-            "short_progress_qualified"
-        )
-    )
+    return False
 
 
 def is_roc3_progress(row):
 
-    if not row:
-        return False
-
-    return bool(
-        row.get(
-            "roc3_long_progress_qualified",
-            False
-        )
-    )
+    return False
 
 
 def is_roc3_short_progress(row):
 
-    if not row:
-        return False
-
-    return bool(
-        row.get(
-            "roc3_short_progress_qualified",
-            False
-        )
-    )
+    return False
 
 
 # =========================================================
 # ★ 롱 통합 후보
 #
-# 0선 돌파 = ⓪만
-# 1개 이상 = ☀️
+# 오직:
+#
+# EMA 정배열
+# +
+# ROC > 0
+# +
+# 현재 0선 상향돌파
+#
+# = 🚀⓪
 # =========================================================
 
 def is_long_combined(row):
@@ -3045,42 +3076,56 @@ def is_long_combined(row):
     if not row:
         return False
 
-    if is_breakout(row):
+    r = row.get(
+        "roc",
+        {}
+    )
 
-        try:
+    try:
 
-            count = int(
-                row.get(
-                    "roc",
-                    {}
-                ).get(
-                    "long_breakout_count",
-                    0
-                )
+        roc_value = float(
+            r.get(
+                "roc10"
             )
+        )
 
-            if count <= int(
-                LONG_PROGRESS_BREAKOUT_MAX_COUNT
-            ):
+    except Exception:
 
-                return True
+        return False
 
-        except Exception:
+    # ROC가 0 이하이면 롱 후보에서 제외
+    if roc_value <= 0:
 
-            return False
+        return False
 
-    if is_roc3_progress(row):
+    # 현재 0선 상향 돌파만 허용
+    if r.get(
+        "long_breakout_state",
+        "none"
+    ) != "current":
 
-        return True
+        return False
 
-    return False
+    return bool(
+        row.get(
+            "breakout_qualified",
+            False
+        )
+    )
 
 
 # =========================================================
 # ★ 숏 통합 후보
 #
-# 0선 돌파 = ⓪만
-# 1개 이상 = 🌧️
+# 오직:
+#
+# EMA 역배열
+# +
+# ROC < 0
+# +
+# 현재 0선 하향돌파
+#
+# = 🔻⓪
 # =========================================================
 
 def is_short_combined(row):
@@ -3088,127 +3133,56 @@ def is_short_combined(row):
     if not row:
         return False
 
-    if is_short_breakout(row):
+    r = row.get(
+        "roc",
+        {}
+    )
 
-        try:
+    try:
 
-            count = int(
-                row.get(
-                    "roc",
-                    {}
-                ).get(
-                    "short_breakout_count",
-                    0
-                )
+        roc_value = float(
+            r.get(
+                "roc10"
             )
+        )
 
-            if count <= int(
-                SHORT_PROGRESS_BREAKOUT_MAX_COUNT
-            ):
+    except Exception:
 
-                return True
+        return False
 
-        except Exception:
+    # ROC가 0 이상이면 숏 후보에서 제외
+    if roc_value >= 0:
 
-            return False
+        return False
 
-    if is_roc3_short_progress(row):
+    # 현재 0선 하향 돌파만 허용
+    if r.get(
+        "short_breakout_state",
+        "none"
+    ) != "current":
 
-        return True
+        return False
 
-    return False
+    return bool(
+        row.get(
+            "short_breakout_qualified",
+            False
+        )
+    )
 
 
 # =========================================================
-# ★ 롱 진행 카운팅
+# 진행 카운팅
+#
+# 더 이상 화면 정렬에 사용하지 않음
 # =========================================================
 
 def get_long_progress_count(row):
 
-    if not row:
-        return 0
-
-    r = row.get(
-        "roc",
-        {}
-    )
-
-    if is_roc3_progress(row):
-
-        try:
-
-            return int(
-                r.get(
-                    "roc10_count",
-                    0
-                )
-            )
-
-        except Exception:
-
-            return 0
-
-    if is_breakout(row):
-
-        try:
-
-            return int(
-                r.get(
-                    "long_breakout_count",
-                    0
-                )
-            )
-
-        except Exception:
-
-            return 0
-
     return 0
 
 
-# =========================================================
-# ★ 숏 진행 카운팅
-# =========================================================
-
 def get_short_progress_count(row):
-
-    if not row:
-        return 0
-
-    r = row.get(
-        "roc",
-        {}
-    )
-
-    if is_roc3_short_progress(row):
-
-        try:
-
-            return int(
-                r.get(
-                    "roc10_negative_count",
-                    0
-                )
-            )
-
-        except Exception:
-
-            return 0
-
-    if is_short_breakout(row):
-
-        try:
-
-            return int(
-                r.get(
-                    "short_breakout_count",
-                    0
-                )
-            )
-
-        except Exception:
-
-            return 0
 
     return 0
 
@@ -3280,14 +3254,10 @@ def update_upbit():
 
     log.info(
         f"업비트 완료 / "
-        f"롱돌파 "
-        f"{sum(is_breakout(x) for x in rows)}개 / "
-        f"숏돌파 "
-        f"{sum(is_short_breakout(x) for x in rows)}개 / "
-        f"롱진행 "
-        f"{sum(is_progress(x) for x in rows)}개 / "
-        f"숏진행 "
-        f"{sum(is_short_progress(x) for x in rows)}개"
+        f"롱 0선 현재돌파 "
+        f"{sum(is_long_combined(x) for x in rows)}개 / "
+        f"숏 0선 현재돌파 "
+        f"{sum(is_short_combined(x) for x in rows)}개"
     )
 
 
@@ -3447,14 +3417,10 @@ def update_okx(usdt):
 
     log.info(
         f"OKX 완료 / "
-        f"롱돌파 "
-        f"{sum(is_breakout(x) for x in rows)}개 / "
-        f"숏돌파 "
-        f"{sum(is_short_breakout(x) for x in rows)}개 / "
-        f"롱진행 "
-        f"{sum(is_progress(x) for x in rows)}개 / "
-        f"숏진행 "
-        f"{sum(is_short_progress(x) for x in rows)}개"
+        f"롱 0선 현재돌파 "
+        f"{sum(is_long_combined(x) for x in rows)}개 / "
+        f"숏 0선 현재돌파 "
+        f"{sum(is_short_combined(x) for x in rows)}개"
     )
 
     return True
@@ -3575,6 +3541,8 @@ def market_direction_html(
 
 # =========================================================
 # BTC ROC 표시
+#
+# ★ ☀️ / 🌧️ 완전 제거
 # =========================================================
 
 def market_roc_html(r):
@@ -3611,24 +3579,16 @@ def market_roc_html(r):
             '</span>'
         )
 
-    state = r.get(
-        "long_breakout_state",
-        "none"
-    )
+    # -----------------------------------------------------
+    # 롱 현재 0선 돌파
+    # -----------------------------------------------------
 
-    long_count = {
-        "current": 0,
-        "confirmed": 1,
-        "next": 2
-    }.get(
-        state,
-        0
-    )
-
-    # ★ BTC도 현재 돌파 ⓪만 표시
     if (
-        state == "current"
-        and long_count == 0
+        r.get(
+            "long_breakout_state",
+            "none"
+        ) == "current"
+        and value > 0
     ):
 
         return (
@@ -3637,24 +3597,16 @@ def market_roc_html(r):
             '</span>'
         )
 
-    state = r.get(
-        "short_breakout_state",
-        "none"
-    )
+    # -----------------------------------------------------
+    # 숏 현재 0선 돌파
+    # -----------------------------------------------------
 
-    short_count = {
-        "current": 0,
-        "confirmed": 1,
-        "next": 2
-    }.get(
-        state,
-        0
-    )
-
-    # ★ BTC도 현재 돌파 ⓪만 표시
     if (
-        state == "current"
-        and short_count == 0
+        r.get(
+            "short_breakout_state",
+            "none"
+        ) == "current"
+        and value < 0
     ):
 
         return (
@@ -3663,39 +3615,25 @@ def market_roc_html(r):
             '</span>'
         )
 
+    # -----------------------------------------------------
+    # 그 외에는 단순 ROC 상태만 표시
+    # -----------------------------------------------------
+
     if value > 0:
 
-        count = int(
-            r.get(
-                "roc10_count",
-                0
-            )
+        return (
+            '<span class="market-up">'
+            '🟢 ROC +'
+            '</span>'
         )
-
-        if count >= ROC_PROGRESS_MIN_COUNT:
-
-            return (
-                '<span class="market-up">'
-                '☀️'
-                '</span>'
-            )
 
     if value < 0:
 
-        count = int(
-            r.get(
-                "roc10_negative_count",
-                0
-            )
+        return (
+            '<span class="market-down">'
+            '🔴 ROC -'
+            '</span>'
         )
-
-        if count >= ROC_PROGRESS_MIN_COUNT:
-
-            return (
-                '<span class="market-down">'
-                '🌧️'
-                '</span>'
-            )
 
     return (
         '<span class="market-zero">'
@@ -4153,6 +4091,12 @@ def market_summary_html():
 
 # =========================================================
 # ROC HTML
+#
+# ★ 구름 표시 완전 제거
+#
+# 🚀⓪ = 현재 0선 상향돌파
+# 🔻⓪ = 현재 0선 하향돌파
+# ⚪ 0 = 그 외
 # =========================================================
 
 def roc_html(r):
@@ -4196,16 +4140,16 @@ def roc_html(r):
         )
 
     # =====================================================
-    # ★ 롱 돌파
-    # 현재봉 ⓪만 표시
+    # ★ 롱 현재 돌파
     # =====================================================
 
-    state = r.get(
-        "long_breakout_state",
-        "none"
-    )
-
-    if state == "current":
+    if (
+        r.get(
+            "long_breakout_state",
+            "none"
+        ) == "current"
+        and value > 0
+    ):
 
         return """
 
@@ -4222,16 +4166,16 @@ def roc_html(r):
         """
 
     # =====================================================
-    # ★ 숏 돌파
-    # 현재봉 ⓪만 표시
+    # ★ 숏 현재 돌파
     # =====================================================
 
-    state = r.get(
-        "short_breakout_state",
-        "none"
-    )
-
-    if state == "current":
+    if (
+        r.get(
+            "short_breakout_state",
+            "none"
+        ) == "current"
+        and value < 0
+    ):
 
         return """
 
@@ -4248,19 +4192,15 @@ def roc_html(r):
         """
 
     # =====================================================
-    # ★ 롱 진행
-    # 1개 이상 = ☀️
+    # ★ 그 외
+    #
+    # ☀️ 없음
+    # 🌧️ 없음
+    # ① 없음
+    # ② 없음
     # =====================================================
 
-    if (
-        value > 0
-        and int(
-            r.get(
-                "roc10_count",
-                0
-            )
-        ) >= ROC_PROGRESS_MIN_COUNT
-    ):
+    if value > 0:
 
         return """
 
@@ -4268,7 +4208,7 @@ def roc_html(r):
 
             <span class="roc-positive">
 
-                ☀️
+                🟢 ROC +
 
             </span>
 
@@ -4276,20 +4216,7 @@ def roc_html(r):
 
         """
 
-    # =====================================================
-    # ★ 숏 진행
-    # 1개 이상 = 🌧️
-    # =====================================================
-
-    if (
-        value < 0
-        and int(
-            r.get(
-                "roc10_negative_count",
-                0
-            )
-        ) >= ROC_PROGRESS_MIN_COUNT
-    ):
+    if value < 0:
 
         return """
 
@@ -4297,7 +4224,7 @@ def roc_html(r):
 
             <span class="roc-negative">
 
-                🌧️
+                🔴 ROC -
 
             </span>
 
@@ -4322,9 +4249,17 @@ def roc_html(r):
 
 # =========================================================
 # 신호 HTML
+#
+# ★ 오직 현재 0선 돌파만 표시
 # =========================================================
 
 def signal_html(row):
+
+    if not row:
+
+        return (
+            '<span class="muted">-</span>'
+        )
 
     r = row.get(
         "roc",
@@ -4332,92 +4267,90 @@ def signal_html(row):
     )
 
     # =====================================================
-    # ★ 롱 돌파
-    # 현재봉 ⓪만
+    # ★ 롱
+    #
+    # EMA 정배열
+    # ROC > 0
+    # 현재 0선 상향돌파
     # =====================================================
-
-    state = r.get(
-        "long_breakout_state",
-        "none"
-    )
 
     if (
         row.get(
             "breakout_qualified",
             False
         )
-        and state == "current"
+        and r.get(
+            "long_breakout_state",
+            "none"
+        ) == "current"
     ):
 
-        return (
-            '<span '
-            'class="signal-icon long-breakout" '
-            'title="롱 0선 현재 돌파 / 정배열">'
-            '🚀⓪'
-            '</span>'
-        )
+        try:
+
+            roc_value = float(
+                r.get(
+                    "roc10"
+                )
+            )
+
+        except Exception:
+
+            roc_value = 0
+
+        if roc_value > 0:
+
+            return (
+                '<span '
+                'class="signal-icon long-breakout" '
+                'title="롱 0선 현재 돌파 / 정배열">'
+                '🚀⓪'
+                '</span>'
+            )
 
     # =====================================================
-    # ★ 숏 돌파
-    # 현재봉 ⓪만
+    # ★ 숏
+    #
+    # EMA 역배열
+    # ROC < 0
+    # 현재 0선 하향돌파
     # =====================================================
-
-    state = r.get(
-        "short_breakout_state",
-        "none"
-    )
 
     if (
         row.get(
             "short_breakout_qualified",
             False
         )
-        and state == "current"
+        and r.get(
+            "short_breakout_state",
+            "none"
+        ) == "current"
     ):
 
-        return (
-            '<span '
-            'class="signal-icon short-breakout" '
-            'title="숏 0선 현재 돌파 / 역배열">'
-            '🔻⓪'
-            '</span>'
-        )
+        try:
+
+            roc_value = float(
+                r.get(
+                    "roc10"
+                )
+            )
+
+        except Exception:
+
+            roc_value = 0
+
+        if roc_value < 0:
+
+            return (
+                '<span '
+                'class="signal-icon short-breakout" '
+                'title="숏 0선 현재 돌파 / 역배열">'
+                '🔻⓪'
+                '</span>'
+            )
 
     # =====================================================
-    # ★ 롱 진행
-    # ROC 1개 이상
+    # ★ 구름 / 진행 신호 없음
     # =====================================================
-
-    if row.get(
-        "roc3_long_progress_qualified",
-        False
-    ):
-
-        return (
-            '<span '
-            'class="signal-icon long-progress" '
-            'title="롱 진행 / 정배열 / ROC 1+">'
-            '☀️'
-            '</span>'
-        )
-
-    # =====================================================
-    # ★ 숏 진행
-    # ROC 1개 이상
-    # =====================================================
-
-    if row.get(
-        "roc3_short_progress_qualified",
-        False
-    ):
-
-        return (
-            '<span '
-            'class="signal-icon short-progress" '
-            'title="숏 진행 / 역배열 / ROC 1+">'
-            '🌧️'
-            '</span>'
-        )
 
     return (
         '<span class="muted">-</span>'
@@ -4463,29 +4396,13 @@ def ema_html(e):
 
 def row_class(x):
 
-    if x.get(
-        "breakout_qualified"
-    ):
+    if is_breakout(x):
 
         return "breakout-qualified"
 
-    if x.get(
-        "short_breakout_qualified"
-    ):
+    if is_short_breakout(x):
 
         return "short-breakout-qualified"
-
-    if x.get(
-        "roc3_long_progress_qualified"
-    ):
-
-        return "progress-qualified"
-
-    if x.get(
-        "roc3_short_progress_qualified"
-    ):
-
-        return "short-progress-qualified"
 
     return ""
 
@@ -4505,13 +4422,9 @@ def rows_html(
 
         if focus == "long_combined":
 
-            if is_breakout(x):
+            if is_long_combined(x):
 
                 cls = "breakout-qualified"
-
-            elif is_roc3_progress(x):
-
-                cls = "progress-qualified"
 
             else:
 
@@ -4519,13 +4432,9 @@ def rows_html(
 
         elif focus == "short_combined":
 
-            if is_short_breakout(x):
+            if is_short_combined(x):
 
                 cls = "short-breakout-qualified"
-
-            elif is_roc3_short_progress(x):
-
-                cls = "short-progress-qualified"
 
             else:
 
@@ -4533,27 +4442,19 @@ def rows_html(
 
         elif focus == "breakout":
 
-            cls = "breakout-qualified"
+            cls = (
+                "breakout-qualified"
+                if is_breakout(x)
+                else ""
+            )
 
         elif focus == "short_breakout":
 
-            cls = "short-breakout-qualified"
-
-        elif focus == "progress":
-
-            cls = "progress-qualified"
-
-        elif focus == "short_progress":
-
-            cls = "short-progress-qualified"
-
-        elif focus == "roc3_progress":
-
-            cls = "progress-qualified"
-
-        elif focus == "roc3_short_progress":
-
-            cls = "short-progress-qualified"
+            cls = (
+                "short-breakout-qualified"
+                if is_short_breakout(x)
+                else ""
+            )
 
         else:
 
@@ -4720,7 +4621,7 @@ def table_html(
 
 
 # =========================================================
-# ★ 후보 섹션
+# 후보 섹션
 # =========================================================
 
 def focus_section(
@@ -4745,97 +4646,27 @@ def focus_section(
     ]
 
     # =====================================================
-    # 롱 통합
+    # ★ 현재 돌파만 존재
+    #
+    # 진행 카운팅 정렬 제거
     # =====================================================
 
     if focus == "long_combined":
 
-        def long_sort_key(x):
-
-            count = get_long_progress_count(
-                x
-            )
-
-            start_time = (
-                x.get(
-                    "roc",
-                    {}
-                ).get(
-                    "roc_progress_start_time"
-                )
-            )
-
-            if start_time is None:
-
-                timestamp = pd.Timestamp.min
-
-            else:
-
-                try:
-
-                    timestamp = pd.Timestamp(
-                        start_time
-                    )
-
-                except Exception:
-
-                    timestamp = pd.Timestamp.min
-
-            return (
-                count,
-                timestamp
-            )
-
         rows.sort(
-            key=long_sort_key,
-            reverse=True
+            key=lambda x: x.get(
+                "rank",
+                999999
+            )
         )
-
-    # =====================================================
-    # 숏 통합
-    # =====================================================
 
     elif focus == "short_combined":
 
-        def short_sort_key(x):
-
-            count = get_short_progress_count(
-                x
-            )
-
-            start_time = (
-                x.get(
-                    "roc",
-                    {}
-                ).get(
-                    "roc_negative_progress_start_time"
-                )
-            )
-
-            if start_time is None:
-
-                timestamp = pd.Timestamp.min
-
-            else:
-
-                try:
-
-                    timestamp = pd.Timestamp(
-                        start_time
-                    )
-
-                except Exception:
-
-                    timestamp = pd.Timestamp.min
-
-            return (
-                count,
-                timestamp
-            )
-
         rows.sort(
-            key=short_sort_key,
-            reverse=True
+            key=lambda x: x.get(
+                "rank",
+                999999
+            )
         )
 
     elif sort_key:
@@ -5033,22 +4864,6 @@ h1{
     border-left-color:#ff5555;
 }
 
-.progress-section-title{
-    border-left-color:#4cc9ff;
-}
-
-.short_progress-section-title{
-    border-left-color:#ff6666;
-}
-
-.roc3_progress-section-title{
-    border-left-color:#39e875;
-}
-
-.roc3_short_progress-section-title{
-    border-left-color:#ff5555;
-}
-
 .market-summary{
     width:100%;
     margin:2px 0 3px;
@@ -5199,14 +5014,6 @@ h1{
     font-weight:900;
 }
 
-.progress{
-    color:#4cc9ff;
-}
-
-.short-progress{
-    color:#ff6666;
-}
-
 .muted,.roc-zero,.zero{
     color:#68717b!important;
 }
@@ -5240,28 +5047,6 @@ h1{
         0 0 2px
         rgba(255,85,85,.35)
     );
-}
-
-.signal-icon.long-progress{
-    filter:drop-shadow(
-        0 0 2px
-        rgba(255,216,77,.25)
-    );
-}
-
-.signal-icon.short-progress{
-    filter:drop-shadow(
-        0 0 2px
-        rgba(160,190,220,.25)
-    );
-}
-
-.roc3-progress-qualified{
-    background:rgba(57,232,117,.06);
-}
-
-.roc3-short-progress-qualified{
-    background:rgba(255,85,85,.06);
 }
 
 .table-wrap{
@@ -5419,14 +5204,6 @@ td:nth-child(1){
 
 .short-breakout-qualified{
     background:rgba(255,85,85,.05);
-}
-
-.progress-qualified{
-    background:rgba(76,201,255,.06);
-}
-
-.short-progress-qualified{
-    background:rgba(255,85,85,.035);
 }
 
 .empty{
@@ -5726,10 +5503,19 @@ def dashboard():
     sections = ""
 
     # =====================================================
-    # ① 🚀 롱 진행 통합
+    # ① 🚀 롱 진행
     #
-    # 0선 돌파 = 🚀⓪
-    # 1개 이상 = ☀️
+    # ★ 실제 의미:
+    # EMA 정배열
+    # +
+    # ROC 0선 상향돌파 현재봉
+    # +
+    # ROC > 0
+    #
+    # 표시:
+    # 🚀⓪
+    #
+    # ☀️ 없음
     # =====================================================
 
     if USE_UPBIT == "Y":
@@ -5752,21 +5538,29 @@ def dashboard():
                 f"{format_timeframe(EMA_HIGH_TIMEFRAME)} "
                 f"{get_ema_period_text_long()} · "
                 f"{get_roc_text()} "
-                f"음수→양수 ⓪ "
-                f"→ 양수 {ROC_PROGRESS_MIN_COUNT}+ = ☀️"
+                f"음수→양수 현재 돌파 = 🚀⓪"
             ),
 
-            sort_key="roc_progress_start_time",
+            sort_key=None,
 
-            reverse=True
+            reverse=False
 
         )
 
     # =====================================================
-    # ② 🔻 숏 진행 통합
+    # ② 🔻 숏 진행
     #
-    # 0선 돌파 = 🔻⓪
-    # 1개 이상 = 🌧️
+    # ★ 실제 의미:
+    # EMA 역배열
+    # +
+    # ROC 0선 하향돌파 현재봉
+    # +
+    # ROC < 0
+    #
+    # 표시:
+    # 🔻⓪
+    #
+    # 🌧️ 없음
     # =====================================================
 
     if USE_UPBIT == "Y":
@@ -5789,13 +5583,12 @@ def dashboard():
                 f"{format_timeframe(EMA_HIGH_TIMEFRAME)} "
                 f"{get_ema_period_text_short()} · "
                 f"{get_roc_text()} "
-                f"양수→음수 ⓪ "
-                f"→ 음수 {ROC_PROGRESS_MIN_COUNT}+ = 🌧️"
+                f"양수→음수 현재 돌파 = 🔻⓪"
             ),
 
-            sort_key="roc_negative_progress_start_time",
+            sort_key=None,
 
-            reverse=True
+            reverse=False
 
         )
 
@@ -5823,13 +5616,12 @@ def dashboard():
                 f"{format_timeframe(EMA_HIGH_TIMEFRAME)} "
                 f"{get_ema_period_text_long()} · "
                 f"{get_roc_text()} "
-                f"음수→양수 ⓪ "
-                f"→ 양수 {ROC_PROGRESS_MIN_COUNT}+ = ☀️"
+                f"음수→양수 현재 돌파 = 🚀⓪"
             ),
 
-            sort_key="roc_progress_start_time",
+            sort_key=None,
 
-            reverse=True
+            reverse=False
 
         )
 
@@ -5851,13 +5643,12 @@ def dashboard():
                 f"{format_timeframe(EMA_HIGH_TIMEFRAME)} "
                 f"{get_ema_period_text_short()} · "
                 f"{get_roc_text()} "
-                f"양수→음수 ⓪ "
-                f"→ 음수 {ROC_PROGRESS_MIN_COUNT}+ = 🌧️"
+                f"양수→음수 현재 돌파 = 🔻⓪"
             ),
 
-            sort_key="roc_negative_progress_start_time",
+            sort_key=None,
 
-            reverse=True
+            reverse=False
 
         )
 
@@ -6085,6 +5876,10 @@ def startup():
         "========================================"
     )
 
+    # =====================================================
+    # ★ 롱 조건
+    # =====================================================
+
     log.info(
         "롱 조건:"
     )
@@ -6096,17 +5891,20 @@ def startup():
 
     log.info(
         f"{get_roc_text()} "
-        f"음수→양수 돌파 = 🚀⓪"
+        f"음수→양수 현재 돌파 = 🚀⓪"
     )
 
     log.info(
-        f"{get_roc_text()} "
-        f"양수 {ROC_PROGRESS_MIN_COUNT}개 이상 = ☀️"
+        "★ ROC 양수 지속 구름 조건 사용 안 함"
     )
 
     log.info(
         "========================================"
     )
+
+    # =====================================================
+    # ★ 숏 조건
+    # =====================================================
 
     log.info(
         "숏 조건:"
@@ -6119,12 +5917,11 @@ def startup():
 
     log.info(
         f"{get_roc_text()} "
-        f"양수→음수 돌파 = 🔻⓪"
+        f"양수→음수 현재 돌파 = 🔻⓪"
     )
 
     log.info(
-        f"{get_roc_text()} "
-        f"음수 {ROC_PROGRESS_MIN_COUNT}개 이상 = 🌧️"
+        "★ ROC 음수 지속 구름 조건 사용 안 함"
     )
 
     log.info(
@@ -6136,41 +5933,35 @@ def startup():
     )
 
     log.info(
-        "0선 현재 돌파봉 = 🚀⓪ / 🔻⓪"
+        "0선 현재 상향돌파 = 🚀⓪"
     )
 
     log.info(
-        f"양수 {ROC_PROGRESS_MIN_COUNT}개 이상 = ☀️"
+        "0선 현재 하향돌파 = 🔻⓪"
     )
 
     log.info(
-        f"음수 {ROC_PROGRESS_MIN_COUNT}개 이상 = 🌧️"
+        "그 외 양수 = 🟢 ROC +"
     )
 
     log.info(
-        "★ ① / ②는 표시하지 않음"
+        "그 외 음수 = 🔴 ROC -"
     )
 
     log.info(
-        f"롱 진행 돌파 표시 = "
-        f"⓪만"
+        "★ ☀️ / 🌧️ 구름 표시 없음"
     )
 
     log.info(
-        f"숏 진행 돌파 표시 = "
-        f"⓪만"
+        "★ ① / ② 표시 없음"
     )
 
     log.info(
-        "★ 롱 진행 정렬: ROC 카운팅 높은 순"
+        "★ 롱 진행 섹션 = 현재 0선 상향돌파만"
     )
 
     log.info(
-        "★ 숏 진행 정렬: ROC 카운팅 높은 순"
-    )
-
-    log.info(
-        "★ 카운팅 동일 시 진행 시작시간 최신순"
+        "★ 숏 진행 섹션 = 현재 0선 하향돌파만"
     )
 
     log.info(
@@ -6221,10 +6012,12 @@ def startup():
     )
 
     log.info(
-        "🚀⓪ 롱 돌파 / "
-        "🔻⓪ 숏 돌파 / "
-        "☀️ 롱 진행 / "
-        "🌧️ 숏 진행"
+        "🚀⓪ 롱 현재 0선 돌파 / "
+        "🔻⓪ 숏 현재 0선 돌파"
+    )
+
+    log.info(
+        "★ ☀️ / 🌧️ / ① / ② 사용 안 함"
     )
 
     log.info(
@@ -6232,15 +6025,11 @@ def startup():
     )
 
     log.info(
-        "★ 롱 돌파 + 롱 진행중 → 🚀 롱 진행 하나로 통합"
+        "★ 롱 진행 = 현재 0선 상향돌파만"
     )
 
     log.info(
-        "★ 숏 돌파 + 숏 진행중 → 🔻 숏 진행 하나로 통합"
-    )
-
-    log.info(
-        "★ 통합 섹션은 카운팅 높은 순으로 표시"
+        "★ 숏 진행 = 현재 0선 하향돌파만"
     )
 
     log.info(
