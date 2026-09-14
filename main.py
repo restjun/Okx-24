@@ -2003,6 +2003,104 @@ def rsi_count(
 
 
 # =========================================================
+# RSI 방향 계산
+# =========================================================
+
+def get_rsi_direction(
+    current,
+    previous
+):
+
+    if (
+        current is None
+        or previous is None
+    ):
+
+        return {
+            "direction": "flat",
+            "change": 0.0
+        }
+
+    try:
+
+        current = float(current)
+
+        previous = float(previous)
+
+        change = current - previous
+
+        if change > 0:
+
+            direction = "up"
+
+        elif change < 0:
+
+            direction = "down"
+
+        else:
+
+            direction = "flat"
+
+        return {
+
+            "direction":
+                direction,
+
+            "change":
+                change
+
+        }
+
+    except Exception:
+
+        return {
+
+            "direction":
+                "flat",
+
+            "change":
+                0.0
+
+        }
+
+
+def rsi_slope_html(
+    direction,
+    change
+):
+
+    try:
+
+        change = float(change)
+
+    except Exception:
+
+        change = 0.0
+
+    if direction == "up":
+
+        return (
+            '<span class="rsi-slope rsi-up">'
+            f'↗+{change:.1f}'
+            '</span>'
+        )
+
+    if direction == "down":
+
+        return (
+            '<span class="rsi-slope rsi-down">'
+            f'↘{change:.1f}'
+            '</span>'
+        )
+
+    return (
+        '<span class="rsi-slope rsi-flat">'
+        '→0.0'
+        '</span>'
+    )
+
+
+# =========================================================
 # RSI 참고 분석
 # =========================================================
 
@@ -2025,6 +2123,12 @@ def rsi_reference_analysis(
             0,
 
         "direction":
+            "flat",
+
+        "change":
+            0.0,
+
+        "state":
             "neutral",
 
         "display":
@@ -2052,25 +2156,27 @@ def rsi_reference_analysis(
 
             return result
 
+        valid = series.dropna()
+
+        if valid.empty:
+
+            return result
+
         value = float(
-            series.iloc[-1]
+            valid.iloc[-1]
         )
+
+        previous = None
+
+        if len(valid) >= 2:
+
+            previous = float(
+                valid.iloc[-2]
+            )
 
         if pd.isna(value):
 
             return result
-
-        previous = None
-
-        if len(series) >= 2:
-
-            previous = float(
-                series.iloc[-2]
-            )
-
-            if pd.isna(previous):
-
-                previous = None
 
         long_count = rsi_count(
             series,
@@ -2086,15 +2192,20 @@ def rsi_reference_analysis(
 
         if value >= RSI_LONG_LEVEL:
 
-            direction = "long"
+            state = "long"
 
         elif value <= RSI_SHORT_LEVEL:
 
-            direction = "short"
+            state = "short"
 
         else:
 
-            direction = "neutral"
+            state = "neutral"
+
+        slope = get_rsi_direction(
+            value,
+            previous
+        )
 
         result.update({
 
@@ -2111,29 +2222,15 @@ def rsi_reference_analysis(
                 short_count,
 
             "direction":
-                direction
+                slope["direction"],
+
+            "change":
+                slope["change"],
+
+            "state":
+                state
 
         })
-
-        if direction == "long":
-
-            result["display"] = (
-                f"🟢{value:.1f}"
-                f"({long_count})"
-            )
-
-        elif direction == "short":
-
-            result["display"] = (
-                f"🔴{value:.1f}"
-                f"({short_count})"
-            )
-
-        else:
-
-            result["display"] = (
-                f"{value:.1f}(0)"
-            )
 
         return result
 
@@ -2178,6 +2275,12 @@ def rsi_analysis(
         "state":
             "none",
 
+        "direction":
+            "flat",
+
+        "change":
+            0.0,
+
         "display":
             "-"
 
@@ -2209,12 +2312,27 @@ def rsi_analysis(
 
             return result
 
+        confirmed_valid = (
+            confirmed_rsi.dropna()
+        )
+
+        current_valid = (
+            current_rsi.dropna()
+        )
+
+        if (
+            confirmed_valid.empty
+            or current_valid.empty
+        ):
+
+            return result
+
         previous = float(
-            confirmed_rsi.iloc[-1]
+            confirmed_valid.iloc[-1]
         )
 
         current_value = float(
-            current_rsi.iloc[-1]
+            current_valid.iloc[-1]
         )
 
         if (
@@ -2248,6 +2366,11 @@ def rsi_analysis(
 
             state = "neutral"
 
+        slope = get_rsi_direction(
+            current_value,
+            previous
+        )
+
         result.update({
 
             "rsi14":
@@ -2269,29 +2392,15 @@ def rsi_analysis(
                 short_count,
 
             "state":
-                state
+                state,
+
+            "direction":
+                slope["direction"],
+
+            "change":
+                slope["change"]
 
         })
-
-        if state == "long":
-
-            result["display"] = (
-                f"🟢{current_value:.1f}"
-                f"({long_count})"
-            )
-
-        elif state == "short":
-
-            result["display"] = (
-                f"🔴{current_value:.1f}"
-                f"({short_count})"
-            )
-
-        else:
-
-            result["display"] = (
-                f"{current_value:.1f}(0)"
-            )
 
         return result
 
@@ -3614,11 +3723,28 @@ def rsi_html(r):
         or 0
     )
 
+    direction = r.get(
+        "direction",
+        "flat"
+    )
+
+    change = r.get(
+        "change",
+        0.0
+    )
+
+    slope = rsi_slope_html(
+        direction,
+        change
+    )
+
     if value >= RSI_LONG_LEVEL:
 
         return (
             '<span class="rsi-long">'
-            f'🟢{value:.1f}({long_count})'
+            f'🟢{value:.1f} '
+            f'{slope}'
+            f'({long_count})'
             '</span>'
         )
 
@@ -3626,13 +3752,17 @@ def rsi_html(r):
 
         return (
             '<span class="rsi-short">'
-            f'🔴{value:.1f}({short_count})'
+            f'🔴{value:.1f} '
+            f'{slope}'
+            f'({short_count})'
             '</span>'
         )
 
     return (
         '<span class="rsi-neutral">'
-        f'{value:.1f}(0)'
+        f'{value:.1f} '
+        f'{slope}'
+        '(0)'
         '</span>'
     )
 
@@ -3683,11 +3813,28 @@ def rsi_reference_html(
         or 0
     )
 
+    direction = r.get(
+        "direction",
+        "flat"
+    )
+
+    change = r.get(
+        "change",
+        0.0
+    )
+
+    slope = rsi_slope_html(
+        direction,
+        change
+    )
+
     if value >= RSI_LONG_LEVEL:
 
         return (
             '<span class="rsi-reference-long">'
-            f'🟢{value:.1f}({long_count})'
+            f'🟢{value:.1f} '
+            f'{slope}'
+            f'({long_count})'
             '</span>'
         )
 
@@ -3695,13 +3842,17 @@ def rsi_reference_html(
 
         return (
             '<span class="rsi-reference-short">'
-            f'🔴{value:.1f}({short_count})'
+            f'🔴{value:.1f} '
+            f'{slope}'
+            f'({short_count})'
             '</span>'
         )
 
     return (
         '<span class="rsi-reference">'
-        f'{value:.1f}(0)'
+        f'{value:.1f} '
+        f'{slope}'
+        '(0)'
         '</span>'
     )
 
@@ -4406,6 +4557,21 @@ def market_rsi_html(
 
         return "-"
 
+    direction = r.get(
+        "direction",
+        "flat"
+    )
+
+    change = r.get(
+        "change",
+        0.0
+    )
+
+    slope = rsi_slope_html(
+        direction,
+        change
+    )
+
     if value >= RSI_LONG_LEVEL:
 
         count = int(
@@ -4418,7 +4584,9 @@ def market_rsi_html(
 
         return (
             '<span class="market-up">'
-            f'🟢 {value:.1f}({count})'
+            f'🟢 {value:.1f} '
+            f'{slope}'
+            f'({count})'
             '</span>'
         )
 
@@ -4434,13 +4602,17 @@ def market_rsi_html(
 
         return (
             '<span class="market-down">'
-            f'🔴 {value:.1f}({count})'
+            f'🔴 {value:.1f} '
+            f'{slope}'
+            f'({count})'
             '</span>'
         )
 
     return (
         '<span class="market-zero">'
-        f'{value:.1f}(0)'
+        f'{value:.1f} '
+        f'{slope}'
+        '(0)'
         '</span>'
     )
 
@@ -4469,6 +4641,21 @@ def market_rsi_reference_html(
 
         return "-"
 
+    direction = r.get(
+        "direction",
+        "flat"
+    )
+
+    change = r.get(
+        "change",
+        0.0
+    )
+
+    slope = rsi_slope_html(
+        direction,
+        change
+    )
+
     if value >= RSI_LONG_LEVEL:
 
         count = int(
@@ -4481,7 +4668,9 @@ def market_rsi_reference_html(
 
         return (
             '<span class="market-up">'
-            f'🟢 {value:.1f}({count})'
+            f'🟢 {value:.1f} '
+            f'{slope}'
+            f'({count})'
             '</span>'
         )
 
@@ -4497,13 +4686,17 @@ def market_rsi_reference_html(
 
         return (
             '<span class="market-down">'
-            f'🔴 {value:.1f}({count})'
+            f'🔴 {value:.1f} '
+            f'{slope}'
+            f'({count})'
             '</span>'
         )
 
     return (
         '<span class="market-zero">'
-        f'{value:.1f}(0)'
+        f'{value:.1f} '
+        f'{slope}'
+        '(0)'
         '</span>'
     )
 
@@ -5125,8 +5318,8 @@ tr:last-child td{
    #        5%
    코인     15%
    거래대금 13%
-   EMA      32%
-   RSI      25%
+   EMA      27%
+   RSI      30%
    신호     10%
    
    ========================================================= */
@@ -5148,12 +5341,12 @@ td:nth-child(3){
 
 th:nth-child(4),
 td:nth-child(4){
-    width:32%;
+    width:27%;
 }
 
 th:nth-child(5),
 td:nth-child(5){
-    width:25%;
+    width:30%;
 }
 
 th:nth-child(6),
@@ -5264,6 +5457,30 @@ td:nth-child(6){
 
 .ema-direction{
     min-width:18px;
+}
+
+
+/* =========================================================
+   RSI 상승 / 하락
+   ========================================================= */
+
+.rsi-slope{
+    font-size:5.5px;
+    line-height:7px;
+    font-weight:900;
+    white-space:nowrap;
+}
+
+.rsi-up{
+    color:#39e875!important;
+}
+
+.rsi-down{
+    color:#ff5555!important;
+}
+
+.rsi-flat{
+    color:#8b929b!important;
 }
 
 
@@ -5516,12 +5733,12 @@ td:nth-child(6){
 
     th:nth-child(4),
     td:nth-child(4){
-        width:32%;
+        width:27%;
     }
 
     th:nth-child(5),
     td:nth-child(5){
-        width:25%;
+        width:30%;
     }
 
     th:nth-child(6),
@@ -5574,6 +5791,11 @@ td:nth-child(6){
     .rsi-reference-long,
     .rsi-reference-short{
         font-size:5px;
+        line-height:7px;
+    }
+
+    .rsi-slope{
+        font-size:4.8px;
         line-height:7px;
     }
 
@@ -5713,12 +5935,12 @@ td:nth-child(6){
 
     th:nth-child(4),
     td:nth-child(4){
-        width:32%;
+        width:27%;
     }
 
     th:nth-child(5),
     td:nth-child(5){
-        width:25%;
+        width:30%;
     }
 
     th:nth-child(6),
@@ -5770,6 +5992,11 @@ td:nth-child(6){
     .rsi-reference-long,
     .rsi-reference-short{
         font-size:8px;
+        line-height:10px;
+    }
+
+    .rsi-slope{
+        font-size:7px;
         line-height:10px;
     }
 
@@ -6169,6 +6396,14 @@ def startup():
 
     log.info(
         "30 < RSI < 70 → 회색 숫자(0)"
+    )
+
+    log.info(
+        "RSI ↗ / ↘ → 직전 RSI 대비 변화 표시"
+    )
+
+    log.info(
+        "RSI 상승/하락 방향은 신호 조건에 사용하지 않음"
     )
 
     log.info(
