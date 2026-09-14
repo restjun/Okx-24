@@ -1473,6 +1473,9 @@ def ema(
 
 # =========================================================
 # EMA 실제 수치
+#
+# 계산에는 계속 사용
+# 대시보드에서는 표시하지 않음
 # =========================================================
 
 def ema_values(
@@ -1668,6 +1671,9 @@ def ema_alignment_count(
 
 # =========================================================
 # EMA 표시
+#
+# 계산 결과는 유지
+# 대시보드에는 방향 + 카운트만 표시
 # =========================================================
 
 def ema_display(
@@ -3503,6 +3509,9 @@ def update_dashboard():
 
 # =========================================================
 # 숫자 표시
+#
+# RSI 가격/수치는 사용
+# EMA 가격 수치는 화면에서 사용하지 않음
 # =========================================================
 
 def format_indicator_value(
@@ -3525,7 +3534,13 @@ def format_indicator_value(
 # =========================================================
 # EMA HTML
 #
-# 1H / 4H / 1D 모두 실제 EMA 수치 표시
+# EMA 가격 숫자는 대시보드에서 완전히 생략
+# 방향 + 카운트만 표시
+#
+# 예:
+# 1H 🟢(15)
+# 4H 🔴(3)
+# 1D ⚪(0)
 # =========================================================
 
 def ema_detail_html(
@@ -3540,7 +3555,7 @@ def ema_detail_html(
             f'<span class="indicator-label">'
             f'{timeframe}'
             '</span>'
-            '<span class="ema-numbers">-</span>'
+            '<span class="ema-direction">⚪(0)</span>'
             '</div>'
         )
 
@@ -3555,11 +3570,6 @@ def ema_detail_html(
             0
         )
         or 0
-    )
-
-    values = e.get(
-        "values",
-        {}
     )
 
     if direction == "long":
@@ -3584,22 +3594,6 @@ def ema_detail_html(
 
         <span class="ema-direction">
             {icon}({count})
-        </span>
-
-        <span class="ema-number">
-            10:{format_indicator_value(values.get("10"))}
-        </span>
-
-        <span class="ema-number">
-            30:{format_indicator_value(values.get("30"))}
-        </span>
-
-        <span class="ema-number">
-            60:{format_indicator_value(values.get("60"))}
-        </span>
-
-        <span class="ema-number">
-            120:{format_indicator_value(values.get("120"))}
         </span>
 
     </div>
@@ -4551,32 +4545,15 @@ def market_rsi_reference_html(
 
 # =========================================================
 # 시장 EMA 실제 수치
+#
+# 대시보드에서는 EMA 가격 수치를 표시하지 않음
 # =========================================================
 
 def market_ema_numbers(
     e
 ):
 
-    if not e:
-
-        return "-"
-
-    values = e.get(
-        "values",
-        {}
-    )
-
-    return f"""
-        <div class="market-ema-values">
-            10:{format_indicator_value(values.get("10"))}
-            &nbsp;
-            30:{format_indicator_value(values.get("30"))}
-            &nbsp;
-            60:{format_indicator_value(values.get("60"))}
-            &nbsp;
-            120:{format_indicator_value(values.get("120"))}
-        </div>
-    """
+    return ""
 
 
 # =========================================================
@@ -4714,10 +4691,6 @@ def market_panel(
 
                 </div>
 
-                {market_ema_numbers(
-                    ema_1
-                )}
-
 
                 <div class="market-indicator-line">
 
@@ -4738,10 +4711,6 @@ def market_panel(
 
                 </div>
 
-                {market_ema_numbers(
-                    ema_high
-                )}
-
 
                 <div class="market-indicator-line">
 
@@ -4761,10 +4730,6 @@ def market_panel(
                     )}
 
                 </div>
-
-                {market_ema_numbers(
-                    ema_daily
-                )}
 
             </div>
 
@@ -5124,15 +5089,6 @@ h1{
     min-width:18px;
 }
 
-.market-ema-values{
-    color:#7f8791;
-    font-size:4.1px;
-    line-height:7px;
-    white-space:nowrap;
-    padding-left:20px;
-    margin-bottom:1px;
-}
-
 .market-up{
     color:#39e875!important;
     font-weight:900;
@@ -5318,13 +5274,6 @@ td:nth-child(6){
     line-height:7px;
     font-weight:900;
     min-width:18px;
-}
-
-.ema-number{
-    color:#8c949d;
-    font-size:4.6px;
-    line-height:7px;
-    white-space:nowrap;
 }
 
 
@@ -5557,12 +5506,6 @@ td:nth-child(6){
         min-width:15px;
     }
 
-    .market-ema-values{
-        font-size:3.7px;
-        padding-left:17px;
-        line-height:6px;
-    }
-
     th{
         height:16px;
         font-size:4.5px;
@@ -5605,11 +5548,6 @@ td:nth-child(6){
     .ema-direction{
         font-size:4.5px;
         min-width:16px;
-    }
-
-    .ema-number{
-        font-size:3.8px;
-        line-height:6px;
     }
 
     .rsi-long,
@@ -5721,12 +5659,6 @@ td:nth-child(6){
         min-width:24px;
     }
 
-    .market-ema-values{
-        font-size:5px;
-        line-height:8px;
-        padding-left:28px;
-    }
-
     th{
         height:26px;
         font-size:7px;
@@ -5769,11 +5701,6 @@ td:nth-child(6){
     .ema-direction{
         font-size:7px;
         min-width:25px;
-    }
-
-    .ema-number{
-        font-size:6px;
-        line-height:9px;
     }
 
     .rsi-long,
