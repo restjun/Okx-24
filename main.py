@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+mfrom fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
 import schedule
@@ -73,13 +73,11 @@ USE_EMA_HIGH_TIMEFRAME = "N"
 # =========================================================
 # EMA 설정
 #
-# ★ 여기만 수정하면 계산 + 대시보드가 같이 변경됨
-#
 # 정배열:
-# EMA9 > EMA30 > EMA60 > EMA120
+# EMA10 > EMA30 > EMA60 > EMA120
 #
 # 역배열:
-# EMA9 < EMA30 < EMA60 < EMA120
+# EMA10 < EMA30 < EMA60 < EMA120
 # =========================================================
 
 EMA1_FASTEST = 10
@@ -92,8 +90,6 @@ EMA1_MAX_COUNT = 200
 
 # =========================================================
 # ROC 설정
-#
-# ★ 여기만 수정하면 계산 + 대시보드가 같이 변경됨
 # =========================================================
 
 ROC_PERIOD = 10
@@ -2989,8 +2985,6 @@ def is_roc3_short_progress(row):
 
 # =========================================================
 # ★ 롱 통합 후보
-#
-# 롱 돌파 또는 ROC 3+ 롱 진행중이면 표시
 # =========================================================
 
 def is_long_combined(row):
@@ -3006,8 +3000,6 @@ def is_long_combined(row):
 
 # =========================================================
 # ★ 숏 통합 후보
-#
-# 숏 돌파 또는 ROC 3+ 숏 진행중이면 표시
 # =========================================================
 
 def is_short_combined(row):
@@ -3019,6 +3011,132 @@ def is_short_combined(row):
         is_short_breakout(row)
         or is_roc3_short_progress(row)
     )
+
+
+# =========================================================
+# ★ 롱 진행 카운팅
+#
+# 돌파:
+# ⓪ = 0
+# ① = 1
+# ② = 2
+#
+# 진행:
+# 3, 4, 5, ...
+# =========================================================
+
+def get_long_progress_count(row):
+
+    if not row:
+        return 0
+
+    r = row.get(
+        "roc",
+        {}
+    )
+
+    # -----------------------------------------------------
+    # ROC 3+ 진행중
+    # -----------------------------------------------------
+
+    if is_roc3_progress(row):
+
+        try:
+
+            return int(
+                r.get(
+                    "roc10_count",
+                    0
+                )
+            )
+
+        except Exception:
+
+            return 0
+
+    # -----------------------------------------------------
+    # 롱 돌파
+    # -----------------------------------------------------
+
+    if is_breakout(row):
+
+        try:
+
+            return int(
+                r.get(
+                    "long_breakout_count",
+                    0
+                )
+            )
+
+        except Exception:
+
+            return 0
+
+    return 0
+
+
+# =========================================================
+# ★ 숏 진행 카운팅
+#
+# 돌파:
+# ⓪ = 0
+# ① = 1
+# ② = 2
+#
+# 진행:
+# 3, 4, 5, ...
+# =========================================================
+
+def get_short_progress_count(row):
+
+    if not row:
+        return 0
+
+    r = row.get(
+        "roc",
+        {}
+    )
+
+    # -----------------------------------------------------
+    # ROC 3+ 진행중
+    # -----------------------------------------------------
+
+    if is_roc3_short_progress(row):
+
+        try:
+
+            return int(
+                r.get(
+                    "roc10_negative_count",
+                    0
+                )
+            )
+
+        except Exception:
+
+            return 0
+
+    # -----------------------------------------------------
+    # 숏 돌파
+    # -----------------------------------------------------
+
+    if is_short_breakout(row):
+
+        try:
+
+            return int(
+                r.get(
+                    "short_breakout_count",
+                    0
+                )
+            )
+
+        except Exception:
+
+            return 0
+
+    return 0
 
 
 # =========================================================
@@ -3419,10 +3537,6 @@ def market_roc_html(r):
             '</span>'
         )
 
-    # -----------------------------------------------------
-    # 롱 돌파
-    # -----------------------------------------------------
-
     state = r.get(
         "long_breakout_state",
         "none"
@@ -3453,10 +3567,6 @@ def market_roc_html(r):
             f'🚀{count_icon(long_count)}'
             '</span>'
         )
-
-    # -----------------------------------------------------
-    # 숏 돌파
-    # -----------------------------------------------------
 
     state = r.get(
         "short_breakout_state",
@@ -3489,10 +3599,6 @@ def market_roc_html(r):
             '</span>'
         )
 
-    # -----------------------------------------------------
-    # 롱 진행
-    # -----------------------------------------------------
-
     if value > 0:
 
         count = int(
@@ -3509,10 +3615,6 @@ def market_roc_html(r):
                 f'🟢 상승 {count}'
                 '</span>'
             )
-
-    # -----------------------------------------------------
-    # 숏 진행
-    # -----------------------------------------------------
 
     if value < 0:
 
@@ -4165,10 +4267,6 @@ def roc_html(r):
 
         """
 
-    # =====================================================
-    # 그 외
-    # =====================================================
-
     return """
 
     <div class="roc-cell">
@@ -4618,7 +4716,11 @@ def table_html(
 
 
 # =========================================================
-# 후보 섹션
+# ★ 후보 섹션
+#
+# 통합 롱/숏:
+# 1. 카운팅 높은 순
+# 2. 카운팅 같으면 시작시간 최신순
 # =========================================================
 
 def focus_section(
@@ -4642,7 +4744,111 @@ def focus_section(
 
     ]
 
-    if sort_key:
+    # =====================================================
+    # ★ 롱 통합
+    # =====================================================
+
+    if focus == "long_combined":
+
+        def long_sort_key(x):
+
+            count = get_long_progress_count(
+                x
+            )
+
+            start_time = (
+                x.get(
+                    "roc",
+                    {}
+                ).get(
+                    "roc_progress_start_time"
+                )
+            )
+
+            if start_time is None:
+
+                timestamp = pd.Timestamp.min
+
+            else:
+
+                try:
+
+                    timestamp = pd.Timestamp(
+                        start_time
+                    )
+
+                except Exception:
+
+                    timestamp = pd.Timestamp.min
+
+            # ★ 첫 번째 기준: 카운팅 높은 순
+            # ★ 두 번째 기준: 시작시간 최신순
+
+            return (
+                count,
+                timestamp
+            )
+
+        rows.sort(
+            key=long_sort_key,
+            reverse=True
+        )
+
+    # =====================================================
+    # ★ 숏 통합
+    # =====================================================
+
+    elif focus == "short_combined":
+
+        def short_sort_key(x):
+
+            count = get_short_progress_count(
+                x
+            )
+
+            start_time = (
+                x.get(
+                    "roc",
+                    {}
+                ).get(
+                    "roc_negative_progress_start_time"
+                )
+            )
+
+            if start_time is None:
+
+                timestamp = pd.Timestamp.min
+
+            else:
+
+                try:
+
+                    timestamp = pd.Timestamp(
+                        start_time
+                    )
+
+                except Exception:
+
+                    timestamp = pd.Timestamp.min
+
+            # ★ 첫 번째 기준: 카운팅 높은 순
+            # ★ 두 번째 기준: 시작시간 최신순
+
+            return (
+                count,
+                timestamp
+            )
+
+        rows.sort(
+            key=short_sort_key,
+            reverse=True
+        )
+
+    # =====================================================
+    # 기존 방식
+    # =====================================================
+
+    elif sort_key:
 
         def get_sort_value(x):
 
@@ -5533,7 +5739,8 @@ def dashboard():
     # ① 🚀 롱 진행 통합
     #
     # 롱 돌파 + ROC 3+ 롱 진행중
-    # 하나의 대시보드 섹션으로 표시
+    #
+    # ★ 카운팅 높은 순으로 정렬
     # =====================================================
 
     if USE_UPBIT == "Y":
@@ -5570,7 +5777,8 @@ def dashboard():
     # ② 🔻 숏 진행 통합
     #
     # 숏 돌파 + ROC 3+ 숏 진행중
-    # 하나의 대시보드 섹션으로 표시
+    #
+    # ★ 카운팅 높은 순으로 정렬
     # =====================================================
 
     if USE_UPBIT == "Y":
@@ -5964,15 +6172,15 @@ def startup():
     )
 
     log.info(
-        "ROC 진행 리스트 정렬:"
+        "★ 롱 진행 정렬: ROC 카운팅 높은 순"
     )
 
     log.info(
-        "양수 진행 시작시간 최신순"
+        "★ 숏 진행 정렬: ROC 카운팅 높은 순"
     )
 
     log.info(
-        "음수 진행 시작시간 최신순"
+        "★ 카운팅 동일 시 진행 시작시간 최신순"
     )
 
     log.info(
@@ -6039,6 +6247,10 @@ def startup():
 
     log.info(
         "★ 숏 돌파 + 숏 진행중 → 🔻 숏 진행 하나로 통합"
+    )
+
+    log.info(
+        "★ 통합 섹션은 카운팅 높은 순으로 표시"
     )
 
     log.info(
