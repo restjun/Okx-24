@@ -95,7 +95,7 @@ EMA1_MAX_COUNT = 200
 ROC_PERIOD = 5
 
 # 0선 돌파 후
-# 0 / 1 / 2 단계까지만 돌파 표시
+# 0 / 1 / 2 단계까지 돌파 표시
 BREAKOUT_MAX_COUNT = 2
 
 # 3개부터 진행중 표시
@@ -2985,6 +2985,14 @@ def is_roc3_short_progress(row):
 
 # =========================================================
 # ★ 롱 통합 후보
+#
+# 롱 돌파:
+# ⓪ / ①만 표시
+#
+# 롱 진행:
+# ROC 3개 이상
+#
+# ★ 롱 ②는 🚀 롱 진행에서 제외
 # =========================================================
 
 def is_long_combined(row):
@@ -2992,14 +3000,52 @@ def is_long_combined(row):
     if not row:
         return False
 
-    return (
-        is_breakout(row)
-        or is_roc3_progress(row)
-    )
+    # -----------------------------------------------------
+    # 롱 돌파
+    # ⓪ / ①까지만 표시
+    # -----------------------------------------------------
+
+    if is_breakout(row):
+
+        try:
+
+            count = int(
+                row.get(
+                    "roc",
+                    {}
+                ).get(
+                    "long_breakout_count",
+                    0
+                )
+            )
+
+            if count <= 1:
+
+                return True
+
+        except Exception:
+
+            return False
+
+    # -----------------------------------------------------
+    # ROC 3개 이상 롱 진행
+    # -----------------------------------------------------
+
+    if is_roc3_progress(row):
+
+        return True
+
+    return False
 
 
 # =========================================================
 # ★ 숏 통합 후보
+#
+# 숏 돌파:
+# ⓪ / ① / ②
+#
+# 숏 진행:
+# ROC 3개 이상
 # =========================================================
 
 def is_short_combined(row):
@@ -5740,6 +5786,7 @@ def dashboard():
     #
     # 롱 돌파 + ROC 3+ 롱 진행중
     #
+    # ★ 롱 돌파는 ⓪ / ①까지만 표시
     # ★ 카운팅 높은 순으로 정렬
     # =====================================================
 
@@ -5763,7 +5810,7 @@ def dashboard():
                 f"{format_timeframe(EMA_HIGH_TIMEFRAME)} "
                 f"{get_ema_period_text_long()} · "
                 f"{get_roc_text()} "
-                f"음수→양수 ⓪①② "
+                f"음수→양수 ⓪① "
                 f"→ 양수 {ROC_PROGRESS_MIN_COUNT}+"
             ),
 
@@ -5778,6 +5825,7 @@ def dashboard():
     #
     # 숏 돌파 + ROC 3+ 숏 진행중
     #
+    # ★ 숏 돌파는 ⓪ / ① / ②
     # ★ 카운팅 높은 순으로 정렬
     # =====================================================
 
@@ -5835,7 +5883,7 @@ def dashboard():
                 f"{format_timeframe(EMA_HIGH_TIMEFRAME)} "
                 f"{get_ema_period_text_long()} · "
                 f"{get_roc_text()} "
-                f"음수→양수 ⓪①② "
+                f"음수→양수 ⓪① "
                 f"→ 양수 {ROC_PROGRESS_MIN_COUNT}+"
             ),
 
@@ -6184,6 +6232,14 @@ def startup():
     )
 
     log.info(
+        "★ 롱 진행 통합에서는 ⓪ / ①만 표시"
+    )
+
+    log.info(
+        "★ 숏 진행 통합에서는 ⓪ / ① / ② 표시"
+    )
+
+    log.info(
         "OKX bar="
         f"{get_okx_bar(EMA_TIMEFRAME)}"
     )
@@ -6251,6 +6307,14 @@ def startup():
 
     log.info(
         "★ 통합 섹션은 카운팅 높은 순으로 표시"
+    )
+
+    log.info(
+        "★ 롱 통합 섹션의 돌파는 ⓪ / ①만 표시"
+    )
+
+    log.info(
+        "★ 숏 통합 섹션의 돌파는 ⓪ / ① / ② 표시"
     )
 
     log.info(
