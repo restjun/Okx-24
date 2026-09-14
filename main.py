@@ -126,9 +126,9 @@ EMA1_MAX_COUNT = 200
 
 RSI_PERIOD = 14
 
-RSI_LONG_LEVEL = 69
+RSI_LONG_LEVEL = 70
 
-RSI_SHORT_LEVEL = 31
+RSI_SHORT_LEVEL = 30
 
 
 # =========================================================
