@@ -99,7 +99,7 @@ ROC_PERIOD = 5
 BREAKOUT_MAX_COUNT = 2
 
 # 진행중 시작 기준
-ROC_PROGRESS_MIN_COUNT = 0
+ROC_PROGRESS_MIN_COUNT = 3
 
 
 # =========================================================
@@ -112,8 +112,8 @@ ROC_PROGRESS_MIN_COUNT = 0
 # 롱 / 숏을 각각 따로 설정 가능
 # =========================================================
 
-LONG_PROGRESS_BREAKOUT_MAX_COUNT = 1
-SHORT_PROGRESS_BREAKOUT_MAX_COUNT = 1
+LONG_PROGRESS_BREAKOUT_MAX_COUNT = 0
+SHORT_PROGRESS_BREAKOUT_MAX_COUNT = 0
 
 
 SUPPORTED_UPBIT_TIMEFRAMES = {
