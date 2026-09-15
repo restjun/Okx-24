@@ -56,17 +56,11 @@ KST = ZoneInfo("Asia/Seoul")
 
 # =========================================================
 # 업비트 호가 설정
-#
-# 현재가 기준 ±10%
-# 업비트 최대 30호가 사용
-#
-# ※ 참고용이며 EMA/ROC 신호에는 사용하지 않음
 # =========================================================
 
 ORDERBOOK_RANGE = 0.10
 ORDERBOOK_COUNT = 30
 
-# 매수/매도 비중 차이가 이 값 이상이면 우세 표시
 ORDERBOOK_DOMINANCE_GAP = 5.0
 
 
@@ -83,9 +77,6 @@ USE_EMA_HIGH_TIMEFRAME = "Y"
 
 # =========================================================
 # EMA 설정
-#
-# Y = 해당 EMA 사용
-# N = 해당 EMA 사용 안 함
 # =========================================================
 
 EMA1_FASTEST = 10
@@ -101,11 +92,6 @@ EMA_USE_120 = "Y"
 
 # =========================================================
 # EMA 카운트 제한
-#
-# 1H EMA에만 적용
-#
-# 1H 200개 = 200시간 = 약 8.33일
-# 4H는 카운트 제한 없음
 # =========================================================
 
 EMA1_MAX_COUNT = 200
@@ -120,10 +106,6 @@ ROC_PERIOD = 5
 
 # =========================================================
 # ROC 상승 돌파 카운트 표시 설정
-#
-# 0 = 현재 돌파봉
-# 1 = 돌파 후 1번째 확정봉
-# 2 = 돌파 후 2번째 확정봉
 # =========================================================
 
 LONG_ROC_COUNT_0 = "Y"
@@ -156,6 +138,7 @@ latest_upbit_data = []
 latest_okx_data = []
 
 latest_usdt_krw = 0
+latest_usdt_krw_change = None
 
 latest_upbit_update_time = "-"
 latest_okx_update_time = "-"
@@ -382,15 +365,13 @@ def validate_timeframe():
     if EMA_HIGH_TIMEFRAME not in SUPPORTED_UPBIT_TIMEFRAMES:
 
         raise ValueError(
-            f"EMA_HIGH_TIMEFRAME 오류: "
-            f"{EMA_HIGH_TIMEFRAME}"
+            f"EMA_HIGH_TIMEFRAME 오류: {EMA_HIGH_TIMEFRAME}"
         )
 
     if get_okx_bar(EMA_TIMEFRAME) is None:
 
         raise ValueError(
-            f"OKX에서 지원하지 않는 시간봉: "
-            f"{EMA_TIMEFRAME}"
+            f"OKX에서 지원하지 않는 시간봉: {EMA_TIMEFRAME}"
         )
 
     if get_okx_bar(EMA_HIGH_TIMEFRAME) is None:
@@ -696,6 +677,10 @@ def get_upbit_markets():
         return []
 
 
+# =========================================================
+# USDT/KRW 현재가
+# =========================================================
+
 def get_usdt_krw():
 
     r = retry(
@@ -709,21 +694,138 @@ def get_usdt_krw():
 
     try:
 
+        data = r.json()
+
+        if not data:
+            return None
+
         price = float(
-            r.json()[0]["trade_price"]
+            data[0]["trade_price"]
         )
 
         return price if price > 0 else None
 
-    except Exception:
+    except Exception as e:
+
+        log.error(
+            f"USDT/KRW 현재가 오류: {e}"
+        )
 
         return None
 
 
 # =========================================================
-# 업비트 호가 조회
+# ★ USDT/KRW 당일 변동률
 #
-# TOP30을 최대 30개까지 한 번에 조회
+# 업비트 일봉 기준
+# 09:00 KST 시작
+#
+# 현재가 vs 당일 시가
+#
+# 음수 → 시장 자금 유입 참고 → ☀️
+# 양수 → 시장 자금 이탈 참고 → 🌧️
+# =========================================================
+
+def get_usdt_krw_daily_change():
+
+    r = retry(
+        requests.get,
+        "https://api.upbit.com/v1/candles/days",
+        params={
+            "market": "KRW-USDT",
+            "count": 1
+        },
+        timeout=15
+    )
+
+    if r is None:
+        return None
+
+    try:
+
+        data = r.json()
+
+        if not data:
+            return None
+
+        current = float(
+            data[0]["trade_price"]
+        )
+
+        opening = float(
+            data[0]["opening_price"]
+        )
+
+        if opening <= 0:
+            return None
+
+        change = (
+            (current - opening)
+            / opening
+            * 100
+        )
+
+        return float(change)
+
+    except Exception as e:
+
+        log.error(
+            f"USDT/KRW 당일 변동률 오류: {e}"
+        )
+
+        return None
+
+
+# =========================================================
+# ★ USDT/KRW 시장 방향 HTML
+#
+# 핵심:
+# USDT/KRW 음수 → ☀️
+# USDT/KRW 양수 → 🌧️
+# =========================================================
+
+def usdt_market_state(change):
+
+    if change is None:
+
+        return {
+            "icon": "⚪",
+            "class": "wait"
+        }
+
+    try:
+
+        change = float(change)
+
+    except Exception:
+
+        return {
+            "icon": "⚪",
+            "class": "wait"
+        }
+
+    if change < 0:
+
+        return {
+            "icon": "☀️",
+            "class": "up"
+        }
+
+    if change > 0:
+
+        return {
+            "icon": "🌧️",
+            "class": "down"
+        }
+
+    return {
+        "icon": "⚪",
+        "class": "wait"
+    }
+
+
+# =========================================================
+# 업비트 호가 조회
 # =========================================================
 
 def get_upbit_orderbooks(markets):
@@ -799,19 +901,6 @@ def get_upbit_orderbooks(markets):
 
 # =========================================================
 # 업비트 호가 대기금액 계산
-#
-# 현재가 기준 ±10%
-#
-# 매수:
-# 현재가의 90% ~ 현재가
-#
-# 매도:
-# 현재가 ~ 현재가의 110%
-#
-# 금액:
-# 가격 × 수량
-#
-# ※ 업비트 API가 제공하는 최대 30호가 기준
 # =========================================================
 
 def calculate_orderbook_amount(
@@ -855,11 +944,6 @@ def calculate_orderbook_amount(
     if current_price <= 0:
         return result
 
-
-    # =====================================================
-    # 가격 범위
-    # =====================================================
-
     lower_price = (
         current_price
         * (1.0 - ORDERBOOK_RANGE)
@@ -873,7 +957,6 @@ def calculate_orderbook_amount(
     result["lower_price"] = lower_price
     result["upper_price"] = upper_price
 
-
     units = orderbook.get(
         "orderbook_units",
         []
@@ -886,17 +969,11 @@ def calculate_orderbook_amount(
 
         return result
 
-
     bid_amount = 0.0
     ask_amount = 0.0
 
     bid_count = 0
     ask_count = 0
-
-
-    # =====================================================
-    # 호가 계산
-    # =====================================================
 
     for unit in units:
 
@@ -934,12 +1011,6 @@ def calculate_orderbook_amount(
 
             continue
 
-
-        # =================================================
-        # 매수 대기
-        # 현재가 이하
-        # =================================================
-
         if (
             lower_price
             <= bid_price
@@ -953,12 +1024,6 @@ def calculate_orderbook_amount(
             )
 
             bid_count += 1
-
-
-        # =================================================
-        # 매도 대기
-        # 현재가 이상
-        # =================================================
 
         if (
             current_price
@@ -974,16 +1039,10 @@ def calculate_orderbook_amount(
 
             ask_count += 1
 
-
     total_amount = (
         bid_amount
         + ask_amount
     )
-
-
-    # =====================================================
-    # 비중
-    # =====================================================
 
     if total_amount > 0:
 
@@ -1004,18 +1063,10 @@ def calculate_orderbook_amount(
         bid_ratio = 0.0
         ask_ratio = 0.0
 
-
-    # =====================================================
-    # 매수/매도 우세
-    #
-    # 기본값 5%p 차이
-    # =====================================================
-
     difference = (
         bid_ratio
         - ask_ratio
     )
-
 
     if (
         total_amount > 0
@@ -1026,7 +1077,6 @@ def calculate_orderbook_amount(
         dominance = "bid"
         dominance_text = "매수 우세"
 
-
     elif (
         total_amount > 0
         and difference
@@ -1036,12 +1086,10 @@ def calculate_orderbook_amount(
         dominance = "ask"
         dominance_text = "매도 우세"
 
-
     else:
 
         dominance = "balanced"
         dominance_text = "균형"
-
 
     result.update({
 
@@ -1073,16 +1121,11 @@ def calculate_orderbook_amount(
             dominance_text
     })
 
-
     return result
 
 
 # =========================================================
 # 호가 시각화 HTML
-#
-# ★ 변경:
-# 매도대기 → 위
-# 매수대기 → 아래
 # =========================================================
 
 def orderbook_html(row):
@@ -1094,7 +1137,6 @@ def orderbook_html(row):
             '호가 정보 없음'
             '</div>'
         )
-
 
     try:
 
@@ -1134,7 +1176,6 @@ def orderbook_html(row):
             '</div>'
         )
 
-
     if (
         bid_amount <= 0
         and ask_amount <= 0
@@ -1145,11 +1186,6 @@ def orderbook_html(row):
             '호가 정보 없음'
             '</div>'
         )
-
-
-    # =====================================================
-    # 비율 안전 처리
-    # =====================================================
 
     bid_ratio = max(
         0.0,
@@ -1167,16 +1203,10 @@ def orderbook_html(row):
         )
     )
 
-
-    # =====================================================
-    # 우세
-    # =====================================================
-
     dominance = row.get(
         "orderbook_dominance",
         "balanced"
     )
-
 
     if dominance == "bid":
 
@@ -1202,14 +1232,8 @@ def orderbook_html(row):
             '</span>'
         )
 
-
     return f"""
     <div class="orderbook-wrap">
-
-        <!-- =============================================
-             ★ 매도대기
-             위쪽 표시
-             ============================================= -->
 
         <div class="orderbook-row">
 
@@ -1236,12 +1260,6 @@ def orderbook_html(row):
 
         </div>
 
-
-        <!-- =============================================
-             ★ 매수대기
-             아래쪽 표시
-             ============================================= -->
-
         <div class="orderbook-row">
 
             <span class="orderbook-label bid-label">
@@ -1267,11 +1285,6 @@ def orderbook_html(row):
 
         </div>
 
-
-        <!-- =============================================
-             호가 범위 / 우세
-             ============================================= -->
-
         <div class="orderbook-bottom">
 
             <span class="orderbook-range">
@@ -1287,7 +1300,7 @@ def orderbook_html(row):
 
 
 # =========================================================
-# Upbit 캔들
+# 업비트 캔들
 # =========================================================
 
 def get_upbit_candle(
@@ -3132,11 +3145,6 @@ def make_row(
         "direction":
             a["direction_1h"],
 
-
-        # =================================================
-        # 호가
-        # =================================================
-
         "bid_amount":
             float(
                 ob.get(
@@ -3437,55 +3445,35 @@ def update_upbit():
         f"========== 업비트 TOP{TOP_N} =========="
     )
 
-
     markets = sorted(
         get_upbit_markets(),
         key=lambda x: x["volume_24h"],
         reverse=True
     )
 
-
-    # =====================================================
-    # TOP_N
-    # =====================================================
-
     top_markets = markets[
         :TOP_N
     ]
-
 
     market_codes = [
         x["market"]
         for x in top_markets
     ]
 
-
-    # =====================================================
-    # 호가 조회
-    # =====================================================
-
     orderbooks = get_upbit_orderbooks(
         market_codes
     )
 
-
     latest_upbit_orderbook = (
         orderbooks.copy()
     )
-
 
     log.info(
         f"업비트 호가 조회 "
         f"{len(orderbooks)}/{len(market_codes)}개"
     )
 
-
     rows = []
-
-
-    # =====================================================
-    # 분석
-    # =====================================================
 
     for rank, item in enumerate(
         top_markets,
@@ -3503,7 +3491,6 @@ def update_upbit():
             "current_price"
         ]
 
-
         try:
 
             a = analyze(
@@ -3520,16 +3507,10 @@ def update_upbit():
 
             a = None
 
-
-        # =================================================
-        # 호가 계산
-        # =================================================
-
         ob = calculate_orderbook_amount(
             orderbooks.get(market),
             price
         )
-
 
         rows.append(
             make_row(
@@ -3542,11 +3523,6 @@ def update_upbit():
             )
         )
 
-
-        # =================================================
-        # 호가 로그
-        # =================================================
-
         log.info(
             f"[호가] "
             f"{coin} | "
@@ -3557,24 +3533,19 @@ def update_upbit():
             f"{ob['dominance_text']}"
         )
 
-
     latest_upbit_data = rows
-
 
     breadth = top_roc_breadth(
         latest_upbit_data
     )
 
-
     latest_upbit_update_time = kst()
-
 
     log.info(
         f"업비트 완료 / "
         f"상승 "
         f"{sum(is_long_combined(x) for x in rows)}개"
     )
-
 
     log.info(
         f"TOP{TOP_N} ROC 시장폭 / "
@@ -3729,6 +3700,7 @@ def update_okx(usdt):
 def update_dashboard():
 
     global latest_usdt_krw
+    global latest_usdt_krw_change
     global latest_upbit_data
     global latest_okx_data
 
@@ -3741,6 +3713,45 @@ def update_dashboard():
         return
 
     try:
+
+        # =================================================
+        # ★ USDT/KRW는 OKX 사용 여부와 관계없이 조회
+        # =================================================
+
+        try:
+
+            usdt = get_usdt_krw()
+
+            if usdt is not None:
+
+                latest_usdt_krw = usdt
+
+            else:
+
+                usdt = latest_usdt_krw
+
+            usdt_change = (
+                get_usdt_krw_daily_change()
+            )
+
+            if usdt_change is not None:
+
+                latest_usdt_krw_change = (
+                    usdt_change
+                )
+
+        except Exception as e:
+
+            log.exception(
+                f"USDT/KRW 업데이트 오류: {e}"
+            )
+
+            usdt = latest_usdt_krw
+
+
+        # =================================================
+        # 업비트
+        # =================================================
 
         if USE_UPBIT == "Y":
 
@@ -3759,20 +3770,19 @@ def update_dashboard():
             latest_upbit_data = []
 
 
+        # =================================================
+        # OKX
+        # =================================================
+
         if USE_OKX == "Y":
 
             try:
 
-                usdt = get_usdt_krw()
+                if usdt and usdt > 0:
 
-                if usdt:
-                    latest_usdt_krw = usdt
-
-                else:
-                    usdt = latest_usdt_krw
-
-                if usdt > 0:
-                    update_okx(usdt)
+                    update_okx(
+                        usdt
+                    )
 
             except Exception as e:
 
@@ -3969,213 +3979,90 @@ def get_market_row(coin):
 
 
 # =========================================================
-# BTC 시장 시황
+# ★ BTC 시장 시황
+#
+# 하단 3칸
+#
+# 1번 : USDT/KRW
+#       음수 → ☀️
+#       양수 → 🌧️
+#
+# 2번 : BTC ROC5
+#
+# 3번 : TOP30 ROC5 시장폭
+#
+# BTC 1H/4H EMA는 이곳에서 제거
 # =========================================================
 
 def market_summary_html():
 
     btc = get_market_row("BTC")
 
+    # =====================================================
+    # USDT 상태
+    # =====================================================
+
+    usdt_state = usdt_market_state(
+        latest_usdt_krw_change
+    )
+
+    usdt_icon = usdt_state[
+        "icon"
+    ]
+
+    usdt_class = usdt_state[
+        "class"
+    ]
+
+
+    if latest_usdt_krw_change is None:
+
+        usdt_change_display = "-"
+
+    else:
+
+        try:
+
+            change = float(
+                latest_usdt_krw_change
+            )
+
+            if change > 0:
+
+                usdt_change_display = (
+                    f"▲+{change:.2f}%"
+                )
+
+            elif change < 0:
+
+                usdt_change_display = (
+                    f"▼{change:.2f}%"
+                )
+
+            else:
+
+                usdt_change_display = "0.00%"
+
+        except Exception:
+
+            usdt_change_display = "-"
+
+
+    usdt_price_display = (
+        format_market_price(
+            latest_usdt_krw
+        )
+        if latest_usdt_krw
+        and latest_usdt_krw > 0
+        else "-"
+    )
+
+
+    # =====================================================
+    # BTC 데이터
+    # =====================================================
+
     if btc is None:
-
-        breadth = top_roc_breadth(
-            latest_upbit_data
-        )
-
-        breadth_icon = breadth.get(
-            "icon",
-            "⚪"
-        )
-
-        breadth_positive = breadth.get(
-            "positive",
-            0
-        )
-
-        breadth_total = breadth.get(
-            "total",
-            0
-        )
-
-        breadth_display = (
-            f"{breadth_positive}/{breadth_total}"
-            if breadth_total > 0
-            else "-"
-        )
-
-        return f"""
-        <div class="market-summary">
-
-            <div class="market-title">
-
-                <span class="market-title-main">
-                    ₿ BTC 시장 시황
-                </span>
-
-                <span class="market-title-sub">
-                    {get_roc_text()} 기준
-                </span>
-
-            </div>
-
-            <div class="btc-mobile">
-
-                <div class="btc-top">
-
-                    <span class="btc-name">
-                        ₿ BTC
-                    </span>
-
-                    <span class="btc-price">
-                        -
-                    </span>
-
-                    <span class="btc-change">
-                        -
-                    </span>
-
-                </div>
-
-                <div class="btc-bottom">
-
-                    <div class="btc-ema-box">
-
-                        <div class="btc-ema-half">
-
-                            <div class="btc-ema-icon">
-                                ⚪
-                            </div>
-
-                            <div class="btc-ema-text">
-
-                                <div class="btc-ema-title">
-                                    {format_timeframe(
-                                        EMA_TIMEFRAME
-                                    )}
-                                </div>
-
-                                <div class="btc-ema-sub">
-                                    {get_ema_period_text_long()}
-                                </div>
-
-                            </div>
-
-                        </div>
-
-                        <div class="btc-ema-half">
-
-                            <div class="btc-ema-icon">
-                                ⚪
-                            </div>
-
-                            <div class="btc-ema-text">
-
-                                <div class="btc-ema-title">
-                                    {format_timeframe(
-                                        EMA_HIGH_TIMEFRAME
-                                    )}
-                                </div>
-
-                                <div class="btc-ema-sub">
-                                    {get_ema_period_text_long()}
-                                </div>
-
-                            </div>
-
-                        </div>
-
-                    </div>
-
-                    <div class="btc-info-box wait">
-
-                        <div class="btc-info-title">
-                            {get_roc_text()}
-                        </div>
-
-                        <div class="btc-info-value">
-                            ⚪
-                        </div>
-
-                        <div class="btc-info-sub">
-                            BTC 기준
-                        </div>
-
-                    </div>
-
-                    <div class="btc-info-box wait">
-
-                        <div class="btc-info-title">
-                            TOP{TOP_N} {get_roc_text()}
-                        </div>
-
-                        <div class="btc-info-value">
-                            {breadth_icon}
-                        </div>
-
-                        <div class="btc-info-sub">
-                            {breadth_display}
-                        </div>
-
-                    </div>
-
-                </div>
-
-            </div>
-
-        </div>
-        """
-
-
-    ema_1 = btc.get(
-        "ema_1h",
-        {}
-    )
-
-    ema_high = btc.get(
-        "ema_high",
-        {}
-    )
-
-    roc_data = btc.get(
-        "roc",
-        {}
-    )
-
-    ema_1_direction = ema_1.get(
-        "direction",
-        "none"
-    )
-
-    ema_high_direction = ema_high.get(
-        "direction",
-        "none"
-    )
-
-
-    def ema_market_icon(direction):
-
-        if direction == "long":
-            return "☀️"
-
-        if direction == "short":
-            return "🌧️"
-
-        return "⚪"
-
-
-    ema_1_icon = ema_market_icon(
-        ema_1_direction
-    )
-
-    ema_high_icon = ema_market_icon(
-        ema_high_direction
-    )
-
-    roc_value = roc_data.get(
-        "roc10"
-    )
-
-    if roc_value is None:
 
         roc_icon = "⚪"
         roc_display = "-"
@@ -4183,44 +4070,65 @@ def market_summary_html():
 
     else:
 
-        try:
+        roc_data = btc.get(
+            "roc",
+            {}
+        )
 
-            roc_value = float(
-                roc_value
-            )
+        roc_value = roc_data.get(
+            "roc10"
+        )
 
-            if roc_value > 0:
-
-                roc_icon = "☀️"
-
-                roc_display = (
-                    f"+{roc_value:.2f}%"
-                )
-
-                btc_roc_class = "up"
-
-            elif roc_value < 0:
-
-                roc_icon = "🌧️"
-
-                roc_display = (
-                    f"{roc_value:.2f}%"
-                )
-
-                btc_roc_class = "down"
-
-            else:
-
-                roc_icon = "⚪"
-                roc_display = "0.00%"
-                btc_roc_class = "wait"
-
-        except Exception:
+        if roc_value is None:
 
             roc_icon = "⚪"
             roc_display = "-"
             btc_roc_class = "wait"
 
+        else:
+
+            try:
+
+                roc_value = float(
+                    roc_value
+                )
+
+                if roc_value > 0:
+
+                    roc_icon = "☀️"
+
+                    roc_display = (
+                        f"+{roc_value:.2f}%"
+                    )
+
+                    btc_roc_class = "up"
+
+                elif roc_value < 0:
+
+                    roc_icon = "🌧️"
+
+                    roc_display = (
+                        f"{roc_value:.2f}%"
+                    )
+
+                    btc_roc_class = "down"
+
+                else:
+
+                    roc_icon = "⚪"
+                    roc_display = "0.00%"
+                    btc_roc_class = "wait"
+
+            except Exception:
+
+                roc_icon = "⚪"
+                roc_display = "-"
+                btc_roc_class = "wait"
+
+
+    # =====================================================
+    # TOP ROC 시장폭
+    # =====================================================
 
     breadth = top_roc_breadth(
         latest_upbit_data
@@ -4265,6 +4173,30 @@ def market_summary_html():
         breadth_class = "wait"
 
 
+    # =====================================================
+    # BTC 상단
+    # =====================================================
+
+    if btc is None:
+
+        btc_price_display = "-"
+        btc_change_display = "-"
+
+    else:
+
+        btc_price_display = (
+            format_market_price(
+                btc.get("current_price")
+            )
+        )
+
+        btc_change_display = (
+            market_change_html(
+                btc.get("change_value")
+            )
+        )
+
+
     return f"""
 
     <div class="market-summary">
@@ -4276,7 +4208,7 @@ def market_summary_html():
             </span>
 
             <span class="market-title-sub">
-                {get_roc_text()} 기준
+                {get_roc_text()} 기준 · USDT/KRW 참고
             </span>
 
         </div>
@@ -4290,68 +4222,52 @@ def market_summary_html():
                 </span>
 
                 <span class="btc-price">
-                    {format_market_price(
-                        btc.get("current_price")
-                    )}
+                    {btc_price_display}
                 </span>
 
                 <span class="btc-change">
-                    {market_change_html(
-                        btc.get("change_value")
-                    )}
+                    {btc_change_display}
                 </span>
 
             </div>
 
             <div class="btc-bottom">
 
-                <div class="btc-ema-box">
+                <!-- =====================================
+                     1번
+                     USDT/KRW
+                     ===================================== -->
 
-                    <div class="btc-ema-half">
+                <div
+                    class="
+                        btc-info-box
+                        {usdt_class}
+                    "
+                >
 
-                        <div class="btc-ema-icon">
-                            {ema_1_icon}
-                        </div>
-
-                        <div class="btc-ema-text">
-
-                            <div class="btc-ema-title">
-                                {format_timeframe(
-                                    EMA_TIMEFRAME
-                                )}
-                            </div>
-
-                            <div class="btc-ema-sub">
-                                {get_ema_period_text_long()}
-                            </div>
-
-                        </div>
-
+                    <div class="btc-info-title">
+                        USDT/KRW · 당일
                     </div>
 
-                    <div class="btc-ema-half">
+                    <div class="btc-info-value">
+                        {usdt_icon}
+                    </div>
 
-                        <div class="btc-ema-icon">
-                            {ema_high_icon}
-                        </div>
+                    <div class="btc-info-sub">
 
-                        <div class="btc-ema-text">
-
-                            <div class="btc-ema-title">
-                                {format_timeframe(
-                                    EMA_HIGH_TIMEFRAME
-                                )}
-                            </div>
-
-                            <div class="btc-ema-sub">
-                                {get_ema_period_text_long()}
-                            </div>
-
-                        </div>
+                        {usdt_price_display}
+                        ·
+                        {usdt_change_display}
 
                     </div>
 
                 </div>
+
+
+                <!-- =====================================
+                     2번
+                     BTC ROC5
+                     ===================================== -->
 
                 <div
                     class="
@@ -4373,6 +4289,12 @@ def market_summary_html():
                     </div>
 
                 </div>
+
+
+                <!-- =====================================
+                     3번
+                     TOP30 ROC5
+                     ===================================== -->
 
                 <div
                     class="
@@ -4606,9 +4528,6 @@ def row_class(x):
 
 # =========================================================
 # 행 HTML
-#
-# 코인 바로 아래에
-# 매도 → 매수 호가 막대 표시
 # =========================================================
 
 def rows_html(
@@ -4631,11 +4550,6 @@ def rows_html(
         else:
 
             cls = row_class(x)
-
-
-        # =================================================
-        # 코인 기본 행
-        # =================================================
 
         out.append(
             f"""
@@ -4711,12 +4625,6 @@ def rows_html(
                 </td>
 
             </tr>
-
-
-            <!-- =========================================
-                 호가 대기물량 시각화
-                 매도 위 / 매수 아래
-                 ========================================= -->
 
             <tr class="orderbook-subrow">
 
@@ -5086,93 +4994,7 @@ h1{
 
 
 /* =========================================================
-   1번 EMA 카드
-   ========================================================= */
-
-.btc-ema-box{
-    min-width:0;
-    min-height:70px;
-
-    display:grid;
-
-    grid-template-rows:
-        1fr
-        1fr;
-
-    border:1px solid #292f36;
-
-    border-radius:6px;
-
-    background:#14181d;
-
-    overflow:hidden;
-}
-
-.btc-ema-half{
-    min-width:0;
-
-    display:grid;
-
-    grid-template-columns:
-        34px
-        1fr;
-
-    align-items:center;
-
-    padding:3px 5px;
-}
-
-.btc-ema-half + .btc-ema-half{
-    border-top:1px solid #292f36;
-}
-
-.btc-ema-icon{
-    display:flex;
-
-    align-items:center;
-    justify-content:center;
-
-    width:100%;
-
-    font-size:24px;
-    line-height:26px;
-
-    text-align:center;
-}
-
-.btc-ema-text{
-    min-width:0;
-
-    text-align:center;
-}
-
-.btc-ema-title{
-    color:#eee;
-
-    font-size:8px;
-    line-height:10px;
-
-    font-weight:900;
-}
-
-.btc-ema-sub{
-    margin-top:1px;
-
-    color:#737b85;
-
-    font-size:5px;
-    line-height:7px;
-
-    font-weight:700;
-
-    white-space:nowrap;
-    overflow:hidden;
-    text-overflow:ellipsis;
-}
-
-
-/* =========================================================
-   2번 / 3번 공통 카드
+   BTC 공통 정보 카드
    ========================================================= */
 
 .btc-info-box{
@@ -5594,7 +5416,7 @@ td:nth-child(1){
 
 
 /* =========================================================
-   호가 대기물량 시각화
+   호가
    ========================================================= */
 
 .orderbook-subrow{
@@ -5610,11 +5432,6 @@ td:nth-child(1){
         1px solid #252b31!important;
 }
 
-
-/* =========================================================
-   호가 전체
-   ========================================================= */
-
 .orderbook-wrap{
     width:100%;
 
@@ -5622,11 +5439,6 @@ td:nth-child(1){
 
     overflow:hidden;
 }
-
-
-/* =========================================================
-   호가 한 줄
-   ========================================================= */
 
 .orderbook-row{
 
@@ -5647,11 +5459,6 @@ td:nth-child(1){
     min-height:13px;
 }
 
-
-/* =========================================================
-   호가 라벨
-   ========================================================= */
-
 .orderbook-label{
 
     font-size:5.5px;
@@ -5670,11 +5477,6 @@ td:nth-child(1){
 .ask-label{
     color:#4d9fff;
 }
-
-
-/* =========================================================
-   호가 금액
-   ========================================================= */
 
 .orderbook-amount{
 
@@ -5697,11 +5499,6 @@ td:nth-child(1){
     color:#66adff;
 }
 
-
-/* =========================================================
-   막대 배경
-   ========================================================= */
-
 .orderbook-bar-box{
 
     position:relative;
@@ -5716,11 +5513,6 @@ td:nth-child(1){
 
     overflow:hidden;
 }
-
-
-/* =========================================================
-   막대
-   ========================================================= */
 
 .orderbook-bar{
 
@@ -5742,11 +5534,6 @@ td:nth-child(1){
     background:#438bd1;
 }
 
-
-/* =========================================================
-   비중
-   ========================================================= */
-
 .orderbook-ratio{
 
     font-size:5.5px;
@@ -5767,11 +5554,6 @@ td:nth-child(1){
 .ask-ratio{
     color:#66adff;
 }
-
-
-/* =========================================================
-   호가 하단
-   ========================================================= */
 
 .orderbook-bottom{
 
@@ -5796,22 +5578,12 @@ td:nth-child(1){
     font-weight:800;
 }
 
-
-/* =========================================================
-   ±10% 표시
-   ========================================================= */
-
 .orderbook-range{
 
     color:#5e6670;
 
     white-space:nowrap;
 }
-
-
-/* =========================================================
-   우세 표시
-   ========================================================= */
 
 .ob-dominance{
 
@@ -5835,11 +5607,6 @@ td:nth-child(1){
 .balanced-dominance{
     color:#9aa1aa;
 }
-
-
-/* =========================================================
-   호가 없음
-   ========================================================= */
 
 .orderbook-empty{
 
@@ -5941,34 +5708,6 @@ td:nth-child(1){
         gap:3px;
     }
 
-    .btc-ema-box{
-        min-height:58px;
-        border-radius:5px;
-    }
-
-    .btc-ema-half{
-        grid-template-columns:
-            25px
-            1fr;
-
-        padding:2px 3px;
-    }
-
-    .btc-ema-icon{
-        font-size:19px;
-        line-height:21px;
-    }
-
-    .btc-ema-title{
-        font-size:7px;
-        line-height:8px;
-    }
-
-    .btc-ema-sub{
-        font-size:4px;
-        line-height:5px;
-    }
-
     .btc-info-box{
         min-height:58px;
 
@@ -6038,11 +5777,6 @@ td:nth-child(1){
 
         min-height:19px;
     }
-
-
-    /* =============================================
-       모바일 호가
-       ============================================= */
 
     .orderbook-subrow td{
 
@@ -6194,33 +5928,6 @@ td:nth-child(1){
         gap:6px;
     }
 
-    .btc-ema-box{
-        min-height:75px;
-    }
-
-    .btc-ema-half{
-        grid-template-columns:
-            42px
-            1fr;
-
-        padding:4px 6px;
-    }
-
-    .btc-ema-icon{
-        font-size:28px;
-        line-height:30px;
-    }
-
-    .btc-ema-title{
-        font-size:9px;
-        line-height:11px;
-    }
-
-    .btc-ema-sub{
-        font-size:6px;
-        line-height:8px;
-    }
-
     .btc-info-box{
         min-height:75px;
 
@@ -6279,11 +5986,6 @@ td:nth-child(1){
 
         min-height:28px;
     }
-
-
-    /* =============================================
-       데스크톱 호가
-       ============================================= */
 
     .orderbook-subrow td{
 
@@ -6606,7 +6308,6 @@ def startup():
 
     validate_timeframe()
 
-
     tf = format_timeframe(
         EMA_TIMEFRAME
     )
@@ -6614,7 +6315,6 @@ def startup():
     high_tf = format_timeframe(
         EMA_HIGH_TIMEFRAME
     )
-
 
     log.info(
         "========================================"
@@ -6713,6 +6413,36 @@ def startup():
 
     log.info(
         "========================================"
+    )
+
+
+    # =====================================================
+    # USDT/KRW 시장 방향 로그
+    # =====================================================
+
+    log.info(
+        "USDT/KRW 시장 참고 방향:"
+    )
+
+    log.info(
+        "USDT/KRW 당일 변동 음수 → ☀️"
+    )
+
+    log.info(
+        "USDT/KRW 당일 변동 양수 → 🌧️"
+    )
+
+    log.info(
+        "USDT/KRW 당일 변동 0 → ⚪"
+    )
+
+    log.info(
+        "USDT/KRW는 09:00 KST 기준 당일 시가 대비"
+    )
+
+    log.info(
+        "USDT/KRW 방향은 참고용이며 "
+        "EMA/ROC 신호에는 사용하지 않음"
     )
 
 
