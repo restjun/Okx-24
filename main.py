@@ -66,6 +66,9 @@ KST = ZoneInfo("Asia/Seoul")
 ORDERBOOK_RANGE = 0.10
 ORDERBOOK_COUNT = 30
 
+# 매수/매도 비중 차이가 이 값 이상이면 우세 표시
+ORDERBOOK_DOMINANCE_GAP = 5.0
+
 
 # =========================================================
 # 시간봉
@@ -453,6 +456,12 @@ def validate_timeframe():
             "ORDERBOOK_COUNT는 1 이상이어야 합니다."
         )
 
+    if float(ORDERBOOK_DOMINANCE_GAP) < 0:
+
+        raise ValueError(
+            "ORDERBOOK_DOMINANCE_GAP은 0 이상이어야 합니다."
+        )
+
     for name, value in [
         ("LONG_ROC_COUNT_0", LONG_ROC_COUNT_0),
         ("LONG_ROC_COUNT_1", LONG_ROC_COUNT_1),
@@ -824,7 +833,10 @@ def calculate_orderbook_amount(
         "ask_count": 0,
 
         "lower_price": None,
-        "upper_price": None
+        "upper_price": None,
+
+        "dominance": "balanced",
+        "dominance_text": "균형"
     }
 
     if not orderbook:
@@ -843,6 +855,11 @@ def calculate_orderbook_amount(
     if current_price <= 0:
         return result
 
+
+    # =====================================================
+    # 가격 범위
+    # =====================================================
+
     lower_price = (
         current_price
         * (1.0 - ORDERBOOK_RANGE)
@@ -856,6 +873,7 @@ def calculate_orderbook_amount(
     result["lower_price"] = lower_price
     result["upper_price"] = upper_price
 
+
     units = orderbook.get(
         "orderbook_units",
         []
@@ -868,11 +886,17 @@ def calculate_orderbook_amount(
 
         return result
 
+
     bid_amount = 0.0
     ask_amount = 0.0
 
     bid_count = 0
     ask_count = 0
+
+
+    # =====================================================
+    # 호가 계산
+    # =====================================================
 
     for unit in units:
 
@@ -910,8 +934,10 @@ def calculate_orderbook_amount(
 
             continue
 
+
         # =================================================
         # 매수 대기
+        # 현재가 이하
         # =================================================
 
         if (
@@ -928,8 +954,10 @@ def calculate_orderbook_amount(
 
             bid_count += 1
 
+
         # =================================================
         # 매도 대기
+        # 현재가 이상
         # =================================================
 
         if (
@@ -946,10 +974,16 @@ def calculate_orderbook_amount(
 
             ask_count += 1
 
+
     total_amount = (
         bid_amount
         + ask_amount
     )
+
+
+    # =====================================================
+    # 비중
+    # =====================================================
 
     if total_amount > 0:
 
@@ -969,6 +1003,45 @@ def calculate_orderbook_amount(
 
         bid_ratio = 0.0
         ask_ratio = 0.0
+
+
+    # =====================================================
+    # 매수/매도 우세
+    #
+    # 기본값 5%p 차이
+    # =====================================================
+
+    difference = (
+        bid_ratio
+        - ask_ratio
+    )
+
+
+    if (
+        total_amount > 0
+        and difference
+        >= ORDERBOOK_DOMINANCE_GAP
+    ):
+
+        dominance = "bid"
+        dominance_text = "매수 우세"
+
+
+    elif (
+        total_amount > 0
+        and difference
+        <= -ORDERBOOK_DOMINANCE_GAP
+    ):
+
+        dominance = "ask"
+        dominance_text = "매도 우세"
+
+
+    else:
+
+        dominance = "balanced"
+        dominance_text = "균형"
+
 
     result.update({
 
@@ -991,15 +1064,23 @@ def calculate_orderbook_amount(
             bid_count,
 
         "ask_count":
-            ask_count
+            ask_count,
 
+        "dominance":
+            dominance,
+
+        "dominance_text":
+            dominance_text
     })
+
 
     return result
 
 
 # =========================================================
-# 호가 HTML
+# 호가 시각화 HTML
+#
+# 매수 / 매도 각각 별도 막대
 # =========================================================
 
 def orderbook_html(row):
@@ -1007,10 +1088,11 @@ def orderbook_html(row):
     if not row:
 
         return (
-            '<span class="orderbook-empty">'
+            '<div class="orderbook-empty">'
             '호가 정보 없음'
-            '</span>'
+            '</div>'
         )
+
 
     try:
 
@@ -1045,10 +1127,11 @@ def orderbook_html(row):
     except Exception:
 
         return (
-            '<span class="orderbook-empty">'
+            '<div class="orderbook-empty">'
             '호가 정보 없음'
-            '</span>'
+            '</div>'
         )
+
 
     if (
         bid_amount <= 0
@@ -1056,41 +1139,144 @@ def orderbook_html(row):
     ):
 
         return (
-            '<span class="orderbook-empty">'
+            '<div class="orderbook-empty">'
             '호가 정보 없음'
+            '</div>'
+        )
+
+
+    # =====================================================
+    # 비율 안전 처리
+    # =====================================================
+
+    bid_ratio = max(
+        0.0,
+        min(
+            100.0,
+            bid_ratio
+        )
+    )
+
+    ask_ratio = max(
+        0.0,
+        min(
+            100.0,
+            ask_ratio
+        )
+    )
+
+
+    # =====================================================
+    # 우세
+    # =====================================================
+
+    dominance = row.get(
+        "orderbook_dominance",
+        "balanced"
+    )
+
+
+    if dominance == "bid":
+
+        dominance_html = (
+            '<span class="ob-dominance bid-dominance">'
+            '▲ 매수 우세'
             '</span>'
         )
 
+    elif dominance == "ask":
+
+        dominance_html = (
+            '<span class="ob-dominance ask-dominance">'
+            '▼ 매도 우세'
+            '</span>'
+        )
+
+    else:
+
+        dominance_html = (
+            '<span class="ob-dominance balanced-dominance">'
+            '◆ 균형'
+            '</span>'
+        )
+
+
     return f"""
-    <div class="orderbook-line">
+    <div class="orderbook-wrap">
 
-        <span class="orderbook-bid">
-            매수대기 {format_volume(bid_amount)}
-        </span>
+        <!-- =============================================
+             매수대기
+             ============================================= -->
 
-        <span class="orderbook-slash">
-            /
-        </span>
+        <div class="orderbook-row">
 
-        <span class="orderbook-ask">
-            매도대기 {format_volume(ask_amount)}
-        </span>
+            <span class="orderbook-label bid-label">
+                매수대기
+            </span>
 
-        <span class="orderbook-slash">
-            /
-        </span>
+            <span class="orderbook-amount bid-amount">
+                {format_volume(bid_amount)}
+            </span>
 
-        <span class="orderbook-bid">
-            매수비중 {bid_ratio:.1f}%
-        </span>
+            <div class="orderbook-bar-box">
 
-        <span class="orderbook-slash">
-            /
-        </span>
+                <div
+                    class="orderbook-bar bid-bar"
+                    style="width:{bid_ratio:.1f}%"
+                ></div>
 
-        <span class="orderbook-ask">
-            매도비중 {ask_ratio:.1f}%
-        </span>
+            </div>
+
+            <span class="orderbook-ratio bid-ratio">
+                {bid_ratio:.1f}%
+            </span>
+
+        </div>
+
+
+        <!-- =============================================
+             매도대기
+             ============================================= -->
+
+        <div class="orderbook-row">
+
+            <span class="orderbook-label ask-label">
+                매도대기
+            </span>
+
+            <span class="orderbook-amount ask-amount">
+                {format_volume(ask_amount)}
+            </span>
+
+            <div class="orderbook-bar-box">
+
+                <div
+                    class="orderbook-bar ask-bar"
+                    style="width:{ask_ratio:.1f}%"
+                ></div>
+
+            </div>
+
+            <span class="orderbook-ratio ask-ratio">
+                {ask_ratio:.1f}%
+            </span>
+
+        </div>
+
+
+        <!-- =============================================
+             호가 범위 / 우세
+             ============================================= -->
+
+        <div class="orderbook-bottom">
+
+            <span class="orderbook-range">
+                호가 ±{ORDERBOOK_RANGE * 100:.0f}%
+            </span>
+
+            {dominance_html}
+
+        </div>
 
     </div>
     """
@@ -2259,6 +2445,7 @@ def roc_analysis(
 
                 if float(value) > 0:
                     positive_count += 1
+
                 else:
                     break
 
@@ -2271,6 +2458,7 @@ def roc_analysis(
 
                 if float(value) < 0:
                     negative_count += 1
+
                 else:
                     break
 
@@ -2517,6 +2705,7 @@ def format_volume(v):
 
     try:
         v = float(v)
+
     except Exception:
         return "-"
 
@@ -2939,8 +3128,9 @@ def make_row(
         "direction":
             a["direction_1h"],
 
+
         # =================================================
-        # 호가 대기금액
+        # 호가
         # =================================================
 
         "bid_amount":
@@ -2989,6 +3179,18 @@ def make_row(
                     "ask_count",
                     0
                 )
+            ),
+
+        "orderbook_dominance":
+            ob.get(
+                "dominance",
+                "balanced"
+            ),
+
+        "orderbook_dominance_text":
+            ob.get(
+                "dominance_text",
+                "균형"
             )
     }
 
@@ -3231,39 +3433,55 @@ def update_upbit():
         f"========== 업비트 TOP{TOP_N} =========="
     )
 
+
     markets = sorted(
         get_upbit_markets(),
         key=lambda x: x["volume_24h"],
         reverse=True
     )
 
+
     # =====================================================
-    # TOP_N 선정
+    # TOP_N
     # =====================================================
 
-    top_markets = markets[:TOP_N]
+    top_markets = markets[
+        :TOP_N
+    ]
+
 
     market_codes = [
         x["market"]
         for x in top_markets
     ]
 
+
     # =====================================================
-    # TOP_N 호가 한 번에 조회
+    # 호가 조회
     # =====================================================
 
     orderbooks = get_upbit_orderbooks(
         market_codes
     )
 
-    latest_upbit_orderbook = orderbooks.copy()
+
+    latest_upbit_orderbook = (
+        orderbooks.copy()
+    )
+
 
     log.info(
         f"업비트 호가 조회 "
         f"{len(orderbooks)}/{len(market_codes)}개"
     )
 
+
     rows = []
+
+
+    # =====================================================
+    # 분석
+    # =====================================================
 
     for rank, item in enumerate(
         top_markets,
@@ -3277,7 +3495,10 @@ def update_upbit():
             ""
         )
 
-        price = item["current_price"]
+        price = item[
+            "current_price"
+        ]
+
 
         try:
 
@@ -3295,6 +3516,7 @@ def update_upbit():
 
             a = None
 
+
         # =================================================
         # 호가 계산
         # =================================================
@@ -3303,6 +3525,7 @@ def update_upbit():
             orderbooks.get(market),
             price
         )
+
 
         rows.append(
             make_row(
@@ -3315,18 +3538,39 @@ def update_upbit():
             )
         )
 
+
+        # =================================================
+        # 호가 로그
+        # =================================================
+
+        log.info(
+            f"[호가] "
+            f"{coin} | "
+            f"매수 {format_volume(ob['bid_amount'])} "
+            f"({ob['bid_ratio']:.1f}%) / "
+            f"매도 {format_volume(ob['ask_amount'])} "
+            f"({ob['ask_ratio']:.1f}%) / "
+            f"{ob['dominance_text']}"
+        )
+
+
     latest_upbit_data = rows
+
 
     breadth = top_roc_breadth(
         latest_upbit_data
     )
 
+
     latest_upbit_update_time = kst()
+
 
     log.info(
         f"업비트 완료 / "
-        f"상승 {sum(is_long_combined(x) for x in rows)}개"
+        f"상승 "
+        f"{sum(is_long_combined(x) for x in rows)}개"
     )
+
 
     log.info(
         f"TOP{TOP_N} ROC 시장폭 / "
@@ -3335,26 +3579,6 @@ def update_upbit():
         f"중립 {breadth['zero']} / "
         f"판단 {breadth['icon']}"
     )
-
-    # =====================================================
-    # 호가 요약 로그
-    # =====================================================
-
-    for row in rows:
-
-        if (
-            row.get("bid_amount", 0) > 0
-            or row.get("ask_amount", 0) > 0
-        ):
-
-            log.info(
-                f"[호가] "
-                f"{row.get('name')} "
-                f"매수 {format_volume(row.get('bid_amount', 0))} / "
-                f"매도 {format_volume(row.get('ask_amount', 0))} / "
-                f"매수비중 {row.get('bid_ratio', 0):.1f}% / "
-                f"매도비중 {row.get('ask_ratio', 0):.1f}%"
-            )
 
 
 # =========================================================
@@ -3517,6 +3741,7 @@ def update_dashboard():
         if USE_UPBIT == "Y":
 
             try:
+
                 update_upbit()
 
             except Exception as e:
@@ -3528,6 +3753,7 @@ def update_dashboard():
         else:
 
             latest_upbit_data = []
+
 
         if USE_OKX == "Y":
 
@@ -3921,6 +4147,7 @@ def market_summary_html():
         "none"
     )
 
+
     def ema_market_icon(direction):
 
         if direction == "long":
@@ -3930,6 +4157,7 @@ def market_summary_html():
             return "🌧️"
 
         return "⚪"
+
 
     ema_1_icon = ema_market_icon(
         ema_1_direction
@@ -3989,6 +4217,7 @@ def market_summary_html():
             roc_display = "-"
             btc_roc_class = "wait"
 
+
     breadth = top_roc_breadth(
         latest_upbit_data
     )
@@ -4018,6 +4247,7 @@ def market_summary_html():
 
         breadth_display = "-"
 
+
     if breadth.get("state") == "up":
 
         breadth_class = "up"
@@ -4029,6 +4259,7 @@ def market_summary_html():
     else:
 
         breadth_class = "wait"
+
 
     return f"""
 
@@ -4372,8 +4603,8 @@ def row_class(x):
 # =========================================================
 # 행 HTML
 #
-# 기존 코인 행 바로 아래에
-# 호가 대기금액 한 줄 추가
+# 코인 바로 아래에
+# 매수/매도 호가 막대 표시
 # =========================================================
 
 def rows_html(
@@ -4396,6 +4627,11 @@ def rows_html(
         else:
 
             cls = row_class(x)
+
+
+        # =================================================
+        # 코인 기본 행
+        # =================================================
 
         out.append(
             f"""
@@ -4474,7 +4710,7 @@ def rows_html(
 
 
             <!-- =========================================
-                 호가 대기금액
+                 호가 대기물량 시각화
                  ========================================= -->
 
             <tr class="orderbook-subrow">
@@ -5353,7 +5589,7 @@ td:nth-child(1){
 
 
 /* =========================================================
-   호가 대기금액
+   호가 대기물량 시각화
    ========================================================= */
 
 .orderbook-subrow{
@@ -5361,60 +5597,260 @@ td:nth-child(1){
 }
 
 .orderbook-subrow td{
-    height:17px!important;
+    height:auto!important;
 
-    padding:2px 3px!important;
+    padding:3px 4px 4px!important;
 
     border-bottom:
-        1px solid #22282e!important;
+        1px solid #252b31!important;
 }
 
-.orderbook-line{
-    display:flex;
+
+/* =========================================================
+   호가 전체
+   ========================================================= */
+
+.orderbook-wrap{
+    width:100%;
+
+    padding:1px 0;
+
+    overflow:hidden;
+}
+
+
+/* =========================================================
+   호가 한 줄
+   ========================================================= */
+
+.orderbook-row{
+
+    display:grid;
+
+    grid-template-columns:
+        43px
+        43px
+        minmax(55px, 1fr)
+        35px;
 
     align-items:center;
-    justify-content:center;
+
+    gap:4px;
 
     width:100%;
 
     min-height:13px;
+}
 
-    gap:3px;
+
+/* =========================================================
+   호가 라벨
+   ========================================================= */
+
+.orderbook-label{
+
+    font-size:5.5px;
+
+    line-height:8px;
+
+    font-weight:900;
 
     white-space:nowrap;
-    overflow:hidden;
+}
 
-    font-size:5.3px;
+.bid-label{
+    color:#ff5555;
+}
+
+.ask-label{
+    color:#4d9fff;
+}
+
+
+/* =========================================================
+   호가 금액
+   ========================================================= */
+
+.orderbook-amount{
+
+    font-size:5.5px;
+
+    line-height:8px;
+
+    font-weight:900;
+
+    text-align:right;
+
+    white-space:nowrap;
+}
+
+.bid-amount{
+    color:#ff7777;
+}
+
+.ask-amount{
+    color:#66adff;
+}
+
+
+/* =========================================================
+   막대 배경
+   ========================================================= */
+
+.orderbook-bar-box{
+
+    position:relative;
+
+    width:100%;
+
+    height:7px;
+
+    background:#252b31;
+
+    border-radius:4px;
+
+    overflow:hidden;
+}
+
+
+/* =========================================================
+   막대
+   ========================================================= */
+
+.orderbook-bar{
+
+    height:100%;
+
+    min-width:1px;
+
+    border-radius:4px;
+
+    transition:
+        width .25s ease;
+}
+
+.bid-bar{
+    background:#d94a4a;
+}
+
+.ask-bar{
+    background:#438bd1;
+}
+
+
+/* =========================================================
+   비중
+   ========================================================= */
+
+.orderbook-ratio{
+
+    font-size:5.5px;
+
+    line-height:8px;
+
+    font-weight:900;
+
+    text-align:right;
+
+    white-space:nowrap;
+}
+
+.bid-ratio{
+    color:#ff7777;
+}
+
+.ask-ratio{
+    color:#66adff;
+}
+
+
+/* =========================================================
+   호가 하단
+   ========================================================= */
+
+.orderbook-bottom{
+
+    display:flex;
+
+    align-items:center;
+
+    justify-content:flex-end;
+
+    gap:7px;
+
+    min-height:11px;
+
+    margin-top:2px;
+
+    padding-right:1px;
+
+    font-size:5px;
+
     line-height:7px;
 
     font-weight:800;
 }
 
-.orderbook-bid{
-    color:#ff5b5b;
+
+/* =========================================================
+   ±10% 표시
+   ========================================================= */
+
+.orderbook-range{
+
+    color:#5e6670;
+
+    white-space:nowrap;
+}
+
+
+/* =========================================================
+   우세 표시
+   ========================================================= */
+
+.ob-dominance{
+
+    font-size:5.5px;
+
+    line-height:8px;
 
     font-weight:900;
+
+    white-space:nowrap;
 }
 
-.orderbook-ask{
-    color:#5ca8ff;
-
-    font-weight:900;
+.bid-dominance{
+    color:#ff5555;
 }
 
-.orderbook-slash{
-    color:#4e5660;
-
-    font-weight:700;
+.ask-dominance{
+    color:#4da3ff;
 }
+
+.balanced-dominance{
+    color:#9aa1aa;
+}
+
+
+/* =========================================================
+   호가 없음
+   ========================================================= */
 
 .orderbook-empty{
-    color:#555e68;
+
+    width:100%;
+
+    padding:3px 0;
+
+    color:#555d67;
 
     font-size:5px;
+
     line-height:7px;
 
     font-weight:700;
+
+    text-align:center;
 }
 
 
@@ -5598,27 +6034,82 @@ td:nth-child(1){
         min-height:19px;
     }
 
+
     /* =============================================
        모바일 호가
        ============================================= */
 
     .orderbook-subrow td{
-        height:15px!important;
 
-        padding:1px 2px!important;
+        height:auto!important;
+
+        padding:2px 2px 3px!important;
     }
 
-    .orderbook-line{
-        gap:2px;
+    .orderbook-row{
+
+        grid-template-columns:
+            37px
+            38px
+            minmax(42px, 1fr)
+            31px;
+
+        gap:3px;
 
         min-height:12px;
+    }
 
-        font-size:4.6px;
+    .orderbook-label{
+
+        font-size:4.8px;
+
+        line-height:7px;
+    }
+
+    .orderbook-amount{
+
+        font-size:4.8px;
+
+        line-height:7px;
+    }
+
+    .orderbook-bar-box{
+
+        height:6px;
+    }
+
+    .orderbook-ratio{
+
+        font-size:4.8px;
+
+        line-height:7px;
+    }
+
+    .orderbook-bottom{
+
+        min-height:10px;
+
+        gap:5px;
+
+        margin-top:1px;
+
+        font-size:4.5px;
+
         line-height:6px;
     }
 
+    .ob-dominance{
+
+        font-size:5px;
+
+        line-height:7px;
+    }
+
     .orderbook-empty{
+
         font-size:4.5px;
+
+        line-height:6px;
     }
 }
 
@@ -5784,27 +6275,82 @@ td:nth-child(1){
         min-height:28px;
     }
 
+
     /* =============================================
        데스크톱 호가
        ============================================= */
 
     .orderbook-subrow td{
-        height:22px!important;
 
-        padding:3px 4px!important;
+        height:auto!important;
+
+        padding:4px 6px 5px!important;
     }
 
-    .orderbook-line{
-        gap:5px;
+    .orderbook-row{
 
-        min-height:15px;
+        grid-template-columns:
+            55px
+            60px
+            minmax(80px, 1fr)
+            45px;
 
-        font-size:6.5px;
+        gap:6px;
+
+        min-height:17px;
+    }
+
+    .orderbook-label{
+
+        font-size:7px;
+
+        line-height:9px;
+    }
+
+    .orderbook-amount{
+
+        font-size:7px;
+
+        line-height:9px;
+    }
+
+    .orderbook-bar-box{
+
+        height:9px;
+    }
+
+    .orderbook-ratio{
+
+        font-size:7px;
+
+        line-height:9px;
+    }
+
+    .orderbook-bottom{
+
+        min-height:13px;
+
+        gap:9px;
+
+        margin-top:2px;
+
+        font-size:6px;
+
         line-height:8px;
     }
 
+    .ob-dominance{
+
+        font-size:6.5px;
+
+        line-height:9px;
+    }
+
     .orderbook-empty{
+
         font-size:6px;
+
+        line-height:8px;
     }
 }
 
@@ -5933,6 +6479,7 @@ def dashboard():
             latest_upbit_update_time
         )
 
+
     if USE_OKX == "Y":
 
         sections += section(
@@ -5982,7 +6529,9 @@ def dashboard():
         </title>
 
         <style>
+
             {CSS}
+
         </style>
 
     </head>
@@ -6052,6 +6601,7 @@ def startup():
 
     validate_timeframe()
 
+
     tf = format_timeframe(
         EMA_TIMEFRAME
     )
@@ -6059,6 +6609,7 @@ def startup():
     high_tf = format_timeframe(
         EMA_HIGH_TIMEFRAME
     )
+
 
     log.info(
         "========================================"
@@ -6126,6 +6677,7 @@ def startup():
         "4H → EMA count 제한 미적용"
     )
 
+
     # =====================================================
     # 호가 설정 로그
     # =====================================================
@@ -6145,6 +6697,11 @@ def startup():
     )
 
     log.info(
+        f"호가 우세 기준: "
+        f"{ORDERBOOK_DOMINANCE_GAP:.1f}%p"
+    )
+
+    log.info(
         "호가 대기금액은 참고용이며 "
         "EMA/ROC 신호에는 사용하지 않음"
     )
@@ -6152,6 +6709,7 @@ def startup():
     log.info(
         "========================================"
     )
+
 
     # =====================================================
     # TOP ROC 시장폭
@@ -6176,6 +6734,7 @@ def startup():
     log.info(
         "TOP_N 변경 시 기준 자동 변경"
     )
+
 
     # =====================================================
     # ROC 돌파
