@@ -68,17 +68,32 @@ USE_EMA_HIGH_TIMEFRAME = "Y"
 # =========================================================
 # EMA 설정
 #
-# 정배열:
-# EMA10 > EMA30 > EMA60 > EMA120
+# ★ 추가된 부분
 #
-# 역배열:
-# EMA10 < EMA30 < EMA60 < EMA120
+# Y = 해당 EMA 사용
+# N = 해당 EMA 사용 안 함
+#
+# 예:
+#
+# 10 Y
+# 30 Y
+# 60 N
+# 120 N
+#
+# → EMA10 > EMA30
+#
 # =========================================================
 
 EMA1_FASTEST = 10
 EMA1_FAST = 30
 EMA1_MID = 60
 EMA1_SLOW = 120
+
+# ★ EMA별 사용 여부
+EMA_USE_10 = "N"
+EMA_USE_30 = "Y"
+EMA_USE_60 = "Y"
+EMA_USE_120 = "Y"
 
 # 정배열/역배열 연속 카운트 최대
 EMA1_MAX_COUNT = 60
@@ -93,26 +108,6 @@ ROC_PERIOD = 5
 
 # =========================================================
 # ★ ROC 돌파 카운트 표시 설정
-#
-# Y = 표시
-# N = 표시 안 함
-#
-# 0 = 현재 돌파봉
-# 1 = 돌파 후 1번째 확정봉
-# 2 = 돌파 후 2번째 확정봉
-#
-# 예:
-#
-# LONG_ROC_COUNT_0 = "Y"
-# LONG_ROC_COUNT_1 = "Y"
-# LONG_ROC_COUNT_2 = "N"
-#
-# → 🚀⓪
-# → 🚀①
-# 표시
-#
-# → 🚀②
-# 표시 안 함
 # =========================================================
 
 LONG_ROC_COUNT_0 = "Y"
@@ -171,36 +166,74 @@ okx_1h_cache_time = "-"
 
 
 # =========================================================
-# 표시용
+# ★ EMA 사용 설정
 # =========================================================
+
+def get_ema_periods():
+
+    periods = []
+
+    if EMA_USE_10 == "Y":
+        periods.append(EMA1_FASTEST)
+
+    if EMA_USE_30 == "Y":
+        periods.append(EMA1_FAST)
+
+    if EMA_USE_60 == "Y":
+        periods.append(EMA1_MID)
+
+    if EMA_USE_120 == "Y":
+        periods.append(EMA1_SLOW)
+
+    return periods
+
 
 def get_ema_period_text():
 
-    return (
-        f"{EMA1_FASTEST}>"
-        f"{EMA1_FAST}>"
-        f"{EMA1_MID}>"
-        f"{EMA1_SLOW}"
+    periods = get_ema_periods()
+
+    if not periods:
+        return "-"
+
+    return ">".join(
+        str(x)
+        for x in periods
     )
 
 
 def get_ema_period_text_long():
 
-    return (
-        f"EMA{EMA1_FASTEST}>"
-        f"{EMA1_FAST}>"
-        f"{EMA1_MID}>"
-        f"{EMA1_SLOW}"
+    periods = get_ema_periods()
+
+    if not periods:
+        return "EMA 없음"
+
+    return ">".join(
+        f"EMA{x}"
+        for x in periods
     )
 
 
 def get_ema_period_text_short():
 
+    periods = get_ema_periods()
+
+    if not periods:
+        return "EMA 없음"
+
+    return "<".join(
+        f"EMA{x}"
+        for x in periods
+    )
+
+
+def get_ema_setting_text():
+
     return (
-        f"EMA{EMA1_FASTEST}<"
-        f"{EMA1_FAST}<"
-        f"{EMA1_MID}<"
-        f"{EMA1_SLOW}"
+        f"10={EMA_USE_10}/"
+        f"30={EMA_USE_30}/"
+        f"60={EMA_USE_60}/"
+        f"120={EMA_USE_120}"
     )
 
 
@@ -371,6 +404,30 @@ def validate_timeframe():
 
         raise ValueError(
             "USE_EMA_HIGH_TIMEFRAME은 Y 또는 N만 가능합니다."
+        )
+
+    # =====================================================
+    # ★ EMA Y/N 검증
+    # =====================================================
+
+    for name, value in [
+        ("EMA_USE_10", EMA_USE_10),
+        ("EMA_USE_30", EMA_USE_30),
+        ("EMA_USE_60", EMA_USE_60),
+        ("EMA_USE_120", EMA_USE_120),
+    ]:
+
+        if value not in ("Y", "N"):
+
+            raise ValueError(
+                f"{name}은 Y 또는 N만 가능합니다."
+            )
+
+    if len(get_ema_periods()) < 2:
+
+        raise ValueError(
+            "EMA 정배열/역배열 판단을 위해 "
+            "최소 2개의 EMA를 Y로 설정해야 합니다."
         )
 
     if int(ROC_PERIOD) < 1:
@@ -1312,6 +1369,21 @@ def ema(df, period):
     )
 
 
+# =========================================================
+# ★ EMA 배열
+#
+# 선택된 EMA만 비교
+#
+# 예:
+# 10 Y
+# 30 Y
+# 60 N
+# 120 N
+#
+# → EMA10 > EMA30 = 정배열
+# → EMA10 < EMA30 = 역배열
+# =========================================================
+
 def ema_alignment_count(df):
 
     if df is None or df.empty:
@@ -1323,48 +1395,64 @@ def ema_alignment_count(df):
 
     try:
 
-        e_fastest = ema(
-            df,
-            EMA1_FASTEST
-        )
+        periods = get_ema_periods()
 
-        e_fast = ema(
-            df,
-            EMA1_FAST
-        )
+        if len(periods) < 2:
 
-        e_mid = ema(
-            df,
-            EMA1_MID
-        )
+            return {
+                "direction": "none",
+                "count": 0
+            }
 
-        e_slow = ema(
-            df,
-            EMA1_SLOW
-        )
+        ema_values = {}
+
+        for period in periods:
+
+            ema_values[period] = ema(
+                df,
+                period
+            )
 
         def get_dir(i):
 
-            a = float(
-                e_fastest.iloc[i]
-            )
+            values = []
 
-            b = float(
-                e_fast.iloc[i]
-            )
+            for period in periods:
 
-            c = float(
-                e_mid.iloc[i]
-            )
+                series = ema_values.get(
+                    period
+                )
 
-            d = float(
-                e_slow.iloc[i]
-            )
+                if series is None:
+                    return "none"
 
-            if a > b > c > d:
+                value = series.iloc[i]
+
+                if pd.isna(value):
+                    return "none"
+
+                values.append(
+                    float(value)
+                )
+
+            # 정배열
+            if all(
+                values[j] > values[j + 1]
+                for j in range(
+                    len(values) - 1
+                )
+            ):
+
                 return "long"
 
-            if a < b < c < d:
+            # 역배열
+            if all(
+                values[j] < values[j + 1]
+                for j in range(
+                    len(values) - 1
+                )
+            ):
+
                 return "short"
 
             return "none"
@@ -1387,8 +1475,11 @@ def ema_alignment_count(df):
         ):
 
             if get_dir(i) == current:
+
                 count += 1
+
             else:
+
                 break
 
         return {
@@ -1587,14 +1678,6 @@ def roc(
         return None
 
 
-# =========================================================
-# ROC 교차 상태
-#
-# current  = 0
-# confirmed = 1
-# next      = 2
-# =========================================================
-
 def roc_cross_state(
     confirmed_series,
     current_series,
@@ -1648,11 +1731,6 @@ def roc_cross_state(
 
             return False
 
-        # =================================================
-        # 현재 진행 중인 캔들
-        # count = 0
-        # =================================================
-
         if len(current) >= 2:
 
             prev = current[-2]
@@ -1664,10 +1742,6 @@ def roc_cross_state(
                     "state": "current",
                     "count": 0
                 }
-
-        # =================================================
-        # 현재 데이터가 1개뿐인 경우
-        # =================================================
 
         if len(current) == 1:
 
@@ -1681,11 +1755,6 @@ def roc_cross_state(
                     "count": 0
                 }
 
-        # =================================================
-        # 가장 최근 확정봉에서 돌파
-        # count = 1
-        # =================================================
-
         if len(confirmed) >= 2:
 
             prev = confirmed[-2]
@@ -1697,11 +1766,6 @@ def roc_cross_state(
                     "state": "confirmed",
                     "count": 1
                 }
-
-        # =================================================
-        # 그 이전 확정봉에서 돌파
-        # count = 2
-        # =================================================
 
         if len(confirmed) >= 3:
 
@@ -1738,31 +1802,18 @@ def roc_analysis(
     result = {
 
         "roc10": None,
-
         "roc10_previous": None,
-
         "roc10_count": 0,
-
         "roc10_negative_count": 0,
-
         "roc_progress_start_time": None,
-
         "roc_negative_progress_start_time": None,
-
         "long_breakout": False,
-
         "short_breakout": False,
-
         "long_breakout_count": 0,
-
         "short_breakout_count": 0,
-
         "long_breakout_state": "none",
-
         "short_breakout_state": "none",
-
         "state": "none",
-
         "display": "-"
     }
 
@@ -1809,10 +1860,6 @@ def roc_analysis(
 
             return result
 
-        # -------------------------------------------------
-        # 내부 ROC 연속 카운트
-        # -------------------------------------------------
-
         positive_count = 0
         negative_count = 0
 
@@ -1845,10 +1892,6 @@ def roc_analysis(
         except Exception:
             pass
 
-        # -------------------------------------------------
-        # 돌파 상태
-        # -------------------------------------------------
-
         lb = roc_cross_state(
             confirmed,
             current,
@@ -1860,10 +1903,6 @@ def roc_analysis(
             current,
             "short_breakout"
         )
-
-        # -------------------------------------------------
-        # 결과
-        # -------------------------------------------------
 
         result.update({
 
@@ -1898,10 +1937,6 @@ def roc_analysis(
                 sb["state"]
 
         })
-
-        # =================================================
-        # 화면용 상태
-        # =================================================
 
         if (
             lb["state"] != "none"
@@ -2167,27 +2202,16 @@ def empty_analysis():
         "roc": {
 
             "roc10": None,
-
             "roc10_previous": None,
-
             "roc10_count": 0,
-
             "roc10_negative_count": 0,
-
             "long_breakout": False,
-
             "short_breakout": False,
-
             "long_breakout_count": 0,
-
             "short_breakout_count": 0,
-
             "long_breakout_state": "none",
-
             "short_breakout_state": "none",
-
             "state": "none",
-
             "display": "⚪ 0"
         },
 
@@ -2264,10 +2288,6 @@ def get_signal_qualified(
             and filter_direction == "short"
         )
 
-    # =====================================================
-    # 롱
-    # =====================================================
-
     try:
 
         roc_value = float(
@@ -2315,10 +2335,6 @@ def get_signal_qualified(
             long_count
         )
     )
-
-    # =====================================================
-    # 숏
-    # =====================================================
 
     short_breakout_qualified = (
 
@@ -3196,7 +3212,6 @@ def market_roc_html(r):
             '</span>'
         )
 
-    # 롱
     if (
         value > 0
         and r.get(
@@ -3223,7 +3238,6 @@ def market_roc_html(r):
                 '</span>'
             )
 
-    # 숏
     if (
         value < 0
         and r.get(
@@ -3717,10 +3731,6 @@ def roc_html(r):
             '</div>'
         )
 
-    # =====================================================
-    # 롱
-    # =====================================================
-
     if (
         value > 0
         and r.get(
@@ -3749,10 +3759,6 @@ def roc_html(r):
                 '</div>'
             )
 
-    # =====================================================
-    # 숏
-    # =====================================================
-
     if (
         value < 0
         and r.get(
@@ -3780,10 +3786,6 @@ def roc_html(r):
                 '</span>'
                 '</div>'
             )
-
-    # =====================================================
-    # 일반 ROC
-    # =====================================================
 
     if value > 0:
 
@@ -3831,10 +3833,6 @@ def signal_html(row):
         {}
     )
 
-    # =====================================================
-    # 롱
-    # =====================================================
-
     if row.get(
         "breakout_qualified",
         False
@@ -3871,10 +3869,6 @@ def signal_html(row):
                 f'🚀{count_icon(count)}'
                 '</span>'
             )
-
-    # =====================================================
-    # 숏
-    # =====================================================
 
     if row.get(
         "short_breakout_qualified",
@@ -4900,6 +4894,13 @@ def dashboard():
             </b>
         </span>
 
+        <span>
+            EMA :
+            <b class="y">
+                {get_ema_setting_text()}
+            </b>
+        </span>
+
     </div>
 
     """
@@ -5070,8 +5071,7 @@ def dashboard():
             {format_timeframe(EMA_TIMEFRAME)}
             /
             {format_timeframe(EMA_HIGH_TIMEFRAME)}
-            EMA{EMA1_FASTEST}·{EMA1_FAST}·
-            {EMA1_MID}·{EMA1_SLOW}
+            {get_ema_period_text_long()}
             ·
             {get_roc_text()}
         </title>
@@ -5161,10 +5161,7 @@ def startup():
 
     log.info(
         f"{tf}/{high_tf} "
-        f"EMA{EMA1_FASTEST}·"
-        f"{EMA1_FAST}·"
-        f"{EMA1_MID}·"
-        f"{EMA1_SLOW} + "
+        f"{get_ema_period_text_long()} + "
         f"{get_roc_text()} 시작"
     )
 
@@ -5188,13 +5185,22 @@ def startup():
         f"사용={USE_EMA_HIGH_TIMEFRAME}"
     )
 
+    # =====================================================
+    # ★ EMA Y/N 출력
+    # =====================================================
+
     log.info(
-        f"EMA 기준: "
+        f"EMA 사용 설정: "
+        f"{get_ema_setting_text()}"
+    )
+
+    log.info(
+        f"현재 EMA 배열 기준: "
         f"{get_ema_period_text_long()}"
     )
 
     log.info(
-        f"EMA 역배열 기준: "
+        f"현재 EMA 역배열 기준: "
         f"{get_ema_period_text_short()}"
     )
 
@@ -5215,10 +5221,6 @@ def startup():
     log.info(
         "========================================"
     )
-
-    # =====================================================
-    # ROC 카운트 설정 출력
-    # =====================================================
 
     log.info(
         "ROC 롱 카운트 표시:"
