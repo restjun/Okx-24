@@ -1080,7 +1080,9 @@ def calculate_orderbook_amount(
 # =========================================================
 # 호가 시각화 HTML
 #
-# 매수 / 매도 각각 별도 막대
+# ★ 변경:
+# 매도대기 → 위
+# 매수대기 → 아래
 # =========================================================
 
 def orderbook_html(row):
@@ -1205,37 +1207,8 @@ def orderbook_html(row):
     <div class="orderbook-wrap">
 
         <!-- =============================================
-             매수대기
-             ============================================= -->
-
-        <div class="orderbook-row">
-
-            <span class="orderbook-label bid-label">
-                매수대기
-            </span>
-
-            <span class="orderbook-amount bid-amount">
-                {format_volume(bid_amount)}
-            </span>
-
-            <div class="orderbook-bar-box">
-
-                <div
-                    class="orderbook-bar bid-bar"
-                    style="width:{bid_ratio:.1f}%"
-                ></div>
-
-            </div>
-
-            <span class="orderbook-ratio bid-ratio">
-                {bid_ratio:.1f}%
-            </span>
-
-        </div>
-
-
-        <!-- =============================================
-             매도대기
+             ★ 매도대기
+             위쪽 표시
              ============================================= -->
 
         <div class="orderbook-row">
@@ -1259,6 +1232,37 @@ def orderbook_html(row):
 
             <span class="orderbook-ratio ask-ratio">
                 {ask_ratio:.1f}%
+            </span>
+
+        </div>
+
+
+        <!-- =============================================
+             ★ 매수대기
+             아래쪽 표시
+             ============================================= -->
+
+        <div class="orderbook-row">
+
+            <span class="orderbook-label bid-label">
+                매수대기
+            </span>
+
+            <span class="orderbook-amount bid-amount">
+                {format_volume(bid_amount)}
+            </span>
+
+            <div class="orderbook-bar-box">
+
+                <div
+                    class="orderbook-bar bid-bar"
+                    style="width:{bid_ratio:.1f}%"
+                ></div>
+
+            </div>
+
+            <span class="orderbook-ratio bid-ratio">
+                {bid_ratio:.1f}%
             </span>
 
         </div>
@@ -4604,7 +4608,7 @@ def row_class(x):
 # 행 HTML
 #
 # 코인 바로 아래에
-# 매수/매도 호가 막대 표시
+# 매도 → 매수 호가 막대 표시
 # =========================================================
 
 def rows_html(
@@ -4711,6 +4715,7 @@ def rows_html(
 
             <!-- =========================================
                  호가 대기물량 시각화
+                 매도 위 / 매수 아래
                  ========================================= -->
 
             <tr class="orderbook-subrow">
