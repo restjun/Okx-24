@@ -82,6 +82,17 @@ EMA_USE_30 = "Y"
 EMA_USE_60 = "Y"
 EMA_USE_120 = "Y"
 
+# =========================================================
+# EMA 카운트 제한
+#
+# 중요:
+# 이 값은 1H EMA에만 적용
+# 4H EMA에는 적용하지 않음
+#
+# 1H 60개 = 60시간 = 2.5일
+# 4H는 카운트 제한 없음
+# =========================================================
+
 EMA1_MAX_COUNT = 60
 
 
@@ -1323,6 +1334,14 @@ def ema(df, period):
 # EMA 배열
 #
 # 선택된 EMA만 비교
+#
+# 예:
+# EMA30 > EMA60 > EMA120 = 정배열
+# EMA30 < EMA60 < EMA120 = 역배열
+#
+# 여기서는 배열의 방향과 지속 캔들 수만 계산.
+# 60개 제한은 ema_filter_pass()에서
+# 1H에만 적용한다.
 # =========================================================
 
 def ema_alignment_count(df):
@@ -1467,6 +1486,11 @@ def ema_display(
 
 # =========================================================
 # EMA 필터
+#
+# 중요:
+#
+# 1H → 방향 + 60개 카운트 제한 적용
+# 4H → 방향만 확인, 카운트 제한 없음
 # =========================================================
 
 def ema_filter_direction(
@@ -1528,51 +1552,90 @@ def ema_filter_pass(
     e_high
 ):
 
-    selected = []
+    # =====================================================
+    # 1H
+    #
+    # 1H만 EMA1_MAX_COUNT 검사
+    # =====================================================
 
     if USE_EMA_TIMEFRAME == "Y":
-        selected.append(e1)
 
-    if USE_EMA_HIGH_TIMEFRAME == "Y":
-        selected.append(e_high)
-
-    if not selected:
-        return True
-
-    for e in selected:
-
-        direction = e.get(
+        direction_1h = e1.get(
             "direction",
             "none"
         )
 
-        count = int(
-            e.get(
+        count_1h = int(
+            e1.get(
                 "count",
                 0
             )
         )
 
-        if direction not in (
+        if direction_1h not in (
             "long",
             "short"
         ):
 
             return False
 
-        if count > EMA1_MAX_COUNT:
+        if count_1h > EMA1_MAX_COUNT:
+
             return False
 
-    directions = [
-        e.get(
+
+    # =====================================================
+    # 4H
+    #
+    # 카운트 제한 없음
+    # 방향만 정상인지 확인
+    # =====================================================
+
+    if USE_EMA_HIGH_TIMEFRAME == "Y":
+
+        direction_4h = e_high.get(
             "direction",
             "none"
         )
-        for e in selected
-    ]
+
+        if direction_4h not in (
+            "long",
+            "short"
+        ):
+
+            return False
+
+
+    # =====================================================
+    # 두 시간봉 방향 일치 여부
+    # =====================================================
+
+    selected_directions = []
+
+    if USE_EMA_TIMEFRAME == "Y":
+
+        selected_directions.append(
+            e1.get(
+                "direction",
+                "none"
+            )
+        )
+
+    if USE_EMA_HIGH_TIMEFRAME == "Y":
+
+        selected_directions.append(
+            e_high.get(
+                "direction",
+                "none"
+            )
+        )
+
+    if not selected_directions:
+
+        return True
 
     return len(
-        set(directions)
+        set(selected_directions)
     ) == 1
 
 
@@ -2866,12 +2929,12 @@ def update_dashboard():
 # =========================================================
 # BTC 시황
 #
-# 1H / 4H 이평
+# 1H / 4H EMA
 # 정배열 → ☀️
 # 역배열 → 🌧️
 # 혼조 → ⚪
 #
-# 최종 시황
+# 최종 BTC
 # ROC5 >= 0 → ☀️
 # ROC5 < 0 → 🌧️
 # =========================================================
@@ -3046,11 +3109,6 @@ def market_change_html(value):
 
 # =========================================================
 # BTC 최종 시황
-#
-# ROC5 >= 0 → ☀️
-# ROC5 < 0 → 🌧️
-#
-# EMA는 최종 시황 판단에서 제외
 # =========================================================
 
 def btc_position_view(row):
@@ -3122,10 +3180,6 @@ def get_market_row(coin):
 def market_summary_html():
 
     btc = get_market_row("BTC")
-
-    # =====================================================
-    # BTC 데이터가 아직 없는 경우
-    # =====================================================
 
     if btc is None:
 
@@ -3233,10 +3287,6 @@ def market_summary_html():
         </div>
         """
 
-    # =====================================================
-    # BTC 데이터
-    # =====================================================
-
     ema_1 = btc.get(
         "ema_1h",
         {}
@@ -3255,10 +3305,6 @@ def market_summary_html():
     position = btc_position_view(
         btc
     )
-
-    # =====================================================
-    # ROC 표시
-    # =====================================================
 
     roc_value = roc_data.get(
         "roc10"
@@ -3298,10 +3344,6 @@ def market_summary_html():
 
             roc_display = "ROC5 -"
 
-
-    # =====================================================
-    # 최종 BTC ROC
-    # =====================================================
 
     position_roc = position.get(
         "roc_value"
@@ -3444,9 +3486,7 @@ def market_summary_html():
 
 
                 <!-- =====================================
-                     최종 BTC 시황
-                     ROC5 >= 0 → ☀️
-                     ROC5 < 0 → 🌧️
+                     최종 BTC
                      ===================================== -->
 
                 <div
@@ -4121,7 +4161,7 @@ h1{
 
 /* =========================================================
    BTC 이평 그림
-   ROC 표시와 동일한 크기
+   ROC와 동일한 크기
    ========================================================= */
 
 .market-cloud-icon{
@@ -5071,8 +5111,17 @@ def startup():
         f"{get_ema_period_text_long()}"
     )
 
+    # =====================================================
+    # 중요
+    # EMA1_MAX_COUNT는 1H에만 적용
+    # =====================================================
+
     log.info(
-        f"EMA count <= {EMA1_MAX_COUNT}"
+        f"1H EMA count <= {EMA1_MAX_COUNT}"
+    )
+
+    log.info(
+        "4H EMA count 제한 없음"
     )
 
     log.info(
@@ -5083,6 +5132,14 @@ def startup():
 
     log.info(
         "Y/Y → 두 시간봉 방향 일치 필요"
+    )
+
+    log.info(
+        "1H → EMA count 제한 적용"
+    )
+
+    log.info(
+        "4H → EMA count 제한 미적용"
     )
 
     log.info(
