@@ -60,7 +60,6 @@ KST = ZoneInfo("Asia/Seoul")
 
 ORDERBOOK_RANGE = 0.10
 ORDERBOOK_COUNT = 30
-
 ORDERBOOK_DOMINANCE_GAP = 5.0
 
 
@@ -722,8 +721,9 @@ def get_usdt_krw():
 #
 # 현재가 vs 당일 시가
 #
-# 음수 → 시장 자금 유입 참고 → ☀️
-# 양수 → 시장 자금 이탈 참고 → 🌧️
+# 음수 → ☀️
+# 양수 → 🌧️
+# 0 → ⚪
 # =========================================================
 
 def get_usdt_krw_daily_change():
@@ -759,13 +759,11 @@ def get_usdt_krw_daily_change():
         if opening <= 0:
             return None
 
-        change = (
+        return (
             (current - opening)
             / opening
             * 100
         )
-
-        return float(change)
 
     except Exception as e:
 
@@ -777,11 +775,10 @@ def get_usdt_krw_daily_change():
 
 
 # =========================================================
-# ★ USDT/KRW 시장 방향 HTML
+# ★ USDT/KRW 시장 상태
 #
-# 핵심:
-# USDT/KRW 음수 → ☀️
-# USDT/KRW 양수 → 🌧️
+# USDT 하락 → ☀️
+# USDT 상승 → 🌧️
 # =========================================================
 
 def usdt_market_state(change):
@@ -3715,7 +3712,7 @@ def update_dashboard():
     try:
 
         # =================================================
-        # ★ USDT/KRW는 OKX 사용 여부와 관계없이 조회
+        # ★ USDT/KRW는 OKX=N이어도 항상 조회
         # =================================================
 
         try:
@@ -3981,17 +3978,11 @@ def get_market_row(coin):
 # =========================================================
 # ★ BTC 시장 시황
 #
-# 하단 3칸
-#
 # 1번 : USDT/KRW
-#       음수 → ☀️
-#       양수 → 🌧️
-#
 # 2번 : BTC ROC5
-#
 # 3번 : TOP30 ROC5 시장폭
 #
-# BTC 1H/4H EMA는 이곳에서 제거
+# BTC 1H/4H EMA 제거
 # =========================================================
 
 def market_summary_html():
@@ -4006,14 +3997,8 @@ def market_summary_html():
         latest_usdt_krw_change
     )
 
-    usdt_icon = usdt_state[
-        "icon"
-    ]
-
-    usdt_class = usdt_state[
-        "class"
-    ]
-
+    usdt_icon = usdt_state["icon"]
+    usdt_class = usdt_state["class"]
 
     if latest_usdt_krw_change is None:
 
@@ -4041,12 +4026,13 @@ def market_summary_html():
 
             else:
 
-                usdt_change_display = "0.00%"
+                usdt_change_display = (
+                    "0.00%"
+                )
 
         except Exception:
 
             usdt_change_display = "-"
-
 
     usdt_price_display = (
         format_market_price(
@@ -4059,7 +4045,7 @@ def market_summary_html():
 
 
     # =====================================================
-    # BTC 데이터
+    # BTC ROC
     # =====================================================
 
     if btc is None:
@@ -4127,7 +4113,7 @@ def market_summary_html():
 
 
     # =====================================================
-    # TOP ROC 시장폭
+    # TOP30 ROC 시장폭
     # =====================================================
 
     breadth = top_roc_breadth(
@@ -4158,7 +4144,6 @@ def market_summary_html():
     else:
 
         breadth_display = "-"
-
 
     if breadth.get("state") == "up":
 
@@ -4231,6 +4216,7 @@ def market_summary_html():
 
             </div>
 
+
             <div class="btc-bottom">
 
                 <!-- =====================================
@@ -4238,12 +4224,10 @@ def market_summary_html():
                      USDT/KRW
                      ===================================== -->
 
-                <div
-                    class="
-                        btc-info-box
-                        {usdt_class}
-                    "
-                >
+                <div class="
+                    btc-info-box
+                    {usdt_class}
+                ">
 
                     <div class="btc-info-title">
                         USDT/KRW · 당일
@@ -4269,12 +4253,10 @@ def market_summary_html():
                      BTC ROC5
                      ===================================== -->
 
-                <div
-                    class="
-                        btc-info-box
-                        {btc_roc_class}
-                    "
-                >
+                <div class="
+                    btc-info-box
+                    {btc_roc_class}
+                ">
 
                     <div class="btc-info-title">
                         {get_roc_text()}
@@ -4296,12 +4278,10 @@ def market_summary_html():
                      TOP30 ROC5
                      ===================================== -->
 
-                <div
-                    class="
-                        btc-info-box
-                        {breadth_class}
-                    "
-                >
+                <div class="
+                    btc-info-box
+                    {breadth_class}
+                ">
 
                     <div class="btc-info-title">
                         TOP{TOP_N} {get_roc_text()}
@@ -4954,13 +4934,19 @@ h1{
     text-overflow:ellipsis;
 }
 
+
+/* =========================================================
+   ★ 당일 변동률 확대
+   ========================================================= */
+
 .btc-change{
     flex:none;
 
-    width:58px;
+    width:64px;
 
-    font-size:7.5px;
-    line-height:10px;
+    font-size:9px;
+    line-height:11px;
+
     font-weight:900;
 
     text-align:right;
@@ -5474,8 +5460,13 @@ td:nth-child(1){
     color:#ff5555;
 }
 
+
+/* =========================================================
+   ★ 매도대기 녹색
+   ========================================================= */
+
 .ask-label{
-    color:#4d9fff;
+    color:#39e875;
 }
 
 .orderbook-amount{
@@ -5496,7 +5487,7 @@ td:nth-child(1){
 }
 
 .ask-amount{
-    color:#66adff;
+    color:#39e875;
 }
 
 .orderbook-bar-box{
@@ -5531,7 +5522,7 @@ td:nth-child(1){
 }
 
 .ask-bar{
-    background:#438bd1;
+    background:#39e875;
 }
 
 .orderbook-ratio{
@@ -5552,7 +5543,7 @@ td:nth-child(1){
 }
 
 .ask-ratio{
-    color:#66adff;
+    color:#39e875;
 }
 
 .orderbook-bottom{
@@ -5601,7 +5592,7 @@ td:nth-child(1){
 }
 
 .ask-dominance{
-    color:#4da3ff;
+    color:#39e875;
 }
 
 .balanced-dominance{
@@ -5691,11 +5682,16 @@ td:nth-child(1){
         font-size:5.4px;
     }
 
+
+    /* 모바일 당일 변동률 확대 */
+
     .btc-change{
-        width:50px;
-        font-size:6.5px;
-        line-height:9px;
+        width:56px;
+
+        font-size:8px;
+        line-height:10px;
     }
+
 
     .btc-bottom{
         grid-template-columns:
@@ -5912,10 +5908,16 @@ td:nth-child(1){
         font-size:8px;
     }
 
+
+    /* 데스크톱 당일 변동률 확대 */
+
     .btc-change{
-        width:55px;
-        font-size:7px;
+        width:64px;
+
+        font-size:9px;
+        line-height:11px;
     }
+
 
     .btc-bottom{
         grid-template-columns:
