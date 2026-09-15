@@ -70,7 +70,6 @@ USE_EMA_HIGH_TIMEFRAME = "Y"
 #
 # Y = 해당 EMA 사용
 # N = 해당 EMA 사용 안 함
-#
 # =========================================================
 
 EMA1_FASTEST = 10
@@ -1324,15 +1323,6 @@ def ema(df, period):
 # EMA 배열
 #
 # 선택된 EMA만 비교
-#
-# 예:
-# 10 N
-# 30 Y
-# 60 Y
-# 120 Y
-#
-# → EMA30 > EMA60 > EMA120 = 정배열
-# → EMA30 < EMA60 < EMA120 = 역배열
 # =========================================================
 
 def ema_alignment_count(df):
@@ -2875,6 +2865,15 @@ def update_dashboard():
 
 # =========================================================
 # BTC 시황
+#
+# 1H / 4H 이평
+# 정배열 → ☀️
+# 역배열 → 🌧️
+# 혼조 → ⚪
+#
+# 최종 시황
+# ROC5 >= 0 → ☀️
+# ROC5 < 0 → 🌧️
 # =========================================================
 
 def market_direction_html(
@@ -2882,30 +2881,25 @@ def market_direction_html(
     count
 ):
 
-    try:
-        count = int(count)
-    except Exception:
-        count = 0
-
     if direction == "long":
 
         return (
-            '<span class="market-up">'
-            f'🟢 정배열 ({count})'
+            '<span class="market-up market-cloud-icon">'
+            '☀️'
             '</span>'
         )
 
     if direction == "short":
 
         return (
-            '<span class="market-down">'
-            f'🔴 역배열 ({count})'
+            '<span class="market-down market-cloud-icon">'
+            '🌧️'
             '</span>'
         )
 
     return (
-        '<span class="market-zero">'
-        '⚪ 혼조'
+        '<span class="market-zero market-cloud-icon">'
+        '⚪'
         '</span>'
     )
 
@@ -3053,8 +3047,8 @@ def market_change_html(value):
 # =========================================================
 # BTC 최종 시황
 #
-# ROC5 >= 0 → ☀️ 해
-# ROC5 <  0 → 🌧️ 비
+# ROC5 >= 0 → ☀️
+# ROC5 < 0 → 🌧️
 #
 # EMA는 최종 시황 판단에서 제외
 # =========================================================
@@ -3064,8 +3058,7 @@ def btc_position_view(row):
     if not row:
 
         return {
-            "text": "⚪",
-            "label": "확인중",
+            "icon": "⚪",
             "roc_value": None,
             "class": "wait"
         }
@@ -3082,8 +3075,7 @@ def btc_position_view(row):
     if roc_value is None:
 
         return {
-            "text": "⚪",
-            "label": "확인중",
+            "icon": "⚪",
             "roc_value": None,
             "class": "wait"
         }
@@ -3097,32 +3089,21 @@ def btc_position_view(row):
     except Exception:
 
         return {
-            "text": "⚪",
-            "label": "확인중",
+            "icon": "⚪",
             "roc_value": None,
             "class": "wait"
         }
 
-    # =====================================================
-    # ROC5 0 이상
-    # =====================================================
-
     if roc_value >= 0:
 
         return {
-            "text": "☀️",
-            "label": "해",
+            "icon": "☀️",
             "roc_value": roc_value,
             "class": "up"
         }
 
-    # =====================================================
-    # ROC5 0 미만
-    # =====================================================
-
     return {
-        "text": "🌧️",
-        "label": "비",
+        "icon": "🌧️",
         "roc_value": roc_value,
         "class": "down"
     }
@@ -3158,8 +3139,7 @@ def market_summary_html():
                 </span>
 
                 <span class="market-title-sub">
-                    {get_roc_text()} 기준 ·
-                    0 이상 해 / 0 미만 비
+                    {get_roc_text()} 기준
                 </span>
 
             </div>
@@ -3193,11 +3173,14 @@ def market_summary_html():
                             {format_timeframe(
                                 EMA_TIMEFRAME
                             )}
-                            구름
                         </div>
 
                         <div class="btc-info-value">
-                            ⚪ 확인중
+
+                            <span class="market-zero market-cloud-icon">
+                                ⚪
+                            </span>
+
                         </div>
 
                         <div class="btc-info-sub">
@@ -3213,11 +3196,14 @@ def market_summary_html():
                             {format_timeframe(
                                 EMA_HIGH_TIMEFRAME
                             )}
-                            구름
                         </div>
 
                         <div class="btc-info-value">
-                            ⚪ 확인중
+
+                            <span class="market-zero market-cloud-icon">
+                                ⚪
+                            </span>
+
                         </div>
 
                         <div class="btc-info-sub">
@@ -3231,10 +3217,6 @@ def market_summary_html():
 
                         <span class="btc-position-icon">
                             ⚪
-                        </span>
-
-                        <span class="btc-position-label">
-                            확인중
                         </span>
 
                         <span class="btc-position-roc">
@@ -3318,7 +3300,7 @@ def market_summary_html():
 
 
     # =====================================================
-    # 최종 BTC 시황
+    # 최종 BTC ROC
     # =====================================================
 
     position_roc = position.get(
@@ -3341,10 +3323,6 @@ def market_summary_html():
     <div class="market-summary">
 
 
-        <!-- =============================================
-             BTC 제목
-             ============================================= -->
-
         <div class="market-title">
 
             <span class="market-title-main">
@@ -3352,8 +3330,7 @@ def market_summary_html():
             </span>
 
             <span class="market-title-sub">
-                {get_roc_text()} 기준 ·
-                0 이상 해 / 0 미만 비
+                {get_roc_text()} 기준
             </span>
 
         </div>
@@ -3361,10 +3338,6 @@ def market_summary_html():
 
         <div class="btc-mobile">
 
-
-            <!-- =========================================
-                 BTC 가격
-                 ========================================= -->
 
             <div class="btc-top">
 
@@ -3387,19 +3360,11 @@ def market_summary_html():
             </div>
 
 
-            <!-- =========================================
-                 BTC 하단
-                 
-                 1H 구름
-                 4H 구름
-                 최종 해/비
-                 ========================================= -->
-
             <div class="btc-bottom">
 
 
                 <!-- =====================================
-                     1H 구름
+                     1H 이평 그림
                      ===================================== -->
 
                 <div class="btc-info-box">
@@ -3409,8 +3374,6 @@ def market_summary_html():
                         {format_timeframe(
                             EMA_TIMEFRAME
                         )}
-
-                        구름
 
                     </div>
 
@@ -3441,7 +3404,7 @@ def market_summary_html():
 
 
                 <!-- =====================================
-                     4H 구름
+                     4H 이평 그림
                      ===================================== -->
 
                 <div class="btc-info-box">
@@ -3451,8 +3414,6 @@ def market_summary_html():
                         {format_timeframe(
                             EMA_HIGH_TIMEFRAME
                         )}
-
-                        구름
 
                     </div>
 
@@ -3484,9 +3445,8 @@ def market_summary_html():
 
                 <!-- =====================================
                      최종 BTC 시황
-                     
-                     ROC5 >= 0 → ☀️ 해
-                     ROC5 <  0 → 🌧️ 비
+                     ROC5 >= 0 → ☀️
+                     ROC5 < 0 → 🌧️
                      ===================================== -->
 
                 <div
@@ -3497,11 +3457,7 @@ def market_summary_html():
                 >
 
                     <span class="btc-position-icon">
-                        {position["text"]}
-                    </span>
-
-                    <span class="btc-position-label">
-                        {position["label"]}
+                        {position["icon"]}
                     </span>
 
                     <span class="btc-position-roc">
@@ -4164,13 +4120,16 @@ h1{
 
 
 /* =========================================================
-   구름 카운트
+   BTC 이평 그림
+   ROC 표시와 동일한 크기
    ========================================================= */
 
-.cloud-count{
-    color:#8b929b;
-    font-size:5px;
-    font-weight:700;
+.market-cloud-icon{
+    display:inline-block;
+    font-size:5.8px;
+    line-height:8px;
+    font-weight:900;
+    vertical-align:middle;
 }
 
 
@@ -4199,13 +4158,6 @@ h1{
     line-height:31px;
 }
 
-.btc-position-label{
-    display:block;
-    font-size:9px;
-    line-height:11px;
-    font-weight:900;
-}
-
 .btc-position-roc{
     display:block;
     margin-top:1px;
@@ -4216,7 +4168,7 @@ h1{
 
 
 /* =========================================================
-   해
+   최종 ☀️
    ========================================================= */
 
 .btc-position.up{
@@ -4230,7 +4182,7 @@ h1{
 
 
 /* =========================================================
-   비
+   최종 🌧️
    ========================================================= */
 
 .btc-position.down{
@@ -4244,7 +4196,7 @@ h1{
 
 
 /* =========================================================
-   확인중
+   최종 ⚪
    ========================================================= */
 
 .btc-position.wait{
@@ -4596,13 +4548,20 @@ td:nth-child(1){
         line-height:6px;
     }
 
-    .cloud-count{
-        font-size:4.3px;
+
+    /* =============================================
+       모바일 이평 그림
+       ROC와 동일한 크기
+       ============================================= */
+
+    .market-cloud-icon{
+        font-size:5.2px;
+        line-height:7px;
     }
 
 
     /* =============================================
-       모바일 해 / 비
+       모바일 최종 해 / 비
        ============================================= */
 
     .btc-position{
@@ -4615,11 +4574,6 @@ td:nth-child(1){
     .btc-position-icon{
         font-size:26px;
         line-height:27px;
-    }
-
-    .btc-position-label{
-        font-size:8px;
-        line-height:9px;
     }
 
     .btc-position-roc{
@@ -4758,6 +4712,18 @@ td:nth-child(1){
         line-height:8px;
     }
 
+
+    /* =============================================
+       데스크톱 이평 그림
+       ROC와 동일한 크기
+       ============================================= */
+
+    .market-cloud-icon{
+        font-size:7px;
+        line-height:9px;
+    }
+
+
     .btc-position{
         min-width:120px;
         min-height:70px;
@@ -4767,11 +4733,6 @@ td:nth-child(1){
     .btc-position-icon{
         font-size:34px;
         line-height:35px;
-    }
-
-    .btc-position-label{
-        font-size:13px;
-        line-height:16px;
     }
 
     .btc-position-roc{
