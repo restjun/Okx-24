@@ -38,7 +38,7 @@ log = logging.getLogger("trading")
 # =========================================================
 
 VOLUME_HOURS = 24
-TOP_N = 50
+TOP_N = 30
 UPDATE_MINUTES = 1
 
 HISTORY_CHUNK = 200
@@ -63,7 +63,7 @@ KST = ZoneInfo("Asia/Seoul")
 # ※ 참고용이며 EMA/ROC 신호에는 사용하지 않음
 # =========================================================
 
-ORDERBOOK_RANGE = 0.05
+ORDERBOOK_RANGE = 0.10
 ORDERBOOK_COUNT = 30
 
 # 매수/매도 비중 차이가 이 값 이상이면 우세 표시
