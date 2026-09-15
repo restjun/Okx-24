@@ -61,7 +61,7 @@ KST = ZoneInfo("Asia/Seoul")
 EMA_TIMEFRAME = 60
 EMA_HIGH_TIMEFRAME = 240
 
-USE_EMA_TIMEFRAME = "N"
+USE_EMA_TIMEFRAME = "Y"
 USE_EMA_HIGH_TIMEFRAME = "Y"
 
 
@@ -93,7 +93,7 @@ EMA_USE_120 = "Y"
 # 4H는 카운트 제한 없음
 # =========================================================
 
-EMA1_MAX_COUNT = 60
+EMA1_MAX_COUNT = 200
 
 
 # =========================================================
