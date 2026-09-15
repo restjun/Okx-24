@@ -82,14 +82,13 @@ EMA_USE_30 = "Y"
 EMA_USE_60 = "Y"
 EMA_USE_120 = "Y"
 
+
 # =========================================================
 # EMA 카운트 제한
 #
-# 중요:
-# 이 값은 1H EMA에만 적용
-# 4H EMA에는 적용하지 않음
+# 1H EMA에만 적용
 #
-# 1H 60개 = 60시간 = 2.5일
+# 1H 200개 = 200시간 = 약 8.33일
 # 4H는 카운트 제한 없음
 # =========================================================
 
@@ -416,6 +415,12 @@ def validate_timeframe():
             "ROC_PERIOD는 1 이상이어야 합니다."
         )
 
+    if int(TOP_N) < 1:
+
+        raise ValueError(
+            "TOP_N은 1 이상이어야 합니다."
+        )
+
     for name, value in [
         ("LONG_ROC_COUNT_0", LONG_ROC_COUNT_0),
         ("LONG_ROC_COUNT_1", LONG_ROC_COUNT_1),
@@ -430,7 +435,7 @@ def validate_timeframe():
 
 
 # =========================================================
-# ROC 상승 카운트 표시 여부
+# 카운트 아이콘
 # =========================================================
 
 def long_count_enabled(count):
@@ -448,10 +453,6 @@ def long_count_enabled(count):
 
     return False
 
-
-# =========================================================
-# 카운트 아이콘
-# =========================================================
 
 def count_icon(count):
 
@@ -1124,10 +1125,13 @@ def get_okx_tickers():
                 continue
 
             try:
+
                 last = float(
                     x.get("last", 0)
                 )
+
             except Exception:
+
                 last = 0
 
             if last > 0:
@@ -1255,9 +1259,13 @@ def get_okx_current_1h(
 
     try:
 
-        start = get_current_candle_start(60)
+        start = get_current_candle_start(
+            60
+        )
 
-        price = float(current_price)
+        price = float(
+            current_price
+        )
 
         if price <= 0:
             return df
@@ -1332,16 +1340,6 @@ def ema(df, period):
 
 # =========================================================
 # EMA 배열
-#
-# 선택된 EMA만 비교
-#
-# 예:
-# EMA30 > EMA60 > EMA120 = 정배열
-# EMA30 < EMA60 < EMA120 = 역배열
-#
-# 여기서는 배열의 방향과 지속 캔들 수만 계산.
-# 60개 제한은 ema_filter_pass()에서
-# 1H에만 적용한다.
 # =========================================================
 
 def ema_alignment_count(df):
@@ -1487,10 +1485,8 @@ def ema_display(
 # =========================================================
 # EMA 필터
 #
-# 중요:
-#
-# 1H → 방향 + 60개 카운트 제한 적용
-# 4H → 방향만 확인, 카운트 제한 없음
+# 1H → 방향 + 200개 카운트 제한
+# 4H → 방향만 확인
 # =========================================================
 
 def ema_filter_direction(
@@ -1554,8 +1550,6 @@ def ema_filter_pass(
 
     # =====================================================
     # 1H
-    #
-    # 1H만 EMA1_MAX_COUNT 검사
     # =====================================================
 
     if USE_EMA_TIMEFRAME == "Y":
@@ -1586,9 +1580,6 @@ def ema_filter_pass(
 
     # =====================================================
     # 4H
-    #
-    # 카운트 제한 없음
-    # 방향만 정상인지 확인
     # =====================================================
 
     if USE_EMA_HIGH_TIMEFRAME == "Y":
@@ -1607,7 +1598,7 @@ def ema_filter_pass(
 
 
     # =====================================================
-    # 두 시간봉 방향 일치 여부
+    # 방향 일치
     # =====================================================
 
     selected_directions = []
@@ -2587,10 +2578,12 @@ def is_breakout(row):
 
 
 def is_progress(row):
+
     return False
 
 
 def is_roc3_progress(row):
+
     return False
 
 
@@ -2669,6 +2662,122 @@ def get_long_progress_count(row):
 
 
 # =========================================================
+# TOP_N ROC 시장 폭
+#
+# 중요:
+#
+# 현재 조회된 TOP_N 전체 코인을 대상으로
+# ROC5 > 0 인 코인 개수를 계산한다.
+#
+# 예:
+# TOP_N = 50
+# 양수 26개 이상 → ☀️
+# 양수 25개      → ⚪
+# 양수 24개 이하 → 🌧️
+#
+# TOP_N = 30
+# 양수 16개 이상 → ☀️
+# 양수 15개      → ⚪
+# 양수 14개 이하 → 🌧️
+#
+# TOP_N 값에 따라 자동 계산
+# =========================================================
+
+def top_roc_breadth(data):
+
+    result = {
+        "positive": 0,
+        "negative": 0,
+        "zero": 0,
+        "total": 0,
+        "ratio": 0.0,
+        "icon": "⚪",
+        "state": "neutral"
+    }
+
+    if not data:
+        return result
+
+    positive = 0
+    negative = 0
+    zero = 0
+    total = 0
+
+    for row in data:
+
+        if not row:
+            continue
+
+        r = row.get(
+            "roc",
+            {}
+        )
+
+        value = r.get(
+            "roc10"
+        )
+
+        try:
+
+            if value is None:
+                continue
+
+            value = float(value)
+
+        except Exception:
+
+            continue
+
+        if pd.isna(value):
+            continue
+
+        total += 1
+
+        if value > 0:
+
+            positive += 1
+
+        elif value < 0:
+
+            negative += 1
+
+        else:
+
+            zero += 1
+
+    result["positive"] = positive
+    result["negative"] = negative
+    result["zero"] = zero
+    result["total"] = total
+
+    if total <= 0:
+        return result
+
+    result["ratio"] = (
+        positive / total * 100
+    )
+
+    half = total / 2
+
+    if positive > half:
+
+        result["icon"] = "☀️"
+        result["state"] = "up"
+
+    elif positive == half:
+
+        result["icon"] = "⚪"
+        result["state"] = "neutral"
+
+    else:
+
+        result["icon"] = "🌧️"
+        result["state"] = "down"
+
+    return result
+
+
+# =========================================================
 # Upbit 업데이트
 # =========================================================
 
@@ -2731,11 +2840,23 @@ def update_upbit():
 
     latest_upbit_data = rows
 
+    breadth = top_roc_breadth(
+        latest_upbit_data
+    )
+
     latest_upbit_update_time = kst()
 
     log.info(
         f"업비트 완료 / "
         f"상승 {sum(is_long_combined(x) for x in rows)}개"
+    )
+
+    log.info(
+        f"TOP{TOP_N} ROC 시장폭 / "
+        f"양수 {breadth['positive']} / "
+        f"음수 {breadth['negative']} / "
+        f"중립 {breadth['zero']} / "
+        f"판단 {breadth['icon']}"
     )
 
 
@@ -2858,8 +2979,20 @@ def update_okx(usdt):
 
     latest_okx_data = rows
 
+    breadth = top_roc_breadth(
+        latest_okx_data
+    )
+
     okx_1h_cache_time = kst()
     latest_okx_update_time = kst()
+
+    log.info(
+        f"OKX TOP{TOP_N} ROC 시장폭 / "
+        f"양수 {breadth['positive']} / "
+        f"음수 {breadth['negative']} / "
+        f"중립 {breadth['zero']} / "
+        f"판단 {breadth['icon']}"
+    )
 
     return True
 
@@ -2888,7 +3021,9 @@ def update_dashboard():
 
             try:
                 update_upbit()
+
             except Exception as e:
+
                 log.exception(
                     f"업비트 업데이트 오류: {e}"
                 )
@@ -2905,6 +3040,7 @@ def update_dashboard():
 
                 if usdt:
                     latest_usdt_krw = usdt
+
                 else:
                     usdt = latest_usdt_krw
 
@@ -2929,14 +3065,17 @@ def update_dashboard():
 # =========================================================
 # BTC 시황
 #
-# 1H / 4H EMA
-# 정배열 → ☀️
-# 역배열 → 🌧️
-# 혼조 → ⚪
+# 변경된 구조
 #
-# 최종 BTC
-# ROC5 >= 0 → ☀️
-# ROC5 < 0 → 🌧️
+# 1번 칸:
+#   1H + 4H EMA
+#
+# 2번 칸:
+#   BTC ROC5
+#
+# 3번 칸:
+#   TOP_N 전체 ROC5 시장폭
+#
 # =========================================================
 
 def market_direction_html(
@@ -2988,7 +3127,9 @@ def market_roc_html(r):
         )
 
     try:
+
         value = float(value)
+
     except Exception:
 
         return (
@@ -3052,8 +3193,11 @@ def format_market_price(price):
         return "-"
 
     try:
+
         price = float(price)
+
     except Exception:
+
         return "-"
 
     if price >= 100000000:
@@ -3077,7 +3221,9 @@ def market_change_html(value):
         )
 
     try:
+
         value = float(value)
+
     except Exception:
 
         return (
@@ -3108,7 +3254,7 @@ def market_change_html(value):
 
 
 # =========================================================
-# BTC 최종 시황
+# BTC 최종 ROC
 # =========================================================
 
 def btc_position_view(row):
@@ -3177,11 +3323,55 @@ def get_market_row(coin):
     return None
 
 
+# =========================================================
+# TOP ROC 시장폭 HTML
+# =========================================================
+
+def top_roc_breadth_html(data):
+
+    breadth = top_roc_breadth(
+        data
+    )
+
+    total = breadth["total"]
+    positive = breadth["positive"]
+    icon = breadth["icon"]
+
+    if total <= 0:
+
+        return (
+            '<span class="market-zero">'
+            '⚪ -'
+            '</span>'
+        )
+
+    return (
+        f'<span class="breadth-icon">'
+        f'{icon}'
+        f'</span>'
+        f'<span class="breadth-count">'
+        f'{positive}/{total}'
+        f'</span>'
+    )
+
+
+# =========================================================
+# BTC 시장 시황
+#
+# 3칸 구조
+#
+# [1H + 4H EMA] [BTC ROC5] [TOP_N ROC5]
+# =========================================================
+
 def market_summary_html():
 
     btc = get_market_row("BTC")
 
     if btc is None:
+
+        breadth_html = top_roc_breadth_html(
+            latest_upbit_data
+        )
 
         return f"""
         <div class="market-summary">
@@ -3221,17 +3411,30 @@ def market_summary_html():
                 <div class="btc-bottom">
 
 
+                    <!-- =================================
+                         1번
+                         1H + 4H EMA
+                         ================================= -->
+
                     <div class="btc-info-box">
 
                         <div class="btc-info-title">
-                            {format_timeframe(
-                                EMA_TIMEFRAME
-                            )}
+                            EMA
                         </div>
 
                         <div class="btc-info-value">
 
-                            <span class="market-zero market-cloud-icon">
+                            <span class="ema-market-line">
+                                {format_timeframe(
+                                    EMA_TIMEFRAME
+                                )}
+                                ⚪
+                            </span>
+
+                            <span class="ema-market-line">
+                                {format_timeframe(
+                                    EMA_HIGH_TIMEFRAME
+                                )}
                                 ⚪
                             </span>
 
@@ -3244,37 +3447,45 @@ def market_summary_html():
                     </div>
 
 
+                    <!-- =================================
+                         2번
+                         BTC ROC
+                         ================================= -->
+
                     <div class="btc-info-box">
 
                         <div class="btc-info-title">
-                            {format_timeframe(
-                                EMA_HIGH_TIMEFRAME
-                            )}
+                            {get_roc_text()}
                         </div>
 
                         <div class="btc-info-value">
 
-                            <span class="market-zero market-cloud-icon">
+                            <span class="market-zero">
                                 ⚪
                             </span>
 
                         </div>
 
                         <div class="btc-info-sub">
-                            {get_ema_period_text_long()}
+                            BTC 기준
                         </div>
 
                     </div>
 
+
+                    <!-- =================================
+                         3번
+                         TOP_N ROC
+                         ================================= -->
 
                     <div class="btc-position wait">
 
                         <span class="btc-position-icon">
-                            ⚪
+                            {breadth_html}
                         </span>
 
                         <span class="btc-position-roc">
-                            ROC5 -
+                            TOP{TOP_N} ROC
                         </span>
 
                     </div>
@@ -3286,6 +3497,7 @@ def market_summary_html():
 
         </div>
         """
+
 
     ema_1 = btc.get(
         "ema_1h",
@@ -3305,6 +3517,11 @@ def market_summary_html():
     position = btc_position_view(
         btc
     )
+
+
+    # =====================================================
+    # BTC ROC 표시
+    # =====================================================
 
     roc_value = roc_data.get(
         "roc10"
@@ -3345,19 +3562,45 @@ def market_summary_html():
             roc_display = "ROC5 -"
 
 
-    position_roc = position.get(
-        "roc_value"
+    # =====================================================
+    # TOP_N ROC 시장폭
+    # =====================================================
+
+    breadth = top_roc_breadth(
+        latest_upbit_data
     )
 
-    if position_roc is None:
+    breadth_icon = breadth["icon"]
+    breadth_positive = breadth["positive"]
+    breadth_total = breadth["total"]
 
-        position_roc_display = "ROC5 -"
+
+    if breadth_total > 0:
+
+        breadth_display = (
+            f"{breadth_positive}/{breadth_total}"
+        )
 
     else:
 
-        position_roc_display = (
-            f"ROC5 {position_roc:+.2f}%"
-        )
+        breadth_display = "-"
+
+
+    # =====================================================
+    # TOP_N ROC 시장폭 색상
+    # =====================================================
+
+    if breadth["state"] == "up":
+
+        breadth_class = "up"
+
+    elif breadth["state"] == "down":
+
+        breadth_class = "down"
+
+    else:
+
+        breadth_class = "wait"
 
 
     return f"""
@@ -3406,31 +3649,94 @@ def market_summary_html():
 
 
                 <!-- =====================================
-                     1H 이평 그림
+                     1번 칸
+                     1H + 4H EMA
+                     ===================================== -->
+
+                <div class="btc-info-box">
+
+                    <div class="btc-info-title">
+                        EMA
+                    </div>
+
+
+                    <div class="btc-info-value">
+
+
+                        <div class="ema-market-line">
+
+                            <span class="ema-market-tf">
+                                {format_timeframe(
+                                    EMA_TIMEFRAME
+                                )}
+                            </span>
+
+                            {market_direction_html(
+                                ema_1.get(
+                                    "direction",
+                                    "none"
+                                ),
+                                ema_1.get(
+                                    "count",
+                                    0
+                                )
+                            )}
+
+                        </div>
+
+
+                        <div class="ema-market-line">
+
+                            <span class="ema-market-tf">
+                                {format_timeframe(
+                                    EMA_HIGH_TIMEFRAME
+                                )}
+                            </span>
+
+                            {market_direction_html(
+                                ema_high.get(
+                                    "direction",
+                                    "none"
+                                ),
+                                ema_high.get(
+                                    "count",
+                                    0
+                                )
+                            )}
+
+                        </div>
+
+
+                    </div>
+
+
+                    <div class="btc-info-sub">
+
+                        {get_ema_period_text_long()}
+
+                    </div>
+
+                </div>
+
+
+                <!-- =====================================
+                     2번 칸
+                     BTC ROC5
                      ===================================== -->
 
                 <div class="btc-info-box">
 
                     <div class="btc-info-title">
 
-                        {format_timeframe(
-                            EMA_TIMEFRAME
-                        )}
+                        {get_roc_text()}
 
                     </div>
 
 
                     <div class="btc-info-value">
 
-                        {market_direction_html(
-                            ema_1.get(
-                                "direction",
-                                "none"
-                            ),
-                            ema_1.get(
-                                "count",
-                                0
-                            )
+                        {market_roc_html(
+                            roc_data
                         )}
 
                     </div>
@@ -3446,62 +3752,30 @@ def market_summary_html():
 
 
                 <!-- =====================================
-                     4H 이평 그림
-                     ===================================== -->
-
-                <div class="btc-info-box">
-
-                    <div class="btc-info-title">
-
-                        {format_timeframe(
-                            EMA_HIGH_TIMEFRAME
-                        )}
-
-                    </div>
-
-
-                    <div class="btc-info-value">
-
-                        {market_direction_html(
-                            ema_high.get(
-                                "direction",
-                                "none"
-                            ),
-                            ema_high.get(
-                                "count",
-                                0
-                            )
-                        )}
-
-                    </div>
-
-
-                    <div class="btc-info-sub">
-
-                        {get_ema_period_text_long()}
-
-                    </div>
-
-                </div>
-
-
-                <!-- =====================================
-                     최종 BTC
+                     3번 칸
+                     TOP_N ROC5
                      ===================================== -->
 
                 <div
                     class="
                         btc-position
-                        {position["class"]}
+                        {breadth_class}
                     "
                 >
 
                     <span class="btc-position-icon">
-                        {position["icon"]}
+
+                        {breadth_icon}
+
                     </span>
 
                     <span class="btc-position-roc">
-                        {position_roc_display}
+
+                        TOP{TOP_N}
+                        {get_roc_text()}
+                        <br>
+                        {breadth_display}
+
                     </span>
 
                 </div>
@@ -3547,7 +3821,9 @@ def roc_html(r):
         )
 
     try:
+
         value = float(value)
+
     except Exception:
 
         return (
@@ -3994,6 +4270,11 @@ h1{
     line-height:14px;
 }
 
+
+/* =========================================================
+   제목
+   ========================================================= */
+
 .market-title,
 .section-title{
     display:flex;
@@ -4044,6 +4325,11 @@ h1{
 .long_combined-section-title{
     border-left-color:#39e875;
 }
+
+
+/* =========================================================
+   BTC 시황
+   ========================================================= */
 
 .market-summary{
     width:100%;
@@ -4103,7 +4389,7 @@ h1{
 
 
 /* =========================================================
-   BTC 하단
+   BTC 하단 3칸
    ========================================================= */
 
 .btc-bottom{
@@ -4160,8 +4446,28 @@ h1{
 
 
 /* =========================================================
-   BTC 이평 그림
-   ROC와 동일한 크기
+   1번 칸 EMA
+   ========================================================= */
+
+.ema-market-line{
+    display:flex;
+    align-items:center;
+    gap:3px;
+    height:11px;
+    line-height:10px;
+    white-space:nowrap;
+}
+
+.ema-market-tf{
+    color:#7f8791;
+    font-size:5.5px;
+    font-weight:800;
+    min-width:16px;
+}
+
+
+/* =========================================================
+   이평 아이콘
    ========================================================= */
 
 .market-cloud-icon{
@@ -4174,7 +4480,26 @@ h1{
 
 
 /* =========================================================
-   BTC 최종 해 / 비
+   3번 TOP ROC
+   ========================================================= */
+
+.breadth-icon{
+    display:inline-block;
+    font-size:27px;
+    line-height:28px;
+    font-weight:900;
+}
+
+.breadth-count{
+    display:block;
+    font-size:6px;
+    line-height:8px;
+    font-weight:900;
+}
+
+
+/* =========================================================
+   BTC 최종 / 시장폭
    ========================================================= */
 
 .btc-position{
@@ -4208,7 +4533,7 @@ h1{
 
 
 /* =========================================================
-   최종 ☀️
+   TOP ROC ☀️
    ========================================================= */
 
 .btc-position.up{
@@ -4222,7 +4547,7 @@ h1{
 
 
 /* =========================================================
-   최종 🌧️
+   TOP ROC 🌧️
    ========================================================= */
 
 .btc-position.down{
@@ -4236,7 +4561,7 @@ h1{
 
 
 /* =========================================================
-   최종 ⚪
+   TOP ROC ⚪
    ========================================================= */
 
 .btc-position.wait{
@@ -4589,9 +4914,20 @@ td:nth-child(1){
     }
 
 
+    .ema-market-line{
+        height:9px;
+        line-height:8px;
+        gap:2px;
+    }
+
+    .ema-market-tf{
+        font-size:4.5px;
+        min-width:13px;
+    }
+
+
     /* =============================================
        모바일 이평 그림
-       ROC와 동일한 크기
        ============================================= */
 
     .market-cloud-icon{
@@ -4601,7 +4937,22 @@ td:nth-child(1){
 
 
     /* =============================================
-       모바일 최종 해 / 비
+       모바일 TOP ROC
+       ============================================= */
+
+    .breadth-icon{
+        font-size:24px;
+        line-height:25px;
+    }
+
+    .breadth-count{
+        font-size:5px;
+        line-height:6px;
+    }
+
+
+    /* =============================================
+       모바일 최종 칸
        ============================================= */
 
     .btc-position{
@@ -4753,12 +5104,38 @@ td:nth-child(1){
     }
 
 
+    .ema-market-line{
+        height:14px;
+        line-height:12px;
+        gap:4px;
+    }
+
+    .ema-market-tf{
+        font-size:6px;
+        min-width:22px;
+    }
+
+
     /* =============================================
        데스크톱 이평 그림
-       ROC와 동일한 크기
        ============================================= */
 
     .market-cloud-icon{
+        font-size:7px;
+        line-height:9px;
+    }
+
+
+    /* =============================================
+       데스크톱 TOP ROC
+       ============================================= */
+
+    .breadth-icon{
+        font-size:34px;
+        line-height:35px;
+    }
+
+    .breadth-count{
         font-size:7px;
         line-height:9px;
     }
@@ -4871,6 +5248,7 @@ def dashboard():
 
     sections = ""
 
+
     # =====================================================
     # 상승 신호
     # =====================================================
@@ -4899,6 +5277,7 @@ def dashboard():
             )
 
         )
+
 
     # =====================================================
     # OKX 상승 신호
@@ -4929,6 +5308,7 @@ def dashboard():
 
         )
 
+
     # =====================================================
     # 전체
     # =====================================================
@@ -4948,6 +5328,7 @@ def dashboard():
             latest_okx_data,
             latest_okx_update_time
         )
+
 
     return f"""
 
@@ -5097,6 +5478,7 @@ def startup():
         f"사용={USE_EMA_HIGH_TIMEFRAME}"
     )
 
+
     # =====================================================
     # EMA Y/N 출력
     # =====================================================
@@ -5111,9 +5493,9 @@ def startup():
         f"{get_ema_period_text_long()}"
     )
 
+
     # =====================================================
-    # 중요
-    # EMA1_MAX_COUNT는 1H에만 적용
+    # EMA 카운트
     # =====================================================
 
     log.info(
@@ -5141,6 +5523,40 @@ def startup():
     log.info(
         "4H → EMA count 제한 미적용"
     )
+
+
+    # =====================================================
+    # TOP ROC 시장폭
+    # =====================================================
+
+    log.info(
+        "========================================"
+    )
+
+    log.info(
+        f"TOP{TOP_N} ROC 시장폭 기준:"
+    )
+
+    log.info(
+        "ROC5 양수 > 전체의 50% → ☀️"
+    )
+
+    log.info(
+        "ROC5 양수 = 전체의 50% → ⚪"
+    )
+
+    log.info(
+        "ROC5 양수 < 전체의 50% → 🌧️"
+    )
+
+    log.info(
+        "TOP_N 변경 시 기준 자동 변경"
+    )
+
+
+    # =====================================================
+    # ROC 돌파
+    # =====================================================
 
     log.info(
         "========================================"
@@ -5206,10 +5622,20 @@ def startup():
         "========================================"
     )
 
+
+    # =====================================================
+    # 최초 업데이트
+    # =====================================================
+
     threading.Thread(
         target=update_dashboard,
         daemon=True
     ).start()
+
+
+    # =====================================================
+    # 스케줄러
+    # =====================================================
 
     schedule.every(
         UPDATE_MINUTES
