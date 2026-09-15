@@ -2664,23 +2664,19 @@ def get_long_progress_count(row):
 # =========================================================
 # TOP_N ROC 시장 폭
 #
-# 중요:
-#
 # 현재 조회된 TOP_N 전체 코인을 대상으로
 # ROC5 > 0 인 코인 개수를 계산한다.
 #
-# 예:
-# TOP_N = 50
-# 양수 26개 이상 → ☀️
-# 양수 25개      → ⚪
-# 양수 24개 이하 → 🌧️
+# TOP50:
+# 26 이상 → ☀️
+# 25     → ⚪
+# 24 이하 → 🌧️
 #
-# TOP_N = 30
-# 양수 16개 이상 → ☀️
-# 양수 15개      → ⚪
-# 양수 14개 이하 → 🌧️
+# TOP30:
+# 16 이상 → ☀️
+# 15     → ⚪
+# 14 이하 → 🌧️
 #
-# TOP_N 값에 따라 자동 계산
 # =========================================================
 
 def top_roc_breadth(data):
@@ -3063,19 +3059,7 @@ def update_dashboard():
 
 
 # =========================================================
-# BTC 시황
-#
-# 변경된 구조
-#
-# 1번 칸:
-#   1H + 4H EMA
-#
-# 2번 칸:
-#   BTC ROC5
-#
-# 3번 칸:
-#   TOP_N 전체 ROC5 시장폭
-#
+# 시장 방향 HTML
 # =========================================================
 
 def market_direction_html(
@@ -3106,13 +3090,17 @@ def market_direction_html(
     )
 
 
+# =========================================================
+# BTC ROC HTML
+# =========================================================
+
 def market_roc_html(r):
 
     if not r:
 
         return (
             '<span class="market-zero">'
-            '⚪ -'
+            '⚪'
             '</span>'
         )
 
@@ -3122,7 +3110,7 @@ def market_roc_html(r):
 
         return (
             '<span class="market-zero">'
-            '⚪ -'
+            '⚪'
             '</span>'
         )
 
@@ -3134,41 +3122,15 @@ def market_roc_html(r):
 
         return (
             '<span class="market-zero">'
-            '⚪ -'
+            '⚪'
             '</span>'
         )
-
-    if (
-        value > 0
-        and r.get(
-            "long_breakout_state",
-            "none"
-        ) != "none"
-    ):
-
-        count = int(
-            r.get(
-                "long_breakout_count",
-                0
-            )
-        )
-
-        if (
-            count in (0, 1, 2)
-            and long_count_enabled(count)
-        ):
-
-            return (
-                '<span class="market-up">'
-                f'🚀{count_icon(count)}'
-                '</span>'
-            )
 
     if value > 0:
 
         return (
             '<span class="market-up">'
-            '🟢 ROC +'
+            '☀️'
             '</span>'
         )
 
@@ -3176,16 +3138,20 @@ def market_roc_html(r):
 
         return (
             '<span class="market-down">'
-            '🔴 ROC -'
+            '🌧️'
             '</span>'
         )
 
     return (
         '<span class="market-zero">'
-        '⚪ 0'
+        '⚪'
         '</span>'
     )
 
+
+# =========================================================
+# 가격
+# =========================================================
 
 def format_market_price(price):
 
@@ -3211,6 +3177,10 @@ def format_market_price(price):
 
     return f"{price:.6f}"
 
+
+# =========================================================
+# 시장 등락률
+# =========================================================
 
 def market_change_html(value):
 
@@ -3254,64 +3224,8 @@ def market_change_html(value):
 
 
 # =========================================================
-# BTC 최종 ROC
+# BTC 행 찾기
 # =========================================================
-
-def btc_position_view(row):
-
-    if not row:
-
-        return {
-            "icon": "⚪",
-            "roc_value": None,
-            "class": "wait"
-        }
-
-    r = row.get(
-        "roc",
-        {}
-    )
-
-    roc_value = r.get(
-        "roc10"
-    )
-
-    if roc_value is None:
-
-        return {
-            "icon": "⚪",
-            "roc_value": None,
-            "class": "wait"
-        }
-
-    try:
-
-        roc_value = float(
-            roc_value
-        )
-
-    except Exception:
-
-        return {
-            "icon": "⚪",
-            "roc_value": None,
-            "class": "wait"
-        }
-
-    if roc_value >= 0:
-
-        return {
-            "icon": "☀️",
-            "roc_value": roc_value,
-            "class": "up"
-        }
-
-    return {
-        "icon": "🌧️",
-        "roc_value": roc_value,
-        "class": "down"
-    }
-
 
 def get_market_row(coin):
 
@@ -3324,53 +3238,55 @@ def get_market_row(coin):
 
 
 # =========================================================
-# TOP ROC 시장폭 HTML
-# =========================================================
-
-def top_roc_breadth_html(data):
-
-    breadth = top_roc_breadth(
-        data
-    )
-
-    total = breadth["total"]
-    positive = breadth["positive"]
-    icon = breadth["icon"]
-
-    if total <= 0:
-
-        return (
-            '<span class="market-zero">'
-            '⚪ -'
-            '</span>'
-        )
-
-    return (
-        f'<span class="breadth-icon">'
-        f'{icon}'
-        f'</span>'
-        f'<span class="breadth-count">'
-        f'{positive}/{total}'
-        f'</span>'
-    )
-
-
-# =========================================================
 # BTC 시장 시황
 #
-# 3칸 구조
+# 최종 3칸 구조
 #
-# [1H + 4H EMA] [BTC ROC5] [TOP_N ROC5]
+# ┌────────────┬────────────┬────────────┐
+# │ 1H   ☀️   │  BTC ROC5  │ TOP50 ROC5 │
+# │ EMA30...  │    ☀️      │    ☀️      │
+# │────────────│ +1.25%     │   26/50    │
+# │ 4H   ☀️   │  BTC 기준  │ TOP50 기준 │
+# │ EMA30...  │            │            │
+# └────────────┴────────────┴────────────┘
+#
+# 1번 칸도 정확히 상/하 2등분
+# 2번과 3번은 동일한 카드
 # =========================================================
 
 def market_summary_html():
 
     btc = get_market_row("BTC")
 
+    # =====================================================
+    # BTC 데이터가 아직 없을 경우
+    # =====================================================
+
     if btc is None:
 
-        breadth_html = top_roc_breadth_html(
+        breadth = top_roc_breadth(
             latest_upbit_data
+        )
+
+        breadth_icon = breadth.get(
+            "icon",
+            "⚪"
+        )
+
+        breadth_positive = breadth.get(
+            "positive",
+            0
+        )
+
+        breadth_total = breadth.get(
+            "total",
+            0
+        )
+
+        breadth_display = (
+            f"{breadth_positive}/{breadth_total}"
+            if breadth_total > 0
+            else "-"
         )
 
         return f"""
@@ -3412,58 +3328,74 @@ def market_summary_html():
 
 
                     <!-- =================================
-                         1번
-                         1H + 4H EMA
+                         1번 칸
+                         EMA
                          ================================= -->
 
-                    <div class="btc-info-box">
+                    <div class="btc-ema-box">
 
-                        <div class="btc-info-title">
-                            EMA
+
+                        <div class="btc-ema-half">
+
+                            <div class="btc-ema-icon">
+                                ⚪
+                            </div>
+
+                            <div class="btc-ema-text">
+
+                                <div class="btc-ema-title">
+                                    {format_timeframe(
+                                        EMA_TIMEFRAME
+                                    )}
+                                </div>
+
+                                <div class="btc-ema-sub">
+                                    {get_ema_period_text_long()}
+                                </div>
+
+                            </div>
+
                         </div>
 
-                        <div class="btc-info-value">
 
-                            <span class="ema-market-line">
-                                {format_timeframe(
-                                    EMA_TIMEFRAME
-                                )}
+                        <div class="btc-ema-half">
+
+                            <div class="btc-ema-icon">
                                 ⚪
-                            </span>
+                            </div>
 
-                            <span class="ema-market-line">
-                                {format_timeframe(
-                                    EMA_HIGH_TIMEFRAME
-                                )}
-                                ⚪
-                            </span>
+                            <div class="btc-ema-text">
 
-                        </div>
+                                <div class="btc-ema-title">
+                                    {format_timeframe(
+                                        EMA_HIGH_TIMEFRAME
+                                    )}
+                                </div>
 
-                        <div class="btc-info-sub">
-                            {get_ema_period_text_long()}
+                                <div class="btc-ema-sub">
+                                    {get_ema_period_text_long()}
+                                </div>
+
+                            </div>
+
                         </div>
 
                     </div>
 
 
                     <!-- =================================
-                         2번
-                         BTC ROC
+                         2번 칸
+                         BTC ROC5
                          ================================= -->
 
-                    <div class="btc-info-box">
+                    <div class="btc-info-box wait">
 
                         <div class="btc-info-title">
                             {get_roc_text()}
                         </div>
 
                         <div class="btc-info-value">
-
-                            <span class="market-zero">
-                                ⚪
-                            </span>
-
+                            ⚪
                         </div>
 
                         <div class="btc-info-sub">
@@ -3474,19 +3406,23 @@ def market_summary_html():
 
 
                     <!-- =================================
-                         3번
-                         TOP_N ROC
+                         3번 칸
+                         TOP_N ROC5
                          ================================= -->
 
-                    <div class="btc-position wait">
+                    <div class="btc-info-box wait">
 
-                        <span class="btc-position-icon">
-                            {breadth_html}
-                        </span>
+                        <div class="btc-info-title">
+                            TOP{TOP_N} {get_roc_text()}
+                        </div>
 
-                        <span class="btc-position-roc">
-                            TOP{TOP_N} ROC
-                        </span>
+                        <div class="btc-info-value">
+                            {breadth_icon}
+                        </div>
+
+                        <div class="btc-info-sub">
+                            {breadth_display}
+                        </div>
 
                     </div>
 
@@ -3498,6 +3434,10 @@ def market_summary_html():
         </div>
         """
 
+
+    # =====================================================
+    # BTC 데이터
+    # =====================================================
 
     ema_1 = btc.get(
         "ema_1h",
@@ -3514,13 +3454,48 @@ def market_summary_html():
         {}
     )
 
-    position = btc_position_view(
-        btc
+
+    # =====================================================
+    # EMA 방향
+    # =====================================================
+
+    ema_1_direction = ema_1.get(
+        "direction",
+        "none"
+    )
+
+    ema_high_direction = ema_high.get(
+        "direction",
+        "none"
     )
 
 
     # =====================================================
-    # BTC ROC 표시
+    # EMA 아이콘
+    # =====================================================
+
+    def ema_market_icon(direction):
+
+        if direction == "long":
+            return "☀️"
+
+        if direction == "short":
+            return "🌧️"
+
+        return "⚪"
+
+
+    ema_1_icon = ema_market_icon(
+        ema_1_direction
+    )
+
+    ema_high_icon = ema_market_icon(
+        ema_high_direction
+    )
+
+
+    # =====================================================
+    # BTC ROC5 값
     # =====================================================
 
     roc_value = roc_data.get(
@@ -3529,7 +3504,10 @@ def market_summary_html():
 
     if roc_value is None:
 
-        roc_display = "ROC5 -"
+        roc_icon = "⚪"
+        roc_display = "-"
+
+        btc_roc_class = "wait"
 
     else:
 
@@ -3541,25 +3519,35 @@ def market_summary_html():
 
             if roc_value > 0:
 
+                roc_icon = "☀️"
+
                 roc_display = (
-                    f"ROC5 +{roc_value:.2f}%"
+                    f"+{roc_value:.2f}%"
                 )
+
+                btc_roc_class = "up"
 
             elif roc_value < 0:
 
+                roc_icon = "🌧️"
+
                 roc_display = (
-                    f"ROC5 {roc_value:.2f}%"
+                    f"{roc_value:.2f}%"
                 )
+
+                btc_roc_class = "down"
 
             else:
 
-                roc_display = (
-                    "ROC5 0.00%"
-                )
+                roc_icon = "⚪"
+                roc_display = "0.00%"
+                btc_roc_class = "wait"
 
         except Exception:
 
-            roc_display = "ROC5 -"
+            roc_icon = "⚪"
+            roc_display = "-"
+            btc_roc_class = "wait"
 
 
     # =====================================================
@@ -3570,10 +3558,20 @@ def market_summary_html():
         latest_upbit_data
     )
 
-    breadth_icon = breadth["icon"]
-    breadth_positive = breadth["positive"]
-    breadth_total = breadth["total"]
+    breadth_icon = breadth.get(
+        "icon",
+        "⚪"
+    )
 
+    breadth_positive = breadth.get(
+        "positive",
+        0
+    )
+
+    breadth_total = breadth.get(
+        "total",
+        0
+    )
 
     if breadth_total > 0:
 
@@ -3587,14 +3585,14 @@ def market_summary_html():
 
 
     # =====================================================
-    # TOP_N ROC 시장폭 색상
+    # TOP_N 상태
     # =====================================================
 
-    if breadth["state"] == "up":
+    if breadth.get("state") == "up":
 
         breadth_class = "up"
 
-    elif breadth["state"] == "down":
+    elif breadth.get("state") == "down":
 
         breadth_class = "down"
 
@@ -3603,10 +3601,18 @@ def market_summary_html():
         breadth_class = "wait"
 
 
+    # =====================================================
+    # 최종 HTML
+    # =====================================================
+
     return f"""
 
     <div class="market-summary">
 
+
+        <!-- =============================================
+             제목
+             ============================================= -->
 
         <div class="market-title">
 
@@ -3623,6 +3629,10 @@ def market_summary_html():
 
         <div class="btc-mobile">
 
+
+            <!-- =========================================
+                 BTC 기본 정보
+                 ========================================= -->
 
             <div class="btc-top">
 
@@ -3645,76 +3655,87 @@ def market_summary_html():
             </div>
 
 
+            <!-- =========================================
+                 BTC 시황 3칸
+                 ========================================= -->
+
             <div class="btc-bottom">
 
 
                 <!-- =====================================
                      1번 칸
-                     1H + 4H EMA
+                     1H / 4H EMA
+                     정확히 반으로 분할
                      ===================================== -->
 
-                <div class="btc-info-box">
-
-                    <div class="btc-info-title">
-                        EMA
-                    </div>
+                <div class="btc-ema-box">
 
 
-                    <div class="btc-info-value">
+                    <!-- 1H -->
+
+                    <div class="btc-ema-half">
+
+                        <div class="btc-ema-icon">
+
+                            {ema_1_icon}
+
+                        </div>
 
 
-                        <div class="ema-market-line">
+                        <div class="btc-ema-text">
 
-                            <span class="ema-market-tf">
+                            <div class="btc-ema-title">
+
                                 {format_timeframe(
                                     EMA_TIMEFRAME
                                 )}
-                            </span>
 
-                            {market_direction_html(
-                                ema_1.get(
-                                    "direction",
-                                    "none"
-                                ),
-                                ema_1.get(
-                                    "count",
-                                    0
-                                )
-                            )}
+                            </div>
+
+
+                            <div class="btc-ema-sub">
+
+                                {get_ema_period_text_long()}
+
+                            </div>
+
+                        </div>
+
+                    </div>
+
+
+                    <!-- 4H -->
+
+                    <div class="btc-ema-half">
+
+                        <div class="btc-ema-icon">
+
+                            {ema_high_icon}
 
                         </div>
 
 
-                        <div class="ema-market-line">
+                        <div class="btc-ema-text">
 
-                            <span class="ema-market-tf">
+                            <div class="btc-ema-title">
+
                                 {format_timeframe(
                                     EMA_HIGH_TIMEFRAME
                                 )}
-                            </span>
 
-                            {market_direction_html(
-                                ema_high.get(
-                                    "direction",
-                                    "none"
-                                ),
-                                ema_high.get(
-                                    "count",
-                                    0
-                                )
-                            )}
+                            </div>
+
+
+                            <div class="btc-ema-sub">
+
+                                {get_ema_period_text_long()}
+
+                            </div>
 
                         </div>
 
-
                     </div>
 
-
-                    <div class="btc-info-sub">
-
-                        {get_ema_period_text_long()}
-
-                    </div>
 
                 </div>
 
@@ -3724,7 +3745,12 @@ def market_summary_html():
                      BTC ROC5
                      ===================================== -->
 
-                <div class="btc-info-box">
+                <div
+                    class="
+                        btc-info-box
+                        {btc_roc_class}
+                    "
+                >
 
                     <div class="btc-info-title">
 
@@ -3735,9 +3761,7 @@ def market_summary_html():
 
                     <div class="btc-info-value">
 
-                        {market_roc_html(
-                            roc_data
-                        )}
+                        {roc_icon}
 
                     </div>
 
@@ -3754,38 +3778,42 @@ def market_summary_html():
                 <!-- =====================================
                      3번 칸
                      TOP_N ROC5
+                     2번과 동일한 디자인
                      ===================================== -->
 
                 <div
                     class="
-                        btc-position
+                        btc-info-box
                         {breadth_class}
                     "
                 >
 
-                    <span class="btc-position-icon">
+                    <div class="btc-info-title">
+
+                        TOP{TOP_N} {get_roc_text()}
+
+                    </div>
+
+
+                    <div class="btc-info-value">
 
                         {breadth_icon}
 
-                    </span>
+                    </div>
 
-                    <span class="btc-position-roc">
 
-                        TOP{TOP_N}
-                        {get_roc_text()}
-                        <br>
+                    <div class="btc-info-sub">
+
                         {breadth_display}
 
-                    </span>
+                    </div>
 
                 </div>
 
 
             </div>
 
-
         </div>
-
 
     </div>
 
@@ -4244,7 +4272,8 @@ CSS = """
     -webkit-tap-highlight-color:transparent;
 }
 
-html,body{
+html,
+body{
     margin:0;
     padding:0;
     width:100%;
@@ -4254,13 +4283,16 @@ html,body{
 body{
     background:#0d1014;
     color:#eee;
+
     font-family:
         -apple-system,
         BlinkMacSystemFont,
         "Segoe UI",
         Arial,
         sans-serif;
+
     font-size:8px;
+
     padding:2px 2px 8px;
 }
 
@@ -4279,17 +4311,26 @@ h1{
 .section-title{
     display:flex;
     align-items:center;
+
     gap:5px;
+
     width:100%;
     min-height:18px;
+
     color:#fff;
+
     font-size:8px;
     line-height:10px;
     font-weight:900;
+
     padding:3px 5px;
+
     border-left:3px solid #39e875;
+
     background:rgba(57,232,117,.08);
+
     border-radius:3px;
+
     white-space:nowrap;
     overflow:hidden;
 }
@@ -4305,18 +4346,22 @@ h1{
 .market-title-main,
 .section-title-main{
     color:#fff;
+
     font-size:8px;
     line-height:10px;
     font-weight:900;
+
     flex:none;
 }
 
 .market-title-sub,
 .section-title-sub{
     color:#7f8791;
+
     font-size:5.5px;
     line-height:8px;
     font-weight:700;
+
     white-space:nowrap;
     overflow:hidden;
     text-overflow:ellipsis;
@@ -4333,11 +4378,16 @@ h1{
 
 .market-summary{
     width:100%;
+
     margin:2px 0 3px;
+
     padding:3px 4px;
+
     border-top:1px solid #242a31;
     border-bottom:1px solid #242a31;
+
     background:#101419;
+
     overflow:hidden;
 }
 
@@ -4348,17 +4398,23 @@ h1{
 
 .btc-top{
     display:flex;
+
     align-items:center;
+
     width:100%;
     min-height:16px;
+
     gap:4px;
+
     white-space:nowrap;
     overflow:hidden;
 }
 
 .btc-name{
     flex:none;
+
     width:34px;
+
     font-size:6.5px;
     line-height:8px;
     font-weight:900;
@@ -4366,12 +4422,17 @@ h1{
 
 .btc-price{
     flex:1;
+
     min-width:0;
+
     color:#e8edf2;
+
     font-size:6px;
     line-height:8px;
     font-weight:800;
+
     text-align:left;
+
     white-space:nowrap;
     overflow:hidden;
     text-overflow:ellipsis;
@@ -4379,11 +4440,15 @@ h1{
 
 .btc-change{
     flex:none;
+
     width:58px;
+
     font-size:7.5px;
     line-height:10px;
     font-weight:900;
+
     text-align:right;
+
     white-space:nowrap;
 }
 
@@ -4394,51 +4459,200 @@ h1{
 
 .btc-bottom{
     display:grid;
-    grid-template-columns:1fr 1fr 90px;
+
+    grid-template-columns:
+        1fr
+        1fr
+        1fr;
+
     align-items:stretch;
+
     width:100%;
-    min-height:58px;
+
+    min-height:70px;
+
     gap:5px;
+
     overflow:hidden;
 }
 
 
 /* =========================================================
-   BTC 정보 박스
+   1번 EMA 카드
+   위 = 1H
+   아래 = 4H
+   정확히 50 : 50
+   ========================================================= */
+
+.btc-ema-box{
+    min-width:0;
+    min-height:70px;
+
+    display:grid;
+
+    grid-template-rows:
+        1fr
+        1fr;
+
+    border:1px solid #292f36;
+
+    border-radius:6px;
+
+    background:#14181d;
+
+    overflow:hidden;
+}
+
+.btc-ema-half{
+    min-width:0;
+
+    display:grid;
+
+    grid-template-columns:
+        34px
+        1fr;
+
+    align-items:center;
+
+    padding:3px 5px;
+}
+
+.btc-ema-half + .btc-ema-half{
+    border-top:1px solid #292f36;
+}
+
+
+/* =========================================================
+   EMA 큰 아이콘
+   ========================================================= */
+
+.btc-ema-icon{
+    display:flex;
+
+    align-items:center;
+    justify-content:center;
+
+    width:100%;
+
+    font-size:24px;
+    line-height:26px;
+
+    text-align:center;
+}
+
+
+/* =========================================================
+   EMA 텍스트
+   ========================================================= */
+
+.btc-ema-text{
+    min-width:0;
+
+    text-align:center;
+}
+
+.btc-ema-title{
+    color:#eee;
+
+    font-size:8px;
+    line-height:10px;
+
+    font-weight:900;
+}
+
+.btc-ema-sub{
+    margin-top:1px;
+
+    color:#737b85;
+
+    font-size:5px;
+    line-height:7px;
+
+    font-weight:700;
+
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+}
+
+
+/* =========================================================
+   2번 / 3번 공통 카드
    ========================================================= */
 
 .btc-info-box{
     min-width:0;
+    min-height:70px;
+
     padding:5px 6px;
+
     border:1px solid #292f36;
+
     border-radius:6px;
+
     background:#14181d;
+
     overflow:hidden;
+
+    display:flex;
+
+    flex-direction:column;
+
+    align-items:center;
+
+    justify-content:center;
+
+    text-align:center;
 }
 
 .btc-info-title{
+    width:100%;
+
     color:#7f8791;
+
     font-size:6px;
     line-height:8px;
+
     font-weight:800;
+
     margin-bottom:2px;
+
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
 }
 
 .btc-info-value{
+    width:100%;
+
     color:#eee;
-    font-size:7px;
-    line-height:10px;
+
+    font-size:28px;
+    line-height:30px;
+
     font-weight:900;
+
+    display:flex;
+
+    align-items:center;
+    justify-content:center;
+
     white-space:nowrap;
     overflow:hidden;
-    text-overflow:ellipsis;
 }
 
 .btc-info-sub{
+    width:100%;
+
     color:#737b85;
-    font-size:5px;
-    line-height:7px;
+
+    font-size:7px;
+    line-height:9px;
+
     margin-top:2px;
+
+    font-weight:800;
+
     white-space:nowrap;
     overflow:hidden;
     text-overflow:ellipsis;
@@ -4446,127 +4660,35 @@ h1{
 
 
 /* =========================================================
-   1번 칸 EMA
+   BTC ROC 상태
    ========================================================= */
 
-.ema-market-line{
-    display:flex;
-    align-items:center;
-    gap:3px;
-    height:11px;
-    line-height:10px;
-    white-space:nowrap;
-}
-
-.ema-market-tf{
-    color:#7f8791;
-    font-size:5.5px;
-    font-weight:800;
-    min-width:16px;
-}
-
-
-/* =========================================================
-   이평 아이콘
-   ========================================================= */
-
-.market-cloud-icon{
-    display:inline-block;
-    font-size:5.8px;
-    line-height:8px;
-    font-weight:900;
-    vertical-align:middle;
-}
-
-
-/* =========================================================
-   3번 TOP ROC
-   ========================================================= */
-
-.breadth-icon{
-    display:inline-block;
-    font-size:27px;
-    line-height:28px;
-    font-weight:900;
-}
-
-.breadth-count{
-    display:block;
-    font-size:6px;
-    line-height:8px;
-    font-weight:900;
-}
-
-
-/* =========================================================
-   BTC 최종 / 시장폭
-   ========================================================= */
-
-.btc-position{
-    display:flex;
-    flex-direction:column;
-    align-items:center;
-    justify-content:center;
-    min-width:90px;
-    min-height:58px;
-    padding:4px 6px;
-    border-radius:7px;
-    text-align:center;
-    font-weight:900;
-    border:1px solid rgba(255,255,255,.12);
-    overflow:hidden;
-}
-
-.btc-position-icon{
-    display:block;
-    font-size:30px;
-    line-height:31px;
-}
-
-.btc-position-roc{
-    display:block;
-    margin-top:1px;
-    font-size:5px;
-    line-height:7px;
-    opacity:.8;
-}
-
-
-/* =========================================================
-   TOP ROC ☀️
-   ========================================================= */
-
-.btc-position.up{
+.btc-info-box.up{
     color:#39e875!important;
-    background:rgba(57,232,117,.12);
-    border-color:rgba(57,232,117,.28);
-    box-shadow:
-        0 0 12px
-        rgba(57,232,117,.12);
+
+    border-color:
+        rgba(57,232,117,.28);
+
+    background:
+        rgba(57,232,117,.08);
 }
 
-
-/* =========================================================
-   TOP ROC 🌧️
-   ========================================================= */
-
-.btc-position.down{
+.btc-info-box.down{
     color:#ff5555!important;
-    background:rgba(255,85,85,.12);
-    border-color:rgba(255,85,85,.28);
-    box-shadow:
-        0 0 12px
-        rgba(255,85,85,.12);
+
+    border-color:
+        rgba(255,85,85,.28);
+
+    background:
+        rgba(255,85,85,.08);
 }
 
-
-/* =========================================================
-   TOP ROC ⚪
-   ========================================================= */
-
-.btc-position.wait{
+.btc-info-box.wait{
     color:#b0b7bf!important;
-    background:rgba(104,113,123,.12);
+
+    border-color:#292f36;
+
+    background:#14181d;
 }
 
 
@@ -4602,14 +4724,21 @@ h1{
 
 .status{
     display:flex;
+
     justify-content:center;
+
     gap:9px;
+
     margin:2px 2px 3px;
+
     padding:2px 0;
+
     border-top:1px solid #242a31;
     border-bottom:1px solid #242a31;
+
     font-size:6px;
     line-height:7px;
+
     font-weight:800;
 }
 
@@ -4633,13 +4762,19 @@ h1{
 
 .signal-icon{
     display:inline-flex;
+
     align-items:center;
     justify-content:center;
+
     width:100%;
+
     min-height:21px;
+
     font-size:15px;
     line-height:17px;
+
     font-weight:900;
+
     white-space:nowrap;
 }
 
@@ -4658,16 +4793,23 @@ h1{
 
 .table-wrap{
     width:100%;
+
     overflow:hidden;
+
     border-radius:5px;
+
     border:1px solid #272d34;
+
     background:#171b20;
 }
 
 table{
     width:100%;
+
     table-layout:fixed;
+
     border-collapse:collapse;
+
     background:#171b20;
 }
 
@@ -4677,21 +4819,32 @@ thead{
 
 th{
     height:17px;
+
     padding:1px;
+
     border-bottom:1px solid #292f36;
+
     color:#7f8791;
+
     font-size:5px;
     line-height:6px;
+
     font-weight:700;
+
     text-align:center;
 }
 
 td{
     height:25px;
+
     padding:1px;
+
     border-bottom:1px solid #22282e;
+
     text-align:center;
+
     vertical-align:middle;
+
     overflow:hidden;
 }
 
@@ -4731,87 +4884,121 @@ td:nth-child(6){
 
 td:nth-child(1){
     color:#8b929b;
+
     font-size:6px;
+
     font-weight:700;
 }
 
 .coin{
     text-align:left!important;
+
     line-height:9px;
 }
 
 .coin b{
     display:block;
+
     width:100%;
+
     font-size:6.5px;
     line-height:8px;
+
     font-weight:800;
+
     white-space:nowrap;
+
     overflow:hidden;
+
     text-overflow:ellipsis;
 }
 
 .coin small{
     display:block;
+
     margin:0;
+
     font-size:4.5px;
     line-height:6px;
+
     white-space:nowrap;
+
     overflow:hidden;
 }
 
 .vol{
     font-size:6px;
     line-height:8px;
+
     font-weight:800;
+
     white-space:nowrap;
 }
 
 .ema{
     text-align:center!important;
+
     font-weight:800;
+
     line-height:8px;
+
     white-space:nowrap;
+
     overflow:visible;
 }
 
 .ema span{
     font-size:5.8px;
     line-height:8px;
+
     white-space:nowrap;
 }
 
 .ema-sep{
     color:#555c65;
+
     margin:0 1px;
 }
 
 .roc-cell{
     display:flex;
+
     flex-direction:row;
+
     align-items:center;
+
     justify-content:center;
+
     gap:1px;
+
     min-height:21px;
+
     line-height:8px;
+
     white-space:nowrap;
 }
 
 .roc-cell span{
     font-size:5.8px;
     line-height:8px;
+
     font-weight:900;
+
     white-space:nowrap;
 }
 
 .breakout-qualified{
-    background:rgba(57,232,117,.08);
+    background:
+        rgba(57,232,117,.08);
 }
 
 .empty{
     height:30px;
+
     padding:8px;
+
     color:#555d67;
+
     font-size:6px;
 }
 
@@ -4838,11 +5025,16 @@ td:nth-child(1){
     .market-title,
     .section-title{
         min-height:17px;
+
         gap:4px;
+
         font-size:7px;
         line-height:9px;
+
         padding:3px 4px;
+
         margin-bottom:3px;
+
         border-left-width:3px;
     }
 
@@ -4884,92 +5076,84 @@ td:nth-child(1){
 
 
     /* =============================================
-       모바일 BTC 하단
+       BTC 3칸
        ============================================= */
 
     .btc-bottom{
-        grid-template-columns:1fr 1fr 72px;
-        min-height:52px;
+        grid-template-columns:
+            1fr
+            1fr
+            1fr;
+
+        min-height:58px;
+
         gap:3px;
     }
 
+
+    /* =============================================
+       1번 EMA
+       ============================================= */
+
+    .btc-ema-box{
+        min-height:58px;
+        border-radius:5px;
+    }
+
+    .btc-ema-half{
+        grid-template-columns:
+            25px
+            1fr;
+
+        padding:2px 3px;
+    }
+
+    .btc-ema-icon{
+        font-size:19px;
+        line-height:21px;
+    }
+
+    .btc-ema-title{
+        font-size:7px;
+        line-height:8px;
+    }
+
+    .btc-ema-sub{
+        font-size:4px;
+        line-height:5px;
+    }
+
+
+    /* =============================================
+       2번 / 3번
+       완전히 동일
+       ============================================= */
+
     .btc-info-box{
-        padding:4px;
+        min-height:58px;
+
+        padding:3px 4px;
+
         border-radius:5px;
     }
 
     .btc-info-title{
         font-size:4.8px;
-        line-height:7px;
+        line-height:6px;
+
+        margin-bottom:1px;
     }
 
     .btc-info-value{
-        font-size:6px;
-        line-height:8px;
-    }
-
-    .btc-info-sub{
-        font-size:4.3px;
-        line-height:6px;
-    }
-
-
-    .ema-market-line{
-        height:9px;
-        line-height:8px;
-        gap:2px;
-    }
-
-    .ema-market-tf{
-        font-size:4.5px;
-        min-width:13px;
-    }
-
-
-    /* =============================================
-       모바일 이평 그림
-       ============================================= */
-
-    .market-cloud-icon{
-        font-size:5.2px;
-        line-height:7px;
-    }
-
-
-    /* =============================================
-       모바일 TOP ROC
-       ============================================= */
-
-    .breadth-icon{
-        font-size:24px;
+        font-size:23px;
         line-height:25px;
     }
 
-    .breadth-count{
+    .btc-info-sub{
         font-size:5px;
         line-height:6px;
-    }
 
-
-    /* =============================================
-       모바일 최종 칸
-       ============================================= */
-
-    .btc-position{
-        min-width:72px;
-        min-height:52px;
-        padding:3px 4px;
-        border-radius:6px;
-    }
-
-    .btc-position-icon{
-        font-size:26px;
-        line-height:27px;
-    }
-
-    .btc-position-roc{
-        font-size:4.5px;
-        line-height:6px;
+        margin-top:1px;
     }
 
 
@@ -5012,6 +5196,7 @@ td:nth-child(1){
     .signal-icon{
         font-size:13px;
         line-height:15px;
+
         min-height:19px;
     }
 }
@@ -5025,8 +5210,11 @@ td:nth-child(1){
 
     body{
         max-width:900px;
+
         margin:auto;
+
         padding:8px;
+
         font-size:10px;
     }
 
@@ -5038,10 +5226,15 @@ td:nth-child(1){
     .market-title,
     .section-title{
         min-height:23px;
+
         gap:6px;
+
         font-size:9px;
+
         padding:4px 6px;
+
         margin-bottom:5px;
+
         border-left-width:3px;
     }
 
@@ -5075,17 +5268,61 @@ td:nth-child(1){
 
 
     /* =============================================
-       데스크톱 BTC
+       BTC 3칸
        ============================================= */
 
     .btc-bottom{
-        grid-template-columns:1fr 1fr 120px;
-        min-height:70px;
+        grid-template-columns:
+            1fr
+            1fr
+            1fr;
+
+        min-height:75px;
+
         gap:6px;
     }
 
+
+    /* =============================================
+       EMA
+       ============================================= */
+
+    .btc-ema-box{
+        min-height:75px;
+    }
+
+    .btc-ema-half{
+        grid-template-columns:
+            42px
+            1fr;
+
+        padding:4px 6px;
+    }
+
+    .btc-ema-icon{
+        font-size:28px;
+        line-height:30px;
+    }
+
+    .btc-ema-title{
+        font-size:9px;
+        line-height:11px;
+    }
+
+    .btc-ema-sub{
+        font-size:6px;
+        line-height:8px;
+    }
+
+
+    /* =============================================
+       BTC ROC / TOP ROC
+       ============================================= */
+
     .btc-info-box{
-        padding:7px 8px;
+        min-height:75px;
+
+        padding:6px 8px;
     }
 
     .btc-info-title{
@@ -5094,65 +5331,11 @@ td:nth-child(1){
     }
 
     .btc-info-value{
-        font-size:9px;
-        line-height:12px;
+        font-size:32px;
+        line-height:34px;
     }
 
     .btc-info-sub{
-        font-size:6px;
-        line-height:8px;
-    }
-
-
-    .ema-market-line{
-        height:14px;
-        line-height:12px;
-        gap:4px;
-    }
-
-    .ema-market-tf{
-        font-size:6px;
-        min-width:22px;
-    }
-
-
-    /* =============================================
-       데스크톱 이평 그림
-       ============================================= */
-
-    .market-cloud-icon{
-        font-size:7px;
-        line-height:9px;
-    }
-
-
-    /* =============================================
-       데스크톱 TOP ROC
-       ============================================= */
-
-    .breadth-icon{
-        font-size:34px;
-        line-height:35px;
-    }
-
-    .breadth-count{
-        font-size:7px;
-        line-height:9px;
-    }
-
-
-    .btc-position{
-        min-width:120px;
-        min-height:70px;
-        padding:5px;
-    }
-
-    .btc-position-icon{
-        font-size:34px;
-        line-height:35px;
-    }
-
-    .btc-position-roc{
         font-size:7px;
         line-height:9px;
     }
@@ -5192,6 +5375,7 @@ td:nth-child(1){
     .signal-icon{
         font-size:20px;
         line-height:22px;
+
         min-height:28px;
     }
 }
