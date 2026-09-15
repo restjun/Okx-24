@@ -38,7 +38,7 @@ log = logging.getLogger("trading")
 # =========================================================
 
 VOLUME_HOURS = 24
-TOP_N = 20
+TOP_N = 30
 UPDATE_MINUTES = 1
 
 HISTORY_CHUNK = 200
@@ -714,16 +714,7 @@ def get_usdt_krw():
 
 
 # =========================================================
-# ★ USDT/KRW 당일 변동률
-#
-# 업비트 일봉 기준
-# 09:00 KST 시작
-#
-# 현재가 vs 당일 시가
-#
-# 음수 → ☀️
-# 양수 → 🌧️
-# 0 → ⚪
+# USDT/KRW 당일 변동률
 # =========================================================
 
 def get_usdt_krw_daily_change():
@@ -775,10 +766,9 @@ def get_usdt_krw_daily_change():
 
 
 # =========================================================
-# ★ USDT/KRW 시장 상태
-#
-# USDT 하락 → ☀️
-# USDT 상승 → 🌧️
+# USDT/KRW 시장 상태
+# 음수 → ☀️
+# 양수 → 🌧️
 # =========================================================
 
 def usdt_market_state(change):
@@ -3712,7 +3702,7 @@ def update_dashboard():
     try:
 
         # =================================================
-        # ★ USDT/KRW는 OKX=N이어도 항상 조회
+        # USDT/KRW는 OKX=N이어도 항상 조회
         # =================================================
 
         try:
@@ -3976,13 +3966,7 @@ def get_market_row(coin):
 
 
 # =========================================================
-# ★ BTC 시장 시황
-#
-# 1번 : USDT/KRW
-# 2번 : BTC ROC5
-# 3번 : TOP30 ROC5 시장폭
-#
-# BTC 1H/4H EMA 제거
+# BTC 시장 시황
 # =========================================================
 
 def market_summary_html():
@@ -4220,8 +4204,7 @@ def market_summary_html():
             <div class="btc-bottom">
 
                 <!-- =====================================
-                     1번
-                     USDT/KRW
+                     1번 USDT/KRW
                      ===================================== -->
 
                 <div class="
@@ -4249,8 +4232,7 @@ def market_summary_html():
 
 
                 <!-- =====================================
-                     2번
-                     BTC ROC5
+                     2번 BTC ROC5
                      ===================================== -->
 
                 <div class="
@@ -4274,8 +4256,7 @@ def market_summary_html():
 
 
                 <!-- =====================================
-                     3번
-                     TOP30 ROC5
+                     3번 TOP30 ROC5
                      ===================================== -->
 
                 <div class="
@@ -4936,7 +4917,7 @@ h1{
 
 
 /* =========================================================
-   ★ 당일 변동률 확대
+   ★ 당일 변동률 +2pt
    ========================================================= */
 
 .btc-change{
@@ -4944,8 +4925,8 @@ h1{
 
     width:64px;
 
-    font-size:9px;
-    line-height:11px;
+    font-size:9.5px;
+    line-height:12px;
 
     font-weight:900;
 
@@ -5403,6 +5384,8 @@ td:nth-child(1){
 
 /* =========================================================
    호가
+   매수 = 초록
+   매도 = 빨강
    ========================================================= */
 
 .orderbook-subrow{
@@ -5456,18 +5439,20 @@ td:nth-child(1){
     white-space:nowrap;
 }
 
+
+/* 매수대기 = 초록 */
+
 .bid-label{
+    color:#39e875;
+}
+
+
+/* 매도대기 = 빨강 */
+
+.ask-label{
     color:#ff5555;
 }
 
-
-/* =========================================================
-   ★ 매도대기 녹색
-   ========================================================= */
-
-.ask-label{
-    color:#39e875;
-}
 
 .orderbook-amount{
 
@@ -5482,13 +5467,20 @@ td:nth-child(1){
     white-space:nowrap;
 }
 
+
+/* 매수 금액 = 초록 */
+
 .bid-amount{
+    color:#39e875;
+}
+
+
+/* 매도 금액 = 빨강 */
+
+.ask-amount{
     color:#ff7777;
 }
 
-.ask-amount{
-    color:#39e875;
-}
 
 .orderbook-bar-box{
 
@@ -5517,13 +5509,20 @@ td:nth-child(1){
         width .25s ease;
 }
 
+
+/* 매수 막대 = 초록 */
+
 .bid-bar{
+    background:#39e875;
+}
+
+
+/* 매도 막대 = 빨강 */
+
+.ask-bar{
     background:#d94a4a;
 }
 
-.ask-bar{
-    background:#39e875;
-}
 
 .orderbook-ratio{
 
@@ -5538,13 +5537,20 @@ td:nth-child(1){
     white-space:nowrap;
 }
 
+
+/* 매수 비율 = 초록 */
+
 .bid-ratio{
+    color:#39e875;
+}
+
+
+/* 매도 비율 = 빨강 */
+
+.ask-ratio{
     color:#ff7777;
 }
 
-.ask-ratio{
-    color:#39e875;
-}
 
 .orderbook-bottom{
 
@@ -5587,13 +5593,20 @@ td:nth-child(1){
     white-space:nowrap;
 }
 
+
+/* 매수 우세 = 초록 */
+
 .bid-dominance{
+    color:#39e875;
+}
+
+
+/* 매도 우세 = 빨강 */
+
+.ask-dominance{
     color:#ff5555;
 }
 
-.ask-dominance{
-    color:#39e875;
-}
 
 .balanced-dominance{
     color:#9aa1aa;
@@ -5683,13 +5696,13 @@ td:nth-child(1){
     }
 
 
-    /* 모바일 당일 변동률 확대 */
+    /* 모바일 당일 변동률 +2pt */
 
     .btc-change{
         width:56px;
 
-        font-size:8px;
-        line-height:10px;
+        font-size:8.5px;
+        line-height:11px;
     }
 
 
@@ -5909,13 +5922,13 @@ td:nth-child(1){
     }
 
 
-    /* 데스크톱 당일 변동률 확대 */
+    /* 데스크톱 당일 변동률 +2pt */
 
     .btc-change{
         width:64px;
 
-        font-size:9px;
-        line-height:11px;
+        font-size:9.5px;
+        line-height:12px;
     }
 
 
