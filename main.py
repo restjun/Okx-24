@@ -76,12 +76,33 @@ USE_EMA_HIGH_TIMEFRAME = "Y"
 
 # =========================================================
 # EMA 설정
+#
+# ★ 여기 숫자만 수기로 변경하면
+# ★ 실제 EMA 계산 + 필터 + 데시보드 표시가
+# ★ 모두 자동으로 변경됨.
+#
+# 예:
+# EMA1_FASTEST = 10
+# EMA1_FAST = 30
+# EMA1_MID = 60
+# EMA1_SLOW = 120
+#
+# → 데시보드: 10>30>60>120
+#
 # =========================================================
 
 EMA1_FASTEST = 10
 EMA1_FAST = 20
 EMA1_MID = 50
 EMA1_SLOW = 100
+
+
+# =========================================================
+# EMA 사용 여부
+#
+# 변수명은 기존 구조를 유지.
+# 실제 기간은 위 EMA1_* 숫자를 사용.
+# =========================================================
 
 EMA_USE_10 = "Y"
 EMA_USE_30 = "Y"
@@ -180,16 +201,24 @@ def get_ema_periods():
     periods = []
 
     if EMA_USE_10 == "Y":
-        periods.append(EMA1_FASTEST)
+        periods.append(
+            int(EMA1_FASTEST)
+        )
 
     if EMA_USE_30 == "Y":
-        periods.append(EMA1_FAST)
+        periods.append(
+            int(EMA1_FAST)
+        )
 
     if EMA_USE_60 == "Y":
-        periods.append(EMA1_MID)
+        periods.append(
+            int(EMA1_MID)
+        )
 
     if EMA_USE_120 == "Y":
-        periods.append(EMA1_SLOW)
+        periods.append(
+            int(EMA1_SLOW)
+        )
 
     return periods
 
@@ -202,7 +231,8 @@ def get_ema_period_text():
         return "-"
 
     return ">".join(
-        str(x) for x in periods
+        str(x)
+        for x in periods
     )
 
 
@@ -214,17 +244,23 @@ def get_ema_period_text_long():
         return "EMA 없음"
 
     return ">".join(
-        f"EMA{x}" for x in periods
+        f"EMA{x}"
+        for x in periods
     )
 
+
+# =========================================================
+# ★ 수정
+# 수기로 EMA 숫자를 바꾸면 데시보드도 자동 반영
+# =========================================================
 
 def get_ema_setting_text():
 
     return (
-        f"10={EMA_USE_10}/"
-        f"30={EMA_USE_30}/"
-        f"60={EMA_USE_60}/"
-        f"120={EMA_USE_120}"
+        f"{EMA1_FASTEST}={EMA_USE_10}/"
+        f"{EMA1_FAST}={EMA_USE_30}/"
+        f"{EMA1_MID}={EMA_USE_60}/"
+        f"{EMA1_SLOW}={EMA_USE_120}"
     )
 
 
@@ -270,7 +306,9 @@ def get_okx_bar(minutes):
         480: "8H",
         720: "12H",
         1440: "1D"
-    }.get(int(minutes))
+    }.get(
+        int(minutes)
+    )
 
 
 def get_okx_bar_minutes(bar):
@@ -288,7 +326,9 @@ def get_okx_bar_minutes(bar):
         "8H": 480,
         "12H": 720,
         "1D": 1440
-    }.get(str(bar))
+    }.get(
+        str(bar)
+    )
 
 
 # =========================================================
@@ -396,6 +436,39 @@ def validate_timeframe():
             "USE_EMA_HIGH_TIMEFRAME은 Y 또는 N만 가능합니다."
         )
 
+    # =====================================================
+    # EMA 기간 검증
+    # =====================================================
+
+    ema_period_values = [
+        ("EMA1_FASTEST", EMA1_FASTEST),
+        ("EMA1_FAST", EMA1_FAST),
+        ("EMA1_MID", EMA1_MID),
+        ("EMA1_SLOW", EMA1_SLOW),
+    ]
+
+    for name, value in ema_period_values:
+
+        try:
+
+            value = int(value)
+
+        except Exception:
+
+            raise ValueError(
+                f"{name}은 숫자여야 합니다."
+            )
+
+        if value < 1:
+
+            raise ValueError(
+                f"{name}은 1 이상이어야 합니다."
+            )
+
+    # =====================================================
+    # EMA 사용 여부 검증
+    # =====================================================
+
     for name, value in [
         ("EMA_USE_10", EMA_USE_10),
         ("EMA_USE_30", EMA_USE_30),
@@ -490,7 +563,10 @@ def count_icon(count):
         0: "⓪",
         1: "①",
         2: "②"
-    }.get(count, "")
+    }.get(
+        count,
+        ""
+    )
 
 
 # =========================================================
@@ -3715,16 +3791,20 @@ def get_market_row(coin):
 
 
 # =========================================================
-# ★ BTC 시장 시황
+# BTC 시장 시황
 #
-# 1번 : BTC 1H / 4H EMA 필터
-#        둘 다 정배열 → ☀️
-#        둘 다 역배열 → 🌧️
-#        그 외 → ⚪
+# 1번 :
+# BTC 현재 설정된 1H / 4H EMA 필터
 #
-# 2번 : BTC 당일 변동률
+# 둘 다 정배열 → ☀️
+# 둘 다 역배열 → 🌧️
+# 그 외 → ⚪
 #
-# 3번 : 전체 TOP_N 당일 시장폭
+# 2번 :
+# BTC 당일 변동률
+#
+# 3번 :
+# 전체 TOP_N 당일 시장폭
 # =========================================================
 
 def market_summary_html():
@@ -3734,7 +3814,7 @@ def market_summary_html():
 
     # =====================================================
     # 1번째 칸
-    # ★ BTC 1H / 4H EMA 필터
+    # BTC EMA
     # =====================================================
 
     if btc is None:
@@ -3956,7 +4036,13 @@ def market_summary_html():
             </span>
 
             <span class="market-title-sub">
-                BTC 1H / 4H EMA 필터 · 당일 변동률 기준
+                BTC
+                {format_timeframe(EMA_TIMEFRAME)}
+                /
+                {format_timeframe(EMA_HIGH_TIMEFRAME)}
+                EMA 필터 ·
+                {get_ema_period_text()}
+                · 당일 변동률 기준
             </span>
 
         </div>
@@ -3993,7 +4079,10 @@ def market_summary_html():
                 ">
 
                     <div class="btc-info-title">
-                        BTC EMA · 1H / 4H
+                        BTC EMA ·
+                        {format_timeframe(EMA_TIMEFRAME)}
+                        /
+                        {format_timeframe(EMA_HIGH_TIMEFRAME)}
                     </div>
 
                     <div class="btc-info-value">
@@ -4002,6 +4091,8 @@ def market_summary_html():
 
                     <div class="btc-info-sub">
                         {btc_ema_display}
+                        ·
+                        {get_ema_period_text()}
                     </div>
 
                 </div>
@@ -5783,8 +5874,10 @@ def dashboard():
         <span>
             이평필터 :
             <b class="y">
-                {USE_EMA_TIMEFRAME}/
-                {USE_EMA_HIGH_TIMEFRAME}
+                {format_timeframe(EMA_TIMEFRAME)}/
+                {format_timeframe(EMA_HIGH_TIMEFRAME)}
+                ·
+                {get_ema_period_text()}
             </b>
         </span>
 
@@ -6117,11 +6210,13 @@ def startup():
     )
 
     log.info(
-        "1H + 4H EMA 둘 다 정배열 → ☀️"
+        f"{tf} + {high_tf} EMA "
+        f"둘 다 정배열 → ☀️"
     )
 
     log.info(
-        "1H + 4H EMA 둘 다 역배열 → 🌧️"
+        f"{tf} + {high_tf} EMA "
+        f"둘 다 역배열 → 🌧️"
     )
 
     log.info(
@@ -6131,6 +6226,11 @@ def startup():
     log.info(
         "BTC 시장 시황 EMA는 "
         "현재 이평 필터 기준을 그대로 사용"
+    )
+
+    log.info(
+        f"BTC 시장 시황 EMA 기준: "
+        f"{get_ema_period_text_long()}"
     )
 
     log.info(
