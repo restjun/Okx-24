@@ -9,8 +9,6 @@ import uvicorn
 import logging
 import pandas as pd
 import warnings
-import json
-import os
 
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -150,23 +148,8 @@ last_request_time = 0
 
 
 # =========================================================
-# USDT Dominance
-# =========================================================
-
-latest_usdt_dominance = None
-latest_usdt_dominance_change = None
-
-usdt_dominance_base = None
-usdt_dominance_base_date = None
-
-USDT_DOMINANCE_FILE = "usdt_dominance_base.json"
-
-
-# =========================================================
 # OKX 내부 환산용 USDT/KRW
-#
 # 화면에는 표시하지 않음.
-# OKX 거래대금을 KRW로 환산할 때만 사용.
 # =========================================================
 
 latest_usdt_krw_internal = 0
@@ -219,8 +202,7 @@ def get_ema_period_text():
         return "-"
 
     return ">".join(
-        str(x)
-        for x in periods
+        str(x) for x in periods
     )
 
 
@@ -232,8 +214,7 @@ def get_ema_period_text_long():
         return "EMA 없음"
 
     return ">".join(
-        f"EMA{x}"
-        for x in periods
+        f"EMA{x}" for x in periods
     )
 
 
@@ -392,7 +373,8 @@ def validate_timeframe():
     if get_okx_bar(EMA_TIMEFRAME) is None:
 
         raise ValueError(
-            f"OKX에서 지원하지 않는 시간봉: {EMA_TIMEFRAME}"
+            f"OKX에서 지원하지 않는 시간봉: "
+            f"{EMA_TIMEFRAME}"
         )
 
     if get_okx_bar(EMA_HIGH_TIMEFRAME) is None:
@@ -532,9 +514,7 @@ def wait_request():
                 REQUEST_INTERVAL - gap
             )
 
-        last_request_time = (
-            time.monotonic()
-        )
+        last_request_time = time.monotonic()
 
 
 def retry(func, *args, **kwargs):
@@ -616,317 +596,6 @@ def retry(func, *args, **kwargs):
     )
 
     return None
-
-
-# =========================================================
-# ★ USDT Dominance 기준 날짜
-#
-# 09:00 ~ 다음날 08:59:59
-# =========================================================
-
-def get_usdt_dominance_base_date():
-
-    now = datetime.now(KST)
-
-    if now.hour >= 9:
-
-        return now.strftime(
-            "%Y-%m-%d"
-        )
-
-    return (
-        now - pd.Timedelta(days=1)
-    ).strftime(
-        "%Y-%m-%d"
-    )
-
-
-# =========================================================
-# ★ USDT Dominance 기준값 저장
-# =========================================================
-
-def load_usdt_dominance_base():
-
-    global usdt_dominance_base
-    global usdt_dominance_base_date
-
-    try:
-
-        if not os.path.exists(
-            USDT_DOMINANCE_FILE
-        ):
-
-            return
-
-        with open(
-            USDT_DOMINANCE_FILE,
-            "r",
-            encoding="utf-8"
-        ) as f:
-
-            data = json.load(f)
-
-        usdt_dominance_base = data.get(
-            "base"
-        )
-
-        usdt_dominance_base_date = data.get(
-            "date"
-        )
-
-        if usdt_dominance_base is not None:
-
-            usdt_dominance_base = float(
-                usdt_dominance_base
-            )
-
-        log.info(
-            f"USDT.D 기준값 복원: "
-            f"{usdt_dominance_base_date} / "
-            f"{usdt_dominance_base}"
-        )
-
-    except Exception as e:
-
-        log.error(
-            f"USDT.D 기준값 복원 오류: {e}"
-        )
-
-
-def save_usdt_dominance_base():
-
-    try:
-
-        with open(
-            USDT_DOMINANCE_FILE,
-            "w",
-            encoding="utf-8"
-        ) as f:
-
-            json.dump(
-                {
-                    "base":
-                        usdt_dominance_base,
-
-                    "date":
-                        usdt_dominance_base_date
-                },
-                f,
-                ensure_ascii=False,
-                indent=2
-            )
-
-    except Exception as e:
-
-        log.error(
-            f"USDT.D 기준값 저장 오류: {e}"
-        )
-
-
-# =========================================================
-# ★ USDT Dominance 조회
-#
-# USDT 시가총액 / 전체 암호화폐 시가총액 × 100
-# =========================================================
-
-def get_usdt_dominance():
-
-    try:
-
-        global_r = retry(
-            requests.get,
-            "https://api.coingecko.com/api/v3/global",
-            timeout=15
-        )
-
-        if global_r is None:
-            return None
-
-        global_data = global_r.json()
-
-        total_market_cap = float(
-            global_data["data"]
-            ["total_market_cap"]
-            ["usd"]
-        )
-
-        if total_market_cap <= 0:
-            return None
-
-        usdt_r = retry(
-            requests.get,
-            "https://api.coingecko.com/api/v3/coins/tether",
-            params={
-                "localization": "false",
-                "tickers": "false",
-                "market_data": "true",
-                "community_data": "false",
-                "developer_data": "false"
-            },
-            timeout=15
-        )
-
-        if usdt_r is None:
-            return None
-
-        usdt_data = usdt_r.json()
-
-        usdt_market_cap = float(
-            usdt_data["market_data"]
-            ["market_cap"]
-            ["usd"]
-        )
-
-        if usdt_market_cap <= 0:
-            return None
-
-        dominance = (
-            usdt_market_cap
-            / total_market_cap
-            * 100
-        )
-
-        return float(dominance)
-
-    except Exception as e:
-
-        log.error(
-            f"USDT.D 조회 오류: {e}"
-        )
-
-        return None
-
-
-# =========================================================
-# ★ USDT Dominance 업데이트
-#
-# 매일 09:00 KST 기준값 초기화
-# =========================================================
-
-def update_usdt_dominance():
-
-    global latest_usdt_dominance
-    global latest_usdt_dominance_change
-
-    global usdt_dominance_base
-    global usdt_dominance_base_date
-
-    current = get_usdt_dominance()
-
-    if current is None:
-
-        log.warning(
-            "USDT.D 조회 실패"
-        )
-
-        return
-
-    base_date = (
-        get_usdt_dominance_base_date()
-    )
-
-    # ---------------------------------------------
-    # 날짜가 바뀌면 새로운 09:00 기준값 생성
-    # ---------------------------------------------
-
-    if (
-        usdt_dominance_base is None
-        or usdt_dominance_base_date != base_date
-    ):
-
-        usdt_dominance_base = current
-        usdt_dominance_base_date = base_date
-
-        save_usdt_dominance_base()
-
-        log.info(
-            f"USDT.D 09:00 기준값 설정: "
-            f"{base_date} / "
-            f"{current:.4f}%"
-        )
-
-    latest_usdt_dominance = current
-
-    if (
-        usdt_dominance_base is not None
-        and usdt_dominance_base > 0
-    ):
-
-        latest_usdt_dominance_change = (
-            (
-                current
-                - usdt_dominance_base
-            )
-            / usdt_dominance_base
-            * 100
-        )
-
-    else:
-
-        latest_usdt_dominance_change = None
-
-    if latest_usdt_dominance_change is not None:
-
-        log.info(
-            f"USDT.D "
-            f"{current:.4f}% / "
-            f"09시 기준 "
-            f"{latest_usdt_dominance_change:+.4f}%"
-        )
-
-    else:
-
-        log.info(
-            f"USDT.D {current:.4f}%"
-        )
-
-
-# =========================================================
-# USDT.D 상태
-#
-# 상승 → 🌧️
-# 하락 → ☀️
-# 보합 → ⚪
-# =========================================================
-
-def usdt_dominance_state(change):
-
-    if change is None:
-
-        return {
-            "icon": "⚪",
-            "class": "wait"
-        }
-
-    try:
-
-        change = float(change)
-
-    except Exception:
-
-        return {
-            "icon": "⚪",
-            "class": "wait"
-        }
-
-    if change > 0:
-
-        return {
-            "icon": "🌧️",
-            "class": "down"
-        }
-
-    if change < 0:
-
-        return {
-            "icon": "☀️",
-            "class": "up"
-        }
-
-    return {
-        "icon": "⚪",
-        "class": "wait"
-    }
 
 
 # =========================================================
@@ -1091,7 +760,6 @@ def get_upbit_orderbooks(markets):
                 data,
                 list
             ):
-
                 continue
 
             for item in data:
@@ -1145,10 +813,13 @@ def calculate_orderbook_amount(
         return result
 
     try:
+
         current_price = float(
             current_price
         )
+
     except Exception:
+
         return result
 
     if current_price <= 0:
@@ -1176,6 +847,7 @@ def calculate_orderbook_amount(
         units,
         list
     ):
+
         return result
 
     bid_amount = 0.0
@@ -1350,31 +1022,19 @@ def orderbook_html(row):
     try:
 
         bid_amount = float(
-            row.get(
-                "bid_amount",
-                0
-            )
+            row.get("bid_amount", 0)
         )
 
         ask_amount = float(
-            row.get(
-                "ask_amount",
-                0
-            )
+            row.get("ask_amount", 0)
         )
 
         bid_ratio = float(
-            row.get(
-                "bid_ratio",
-                0
-            )
+            row.get("bid_ratio", 0)
         )
 
         ask_ratio = float(
-            row.get(
-                "ask_ratio",
-                0
-            )
+            row.get("ask_ratio", 0)
         )
 
     except Exception:
@@ -1398,18 +1058,12 @@ def orderbook_html(row):
 
     bid_ratio = max(
         0.0,
-        min(
-            100.0,
-            bid_ratio
-        )
+        min(100.0, bid_ratio)
     )
 
     ask_ratio = max(
         0.0,
-        min(
-            100.0,
-            ask_ratio
-        )
+        min(100.0, ask_ratio)
     )
 
     dominance = row.get(
@@ -1528,10 +1182,7 @@ def get_upbit_candle(
         params={
             "market": market,
             "count": min(
-                max(
-                    int(count),
-                    1
-                ),
+                max(int(count), 1),
                 200
             ),
             **(
@@ -1762,10 +1413,7 @@ def get_okx_ohlcv(
         "instId": inst,
         "bar": bar,
         "limit": min(
-            max(
-                int(limit),
-                1
-            ),
+            max(int(limit), 1),
             200
         )
     }
@@ -2224,18 +1872,14 @@ def ema_alignment_count(df):
 
             if all(
                 values[j] > values[j + 1]
-                for j in range(
-                    len(values) - 1
-                )
+                for j in range(len(values) - 1)
             ):
 
                 return "long"
 
             if all(
                 values[j] < values[j + 1]
-                for j in range(
-                    len(values) - 1
-                )
+                for j in range(len(values) - 1)
             ):
 
                 return "short"
@@ -2261,6 +1905,7 @@ def ema_alignment_count(df):
 
             if get_dir(i) == current:
                 count += 1
+
             else:
                 break
 
@@ -2460,9 +2105,7 @@ def roc(
 
         return (
             close
-            / close.shift(
-                int(period)
-            )
+            / close.shift(int(period))
             - 1
         ) * 100
 
@@ -3902,26 +3545,9 @@ def update_dashboard():
 
     try:
 
-        # =================================================
-        # ★ USDT Dominance
-        # =================================================
-
-        try:
-
-            update_usdt_dominance()
-
-        except Exception as e:
-
-            log.exception(
-                f"USDT.D 업데이트 오류: {e}"
-            )
-
-
-        # =================================================
-        # ★ OKX 내부 환산용 USDT/KRW
-        #
-        # 화면에는 표시하지 않음.
-        # =================================================
+        # =============================================
+        # OKX 내부 환산용 USDT/KRW
+        # =============================================
 
         usdt = (
             latest_usdt_krw_internal
@@ -3950,9 +3576,9 @@ def update_dashboard():
                 )
 
 
-        # =================================================
+        # =============================================
         # 업비트
-        # =================================================
+        # =============================================
 
         if USE_UPBIT == "Y":
 
@@ -3971,9 +3597,9 @@ def update_dashboard():
             latest_upbit_data = []
 
 
-        # =================================================
+        # =============================================
         # OKX
-        # =================================================
+        # =============================================
 
         if USE_OKX == "Y":
 
@@ -4001,127 +3627,7 @@ def update_dashboard():
 
 
 # =========================================================
-# 시장 방향 HTML
-# =========================================================
-
-def market_direction_html(
-    direction,
-    count
-):
-
-    if direction == "long":
-
-        return (
-            '<span class="market-up market-cloud-icon">'
-            '☀️'
-            '</span>'
-        )
-
-    if direction == "short":
-
-        return (
-            '<span class="market-down market-cloud-icon">'
-            '🌧️'
-            '</span>'
-        )
-
-    return (
-        '<span class="market-zero market-cloud-icon">'
-        '⚪'
-        '</span>'
-    )
-
-
-# =========================================================
-# BTC ROC HTML
-# =========================================================
-
-def market_roc_html(r):
-
-    if not r:
-
-        return (
-            '<span class="market-zero">'
-            '⚪'
-            '</span>'
-        )
-
-    value = r.get("roc10")
-
-    if value is None:
-
-        return (
-            '<span class="market-zero">'
-            '⚪'
-            '</span>'
-        )
-
-    try:
-
-        value = float(value)
-
-    except Exception:
-
-        return (
-            '<span class="market-zero">'
-            '⚪'
-            '</span>'
-        )
-
-    if value > 0:
-
-        return (
-            '<span class="market-up">'
-            '☀️'
-            '</span>'
-        )
-
-    if value < 0:
-
-        return (
-            '<span class="market-down">'
-            '🌧️'
-            '</span>'
-        )
-
-    return (
-        '<span class="market-zero">'
-        '⚪'
-        '</span>'
-    )
-
-
-# =========================================================
-# 가격
-# =========================================================
-
-def format_market_price(price):
-
-    if price is None:
-        return "-"
-
-    try:
-
-        price = float(price)
-
-    except Exception:
-
-        return "-"
-
-    if price >= 100000000:
-        return f"{price / 100000000:.2f}억"
-
-    if price >= 10000:
-        return f"{price:,.0f}"
-
-    if price >= 1:
-        return f"{price:,.2f}"
-
-    return f"{price:.6f}"
-
-
-# =========================================================
-# 시장 등락률
+# 시장 등락률 HTML
 # =========================================================
 
 def market_change_html(value):
@@ -4166,6 +3672,35 @@ def market_change_html(value):
 
 
 # =========================================================
+# 가격
+# =========================================================
+
+def format_market_price(price):
+
+    if price is None:
+        return "-"
+
+    try:
+
+        price = float(price)
+
+    except Exception:
+
+        return "-"
+
+    if price >= 100000000:
+        return f"{price / 100000000:.2f}억"
+
+    if price >= 10000:
+        return f"{price:,.0f}"
+
+    if price >= 1:
+        return f"{price:,.2f}"
+
+    return f"{price:.6f}"
+
+
+# =========================================================
 # BTC 행
 # =========================================================
 
@@ -4181,6 +3716,15 @@ def get_market_row(coin):
 
 # =========================================================
 # ★ BTC 시장 시황
+#
+# 1번 : BTC 1H / 4H EMA 필터
+#        둘 다 정배열 → ☀️
+#        둘 다 역배열 → 🌧️
+#        그 외 → ⚪
+#
+# 2번 : BTC 당일 변동률
+#
+# 3번 : 전체 TOP_N 당일 시장폭
 # =========================================================
 
 def market_summary_html():
@@ -4190,66 +3734,60 @@ def market_summary_html():
 
     # =====================================================
     # 1번째 칸
-    # ★ USDT Dominance
+    # ★ BTC 1H / 4H EMA 필터
     # =====================================================
 
-    usdt_d_state = (
-        usdt_dominance_state(
-            latest_usdt_dominance_change
-        )
-    )
+    if btc is None:
 
-    usdt_d_icon = (
-        usdt_d_state["icon"]
-    )
-
-    usdt_d_class = (
-        usdt_d_state["class"]
-    )
-
-    if latest_usdt_dominance is None:
-
-        usdt_d_value_display = "-"
+        btc_ema_icon = "⚪"
+        btc_ema_display = "-"
+        btc_ema_class = "wait"
 
     else:
 
-        usdt_d_value_display = (
-            f"{latest_usdt_dominance:.2f}%"
+        ema_1h = btc.get(
+            "ema_1h",
+            {}
         )
 
-    if latest_usdt_dominance_change is None:
+        ema_4h = btc.get(
+            "ema_high",
+            {}
+        )
 
-        usdt_d_change_display = "-"
+        direction_1h = ema_1h.get(
+            "direction",
+            "none"
+        )
 
-    else:
+        direction_4h = ema_4h.get(
+            "direction",
+            "none"
+        )
 
-        try:
+        if (
+            direction_1h == "long"
+            and direction_4h == "long"
+        ):
 
-            change = float(
-                latest_usdt_dominance_change
-            )
+            btc_ema_icon = "☀️"
+            btc_ema_display = "정배열"
+            btc_ema_class = "up"
 
-            if change > 0:
+        elif (
+            direction_1h == "short"
+            and direction_4h == "short"
+        ):
 
-                usdt_d_change_display = (
-                    f"▲+{change:.2f}%"
-                )
+            btc_ema_icon = "🌧️"
+            btc_ema_display = "역배열"
+            btc_ema_class = "down"
 
-            elif change < 0:
+        else:
 
-                usdt_d_change_display = (
-                    f"▼{change:.2f}%"
-                )
-
-            else:
-
-                usdt_d_change_display = (
-                    "0.00%"
-                )
-
-        except Exception:
-
-            usdt_d_change_display = "-"
+            btc_ema_icon = "⚪"
+            btc_ema_display = "중립"
+            btc_ema_class = "wait"
 
 
     # =====================================================
@@ -4320,7 +3858,7 @@ def market_summary_html():
 
     # =====================================================
     # 3번째 칸
-    # 전체 TOP30
+    # 전체 TOP_N
     # =====================================================
 
     breadth = top_daily_breadth(
@@ -4418,7 +3956,7 @@ def market_summary_html():
             </span>
 
             <span class="market-title-sub">
-                당일 변동률 기준 · USDT.D 09:00 KST 기준
+                BTC 1H / 4H EMA 필터 · 당일 변동률 기준
             </span>
 
         </div>
@@ -4446,35 +3984,31 @@ def market_summary_html():
 
 
                 <!-- =====================================
-                     1. USDT DOMINANCE
+                     1. BTC EMA
                      ===================================== -->
 
                 <div class="
                     btc-info-box
-                    {usdt_d_class}
+                    {btc_ema_class}
                 ">
 
                     <div class="btc-info-title">
-                        USDT.D · 당일
+                        BTC EMA · 1H / 4H
                     </div>
 
                     <div class="btc-info-value">
-                        {usdt_d_icon}
+                        {btc_ema_icon}
                     </div>
 
                     <div class="btc-info-sub">
-
-                        {usdt_d_value_display}
-                        ·
-                        {usdt_d_change_display}
-
+                        {btc_ema_display}
                     </div>
 
                 </div>
 
 
                 <!-- =====================================
-                     2. BTC
+                     2. BTC 당일
                      ===================================== -->
 
                 <div class="
@@ -6462,12 +5996,6 @@ def startup():
 
     validate_timeframe()
 
-    # =====================================================
-    # ★ USDT.D 기존 기준값 복원
-    # =====================================================
-
-    load_usdt_dominance_base()
-
     tf = format_timeframe(
         EMA_TIMEFRAME
     )
@@ -6581,32 +6109,33 @@ def startup():
 
 
     # =====================================================
-    # ★ USDT Dominance
+    # BTC 시장 시황
     # =====================================================
 
     log.info(
-        "USDT Dominance 시장 참고 방향:"
+        "BTC 시장 시황:"
     )
 
     log.info(
-        "USDT.D 상승 → 🌧️"
+        "1H + 4H EMA 둘 다 정배열 → ☀️"
     )
 
     log.info(
-        "USDT.D 하락 → ☀️"
+        "1H + 4H EMA 둘 다 역배열 → 🌧️"
     )
 
     log.info(
-        "USDT.D 변동 0 → ⚪"
+        "그 외 → ⚪"
     )
 
     log.info(
-        "USDT.D는 매일 09:00 KST 기준으로 초기화"
+        "BTC 시장 시황 EMA는 "
+        "현재 이평 필터 기준을 그대로 사용"
     )
 
     log.info(
-        "USDT.D 방향은 참고용이며 "
-        "EMA/ROC 신호에는 사용하지 않음"
+        "BTC 시장 시황은 "
+        "EMA/ROC 매매 신호와 별도로 표시"
     )
 
 
@@ -6694,8 +6223,8 @@ def startup():
     log.info(
         "상승:"
         f" 🚀⓪={LONG_ROC_COUNT_0}"
-        f" 🚀①={LONG_ROC_COUNT_1}"
-        f" 🚀②={LONG_ROC_COUNT_2}"
+        f" / 🚀①={LONG_ROC_COUNT_1}"
+        f" / 🚀②={LONG_ROC_COUNT_2}"
     )
 
     log.info(
