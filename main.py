@@ -66,11 +66,13 @@ ORDERBOOK_DOMINANCE_GAP = 5.0
 # =========================================================
 # ★ ROC 필터 시간봉
 #
-# 1H ROC5 + 4H ROC5
+# 기존 EMA 1H / 4H 필터를 ROC 필터로 교체
 #
-# 둘 다 양수 → ☀️
-# 둘 다 음수 → 🌧️
-# 그 외 → ⚪
+# 60  = 1시간
+# 240 = 4시간
+#
+# 1H ROC10/20/50/200 모두 >= 0
+# 4H ROC10/20/50/200 모두 >= 0
 # =========================================================
 
 ROC_FILTER_TIMEFRAME = 60
@@ -79,20 +81,48 @@ ROC_FILTER_HIGH_TIMEFRAME = 240
 USE_ROC_FILTER_TIMEFRAME = "Y"
 USE_ROC_FILTER_HIGH_TIMEFRAME = "Y"
 
-ROC_FILTER_PERIOD = 5
+
+# =========================================================
+# ★ ROC 필터 기간
+#
+# 네 가지 ROC가 모두 0 이상이어야 필터 통과
+#
+# ROC10  >= 0
+# ROC20  >= 0
+# ROC50  >= 0
+# ROC200 >= 0
+# =========================================================
+
+ROC_FILTER_PERIODS = [
+    10,
+    20,
+    50,
+    200
+]
 
 
 # =========================================================
 # ★ ROC 로켓 시간봉
 #
-# 이 부분은 기존 ROC 로직 유지
+# 이 부분은 기존 ROC 로켓 설정 그대로
 #
-# 현재:
-# ROC = 1시간봉
-# ROC 기간 = 5
+# 5   = 5분
+# 15  = 15분
+# 30  = 30분
+# 60  = 1시간
+# 120 = 2시간
+# 240 = 4시간
 # =========================================================
 
 ROC_TIMEFRAME = 60
+
+
+# =========================================================
+# ROC 로켓 기간
+#
+# 기존 설정 그대로 ROC5
+# =========================================================
+
 ROC_PERIOD = 5
 
 
@@ -105,13 +135,6 @@ ROC_PERIOD = 5
 # 🚀1
 # 🚀2
 # 🚀3
-# 🚀4
-# 🚀5
-# 🚀6
-# 🚀7
-# 🚀8
-# 🚀9
-# 🚀10
 # ...
 #
 # 음수:
@@ -131,6 +154,7 @@ BREAKOUT_MAX_COUNT = 999999
 SUPPORTED_UPBIT_TIMEFRAMES = {
     5, 15, 30, 60, 240
 }
+
 
 SUPPORTED_OKX_TIMEFRAMES = {
     5, 15, 30, 60, 120,
@@ -180,22 +204,50 @@ okx_1h_cache_time = "-"
 
 
 # =========================================================
-# ROC 설정 텍스트
+# ROC 설정
 # =========================================================
+
+def get_roc_filter_periods():
+
+    return [
+        int(x)
+        for x in ROC_FILTER_PERIODS
+    ]
+
 
 def get_roc_filter_period_text():
 
-    return f"ROC{ROC_FILTER_PERIOD}"
+    periods = get_roc_filter_periods()
+
+    if not periods:
+        return "-"
+
+    return ">".join(
+        str(x)
+        for x in periods
+    )
 
 
-def get_roc_filter_text():
+def get_roc_filter_period_text_long():
+
+    periods = get_roc_filter_periods()
+
+    if not periods:
+        return "ROC 필터 없음"
+
+    return ">".join(
+        f"ROC{x}"
+        for x in periods
+    )
+
+
+def get_roc_filter_setting_text():
 
     return (
-        f"ROC{ROC_FILTER_PERIOD}"
-        f"({format_timeframe(ROC_FILTER_TIMEFRAME)})"
-        f"/"
-        f"ROC{ROC_FILTER_PERIOD}"
-        f"({format_timeframe(ROC_FILTER_HIGH_TIMEFRAME)})"
+        f"{format_timeframe(ROC_FILTER_TIMEFRAME)}:"
+        f"{get_roc_filter_period_text()} / "
+        f"{format_timeframe(ROC_FILTER_HIGH_TIMEFRAME)}:"
+        f"{get_roc_filter_period_text()}"
     )
 
 
@@ -335,81 +387,119 @@ def validate_timeframe():
             ROC_TIMEFRAME
         )
 
-        ROC_FILTER_PERIOD = int(
-            globals()["ROC_FILTER_PERIOD"]
-        )
-
-        ROC_PERIOD_VALUE = int(
-            globals()["ROC_PERIOD"]
-        )
-
     except Exception:
 
         raise ValueError(
-            "ROC 시간봉 및 기간 설정은 숫자여야 합니다."
+            "ROC 시간봉 설정은 숫자여야 합니다."
         )
 
-    if ROC_FILTER_TIMEFRAME not in SUPPORTED_UPBIT_TIMEFRAMES:
+    if (
+        ROC_FILTER_TIMEFRAME
+        not in SUPPORTED_UPBIT_TIMEFRAMES
+    ):
 
         raise ValueError(
             f"ROC_FILTER_TIMEFRAME 오류: "
             f"{ROC_FILTER_TIMEFRAME}"
         )
 
-    if ROC_FILTER_HIGH_TIMEFRAME not in SUPPORTED_UPBIT_TIMEFRAMES:
+    if (
+        ROC_FILTER_HIGH_TIMEFRAME
+        not in SUPPORTED_UPBIT_TIMEFRAMES
+    ):
 
         raise ValueError(
             f"ROC_FILTER_HIGH_TIMEFRAME 오류: "
             f"{ROC_FILTER_HIGH_TIMEFRAME}"
         )
 
-    if ROC_TIMEFRAME not in SUPPORTED_UPBIT_TIMEFRAMES:
+    if (
+        ROC_TIMEFRAME
+        not in SUPPORTED_UPBIT_TIMEFRAMES
+    ):
 
         raise ValueError(
             f"ROC_TIMEFRAME 오류: "
             f"{ROC_TIMEFRAME}"
         )
 
-    if get_okx_bar(ROC_FILTER_TIMEFRAME) is None:
+    if (
+        get_okx_bar(
+            ROC_FILTER_TIMEFRAME
+        )
+        is None
+    ):
 
         raise ValueError(
-            f"OKX에서 지원하지 않는 ROC 필터 시간봉: "
+            f"OKX에서 지원하지 않는 "
+            f"ROC 필터 시간봉: "
             f"{ROC_FILTER_TIMEFRAME}"
         )
 
-    if get_okx_bar(ROC_FILTER_HIGH_TIMEFRAME) is None:
+    if (
+        get_okx_bar(
+            ROC_FILTER_HIGH_TIMEFRAME
+        )
+        is None
+    ):
 
         raise ValueError(
-            f"OKX에서 지원하지 않는 ROC 필터 HIGH 시간봉: "
+            f"OKX에서 지원하지 않는 "
+            f"ROC 고시간봉: "
             f"{ROC_FILTER_HIGH_TIMEFRAME}"
         )
 
-    if get_okx_bar(ROC_TIMEFRAME) is None:
+    if (
+        get_okx_bar(
+            ROC_TIMEFRAME
+        )
+        is None
+    ):
 
         raise ValueError(
-            f"OKX에서 지원하지 않는 ROC 시간봉: "
+            f"OKX에서 지원하지 않는 "
+            f"ROC 시간봉: "
             f"{ROC_TIMEFRAME}"
         )
 
-    if USE_ROC_FILTER_TIMEFRAME not in ("Y", "N"):
+    if (
+        USE_ROC_FILTER_TIMEFRAME
+        not in ("Y", "N")
+    ):
 
         raise ValueError(
-            "USE_ROC_FILTER_TIMEFRAME은 Y 또는 N만 가능합니다."
+            "USE_ROC_FILTER_TIMEFRAME은 "
+            "Y 또는 N만 가능합니다."
         )
 
-    if USE_ROC_FILTER_HIGH_TIMEFRAME not in ("Y", "N"):
+    if (
+        USE_ROC_FILTER_HIGH_TIMEFRAME
+        not in ("Y", "N")
+    ):
 
         raise ValueError(
-            "USE_ROC_FILTER_HIGH_TIMEFRAME은 Y 또는 N만 가능합니다."
+            "USE_ROC_FILTER_HIGH_TIMEFRAME은 "
+            "Y 또는 N만 가능합니다."
         )
 
-    if ROC_FILTER_PERIOD_VALUE < 1:
+    periods = get_roc_filter_periods()
+
+    if len(periods) < 1:
 
         raise ValueError(
-            "ROC_FILTER_PERIOD는 1 이상이어야 합니다."
+            "ROC 필터 기간이 없습니다."
         )
 
-    if ROC_PERIOD_VALUE < 1:
+    for period in periods:
+
+        if period < 1:
+
+            raise ValueError(
+                "ROC 필터 기간은 "
+                "1 이상이어야 합니다."
+            )
+
+    if int(ROC_PERIOD) < 1:
 
         raise ValueError(
             "ROC_PERIOD는 1 이상이어야 합니다."
@@ -424,19 +514,22 @@ def validate_timeframe():
     if not 0 < float(ORDERBOOK_RANGE) <= 1:
 
         raise ValueError(
-            "ORDERBOOK_RANGE는 0보다 크고 1 이하여야 합니다."
+            "ORDERBOOK_RANGE는 "
+            "0보다 크고 1 이하여야 합니다."
         )
 
     if int(ORDERBOOK_COUNT) < 1:
 
         raise ValueError(
-            "ORDERBOOK_COUNT는 1 이상이어야 합니다."
+            "ORDERBOOK_COUNT는 "
+            "1 이상이어야 합니다."
         )
 
     if float(ORDERBOOK_DOMINANCE_GAP) < 0:
 
         raise ValueError(
-            "ORDERBOOK_DOMINANCE_GAP은 0 이상이어야 합니다."
+            "ORDERBOOK_DOMINANCE_GAP은 "
+            "0 이상이어야 합니다."
         )
 
 
@@ -518,7 +611,8 @@ def retry(func, *args, **kwargs):
                 return r
 
             log.warning(
-                f"[API 재시도] {url} {wait}초"
+                f"[API 재시도] "
+                f"{url} {wait}초"
             )
 
             time.sleep(wait)
@@ -1276,6 +1370,10 @@ def history_upbit(
     return all_df
 
 
+# =========================================================
+# 업비트 현재 ROC 데이터
+# =========================================================
+
 def get_upbit_current_roc_data(
     market,
     current_price
@@ -1785,75 +1883,103 @@ def roc(
 
 
 # =========================================================
-# ★ ROC 필터 상태
+# ★ ROC 필터 분석
 #
-# ROC5 기준
+# 핵심 조건:
 #
-# 양수 = 상승 방향
-# 음수 = 하락 방향
-# 0 = 중립
+# ROC10  >= 0
+# ROC20  >= 0
+# ROC50  >= 0
+# ROC200 >= 0
+#
+# 모두 만족해야 long
+# 하나라도 음수면 none
 # =========================================================
 
-def roc_filter_state(
-    df,
-    period=ROC_FILTER_PERIOD
-):
+def roc_filter_analysis(df):
 
     result = {
 
-        "value": None,
-
         "direction": "none",
 
-        "display": "⚪",
+        "passed": False,
 
-        "period": int(period)
+        "roc_values": {},
+
+        "positive_count": 0,
+
+        "total_count": len(
+            get_roc_filter_periods()
+        )
     }
 
-    if df is None or df.empty:
+    if (
+        df is None
+        or df.empty
+    ):
+
         return result
 
     try:
 
-        values = roc(
-            df,
-            period
+        periods = get_roc_filter_periods()
+
+        values = {}
+
+        positive_count = 0
+
+        for period in periods:
+
+            series = roc(
+                df,
+                period
+            )
+
+            if (
+                series is None
+                or series.empty
+            ):
+
+                return result
+
+            value = float(
+                series.iloc[-1]
+            )
+
+            if pd.isna(value):
+
+                return result
+
+            values[period] = value
+
+            if value >= 0:
+
+                positive_count += 1
+
+        passed = (
+            positive_count
+            == len(periods)
         )
-
-        if values is None or values.empty:
-            return result
-
-        value = float(
-            values.iloc[-1]
-        )
-
-        if pd.isna(value):
-            return result
-
-        if value > 0:
-
-            direction = "long"
-            display = "☀️"
-
-        elif value < 0:
-
-            direction = "short"
-            display = "🌧️"
-
-        else:
-
-            direction = "none"
-            display = "⚪"
 
         result.update({
 
-            "value": value,
-
             "direction":
-                direction,
+                "long"
+                if passed
+                else "none",
 
-            "display":
-                display
+            "passed":
+                passed,
+
+            "roc_values":
+                values,
+
+            "positive_count":
+                positive_count,
+
+            "total_count":
+                len(periods)
+
         })
 
         return result
@@ -1868,144 +1994,36 @@ def roc_filter_state(
 
 
 # =========================================================
-# ★ ROC 필터 방향
-#
-# 1H ROC5
-# +
-# 4H ROC5
-#
-# 둘 다 양수 → long
-# 둘 다 음수 → short
-# 그 외 → none
+# ROC 필터 표시
 # =========================================================
 
-def roc_filter_direction(
-    r1,
-    r_high
+def roc_filter_display(
+    x
 ):
 
-    selected = []
-
-    if USE_ROC_FILTER_TIMEFRAME == "Y":
-
-        selected.append(
-            r1.get(
-                "direction",
-                "none"
-            )
-        )
-
-    if USE_ROC_FILTER_HIGH_TIMEFRAME == "Y":
-
-        selected.append(
-            r_high.get(
-                "direction",
-                "none"
-            )
-        )
-
-    if not selected:
-
-        return "none"
-
-    if all(
-        x == "long"
-        for x in selected
-    ):
-
-        return "long"
-
-    if all(
-        x == "short"
-        for x in selected
-    ):
-
-        return "short"
-
-    return "none"
-
-
-# =========================================================
-# ★ ROC 필터 통과
-# =========================================================
-
-def roc_filter_pass(
-    r1,
-    r_high
-):
-
-    selected = []
-
-    if USE_ROC_FILTER_TIMEFRAME == "Y":
-
-        d = r1.get(
-            "direction",
-            "none"
-        )
-
-        if d not in (
-            "long",
-            "short"
-        ):
-
-            return False
-
-        selected.append(d)
-
-    if USE_ROC_FILTER_HIGH_TIMEFRAME == "Y":
-
-        d = r_high.get(
-            "direction",
-            "none"
-        )
-
-        if d not in (
-            "long",
-            "short"
-        ):
-
-            return False
-
-        selected.append(d)
-
-    if not selected:
-        return True
-
-    return len(
-        set(selected)
-    ) == 1
-
-
-# =========================================================
-# EMA 대체용 ROC 표시
-# =========================================================
-
-def roc_filter_display(r):
-
-    if not r:
+    if not x:
 
         return {
             "display": "⚪",
             "direction": "none",
-            "value": None
+            "passed": False,
+            "positive_count": 0,
+            "total_count": len(
+                get_roc_filter_periods()
+            ),
+            "roc_values": {}
         }
 
-    direction = r.get(
-        "direction",
-        "none"
+    passed = bool(
+        x.get(
+            "passed",
+            False
+        )
     )
 
-    value = r.get(
-        "value"
-    )
+    if passed:
 
-    if direction == "long":
-
-        icon = "☀️"
-
-    elif direction == "short":
-
-        icon = "🌧️"
+        icon = "🟢"
 
     else:
 
@@ -2017,15 +2035,118 @@ def roc_filter_display(r):
             icon,
 
         "direction":
-            direction,
+            x.get(
+                "direction",
+                "none"
+            ),
 
-        "value":
-            value
+        "passed":
+            passed,
+
+        "positive_count":
+            x.get(
+                "positive_count",
+                0
+            ),
+
+        "total_count":
+            x.get(
+                "total_count",
+                0
+            ),
+
+        "roc_values":
+            x.get(
+                "roc_values",
+                {}
+            )
     }
 
 
 # =========================================================
-# ROC 상태 분석
+# ★ ROC 필터 방향
+#
+# 선택된 시간봉의 ROC10/20/50/200이
+# 모두 0 이상이어야 long
+#
+# 둘 중 하나라도 조건 미충족 → none
+# =========================================================
+
+def roc_filter_direction(
+    r1,
+    r_high
+):
+
+    selected = []
+
+    if USE_ROC_FILTER_TIMEFRAME == "Y":
+
+        selected.append(r1)
+
+    if USE_ROC_FILTER_HIGH_TIMEFRAME == "Y":
+
+        selected.append(r_high)
+
+    if not selected:
+
+        return {
+            "direction": "none",
+            "valid": True
+        }
+
+    for x in selected:
+
+        if not x.get(
+            "passed",
+            False
+        ):
+
+            return {
+                "direction": "none",
+                "valid": False
+            }
+
+    return {
+        "direction": "long",
+        "valid": True
+    }
+
+
+# =========================================================
+# ★ ROC 필터 통과
+# =========================================================
+
+def roc_filter_pass(
+    r1,
+    r_high
+):
+
+    if USE_ROC_FILTER_TIMEFRAME == "Y":
+
+        if not r1.get(
+            "passed",
+            False
+        ):
+
+            return False
+
+    if USE_ROC_FILTER_HIGH_TIMEFRAME == "Y":
+
+        if not r_high.get(
+            "passed",
+            False
+        ):
+
+            return False
+
+    return True
+
+
+# =========================================================
+# ★ ROC5 상태 분석
+#
+# 이 부분은 기존 ROC 로켓 기능
+# ROC_PERIOD = 5 유지
 # =========================================================
 
 def roc_analysis(
@@ -2193,10 +2314,7 @@ def roc_analysis(
         })
 
         # =================================================
-        # ★ 상승 로켓
-        #
-        # ROC가 양수인 동안
-        # 0부터 계속 증가
+        # 상승 로켓
         # =================================================
 
         if (
@@ -2260,9 +2378,6 @@ def roc_analysis(
                     "long_breakout":
                         True,
 
-                    "long_breakout":
-                        True,
-
                     "long_breakout_count":
                         count,
 
@@ -2275,7 +2390,7 @@ def roc_analysis(
                 })
 
         # =================================================
-        # ★ ROC 음수
+        # ROC 음수
         # =================================================
 
         elif current_value < 0:
@@ -2531,24 +2646,35 @@ def format_volume(v):
 # 기본 분석
 # =========================================================
 
-def empty_analysis():
+def empty_roc_filter():
 
-    r = {
+    return {
 
         "display": "⚪",
 
         "direction": "none",
 
-        "value": None
+        "passed": False,
+
+        "positive_count": 0,
+
+        "total_count": len(
+            get_roc_filter_periods()
+        ),
+
+        "roc_values": {}
     }
+
+
+def empty_analysis():
 
     return {
 
         "roc_filter_1h":
-            r.copy(),
+            empty_roc_filter(),
 
         "roc_filter_high":
-            r.copy(),
+            empty_roc_filter(),
 
         "roc": {
 
@@ -2588,6 +2714,80 @@ def empty_analysis():
 
 
 # =========================================================
+# ROC 필터 HTML
+# =========================================================
+
+def roc_filter_html(
+    r
+):
+
+    if not r:
+
+        return (
+            '<span class="roc-filter-none">'
+            '⚪'
+            '</span>'
+        )
+
+    passed = bool(
+        r.get(
+            "passed",
+            False
+        )
+    )
+
+    values = r.get(
+        "roc_values",
+        {}
+    )
+
+    if passed:
+
+        icon = "🟢"
+
+    else:
+
+        icon = "⚪"
+
+    parts = []
+
+    for period in get_roc_filter_periods():
+
+        value = values.get(
+            period
+        )
+
+        if value is None:
+
+            parts.append(
+                f"R{period} -"
+            )
+
+        else:
+
+            if value >= 0:
+
+                parts.append(
+                    f"R{period} +{value:.1f}"
+                )
+
+            else:
+
+                parts.append(
+                    f"R{period} {value:.1f}"
+                )
+
+    return (
+        '<span class="roc-filter-box">'
+        f'{icon}'
+        '<span class="roc-filter-values">'
+        + " / ".join(parts)
+        + '</span>'
+        '</span>'
+    )
+
+
+# =========================================================
 # 신호 자격
 # =========================================================
 
@@ -2597,9 +2797,13 @@ def get_signal_qualified(
     r
 ):
 
-    filter_direction = roc_filter_direction(
+    filter_info = roc_filter_direction(
         r1,
         r_high
+    )
+
+    filter_direction = (
+        filter_info["direction"]
     )
 
     filter_pass = roc_filter_pass(
@@ -2681,7 +2885,7 @@ def analyze_okx(
         ROC_FILTER_TIMEFRAME
     )
 
-    filter_high_bar = get_okx_bar(
+    high_filter_bar = get_okx_bar(
         ROC_FILTER_HIGH_TIMEFRAME
     )
 
@@ -2691,7 +2895,7 @@ def analyze_okx(
 
     if (
         not filter_bar
-        or not filter_high_bar
+        or not high_filter_bar
         or not roc_bar
     ):
 
@@ -2699,17 +2903,20 @@ def analyze_okx(
 
     df_filter = history_okx(
         market,
-        filter_bar
+        filter_bar,
+        required=200
     )
 
     df_filter_high = history_okx(
         market,
-        filter_high_bar
+        high_filter_bar,
+        required=200
     )
 
     df_roc_confirmed = history_okx(
         market,
-        roc_bar
+        roc_bar,
+        required=200
     )
 
     df_roc_current = get_okx_current_roc_data(
@@ -2738,18 +2945,12 @@ def analyze_okx(
 
         return None
 
-    r1 = roc_filter_display(
-        roc_filter_state(
-            df_filter,
-            ROC_FILTER_PERIOD
-        )
+    roc_filter_1h = roc_filter_analysis(
+        df_filter
     )
 
-    r_high = roc_filter_display(
-        roc_filter_state(
-            df_filter_high,
-            ROC_FILTER_PERIOD
-        )
+    roc_filter_high = roc_filter_analysis(
+        df_filter_high
     )
 
     r = roc_analysis(
@@ -2762,18 +2963,22 @@ def analyze_okx(
     )
 
     q = get_signal_qualified(
-        r1,
-        r_high,
+        roc_filter_1h,
+        roc_filter_high,
         r
     )
 
     return {
 
         "roc_filter_1h":
-            r1,
+            roc_filter_display(
+                roc_filter_1h
+            ),
 
         "roc_filter_high":
-            r_high,
+            roc_filter_display(
+                roc_filter_high
+            ),
 
         "roc":
             r,
@@ -2808,19 +3013,34 @@ def analyze(
             current_price
         )
 
+    # =====================================================
+    # ROC 필터용 1H
+    # =====================================================
+
     df_filter = history_upbit(
         market,
-        ROC_FILTER_TIMEFRAME
+        ROC_FILTER_TIMEFRAME,
+        required=200
     )
+
+    # =====================================================
+    # ROC 필터용 4H
+    # =====================================================
 
     df_filter_high = history_upbit(
         market,
-        ROC_FILTER_HIGH_TIMEFRAME
+        ROC_FILTER_HIGH_TIMEFRAME,
+        required=200
     )
+
+    # =====================================================
+    # ROC5 로켓용 시간봉
+    # =====================================================
 
     df_roc_confirmed = history_upbit(
         market,
-        ROC_TIMEFRAME
+        ROC_TIMEFRAME,
+        required=200
     )
 
     df_roc_current = get_upbit_current_roc_data(
@@ -2853,38 +3073,48 @@ def analyze(
 
         return None
 
-    r1 = roc_filter_display(
-        roc_filter_state(
-            df_filter,
-            ROC_FILTER_PERIOD
-        )
+    # =====================================================
+    # ROC 필터
+    # =====================================================
+
+    roc_filter_1h = roc_filter_analysis(
+        df_filter
     )
 
-    r_high = roc_filter_display(
-        roc_filter_state(
-            df_filter_high,
-            ROC_FILTER_PERIOD
-        )
+    roc_filter_high = roc_filter_analysis(
+        df_filter_high
     )
+
+    # =====================================================
+    # ROC5 로켓
+    # =====================================================
 
     r = roc_analysis(
         df_roc_confirmed,
         df_roc_current
     )
 
+    # =====================================================
+    # 최종 자격
+    # =====================================================
+
     q = get_signal_qualified(
-        r1,
-        r_high,
+        roc_filter_1h,
+        roc_filter_high,
         r
     )
 
     return {
 
         "roc_filter_1h":
-            r1,
+            roc_filter_display(
+                roc_filter_1h
+            ),
 
         "roc_filter_high":
-            r_high,
+            roc_filter_display(
+                roc_filter_high
+            ),
 
         "roc":
             r,
@@ -2952,13 +3182,13 @@ def make_row(
         "roc_filter_1h":
             a.get(
                 "roc_filter_1h",
-                {}
+                empty_roc_filter()
             ),
 
         "roc_filter_high":
             a.get(
                 "roc_filter_high",
-                {}
+                empty_roc_filter()
             ),
 
         "roc":
@@ -3684,9 +3914,7 @@ def get_market_row(coin):
 
 
 # =========================================================
-# ★ BTC 시장 시황
-#
-# EMA → ROC5로 변경
+# BTC 시장 시황
 # =========================================================
 
 def market_summary_html():
@@ -3695,55 +3923,47 @@ def market_summary_html():
 
     if btc is None:
 
-        btc_roc_icon = "⚪"
-        btc_roc_display = "-"
-        btc_roc_class = "wait"
+        btc_filter_icon = "⚪"
+        btc_filter_display = "-"
+        btc_filter_class = "wait"
 
     else:
 
-        roc_1h = btc.get(
+        r1 = btc.get(
             "roc_filter_1h",
             {}
         )
 
-        roc_4h = btc.get(
+        r4 = btc.get(
             "roc_filter_high",
             {}
         )
 
-        direction_1h = roc_1h.get(
-            "direction",
-            "none"
+        pass_1h = bool(
+            r1.get(
+                "passed",
+                False
+            )
         )
 
-        direction_4h = roc_4h.get(
-            "direction",
-            "none"
+        pass_4h = bool(
+            r4.get(
+                "passed",
+                False
+            )
         )
 
-        if (
-            direction_1h == "long"
-            and direction_4h == "long"
-        ):
+        if pass_1h and pass_4h:
 
-            btc_roc_icon = "☀️"
-            btc_roc_display = "정방향"
-            btc_roc_class = "up"
-
-        elif (
-            direction_1h == "short"
-            and direction_4h == "short"
-        ):
-
-            btc_roc_icon = "🌧️"
-            btc_roc_display = "역방향"
-            btc_roc_class = "down"
+            btc_filter_icon = "☀️"
+            btc_filter_display = "필터 통과"
+            btc_filter_class = "up"
 
         else:
 
-            btc_roc_icon = "⚪"
-            btc_roc_display = "중립"
-            btc_roc_class = "wait"
+            btc_filter_icon = "⚪"
+            btc_filter_display = "필터 미통과"
+            btc_filter_class = "wait"
 
     if btc is None:
 
@@ -3894,12 +4114,13 @@ def market_summary_html():
             </span>
 
             <span class="market-title-sub">
-                ROC5
+                ROC 필터
                 {format_timeframe(ROC_FILTER_TIMEFRAME)}
                 /
-                ROC5
                 {format_timeframe(ROC_FILTER_HIGH_TIMEFRAME)}
-                필터 ·
+                ·
+                {get_roc_filter_period_text()}
+                ·
                 {get_roc_text()}
             </span>
 
@@ -3927,22 +4148,24 @@ def market_summary_html():
 
                 <div class="
                     btc-info-box
-                    {btc_roc_class}
+                    {btc_filter_class}
                 ">
 
                     <div class="btc-info-title">
-                        ROC5 ·
+                        ROC 필터 ·
                         {format_timeframe(ROC_FILTER_TIMEFRAME)}
                         /
                         {format_timeframe(ROC_FILTER_HIGH_TIMEFRAME)}
                     </div>
 
                     <div class="btc-info-value">
-                        {btc_roc_icon}
+                        {btc_filter_icon}
                     </div>
 
                     <div class="btc-info-sub">
-                        {btc_roc_display}
+                        {btc_filter_display}
+                        ·
+                        {get_roc_filter_period_text()}
                     </div>
 
                 </div>
@@ -4036,6 +4259,10 @@ def roc_html(r):
             '</div>'
         )
 
+    # =====================================================
+    # ROC 양수 + 돌파
+    # =====================================================
+
     if (
         value > 0
         and r.get(
@@ -4059,6 +4286,10 @@ def roc_html(r):
             '</div>'
         )
 
+    # =====================================================
+    # ROC 양수지만 돌파 이력 없음
+    # =====================================================
+
     if value > 0:
 
         positive_count = int(
@@ -4075,6 +4306,10 @@ def roc_html(r):
             '</span>'
             '</div>'
         )
+
+    # =====================================================
+    # ROC 음수
+    # =====================================================
 
     if value < 0:
 
@@ -4153,7 +4388,7 @@ def signal_html(
             return (
                 '<span '
                 'class="signal-icon long-breakout" '
-                'title="ROC5 1H/4H 필터 일치 + ROC 0선 상승 돌파">'
+                'title="ROC 0선 상승 돌파 후 연속 카운트">'
                 f'🚀{count}'
                 '</span>'
             )
@@ -4167,16 +4402,29 @@ def signal_html(
 # ROC 필터 HTML
 # =========================================================
 
-def roc_filter_html(
-    r
+def filter_html(
+    r1,
+    r4
 ):
 
-    if not r:
-        return "⚪"
+    if not r1:
+        r1 = empty_roc_filter()
 
-    return r.get(
-        "display",
-        "⚪"
+    if not r4:
+        r4 = empty_roc_filter()
+
+    return (
+        '<div class="filter-detail">'
+        '<span>'
+        f'{format_timeframe(ROC_FILTER_TIMEFRAME)} '
+        f'{roc_filter_html(r1)}'
+        '</span>'
+        '<span class="filter-sep">/</span>'
+        '<span>'
+        f'{format_timeframe(ROC_FILTER_HIGH_TIMEFRAME)} '
+        f'{roc_filter_html(r4)}'
+        '</span>'
+        '</div>'
     )
 
 
@@ -4244,37 +4492,16 @@ def rows_html(
 
                 <td class="ema">
 
-                    <span>
-
-                        {format_timeframe(
-                            ROC_FILTER_TIMEFRAME
-                        )}
-
-                        {roc_filter_html(
-                            x.get(
-                                "roc_filter_1h"
-                            )
-                        )}
-
-                    </span>
-
-                    <span class="ema-sep">
-                        /
-                    </span>
-
-                    <span>
-
-                        {format_timeframe(
-                            ROC_FILTER_HIGH_TIMEFRAME
-                        )}
-
-                        {roc_filter_html(
-                            x.get(
-                                "roc_filter_high"
-                            )
-                        )}
-
-                    </span>
+                    {filter_html(
+                        x.get(
+                            "roc_filter_1h",
+                            {}
+                        ),
+                        x.get(
+                            "roc_filter_high",
+                            {}
+                        )
+                    )}
 
                 </td>
 
@@ -4356,8 +4583,12 @@ def table_html(
                     <th>#</th>
                     <th>코인</th>
                     <th>거래대금</th>
-                    <th>ROC 필터</th>
-                    <th>{get_roc_text()}</th>
+                    <th>
+                        ROC 필터
+                    </th>
+                    <th>
+                        {get_roc_text()}
+                    </th>
                     <th>신호</th>
 
                 </tr>
@@ -4926,12 +5157,12 @@ td:nth-child(3){
 
 th:nth-child(4),
 td:nth-child(4){
-    width:25%;
+    width:29%;
 }
 
 th:nth-child(5),
 td:nth-child(5){
-    width:22%;
+    width:18%;
 }
 
 th:nth-child(6),
@@ -4999,22 +5230,57 @@ td:nth-child(1){
 
     line-height:8px;
 
-    white-space:nowrap;
+    white-space:normal;
 
-    overflow:visible;
+    overflow:hidden;
 }
 
-.ema span{
-    font-size:5.8px;
-    line-height:8px;
+.filter-detail{
+    display:flex;
 
+    align-items:center;
+
+    justify-content:center;
+
+    gap:2px;
+
+    width:100%;
+
+    font-size:4.8px;
+
+    line-height:7px;
+
+    white-space:nowrap;
+
+    overflow:hidden;
+}
+
+.filter-detail > span{
     white-space:nowrap;
 }
 
-.ema-sep{
+.filter-sep{
     color:#555c65;
+}
 
-    margin:0 1px;
+.roc-filter-box{
+    display:inline-flex;
+
+    align-items:center;
+
+    gap:1px;
+
+    font-weight:900;
+}
+
+.roc-filter-values{
+    color:#9ca4ad;
+
+    font-size:4.2px;
+
+    font-weight:700;
+
+    white-space:nowrap;
 }
 
 .roc-cell{
@@ -5400,8 +5666,14 @@ td:nth-child(1){
         font-size:5.5px;
     }
 
-    .ema span{
-        font-size:5.3px;
+    .filter-detail{
+        font-size:4.2px;
+        line-height:6px;
+        gap:1px;
+    }
+
+    .roc-filter-values{
+        font-size:3.6px;
     }
 
     .roc-cell span{
@@ -5607,8 +5879,14 @@ td:nth-child(1){
         font-size:8px;
     }
 
-    .ema span{
-        font-size:8px;
+    .filter-detail{
+        font-size:6px;
+        line-height:8px;
+        gap:3px;
+    }
+
+    .roc-filter-values{
+        font-size:5.2px;
     }
 
     .roc-cell span{
@@ -5728,12 +6006,13 @@ def dashboard():
         </span>
 
         <span>
-            ROC 필터 :
+            ROC필터 :
             <b class="y">
-                ROC{ROC_FILTER_PERIOD}
-                ·
                 {format_timeframe(ROC_FILTER_TIMEFRAME)}/
                 {format_timeframe(ROC_FILTER_HIGH_TIMEFRAME)}
+                ·
+                {get_roc_filter_period_text()}
+                ≥0
             </b>
         </span>
 
@@ -5769,10 +6048,11 @@ def dashboard():
             "long_combined",
 
             (
-                f"ROC{ROC_FILTER_PERIOD} "
-                f"{format_timeframe(ROC_FILTER_TIMEFRAME)}/"
+                f"{format_timeframe(ROC_FILTER_TIMEFRAME)}"
+                f"/"
                 f"{format_timeframe(ROC_FILTER_HIGH_TIMEFRAME)} "
-                f"동시 양수 · "
+                f"{get_roc_filter_period_text_long()} "
+                f"모두 ≥ 0 · "
                 f"{get_roc_text()} "
                 f"0선 상승 돌파 + "
                 f"당일 변동률 ≥ 0%"
@@ -5795,10 +6075,11 @@ def dashboard():
             "long_combined",
 
             (
-                f"ROC{ROC_FILTER_PERIOD} "
-                f"{format_timeframe(ROC_FILTER_TIMEFRAME)}/"
+                f"{format_timeframe(ROC_FILTER_TIMEFRAME)}"
+                f"/"
                 f"{format_timeframe(ROC_FILTER_HIGH_TIMEFRAME)} "
-                f"동시 양수 · "
+                f"{get_roc_filter_period_text_long()} "
+                f"모두 ≥ 0 · "
                 f"{get_roc_text()} "
                 f"0선 상승 돌파 + "
                 f"당일 변동률 ≥ 0%"
@@ -5857,11 +6138,8 @@ def dashboard():
         >
 
         <title>
-            ROC{ROC_FILTER_PERIOD}
-            /
-            {format_timeframe(ROC_FILTER_TIMEFRAME)}
-            /
-            {format_timeframe(ROC_FILTER_HIGH_TIMEFRAME)}
+            ROC 필터
+            {get_roc_filter_period_text()}
             ·
             {get_roc_text()}
         </title>
@@ -5943,7 +6221,7 @@ def startup():
         ROC_FILTER_TIMEFRAME
     )
 
-    filter_high_tf = format_timeframe(
+    high_filter_tf = format_timeframe(
         ROC_FILTER_HIGH_TIMEFRAME
     )
 
@@ -5956,66 +6234,42 @@ def startup():
     )
 
     log.info(
-        f"ROC 필터: "
-        f"ROC{ROC_FILTER_PERIOD} "
-        f"{filter_tf}/{filter_high_tf}"
+        "EMA 필터 완전 삭제"
     )
 
     log.info(
-        f"ROC 로켓: "
-        f"ROC{ROC_PERIOD} "
-        f"{roc_tf}"
+        f"ROC 필터 "
+        f"{filter_tf}/{high_filter_tf}"
     )
 
     log.info(
-        f"업비트={USE_UPBIT} / "
-        f"OKX={USE_OKX}"
+        f"ROC 필터 기간: "
+        f"{get_roc_filter_period_text_long()}"
     )
 
     log.info(
-        f"TOP={TOP_N} / "
-        f"UPDATE={UPDATE_MINUTES}분"
-    )
-
-    # =====================================================
-    # ROC 필터
-    # =====================================================
-
-    log.info(
-        "========================================"
+        "ROC 필터 조건:"
     )
 
     log.info(
-        "ROC 필터:"
+        "ROC10 >= 0"
     )
 
     log.info(
-        f"{filter_tf} ROC{ROC_FILTER_PERIOD}"
+        "ROC20 >= 0"
     )
 
     log.info(
-        f"{filter_high_tf} ROC{ROC_FILTER_PERIOD}"
+        "ROC50 >= 0"
     )
 
     log.info(
-        "두 시간봉 ROC 모두 양수 → ☀️"
+        "ROC200 >= 0"
     )
 
     log.info(
-        "두 시간봉 ROC 모두 음수 → 🌧️"
+        "위 4개 모두 0 이상이어야 필터 통과"
     )
-
-    log.info(
-        "두 시간봉 방향 불일치 → ⚪"
-    )
-
-    log.info(
-        "ROC 필터는 EMA를 사용하지 않음"
-    )
-
-    # =====================================================
-    # ROC 로켓
-    # =====================================================
 
     log.info(
         "========================================"
@@ -6030,7 +6284,7 @@ def startup():
     )
 
     log.info(
-        "ROC 상승:"
+        "ROC5 상승:"
     )
 
     log.info(
@@ -6058,15 +6312,15 @@ def startup():
     )
 
     log.info(
-        "ROC 양수 유지 동안 카운트 제한 없음"
+        "ROC5 양수 유지 동안 카운트 제한 없음"
     )
 
     log.info(
-        "ROC가 0 이하가 되면 로켓 종료"
+        "ROC5가 0 이하가 되면 로켓 종료"
     )
 
     log.info(
-        "ROC 음수:"
+        "ROC5 음수:"
     )
 
     log.info(
@@ -6130,15 +6384,9 @@ def startup():
     )
 
     log.info(
-        f"{filter_tf} ROC{ROC_FILTER_PERIOD} "
-        f"+ {filter_high_tf} ROC{ROC_FILTER_PERIOD} "
-        f"둘 다 양수 → ☀️"
-    )
-
-    log.info(
-        f"{filter_tf} ROC{ROC_FILTER_PERIOD} "
-        f"+ {filter_high_tf} ROC{ROC_FILTER_PERIOD} "
-        f"둘 다 음수 → 🌧️"
+        f"{filter_tf} + {high_filter_tf} "
+        f"ROC10/20/50/200 "
+        f"모두 0 이상 → ☀️"
     )
 
     log.info(
@@ -6182,19 +6430,22 @@ def startup():
     )
 
     log.info(
-        f"① {filter_tf} ROC{ROC_FILTER_PERIOD} 양수"
+        f"① {filter_tf} ROC10/20/50/200 "
+        f"모두 0 이상"
     )
 
     log.info(
-        f"② {filter_high_tf} ROC{ROC_FILTER_PERIOD} 양수"
+        f"② {high_filter_tf} ROC10/20/50/200 "
+        f"모두 0 이상"
     )
 
     log.info(
-        f"③ {get_roc_text()} 0선 상승 돌파"
+        f"③ {get_roc_text()} "
+        f"0선 상승 돌파"
     )
 
     log.info(
-        "④ ROC 양수 상태 유지 동안 "
+        "④ ROC5 양수 상태 유지 동안 "
         "카운트 제한 없음"
     )
 
@@ -6213,7 +6464,27 @@ def startup():
     )
 
     log.info(
-        "EMA 필터는 완전히 제거됨"
+        "========================================"
+    )
+
+    log.info(
+        f"ROC 필터 설정: "
+        f"{get_roc_filter_setting_text()}"
+    )
+
+    log.info(
+        f"ROC 로켓 설정: "
+        f"{get_roc_text()}"
+    )
+
+    log.info(
+        f"업비트={USE_UPBIT} / "
+        f"OKX={USE_OKX}"
+    )
+
+    log.info(
+        f"TOP={TOP_N} / "
+        f"UPDATE={UPDATE_MINUTES}분"
     )
 
     # =====================================================
