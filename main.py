@@ -79,7 +79,7 @@ ROC_FILTER_TIMEFRAME = 60
 ROC_FILTER_HIGH_TIMEFRAME = 240
 
 USE_ROC_FILTER_TIMEFRAME = "Y"
-USE_ROC_FILTER_HIGH_TIMEFRAME = "Y"
+USE_ROC_FILTER_HIGH_TIMEFRAME = "N"
 
 
 # =========================================================
