@@ -70,7 +70,7 @@ ORDERBOOK_DOMINANCE_GAP = 5.0
 EMA_TIMEFRAME = 60
 EMA_HIGH_TIMEFRAME = 240
 
-USE_EMA_TIMEFRAME = "N"
+USE_EMA_TIMEFRAME = "Y"
 USE_EMA_HIGH_TIMEFRAME = "N"
 
 
@@ -92,7 +92,7 @@ EMA1_SLOW = 200
 # EMA 사용 여부
 # =========================================================
 
-EMA_USE_10 = "Y"
+EMA_USE_10 = "N"
 EMA_USE_30 = "Y"
 EMA_USE_60 = "Y"
 EMA_USE_120 = "Y"
