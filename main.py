@@ -111,7 +111,7 @@ ROC_PERIOD = 5
 
 LONG_ROC_COUNT_0 = "Y"
 LONG_ROC_COUNT_1 = "Y"
-LONG_ROC_COUNT_2 = "Y"
+LONG_ROC_COUNT_2 = "N"
 
 
 # =========================================================
