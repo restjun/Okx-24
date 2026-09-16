@@ -94,7 +94,7 @@ USE_EMA_HIGH_TIMEFRAME = "Y"
 EMA1_FASTEST = 10
 EMA1_FAST = 20
 EMA1_MID = 50
-EMA1_SLOW = 100
+EMA1_SLOW = 200
 
 
 # =========================================================
