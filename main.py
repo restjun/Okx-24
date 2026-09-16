@@ -64,33 +64,18 @@ ORDERBOOK_DOMINANCE_GAP = 5.0
 
 
 # =========================================================
-# ★ ROC 필터 시간봉
-#
-# 기존 EMA 1H / 4H 필터를 ROC 필터로 교체
-#
-# 60  = 1시간
-# 240 = 4시간
-#
-# 1H ROC10/20/50/200 모두 >= 0
-# 4H ROC10/20/50/200 모두 >= 0
+# ROC 필터 시간봉
 # =========================================================
 
 ROC_FILTER_TIMEFRAME = 60
 ROC_FILTER_HIGH_TIMEFRAME = 240
 
 USE_ROC_FILTER_TIMEFRAME = "Y"
-USE_ROC_FILTER_HIGH_TIMEFRAME = "N"
+USE_ROC_FILTER_HIGH_TIMEFRAME = "Y"
 
 
 # =========================================================
-# ★ ROC 필터 기간
-#
-# 네 가지 ROC가 모두 0 이상이어야 필터 통과
-#
-# ROC10  >= 0
-# ROC20  >= 0
-# ROC50  >= 0
-# ROC200 >= 0
+# ROC 필터 기간
 # =========================================================
 
 ROC_FILTER_PERIODS = [
@@ -102,16 +87,7 @@ ROC_FILTER_PERIODS = [
 
 
 # =========================================================
-# ★ ROC 로켓 시간봉
-#
-# 이 부분은 기존 ROC 로켓 설정 그대로
-#
-# 5   = 5분
-# 15  = 15분
-# 30  = 30분
-# 60  = 1시간
-# 120 = 2시간
-# 240 = 4시간
+# ROC 로켓 시간봉
 # =========================================================
 
 ROC_TIMEFRAME = 60
@@ -119,8 +95,6 @@ ROC_TIMEFRAME = 60
 
 # =========================================================
 # ROC 로켓 기간
-#
-# 기존 설정 그대로 ROC5
 # =========================================================
 
 ROC_PERIOD = 5
@@ -128,24 +102,6 @@ ROC_PERIOD = 5
 
 # =========================================================
 # ROC 로켓 표시
-#
-# 상승:
-#
-# 🚀0
-# 🚀1
-# 🚀2
-# 🚀3
-# ...
-#
-# 음수:
-#
-# 🔴 ROC -(1)
-# 🔴 ROC -(2)
-# 🔴 ROC -(3)
-# ...
-#
-# ROC가 다시 0선 상승 돌파하면
-# 🚀0부터 다시 시작
 # =========================================================
 
 BREAKOUT_MAX_COUNT = 999999
@@ -1883,17 +1839,7 @@ def roc(
 
 
 # =========================================================
-# ★ ROC 필터 분석
-#
-# 핵심 조건:
-#
-# ROC10  >= 0
-# ROC20  >= 0
-# ROC50  >= 0
-# ROC200 >= 0
-#
-# 모두 만족해야 long
-# 하나라도 음수면 none
+# ROC 필터 분석
 # =========================================================
 
 def roc_filter_analysis(df):
@@ -2064,12 +2010,7 @@ def roc_filter_display(
 
 
 # =========================================================
-# ★ ROC 필터 방향
-#
-# 선택된 시간봉의 ROC10/20/50/200이
-# 모두 0 이상이어야 long
-#
-# 둘 중 하나라도 조건 미충족 → none
+# ROC 필터 방향
 # =========================================================
 
 def roc_filter_direction(
@@ -2113,7 +2054,7 @@ def roc_filter_direction(
 
 
 # =========================================================
-# ★ ROC 필터 통과
+# ROC 필터 통과
 # =========================================================
 
 def roc_filter_pass(
@@ -2143,10 +2084,7 @@ def roc_filter_pass(
 
 
 # =========================================================
-# ★ ROC5 상태 분석
-#
-# 이 부분은 기존 ROC 로켓 기능
-# ROC_PERIOD = 5 유지
+# ROC5 상태 분석
 # =========================================================
 
 def roc_analysis(
@@ -2227,10 +2165,6 @@ def roc_analysis(
 
             return result
 
-        # =================================================
-        # 양수 연속
-        # =================================================
-
         positive_count = 0
 
         for value in reversed(values):
@@ -2243,10 +2177,6 @@ def roc_analysis(
 
                 break
 
-        # =================================================
-        # 음수 연속
-        # =================================================
-
         negative_count = 0
 
         for value in reversed(values):
@@ -2258,10 +2188,6 @@ def roc_analysis(
             else:
 
                 break
-
-        # =================================================
-        # 상승 돌파
-        # =================================================
 
         breakout_count = 0
         breakout_state = "none"
@@ -2312,10 +2238,6 @@ def roc_analysis(
                 breakout_state
 
         })
-
-        # =================================================
-        # 상승 로켓
-        # =================================================
 
         if (
             current_value > 0
@@ -2389,10 +2311,6 @@ def roc_analysis(
 
                 })
 
-        # =================================================
-        # ROC 음수
-        # =================================================
-
         elif current_value < 0:
 
             result.update({
@@ -2413,10 +2331,6 @@ def roc_analysis(
                     "none"
 
             })
-
-        # =================================================
-        # ROC 0
-        # =================================================
 
         else:
 
@@ -3013,29 +2927,17 @@ def analyze(
             current_price
         )
 
-    # =====================================================
-    # ROC 필터용 1H
-    # =====================================================
-
     df_filter = history_upbit(
         market,
         ROC_FILTER_TIMEFRAME,
         required=200
     )
 
-    # =====================================================
-    # ROC 필터용 4H
-    # =====================================================
-
     df_filter_high = history_upbit(
         market,
         ROC_FILTER_HIGH_TIMEFRAME,
         required=200
     )
-
-    # =====================================================
-    # ROC5 로켓용 시간봉
-    # =====================================================
 
     df_roc_confirmed = history_upbit(
         market,
@@ -3073,10 +2975,6 @@ def analyze(
 
         return None
 
-    # =====================================================
-    # ROC 필터
-    # =====================================================
-
     roc_filter_1h = roc_filter_analysis(
         df_filter
     )
@@ -3085,18 +2983,10 @@ def analyze(
         df_filter_high
     )
 
-    # =====================================================
-    # ROC5 로켓
-    # =====================================================
-
     r = roc_analysis(
         df_roc_confirmed,
         df_roc_current
     )
-
-    # =====================================================
-    # 최종 자격
-    # =====================================================
 
     q = get_signal_qualified(
         roc_filter_1h,
@@ -4259,10 +4149,6 @@ def roc_html(r):
             '</div>'
         )
 
-    # =====================================================
-    # ROC 양수 + 돌파
-    # =====================================================
-
     if (
         value > 0
         and r.get(
@@ -4286,10 +4172,6 @@ def roc_html(r):
             '</div>'
         )
 
-    # =====================================================
-    # ROC 양수지만 돌파 이력 없음
-    # =====================================================
-
     if value > 0:
 
         positive_count = int(
@@ -4306,10 +4188,6 @@ def roc_html(r):
             '</span>'
             '</div>'
         )
-
-    # =====================================================
-    # ROC 음수
-    # =====================================================
 
     if value < 0:
 
@@ -4400,6 +4278,7 @@ def signal_html(
 
 # =========================================================
 # ROC 필터 HTML
+# ★ 여기만 1H / 4H 두 줄 표시로 변경
 # =========================================================
 
 def filter_html(
@@ -4415,15 +4294,21 @@ def filter_html(
 
     return (
         '<div class="filter-detail">'
-        '<span>'
-        f'{format_timeframe(ROC_FILTER_TIMEFRAME)} '
+
+        '<div class="filter-line">'
+        f'<span class="filter-timeframe">'
+        f'{format_timeframe(ROC_FILTER_TIMEFRAME)}'
+        f'</span>'
         f'{roc_filter_html(r1)}'
-        '</span>'
-        '<span class="filter-sep">/</span>'
-        '<span>'
-        f'{format_timeframe(ROC_FILTER_HIGH_TIMEFRAME)} '
+        '</div>'
+
+        '<div class="filter-line">'
+        f'<span class="filter-timeframe">'
+        f'{format_timeframe(ROC_FILTER_HIGH_TIMEFRAME)}'
+        f'</span>'
         f'{roc_filter_html(r4)}'
-        '</span>'
+        '</div>'
+
         '</div>'
     )
 
@@ -5235,14 +5120,22 @@ td:nth-child(1){
     overflow:hidden;
 }
 
+
+/* =======================================================
+   ★ ROC 필터 1시간 / 4시간 두 줄 표시
+   ======================================================= */
+
 .filter-detail{
+
     display:flex;
 
-    align-items:center;
+    flex-direction:column;
+
+    align-items:flex-start;
 
     justify-content:center;
 
-    gap:2px;
+    gap:1px;
 
     width:100%;
 
@@ -5253,10 +5146,47 @@ td:nth-child(1){
     white-space:nowrap;
 
     overflow:hidden;
+
 }
 
-.filter-detail > span{
+.filter-line{
+
+    display:flex;
+
+    align-items:center;
+
+    justify-content:flex-start;
+
+    gap:2px;
+
+    width:100%;
+
+    min-width:0;
+
     white-space:nowrap;
+
+    overflow:hidden;
+
+}
+
+.filter-timeframe{
+
+    display:inline-block;
+
+    flex:none;
+
+    width:14px;
+
+    color:#d7dce1;
+
+    font-size:4.8px;
+
+    line-height:7px;
+
+    font-weight:900;
+
+    text-align:left;
+
 }
 
 .filter-sep{
@@ -5270,7 +5200,13 @@ td:nth-child(1){
 
     gap:1px;
 
+    min-width:0;
+
     font-weight:900;
+
+    white-space:nowrap;
+
+    overflow:hidden;
 }
 
 .roc-filter-values{
@@ -5281,6 +5217,10 @@ td:nth-child(1){
     font-weight:700;
 
     white-space:nowrap;
+
+    overflow:hidden;
+
+    text-overflow:clip;
 }
 
 .roc-cell{
@@ -5666,10 +5606,24 @@ td:nth-child(1){
         font-size:5.5px;
     }
 
+    /* ★ 모바일 ROC 필터 두 줄 */
+
     .filter-detail{
         font-size:4.2px;
         line-height:6px;
+
         gap:1px;
+    }
+
+    .filter-line{
+        gap:1px;
+    }
+
+    .filter-timeframe{
+        width:12px;
+
+        font-size:4.2px;
+        line-height:6px;
     }
 
     .roc-filter-values{
@@ -5879,10 +5833,24 @@ td:nth-child(1){
         font-size:8px;
     }
 
+    /* ★ PC ROC 필터 두 줄 */
+
     .filter-detail{
         font-size:6px;
         line-height:8px;
+
+        gap:2px;
+    }
+
+    .filter-line{
         gap:3px;
+    }
+
+    .filter-timeframe{
+        width:17px;
+
+        font-size:6px;
+        line-height:8px;
     }
 
     .roc-filter-values{
