@@ -3361,10 +3361,12 @@ def get_long_progress_count(row):
 
 
 # =========================================================
-# TOP_N ROC 시장 폭
+# ★ TOP_N 당일 변동률 시장폭
+#
+# 양수 / 음수 비율
 # =========================================================
 
-def top_roc_breadth(data):
+def top_daily_breadth(data):
 
     result = {
         "positive": 0,
@@ -3389,13 +3391,8 @@ def top_roc_breadth(data):
         if not row:
             continue
 
-        r = row.get(
-            "roc",
-            {}
-        )
-
-        value = r.get(
-            "roc10"
+        value = row.get(
+            "change_value"
         )
 
         try:
@@ -3438,22 +3435,24 @@ def top_roc_breadth(data):
         positive / total * 100
     )
 
-    half = total / 2
+    # =====================================================
+    # 양수 / 음수 개수 비교
+    # =====================================================
 
-    if positive > half:
+    if positive > negative:
 
         result["icon"] = "☀️"
         result["state"] = "up"
 
-    elif positive == half:
-
-        result["icon"] = "⚪"
-        result["state"] = "neutral"
-
-    else:
+    elif positive < negative:
 
         result["icon"] = "🌧️"
         result["state"] = "down"
+
+    else:
+
+        result["icon"] = "⚪"
+        result["state"] = "neutral"
 
     return result
 
@@ -3562,7 +3561,7 @@ def update_upbit():
 
     latest_upbit_data = rows
 
-    breadth = top_roc_breadth(
+    breadth = top_daily_breadth(
         latest_upbit_data
     )
 
@@ -3575,10 +3574,10 @@ def update_upbit():
     )
 
     log.info(
-        f"TOP{TOP_N} ROC 시장폭 / "
+        f"TOP{TOP_N} 당일 변동 시장폭 / "
         f"양수 {breadth['positive']} / "
         f"음수 {breadth['negative']} / "
-        f"중립 {breadth['zero']} / "
+        f"보합 {breadth['zero']} / "
         f"판단 {breadth['icon']}"
     )
 
@@ -3702,7 +3701,7 @@ def update_okx(usdt):
 
     latest_okx_data = rows
 
-    breadth = top_roc_breadth(
+    breadth = top_daily_breadth(
         latest_okx_data
     )
 
@@ -3710,10 +3709,10 @@ def update_okx(usdt):
     latest_okx_update_time = kst()
 
     log.info(
-        f"OKX TOP{TOP_N} ROC 시장폭 / "
+        f"OKX TOP{TOP_N} 당일 변동 시장폭 / "
         f"양수 {breadth['positive']} / "
         f"음수 {breadth['negative']} / "
-        f"중립 {breadth['zero']} / "
+        f"보합 {breadth['zero']} / "
         f"판단 {breadth['icon']}"
     )
 
@@ -4014,7 +4013,8 @@ def market_summary_html():
     btc = get_market_row("BTC")
 
     # =====================================================
-    # USDT 상태
+    # 1번째 칸
+    # USDT/KRW 당일
     # =====================================================
 
     usdt_state = usdt_market_state(
@@ -4069,78 +4069,79 @@ def market_summary_html():
 
 
     # =====================================================
-    # BTC ROC
+    # 2번째 칸
+    # ★ BTC 당일 변동률
     # =====================================================
 
     if btc is None:
 
-        roc_icon = "⚪"
-        roc_display = "-"
-        btc_roc_class = "wait"
+        btc_daily_icon = "⚪"
+        btc_daily_display = "-"
+        btc_daily_class = "wait"
 
     else:
 
-        roc_data = btc.get(
-            "roc",
-            {}
+        btc_daily_change = btc.get(
+            "change_value"
         )
 
-        roc_value = roc_data.get(
-            "roc10"
-        )
+        if btc_daily_change is None:
 
-        if roc_value is None:
-
-            roc_icon = "⚪"
-            roc_display = "-"
-            btc_roc_class = "wait"
+            btc_daily_icon = "⚪"
+            btc_daily_display = "-"
+            btc_daily_class = "wait"
 
         else:
 
             try:
 
-                roc_value = float(
-                    roc_value
+                btc_daily_change = float(
+                    btc_daily_change
                 )
 
-                if roc_value > 0:
+                if btc_daily_change > 0:
 
-                    roc_icon = "☀️"
+                    btc_daily_icon = "☀️"
 
-                    roc_display = (
-                        f"+{roc_value:.2f}%"
+                    btc_daily_display = (
+                        f"+{btc_daily_change:.2f}%"
                     )
 
-                    btc_roc_class = "up"
+                    btc_daily_class = "up"
 
-                elif roc_value < 0:
+                elif btc_daily_change < 0:
 
-                    roc_icon = "🌧️"
+                    btc_daily_icon = "🌧️"
 
-                    roc_display = (
-                        f"{roc_value:.2f}%"
+                    btc_daily_display = (
+                        f"{btc_daily_change:.2f}%"
                     )
 
-                    btc_roc_class = "down"
+                    btc_daily_class = "down"
 
                 else:
 
-                    roc_icon = "⚪"
-                    roc_display = "0.00%"
-                    btc_roc_class = "wait"
+                    btc_daily_icon = "⚪"
+
+                    btc_daily_display = "0.00%"
+
+                    btc_daily_class = "wait"
 
             except Exception:
 
-                roc_icon = "⚪"
-                roc_display = "-"
-                btc_roc_class = "wait"
+                btc_daily_icon = "⚪"
+                btc_daily_display = "-"
+                btc_daily_class = "wait"
 
 
     # =====================================================
-    # TOP30 ROC 시장폭
+    # 3번째 칸
+    # ★ 전체 TOP30 당일 변동률
+    #
+    # 양수 / 음수
     # =====================================================
 
-    breadth = top_roc_breadth(
+    breadth = top_daily_breadth(
         latest_upbit_data
     )
 
@@ -4154,6 +4155,16 @@ def market_summary_html():
         0
     )
 
+    breadth_negative = breadth.get(
+        "negative",
+        0
+    )
+
+    breadth_zero = breadth.get(
+        "zero",
+        0
+    )
+
     breadth_total = breadth.get(
         "total",
         0
@@ -4162,8 +4173,16 @@ def market_summary_html():
     if breadth_total > 0:
 
         breadth_display = (
-            f"{breadth_positive}/{breadth_total}"
+            f"양수 {breadth_positive}"
+            f" / "
+            f"음수 {breadth_negative}"
         )
+
+        if breadth_zero > 0:
+
+            breadth_display += (
+                f" · 0 {breadth_zero}"
+            )
 
     else:
 
@@ -4217,7 +4236,7 @@ def market_summary_html():
             </span>
 
             <span class="market-title-sub">
-                {get_roc_text()} 기준 · USDT/KRW 참고
+                당일 변동률 기준 · USDT/KRW 참고
             </span>
 
         </div>
@@ -4243,6 +4262,10 @@ def market_summary_html():
 
             <div class="btc-bottom">
 
+                <!-- =========================================
+                     1. USDT/KRW
+                     ========================================= -->
+
                 <div class="
                     btc-info-box
                     {usdt_class}
@@ -4267,25 +4290,33 @@ def market_summary_html():
                 </div>
 
 
+                <!-- =========================================
+                     2. BTC 당일 변동률
+                     ========================================= -->
+
                 <div class="
                     btc-info-box
-                    {btc_roc_class}
+                    {btc_daily_class}
                 ">
 
                     <div class="btc-info-title">
-                        {get_roc_text()}
+                        BTC · 당일
                     </div>
 
                     <div class="btc-info-value">
-                        {roc_icon}
+                        {btc_daily_icon}
                     </div>
 
                     <div class="btc-info-sub">
-                        {roc_display}
+                        {btc_daily_display}
                     </div>
 
                 </div>
 
+
+                <!-- =========================================
+                     3. 전체 양수 / 음수
+                     ========================================= -->
 
                 <div class="
                     btc-info-box
@@ -4293,7 +4324,7 @@ def market_summary_html():
                 ">
 
                     <div class="btc-info-title">
-                        TOP{TOP_N} {get_roc_text()}
+                        전체 · 당일
                     </div>
 
                     <div class="btc-info-value">
@@ -6458,27 +6489,27 @@ def startup():
 
 
     # =====================================================
-    # TOP ROC 시장폭
+    # ★ TOP 당일 변동 시장폭
     # =====================================================
 
     log.info(
-        f"TOP{TOP_N} ROC 시장폭 기준:"
+        f"TOP{TOP_N} 당일 변동 시장폭 기준:"
     )
 
     log.info(
-        "ROC5 양수 > 전체의 50% → ☀️"
+        "당일 변동률 양수 > 음수 → ☀️"
     )
 
     log.info(
-        "ROC5 양수 = 전체의 50% → ⚪"
+        "당일 변동률 양수 < 음수 → 🌧️"
     )
 
     log.info(
-        "ROC5 양수 < 전체의 50% → 🌧️"
+        "당일 변동률 양수 = 음수 → ⚪"
     )
 
     log.info(
-        "TOP_N 변경 시 기준 자동 변경"
+        "전체 TOP30은 음수 종목도 표시"
     )
 
 
