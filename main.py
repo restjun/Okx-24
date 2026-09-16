@@ -38,7 +38,7 @@ log = logging.getLogger("trading")
 # =========================================================
 
 VOLUME_HOURS = 24
-TOP_N = 20
+TOP_N = 30
 UPDATE_MINUTES = 1
 
 HISTORY_CHUNK = 200
@@ -109,7 +109,7 @@ ROC_PERIOD = 5
 
 LONG_ROC_COUNT_0 = "Y"
 LONG_ROC_COUNT_1 = "Y"
-LONG_ROC_COUNT_2 = "N"
+LONG_ROC_COUNT_2 = "Y"
 
 
 # =========================================================
@@ -767,8 +767,6 @@ def get_usdt_krw_daily_change():
 
 # =========================================================
 # USDT/KRW 시장 상태
-# 음수 → ☀️
-# 양수 → 🌧️
 # =========================================================
 
 def usdt_market_state(change):
@@ -3247,7 +3245,10 @@ def is_roc3_progress(row):
 
 
 # =========================================================
-# 상승 통합 후보
+# ★ 상승 통합 후보
+#
+# 기존 조건 +
+# 당일 변동률 음수 종목 제외
 # =========================================================
 
 def is_long_combined(row):
@@ -3277,14 +3278,53 @@ def is_long_combined(row):
 
         return False
 
+    # =====================================================
+    # ROC 양수
+    # =====================================================
+
     if roc_value <= 0:
         return False
+
+    # =====================================================
+    # ROC 돌파 카운트
+    # =====================================================
 
     if count not in (0, 1, 2):
         return False
 
     if not long_count_enabled(count):
         return False
+
+    # =====================================================
+    # ★ 당일 변동률
+    #
+    # 음수 → 상승 신호에서 제외
+    # 0 이상 → 통과
+    # =====================================================
+
+    daily_change = row.get(
+        "change_value"
+    )
+
+    if daily_change is None:
+        return False
+
+    try:
+
+        daily_change = float(
+            daily_change
+        )
+
+    except Exception:
+
+        return False
+
+    if daily_change < 0:
+        return False
+
+    # =====================================================
+    # 최종 상승 신호
+    # =====================================================
 
     return bool(
         row.get(
@@ -3702,7 +3742,7 @@ def update_dashboard():
     try:
 
         # =================================================
-        # USDT/KRW는 OKX=N이어도 항상 조회
+        # USDT/KRW
         # =================================================
 
         try:
@@ -4203,10 +4243,6 @@ def market_summary_html():
 
             <div class="btc-bottom">
 
-                <!-- =====================================
-                     1번 USDT/KRW
-                     ===================================== -->
-
                 <div class="
                     btc-info-box
                     {usdt_class}
@@ -4231,10 +4267,6 @@ def market_summary_html():
                 </div>
 
 
-                <!-- =====================================
-                     2번 BTC ROC5
-                     ===================================== -->
-
                 <div class="
                     btc-info-box
                     {btc_roc_class}
@@ -4254,10 +4286,6 @@ def market_summary_html():
 
                 </div>
 
-
-                <!-- =====================================
-                     3번 TOP30 ROC5
-                     ===================================== -->
 
                 <div class="
                     btc-info-box
@@ -4917,7 +4945,7 @@ h1{
 
 
 /* =========================================================
-   ★ 당일 변동률 +2pt
+   ★ 당일 변동률 2포인트 확대
    ========================================================= */
 
 .btc-change{
@@ -5384,8 +5412,6 @@ td:nth-child(1){
 
 /* =========================================================
    호가
-   매수 = 초록
-   매도 = 빨강
    ========================================================= */
 
 .orderbook-subrow{
@@ -5440,19 +5466,17 @@ td:nth-child(1){
 }
 
 
-/* 매수대기 = 초록 */
-
-.bid-label{
-    color:#39e875;
-}
-
-
-/* 매도대기 = 빨강 */
+/* =========================================================
+   ★ 매도 = 빨강 / 매수 = 녹색
+   ========================================================= */
 
 .ask-label{
     color:#ff5555;
 }
 
+.bid-label{
+    color:#39e875;
+}
 
 .orderbook-amount{
 
@@ -5467,20 +5491,13 @@ td:nth-child(1){
     white-space:nowrap;
 }
 
-
-/* 매수 금액 = 초록 */
-
-.bid-amount{
-    color:#39e875;
-}
-
-
-/* 매도 금액 = 빨강 */
-
 .ask-amount{
     color:#ff7777;
 }
 
+.bid-amount{
+    color:#39e875;
+}
 
 .orderbook-bar-box{
 
@@ -5509,20 +5526,13 @@ td:nth-child(1){
         width .25s ease;
 }
 
-
-/* 매수 막대 = 초록 */
-
-.bid-bar{
-    background:#39e875;
-}
-
-
-/* 매도 막대 = 빨강 */
-
 .ask-bar{
     background:#d94a4a;
 }
 
+.bid-bar{
+    background:#39e875;
+}
 
 .orderbook-ratio{
 
@@ -5537,20 +5547,13 @@ td:nth-child(1){
     white-space:nowrap;
 }
 
-
-/* 매수 비율 = 초록 */
-
-.bid-ratio{
-    color:#39e875;
-}
-
-
-/* 매도 비율 = 빨강 */
-
 .ask-ratio{
     color:#ff7777;
 }
 
+.bid-ratio{
+    color:#39e875;
+}
 
 .orderbook-bottom{
 
@@ -5593,20 +5596,13 @@ td:nth-child(1){
     white-space:nowrap;
 }
 
-
-/* 매수 우세 = 초록 */
-
 .bid-dominance{
     color:#39e875;
 }
 
-
-/* 매도 우세 = 빨강 */
-
 .ask-dominance{
     color:#ff5555;
 }
-
 
 .balanced-dominance{
     color:#9aa1aa;
@@ -5695,7 +5691,6 @@ td:nth-child(1){
         font-size:5.4px;
     }
 
-
     /* 모바일 당일 변동률 +2pt */
 
     .btc-change{
@@ -5704,7 +5699,6 @@ td:nth-child(1){
         font-size:8.5px;
         line-height:11px;
     }
-
 
     .btc-bottom{
         grid-template-columns:
@@ -5921,7 +5915,6 @@ td:nth-child(1){
         font-size:8px;
     }
 
-
     /* 데스크톱 당일 변동률 +2pt */
 
     .btc-change{
@@ -5930,7 +5923,6 @@ td:nth-child(1){
         font-size:9.5px;
         line-height:12px;
     }
-
 
     .btc-bottom{
         grid-template-columns:
@@ -6153,7 +6145,7 @@ def dashboard():
                 f"{format_timeframe(EMA_HIGH_TIMEFRAME)} "
                 f"{get_ema_period_text_long()} · "
                 f"{get_roc_text()} "
-                f"돌파 카운트 Y/N 설정"
+                f"돌파 + 당일 변동률 ≥ 0%"
             )
 
         )
@@ -6183,7 +6175,7 @@ def dashboard():
                 f"{format_timeframe(EMA_HIGH_TIMEFRAME)} "
                 f"{get_ema_period_text_long()} · "
                 f"{get_roc_text()} "
-                f"돌파 카운트 Y/N 설정"
+                f"돌파 + 당일 변동률 ≥ 0%"
             )
 
         )
@@ -6399,7 +6391,7 @@ def startup():
 
 
     # =====================================================
-    # 호가 설정 로그
+    # 호가 설정
     # =====================================================
 
     log.info(
@@ -6427,12 +6419,16 @@ def startup():
     )
 
     log.info(
+        "매도대기 = 빨강 / 매수대기 = 녹색"
+    )
+
+    log.info(
         "========================================"
     )
 
 
     # =====================================================
-    # USDT/KRW 시장 방향 로그
+    # USDT/KRW
     # =====================================================
 
     log.info(
@@ -6487,12 +6483,49 @@ def startup():
 
 
     # =====================================================
-    # ROC 돌파
+    # 상승 신호 최종 조건
     # =====================================================
 
     log.info(
         "========================================"
     )
+
+    log.info(
+        "상승 신호 최종 조건:"
+    )
+
+    log.info(
+        "① EMA 정배열"
+    )
+
+    log.info(
+        f"② {get_roc_text()} 0선 상승 돌파"
+    )
+
+    log.info(
+        "③ ROC 돌파 카운트 ⓪/①/②"
+    )
+
+    log.info(
+        "④ 당일 변동률 0% 이상"
+    )
+
+    log.info(
+        "⑤ 당일 변동률 음수 종목은 상승 신호에서 제외"
+    )
+
+    log.info(
+        "※ 전체 TOP30 표에는 음수 종목도 표시"
+    )
+
+    log.info(
+        "========================================"
+    )
+
+
+    # =====================================================
+    # ROC 돌파
+    # =====================================================
 
     log.info(
         "ROC 상승 카운트 표시:"
@@ -6510,24 +6543,6 @@ def startup():
         f" 🚀⓪={LONG_ROC_COUNT_0}"
         f" 🚀①={LONG_ROC_COUNT_1}"
         f" 🚀②={LONG_ROC_COUNT_2}"
-    )
-
-    log.info(
-        "========================================"
-    )
-
-    log.info(
-        "상승 조건:"
-    )
-
-    log.info(
-        f"정배열 "
-        f"{get_ema_period_text_long()}"
-    )
-
-    log.info(
-        f"{get_roc_text()} "
-        "음수→양수 돌파"
     )
 
     log.info(
