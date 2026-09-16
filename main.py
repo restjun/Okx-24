@@ -2629,6 +2629,9 @@ def empty_analysis():
 
 # =========================================================
 # ROC 필터 HTML
+# ★ 수정:
+# 시간 옆 전체 공 제거
+# R10/R20/R50/R200 각각 상태만 표시
 # =========================================================
 
 def roc_filter_html(
@@ -2643,25 +2646,10 @@ def roc_filter_html(
             '</span>'
         )
 
-    passed = bool(
-        r.get(
-            "passed",
-            False
-        )
-    )
-
     values = r.get(
         "roc_values",
         {}
     )
-
-    if passed:
-
-        icon = "🟢"
-
-    else:
-
-        icon = "⚪"
 
     parts = []
 
@@ -2673,27 +2661,32 @@ def roc_filter_html(
 
         if value is None:
 
-            parts.append(
-                f"R{period} -"
-            )
+            icon = "⚪"
 
         else:
 
-            if value >= 0:
+            try:
 
-                parts.append(
-                    f"R{period} +{value:.1f}"
-                )
+                value = float(value)
 
-            else:
+                if value >= 0:
 
-                parts.append(
-                    f"R{period} {value:.1f}"
-                )
+                    icon = "🟢"
+
+                else:
+
+                    icon = "🔴"
+
+            except Exception:
+
+                icon = "⚪"
+
+        parts.append(
+            f"R{period} {icon}"
+        )
 
     return (
         '<span class="roc-filter-box">'
-        f'{icon}'
         '<span class="roc-filter-values">'
         + " / ".join(parts)
         + '</span>'
@@ -4278,7 +4271,8 @@ def signal_html(
 
 # =========================================================
 # ROC 필터 HTML
-# ★ 여기만 1H / 4H 두 줄 표시로 변경
+# ★ 1H / 4H 두 줄
+# ★ 시간 옆 전체 공 제거
 # =========================================================
 
 def filter_html(
@@ -5122,7 +5116,9 @@ td:nth-child(1){
 
 
 /* =======================================================
-   ★ ROC 필터 1시간 / 4시간 두 줄 표시
+   ROC 필터
+   ★ 시간 옆 전체 공 제거
+   ★ 각 R값 상태만 표시
    ======================================================= */
 
 .filter-detail{
