@@ -55,6 +55,20 @@ KST = ZoneInfo("Asia/Seoul")
 
 
 # =========================================================
+# ★ API 캐시 설정
+# =========================================================
+
+# 확정봉 캐시 사용
+USE_CANDLE_CACHE = True
+
+# OKX 거래대금 캐시
+OKX_VOLUME_CACHE_MINUTES = 5
+
+# OKX 심볼 목록 캐시
+OKX_SYMBOL_CACHE_MINUTES = 30
+
+
+# =========================================================
 # 업비트 호가 설정
 # =========================================================
 
@@ -151,6 +165,43 @@ last_request_time = 0
 
 
 # =========================================================
+# 업비트 ticker 캐시
+# =========================================================
+
+# market:
+# {
+#   volume_24h,
+#   current_price,
+#   daily_change
+# }
+upbit_ticker_cache = {}
+
+upbit_ticker_cache_time = "-"
+
+
+# =========================================================
+# 업비트 캔들 캐시
+#
+# {
+#   "KRW-BTC": {
+#       60: {
+#           "df": DataFrame,
+#           "candle_start": datetime
+#       },
+#       240: {
+#           "df": DataFrame,
+#           "candle_start": datetime
+#       }
+#   }
+# }
+# =========================================================
+
+upbit_candle_cache = {}
+
+upbit_cache_lock = threading.Lock()
+
+
+# =========================================================
 # 업비트 호가 캐시
 # =========================================================
 
@@ -162,6 +213,17 @@ latest_upbit_orderbook = {}
 # =========================================================
 
 okx_ticker_cache = {}
+
+okx_symbol_cache = []
+okx_symbol_cache_time = None
+
+okx_volume_cache = {}
+okx_volume_cache_time = {}
+
+okx_candle_cache = {}
+
+okx_cache_lock = threading.Lock()
+
 okx_1h_cache = {}
 okx_1h_cache_time = "-"
 
@@ -605,18 +667,30 @@ def retry(func, *args, **kwargs):
 
 
 # =========================================================
-# Upbit 마켓
+# ★ Upbit ticker 전체 조회
+#
+# 기존:
+# ticker/all
+# +
+# USDT 현재가 별도 조회
+# +
+# TOP30 일봉 별도 조회
+#
+# 최적화:
+# ticker/all 1회로 모두 처리
 # =========================================================
 
 def get_upbit_markets():
 
     global latest_upbit_markets
+    global upbit_ticker_cache
+    global upbit_ticker_cache_time
 
     r = retry(
         requests.get,
         "https://api.upbit.com/v1/ticker/all",
         params={
-            "quote_currencies": "KRW"
+            "quote_currencies": "KRW,USDT"
         },
         timeout=15
     )
@@ -627,6 +701,7 @@ def get_upbit_markets():
     try:
 
         result = []
+        ticker_cache = {}
 
         for x in r.json():
 
@@ -635,35 +710,92 @@ def get_upbit_markets():
                 ""
             )
 
-            if not market.startswith("KRW-"):
+            if not market:
                 continue
 
             try:
 
-                volume = float(
-                    x["acc_trade_price_24h"]
+                price = float(
+                    x.get(
+                        "trade_price",
+                        0
+                    )
                 )
 
-                price = float(
-                    x["trade_price"]
+                volume = float(
+                    x.get(
+                        "acc_trade_price_24h",
+                        0
+                    )
                 )
 
             except Exception:
 
                 continue
 
-            if volume > 0 and price > 0:
+            # =================================================
+            # Upbit ticker의 전일 종가 기준 변동률 사용
+            # =================================================
+
+            daily_change = None
+
+            try:
+
+                daily_change = float(
+                    x.get(
+                        "signed_change_rate"
+                    )
+                ) * 100
+
+            except Exception:
+
+                try:
+
+                    daily_change = (
+                        float(
+                            x.get(
+                                "signed_change_price",
+                                0
+                            )
+                        )
+                        / float(
+                            x.get(
+                                "prev_closing_price"
+                            )
+                        )
+                        * 100
+                    )
+
+                except Exception:
+
+                    daily_change = None
+
+            ticker_cache[market] = {
+                "current_price": price,
+                "volume_24h": volume,
+                "daily_change": daily_change
+            }
+
+            if (
+                market.startswith("KRW-")
+                and volume > 0
+                and price > 0
+            ):
 
                 result.append({
                     "market": market,
                     "volume_24h": volume,
-                    "current_price": price
+                    "current_price": price,
+                    "daily_change": daily_change
                 })
 
         latest_upbit_markets = [
             x["market"]
             for x in result
         ]
+
+        upbit_ticker_cache = ticker_cache
+        upbit_ticker_cache_time = kst()
 
         return result
 
@@ -677,136 +809,59 @@ def get_upbit_markets():
 
 
 # =========================================================
-# USDT/KRW 현재가
+# USDT/KRW
+#
+# ticker/all 결과 재사용
 # =========================================================
 
-def get_usdt_krw():
-
-    r = retry(
-        requests.get,
-        "https://api.upbit.com/v1/ticker?markets=KRW-USDT",
-        timeout=15
-    )
-
-    if r is None:
-        return None
+def get_usdt_krw_from_cache():
 
     try:
 
-        data = r.json()
+        item = upbit_ticker_cache.get(
+            "KRW-USDT"
+        )
 
-        if not data:
+        if not item:
             return None
 
         price = float(
-            data[0]["trade_price"]
+            item.get(
+                "current_price",
+                0
+            )
         )
 
         return price if price > 0 else None
 
-    except Exception as e:
-
-        log.error(
-            f"USDT/KRW 현재가 오류: {e}"
-        )
+    except Exception:
 
         return None
 
 
-# =========================================================
-# USDT/KRW 당일 변동률
-# =========================================================
-
-def get_usdt_krw_daily_change():
-
-    r = retry(
-        requests.get,
-        "https://api.upbit.com/v1/candles/days",
-        params={
-            "market": "KRW-USDT",
-            "count": 1
-        },
-        timeout=15
-    )
-
-    if r is None:
-        return None
+def get_usdt_krw_daily_change_from_cache():
 
     try:
 
-        data = r.json()
+        item = upbit_ticker_cache.get(
+            "KRW-USDT"
+        )
 
-        if not data:
+        if not item:
             return None
 
-        current = float(
-            data[0]["trade_price"]
+        value = item.get(
+            "daily_change"
         )
 
-        opening = float(
-            data[0]["opening_price"]
-        )
-
-        if opening <= 0:
+        if value is None:
             return None
 
-        return (
-            (current - opening)
-            / opening
-            * 100
-        )
-
-    except Exception as e:
-
-        log.error(
-            f"USDT/KRW 당일 변동률 오류: {e}"
-        )
-
-        return None
-
-
-# =========================================================
-# USDT/KRW 시장 상태
-# =========================================================
-
-def usdt_market_state(change):
-
-    if change is None:
-
-        return {
-            "icon": "⚪",
-            "class": "wait"
-        }
-
-    try:
-
-        change = float(change)
+        return float(value)
 
     except Exception:
 
-        return {
-            "icon": "⚪",
-            "class": "wait"
-        }
-
-    if change < 0:
-
-        return {
-            "icon": "☀️",
-            "class": "up"
-        }
-
-    if change > 0:
-
-        return {
-            "icon": "🌧️",
-            "class": "down"
-        }
-
-    return {
-        "icon": "⚪",
-        "class": "wait"
-    }
+        return None
 
 
 # =========================================================
@@ -1285,48 +1340,14 @@ def orderbook_html(row):
 
 
 # =========================================================
-# 업비트 캔들
+# Upbit 캔들 파싱
 # =========================================================
 
-def get_upbit_candle(
-    market,
-    unit,
-    count=200,
-    to=None,
-    include_current=False
-):
-
-    unit = int(unit)
-
-    r = retry(
-        requests.get,
-        f"https://api.upbit.com/v1/candles/minutes/{unit}",
-        params={
-            "market": market,
-            "count": min(
-                max(
-                    int(count),
-                    1
-                ),
-                200
-            ),
-            **(
-                {"to": to}
-                if to
-                else {}
-            )
-        },
-        timeout=15
-    )
-
-    if r is None:
-        return None
+def parse_upbit_candle_json(data):
 
     try:
 
-        df = pd.DataFrame(
-            r.json()
-        )
+        df = pd.DataFrame(data)
 
         if df.empty:
             return None
@@ -1374,6 +1395,69 @@ def get_upbit_candle(
         if df.empty:
             return None
 
+        return (
+            df
+            .sort_values("datetime")
+            .drop_duplicates("datetime")
+            .reset_index(drop=True)
+        )
+
+    except Exception as e:
+
+        log.error(
+            f"업비트 캔들 파싱 오류: {e}"
+        )
+
+        return None
+
+
+# =========================================================
+# Upbit 캔들 API
+# =========================================================
+
+def get_upbit_candle(
+    market,
+    unit,
+    count=200,
+    to=None,
+    include_current=False
+):
+
+    unit = int(unit)
+
+    r = retry(
+        requests.get,
+        f"https://api.upbit.com/v1/candles/minutes/{unit}",
+        params={
+            "market": market,
+            "count": min(
+                max(
+                    int(count),
+                    1
+                ),
+                200
+            ),
+            **(
+                {"to": to}
+                if to
+                else {}
+            )
+        },
+        timeout=15
+    )
+
+    if r is None:
+        return None
+
+    try:
+
+        df = parse_upbit_candle_json(
+            r.json()
+        )
+
+        if df is None:
+            return None
+
         if not include_current:
 
             current = get_current_candle_start(
@@ -1387,12 +1471,7 @@ def get_upbit_candle(
         if df.empty:
             return None
 
-        return (
-            df
-            .sort_values("datetime")
-            .drop_duplicates("datetime")
-            .reset_index(drop=True)
-        )
+        return df
 
     except Exception as e:
 
@@ -1403,6 +1482,10 @@ def get_upbit_candle(
 
         return None
 
+
+# =========================================================
+# Upbit 과거 히스토리
+# =========================================================
 
 def history_upbit(
     market,
@@ -1452,15 +1535,102 @@ def history_upbit(
     return all_df
 
 
+# =========================================================
+# ★ Upbit 캐시에서 확정봉 가져오기
+# =========================================================
+
+def get_cached_upbit_history(
+    market,
+    unit,
+    required=200
+):
+
+    unit = int(unit)
+
+    current_start = get_current_candle_start(
+        unit
+    )
+
+    with upbit_cache_lock:
+
+        market_cache = upbit_candle_cache.get(
+            market,
+            {}
+        )
+
+        cached = market_cache.get(
+            unit
+        )
+
+        if cached:
+
+            df = cached.get("df")
+
+            cached_start = cached.get(
+                "candle_start"
+            )
+
+            if (
+                df is not None
+                and not df.empty
+                and cached_start == current_start
+                and len(df) >= required
+            ):
+
+                return df.copy()
+
+    # =====================================================
+    # 캐시 없음 / 새로운 봉 시작
+    # =====================================================
+
+    df = history_upbit(
+        market,
+        unit,
+        required
+    )
+
+    if df is None or df.empty:
+        return None
+
+    with upbit_cache_lock:
+
+        if market not in upbit_candle_cache:
+
+            upbit_candle_cache[market] = {}
+
+        upbit_candle_cache[market][unit] = {
+
+            "df":
+                df.copy(),
+
+            "candle_start":
+                current_start
+        }
+
+    log.info(
+        f"[Upbit 캔들 갱신] "
+        f"{market} / {format_timeframe(unit)} / "
+        f"{len(df)}봉"
+    )
+
+    return df
+
+
+# =========================================================
+# ★ 현재 1H ROC 데이터
+#
+# API 재조회하지 않고
+# 캐시된 확정봉 + ticker 현재가 사용
+# =========================================================
+
 def get_upbit_current_roc_data(
     market,
     current_price
 ):
 
-    df = get_upbit_candle(
+    df = get_cached_upbit_history(
         market,
-        EMA_TIMEFRAME,
-        include_current=True
+        EMA_TIMEFRAME
     )
 
     if df is None or df.empty:
@@ -1479,34 +1649,29 @@ def get_upbit_current_roc_data(
         if price <= 0:
             return df
 
-        mask = df.datetime == start
+        current_df = df.copy()
 
-        if mask.any():
+        row = current_df.iloc[-1].copy()
 
-            df.loc[
-                mask,
-                "c"
-            ] = price
+        # 현재 진행봉을 새로 생성
+        row["datetime"] = start
+        row["c"] = price
 
-        else:
-
-            row = df.iloc[-1].copy()
-
-            row["datetime"] = start
-            row["c"] = price
-
-            df = pd.concat(
-                [
-                    df,
-                    pd.DataFrame([row])
-                ],
-                ignore_index=True
-            )
+        current_df = pd.concat(
+            [
+                current_df,
+                pd.DataFrame([row])
+            ],
+            ignore_index=True
+        )
 
         return (
-            df
+            current_df
             .sort_values("datetime")
-            .drop_duplicates("datetime")
+            .drop_duplicates(
+                "datetime",
+                keep="last"
+            )
             .reset_index(drop=True)
         )
 
@@ -1540,7 +1705,7 @@ def get_okx_ohlcv(
                 int(limit),
                 1
             ),
-            200
+            300
         )
     }
 
@@ -1616,7 +1781,9 @@ def get_okx_ohlcv(
 
         if not include_current:
 
-            minutes = get_okx_bar_minutes(bar)
+            minutes = get_okx_bar_minutes(
+                bar
+            )
 
             if minutes:
 
@@ -1646,6 +1813,10 @@ def get_okx_ohlcv(
 
         return None
 
+
+# =========================================================
+# OKX 히스토리
+# =========================================================
 
 def history_okx(
     inst,
@@ -1694,6 +1865,151 @@ def history_okx(
     return all_df
 
 
+# =========================================================
+# ★ OKX 캐시 히스토리
+# =========================================================
+
+def get_cached_okx_history(
+    inst,
+    bar,
+    required=200
+):
+
+    minutes = get_okx_bar_minutes(
+        bar
+    )
+
+    if not minutes:
+        return None
+
+    current_start = get_current_candle_start(
+        minutes
+    )
+
+    key = (
+        inst,
+        bar
+    )
+
+    with okx_cache_lock:
+
+        cached = okx_candle_cache.get(
+            key
+        )
+
+        if cached:
+
+            df = cached.get("df")
+
+            cached_start = cached.get(
+                "candle_start"
+            )
+
+            if (
+                df is not None
+                and not df.empty
+                and cached_start == current_start
+                and len(df) >= required
+            ):
+
+                return df.copy()
+
+    df = history_okx(
+        inst,
+        bar,
+        required
+    )
+
+    if df is None or df.empty:
+        return None
+
+    with okx_cache_lock:
+
+        okx_candle_cache[key] = {
+
+            "df":
+                df.copy(),
+
+            "candle_start":
+                current_start
+        }
+
+    log.info(
+        f"[OKX 캔들 갱신] "
+        f"{inst} / {bar} / {len(df)}봉"
+    )
+
+    return df
+
+
+# =========================================================
+# OKX 현재 1H
+# =========================================================
+
+def get_okx_current_1h(
+    inst,
+    current_price
+):
+
+    df = get_cached_okx_history(
+        inst,
+        "1H"
+    )
+
+    if df is None or df.empty:
+        return None
+
+    try:
+
+        start = get_current_candle_start(
+            60
+        )
+
+        price = float(
+            current_price
+        )
+
+        if price <= 0:
+            return df
+
+        current_df = df.copy()
+
+        row = current_df.iloc[-1].copy()
+
+        row["datetime"] = start
+        row["c"] = price
+
+        current_df = pd.concat(
+            [
+                current_df,
+                pd.DataFrame([row])
+            ],
+            ignore_index=True
+        )
+
+        return (
+            current_df
+            .sort_values("datetime")
+            .drop_duplicates(
+                "datetime",
+                keep="last"
+            )
+            .reset_index(drop=True)
+        )
+
+    except Exception as e:
+
+        log.error(
+            f"OKX 현재 1H 오류 {inst}: {e}"
+        )
+
+        return df
+
+
+# =========================================================
+# OKX ticker
+# =========================================================
+
 def get_okx_tickers():
 
     global okx_ticker_cache
@@ -1732,18 +2048,34 @@ def get_okx_tickers():
             try:
 
                 last = float(
-                    x.get("last", 0)
+                    x.get(
+                        "last",
+                        0
+                    )
                 )
 
             except Exception:
 
                 last = 0
 
-            if last > 0:
+            if last <= 0:
+                continue
 
-                result[inst] = {
-                    "last": last
-                }
+            result[inst] = {
+
+                "last":
+                    last,
+
+                "vol24h":
+                    x.get(
+                        "vol24h"
+                    ),
+
+                "volCcy24h":
+                    x.get(
+                        "volCcy24h"
+                    )
+            }
 
         okx_ticker_cache = result
 
@@ -1758,7 +2090,28 @@ def get_okx_tickers():
         return {}
 
 
+# =========================================================
+# OKX 심볼
+# =========================================================
+
 def get_okx_symbols():
+
+    global okx_symbol_cache
+    global okx_symbol_cache_time
+
+    now = time.monotonic()
+
+    if (
+        okx_symbol_cache
+        and okx_symbol_cache_time is not None
+        and (
+            now
+            - okx_symbol_cache_time
+        )
+        < OKX_SYMBOL_CACHE_MINUTES * 60
+    ):
+
+        return okx_symbol_cache.copy()
 
     r = retry(
         requests.get,
@@ -1770,11 +2123,11 @@ def get_okx_symbols():
     )
 
     if r is None:
-        return []
+        return okx_symbol_cache.copy()
 
     try:
 
-        return [
+        result = [
             x["instId"]
             for x in r.json().get(
                 "data",
@@ -1787,15 +2140,98 @@ def get_okx_symbols():
             and x.get("state") == "live"
         ]
 
+        okx_symbol_cache = result
+        okx_symbol_cache_time = now
+
+        return result.copy()
+
     except Exception:
 
-        return []
+        return okx_symbol_cache.copy()
 
+
+# =========================================================
+# OKX 24H 거래대금
+#
+# 기존:
+# 모든 종목 1H 24개 캔들 조회
+#
+# 최적화:
+# ticker에서 가능한 경우 거래량 사용
+# 실패하면 기존 1H 조회
+# + 결과 5분 캐시
+# =========================================================
 
 def get_okx_volume_cached(
     inst,
     usdt
 ):
+
+    now = time.monotonic()
+
+    cached = okx_volume_cache.get(
+        inst
+    )
+
+    cached_time = okx_volume_cache_time.get(
+        inst
+    )
+
+    if (
+        cached is not None
+        and cached_time is not None
+        and (
+            now
+            - cached_time
+        )
+        < OKX_VOLUME_CACHE_MINUTES * 60
+    ):
+
+        return cached
+
+
+    # =====================================================
+    # ticker 24H 거래대금 우선
+    # =====================================================
+
+    try:
+
+        ticker = okx_ticker_cache.get(
+            inst,
+            {}
+        )
+
+        quote_volume = ticker.get(
+            "volCcy24h"
+        )
+
+        if quote_volume is not None:
+
+            quote_volume = float(
+                quote_volume
+            )
+
+            if quote_volume > 0:
+
+                volume = (
+                    quote_volume
+                    * float(usdt)
+                )
+
+                okx_volume_cache[inst] = volume
+                okx_volume_cache_time[inst] = now
+
+                return volume
+
+    except Exception:
+
+        pass
+
+
+    # =====================================================
+    # fallback
+    # 기존 방식
+    # =====================================================
 
     df = get_okx_ohlcv(
         inst,
@@ -1806,8 +2242,6 @@ def get_okx_volume_cached(
     if df is None or df.empty:
         return None
 
-    okx_1h_cache[inst] = df.copy()
-
     try:
 
         volume = pd.to_numeric(
@@ -1815,15 +2249,24 @@ def get_okx_volume_cached(
             errors="coerce"
         ).sum()
 
-        return (
+        volume = (
             float(volume)
             * float(usdt)
         )
+
+        okx_volume_cache[inst] = volume
+        okx_volume_cache_time[inst] = now
+
+        return volume
 
     except Exception:
 
         return None
 
+
+# =========================================================
+# OKX 가격
+# =========================================================
 
 def get_okx_cached_price(inst):
 
@@ -1845,74 +2288,6 @@ def get_okx_cached_price(inst):
     except Exception:
 
         return None
-
-
-def get_okx_current_1h(
-    inst,
-    current_price
-):
-
-    df = get_okx_ohlcv(
-        inst,
-        "1H",
-        200,
-        include_current=True
-    )
-
-    if df is None or df.empty:
-        return None
-
-    try:
-
-        start = get_current_candle_start(
-            60
-        )
-
-        price = float(
-            current_price
-        )
-
-        if price <= 0:
-            return df
-
-        mask = df.datetime == start
-
-        if mask.any():
-
-            df.loc[
-                mask,
-                "c"
-            ] = price
-
-        else:
-
-            row = df.iloc[-1].copy()
-
-            row["datetime"] = start
-            row["c"] = price
-
-            df = pd.concat(
-                [
-                    df,
-                    pd.DataFrame([row])
-                ],
-                ignore_index=True
-            )
-
-        return (
-            df
-            .sort_values("datetime")
-            .drop_duplicates("datetime")
-            .reset_index(drop=True)
-        )
-
-    except Exception as e:
-
-        log.error(
-            f"OKX 현재 1H 오류 {inst}: {e}"
-        )
-
-        return df
 
 
 # =========================================================
@@ -2077,7 +2452,7 @@ def ema_display(
 
     return {
         "display":
-            f"{icon}({x['count']})",
+            f"{icon}({x['count']}",
         "direction":
             x["direction"],
         "count":
@@ -2541,43 +2916,24 @@ def roc_analysis(
 
 def daily_change_upbit(market):
 
-    r = retry(
-        requests.get,
-        "https://api.upbit.com/v1/candles/days",
-        params={
-            "market": market,
-            "count": 2
-        },
-        timeout=15
-    )
-
-    if r is None:
-        return None
-
     try:
 
-        data = r.json()
+        item = upbit_ticker_cache.get(
+            market
+        )
 
-        if len(data) < 2:
+        if not item:
             return None
 
-        current = float(
-            data[0]["trade_price"]
+        value = item.get(
+            "daily_change"
         )
 
-        previous = float(
-            data[1]["trade_price"]
-        )
-
-        if previous == 0:
+        if value is None:
             return None
 
         return [
-            (
-                current - previous
-            )
-            / previous
-            * 100
+            float(value)
         ]
 
     except Exception:
@@ -2894,21 +3250,12 @@ def analyze_okx(
     if not bar or not high_bar:
         return None
 
-    df_confirmed = okx_1h_cache.get(
-        market
+    df_confirmed = get_cached_okx_history(
+        market,
+        bar
     )
 
-    if (
-        df_confirmed is None
-        or df_confirmed.empty
-    ):
-
-        df_confirmed = history_okx(
-            market,
-            bar
-        )
-
-    df_high = history_okx(
+    df_high = get_cached_okx_history(
         market,
         high_bar
     )
@@ -2991,12 +3338,16 @@ def analyze(
             current_price
         )
 
-    df_confirmed = history_upbit(
+    # =====================================================
+    # Upbit 캐시
+    # =====================================================
+
+    df_confirmed = get_cached_upbit_history(
         market,
         EMA_TIMEFRAME
     )
 
-    df_high = history_upbit(
+    df_high = get_cached_upbit_history(
         market,
         EMA_HIGH_TIMEFRAME
     )
@@ -3245,10 +3596,7 @@ def is_roc3_progress(row):
 
 
 # =========================================================
-# ★ 상승 통합 후보
-#
-# 기존 조건 +
-# 당일 변동률 음수 종목 제외
+# 상승 통합 후보
 # =========================================================
 
 def is_long_combined(row):
@@ -3278,29 +3626,14 @@ def is_long_combined(row):
 
         return False
 
-    # =====================================================
-    # ROC 양수
-    # =====================================================
-
     if roc_value <= 0:
         return False
-
-    # =====================================================
-    # ROC 돌파 카운트
-    # =====================================================
 
     if count not in (0, 1, 2):
         return False
 
     if not long_count_enabled(count):
         return False
-
-    # =====================================================
-    # ★ 당일 변동률
-    #
-    # 음수 → 상승 신호에서 제외
-    # 0 이상 → 통과
-    # =====================================================
 
     daily_change = row.get(
         "change_value"
@@ -3321,10 +3654,6 @@ def is_long_combined(row):
 
     if daily_change < 0:
         return False
-
-    # =====================================================
-    # 최종 상승 신호
-    # =====================================================
 
     return bool(
         row.get(
@@ -3361,9 +3690,7 @@ def get_long_progress_count(row):
 
 
 # =========================================================
-# ★ TOP_N 당일 변동률 시장폭
-#
-# 양수 / 음수 비율
+# TOP_N 당일 변동률 시장폭
 # =========================================================
 
 def top_daily_breadth(data):
@@ -3435,10 +3762,6 @@ def top_daily_breadth(data):
         positive / total * 100
     )
 
-    # =====================================================
-    # 양수 / 음수 개수 비교
-    # =====================================================
-
     if positive > negative:
 
         result["icon"] = "☀️"
@@ -3458,7 +3781,7 @@ def top_daily_breadth(data):
 
 
 # =========================================================
-# Upbit 업데이트
+# ★ Upbit 업데이트
 # =========================================================
 
 def update_upbit():
@@ -3470,6 +3793,10 @@ def update_upbit():
     log.info(
         f"========== 업비트 TOP{TOP_N} =========="
     )
+
+    # =====================================================
+    # ticker 1회
+    # =====================================================
 
     markets = sorted(
         get_upbit_markets(),
@@ -3485,6 +3812,10 @@ def update_upbit():
         x["market"]
         for x in top_markets
     ]
+
+    # =====================================================
+    # 호가
+    # =====================================================
 
     orderbooks = get_upbit_orderbooks(
         market_codes
@@ -3583,7 +3914,7 @@ def update_upbit():
 
 
 # =========================================================
-# OKX 업데이트
+# ★ OKX 업데이트
 # =========================================================
 
 def update_okx(usdt):
@@ -3596,7 +3927,15 @@ def update_okx(usdt):
     if not usdt or usdt <= 0:
         return False
 
-    okx_1h_cache = {}
+    # =====================================================
+    # ★ 기존의
+    #
+    # okx_1h_cache = {}
+    #
+    # 제거
+    #
+    # 캐시를 매분 삭제하면 최적화 의미가 없어짐
+    # =====================================================
 
     tickers = get_okx_tickers()
 
@@ -3624,6 +3963,12 @@ def update_okx(usdt):
 
     volumes = {}
 
+    # =====================================================
+    # OKX 거래대금
+    #
+    # ticker 24H 거래량 캐시 우선
+    # =====================================================
+
     for idx, symbol in enumerate(
         symbols,
         1
@@ -3637,7 +3982,7 @@ def update_okx(usdt):
         if v and v > 0:
             volumes[symbol] = v
 
-        if idx % 50 == 0:
+        if idx % 100 == 0:
 
             log.info(
                 f"OKX 거래대금 "
@@ -3741,12 +4086,39 @@ def update_dashboard():
     try:
 
         # =================================================
+        # Upbit
+        #
+        # ticker/all을 먼저 조회
+        # =================================================
+
+        if USE_UPBIT == "Y":
+
+            try:
+
+                # ticker가 먼저 갱신되어야
+                # USDT와 일일 변동률도 같이 사용 가능
+                update_upbit()
+
+            except Exception as e:
+
+                log.exception(
+                    f"업비트 업데이트 오류: {e}"
+                )
+
+        else:
+
+            latest_upbit_data = []
+
+
+        # =================================================
         # USDT/KRW
+        #
+        # 별도 API 호출 없음
         # =================================================
 
         try:
 
-            usdt = get_usdt_krw()
+            usdt = get_usdt_krw_from_cache()
 
             if usdt is not None:
 
@@ -3757,7 +4129,7 @@ def update_dashboard():
                 usdt = latest_usdt_krw
 
             usdt_change = (
-                get_usdt_krw_daily_change()
+                get_usdt_krw_daily_change_from_cache()
             )
 
             if usdt_change is not None:
@@ -3773,27 +4145,6 @@ def update_dashboard():
             )
 
             usdt = latest_usdt_krw
-
-
-        # =================================================
-        # 업비트
-        # =================================================
-
-        if USE_UPBIT == "Y":
-
-            try:
-
-                update_upbit()
-
-            except Exception as e:
-
-                log.exception(
-                    f"업비트 업데이트 오류: {e}"
-                )
-
-        else:
-
-            latest_upbit_data = []
 
 
         # =================================================
@@ -4012,11 +4363,6 @@ def market_summary_html():
 
     btc = get_market_row("BTC")
 
-    # =====================================================
-    # 1번째 칸
-    # USDT/KRW 당일
-    # =====================================================
-
     usdt_state = usdt_market_state(
         latest_usdt_krw_change
     )
@@ -4067,11 +4413,6 @@ def market_summary_html():
         else "-"
     )
 
-
-    # =====================================================
-    # 2번째 칸
-    # ★ BTC 당일 변동률
-    # =====================================================
 
     if btc is None:
 
@@ -4134,13 +4475,6 @@ def market_summary_html():
                 btc_daily_class = "wait"
 
 
-    # =====================================================
-    # 3번째 칸
-    # ★ 전체 TOP30 당일 변동률
-    #
-    # 양수 / 음수
-    # =====================================================
-
     breadth = top_daily_breadth(
         latest_upbit_data
     )
@@ -4201,10 +4535,6 @@ def market_summary_html():
         breadth_class = "wait"
 
 
-    # =====================================================
-    # BTC 상단
-    # =====================================================
-
     if btc is None:
 
         btc_price_display = "-"
@@ -4259,12 +4589,7 @@ def market_summary_html():
 
             </div>
 
-
             <div class="btc-bottom">
-
-                <!-- =========================================
-                     1. USDT/KRW
-                     ========================================= -->
 
                 <div class="
                     btc-info-box
@@ -4289,11 +4614,6 @@ def market_summary_html():
 
                 </div>
 
-
-                <!-- =========================================
-                     2. BTC 당일 변동률
-                     ========================================= -->
-
                 <div class="
                     btc-info-box
                     {btc_daily_class}
@@ -4312,11 +4632,6 @@ def market_summary_html():
                     </div>
 
                 </div>
-
-
-                <!-- =========================================
-                     3. 전체 양수 / 음수
-                     ========================================= -->
 
                 <div class="
                     btc-info-box
@@ -4838,35 +5153,21 @@ h1{
     line-height:14px;
 }
 
-
-/* =========================================================
-   제목
-   ========================================================= */
-
 .market-title,
 .section-title{
     display:flex;
     align-items:center;
-
     gap:5px;
-
     width:100%;
     min-height:18px;
-
     color:#fff;
-
     font-size:8px;
     line-height:10px;
     font-weight:900;
-
     padding:3px 5px;
-
     border-left:3px solid #39e875;
-
     background:rgba(57,232,117,.08);
-
     border-radius:3px;
-
     white-space:nowrap;
     overflow:hidden;
 }
@@ -4882,22 +5183,18 @@ h1{
 .market-title-main,
 .section-title-main{
     color:#fff;
-
     font-size:8px;
     line-height:10px;
     font-weight:900;
-
     flex:none;
 }
 
 .market-title-sub,
 .section-title-sub{
     color:#7f8791;
-
     font-size:5.5px;
     line-height:8px;
     font-weight:700;
-
     white-space:nowrap;
     overflow:hidden;
     text-overflow:ellipsis;
@@ -4907,23 +5204,13 @@ h1{
     border-left-color:#39e875;
 }
 
-
-/* =========================================================
-   BTC 시황
-   ========================================================= */
-
 .market-summary{
     width:100%;
-
     margin:2px 0 3px;
-
     padding:3px 4px;
-
     border-top:1px solid #242a31;
     border-bottom:1px solid #242a31;
-
     background:#101419;
-
     overflow:hidden;
 }
 
@@ -4934,23 +5221,17 @@ h1{
 
 .btc-top{
     display:flex;
-
     align-items:center;
-
     width:100%;
     min-height:16px;
-
     gap:4px;
-
     white-space:nowrap;
     overflow:hidden;
 }
 
 .btc-name{
     flex:none;
-
     width:34px;
-
     font-size:6.5px;
     line-height:8px;
     font-weight:900;
@@ -4958,108 +5239,59 @@ h1{
 
 .btc-price{
     flex:1;
-
     min-width:0;
-
     color:#e8edf2;
-
     font-size:6px;
     line-height:8px;
     font-weight:800;
-
     text-align:left;
-
     white-space:nowrap;
     overflow:hidden;
     text-overflow:ellipsis;
 }
 
-
-/* =========================================================
-   ★ 당일 변동률 2포인트 확대
-   ========================================================= */
-
 .btc-change{
     flex:none;
-
     width:64px;
-
     font-size:9.5px;
     line-height:12px;
-
     font-weight:900;
-
     text-align:right;
-
     white-space:nowrap;
 }
 
-
-/* =========================================================
-   BTC 하단 3칸
-   ========================================================= */
-
 .btc-bottom{
     display:grid;
-
-    grid-template-columns:
-        1fr
-        1fr
-        1fr;
-
+    grid-template-columns:1fr 1fr 1fr;
     align-items:stretch;
-
     width:100%;
-
     min-height:70px;
-
     gap:5px;
-
     overflow:hidden;
 }
-
-
-/* =========================================================
-   BTC 공통 정보 카드
-   ========================================================= */
 
 .btc-info-box{
     min-width:0;
     min-height:70px;
-
     padding:5px 6px;
-
     border:1px solid #292f36;
-
     border-radius:6px;
-
     background:#14181d;
-
     overflow:hidden;
-
     display:flex;
-
     flex-direction:column;
-
     align-items:center;
-
     justify-content:center;
-
     text-align:center;
 }
 
 .btc-info-title{
     width:100%;
-
     color:#7f8791;
-
     font-size:6px;
     line-height:8px;
-
     font-weight:800;
-
     margin-bottom:2px;
-
     white-space:nowrap;
     overflow:hidden;
     text-overflow:ellipsis;
@@ -5067,35 +5299,24 @@ h1{
 
 .btc-info-value{
     width:100%;
-
     color:#eee;
-
     font-size:28px;
     line-height:30px;
-
     font-weight:900;
-
     display:flex;
-
     align-items:center;
     justify-content:center;
-
     white-space:nowrap;
     overflow:hidden;
 }
 
 .btc-info-sub{
     width:100%;
-
     color:#737b85;
-
     font-size:7px;
     line-height:9px;
-
     margin-top:2px;
-
     font-weight:800;
-
     white-space:nowrap;
     overflow:hidden;
     text-overflow:ellipsis;
@@ -5103,36 +5324,21 @@ h1{
 
 .btc-info-box.up{
     color:#39e875!important;
-
-    border-color:
-        rgba(57,232,117,.28);
-
-    background:
-        rgba(57,232,117,.08);
+    border-color:rgba(57,232,117,.28);
+    background:rgba(57,232,117,.08);
 }
 
 .btc-info-box.down{
     color:#ff5555!important;
-
-    border-color:
-        rgba(255,85,85,.28);
-
-    background:
-        rgba(255,85,85,.08);
+    border-color:rgba(255,85,85,.28);
+    background:rgba(255,85,85,.08);
 }
 
 .btc-info-box.wait{
     color:#b0b7bf!important;
-
     border-color:#292f36;
-
     background:#14181d;
 }
-
-
-/* =========================================================
-   일반 색상
-   ========================================================= */
 
 .market-up,
 .roc-positive,
@@ -5155,28 +5361,16 @@ h1{
     color:#68717b!important;
 }
 
-
-/* =========================================================
-   상태
-   ========================================================= */
-
 .status{
     display:flex;
-
     justify-content:center;
-
     gap:9px;
-
     margin:2px 2px 3px;
-
     padding:2px 0;
-
     border-top:1px solid #242a31;
     border-bottom:1px solid #242a31;
-
     font-size:6px;
     line-height:7px;
-
     font-weight:800;
 }
 
@@ -5188,11 +5382,6 @@ h1{
     color:#ff5555!important;
 }
 
-
-/* =========================================================
-   신호
-   ========================================================= */
-
 .signal-cell{
     text-align:center!important;
     vertical-align:middle;
@@ -5200,54 +5389,35 @@ h1{
 
 .signal-icon{
     display:inline-flex;
-
     align-items:center;
     justify-content:center;
-
     width:100%;
-
     min-height:21px;
-
     font-size:15px;
     line-height:17px;
-
     font-weight:900;
-
     white-space:nowrap;
 }
 
 .signal-icon.long-breakout{
-    filter:
-        drop-shadow(
-            0 0 2px
-            rgba(57,232,117,.35)
-        );
+    filter:drop-shadow(
+        0 0 2px
+        rgba(57,232,117,.35)
+    );
 }
-
-
-/* =========================================================
-   테이블
-   ========================================================= */
 
 .table-wrap{
     width:100%;
-
     overflow:hidden;
-
     border-radius:5px;
-
     border:1px solid #272d34;
-
     background:#171b20;
 }
 
 table{
     width:100%;
-
     table-layout:fixed;
-
     border-collapse:collapse;
-
     background:#171b20;
 }
 
@@ -5257,32 +5427,21 @@ thead{
 
 th{
     height:17px;
-
     padding:1px;
-
     border-bottom:1px solid #292f36;
-
     color:#7f8791;
-
     font-size:5px;
     line-height:6px;
-
     font-weight:700;
-
     text-align:center;
 }
 
 td{
     height:25px;
-
     padding:1px;
-
     border-bottom:1px solid #22282e;
-
     text-align:center;
-
     vertical-align:middle;
-
     overflow:hidden;
 }
 
@@ -5322,128 +5481,89 @@ td:nth-child(6){
 
 td:nth-child(1){
     color:#8b929b;
-
     font-size:6px;
-
     font-weight:700;
 }
 
 .coin{
     text-align:left!important;
-
     line-height:9px;
 }
 
 .coin b{
     display:block;
-
     width:100%;
-
     font-size:6.5px;
     line-height:8px;
-
     font-weight:800;
-
     white-space:nowrap;
-
     overflow:hidden;
-
     text-overflow:ellipsis;
 }
 
 .coin small{
     display:block;
-
     margin:0;
-
     font-size:4.5px;
     line-height:6px;
-
     white-space:nowrap;
-
     overflow:hidden;
 }
 
 .vol{
     font-size:6px;
     line-height:8px;
-
     font-weight:800;
-
     white-space:nowrap;
 }
 
 .ema{
     text-align:center!important;
-
     font-weight:800;
-
     line-height:8px;
-
     white-space:nowrap;
-
     overflow:visible;
 }
 
 .ema span{
     font-size:5.8px;
     line-height:8px;
-
     white-space:nowrap;
 }
 
 .ema-sep{
     color:#555c65;
-
     margin:0 1px;
 }
 
 .roc-cell{
     display:flex;
-
     flex-direction:row;
-
     align-items:center;
-
     justify-content:center;
-
     gap:1px;
-
     min-height:21px;
-
     line-height:8px;
-
     white-space:nowrap;
 }
 
 .roc-cell span{
     font-size:5.8px;
     line-height:8px;
-
     font-weight:900;
-
     white-space:nowrap;
 }
 
 .breakout-qualified{
-    background:
-        rgba(57,232,117,.08);
+    background:rgba(57,232,117,.08);
 }
 
 .empty{
     height:30px;
-
     padding:8px;
-
     color:#555d67;
-
     font-size:6px;
 }
-
-
-/* =========================================================
-   호가
-   ========================================================= */
 
 .orderbook-subrow{
     background:#101419!important;
@@ -5451,55 +5571,31 @@ td:nth-child(1){
 
 .orderbook-subrow td{
     height:auto!important;
-
     padding:3px 4px 4px!important;
-
-    border-bottom:
-        1px solid #252b31!important;
+    border-bottom:1px solid #252b31!important;
 }
 
 .orderbook-wrap{
     width:100%;
-
     padding:1px 0;
-
     overflow:hidden;
 }
 
 .orderbook-row{
-
     display:grid;
-
-    grid-template-columns:
-        43px
-        43px
-        minmax(55px, 1fr)
-        35px;
-
+    grid-template-columns:43px 43px minmax(55px,1fr) 35px;
     align-items:center;
-
     gap:4px;
-
     width:100%;
-
     min-height:13px;
 }
 
 .orderbook-label{
-
     font-size:5.5px;
-
     line-height:8px;
-
     font-weight:900;
-
     white-space:nowrap;
 }
-
-
-/* =========================================================
-   ★ 매도 = 빨강 / 매수 = 녹색
-   ========================================================= */
 
 .ask-label{
     color:#ff5555;
@@ -5510,15 +5606,10 @@ td:nth-child(1){
 }
 
 .orderbook-amount{
-
     font-size:5.5px;
-
     line-height:8px;
-
     font-weight:900;
-
     text-align:right;
-
     white-space:nowrap;
 }
 
@@ -5531,30 +5622,19 @@ td:nth-child(1){
 }
 
 .orderbook-bar-box{
-
     position:relative;
-
     width:100%;
-
     height:7px;
-
     background:#252b31;
-
     border-radius:4px;
-
     overflow:hidden;
 }
 
 .orderbook-bar{
-
     height:100%;
-
     min-width:1px;
-
     border-radius:4px;
-
-    transition:
-        width .25s ease;
+    transition:width .25s ease;
 }
 
 .ask-bar{
@@ -5566,15 +5646,10 @@ td:nth-child(1){
 }
 
 .orderbook-ratio{
-
     font-size:5.5px;
-
     line-height:8px;
-
     font-weight:900;
-
     text-align:right;
-
     white-space:nowrap;
 }
 
@@ -5587,43 +5662,27 @@ td:nth-child(1){
 }
 
 .orderbook-bottom{
-
     display:flex;
-
     align-items:center;
-
     justify-content:flex-end;
-
     gap:7px;
-
     min-height:11px;
-
     margin-top:2px;
-
     padding-right:1px;
-
     font-size:5px;
-
     line-height:7px;
-
     font-weight:800;
 }
 
 .orderbook-range{
-
     color:#5e6670;
-
     white-space:nowrap;
 }
 
 .ob-dominance{
-
     font-size:5.5px;
-
     line-height:8px;
-
     font-weight:900;
-
     white-space:nowrap;
 }
 
@@ -5640,26 +5699,14 @@ td:nth-child(1){
 }
 
 .orderbook-empty{
-
     width:100%;
-
     padding:3px 0;
-
     color:#555d67;
-
     font-size:5px;
-
     line-height:7px;
-
     font-weight:700;
-
     text-align:center;
 }
-
-
-/* =========================================================
-   모바일
-   ========================================================= */
 
 @media(max-width:380px){
 
@@ -5679,16 +5726,11 @@ td:nth-child(1){
     .market-title,
     .section-title{
         min-height:17px;
-
         gap:4px;
-
         font-size:7px;
         line-height:9px;
-
         padding:3px 4px;
-
         margin-bottom:3px;
-
         border-left-width:3px;
     }
 
@@ -5722,38 +5764,27 @@ td:nth-child(1){
         font-size:5.4px;
     }
 
-    /* 모바일 당일 변동률 +2pt */
-
     .btc-change{
         width:56px;
-
         font-size:8.5px;
         line-height:11px;
     }
 
     .btc-bottom{
-        grid-template-columns:
-            1fr
-            1fr
-            1fr;
-
+        grid-template-columns:1fr 1fr 1fr;
         min-height:58px;
-
         gap:3px;
     }
 
     .btc-info-box{
         min-height:58px;
-
         padding:3px 4px;
-
         border-radius:5px;
     }
 
     .btc-info-title{
         font-size:4.8px;
         line-height:6px;
-
         margin-bottom:1px;
     }
 
@@ -5765,7 +5796,6 @@ td:nth-child(1){
     .btc-info-sub{
         font-size:5px;
         line-height:6px;
-
         margin-top:1px;
     }
 
@@ -5808,98 +5838,64 @@ td:nth-child(1){
     .signal-icon{
         font-size:13px;
         line-height:15px;
-
         min-height:19px;
     }
 
     .orderbook-subrow td{
-
         height:auto!important;
-
         padding:2px 2px 3px!important;
     }
 
     .orderbook-row{
-
-        grid-template-columns:
-            37px
-            38px
-            minmax(42px, 1fr)
-            31px;
-
+        grid-template-columns:37px 38px minmax(42px,1fr) 31px;
         gap:3px;
-
         min-height:12px;
     }
 
     .orderbook-label{
-
         font-size:4.8px;
-
         line-height:7px;
     }
 
     .orderbook-amount{
-
         font-size:4.8px;
-
         line-height:7px;
     }
 
     .orderbook-bar-box{
-
         height:6px;
     }
 
     .orderbook-ratio{
-
         font-size:4.8px;
-
         line-height:7px;
     }
 
     .orderbook-bottom{
-
         min-height:10px;
-
         gap:5px;
-
         margin-top:1px;
-
         font-size:4.5px;
-
         line-height:6px;
     }
 
     .ob-dominance{
-
         font-size:5px;
-
         line-height:7px;
     }
 
     .orderbook-empty{
-
         font-size:4.5px;
-
         line-height:6px;
     }
 }
-
-
-/* =========================================================
-   데스크톱
-   ========================================================= */
 
 @media(min-width:601px){
 
     body{
         max-width:900px;
-
         margin:auto;
-
         padding:8px;
-
         font-size:10px;
     }
 
@@ -5911,15 +5907,10 @@ td:nth-child(1){
     .market-title,
     .section-title{
         min-height:23px;
-
         gap:6px;
-
         font-size:9px;
-
         padding:4px 6px;
-
         margin-bottom:5px;
-
         border-left-width:3px;
     }
 
@@ -5946,29 +5937,20 @@ td:nth-child(1){
         font-size:8px;
     }
 
-    /* 데스크톱 당일 변동률 +2pt */
-
     .btc-change{
         width:64px;
-
         font-size:9.5px;
         line-height:12px;
     }
 
     .btc-bottom{
-        grid-template-columns:
-            1fr
-            1fr
-            1fr;
-
+        grid-template-columns:1fr 1fr 1fr;
         min-height:75px;
-
         gap:6px;
     }
 
     .btc-info-box{
         min-height:75px;
-
         padding:6px 8px;
     }
 
@@ -6021,84 +6003,57 @@ td:nth-child(1){
     .signal-icon{
         font-size:20px;
         line-height:22px;
-
         min-height:28px;
     }
 
     .orderbook-subrow td{
-
         height:auto!important;
-
         padding:4px 6px 5px!important;
     }
 
     .orderbook-row{
-
-        grid-template-columns:
-            55px
-            60px
-            minmax(80px, 1fr)
-            45px;
-
+        grid-template-columns:55px 60px minmax(80px,1fr) 45px;
         gap:6px;
-
         min-height:17px;
     }
 
     .orderbook-label{
-
         font-size:7px;
-
         line-height:9px;
     }
 
     .orderbook-amount{
-
         font-size:7px;
-
         line-height:9px;
     }
 
     .orderbook-bar-box{
-
         height:9px;
     }
 
     .orderbook-ratio{
-
         font-size:7px;
-
         line-height:9px;
     }
 
     .orderbook-bottom{
-
         min-height:13px;
-
         gap:9px;
-
         margin-top:2px;
-
         font-size:6px;
-
         line-height:8px;
     }
 
     .ob-dominance{
-
         font-size:6.5px;
-
         line-height:9px;
     }
 
     .orderbook-empty{
-
         font-size:6px;
-
         line-height:8px;
     }
 }
-
 """
 
 
@@ -6151,11 +6106,6 @@ def dashboard():
 
     sections = ""
 
-
-    # =====================================================
-    # 상승 신호
-    # =====================================================
-
     if USE_UPBIT == "Y":
 
         sections += focus_section(
@@ -6180,11 +6130,6 @@ def dashboard():
             )
 
         )
-
-
-    # =====================================================
-    # OKX 상승 신호
-    # =====================================================
 
     if USE_OKX == "Y":
 
@@ -6211,11 +6156,6 @@ def dashboard():
 
         )
 
-
-    # =====================================================
-    # 전체
-    # =====================================================
-
     if USE_UPBIT == "Y":
 
         sections += section(
@@ -6224,7 +6164,6 @@ def dashboard():
             latest_upbit_update_time
         )
 
-
     if USE_OKX == "Y":
 
         sections += section(
@@ -6232,7 +6171,6 @@ def dashboard():
             latest_okx_data,
             latest_okx_update_time
         )
-
 
     return f"""
 
@@ -6375,6 +6313,20 @@ def startup():
     )
 
     log.info(
+        f"API 캔들 캐시={USE_CANDLE_CACHE}"
+    )
+
+    log.info(
+        f"OKX 거래대금 캐시="
+        f"{OKX_VOLUME_CACHE_MINUTES}분"
+    )
+
+    log.info(
+        f"OKX 심볼 캐시="
+        f"{OKX_SYMBOL_CACHE_MINUTES}분"
+    )
+
+    log.info(
         f"EMA1={tf} / "
         f"사용={USE_EMA_TIMEFRAME}"
     )
@@ -6420,11 +6372,6 @@ def startup():
         "4H → EMA count 제한 미적용"
     )
 
-
-    # =====================================================
-    # 호가 설정
-    # =====================================================
-
     log.info(
         "========================================"
     )
@@ -6457,11 +6404,6 @@ def startup():
         "========================================"
     )
 
-
-    # =====================================================
-    # USDT/KRW
-    # =====================================================
-
     log.info(
         "USDT/KRW 시장 참고 방향:"
     )
@@ -6479,18 +6421,12 @@ def startup():
     )
 
     log.info(
-        "USDT/KRW는 09:00 KST 기준 당일 시가 대비"
+        "USDT/KRW 방향은 ticker/all 결과 재사용"
     )
 
     log.info(
-        "USDT/KRW 방향은 참고용이며 "
-        "EMA/ROC 신호에는 사용하지 않음"
+        "========================================"
     )
-
-
-    # =====================================================
-    # ★ TOP 당일 변동 시장폭
-    # =====================================================
 
     log.info(
         f"TOP{TOP_N} 당일 변동 시장폭 기준:"
@@ -6511,11 +6447,6 @@ def startup():
     log.info(
         "전체 TOP30은 음수 종목도 표시"
     )
-
-
-    # =====================================================
-    # 상승 신호 최종 조건
-    # =====================================================
 
     log.info(
         "========================================"
@@ -6552,11 +6483,6 @@ def startup():
     log.info(
         "========================================"
     )
-
-
-    # =====================================================
-    # ROC 돌파
-    # =====================================================
 
     log.info(
         "ROC 상승 카운트 표시:"
@@ -6600,7 +6526,6 @@ def startup():
         "========================================"
     )
 
-
     # =====================================================
     # 최초 업데이트
     # =====================================================
@@ -6609,7 +6534,6 @@ def startup():
         target=update_dashboard,
         daemon=True
     ).start()
-
 
     # =====================================================
     # 스케줄러
