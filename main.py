@@ -790,7 +790,6 @@ def calculate_orderbook_amount(
 
         "bid_amount": 0.0,
         "ask_amount": 0.0,
-
         "total_amount": 0.0,
 
         "bid_ratio": 0.0,
@@ -858,31 +857,19 @@ def calculate_orderbook_amount(
         try:
 
             bid_price = float(
-                unit.get(
-                    "bid_price",
-                    0
-                )
+                unit.get("bid_price", 0)
             )
 
             bid_size = float(
-                unit.get(
-                    "bid_size",
-                    0
-                )
+                unit.get("bid_size", 0)
             )
 
             ask_price = float(
-                unit.get(
-                    "ask_price",
-                    0
-                )
+                unit.get("ask_price", 0)
             )
 
             ask_size = float(
-                unit.get(
-                    "ask_size",
-                    0
-                )
+                unit.get("ask_size", 0)
             )
 
         except Exception:
@@ -971,32 +958,18 @@ def calculate_orderbook_amount(
 
     result.update({
 
-        "bid_amount":
-            bid_amount,
+        "bid_amount": bid_amount,
+        "ask_amount": ask_amount,
+        "total_amount": total_amount,
 
-        "ask_amount":
-            ask_amount,
+        "bid_ratio": bid_ratio,
+        "ask_ratio": ask_ratio,
 
-        "total_amount":
-            total_amount,
+        "bid_count": bid_count,
+        "ask_count": ask_count,
 
-        "bid_ratio":
-            bid_ratio,
-
-        "ask_ratio":
-            ask_ratio,
-
-        "bid_count":
-            bid_count,
-
-        "ask_count":
-            ask_count,
-
-        "dominance":
-            dominance,
-
-        "dominance_text":
-            dominance_text
+        "dominance": dominance,
+        "dominance_text": dominance_text
     })
 
     return result
@@ -1847,11 +1820,8 @@ def roc_filter_analysis(df):
     result = {
 
         "direction": "none",
-
         "passed": False,
-
         "roc_values": {},
-
         "positive_count": 0,
 
         "total_count": len(
@@ -1871,7 +1841,6 @@ def roc_filter_analysis(df):
         periods = get_roc_filter_periods()
 
         values = {}
-
         positive_count = 0
 
         for period in periods:
@@ -1899,7 +1868,6 @@ def roc_filter_analysis(df):
             values[period] = value
 
             if value >= 0:
-
                 positive_count += 1
 
         passed = (
@@ -1968,11 +1936,8 @@ def roc_filter_display(
     )
 
     if passed:
-
         icon = "🟢"
-
     else:
-
         icon = "⚪"
 
     return {
@@ -2021,11 +1986,9 @@ def roc_filter_direction(
     selected = []
 
     if USE_ROC_FILTER_TIMEFRAME == "Y":
-
         selected.append(r1)
 
     if USE_ROC_FILTER_HIGH_TIMEFRAME == "Y":
-
         selected.append(r_high)
 
     if not selected:
@@ -2098,7 +2061,6 @@ def roc_analysis(
         "roc10_previous": None,
 
         "roc10_count": 0,
-
         "roc10_negative_count": 0,
 
         "roc_progress_start_time": None,
@@ -2162,7 +2124,6 @@ def roc_analysis(
         ]
 
         if not values:
-
             return result
 
         positive_count = 0
@@ -2170,11 +2131,8 @@ def roc_analysis(
         for value in reversed(values):
 
             if value > 0:
-
                 positive_count += 1
-
             else:
-
                 break
 
         negative_count = 0
@@ -2182,11 +2140,8 @@ def roc_analysis(
         for value in reversed(values):
 
             if value < 0:
-
                 negative_count += 1
-
             else:
-
                 break
 
         breakout_count = 0
@@ -2253,7 +2208,6 @@ def roc_analysis(
                 ]
 
                 if before_value <= 0:
-
                     is_new_breakout = True
 
             if is_new_breakout:
@@ -2596,7 +2550,6 @@ def empty_analysis():
             "roc10_previous": None,
 
             "roc10_count": 0,
-
             "roc10_negative_count": 0,
 
             "long_breakout": False,
@@ -2629,9 +2582,10 @@ def empty_analysis():
 
 # =========================================================
 # ROC 필터 HTML
-# ★ 수정:
-# 시간 옆 전체 공 제거
-# R10/R20/R50/R200 각각 상태만 표시
+# ★ 대시보드 표시만 수정
+# ★ 시간봉 옆 전체 아이콘 제거
+# ★ R10 → 10
+# ★ 각 기간별 상태만 표시
 # =========================================================
 
 def roc_filter_html(
@@ -2682,7 +2636,7 @@ def roc_filter_html(
                 icon = "⚪"
 
         parts.append(
-            f"R{period} {icon}"
+            f"{period} {icon}"
         )
 
     return (
@@ -4698,7 +4652,6 @@ h1{
 
 .btc-top{
     display:flex;
-
     align-items:center;
 
     width:100%;
@@ -5117,8 +5070,6 @@ td:nth-child(1){
 
 /* =======================================================
    ROC 필터
-   ★ 시간 옆 전체 공 제거
-   ★ 각 R값 상태만 표시
    ======================================================= */
 
 .filter-detail{
@@ -5602,8 +5553,6 @@ td:nth-child(1){
         font-size:5.5px;
     }
 
-    /* ★ 모바일 ROC 필터 두 줄 */
-
     .filter-detail{
         font-size:4.2px;
         line-height:6px;
@@ -5828,8 +5777,6 @@ td:nth-child(1){
     .vol{
         font-size:8px;
     }
-
-    /* ★ PC ROC 필터 두 줄 */
 
     .filter-detail{
         font-size:6px;
