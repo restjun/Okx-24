@@ -77,18 +77,9 @@ USE_EMA_HIGH_TIMEFRAME = "Y"
 # =========================================================
 # EMA 설정
 #
-# ★ 여기 숫자만 수기로 변경하면
-# ★ 실제 EMA 계산 + 필터 + 데시보드 표시가
-# ★ 모두 자동으로 변경됨.
-#
-# 예:
-# EMA1_FASTEST = 10
-# EMA1_FAST = 30
-# EMA1_MID = 60
-# EMA1_SLOW = 120
-#
-# → 데시보드: 10>30>60>120
-#
+# ★ 숫자만 수기로 변경하면
+# ★ 실제 EMA 계산 + 필터 + 데시보드 표시
+# ★ 모두 자동 변경
 # =========================================================
 
 EMA1_FASTEST = 10
@@ -99,9 +90,6 @@ EMA1_SLOW = 200
 
 # =========================================================
 # EMA 사용 여부
-#
-# 변수명은 기존 구조를 유지.
-# 실제 기간은 위 EMA1_* 숫자를 사용.
 # =========================================================
 
 EMA_USE_10 = "Y"
@@ -126,11 +114,28 @@ ROC_PERIOD = 5
 
 # =========================================================
 # ROC 상승 돌파 카운트 표시
+#
+# ⓪ = 현재 돌파봉
+# ① = 돌파 후 1번째 확정봉
+# ② = 돌파 후 2번째 확정봉
 # =========================================================
 
 LONG_ROC_COUNT_0 = "Y"
 LONG_ROC_COUNT_1 = "Y"
 LONG_ROC_COUNT_2 = "N"
+
+
+# =========================================================
+# ★ TOP 리스트 전용 상승 지속 조건
+#
+# ROC 양수 상태가 연속 3개 이상이면
+# TOP 리스트 신호 칸에 ☀️ 표시
+#
+# ※ 기존 상승신호 조건과 별도
+# ※ 상승 신호 섹션에는 사용하지 않음
+# =========================================================
+
+TOP_SUSTAINED_ROC_COUNT = 3
 
 
 # =========================================================
@@ -170,7 +175,7 @@ last_request_time = 0
 
 # =========================================================
 # OKX 내부 환산용 USDT/KRW
-# 화면에는 표시하지 않음.
+# 화면에는 표시하지 않음
 # =========================================================
 
 latest_usdt_krw_internal = 0
@@ -250,7 +255,6 @@ def get_ema_period_text_long():
 
 
 # =========================================================
-# ★ 수정
 # 수기로 EMA 숫자를 바꾸면 데시보드도 자동 반영
 # =========================================================
 
@@ -499,6 +503,12 @@ def validate_timeframe():
 
         raise ValueError(
             "TOP_N은 1 이상이어야 합니다."
+        )
+
+    if int(TOP_SUSTAINED_ROC_COUNT) < 1:
+
+        raise ValueError(
+            "TOP_SUSTAINED_ROC_COUNT는 1 이상이어야 합니다."
         )
 
     if not 0 < float(ORDERBOOK_RANGE) <= 1:
@@ -2294,6 +2304,20 @@ def roc_cross_state(
         return result
 
 
+# =========================================================
+# ★ ROC 분석
+#
+# roc10_count
+# = 현재 ROC가 0보다 큰 상태로
+#   몇 개 캔들 연속 유지되고 있는지
+#
+# 예:
+# 0 이상이 1개 → 1
+# 0 이상이 2개 → 2
+# 0 이상이 3개 → 3
+# ...
+# =========================================================
+
 def roc_analysis(
     df_confirmed,
     df_current
@@ -2303,7 +2327,9 @@ def roc_analysis(
 
         "roc10": None,
         "roc10_previous": None,
+
         "roc10_count": 0,
+
         "roc10_negative_count": 0,
 
         "roc_progress_start_time": None,
@@ -2363,6 +2389,10 @@ def roc_analysis(
         positive_count = 0
         negative_count = 0
 
+        # =================================================
+        # ROC 양수 연속 카운트
+        # =================================================
+
         for value in reversed(
             current.tolist()
         ):
@@ -2371,9 +2401,16 @@ def roc_analysis(
                 break
 
             if float(value) > 0:
+
                 positive_count += 1
+
             else:
+
                 break
+
+        # =================================================
+        # ROC 음수 연속 카운트
+        # =================================================
 
         for value in reversed(
             current.tolist()
@@ -2383,8 +2420,11 @@ def roc_analysis(
                 break
 
             if float(value) < 0:
+
                 negative_count += 1
+
             else:
+
                 break
 
         lb = roc_cross_state(
@@ -2667,7 +2707,9 @@ def empty_analysis():
 
             "roc10": None,
             "roc10_previous": None,
+
             "roc10_count": 0,
+
             "roc10_negative_count": 0,
 
             "long_breakout": False,
@@ -3154,10 +3196,12 @@ def is_breakout(row):
 
 
 def is_progress(row):
+
     return False
 
 
 def is_roc3_progress(row):
+
     return False
 
 
@@ -3229,26 +3273,111 @@ def is_long_combined(row):
     )
 
 
-def get_long_progress_count(row):
+# =========================================================
+# ★ TOP 리스트 전용 상승 지속 조건
+#
+# 핵심:
+#
+# 1. 현재 ROC > 0
+# 2. ROC 양수 연속 카운트 >= 3
+# 3. EMA 필터 정배열
+# 4. 당일 변동률 >= 0%
+#
+# ※ 기존 상승신호와 완전히 별도
+# ※ 이 함수는 TOP 리스트 신호 칸에서만 호출
+# =========================================================
+
+def is_top_sustained_long(row):
 
     if not row:
-        return 0
+        return False
+
+    r = row.get(
+        "roc",
+        {}
+    )
 
     try:
 
-        return int(
-            row.get(
-                "roc",
-                {}
-            ).get(
-                "long_breakout_count",
+        roc_value = float(
+            r.get("roc10")
+        )
+
+        sustained_count = int(
+            r.get(
+                "roc10_count",
                 0
             )
         )
 
     except Exception:
 
-        return 0
+        return False
+
+    # -----------------------------------------------------
+    # 현재 ROC가 양수여야 함
+    # -----------------------------------------------------
+
+    if roc_value <= 0:
+        return False
+
+    # -----------------------------------------------------
+    # ★ ROC 양수 연속 3개 이상
+    # -----------------------------------------------------
+
+    if sustained_count < TOP_SUSTAINED_ROC_COUNT:
+        return False
+
+    # -----------------------------------------------------
+    # EMA 방향
+    # -----------------------------------------------------
+
+    e1 = row.get(
+        "ema_1h",
+        {}
+    )
+
+    e_high = row.get(
+        "ema_high",
+        {}
+    )
+
+    filter_info = ema_filter_direction(
+        e1,
+        e_high
+    )
+
+    if filter_info.get(
+        "direction"
+    ) != "long":
+
+        return False
+
+    # -----------------------------------------------------
+    # 당일 변동률
+    # -----------------------------------------------------
+
+    daily_change = row.get(
+        "change_value"
+    )
+
+    if daily_change is None:
+        return False
+
+    try:
+
+        daily_change = float(
+            daily_change
+        )
+
+    except Exception:
+
+        return False
+
+    if daily_change < 0:
+        return False
+
+    return True
 
 
 # =========================================================
@@ -3447,12 +3576,23 @@ def update_upbit():
         latest_upbit_data
     )
 
+    # =====================================================
+    # ★ TOP 리스트 전용 ☀️ 개수 로그
+    # =====================================================
+
+    sustained_count = sum(
+        is_top_sustained_long(x)
+        for x in rows
+    )
+
     latest_upbit_update_time = kst()
 
     log.info(
         f"업비트 완료 / "
         f"상승 "
-        f"{sum(is_long_combined(x) for x in rows)}개"
+        f"{sum(is_long_combined(x) for x in rows)}개 / "
+        f"TOP 지속☀️ "
+        f"{sustained_count}개"
     )
 
     log.info(
@@ -3587,8 +3727,19 @@ def update_okx(usdt):
         latest_okx_data
     )
 
+    sustained_count = sum(
+        is_top_sustained_long(x)
+        for x in rows
+    )
+
     okx_1h_cache_time = kst()
     latest_okx_update_time = kst()
+
+    log.info(
+        f"OKX TOP{TOP_N} 완료 / "
+        f"TOP 지속☀️ "
+        f"{sustained_count}개"
+    )
 
     log.info(
         f"OKX TOP{TOP_N} 당일 변동 시장폭 / "
@@ -3792,19 +3943,6 @@ def get_market_row(coin):
 
 # =========================================================
 # BTC 시장 시황
-#
-# 1번 :
-# BTC 현재 설정된 1H / 4H EMA 필터
-#
-# 둘 다 정배열 → ☀️
-# 둘 다 역배열 → 🌧️
-# 그 외 → ⚪
-#
-# 2번 :
-# BTC 당일 변동률
-#
-# 3번 :
-# 전체 TOP_N 당일 시장폭
 # =========================================================
 
 def market_summary_html():
@@ -4254,16 +4392,67 @@ def roc_html(r):
 
 
 # =========================================================
-# 신호 HTML
+# ★ 신호 HTML
+#
+# top_list=False
+# → 기존 상승신호만 표시
+#
+# top_list=True
+# → TOP 리스트에서는
+#   ROC 양수 3개 이상 지속 시 ☀️ 표시
 # =========================================================
 
-def signal_html(row):
+def signal_html(
+    row,
+    top_list=False
+):
 
     if not row:
 
         return (
             '<span class="muted">-</span>'
         )
+
+    # =====================================================
+    # ★ TOP 리스트 전용 ☀️
+    #
+    # 기존 상승신호와 별도
+    # =====================================================
+
+    if (
+        top_list
+        and is_top_sustained_long(row)
+    ):
+
+        try:
+
+            sustained_count = int(
+                row.get(
+                    "roc",
+                    {}
+                ).get(
+                    "roc10_count",
+                    0
+                )
+            )
+
+        except Exception:
+
+            sustained_count = (
+                TOP_SUSTAINED_ROC_COUNT
+            )
+
+        return (
+            '<span '
+            'class="signal-icon sustained-long" '
+            f'title="ROC 양수 {sustained_count}개 연속 지속">'
+            '☀️'
+            '</span>'
+        )
+
+    # =====================================================
+    # 기존 상승신호
+    # =====================================================
 
     r = row.get(
         "roc",
@@ -4360,7 +4549,8 @@ def row_class(x):
 
 def rows_html(
     data,
-    focus=None
+    focus=None,
+    top_list=False
 ):
 
     out = []
@@ -4448,7 +4638,10 @@ def rows_html(
 
                 <td class="signal-cell">
 
-                    {signal_html(x)}
+                    {signal_html(
+                        x,
+                        top_list
+                    )}
 
                 </td>
 
@@ -4475,12 +4668,14 @@ def rows_html(
 
 def table_html(
     data,
-    focus=None
+    focus=None,
+    top_list=False
 ):
 
     rows = rows_html(
         data,
-        focus
+        focus,
+        top_list
     )
 
     if not rows:
@@ -4575,11 +4770,18 @@ def focus_section(
 
     {table_html(
         rows,
-        focus
+        focus,
+        top_list=False
     )}
 
     """
 
+
+# =========================================================
+# ★ 전체 TOP 섹션
+#
+# 여기에서만 top_list=True
+# =========================================================
 
 def section(
     title,
@@ -4600,7 +4802,10 @@ def section(
 
     </div>
 
-    {table_html(data)}
+    {table_html(
+        data,
+        top_list=True
+    )}
 
     """
 
@@ -4991,6 +5196,23 @@ h1{
             rgba(57,232,117,.35)
         );
 }
+
+
+/* =====================================================
+   ★ TOP 리스트 전용 ☀️
+   ===================================================== */
+
+.signal-icon.sustained-long{
+    filter:
+        drop-shadow(
+            0 0 3px
+            rgba(255,210,50,.55)
+        );
+
+    transform:
+        scale(1.08);
+}
+
 
 .table-wrap{
     width:100%;
@@ -5559,6 +5781,11 @@ td:nth-child(1){
         min-height:19px;
     }
 
+    .signal-icon.sustained-long{
+        transform:
+            scale(1.05);
+    }
+
     .orderbook-subrow td{
 
         height:auto!important;
@@ -5766,6 +5993,11 @@ td:nth-child(1){
         min-height:28px;
     }
 
+    .signal-icon.sustained-long{
+        transform:
+            scale(1.08);
+    }
+
     .orderbook-subrow td{
 
         height:auto!important;
@@ -5897,6 +6129,8 @@ def dashboard():
 
     # =====================================================
     # 상승 신호
+    #
+    # ★ 여기에는 TOP 지속 ☀️ 조건을 사용하지 않음
     # =====================================================
 
     if USE_UPBIT == "Y":
@@ -5956,7 +6190,9 @@ def dashboard():
 
 
     # =====================================================
-    # 전체
+    # ★ 전체 TOP
+    #
+    # 여기에서만 ☀️ 지속 조건 사용
     # =====================================================
 
     if USE_UPBIT == "Y":
@@ -6300,6 +6536,44 @@ def startup():
         f"※ 전체 TOP{TOP_N} 표에는 음수 종목도 표시"
     )
 
+
+    # =====================================================
+    # ★ TOP 리스트 전용 ☀️ 조건
+    # =====================================================
+
+    log.info(
+        "========================================"
+    )
+
+    log.info(
+        "TOP 리스트 전용 ☀️ 조건:"
+    )
+
+    log.info(
+        f"① {get_roc_text()} 현재값 > 0"
+    )
+
+    log.info(
+        f"② {get_roc_text()} 양수 지속 "
+        f"{TOP_SUSTAINED_ROC_COUNT}개 이상"
+    )
+
+    log.info(
+        "③ EMA 정배열"
+    )
+
+    log.info(
+        "④ 당일 변동률 0% 이상"
+    )
+
+    log.info(
+        "⑤ 기존 🚀 상승신호와 별도 조건"
+    )
+
+    log.info(
+        f"⑥ 전체 TOP{TOP_N} 리스트에서만 ☀️ 표시"
+    )
+
     log.info(
         "========================================"
     )
@@ -6345,6 +6619,11 @@ def startup():
 
     log.info(
         "② = 돌파 후 2번째 확정봉"
+    )
+
+    log.info(
+        f"TOP ☀️ = ROC 양수 "
+        f"{TOP_SUSTAINED_ROC_COUNT}개 이상 지속"
     )
 
     log.info(
