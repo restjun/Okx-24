@@ -68,7 +68,7 @@ ORDERBOOK_DOMINANCE_GAP = 5.0
 # =========================================================
 
 EMA_TIMEFRAME = 60
-EMA_HIGH_TIMEFRAME = 15
+EMA_HIGH_TIMEFRAME = 240
 
 USE_EMA_TIMEFRAME = "Y"
 USE_EMA_HIGH_TIMEFRAME = "N"
