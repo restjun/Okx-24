@@ -78,10 +78,10 @@ USE_EMA_HIGH_TIMEFRAME = "Y"
 # EMA 설정
 # =========================================================
 
-EMA1_FASTEST = 5
+EMA1_FASTEST = 10
 EMA1_FAST = 20
-EMA1_MID = 60
-EMA1_SLOW = 120
+EMA1_MID = 50
+EMA1_SLOW = 100
 
 EMA_USE_10 = "N"
 EMA_USE_30 = "Y"
