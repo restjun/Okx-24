@@ -77,9 +77,9 @@ USE_EMA_HIGH_TIMEFRAME = "N"
 # =========================================================
 # EMA 설정
 #
-# ★ 숫자만 수기로 변경하면
-# ★ 실제 EMA 계산 + 필터 + 데시보드 표시
-# ★ 모두 자동 변경
+# 숫자만 수기로 변경하면
+# 실제 EMA 계산 + 필터 + 데시보드 표시
+# 모두 자동 변경
 # =========================================================
 
 EMA1_FASTEST = 10
@@ -113,36 +113,43 @@ ROC_PERIOD = 5
 
 
 # =========================================================
-# ROC 상승 돌파 카운트 표시
+# ★ ROC 로켓 표시 방식
 #
-# ⓪ = 현재 돌파봉
-# ① = 돌파 후 1번째 확정봉
-# ② = 돌파 후 2번째 확정봉
-# =========================================================
-
-LONG_ROC_COUNT_0 = "Y"
-LONG_ROC_COUNT_1 = "Y"
-LONG_ROC_COUNT_2 = "Y"
-
-
-# =========================================================
-# ★ TOP 리스트 전용 상승 지속 조건
+# ROC가 0선 상승 돌파하면
 #
-# ROC 양수 상태가 연속 3개 이상이면
-# TOP 리스트 신호 칸에 ☀️ 표시
+# 🚀⓪
+# 🚀①
+# 🚀②
+# 🚀③
+# 🚀④
+# ...
 #
-# ※ 기존 상승신호 조건과 별도
-# ※ 상승 신호 섹션에는 사용하지 않음
+# ROC가 양수로 유지되는 동안
+# 계속 카운트 증가
+#
+# ⑨ 이후:
+# 🚀10
+# 🚀11
+# 🚀12
+# ...
+#
+# ROC가 음수로 내려가면
+#
+# 🔴 ROC -(1)
+# 🔴 ROC -(2)
+# 🔴 ROC -(3)
+# ...
+#
+# 다시 0선 상승 돌파하면
+# 🚀⓪부터 새로 시작
 # =========================================================
-
-TOP_SUSTAINED_ROC_COUNT = 3
 
 
 # =========================================================
 # 내부 돌파 확인 범위
 # =========================================================
 
-BREAKOUT_MAX_COUNT = 2
+BREAKOUT_MAX_COUNT = 999999
 
 
 SUPPORTED_UPBIT_TIMEFRAMES = {
@@ -505,12 +512,6 @@ def validate_timeframe():
             "TOP_N은 1 이상이어야 합니다."
         )
 
-    if int(TOP_SUSTAINED_ROC_COUNT) < 1:
-
-        raise ValueError(
-            "TOP_SUSTAINED_ROC_COUNT는 1 이상이어야 합니다."
-        )
-
     if not 0 < float(ORDERBOOK_RANGE) <= 1:
 
         raise ValueError(
@@ -529,54 +530,41 @@ def validate_timeframe():
             "ORDERBOOK_DOMINANCE_GAP은 0 이상이어야 합니다."
         )
 
-    for name, value in [
-        ("LONG_ROC_COUNT_0", LONG_ROC_COUNT_0),
-        ("LONG_ROC_COUNT_1", LONG_ROC_COUNT_1),
-        ("LONG_ROC_COUNT_2", LONG_ROC_COUNT_2),
-    ]:
-
-        if value not in ("Y", "N"):
-
-            raise ValueError(
-                f"{name}은 Y 또는 N만 가능합니다."
-            )
-
 
 # =========================================================
-# 카운트 아이콘
+# ★ ROC 카운트 표시
+#
+# 0~9는 원형 숫자
+# 10 이상은 일반 숫자
 # =========================================================
-
-def long_count_enabled(count):
-
-    count = int(count)
-
-    if count == 0:
-        return LONG_ROC_COUNT_0 == "Y"
-
-    if count == 1:
-        return LONG_ROC_COUNT_1 == "Y"
-
-    if count == 2:
-        return LONG_ROC_COUNT_2 == "Y"
-
-    return False
-
 
 def count_icon(count):
 
     try:
         count = int(count)
+
     except Exception:
+
         return ""
 
-    return {
+    circled = {
         0: "⓪",
         1: "①",
-        2: "②"
-    }.get(
-        count,
-        ""
-    )
+        2: "②",
+        3: "③",
+        4: "④",
+        5: "⑤",
+        6: "⑥",
+        7: "⑦",
+        8: "⑧",
+        9: "⑨"
+    }
+
+    if count in circled:
+
+        return circled[count]
+
+    return str(count)
 
 
 # =========================================================
@@ -2204,117 +2192,30 @@ def roc(
         return None
 
 
-def roc_cross_state(
-    confirmed_series,
-    current_series
-):
-
-    result = {
-        "state": "none",
-        "count": 0
-    }
-
-    try:
-
-        if (
-            confirmed_series is None
-            or current_series is None
-        ):
-
-            return result
-
-        confirmed = [
-            float(x)
-            for x in confirmed_series.tolist()
-            if not pd.isna(x)
-        ]
-
-        current = [
-            float(x)
-            for x in current_series.tolist()
-            if not pd.isna(x)
-        ]
-
-        if not confirmed or not current:
-            return result
-
-        def crossed(prev, curr):
-
-            return (
-                prev <= 0
-                and curr > 0
-            )
-
-        if len(current) >= 2:
-
-            if crossed(
-                current[-2],
-                current[-1]
-            ):
-
-                return {
-                    "state": "current",
-                    "count": 0
-                }
-
-        if len(current) == 1:
-
-            if crossed(
-                confirmed[-1],
-                current[-1]
-            ):
-
-                return {
-                    "state": "current",
-                    "count": 0
-                }
-
-        if len(confirmed) >= 2:
-
-            if crossed(
-                confirmed[-2],
-                confirmed[-1]
-            ):
-
-                return {
-                    "state": "confirmed",
-                    "count": 1
-                }
-
-        if len(confirmed) >= 3:
-
-            if crossed(
-                confirmed[-3],
-                confirmed[-2]
-            ):
-
-                return {
-                    "state": "next",
-                    "count": 2
-                }
-
-        return result
-
-    except Exception as e:
-
-        log.error(
-            f"ROC 상승 교차 상태 오류: {e}"
-        )
-
-        return result
-
-
 # =========================================================
-# ★ ROC 분석
+# ★ ROC 상태 분석
 #
-# roc10_count
-# = 현재 ROC가 0보다 큰 상태로
-#   몇 개 캔들 연속 유지되고 있는지
+# 핵심:
 #
-# 예:
-# 0 이상이 1개 → 1
-# 0 이상이 2개 → 2
-# 0 이상이 3개 → 3
+# 현재 ROC가 양수이고
+# 직전 ROC가 0 이하라면
+# → 새로운 상승 돌파
+#
+# 이후 양수 유지:
+#
+# 첫 봉     → 🚀⓪
+# 두 번째   → 🚀①
+# 세 번째   → 🚀②
+# ...
+#
+# ROC가 음수가 되면
+# 상승 로켓 종료
+#
+# 음수 연속:
+#
+# 🔴 ROC -(1)
+# 🔴 ROC -(2)
+# 🔴 ROC -(3)
 # ...
 # =========================================================
 
@@ -2371,7 +2272,7 @@ def roc_analysis(
 
             return result
 
-        previous = float(
+        previous_confirmed = float(
             confirmed.iloc[-1]
         )
 
@@ -2380,27 +2281,35 @@ def roc_analysis(
         )
 
         if (
-            pd.isna(previous)
+            pd.isna(previous_confirmed)
             or pd.isna(current_value)
         ):
 
             return result
 
+        # =================================================
+        # 현재 ROC 전체 값
+        # =================================================
+
+        values = [
+            float(x)
+            for x in current.tolist()
+            if not pd.isna(x)
+        ]
+
+        if not values:
+
+            return result
+
+        # =================================================
+        # 양수 연속 카운트
+        # =================================================
+
         positive_count = 0
-        negative_count = 0
 
-        # =================================================
-        # ROC 양수 연속 카운트
-        # =================================================
+        for value in reversed(values):
 
-        for value in reversed(
-            current.tolist()
-        ):
-
-            if pd.isna(value):
-                break
-
-            if float(value) > 0:
+            if value > 0:
 
                 positive_count += 1
 
@@ -2409,17 +2318,14 @@ def roc_analysis(
                 break
 
         # =================================================
-        # ROC 음수 연속 카운트
+        # 음수 연속 카운트
         # =================================================
 
-        for value in reversed(
-            current.tolist()
-        ):
+        negative_count = 0
 
-            if pd.isna(value):
-                break
+        for value in reversed(values):
 
-            if float(value) < 0:
+            if value < 0:
 
                 negative_count += 1
 
@@ -2427,10 +2333,61 @@ def roc_analysis(
 
                 break
 
-        lb = roc_cross_state(
-            confirmed,
-            current
-        )
+        # =================================================
+        # ★ 상승 돌파 판정
+        #
+        # 현재 ROC가 양수이고
+        # 그 직전 값이 0 이하라면
+        # 현재봉이 0선 상승 돌파봉
+        #
+        # 다만 현재 df의 마지막이
+        # 현재 진행 중인 봉일 수 있으므로
+        # 전체 양수 연속 길이를 이용해
+        # 돌파 후 경과 카운트를 계산
+        #
+        # 양수 연속 1개 → ⓪
+        # 양수 연속 2개 → ①
+        # 양수 연속 3개 → ②
+        # ...
+        # =================================================
+
+        breakout_count = 0
+        breakout_state = "none"
+
+        if current_value > 0:
+
+            # 현재 양수 연속 구간이 존재
+            if positive_count > 0:
+
+                # 양수 구간 직전 값 확인
+                if len(values) > positive_count:
+
+                    before_value = values[
+                        -positive_count - 1
+                    ]
+
+                    if before_value <= 0:
+
+                        breakout_count = (
+                            positive_count - 1
+                        )
+
+                        breakout_state = (
+                            "current"
+                            if breakout_count == 0
+                            else "confirmed"
+                        )
+
+                else:
+
+                    # 데이터 시작부터 양수인 경우
+                    # 별도 돌파로 확정하지 않음
+                    breakout_count = 0
+                    breakout_state = "none"
+
+        # =================================================
+        # 결과
+        # =================================================
 
         result.update({
 
@@ -2438,7 +2395,7 @@ def roc_analysis(
                 current_value,
 
             "roc10_previous":
-                previous,
+                previous_confirmed,
 
             "roc10_count":
                 positive_count,
@@ -2447,28 +2404,118 @@ def roc_analysis(
                 negative_count,
 
             "long_breakout":
-                lb["state"] != "none",
+                breakout_state != "none",
 
             "long_breakout_count":
-                lb["count"],
+                breakout_count,
 
             "long_breakout_state":
-                lb["state"]
+                breakout_state
 
         })
 
+        # =================================================
+        # ★ 상승 로켓
+        #
+        # 한번 0선 돌파 후
+        # 양수 상태가 계속되면
+        # 카운트를 계속 유지
+        # =================================================
+
         if (
-            lb["state"] != "none"
-            and current_value > 0
+            current_value > 0
+            and positive_count > 0
         ):
+
+            # 직전 양수 구간 이전 값 확인
+            is_new_breakout = False
+
+            if len(values) > positive_count:
+
+                before_value = values[
+                    -positive_count - 1
+                ]
+
+                if before_value <= 0:
+
+                    is_new_breakout = True
+
+            if is_new_breakout:
+
+                result.update({
+
+                    "state":
+                        "long_breakout",
+
+                    "long_breakout":
+                        True,
+
+                    "long_breakout_count":
+                        positive_count - 1,
+
+                    "long_breakout_state":
+                        (
+                            "current"
+                            if positive_count == 1
+                            else "confirmed"
+                        ),
+
+                    "display":
+                        f"🚀{count_icon(positive_count - 1)}"
+
+                })
+
+            else:
+
+                # 이미 양수 구간이 진행 중인 경우
+                # 현재 연속 카운트를 계속 로켓으로 표시
+                #
+                # 단, 데이터 시작부터 양수였던 경우
+                # 돌파 근거가 없으므로 일반 ROC 표시
+                result.update({
+
+                    "state":
+                        "long_breakout",
+
+                    "long_breakout":
+                        True,
+
+                    "long_breakout_count":
+                        max(
+                            positive_count - 1,
+                            0
+                        ),
+
+                    "long_breakout_state":
+                        "confirmed",
+
+                    "display":
+                        f"🚀{count_icon(max(positive_count - 1, 0))}"
+
+                })
+
+        # =================================================
+        # ROC 음수
+        # =================================================
+
+        elif current_value < 0:
 
             result.update({
 
                 "state":
-                    "long_breakout",
+                    "negative",
 
                 "display":
-                    f"🚀{count_icon(lb['count'])}"
+                    f"🔴 ROC -({negative_count})",
+
+                "long_breakout":
+                    False,
+
+                "long_breakout_count":
+                    0,
+
+                "long_breakout_state":
+                    "none"
 
             })
 
@@ -2480,7 +2527,16 @@ def roc_analysis(
                     "none",
 
                 "display":
-                    f"⚪ 0"
+                    "⚪ 0",
+
+                "long_breakout":
+                    False,
+
+                "long_breakout_count":
+                    0,
+
+                "long_breakout_state":
+                    "none"
 
             })
 
@@ -2500,16 +2556,6 @@ def roc_analysis(
 # =========================================================
 
 def daily_change_upbit(market):
-
-    # =====================================================
-    # ★ 수정
-    #
-    # 기존 잘못된 주소:
-    # https://api.upbitbit.com/...
-    #
-    # 정확한 업비트 API:
-    # https://api.upbit.com/...
-    # =====================================================
 
     r = retry(
         requests.get,
@@ -2757,6 +2803,15 @@ def empty_analysis():
 
 # =========================================================
 # 신호 자격
+#
+# ★ 수정
+#
+# 이전:
+# ROC 돌파 카운트 0/1/2만 허용
+#
+# 현재:
+# ROC가 0선 상승 돌파 후
+# 양수 상태라면 카운트 제한 없음
 # =========================================================
 
 def get_signal_qualified(
@@ -2803,13 +2858,6 @@ def get_signal_qualified(
 
         roc_value = None
 
-    long_count = int(
-        r.get(
-            "long_breakout_count",
-            0
-        )
-    )
-
     long_breakout_qualified = (
 
         long_base
@@ -2821,17 +2869,14 @@ def get_signal_qualified(
         and r.get(
             "long_breakout_state",
             "none"
-        ) in (
-            "current",
-            "confirmed",
-            "next"
-        )
+        ) != "none"
 
-        and long_count in (0, 1, 2)
-
-        and long_count_enabled(
-            long_count
-        )
+        and int(
+            r.get(
+                "long_breakout_count",
+                0
+            )
+        ) >= 0
     )
 
     return {
@@ -3205,8 +3250,7 @@ def is_breakout(row):
             False
         )
         and value > 0
-        and count in (0, 1, 2)
-        and long_count_enabled(count)
+        and count >= 0
     )
 
 
@@ -3254,10 +3298,7 @@ def is_long_combined(row):
     if roc_value <= 0:
         return False
 
-    if count not in (0, 1, 2):
-        return False
-
-    if not long_count_enabled(count):
+    if count < 0:
         return False
 
     daily_change = row.get(
@@ -3289,84 +3330,17 @@ def is_long_combined(row):
 
 
 # =========================================================
-# ★ TOP 리스트 전용 상승 지속 조건
+# ★ TOP 리스트 전용 ☀️ 기능 삭제
 # =========================================================
-
-def is_top_sustained_long(row):
-
-    if not row:
-        return False
-
-    r = row.get(
-        "roc",
-        {}
-    )
-
-    try:
-
-        roc_value = float(
-            r.get("roc10")
-        )
-
-        sustained_count = int(
-            r.get(
-                "roc10_count",
-                0
-            )
-        )
-
-    except Exception:
-
-        return False
-
-    if roc_value <= 0:
-        return False
-
-    if sustained_count < TOP_SUSTAINED_ROC_COUNT:
-        return False
-
-    e1 = row.get(
-        "ema_1h",
-        {}
-    )
-
-    e_high = row.get(
-        "ema_high",
-        {}
-    )
-
-    filter_info = ema_filter_direction(
-        e1,
-        e_high
-    )
-
-    if filter_info.get(
-        "direction"
-    ) != "long":
-
-        return False
-
-    daily_change = row.get(
-        "change_value"
-    )
-
-    if daily_change is None:
-        return False
-
-    try:
-
-        daily_change = float(
-            daily_change
-        )
-
-    except Exception:
-
-        return False
-
-    if daily_change < 0:
-        return False
-
-    return True
+#
+# 기존:
+# is_top_sustained_long()
+#
+# 삭제
+#
+# TOP 리스트에서는 일반 signal_html()
+# 로켓 신호만 표시
+# =========================================================
 
 
 # =========================================================
@@ -3565,19 +3539,12 @@ def update_upbit():
         latest_upbit_data
     )
 
-    sustained_count = sum(
-        is_top_sustained_long(x)
-        for x in rows
-    )
-
     latest_upbit_update_time = kst()
 
     log.info(
         f"업비트 완료 / "
         f"상승 "
-        f"{sum(is_long_combined(x) for x in rows)}개 / "
-        f"TOP 지속☀️ "
-        f"{sustained_count}개"
+        f"{sum(is_long_combined(x) for x in rows)}개"
     )
 
     log.info(
@@ -3712,18 +3679,11 @@ def update_okx(usdt):
         latest_okx_data
     )
 
-    sustained_count = sum(
-        is_top_sustained_long(x)
-        for x in rows
-    )
-
     okx_1h_cache_time = kst()
     latest_okx_update_time = kst()
 
     log.info(
-        f"OKX TOP{TOP_N} 완료 / "
-        f"TOP 지속☀️ "
-        f"{sustained_count}개"
+        f"OKX TOP{TOP_N} 완료"
     )
 
     log.info(
@@ -4253,25 +4213,22 @@ def market_summary_html():
 # =========================================================
 # ★ ROC HTML
 #
-# 핵심 수정:
+# 상승:
 #
-# ROC 양수:
-#   기존 → 🟢 ROC +
+# 🚀⓪
+# 🚀①
+# 🚀②
+# ...
+# 🚀⑨
+# 🚀10
+# 🚀11
 #
-#   수정 → 🟢 ROC +(3)
+# 음수:
 #
-# 괄호 안 숫자는
-# ROC가 0보다 큰 상태로
-# 연속 몇 개 캔들이 유지되고 있는지를 표시
-#
-# 예:
-#   🟢 ROC +(1)
-#   🟢 ROC +(2)
-#   🟢 ROC +(3)
-#   🟢 ROC +(10)
-#
-# 🚀 돌파 상태는 기존처럼
-# 🚀⓪ / 🚀① / 🚀②
+# 🔴 ROC -(1)
+# 🔴 ROC -(2)
+# 🔴 ROC -(3)
+# ...
 # =========================================================
 
 def roc_html(r):
@@ -4313,9 +4270,7 @@ def roc_html(r):
         )
 
     # =====================================================
-    # ROC 상승 돌파
-    #
-    # 🚀⓪ / 🚀① / 🚀②
+    # ★ ROC 양수 + 상승 돌파 이후
     # =====================================================
 
     if (
@@ -4333,27 +4288,16 @@ def roc_html(r):
             )
         )
 
-        if (
-            breakout_count in (0, 1, 2)
-            and long_count_enabled(
-                breakout_count
-            )
-        ):
-
-            return (
-                '<div class="roc-cell">'
-                '<span class="roc-positive">'
-                f'🚀{count_icon(breakout_count)}'
-                '</span>'
-                '</div>'
-            )
+        return (
+            '<div class="roc-cell">'
+            '<span class="roc-positive">'
+            f'🚀{count_icon(breakout_count)}'
+            '</span>'
+            '</div>'
+        )
 
     # =====================================================
-    # ROC 양수
-    #
-    # ★ 여기 수정
-    #
-    # roc10_count를 괄호 안에 표시
+    # ROC 양수지만 돌파 이력이 없는 경우
     # =====================================================
 
     if value > 0:
@@ -4374,9 +4318,7 @@ def roc_html(r):
         )
 
     # =====================================================
-    # ROC 음수
-    #
-    # 음수도 동일하게 연속 카운트 표시
+    # ★ ROC 음수
     # =====================================================
 
     if value < 0:
@@ -4396,6 +4338,10 @@ def roc_html(r):
             '</div>'
         )
 
+    # =====================================================
+    # ROC 0
+    # =====================================================
+
     return (
         '<div class="roc-cell">'
         '<span class="roc-zero">'
@@ -4407,6 +4353,11 @@ def roc_html(r):
 
 # =========================================================
 # 신호 HTML
+#
+# ★ TOP 전용 ☀️ 삭제
+#
+# 이제 TOP 리스트도
+# 일반 로켓 신호만 표시
 # =========================================================
 
 def signal_html(
@@ -4419,45 +4370,6 @@ def signal_html(
         return (
             '<span class="muted">-</span>'
         )
-
-    # =====================================================
-    # TOP 리스트 전용 ☀️
-    # =====================================================
-
-    if (
-        top_list
-        and is_top_sustained_long(row)
-    ):
-
-        try:
-
-            sustained_count = int(
-                row.get(
-                    "roc",
-                    {}
-                ).get(
-                    "roc10_count",
-                    0
-                )
-            )
-
-        except Exception:
-
-            sustained_count = (
-                TOP_SUSTAINED_ROC_COUNT
-            )
-
-        return (
-            '<span '
-            'class="signal-icon sustained-long" '
-            f'title="ROC 양수 {sustained_count}개 연속 지속">'
-            '☀️'
-            '</span>'
-        )
-
-    # =====================================================
-    # 기존 상승신호
-    # =====================================================
 
     r = row.get(
         "roc",
@@ -4485,18 +4397,17 @@ def signal_html(
         except Exception:
 
             roc_value = 0
-            count = 99
+            count = -1
 
         if (
             roc_value > 0
-            and count in (0, 1, 2)
-            and long_count_enabled(count)
+            and count >= 0
         ):
 
             return (
                 '<span '
                 'class="signal-icon long-breakout" '
-                'title="상승 ROC 0선 돌파">'
+                'title="ROC 0선 상승 돌파 후 연속 카운트">'
                 f'🚀{count_icon(count)}'
                 '</span>'
             )
@@ -4783,7 +4694,7 @@ def focus_section(
 
 
 # =========================================================
-# ★ 전체 TOP 섹션
+# 전체 TOP 섹션
 # =========================================================
 
 def section(
@@ -5198,17 +5109,6 @@ h1{
             0 0 2px
             rgba(57,232,117,.35)
         );
-}
-
-.signal-icon.sustained-long{
-    filter:
-        drop-shadow(
-            0 0 3px
-            rgba(255,210,50,.55)
-        );
-
-    transform:
-        scale(1.08);
 }
 
 .table-wrap{
@@ -5778,11 +5678,6 @@ td:nth-child(1){
         min-height:19px;
     }
 
-    .signal-icon.sustained-long{
-        transform:
-            scale(1.05);
-    }
-
     .orderbook-subrow td{
 
         height:auto!important;
@@ -5990,11 +5885,6 @@ td:nth-child(1){
         min-height:28px;
     }
 
-    .signal-icon.sustained-long{
-        transform:
-            scale(1.08);
-    }
-
     .orderbook-subrow td{
 
         height:auto!important;
@@ -6147,7 +6037,8 @@ def dashboard():
                 f"{format_timeframe(EMA_HIGH_TIMEFRAME)} "
                 f"{get_ema_period_text_long()} · "
                 f"{get_roc_text()} "
-                f"돌파 + 당일 변동률 ≥ 0%"
+                f"0선 상승 돌파 + "
+                f"당일 변동률 ≥ 0%"
             )
 
         )
@@ -6176,7 +6067,8 @@ def dashboard():
                 f"{format_timeframe(EMA_HIGH_TIMEFRAME)} "
                 f"{get_ema_period_text_long()} · "
                 f"{get_roc_text()} "
-                f"돌파 + 당일 변동률 ≥ 0%"
+                f"0선 상승 돌파 + "
+                f"당일 변동률 ≥ 0%"
             )
 
         )
@@ -6419,13 +6311,13 @@ def startup():
         "매도대기 = 빨강 / 매수대기 = 녹색"
     )
 
-    log.info(
-        "========================================"
-    )
-
     # =====================================================
     # BTC 시장 시황
     # =====================================================
+
+    log.info(
+        "========================================"
+    )
 
     log.info(
         "BTC 시장 시황:"
@@ -6485,7 +6377,7 @@ def startup():
     )
 
     # =====================================================
-    # 상승 신호 최종 조건
+    # ★ 상승 신호 최종 조건
     # =====================================================
 
     log.info(
@@ -6505,7 +6397,8 @@ def startup():
     )
 
     log.info(
-        "③ ROC 돌파 카운트 ⓪/①/②"
+        "③ ROC 양수 상태 유지 동안 "
+        "카운트 제한 없음"
     )
 
     log.info(
@@ -6513,15 +6406,17 @@ def startup():
     )
 
     log.info(
-        "⑤ 당일 변동률 음수 종목은 상승 신호에서 제외"
+        "⑤ 당일 변동률 음수 종목은 "
+        "상승 신호에서 제외"
     )
 
     log.info(
-        f"※ 전체 TOP{TOP_N} 표에는 음수 종목도 표시"
+        f"※ 전체 TOP{TOP_N} 표에는 "
+        "음수 종목도 표시"
     )
 
     # =====================================================
-    # TOP 리스트 전용 ☀️ 조건
+    # ★ ROC 카운트
     # =====================================================
 
     log.info(
@@ -6529,89 +6424,69 @@ def startup():
     )
 
     log.info(
-        "TOP 리스트 전용 ☀️ 조건:"
+        "ROC 상승 카운트:"
     )
 
     log.info(
-        f"① {get_roc_text()} 현재값 > 0"
+        "🚀⓪ = 0선 상승 돌파 현재봉"
     )
 
     log.info(
-        f"② {get_roc_text()} 양수 지속 "
-        f"{TOP_SUSTAINED_ROC_COUNT}개 이상"
+        "🚀① = 돌파 후 1번째 봉"
     )
 
     log.info(
-        "③ EMA 정배열"
+        "🚀② = 돌파 후 2번째 봉"
     )
 
     log.info(
-        "④ 당일 변동률 0% 이상"
+        "🚀③ = 돌파 후 3번째 봉"
     )
 
     log.info(
-        "⑤ 기존 🚀 상승신호와 별도 조건"
+        "..."
     )
 
     log.info(
-        f"⑥ 전체 TOP{TOP_N} 리스트에서만 ☀️ 표시"
-    )
-
-    # =====================================================
-    # ROC 돌파
-    # =====================================================
-
-    log.info(
-        "ROC 상승 카운트 표시:"
-        f" 0={LONG_ROC_COUNT_0}"
-        f" / 1={LONG_ROC_COUNT_1}"
-        f" / 2={LONG_ROC_COUNT_2}"
+        "🚀⑨ 이후 → 🚀10, 🚀11, 🚀12..."
     )
 
     log.info(
-        "========================================"
+        "ROC 양수 상태가 유지되는 동안 "
+        "로켓 카운트 계속 증가"
     )
 
     log.info(
-        "상승:"
-        f" 🚀⓪={LONG_ROC_COUNT_0}"
-        f" / 🚀①={LONG_ROC_COUNT_1}"
-        f" / 🚀②={LONG_ROC_COUNT_2}"
+        "ROC가 0 이하가 되면 "
+        "로켓 종료"
     )
 
     log.info(
-        "========================================"
+        "ROC 음수:"
     )
 
     log.info(
-        "ROC 카운트 의미:"
+        "🔴 ROC -(1)"
     )
 
     log.info(
-        "⓪ = 현재 돌파봉"
+        "🔴 ROC -(2)"
     )
 
     log.info(
-        "① = 돌파 후 1번째 확정봉"
+        "🔴 ROC -(3) ..."
     )
 
     log.info(
-        "② = 돌파 후 2번째 확정봉"
+        "다시 0선 상승 돌파하면 🚀⓪부터 재시작"
     )
 
     log.info(
-        f"ROC +(N) = ROC 양수 "
-        f"N개 연속"
+        "TOP 리스트 전용 ☀️ 지속 조건 삭제"
     )
 
     log.info(
-        f"ROC -(N) = ROC 음수 "
-        f"N개 연속"
-    )
-
-    log.info(
-        f"TOP ☀️ = ROC 양수 "
-        f"{TOP_SUSTAINED_ROC_COUNT}개 이상 지속"
+        "TOP 리스트도 일반 🚀 카운트 사용"
     )
 
     log.info(
