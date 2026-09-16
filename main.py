@@ -70,7 +70,7 @@ ORDERBOOK_DOMINANCE_GAP = 5.0
 EMA_TIMEFRAME = 60
 EMA_HIGH_TIMEFRAME = 240
 
-USE_EMA_TIMEFRAME = "Y"
+USE_EMA_TIMEFRAME = "N"
 USE_EMA_HIGH_TIMEFRAME = "N"
 
 
@@ -92,7 +92,7 @@ EMA1_SLOW = 200
 # EMA 사용 여부
 # =========================================================
 
-EMA_USE_10 = "N"
+EMA_USE_10 = "Y"
 EMA_USE_30 = "Y"
 EMA_USE_60 = "Y"
 EMA_USE_120 = "Y"
@@ -2305,7 +2305,7 @@ def roc_cross_state(
 
 
 # =========================================================
-# ROC 분석
+# ★ ROC 분석
 #
 # roc10_count
 # = 현재 ROC가 0보다 큰 상태로
@@ -2340,7 +2340,7 @@ def roc_analysis(
         "long_breakout_state": "none",
 
         "state": "none",
-        "display": "-"
+        "display": "⚪ 0"
     }
 
     if (
@@ -2480,7 +2480,7 @@ def roc_analysis(
                     "none",
 
                 "display":
-                    "⚪ 0"
+                    f"⚪ 0"
 
             })
 
@@ -2501,9 +2501,19 @@ def roc_analysis(
 
 def daily_change_upbit(market):
 
+    # =====================================================
+    # ★ 수정
+    #
+    # 기존 잘못된 주소:
+    # https://api.upbitbit.com/...
+    #
+    # 정확한 업비트 API:
+    # https://api.upbit.com/...
+    # =====================================================
+
     r = retry(
         requests.get,
-        "https://api.upbitbit.com/v1/candles/days",
+        "https://api.upbit.com/v1/candles/days",
         params={
             "market": market,
             "count": 2
@@ -2540,7 +2550,12 @@ def daily_change_upbit(market):
             * 100
         ]
 
-    except Exception:
+    except Exception as e:
+
+        log.error(
+            f"업비트 일봉 등락률 오류 "
+            f"{market}: {e}"
+        )
 
         return None
 
@@ -3768,6 +3783,10 @@ def update_dashboard():
                     f"OKX 환산용 USDT/KRW 오류: {e}"
                 )
 
+        # =================================================
+        # 업비트
+        # =================================================
+
         if USE_UPBIT == "Y":
 
             try:
@@ -3783,6 +3802,10 @@ def update_dashboard():
         else:
 
             latest_upbit_data = []
+
+        # =================================================
+        # OKX
+        # =================================================
 
         if USE_OKX == "Y":
 
@@ -3962,7 +3985,6 @@ def market_summary_html():
             btc_ema_display = "중립"
             btc_ema_class = "wait"
 
-
     # =====================================================
     # 2번째 칸
     # BTC 당일 변동률
@@ -4028,7 +4050,6 @@ def market_summary_html():
                 btc_daily_display = "-"
                 btc_daily_class = "wait"
 
-
     # =====================================================
     # 3번째 칸
     # 전체 TOP_N
@@ -4093,7 +4114,6 @@ def market_summary_html():
 
         breadth_class = "wait"
 
-
     # =====================================================
     # BTC 상단
     # =====================================================
@@ -4116,7 +4136,6 @@ def market_summary_html():
                 btc.get("change_value")
             )
         )
-
 
     return f"""
 
@@ -4232,19 +4251,27 @@ def market_summary_html():
 
 
 # =========================================================
-# ROC HTML
+# ★ ROC HTML
 #
-# ★ 변경사항
+# 핵심 수정:
 #
 # ROC 양수:
 #   기존 → 🟢 ROC +
-#   변경 → 🟢 ROC +(3)
 #
-# ROC 음수:
-#   기존 → 🔴 ROC -
-#   변경 → 🔴 ROC -(3)
+#   수정 → 🟢 ROC +(3)
 #
-# 🚀⓪ / 🚀① / 🚀②는 기존 그대로
+# 괄호 안 숫자는
+# ROC가 0보다 큰 상태로
+# 연속 몇 개 캔들이 유지되고 있는지를 표시
+#
+# 예:
+#   🟢 ROC +(1)
+#   🟢 ROC +(2)
+#   🟢 ROC +(3)
+#   🟢 ROC +(10)
+#
+# 🚀 돌파 상태는 기존처럼
+# 🚀⓪ / 🚀① / 🚀②
 # =========================================================
 
 def roc_html(r):
@@ -4286,43 +4313,9 @@ def roc_html(r):
         )
 
     # =====================================================
-    # ★ ROC 양수 지속 카운트
-    # =====================================================
-
-    try:
-
-        positive_count = int(
-            r.get(
-                "roc10_count",
-                0
-            )
-        )
-
-    except Exception:
-
-        positive_count = 0
-
-    # =====================================================
-    # ★ ROC 음수 지속 카운트
-    # =====================================================
-
-    try:
-
-        negative_count = int(
-            r.get(
-                "roc10_negative_count",
-                0
-            )
-        )
-
-    except Exception:
-
-        negative_count = 0
-
-    # =====================================================
-    # ROC 0선 상승 돌파
+    # ROC 상승 돌파
     #
-    # 기존 🚀⓪ / 🚀① / 🚀② 유지
+    # 🚀⓪ / 🚀① / 🚀②
     # =====================================================
 
     if (
@@ -4333,28 +4326,24 @@ def roc_html(r):
         ) != "none"
     ):
 
-        try:
-
-            count = int(
-                r.get(
-                    "long_breakout_count",
-                    0
-                )
+        breakout_count = int(
+            r.get(
+                "long_breakout_count",
+                0
             )
-
-        except Exception:
-
-            count = 99
+        )
 
         if (
-            count in (0, 1, 2)
-            and long_count_enabled(count)
+            breakout_count in (0, 1, 2)
+            and long_count_enabled(
+                breakout_count
+            )
         ):
 
             return (
                 '<div class="roc-cell">'
                 '<span class="roc-positive">'
-                f'🚀{count_icon(count)}'
+                f'🚀{count_icon(breakout_count)}'
                 '</span>'
                 '</div>'
             )
@@ -4362,15 +4351,19 @@ def roc_html(r):
     # =====================================================
     # ROC 양수
     #
-    # ★ 양수 연속 캔들 수 표시
+    # ★ 여기 수정
     #
-    # 예:
-    # 🟢 ROC +(1)
-    # 🟢 ROC +(2)
-    # 🟢 ROC +(3)
+    # roc10_count를 괄호 안에 표시
     # =====================================================
 
     if value > 0:
+
+        positive_count = int(
+            r.get(
+                "roc10_count",
+                0
+            )
+        )
 
         return (
             '<div class="roc-cell">'
@@ -4383,13 +4376,17 @@ def roc_html(r):
     # =====================================================
     # ROC 음수
     #
-    # 예:
-    # 🔴 ROC -(1)
-    # 🔴 ROC -(2)
-    # 🔴 ROC -(3)
+    # 음수도 동일하게 연속 카운트 표시
     # =====================================================
 
     if value < 0:
+
+        negative_count = int(
+            r.get(
+                "roc10_negative_count",
+                0
+            )
+        )
 
         return (
             '<div class="roc-cell">'
@@ -4398,10 +4395,6 @@ def roc_html(r):
             '</span>'
             '</div>'
         )
-
-    # =====================================================
-    # ROC 0
-    # =====================================================
 
     return (
         '<div class="roc-cell">'
@@ -4791,8 +4784,6 @@ def focus_section(
 
 # =========================================================
 # ★ 전체 TOP 섹션
-#
-# 여기에서만 top_list=True
 # =========================================================
 
 def section(
@@ -5209,11 +5200,6 @@ h1{
         );
 }
 
-
-/* =====================================================
-   ★ TOP 리스트 전용 ☀️
-   ===================================================== */
-
 .signal-icon.sustained-long{
     filter:
         drop-shadow(
@@ -5224,7 +5210,6 @@ h1{
     transform:
         scale(1.08);
 }
-
 
 .table-wrap{
     width:100%;
@@ -6572,10 +6557,6 @@ def startup():
         f"⑥ 전체 TOP{TOP_N} 리스트에서만 ☀️ 표시"
     )
 
-    log.info(
-        "========================================"
-    )
-
     # =====================================================
     # ROC 돌파
     # =====================================================
@@ -6616,6 +6597,16 @@ def startup():
 
     log.info(
         "② = 돌파 후 2번째 확정봉"
+    )
+
+    log.info(
+        f"ROC +(N) = ROC 양수 "
+        f"N개 연속"
+    )
+
+    log.info(
+        f"ROC -(N) = ROC 음수 "
+        f"N개 연속"
     )
 
     log.info(
