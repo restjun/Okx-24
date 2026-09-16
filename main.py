@@ -58,7 +58,7 @@ KST = ZoneInfo("Asia/Seoul")
 # 업비트 호가 설정
 # =========================================================
 
-ORDERBOOK_RANGE = 0.10
+ORDERBOOK_RANGE = 0.05
 ORDERBOOK_COUNT = 30
 ORDERBOOK_DOMINANCE_GAP = 5.0
 
