@@ -51,7 +51,7 @@ def kst():
 # =========================================================
 
 VOLUME_HOURS = 24
-TOP_N = 10
+TOP_N = 15
 UPDATE_MINUTES = 1
 
 HISTORY_CHUNK = 200
@@ -78,8 +78,8 @@ MAX_RETRIES = 10
 USE_1H_ROC5 = "Y"
 USE_1H_ROC10 = "Y"
 USE_1H_ROC20 = "Y"
-USE_1H_ROC50 = "Y"
-USE_1H_ROC200 = "Y"
+USE_1H_ROC50 = "N"
+USE_1H_ROC200 = "N"
 
 USE_4H_ROC5 = "Y"
 USE_4H_ROC10 = "Y"
