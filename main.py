@@ -162,6 +162,22 @@ okx_1h_cache_time = "-"
 
 
 # =========================================================
+# ★ 전일 업비트 전체 거래대금
+#
+# latest_upbit_total_trade_value
+#     = 전일 완성 일봉 기준
+#       전체 KRW 마켓 거래대금 합계
+#
+# latest_upbit_total_trade_date
+#     = 계산한 업비트 일봉 날짜
+# =========================================================
+
+latest_upbit_total_trade_value = 0.0
+latest_upbit_total_trade_date = None
+latest_upbit_total_trade_market_count = 0
+
+
+# =========================================================
 # ROC 신호 STATE
 #
 # market별 독립
@@ -892,6 +908,199 @@ def get_upbit_markets():
         )
 
         return []
+
+
+# =========================================================
+# ★ 전일 업비트 전체 거래대금
+#
+# 전체 KRW 마켓의
+# "가장 최근 완성된 업비트 일봉"
+# candle_acc_trade_price를 합산
+#
+# 같은 날짜에는 캐시 사용
+# =========================================================
+
+def update_previous_upbit_total_trade_value(
+    markets
+):
+
+    global latest_upbit_total_trade_value
+    global latest_upbit_total_trade_date
+    global latest_upbit_total_trade_market_count
+
+    if not markets:
+        return
+
+    now = datetime.now(KST)
+
+    # -----------------------------------------------------
+    # 업비트 일봉 기준
+    #
+    # 현재 KST 09:00 이후:
+    # 가장 최근 완성 일봉 = 오늘 09:00 직전까지의 일봉
+    #
+    # 현재 KST 09:00 이전:
+    # 가장 최근 완성 일봉 = 어제 09:00 직전까지의 일봉
+    # -----------------------------------------------------
+
+    if (
+        now.hour >= 9
+    ):
+
+        target_date = (
+            now.date()
+        )
+
+    else:
+
+        target_date = (
+            now.date()
+        )
+
+    # -----------------------------------------------------
+    # 이미 오늘 계산했다면 재계산하지 않음
+    # -----------------------------------------------------
+
+    if (
+        latest_upbit_total_trade_date
+        == target_date
+        and latest_upbit_total_trade_value > 0
+    ):
+
+        return
+
+    total_trade_value = 0.0
+    success_count = 0
+
+    log.info(
+        "========== 전일 업비트 전체 거래대금 계산 =========="
+    )
+
+    for item in markets:
+
+        market = item.get(
+            "market"
+        )
+
+        if not market:
+            continue
+
+        response = retry(
+            requests.get,
+            "https://api.upbit.com/v1/candles/days",
+            params={
+                "market":
+                    market,
+                "count":
+                    2
+            },
+            timeout=15
+        )
+
+        if response is None:
+            continue
+
+        try:
+
+            data = response.json()
+
+            if not isinstance(
+                data,
+                list
+            ):
+                continue
+
+            if len(data) < 2:
+                continue
+
+            # -------------------------------------------------
+            # 최신 일봉은 현재 진행 중일 수 있으므로
+            # 두 번째 일봉을 전일 완성 일봉으로 사용
+            # -------------------------------------------------
+
+            candle = data[1]
+
+            value = float(
+                candle.get(
+                    "candle_acc_trade_price",
+                    0
+                )
+            )
+
+            if value <= 0:
+                continue
+
+            total_trade_value += value
+            success_count += 1
+
+        except Exception:
+
+            continue
+
+    if total_trade_value > 0:
+
+        latest_upbit_total_trade_value = (
+            total_trade_value
+        )
+
+        latest_upbit_total_trade_date = (
+            target_date
+        )
+
+        latest_upbit_total_trade_market_count = (
+            success_count
+        )
+
+        log.info(
+            f"[전일 업비트 전체 거래대금] "
+            f"{format_volume(total_trade_value)} "
+            f"/ "
+            f"{success_count}개 마켓"
+        )
+
+
+# =========================================================
+# 전일 거래대금 표시
+# =========================================================
+
+def format_total_trade_value(
+    value
+):
+
+    try:
+
+        value = float(
+            value
+        )
+
+    except Exception:
+
+        return "-"
+
+    if value <= 0:
+        return "-"
+
+    if value >= 1e12:
+
+        return (
+            f"{value / 1e12:.2f}조"
+        )
+
+    if value >= 1e8:
+
+        return (
+            f"{value / 1e8:.0f}억"
+        )
+
+    if value >= 1e4:
+
+        return (
+            f"{value / 1e4:.0f}만원"
+        )
+
+    return (
+        f"{value:,.0f}원"
+    )
 
 
 # =========================================================
@@ -2435,26 +2644,7 @@ def filter_html(
 
 
 # =========================================================
-# ★ 과거에서 최근 신호 시작점 찾기
-#
-# 매우 중요
-#
-# 서버가 재시작되어도
-# state가 비어 있으면
-# 최근 완성캔들 데이터를 이용해서
-# 마지막 전체 활성 ROC 돌파 지점을 찾는다.
-#
-# 예:
-#
-# 05:00 음수
-# 06:00 음수
-# 07:00 전체 >= 0  ← 시작점
-# 08:00 전체 >= 0
-# 09:00 전체 >= 0
-#
-# 현재 10:00 진행
-#
-# count = 3
+# 과거에서 최근 신호 시작점 찾기
 # =========================================================
 
 def find_latest_signal_start(
@@ -2486,10 +2676,6 @@ def find_latest_signal_start(
 
     try:
 
-        # -------------------------------------------------
-        # 1H 상태
-        # -------------------------------------------------
-
         states_1h = {}
 
         periods_1h = [
@@ -2520,6 +2706,7 @@ def find_latest_signal_start(
                     ]
 
                     if pd.isna(value):
+
                         states_1h[
                             (
                                 df1h[
@@ -2541,10 +2728,6 @@ def find_latest_signal_start(
                         ] = float(
                             value
                         )
-
-        # -------------------------------------------------
-        # 4H 상태
-        # -------------------------------------------------
 
         states_4h = {}
 
@@ -2599,12 +2782,6 @@ def find_latest_signal_start(
                             value
                         )
 
-        # -------------------------------------------------
-        # 공통 1H 캔들 기준으로 검사
-        #
-        # 현재 진행 중인 캔들은 제외
-        # -------------------------------------------------
-
         current_start = (
             get_current_candle_start(
                 ROC_TIMEFRAME
@@ -2620,13 +2797,6 @@ def find_latest_signal_start(
         if not candidates:
             return None
 
-        # -------------------------------------------------
-        # 최근 → 과거
-        # 마지막으로
-        # "전체 활성 ROC >= 0"
-        # 상태가 시작된 캔들 찾기
-        # -------------------------------------------------
-
         for i in range(
             len(candidates) - 1,
             -1,
@@ -2638,10 +2808,6 @@ def find_latest_signal_start(
             ]
 
             current_ok = True
-
-            # -------------------------------------------------
-            # 현재 캔들의 모든 활성 ROC 확인
-            # -------------------------------------------------
 
             for timeframe, period in enabled:
 
@@ -2655,11 +2821,6 @@ def find_latest_signal_start(
                     )
 
                 else:
-
-                    # -----------------------------------------
-                    # 4H는 해당 시점 이전의
-                    # 가장 최근 완성 4H 캔들 사용
-                    # -----------------------------------------
 
                     candidates_4h = [
                         x
@@ -2693,13 +2854,6 @@ def find_latest_signal_start(
 
             if not current_ok:
                 continue
-
-            # -------------------------------------------------
-            # 이전 캔들 상태 확인
-            #
-            # 이전이 전체 >=0이 아니어야
-            # 최초 시작점
-            # -------------------------------------------------
 
             if i == 0:
 
@@ -2781,17 +2935,7 @@ def find_latest_signal_start(
 
 
 # =========================================================
-# ★ ROC 신호
-#
-# 핵심
-#
-# 돌파 완성캔들 = 0
-# 다음 진행캔들 = 1
-# 다음 = 2
-# 다음 = 3
-#
-# 일봉은 count에 영향 없음
-# TOP rank는 count에 영향 없음
+# ROC 신호
 # =========================================================
 
 def get_signal_qualified(
@@ -2830,10 +2974,6 @@ def get_signal_qualified(
             historical_start_candle
         )
     )
-
-    # =====================================================
-    # 활성 ROC
-    # =====================================================
 
     enabled = (
         get_enabled_all_filters()
@@ -2905,10 +3045,6 @@ def get_signal_qualified(
         and roc_all_positive
     )
 
-    # =====================================================
-    # 화면용 상태
-    # =====================================================
-
     (
         current_all_status,
         previous_all_status
@@ -2922,12 +3058,6 @@ def get_signal_qualified(
         and not previous_all_status
     )
 
-    # =====================================================
-    # 일봉
-    #
-    # count와 무관
-    # =====================================================
-
     change_value = (
         get_change_value(
             daily_change
@@ -2939,28 +3069,15 @@ def get_signal_qualified(
         and change_value >= 0
     )
 
-    # =====================================================
-    # 기존 state
-    # =====================================================
-
     state = roc_signal_state.get(
         market_key
     )
-
-    # =====================================================
-    # ★ STATE가 없을 때
-    # =====================================================
 
     if state is None:
 
         start_candle = (
             historical_start_candle
         )
-
-        # -------------------------------------------------
-        # 과거 복원값이 없으면
-        # 현재 완성캔들에서 시작
-        # -------------------------------------------------
 
         if start_candle is None:
 
@@ -2972,10 +3089,6 @@ def get_signal_qualified(
                 start_candle = (
                     completed_candle_time
                 )
-
-        # -------------------------------------------------
-        # 시작점이 있으면 STATE 생성
-        # -------------------------------------------------
 
         if start_candle is not None:
 
@@ -3012,20 +3125,12 @@ def get_signal_qualified(
                 f"COUNT=0"
             )
 
-    # =====================================================
-    # STATE가 있으면
-    # =====================================================
-
     if state is not None:
 
         if state.get(
             "active",
             False
         ):
-
-            # -------------------------------------------------
-            # ★ 실제 활성 ROC 음수만 종료
-            # -------------------------------------------------
 
             if roc_has_negative:
 
@@ -3055,10 +3160,6 @@ def get_signal_qualified(
                         "cross_candle"
                     )
                 )
-
-                # -------------------------------------------------
-                # ★ 진행캔들 기준 카운트
-                # -------------------------------------------------
 
                 if (
                     cross_candle is not None
@@ -3102,19 +3203,11 @@ def get_signal_qualified(
                         "last_progress_candle"
                     ] = progress_candle_time
 
-                # -------------------------------------------------
-                # 마지막 완성캔들
-                # -------------------------------------------------
-
                 if completed_candle_time is not None:
 
                     state[
                         "last_completed_candle"
                     ] = completed_candle_time
-
-    # =====================================================
-    # STATE 재조회
-    # =====================================================
 
     state = roc_signal_state.get(
         market_key
@@ -3145,24 +3238,12 @@ def get_signal_qualified(
 
             signal_count = 0
 
-    # =====================================================
-    # 돌파 목록
-    # =====================================================
-
     zero_cross_list = (
         get_active_zero_cross_list(
             r1,
             r4
         )
     )
-
-    # =====================================================
-    # 상승 신호
-    #
-    # 일봉 >= 0일 때만 상승신호 영역 표시
-    #
-    # count에는 영향 없음
-    # =====================================================
 
     breakout_qualified = (
         signal_active
@@ -3203,7 +3284,7 @@ def get_signal_qualified(
 
 
 # =========================================================
-# ★ 분석
+# 분석
 # =========================================================
 
 def analyze(
@@ -3214,10 +3295,6 @@ def analyze(
     all_periods = (
         get_all_periods()
     )
-
-    # =====================================================
-    # 1H
-    # =====================================================
 
     df1h = history_upbit(
         market,
@@ -3231,10 +3308,6 @@ def analyze(
     ):
         return None
 
-    # =====================================================
-    # 4H
-    # =====================================================
-
     df4h = history_upbit(
         market,
         240,
@@ -3246,10 +3319,6 @@ def analyze(
         or df4h.empty
     ):
         return None
-
-    # =====================================================
-    # ROC 확정 데이터
-    # =====================================================
 
     df_roc_confirmed = (
         history_upbit(
@@ -3265,10 +3334,6 @@ def analyze(
     ):
         return None
 
-    # =====================================================
-    # 현재 진행 데이터
-    # =====================================================
-
     df_roc_current = (
         get_upbit_current_roc_data(
             market,
@@ -3282,10 +3347,6 @@ def analyze(
     ):
         return None
 
-    # =====================================================
-    # 1H ROC
-    # =====================================================
-
     r1_raw = roc_filter_analysis(
         df1h,
         all_periods
@@ -3295,10 +3356,6 @@ def analyze(
         r1_raw,
         "1H"
     )
-
-    # =====================================================
-    # 4H ROC
-    # =====================================================
 
     r4_raw = roc_filter_analysis(
         df4h,
@@ -3310,10 +3367,6 @@ def analyze(
         "4H"
     )
 
-    # =====================================================
-    # ROC 분석
-    # =====================================================
-
     r = roc_analysis(
         df_roc_confirmed,
         df_roc_current,
@@ -3321,19 +3374,9 @@ def analyze(
         r4
     )
 
-    # =====================================================
-    # 일봉
-    # =====================================================
-
     changes = daily_change_upbit(
         market
     )
-
-    # =====================================================
-    # ★ 완성캔들
-    #
-    # 신호 시작 기준
-    # =====================================================
 
     completed_candle_time = (
         get_last_completed_candle_time(
@@ -3342,23 +3385,11 @@ def analyze(
         )
     )
 
-    # =====================================================
-    # ★ 진행캔들
-    #
-    # 카운팅 기준
-    # =====================================================
-
     progress_candle_time = (
         get_current_candle_start(
             ROC_TIMEFRAME
         )
     )
-
-    # =====================================================
-    # ★ 과거 신호 시작점 복원
-    #
-    # state가 없을 경우에만 사용
-    # =====================================================
 
     historical_start_candle = None
 
@@ -3380,10 +3411,6 @@ def analyze(
                 f"{historical_start_candle}"
             )
 
-    # =====================================================
-    # ★ 신호
-    # =====================================================
-
     q = get_signal_qualified(
         r1,
         r4,
@@ -3401,10 +3428,6 @@ def analyze(
         )
     )
 
-    # =====================================================
-    # ★ ROC COUNT = SIGNAL COUNT
-    # =====================================================
-
     signal_count = int(
         q.get(
             "signal_count",
@@ -3415,10 +3438,6 @@ def analyze(
     r[
         "signal_count"
     ] = signal_count
-
-    # =====================================================
-    # 신호 표시
-    # =====================================================
 
     if q.get(
         "signal_active",
@@ -3852,6 +3871,26 @@ def update_upbit():
             x["volume_24h"],
         reverse=True
     )
+
+    # =====================================================
+    # ★ 전일 전체 업비트 거래대금 계산
+    #
+    # TOP10이 아니라
+    # get_upbit_markets()에서 확보한
+    # 전체 KRW 마켓을 사용
+    # =====================================================
+
+    try:
+
+        update_previous_upbit_total_trade_value(
+            markets
+        )
+
+    except Exception as e:
+
+        log.exception(
+            f"전일 업비트 전체 거래대금 오류: {e}"
+        )
 
     top_markets = markets[
         :TOP_N
@@ -4726,8 +4765,14 @@ def market_summary_html():
 
             btc_daily = "⚪"
 
-    breadth = top_daily_breadth(
-        latest_upbit_data
+    # =====================================================
+    # ★ 전일 전체 업비트 거래대금
+    # =====================================================
+
+    total_trade_value = (
+        format_total_trade_value(
+            latest_upbit_total_trade_value
+        )
     )
 
     return f"""
@@ -4797,20 +4842,22 @@ def market_summary_html():
 
             </div>
 
-            <div class="btc-info-box">
+            <!-- =================================================
+                 ★ 변경된 3번째 칸
+                 ================================================= -->
+
+            <div class="btc-info-box total-trade-box">
 
                 <div class="btc-info-title">
-                    TOP{TOP_N} · 당일
+                    전일 업비트 전체 거래대금
                 </div>
 
-                <div class="btc-info-value">
-                    {breadth["icon"]}
+                <div class="btc-info-value total-trade-value">
+                    {total_trade_value}
                 </div>
 
                 <div class="btc-info-sub">
-                    양수 {breadth["positive"]}
-                    /
-                    음수 {breadth["negative"]}
+                    전체 KRW 마켓
                 </div>
 
             </div>
@@ -5525,6 +5572,43 @@ h1{
     font-weight:900;
 }
 
+/* =====================================================
+   ★ 전일 전체 거래대금 강조
+   ===================================================== */
+
+.total-trade-box{
+    border-color:#343b43;
+    background:
+        linear-gradient(
+            180deg,
+            #181d22 0%,
+            #14181d 100%
+        );
+}
+
+.total-trade-box .btc-info-title{
+    font-size:5.8px;
+    font-weight:900;
+}
+
+.total-trade-value{
+    font-size:36px!important;
+    line-height:38px!important;
+    font-weight:1000!important;
+    letter-spacing:-1px;
+    color:#ffffff!important;
+    text-shadow:
+        0 0 8px rgba(255,255,255,.12);
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+}
+
+.total-trade-box .btc-info-sub{
+    font-size:5.5px;
+    color:#626b75;
+}
+
 .btc-info-sub{
     width:100%;
     color:#737b85;
@@ -6010,6 +6094,22 @@ td:nth-child(1){
         line-height:25px;
     }
 
+    /* ★ 모바일 거래대금 강조 */
+
+    .total-trade-box .btc-info-title{
+        font-size:4.3px;
+    }
+
+    .total-trade-value{
+        font-size:27px!important;
+        line-height:29px!important;
+        letter-spacing:-1px;
+    }
+
+    .total-trade-box .btc-info-sub{
+        font-size:4.5px;
+    }
+
     .btc-info-sub{
         font-size:5px;
     }
@@ -6158,6 +6258,22 @@ td:nth-child(1){
     .btc-info-value{
         font-size:32px;
         line-height:34px;
+    }
+
+    /* ★ PC 거래대금 강조 */
+
+    .total-trade-box .btc-info-title{
+        font-size:6.5px;
+    }
+
+    .total-trade-value{
+        font-size:40px!important;
+        line-height:42px!important;
+        letter-spacing:-1px;
+    }
+
+    .total-trade-box .btc-info-sub{
+        font-size:6.5px;
     }
 
     .btc-info-sub{
@@ -6579,6 +6695,19 @@ def startup():
 
     log.info(
         "서버 재시작 시 과거 ROC에서 시작점 복원"
+    )
+
+    log.info(
+        "----------------------------------------"
+    )
+
+    log.info(
+        "전일 업비트 전체 거래대금 = "
+        "전체 KRW 마켓 완성 일봉 합계"
+    )
+
+    log.info(
+        "전일 거래대금은 날짜별 캐시 사용"
     )
 
     log.info(
