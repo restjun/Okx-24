@@ -55,12 +55,28 @@ MAX_RETRIES = 10
 
 
 # =========================================================
+# ROC 필터 시간봉 사용 설정
+#
+# Y = 해당 시간봉을 실제 필터에 사용
+# N = 해당 시간봉은 실제 필터에서 제외
+#
+# ★ N이어도 대시보드에는 계속 표시
+# =========================================================
+
+USE_1H_ROC_FILTER = "Y"
+USE_4H_ROC_FILTER = "N"
+
+
+# =========================================================
 # ROC 필터 개별 사용 설정
 #
 # Y = 조건에 사용
 # N = 조건에는 사용하지 않음
 #
 # ★ N이어도 화면에는 항상 표시
+#
+# ★ 시간봉 자체가 N이면
+#   해당 시간봉의 ROC는 필터에서 사용하지 않음
 # =========================================================
 
 USE_1H_ROC5 = "Y"
@@ -206,13 +222,37 @@ def roc_settings():
 # =========================================================
 # 활성화된 ROC 기간
 #
-# ★ 조건 판정용
-# Y만 반환
+# ★ 실제 필터 조건 판정용
+#
+# 시간봉 Y/N을 먼저 확인
+# 그 다음 ROC 개별 Y/N 확인
+#
+# ★ N인 ROC는 필터에서 완전히 제외
+# ★ N인 시간봉도 필터에서 완전히 제외
+# ★ 대시보드 표시에는 영향 없음
 # =========================================================
 
 def get_enabled_periods(timeframe):
 
     result = []
+
+    # -----------------------------------------------------
+    # 시간봉 자체가 N이면 필터에 사용하지 않음
+    # -----------------------------------------------------
+
+    if timeframe == "1H":
+
+        if USE_1H_ROC_FILTER != "Y":
+            return []
+
+    elif timeframe == "4H":
+
+        if USE_4H_ROC_FILTER != "Y":
+            return []
+
+    else:
+
+        return []
 
     settings = roc_settings()
 
@@ -227,7 +267,10 @@ def get_enabled_periods(timeframe):
         )
 
         if value == "Y":
-            result.append(period)
+
+            result.append(
+                period
+            )
 
     return result
 
@@ -247,7 +290,9 @@ def get_all_periods():
 # =========================================================
 # 전체 활성 필터
 #
-# ★ 조건 판정은 Y만
+# ★ 시간봉 Y
+# ★ ROC Y
+# 인 경우만 실제 조건에 사용
 # =========================================================
 
 def get_enabled_all_filters():
@@ -256,18 +301,40 @@ def get_enabled_all_filters():
 
     settings = roc_settings()
 
-    for timeframe in ["1H", "4H"]:
+    # -----------------------------------------------------
+    # 1H 필터
+    # -----------------------------------------------------
+
+    if USE_1H_ROC_FILTER == "Y":
 
         for period in ROC_FILTER_PERIODS:
 
             setting = settings[
                 period
-            ][timeframe]
+            ]["1H"]
 
             if setting == "Y":
 
                 result.append(
-                    (timeframe, period)
+                    ("1H", period)
+                )
+
+    # -----------------------------------------------------
+    # 4H 필터
+    # -----------------------------------------------------
+
+    if USE_4H_ROC_FILTER == "Y":
+
+        for period in ROC_FILTER_PERIODS:
+
+            setting = settings[
+                period
+            ]["4H"]
+
+            if setting == "Y":
+
+                result.append(
+                    ("4H", period)
                 )
 
     return result
@@ -275,6 +342,8 @@ def get_enabled_all_filters():
 
 # =========================================================
 # 활성 필터 표시
+#
+# ★ 실제 필터에서 활성화된 ROC만 표시
 # =========================================================
 
 def get_enabled_filter_text(timeframe):
@@ -292,11 +361,28 @@ def get_enabled_filter_text(timeframe):
     )
 
 
+# =========================================================
+# 필터 설정 표시
+#
+# ★ 간격 축소
+# =========================================================
+
 def get_filter_setting_text():
 
+    h1 = (
+        get_enabled_filter_text("1H")
+        if USE_1H_ROC_FILTER == "Y"
+        else "-"
+    )
+
+    h4 = (
+        get_enabled_filter_text("4H")
+        if USE_4H_ROC_FILTER == "Y"
+        else "-"
+    )
+
     return (
-        f"1H:{get_enabled_filter_text('1H')} / "
-        f"4H:{get_enabled_filter_text('4H')}"
+        f"1H:{h1} 4H:{h4}"
     )
 
 
@@ -430,10 +516,37 @@ def validate_timeframe():
         ROC_TIMEFRAME
     )
 
+    # -----------------------------------------------------
+    # 시간봉 Y/N 검증
+    # -----------------------------------------------------
+
+    if USE_1H_ROC_FILTER not in (
+        "Y",
+        "N"
+    ):
+
+        raise ValueError(
+            "USE_1H_ROC_FILTER는 Y/N만 가능합니다."
+        )
+
+    if USE_4H_ROC_FILTER not in (
+        "Y",
+        "N"
+    ):
+
+        raise ValueError(
+            "USE_4H_ROC_FILTER는 Y/N만 가능합니다."
+        )
+
+    # -----------------------------------------------------
+    # 시간봉 검증
+    # -----------------------------------------------------
+
     if (
         ROC_FILTER_TIMEFRAME
         not in SUPPORTED_UPBIT_TIMEFRAMES
     ):
+
         raise ValueError(
             f"1H ROC 필터 시간봉 오류: "
             f"{ROC_FILTER_TIMEFRAME}"
@@ -443,6 +556,7 @@ def validate_timeframe():
         ROC_FILTER_HIGH_TIMEFRAME
         not in SUPPORTED_UPBIT_TIMEFRAMES
     ):
+
         raise ValueError(
             f"4H ROC 필터 시간봉 오류: "
             f"{ROC_FILTER_HIGH_TIMEFRAME}"
@@ -452,22 +566,33 @@ def validate_timeframe():
         ROC_TIMEFRAME
         not in SUPPORTED_UPBIT_TIMEFRAMES
     ):
+
         raise ValueError(
             f"ROC 로켓 시간봉 오류: "
             f"{ROC_TIMEFRAME}"
         )
 
+    # -----------------------------------------------------
+    # ROC 개별 Y/N 검증
+    # -----------------------------------------------------
+
     settings = roc_settings()
 
     for period in ROC_FILTER_PERIODS:
 
-        for timeframe in ["1H", "4H"]:
+        for timeframe in [
+            "1H",
+            "4H"
+        ]:
 
             value = settings[
                 period
             ][timeframe]
 
-            if value not in ("Y", "N"):
+            if value not in (
+                "Y",
+                "N"
+            ):
 
                 raise ValueError(
                     f"{timeframe} ROC{period} "
@@ -571,9 +696,11 @@ def retry(
                 r,
                 "status_code"
             ):
+
                 return r
 
             if r.status_code == 200:
+
                 return r
 
             if r.status_code == 429:
@@ -605,7 +732,9 @@ def retry(
                 f"{url} {wait}초"
             )
 
-            time.sleep(wait)
+            time.sleep(
+                wait
+            )
 
         except Exception as e:
 
@@ -664,6 +793,7 @@ def get_upbit_markets():
             if not market.startswith(
                 "KRW-"
             ):
+
                 continue
 
             try:
@@ -759,6 +889,7 @@ def get_upbit_orderbooks(
                 data,
                 list
             ):
+
                 continue
 
             for item in data:
@@ -853,6 +984,7 @@ def calculate_orderbook_amount(
         units,
         list
     ):
+
         return result
 
     bid_amount = 0.0
@@ -1157,6 +1289,7 @@ def history_upbit(
             df is None
             or df.empty
         ):
+
             break
 
         all_df = (
@@ -1185,6 +1318,7 @@ def history_upbit(
         )
 
         if len(all_df) >= required:
+
             return all_df
 
         to = (
@@ -1293,6 +1427,7 @@ def roc(
         or df.empty
         or "c" not in df
     ):
+
         return None
 
     try:
@@ -1322,15 +1457,19 @@ def roc(
 # =========================================================
 # ROC 필터 분석
 #
-# ★ 전체 5/10/20/50/200 계산
+# ★ 5/10/20/50/200 전체 계산
 #
-# ★ 추가:
-#   previous_values
-#   zero_crosses
+# ★ previous_values
+# ★ zero_crosses
 #
 # zero_cross:
-#   이전 <= 0
-#   현재 > 0
+# 이전 <= 0
+# 현재 > 0
+#
+# 중요:
+# 이 함수는 전체 ROC를 계산하기 위한 함수
+# 실제 필터 활성 여부는
+# get_enabled_all_filters()가 결정
 # =========================================================
 
 def roc_filter_analysis(
@@ -1340,9 +1479,7 @@ def roc_filter_analysis(
 
     if periods is None:
 
-        periods = get_enabled_periods(
-            "1H"
-        )
+        periods = get_all_periods()
 
     result = {
 
@@ -1371,22 +1508,11 @@ def roc_filter_analysis(
             periods.copy()
     }
 
-    if not periods:
-
-        result[
-            "passed"
-        ] = True
-
-        result[
-            "direction"
-        ] = "long"
-
-        return result
-
     if (
         df is None
         or df.empty
     ):
+
         return result
 
     try:
@@ -1408,6 +1534,7 @@ def roc_filter_analysis(
                 series is None
                 or series.empty
             ):
+
                 continue
 
             current_value = float(
@@ -1417,6 +1544,7 @@ def roc_filter_analysis(
             if pd.isna(
                 current_value
             ):
+
                 continue
 
             values[
@@ -1447,9 +1575,6 @@ def roc_filter_analysis(
 
             # -------------------------------------------------
             # 0선 상승 돌파
-            #
-            # 이전 <= 0
-            # 현재 > 0
             # -------------------------------------------------
 
             zero_cross = (
@@ -1463,12 +1588,15 @@ def roc_filter_analysis(
             ] = zero_cross
 
             if current_value >= 0:
+
                 positive_count += 1
 
         # -------------------------------------------------
-        # 활성 필터 전체 통과
+        # 여기서의 passed는 전체 계산 결과
         #
-        # 모든 활성 ROC가 0 이상
+        # 실제 필터 판정은
+        # all_active_roc_filters_pass()
+        # 에서 Y 설정만 따로 판정
         # -------------------------------------------------
 
         passed = (
@@ -1517,8 +1645,16 @@ def roc_filter_analysis(
 # =========================================================
 # 활성 ROC 필터 전체 조건
 #
-# ★ Y인 ROC만 조건으로 사용
-# ★ N은 완전히 무시
+# ★ 핵심
+#
+# 시간봉 Y
+# +
+# ROC Y
+#
+# 인 것만 실제 필터에 사용
+#
+# N인 ROC는 완전히 무시
+# N인 시간봉도 완전히 무시
 # =========================================================
 
 def all_active_roc_filters_pass(
@@ -1528,8 +1664,17 @@ def all_active_roc_filters_pass(
 
     enabled = get_enabled_all_filters()
 
+    # -----------------------------------------------------
+    # 활성 필터가 하나도 없으면 통과
+    # -----------------------------------------------------
+
     if not enabled:
+
         return True
+
+    # -----------------------------------------------------
+    # 활성 필터 하나씩 검사
+    # -----------------------------------------------------
 
     for timeframe, period in enabled:
 
@@ -1542,6 +1687,7 @@ def all_active_roc_filters_pass(
             info = filter_4h
 
         if not info:
+
             return False
 
         values = info.get(
@@ -1554,11 +1700,13 @@ def all_active_roc_filters_pass(
         )
 
         if value is None:
+
             return False
 
         try:
 
             if float(value) < 0:
+
                 return False
 
         except Exception:
@@ -1569,22 +1717,19 @@ def all_active_roc_filters_pass(
 
 
 # =========================================================
-# ★ 전체 활성 ROC 0선 상승 돌파
+# 전체 활성 ROC 0선 상승 돌파
 #
-# 핵심 변경
+# ★ 실제 활성 필터만 검사
 #
-# ROC5만 보는 것이 아님
+# 예:
 #
-# Y로 활성화된
-# 1H / 4H
-# ROC5/10/20/50/200
+# 1H = Y
+# 4H = N
 #
-# 중 하나라도
+# 이면 1H만 검사
 #
-# 이전 <= 0
-# 현재 > 0
-#
-# 이면 True
+# 1H ROC50 = N
+# 이면 ROC50은 돌파 신호에서도 제외
 # =========================================================
 
 def any_active_roc_zero_cross(
@@ -1595,6 +1740,7 @@ def any_active_roc_zero_cross(
     enabled = get_enabled_all_filters()
 
     if not enabled:
+
         return False
 
     for timeframe, period in enabled:
@@ -1608,6 +1754,7 @@ def any_active_roc_zero_cross(
             info = filter_4h
 
         if not info:
+
             continue
 
         zero_crosses = info.get(
@@ -1626,9 +1773,9 @@ def any_active_roc_zero_cross(
 
 
 # =========================================================
-# 전체 활성 ROC 0선 돌파 목록
+# 활성 ROC 0선 돌파 목록
 #
-# 화면/로그용
+# ★ 실제 활성 ROC만 표시
 # =========================================================
 
 def get_active_zero_cross_list(
@@ -1649,6 +1796,7 @@ def get_active_zero_cross_list(
         )
 
         if not info:
+
             continue
 
         zero_crosses = info.get(
@@ -1680,9 +1828,7 @@ def roc_filter_display(
 ):
 
     values = {}
-
     previous_values = {}
-
     zero_crosses = {}
 
     if x:
@@ -1767,12 +1913,10 @@ def roc_filter_display(
 # =========================================================
 # ROC5 분석
 #
-# ★ 원본 유지
+# ★ ROC5 자체의 로켓 표시
 #
-# ROC5 자체의 로켓 표시만 담당
-#
-# ★ 실제 신호 조건은 아래 get_signal_qualified()
-#   에서 전체 활성 ROC 0선 돌파로 판정
+# ★ 실제 신호 조건은
+#   전체 활성 ROC 0선 돌파
 # =========================================================
 
 def roc_analysis(
@@ -1821,6 +1965,7 @@ def roc_analysis(
         or df_current is None
         or df_current.empty
     ):
+
         return result
 
     try:
@@ -1839,6 +1984,7 @@ def roc_analysis(
             confirmed is None
             or current is None
         ):
+
             return result
 
         confirmed_value = float(
@@ -1857,6 +2003,7 @@ def roc_analysis(
                 current_value
             )
         ):
+
             return result
 
         # ---------------------------------------------
@@ -1925,9 +2072,6 @@ def roc_analysis(
 
         # ---------------------------------------------
         # 카운터
-        #
-        # 돌파 현재봉 = 0
-        # 다음봉 = 1
         # ---------------------------------------------
 
         breakout_count = 0
@@ -1946,7 +2090,7 @@ def roc_analysis(
                 )
 
         # ---------------------------------------------
-        # 최종 로켓
+        # 최종 ROC5 로켓
         # ---------------------------------------------
 
         if (
@@ -2410,14 +2554,15 @@ def empty_analysis():
 # =========================================================
 # ROC 필터 HTML
 #
-# ★ 화면 표시
+# ★ Y/N 관계없이 전체 표시
 #
 # 예:
 #
-# 1H   5🟢  10🟢  20🟢  50🔴  200🔴
-# 4H   5🟢  10🔴  20🟢  50🟢  200🔴
+# 1H   5🟢 10🟢 20🟢 50🔴 200🔴
+# 4H   5🟢 10🔴 20🟢 50🟢 200🔴
 #
-# Y/N 관계없이 전부 표시
+# ★ N인 ROC도 상태 표시
+# ★ 단지 글자만 흐리게 표시
 # =========================================================
 
 def roc_filter_html(
@@ -2437,6 +2582,11 @@ def roc_filter_html(
         )
 
     parts = []
+
+    # -----------------------------------------------------
+    # 중요:
+    # 필터 Y/N과 관계없이 전체 ROC 표시
+    # -----------------------------------------------------
 
     for period in ROC_FILTER_PERIODS:
 
@@ -2540,19 +2690,13 @@ def filter_html(
 # =========================================================
 # 신호 자격
 #
-# ★ 핵심 변경
+# ★ 실제 활성 ROC만 필터
 #
-# 기존:
-#   ROC5 0선 돌파
+# 조건:
 #
-# 변경:
-#   Y로 설정된 1H/4H 전체 ROC 중
-#   하나라도 0선 상승 돌파
-#
-# 단,
-#   활성 ROC 전체가 0 이상
-#   당일 등락률 >= 0
-#   조건도 유지
+# 1. 활성 ROC 전체 >= 0
+# 2. 활성 ROC 중 하나라도 0선 상승 돌파
+# 3. 당일 등락률 >= 0
 # =========================================================
 
 def get_signal_qualified(
@@ -2563,7 +2707,7 @@ def get_signal_qualified(
 ):
 
     # -----------------------------------------------------
-    # Y로 설정된 ROC만 필터 조건에 사용
+    # 활성 ROC 필터 전체 통과
     # -----------------------------------------------------
 
     filter_pass = (
@@ -2574,7 +2718,7 @@ def get_signal_qualified(
     )
 
     # -----------------------------------------------------
-    # 전체 활성 ROC 0선 상승 돌파
+    # 활성 ROC 중 하나라도 0선 상승 돌파
     # -----------------------------------------------------
 
     zero_cross = (
@@ -2601,12 +2745,6 @@ def get_signal_qualified(
 
     # -----------------------------------------------------
     # 최종 상승 신호
-    #
-    # 활성 ROC 전체 >= 0
-    # +
-    # 활성 ROC 중 하나라도 0선 상승 돌파
-    # +
-    # 당일 >= 0
     # -----------------------------------------------------
 
     breakout = (
@@ -2650,6 +2788,12 @@ def get_signal_qualified(
 
 # =========================================================
 # 업비트 분석
+#
+# ★ 1H / 4H 모두 계산
+#
+# 이유:
+# 4H 필터가 N이어도
+# 대시보드에는 4H 상태를 계속 표시해야 함
 # =========================================================
 
 def analyze(
@@ -2658,9 +2802,7 @@ def analyze(
 ):
 
     # =====================================================
-    # 중요
-    #
-    # ★ 1H / 4H 전체 ROC 계산
+    # 전체 ROC 계산
     #
     # Y/N 관계없이
     # 5/10/20/50/200 전부 계산
@@ -2670,12 +2812,17 @@ def analyze(
         get_all_periods()
     )
 
+    # -----------------------------------------------------
+    # ★ 항상 1H 계산
+    # ★ 항상 4H 계산
+    #
+    # 필터 Y/N과 관계없이 화면 표시를 위해 필요
+    # -----------------------------------------------------
+
     need_1h = True
     need_4h = True
 
-    need_roc5 = (
-        USE_1H_ROC5 == "Y"
-    )
+    need_roc5 = True
 
     df1h = None
     df4h = None
@@ -2721,7 +2868,7 @@ def analyze(
     # -----------------------------------------------------
     # ROC5
     #
-    # ★ 화면 ROC5 로켓 유지
+    # ★ ROC5 로켓 표시 유지
     # -----------------------------------------------------
 
     if need_roc5:
@@ -2761,7 +2908,7 @@ def analyze(
         df_roc_current = None
 
     # -----------------------------------------------------
-    # 1H ROC 필터
+    # 1H ROC
     #
     # ★ 전체 5/10/20/50/200 계산
     # -----------------------------------------------------
@@ -2777,7 +2924,7 @@ def analyze(
     )
 
     # -----------------------------------------------------
-    # 4H ROC 필터
+    # 4H ROC
     #
     # ★ 전체 5/10/20/50/200 계산
     # -----------------------------------------------------
@@ -2851,6 +2998,10 @@ def analyze(
             market
         )
     )
+
+    # -----------------------------------------------------
+    # 최종 신호
+    # -----------------------------------------------------
 
     q = get_signal_qualified(
         r1,
@@ -3548,6 +3699,7 @@ def history_okx(
             df is None
             or df.empty
         ):
+
             break
 
         all_df = (
@@ -3616,6 +3768,7 @@ def get_okx_tickers():
             if not inst.endswith(
                 "-USDT-SWAP"
             ):
+
                 continue
 
             try:
@@ -3776,6 +3929,7 @@ def update_okx(
             df is None
             or df.empty
         ):
+
             continue
 
         try:
@@ -4346,11 +4500,6 @@ def signal_html(
         "breakout_qualified",
         False
     ):
-
-        # -------------------------------------------------
-        # 전체 활성 ROC 중
-        # 0선 상승 돌파한 ROC
-        # -------------------------------------------------
 
         cross_list = row.get(
             "zero_cross_list",
@@ -5121,7 +5270,7 @@ td:nth-child(1){
     text-align:center!important;
     line-height:8px;
     white-space:normal;
-    overflow:hidden;
+    overflow:visible;
 }
 
 .filter-detail{
@@ -5132,7 +5281,7 @@ td:nth-child(1){
     gap:1px;
     width:100%;
     white-space:nowrap;
-    overflow:hidden;
+    overflow:visible;
 }
 
 .filter-line{
@@ -5140,16 +5289,16 @@ td:nth-child(1){
     align-items:center;
     justify-content:flex-start;
     width:100%;
-    white-space:normal;
-    overflow:hidden;
+    white-space:nowrap;
+    overflow:visible;
 }
 
 .filter-timeframe{
     display:inline-block;
     flex:none;
-    width:14px;
+    width:12px;
     color:#d7dce1;
-    font-size:4.8px;
+    font-size:4.5px;
     font-weight:900;
     text-align:left;
 }
@@ -5158,17 +5307,18 @@ td:nth-child(1){
     display:flex;
     align-items:center;
     justify-content:flex-start;
-    gap:4px;
+    gap:2px;
     width:100%;
     line-height:8px;
     white-space:nowrap;
-    overflow:hidden;
+    overflow:visible;
 }
 
 .roc-item{
     display:inline-flex;
     align-items:center;
     justify-content:center;
+    flex:none;
     white-space:nowrap;
     font-size:4.5px;
     font-weight:800;
@@ -5430,13 +5580,14 @@ td:nth-child(1){
     }
 
     .filter-timeframe{
-        width:12px;
+        width:11px;
         font-size:4.2px;
     }
 
     .roc-filter-all{
-        gap:3px;
+        gap:1px;
         line-height:7px;
+        overflow:visible;
     }
 
     .roc-item{
@@ -5575,8 +5726,9 @@ td:nth-child(1){
     }
 
     .roc-filter-all{
-        gap:5px;
+        gap:3px;
         line-height:10px;
+        overflow:visible;
     }
 
     .roc-item{
@@ -5635,6 +5787,22 @@ td:nth-child(1){
 )
 def dashboard():
 
+    # -----------------------------------------------------
+    # 실제 필터 시간봉 상태 표시
+    # -----------------------------------------------------
+
+    status_1h_class = (
+        "y"
+        if USE_1H_ROC_FILTER == "Y"
+        else "n"
+    )
+
+    status_4h_class = (
+        "y"
+        if USE_4H_ROC_FILTER == "Y"
+        else "n"
+    )
+
     status = f"""
 
     <div class="status">
@@ -5655,22 +5823,30 @@ def dashboard():
 
         <span>
             1H :
-            <b class="y">
-                {get_enabled_filter_text("1H")}
+            <b class="{status_1h_class}">
+                {
+                    get_enabled_filter_text("1H")
+                    if USE_1H_ROC_FILTER == "Y"
+                    else "N"
+                }
             </b>
         </span>
 
         <span>
             4H :
-            <b class="y">
-                {get_enabled_filter_text("4H")}
+            <b class="{status_4h_class}">
+                {
+                    get_enabled_filter_text("4H")
+                    if USE_4H_ROC_FILTER == "Y"
+                    else "N"
+                }
             </b>
         </span>
 
         <span>
             0선 :
             <b class="y">
-                전체
+                전체 활성
             </b>
         </span>
 
@@ -5825,6 +6001,20 @@ def startup():
     )
 
     log.info(
+        f"1H 필터 사용 = "
+        f"{USE_1H_ROC_FILTER}"
+    )
+
+    log.info(
+        f"4H 필터 사용 = "
+        f"{USE_4H_ROC_FILTER}"
+    )
+
+    log.info(
+        "----------------------------------------"
+    )
+
+    log.info(
         f"1H ROC5 = {USE_1H_ROC5}"
     )
 
@@ -5873,17 +6063,23 @@ def startup():
     )
 
     log.info(
-        f"활성 필터: "
+        f"실제 활성 필터: "
         f"{get_filter_setting_text()}"
     )
 
     log.info(
-        "활성화된 Y ROC 필터만 "
-        "조건 판정에 사용"
+        "Y 시간봉 + Y ROC만 "
+        "실제 필터 조건에 사용"
     )
 
     log.info(
-        "N ROC 필터도 화면에는 전체 표시"
+        "N ROC도 대시보드에는 "
+        "항상 전체 상태 표시"
+    )
+
+    log.info(
+        "1H/4H 시간봉 N이어도 "
+        "대시보드 ROC 상태는 계속 계산"
     )
 
     log.info(
@@ -5899,7 +6095,7 @@ def startup():
 
     log.info(
         "활성 ROC 전체 >= 0 "
-        "+ 전체 활성 ROC 0선 상승 돌파 "
+        "+ 활성 ROC 중 하나 0선 상승 돌파 "
         "+ 당일 >= 0% → 🚀"
     )
 
@@ -5929,14 +6125,18 @@ def startup():
         "========================================"
     )
 
+    # -----------------------------------------------------
     # 최초 업데이트
+    # -----------------------------------------------------
 
     threading.Thread(
         target=update_dashboard,
         daemon=True
     ).start()
 
+    # -----------------------------------------------------
     # 스케줄러
+    # -----------------------------------------------------
 
     schedule.every(
         UPDATE_MINUTES
