@@ -18,7 +18,10 @@ from zoneinfo import ZoneInfo
 # 기본 설정
 # =========================================================
 
-warnings.filterwarnings("ignore", category=FutureWarning)
+warnings.filterwarnings(
+    "ignore",
+    category=FutureWarning
+)
 
 app = FastAPI()
 
@@ -28,6 +31,7 @@ logging.basicConfig(
 )
 
 log = logging.getLogger("trading")
+
 KST = ZoneInfo("Asia/Seoul")
 
 
@@ -36,17 +40,23 @@ KST = ZoneInfo("Asia/Seoul")
 # =========================================================
 
 VOLUME_HOURS = 24
+
 TOP_N = 20
+
 UPDATE_MINUTES = 1
 
 HISTORY_CHUNK = 200
+
 MAX_HISTORY_CHUNKS = 10
 
 USE_UPBIT = "Y"
+
 USE_OKX = "N"
 
 REQUEST_INTERVAL = 0.08
+
 RATE_LIMIT_WAIT = 3
+
 MAX_RETRIES = 10
 
 
@@ -55,27 +65,44 @@ MAX_RETRIES = 10
 # =========================================================
 
 USE_1H_ROC_FILTER = "Y"
+
 USE_4H_ROC_FILTER = "N"
 
 USE_1H_ROC5 = "Y"
+
 USE_1H_ROC10 = "Y"
+
 USE_1H_ROC20 = "Y"
+
 USE_1H_ROC50 = "Y"
+
 USE_1H_ROC200 = "Y"
 
 USE_4H_ROC5 = "N"
+
 USE_4H_ROC10 = "N"
+
 USE_4H_ROC20 = "N"
+
 USE_4H_ROC50 = "N"
+
 USE_4H_ROC200 = "N"
 
 ROC_FILTER_TIMEFRAME = 60
+
 ROC_FILTER_HIGH_TIMEFRAME = 240
 
 ROC_TIMEFRAME = 60
+
 ROC_PERIOD = 5
 
-ROC_FILTER_PERIODS = [5, 10, 20, 50, 200]
+ROC_FILTER_PERIODS = [
+    5,
+    10,
+    20,
+    50,
+    200
+]
 
 
 # =========================================================
@@ -83,7 +110,9 @@ ROC_FILTER_PERIODS = [5, 10, 20, 50, 200]
 # =========================================================
 
 ORDERBOOK_RANGE = 0.01
+
 ORDERBOOK_COUNT = 30
+
 ORDERBOOK_DOMINANCE_GAP = 5.0
 
 
@@ -92,12 +121,24 @@ ORDERBOOK_DOMINANCE_GAP = 5.0
 # =========================================================
 
 SUPPORTED_UPBIT_TIMEFRAMES = {
-    5, 15, 30, 60, 240
+    5,
+    15,
+    30,
+    60,
+    240
 }
 
 SUPPORTED_OKX_TIMEFRAMES = {
-    5, 15, 30, 60, 120, 240,
-    360, 480, 720, 1440
+    5,
+    15,
+    30,
+    60,
+    120,
+    240,
+    360,
+    480,
+    720,
+    1440
 }
 
 
@@ -106,15 +147,19 @@ SUPPORTED_OKX_TIMEFRAMES = {
 # =========================================================
 
 latest_upbit_data = []
+
 latest_okx_data = []
 
 latest_upbit_update_time = "-"
+
 latest_okx_update_time = "-"
 
 latest_upbit_markets = []
+
 latest_upbit_orderbook = {}
 
 request_lock = threading.Lock()
+
 update_lock = threading.Lock()
 
 last_request_time = 0
@@ -122,7 +167,9 @@ last_request_time = 0
 latest_usdt_krw_internal = 0
 
 okx_ticker_cache = {}
+
 okx_1h_cache = {}
+
 okx_1h_cache_time = "-"
 
 roc_signal_state = {}
@@ -135,6 +182,7 @@ roc_signal_state = {}
 def roc_settings():
 
     return {
+
         5: {
             "1H": USE_1H_ROC5,
             "4H": USE_4H_ROC5
@@ -167,11 +215,13 @@ def get_enabled_periods(timeframe):
     if timeframe == "1H":
 
         if USE_1H_ROC_FILTER != "Y":
+
             return []
 
     elif timeframe == "4H":
 
         if USE_4H_ROC_FILTER != "Y":
+
             return []
 
     else:
@@ -195,6 +245,7 @@ def get_all_periods():
 def get_enabled_all_filters():
 
     result = []
+
     settings = roc_settings()
 
     if USE_1H_ROC_FILTER == "Y":
@@ -222,9 +273,12 @@ def get_enabled_all_filters():
 
 def get_enabled_filter_text(timeframe):
 
-    periods = get_enabled_periods(timeframe)
+    periods = get_enabled_periods(
+        timeframe
+    )
 
     if not periods:
+
         return "-"
 
     return "/".join(
@@ -359,6 +413,7 @@ def get_current_candle_start(minutes):
 def normalize_datetime(value):
 
     if value is None:
+
         return None
 
     try:
@@ -366,7 +421,9 @@ def normalize_datetime(value):
         return (
             pd.Timestamp(value)
             .to_pydatetime()
-            .replace(tzinfo=None)
+            .replace(
+                tzinfo=None
+            )
         )
 
     except Exception:
@@ -392,6 +449,7 @@ def candle_distance(
         start_time is None
         or end_time is None
     ):
+
         return 0
 
     try:
@@ -454,6 +512,7 @@ def get_last_completed_candle_time(
         ]
 
         if completed.empty:
+
             return None
 
         return completed[
@@ -476,7 +535,9 @@ def get_last_completed_candle_time(
 def validate_timeframe():
 
     global ROC_FILTER_TIMEFRAME
+
     global ROC_FILTER_HIGH_TIMEFRAME
+
     global ROC_TIMEFRAME
 
     ROC_FILTER_TIMEFRAME = int(
@@ -497,7 +558,8 @@ def validate_timeframe():
     ):
 
         raise ValueError(
-            "USE_1H_ROC_FILTER는 Y/N만 가능합니다."
+            "USE_1H_ROC_FILTER는 "
+            "Y/N만 가능합니다."
         )
 
     if USE_4H_ROC_FILTER not in (
@@ -506,7 +568,8 @@ def validate_timeframe():
     ):
 
         raise ValueError(
-            "USE_4H_ROC_FILTER는 Y/N만 가능합니다."
+            "USE_4H_ROC_FILTER는 "
+            "Y/N만 가능합니다."
         )
 
     if ROC_FILTER_TIMEFRAME not in (
@@ -677,7 +740,9 @@ def retry(
                 f"{wait}초"
             )
 
-            time.sleep(wait)
+            time.sleep(
+                wait
+            )
 
         except Exception as e:
 
@@ -718,6 +783,7 @@ def get_upbit_markets():
     )
 
     if response is None:
+
         return []
 
     try:
@@ -736,6 +802,7 @@ def get_upbit_markets():
         ]
 
         if not krw_markets:
+
             return []
 
         ticker_result = []
@@ -761,6 +828,7 @@ def get_upbit_markets():
             )
 
             if ticker_response is None:
+
                 continue
 
             try:
@@ -817,6 +885,7 @@ def get_upbit_markets():
             ):
 
                 result.append({
+
                     "market":
                         market,
 
@@ -825,6 +894,7 @@ def get_upbit_markets():
 
                     "current_price":
                         price
+
                 })
 
         latest_upbit_markets = [
@@ -850,6 +920,7 @@ def get_upbit_markets():
 def get_upbit_orderbooks(markets):
 
     if not markets:
+
         return {}
 
     result = {}
@@ -878,6 +949,7 @@ def get_upbit_orderbooks(markets):
         )
 
         if response is None:
+
             continue
 
         try:
@@ -916,20 +988,43 @@ def calculate_orderbook_amount(
 ):
 
     result = {
-        "bid_amount": 0.0,
-        "ask_amount": 0.0,
-        "total_amount": 0.0,
-        "bid_ratio": 0.0,
-        "ask_ratio": 0.0,
-        "bid_count": 0,
-        "ask_count": 0,
-        "lower_price": None,
-        "upper_price": None,
-        "dominance": "balanced",
-        "dominance_text": "균형"
+
+        "bid_amount":
+            0.0,
+
+        "ask_amount":
+            0.0,
+
+        "total_amount":
+            0.0,
+
+        "bid_ratio":
+            0.0,
+
+        "ask_ratio":
+            0.0,
+
+        "bid_count":
+            0,
+
+        "ask_count":
+            0,
+
+        "lower_price":
+            None,
+
+        "upper_price":
+            None,
+
+        "dominance":
+            "balanced",
+
+        "dominance_text":
+            "균형"
     }
 
     if not orderbook:
+
         return result
 
     try:
@@ -943,6 +1038,7 @@ def calculate_orderbook_amount(
         return result
 
     if current_price <= 0:
+
         return result
 
     lower_price = (
@@ -980,9 +1076,11 @@ def calculate_orderbook_amount(
         return result
 
     bid_amount = 0.0
+
     ask_amount = 0.0
 
     bid_count = 0
+
     ask_count = 0
 
     for unit in units:
@@ -1071,6 +1169,7 @@ def calculate_orderbook_amount(
     else:
 
         bid_ratio = 0
+
         ask_ratio = 0
 
     difference = (
@@ -1085,6 +1184,7 @@ def calculate_orderbook_amount(
     ):
 
         dominance = "bid"
+
         dominance_text = "매수 우세"
 
     elif (
@@ -1094,11 +1194,13 @@ def calculate_orderbook_amount(
     ):
 
         dominance = "ask"
+
         dominance_text = "매도 우세"
 
     else:
 
         dominance = "balanced"
+
         dominance_text = "균형"
 
     result.update({
@@ -1149,14 +1251,18 @@ def get_upbit_candle(
     unit = int(unit)
 
     params = {
-        "market": market,
-        "count": min(
-            max(
-                int(count),
-                1
-            ),
-            200
-        )
+
+        "market":
+            market,
+
+        "count":
+            min(
+                max(
+                    int(count),
+                    1
+                ),
+                200
+            )
     }
 
     if to:
@@ -1171,6 +1277,7 @@ def get_upbit_candle(
     )
 
     if response is None:
+
         return None
 
     try:
@@ -1180,6 +1287,7 @@ def get_upbit_candle(
         )
 
         if df.empty:
+
             return None
 
         df["o"] = pd.to_numeric(
@@ -1227,6 +1335,7 @@ def get_upbit_candle(
         )
 
         if df.empty:
+
             return None
 
         if not include_current:
@@ -1242,11 +1351,14 @@ def get_upbit_candle(
             ]
 
         if df.empty:
+
             return None
 
         return (
             df
-            .sort_values("datetime")
+            .sort_values(
+                "datetime"
+            )
             .drop_duplicates(
                 "datetime"
             )
@@ -1272,6 +1384,7 @@ def history_upbit(
 ):
 
     all_df = None
+
     to = None
 
     for _ in range(
@@ -1368,6 +1481,7 @@ def get_upbit_current_roc_data(
         )
 
         if price <= 0:
+
             return df
 
         mask = (
@@ -1390,6 +1504,7 @@ def get_upbit_current_roc_data(
             )
 
             row["datetime"] = start
+
             row["c"] = price
 
             df = pd.concat(
@@ -1517,7 +1632,9 @@ def roc_filter_analysis(
     try:
 
         values = {}
+
         previous_values = {}
+
         zero_crosses = {}
 
         positive_count = 0
@@ -1630,6 +1747,7 @@ def roc_filter_display(
 ):
 
     if result is None:
+
         result = {}
 
     result = dict(result)
@@ -1663,9 +1781,11 @@ def get_all_active_roc_status(
         return False, False
 
     current_ok = True
+
     previous_ok = True
 
     current_count = 0
+
     previous_count = 0
 
     for timeframe, period in enabled:
@@ -1691,11 +1811,15 @@ def get_all_active_roc_status(
         )
 
         current_value = (
-            values.get(period)
+            values.get(
+                period
+            )
         )
 
         previous_value = (
-            previous.get(period)
+            previous.get(
+                period
+            )
         )
 
         if current_value is None:
@@ -1874,6 +1998,7 @@ def roc_analysis(
         )
 
         roc5_value = None
+
         roc5_previous = None
 
         if filter_1h:
@@ -1950,6 +2075,7 @@ def daily_change_upbit(
     )
 
     if response is None:
+
         return None
 
     try:
@@ -1957,6 +2083,7 @@ def daily_change_upbit(
         data = response.json()
 
         if len(data) < 2:
+
             return None
 
         current = float(
@@ -1968,6 +2095,7 @@ def daily_change_upbit(
         )
 
         if previous == 0:
+
             return None
 
         return [
@@ -1994,6 +2122,7 @@ def get_change_value(x):
     try:
 
         if x is None:
+
             return None
 
         if isinstance(
@@ -2002,6 +2131,7 @@ def get_change_value(x):
         ):
 
             if not x:
+
                 return None
 
             return float(
@@ -2017,7 +2147,9 @@ def get_change_value(x):
 
 def format_change(x):
 
-    x = get_change_value(x)
+    x = get_change_value(
+        x
+    )
 
     if x is None:
 
@@ -2222,6 +2354,7 @@ def roc_filter_html(
     settings = roc_settings()
 
     if not r:
+
         r = {}
 
     values = r.get(
@@ -2240,6 +2373,7 @@ def roc_filter_html(
         if value is None:
 
             value_class = "roc-zero"
+
             icon = "⚪"
 
         else:
@@ -2253,21 +2387,25 @@ def roc_filter_html(
                 if value > 0:
 
                     value_class = "roc-up"
+
                     icon = "🟢"
 
                 elif value < 0:
 
                     value_class = "roc-down"
+
                     icon = "🔴"
 
                 else:
 
                     value_class = "roc-zero"
+
                     icon = "⚪"
 
             except Exception:
 
                 value_class = "roc-zero"
+
                 icon = "⚪"
 
         setting = settings[
@@ -2347,6 +2485,7 @@ def find_latest_signal_start(
     )
 
     if not enabled:
+
         return None
 
     if (
@@ -2385,6 +2524,7 @@ def find_latest_signal_start(
             )
 
             if series is None:
+
                 continue
 
             for idx in range(
@@ -2425,6 +2565,7 @@ def find_latest_signal_start(
             )
 
             if series is None:
+
                 continue
 
             for idx in range(
@@ -2463,6 +2604,7 @@ def find_latest_signal_start(
         ]
 
         if not candidates:
+
             return None
 
         for i in range(
@@ -2492,8 +2634,7 @@ def find_latest_signal_start(
 
                     candidates_4h = [
                         x
-                        for x
-                        in df4h[
+                        for x in df4h[
                             "datetime"
                         ].tolist()
                         if x <= candle_time
@@ -2502,6 +2643,7 @@ def find_latest_signal_start(
                     if not candidates_4h:
 
                         current_ok = False
+
                         break
 
                     value = states_4h.get(
@@ -2517,9 +2659,11 @@ def find_latest_signal_start(
                 ):
 
                     current_ok = False
+
                     break
 
             if not current_ok:
+
                 continue
 
             if i == 0:
@@ -2561,6 +2705,7 @@ def find_latest_signal_start(
                         if not previous_4h:
 
                             previous_ok = False
+
                             break
 
                         previous_value = (
@@ -2578,6 +2723,7 @@ def find_latest_signal_start(
                     ):
 
                         previous_ok = False
+
                         break
 
             if not previous_ok:
@@ -2642,12 +2788,15 @@ def get_signal_qualified(
     )
 
     roc_complete = True
+
     roc_all_positive = True
+
     roc_has_negative = False
 
     if not enabled:
 
         roc_complete = False
+
         roc_all_positive = False
 
     else:
@@ -2663,6 +2812,7 @@ def get_signal_qualified(
             if not info:
 
                 roc_complete = False
+
                 continue
 
             value = (
@@ -2671,12 +2821,15 @@ def get_signal_qualified(
                     "roc_values",
                     {}
                 )
-                .get(period)
+                .get(
+                    period
+                )
             )
 
             if value is None:
 
                 roc_complete = False
+
                 continue
 
             try:
@@ -2688,16 +2841,19 @@ def get_signal_qualified(
                 if pd.isna(value):
 
                     roc_complete = False
+
                     continue
 
             except Exception:
 
                 roc_complete = False
+
                 continue
 
             if value < 0:
 
                 roc_has_negative = True
+
                 roc_all_positive = False
 
     current_all = (
@@ -3383,6 +3539,7 @@ def make_row(
 def is_breakout(row):
 
     if not row:
+
         return False
 
     return bool(
@@ -3429,6 +3586,7 @@ def top_daily_breadth(data):
     }
 
     if not data:
+
         return result
 
     for row in data:
@@ -3440,6 +3598,7 @@ def top_daily_breadth(data):
         try:
 
             if value is None:
+
                 continue
 
             value = float(
@@ -3451,6 +3610,7 @@ def top_daily_breadth(data):
             continue
 
         if pd.isna(value):
+
             continue
 
         result[
@@ -3480,6 +3640,7 @@ def top_daily_breadth(data):
     ]
 
     if total <= 0:
+
         return result
 
     result[
@@ -3496,6 +3657,7 @@ def top_daily_breadth(data):
     ):
 
         result["icon"] = "☀️"
+
         result["state"] = "up"
 
     elif (
@@ -3504,6 +3666,7 @@ def top_daily_breadth(data):
     ):
 
         result["icon"] = "🌧️"
+
         result["state"] = "down"
 
     return result
@@ -3516,7 +3679,9 @@ def top_daily_breadth(data):
 def update_upbit():
 
     global latest_upbit_data
+
     global latest_upbit_update_time
+
     global latest_upbit_orderbook
 
     log.info(
@@ -3670,6 +3835,7 @@ def get_usdt_krw_internal():
     )
 
     if response is None:
+
         return None
 
     try:
@@ -3677,6 +3843,7 @@ def get_usdt_krw_internal():
         data = response.json()
 
         if not data:
+
             return None
 
         price = float(
@@ -3734,6 +3901,7 @@ def get_okx_ohlcv(
     )
 
     if response is None:
+
         return None
 
     try:
@@ -3747,6 +3915,7 @@ def get_okx_ohlcv(
         )
 
         if not data:
+
             return None
 
         df = pd.DataFrame(
@@ -3820,6 +3989,7 @@ def get_okx_ohlcv(
                 ]
 
         if df.empty:
+
             return None
 
         return (
@@ -3850,6 +4020,7 @@ def history_okx(
 ):
 
     all_df = None
+
     before = None
 
     for _ in range(
@@ -3921,6 +4092,7 @@ def get_okx_tickers():
     )
 
     if response is None:
+
         return {}
 
     try:
@@ -3962,6 +4134,7 @@ def get_okx_tickers():
             if last > 0:
 
                 result[inst] = {
+
                     "last":
                         last
                 }
@@ -3990,6 +4163,7 @@ def get_okx_symbols():
     )
 
     if response is None:
+
         return []
 
     try:
@@ -4031,6 +4205,7 @@ def get_okx_cached_price(
         )
 
         if not item:
+
             return None
 
         price = float(
@@ -4056,6 +4231,7 @@ def update_okx(
 ):
 
     global latest_okx_data
+
     global latest_okx_update_time
 
     if (
@@ -4070,6 +4246,7 @@ def update_okx(
     )
 
     if not tickers:
+
         return False
 
     symbols = (
@@ -4077,6 +4254,7 @@ def update_okx(
     )
 
     if not symbols:
+
         return False
 
     symbols = [
@@ -4178,7 +4356,9 @@ def update_okx(
 def update_dashboard():
 
     global latest_upbit_data
+
     global latest_okx_data
+
     global latest_usdt_krw_internal
 
     if not update_lock.acquire(
@@ -4253,6 +4433,7 @@ def format_market_price(
 ):
 
     if price is None:
+
         return "-"
 
     try:
@@ -4359,9 +4540,13 @@ def market_summary_html():
     if btc is None:
 
         btc_price = "-"
+
         btc_change = "-"
+
         btc_filter = "⚪"
+
         btc_daily = "⚪"
+
         btc_daily_value = "-"
 
     else:
@@ -4600,7 +4785,19 @@ def roc_html(
 
 
 # =========================================================
-# 신호 HTML
+# ★ 신호 HTML
+#
+# 중요:
+#
+# 이 함수는 TOP 리스트와 상승 신호에서
+# 동일하게 사용하지만,
+#
+# "상승 신호"에서만 0/1 제한을 걸면
+# TOP 리스트의 전체 COUNT가 사라지므로
+# 여기서는 전체 COUNT를 그대로 표시한다.
+#
+# 상승 신호에서 0/1 제한은
+# focus_section()에서 필터링한다.
 # =========================================================
 
 def signal_html(
@@ -4620,12 +4817,25 @@ def signal_html(
         False
     ):
 
-        count = int(
-            row.get(
-                "signal_count",
-                0
+        try:
+
+            count = int(
+                row.get(
+                    "signal_count",
+                    0
+                )
             )
-        )
+
+        except Exception:
+
+            count = 0
+
+        # =================================================
+        # TOP 리스트
+        #
+        # 0, 1, 2, 3, 4, 5...
+        # 카운팅된 모든 숫자를 그대로 표시
+        # =================================================
 
         return (
             '<span class="signal-active">'
@@ -4804,7 +5014,14 @@ def orderbook_html(
 
 
 # =========================================================
-# 행 HTML
+# ★ 행 HTML
+#
+# 여기서도 전체 COUNT를 그대로 표시한다.
+#
+# 상승 신호 영역도 rows_html() 자체에서는
+# COUNT를 자르지 않는다.
+#
+# focus_section()에서 0 / 1만 골라서 보여준다.
 # =========================================================
 
 def rows_html(
@@ -4891,6 +5108,20 @@ def rows_html(
                 )
             )
         )
+
+        # =================================================
+        # ★ 중요
+        #
+        # TOP 리스트:
+        # 🚀0
+        # 🚀1
+        # 🚀2
+        # 🚀3
+        # 🚀4
+        # ...
+        #
+        # 전부 표시
+        # =================================================
 
         signal_content = (
             signal_html(
@@ -4991,10 +5222,15 @@ def table_html(
                 <tr>
 
                     <th>#</th>
+
                     <th>코인</th>
+
                     <th>거래대금</th>
+
                     <th>ROC 필터</th>
+
                     <th>ROC</th>
+
                     <th>신호</th>
 
                 </tr>
@@ -5012,7 +5248,15 @@ def table_html(
 
 
 # =========================================================
-# 섹션
+# ★ 상승 신호
+#
+# 여기에서만 COUNT 0 / 1을 표시하도록 필터링
+#
+# 2 이상인 코인은 상승 신호 영역에서는 숨김.
+#
+# 단,
+# TOP 리스트의 latest_upbit_data에는 그대로 존재하기 때문에
+# TOP 리스트에서는 🚀2, 🚀3, 🚀4... 모두 표시됨.
 # =========================================================
 
 def focus_section(
@@ -5022,7 +5266,23 @@ def focus_section(
     rows = [
         x
         for x in data
+
         if is_long_combined(x)
+
+        and x.get(
+            "signal_active",
+            False
+        )
+
+        and int(
+            x.get(
+                "signal_count",
+                0
+            )
+        ) in (
+            0,
+            1
+        )
     ]
 
     return f"""
@@ -5045,6 +5305,16 @@ def focus_section(
     {table_html(rows)}
     """
 
+
+# =========================================================
+# ★ TOP 리스트
+#
+# latest_upbit_data 전체를 그대로 전달
+#
+# 따라서 signal_count가
+# 0, 1, 2, 3, 4, 5...
+# 모두 표시됨.
+# =========================================================
 
 def section(
     data,
@@ -5090,22 +5360,29 @@ body{
 body{
     background:#0b0e12;
     color:#e5e9ed;
+
     font-family:
         -apple-system,
         BlinkMacSystemFont,
         "Segoe UI",
         Arial,
         sans-serif;
+
     font-size:8px;
+
     padding:3px 3px 10px;
 }
 
 h1{
     margin:2px 3px 5px;
+
     color:#dfe4e8;
+
     font-size:12px;
     line-height:15px;
+
     font-weight:900;
+
     letter-spacing:.2px;
 }
 
@@ -5116,11 +5393,15 @@ h1{
 
 .market-title,
 .section-title{
+
     display:flex;
+
     align-items:center;
+
     gap:6px;
 
     width:100%;
+
     min-height:21px;
 
     padding:4px 6px;
@@ -5130,11 +5411,13 @@ h1{
     background:#14181d;
 
     border:1px solid #252b32;
+
     border-left:3px solid #59616a;
 
     border-radius:5px;
 
     white-space:nowrap;
+
     overflow:hidden;
 
     box-shadow:
@@ -5151,11 +5434,13 @@ h1{
 
 .market-title-main,
 .section-title-main{
+
     flex:none;
 
     color:#e7ebef;
 
     font-size:8px;
+
     line-height:10px;
 
     font-weight:900;
@@ -5163,17 +5448,21 @@ h1{
 
 .market-title-sub,
 .section-title-sub{
+
     min-width:0;
 
     color:#737c86;
 
     font-size:5.5px;
+
     line-height:8px;
 
     font-weight:700;
 
     white-space:nowrap;
+
     overflow:hidden;
+
     text-overflow:ellipsis;
 }
 
@@ -5187,14 +5476,17 @@ h1{
    ========================================================= */
 
 .market-summary{
+
     width:100%;
 
     margin:2px 0 4px;
+
     padding:4px;
 
     background:#0f1318;
 
     border-top:1px solid #242a31;
+
     border-bottom:1px solid #242a31;
 
     border-radius:4px;
@@ -5203,19 +5495,24 @@ h1{
 }
 
 .btc-top{
+
     display:flex;
+
     align-items:center;
 
     width:100%;
+
     min-height:19px;
 
     gap:5px;
 
     white-space:nowrap;
+
     overflow:hidden;
 }
 
 .btc-name{
+
     flex:none;
 
     width:38px;
@@ -5223,29 +5520,37 @@ h1{
     color:#dce1e5;
 
     font-size:6.5px;
+
     font-weight:900;
 }
 
 .btc-price{
+
     flex:1;
+
     min-width:0;
 
     color:#e5e9ed;
 
     font-size:6px;
+
     font-weight:800;
 
     white-space:nowrap;
+
     overflow:hidden;
+
     text-overflow:ellipsis;
 }
 
 .btc-change{
+
     flex:none;
 
     width:66px;
 
     font-size:9px;
+
     font-weight:900;
 
     text-align:right;
@@ -5254,6 +5559,7 @@ h1{
 }
 
 .btc-bottom{
+
     display:grid;
 
     grid-template-columns:
@@ -5271,7 +5577,9 @@ h1{
 }
 
 .btc-info-box{
+
     min-width:0;
+
     min-height:68px;
 
     padding:5px;
@@ -5279,57 +5587,70 @@ h1{
     background:#151a20;
 
     border:1px solid #292f36;
+
     border-radius:6px;
 
     overflow:hidden;
 
     display:flex;
+
     flex-direction:column;
 
     align-items:center;
+
     justify-content:center;
 
     text-align:center;
 }
 
 .btc-info-title{
+
     width:100%;
 
     color:#777f89;
 
     font-size:5.8px;
+
     line-height:8px;
 
     font-weight:800;
 
     white-space:nowrap;
+
     overflow:hidden;
+
     text-overflow:ellipsis;
 }
 
 .btc-info-value{
+
     width:100%;
 
     color:#dce2e7;
 
     font-size:27px;
+
     line-height:29px;
 
     font-weight:900;
 }
 
 .btc-info-sub{
+
     width:100%;
 
     color:#666f79;
 
     font-size:5.8px;
+
     line-height:8px;
 
     font-weight:800;
 
     white-space:nowrap;
+
     overflow:hidden;
+
     text-overflow:ellipsis;
 }
 
@@ -5341,20 +5662,25 @@ h1{
 .market-up,
 .roc-positive,
 .up{
+
     color:#62b58a!important;
+
     font-weight:900;
 }
 
 .market-down,
 .roc-negative,
 .down{
+
     color:#c97878!important;
+
     font-weight:900;
 }
 
 .market-zero,
 .zero,
 .muted{
+
     color:#68717b!important;
 }
 
@@ -5364,8 +5690,11 @@ h1{
    ========================================================= */
 
 .status{
+
     display:flex;
+
     justify-content:center;
+
     align-items:center;
 
     flex-wrap:wrap;
@@ -5373,14 +5702,17 @@ h1{
     gap:8px;
 
     margin:3px 2px 5px;
+
     padding:4px 2px;
 
     border-top:1px solid #242a31;
+
     border-bottom:1px solid #242a31;
 
     color:#737b84;
 
     font-size:6px;
+
     font-weight:800;
 }
 
@@ -5398,14 +5730,18 @@ h1{
    ========================================================= */
 
 .signal-cell{
+
     text-align:center!important;
+
     vertical-align:middle;
 }
 
 .signal-active{
+
     display:inline-flex;
 
     align-items:center;
+
     justify-content:center;
 
     gap:2px;
@@ -5416,16 +5752,20 @@ h1{
 }
 
 .signal-rocket{
+
     font-size:9px;
+
     line-height:10px;
 
     font-weight:900;
 }
 
 .signal-count{
+
     color:#62b58a;
 
     font-size:7px;
+
     line-height:9px;
 
     font-weight:900;
@@ -5436,47 +5776,46 @@ h1{
    ★ 신호 행 전체 반짝임
    ========================================================= */
 
-/*
-   0 = 돌파 완성캔들
-       가장 강하게 강조
-
-   1 = 다음 진행캔들
-       중간 정도 강조
-
-   2 이상 = 일반 표시
-*/
-
-
 @keyframes signalFlashZero{
 
     0%{
         background-color:#15191e;
+
         box-shadow:
-            inset 0 0 0 rgba(98,181,138,0);
+            inset 0 0 0
+            rgba(98,181,138,0);
     }
 
     25%{
         background-color:#354d42;
+
         box-shadow:
-            inset 0 0 18px rgba(98,181,138,.55);
+            inset 0 0 18px
+            rgba(98,181,138,.55);
     }
 
     50%{
         background-color:#18231f;
+
         box-shadow:
-            inset 0 0 5px rgba(98,181,138,.20);
+            inset 0 0 5px
+            rgba(98,181,138,.20);
     }
 
     75%{
         background-color:#3b5548;
+
         box-shadow:
-            inset 0 0 20px rgba(98,181,138,.60);
+            inset 0 0 20px
+            rgba(98,181,138,.60);
     }
 
     100%{
         background-color:#15191e;
+
         box-shadow:
-            inset 0 0 0 rgba(98,181,138,0);
+            inset 0 0 0
+            rgba(98,181,138,0);
     }
 }
 
@@ -5485,34 +5824,40 @@ h1{
 
     0%{
         background-color:#15191e;
+
         box-shadow:
-            inset 0 0 0 rgba(98,181,138,0);
+            inset 0 0 0
+            rgba(98,181,138,0);
     }
 
     30%{
         background-color:#2a3d34;
+
         box-shadow:
-            inset 0 0 11px rgba(98,181,138,.32);
+            inset 0 0 11px
+            rgba(98,181,138,.32);
     }
 
     60%{
         background-color:#19221e;
+
         box-shadow:
-            inset 0 0 3px rgba(98,181,138,.12);
+            inset 0 0 3px
+            rgba(98,181,138,.12);
     }
 
     100%{
         background-color:#15191e;
+
         box-shadow:
-            inset 0 0 0 rgba(98,181,138,0);
+            inset 0 0 0
+            rgba(98,181,138,0);
     }
 }
 
 
-/*
-   첫 번째 줄
-*/
 tr.signal-flash-zero td{
+
     animation:
         signalFlashZero
         1.05s
@@ -5521,10 +5866,8 @@ tr.signal-flash-zero td{
 }
 
 
-/*
-   두 번째 호가 줄
-*/
 tr.orderbook-subrow.signal-flash-zero td{
+
     animation:
         signalFlashZero
         1.05s
@@ -5533,10 +5876,8 @@ tr.orderbook-subrow.signal-flash-zero td{
 }
 
 
-/*
-   1번 진행캔들
-*/
 tr.signal-flash-one td{
+
     animation:
         signalFlashOne
         1.35s
@@ -5546,6 +5887,7 @@ tr.signal-flash-one td{
 
 
 tr.orderbook-subrow.signal-flash-one td{
+
     animation:
         signalFlashOne
         1.35s
@@ -5554,16 +5896,14 @@ tr.orderbook-subrow.signal-flash-one td{
 }
 
 
-/*
-   반짝이는 동안에도
-   신호 숫자는 선명하게 유지
-*/
 .signal-flash-zero .signal-count,
 .signal-flash-one .signal-count{
+
     color:#8de0b1;
 
     text-shadow:
-        0 0 5px rgba(98,181,138,.65);
+        0 0 5px
+        rgba(98,181,138,.65);
 }
 
 
@@ -5572,20 +5912,24 @@ tr.orderbook-subrow.signal-flash-one td{
    ========================================================= */
 
 .table-wrap{
+
     width:100%;
 
     overflow:hidden;
 
     border:1px solid #272d34;
+
     border-radius:6px;
 
     background:#15191e;
 
     box-shadow:
-        0 2px 6px rgba(0,0,0,.25);
+        0 2px 6px
+        rgba(0,0,0,.25);
 }
 
 table{
+
     width:100%;
 
     table-layout:fixed;
@@ -5600,6 +5944,7 @@ thead{
 }
 
 th{
+
     height:18px;
 
     padding:2px 1px;
@@ -5609,12 +5954,14 @@ th{
     border-bottom:1px solid #292f36;
 
     font-size:5px;
+
     font-weight:800;
 
     text-align:center;
 }
 
 td{
+
     height:26px;
 
     padding:1px;
@@ -5624,6 +5971,7 @@ td{
     border-bottom:1px solid #22282e;
 
     text-align:center;
+
     vertical-align:middle;
 
     overflow:hidden;
@@ -5636,38 +5984,46 @@ td{
 
 th:nth-child(1),
 td:nth-child(1){
+
     width:6%;
 }
 
 th:nth-child(2),
 td:nth-child(2){
+
     width:15%;
 }
 
 th:nth-child(3),
 td:nth-child(3){
+
     width:15%;
 }
 
 th:nth-child(4),
 td:nth-child(4){
+
     width:29%;
 }
 
 th:nth-child(5),
 td:nth-child(5){
+
     width:18%;
 }
 
 th:nth-child(6),
 td:nth-child(6){
+
     width:17%;
 }
 
 td:nth-child(1){
+
     color:#7f8790;
 
     font-size:6px;
+
     font-weight:700;
 }
 
@@ -5677,10 +6033,12 @@ td:nth-child(1){
    ========================================================= */
 
 .coin{
+
     text-align:left!important;
 }
 
 .coin b{
+
     display:block;
 
     width:100%;
@@ -5688,29 +6046,37 @@ td:nth-child(1){
     color:#e0e5e9;
 
     font-size:6.5px;
+
     line-height:8px;
 
     font-weight:800;
 
     white-space:nowrap;
+
     overflow:hidden;
+
     text-overflow:ellipsis;
 }
 
 .coin small{
+
     display:block;
 
     font-size:4.5px;
+
     line-height:6px;
 
     white-space:nowrap;
+
     overflow:hidden;
 }
 
 .vol{
+
     color:#cdd3d8;
 
     font-size:6px;
+
     font-weight:800;
 
     white-space:nowrap;
@@ -5722,6 +6088,7 @@ td:nth-child(1){
    ========================================================= */
 
 .ema{
+
     text-align:center!important;
 
     line-height:8px;
@@ -5732,11 +6099,13 @@ td:nth-child(1){
 }
 
 .filter-detail{
+
     display:flex;
 
     flex-direction:column;
 
     align-items:flex-start;
+
     justify-content:center;
 
     gap:1px;
@@ -5749,9 +6118,11 @@ td:nth-child(1){
 }
 
 .filter-line{
+
     display:flex;
 
     align-items:center;
+
     justify-content:flex-start;
 
     width:100%;
@@ -5762,6 +6133,7 @@ td:nth-child(1){
 }
 
 .filter-timeframe{
+
     display:inline-block;
 
     flex:none;
@@ -5778,9 +6150,11 @@ td:nth-child(1){
 }
 
 .roc-filter-all{
+
     display:flex;
 
     align-items:center;
+
     justify-content:flex-start;
 
     gap:2px;
@@ -5795,9 +6169,11 @@ td:nth-child(1){
 }
 
 .roc-item{
+
     display:inline-flex;
 
     align-items:center;
+
     justify-content:center;
 
     flex:none;
@@ -5805,30 +6181,36 @@ td:nth-child(1){
     white-space:nowrap;
 
     font-size:4.5px;
+
     line-height:8px;
 
     font-weight:900;
 }
 
 .roc-active{
+
     font-weight:900;
 }
 
 .roc-disabled{
+
     font-weight:900;
 
     opacity:.42;
 }
 
 .roc-up{
+
     color:#62b58a!important;
 }
 
 .roc-down{
+
     color:#c97878!important;
 }
 
 .roc-zero{
+
     color:#68717b!important;
 }
 
@@ -5838,9 +6220,11 @@ td:nth-child(1){
    ========================================================= */
 
 .roc-cell{
+
     display:flex;
 
     align-items:center;
+
     justify-content:center;
 
     min-height:21px;
@@ -5848,10 +6232,12 @@ td:nth-child(1){
     white-space:nowrap;
 
     font-size:5.8px;
+
     line-height:8px;
 }
 
 .roc-cell span{
+
     font-size:5.8px!important;
 
     line-height:8px;
@@ -5865,14 +6251,17 @@ td:nth-child(1){
    ========================================================= */
 
 .breakout-qualified{
+
     background:#191e23;
 }
 
 .breakout-qualified td{
+
     border-bottom-color:#293038;
 }
 
 .empty{
+
     height:30px;
 
     padding:8px;
@@ -5888,16 +6277,19 @@ td:nth-child(1){
    ========================================================= */
 
 .orderbook-subrow{
+
     background:#0f1318!important;
 }
 
 .orderbook-subrow td{
+
     height:auto!important;
 
     padding:4px 5px 5px!important;
 }
 
 .orderbook-wrap{
+
     width:100%;
 
     padding:1px 0;
@@ -5906,6 +6298,7 @@ td:nth-child(1){
 }
 
 .orderbook-row{
+
     display:grid;
 
     grid-template-columns:
@@ -5924,6 +6317,7 @@ td:nth-child(1){
 }
 
 .orderbook-label{
+
     font-size:5.5px;
 
     font-weight:900;
@@ -5940,6 +6334,7 @@ td:nth-child(1){
 }
 
 .orderbook-amount{
+
     font-size:5.5px;
 
     font-weight:900;
@@ -5958,6 +6353,7 @@ td:nth-child(1){
 }
 
 .orderbook-bar-box{
+
     position:relative;
 
     width:100%;
@@ -5972,6 +6368,7 @@ td:nth-child(1){
 }
 
 .orderbook-bar{
+
     height:100%;
 
     min-width:1px;
@@ -5990,6 +6387,7 @@ td:nth-child(1){
 }
 
 .orderbook-ratio{
+
     font-size:5.5px;
 
     font-weight:900;
@@ -6008,9 +6406,11 @@ td:nth-child(1){
 }
 
 .orderbook-bottom{
+
     display:flex;
 
     align-items:center;
+
     justify-content:flex-end;
 
     gap:7px;
@@ -6029,6 +6429,7 @@ td:nth-child(1){
 }
 
 .ob-dominance{
+
     font-size:5.5px;
 
     font-weight:900;
@@ -6047,6 +6448,7 @@ td:nth-child(1){
 }
 
 .orderbook-empty{
+
     width:100%;
 
     padding:3px 0;
@@ -6066,18 +6468,22 @@ td:nth-child(1){
 @media(max-width:380px){
 
     body{
+
         padding:2px 2px 7px;
     }
 
     h1{
+
         margin:1px 2px 4px;
 
         font-size:11px;
+
         line-height:13px;
     }
 
     .market-title,
     .section-title{
+
         min-height:18px;
 
         gap:4px;
@@ -6087,91 +6493,109 @@ td:nth-child(1){
 
     .market-title-main,
     .section-title-main{
+
         font-size:7px;
     }
 
     .market-title-sub,
     .section-title-sub{
+
         font-size:4.8px;
     }
 
     .btc-name{
+
         width:30px;
 
         font-size:5.8px;
     }
 
     .btc-price{
+
         font-size:5.4px;
     }
 
     .btc-change{
+
         width:56px;
 
         font-size:8.5px;
     }
 
     .btc-bottom{
+
         min-height:58px;
 
         gap:3px;
     }
 
     .btc-info-box{
+
         min-height:58px;
 
         padding:3px 4px;
     }
 
     .btc-info-title{
+
         font-size:4.8px;
     }
 
     .btc-info-value{
+
         font-size:23px;
 
         line-height:25px;
     }
 
     .btc-info-sub{
+
         font-size:5px;
     }
 
     .status{
+
         gap:6px;
 
         font-size:5.5px;
     }
 
     th{
+
         height:16px;
 
         font-size:4.5px;
     }
 
     td{
+
         height:23px;
     }
 
     .coin b{
+
         font-size:6px;
     }
 
     .coin small{
+
         font-size:4px;
     }
 
     .vol{
+
         font-size:5.5px;
     }
 
     .filter-timeframe{
+
         width:11px;
 
         font-size:4.2px;
     }
 
     .roc-filter-all{
+
         gap:1px;
 
         line-height:7px;
@@ -6180,36 +6604,42 @@ td:nth-child(1){
     }
 
     .roc-item{
+
         font-size:3.8px;
 
         line-height:7px;
     }
 
     .roc-cell span{
+
         font-size:5.8px!important;
 
         line-height:8px;
     }
 
     .signal-active{
+
         gap:1px;
 
         min-height:19px;
     }
 
     .signal-rocket{
+
         font-size:8px;
 
         line-height:9px;
     }
 
     .signal-count{
+
         font-size:6.5px;
 
         line-height:8px;
     }
 
     .orderbook-row{
+
         grid-template-columns:
             37px
             38px
@@ -6222,20 +6652,24 @@ td:nth-child(1){
     .orderbook-label,
     .orderbook-amount,
     .orderbook-ratio{
+
         font-size:4.8px;
     }
 
     .orderbook-bar-box{
+
         height:6px;
     }
 
     .orderbook-bottom{
+
         gap:5px;
 
         font-size:4.5px;
     }
 
     .ob-dominance{
+
         font-size:5px;
     }
 }
@@ -6248,6 +6682,7 @@ td:nth-child(1){
 @media(min-width:601px){
 
     body{
+
         max-width:900px;
 
         margin:auto;
@@ -6258,6 +6693,7 @@ td:nth-child(1){
     }
 
     h1{
+
         font-size:15px;
 
         line-height:20px;
@@ -6265,6 +6701,7 @@ td:nth-child(1){
 
     .market-title,
     .section-title{
+
         min-height:24px;
 
         gap:7px;
@@ -6274,95 +6711,113 @@ td:nth-child(1){
 
     .market-title-main,
     .section-title-main{
+
         font-size:9px;
     }
 
     .market-title-sub,
     .section-title-sub{
+
         font-size:6px;
     }
 
     .btc-name{
+
         width:42px;
 
         font-size:8px;
     }
 
     .btc-price{
+
         font-size:8px;
     }
 
     .btc-change{
+
         width:70px;
 
         font-size:9.5px;
     }
 
     .btc-bottom{
+
         min-height:78px;
 
         gap:7px;
     }
 
     .btc-info-box{
+
         min-height:78px;
 
         padding:7px 9px;
     }
 
     .btc-info-title{
+
         font-size:7px;
     }
 
     .btc-info-value{
+
         font-size:33px;
 
         line-height:35px;
     }
 
     .btc-info-sub{
+
         font-size:7px;
     }
 
     .status{
+
         gap:12px;
 
         font-size:7px;
     }
 
     th{
+
         height:27px;
 
         font-size:7px;
     }
 
     td{
+
         height:39px;
 
         padding:3px;
     }
 
     .coin b{
+
         font-size:9px;
 
         line-height:11px;
     }
 
     .coin small{
+
         font-size:7px;
     }
 
     .vol{
+
         font-size:8px;
     }
 
     .filter-timeframe{
+
         width:17px;
 
         font-size:6px;
     }
 
     .roc-filter-all{
+
         gap:3px;
 
         line-height:10px;
@@ -6371,36 +6826,42 @@ td:nth-child(1){
     }
 
     .roc-item{
+
         font-size:5.5px;
 
         line-height:10px;
     }
 
     .roc-cell span{
+
         font-size:7px!important;
 
         line-height:10px;
     }
 
     .signal-active{
+
         gap:2px;
 
         min-height:28px;
     }
 
     .signal-rocket{
+
         font-size:12px;
 
         line-height:13px;
     }
 
     .signal-count{
+
         font-size:8px;
 
         line-height:10px;
     }
 
     .orderbook-row{
+
         grid-template-columns:
             55px
             60px
@@ -6413,20 +6874,24 @@ td:nth-child(1){
     .orderbook-label,
     .orderbook-amount,
     .orderbook-ratio{
+
         font-size:7px;
     }
 
     .orderbook-bar-box{
+
         height:9px;
     }
 
     .orderbook-bottom{
+
         gap:9px;
 
         font-size:6px;
     }
 
     .ob-dominance{
+
         font-size:6.5px;
     }
 }
@@ -6533,11 +6998,32 @@ def dashboard():
 
     if USE_UPBIT == "Y":
 
+        # =================================================
+        # ★ 상승 신호
+        #
+        # focus_section 내부에서
+        # signal_count 0 / 1만 표시
+        # =================================================
+
         sections += (
             focus_section(
                 latest_upbit_data
             )
         )
+
+        # =================================================
+        # ★ TOP20
+        #
+        # latest_upbit_data 전체 전달
+        #
+        # 🚀0
+        # 🚀1
+        # 🚀2
+        # 🚀3
+        # ...
+        #
+        # 모두 표시
+        # =================================================
 
         sections += (
             section(
@@ -6646,7 +7132,8 @@ def startup():
     ):
 
         raise ValueError(
-            "USE_UPBIT은 Y/N만 가능합니다."
+            "USE_UPBIT은 "
+            "Y/N만 가능합니다."
         )
 
     if USE_OKX not in (
@@ -6655,7 +7142,8 @@ def startup():
     ):
 
         raise ValueError(
-            "USE_OKX는 Y/N만 가능합니다."
+            "USE_OKX는 "
+            "Y/N만 가능합니다."
         )
 
     validate_timeframe()
