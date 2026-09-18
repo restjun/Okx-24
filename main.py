@@ -1020,7 +1020,18 @@ def calculate_orderbook_amount(
             "balanced",
 
         "dominance_text":
-            "균형"
+            "균형",
+
+        # =================================================
+        # ★ 추가
+        # 최우선 매수/매도 1호가
+        # =================================================
+
+        "first_bid_price":
+            None,
+
+        "first_ask_price":
+            None
     }
 
     if not orderbook:
@@ -1074,6 +1085,47 @@ def calculate_orderbook_amount(
     ):
 
         return result
+
+    # =====================================================
+    # ★ 추가
+    # Upbit orderbook_units[0] = 1호가
+    # =====================================================
+
+    if units:
+
+        try:
+
+            first_unit = units[0]
+
+            first_bid_price = float(
+                first_unit.get(
+                    "bid_price",
+                    0
+                )
+            )
+
+            first_ask_price = float(
+                first_unit.get(
+                    "ask_price",
+                    0
+                )
+            )
+
+            if first_bid_price > 0:
+
+                result[
+                    "first_bid_price"
+                ] = first_bid_price
+
+            if first_ask_price > 0:
+
+                result[
+                    "first_ask_price"
+                ] = first_ask_price
+
+        except Exception:
+
+            pass
 
     bid_amount = 0.0
 
@@ -3522,6 +3574,21 @@ def make_row(
                 )
             ),
 
+        # =================================================
+        # ★ 추가
+        # 1호가 가격
+        # =================================================
+
+        "first_bid_price":
+            ob.get(
+                "first_bid_price"
+            ),
+
+        "first_ask_price":
+            ob.get(
+                "first_ask_price"
+            ),
+
         "orderbook_dominance":
             ob.get(
                 "dominance",
@@ -4786,18 +4853,6 @@ def roc_html(
 
 # =========================================================
 # ★ 신호 HTML
-#
-# 중요:
-#
-# 이 함수는 TOP 리스트와 상승 신호에서
-# 동일하게 사용하지만,
-#
-# "상승 신호"에서만 0/1 제한을 걸면
-# TOP 리스트의 전체 COUNT가 사라지므로
-# 여기서는 전체 COUNT를 그대로 표시한다.
-#
-# 상승 신호에서 0/1 제한은
-# focus_section()에서 필터링한다.
 # =========================================================
 
 def signal_html(
@@ -4829,13 +4884,6 @@ def signal_html(
         except Exception:
 
             count = 0
-
-        # =================================================
-        # TOP 리스트
-        #
-        # 0, 1, 2, 3, 4, 5...
-        # 카운팅된 모든 숫자를 그대로 표시
-        # =================================================
 
         return (
             '<span class="signal-active">'
@@ -4909,6 +4957,68 @@ def orderbook_html(
             '호가 정보 없음'
             '</div>'
         )
+
+    # =====================================================
+    # ★ 현재가격 / 1호가 계산
+    # =====================================================
+
+    current_price = row.get(
+        "current_price"
+    )
+
+    first_ask_price = row.get(
+        "first_ask_price"
+    )
+
+    one_quote_pct = None
+
+    try:
+
+        current_price = float(
+            current_price
+        )
+
+        first_ask_price = float(
+            first_ask_price
+        )
+
+        if (
+            current_price > 0
+            and first_ask_price > 0
+        ):
+
+            one_quote_pct = (
+                abs(
+                    first_ask_price
+                    - current_price
+                )
+                / current_price
+                * 100
+            )
+
+    except Exception:
+
+        one_quote_pct = None
+
+    current_price_text = (
+        format_market_price(
+            current_price
+        )
+    )
+
+    if one_quote_pct is not None:
+
+        one_quote_text = (
+            f"{one_quote_pct:.3f}%"
+        )
+
+    else:
+
+        one_quote_text = "-"
+
+    # =====================================================
+    # 우세 표시
+    # =====================================================
 
     dominance = row.get(
         "orderbook_dominance",
@@ -4999,6 +5109,31 @@ def orderbook_html(
 
         </div>
 
+        <!-- =================================================
+             ★ 현재가격 / 1호가
+             매수대기 아래에 표시
+             ================================================= -->
+
+        <div class="orderbook-current-info">
+
+            <span class="orderbook-current-label">
+                현재가격
+            </span>
+
+            <span class="orderbook-current-price">
+                {current_price_text}원
+            </span>
+
+            <span class="orderbook-onequote-label">
+                1호가
+            </span>
+
+            <span class="orderbook-onequote-value">
+                {one_quote_text}
+            </span>
+
+        </div>
+
         <div class="orderbook-bottom">
 
             <span class="orderbook-range">
@@ -5015,13 +5150,6 @@ def orderbook_html(
 
 # =========================================================
 # ★ 행 HTML
-#
-# 여기서도 전체 COUNT를 그대로 표시한다.
-#
-# 상승 신호 영역도 rows_html() 자체에서는
-# COUNT를 자르지 않는다.
-#
-# focus_section()에서 0 / 1만 골라서 보여준다.
 # =========================================================
 
 def rows_html(
@@ -5042,10 +5170,6 @@ def rows_html(
 
         # =================================================
         # 신호 카운팅에 따른 전체 행 반짝임
-        #
-        # 0 = 돌파 완성캔들
-        # 1 = 다음 진행캔들
-        # 2 이상 = 일반 표시
         # =================================================
 
         if x.get(
@@ -5108,20 +5232,6 @@ def rows_html(
                 )
             )
         )
-
-        # =================================================
-        # ★ 중요
-        #
-        # TOP 리스트:
-        # 🚀0
-        # 🚀1
-        # 🚀2
-        # 🚀3
-        # 🚀4
-        # ...
-        #
-        # 전부 표시
-        # =================================================
 
         signal_content = (
             signal_html(
@@ -5249,14 +5359,6 @@ def table_html(
 
 # =========================================================
 # ★ 상승 신호
-#
-# 여기에서만 COUNT 0 / 1을 표시하도록 필터링
-#
-# 2 이상인 코인은 상승 신호 영역에서는 숨김.
-#
-# 단,
-# TOP 리스트의 latest_upbit_data에는 그대로 존재하기 때문에
-# TOP 리스트에서는 🚀2, 🚀3, 🚀4... 모두 표시됨.
 # =========================================================
 
 def focus_section(
@@ -5308,12 +5410,6 @@ def focus_section(
 
 # =========================================================
 # ★ TOP 리스트
-#
-# latest_upbit_data 전체를 그대로 전달
-#
-# 따라서 signal_count가
-# 0, 1, 2, 3, 4, 5...
-# 모두 표시됨.
 # =========================================================
 
 def section(
@@ -6405,6 +6501,84 @@ td:nth-child(1){
     color:#609276;
 }
 
+
+/* =========================================================
+   ★ 현재가격 / 1호가
+   매도대기 / 매수대기 아래
+   ========================================================= */
+
+.orderbook-current-info{
+
+    display:flex;
+
+    align-items:center;
+
+    justify-content:flex-end;
+
+    gap:4px;
+
+    width:100%;
+
+    min-height:13px;
+
+    margin-top:3px;
+
+    padding-top:3px;
+
+    border-top:1px solid #20262c;
+
+    white-space:nowrap;
+
+    overflow:hidden;
+}
+
+.orderbook-current-label{
+
+    color:#68717b;
+
+    font-size:5.5px;
+
+    font-weight:800;
+
+    white-space:nowrap;
+}
+
+.orderbook-current-price{
+
+    color:#d4d9de;
+
+    font-size:5.8px;
+
+    font-weight:900;
+
+    white-space:nowrap;
+}
+
+.orderbook-onequote-label{
+
+    margin-left:4px;
+
+    color:#68717b;
+
+    font-size:5.5px;
+
+    font-weight:800;
+
+    white-space:nowrap;
+}
+
+.orderbook-onequote-value{
+
+    color:#c9d0d6;
+
+    font-size:5.8px;
+
+    font-weight:900;
+
+    white-space:nowrap;
+}
+
+
 .orderbook-bottom{
 
     display:flex;
@@ -6661,6 +6835,40 @@ td:nth-child(1){
         height:6px;
     }
 
+
+    /* =====================================================
+       ★ 모바일 현재가격 / 1호가
+       ===================================================== */
+
+    .orderbook-current-info{
+
+        gap:3px;
+
+        min-height:12px;
+
+        margin-top:2px;
+
+        padding-top:2px;
+    }
+
+    .orderbook-current-label,
+    .orderbook-onequote-label{
+
+        font-size:4.5px;
+    }
+
+    .orderbook-current-price,
+    .orderbook-onequote-value{
+
+        font-size:5px;
+    }
+
+    .orderbook-onequote-label{
+
+        margin-left:3px;
+    }
+
+
     .orderbook-bottom{
 
         gap:5px;
@@ -6883,6 +7091,40 @@ td:nth-child(1){
         height:9px;
     }
 
+
+    /* =====================================================
+       ★ PC 현재가격 / 1호가
+       ===================================================== */
+
+    .orderbook-current-info{
+
+        gap:5px;
+
+        min-height:16px;
+
+        margin-top:3px;
+
+        padding-top:3px;
+    }
+
+    .orderbook-current-label,
+    .orderbook-onequote-label{
+
+        font-size:6px;
+    }
+
+    .orderbook-current-price,
+    .orderbook-onequote-value{
+
+        font-size:7px;
+    }
+
+    .orderbook-onequote-label{
+
+        margin-left:5px;
+    }
+
+
     .orderbook-bottom{
 
         gap:9px;
@@ -6998,32 +7240,11 @@ def dashboard():
 
     if USE_UPBIT == "Y":
 
-        # =================================================
-        # ★ 상승 신호
-        #
-        # focus_section 내부에서
-        # signal_count 0 / 1만 표시
-        # =================================================
-
         sections += (
             focus_section(
                 latest_upbit_data
             )
         )
-
-        # =================================================
-        # ★ TOP20
-        #
-        # latest_upbit_data 전체 전달
-        #
-        # 🚀0
-        # 🚀1
-        # 🚀2
-        # 🚀3
-        # ...
-        #
-        # 모두 표시
-        # =================================================
 
         sections += (
             section(
