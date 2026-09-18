@@ -72,14 +72,14 @@ USE_4H_ROC_FILTER = "N"
 USE_1H_ROC5 = "Y"
 USE_1H_ROC10 = "Y"
 USE_1H_ROC20 = "Y"
-USE_1H_ROC50 = "Y"
-USE_1H_ROC200 = "Y"
+USE_1H_ROC50 = "N"
+USE_1H_ROC200 = "N"
 
-USE_4H_ROC5 = "Y"
-USE_4H_ROC10 = "Y"
-USE_4H_ROC20 = "Y"
-USE_4H_ROC50 = "Y"
-USE_4H_ROC200 = "Y"
+USE_4H_ROC5 = "N"
+USE_4H_ROC10 = "N"
+USE_4H_ROC20 = "N"
+USE_4H_ROC50 = "N"
+USE_4H_ROC200 = "N"
 
 
 # =========================================================
