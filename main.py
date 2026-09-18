@@ -190,6 +190,19 @@ okx_1h_cache_time = "-"
 
 
 # =========================================================
+# ROC 신호 유지 카운팅
+#
+# 돌파 진행 캔들 = 0
+# 다음 캔들 = 1
+# 이후 2, 3, 4...
+#
+# 활성 ROC 조건이 해제될 때까지 유지
+# =========================================================
+
+roc_signal_state = {}
+
+
+# =========================================================
 # ROC 설정
 # =========================================================
 
@@ -221,24 +234,11 @@ def roc_settings():
 
 # =========================================================
 # 활성화된 ROC 기간
-#
-# ★ 실제 필터 조건 판정용
-#
-# 시간봉 Y/N을 먼저 확인
-# 그 다음 ROC 개별 Y/N 확인
-#
-# ★ N인 ROC는 필터에서 완전히 제외
-# ★ N인 시간봉도 필터에서 완전히 제외
-# ★ 대시보드 표시에는 영향 없음
 # =========================================================
 
 def get_enabled_periods(timeframe):
 
     result = []
-
-    # -----------------------------------------------------
-    # 시간봉 자체가 N이면 필터에 사용하지 않음
-    # -----------------------------------------------------
 
     if timeframe == "1H":
 
@@ -279,7 +279,6 @@ def get_enabled_periods(timeframe):
 # 전체 ROC 기간
 #
 # ★ 화면 표시용
-# Y/N 관계없이 전부 반환
 # =========================================================
 
 def get_all_periods():
@@ -289,10 +288,6 @@ def get_all_periods():
 
 # =========================================================
 # 전체 활성 필터
-#
-# ★ 시간봉 Y
-# ★ ROC Y
-# 인 경우만 실제 조건에 사용
 # =========================================================
 
 def get_enabled_all_filters():
@@ -300,10 +295,6 @@ def get_enabled_all_filters():
     result = []
 
     settings = roc_settings()
-
-    # -----------------------------------------------------
-    # 1H 필터
-    # -----------------------------------------------------
 
     if USE_1H_ROC_FILTER == "Y":
 
@@ -318,10 +309,6 @@ def get_enabled_all_filters():
                 result.append(
                     ("1H", period)
                 )
-
-    # -----------------------------------------------------
-    # 4H 필터
-    # -----------------------------------------------------
 
     if USE_4H_ROC_FILTER == "Y":
 
@@ -342,8 +329,6 @@ def get_enabled_all_filters():
 
 # =========================================================
 # 활성 필터 표시
-#
-# ★ 실제 필터에서 활성화된 ROC만 표시
 # =========================================================
 
 def get_enabled_filter_text(timeframe):
@@ -363,8 +348,6 @@ def get_enabled_filter_text(timeframe):
 
 # =========================================================
 # 필터 설정 표시
-#
-# ★ 간격 축소
 # =========================================================
 
 def get_filter_setting_text():
@@ -516,10 +499,6 @@ def validate_timeframe():
         ROC_TIMEFRAME
     )
 
-    # -----------------------------------------------------
-    # 시간봉 Y/N 검증
-    # -----------------------------------------------------
-
     if USE_1H_ROC_FILTER not in (
         "Y",
         "N"
@@ -537,10 +516,6 @@ def validate_timeframe():
         raise ValueError(
             "USE_4H_ROC_FILTER는 Y/N만 가능합니다."
         )
-
-    # -----------------------------------------------------
-    # 시간봉 검증
-    # -----------------------------------------------------
 
     if (
         ROC_FILTER_TIMEFRAME
@@ -571,10 +546,6 @@ def validate_timeframe():
             f"ROC 로켓 시간봉 오류: "
             f"{ROC_TIMEFRAME}"
         )
-
-    # -----------------------------------------------------
-    # ROC 개별 Y/N 검증
-    # -----------------------------------------------------
 
     settings = roc_settings()
 
@@ -1456,20 +1427,6 @@ def roc(
 
 # =========================================================
 # ROC 필터 분석
-#
-# ★ 5/10/20/50/200 전체 계산
-#
-# ★ previous_values
-# ★ zero_crosses
-#
-# zero_cross:
-# 이전 <= 0
-# 현재 > 0
-#
-# 중요:
-# 이 함수는 전체 ROC를 계산하기 위한 함수
-# 실제 필터 활성 여부는
-# get_enabled_all_filters()가 결정
 # =========================================================
 
 def roc_filter_analysis(
@@ -1551,10 +1508,6 @@ def roc_filter_analysis(
                 period
             ] = current_value
 
-            # -------------------------------------------------
-            # 직전 ROC
-            # -------------------------------------------------
-
             previous_value = None
 
             if len(series) >= 2:
@@ -1573,10 +1526,6 @@ def roc_filter_analysis(
                 period
             ] = previous_value
 
-            # -------------------------------------------------
-            # 0선 상승 돌파
-            # -------------------------------------------------
-
             zero_cross = (
                 previous_value is not None
                 and previous_value <= 0
@@ -1590,14 +1539,6 @@ def roc_filter_analysis(
             if current_value >= 0:
 
                 positive_count += 1
-
-        # -------------------------------------------------
-        # 여기서의 passed는 전체 계산 결과
-        #
-        # 실제 필터 판정은
-        # all_active_roc_filters_pass()
-        # 에서 Y 설정만 따로 판정
-        # -------------------------------------------------
 
         passed = (
             len(values) == len(periods)
@@ -1644,17 +1585,6 @@ def roc_filter_analysis(
 
 # =========================================================
 # 활성 ROC 필터 전체 조건
-#
-# ★ 핵심
-#
-# 시간봉 Y
-# +
-# ROC Y
-#
-# 인 것만 실제 필터에 사용
-#
-# N인 ROC는 완전히 무시
-# N인 시간봉도 완전히 무시
 # =========================================================
 
 def all_active_roc_filters_pass(
@@ -1664,17 +1594,9 @@ def all_active_roc_filters_pass(
 
     enabled = get_enabled_all_filters()
 
-    # -----------------------------------------------------
-    # 활성 필터가 하나도 없으면 통과
-    # -----------------------------------------------------
-
     if not enabled:
 
         return True
-
-    # -----------------------------------------------------
-    # 활성 필터 하나씩 검사
-    # -----------------------------------------------------
 
     for timeframe, period in enabled:
 
@@ -1718,18 +1640,6 @@ def all_active_roc_filters_pass(
 
 # =========================================================
 # 전체 활성 ROC 0선 상승 돌파
-#
-# ★ 실제 활성 필터만 검사
-#
-# 예:
-#
-# 1H = Y
-# 4H = N
-#
-# 이면 1H만 검사
-#
-# 1H ROC50 = N
-# 이면 ROC50은 돌파 신호에서도 제외
 # =========================================================
 
 def any_active_roc_zero_cross(
@@ -1774,8 +1684,6 @@ def any_active_roc_zero_cross(
 
 # =========================================================
 # 활성 ROC 0선 돌파 목록
-#
-# ★ 실제 활성 ROC만 표시
 # =========================================================
 
 def get_active_zero_cross_list(
@@ -1818,8 +1726,6 @@ def get_active_zero_cross_list(
 
 # =========================================================
 # ROC 필터 표시용
-#
-# ★ Y/N 관계없이 전체 표시
 # =========================================================
 
 def roc_filter_display(
@@ -1912,11 +1818,6 @@ def roc_filter_display(
 
 # =========================================================
 # ROC5 분석
-#
-# ★ ROC5 자체의 로켓 표시
-#
-# ★ 실제 신호 조건은
-#   전체 활성 ROC 0선 돌파
 # =========================================================
 
 def roc_analysis(
@@ -2006,20 +1907,12 @@ def roc_analysis(
 
             return result
 
-        # ---------------------------------------------
-        # 활성 필터 전체 통과
-        # ---------------------------------------------
-
         filter_pass = (
             all_active_roc_filters_pass(
                 filter_1h,
                 filter_4h
             )
         )
-
-        # ---------------------------------------------
-        # ROC5 현재 연속 양수
-        # ---------------------------------------------
 
         values = [
             float(v)
@@ -2039,10 +1932,6 @@ def roc_analysis(
 
                 break
 
-        # ---------------------------------------------
-        # ROC5 현재 연속 음수
-        # ---------------------------------------------
-
         negative_count = 0
 
         for value in reversed(values):
@@ -2055,12 +1944,6 @@ def roc_analysis(
 
                 break
 
-        # ---------------------------------------------
-        # ROC5 0선 상승 돌파
-        #
-        # ★ 로켓 표시용
-        # ---------------------------------------------
-
         is_cross = False
 
         if (
@@ -2069,10 +1952,6 @@ def roc_analysis(
         ):
 
             is_cross = True
-
-        # ---------------------------------------------
-        # 카운터
-        # ---------------------------------------------
 
         breakout_count = 0
 
@@ -2088,10 +1967,6 @@ def roc_analysis(
                     positive_count - 1,
                     0
                 )
-
-        # ---------------------------------------------
-        # 최종 ROC5 로켓
-        # ---------------------------------------------
 
         if (
             filter_pass
@@ -2546,6 +2421,12 @@ def empty_analysis():
         "zero_cross_list":
             [],
 
+        "signal_active":
+            False,
+
+        "signal_count":
+            0,
+
         "df1h":
             None
     }
@@ -2553,16 +2434,6 @@ def empty_analysis():
 
 # =========================================================
 # ROC 필터 HTML
-#
-# ★ Y/N 관계없이 전체 표시
-#
-# 예:
-#
-# 1H   5🟢 10🟢 20🟢 50🔴 200🔴
-# 4H   5🟢 10🔴 20🟢 50🟢 200🔴
-#
-# ★ N인 ROC도 상태 표시
-# ★ 단지 글자만 흐리게 표시
 # =========================================================
 
 def roc_filter_html(
@@ -2582,11 +2453,6 @@ def roc_filter_html(
         )
 
     parts = []
-
-    # -----------------------------------------------------
-    # 중요:
-    # 필터 Y/N과 관계없이 전체 ROC 표시
-    # -----------------------------------------------------
 
     for period in ROC_FILTER_PERIODS:
 
@@ -2690,21 +2556,26 @@ def filter_html(
 # =========================================================
 # 신호 자격
 #
-# ★ 실제 활성 ROC만 필터
+# ★ 전체 활성 ROC 조건
 #
-# 조건:
+# 돌파 캔들 = 0
+# 다음 캔들 = 1
+# 이후 2, 3, 4...
 #
-# 1. 활성 ROC 전체 >= 0
-# 2. 활성 ROC 중 하나라도 0선 상승 돌파
-# 3. 당일 등락률 >= 0
+# ★ 조건이 유지되는 동안 계속 표시
+# ★ 조건이 해제되면 신호 종료
 # =========================================================
 
 def get_signal_qualified(
     r1,
     r4,
     r,
-    daily_change
+    daily_change,
+    market=None,
+    current_candle_time=None
 ):
+
+    global roc_signal_state
 
     # -----------------------------------------------------
     # 활성 ROC 필터 전체 통과
@@ -2744,17 +2615,147 @@ def get_signal_qualified(
     )
 
     # -----------------------------------------------------
-    # 최종 상승 신호
+    # 활성 조건
     # -----------------------------------------------------
 
-    breakout = (
-
+    active_condition = (
         filter_pass
-
-        and zero_cross
-
         and daily_pass
     )
+
+    # -----------------------------------------------------
+    # 코인별 상태
+    # -----------------------------------------------------
+
+    if market is None:
+
+        market_key = "_default"
+
+    else:
+
+        market_key = str(
+            market
+        )
+
+    state = roc_signal_state.get(
+        market_key
+    )
+
+    # -----------------------------------------------------
+    # 최초 0선 돌파
+    #
+    # 현재 진행 중인 캔들 = 0
+    # -----------------------------------------------------
+
+    if (
+        active_condition
+        and zero_cross
+    ):
+
+        roc_signal_state[
+            market_key
+        ] = {
+
+            "active":
+                True,
+
+            "count":
+                0,
+
+            "cross_candle":
+                current_candle_time,
+
+            "last_candle":
+                current_candle_time
+        }
+
+        state = roc_signal_state[
+            market_key
+        ]
+
+    # -----------------------------------------------------
+    # 기존 신호 유지
+    #
+    # 새로운 1H 캔들이 시작될 때마다 +1
+    # -----------------------------------------------------
+
+    elif (
+        active_condition
+        and state
+        and state.get(
+            "active",
+            False
+        )
+    ):
+
+        last_candle = state.get(
+            "last_candle"
+        )
+
+        if (
+            current_candle_time is not None
+            and last_candle is not None
+            and current_candle_time
+            != last_candle
+        ):
+
+            state[
+                "count"
+            ] = int(
+                state.get(
+                    "count",
+                    0
+                )
+            ) + 1
+
+            state[
+                "last_candle"
+            ] = current_candle_time
+
+    # -----------------------------------------------------
+    # 신호 해제
+    #
+    # 활성 ROC가 하나라도 음수가 되거나
+    # 당일 등락률이 음수가 되면 종료
+    # -----------------------------------------------------
+
+    elif not active_condition:
+
+        roc_signal_state.pop(
+            market_key,
+            None
+        )
+
+    # -----------------------------------------------------
+    # 상태 확인
+    # -----------------------------------------------------
+
+    state = roc_signal_state.get(
+        market_key
+    )
+
+    signal_active = bool(
+        state
+        and state.get(
+            "active",
+            False
+        )
+    )
+
+    signal_count = 0
+
+    if signal_active:
+
+        signal_count = int(
+            state.get(
+                "count",
+                0
+            )
+        )
+
+    # -----------------------------------------------------
+    # 돌파 목록
+    # -----------------------------------------------------
 
     zero_cross_list = (
         get_active_zero_cross_list(
@@ -2767,7 +2768,7 @@ def get_signal_qualified(
 
         "breakout_qualified":
             bool(
-                breakout
+                signal_active
             ),
 
         "filter_pass":
@@ -2779,21 +2780,24 @@ def get_signal_qualified(
             else "none",
 
         "zero_cross":
-            zero_cross,
+            bool(
+                zero_cross
+                or signal_active
+            ),
 
         "zero_cross_list":
-            zero_cross_list
+            zero_cross_list,
+
+        "signal_active":
+            signal_active,
+
+        "signal_count":
+            signal_count
     }
 
 
 # =========================================================
 # 업비트 분석
-#
-# ★ 1H / 4H 모두 계산
-#
-# 이유:
-# 4H 필터가 N이어도
-# 대시보드에는 4H 상태를 계속 표시해야 함
 # =========================================================
 
 def analyze(
@@ -2801,27 +2805,12 @@ def analyze(
     current_price=None
 ):
 
-    # =====================================================
-    # 전체 ROC 계산
-    #
-    # Y/N 관계없이
-    # 5/10/20/50/200 전부 계산
-    # =====================================================
-
     all_periods = (
         get_all_periods()
     )
 
-    # -----------------------------------------------------
-    # ★ 항상 1H 계산
-    # ★ 항상 4H 계산
-    #
-    # 필터 Y/N과 관계없이 화면 표시를 위해 필요
-    # -----------------------------------------------------
-
     need_1h = True
     need_4h = True
-
     need_roc5 = True
 
     df1h = None
@@ -2867,8 +2856,6 @@ def analyze(
 
     # -----------------------------------------------------
     # ROC5
-    #
-    # ★ ROC5 로켓 표시 유지
     # -----------------------------------------------------
 
     if need_roc5:
@@ -2909,8 +2896,6 @@ def analyze(
 
     # -----------------------------------------------------
     # 1H ROC
-    #
-    # ★ 전체 5/10/20/50/200 계산
     # -----------------------------------------------------
 
     r1_raw = roc_filter_analysis(
@@ -2925,8 +2910,6 @@ def analyze(
 
     # -----------------------------------------------------
     # 4H ROC
-    #
-    # ★ 전체 5/10/20/50/200 계산
     # -----------------------------------------------------
 
     r4_raw = roc_filter_analysis(
@@ -2955,6 +2938,7 @@ def analyze(
     else:
 
         r = {
+
             "roc5":
                 None,
 
@@ -3001,13 +2985,19 @@ def analyze(
 
     # -----------------------------------------------------
     # 최종 신호
+    #
+    # ★ 여기서 코인별 1H 캔들 기준 카운팅
     # -----------------------------------------------------
 
     q = get_signal_qualified(
         r1,
         r4,
         r,
-        changes
+        changes,
+        market=market,
+        current_candle_time=get_current_candle_start(
+            ROC_TIMEFRAME
+        )
     )
 
     return {
@@ -3142,6 +3132,22 @@ def make_row(
                 []
             ),
 
+        "signal_active":
+            bool(
+                a.get(
+                    "signal_active",
+                    False
+                )
+            ),
+
+        "signal_count":
+            int(
+                a.get(
+                    "signal_count",
+                    0
+                )
+            ),
+
         "bid_amount":
             float(
                 ob.get(
@@ -3206,8 +3212,6 @@ def make_row(
 
 # =========================================================
 # 상승 후보
-#
-# ★ 전체 활성 ROC 0선 돌파 신호
 # =========================================================
 
 def is_breakout(row):
@@ -3456,7 +3460,9 @@ def update_upbit():
             f"[{coin}] "
             f"ROC={rows[-1]['roc'].get('display', '-')} "
             f"0선돌파="
-            f"{rows[-1].get('zero_cross_list', [])}"
+            f"{rows[-1].get('zero_cross_list', [])} "
+            f"신호카운트="
+            f"{rows[-1].get('signal_count', 0)}"
         )
 
     latest_upbit_data = rows
@@ -4486,7 +4492,10 @@ def roc_html(
 # =========================================================
 # 신호 HTML
 #
-# ★ 전체 활성 ROC 0선 돌파를 표시
+# ★ 로켓 작게
+# ★ 옆에 카운팅
+# ★ 0부터 시작
+# ★ 유지되는 동안 계속 표시
 # =========================================================
 
 def signal_html(
@@ -4494,29 +4503,31 @@ def signal_html(
 ):
 
     if not row:
-        return "-"
+
+        return (
+            '<span class="muted">-</span>'
+        )
 
     if row.get(
-        "breakout_qualified",
+        "signal_active",
         False
     ):
 
-        cross_list = row.get(
-            "zero_cross_list",
-            []
+        count = int(
+            row.get(
+                "signal_count",
+                0
+            )
         )
 
-        if cross_list:
-
-            return (
-                '<span class="signal-icon">'
-                '🚀'
-                '</span>'
-            )
-
         return (
-            '<span class="signal-icon">'
+            '<span class="signal-active">'
+            '<span class="signal-rocket">'
             '🚀'
+            '</span>'
+            '<span class="signal-count">'
+            f'{count}'
+            '</span>'
             '</span>'
         )
 
@@ -4824,7 +4835,7 @@ def table_html(
                     </th>
 
                     <th>
-                        ROC5
+                        ROC
                     </th>
 
                     <th>
@@ -4850,8 +4861,6 @@ def table_html(
 
 # =========================================================
 # 상승 신호
-#
-# ★ 전체 활성 ROC 0선 상승 돌파
 # =========================================================
 
 def focus_section(
@@ -5152,15 +5161,30 @@ h1{
     vertical-align:middle;
 }
 
-.signal-icon{
+/* =====================================================
+   신호 로켓 + 카운팅
+   ===================================================== */
+
+.signal-active{
     display:inline-flex;
     align-items:center;
     justify-content:center;
-    width:100%;
+    gap:2px;
     min-height:21px;
-    font-size:15px;
-    line-height:17px;
+    white-space:nowrap;
+}
+
+.signal-rocket{
+    font-size:9px;
+    line-height:10px;
     font-weight:900;
+}
+
+.signal-count{
+    font-size:7px;
+    line-height:9px;
+    font-weight:900;
+    color:#39e875;
 }
 
 .table-wrap{
@@ -5321,6 +5345,7 @@ td:nth-child(1){
     flex:none;
     white-space:nowrap;
     font-size:4.5px;
+    line-height:8px;
     font-weight:800;
 }
 
@@ -5333,16 +5358,23 @@ td:nth-child(1){
     opacity:.55;
 }
 
+/* =====================================================
+   ROC 카운팅 크기 통일
+   ===================================================== */
+
 .roc-cell{
     display:flex;
     align-items:center;
     justify-content:center;
     min-height:21px;
     white-space:nowrap;
+    font-size:5.8px;
+    line-height:8px;
 }
 
 .roc-cell span{
-    font-size:5.8px;
+    font-size:5.8px!important;
+    line-height:8px;
     font-weight:900;
 }
 
@@ -5592,15 +5624,27 @@ td:nth-child(1){
 
     .roc-item{
         font-size:3.8px;
+        line-height:7px;
     }
 
     .roc-cell span{
-        font-size:5.2px;
+        font-size:5.8px!important;
+        line-height:8px;
     }
 
-    .signal-icon{
-        font-size:13px;
+    .signal-active{
+        gap:1px;
         min-height:19px;
+    }
+
+    .signal-rocket{
+        font-size:8px;
+        line-height:9px;
+    }
+
+    .signal-count{
+        font-size:6.5px;
+        line-height:8px;
     }
 
     .orderbook-row{
@@ -5733,15 +5777,27 @@ td:nth-child(1){
 
     .roc-item{
         font-size:5.5px;
+        line-height:10px;
     }
 
     .roc-cell span{
-        font-size:7px;
+        font-size:7px!important;
+        line-height:10px;
     }
 
-    .signal-icon{
-        font-size:20px;
+    .signal-active{
+        gap:2px;
         min-height:28px;
+    }
+
+    .signal-rocket{
+        font-size:12px;
+        line-height:13px;
+    }
+
+    .signal-count{
+        font-size:8px;
+        line-height:10px;
     }
 
     .orderbook-row{
@@ -5786,10 +5842,6 @@ td:nth-child(1){
     response_class=HTMLResponse
 )
 def dashboard():
-
-    # -----------------------------------------------------
-    # 실제 필터 시간봉 상태 표시
-    # -----------------------------------------------------
 
     status_1h_class = (
         "y"
@@ -5856,19 +5908,11 @@ def dashboard():
 
     sections = ""
 
-    # -----------------------------------------------------
-    # 상승 신호
-    # -----------------------------------------------------
-
     if USE_UPBIT == "Y":
 
         sections += focus_section(
             latest_upbit_data
         )
-
-    # -----------------------------------------------------
-    # 전체 TOP
-    # -----------------------------------------------------
 
     if USE_UPBIT == "Y":
 
@@ -6097,6 +6141,13 @@ def startup():
         "활성 ROC 전체 >= 0 "
         "+ 활성 ROC 중 하나 0선 상승 돌파 "
         "+ 당일 >= 0% → 🚀"
+    )
+
+    log.info(
+        "신호 카운팅: "
+        "돌파 캔들 0 "
+        "→ 다음 캔들 1 "
+        "→ 이후 2, 3, 4..."
     )
 
     log.info(
