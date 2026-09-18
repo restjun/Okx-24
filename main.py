@@ -211,7 +211,7 @@ def format_volume(value):
 
     # 1,000억 이상
     if value >= 100_000_000_000:
-        return f"{value / 1_000_000_000_000:.1f}조"
+        return f"{value / 1_000_000_000:.1f}억"
 
     # 1억 이상
     if value >= 100_000_000:
@@ -234,15 +234,19 @@ def format_total_trade_value(value):
     if value <= 0:
         return "-"
 
+    # 1조 이상
     if value >= 1_000_000_000_000:
         return f"{value / 1_000_000_000_000:.1f}조"
 
+    # 1,000억 이상
     if value >= 100_000_000_000:
-        return f"{value / 1_000_000_000_000:.1f}조"
+        return f"{value / 1_000_000_000:.1f}억"
 
+    # 1억 이상
     if value >= 100_000_000:
         return f"{value / 100_000_000:.1f}억"
 
+    # 1만 이상
     if value >= 10_000:
         return f"{value / 10_000:.0f}만"
 
@@ -1083,8 +1087,6 @@ def find_latest_signal_start(
         if not row_ok:
             continue
 
-        # 현재 0 이상 상태에서
-        # 직전 캔들이 모든 활성 ROC 음수였던 지점을 찾음
         previous_ok = False
 
         if i > 0:
@@ -1146,6 +1148,7 @@ def find_latest_signal_start(
                     break
 
         if previous_ok:
+
             candidate_times.append(
                 normalize_datetime(
                     completed_1h.iloc[i]["time"]
@@ -1153,10 +1156,9 @@ def find_latest_signal_start(
             )
 
     if candidate_times:
+
         return candidate_times[-1]
 
-    # 과거에 이미 발생한 신호이고
-    # 현재까지 유지되고 있는 경우
     latest_valid = None
 
     for i in range(
@@ -1222,6 +1224,7 @@ def find_latest_signal_start(
         if row_ok:
 
             if latest_valid is None:
+
                 latest_valid = normalize_datetime(
                     completed_1h.iloc[i]["time"]
                 )
@@ -1249,23 +1252,16 @@ def get_signal_qualified(
     )
 
     if completed_time is None:
+
         return {
             "active": False,
             "count": 0,
             "start": None
         }
 
-    # -----------------------------------------------------
-    # 기존 상태
-    # -----------------------------------------------------
-
     state = signal_states.get(
         market
     )
-
-    # -----------------------------------------------------
-    # 현재 활성 신호가 있는데 ROC가 깨진 경우
-    # -----------------------------------------------------
 
     if state is not None:
 
@@ -1307,10 +1303,6 @@ def get_signal_qualified(
 
                 return state
 
-    # -----------------------------------------------------
-    # 새로운 신호 확인
-    # -----------------------------------------------------
-
     start = find_latest_signal_start(
         df1h,
         df4h
@@ -1318,8 +1310,6 @@ def get_signal_qualified(
 
     if start is not None:
 
-        # 실제 시작 캔들은 완성된 1H 캔들
-        # 다음 진행 캔들이 1
         count = candle_distance(
             start,
             current_start,
@@ -1341,18 +1331,11 @@ def get_signal_qualified(
 
         return state
 
-    # -----------------------------------------------------
-    # 현재 완성 캔들에서 모든 활성 ROC가
-    # 0 이상인지 확인
-    # -----------------------------------------------------
-
     if active_roc_all_positive(
         df1h,
         df4h
     ):
 
-        # 직전 완성 캔들이 음수였던 경우
-        # 현재 완성 캔들이 돌파 캔들 = 0
         statuses = get_all_active_roc_status(
             df1h,
             df4h
@@ -1367,6 +1350,7 @@ def get_signal_qualified(
                 and status["previous"] < 0
                 and status["current"] >= 0
             ):
+
                 zero_cross = True
                 break
 
@@ -1419,8 +1403,10 @@ def roc_value_html(
 
     if value > 0:
         cls = "roc-positive"
+
     elif value < 0:
         cls = "roc-negative"
+
     else:
         cls = "roc-zero"
 
@@ -1438,17 +1424,20 @@ def roc_html(
 
     parts = []
 
-    # 1H
     for period in ROC_FILTER_PERIODS:
 
         if period == 5:
             enabled = USE_1H_ROC5
+
         elif period == 10:
             enabled = USE_1H_ROC10
+
         elif period == 20:
             enabled = USE_1H_ROC20
+
         elif period == 50:
             enabled = USE_1H_ROC50
+
         else:
             enabled = USE_1H_ROC200
 
@@ -1475,17 +1464,20 @@ def roc_html(
                 f'</span>'
             )
 
-    # 4H
     for period in ROC_FILTER_PERIODS:
 
         if period == 5:
             enabled = USE_4H_ROC5
+
         elif period == 10:
             enabled = USE_4H_ROC10
+
         elif period == 20:
             enabled = USE_4H_ROC20
+
         elif period == 50:
             enabled = USE_4H_ROC50
+
         else:
             enabled = USE_4H_ROC200
 
@@ -1639,6 +1631,7 @@ def calculate_orderbook_amount(
 ):
 
     if not orderbook:
+
         return {
             "bid": 0,
             "ask": 0,
@@ -1655,6 +1648,7 @@ def calculate_orderbook_amount(
     )
 
     if not units:
+
         return {
             "bid": 0,
             "ask": 0,
@@ -1681,6 +1675,7 @@ def calculate_orderbook_amount(
     )
 
     if current_price <= 0:
+
         current_price = float(
             units[0].get(
                 "bid_price",
@@ -1823,10 +1818,10 @@ def update_previous_upbit_total_trade_value(
         if df.empty:
             continue
 
-        # 가장 최근 완성 일봉
         if len(df) >= 2:
 
             try:
+
                 value = float(
                     df.iloc[-2][
                         "trade_value"
@@ -2303,7 +2298,16 @@ def dashboard_html():
             )
         )
 
-    return f"""
+    summary_html = market_summary_html()
+    table_html = rows_html()
+
+    # -----------------------------------------------------
+    # 중요:
+    # CSS의 { } 때문에 f-string SyntaxError가 발생하지
+    # 않도록 HTML 자체는 일반 문자열로 작성한다.
+    # -----------------------------------------------------
+
+    html = """
 <!DOCTYPE html>
 
 <html lang="ko">
@@ -2805,6 +2809,7 @@ td:nth-child(6){
     color:#aaa;
 
     font-size:5px;
+
 }
 
 
@@ -3015,13 +3020,13 @@ td:nth-child(6){
     </div>
 
     <div class="update">
-        {update_text}
+        __UPDATE_TIME__
     </div>
 
 </div>
 
 
-{market_summary_html()}
+__SUMMARY__
 
 
 <div class="table-wrap">
@@ -3050,7 +3055,7 @@ td:nth-child(6){
 
 <tbody>
 
-{rows_html()}
+__ROWS__
 
 </tbody>
 
@@ -3075,6 +3080,23 @@ setTimeout(
 
 </html>
 """
+
+    html = html.replace(
+        "__UPDATE_TIME__",
+        update_text
+    )
+
+    html = html.replace(
+        "__SUMMARY__",
+        summary_html
+    )
+
+    html = html.replace(
+        "__ROWS__",
+        table_html
+    )
+
+    return html
 
 
 # =========================================================
