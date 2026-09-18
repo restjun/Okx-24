@@ -162,14 +162,7 @@ okx_1h_cache_time = "-"
 
 
 # =========================================================
-# ★ 전일 업비트 전체 거래대금
-#
-# latest_upbit_total_trade_value
-#     = 전일 완성 일봉 기준
-#       전체 KRW 마켓 거래대금 합계
-#
-# latest_upbit_total_trade_date
-#     = 계산한 업비트 일봉 날짜
+# 전일 업비트 전체 거래대금
 # =========================================================
 
 latest_upbit_total_trade_value = 0.0
@@ -912,12 +905,6 @@ def get_upbit_markets():
 
 # =========================================================
 # ★ 전일 업비트 전체 거래대금
-#
-# 전체 KRW 마켓의
-# "가장 최근 완성된 업비트 일봉"
-# candle_acc_trade_price를 합산
-#
-# 같은 날짜에는 캐시 사용
 # =========================================================
 
 def update_previous_upbit_total_trade_value(
@@ -933,33 +920,10 @@ def update_previous_upbit_total_trade_value(
 
     now = datetime.now(KST)
 
-    # -----------------------------------------------------
-    # 업비트 일봉 기준
-    #
-    # 현재 KST 09:00 이후:
-    # 가장 최근 완성 일봉 = 오늘 09:00 직전까지의 일봉
-    #
-    # 현재 KST 09:00 이전:
-    # 가장 최근 완성 일봉 = 어제 09:00 직전까지의 일봉
-    # -----------------------------------------------------
-
-    if (
-        now.hour >= 9
-    ):
-
-        target_date = (
-            now.date()
-        )
-
+    if now.hour >= 9:
+        target_date = now.date()
     else:
-
-        target_date = (
-            now.date()
-        )
-
-    # -----------------------------------------------------
-    # 이미 오늘 계산했다면 재계산하지 않음
-    # -----------------------------------------------------
+        target_date = now.date()
 
     if (
         latest_upbit_total_trade_date
@@ -1013,11 +977,6 @@ def update_previous_upbit_total_trade_value(
             if len(data) < 2:
                 continue
 
-            # -------------------------------------------------
-            # 최신 일봉은 현재 진행 중일 수 있으므로
-            # 두 번째 일봉을 전일 완성 일봉으로 사용
-            # -------------------------------------------------
-
             candle = data[1]
 
             value = float(
@@ -1060,7 +1019,9 @@ def update_previous_upbit_total_trade_value(
 
 
 # =========================================================
-# 전일 거래대금 표시
+# ★ 거래대금 표시
+#
+# 모든 거래대금은 억 단위만 표시
 # =========================================================
 
 def format_total_trade_value(
@@ -1080,27 +1041,21 @@ def format_total_trade_value(
     if value <= 0:
         return "-"
 
-    if value >= 1e12:
+    eok = value / 100_000_000
 
-        return (
-            f"{value / 1e12:.2f}조"
-        )
+    if eok >= 1000:
 
-    if value >= 1e8:
+        return f"{eok:,.0f}억"
 
-        return (
-            f"{value / 1e8:.0f}억"
-        )
+    if eok >= 10:
 
-    if value >= 1e4:
+        return f"{eok:.1f}억"
 
-        return (
-            f"{value / 1e4:.0f}만원"
-        )
+    if eok >= 1:
 
-    return (
-        f"{value:,.0f}원"
-    )
+        return f"{eok:.1f}억"
+
+    return f"{eok:.2f}억"
 
 
 # =========================================================
@@ -2359,6 +2314,11 @@ def format_change(x):
     )
 
 
+# =========================================================
+# ★ 거래대금
+# 무조건 억 단위
+# =========================================================
+
 def format_volume(v):
 
     try:
@@ -2369,16 +2329,24 @@ def format_volume(v):
 
         return "-"
 
-    if v >= 1e12:
-        return f"{v / 1e12:.1f}조"
+    if v <= 0:
+        return "-"
 
-    if v >= 1e8:
-        return f"{v / 1e8:.0f}억"
+    eok = v / 100_000_000
 
-    if v >= 1e4:
-        return f"{v / 1e4:.0f}만"
+    if eok >= 1000:
 
-    return f"{v:,.0f}"
+        return f"{eok:,.0f}억"
+
+    if eok >= 10:
+
+        return f"{eok:.1f}억"
+
+    if eok >= 1:
+
+        return f"{eok:.1f}억"
+
+    return f"{eok:.2f}억"
 
 
 # =========================================================
@@ -3872,14 +3840,6 @@ def update_upbit():
         reverse=True
     )
 
-    # =====================================================
-    # ★ 전일 전체 업비트 거래대금 계산
-    #
-    # TOP10이 아니라
-    # get_upbit_markets()에서 확보한
-    # 전체 KRW 마켓을 사용
-    # =====================================================
-
     try:
 
         update_previous_upbit_total_trade_value(
@@ -4765,10 +4725,6 @@ def market_summary_html():
 
             btc_daily = "⚪"
 
-    # =====================================================
-    # ★ 전일 전체 업비트 거래대금
-    # =====================================================
-
     total_trade_value = (
         format_total_trade_value(
             latest_upbit_total_trade_value
@@ -4841,10 +4797,6 @@ def market_summary_html():
                 </div>
 
             </div>
-
-            <!-- =================================================
-                 ★ 변경된 3번째 칸
-                 ================================================= -->
 
             <div class="btc-info-box total-trade-box">
 
@@ -5572,10 +5524,6 @@ h1{
     font-weight:900;
 }
 
-/* =====================================================
-   ★ 전일 전체 거래대금 강조
-   ===================================================== */
-
 .total-trade-box{
     border-color:#343b43;
     background:
@@ -5785,9 +5733,11 @@ td:nth-child(1){
 }
 
 .vol{
-    font-size:6px;
-    font-weight:800;
+    font-size:5.5px;
+    font-weight:900;
     white-space:nowrap;
+    overflow:visible;
+    text-overflow:clip;
 }
 
 .ema{
@@ -6094,8 +6044,6 @@ td:nth-child(1){
         line-height:25px;
     }
 
-    /* ★ 모바일 거래대금 강조 */
-
     .total-trade-box .btc-info-title{
         font-size:4.3px;
     }
@@ -6132,7 +6080,11 @@ td:nth-child(1){
     }
 
     .vol{
-        font-size:5.5px;
+        font-size:5px;
+        font-weight:900;
+        white-space:nowrap;
+        overflow:visible;
+        text-overflow:clip;
     }
 
     .filter-timeframe{
@@ -6260,8 +6212,6 @@ td:nth-child(1){
         line-height:34px;
     }
 
-    /* ★ PC 거래대금 강조 */
-
     .total-trade-box .btc-info-title{
         font-size:6.5px;
     }
@@ -6300,7 +6250,11 @@ td:nth-child(1){
     }
 
     .vol{
-        font-size:8px;
+        font-size:7px;
+        font-weight:900;
+        white-space:nowrap;
+        overflow:visible;
+        text-overflow:clip;
     }
 
     .filter-timeframe{
@@ -6707,7 +6661,15 @@ def startup():
     )
 
     log.info(
-        "전일 거래대금은 날짜별 캐시 사용"
+        "전일 거래대금은 억 단위 표시"
+    )
+
+    log.info(
+        "TOP 거래대금도 억 단위 표시"
+    )
+
+    log.info(
+        "호가 대기금액도 억 단위 표시"
     )
 
     log.info(
