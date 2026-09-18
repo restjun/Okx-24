@@ -161,16 +161,16 @@ okx_1h_cache_time = "-"
 # =========================================================
 # ROC 신호 상태
 #
-# 핵심
+# ★ 중요
 #
 # 모든 활성 ROC가 처음으로 0 이상이 된
-# "완성 캔들" = 0
+# 완성 캔들 = 0
 #
 # 다음 완성 캔들 = 1
 # 다음 = 2
 # 다음 = 3
 #
-# ROC와 신호가 이 상태를 공동 사용
+# ROC와 신호는 동일 state/count 사용
 # =========================================================
 
 roc_signal_state = {}
@@ -233,7 +233,6 @@ def get_enabled_periods(timeframe):
     for period in ROC_FILTER_PERIODS:
 
         if settings[period][timeframe] == "Y":
-
             result.append(period)
 
     return result
@@ -287,7 +286,9 @@ def get_enabled_all_filters():
 
 def get_enabled_filter_text(timeframe):
 
-    periods = get_enabled_periods(timeframe)
+    periods = get_enabled_periods(
+        timeframe
+    )
 
     if not periods:
         return "-"
@@ -421,6 +422,8 @@ def get_current_candle_start(minutes):
 
 # =========================================================
 # 마지막 완성 캔들 시간
+#
+# ★ 카운팅 기준
 # =========================================================
 
 def get_last_completed_candle_time(
@@ -450,9 +453,10 @@ def get_last_completed_candle_time(
         if completed.empty:
             return None
 
-        return completed[
-            "datetime"
-        ].iloc[-1]
+        return (
+            completed["datetime"]
+            .iloc[-1]
+        )
 
     except Exception:
 
@@ -591,23 +595,22 @@ def retry(func, *args, **kwargs):
 
             wait_request()
 
-            r = func(
+            response = func(
                 *args,
                 **kwargs
             )
 
             if not hasattr(
-                r,
+                response,
                 "status_code"
             ):
 
-                return r
+                return response
 
-            if r.status_code == 200:
+            if response.status_code == 200:
+                return response
 
-                return r
-
-            if r.status_code == 429:
+            if response.status_code == 429:
 
                 wait = min(
                     RATE_LIMIT_WAIT
@@ -615,7 +618,7 @@ def retry(func, *args, **kwargs):
                     60
                 )
 
-            elif r.status_code >= 500:
+            elif response.status_code >= 500:
 
                 wait = min(
                     2 * 2 ** n,
@@ -625,11 +628,12 @@ def retry(func, *args, **kwargs):
             else:
 
                 log.warning(
-                    f"[HTTP {r.status_code}] "
+                    f"[HTTP "
+                    f"{response.status_code}] "
                     f"{url}"
                 )
 
-                return r
+                return response
 
             log.warning(
                 f"[API 재시도] "
@@ -683,16 +687,12 @@ def get_upbit_markets():
         markets = r.json()
 
         krw_markets = [
-
             x["market"]
-
             for x in markets
-
             if x.get(
                 "market",
                 ""
             ).startswith("KRW-")
-
         ]
 
         if not krw_markets:
@@ -1120,7 +1120,6 @@ def get_upbit_candle(
     }
 
     if to:
-
         params["to"] = to
 
     r = retry(
@@ -1274,7 +1273,6 @@ def history_upbit(
         )
 
         if len(all_df) >= required:
-
             return all_df
 
         to = (
@@ -1419,7 +1417,6 @@ def roc_filter_analysis(
 ):
 
     if periods is None:
-
         periods = get_all_periods()
 
     result = {
@@ -1516,7 +1513,6 @@ def roc_filter_analysis(
             )
 
             if current_value >= 0:
-
                 positive_count += 1
 
         passed = (
@@ -1563,10 +1559,7 @@ def roc_filter_analysis(
 
 
 # =========================================================
-# ROC 필터 표시용
-#
-# ★ 화면에는 모든 ROC를 표시
-# ★ Y/N 설정도 유지
+# ROC 필터 표시
 # =========================================================
 
 def roc_filter_display(
@@ -1576,18 +1569,26 @@ def roc_filter_display(
 
     if result is None:
 
-        result = {}
+        result = empty_roc_filter(
+            timeframe
+        )
 
-    result = dict(result)
+    result = dict(
+        result
+    )
 
-    result["timeframe"] = timeframe
+    result["timeframe"] = (
+        timeframe
+    )
 
+    # ★ 실제 활성 필터
     result["enabled_periods"] = (
         get_enabled_periods(
             timeframe
         )
     )
 
+    # ★ 화면 표시용 전체 ROC
     result["all_periods"] = (
         ROC_FILTER_PERIODS.copy()
     )
@@ -1608,8 +1609,8 @@ def all_active_roc_filters_pass(
         get_enabled_all_filters()
     )
 
+    # 활성 ROC가 하나도 없으면 통과
     if not enabled:
-
         return True
 
     for timeframe, period in enabled:
@@ -1621,7 +1622,6 @@ def all_active_roc_filters_pass(
         )
 
         if not info:
-
             return False
 
         value = (
@@ -1634,13 +1634,11 @@ def all_active_roc_filters_pass(
         )
 
         if value is None:
-
             return False
 
         try:
 
             if float(value) < 0:
-
                 return False
 
         except Exception:
@@ -1667,7 +1665,6 @@ def get_all_active_roc_status(
     )
 
     if not enabled:
-
         return False, False
 
     current_ok = True
@@ -1685,7 +1682,6 @@ def get_all_active_roc_status(
         )
 
         if not info:
-
             return False, False
 
         values = info.get(
@@ -1765,11 +1761,11 @@ def get_all_active_roc_status(
 # =========================================================
 # 전체 활성 ROC 최초 완성
 #
-# 이전 완성 캔들:
-# 하나라도 음수
+# ★ 이전 완성 캔들:
+#    전체 조건 미충족
 #
-# 현재 완성 캔들:
-# 모두 0 이상
+# ★ 현재 완성 캔들:
+#    전체 조건 충족
 #
 # => 🚀0
 # =========================================================
@@ -1818,9 +1814,8 @@ def get_active_zero_cross_list(
 # =========================================================
 # ROC 분석
 #
-# ★ 실제 카운팅은 여기서 하지 않음
-# ★ get_signal_qualified()의 state를 사용
-# ★ ROC와 신호가 완전히 같은 count를 사용
+# ★ 카운팅은 하지 않음
+# ★ get_signal_qualified()가 유일한 count 관리
 # =========================================================
 
 def roc_analysis(
@@ -2221,13 +2216,11 @@ def empty_analysis():
 # =========================================================
 # ROC 필터 HTML
 #
-# ★ 여기서 흰색 고정 문제 해결
+# ★ Y/N 여부와 관계없이 전체 상태 표시
 #
-# ROC > 0 = 초록
-# ROC < 0 = 빨강
-# ROC = 0 = 회색
-#
-# N이라도 상태 색상은 표시
+# 🟢 양수
+# 🔴 음수
+# ⚪ 0 / 데이터 없음
 # =========================================================
 
 def roc_filter_html(
@@ -2238,7 +2231,6 @@ def roc_filter_html(
     settings = roc_settings()
 
     if not r:
-
         r = {}
 
     values = r.get(
@@ -2253,10 +2245,6 @@ def roc_filter_html(
         value = values.get(
             period
         )
-
-        # ---------------------------------------------
-        # 상태 색상
-        # ---------------------------------------------
 
         if value is None:
 
@@ -2289,10 +2277,6 @@ def roc_filter_html(
                 value_class = "roc-zero"
                 icon = "⚪"
 
-        # ---------------------------------------------
-        # Y / N
-        # ---------------------------------------------
-
         setting = settings[
             period
         ][timeframe]
@@ -2310,7 +2294,7 @@ def roc_filter_html(
             )
 
         parts.append(
-            f'''
+            f"""
             <span class="
                 roc-item
                 {setting_class}
@@ -2318,7 +2302,7 @@ def roc_filter_html(
             ">
                 {period}{icon}
             </span>
-            '''
+            """
         )
 
     return (
@@ -2330,12 +2314,26 @@ def roc_filter_html(
 
 # =========================================================
 # 필터 HTML
+#
+# ★ 여기서는 함수 내부 f-string을
+#   별도 변수로 만들지 않아도 되지만
+#   rows_html에서는 반드시 분리하여 사용
 # =========================================================
 
 def filter_html(
     r1,
     r4
 ):
+
+    h1_html = roc_filter_html(
+        r1,
+        "1H"
+    )
+
+    h4_html = roc_filter_html(
+        r4,
+        "4H"
+    )
 
     return (
 
@@ -2347,10 +2345,7 @@ def filter_html(
         '1H'
         '</span>'
 
-        f'{roc_filter_html(
-            r1,
-            "1H"
-        )}'
+        f'{h1_html}'
 
         '</div>'
 
@@ -2360,10 +2355,7 @@ def filter_html(
         '4H'
         '</span>'
 
-        f'{roc_filter_html(
-            r4,
-            "4H"
-        )}'
+        f'{h4_html}'
 
         '</div>'
 
@@ -2374,20 +2366,13 @@ def filter_html(
 # =========================================================
 # 신호 자격 / 통합 카운팅
 #
-# ★ 핵심 함수
+# ★ ROC만 카운팅 상태를 결정
 #
-# 1. 활성 ROC 전체가 처음 0 이상
-#    완성캔들 = 0
+# ★ 일봉 등락률은
+#   상승 후보 표시 여부에만 사용
 #
-# 2. 다음 완성캔들 = 1
-#
-# 3. 다음 = 2
-#
-# 4. 활성 ROC 하나라도 < 0
-#    => 신호 종료
-#
-# 5. 일봉 등락률은 "상승 신호 표시"에만 사용
-#    ROC 카운팅 자체를 초기화하지 않음
+# ★ ROC 하나라도 음수
+#   => state 종료
 # =========================================================
 
 def get_signal_qualified(
@@ -2419,7 +2404,7 @@ def get_signal_qualified(
     )
 
     # -----------------------------------------------------
-    # 최초 전체 완성
+    # 전체 조건 최초 완성
     # -----------------------------------------------------
 
     all_active_cross = (
@@ -2428,7 +2413,7 @@ def get_signal_qualified(
     )
 
     # -----------------------------------------------------
-    # 등락률
+    # 일봉 등락률
     # -----------------------------------------------------
 
     change_value = (
@@ -2443,7 +2428,7 @@ def get_signal_qualified(
     )
 
     # -----------------------------------------------------
-    # 현재 상태
+    # 기존 state
     # -----------------------------------------------------
 
     state = roc_signal_state.get(
@@ -2451,11 +2436,11 @@ def get_signal_qualified(
     )
 
     # =====================================================
-    # CASE 1
+    # 1.
     #
-    # 모든 활성 ROC가 처음으로 완성
+    # 전체 활성 ROC 최초 완성
     #
-    # => 무조건 🚀0
+    # => 🚀0
     # =====================================================
 
     if all_active_cross:
@@ -2478,11 +2463,11 @@ def get_signal_qualified(
         }
 
     # =====================================================
-    # CASE 2
+    # 2.
     #
-    # 이미 신호가 살아 있음
+    # 기존 신호 유지
     #
-    # 새로운 완성캔들이면 +1
+    # 새로운 완성 캔들마다 +1
     # =====================================================
 
     elif (
@@ -2521,9 +2506,9 @@ def get_signal_qualified(
             ] = current_candle_time
 
     # =====================================================
-    # CASE 3
+    # 3.
     #
-    # 현재 활성 ROC 중 하나라도 음수
+    # 활성 ROC 중 하나라도 음수
     #
     # => 신호 종료
     # =====================================================
@@ -2536,7 +2521,7 @@ def get_signal_qualified(
         )
 
     # -----------------------------------------------------
-    # 상태 재조회
+    # state 다시 읽기
     # -----------------------------------------------------
 
     state = roc_signal_state.get(
@@ -2563,7 +2548,7 @@ def get_signal_qualified(
         )
 
     # -----------------------------------------------------
-    # ROC 전체 돌파 목록
+    # 전체 ROC 돌파 목록
     # -----------------------------------------------------
 
     zero_cross_list = (
@@ -2574,11 +2559,11 @@ def get_signal_qualified(
     )
 
     # -----------------------------------------------------
-    # 상승 신호
+    # 상승 후보
     #
-    # ROC 상태는 유지하되
-    # 당일 등락률 >= 0일 때만
-    # 상승 후보 섹션에 표시
+    # ROC state는 일봉 변화와 무관하게 유지
+    #
+    # 당일 >= 0인 경우에만 상승 후보 표시
     # -----------------------------------------------------
 
     breakout_qualified = (
@@ -2600,7 +2585,7 @@ def get_signal_qualified(
             else "none",
 
         "zero_cross":
-            signal_active,
+            all_active_cross,
 
         "zero_cross_list":
             zero_cross_list,
@@ -2705,6 +2690,9 @@ def analyze(
 
     # -----------------------------------------------------
     # 1H 전체 ROC
+    #
+    # ★ 화면에는 전체 5/10/20/50/200 표시
+    # ★ 실제 조건은 Y만 사용
     # -----------------------------------------------------
 
     r1_raw = roc_filter_analysis(
@@ -2751,9 +2739,9 @@ def analyze(
     )
 
     # -----------------------------------------------------
-    # ★ 실제 마지막 완성 1H 캔들
+    # ★ 마지막 완성 캔들 시간
     #
-    # 현재 진행 중인 캔들 시간이 아님
+    # 현재 진행 중인 캔들은 사용하지 않음
     # -----------------------------------------------------
 
     current_candle_time = (
@@ -2764,7 +2752,7 @@ def analyze(
     )
 
     # -----------------------------------------------------
-    # 신호
+    # 통합 신호
     # -----------------------------------------------------
 
     q = get_signal_qualified(
@@ -2777,9 +2765,7 @@ def analyze(
     )
 
     # -----------------------------------------------------
-    # ★ ROC에도 동일 count 저장
-    #
-    # ROC / 신호 완전 동일
+    # ★ ROC와 신호의 count를 동일하게 적용
     # -----------------------------------------------------
 
     r["signal_count"] = int(
@@ -2795,12 +2781,12 @@ def analyze(
     ):
 
         r["display"] = (
-            f'🚀{int(
+            f"🚀{int(
                 q.get(
                     "signal_count",
                     0
                 )
-            )}'
+            )}"
         )
 
         r["state"] = (
@@ -2817,10 +2803,6 @@ def analyze(
         )
 
     else:
-
-        # ---------------------------------------------
-        # 신호가 없을 때는 ROC5 상태 표시
-        # ---------------------------------------------
 
         roc5 = r.get(
             "roc5"
@@ -2852,7 +2834,7 @@ def analyze(
 
             except Exception:
 
-                r["display"] = "⚪ 0"
+                r["display"] = "⚪"
 
     return {
 
@@ -3522,7 +3504,6 @@ def history_okx(
         )
 
         if len(all_df) >= required:
-
             return all_df
 
         before = int(
@@ -4194,6 +4175,9 @@ def roc_html(
 
 # =========================================================
 # 신호 HTML
+#
+# ★ 로켓 + 카운트
+# ★ ROC와 동일 signal_count
 # =========================================================
 
 def signal_html(row):
@@ -4392,6 +4376,11 @@ def orderbook_html(row):
 
 # =========================================================
 # 행 HTML
+#
+# ★★★ SyntaxError 수정 핵심 ★★★
+#
+# 함수 호출을 f-string 안에서 직접 하지 않고
+# 먼저 변수로 생성
 # =========================================================
 
 def rows_html(data):
@@ -4406,9 +4395,49 @@ def rows_html(data):
             else ""
         )
 
+        # -------------------------------------------------
+        # ★ 각각 먼저 HTML 생성
+        # -------------------------------------------------
+
+        filter_content = filter_html(
+            x.get(
+                "roc_filter_1h"
+            ),
+            x.get(
+                "roc_filter_high"
+            )
+        )
+
+        roc_content = roc_html(
+            x.get(
+                "roc"
+            ),
+            x.get(
+                "signal_count",
+                0
+            ),
+            x.get(
+                "signal_active",
+                False
+            )
+        )
+
+        signal_content = signal_html(
+            x
+        )
+
+        orderbook_content = (
+            orderbook_html(
+                x
+            )
+        )
+
+        # -------------------------------------------------
+        # ★ f-string 안에는 변수만 사용
+        # -------------------------------------------------
+
         out.append(
             f"""
-
             <tr class="{cls}">
 
                 <td>
@@ -4432,38 +4461,15 @@ def rows_html(data):
                 </td>
 
                 <td class="ema">
-
-                    {filter_html(
-                        x.get(
-                            "roc_filter_1h"
-                        ),
-                        x.get(
-                            "roc_filter_high"
-                        )
-                    )}
-
+                    {filter_content}
                 </td>
 
                 <td>
-
-                    {roc_html(
-                        x.get("roc"),
-                        x.get(
-                            "signal_count",
-                            0
-                        ),
-                        x.get(
-                            "signal_active",
-                            False
-                        )
-                    )}
-
+                    {roc_content}
                 </td>
 
                 <td class="signal-cell">
-
-                    {signal_html(x)}
-
+                    {signal_content}
                 </td>
 
             </tr>
@@ -4471,13 +4477,10 @@ def rows_html(data):
             <tr class="orderbook-subrow">
 
                 <td colspan="6">
-
-                    {orderbook_html(x)}
-
+                    {orderbook_content}
                 </td>
 
             </tr>
-
             """
         )
 
@@ -4867,8 +4870,8 @@ h1{
 }
 
 .signal-rocket{
-    font-size:9px;
-    line-height:10px;
+    font-size:8px;
+    line-height:9px;
     font-weight:900;
 }
 
@@ -5030,10 +5033,6 @@ td:nth-child(1){
     overflow:visible;
 }
 
-/* =====================================================
-   ROC 색상
-   ===================================================== */
-
 .roc-item{
     display:inline-flex;
     align-items:center;
@@ -5045,40 +5044,26 @@ td:nth-child(1){
     font-weight:900;
 }
 
-/* Y 활성 ROC */
-
 .roc-active{
     font-weight:900;
 }
-
-/* N ROC */
 
 .roc-disabled{
     font-weight:900;
     opacity:.55;
 }
 
-/* ROC 양수 */
-
 .roc-up{
     color:#39e875!important;
 }
-
-/* ROC 음수 */
 
 .roc-down{
     color:#ff5555!important;
 }
 
-/* ROC 0 / 데이터 없음 */
-
 .roc-zero{
     color:#68717b!important;
 }
-
-/* =====================================================
-   ROC 로켓
-   ===================================================== */
 
 .roc-cell{
     display:flex;
@@ -5086,12 +5071,12 @@ td:nth-child(1){
     justify-content:center;
     min-height:21px;
     white-space:nowrap;
-    font-size:5.8px;
+    font-size:6px;
     line-height:8px;
 }
 
 .roc-cell span{
-    font-size:5.8px!important;
+    font-size:6px!important;
     line-height:8px;
     font-weight:900;
 }
@@ -5508,8 +5493,8 @@ td:nth-child(1){
     }
 
     .signal-rocket{
-        font-size:12px;
-        line-height:13px;
+        font-size:10px;
+        line-height:11px;
     }
 
     .signal-count{
@@ -5571,6 +5556,18 @@ def dashboard():
         else "n"
     )
 
+    status_1h_text = (
+        get_enabled_filter_text("1H")
+        if USE_1H_ROC_FILTER == "Y"
+        else "N"
+    )
+
+    status_4h_text = (
+        get_enabled_filter_text("4H")
+        if USE_4H_ROC_FILTER == "Y"
+        else "N"
+    )
+
     status = f"""
 
     <div class="status">
@@ -5592,22 +5589,14 @@ def dashboard():
         <span>
             1H :
             <b class="{status_1h_class}">
-                {
-                    get_enabled_filter_text("1H")
-                    if USE_1H_ROC_FILTER == "Y"
-                    else "N"
-                }
+                {status_1h_text}
             </b>
         </span>
 
         <span>
             4H :
             <b class="{status_4h_class}">
-                {
-                    get_enabled_filter_text("4H")
-                    if USE_4H_ROC_FILTER == "Y"
-                    else "N"
-                }
+                {status_4h_text}
             </b>
         </span>
 
