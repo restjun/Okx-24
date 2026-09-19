@@ -40,23 +40,17 @@ KST = ZoneInfo("Asia/Seoul")
 # =========================================================
 
 VOLUME_HOURS = 24
-
 TOP_N = 20
-
 UPDATE_MINUTES = 1
 
 HISTORY_CHUNK = 200
-
 MAX_HISTORY_CHUNKS = 10
 
 USE_UPBIT = "Y"
-
 USE_OKX = "N"
 
 REQUEST_INTERVAL = 0.08
-
 RATE_LIMIT_WAIT = 3
-
 MAX_RETRIES = 10
 
 
@@ -68,33 +62,22 @@ MAX_RETRIES = 10
 # =========================================================
 
 USE_1H_ROC_FILTER = "Y"
-
 USE_4H_ROC_FILTER = "N"
 
 USE_1H_ROC5 = "N"
-
 USE_1H_ROC10 = "Y"
-
 USE_1H_ROC20 = "Y"
-
 USE_1H_ROC50 = "Y"
-
 USE_1H_ROC200 = "N"
 
 USE_4H_ROC5 = "N"
-
 USE_4H_ROC10 = "N"
-
 USE_4H_ROC20 = "N"
-
 USE_4H_ROC50 = "N"
-
 USE_4H_ROC200 = "N"
 
 ROC_FILTER_TIMEFRAME = 60
-
 ROC_FILTER_HIGH_TIMEFRAME = 240
-
 ROC_TIMEFRAME = 60
 
 # ★ 신호 / 눌림 모두 ROC5
@@ -114,9 +97,7 @@ ROC_FILTER_PERIODS = [
 # =========================================================
 
 ORDERBOOK_RANGE = 0.01
-
 ORDERBOOK_COUNT = 30
-
 ORDERBOOK_DOMINANCE_GAP = 5.0
 
 
@@ -125,23 +106,18 @@ ORDERBOOK_DOMINANCE_GAP = 5.0
 # =========================================================
 
 latest_upbit_data = []
-
 latest_okx_data = []
 
 latest_upbit_update_time = "-"
-
 latest_okx_update_time = "-"
 
 latest_upbit_markets = []
-
 latest_upbit_orderbook = {}
 
 request_lock = threading.Lock()
-
 update_lock = threading.Lock()
 
 last_request_time = 0
-
 latest_usdt_krw_internal = 0
 
 okx_ticker_cache = {}
@@ -177,9 +153,6 @@ roc_pullback_state = {}
 
 # =========================================================
 # ★ 진행캔들에서 이미 실패한 신호
-#
-# 같은 진행캔들 안에서
-# ROC5가 다시 올라와도 0을 반복 생성하지 않음
 # =========================================================
 
 roc_signal_failed_candle = {}
@@ -192,27 +165,22 @@ roc_signal_failed_candle = {}
 def roc_settings():
 
     return {
-
         5: {
             "1H": USE_1H_ROC5,
             "4H": USE_4H_ROC5
         },
-
         10: {
             "1H": USE_1H_ROC10,
             "4H": USE_4H_ROC10
         },
-
         20: {
             "1H": USE_1H_ROC20,
             "4H": USE_4H_ROC20
         },
-
         50: {
             "1H": USE_1H_ROC50,
             "4H": USE_4H_ROC50
         },
-
         200: {
             "1H": USE_1H_ROC200,
             "4H": USE_4H_ROC200
@@ -460,8 +428,7 @@ def get_last_completed_candle_time(
         )
 
         completed = temp[
-            temp["datetime"]
-            < current_start
+            temp["datetime"] < current_start
         ]
 
         if completed.empty:
@@ -857,25 +824,19 @@ def calculate_orderbook_amount(
     result = {
 
         "bid_amount": 0.0,
-
         "ask_amount": 0.0,
-
         "total_amount": 0.0,
 
         "bid_ratio": 0.0,
-
         "ask_ratio": 0.0,
 
         "bid_count": 0,
-
         "ask_count": 0,
 
         "lower_price": None,
-
         "upper_price": None,
 
         "dominance": "balanced",
-
         "dominance_text": "균형"
     }
 
@@ -906,7 +867,6 @@ def calculate_orderbook_amount(
     )
 
     result["lower_price"] = lower_price
-
     result["upper_price"] = upper_price
 
     units = orderbook.get(
@@ -915,11 +875,9 @@ def calculate_orderbook_amount(
     )
 
     bid_amount = 0.0
-
     ask_amount = 0.0
 
     bid_count = 0
-
     ask_count = 0
 
     for unit in units:
@@ -1006,7 +964,6 @@ def calculate_orderbook_amount(
     else:
 
         bid_ratio = 0
-
         ask_ratio = 0
 
     difference = (
@@ -1020,7 +977,6 @@ def calculate_orderbook_amount(
     ):
 
         dominance = "bid"
-
         dominance_text = "매수 우세"
 
     elif (
@@ -1029,13 +985,11 @@ def calculate_orderbook_amount(
     ):
 
         dominance = "ask"
-
         dominance_text = "매도 우세"
 
     else:
 
         dominance = "balanced"
-
         dominance_text = "균형"
 
     result.update({
@@ -1205,7 +1159,6 @@ def history_upbit(
 ):
 
     all_df = None
-
     to = None
 
     for _ in range(
@@ -1319,7 +1272,6 @@ def get_upbit_current_roc_data(
             )
 
             row["datetime"] = start
-
             row["c"] = price
 
             df = pd.concat(
@@ -1398,7 +1350,6 @@ def roc_filter_analysis(
 ):
 
     if periods is None:
-
         periods = get_all_periods()
 
     result = {
@@ -1439,9 +1390,7 @@ def roc_filter_analysis(
         return result
 
     values = {}
-
     previous_values = {}
-
     zero_crosses = {}
 
     positive_count = 0
@@ -1509,7 +1458,6 @@ def roc_filter_analysis(
         )
 
         if current_value >= 0:
-
             positive_count += 1
 
     passed = (
@@ -1586,15 +1534,12 @@ def get_all_active_roc_status(
     )
 
     if not enabled:
-
         return False, False
 
     current_ok = True
-
     previous_ok = True
 
     current_count = 0
-
     previous_count = 0
 
     for timeframe, period in enabled:
@@ -1606,7 +1551,6 @@ def get_all_active_roc_status(
         )
 
         if not info:
-
             return False, False
 
         values = info.get(
@@ -1742,9 +1686,6 @@ def roc5_zero_cross(r):
 # 현재 ROC5 >= 0
 # 이전 ROC5 >= 0
 # 현재 ROC5 < 이전 ROC5
-#
-# 즉,
-# ROC5가 양수권을 유지하면서 하락하면 눌림
 # =========================================================
 
 def roc5_pullback_condition(r):
@@ -2019,10 +1960,6 @@ def update_signal_and_pullback(
         )
     )
 
-    # =====================================================
-    # ROC5
-    # =====================================================
-
     roc5_current = r.get(
         "roc5"
     )
@@ -2049,22 +1986,16 @@ def update_signal_and_pullback(
         )
     )
 
-    # =====================================================
-    # 신호가 없을 때
-    # =====================================================
-
     if signal_state is None:
 
         start_candle = None
 
-        # 과거 복원
         if historical_start_candle is not None:
 
             start_candle = (
                 historical_start_candle
             )
 
-        # 현재 ROC5 돌파
         elif (
             roc5_cross
             and filter_pass
@@ -2072,8 +2003,6 @@ def update_signal_and_pullback(
             is not None
         ):
 
-            # 같은 진행캔들에서
-            # 실패했던 신호는 다시 생성하지 않음
             failed_candle = (
                 roc_signal_failed_candle.get(
                     market_key
@@ -2128,7 +2057,6 @@ def update_signal_and_pullback(
 
     if signal_state is not None:
 
-        # ROC5가 음수면 신호 종료
         roc5_negative = False
 
         try:
@@ -2242,9 +2170,6 @@ def update_signal_and_pullback(
 
     # =====================================================
     # ★ 눌림 상태
-    #
-    # 신호가 살아 있고
-    # 필터 통과 상태에서만 눌림 계산
     # =====================================================
 
     pullback_state = (
@@ -2252,10 +2177,6 @@ def update_signal_and_pullback(
             market_key
         )
     )
-
-    # -----------------------------------------------------
-    # 신호가 종료되면 눌림도 종료
-    # -----------------------------------------------------
 
     if not signal_active:
 
@@ -2267,10 +2188,6 @@ def update_signal_and_pullback(
         pullback_state = None
 
     else:
-
-        # -------------------------------------------------
-        # 눌림이 없을 때
-        # -------------------------------------------------
 
         if pullback_state is None:
 
@@ -2305,10 +2222,6 @@ def update_signal_and_pullback(
                     f"📉0 | "
                     f"ROC5={roc5_current}"
                 )
-
-        # -------------------------------------------------
-        # 눌림 진행
-        # -------------------------------------------------
 
         else:
 
@@ -2345,8 +2258,6 @@ def update_signal_and_pullback(
 
             else:
 
-                # ROC5가 다시 상승하거나
-                # 조건을 벗어나면 현재 눌림 종료
                 old_count = int(
                     pullback_state.get(
                         "count",
@@ -2630,9 +2541,9 @@ def analyze(
     )
 
     # =====================================================
-    # ★ 현재 진행캔들 ROC
+    # 현재 진행캔들 ROC
     #
-    # ROC5 신호 / 눌림용
+    # ★ ROC5 신호 / 눌림용
     # =====================================================
 
     r1_current_raw = (
@@ -2688,8 +2599,6 @@ def analyze(
 
     # =====================================================
     # ★ 활성 필터
-    #
-    # 원본 필터 설정 기준
     # =====================================================
 
     filter_pass = (
@@ -2831,7 +2740,6 @@ def make_row(
 ):
 
     a = analysis or {}
-
     ob = orderbook_info or {}
 
     return {
@@ -2993,9 +2901,7 @@ def make_row(
 def update_upbit():
 
     global latest_upbit_data
-
     global latest_upbit_update_time
-
     global latest_upbit_orderbook
 
     markets = sorted(
@@ -3136,10 +3042,8 @@ def update_okx(
 ):
 
     global latest_okx_data
-
     global latest_okx_update_time
 
-    # 원본 OKX 사용 여부 유지
     latest_okx_data = []
 
     latest_okx_update_time = (
@@ -3258,7 +3162,6 @@ def roc_filter_html(
         if value is None:
 
             icon = "⚪"
-
             cls = "roc-zero"
 
         else:
@@ -3272,25 +3175,21 @@ def roc_filter_html(
                 if value > 0:
 
                     icon = "🟢"
-
                     cls = "roc-up"
 
                 elif value < 0:
 
                     icon = "🔴"
-
                     cls = "roc-down"
 
                 else:
 
                     icon = "⚪"
-
                     cls = "roc-zero"
 
             except Exception:
 
                 icon = "⚪"
-
                 cls = "roc-zero"
 
         setting = settings[
@@ -3364,6 +3263,9 @@ def filter_html(
 
 # =========================================================
 # ★ 신호 HTML
+#
+# 상승 신호 영역에서
+# 신호 COUNT + 눌림 COUNT 같이 표시
 # =========================================================
 
 def signal_html(
@@ -3404,12 +3306,15 @@ def signal_html(
         result.append(
             f"""
             <span class="signal-item">
+
                 <span class="signal-rocket">
                     🚀
                 </span>
+
                 <span class="signal-count">
                     {signal_count}
                 </span>
+
             </span>
             """
         )
@@ -3419,12 +3324,15 @@ def signal_html(
         result.append(
             f"""
             <span class="pullback-item">
+
                 <span class="pullback-icon">
                     📉
                 </span>
+
                 <span class="pullback-count">
                     {pullback_count}
                 </span>
+
             </span>
             """
         )
@@ -3447,8 +3355,7 @@ def signal_html(
 # =========================================================
 # ★ TOP 리스트 전용 COUNT
 #
-# 여기에서 신호 / 눌림 COUNT를
-# 반드시 같이 보여준다.
+# 신호 / 눌림 COUNT 같이 표시
 # =========================================================
 
 def top_signal_count_html(
@@ -3611,7 +3518,6 @@ def orderbook_html(
 
         </div>
 
-
         <div class="orderbook-row">
 
             <span class="orderbook-label bid-label">
@@ -3642,7 +3548,6 @@ def orderbook_html(
 
         </div>
 
-
         <div class="orderbook-bottom">
 
             ±1%
@@ -3658,7 +3563,20 @@ def orderbook_html(
 # =========================================================
 # ★ ROW HTML
 #
-# TOP 리스트에서도 COUNT 표시
+# ★ COUNT 1일 때만 반짝임
+#
+# 신호 COUNT
+# 0      → 반짝임 없음
+# 1      → 반짝임
+# 2 이상 → 반짝임 없음
+#
+# 눌림 COUNT
+# 0      → 반짝임 없음
+# 1      → 반짝임
+# 2 이상 → 반짝임 없음
+#
+# 신호 또는 눌림 중 하나라도 1이면
+# 해당 행 전체 반짝임
 # =========================================================
 
 def rows_html(
@@ -3688,23 +3606,34 @@ def rows_html(
             )
         )
 
-        # -------------------------------------------------
-        # 기존 반짝임 유지
-        # -------------------------------------------------
+        pullback_count = int(
+            x.get(
+                "pullback_count",
+                0
+            )
+        )
 
-        if signal_active:
+        # =================================================
+        # ★ COUNT 1일 때만 반짝임
+        #
+        # 0 / 2 이상은 반짝이지 않음
+        # =================================================
 
-            if signal_count == 0:
+        if (
+            (
+                signal_active
+                and signal_count == 1
+            )
+            or
+            (
+                pullback_active
+                and pullback_count == 1
+            )
+        ):
 
-                cls_list.append(
-                    "signal-flash-zero"
-                )
-
-            elif signal_count == 1:
-
-                cls_list.append(
-                    "signal-flash-one"
-                )
+            cls_list.append(
+                "signal-flash-one"
+            )
 
         cls = " ".join(
             cls_list
@@ -3860,7 +3789,8 @@ def table_html(
 # =========================================================
 # ★ 상승 신호
 #
-# COUNT 제한 없음
+# 신호 COUNT + 눌림 COUNT 같이 표시
+# 별도 눌림 영역 없음
 # =========================================================
 
 def focus_section(
@@ -3894,55 +3824,8 @@ def focus_section(
         <span class="section-title-sub">
             ROC5 돌파
             · 필터 통과
-            · COUNT 무제한
+            · 신호/눌림 COUNT 무제한
             · {kst()} KST
-        </span>
-
-    </div>
-
-    {table_html(rows)}
-    """
-
-
-# =========================================================
-# ★ 눌림 영역
-#
-# ROC5 기반
-# =========================================================
-
-def pullback_section(
-    data
-):
-
-    rows = [
-        x
-        for x in data
-
-        if (
-            x.get(
-                "pullback_active",
-                False
-            )
-
-            and x.get(
-                "filter_pass",
-                False
-            )
-        )
-    ]
-
-    return f"""
-    <div class="section-title pullback-title">
-
-        <span class="section-title-main">
-            📉 ROC5 눌림
-        </span>
-
-        <span class="section-title-sub">
-            ROC5 양수 유지
-            · ROC5 하락
-            · 필터 통과
-            · COUNT 무제한
         </span>
 
     </div>
@@ -4016,9 +3899,7 @@ def market_summary_html():
     else:
 
         price = "-"
-
         change = "-"
-
         signal = "-"
 
     return f"""
@@ -4173,11 +4054,6 @@ h1{
     overflow:hidden;
 
     text-overflow:ellipsis;
-}
-
-.pullback-title{
-
-    border-left-color:#77715f;
 }
 
 
@@ -4582,60 +4458,8 @@ td:nth-child(6){
 
 
 /* =========================================================
-   FLASH 0
-   ========================================================= */
-
-@keyframes signalFlashZero{
-
-    0%{
-
-        background-color:#15191e;
-
-        box-shadow:
-            inset 0 0 0
-            rgba(98,181,138,0);
-    }
-
-    25%{
-
-        background-color:#354d42;
-
-        box-shadow:
-            inset 0 0 18px
-            rgba(98,181,138,.55);
-    }
-
-    50%{
-
-        background-color:#18231f;
-
-        box-shadow:
-            inset 0 0 5px
-            rgba(98,181,138,.20);
-    }
-
-    75%{
-
-        background-color:#3b5548;
-
-        box-shadow:
-            inset 0 0 20px
-            rgba(98,181,138,.60);
-    }
-
-    100%{
-
-        background-color:#15191e;
-
-        box-shadow:
-            inset 0 0 0
-            rgba(98,181,138,0);
-    }
-}
-
-
-/* =========================================================
    FLASH 1
+   ★ COUNT 1일 때만 사용
    ========================================================= */
 
 @keyframes signalFlashOne{
@@ -4675,26 +4499,6 @@ td:nth-child(6){
             inset 0 0 0
             rgba(98,181,138,0);
     }
-}
-
-
-tr.signal-flash-zero td{
-
-    animation:
-        signalFlashZero
-        1.05s
-        ease-in-out
-        infinite;
-}
-
-
-tr.orderbook-subrow.signal-flash-zero td{
-
-    animation:
-        signalFlashZero
-        1.05s
-        ease-in-out
-        infinite;
 }
 
 
@@ -5065,9 +4869,7 @@ tr.orderbook-subrow.signal-flash-one td{
 
 @media(prefers-reduced-motion:reduce){
 
-    tr.signal-flash-zero td,
     tr.signal-flash-one td,
-    tr.orderbook-subrow.signal-flash-zero td,
     tr.orderbook-subrow.signal-flash-one td{
 
         animation:none!important;
@@ -5095,18 +4897,15 @@ def dashboard():
         # ★ 순서
         #
         # 1. 상승 신호
-        # 2. 눌림
-        # 3. TOP 리스트
+        # 2. TOP 리스트
+        #
+        # ★ 별도 눌림 대시보드 삭제
+        # ★ 상승 신호에서
+        #   신호 COUNT + 눌림 COUNT 같이 표시
         # =================================================
 
         sections += (
             focus_section(
-                latest_upbit_data
-            )
-        )
-
-        sections += (
-            pullback_section(
                 latest_upbit_data
             )
         )
@@ -5267,15 +5066,23 @@ def startup():
     )
 
     log.info(
-        "0번 신호 = 강한 반짝임"
+        "COUNT 0 = 반짝임 없음"
     )
 
     log.info(
-        "1번 신호 = 중간 반짝임"
+        "COUNT 1 = 반짝임"
     )
 
     log.info(
-        "2번 이후 = 계속 표시"
+        "COUNT 2 이상 = 반짝임 없음"
+    )
+
+    log.info(
+        "신호 또는 눌림 COUNT 1 → 행 반짝임"
+    )
+
+    log.info(
+        "별도 눌림 대시보드 = 삭제"
     )
 
     log.info(
