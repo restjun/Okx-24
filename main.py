@@ -55,20 +55,21 @@ MAX_RETRIES = 10
 
 
 # =========================================================
-# EMA 신호 카운팅 설정
+# EMA 상승신호 COUNT 제한
 # =========================================================
-# EMA 카운팅이 이 숫자 이상일 때만 EMA 신호 표시
+# 🟢 상승 EMA 신호는 이 COUNT 이하일 때만 표시
 #
 # 예:
-# 1 = 🟢(1)부터 표시
-# 3 = 🟢(3) 이상부터 표시
-# 5 = 🟢(5) 이상부터 표시
+# 50 = 🟢(1) ~ 🟢(50) 표시
+#      🟢(51) 이상은 표시 안 함
 #
-# EMA 카운트 자체는 계속 계산됨
+# 🔴 하락 EMA 신호는 COUNT 제한 없음
+#
+# EMA COUNT 자체는 계속 계산됨
 # 화면 표시만 이 설정으로 제한
 # =========================================================
 
-EMA_SIGNAL_MIN_COUNT = 1
+EMA_LONG_MAX_COUNT = 50
 
 
 # =========================================================
@@ -483,14 +484,14 @@ def validate_timeframe():
 
     if (
         not isinstance(
-            EMA_SIGNAL_MIN_COUNT,
+            EMA_LONG_MAX_COUNT,
             int
         )
-        or EMA_SIGNAL_MIN_COUNT < 1
+        or EMA_LONG_MAX_COUNT < 1
     ):
 
         raise ValueError(
-            "EMA_SIGNAL_MIN_COUNT는 1 이상의 정수여야 합니다."
+            "EMA_LONG_MAX_COUNT는 1 이상의 정수여야 합니다."
         )
 
     settings = roc_settings()
@@ -3958,9 +3959,11 @@ def ema_signal_html(
             )
         )
 
+        # 🟢 상승 EMA는 최대 COUNT까지만 표시
         if (
             direction == "long"
-            and count >= EMA_SIGNAL_MIN_COUNT
+            and count > 0
+            and count <= EMA_LONG_MAX_COUNT
         ):
 
             parts.append(
@@ -3971,9 +3974,10 @@ def ema_signal_html(
                 """
             )
 
+        # 🔴 하락 EMA는 COUNT 제한 없음
         elif (
             direction == "short"
-            and count >= EMA_SIGNAL_MIN_COUNT
+            and count > 0
         ):
 
             parts.append(
@@ -4002,9 +4006,11 @@ def ema_signal_html(
             )
         )
 
+        # 🟢 상승 EMA는 최대 COUNT까지만 표시
         if (
             direction == "long"
-            and count >= EMA_SIGNAL_MIN_COUNT
+            and count > 0
+            and count <= EMA_LONG_MAX_COUNT
         ):
 
             parts.append(
@@ -4015,9 +4021,10 @@ def ema_signal_html(
                 """
             )
 
+        # 🔴 하락 EMA는 COUNT 제한 없음
         elif (
             direction == "short"
-            and count >= EMA_SIGNAL_MIN_COUNT
+            and count > 0
         ):
 
             parts.append(
@@ -6052,8 +6059,8 @@ def startup():
     )
 
     log.info(
-        f"EMA 신호 최소 COUNT = "
-        f"{EMA_SIGNAL_MIN_COUNT}"
+        f"EMA 상승신호 최대 COUNT = "
+        f"{EMA_LONG_MAX_COUNT}"
     )
 
     log.info(
