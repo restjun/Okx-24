@@ -36,7 +36,7 @@ KST = ZoneInfo("Asia/Seoul")
 
 
 # =========================================================
-# 기본 설정
+# 설정
 # =========================================================
 
 VOLUME_HOURS = 24
@@ -117,7 +117,7 @@ ORDERBOOK_DOMINANCE_GAP = 5.0
 
 
 # =========================================================
-# 지원 시간봉
+# 시간봉
 # =========================================================
 
 SUPPORTED_UPBIT_TIMEFRAMES = {
@@ -171,6 +171,21 @@ okx_ticker_cache = {}
 okx_1h_cache = {}
 
 okx_1h_cache_time = "-"
+
+
+# =========================================================
+# ★ ROC 신호 상태
+#
+# market별 독립 관리
+#
+# cross_candle
+# = 실제 0선 돌파가 발생한 진행 중 캔들
+#
+# count
+# = 돌파 진행 중 캔들 0
+# = 다음 캔들 1
+# = 다음 2
+# =========================================================
 
 roc_signal_state = {}
 
@@ -558,8 +573,7 @@ def validate_timeframe():
     ):
 
         raise ValueError(
-            "USE_1H_ROC_FILTER는 "
-            "Y/N만 가능합니다."
+            "USE_1H_ROC_FILTER는 Y/N만 가능합니다."
         )
 
     if USE_4H_ROC_FILTER not in (
@@ -568,8 +582,7 @@ def validate_timeframe():
     ):
 
         raise ValueError(
-            "USE_4H_ROC_FILTER는 "
-            "Y/N만 가능합니다."
+            "USE_4H_ROC_FILTER는 Y/N만 가능합니다."
         )
 
     if ROC_FILTER_TIMEFRAME not in (
@@ -727,8 +740,7 @@ def retry(
             else:
 
                 log.warning(
-                    f"[HTTP "
-                    f"{response.status_code}] "
+                    f"[HTTP {response.status_code}] "
                     f"{url}"
                 )
 
@@ -740,20 +752,15 @@ def retry(
                 f"{wait}초"
             )
 
-            time.sleep(
-                wait
-            )
+            time.sleep(wait)
 
         except Exception as e:
 
             log.error(
-                f"[API 오류] "
-                f"{url}: {e}"
+                f"[API 오류] {url}: {e}"
             )
 
-            if n < (
-                MAX_RETRIES - 1
-            ):
+            if n < MAX_RETRIES - 1:
 
                 time.sleep(
                     min(
@@ -796,14 +803,8 @@ def get_upbit_markets():
             if x.get(
                 "market",
                 ""
-            ).startswith(
-                "KRW-"
-            )
+            ).startswith("KRW-")
         ]
-
-        if not krw_markets:
-
-            return []
 
         ticker_result = []
 
@@ -821,8 +822,7 @@ def get_upbit_markets():
                 requests.get,
                 "https://api.upbit.com/v1/ticker",
                 params={
-                    "markets":
-                        ",".join(chunk)
+                    "markets": ",".join(chunk)
                 },
                 timeout=15
             )
@@ -833,22 +833,15 @@ def get_upbit_markets():
 
             try:
 
-                data = (
-                    ticker_response.json()
-                )
+                data = ticker_response.json()
 
             except Exception:
 
                 continue
 
-            if isinstance(
-                data,
-                list
-            ):
+            if isinstance(data, list):
 
-                ticker_result.extend(
-                    data
-                )
+                ticker_result.extend(data)
 
         result = []
 
@@ -885,16 +878,9 @@ def get_upbit_markets():
             ):
 
                 result.append({
-
-                    "market":
-                        market,
-
-                    "volume_24h":
-                        volume,
-
-                    "current_price":
-                        price
-
+                    "market": market,
+                    "volume_24h": volume,
+                    "current_price": price
                 })
 
         latest_upbit_markets = [
@@ -939,11 +925,8 @@ def get_upbit_orderbooks(markets):
             requests.get,
             "https://api.upbit.com/v1/orderbook",
             params={
-                "markets":
-                    ",".join(chunk),
-
-                "count":
-                    ORDERBOOK_COUNT
+                "markets": ",".join(chunk),
+                "count": ORDERBOOK_COUNT
             },
             timeout=15
         )
@@ -960,24 +943,17 @@ def get_upbit_orderbooks(markets):
 
             continue
 
-        if not isinstance(
-            data,
-            list
-        ):
+        if not isinstance(data, list):
 
             continue
 
         for item in data:
 
-            market = item.get(
-                "market"
-            )
+            market = item.get("market")
 
             if market:
 
-                result[
-                    market
-                ] = item
+                result[market] = item
 
     return result
 
@@ -989,49 +965,24 @@ def calculate_orderbook_amount(
 
     result = {
 
-        "bid_amount":
-            0.0,
+        "bid_amount": 0.0,
+        "ask_amount": 0.0,
+        "total_amount": 0.0,
 
-        "ask_amount":
-            0.0,
+        "bid_ratio": 0.0,
+        "ask_ratio": 0.0,
 
-        "total_amount":
-            0.0,
+        "bid_count": 0,
+        "ask_count": 0,
 
-        "bid_ratio":
-            0.0,
+        "lower_price": None,
+        "upper_price": None,
 
-        "ask_ratio":
-            0.0,
+        "dominance": "balanced",
+        "dominance_text": "균형",
 
-        "bid_count":
-            0,
-
-        "ask_count":
-            0,
-
-        "lower_price":
-            None,
-
-        "upper_price":
-            None,
-
-        "dominance":
-            "balanced",
-
-        "dominance_text":
-            "균형",
-
-        # =================================================
-        # ★ 추가
-        # 최우선 매수/매도 1호가
-        # =================================================
-
-        "first_bid_price":
-            None,
-
-        "first_ask_price":
-            None
+        "first_bid_price": None,
+        "first_ask_price": None
     }
 
     if not orderbook:
@@ -1054,25 +1005,17 @@ def calculate_orderbook_amount(
 
     lower_price = (
         current_price
-        * (
-            1 - ORDERBOOK_RANGE
-        )
+        * (1 - ORDERBOOK_RANGE)
     )
 
     upper_price = (
         current_price
-        * (
-            1 + ORDERBOOK_RANGE
-        )
+        * (1 + ORDERBOOK_RANGE)
     )
 
-    result["lower_price"] = (
-        lower_price
-    )
+    result["lower_price"] = lower_price
 
-    result["upper_price"] = (
-        upper_price
-    )
+    result["upper_price"] = upper_price
 
     units = orderbook.get(
         "orderbook_units",
@@ -1086,42 +1029,33 @@ def calculate_orderbook_amount(
 
         return result
 
-    # =====================================================
-    # ★ 추가
-    # Upbit orderbook_units[0] = 1호가
-    # =====================================================
-
     if units:
 
         try:
 
-            first_unit = units[0]
+            first = units[0]
 
-            first_bid_price = float(
-                first_unit.get(
+            bid = float(
+                first.get(
                     "bid_price",
                     0
                 )
             )
 
-            first_ask_price = float(
-                first_unit.get(
+            ask = float(
+                first.get(
                     "ask_price",
                     0
                 )
             )
 
-            if first_bid_price > 0:
+            if bid > 0:
 
-                result[
-                    "first_bid_price"
-                ] = first_bid_price
+                result["first_bid_price"] = bid
 
-            if first_ask_price > 0:
+            if ask > 0:
 
-                result[
-                    "first_ask_price"
-                ] = first_ask_price
+                result["first_ask_price"] = ask
 
         except Exception:
 
@@ -1179,8 +1113,7 @@ def calculate_orderbook_amount(
         ):
 
             bid_amount += (
-                bid_price
-                * bid_size
+                bid_price * bid_size
             )
 
             bid_count += 1
@@ -1193,29 +1126,24 @@ def calculate_orderbook_amount(
         ):
 
             ask_amount += (
-                ask_price
-                * ask_size
+                ask_price * ask_size
             )
 
             ask_count += 1
 
-    total_amount = (
+    total = (
         bid_amount
         + ask_amount
     )
 
-    if total_amount > 0:
+    if total > 0:
 
         bid_ratio = (
-            bid_amount
-            / total_amount
-            * 100
+            bid_amount / total * 100
         )
 
         ask_ratio = (
-            ask_amount
-            / total_amount
-            * 100
+            ask_amount / total * 100
         )
 
     else:
@@ -1230,9 +1158,8 @@ def calculate_orderbook_amount(
     )
 
     if (
-        total_amount > 0
-        and difference
-        >= ORDERBOOK_DOMINANCE_GAP
+        total > 0
+        and difference >= ORDERBOOK_DOMINANCE_GAP
     ):
 
         dominance = "bid"
@@ -1240,9 +1167,8 @@ def calculate_orderbook_amount(
         dominance_text = "매수 우세"
 
     elif (
-        total_amount > 0
-        and difference
-        <= -ORDERBOOK_DOMINANCE_GAP
+        total > 0
+        and difference <= -ORDERBOOK_DOMINANCE_GAP
     ):
 
         dominance = "ask"
@@ -1257,32 +1183,18 @@ def calculate_orderbook_amount(
 
     result.update({
 
-        "bid_amount":
-            bid_amount,
+        "bid_amount": bid_amount,
+        "ask_amount": ask_amount,
+        "total_amount": total,
 
-        "ask_amount":
-            ask_amount,
+        "bid_ratio": bid_ratio,
+        "ask_ratio": ask_ratio,
 
-        "total_amount":
-            total_amount,
+        "bid_count": bid_count,
+        "ask_count": ask_count,
 
-        "bid_ratio":
-            bid_ratio,
-
-        "ask_ratio":
-            ask_ratio,
-
-        "bid_count":
-            bid_count,
-
-        "ask_count":
-            ask_count,
-
-        "dominance":
-            dominance,
-
-        "dominance_text":
-            dominance_text
+        "dominance": dominance,
+        "dominance_text": dominance_text
     })
 
     return result
@@ -1304,17 +1216,15 @@ def get_upbit_candle(
 
     params = {
 
-        "market":
-            market,
+        "market": market,
 
-        "count":
-            min(
-                max(
-                    int(count),
-                    1
-                ),
-                200
-            )
+        "count": min(
+            max(
+                int(count),
+                1
+            ),
+            200
+        )
     }
 
     if to:
@@ -1408,15 +1318,9 @@ def get_upbit_candle(
 
         return (
             df
-            .sort_values(
-                "datetime"
-            )
-            .drop_duplicates(
-                "datetime"
-            )
-            .reset_index(
-                drop=True
-            )
+            .sort_values("datetime")
+            .drop_duplicates("datetime")
+            .reset_index(drop=True)
         )
 
     except Exception as e:
@@ -1471,15 +1375,9 @@ def history_upbit(
 
         all_df = (
             all_df
-            .drop_duplicates(
-                "datetime"
-            )
-            .sort_values(
-                "datetime"
-            )
-            .reset_index(
-                drop=True
-            )
+            .drop_duplicates("datetime")
+            .sort_values("datetime")
+            .reset_index(drop=True)
         )
 
         if len(all_df) >= required:
@@ -1499,17 +1397,22 @@ def history_upbit(
 
 
 # =========================================================
-# 현재 ROC
+# ★ 현재 1H ROC 데이터
+#
+# 현재 진행 중인 캔들의 가격을 현재가로 교체
+#
+# 이것으로 실제 진행 중 0선 돌파를 판단
 # =========================================================
 
 def get_upbit_current_roc_data(
     market,
-    current_price
+    current_price,
+    timeframe=60
 ):
 
     df = get_upbit_candle(
         market,
-        ROC_TIMEFRAME,
+        timeframe,
         include_current=True
     )
 
@@ -1524,7 +1427,7 @@ def get_upbit_current_roc_data(
 
         start = (
             get_current_candle_start(
-                ROC_TIMEFRAME
+                timeframe
             )
         )
 
@@ -1537,8 +1440,7 @@ def get_upbit_current_roc_data(
             return df
 
         mask = (
-            df.datetime
-            == start
+            df.datetime == start
         )
 
         if mask.any():
@@ -1562,24 +1464,16 @@ def get_upbit_current_roc_data(
             df = pd.concat(
                 [
                     df,
-                    pd.DataFrame(
-                        [row]
-                    )
+                    pd.DataFrame([row])
                 ],
                 ignore_index=True
             )
 
         return (
             df
-            .sort_values(
-                "datetime"
-            )
-            .drop_duplicates(
-                "datetime"
-            )
-            .reset_index(
-                drop=True
-            )
+            .sort_values("datetime")
+            .drop_duplicates("datetime")
+            .reset_index(drop=True)
         )
 
     except Exception as e:
@@ -1593,7 +1487,7 @@ def get_upbit_current_roc_data(
 
 
 # =========================================================
-# ROC
+# ROC 계산
 # =========================================================
 
 def roc(
@@ -1633,6 +1527,10 @@ def roc(
         return None
 
 
+# =========================================================
+# ROC 필터 분석
+# =========================================================
+
 def roc_filter_analysis(
     df,
     periods=None
@@ -1640,38 +1538,27 @@ def roc_filter_analysis(
 
     if periods is None:
 
-        periods = (
-            get_all_periods()
-        )
+        periods = get_all_periods()
 
     result = {
 
-        "direction":
-            "none",
+        "direction": "none",
 
-        "passed":
-            False,
+        "passed": False,
 
-        "roc_values":
-            {},
+        "roc_values": {},
 
-        "previous_values":
-            {},
+        "previous_values": {},
 
-        "zero_crosses":
-            {},
+        "zero_crosses": {},
 
-        "positive_count":
-            0,
+        "positive_count": 0,
 
-        "total_count":
-            len(periods),
+        "total_count": len(periods),
 
-        "enabled_periods":
-            periods.copy(),
+        "enabled_periods": periods.copy(),
 
-        "all_periods":
-            ROC_FILTER_PERIODS.copy()
+        "all_periods": ROC_FILTER_PERIODS.copy()
     }
 
     if (
@@ -1741,7 +1628,7 @@ def roc_filter_analysis(
                 period
             ] = (
                 previous_value is not None
-                and previous_value <= 0
+                and previous_value < 0
                 and current_value >= 0
             )
 
@@ -1750,10 +1637,8 @@ def roc_filter_analysis(
                 positive_count += 1
 
         passed = (
-            len(values)
-            == len(periods)
-            and positive_count
-            == len(periods)
+            len(values) == len(periods)
+            and positive_count == len(periods)
         )
 
         result.update({
@@ -1763,11 +1648,9 @@ def roc_filter_analysis(
                 if passed
                 else "none",
 
-            "passed":
-                passed,
+            "passed": passed,
 
-            "roc_values":
-                values,
+            "roc_values": values,
 
             "previous_values":
                 previous_values,
@@ -1794,15 +1677,13 @@ def roc_filter_analysis(
 
 
 def roc_filter_display(
-    result,
+    r,
     timeframe
 ):
 
-    if result is None:
-
-        result = {}
-
-    result = dict(result)
+    result = dict(
+        r or {}
+    )
 
     result["timeframe"] = timeframe
 
@@ -1818,6 +1699,10 @@ def roc_filter_display(
 
     return result
 
+
+# =========================================================
+# 전체 활성 ROC 상태
+# =========================================================
 
 def get_all_active_roc_status(
     filter_1h,
@@ -1862,16 +1747,12 @@ def get_all_active_roc_status(
             {}
         )
 
-        current_value = (
-            values.get(
-                period
-            )
+        current_value = values.get(
+            period
         )
 
-        previous_value = (
-            previous.get(
-                period
-            )
+        previous_value = previous.get(
+            period
         )
 
         if current_value is None:
@@ -1915,12 +1796,11 @@ def get_all_active_roc_status(
                 previous_ok = False
 
     return (
-        current_count
-        == len(enabled)
+
+        current_count == len(enabled)
         and current_ok,
 
-        previous_count
-        == len(enabled)
+        previous_count == len(enabled)
         and previous_ok
     )
 
@@ -1940,21 +1820,97 @@ def all_active_roc_filters_pass(
     return current
 
 
+# =========================================================
+# ★ 실제 전체 ROC 0선 돌파
+#
+# 이전 캔들:
+# 하나라도 < 0
+#
+# 현재 캔들:
+# 모든 활성 ROC >= 0
+#
+# 이때만 실제 돌파
+# =========================================================
+
 def all_active_roc_zero_cross(
     filter_1h,
     filter_4h
 ):
 
-    current, previous = (
-        get_all_active_roc_status(
-            filter_1h,
-            filter_4h
-        )
+    enabled = (
+        get_enabled_all_filters()
     )
 
+    if not enabled:
+
+        return False
+
+    current_ok = True
+
+    previous_had_negative = False
+
+    for timeframe, period in enabled:
+
+        info = (
+            filter_1h
+            if timeframe == "1H"
+            else filter_4h
+        )
+
+        if not info:
+
+            return False
+
+        values = info.get(
+            "roc_values",
+            {}
+        )
+
+        previous = info.get(
+            "previous_values",
+            {}
+        )
+
+        current_value = values.get(
+            period
+        )
+
+        previous_value = previous.get(
+            period
+        )
+
+        if (
+            current_value is None
+            or previous_value is None
+        ):
+
+            return False
+
+        try:
+
+            current_value = float(
+                current_value
+            )
+
+            previous_value = float(
+                previous_value
+            )
+
+        except Exception:
+
+            return False
+
+        if current_value < 0:
+
+            current_ok = False
+
+        if previous_value < 0:
+
+            previous_had_negative = True
+
     return (
-        current
-        and not previous
+        current_ok
+        and previous_had_negative
     )
 
 
@@ -1963,302 +1919,39 @@ def get_active_zero_cross_list(
     filter_4h
 ):
 
-    if not all_active_roc_zero_cross(
-        filter_1h,
-        filter_4h
-    ):
+    result = []
 
-        return []
-
-    return [
-        f"{timeframe} ROC{period}"
-        for timeframe, period
-        in get_enabled_all_filters()
-    ]
-
-
-# =========================================================
-# ROC 분석
-# =========================================================
-
-def roc_analysis(
-    df_confirmed,
-    df_current,
-    filter_1h,
-    filter_4h
-):
-
-    result = {
-
-        "roc5":
-            None,
-
-        "roc5_previous":
-            None,
-
-        "roc5_count":
-            0,
-
-        "roc5_negative_count":
-            0,
-
-        "long_breakout":
-            False,
-
-        "long_breakout_count":
-            0,
-
-        "long_breakout_state":
-            "none",
-
-        "filter_pass":
-            False,
-
-        "state":
-            "none",
-
-        "display":
-            "⚪",
-
-        "signal_count":
-            0,
-
-        "all_active_positive":
-            False,
-
-        "all_active_positive_previous":
-            False,
-
-        "all_active_cross":
-            False
-    }
-
-    if (
-        df_confirmed is None
-        or df_confirmed.empty
-    ):
-
-        return result
-
-    try:
-
-        current_all, previous_all = (
-            get_all_active_roc_status(
-                filter_1h,
-                filter_4h
-            )
-        )
-
-        roc5_value = None
-
-        roc5_previous = None
-
-        if filter_1h:
-
-            roc5_value = (
-                filter_1h
-                .get(
-                    "roc_values",
-                    {}
-                )
-                .get(5)
-            )
-
-            roc5_previous = (
-                filter_1h
-                .get(
-                    "previous_values",
-                    {}
-                )
-                .get(5)
-            )
-
-        result.update({
-
-            "roc5":
-                roc5_value,
-
-            "roc5_previous":
-                roc5_previous,
-
-            "filter_pass":
-                current_all,
-
-            "all_active_positive":
-                current_all,
-
-            "all_active_positive_previous":
-                previous_all,
-
-            "all_active_cross":
-                (
-                    current_all
-                    and not previous_all
-                )
-        })
-
-        return result
-
-    except Exception as e:
-
-        log.error(
-            f"ROC 분석 오류: {e}"
-        )
-
-        return result
-
-
-# =========================================================
-# 등락률
-# =========================================================
-
-def daily_change_upbit(
-    market
-):
-
-    response = retry(
-        requests.get,
-        "https://api.upbit.com/v1/candles/days",
-        params={
-            "market": market,
-            "count": 2
-        },
-        timeout=15
+    enabled = (
+        get_enabled_all_filters()
     )
 
-    if response is None:
+    for timeframe, period in enabled:
 
-        return None
-
-    try:
-
-        data = response.json()
-
-        if len(data) < 2:
-
-            return None
-
-        current = float(
-            data[0]["trade_price"]
+        info = (
+            filter_1h
+            if timeframe == "1H"
+            else filter_4h
         )
 
-        previous = float(
-            data[1]["trade_price"]
+        if not info:
+
+            continue
+
+        crosses = info.get(
+            "zero_crosses",
+            {}
         )
 
-        if previous == 0:
-
-            return None
-
-        return [
-            (
-                current
-                - previous
-            )
-            / previous
-            * 100
-        ]
-
-    except Exception as e:
-
-        log.error(
-            f"일봉 등락률 오류 "
-            f"{market}: {e}"
-        )
-
-        return None
-
-
-def get_change_value(x):
-
-    try:
-
-        if x is None:
-
-            return None
-
-        if isinstance(
-            x,
-            (list, tuple)
+        if crosses.get(
+            period,
+            False
         ):
 
-            if not x:
-
-                return None
-
-            return float(
-                x[0]
+            result.append(
+                f"{timeframe} ROC{period}"
             )
 
-        return float(x)
-
-    except Exception:
-
-        return None
-
-
-def format_change(x):
-
-    x = get_change_value(
-        x
-    )
-
-    if x is None:
-
-        return "-"
-
-    if x > 0:
-
-        return (
-            '<span class="up">'
-            f'▲+{x:.1f}%'
-            '</span>'
-        )
-
-    if x < 0:
-
-        return (
-            '<span class="down">'
-            f'▼{x:.1f}%'
-            '</span>'
-        )
-
-    return (
-        '<span class="zero">'
-        '0.0%'
-        '</span>'
-    )
-
-
-def format_volume(v):
-
-    try:
-
-        v = float(v)
-
-    except Exception:
-
-        return "-"
-
-    if v >= 1e12:
-
-        return (
-            f"{v / 1e12:.1f}조"
-        )
-
-    if v >= 1e8:
-
-        return (
-            f"{v / 1e8:.0f}억"
-        )
-
-    if v >= 1e4:
-
-        return (
-            f"{v / 1e4:.0f}만"
-        )
-
-    return f"{v:,.0f}"
+    return result
 
 
 # =========================================================
@@ -2271,31 +1964,24 @@ def empty_roc_filter(
 
     return {
 
-        "display":
-            "⚪",
+        "display": "⚪",
 
-        "direction":
-            "none",
+        "direction": "none",
 
-        "passed":
-            False,
+        "passed": False,
 
-        "positive_count":
-            0,
+        "positive_count": 0,
 
         "total_count":
             len(
                 ROC_FILTER_PERIODS
             ),
 
-        "roc_values":
-            {},
+        "roc_values": {},
 
-        "previous_values":
-            {},
+        "previous_values": {},
 
-        "zero_crosses":
-            {},
+        "zero_crosses": {},
 
         "enabled_periods":
             get_enabled_periods(
@@ -2305,8 +1991,7 @@ def empty_roc_filter(
         "all_periods":
             ROC_FILTER_PERIODS.copy(),
 
-        "timeframe":
-            timeframe
+        "timeframe": timeframe
     }
 
 
@@ -2322,38 +2007,17 @@ def empty_analysis():
 
         "roc": {
 
-            "roc5":
-                None,
+            "roc5": None,
 
-            "roc5_previous":
-                None,
+            "roc5_previous": None,
 
-            "roc5_count":
-                0,
+            "filter_pass": False,
 
-            "roc5_negative_count":
-                0,
+            "state": "none",
 
-            "long_breakout":
-                False,
+            "display": "⚪",
 
-            "long_breakout_count":
-                0,
-
-            "long_breakout_state":
-                "none",
-
-            "filter_pass":
-                False,
-
-            "state":
-                "none",
-
-            "display":
-                "⚪",
-
-            "signal_count":
-                0,
+            "signal_count": 0,
 
             "all_active_positive":
                 False,
@@ -2365,37 +2029,28 @@ def empty_analysis():
                 False
         },
 
-        "changes":
-            None,
+        "changes": None,
 
-        "breakout_qualified":
-            False,
+        "breakout_qualified": False,
 
-        "filter_pass":
-            False,
+        "filter_pass": False,
 
-        "direction_1h":
-            "none",
+        "direction_1h": "none",
 
-        "zero_cross":
-            False,
+        "zero_cross": False,
 
-        "zero_cross_list":
-            [],
+        "zero_cross_list": [],
 
-        "signal_active":
-            False,
+        "signal_active": False,
 
-        "signal_count":
-            0,
+        "signal_count": 0,
 
-        "df1h":
-            None
+        "df1h": None
     }
 
 
 # =========================================================
-# ROC 표시
+# ROC HTML
 # =========================================================
 
 def roc_filter_html(
@@ -2432,9 +2087,7 @@ def roc_filter_html(
 
             try:
 
-                value = float(
-                    value
-                )
+                value = float(value)
 
                 if value > 0:
 
@@ -2524,280 +2177,18 @@ def filter_html(
 
 
 # =========================================================
-# 과거 신호 시작점
-# =========================================================
-
-def find_latest_signal_start(
-    df1h,
-    df4h
-):
-
-    enabled = (
-        get_enabled_all_filters()
-    )
-
-    if not enabled:
-
-        return None
-
-    if (
-        df1h is None
-        or df1h.empty
-    ):
-
-        return None
-
-    if (
-        USE_4H_ROC_FILTER == "Y"
-        and (
-            df4h is None
-            or df4h.empty
-        )
-    ):
-
-        return None
-
-    try:
-
-        states_1h = {}
-
-        periods_1h = [
-            period
-            for timeframe, period
-            in enabled
-            if timeframe == "1H"
-        ]
-
-        for period in periods_1h:
-
-            series = roc(
-                df1h,
-                period
-            )
-
-            if series is None:
-
-                continue
-
-            for idx in range(
-                len(df1h)
-            ):
-
-                value = series.iloc[
-                    idx
-                ]
-
-                states_1h[
-                    (
-                        df1h[
-                            "datetime"
-                        ].iloc[idx],
-                        period
-                    )
-                ] = (
-                    None
-                    if pd.isna(value)
-                    else float(value)
-                )
-
-        states_4h = {}
-
-        periods_4h = [
-            period
-            for timeframe, period
-            in enabled
-            if timeframe == "4H"
-        ]
-
-        for period in periods_4h:
-
-            series = roc(
-                df4h,
-                period
-            )
-
-            if series is None:
-
-                continue
-
-            for idx in range(
-                len(df4h)
-            ):
-
-                value = series.iloc[
-                    idx
-                ]
-
-                states_4h[
-                    (
-                        df4h[
-                            "datetime"
-                        ].iloc[idx],
-                        period
-                    )
-                ] = (
-                    None
-                    if pd.isna(value)
-                    else float(value)
-                )
-
-        current_start = (
-            get_current_candle_start(
-                ROC_TIMEFRAME
-            )
-        )
-
-        candidates = [
-            x
-            for x in df1h[
-                "datetime"
-            ].tolist()
-            if x < current_start
-        ]
-
-        if not candidates:
-
-            return None
-
-        for i in range(
-            len(candidates) - 1,
-            -1,
-            -1
-        ):
-
-            candle_time = (
-                candidates[i]
-            )
-
-            current_ok = True
-
-            for timeframe, period in enabled:
-
-                if timeframe == "1H":
-
-                    value = states_1h.get(
-                        (
-                            candle_time,
-                            period
-                        )
-                    )
-
-                else:
-
-                    candidates_4h = [
-                        x
-                        for x in df4h[
-                            "datetime"
-                        ].tolist()
-                        if x <= candle_time
-                    ]
-
-                    if not candidates_4h:
-
-                        current_ok = False
-
-                        break
-
-                    value = states_4h.get(
-                        (
-                            candidates_4h[-1],
-                            period
-                        )
-                    )
-
-                if (
-                    value is None
-                    or value < 0
-                ):
-
-                    current_ok = False
-
-                    break
-
-            if not current_ok:
-
-                continue
-
-            if i == 0:
-
-                previous_ok = False
-
-            else:
-
-                previous_time = (
-                    candidates[i - 1]
-                )
-
-                previous_ok = True
-
-                for timeframe, period in enabled:
-
-                    if timeframe == "1H":
-
-                        previous_value = (
-                            states_1h.get(
-                                (
-                                    previous_time,
-                                    period
-                                )
-                            )
-                        )
-
-                    else:
-
-                        previous_4h = [
-                            x
-                            for x
-                            in df4h[
-                                "datetime"
-                            ].tolist()
-                            if x <= previous_time
-                        ]
-
-                        if not previous_4h:
-
-                            previous_ok = False
-
-                            break
-
-                        previous_value = (
-                            states_4h.get(
-                                (
-                                    previous_4h[-1],
-                                    period
-                                )
-                            )
-                        )
-
-                    if (
-                        previous_value is None
-                        or previous_value < 0
-                    ):
-
-                        previous_ok = False
-
-                        break
-
-            if not previous_ok:
-
-                return normalize_datetime(
-                    candle_time
-                )
-
-        return None
-
-    except Exception as e:
-
-        log.warning(
-            f"[ROC START SEARCH ERROR] "
-            f"{e}"
-        )
-
-        return None
-
-
-# =========================================================
-# 신호
+# ★ 신호
+#
+# 핵심:
+#
+# 실제 0선 돌파 진행 중
+# = 🚀0
+#
+# 다음 캔들
+# = 🚀1
+#
+# 돌파 진행 중 다시 음수
+# = 상태 삭제
 # =========================================================
 
 def get_signal_qualified(
@@ -2807,8 +2198,7 @@ def get_signal_qualified(
     daily_change,
     market=None,
     completed_candle_time=None,
-    progress_candle_time=None,
-    historical_start_candle=None
+    progress_candle_time=None
 ):
 
     market_key = (
@@ -2829,100 +2219,32 @@ def get_signal_qualified(
         )
     )
 
-    historical_start_candle = (
-        normalize_datetime(
-            historical_start_candle
-        )
-    )
-
     enabled = (
         get_enabled_all_filters()
     )
 
-    roc_complete = True
-
-    roc_all_positive = True
-
-    roc_has_negative = False
-
-    if not enabled:
-
-        roc_complete = False
-
-        roc_all_positive = False
-
-    else:
-
-        for timeframe, period in enabled:
-
-            info = (
-                r1
-                if timeframe == "1H"
-                else r4
-            )
-
-            if not info:
-
-                roc_complete = False
-
-                continue
-
-            value = (
-                info
-                .get(
-                    "roc_values",
-                    {}
-                )
-                .get(
-                    period
-                )
-            )
-
-            if value is None:
-
-                roc_complete = False
-
-                continue
-
-            try:
-
-                value = float(
-                    value
-                )
-
-                if pd.isna(value):
-
-                    roc_complete = False
-
-                    continue
-
-            except Exception:
-
-                roc_complete = False
-
-                continue
-
-            if value < 0:
-
-                roc_has_negative = True
-
-                roc_all_positive = False
-
-    current_all = (
-        roc_complete
-        and roc_all_positive
-    )
-
-    current_all_status, previous_all_status = (
+    current_all, previous_all = (
         get_all_active_roc_status(
             r1,
             r4
         )
     )
 
-    all_active_cross = (
-        current_all_status
-        and not previous_all_status
+    # =====================================================
+    # ★ 실제 돌파
+    #
+    # 현재 모든 활성 ROC >= 0
+    # AND
+    # 이전에 하나라도 < 0
+    #
+    # = 실제 0선 돌파
+    # =====================================================
+
+    actual_zero_cross = (
+        all_active_roc_zero_cross(
+            r1,
+            r4
+        )
     )
 
     change_value = (
@@ -2936,65 +2258,13 @@ def get_signal_qualified(
         and change_value >= 0
     )
 
-    state = (
-        roc_signal_state.get(
-            market_key
-        )
+    state = roc_signal_state.get(
+        market_key
     )
 
-    if state is None:
-
-        start_candle = (
-            historical_start_candle
-        )
-
-        if start_candle is None:
-
-            if (
-                current_all
-                and completed_candle_time
-                is not None
-            ):
-
-                start_candle = (
-                    completed_candle_time
-                )
-
-        if start_candle is not None:
-
-            roc_signal_state[
-                market_key
-            ] = {
-
-                "active":
-                    True,
-
-                "count":
-                    0,
-
-                "cross_candle":
-                    start_candle,
-
-                "last_progress_candle":
-                    progress_candle_time,
-
-                "last_completed_candle":
-                    completed_candle_time
-            }
-
-            state = (
-                roc_signal_state[
-                    market_key
-                ]
-            )
-
-            log.info(
-                f"[ROC SIGNAL START/RESTORE] "
-                f"{market_key} | "
-                f"START={start_candle} | "
-                f"PROGRESS={progress_candle_time} | "
-                f"COUNT=0"
-            )
+    # =====================================================
+    # ★ 기존 활성 신호가 있는 경우
+    # =====================================================
 
     if state is not None:
 
@@ -3002,6 +2272,50 @@ def get_signal_qualified(
             "active",
             False
         ):
+
+            # ---------------------------------------------
+            # 활성 ROC가 하나라도 음수
+            # → 돌파 실패 / 신호 종료
+            # ---------------------------------------------
+
+            roc_has_negative = False
+
+            for timeframe, period in enabled:
+
+                info = (
+                    r1
+                    if timeframe == "1H"
+                    else r4
+                )
+
+                value = (
+                    info
+                    .get(
+                        "roc_values",
+                        {}
+                    )
+                    .get(
+                        period
+                    )
+                    if info
+                    else None
+                )
+
+                if value is None:
+
+                    continue
+
+                try:
+
+                    if float(value) < 0:
+
+                        roc_has_negative = True
+
+                        break
+
+                except Exception:
+
+                    continue
 
             if roc_has_negative:
 
@@ -3013,7 +2327,7 @@ def get_signal_qualified(
                 )
 
                 log.info(
-                    f"[ROC SIGNAL END] "
+                    f"[ROC SIGNAL FAIL/END] "
                     f"{market_key} | "
                     f"COUNT={old_count} | "
                     f"활성 ROC 음수"
@@ -3024,26 +2338,33 @@ def get_signal_qualified(
                     None
                 )
 
+                state = None
+
             else:
 
-                cross_candle = (
+                cross_candle = normalize_datetime(
                     state.get(
                         "cross_candle"
                     )
                 )
 
+                # -----------------------------------------
+                # ★ 진행캔들 기준 COUNT
+                #
+                # 돌파캔들 = 0
+                # 다음캔들 = 1
+                # 다음 = 2
+                # -----------------------------------------
+
                 if (
                     cross_candle is not None
-                    and progress_candle_time
-                    is not None
+                    and progress_candle_time is not None
                 ):
 
-                    elapsed_candles = (
-                        candle_distance(
-                            cross_candle,
-                            progress_candle_time,
-                            ROC_TIMEFRAME
-                        )
+                    elapsed = candle_distance(
+                        cross_candle,
+                        progress_candle_time,
+                        ROC_TIMEFRAME
                     )
 
                     old_count = int(
@@ -3053,38 +2374,92 @@ def get_signal_qualified(
                         )
                     )
 
-                    if (
-                        elapsed_candles
-                        > old_count
-                    ):
+                    if elapsed >= 0:
 
-                        state["count"] = (
-                            elapsed_candles
-                        )
+                        if elapsed != old_count:
 
-                        log.info(
-                            f"[ROC PROGRESS COUNT] "
-                            f"{market_key} | "
-                            f"START={cross_candle} | "
-                            f"NOW={progress_candle_time} | "
-                            f"{old_count} -> "
-                            f"{elapsed_candles}"
-                        )
+                            state["count"] = (
+                                elapsed
+                            )
 
-                    state[
-                        "last_progress_candle"
-                    ] = progress_candle_time
+                            log.info(
+                                f"[ROC COUNT] "
+                                f"{market_key} | "
+                                f"START={cross_candle} | "
+                                f"NOW={progress_candle_time} | "
+                                f"{old_count} -> "
+                                f"{elapsed}"
+                            )
 
-                if completed_candle_time is not None:
+                        else:
 
-                    state[
-                        "last_completed_candle"
-                    ] = completed_candle_time
+                            state["count"] = (
+                                elapsed
+                            )
 
-    state = (
-        roc_signal_state.get(
-            market_key
-        )
+                state[
+                    "last_progress_candle"
+                ] = progress_candle_time
+
+                state[
+                    "last_completed_candle"
+                ] = completed_candle_time
+
+    # =====================================================
+    # ★ 기존 신호가 없을 때
+    #
+    # 반드시 실제 0선 돌파일 때만 생성
+    #
+    # 단순히 현재 ROC가 양수라고 생성하지 않음
+    # =====================================================
+
+    if state is None:
+
+        if actual_zero_cross:
+
+            cross_candle = (
+                progress_candle_time
+            )
+
+            if cross_candle is not None:
+
+                roc_signal_state[
+                    market_key
+                ] = {
+
+                    "active": True,
+
+                    "count": 0,
+
+                    "cross_candle":
+                        cross_candle,
+
+                    "last_progress_candle":
+                        progress_candle_time,
+
+                    "last_completed_candle":
+                        completed_candle_time
+                }
+
+                state = (
+                    roc_signal_state[
+                        market_key
+                    ]
+                )
+
+                log.info(
+                    f"[ROC ZERO CROSS START] "
+                    f"{market_key} | "
+                    f"CROSS={cross_candle} | "
+                    f"COUNT=0"
+                )
+
+    # =====================================================
+    # 최종 상태
+    # =====================================================
+
+    state = roc_signal_state.get(
+        market_key
     )
 
     signal_active = bool(
@@ -3119,6 +2494,12 @@ def get_signal_qualified(
         )
     )
 
+    # =====================================================
+    # 상승 신호는 활성 ROC 조건 + 당일 >= 0
+    #
+    # COUNT 자체는 일봉 등락률에 영향받지 않음
+    # =====================================================
+
     breakout_qualified = (
         signal_active
         and daily_pass
@@ -3130,15 +2511,15 @@ def get_signal_qualified(
             breakout_qualified,
 
         "filter_pass":
-            current_all_status,
+            current_all,
 
         "direction_1h":
             "long"
-            if current_all_status
+            if current_all
             else "none",
 
         "zero_cross":
-            all_active_cross,
+            actual_zero_cross,
 
         "zero_cross_list":
             zero_cross_list,
@@ -3158,6 +2539,148 @@ def get_signal_qualified(
 
 
 # =========================================================
+# 등락률
+# =========================================================
+
+def daily_change_upbit(
+    market
+):
+
+    response = retry(
+        requests.get,
+        "https://api.upbit.com/v1/candles/days",
+        params={
+            "market": market,
+            "count": 2
+        },
+        timeout=15
+    )
+
+    if response is None:
+
+        return None
+
+    try:
+
+        data = response.json()
+
+        if len(data) < 2:
+
+            return None
+
+        current = float(
+            data[0]["trade_price"]
+        )
+
+        previous = float(
+            data[1]["trade_price"]
+        )
+
+        if previous == 0:
+
+            return None
+
+        return [
+            (
+                current - previous
+            )
+            / previous
+            * 100
+        ]
+
+    except Exception as e:
+
+        log.error(
+            f"일봉 등락률 오류 "
+            f"{market}: {e}"
+        )
+
+        return None
+
+
+def get_change_value(x):
+
+    try:
+
+        if x is None:
+
+            return None
+
+        if isinstance(
+            x,
+            (list, tuple)
+        ):
+
+            if not x:
+
+                return None
+
+            return float(x[0])
+
+        return float(x)
+
+    except Exception:
+
+        return None
+
+
+def format_change(x):
+
+    x = get_change_value(x)
+
+    if x is None:
+
+        return "-"
+
+    if x > 0:
+
+        return (
+            '<span class="up">'
+            f'▲+{x:.1f}%'
+            '</span>'
+        )
+
+    if x < 0:
+
+        return (
+            '<span class="down">'
+            f'▼{x:.1f}%'
+            '</span>'
+        )
+
+    return (
+        '<span class="zero">'
+        '0.0%'
+        '</span>'
+    )
+
+
+def format_volume(v):
+
+    try:
+
+        v = float(v)
+
+    except Exception:
+
+        return "-"
+
+    if v >= 1e12:
+
+        return f"{v / 1e12:.1f}조"
+
+    if v >= 1e8:
+
+        return f"{v / 1e8:.0f}억"
+
+    if v >= 1e4:
+
+        return f"{v / 1e4:.0f}만"
+
+    return f"{v:,.0f}"
+
+
+# =========================================================
 # 분석
 # =========================================================
 
@@ -3169,6 +2692,10 @@ def analyze(
     all_periods = (
         get_all_periods()
     )
+
+    # -----------------------------------------------------
+    # 과거 완성 1H
+    # -----------------------------------------------------
 
     df1h = history_upbit(
         market,
@@ -3183,6 +2710,10 @@ def analyze(
 
         return None
 
+    # -----------------------------------------------------
+    # 4H
+    # -----------------------------------------------------
+
     df4h = history_upbit(
         market,
         240,
@@ -3196,38 +2727,36 @@ def analyze(
 
         return None
 
-    df_roc_confirmed = (
-        history_upbit(
-            market,
-            ROC_TIMEFRAME,
-            required=200
-        )
-    )
+    # -----------------------------------------------------
+    # 현재 진행 중 1H
+    #
+    # ★ 중요
+    # 실제 돌파 판단은 이 데이터 사용
+    # -----------------------------------------------------
 
-    if (
-        df_roc_confirmed is None
-        or df_roc_confirmed.empty
-    ):
-
-        return None
-
-    df_roc_current = (
+    df1h_current = (
         get_upbit_current_roc_data(
             market,
-            current_price
+            current_price,
+            60
         )
     )
 
     if (
-        df_roc_current is None
-        or df_roc_current.empty
+        df1h_current is None
+        or df1h_current.empty
     ):
 
         return None
+
+    # -----------------------------------------------------
+    # 4H는 현재 진행값이 필요할 경우 사용
+    # 현재 설정에서는 4H 필터 N
+    # -----------------------------------------------------
 
     r1_raw = (
         roc_filter_analysis(
-            df1h,
+            df1h_current,
             all_periods
         )
     )
@@ -3253,12 +2782,78 @@ def analyze(
         )
     )
 
-    r = roc_analysis(
-        df_roc_confirmed,
-        df_roc_current,
-        r1,
-        r4
+    # -----------------------------------------------------
+    # ROC5 표시용
+    # -----------------------------------------------------
+
+    r = {
+
+        "roc5":
+            r1.get(
+                "roc_values",
+                {}
+            ).get(5),
+
+        "roc5_previous":
+            r1.get(
+                "previous_values",
+                {}
+            ).get(5),
+
+        "filter_pass":
+            False,
+
+        "state":
+            "none",
+
+        "display":
+            "⚪",
+
+        "signal_count":
+            0,
+
+        "all_active_positive":
+            False,
+
+        "all_active_positive_previous":
+            False,
+
+        "all_active_cross":
+            False
+    }
+
+    current_all, previous_all = (
+        get_all_active_roc_status(
+            r1,
+            r4
+        )
     )
+
+    actual_cross = (
+        all_active_roc_zero_cross(
+            r1,
+            r4
+        )
+    )
+
+    r.update({
+
+        "filter_pass":
+            current_all,
+
+        "all_active_positive":
+            current_all,
+
+        "all_active_positive_previous":
+            previous_all,
+
+        "all_active_cross":
+            actual_cross
+    })
+
+    # -----------------------------------------------------
+    # 일봉
+    # -----------------------------------------------------
 
     changes = (
         daily_change_upbit(
@@ -3266,12 +2861,22 @@ def analyze(
         )
     )
 
+    # -----------------------------------------------------
+    # 마지막 완성캔들
+    # -----------------------------------------------------
+
     completed_candle_time = (
         get_last_completed_candle_time(
-            df_roc_confirmed,
+            df1h,
             ROC_TIMEFRAME
         )
     )
+
+    # -----------------------------------------------------
+    # 현재 진행캔들
+    #
+    # ★ COUNT 0의 기준
+    # -----------------------------------------------------
 
     progress_candle_time = (
         get_current_candle_start(
@@ -3279,43 +2884,27 @@ def analyze(
         )
     )
 
-    historical_start_candle = None
-
-    if market not in roc_signal_state:
-
-        historical_start_candle = (
-            find_latest_signal_start(
-                df1h,
-                df4h
-            )
-        )
-
-        if (
-            historical_start_candle
-            is not None
-        ):
-
-            log.info(
-                f"[ROC HISTORICAL START] "
-                f"{market} | "
-                f"START={historical_start_candle}"
-            )
+    # -----------------------------------------------------
+    # 신호
+    # -----------------------------------------------------
 
     q = get_signal_qualified(
+
         r1,
+
         r4,
+
         r,
+
         changes,
+
         market=market,
-        completed_candle_time=(
-            completed_candle_time
-        ),
-        progress_candle_time=(
+
+        completed_candle_time=
+            completed_candle_time,
+
+        progress_candle_time=
             progress_candle_time
-        ),
-        historical_start_candle=(
-            historical_start_candle
-        )
     )
 
     signal_count = int(
@@ -3329,6 +2918,10 @@ def analyze(
         signal_count
     )
 
+    # -----------------------------------------------------
+    # 표시
+    # -----------------------------------------------------
+
     if q.get(
         "signal_active",
         False
@@ -3340,12 +2933,6 @@ def analyze(
 
         r["state"] = (
             "long_breakout"
-        )
-
-        r["long_breakout"] = True
-
-        r["long_breakout_count"] = (
-            signal_count
         )
 
     else:
@@ -3428,30 +3015,22 @@ def make_row(
 
     return {
 
-        "rank":
-            rank,
+        "rank": rank,
 
-        "name":
-            name,
+        "name": name,
 
         "change":
             format_change(
-                a.get(
-                    "changes"
-                )
+                a.get("changes")
             ),
 
         "change_value":
             get_change_value(
-                a.get(
-                    "changes"
-                )
+                a.get("changes")
             ),
 
         "volume":
-            format_volume(
-                volume
-            ),
+            format_volume(volume),
 
         "current_price":
             current_price,
@@ -3574,11 +3153,6 @@ def make_row(
                 )
             ),
 
-        # =================================================
-        # ★ 추가
-        # 1호가 가격
-        # =================================================
-
         "first_bid_price":
             ob.get(
                 "first_bid_price"
@@ -3630,26 +3204,19 @@ def top_daily_breadth(data):
 
     result = {
 
-        "positive":
-            0,
+        "positive": 0,
 
-        "negative":
-            0,
+        "negative": 0,
 
-        "zero":
-            0,
+        "zero": 0,
 
-        "total":
-            0,
+        "total": 0,
 
-        "ratio":
-            0.0,
+        "ratio": 0.0,
 
-        "icon":
-            "⚪",
+        "icon": "⚪",
 
-        "state":
-            "neutral"
+        "state": "neutral"
     }
 
     if not data:
@@ -3668,9 +3235,7 @@ def top_daily_breadth(data):
 
                 continue
 
-            value = float(
-                value
-            )
+            value = float(value)
 
         except Exception:
 
@@ -3680,39 +3245,27 @@ def top_daily_breadth(data):
 
             continue
 
-        result[
-            "total"
-        ] += 1
+        result["total"] += 1
 
         if value > 0:
 
-            result[
-                "positive"
-            ] += 1
+            result["positive"] += 1
 
         elif value < 0:
 
-            result[
-                "negative"
-            ] += 1
+            result["negative"] += 1
 
         else:
 
-            result[
-                "zero"
-            ] += 1
+            result["zero"] += 1
 
-    total = result[
-        "total"
-    ]
+    total = result["total"]
 
     if total <= 0:
 
         return result
 
-    result[
-        "ratio"
-    ] = (
+    result["ratio"] = (
         result["positive"]
         / total
         * 100
@@ -3752,9 +3305,7 @@ def update_upbit():
     global latest_upbit_orderbook
 
     log.info(
-        f"========== "
-        f"업비트 TOP{TOP_N} "
-        f"=========="
+        f"========== 업비트 TOP{TOP_N} =========="
     )
 
     markets = sorted(
@@ -3831,39 +3382,29 @@ def update_upbit():
         row = make_row(
             rank,
             coin,
-            item[
-                "volume_24h"
-            ],
+            item["volume_24h"],
             analysis,
             price,
             ob
         )
 
-        rows.append(
-            row
-        )
+        rows.append(row)
 
         log.info(
             f"[TOP {rank:02d}] "
             f"{coin} | "
-            f"ROC="
-            f"{row['roc'].get('display', '-')}"
+            f"ROC={row['roc'].get('display', '-')}"
             f" | "
-            f"필터="
-            f"{row.get('filter_pass')} | "
-            f"신호="
-            f"{row.get('signal_active')} | "
-            f"COUNT="
-            f"{row.get('signal_count')}"
+            f"필터={row.get('filter_pass')}"
+            f" | "
+            f"신호={row.get('signal_active')}"
+            f" | "
+            f"COUNT={row.get('signal_count')}"
         )
 
-    latest_upbit_data = (
-        rows
-    )
+    latest_upbit_data = rows
 
-    latest_upbit_update_time = (
-        kst()
-    )
+    latest_upbit_update_time = kst()
 
     breadth = (
         top_daily_breadth(
@@ -3895,8 +3436,7 @@ def get_usdt_krw_internal():
         requests.get,
         "https://api.upbit.com/v1/ticker",
         params={
-            "markets":
-                "KRW-USDT"
+            "markets": "KRW-USDT"
         },
         timeout=15
     )
@@ -3938,27 +3478,22 @@ def get_okx_ohlcv(
 
     params = {
 
-        "instId":
-            inst,
+        "instId": inst,
 
-        "bar":
-            bar,
+        "bar": bar,
 
-        "limit":
-            min(
-                max(
-                    int(limit),
-                    1
-                ),
-                200
-            )
+        "limit": min(
+            max(
+                int(limit),
+                1
+            ),
+            200
+        )
     }
 
     if before is not None:
 
-        params[
-            "before"
-        ] = str(before)
+        params["before"] = str(before)
 
     response = retry(
         requests.get,
@@ -4019,9 +3554,7 @@ def get_okx_ohlcv(
         if not include_current:
 
             df = df[
-                df.confirm.astype(
-                    str
-                ) == "1"
+                df.confirm.astype(str) == "1"
             ]
 
         df["datetime"] = (
@@ -4037,9 +3570,7 @@ def get_okx_ohlcv(
         if not include_current:
 
             minutes = (
-                get_okx_bar_minutes(
-                    bar
-                )
+                get_okx_bar_minutes(bar)
             )
 
             if minutes:
@@ -4051,8 +3582,7 @@ def get_okx_ohlcv(
                 )
 
                 df = df[
-                    df.datetime
-                    < current
+                    df.datetime < current
                 ]
 
         if df.empty:
@@ -4062,19 +3592,14 @@ def get_okx_ohlcv(
         return (
             df
             .sort_values("ts")
-            .drop_duplicates(
-                "ts"
-            )
-            .reset_index(
-                drop=True
-            )
+            .drop_duplicates("ts")
+            .reset_index(drop=True)
         )
 
     except Exception as e:
 
         log.error(
-            f"OKX 오류 "
-            f"{inst}: {e}"
+            f"OKX 오류 {inst}: {e}"
         )
 
         return None
@@ -4122,15 +3647,9 @@ def history_okx(
 
         all_df = (
             all_df
-            .drop_duplicates(
-                "ts"
-            )
-            .sort_values(
-                "ts"
-            )
-            .reset_index(
-                drop=True
-            )
+            .drop_duplicates("ts")
+            .sort_values("ts")
+            .reset_index(drop=True)
         )
 
         if len(all_df) >= required:
@@ -4152,8 +3671,7 @@ def get_okx_tickers():
         requests.get,
         "https://www.okx.com/api/v5/market/tickers",
         params={
-            "instType":
-                "SWAP"
+            "instType": "SWAP"
         },
         timeout=15
     )
@@ -4201,14 +3719,10 @@ def get_okx_tickers():
             if last > 0:
 
                 result[inst] = {
-
-                    "last":
-                        last
+                    "last": last
                 }
 
-        okx_ticker_cache = (
-            result
-        )
+        okx_ticker_cache = result
 
         return result
 
@@ -4223,8 +3737,7 @@ def get_okx_symbols():
         requests.get,
         "https://www.okx.com/api/v5/public/instruments",
         params={
-            "instType":
-                "SWAP"
+            "instType": "SWAP"
         },
         timeout=15
     )
@@ -4260,15 +3773,12 @@ def get_okx_symbols():
         return []
 
 
-def get_okx_cached_price(
-    inst
-):
+def get_okx_cached_price(inst):
 
     try:
 
-        item = (
-            okx_ticker_cache
-            .get(inst)
+        item = okx_ticker_cache.get(
+            inst
         )
 
         if not item:
@@ -4293,9 +3803,7 @@ def get_okx_cached_price(
         return None
 
 
-def update_okx(
-    usdt
-):
+def update_okx(usdt):
 
     global latest_okx_data
 
@@ -4308,17 +3816,13 @@ def update_okx(
 
         return False
 
-    tickers = (
-        get_okx_tickers()
-    )
+    tickers = get_okx_tickers()
 
     if not tickers:
 
         return False
 
-    symbols = (
-        get_okx_symbols()
-    )
+    symbols = get_okx_symbols()
 
     if not symbols:
 
@@ -4350,9 +3854,7 @@ def update_okx(
         try:
 
             volume = pd.to_numeric(
-                df[
-                    "volCcyQuote"
-                ],
+                df["volCcyQuote"],
                 errors="coerce"
             ).sum()
 
@@ -4363,9 +3865,7 @@ def update_okx(
 
             if volume > 0:
 
-                volumes[
-                    symbol
-                ] = volume
+                volumes[symbol] = volume
 
         except Exception:
 
@@ -4375,9 +3875,7 @@ def update_okx(
         volumes,
         key=volumes.get,
         reverse=True
-    )[
-        :TOP_N
-    ]
+    )[:TOP_N]
 
     rows = []
 
@@ -4391,10 +3889,8 @@ def update_okx(
             ""
         )
 
-        price = (
-            get_okx_cached_price(
-                symbol
-            )
+        price = get_okx_cached_price(
+            symbol
         )
 
         rows.append(
@@ -4409,9 +3905,7 @@ def update_okx(
 
     latest_okx_data = rows
 
-    latest_okx_update_time = (
-        kst()
-    )
+    latest_okx_update_time = kst()
 
     return True
 
@@ -4428,9 +3922,7 @@ def update_dashboard():
 
     global latest_usdt_krw_internal
 
-    if not update_lock.acquire(
-        False
-    ):
+    if not update_lock.acquire(False):
 
         log.warning(
             "이전 조회 진행 중"
@@ -4449,8 +3941,7 @@ def update_dashboard():
             except Exception as e:
 
                 log.exception(
-                    f"업비트 업데이트 오류: "
-                    f"{e}"
+                    f"업비트 업데이트 오류: {e}"
                 )
 
         else:
@@ -4471,15 +3962,12 @@ def update_dashboard():
                         usdt
                     )
 
-                    update_okx(
-                        usdt
-                    )
+                    update_okx(usdt)
 
             except Exception as e:
 
                 log.exception(
-                    f"OKX 업데이트 오류: "
-                    f"{e}"
+                    f"OKX 업데이트 오류: {e}"
                 )
 
         else:
@@ -4492,12 +3980,10 @@ def update_dashboard():
 
 
 # =========================================================
-# 가격 / 시장
+# 가격
 # =========================================================
 
-def format_market_price(
-    price
-):
+def format_market_price(price):
 
     if price is None:
 
@@ -4505,9 +3991,7 @@ def format_market_price(
 
     try:
 
-        price = float(
-            price
-        )
+        price = float(price)
 
     except Exception:
 
@@ -4530,30 +4014,22 @@ def format_market_price(
     return f"{price:.6f}"
 
 
-def market_change_html(
-    value
-):
+def market_change_html(value):
 
     if value is None:
 
         return (
-            '<span class="market-zero">'
-            '-'
-            '</span>'
+            '<span class="market-zero">-</span>'
         )
 
     try:
 
-        value = float(
-            value
-        )
+        value = float(value)
 
     except Exception:
 
         return (
-            '<span class="market-zero">'
-            '-'
-            '</span>'
+            '<span class="market-zero">-</span>'
         )
 
     if value > 0:
@@ -4579,15 +4055,11 @@ def market_change_html(
     )
 
 
-def get_market_row(
-    coin
-):
+def get_market_row(coin):
 
     for row in latest_upbit_data:
 
-        if row.get(
-            "name"
-        ) == coin:
+        if row.get("name") == coin:
 
             return row
 
@@ -4600,9 +4072,7 @@ def get_market_row(
 
 def market_summary_html():
 
-    btc = get_market_row(
-        "BTC"
-    )
+    btc = get_market_row("BTC")
 
     if btc is None:
 
@@ -4618,19 +4088,15 @@ def market_summary_html():
 
     else:
 
-        btc_price = (
-            format_market_price(
-                btc.get(
-                    "current_price"
-                )
+        btc_price = format_market_price(
+            btc.get(
+                "current_price"
             )
         )
 
-        btc_change = (
-            market_change_html(
-                btc.get(
-                    "change_value"
-                )
+        btc_change = market_change_html(
+            btc.get(
+                "change_value"
             )
         )
 
@@ -4767,7 +4233,7 @@ def market_summary_html():
 
 
 # =========================================================
-# ROC HTML
+# ROC 표시
 # =========================================================
 
 def roc_html(
@@ -4779,9 +4245,7 @@ def roc_html(
     if not r:
 
         return (
-            '<div class="roc-cell">'
-            '⚪'
-            '</div>'
+            '<div class="roc-cell">⚪</div>'
         )
 
     if signal_active:
@@ -4805,23 +4269,17 @@ def roc_html(
     if value is None:
 
         return (
-            '<div class="roc-cell">'
-            '⚪'
-            '</div>'
+            '<div class="roc-cell">⚪</div>'
         )
 
     try:
 
-        value = float(
-            value
-        )
+        value = float(value)
 
     except Exception:
 
         return (
-            '<div class="roc-cell">'
-            '⚪'
-            '</div>'
+            '<div class="roc-cell">⚪</div>'
         )
 
     if value > 0:
@@ -4845,26 +4303,20 @@ def roc_html(
         )
 
     return (
-        '<div class="roc-cell">'
-        '⚪'
-        '</div>'
+        '<div class="roc-cell">⚪</div>'
     )
 
 
 # =========================================================
-# ★ 신호 HTML
+# 신호 HTML
 # =========================================================
 
-def signal_html(
-    row
-):
+def signal_html(row):
 
     if not row:
 
         return (
-            '<span class="muted">'
-            '-'
-            '</span>'
+            '<span class="muted">-</span>'
         )
 
     if row.get(
@@ -4897,9 +4349,7 @@ def signal_html(
         )
 
     return (
-        '<span class="muted">'
-        '-'
-        '</span>'
+        '<span class="muted">-</span>'
     )
 
 
@@ -4907,9 +4357,7 @@ def signal_html(
 # 호가 HTML
 # =========================================================
 
-def orderbook_html(
-    row
-):
+def orderbook_html(row):
 
     if not row:
 
@@ -4958,10 +4406,6 @@ def orderbook_html(
             '</div>'
         )
 
-    # =====================================================
-    # ★ 현재가격 / 1호가 계산
-    # =====================================================
-
     current_price = row.get(
         "current_price"
     )
@@ -5006,19 +4450,11 @@ def orderbook_html(
         )
     )
 
-    if one_quote_pct is not None:
-
-        one_quote_text = (
-            f"{one_quote_pct:.3f}%"
-        )
-
-    else:
-
-        one_quote_text = "-"
-
-    # =====================================================
-    # 우세 표시
-    # =====================================================
+    one_quote_text = (
+        f"{one_quote_pct:.3f}%"
+        if one_quote_pct is not None
+        else "-"
+    )
 
     dominance = row.get(
         "orderbook_dominance",
@@ -5069,9 +4505,7 @@ def orderbook_html(
 
                 <div
                     class="orderbook-bar ask-bar"
-                    style="
-                        width:{ask_ratio:.1f}%
-                    "
+                    style="width:{ask_ratio:.1f}%"
                 ></div>
 
             </div>
@@ -5096,9 +4530,7 @@ def orderbook_html(
 
                 <div
                     class="orderbook-bar bid-bar"
-                    style="
-                        width:{bid_ratio:.1f}%
-                    "
+                    style="width:{bid_ratio:.1f}%"
                 ></div>
 
             </div>
@@ -5108,11 +4540,6 @@ def orderbook_html(
             </span>
 
         </div>
-
-        <!-- =================================================
-             ★ 현재가격 / 1호가
-             매수대기 아래에 표시
-             ================================================= -->
 
         <div class="orderbook-current-info">
 
@@ -5149,12 +4576,10 @@ def orderbook_html(
 
 
 # =========================================================
-# ★ 행 HTML
+# 행 HTML
 # =========================================================
 
-def rows_html(
-    data
-):
+def rows_html(data):
 
     out = []
 
@@ -5167,10 +4592,6 @@ def rows_html(
             cls_list.append(
                 "breakout-qualified"
             )
-
-        # =================================================
-        # 신호 카운팅에 따른 전체 행 반짝임
-        # =================================================
 
         if x.get(
             "signal_active",
@@ -5206,43 +4627,29 @@ def rows_html(
             cls_list
         )
 
-        filter_content = (
-            filter_html(
-                x.get(
-                    "roc_filter_1h"
-                ),
-                x.get(
-                    "roc_filter_high"
-                )
+        filter_content = filter_html(
+            x.get("roc_filter_1h"),
+            x.get("roc_filter_high")
+        )
+
+        roc_content = roc_html(
+            x.get("roc"),
+            x.get(
+                "signal_count",
+                0
+            ),
+            x.get(
+                "signal_active",
+                False
             )
         )
 
-        roc_content = (
-            roc_html(
-                x.get(
-                    "roc"
-                ),
-                x.get(
-                    "signal_count",
-                    0
-                ),
-                x.get(
-                    "signal_active",
-                    False
-                )
-            )
+        signal_content = signal_html(
+            x
         )
 
-        signal_content = (
-            signal_html(
-                x
-            )
-        )
-
-        orderbook_content = (
-            orderbook_html(
-                x
-            )
+        orderbook_content = orderbook_html(
+            x
         )
 
         out.append(
@@ -5296,18 +4703,12 @@ def rows_html(
             """
         )
 
-    return "".join(
-        out
-    )
+    return "".join(out)
 
 
-def table_html(
-    data
-):
+def table_html(data):
 
-    rows = rows_html(
-        data
-    )
+    rows = rows_html(data)
 
     if not rows:
 
@@ -5358,15 +4759,15 @@ def table_html(
 
 
 # =========================================================
-# ★ 상승 신호
+# 상승 신호
 # =========================================================
 
-def focus_section(
-    data
-):
+def focus_section(data):
 
     rows = [
+
         x
+
         for x in data
 
         if is_long_combined(x)
@@ -5396,8 +4797,8 @@ def focus_section(
 
         <span class="section-title-sub">
             활성 ROC 전체 ≥0
-            · 돌파 완성캔들 0
-            · 다음 진행캔들 1
+            · 돌파 진행캔들 0
+            · 돌파캔들 완성 후 1
             · 당일 ≥0%
             · {kst()} KST
         </span>
@@ -5409,7 +4810,7 @@ def focus_section(
 
 
 # =========================================================
-# ★ TOP 리스트
+# TOP
 # =========================================================
 
 def section(
@@ -5481,11 +4882,6 @@ h1{
 
     letter-spacing:.2px;
 }
-
-
-/* =========================================================
-   제목
-   ========================================================= */
 
 .market-title,
 .section-title{
@@ -5565,11 +4961,6 @@ h1{
 .long-title{
     border-left-color:#68727d;
 }
-
-
-/* =========================================================
-   BTC
-   ========================================================= */
 
 .market-summary{
 
@@ -5659,9 +5050,7 @@ h1{
     display:grid;
 
     grid-template-columns:
-        1fr
-        1fr
-        1fr;
+        1fr 1fr 1fr;
 
     width:100%;
 
@@ -5750,11 +5139,6 @@ h1{
     text-overflow:ellipsis;
 }
 
-
-/* =========================================================
-   색상
-   ========================================================= */
-
 .market-up,
 .roc-positive,
 .up{
@@ -5779,11 +5163,6 @@ h1{
 
     color:#68717b!important;
 }
-
-
-/* =========================================================
-   상태
-   ========================================================= */
 
 .status{
 
@@ -5819,11 +5198,6 @@ h1{
 .n{
     color:#c97878!important;
 }
-
-
-/* =========================================================
-   신호
-   ========================================================= */
 
 .signal-cell{
 
@@ -5869,7 +5243,7 @@ h1{
 
 
 /* =========================================================
-   ★ 신호 행 전체 반짝임
+   0번 강한 반짝임
    ========================================================= */
 
 @keyframes signalFlashZero{
@@ -5916,6 +5290,10 @@ h1{
 }
 
 
+/* =========================================================
+   1번 중간 반짝임
+   ========================================================= */
+
 @keyframes signalFlashOne{
 
     0%{
@@ -5951,7 +5329,6 @@ h1{
     }
 }
 
-
 tr.signal-flash-zero td{
 
     animation:
@@ -5960,7 +5337,6 @@ tr.signal-flash-zero td{
         ease-in-out
         infinite;
 }
-
 
 tr.orderbook-subrow.signal-flash-zero td{
 
@@ -5971,7 +5347,6 @@ tr.orderbook-subrow.signal-flash-zero td{
         infinite;
 }
 
-
 tr.signal-flash-one td{
 
     animation:
@@ -5980,7 +5355,6 @@ tr.signal-flash-one td{
         ease-in-out
         infinite;
 }
-
 
 tr.orderbook-subrow.signal-flash-one td{
 
@@ -5991,7 +5365,6 @@ tr.orderbook-subrow.signal-flash-one td{
         infinite;
 }
 
-
 .signal-flash-zero .signal-count,
 .signal-flash-one .signal-count{
 
@@ -6001,11 +5374,6 @@ tr.orderbook-subrow.signal-flash-one td{
         0 0 5px
         rgba(98,181,138,.65);
 }
-
-
-/* =========================================================
-   테이블
-   ========================================================= */
 
 .table-wrap{
 
@@ -6073,44 +5441,33 @@ td{
     overflow:hidden;
 }
 
-
-/* =========================================================
-   컬럼
-   ========================================================= */
-
 th:nth-child(1),
 td:nth-child(1){
-
     width:6%;
 }
 
 th:nth-child(2),
 td:nth-child(2){
-
     width:15%;
 }
 
 th:nth-child(3),
 td:nth-child(3){
-
     width:15%;
 }
 
 th:nth-child(4),
 td:nth-child(4){
-
     width:29%;
 }
 
 th:nth-child(5),
 td:nth-child(5){
-
     width:18%;
 }
 
 th:nth-child(6),
 td:nth-child(6){
-
     width:17%;
 }
 
@@ -6122,11 +5479,6 @@ td:nth-child(1){
 
     font-weight:700;
 }
-
-
-/* =========================================================
-   코인
-   ========================================================= */
 
 .coin{
 
@@ -6177,11 +5529,6 @@ td:nth-child(1){
 
     white-space:nowrap;
 }
-
-
-/* =========================================================
-   ROC 필터
-   ========================================================= */
 
 .ema{
 
@@ -6284,7 +5631,6 @@ td:nth-child(1){
 }
 
 .roc-active{
-
     font-weight:900;
 }
 
@@ -6309,11 +5655,6 @@ td:nth-child(1){
 
     color:#68717b!important;
 }
-
-
-/* =========================================================
-   ROC
-   ========================================================= */
 
 .roc-cell{
 
@@ -6341,11 +5682,6 @@ td:nth-child(1){
     font-weight:900;
 }
 
-
-/* =========================================================
-   상승 신호 행
-   ========================================================= */
-
 .breakout-qualified{
 
     background:#191e23;
@@ -6366,11 +5702,6 @@ td:nth-child(1){
 
     font-size:6px;
 }
-
-
-/* =========================================================
-   호가
-   ========================================================= */
 
 .orderbook-subrow{
 
@@ -6501,12 +5832,6 @@ td:nth-child(1){
     color:#609276;
 }
 
-
-/* =========================================================
-   ★ 현재가격 / 1호가
-   매도대기 / 매수대기 아래
-   ========================================================= */
-
 .orderbook-current-info{
 
     display:flex;
@@ -6578,7 +5903,6 @@ td:nth-child(1){
     white-space:nowrap;
 }
 
-
 .orderbook-bottom{
 
     display:flex;
@@ -6642,7 +5966,6 @@ td:nth-child(1){
 @media(max-width:380px){
 
     body{
-
         padding:2px 2px 7px;
     }
 
@@ -6835,11 +6158,6 @@ td:nth-child(1){
         height:6px;
     }
 
-
-    /* =====================================================
-       ★ 모바일 현재가격 / 1호가
-       ===================================================== */
-
     .orderbook-current-info{
 
         gap:3px;
@@ -6867,7 +6185,6 @@ td:nth-child(1){
 
         margin-left:3px;
     }
-
 
     .orderbook-bottom{
 
@@ -7091,11 +6408,6 @@ td:nth-child(1){
         height:9px;
     }
 
-
-    /* =====================================================
-       ★ PC 현재가격 / 1호가
-       ===================================================== */
-
     .orderbook-current-info{
 
         gap:5px;
@@ -7124,7 +6436,6 @@ td:nth-child(1){
         margin-left:5px;
     }
 
-
     .orderbook-bottom{
 
         gap:9px;
@@ -7140,7 +6451,7 @@ td:nth-child(1){
 
 
 /* =========================================================
-   모션 감소 설정
+   모션 감소
    ========================================================= */
 
 @media(prefers-reduced-motion:reduce){
@@ -7180,17 +6491,13 @@ def dashboard():
     )
 
     h1_status_text = (
-        get_enabled_filter_text(
-            "1H"
-        )
+        get_enabled_filter_text("1H")
         if USE_1H_ROC_FILTER == "Y"
         else "N"
     )
 
     h4_status_text = (
-        get_enabled_filter_text(
-            "4H"
-        )
+        get_enabled_filter_text("4H")
         if USE_4H_ROC_FILTER == "Y"
         else "N"
     )
@@ -7229,7 +6536,7 @@ def dashboard():
         <span>
             0선 :
             <b class="y">
-                전체 활성
+                실제 돌파
             </b>
         </span>
 
@@ -7288,9 +6595,7 @@ def dashboard():
         </title>
 
         <style>
-
             {CSS}
-
         </style>
 
     </head>
@@ -7353,8 +6658,7 @@ def startup():
     ):
 
         raise ValueError(
-            "USE_UPBIT은 "
-            "Y/N만 가능합니다."
+            "USE_UPBIT은 Y/N만 가능합니다."
         )
 
     if USE_OKX not in (
@@ -7363,8 +6667,7 @@ def startup():
     ):
 
         raise ValueError(
-            "USE_OKX는 "
-            "Y/N만 가능합니다."
+            "USE_OKX는 Y/N만 가능합니다."
         )
 
     validate_timeframe()
@@ -7459,19 +6762,27 @@ def startup():
     )
 
     log.info(
-        "돌파 완성캔들 = 0"
+        "실제 0선 돌파 진행캔들 = 0"
     )
 
     log.info(
-        "다음 진행캔들 = 1"
+        "돌파캔들 완성 후 다음캔들 = 1"
     )
 
     log.info(
-        "다음 진행캔들 = 2"
+        "그 다음 캔들 = 2"
     )
 
     log.info(
-        "다음 진행캔들 = 3..."
+        "그 다음 = 3..."
+    )
+
+    log.info(
+        "돌파 진행 중 ROC 음수 = 신호 실패/삭제"
+    )
+
+    log.info(
+        "실제 0선 돌파가 아니면 0 표시 금지"
     )
 
     log.info(
@@ -7487,24 +6798,7 @@ def startup():
     )
 
     log.info(
-        "실제 활성 ROC 음수일 때만 종료"
-    )
-
-    log.info(
-        "None/데이터 부족은 종료하지 않음"
-    )
-
-    log.info(
         "일봉 등락률은 COUNT에 영향 없음"
-    )
-
-    log.info(
-        "ROC COUNT = SIGNAL COUNT"
-    )
-
-    log.info(
-        "서버 재시작 시 "
-        "과거 ROC에서 시작점 복원"
     )
 
     log.info(
