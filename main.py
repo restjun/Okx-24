@@ -40,17 +40,23 @@ KST = ZoneInfo("Asia/Seoul")
 # =========================================================
 
 VOLUME_HOURS = 24
+
 TOP_N = 20
+
 UPDATE_MINUTES = 1
 
 HISTORY_CHUNK = 200
+
 MAX_HISTORY_CHUNKS = 10
 
 USE_UPBIT = "Y"
+
 USE_OKX = "N"
 
 REQUEST_INTERVAL = 0.08
+
 RATE_LIMIT_WAIT = 3
+
 MAX_RETRIES = 10
 
 
@@ -59,25 +65,39 @@ MAX_RETRIES = 10
 #
 # ★ 원본 설정 그대로 유지
 # ★ 사용자가 직접 Y/N 조절
+#
+# ★ ROC5는 내부 카운팅에 사용
+# ★ 화면의 필터 표시에서는 ROC5 제외
 # =========================================================
 
 USE_1H_ROC_FILTER = "Y"
+
 USE_4H_ROC_FILTER = "N"
 
 USE_1H_ROC5 = "N"
+
 USE_1H_ROC10 = "Y"
+
 USE_1H_ROC20 = "Y"
+
 USE_1H_ROC50 = "Y"
+
 USE_1H_ROC200 = "N"
 
 USE_4H_ROC5 = "N"
+
 USE_4H_ROC10 = "N"
+
 USE_4H_ROC20 = "N"
+
 USE_4H_ROC50 = "N"
+
 USE_4H_ROC200 = "N"
 
 ROC_FILTER_TIMEFRAME = 60
+
 ROC_FILTER_HIGH_TIMEFRAME = 240
+
 ROC_TIMEFRAME = 60
 
 # ★ 신호 / 눌림 모두 ROC5
@@ -97,7 +117,9 @@ ROC_FILTER_PERIODS = [
 # =========================================================
 
 ORDERBOOK_RANGE = 0.01
+
 ORDERBOOK_COUNT = 30
+
 ORDERBOOK_DOMINANCE_GAP = 5.0
 
 
@@ -106,18 +128,23 @@ ORDERBOOK_DOMINANCE_GAP = 5.0
 # =========================================================
 
 latest_upbit_data = []
+
 latest_okx_data = []
 
 latest_upbit_update_time = "-"
+
 latest_okx_update_time = "-"
 
 latest_upbit_markets = []
+
 latest_upbit_orderbook = {}
 
 request_lock = threading.Lock()
+
 update_lock = threading.Lock()
 
 last_request_time = 0
+
 latest_usdt_krw_internal = 0
 
 okx_ticker_cache = {}
@@ -165,22 +192,27 @@ roc_signal_failed_candle = {}
 def roc_settings():
 
     return {
+
         5: {
             "1H": USE_1H_ROC5,
             "4H": USE_4H_ROC5
         },
+
         10: {
             "1H": USE_1H_ROC10,
             "4H": USE_4H_ROC10
         },
+
         20: {
             "1H": USE_1H_ROC20,
             "4H": USE_4H_ROC20
         },
+
         50: {
             "1H": USE_1H_ROC50,
             "4H": USE_4H_ROC50
         },
+
         200: {
             "1H": USE_1H_ROC200,
             "4H": USE_4H_ROC200
@@ -824,19 +856,25 @@ def calculate_orderbook_amount(
     result = {
 
         "bid_amount": 0.0,
+
         "ask_amount": 0.0,
+
         "total_amount": 0.0,
 
         "bid_ratio": 0.0,
+
         "ask_ratio": 0.0,
 
         "bid_count": 0,
+
         "ask_count": 0,
 
         "lower_price": None,
+
         "upper_price": None,
 
         "dominance": "balanced",
+
         "dominance_text": "균형"
     }
 
@@ -867,6 +905,7 @@ def calculate_orderbook_amount(
     )
 
     result["lower_price"] = lower_price
+
     result["upper_price"] = upper_price
 
     units = orderbook.get(
@@ -875,9 +914,11 @@ def calculate_orderbook_amount(
     )
 
     bid_amount = 0.0
+
     ask_amount = 0.0
 
     bid_count = 0
+
     ask_count = 0
 
     for unit in units:
@@ -964,6 +1005,7 @@ def calculate_orderbook_amount(
     else:
 
         bid_ratio = 0
+
         ask_ratio = 0
 
     difference = (
@@ -977,6 +1019,7 @@ def calculate_orderbook_amount(
     ):
 
         dominance = "bid"
+
         dominance_text = "매수 우세"
 
     elif (
@@ -985,11 +1028,13 @@ def calculate_orderbook_amount(
     ):
 
         dominance = "ask"
+
         dominance_text = "매도 우세"
 
     else:
 
         dominance = "balanced"
+
         dominance_text = "균형"
 
     result.update({
@@ -1159,6 +1204,7 @@ def history_upbit(
 ):
 
     all_df = None
+
     to = None
 
     for _ in range(
@@ -1272,6 +1318,7 @@ def get_upbit_current_roc_data(
             )
 
             row["datetime"] = start
+
             row["c"] = price
 
             df = pd.concat(
@@ -1350,6 +1397,7 @@ def roc_filter_analysis(
 ):
 
     if periods is None:
+
         periods = get_all_periods()
 
     result = {
@@ -1390,7 +1438,9 @@ def roc_filter_analysis(
         return result
 
     values = {}
+
     previous_values = {}
+
     zero_crosses = {}
 
     positive_count = 0
@@ -1458,6 +1508,7 @@ def roc_filter_analysis(
         )
 
         if current_value >= 0:
+
             positive_count += 1
 
     passed = (
@@ -1534,12 +1585,15 @@ def get_all_active_roc_status(
     )
 
     if not enabled:
+
         return False, False
 
     current_ok = True
+
     previous_ok = True
 
     current_count = 0
+
     previous_count = 0
 
     for timeframe, period in enabled:
@@ -1551,6 +1605,7 @@ def get_all_active_roc_status(
         )
 
         if not info:
+
             return False, False
 
         values = info.get(
@@ -1638,6 +1693,8 @@ def all_active_roc_filters_pass(
 
 # =========================================================
 # ★ ROC5 0선 상향 돌파
+#
+# ★ 필터가 아니라 카운팅 전용
 # =========================================================
 
 def roc5_zero_cross(r):
@@ -1683,9 +1740,7 @@ def roc5_zero_cross(r):
 # =========================================================
 # ★ ROC5 눌림 조건
 #
-# 현재 ROC5 >= 0
-# 이전 ROC5 >= 0
-# 현재 ROC5 < 이전 ROC5
+# ★ 필터가 아니라 카운팅 전용
 # =========================================================
 
 def roc5_pullback_condition(r):
@@ -1847,6 +1902,7 @@ def find_latest_signal_start(
                     ):
 
                         filter_ok = False
+
                         break
 
                     value = series.iloc[i]
@@ -1859,6 +1915,7 @@ def find_latest_signal_start(
                     ):
 
                         filter_ok = False
+
                         break
 
                     h4 = df4h.copy()
@@ -1889,6 +1946,7 @@ def find_latest_signal_start(
                     if candidates.empty:
 
                         filter_ok = False
+
                         break
 
                     h4_index = (
@@ -1906,6 +1964,7 @@ def find_latest_signal_start(
                     ):
 
                         filter_ok = False
+
                         break
 
                     value = series.iloc[
@@ -1919,6 +1978,7 @@ def find_latest_signal_start(
                 ):
 
                     filter_ok = False
+
                     break
 
             if filter_ok:
@@ -1960,6 +2020,10 @@ def update_signal_and_pullback(
         )
     )
 
+    # =====================================================
+    # ROC5
+    # =====================================================
+
     roc5_current = r.get(
         "roc5"
     )
@@ -1986,16 +2050,22 @@ def update_signal_and_pullback(
         )
     )
 
+    # =====================================================
+    # 신호가 없을 때
+    # =====================================================
+
     if signal_state is None:
 
         start_candle = None
 
+        # 과거 복원
         if historical_start_candle is not None:
 
             start_candle = (
                 historical_start_candle
             )
 
+        # 현재 ROC5 돌파
         elif (
             roc5_cross
             and filter_pass
@@ -2170,6 +2240,10 @@ def update_signal_and_pullback(
 
     # =====================================================
     # ★ 눌림 상태
+    #
+    # ★ 기존 계산 유지
+    # ★ 정배열(filter_pass=True)에서는
+    #   화면에서 표시하지 않음
     # =====================================================
 
     pullback_state = (
@@ -2599,6 +2673,12 @@ def analyze(
 
     # =====================================================
     # ★ 활성 필터
+    #
+    # ★ ROC5는 여기에서 필터로 사용될 수 있음
+    #   사용자가 USE_1H_ROC5="Y"로 설정하면
+    #   기존 필터 로직은 그대로 작동
+    #
+    # ★ 화면 표시에서만 ROC5를 제외
     # =====================================================
 
     filter_pass = (
@@ -2740,6 +2820,7 @@ def make_row(
 ):
 
     a = analysis or {}
+
     ob = orderbook_info or {}
 
     return {
@@ -2901,7 +2982,9 @@ def make_row(
 def update_upbit():
 
     global latest_upbit_data
+
     global latest_upbit_update_time
+
     global latest_upbit_orderbook
 
     markets = sorted(
@@ -3042,6 +3125,7 @@ def update_okx(
 ):
 
     global latest_okx_data
+
     global latest_okx_update_time
 
     latest_okx_data = []
@@ -3134,6 +3218,10 @@ def format_market_price(
 
 # =========================================================
 # ROC 필터 HTML
+#
+# ★ 중요
+# ★ ROC5는 화면 필터에서 삭제
+# ★ ROC5는 내부 카운팅만 사용
 # =========================================================
 
 def roc_filter_html(
@@ -3153,7 +3241,20 @@ def roc_filter_html(
 
     parts = []
 
-    for period in ROC_FILTER_PERIODS:
+    # =====================================================
+    # ★ 화면에 표시할 필터
+    #
+    # ROC5 제외
+    # =====================================================
+
+    display_periods = [
+        10,
+        20,
+        50,
+        200
+    ]
+
+    for period in display_periods:
 
         value = values.get(
             period
@@ -3162,6 +3263,7 @@ def roc_filter_html(
         if value is None:
 
             icon = "⚪"
+
             cls = "roc-zero"
 
         else:
@@ -3175,21 +3277,25 @@ def roc_filter_html(
                 if value > 0:
 
                     icon = "🟢"
+
                     cls = "roc-up"
 
                 elif value < 0:
 
                     icon = "🔴"
+
                     cls = "roc-down"
 
                 else:
 
                     icon = "⚪"
+
                     cls = "roc-zero"
 
             except Exception:
 
                 icon = "⚪"
+
                 cls = "roc-zero"
 
         setting = settings[
@@ -3264,8 +3370,9 @@ def filter_html(
 # =========================================================
 # ★ 신호 HTML
 #
-# 상승 신호 영역에서
-# 신호 COUNT + 눌림 COUNT 같이 표시
+# ROC5 = 카운팅 전용
+#
+# ★ 정배열 상태에서는 눌림 표시 안 함
 # =========================================================
 
 def signal_html(
@@ -3285,6 +3392,11 @@ def signal_html(
         False
     )
 
+    filter_pass = row.get(
+        "filter_pass",
+        False
+    )
+
     signal_count = int(
         row.get(
             "signal_count",
@@ -3300,6 +3412,10 @@ def signal_html(
     )
 
     result = []
+
+    # =====================================================
+    # 상승 신호
+    # =====================================================
 
     if signal_active:
 
@@ -3319,7 +3435,16 @@ def signal_html(
             """
         )
 
-    if pullback_active:
+    # =====================================================
+    # ★ 눌림
+    #
+    # 정배열 상태에서는 표시하지 않음
+    # =====================================================
+
+    if (
+        pullback_active
+        and not filter_pass
+    ):
 
         result.append(
             f"""
@@ -3355,7 +3480,8 @@ def signal_html(
 # =========================================================
 # ★ TOP 리스트 전용 COUNT
 #
-# 신호 / 눌림 COUNT 같이 표시
+# ★ ROC5 카운팅
+# ★ 정배열 상태에서는 눌림 숨김
 # =========================================================
 
 def top_signal_count_html(
@@ -3375,6 +3501,11 @@ def top_signal_count_html(
         False
     )
 
+    filter_pass = row.get(
+        "filter_pass",
+        False
+    )
+
     signal_count = int(
         row.get(
             "signal_count",
@@ -3389,9 +3520,15 @@ def top_signal_count_html(
         )
     )
 
+    # 정배열이면 눌림 숨김
+    show_pullback = (
+        pullback_active
+        and not filter_pass
+    )
+
     if not (
         signal_active
-        or pullback_active
+        or show_pullback
     ):
 
         return (
@@ -3416,7 +3553,7 @@ def top_signal_count_html(
             📉{pullback_count}
         </span>
         """
-        if pullback_active
+        if show_pullback
         else ""
     )
 
@@ -3563,20 +3700,14 @@ def orderbook_html(
 # =========================================================
 # ★ ROW HTML
 #
-# ★ COUNT 1일 때만 반짝임
+# ★ COUNT 0 / 1만 반짝임
 #
-# 신호 COUNT
-# 0      → 반짝임 없음
+# 0      → 반짝임
 # 1      → 반짝임
 # 2 이상 → 반짝임 없음
 #
-# 눌림 COUNT
-# 0      → 반짝임 없음
-# 1      → 반짝임
-# 2 이상 → 반짝임 없음
-#
-# 신호 또는 눌림 중 하나라도 1이면
-# 해당 행 전체 반짝임
+# ★ 정배열 상태에서는
+#   눌림 COUNT 반짝임도 적용하지 않음
 # =========================================================
 
 def rows_html(
@@ -3599,6 +3730,11 @@ def rows_html(
             False
         )
 
+        filter_pass = x.get(
+            "filter_pass",
+            False
+        )
+
         signal_count = int(
             x.get(
                 "signal_count",
@@ -3614,21 +3750,43 @@ def rows_html(
         )
 
         # =================================================
-        # ★ COUNT 1일 때만 반짝임
+        # ★ 신호 COUNT
         #
-        # 0 / 2 이상은 반짝이지 않음
+        # 0 또는 1 → 반짝임
+        # =================================================
+
+        signal_flash = (
+            signal_active
+            and signal_count in (
+                0,
+                1
+            )
+        )
+
+        # =================================================
+        # ★ 눌림 COUNT
+        #
+        # 정배열에서는 눌림 자체를 무시
+        #
+        # 0 또는 1 → 반짝임
+        # =================================================
+
+        pullback_flash = (
+            pullback_active
+            and not filter_pass
+            and pullback_count in (
+                0,
+                1
+            )
+        )
+
+        # =================================================
+        # ★ 둘 중 하나라도 0 또는 1이면 반짝임
         # =================================================
 
         if (
-            (
-                signal_active
-                and signal_count == 1
-            )
-            or
-            (
-                pullback_active
-                and pullback_count == 1
-            )
+            signal_flash
+            or pullback_flash
         ):
 
             cls_list.append(
@@ -3789,8 +3947,8 @@ def table_html(
 # =========================================================
 # ★ 상승 신호
 #
-# 신호 COUNT + 눌림 COUNT 같이 표시
-# 별도 눌림 영역 없음
+# ★ 별도 눌림 영역 없음
+# ★ 신호 / 눌림 COUNT 같이 표시
 # =========================================================
 
 def focus_section(
@@ -3824,7 +3982,8 @@ def focus_section(
         <span class="section-title-sub">
             ROC5 돌파
             · 필터 통과
-            · 신호/눌림 COUNT 무제한
+            · ROC5 카운팅
+            · COUNT 무제한
             · {kst()} KST
         </span>
 
@@ -3899,7 +4058,9 @@ def market_summary_html():
     else:
 
         price = "-"
+
         change = "-"
+
         signal = "-"
 
     return f"""
@@ -4458,8 +4619,14 @@ td:nth-child(6){
 
 
 /* =========================================================
-   FLASH 1
-   ★ COUNT 1일 때만 사용
+   FLASH
+   =========================================================
+   
+   ★ COUNT 0 / 1만 반짝임
+   
+   0 → 반짝임
+   1 → 반짝임
+   2 이상 → 없음
    ========================================================= */
 
 @keyframes signalFlashOne{
@@ -4473,22 +4640,31 @@ td:nth-child(6){
             rgba(98,181,138,0);
     }
 
-    30%{
+    25%{
 
-        background-color:#2a3d34;
+        background-color:#354d42;
 
         box-shadow:
-            inset 0 0 11px
-            rgba(98,181,138,.32);
+            inset 0 0 18px
+            rgba(98,181,138,.55);
     }
 
-    60%{
+    50%{
 
-        background-color:#19221e;
+        background-color:#18231f;
 
         box-shadow:
-            inset 0 0 3px
-            rgba(98,181,138,.12);
+            inset 0 0 5px
+            rgba(98,181,138,.20);
+    }
+
+    75%{
+
+        background-color:#3b5548;
+
+        box-shadow:
+            inset 0 0 20px
+            rgba(98,181,138,.60);
     }
 
     100%{
@@ -4506,7 +4682,7 @@ tr.signal-flash-one td{
 
     animation:
         signalFlashOne
-        1.35s
+        1.05s
         ease-in-out
         infinite;
 }
@@ -4516,7 +4692,7 @@ tr.orderbook-subrow.signal-flash-one td{
 
     animation:
         signalFlashOne
-        1.35s
+        1.05s
         ease-in-out
         infinite;
 }
@@ -4899,9 +5075,7 @@ def dashboard():
         # 1. 상승 신호
         # 2. TOP 리스트
         #
-        # ★ 별도 눌림 대시보드 삭제
-        # ★ 상승 신호에서
-        #   신호 COUNT + 눌림 COUNT 같이 표시
+        # ★ 별도 눌림 대시보드 없음
         # =================================================
 
         sections += (
@@ -5038,11 +5212,15 @@ def startup():
     )
 
     log.info(
-        "ROC5 = 신호 카운팅 기준"
+        "ROC5 = 신호 카운팅 전용"
     )
 
     log.info(
-        "ROC5 = 눌림 카운팅 기준"
+        "ROC5 = 눌림 카운팅 전용"
+    )
+
+    log.info(
+        "ROC5 = 화면 필터 표시 제외"
     )
 
     log.info(
@@ -5062,11 +5240,11 @@ def startup():
     )
 
     log.info(
-        "TOP 리스트 = 신호/눌림 COUNT 표시"
+        "정배열 상태 = 눌림 표시 안 함"
     )
 
     log.info(
-        "COUNT 0 = 반짝임 없음"
+        "COUNT 0 = 반짝임"
     )
 
     log.info(
@@ -5078,11 +5256,11 @@ def startup():
     )
 
     log.info(
-        "신호 또는 눌림 COUNT 1 → 행 반짝임"
+        "TOP 리스트 = 신호/눌림 COUNT 표시"
     )
 
     log.info(
-        "별도 눌림 대시보드 = 삭제"
+        "별도 눌림 대시보드 = 없음"
     )
 
     log.info(
