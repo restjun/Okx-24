@@ -263,8 +263,6 @@ def get_filter_setting_text():
 
 # =========================================================
 # EMA 설정
-#
-# ROC 필터 Y/N을 그대로 사용
 # =========================================================
 
 def get_enabled_ema_periods(timeframe):
@@ -3348,7 +3346,14 @@ def make_row(
             ob.get(
                 "dominance",
                 "balanced"
-            )
+            ),
+
+        # =================================================
+        # BTC 시황에서 1H ROC 데이터를 사용하기 위한 원본
+        # =================================================
+
+        "analysis":
+            analysis
     }
 
 
@@ -3886,8 +3891,6 @@ def top_signal_count_html(
 
 # =========================================================
 # EMA HTML
-#
-# 기존 신호 자리에 들어갈 내용
 # =========================================================
 
 def ema_signal_html(
@@ -4213,10 +4216,6 @@ def rows_html(
             )
         )
 
-        # =================================================
-        # 기존 신호 자리를 EMA로 변경
-        # =================================================
-
         ema_content = (
             ema_signal_html(
                 x
@@ -4455,6 +4454,148 @@ def section(
 
 
 # =========================================================
+# BTC 1H ROC 상태 HTML
+# =========================================================
+
+def btc_1h_roc_status_html(
+    btc_row
+):
+
+    if not btc_row:
+        return ""
+
+    analysis = btc_row.get(
+        "analysis",
+        {}
+    )
+
+    if not analysis:
+        return ""
+
+    df1h = analysis.get(
+        "df1h"
+    )
+
+    if (
+        df1h is None
+        or df1h.empty
+    ):
+        return ""
+
+    periods = [
+        5,
+        10,
+        20,
+        50,
+        200
+    ]
+
+    items = []
+
+    for period in periods:
+
+        series = roc(
+            df1h,
+            period
+        )
+
+        if (
+            series is None
+            or series.empty
+        ):
+
+            icon = "⚪"
+            count = 0
+
+        else:
+
+            valid = series.dropna()
+
+            if valid.empty:
+
+                icon = "⚪"
+                count = 0
+
+            else:
+
+                current = float(
+                    valid.iloc[-1]
+                )
+
+                if current >= 0:
+
+                    icon = "🟢"
+
+                    count = 0
+
+                    for value in reversed(
+                        valid.tolist()
+                    ):
+
+                        if float(value) >= 0:
+
+                            count += 1
+
+                        else:
+
+                            break
+
+                else:
+
+                    icon = "🔴"
+
+                    count = 0
+
+                    for value in reversed(
+                        valid.tolist()
+                    ):
+
+                        if float(value) < 0:
+
+                            count += 1
+
+                        else:
+
+                            break
+
+        items.append(
+            f"""
+            <div class="btc-roc-item">
+
+                <div class="btc-roc-period">
+                    {period}
+                </div>
+
+                <div class="btc-roc-icon">
+                    {icon}
+                </div>
+
+                <div class="btc-roc-count">
+                    ({count})
+                </div>
+
+            </div>
+            """
+        )
+
+    return f"""
+    <div class="btc-roc-section">
+
+        <div class="btc-roc-title">
+            1시간 ROC
+        </div>
+
+        <div class="btc-roc-grid">
+
+            {"".join(items)}
+
+        </div>
+
+    </div>
+    """
+
+
+# =========================================================
 # 시장 요약
 # =========================================================
 
@@ -4490,11 +4631,18 @@ def market_summary_html():
             btc
         )
 
+        roc_status = (
+            btc_1h_roc_status_html(
+                btc
+            )
+        )
+
     else:
 
         price = "-"
         change = "-"
         signal = "-"
+        roc_status = ""
 
     return f"""
     <div class="market-summary">
@@ -4531,6 +4679,8 @@ def market_summary_html():
             </span>
 
         </div>
+
+        {roc_status}
 
     </div>
     """
@@ -4712,6 +4862,95 @@ font-weight:800;
 font-size:8px;
 
 font-weight:900;
+}
+
+
+/* =========================================================
+BTC 1H ROC
+========================================================= */
+
+.btc-roc-section{
+
+width:100%;
+
+margin-top:3px;
+
+padding-top:3px;
+
+border-top:1px solid #20262c;
+}
+
+.btc-roc-title{
+
+margin-bottom:2px;
+
+color:#737c86;
+
+font-size:5px;
+
+font-weight:900;
+
+text-align:left;
+}
+
+.btc-roc-grid{
+
+display:grid;
+
+grid-template-columns:
+    repeat(5, 1fr);
+
+width:100%;
+
+gap:2px;
+}
+
+.btc-roc-item{
+
+display:flex;
+
+flex-direction:column;
+
+align-items:center;
+
+justify-content:center;
+
+min-height:25px;
+
+background:#14181d;
+
+border:1px solid #242a31;
+
+border-radius:3px;
+}
+
+.btc-roc-period{
+
+color:#737c86;
+
+font-size:4.5px;
+
+font-weight:900;
+
+line-height:6px;
+}
+
+.btc-roc-icon{
+
+font-size:8px;
+
+line-height:9px;
+}
+
+.btc-roc-count{
+
+color:#cdd3d8;
+
+font-size:5px;
+
+font-weight:900;
+
+line-height:7px;
 }
 
 
@@ -5507,6 +5746,26 @@ td{
     font-size:4.8px;
 }
 
+.btc-roc-period{
+
+    font-size:4px;
+}
+
+.btc-roc-icon{
+
+    font-size:7px;
+}
+
+.btc-roc-count{
+
+    font-size:4.8px;
+}
+
+.btc-roc-item{
+
+    min-height:23px;
+}
+
 }
 
 
@@ -5601,10 +5860,6 @@ def dashboard():
             📊 TRADING SIGNAL CENTER
         </h1>
 
-        <!-- 기존 비트 시황 -->
-        {market_summary_html()}
-
-        <!-- 비트 시황을 위에 한 번 더 표시 -->
         {market_summary_html()}
 
         {sections}
