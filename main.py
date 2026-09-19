@@ -1682,6 +1682,11 @@ def all_active_roc_filters_pass(
 
 # =========================================================
 # ROC5 0선 상향 돌파
+#
+# 이전 < 0
+# 현재 >= 0
+#
+# ★ 돌파한 캔들이 COUNT 1
 # =========================================================
 
 def roc5_zero_cross(r):
@@ -1725,7 +1730,12 @@ def roc5_zero_cross(r):
 
 
 # =========================================================
-# ROC5 눌림 조건
+# ROC5 0선 하향 돌파
+#
+# 이전 > 0
+# 현재 <= 0
+#
+# ★ 하향 돌파한 캔들이 눌림 COUNT 1
 # =========================================================
 
 def roc5_pullback_condition(r):
@@ -1759,9 +1769,8 @@ def roc5_pullback_condition(r):
         )
 
         return (
-            current >= 0
-            and previous >= 0
-            and current < previous
+            previous > 0
+            and current <= 0
         )
 
     except Exception:
@@ -2008,16 +2017,24 @@ def update_signal_and_pullback(
         "roc5_previous"
     )
 
+    # =====================================================
+    # ROC5 상향 돌파
+    # =====================================================
+
     roc5_cross = (
         roc5_zero_cross(r)
     )
+
+    # =====================================================
+    # ROC5 하향 돌파 = 눌림 시작
+    # =====================================================
 
     pullback_condition = (
         roc5_pullback_condition(r)
     )
 
     # =====================================================
-    # 신호 상태
+    # 기존 상태
     # =====================================================
 
     signal_state = (
@@ -2026,21 +2043,111 @@ def update_signal_and_pullback(
         )
     )
 
-    if signal_state is None:
+    pullback_state = (
+        roc_pullback_state.get(
+            market_key
+        )
+    )
 
-        start_candle = None
+    # =====================================================
+    # 1. ROC5 하향 돌파
+    #
+    # 기존 상승 신호 종료
+    # 동시에 눌림 COUNT 1 시작
+    # =====================================================
 
-        if historical_start_candle is not None:
+    if pullback_condition:
 
-            start_candle = (
-                historical_start_candle
+        if signal_state is not None:
+
+            old_count = int(
+                signal_state.get(
+                    "count",
+                    0
+                )
             )
 
-        elif (
-            roc5_cross
-            and filter_pass
-            and progress_candle_time
-            is not None
+            log.info(
+                f"[ROC5 SIGNAL END] "
+                f"{market_key} | "
+                f"COUNT={old_count} | "
+                f"ROC5 0선 하향 돌파"
+            )
+
+            roc_signal_state.pop(
+                market_key,
+                None
+            )
+
+            signal_state = None
+
+        if progress_candle_time is not None:
+
+            roc_pullback_state[
+                market_key
+            ] = {
+
+                "active":
+                    True,
+
+                "start_candle":
+                    progress_candle_time,
+
+                "count":
+                    1,
+
+                "last_candle":
+                    progress_candle_time
+            }
+
+            pullback_state = (
+                roc_pullback_state[
+                    market_key
+                ]
+            )
+
+            log.info(
+                f"[ROC5 PULLBACK START] "
+                f"{market_key} "
+                f"📉1 | "
+                f"ROC5={roc5_current}"
+            )
+
+    # =====================================================
+    # 2. ROC5 상향 돌파
+    #
+    # 기존 눌림 종료
+    # 활성 필터 통과 시 상승 신호 COUNT 1 시작
+    # =====================================================
+
+    elif roc5_cross:
+
+        if pullback_state is not None:
+
+            old_count = int(
+                pullback_state.get(
+                    "count",
+                    0
+                )
+            )
+
+            log.info(
+                f"[ROC5 PULLBACK END] "
+                f"{market_key} | "
+                f"COUNT={old_count} | "
+                f"ROC5 0선 상향 돌파"
+            )
+
+            roc_pullback_state.pop(
+                market_key,
+                None
+            )
+
+            pullback_state = None
+
+        if (
+            filter_pass
+            and progress_candle_time is not None
         ):
 
             failed_candle = (
@@ -2053,9 +2160,49 @@ def update_signal_and_pullback(
                 progress_candle_time
             ):
 
-                start_candle = (
-                    progress_candle_time
+                roc_signal_state[
+                    market_key
+                ] = {
+
+                    "active":
+                        True,
+
+                    "cross_candle":
+                        progress_candle_time,
+
+                    "count":
+                        1,
+
+                    "last_candle":
+                        progress_candle_time
+                }
+
+                signal_state = (
+                    roc_signal_state[
+                        market_key
+                    ]
                 )
+
+                log.info(
+                    f"[ROC5 SIGNAL START] "
+                    f"{market_key} "
+                    f"🚀1 | "
+                    f"ROC5={roc5_current}"
+                )
+
+    # =====================================================
+    # 3. 신호가 없는 상태에서 과거 신호 복구
+    # =====================================================
+
+    elif signal_state is None:
+
+        start_candle = None
+
+        if historical_start_candle is not None:
+
+            start_candle = (
+                historical_start_candle
+            )
 
         if start_candle is not None:
 
@@ -2072,7 +2219,7 @@ def update_signal_and_pullback(
                     ),
 
                 "count":
-                    0,
+                    1,
 
                 "last_candle":
                     progress_candle_time
@@ -2084,16 +2231,18 @@ def update_signal_and_pullback(
                 ]
             )
 
-            log.info(
-                f"[ROC5 SIGNAL START] "
-                f"{market_key} "
-                f"🚀0 | "
-                f"ROC5={roc5_current}"
-            )
+    # =====================================================
+    # 4. 상승 신호 진행
+    #
+    # ROC5가 0 이상이고
+    # 활성 ROC 필터가 통과 중이면 계속 카운팅
+    # =====================================================
 
-    # =====================================================
-    # 신호 상태 관리
-    # =====================================================
+    signal_state = (
+        roc_signal_state.get(
+            market_key
+        )
+    )
 
     if signal_state is not None:
 
@@ -2112,10 +2261,11 @@ def update_signal_and_pullback(
 
             pass
 
-        if (
-            roc5_negative
-            or not filter_pass
-        ):
+        # -------------------------------------------------
+        # ROC5가 음수가 되면 상승 신호 종료
+        # -------------------------------------------------
+
+        if roc5_negative:
 
             old_count = int(
                 signal_state.get(
@@ -2130,17 +2280,11 @@ def update_signal_and_pullback(
                     market_key
                 ] = progress_candle_time
 
-            reason = (
-                "ROC5 음수"
-                if roc5_negative
-                else "활성 ROC 필터 미통과"
-            )
-
             log.info(
                 f"[ROC5 SIGNAL END] "
                 f"{market_key} | "
                 f"COUNT={old_count} | "
-                f"{reason}"
+                f"ROC5 음수"
             )
 
             roc_signal_state.pop(
@@ -2149,6 +2293,47 @@ def update_signal_and_pullback(
             )
 
             signal_state = None
+
+        # -------------------------------------------------
+        # 활성 필터가 깨지면 상승 신호 종료
+        # -------------------------------------------------
+
+        elif not filter_pass:
+
+            old_count = int(
+                signal_state.get(
+                    "count",
+                    0
+                )
+            )
+
+            if progress_candle_time is not None:
+
+                roc_signal_failed_candle[
+                    market_key
+                ] = progress_candle_time
+
+            log.info(
+                f"[ROC5 SIGNAL END] "
+                f"{market_key} | "
+                f"COUNT={old_count} | "
+                f"활성 ROC 필터 미통과"
+            )
+
+            roc_signal_state.pop(
+                market_key,
+                None
+            )
+
+            signal_state = None
+
+        # -------------------------------------------------
+        # 신호 계속 진행
+        #
+        # 시작 캔들 자체가 1
+        # 다음 캔들 2
+        # 다음 캔들 3
+        # -------------------------------------------------
 
         else:
 
@@ -2163,7 +2348,7 @@ def update_signal_and_pullback(
                 and progress_candle_time is not None
             ):
 
-                count = candle_distance(
+                distance = candle_distance(
                     cross_candle,
                     progress_candle_time,
                     ROC_TIMEFRAME
@@ -2171,18 +2356,113 @@ def update_signal_and_pullback(
 
                 signal_state[
                     "count"
-                ] = count
+                ] = (
+                    distance + 1
+                )
 
                 signal_state[
                     "last_candle"
                 ] = progress_candle_time
 
     # =====================================================
-    # 신호 상태 재확인
+    # 5. 눌림 진행
+    #
+    # 눌림 시작점 자체가 1
+    # 다음 캔들 2
+    # 다음 캔들 3
+    #
+    # ROC5가 0 이하인 동안 계속 유지
+    # =====================================================
+
+    pullback_state = (
+        roc_pullback_state.get(
+            market_key
+        )
+    )
+
+    if pullback_state is not None:
+
+        roc5_positive = False
+
+        try:
+
+            if (
+                roc5_current is not None
+                and float(roc5_current) > 0
+            ):
+
+                roc5_positive = True
+
+        except Exception:
+
+            pass
+
+        if roc5_positive:
+
+            old_count = int(
+                pullback_state.get(
+                    "count",
+                    0
+                )
+            )
+
+            log.info(
+                f"[ROC5 PULLBACK END] "
+                f"{market_key} | "
+                f"COUNT={old_count} | "
+                f"ROC5 양수 복귀"
+            )
+
+            roc_pullback_state.pop(
+                market_key,
+                None
+            )
+
+            pullback_state = None
+
+        else:
+
+            start_candle = (
+                pullback_state.get(
+                    "start_candle"
+                )
+            )
+
+            if (
+                start_candle is not None
+                and progress_candle_time is not None
+            ):
+
+                distance = candle_distance(
+                    start_candle,
+                    progress_candle_time,
+                    ROC_TIMEFRAME
+                )
+
+                pullback_state[
+                    "count"
+                ] = (
+                    distance + 1
+                )
+
+                pullback_state[
+                    "last_candle"
+                ] = (
+                    progress_candle_time
+                )
+
+    # =====================================================
+    # 최종 상태
     # =====================================================
 
     signal_state = (
         roc_signal_state.get(
+            market_key
+        )
+    )
+
+    pullback_state = (
+        roc_pullback_state.get(
             market_key
         )
     )
@@ -2196,6 +2476,14 @@ def update_signal_and_pullback(
         and filter_pass
     )
 
+    pullback_active = bool(
+        pullback_state
+        and pullback_state.get(
+            "active",
+            True
+        )
+    )
+
     signal_count = 0
 
     if signal_state is not None:
@@ -2207,134 +2495,9 @@ def update_signal_and_pullback(
             )
         )
 
-    # =====================================================
-    # 눌림 상태
-    # =====================================================
-
-    pullback_state = (
-        roc_pullback_state.get(
-            market_key
-        )
-    )
-
-    if not signal_active:
-
-        roc_pullback_state.pop(
-            market_key,
-            None
-        )
-
-        pullback_state = None
-
-    else:
-
-        if pullback_state is None:
-
-            if pullback_condition:
-
-                roc_pullback_state[
-                    market_key
-                ] = {
-
-                    "active":
-                        True,
-
-                    "start_candle":
-                        progress_candle_time,
-
-                    "count":
-                        0,
-
-                    "last_candle":
-                        progress_candle_time
-                }
-
-                pullback_state = (
-                    roc_pullback_state[
-                        market_key
-                    ]
-                )
-
-                log.info(
-                    f"[ROC5 PULLBACK START] "
-                    f"{market_key} "
-                    f"📉0 | "
-                    f"ROC5={roc5_current}"
-                )
-
-        else:
-
-            if pullback_condition:
-
-                start_candle = (
-                    pullback_state.get(
-                        "start_candle"
-                    )
-                )
-
-                if (
-                    start_candle is not None
-                    and progress_candle_time
-                    is not None
-                ):
-
-                    count = candle_distance(
-                        start_candle,
-                        progress_candle_time,
-                        ROC_TIMEFRAME
-                    )
-
-                    pullback_state[
-                        "count"
-                    ] = count
-
-                    pullback_state[
-                        "last_candle"
-                    ] = (
-                        progress_candle_time
-                    )
-
-            else:
-
-                old_count = int(
-                    pullback_state.get(
-                        "count",
-                        0
-                    )
-                )
-
-                log.info(
-                    f"[ROC5 PULLBACK END] "
-                    f"{market_key} | "
-                    f"COUNT={old_count}"
-                )
-
-                roc_pullback_state.pop(
-                    market_key,
-                    None
-                )
-
-                pullback_state = None
-
-    # =====================================================
-    # 최종 눌림 상태
-    # =====================================================
-
-    pullback_state = (
-        roc_pullback_state.get(
-            market_key
-        )
-    )
-
-    pullback_active = bool(
-        pullback_state
-        and signal_active
-        and filter_pass
-    )
-
     pullback_count = 0
 
-    if pullback_active:
+    if pullback_state is not None:
 
         pullback_count = int(
             pullback_state.get(
@@ -2631,6 +2794,10 @@ def analyze(
 
     r["roc5_cross"] = (
         roc5_zero_cross(r)
+    )
+
+    r["roc5_pullback"] = (
+        roc5_pullback_condition(r)
     )
 
     # =====================================================
@@ -3630,18 +3797,18 @@ def rows_html(
         )
 
         # =================================================
-        # COUNT 1일 때만 반짝임
+        # COUNT 1 또는 2일 때만 반짝임
         # =================================================
 
         if (
             (
                 signal_active
-                and signal_count == 1
+                and signal_count in (1, 2)
             )
             or
             (
                 pullback_active
-                and pullback_count == 1
+                and pullback_count in (1, 2)
             )
         ):
 
@@ -4469,7 +4636,7 @@ font-weight:900;
 
 
 /* =========================================================
-FLASH 1
+FLASH 1 / 2
 ========================================================= */
 
 @keyframes signalFlashOne{
@@ -5037,27 +5204,27 @@ def startup():
     )
 
     log.info(
-        "ROC5 = 신호 카운팅 기준"
+        "ROC5 상향 0선 돌파 = 🚀 COUNT 1"
     )
 
     log.info(
-        "ROC5 = 눌림 카운팅 기준"
+        "ROC5 하향 0선 돌파 = 📉 눌림 COUNT 1"
     )
 
     log.info(
-        "ROC5 음수 → 신호 종료"
+        "ROC5 음수 → 상승 신호 종료"
     )
 
     log.info(
-        "활성 ROC 필터 음수 → 신호 종료"
+        "활성 ROC 필터 음수 → 상승 신호 종료"
     )
 
     log.info(
-        "신호 COUNT = 0,1,2,3... 무제한"
+        "신호 COUNT = 1,2,3... 무제한"
     )
 
     log.info(
-        "눌림 COUNT = 0,1,2,3... 무제한"
+        "눌림 COUNT = 1,2,3... 무제한"
     )
 
     log.info(
@@ -5065,19 +5232,19 @@ def startup():
     )
 
     log.info(
-        "COUNT 0 = 반짝임 없음"
-    )
-
-    log.info(
         "COUNT 1 = 반짝임"
     )
 
     log.info(
-        "COUNT 2 이상 = 반짝임 없음"
+        "COUNT 2 = 반짝임"
     )
 
     log.info(
-        "신호 또는 눌림 COUNT 1 → 행 반짝임"
+        "COUNT 3 이상 = 반짝임 없음"
+    )
+
+    log.info(
+        "신호 또는 눌림 COUNT 1~2 → 행 반짝임"
     )
 
     log.info(
