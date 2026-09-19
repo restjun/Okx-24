@@ -40,7 +40,7 @@ KST = ZoneInfo("Asia/Seoul")
 # =========================================================
 
 VOLUME_HOURS = 24
-TOP_N = 30
+TOP_N = 15
 UPDATE_MINUTES = 1
 
 HISTORY_CHUNK = 200
@@ -52,6 +52,23 @@ USE_OKX = "N"
 REQUEST_INTERVAL = 0.08
 RATE_LIMIT_WAIT = 3
 MAX_RETRIES = 10
+
+
+# =========================================================
+# EMA 신호 카운팅 설정
+# =========================================================
+# EMA 카운팅이 이 숫자 이상일 때만 EMA 신호 표시
+#
+# 예:
+# 1 = 🟢(1)부터 표시
+# 3 = 🟢(3) 이상부터 표시
+# 5 = 🟢(5) 이상부터 표시
+#
+# EMA 카운트 자체는 계속 계산됨
+# 화면 표시만 이 설정으로 제한
+# =========================================================
+
+EMA_SIGNAL_MIN_COUNT = 1
 
 
 # =========================================================
@@ -462,6 +479,18 @@ def validate_timeframe():
 
         raise ValueError(
             "USE_4H_ROC_FILTER는 Y/N만 가능합니다."
+        )
+
+    if (
+        not isinstance(
+            EMA_SIGNAL_MIN_COUNT,
+            int
+        )
+        or EMA_SIGNAL_MIN_COUNT < 1
+    ):
+
+        raise ValueError(
+            "EMA_SIGNAL_MIN_COUNT는 1 이상의 정수여야 합니다."
         )
 
     settings = roc_settings()
@@ -3348,10 +3377,6 @@ def make_row(
                 "balanced"
             ),
 
-        # =================================================
-        # BTC 시황에서 1H ROC 데이터를 사용하기 위한 원본
-        # =================================================
-
         "analysis":
             analysis
     }
@@ -3465,6 +3490,9 @@ def update_upbit():
 
 # =========================================================
 # OKX
+# =========================================================
+# 현재는 실제 조회하지 않음.
+# 나중에 OKX 기능을 다시 살릴 수 있도록 자리만 유지.
 # =========================================================
 
 def get_usdt_krw_internal():
@@ -3930,7 +3958,10 @@ def ema_signal_html(
             )
         )
 
-        if direction == "long" and count > 0:
+        if (
+            direction == "long"
+            and count >= EMA_SIGNAL_MIN_COUNT
+        ):
 
             parts.append(
                 f"""
@@ -3940,7 +3971,10 @@ def ema_signal_html(
                 """
             )
 
-        elif direction == "short" and count > 0:
+        elif (
+            direction == "short"
+            and count >= EMA_SIGNAL_MIN_COUNT
+        ):
 
             parts.append(
                 f"""
@@ -3968,7 +4002,10 @@ def ema_signal_html(
             )
         )
 
-        if direction == "long" and count > 0:
+        if (
+            direction == "long"
+            and count >= EMA_SIGNAL_MIN_COUNT
+        ):
 
             parts.append(
                 f"""
@@ -3978,7 +4015,10 @@ def ema_signal_html(
                 """
             )
 
-        elif direction == "short" and count > 0:
+        elif (
+            direction == "short"
+            and count >= EMA_SIGNAL_MIN_COUNT
+        ):
 
             parts.append(
                 f"""
@@ -6012,7 +6052,8 @@ def startup():
     )
 
     log.info(
-        "EMA COUNT = 1,2,3... 무제한"
+        f"EMA 신호 최소 COUNT = "
+        f"{EMA_SIGNAL_MIN_COUNT}"
     )
 
     log.info(
