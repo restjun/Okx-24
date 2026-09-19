@@ -55,18 +55,33 @@ MAX_RETRIES = 10
 
 
 # =========================================================
-# EMA 상승신호 COUNT 제한
+# 상승 신호 영역 EMA COUNT 필터
 # =========================================================
-# 🟢 상승 EMA 신호는 이 COUNT 이하일 때만 표시
+#
+# 중요:
+#
+# EMA COUNT 자체에는 제한이 없음.
 #
 # 예:
-# 50 = 🟢(1) ~ 🟢(50) 표시
-#      🟢(51) 이상은 표시 안 함
+# 🟢(1)
+# 🟢(2)
+# ...
+# 🟢(50)
+# 🟢(51)
+# 🟢(52)
+# 🟢(100)
 #
-# 🔴 하락 EMA 신호는 COUNT 제한 없음
+# 모두 EMA COUNT로 계속 계산하고
+# TOP 리스트에서도 모두 표시한다.
 #
-# EMA COUNT 자체는 계속 계산됨
-# 화면 표시만 이 설정으로 제한
+# 단,
+#
+# "🚀 상승 신호" 영역에서만
+#
+# 🟢 상승 EMA COUNT <= EMA_LONG_MAX_COUNT
+#
+# 조건을 적용한다.
+#
 # =========================================================
 
 EMA_LONG_MAX_COUNT = 50
@@ -1799,6 +1814,17 @@ def ema_alignment_analysis(
 
         direction = "none"
 
+    # =====================================================
+    # EMA COUNT
+    #
+    # 여기에는 제한을 걸지 않는다.
+    #
+    # 상승이 100개 이어지면 COUNT=100
+    # 상승이 200개 이어지면 COUNT=200
+    #
+    # 전부 계속 계산한다.
+    # =====================================================
+
     count = 0
 
     for idx in range(
@@ -2351,10 +2377,6 @@ def update_signal_and_pullback(
         )
     )
 
-    # =====================================================
-    # ROC5 하향 돌파
-    # =====================================================
-
     if pullback_condition:
 
         if signal_state is not None:
@@ -2411,10 +2433,6 @@ def update_signal_and_pullback(
                 f"📉1 | "
                 f"ROC5={roc5_current}"
             )
-
-    # =====================================================
-    # ROC5 상향 돌파
-    # =====================================================
 
     elif roc5_cross:
 
@@ -2486,10 +2504,6 @@ def update_signal_and_pullback(
                     f"ROC5={roc5_current}"
                 )
 
-    # =====================================================
-    # 과거 신호 복구
-    # =====================================================
-
     elif signal_state is None:
 
         start_candle = None
@@ -2526,10 +2540,6 @@ def update_signal_and_pullback(
                     market_key
                 ]
             )
-
-    # =====================================================
-    # 상승 신호 진행
-    # =====================================================
 
     signal_state = (
         roc_signal_state.get(
@@ -2641,10 +2651,6 @@ def update_signal_and_pullback(
                     "last_candle"
                 ] = progress_candle_time
 
-    # =====================================================
-    # 눌림 진행
-    # =====================================================
-
     pullback_state = (
         roc_pullback_state.get(
             market_key
@@ -2721,10 +2727,6 @@ def update_signal_and_pullback(
                 ] = (
                     progress_candle_time
                 )
-
-    # =====================================================
-    # 최종 상태
-    # =====================================================
 
     signal_state = (
         roc_signal_state.get(
@@ -3010,6 +3012,8 @@ def analyze(
 
     # =====================================================
     # EMA 배열
+    #
+    # COUNT는 여기서 제한하지 않는다.
     # =====================================================
 
     ema_1h = ema_alignment_analysis(
@@ -3492,9 +3496,6 @@ def update_upbit():
 # =========================================================
 # OKX
 # =========================================================
-# 현재는 실제 조회하지 않음.
-# 나중에 OKX 기능을 다시 살릴 수 있도록 자리만 유지.
-# =========================================================
 
 def get_usdt_krw_internal():
 
@@ -3921,6 +3922,15 @@ def top_signal_count_html(
 # =========================================================
 # EMA HTML
 # =========================================================
+#
+# 여기서는 COUNT 제한을 하지 않는다.
+#
+# 🟢(1) ~ 🟢(100) 모두 표시
+# 🔴도 COUNT 제한 없음
+#
+# EMA_LONG_MAX_COUNT는 아래의
+# "상승 신호 영역" 필터에서만 사용한다.
+# =========================================================
 
 def ema_signal_html(
     row
@@ -3959,11 +3969,10 @@ def ema_signal_html(
             )
         )
 
-        # 🟢 상승 EMA는 최대 COUNT까지만 표시
+        # 🟢 상승 EMA COUNT 제한 없음
         if (
             direction == "long"
             and count > 0
-            and count <= EMA_LONG_MAX_COUNT
         ):
 
             parts.append(
@@ -3974,7 +3983,7 @@ def ema_signal_html(
                 """
             )
 
-        # 🔴 하락 EMA는 COUNT 제한 없음
+        # 🔴 하락 EMA COUNT 제한 없음
         elif (
             direction == "short"
             and count > 0
@@ -4006,11 +4015,10 @@ def ema_signal_html(
             )
         )
 
-        # 🟢 상승 EMA는 최대 COUNT까지만 표시
+        # 🟢 상승 EMA COUNT 제한 없음
         if (
             direction == "long"
             and count > 0
-            and count <= EMA_LONG_MAX_COUNT
         ):
 
             parts.append(
@@ -4021,7 +4029,7 @@ def ema_signal_html(
                 """
             )
 
-        # 🔴 하락 EMA는 COUNT 제한 없음
+        # 🔴 하락 EMA COUNT 제한 없음
         elif (
             direction == "short"
             and count > 0
@@ -4050,6 +4058,102 @@ def ema_signal_html(
 
     </div>
     """
+
+
+# =========================================================
+# 상승 신호 영역 EMA 필터
+# =========================================================
+#
+# EMA COUNT 제한은 오직 여기서만 적용.
+#
+# 1H 또는 4H에서
+#
+# direction == long
+# AND
+# 0 < COUNT <= EMA_LONG_MAX_COUNT
+#
+# 이면 통과.
+#
+# 현재 설정:
+#
+# EMA_LONG_MAX_COUNT = 50
+#
+# 따라서
+#
+# 🟢(1) ~ 🟢(50) = 상승 신호 영역 표시
+# 🟢(51) 이상     = 상승 신호 영역 제외
+#
+# 단, TOP 리스트의 EMA 표시에는 영향 없음.
+# =========================================================
+
+def ema_long_filter_pass(
+    row
+):
+
+    if not row:
+        return False
+
+    ema_1h = row.get(
+        "ema_1h",
+        {}
+    )
+
+    ema_4h = row.get(
+        "ema_4h",
+        {}
+    )
+
+    # -----------------------------------------------------
+    # 1H EMA
+    # -----------------------------------------------------
+
+    if USE_1H_ROC_FILTER == "Y":
+
+        direction = ema_1h.get(
+            "direction",
+            "none"
+        )
+
+        count = int(
+            ema_1h.get(
+                "count",
+                0
+            )
+        )
+
+        if (
+            direction == "long"
+            and 0 < count <= EMA_LONG_MAX_COUNT
+        ):
+
+            return True
+
+    # -----------------------------------------------------
+    # 4H EMA
+    # -----------------------------------------------------
+
+    if USE_4H_ROC_FILTER == "Y":
+
+        direction = ema_4h.get(
+            "direction",
+            "none"
+        )
+
+        count = int(
+            ema_4h.get(
+                "count",
+                0
+            )
+        )
+
+        if (
+            direction == "long"
+            and 0 < count <= EMA_LONG_MAX_COUNT
+        ):
+
+            return True
+
+    return False
 
 
 # =========================================================
@@ -4263,6 +4367,11 @@ def rows_html(
             )
         )
 
+        # =================================================
+        # 중요:
+        # TOP 리스트에서는 EMA COUNT 제한 없음
+        # =================================================
+
         ema_content = (
             ema_signal_html(
                 x
@@ -4410,12 +4519,21 @@ def focus_section(
         for x in data
 
         if (
+            # =============================================
+            # 기존 ROC 필터 통과
+            # =============================================
+
             x.get(
                 "filter_pass",
                 False
             )
 
+            # =============================================
+            # 기존 ROC5 COUNT 조건
+            # =============================================
+
             and
+
             (
                 (
                     x.get(
@@ -4451,6 +4569,19 @@ def focus_section(
                     ) in (1, 2)
                 )
             )
+
+            # =============================================
+            # 추가:
+            #
+            # 상승 신호 영역에서만
+            # EMA 상승 COUNT <= 50 필터 적용
+            # =============================================
+
+            and
+
+            ema_long_filter_pass(
+                x
+            )
         )
     ]
 
@@ -4464,6 +4595,7 @@ def focus_section(
         <span class="section-title-sub">
             ROC5 돌파
             · 필터 통과
+            · EMA 상승 COUNT ≤ {EMA_LONG_MAX_COUNT}
             · 🚀1/2 📉1/2만 표시
             · {kst()} KST
         </span>
@@ -6025,7 +6157,9 @@ def startup():
     )
 
     log.info(
-        "상승 신호 영역 = 필터 통과 + 🚀1/2 + 📉1/2"
+        f"상승 신호 영역 = "
+        f"필터 통과 + 🚀1/2 + 📉1/2 "
+        f"+ EMA 상승 COUNT <= {EMA_LONG_MAX_COUNT}"
     )
 
     log.info(
@@ -6051,16 +6185,20 @@ def startup():
     )
 
     log.info(
-        "EMA 정배열 = 🟢(N)"
+        "EMA 정배열 = 🟢(N) — COUNT 제한 없음"
     )
 
     log.info(
-        "EMA 역배열 = 🔴(N)"
+        "EMA 역배열 = 🔴(N) — COUNT 제한 없음"
     )
 
     log.info(
-        f"EMA 상승신호 최대 COUNT = "
+        f"상승 신호 영역 EMA COUNT 필터 <= "
         f"{EMA_LONG_MAX_COUNT}"
+    )
+
+    log.info(
+        "TOP 리스트 EMA COUNT = 무제한 표시"
     )
 
     log.info(
