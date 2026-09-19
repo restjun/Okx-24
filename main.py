@@ -3969,6 +3969,16 @@ def table_html(
 
 # =========================================================
 # 상승 신호
+#
+# ★ 수정
+#
+# 필터 통과한 코인만
+# 🚀 상승 신호 COUNT 1, 2
+# 📉 눌림 COUNT 1, 2
+# 만 표시
+#
+# COUNT 3 이상은 이 영역에서 제외
+# TOP20 영역에서는 기존 COUNT 그대로 표시
 # =========================================================
 
 def focus_section(
@@ -3981,13 +3991,45 @@ def focus_section(
 
         if (
             x.get(
-                "signal_active",
+                "filter_pass",
                 False
             )
 
-            and x.get(
-                "filter_pass",
-                False
+            and
+            (
+                (
+                    x.get(
+                        "signal_active",
+                        False
+                    )
+
+                    and
+
+                    int(
+                        x.get(
+                            "signal_count",
+                            0
+                        )
+                    ) in (1, 2)
+                )
+
+                or
+
+                (
+                    x.get(
+                        "pullback_active",
+                        False
+                    )
+
+                    and
+
+                    int(
+                        x.get(
+                            "pullback_count",
+                            0
+                        )
+                    ) in (1, 2)
+                )
             )
         )
     ]
@@ -4002,7 +4044,7 @@ def focus_section(
         <span class="section-title-sub">
             ROC5 돌파
             · 필터 통과
-            · 신호/눌림 COUNT 무제한
+            · 🚀1/2 📉1/2만 표시
             · {kst()} KST
         </span>
 
@@ -5244,7 +5286,7 @@ def startup():
     )
 
     log.info(
-        "신호 또는 눌림 COUNT 1~2 → 행 반짝임"
+        "상승 신호 영역 = 필터 통과 + 🚀1/2 + 📉1/2"
     )
 
     log.info(
