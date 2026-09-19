@@ -106,6 +106,28 @@ ROC_FILTER_PERIODS = [
 
 
 # =========================================================
+# ★ 눌림 신호 설정
+#
+# ROC5는 기존 필터 설정이 N이어도
+# 눌림 판단에서는 별도로 사용
+#
+# 조건
+# 1H ROC5  <= 0
+# 1H ROC10 >= 0
+# 1H ROC20 >= 0
+# 1H ROC50 >= 0
+# =========================================================
+
+PULLBACK_ROC_PERIOD = 5
+
+PULLBACK_REQUIRED_PERIODS = [
+    10,
+    20,
+    50
+]
+
+
+# =========================================================
 # 호가
 # =========================================================
 
@@ -174,17 +196,7 @@ okx_1h_cache_time = "-"
 
 
 # =========================================================
-# ★ ROC 신호 상태
-#
-# market별 독립 관리
-#
-# cross_candle
-# = 실제 0선 돌파가 발생한 진행 중 캔들
-#
-# count
-# = 돌파 진행 중 캔들 0
-# = 다음 캔들 1
-# = 다음 2
+# ROC 신호 상태
 # =========================================================
 
 roc_signal_state = {}
@@ -1397,11 +1409,7 @@ def history_upbit(
 
 
 # =========================================================
-# ★ 현재 1H ROC 데이터
-#
-# 현재 진행 중인 캔들의 가격을 현재가로 교체
-#
-# 이것으로 실제 진행 중 0선 돌파를 판단
+# 현재 1H ROC 데이터
 # =========================================================
 
 def get_upbit_current_roc_data(
@@ -1821,15 +1829,7 @@ def all_active_roc_filters_pass(
 
 
 # =========================================================
-# ★ 실제 전체 ROC 0선 돌파
-#
-# 이전 캔들:
-# 하나라도 < 0
-#
-# 현재 캔들:
-# 모든 활성 ROC >= 0
-#
-# 이때만 실제 돌파
+# 전체 ROC 0선 돌파
 # =========================================================
 
 def all_active_roc_zero_cross(
@@ -1955,6 +1955,129 @@ def get_active_zero_cross_list(
 
 
 # =========================================================
+# ★ 눌림 신호 판정
+#
+# ROC5 <= 0
+# ROC10 >= 0
+# ROC20 >= 0
+# ROC50 >= 0
+#
+# ROC5는 화면 필터 N이어도
+# 눌림 판단에서는 사용
+# =========================================================
+
+def get_pullback_status(
+    r1
+):
+
+    result = {
+
+        "active": False,
+
+        "roc5": None,
+
+        "required_values": {},
+
+        "reason": ""
+    }
+
+    if not r1:
+
+        return result
+
+    values = r1.get(
+        "roc_values",
+        {}
+    )
+
+    roc5_value = values.get(
+        PULLBACK_ROC_PERIOD
+    )
+
+    result["roc5"] = roc5_value
+
+    if roc5_value is None:
+
+        result["reason"] = (
+            "ROC5 데이터 없음"
+        )
+
+        return result
+
+    try:
+
+        roc5_value = float(
+            roc5_value
+        )
+
+    except Exception:
+
+        result["reason"] = (
+            "ROC5 오류"
+        )
+
+        return result
+
+    result["roc5"] = roc5_value
+
+    if roc5_value > 0:
+
+        result["reason"] = (
+            "ROC5 > 0"
+        )
+
+        return result
+
+    for period in PULLBACK_REQUIRED_PERIODS:
+
+        value = values.get(
+            period
+        )
+
+        result[
+            "required_values"
+        ][period] = value
+
+        if value is None:
+
+            result["reason"] = (
+                f"ROC{period} 데이터 없음"
+            )
+
+            return result
+
+        try:
+
+            value = float(
+                value
+            )
+
+        except Exception:
+
+            result["reason"] = (
+                f"ROC{period} 오류"
+            )
+
+            return result
+
+        if value < 0:
+
+            result["reason"] = (
+                f"ROC{period} < 0"
+            )
+
+            return result
+
+    result["active"] = True
+
+    result["reason"] = (
+        "ROC5 <= 0 / ROC10·20·50 >= 0"
+    )
+
+    return result
+
+
+# =========================================================
 # 빈 데이터
 # =========================================================
 
@@ -2027,6 +2150,17 @@ def empty_analysis():
 
             "all_active_cross":
                 False
+        },
+
+        "pullback": {
+
+            "active": False,
+
+            "roc5": None,
+
+            "required_values": {},
+
+            "reason": ""
         },
 
         "changes": None,
@@ -2177,18 +2311,7 @@ def filter_html(
 
 
 # =========================================================
-# ★ 신호
-#
-# 핵심:
-#
-# 실제 0선 돌파 진행 중
-# = 🚀0
-#
-# 다음 캔들
-# = 🚀1
-#
-# 돌파 진행 중 다시 음수
-# = 상태 삭제
+# 신호
 # =========================================================
 
 def get_signal_qualified(
@@ -2230,16 +2353,6 @@ def get_signal_qualified(
         )
     )
 
-    # =====================================================
-    # ★ 실제 돌파
-    #
-    # 현재 모든 활성 ROC >= 0
-    # AND
-    # 이전에 하나라도 < 0
-    #
-    # = 실제 0선 돌파
-    # =====================================================
-
     actual_zero_cross = (
         all_active_roc_zero_cross(
             r1,
@@ -2263,7 +2376,7 @@ def get_signal_qualified(
     )
 
     # =====================================================
-    # ★ 기존 활성 신호가 있는 경우
+    # 기존 활성 신호
     # =====================================================
 
     if state is not None:
@@ -2272,11 +2385,6 @@ def get_signal_qualified(
             "active",
             False
         ):
-
-            # ---------------------------------------------
-            # 활성 ROC가 하나라도 음수
-            # → 돌파 실패 / 신호 종료
-            # ---------------------------------------------
 
             roc_has_negative = False
 
@@ -2348,14 +2456,6 @@ def get_signal_qualified(
                     )
                 )
 
-                # -----------------------------------------
-                # ★ 진행캔들 기준 COUNT
-                #
-                # 돌파캔들 = 0
-                # 다음캔들 = 1
-                # 다음 = 2
-                # -----------------------------------------
-
                 if (
                     cross_candle is not None
                     and progress_candle_time is not None
@@ -2406,11 +2506,7 @@ def get_signal_qualified(
                 ] = completed_candle_time
 
     # =====================================================
-    # ★ 기존 신호가 없을 때
-    #
-    # 반드시 실제 0선 돌파일 때만 생성
-    #
-    # 단순히 현재 ROC가 양수라고 생성하지 않음
+    # 실제 0선 돌파 시작
     # =====================================================
 
     if state is None:
@@ -2493,12 +2589,6 @@ def get_signal_qualified(
             r4
         )
     )
-
-    # =====================================================
-    # 상승 신호는 활성 ROC 조건 + 당일 >= 0
-    #
-    # COUNT 자체는 일봉 등락률에 영향받지 않음
-    # =====================================================
 
     breakout_qualified = (
         signal_active
@@ -2728,10 +2818,7 @@ def analyze(
         return None
 
     # -----------------------------------------------------
-    # 현재 진행 중 1H
-    #
-    # ★ 중요
-    # 실제 돌파 판단은 이 데이터 사용
+    # 현재 진행 1H
     # -----------------------------------------------------
 
     df1h_current = (
@@ -2750,8 +2837,7 @@ def analyze(
         return None
 
     # -----------------------------------------------------
-    # 4H는 현재 진행값이 필요할 경우 사용
-    # 현재 설정에서는 4H 필터 N
+    # ROC 계산
     # -----------------------------------------------------
 
     r1_raw = (
@@ -2783,7 +2869,7 @@ def analyze(
     )
 
     # -----------------------------------------------------
-    # ROC5 표시용
+    # ROC5
     # -----------------------------------------------------
 
     r = {
@@ -2852,6 +2938,16 @@ def analyze(
     })
 
     # -----------------------------------------------------
+    # ★ 눌림 분석
+    # -----------------------------------------------------
+
+    pullback = (
+        get_pullback_status(
+            r1
+        )
+    )
+
+    # -----------------------------------------------------
     # 일봉
     # -----------------------------------------------------
 
@@ -2874,8 +2970,6 @@ def analyze(
 
     # -----------------------------------------------------
     # 현재 진행캔들
-    #
-    # ★ COUNT 0의 기준
     # -----------------------------------------------------
 
     progress_candle_time = (
@@ -2885,7 +2979,7 @@ def analyze(
     )
 
     # -----------------------------------------------------
-    # 신호
+    # 상승 신호
     # -----------------------------------------------------
 
     q = get_signal_qualified(
@@ -2980,6 +3074,9 @@ def analyze(
         "roc":
             r,
 
+        "pullback":
+            pullback,
+
         "changes":
             changes,
 
@@ -3011,6 +3108,11 @@ def make_row(
     ob = (
         orderbook_info
         or {}
+    )
+
+    pullback = a.get(
+        "pullback",
+        {}
     )
 
     return {
@@ -3051,6 +3153,17 @@ def make_row(
             a.get(
                 "roc",
                 {}
+            ),
+
+        "pullback":
+            pullback,
+
+        "pullback_active":
+            bool(
+                pullback.get(
+                    "active",
+                    False
+                )
             ),
 
         "breakout_qualified":
@@ -3194,6 +3307,24 @@ def is_breakout(row):
 def is_long_combined(row):
 
     return is_breakout(row)
+
+
+# =========================================================
+# ★ 눌림 판정
+# =========================================================
+
+def is_pullback(row):
+
+    if not row:
+
+        return False
+
+    return bool(
+        row.get(
+            "pullback_active",
+            False
+        )
+    )
 
 
 # =========================================================
@@ -3397,9 +3528,11 @@ def update_upbit():
             f" | "
             f"필터={row.get('filter_pass')}"
             f" | "
-            f"신호={row.get('signal_active')}"
+            f"상승신호={row.get('signal_active')}"
             f" | "
             f"COUNT={row.get('signal_count')}"
+            f" | "
+            f"눌림={row.get('pullback_active')}"
         )
 
     latest_upbit_data = rows
@@ -3412,10 +3545,16 @@ def update_upbit():
         )
     )
 
+    pullback_count = sum(
+        is_pullback(x)
+        for x in rows
+    )
+
     log.info(
         f"업비트 TOP{TOP_N} 완료 / "
         f"상승신호 "
-        f"{sum(is_long_combined(x) for x in rows)}개"
+        f"{sum(is_long_combined(x) for x in rows)}개 / "
+        f"눌림신호 {pullback_count}개"
     )
 
     log.info(
@@ -4354,6 +4493,67 @@ def signal_html(row):
 
 
 # =========================================================
+# ★ 눌림 HTML
+# =========================================================
+
+def pullback_html(row):
+
+    if not row:
+
+        return (
+            '<span class="muted">-</span>'
+        )
+
+    if not row.get(
+        "pullback_active",
+        False
+    ):
+
+        return (
+            '<span class="muted">-</span>'
+        )
+
+    pullback = row.get(
+        "pullback",
+        {}
+    )
+
+    roc5_value = pullback.get(
+        "roc5"
+    )
+
+    if roc5_value is None:
+
+        roc5_text = "-"
+
+    else:
+
+        try:
+
+            roc5_text = (
+                f"{float(roc5_value):.1f}"
+            )
+
+        except Exception:
+
+            roc5_text = "-"
+
+    return (
+        '<span class="pullback-active">'
+        '<span class="pullback-icon">'
+        '🔽'
+        '</span>'
+        '<span class="pullback-text">'
+        '눌림'
+        '</span>'
+        '<span class="pullback-roc">'
+        f'ROC5 {roc5_text}'
+        '</span>'
+        '</span>'
+    )
+
+
+# =========================================================
 # 호가 HTML
 # =========================================================
 
@@ -4410,50 +4610,10 @@ def orderbook_html(row):
         "current_price"
     )
 
-    first_ask_price = row.get(
-        "first_ask_price"
-    )
-
-    one_quote_pct = None
-
-    try:
-
-        current_price = float(
-            current_price
-        )
-
-        first_ask_price = float(
-            first_ask_price
-        )
-
-        if (
-            current_price > 0
-            and first_ask_price > 0
-        ):
-
-            one_quote_pct = (
-                abs(
-                    first_ask_price
-                    - current_price
-                )
-                / current_price
-                * 100
-            )
-
-    except Exception:
-
-        one_quote_pct = None
-
     current_price_text = (
         format_market_price(
             current_price
         )
-    )
-
-    one_quote_text = (
-        f"{one_quote_pct:.3f}%"
-        if one_quote_pct is not None
-        else "-"
     )
 
     dominance = row.get(
@@ -4551,20 +4711,8 @@ def orderbook_html(row):
                 {current_price_text}원
             </span>
 
-            <span class="orderbook-onequote-label">
-                1호가
-            </span>
-
-            <span class="orderbook-onequote-value">
-                {one_quote_text}
-            </span>
-
-        </div>
-
-        <div class="orderbook-bottom">
-
-            <span class="orderbook-range">
-                ±{ORDERBOOK_RANGE * 100:.0f}%
+            <span class="orderbook-onepercent-label">
+                1%
             </span>
 
             {dominance_html}
@@ -4622,6 +4770,12 @@ def rows_html(data):
                 cls_list.append(
                     "signal-flash-one"
                 )
+
+        if is_pullback(x):
+
+            cls_list.append(
+                "pullback-qualified"
+            )
 
         cls = " ".join(
             cls_list
@@ -4810,6 +4964,41 @@ def focus_section(data):
 
 
 # =========================================================
+# ★ 눌림 신호
+# =========================================================
+
+def pullback_section(data):
+
+    rows = [
+
+        x
+
+        for x in data
+
+        if is_pullback(x)
+    ]
+
+    return f"""
+    <div class="section-title pullback-title">
+
+        <span class="section-title-main">
+            🔽 눌림 신호
+        </span>
+
+        <span class="section-title-sub">
+            1H ROC5 ≤ 0
+            · ROC10/20/50 ≥ 0
+            · {len(rows)}개
+            · {kst()} KST
+        </span>
+
+    </div>
+
+    {table_html(rows)}
+    """
+
+
+# =========================================================
 # TOP
 # =========================================================
 
@@ -4961,6 +5150,24 @@ h1{
 .long-title{
     border-left-color:#68727d;
 }
+
+
+/* =========================================================
+   눌림 제목
+   ========================================================= */
+
+.pullback-title{
+    border-left-color:#806f55;
+}
+
+.pullback-title .section-title-main{
+    color:#d2b277;
+}
+
+
+/* =========================================================
+   시장 요약
+   ========================================================= */
 
 .market-summary{
 
@@ -5164,6 +5371,11 @@ h1{
     color:#68717b!important;
 }
 
+
+/* =========================================================
+   상태
+   ========================================================= */
+
 .status{
 
     display:flex;
@@ -5198,6 +5410,11 @@ h1{
 .n{
     color:#c97878!important;
 }
+
+
+/* =========================================================
+   상승 신호
+   ========================================================= */
 
 .signal-cell{
 
@@ -5239,6 +5456,57 @@ h1{
     line-height:9px;
 
     font-weight:900;
+}
+
+
+/* =========================================================
+   ★ 눌림 신호
+   ========================================================= */
+
+.pullback-active{
+
+    display:inline-flex;
+
+    align-items:center;
+
+    justify-content:center;
+
+    gap:2px;
+
+    min-height:21px;
+
+    white-space:nowrap;
+}
+
+.pullback-icon{
+
+    font-size:9px;
+
+    line-height:10px;
+
+    font-weight:900;
+}
+
+.pullback-text{
+
+    color:#d2b277;
+
+    font-size:6.5px;
+
+    line-height:9px;
+
+    font-weight:900;
+}
+
+.pullback-roc{
+
+    color:#a88d61;
+
+    font-size:4.8px;
+
+    line-height:7px;
+
+    font-weight:800;
 }
 
 
@@ -5374,6 +5642,11 @@ tr.orderbook-subrow.signal-flash-one td{
         0 0 5px
         rgba(98,181,138,.65);
 }
+
+
+/* =========================================================
+   테이블
+   ========================================================= */
 
 .table-wrap{
 
@@ -5692,6 +5965,26 @@ td:nth-child(1){
     border-bottom-color:#293038;
 }
 
+
+/* =========================================================
+   ★ 눌림 행
+   ========================================================= */
+
+.pullback-qualified{
+
+    background:#191a1c;
+}
+
+.pullback-qualified td{
+
+    border-bottom-color:#403a30;
+}
+
+
+/* =========================================================
+   빈 행
+   ========================================================= */
+
 .empty{
 
     height:30px;
@@ -5702,6 +5995,11 @@ td:nth-child(1){
 
     font-size:6px;
 }
+
+
+/* =========================================================
+   호가
+   ========================================================= */
 
 .orderbook-subrow{
 
@@ -5879,24 +6177,13 @@ td:nth-child(1){
     white-space:nowrap;
 }
 
-.orderbook-onequote-label{
+.orderbook-onepercent-label{
 
     margin-left:4px;
 
-    color:#68717b;
+    color:#a88d61;
 
     font-size:5.5px;
-
-    font-weight:800;
-
-    white-space:nowrap;
-}
-
-.orderbook-onequote-value{
-
-    color:#c9d0d6;
-
-    font-size:5.8px;
 
     font-weight:900;
 
@@ -6135,6 +6422,34 @@ td:nth-child(1){
         line-height:8px;
     }
 
+    .pullback-active{
+
+        gap:1px;
+
+        min-height:19px;
+    }
+
+    .pullback-icon{
+
+        font-size:8px;
+
+        line-height:9px;
+    }
+
+    .pullback-text{
+
+        font-size:5.5px;
+
+        line-height:8px;
+    }
+
+    .pullback-roc{
+
+        font-size:4px;
+
+        line-height:7px;
+    }
+
     .orderbook-row{
 
         grid-template-columns:
@@ -6170,18 +6485,17 @@ td:nth-child(1){
     }
 
     .orderbook-current-label,
-    .orderbook-onequote-label{
+    .orderbook-onepercent-label{
 
         font-size:4.5px;
     }
 
-    .orderbook-current-price,
-    .orderbook-onequote-value{
+    .orderbook-current-price{
 
         font-size:5px;
     }
 
-    .orderbook-onequote-label{
+    .orderbook-onepercent-label{
 
         margin-left:3px;
     }
@@ -6385,6 +6699,34 @@ td:nth-child(1){
         line-height:10px;
     }
 
+    .pullback-active{
+
+        gap:2px;
+
+        min-height:28px;
+    }
+
+    .pullback-icon{
+
+        font-size:12px;
+
+        line-height:13px;
+    }
+
+    .pullback-text{
+
+        font-size:8px;
+
+        line-height:10px;
+    }
+
+    .pullback-roc{
+
+        font-size:5.5px;
+
+        line-height:8px;
+    }
+
     .orderbook-row{
 
         grid-template-columns:
@@ -6420,18 +6762,17 @@ td:nth-child(1){
     }
 
     .orderbook-current-label,
-    .orderbook-onequote-label{
+    .orderbook-onepercent-label{
 
         font-size:6px;
     }
 
-    .orderbook-current-price,
-    .orderbook-onequote-value{
+    .orderbook-current-price{
 
         font-size:7px;
     }
 
-    .orderbook-onequote-label{
+    .orderbook-onepercent-label{
 
         margin-left:5px;
     }
@@ -6540,6 +6881,13 @@ def dashboard():
             </b>
         </span>
 
+        <span>
+            눌림 :
+            <b class="y">
+                ROC5≤0
+            </b>
+        </span>
+
     </div>
     """
 
@@ -6547,11 +6895,29 @@ def dashboard():
 
     if USE_UPBIT == "Y":
 
+        # ================================================
+        # 1. 상승 신호
+        # ================================================
+
         sections += (
             focus_section(
                 latest_upbit_data
             )
         )
+
+        # ================================================
+        # 2. 눌림 신호
+        # ================================================
+
+        sections += (
+            pullback_section(
+                latest_upbit_data
+            )
+        )
+
+        # ================================================
+        # 3. TOP
+        # ================================================
 
         sections += (
             section(
@@ -6677,7 +7043,7 @@ def startup():
     )
 
     log.info(
-        "ROC TOP / SIGNAL COUNT 시스템 시작"
+        "ROC TOP / SIGNAL COUNT / PULLBACK 시스템 시작"
     )
 
     log.info(
@@ -6722,23 +7088,39 @@ def startup():
     )
 
     log.info(
-        "Y ROC = 실제 필터 / 신호 / 카운팅"
+        "Y ROC = 실제 필터 / 상승신호 / 카운팅"
     )
 
     log.info(
-        "N ROC = 화면 상태만 표시"
+        "N ROC = 화면 상태 표시"
     )
 
     log.info(
-        "ROC > 0 = 초록"
+        "----------------------------------------"
     )
 
     log.info(
-        "ROC < 0 = 빨강"
+        "★ 눌림 신호 조건"
     )
 
     log.info(
-        "ROC = 0 = 회색"
+        "1H ROC5 <= 0"
+    )
+
+    log.info(
+        "1H ROC10 >= 0"
+    )
+
+    log.info(
+        "1H ROC20 >= 0"
+    )
+
+    log.info(
+        "1H ROC50 >= 0"
+    )
+
+    log.info(
+        "ROC5는 기존 필터 N이어도 눌림 판단에 사용"
     )
 
     log.info(
