@@ -55,19 +55,29 @@ MAX_RETRIES = 10
 
 
 # =========================================================
-# ★ 화면 표시 COUNT 설정
+# ★ 화면 COUNT / 반짝임 COUNT 설정
 #
-# 이 숫자만 수정하면 화면 표시 범위를 변경할 수 있음
+# 화면 표시:
+#   1부터 모든 COUNT 표시
 #
-# 3 = 1, 2, 3까지만 표시
-# 5 = 1, 2, 3, 4, 5까지 표시
-# 10 = 1~10까지 표시
+# 반짝임:
+#   기존과 동일하게 1~3만 반짝임
 #
-# 내부 카운팅은 이 숫자와 관계없이 계속 진행됨
+# 예:
+#   COUNT 1  → 표시 + 반짝임
+#   COUNT 2  → 표시 + 반짝임
+#   COUNT 3  → 표시 + 반짝임
+#   COUNT 4  → 표시 + 반짝임 없음
+#   COUNT 5  → 표시 + 반짝임 없음
+#   COUNT 6  → 표시 + 반짝임 없음
+#   이후 계속 표시
 # =========================================================
 
 DISPLAY_COUNT_MIN = 1
-DISPLAY_COUNT_MAX = 3
+DISPLAY_COUNT_MAX = 999999
+
+FLASH_COUNT_MIN = 1
+FLASH_COUNT_MAX = 3
 
 
 # =========================================================
@@ -102,22 +112,7 @@ ROC_TIMEFRAME = 60
 
 
 # =========================================================
-# ★★★★★ 신호용 ROC 설정 ★★★★★
-#
-# 이 숫자 하나만 수정하면
-# 상승신호 / 눌림 / 과거복원 / 화면문구가
-# 모두 같은 ROC 기간으로 자동 변경됨
-#
-# 5  = ROC5
-# 10 = ROC10
-# 20 = ROC20
-# 50 = ROC50
-#
-# 예:
-# SIGNAL_ROC_PERIOD = 10
-#
-# → ROC10 0선 상향 = 🚀
-# → ROC10 0선 하향 = 📉
+# ★ 신호용 ROC 설정
 # =========================================================
 
 SIGNAL_ROC_PERIOD = 5
@@ -185,17 +180,14 @@ roc_signal_failed_candle = {}
 
 
 # =========================================================
-# COUNT 표시 범위
+# COUNT 화면 표시 범위
 # =========================================================
 
 def count_display_allowed(count):
 
     try:
-
         count = int(count)
-
     except Exception:
-
         return False
 
     return (
@@ -205,17 +197,54 @@ def count_display_allowed(count):
     )
 
 
+# =========================================================
+# ★ 반짝임 전용 COUNT 범위
+#
+# 화면 표시와 분리
+#
+# 화면:
+#   모든 COUNT
+#
+# 반짝임:
+#   1~3
+# =========================================================
+
+def count_flash_allowed(count):
+
+    try:
+        count = int(count)
+    except Exception:
+        return False
+
+    return (
+        FLASH_COUNT_MIN
+        <= count
+        <= FLASH_COUNT_MAX
+    )
+
+
 def count_display_text():
 
-    if DISPLAY_COUNT_MIN == DISPLAY_COUNT_MAX:
+    if DISPLAY_COUNT_MAX >= 999999:
+        return "전체"
 
-        return str(
-            DISPLAY_COUNT_MIN
-        )
+    if DISPLAY_COUNT_MIN == DISPLAY_COUNT_MAX:
+        return str(DISPLAY_COUNT_MIN)
 
     return (
         f"{DISPLAY_COUNT_MIN}~"
         f"{DISPLAY_COUNT_MAX}"
+    )
+
+
+def count_flash_text():
+
+    if FLASH_COUNT_MIN == FLASH_COUNT_MAX:
+        return str(FLASH_COUNT_MIN)
+
+    return (
+        f"{FLASH_COUNT_MIN}~"
+        f"{FLASH_COUNT_MAX}"
     )
 
 
@@ -570,6 +599,23 @@ def validate_timeframe():
 
         raise ValueError(
             "DISPLAY_COUNT_MIN/MAX 설정이 올바르지 않습니다."
+        )
+
+    if (
+        not isinstance(
+            FLASH_COUNT_MIN,
+            int
+        )
+        or not isinstance(
+            FLASH_COUNT_MAX,
+            int
+        )
+        or FLASH_COUNT_MIN < 1
+        or FLASH_COUNT_MAX < FLASH_COUNT_MIN
+    ):
+
+        raise ValueError(
+            "FLASH_COUNT_MIN/MAX 설정이 올바르지 않습니다."
         )
 
     if SIGNAL_ROC_PERIOD not in ROC_FILTER_PERIODS:
@@ -4077,6 +4123,8 @@ def filter_html(
 
 # =========================================================
 # ROC COUNT HTML
+#
+# ★ 모든 COUNT 표시
 # =========================================================
 
 def signal_html(
@@ -4113,8 +4161,7 @@ def signal_html(
     result = []
 
     # =====================================================
-    # ★ 화면 표시 1~3
-    # 내부 COUNT가 4 이상이면 표시하지 않음
+    # ★ 화면 COUNT는 제한 없음
     # =====================================================
 
     if (
@@ -4180,6 +4227,8 @@ def signal_html(
 
 # =========================================================
 # TOP 리스트 전용 ROC COUNT
+#
+# ★ 모든 COUNT 표시
 # =========================================================
 
 def top_signal_count_html(
@@ -4586,6 +4635,12 @@ def orderbook_html(
 
 # =========================================================
 # ROW HTML
+#
+# ★ 중요:
+# 화면 COUNT = 전체
+# 반짝임 COUNT = 1~3
+#
+# ★ 기존 반짝임 클래스명 그대로 유지
 # =========================================================
 
 def rows_html(
@@ -4634,12 +4689,13 @@ def rows_html(
         )
 
         # =================================================
-        # ★ 설정된 COUNT 범위까지만 반짝임
+        # ★ 반짝임은 기존과 동일하게 COUNT 1~3만
         #
-        # 기본값:
-        # 1, 2, 3
+        # COUNT 4 이상:
+        #   화면에는 표시
+        #   반짝임은 없음
         #
-        # 내부 COUNT는 계속 증가함
+        # 기존 signalFlashOne CSS는 그대로 사용
         # =================================================
 
         if (
@@ -4649,14 +4705,14 @@ def rows_html(
             (
                 (
                     signal_active
-                    and count_display_allowed(
+                    and count_flash_allowed(
                         signal_count
                     )
                 )
                 or
                 (
                     pullback_active
-                    and count_display_allowed(
+                    and count_flash_allowed(
                         pullback_count
                     )
                 )
@@ -4907,7 +4963,8 @@ def focus_section(
             · 필터 통과
             · 당일 음수 제외
             · EMA 상승 COUNT ≤ {EMA_LONG_MAX_COUNT}
-            · 🚀{count_display_text()} 📉{count_display_text()}만 표시
+            · 🚀📉 모든 COUNT 표시
+            · 반짝임 {count_flash_text()}
             · {kst()} KST
         </span>
 
@@ -5179,6 +5236,8 @@ def market_summary_html():
 
 # =========================================================
 # CSS
+#
+# ★ 반짝임 CSS는 기존 그대로
 # =========================================================
 
 CSS = """
@@ -5779,6 +5838,11 @@ font-size:7px;
 font-weight:900;
 }
 
+
+/* =======================================================
+   ★ 기존 반짝임 그대로 유지
+   ======================================================= */
+
 @keyframes signalFlashOne{
 
 0%{
@@ -6341,8 +6405,12 @@ def startup():
     )
 
     log.info(
-        f"COUNT 화면 표시 = "
-        f"{count_display_text()}"
+        "COUNT 화면 표시 = 1부터 모든 COUNT"
+    )
+
+    log.info(
+        f"COUNT 반짝임 = "
+        f"{count_flash_text()}"
     )
 
     log.info(
@@ -6400,27 +6468,26 @@ def startup():
     )
 
     log.info(
-        "TOP 리스트 = ROC COUNT 표시"
+        "TOP 리스트 = ROC COUNT 전체 표시"
     )
 
     log.info(
-        "ROC COUNT 표시 = 설정된 표시 범위만"
+        "상승 신호 영역 = ROC COUNT 전체 표시"
     )
 
     log.info(
-        f"COUNT {count_display_text()} = 반짝임"
+        f"COUNT {count_flash_text()} = 반짝임"
     )
 
     log.info(
-        f"COUNT {DISPLAY_COUNT_MAX + 1} 이상 = "
-        f"화면 COUNT 표시 없음 / 반짝임 없음"
+        f"COUNT {FLASH_COUNT_MAX + 1} 이상 = "
+        f"화면 COUNT 표시 / 반짝임 없음"
     )
 
     log.info(
         f"상승 신호 영역 = "
         f"필터 통과 + "
-        f"ROC{SIGNAL_ROC_PERIOD} 🚀{count_display_text()} + "
-        f"📉{count_display_text()} + "
+        f"ROC{SIGNAL_ROC_PERIOD} COUNT 전체 + "
         f"EMA 상승 COUNT <= {EMA_LONG_MAX_COUNT} "
         f"+ 당일 등락 >= 0%"
     )
