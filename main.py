@@ -104,7 +104,7 @@ ROC_TIMEFRAME = 60
 # → ROC10 0선 하향 = 📉
 # =========================================================
 
-SIGNAL_ROC_PERIOD = 5
+SIGNAL_ROC_PERIOD = 10
 
 
 ROC_FILTER_PERIODS = [
