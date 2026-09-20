@@ -55,6 +55,22 @@ MAX_RETRIES = 10
 
 
 # =========================================================
+# ★ 화면 표시 COUNT 설정
+#
+# 이 숫자만 수정하면 화면 표시 범위를 변경할 수 있음
+#
+# 3 = 1, 2, 3까지만 표시
+# 5 = 1, 2, 3, 4, 5까지 표시
+# 10 = 1~10까지 표시
+#
+# 내부 카운팅은 이 숫자와 관계없이 계속 진행됨
+# =========================================================
+
+DISPLAY_COUNT_MIN = 1
+DISPLAY_COUNT_MAX = 3
+
+
+# =========================================================
 # 상승 신호 영역 EMA COUNT 필터
 # =========================================================
 
@@ -166,6 +182,41 @@ roc_pullback_state = {}
 # =========================================================
 
 roc_signal_failed_candle = {}
+
+
+# =========================================================
+# COUNT 표시 범위
+# =========================================================
+
+def count_display_allowed(count):
+
+    try:
+
+        count = int(count)
+
+    except Exception:
+
+        return False
+
+    return (
+        DISPLAY_COUNT_MIN
+        <= count
+        <= DISPLAY_COUNT_MAX
+    )
+
+
+def count_display_text():
+
+    if DISPLAY_COUNT_MIN == DISPLAY_COUNT_MAX:
+
+        return str(
+            DISPLAY_COUNT_MIN
+        )
+
+    return (
+        f"{DISPLAY_COUNT_MIN}~"
+        f"{DISPLAY_COUNT_MAX}"
+    )
 
 
 # =========================================================
@@ -502,6 +553,23 @@ def validate_timeframe():
 
         raise ValueError(
             "EMA_LONG_MAX_COUNT는 1 이상의 정수여야 합니다."
+        )
+
+    if (
+        not isinstance(
+            DISPLAY_COUNT_MIN,
+            int
+        )
+        or not isinstance(
+            DISPLAY_COUNT_MAX,
+            int
+        )
+        or DISPLAY_COUNT_MIN < 1
+        or DISPLAY_COUNT_MAX < DISPLAY_COUNT_MIN
+    ):
+
+        raise ValueError(
+            "DISPLAY_COUNT_MIN/MAX 설정이 올바르지 않습니다."
         )
 
     if SIGNAL_ROC_PERIOD not in ROC_FILTER_PERIODS:
@@ -3317,10 +3385,6 @@ def analyze(
             )
         )
 
-    # =====================================================
-    # 과거 눌림 시작점
-    # =====================================================
-
     historical_pullback_start_candle = None
 
     try:
@@ -4048,7 +4112,17 @@ def signal_html(
 
     result = []
 
-    if signal_active:
+    # =====================================================
+    # ★ 화면 표시 1~3
+    # 내부 COUNT가 4 이상이면 표시하지 않음
+    # =====================================================
+
+    if (
+        signal_active
+        and count_display_allowed(
+            signal_count
+        )
+    ):
 
         result.append(
             f"""
@@ -4066,7 +4140,12 @@ def signal_html(
             """
         )
 
-    if pullback_active:
+    if (
+        pullback_active
+        and count_display_allowed(
+            pullback_count
+        )
+    ):
 
         result.append(
             f"""
@@ -4134,9 +4213,23 @@ def top_signal_count_html(
         )
     )
 
-    if not (
+    signal_visible = (
         signal_active
-        or pullback_active
+        and count_display_allowed(
+            signal_count
+        )
+    )
+
+    pullback_visible = (
+        pullback_active
+        and count_display_allowed(
+            pullback_count
+        )
+    )
+
+    if not (
+        signal_visible
+        or pullback_visible
     ):
 
         return (
@@ -4151,7 +4244,7 @@ def top_signal_count_html(
             🚀({signal_count})
         </span>
         """
-        if signal_active
+        if signal_visible
         else ""
     )
 
@@ -4161,7 +4254,7 @@ def top_signal_count_html(
             📉({pullback_count})
         </span>
         """
-        if pullback_active
+        if pullback_visible
         else ""
     )
 
@@ -4541,7 +4634,12 @@ def rows_html(
         )
 
         # =================================================
-        # COUNT 1~5까지 반짝임
+        # ★ 설정된 COUNT 범위까지만 반짝임
+        #
+        # 기본값:
+        # 1, 2, 3
+        #
+        # 내부 COUNT는 계속 증가함
         # =================================================
 
         if (
@@ -4551,23 +4649,15 @@ def rows_html(
             (
                 (
                     signal_active
-                    and signal_count in (
-                        1,
-                        2,
-                        3,
-                        4,
-                        5
+                    and count_display_allowed(
+                        signal_count
                     )
                 )
                 or
                 (
                     pullback_active
-                    and pullback_count in (
-                        1,
-                        2,
-                        3,
-                        4,
-                        5
+                    and count_display_allowed(
+                        pullback_count
                     )
                 )
             )
@@ -4759,17 +4849,13 @@ def focus_section(
 
                     and
 
-                    int(
-                        x.get(
-                            "signal_count",
-                            0
+                    count_display_allowed(
+                        int(
+                            x.get(
+                                "signal_count",
+                                0
+                            )
                         )
-                    ) in (
-                        1,
-                        2,
-                        3,
-                        4,
-                        5
                     )
                 )
 
@@ -4783,17 +4869,13 @@ def focus_section(
 
                     and
 
-                    int(
-                        x.get(
-                            "pullback_count",
-                            0
+                    count_display_allowed(
+                        int(
+                            x.get(
+                                "pullback_count",
+                                0
+                            )
                         )
-                    ) in (
-                        1,
-                        2,
-                        3,
-                        4,
-                        5
                     )
                 )
             )
@@ -4825,7 +4907,7 @@ def focus_section(
             · 필터 통과
             · 당일 음수 제외
             · EMA 상승 COUNT ≤ {EMA_LONG_MAX_COUNT}
-            · 🚀1~5 📉1~5만 표시
+            · 🚀{count_display_text()} 📉{count_display_text()}만 표시
             · {kst()} KST
         </span>
 
@@ -6259,6 +6341,11 @@ def startup():
     )
 
     log.info(
+        f"COUNT 화면 표시 = "
+        f"{count_display_text()}"
+    )
+
+    log.info(
         f"1H ROC FILTER = "
         f"{USE_1H_ROC_FILTER}"
     )
@@ -6279,12 +6366,12 @@ def startup():
 
     log.info(
         f"ROC{SIGNAL_ROC_PERIOD} "
-        f"상향 0선 돌파 = 🚀 COUNT 1"
+        f"상향 0선 돌파 진행 캔들 = 🚀 COUNT 1"
     )
 
     log.info(
         f"ROC{SIGNAL_ROC_PERIOD} "
-        f"하향 0선 돌파 = 📉 눌림 COUNT 1"
+        f"하향 0선 돌파 진행 캔들 = 📉 COUNT 1"
     )
 
     log.info(
@@ -6317,22 +6404,23 @@ def startup():
     )
 
     log.info(
-        "ROC COUNT 표시 = 🚀(N) / 📉(N)"
+        "ROC COUNT 표시 = 설정된 표시 범위만"
     )
 
     log.info(
-        "COUNT 1~5 = 반짝임"
+        f"COUNT {count_display_text()} = 반짝임"
     )
 
     log.info(
-        "COUNT 6 이상 = 반짝임 없음"
+        f"COUNT {DISPLAY_COUNT_MAX + 1} 이상 = "
+        f"화면 COUNT 표시 없음 / 반짝임 없음"
     )
 
     log.info(
         f"상승 신호 영역 = "
         f"필터 통과 + "
-        f"ROC{SIGNAL_ROC_PERIOD} 🚀1~5 + "
-        f"📉1~5 + "
+        f"ROC{SIGNAL_ROC_PERIOD} 🚀{count_display_text()} + "
+        f"📉{count_display_text()} + "
         f"EMA 상승 COUNT <= {EMA_LONG_MAX_COUNT} "
         f"+ 당일 등락 >= 0%"
     )
