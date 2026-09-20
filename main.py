@@ -3199,13 +3199,6 @@ def make_row(
                 )
             ),
 
-        # =================================================
-        # 당일 등락률 필터 상태
-        #
-        # 0 이상 = True
-        # 음수 = False
-        # =================================================
-
         "daily_pass":
             bool(
                 a.get(
@@ -4255,6 +4248,10 @@ def rows_html(
             )
         )
 
+        # =================================================
+        # COUNT 1~5까지 반짝임
+        # =================================================
+
         if (
             filter_pass
             and ema_filter_pass
@@ -4262,12 +4259,24 @@ def rows_html(
             (
                 (
                     signal_active
-                    and signal_count in (1, 2)
+                    and signal_count in (
+                        1,
+                        2,
+                        3,
+                        4,
+                        5
+                    )
                 )
                 or
                 (
                     pullback_active
-                    and pullback_count in (1, 2)
+                    and pullback_count in (
+                        1,
+                        2,
+                        3,
+                        4,
+                        5
+                    )
                 )
             )
         ):
@@ -4452,7 +4461,7 @@ def focus_section(
             )
 
             # =============================================
-            # 기존 ROC5 COUNT 조건
+            # ROC5 COUNT 1~5
             # =============================================
 
             and
@@ -4471,7 +4480,13 @@ def focus_section(
                             "signal_count",
                             0
                         )
-                    ) in (1, 2)
+                    ) in (
+                        1,
+                        2,
+                        3,
+                        4,
+                        5
+                    )
                 )
 
                 or
@@ -4489,7 +4504,13 @@ def focus_section(
                             "pullback_count",
                             0
                         )
-                    ) in (1, 2)
+                    ) in (
+                        1,
+                        2,
+                        3,
+                        4,
+                        5
+                    )
                 )
             )
 
@@ -4504,10 +4525,7 @@ def focus_section(
             )
 
             # =============================================
-            # ★ 당일 음수 제외
-            #
-            # 0% 이상만 상승 신호에 표시
-            # 음수는 제외
+            # 당일 음수 제외
             # =============================================
 
             and
@@ -4531,7 +4549,7 @@ def focus_section(
             · 필터 통과
             · 당일 음수 제외
             · EMA 상승 COUNT ≤ {EMA_LONG_MAX_COUNT}
-            · 🚀1/2 📉1/2만 표시
+            · 🚀1~5 📉1~5만 표시
             · {kst()} KST
         </span>
 
@@ -6010,20 +6028,16 @@ def startup():
     )
 
     log.info(
-        "COUNT 1 = 반짝임"
+        "COUNT 1~5 = 반짝임"
     )
 
     log.info(
-        "COUNT 2 = 반짝임"
-    )
-
-    log.info(
-        "COUNT 3 이상 = 반짝임 없음"
+        "COUNT 6 이상 = 반짝임 없음"
     )
 
     log.info(
         f"상승 신호 영역 = "
-        f"필터 통과 + 🚀1/2 + 📉1/2 "
+        f"필터 통과 + 🚀1~5 + 📉1~5 "
         f"+ EMA 상승 COUNT <= {EMA_LONG_MAX_COUNT} "
         f"+ 당일 등락 >= 0%"
     )
