@@ -2291,6 +2291,137 @@ def find_latest_signal_start(
 
 
 # =========================================================
+# ★ 과거 ROC5 눌림 시작점
+#
+# 프로그램이 시작될 때 이미 ROC5가 음수인 경우
+# 가장 최근의 0선 하향 돌파 지점을 찾아
+# 눌림 COUNT를 복원한다.
+# =========================================================
+
+def find_latest_pullback_start(
+    df1h
+):
+
+    if (
+        df1h is None
+        or df1h.empty
+    ):
+
+        return None
+
+    try:
+
+        current_start = (
+            get_current_candle_start(
+                ROC_TIMEFRAME
+            )
+        )
+
+        temp = df1h.copy()
+
+        temp["datetime"] = pd.to_datetime(
+            temp["datetime"],
+            errors="coerce"
+        )
+
+        temp = (
+            temp
+            .dropna(
+                subset=["datetime"]
+            )
+            .sort_values(
+                "datetime"
+            )
+            .reset_index(
+                drop=True
+            )
+        )
+
+        # 현재 진행 중인 캔들은 제외
+        temp = temp[
+            temp["datetime"]
+            < current_start
+        ]
+
+        if len(temp) < 2:
+            return None
+
+        roc5_series = roc(
+            temp,
+            5
+        )
+
+        if (
+            roc5_series is None
+            or roc5_series.empty
+        ):
+
+            return None
+
+        # 가장 최근 하향 돌파를 찾는다.
+        #
+        # 이전 > 0
+        # 현재 <= 0
+        #
+        # 이 지점이 눌림 COUNT 1의 시작점
+        for i in range(
+            len(temp) - 1,
+            0,
+            -1
+        ):
+
+            current_value = (
+                roc5_series.iloc[i]
+            )
+
+            previous_value = (
+                roc5_series.iloc[i - 1]
+            )
+
+            if (
+                pd.isna(current_value)
+                or pd.isna(previous_value)
+            ):
+
+                continue
+
+            try:
+
+                current_value = float(
+                    current_value
+                )
+
+                previous_value = float(
+                    previous_value
+                )
+
+            except Exception:
+
+                continue
+
+            if (
+                previous_value > 0
+                and current_value <= 0
+            ):
+
+                return normalize_datetime(
+                    temp[
+                        "datetime"
+                    ].iloc[i]
+                )
+
+        return None
+
+    except Exception as e:
+
+        log.warning(
+            f"ROC5 과거 눌림 시작점 오류: {e}"
+        )
+
+        return None
+
+
+# =========================================================
 # 신호 + 눌림 통합 상태
 # =========================================================
 
@@ -2299,7 +2430,8 @@ def update_signal_and_pullback(
     r,
     filter_pass,
     progress_candle_time,
-    historical_start_candle=None
+    historical_start_candle=None,
+    historical_pullback_start_candle=None
 ):
 
     market_key = str(
@@ -2339,6 +2471,10 @@ def update_signal_and_pullback(
             market_key
         )
     )
+
+    # =====================================================
+    # 실시간 ROC5 하향 돌파
+    # =====================================================
 
     if pullback_condition:
 
@@ -2396,6 +2532,10 @@ def update_signal_and_pullback(
                 f"📉1 | "
                 f"ROC5={roc5_current}"
             )
+
+    # =====================================================
+    # 실시간 ROC5 상향 돌파
+    # =====================================================
 
     elif roc5_cross:
 
@@ -2467,6 +2607,10 @@ def update_signal_and_pullback(
                     f"ROC5={roc5_current}"
                 )
 
+    # =====================================================
+    # 과거 상승신호 복원
+    # =====================================================
+
     elif signal_state is None:
 
         start_candle = None
@@ -2503,6 +2647,86 @@ def update_signal_and_pullback(
                     market_key
                 ]
             )
+
+    # =====================================================
+    # ★ 과거 눌림 복원
+    #
+    # 현재 ROC5가 이미 음수이고
+    # 과거 하향 돌파 지점이 발견되면
+    # 눌림 상태를 생성한다.
+    # =====================================================
+
+    if (
+        pullback_state is None
+        and historical_pullback_start_candle is not None
+    ):
+
+        try:
+
+            current_roc5_value = float(
+                roc5_current
+            )
+
+        except Exception:
+
+            current_roc5_value = None
+
+        if (
+            current_roc5_value is not None
+            and current_roc5_value <= 0
+            and progress_candle_time is not None
+        ):
+
+            start_candle = (
+                normalize_datetime(
+                    historical_pullback_start_candle
+                )
+            )
+
+            distance = candle_distance(
+                start_candle,
+                progress_candle_time,
+                ROC_TIMEFRAME
+            )
+
+            restored_count = (
+                distance + 1
+            )
+
+            roc_pullback_state[
+                market_key
+            ] = {
+
+                "active":
+                    True,
+
+                "start_candle":
+                    start_candle,
+
+                "count":
+                    restored_count,
+
+                "last_candle":
+                    progress_candle_time
+            }
+
+            pullback_state = (
+                roc_pullback_state[
+                    market_key
+                ]
+            )
+
+            log.info(
+                f"[ROC5 PULLBACK RESTORE] "
+                f"{market_key} "
+                f"📉({restored_count}) | "
+                f"시작={start_candle} | "
+                f"ROC5={roc5_current}"
+            )
+
+    # =====================================================
+    # 상승 신호 상태 확인
+    # =====================================================
 
     signal_state = (
         roc_signal_state.get(
@@ -2614,6 +2838,10 @@ def update_signal_and_pullback(
                     "last_candle"
                 ] = progress_candle_time
 
+    # =====================================================
+    # 눌림 상태 확인
+    # =====================================================
+
     pullback_state = (
         roc_pullback_state.get(
             market_key
@@ -2690,6 +2918,10 @@ def update_signal_and_pullback(
                 ] = (
                     progress_candle_time
                 )
+
+    # =====================================================
+    # 최종 상태
+    # =====================================================
 
     signal_state = (
         roc_signal_state.get(
@@ -3062,6 +3294,37 @@ def analyze(
             )
         )
 
+    # =====================================================
+    # ★ 과거 눌림 시작점 찾기
+    #
+    # 현재 이미 눌림 상태인 경우에만
+    # 과거 하향 돌파를 복원한다.
+    # =====================================================
+
+    historical_pullback_start_candle = None
+
+    try:
+
+        current_roc5_value = float(
+            roc5_current
+        )
+
+    except Exception:
+
+        current_roc5_value = None
+
+    if (
+        market not in roc_pullback_state
+        and current_roc5_value is not None
+        and current_roc5_value <= 0
+    ):
+
+        historical_pullback_start_candle = (
+            find_latest_pullback_start(
+                df1h
+            )
+        )
+
     state = update_signal_and_pullback(
         market=market,
         r=r,
@@ -3071,6 +3334,9 @@ def analyze(
         ),
         historical_start_candle=(
             historical_start_candle
+        ),
+        historical_pullback_start_candle=(
+            historical_pullback_start_candle
         )
     )
 
@@ -3119,9 +3385,15 @@ def analyze(
 
         "breakout_qualified":
             (
-                state[
-                    "signal_active"
-                ]
+                (
+                    state[
+                        "signal_active"
+                    ]
+                    or
+                    state[
+                        "pullback_active"
+                    ]
+                )
                 and filter_pass
                 and daily_pass
             ),
@@ -4452,7 +4724,7 @@ def focus_section(
 
         if (
             # =============================================
-            # 기존 ROC 필터 통과
+            # ROC 필터 통과
             # =============================================
 
             x.get(
@@ -6017,6 +6289,10 @@ def startup():
 
     log.info(
         "눌림 COUNT = 1,2,3... 무제한"
+    )
+
+    log.info(
+        "과거 눌림 상태 = 자동 복원"
     )
 
     log.info(
