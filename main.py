@@ -84,7 +84,28 @@ ROC_FILTER_TIMEFRAME = 60
 ROC_FILTER_HIGH_TIMEFRAME = 240
 ROC_TIMEFRAME = 60
 
-ROC_PERIOD = 10
+
+# =========================================================
+# ★★★★★ 신호용 ROC 설정 ★★★★★
+#
+# 이 숫자 하나만 수정하면
+# 상승신호 / 눌림 / 과거복원 / 화면문구가
+# 모두 같은 ROC 기간으로 자동 변경됨
+#
+# 5  = ROC5
+# 10 = ROC10
+# 20 = ROC20
+# 50 = ROC50
+#
+# 예:
+# SIGNAL_ROC_PERIOD = 10
+#
+# → ROC10 0선 상향 = 🚀
+# → ROC10 0선 하향 = 📉
+# =========================================================
+
+SIGNAL_ROC_PERIOD = 5
+
 
 ROC_FILTER_PERIODS = [
     5,
@@ -481,6 +502,13 @@ def validate_timeframe():
 
         raise ValueError(
             "EMA_LONG_MAX_COUNT는 1 이상의 정수여야 합니다."
+        )
+
+    if SIGNAL_ROC_PERIOD not in ROC_FILTER_PERIODS:
+
+        raise ValueError(
+            "SIGNAL_ROC_PERIOD는 "
+            "ROC_FILTER_PERIODS에 있는 값만 사용할 수 있습니다."
         )
 
     settings = roc_settings()
@@ -1994,20 +2022,20 @@ def all_active_roc_filters_pass(
 
 
 # =========================================================
-# ROC5 0선 상향 돌파
+# ★ 신호 ROC 0선 상향 돌파
 # =========================================================
 
-def roc5_zero_cross(r):
+def roc_signal_zero_cross(r):
 
     if not r:
         return False
 
     current = r.get(
-        "roc5"
+        "signal_roc"
     )
 
     previous = r.get(
-        "roc5_previous"
+        "signal_roc_previous"
     )
 
     if (
@@ -2038,20 +2066,20 @@ def roc5_zero_cross(r):
 
 
 # =========================================================
-# ROC5 0선 하향 돌파
+# ★ 신호 ROC 0선 하향 돌파 = 눌림
 # =========================================================
 
-def roc5_pullback_condition(r):
+def roc_signal_pullback_condition(r):
 
     if not r:
         return False
 
     current = r.get(
-        "roc5"
+        "signal_roc"
     )
 
     previous = r.get(
-        "roc5_previous"
+        "signal_roc_previous"
     )
 
     if (
@@ -2082,7 +2110,7 @@ def roc5_pullback_condition(r):
 
 
 # =========================================================
-# 과거 ROC5 신호 시작점
+# ★ 과거 신호 시작점
 # =========================================================
 
 def find_latest_signal_start(
@@ -2133,12 +2161,12 @@ def find_latest_signal_start(
         if len(temp) < 2:
             return None
 
-        roc5_series = roc(
+        signal_roc_series = roc(
             temp,
-            5
+            SIGNAL_ROC_PERIOD
         )
 
-        if roc5_series is None:
+        if signal_roc_series is None:
             return None
 
         enabled = (
@@ -2155,11 +2183,11 @@ def find_latest_signal_start(
         ):
 
             current_value = (
-                roc5_series.iloc[i]
+                signal_roc_series.iloc[i]
             )
 
             previous_value = (
-                roc5_series.iloc[i - 1]
+                signal_roc_series.iloc[i - 1]
             )
 
             if (
@@ -2284,18 +2312,15 @@ def find_latest_signal_start(
     except Exception as e:
 
         log.warning(
-            f"ROC5 과거 시작점 오류: {e}"
+            f"ROC{SIGNAL_ROC_PERIOD} "
+            f"과거 시작점 오류: {e}"
         )
 
         return None
 
 
 # =========================================================
-# ★ 과거 ROC5 눌림 시작점
-#
-# 프로그램이 시작될 때 이미 ROC5가 음수인 경우
-# 가장 최근의 0선 하향 돌파 지점을 찾아
-# 눌림 COUNT를 복원한다.
+# ★ 과거 눌림 시작점
 # =========================================================
 
 def find_latest_pullback_start(
@@ -2337,7 +2362,6 @@ def find_latest_pullback_start(
             )
         )
 
-        # 현재 진행 중인 캔들은 제외
         temp = temp[
             temp["datetime"]
             < current_start
@@ -2346,24 +2370,18 @@ def find_latest_pullback_start(
         if len(temp) < 2:
             return None
 
-        roc5_series = roc(
+        signal_roc_series = roc(
             temp,
-            5
+            SIGNAL_ROC_PERIOD
         )
 
         if (
-            roc5_series is None
-            or roc5_series.empty
+            signal_roc_series is None
+            or signal_roc_series.empty
         ):
 
             return None
 
-        # 가장 최근 하향 돌파를 찾는다.
-        #
-        # 이전 > 0
-        # 현재 <= 0
-        #
-        # 이 지점이 눌림 COUNT 1의 시작점
         for i in range(
             len(temp) - 1,
             0,
@@ -2371,11 +2389,11 @@ def find_latest_pullback_start(
         ):
 
             current_value = (
-                roc5_series.iloc[i]
+                signal_roc_series.iloc[i]
             )
 
             previous_value = (
-                roc5_series.iloc[i - 1]
+                signal_roc_series.iloc[i - 1]
             )
 
             if (
@@ -2415,7 +2433,8 @@ def find_latest_pullback_start(
     except Exception as e:
 
         log.warning(
-            f"ROC5 과거 눌림 시작점 오류: {e}"
+            f"ROC{SIGNAL_ROC_PERIOD} "
+            f"과거 눌림 시작점 오류: {e}"
         )
 
         return None
@@ -2444,20 +2463,20 @@ def update_signal_and_pullback(
         )
     )
 
-    roc5_current = r.get(
-        "roc5"
+    signal_roc_current = r.get(
+        "signal_roc"
     )
 
-    roc5_previous = r.get(
-        "roc5_previous"
+    signal_roc_previous = r.get(
+        "signal_roc_previous"
     )
 
-    roc5_cross = (
-        roc5_zero_cross(r)
+    signal_cross = (
+        roc_signal_zero_cross(r)
     )
 
     pullback_condition = (
-        roc5_pullback_condition(r)
+        roc_signal_pullback_condition(r)
     )
 
     signal_state = (
@@ -2473,7 +2492,7 @@ def update_signal_and_pullback(
     )
 
     # =====================================================
-    # 실시간 ROC5 하향 돌파
+    # 실시간 ROC 하향 돌파
     # =====================================================
 
     if pullback_condition:
@@ -2488,10 +2507,10 @@ def update_signal_and_pullback(
             )
 
             log.info(
-                f"[ROC5 SIGNAL END] "
+                f"[ROC{SIGNAL_ROC_PERIOD} SIGNAL END] "
                 f"{market_key} | "
                 f"COUNT={old_count} | "
-                f"ROC5 0선 하향 돌파"
+                f"ROC{SIGNAL_ROC_PERIOD} 0선 하향 돌파"
             )
 
             roc_signal_state.pop(
@@ -2527,17 +2546,17 @@ def update_signal_and_pullback(
             )
 
             log.info(
-                f"[ROC5 PULLBACK START] "
+                f"[ROC{SIGNAL_ROC_PERIOD} PULLBACK START] "
                 f"{market_key} "
                 f"📉1 | "
-                f"ROC5={roc5_current}"
+                f"ROC{SIGNAL_ROC_PERIOD}={signal_roc_current}"
             )
 
     # =====================================================
-    # 실시간 ROC5 상향 돌파
+    # 실시간 ROC 상향 돌파
     # =====================================================
 
-    elif roc5_cross:
+    elif signal_cross:
 
         if pullback_state is not None:
 
@@ -2549,10 +2568,10 @@ def update_signal_and_pullback(
             )
 
             log.info(
-                f"[ROC5 PULLBACK END] "
+                f"[ROC{SIGNAL_ROC_PERIOD} PULLBACK END] "
                 f"{market_key} | "
                 f"COUNT={old_count} | "
-                f"ROC5 0선 상향 돌파"
+                f"ROC{SIGNAL_ROC_PERIOD} 0선 상향 돌파"
             )
 
             roc_pullback_state.pop(
@@ -2601,10 +2620,10 @@ def update_signal_and_pullback(
                 )
 
                 log.info(
-                    f"[ROC5 SIGNAL START] "
+                    f"[ROC{SIGNAL_ROC_PERIOD} SIGNAL START] "
                     f"{market_key} "
                     f"🚀1 | "
-                    f"ROC5={roc5_current}"
+                    f"ROC{SIGNAL_ROC_PERIOD}={signal_roc_current}"
                 )
 
     # =====================================================
@@ -2649,11 +2668,7 @@ def update_signal_and_pullback(
             )
 
     # =====================================================
-    # ★ 과거 눌림 복원
-    #
-    # 현재 ROC5가 이미 음수이고
-    # 과거 하향 돌파 지점이 발견되면
-    # 눌림 상태를 생성한다.
+    # 과거 눌림 복원
     # =====================================================
 
     if (
@@ -2663,17 +2678,17 @@ def update_signal_and_pullback(
 
         try:
 
-            current_roc5_value = float(
-                roc5_current
+            current_signal_roc = float(
+                signal_roc_current
             )
 
         except Exception:
 
-            current_roc5_value = None
+            current_signal_roc = None
 
         if (
-            current_roc5_value is not None
-            and current_roc5_value <= 0
+            current_signal_roc is not None
+            and current_signal_roc <= 0
             and progress_candle_time is not None
         ):
 
@@ -2717,11 +2732,11 @@ def update_signal_and_pullback(
             )
 
             log.info(
-                f"[ROC5 PULLBACK RESTORE] "
+                f"[ROC{SIGNAL_ROC_PERIOD} PULLBACK RESTORE] "
                 f"{market_key} "
                 f"📉({restored_count}) | "
                 f"시작={start_candle} | "
-                f"ROC5={roc5_current}"
+                f"ROC{SIGNAL_ROC_PERIOD}={signal_roc_current}"
             )
 
     # =====================================================
@@ -2736,22 +2751,22 @@ def update_signal_and_pullback(
 
     if signal_state is not None:
 
-        roc5_negative = False
+        signal_roc_negative = False
 
         try:
 
             if (
-                roc5_current is not None
-                and float(roc5_current) < 0
+                signal_roc_current is not None
+                and float(signal_roc_current) < 0
             ):
 
-                roc5_negative = True
+                signal_roc_negative = True
 
         except Exception:
 
             pass
 
-        if roc5_negative:
+        if signal_roc_negative:
 
             old_count = int(
                 signal_state.get(
@@ -2767,10 +2782,10 @@ def update_signal_and_pullback(
                 ] = progress_candle_time
 
             log.info(
-                f"[ROC5 SIGNAL END] "
+                f"[ROC{SIGNAL_ROC_PERIOD} SIGNAL END] "
                 f"{market_key} | "
                 f"COUNT={old_count} | "
-                f"ROC5 음수"
+                f"ROC{SIGNAL_ROC_PERIOD} 음수"
             )
 
             roc_signal_state.pop(
@@ -2796,7 +2811,7 @@ def update_signal_and_pullback(
                 ] = progress_candle_time
 
             log.info(
-                f"[ROC5 SIGNAL END] "
+                f"[ROC{SIGNAL_ROC_PERIOD} SIGNAL END] "
                 f"{market_key} | "
                 f"COUNT={old_count} | "
                 f"활성 ROC 필터 미통과"
@@ -2850,22 +2865,22 @@ def update_signal_and_pullback(
 
     if pullback_state is not None:
 
-        roc5_positive = False
+        signal_roc_positive = False
 
         try:
 
             if (
-                roc5_current is not None
-                and float(roc5_current) > 0
+                signal_roc_current is not None
+                and float(signal_roc_current) > 0
             ):
 
-                roc5_positive = True
+                signal_roc_positive = True
 
         except Exception:
 
             pass
 
-        if roc5_positive:
+        if signal_roc_positive:
 
             old_count = int(
                 pullback_state.get(
@@ -2875,10 +2890,10 @@ def update_signal_and_pullback(
             )
 
             log.info(
-                f"[ROC5 PULLBACK END] "
+                f"[ROC{SIGNAL_ROC_PERIOD} PULLBACK END] "
                 f"{market_key} | "
                 f"COUNT={old_count} | "
-                f"ROC5 양수 복귀"
+                f"ROC{SIGNAL_ROC_PERIOD} 양수 복귀"
             )
 
             roc_pullback_state.pop(
@@ -2988,10 +3003,10 @@ def update_signal_and_pullback(
         "pullback_count":
             pullback_count,
 
-        "roc5_cross":
-            roc5_cross,
+        "signal_roc_cross":
+            signal_cross,
 
-        "roc5_pullback":
+        "signal_roc_pullback":
             pullback_condition
     }
 
@@ -3229,45 +3244,53 @@ def analyze(
         )
     )
 
-    roc5_current = (
+    # =====================================================
+    # ★ 신호용 ROC 자동 선택
+    # =====================================================
+
+    signal_roc_current = (
         r1_current
         .get(
             "roc_values",
             {}
         )
-        .get(5)
+        .get(
+            SIGNAL_ROC_PERIOD
+        )
     )
 
-    roc5_previous = (
+    signal_roc_previous = (
         r1_current
         .get(
             "previous_values",
             {}
         )
-        .get(5)
+        .get(
+            SIGNAL_ROC_PERIOD
+        )
     )
 
     r = {
 
-        "roc5":
-            roc5_current,
+        "signal_roc":
+            signal_roc_current,
 
-        "roc5_previous":
-            roc5_previous,
+        "signal_roc_previous":
+            signal_roc_previous,
 
-        "roc5_cross":
+        "signal_roc_cross":
             False,
 
-        "roc5_pullback":
+        "signal_roc_pullback":
             False
     }
 
-    r["roc5_cross"] = (
-        roc5_zero_cross(r)
+    r["signal_roc_cross"] = (
+        roc_signal_zero_cross(r)
     )
 
-    r["roc5_pullback"] = (
-        roc5_pullback_condition(r)
+    r["signal_roc_pullback"] = (
+        roc_signal_pullback_condition(r)
     )
 
     filter_pass = (
@@ -3295,28 +3318,25 @@ def analyze(
         )
 
     # =====================================================
-    # ★ 과거 눌림 시작점 찾기
-    #
-    # 현재 이미 눌림 상태인 경우에만
-    # 과거 하향 돌파를 복원한다.
+    # 과거 눌림 시작점
     # =====================================================
 
     historical_pullback_start_candle = None
 
     try:
 
-        current_roc5_value = float(
-            roc5_current
+        current_signal_roc_value = float(
+            signal_roc_current
         )
 
     except Exception:
 
-        current_roc5_value = None
+        current_signal_roc_value = None
 
     if (
         market not in roc_pullback_state
-        and current_roc5_value is not None
-        and current_roc5_value <= 0
+        and current_signal_roc_value is not None
+        and current_signal_roc_value <= 0
     ):
 
         historical_pullback_start_candle = (
@@ -3418,14 +3438,14 @@ def analyze(
                 "pullback_count"
             ],
 
-        "roc5_cross":
+        "signal_roc_cross":
             state[
-                "roc5_cross"
+                "signal_roc_cross"
             ],
 
-        "roc5_pullback":
+        "signal_roc_pullback":
             state[
-                "roc5_pullback"
+                "signal_roc_pullback"
             ],
 
         "df1h":
@@ -3565,18 +3585,18 @@ def make_row(
                 )
             ),
 
-        "roc5_cross":
+        "signal_roc_cross":
             bool(
                 a.get(
-                    "roc5_cross",
+                    "signal_roc_cross",
                     False
                 )
             ),
 
-        "roc5_pullback":
+        "signal_roc_pullback":
             bool(
                 a.get(
-                    "roc5_pullback",
+                    "signal_roc_pullback",
                     False
                 )
             ),
@@ -4723,18 +4743,10 @@ def focus_section(
         for x in data
 
         if (
-            # =============================================
-            # ROC 필터 통과
-            # =============================================
-
             x.get(
                 "filter_pass",
                 False
             )
-
-            # =============================================
-            # ROC5 COUNT 1~5
-            # =============================================
 
             and
 
@@ -4786,19 +4798,11 @@ def focus_section(
                 )
             )
 
-            # =============================================
-            # EMA 상승 COUNT 필터
-            # =============================================
-
             and
 
             ema_long_filter_pass(
                 x
             )
-
-            # =============================================
-            # 당일 음수 제외
-            # =============================================
 
             and
 
@@ -4817,7 +4821,7 @@ def focus_section(
         </span>
 
         <span class="section-title-sub">
-            ROC5 돌파
+            ROC{SIGNAL_ROC_PERIOD} 돌파
             · 필터 통과
             · 당일 음수 제외
             · EMA 상승 COUNT ≤ {EMA_LONG_MAX_COUNT}
@@ -5060,6 +5064,7 @@ def market_summary_html():
             <span class="market-title-sub">
                 활성 ROC
                 {get_filter_setting_text()}
+                · 신호 ROC{SIGNAL_ROC_PERIOD}
             </span>
 
         </div>
@@ -6177,7 +6182,7 @@ def dashboard():
         >
 
         <title>
-            ROC5 SIGNAL
+            ROC{SIGNAL_ROC_PERIOD} SIGNAL
         </title>
 
         <style>
@@ -6245,7 +6250,12 @@ def startup():
     )
 
     log.info(
-        "ROC5 SIGNAL / PULLBACK SYSTEM START"
+        f"ROC{SIGNAL_ROC_PERIOD} "
+        f"SIGNAL / PULLBACK SYSTEM START"
+    )
+
+    log.info(
+        f"신호 ROC = ROC{SIGNAL_ROC_PERIOD}"
     )
 
     log.info(
@@ -6268,15 +6278,18 @@ def startup():
     )
 
     log.info(
-        "ROC5 상향 0선 돌파 = 🚀 COUNT 1"
+        f"ROC{SIGNAL_ROC_PERIOD} "
+        f"상향 0선 돌파 = 🚀 COUNT 1"
     )
 
     log.info(
-        "ROC5 하향 0선 돌파 = 📉 눌림 COUNT 1"
+        f"ROC{SIGNAL_ROC_PERIOD} "
+        f"하향 0선 돌파 = 📉 눌림 COUNT 1"
     )
 
     log.info(
-        "ROC5 음수 → 상승 신호 종료"
+        f"ROC{SIGNAL_ROC_PERIOD} 음수 "
+        f"→ 상승 신호 종료"
     )
 
     log.info(
@@ -6289,6 +6302,10 @@ def startup():
 
     log.info(
         "눌림 COUNT = 1,2,3... 무제한"
+    )
+
+    log.info(
+        "과거 신호 상태 = 자동 복원"
     )
 
     log.info(
@@ -6313,8 +6330,10 @@ def startup():
 
     log.info(
         f"상승 신호 영역 = "
-        f"필터 통과 + 🚀1~5 + 📉1~5 "
-        f"+ EMA 상승 COUNT <= {EMA_LONG_MAX_COUNT} "
+        f"필터 통과 + "
+        f"ROC{SIGNAL_ROC_PERIOD} 🚀1~5 + "
+        f"📉1~5 + "
+        f"EMA 상승 COUNT <= {EMA_LONG_MAX_COUNT} "
         f"+ 당일 등락 >= 0%"
     )
 
