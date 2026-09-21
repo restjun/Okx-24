@@ -40,7 +40,7 @@ KST = ZoneInfo("Asia/Seoul")
 # =========================================================
 
 VOLUME_HOURS = 24
-TOP_N = 20
+TOP_N = 30
 UPDATE_MINUTES = 1
 
 HISTORY_CHUNK = 200
@@ -85,7 +85,7 @@ ROC_FILTER_COUNT_MIN = 10
 # =========================================================
 
 DISPLAY_COUNT_MIN = 0
-DISPLAY_COUNT_MAX = 5
+DISPLAY_COUNT_MAX = 1
 
 
 # =========================================================
@@ -98,10 +98,30 @@ FLASH_COUNT_MAX = 1
 
 # =========================================================
 # ROC 필터
+#
+# 사용할 필터를 Y / N으로 직접 설정
+#
+# FILTER1_TIMEFRAME
+# FILTER2_TIMEFRAME
+#
+# 60   = 1H
+# 240  = 4H
+# 1440 = 1D
 # =========================================================
 
-USE_1H_ROC_FILTER = "N"
-USE_4H_ROC_FILTER = "Y"
+USE_FILTER1 = "Y"
+USE_FILTER2 = "Y"
+
+FILTER1_TIMEFRAME = 240
+FILTER2_TIMEFRAME = 1440
+
+
+# =========================================================
+# ROC 기간별 화면 사용 설정
+#
+# 기존 1H / 4H 설정 유지
+# 1D 추가
+# =========================================================
 
 USE_1H_ROC5 = "N"
 USE_1H_ROC20 = "Y"
@@ -113,8 +133,10 @@ USE_4H_ROC20 = "Y"
 USE_4H_ROC50 = "Y"
 USE_4H_ROC200 = "Y"
 
-ROC_FILTER_TIMEFRAME = 60
-ROC_FILTER_HIGH_TIMEFRAME = 240
+USE_1D_ROC5 = "N"
+USE_1D_ROC20 = "Y"
+USE_1D_ROC50 = "Y"
+USE_1D_ROC200 = "Y"
 
 
 # =========================================================
@@ -264,22 +286,26 @@ def roc_settings():
 
         5: {
             "1H": USE_1H_ROC5,
-            "4H": USE_4H_ROC5
+            "4H": USE_4H_ROC5,
+            "1D": USE_1D_ROC5
         },
 
         20: {
             "1H": USE_1H_ROC20,
-            "4H": USE_4H_ROC20
+            "4H": USE_4H_ROC20,
+            "1D": USE_1D_ROC20
         },
 
         50: {
             "1H": USE_1H_ROC50,
-            "4H": USE_4H_ROC50
+            "4H": USE_4H_ROC50,
+            "1D": USE_1D_ROC50
         },
 
         200: {
             "1H": USE_1H_ROC200,
-            "4H": USE_4H_ROC200
+            "4H": USE_4H_ROC200,
+            "1D": USE_1D_ROC200
         }
 
     }
@@ -287,21 +313,14 @@ def roc_settings():
 
 def get_enabled_periods(timeframe):
 
-    if timeframe == "1H":
-
-        if USE_1H_ROC_FILTER != "Y":
-            return []
-
-    elif timeframe == "4H":
-
-        if USE_4H_ROC_FILTER != "Y":
-            return []
-
-    else:
-
-        return []
-
     settings = roc_settings()
+
+    if timeframe not in (
+        "1H",
+        "4H",
+        "1D"
+    ):
+        return []
 
     return [
         p
@@ -315,31 +334,49 @@ def get_all_periods():
     return ROC_FILTER_PERIODS.copy()
 
 
+def get_filter_configs():
+
+    result = []
+
+    if USE_FILTER1 == "Y":
+
+        result.append(
+            FILTER1_TIMEFRAME
+        )
+
+    if USE_FILTER2 == "Y":
+
+        result.append(
+            FILTER2_TIMEFRAME
+        )
+
+    return result
+
+
 def get_enabled_all_filters():
 
     result = []
 
-    settings = roc_settings()
+    for timeframe_minutes in (
+        get_filter_configs()
+    ):
 
-    if USE_1H_ROC_FILTER == "Y":
+        timeframe = format_timeframe(
+            timeframe_minutes
+        )
 
-        for period in ROC_FILTER_PERIODS:
+        periods = get_enabled_periods(
+            timeframe
+        )
 
-            if settings[period]["1H"] == "Y":
+        for period in periods:
 
-                result.append(
-                    ("1H", period)
+            result.append(
+                (
+                    timeframe,
+                    period
                 )
-
-    if USE_4H_ROC_FILTER == "Y":
-
-        for period in ROC_FILTER_PERIODS:
-
-            if settings[period]["4H"] == "Y":
-
-                result.append(
-                    ("4H", period)
-                )
+            )
 
     return result
 
@@ -361,19 +398,30 @@ def get_enabled_filter_text(timeframe):
 
 def get_filter_setting_text():
 
-    h1 = (
-        get_enabled_filter_text("1H")
-        if USE_1H_ROC_FILTER == "Y"
-        else "-"
-    )
+    labels = []
 
-    h4 = (
-        get_enabled_filter_text("4H")
-        if USE_4H_ROC_FILTER == "Y"
-        else "-"
-    )
+    if USE_FILTER1 == "Y":
 
-    return f"1H:{h1} 4H:{h4}"
+        labels.append(
+            format_timeframe(
+                FILTER1_TIMEFRAME
+            )
+        )
+
+    if USE_FILTER2 == "Y":
+
+        labels.append(
+            format_timeframe(
+                FILTER2_TIMEFRAME
+            )
+        )
+
+    if not labels:
+        return "-"
+
+    return " / ".join(
+        labels
+    )
 
 
 # =========================================================
@@ -411,6 +459,34 @@ def get_current_candle_start(minutes):
     minutes = int(minutes)
 
     now = datetime.now(KST)
+
+    # =====================================================
+    # 1D = 업비트 일봉 기준 09:00 KST
+    # =====================================================
+
+    if minutes == 1440:
+
+        anchor = now.replace(
+            hour=9,
+            minute=0,
+            second=0,
+            microsecond=0
+        )
+
+        if now < anchor:
+
+            anchor = (
+                anchor
+                - timedelta(days=1)
+            )
+
+        return anchor.replace(
+            tzinfo=None
+        )
+
+    # =====================================================
+    # 4H
+    # =====================================================
 
     if minutes == 240:
 
@@ -682,22 +758,42 @@ def validate_timeframe():
             "60 또는 240만 사용할 수 있습니다."
         )
 
-    if USE_1H_ROC_FILTER not in (
+    if USE_FILTER1 not in (
         "Y",
         "N"
     ):
 
         raise ValueError(
-            "USE_1H_ROC_FILTER는 Y/N만 가능합니다."
+            "USE_FILTER1은 Y/N만 가능합니다."
         )
 
-    if USE_4H_ROC_FILTER not in (
+    if USE_FILTER2 not in (
         "Y",
         "N"
     ):
 
         raise ValueError(
-            "USE_4H_ROC_FILTER는 Y/N만 가능합니다."
+            "USE_FILTER2는 Y/N만 가능합니다."
+        )
+
+    valid_filter_timeframes = (
+        60,
+        240,
+        1440
+    )
+
+    if FILTER1_TIMEFRAME not in valid_filter_timeframes:
+
+        raise ValueError(
+            "FILTER1_TIMEFRAME은 "
+            "60, 240, 1440만 사용할 수 있습니다."
+        )
+
+    if FILTER2_TIMEFRAME not in valid_filter_timeframes:
+
+        raise ValueError(
+            "FILTER2_TIMEFRAME은 "
+            "60, 240, 1440만 사용할 수 있습니다."
         )
 
     if SIGNAL_ROC_PERIOD not in ROC_FILTER_PERIODS:
@@ -1037,9 +1133,27 @@ def get_upbit_candle(
     if to:
         params["to"] = to
 
+    # =====================================================
+    # 1D = 업비트 days API
+    # =====================================================
+
+    if unit == 1440:
+
+        endpoint = (
+            "https://api.upbit.com/"
+            "v1/candles/days"
+        )
+
+    else:
+
+        endpoint = (
+            "https://api.upbit.com/"
+            f"v1/candles/minutes/{unit}"
+        )
+
     response = retry(
         requests.get,
-        f"https://api.upbit.com/v1/candles/minutes/{unit}",
+        endpoint,
         params=params,
         timeout=15
     )
@@ -1057,7 +1171,7 @@ def get_upbit_candle(
         ):
 
             log.warning(
-                f"업비트 {unit}분봉 "
+                f"업비트 {format_timeframe(unit)} "
                 f"응답 형식 오류: {market}"
             )
 
@@ -1095,10 +1209,20 @@ def get_upbit_candle(
             errors="coerce"
         )
 
-        df["datetime"] = pd.to_datetime(
-            df["candle_date_time_kst"],
-            errors="coerce"
-        )
+        # 일봉도 KST 기준으로 통일
+        if unit == 1440:
+
+            df["datetime"] = pd.to_datetime(
+                df["candle_date_time_kst"],
+                errors="coerce"
+            )
+
+        else:
+
+            df["datetime"] = pd.to_datetime(
+                df["candle_date_time_kst"],
+                errors="coerce"
+            )
 
         df = df.dropna(
             subset=[
@@ -1141,7 +1265,7 @@ def get_upbit_candle(
     except Exception as e:
 
         log.error(
-            f"업비트 {unit}분봉 오류 "
+            f"업비트 {format_timeframe(unit)} 오류 "
             f"{market}: {e}"
         )
 
@@ -1679,44 +1803,46 @@ def get_roc_count_filter_status(
 
 
 def get_all_active_roc_status(
-    filter_1h,
-    filter_4h
+    filters
 ):
 
-    h1_pass = True
-    h4_pass = True
+    if not filters:
 
-    if USE_1H_ROC_FILTER == "Y":
-
-        h1_pass = (
-            get_roc_count_filter_status(
-                filter_1h
-            )
+        return (
+            True,
+            False
         )
 
-    if USE_4H_ROC_FILTER == "Y":
+    for item in filters:
 
-        h4_pass = (
-            get_roc_count_filter_status(
-                filter_4h
+        if not item:
+            return (
+                False,
+                False
             )
-        )
+
+        if not get_roc_count_filter_status(
+            item
+        ):
+
+            return (
+                False,
+                False
+            )
 
     return (
-        h1_pass and h4_pass,
+        True,
         False
     )
 
 
 def all_active_roc_filters_pass(
-    filter_1h,
-    filter_4h
+    filters
 ):
 
     current, _ = (
         get_all_active_roc_status(
-            filter_1h,
-            filter_4h
+            filters
         )
     )
 
@@ -2655,38 +2781,65 @@ def analyze(
     )
 
     # =====================================================
-    # 1H native
+    # ROC 필터 데이터
+    #
+    # 활성화된 필터만 가져옴
     # =====================================================
 
-    df1h = history_upbit(
-        market,
-        60,
-        required=ROC_HISTORY_REQUIRED
+    filter_timeframes = (
+        get_filter_configs()
     )
 
-    if (
-        df1h is None
-        or df1h.empty
-    ):
+    filter_results = []
 
-        return None
+    filter_df_cache = {}
 
-    # =====================================================
-    # 4H native
-    # =====================================================
+    for timeframe_minutes in filter_timeframes:
 
-    df4h = history_upbit(
-        market,
-        240,
-        required=ROC_HISTORY_REQUIRED
-    )
+        if timeframe_minutes not in filter_df_cache:
 
-    if (
-        df4h is None
-        or df4h.empty
-    ):
+            filter_df_cache[
+                timeframe_minutes
+            ] = history_upbit(
+                market,
+                timeframe_minutes,
+                required=ROC_HISTORY_REQUIRED
+            )
 
-        return None
+        df_filter = filter_df_cache[
+            timeframe_minutes
+        ]
+
+        if (
+            df_filter is None
+            or df_filter.empty
+        ):
+
+            return None
+
+        timeframe_name = (
+            format_timeframe(
+                timeframe_minutes
+            )
+        )
+
+        raw_filter = (
+            roc_filter_analysis(
+                df_filter,
+                all_periods
+            )
+        )
+
+        display_filter = (
+            roc_filter_display(
+                raw_filter,
+                timeframe_name
+            )
+        )
+
+        filter_results.append(
+            display_filter
+        )
 
     # =====================================================
     # 신호 기준 native 데이터
@@ -2723,34 +2876,6 @@ def analyze(
     ):
 
         return None
-
-    # =====================================================
-    # 1H ROC
-    # =====================================================
-
-    r1_raw = roc_filter_analysis(
-        df1h,
-        all_periods
-    )
-
-    r1 = roc_filter_display(
-        r1_raw,
-        "1H"
-    )
-
-    # =====================================================
-    # 4H ROC
-    # =====================================================
-
-    r4_raw = roc_filter_analysis(
-        df4h,
-        all_periods
-    )
-
-    r4 = roc_filter_display(
-        r4_raw,
-        "4H"
-    )
 
     # =====================================================
     # SIGNAL ROC
@@ -2824,8 +2949,7 @@ def analyze(
 
     filter_pass = (
         all_active_roc_filters_pass(
-            r1,
-            r4
+            filter_results
         )
     )
 
@@ -2921,11 +3045,8 @@ def analyze(
 
     return {
 
-        "roc_filter_1h":
-            r1,
-
-        "roc_filter_high":
-            r4,
+        "roc_filters":
+            filter_results,
 
         "roc":
             r,
@@ -2971,9 +3092,6 @@ def analyze(
             state[
                 "signal_roc_pullback"
             ],
-
-        "df1h":
-            df1h,
 
         "df_signal":
             df_signal
@@ -3033,16 +3151,10 @@ def make_row(
         "current_price":
             current_price,
 
-        "roc_filter_1h":
+        "roc_filters":
             a.get(
-                "roc_filter_1h",
-                {}
-            ),
-
-        "roc_filter_high":
-            a.get(
-                "roc_filter_high",
-                {}
+                "roc_filters",
+                []
             ),
 
         "roc":
@@ -3322,7 +3434,7 @@ def format_market_price(
 # =========================================================
 # ROC 필터 HTML
 #
-# BTC 시황 ROC와 같은 디자인
+# 실제 지정한 시간봉만 표시
 # =========================================================
 
 def roc_filter_html(
@@ -3405,9 +3517,10 @@ def roc_filter_html(
 
         setting = settings[
             period
-        ][
-            timeframe
-        ]
+        ].get(
+            timeframe,
+            "N"
+        )
 
         setting_cls = (
             "roc-active"
@@ -3455,22 +3568,35 @@ def roc_filter_html(
 
 
 def filter_html(
-    r1,
-    r4
+    filters
 ):
+
+    sections = []
+
+    for r in filters:
+
+        if not r:
+            continue
+
+        timeframe = r.get(
+            "timeframe",
+            "-"
+        )
+
+        sections.append(
+            roc_filter_html(
+                r,
+                timeframe
+            )
+        )
+
+    if not sections:
+        return ""
 
     return f"""
     <div class="filter-detail">
 
-        {roc_filter_html(
-            r1,
-            "1H"
-        )}
-
-        {roc_filter_html(
-            r4,
-            "4H"
-        )}
+        {"".join(sections)}
 
     </div>
     """
@@ -3713,10 +3839,8 @@ def rows_html(
 
         filter_content = filter_html(
             x.get(
-                "roc_filter_1h"
-            ),
-            x.get(
-                "roc_filter_high"
+                "roc_filters",
+                []
             )
         )
 
@@ -4034,7 +4158,7 @@ def section(
 
             ·
 
-            1H / 4H ROC
+            {get_filter_setting_text()} ROC
             업비트 원본
 
         </span>
@@ -5280,11 +5404,20 @@ def startup():
     )
 
     log.info(
-        "★ 1H ROC20/50/200 필터"
+        f"★ 활성 ROC 필터 = "
+        f"{get_filter_setting_text()}"
     )
 
     log.info(
-        "★ 4H ROC20/50/200 필터"
+        f"★ FILTER1 = "
+        f"{USE_FILTER1} / "
+        f"{format_timeframe(FILTER1_TIMEFRAME)}"
+    )
+
+    log.info(
+        f"★ FILTER2 = "
+        f"{USE_FILTER2} / "
+        f"{format_timeframe(FILTER2_TIMEFRAME)}"
     )
 
     log.info(
@@ -5319,15 +5452,16 @@ def startup():
     )
 
     log.info(
-        "★ 1H 데이터 = 업비트 원본 60분봉"
-    )
-
-    log.info(
-        "★ 4H 데이터 = 업비트 원본 240분봉"
+        "★ 선택한 ROC 필터 시간봉은 "
+        "업비트 원본 데이터 사용"
     )
 
     log.info(
         "★ 1H → 4H 캔들 합성하지 않음"
+    )
+
+    log.info(
+        "★ 1D = 업비트 원본 일봉"
     )
 
     log.info(
@@ -5336,7 +5470,7 @@ def startup():
     )
 
     log.info(
-        "★ ROC200 현재값 + 과거 COUNT 계산을 위해 "
+        f"★ ROC200 현재값 + 과거 COUNT 계산을 위해 "
         f"{ROC_HISTORY_REQUIRED}개 데이터 확보"
     )
 
@@ -5359,6 +5493,10 @@ def startup():
     )
 
     log.info(
+        "★ 1D 진행봉 기준 = 09:00 KST"
+    )
+
+    log.info(
         f"★ COUNT 화면 표시 = "
         f"{count_display_text()}"
     )
@@ -5378,16 +5516,6 @@ def startup():
 
     log.info(
         "★ 과거 이벤트는 가장 최근 이벤트 하나만 사용"
-    )
-
-    log.info(
-        f"1H ROC FILTER = "
-        f"{USE_1H_ROC_FILTER}"
-    )
-
-    log.info(
-        f"4H ROC FILTER = "
-        f"{USE_4H_ROC_FILTER}"
     )
 
     log.info(
