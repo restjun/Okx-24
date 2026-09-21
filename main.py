@@ -81,7 +81,7 @@ ROC_FILTER_COUNT_MIN = 10
 
 
 # =========================================================
-# 화면 COUNT
+# 화면 COUNT 기준
 # =========================================================
 
 DISPLAY_COUNT_MIN = 0
@@ -99,10 +99,10 @@ FLASH_COUNT_MAX = 1
 # =========================================================
 # ROC 필터
 #
-# 사용할 필터를 Y / N으로 직접 설정
+# Y = 실제 필터
+# N = 필터 판정에서 제외
 #
-# FILTER1_TIMEFRAME
-# FILTER2_TIMEFRAME
+# 단, N도 대시보드에는 참고용으로 표시
 #
 # 60   = 1H
 # 240  = 4H
@@ -118,9 +118,6 @@ FILTER2_TIMEFRAME = 1440
 
 # =========================================================
 # ROC 기간별 화면 사용 설정
-#
-# 기존 1H / 4H 설정 유지
-# 1D 추가
 # =========================================================
 
 USE_1H_ROC5 = "Y"
@@ -334,6 +331,13 @@ def get_all_periods():
     return ROC_FILTER_PERIODS.copy()
 
 
+# =========================================================
+# 실제 필터만 반환
+#
+# 중요:
+# N인 필터는 여기서 제외
+# =========================================================
+
 def get_filter_configs():
 
     result = []
@@ -345,6 +349,31 @@ def get_filter_configs():
         )
 
     if USE_FILTER2 == "Y":
+
+        result.append(
+            FILTER2_TIMEFRAME
+        )
+
+    return result
+
+
+# =========================================================
+# 대시보드에 표시할 필터
+#
+# Y / N 모두 반환
+# =========================================================
+
+def get_dashboard_filter_configs():
+
+    result = []
+
+    if FILTER1_TIMEFRAME not in result:
+
+        result.append(
+            FILTER1_TIMEFRAME
+        )
+
+    if FILTER2_TIMEFRAME not in result:
 
         result.append(
             FILTER2_TIMEFRAME
@@ -418,6 +447,31 @@ def get_filter_setting_text():
 
     if not labels:
         return "-"
+
+    return " / ".join(
+        labels
+    )
+
+
+def get_dashboard_filter_setting_text():
+
+    labels = []
+
+    labels.append(
+        f"{format_timeframe(FILTER1_TIMEFRAME)} "
+        f"({'Y' if USE_FILTER1 == 'Y' else 'N'})"
+    )
+
+    if (
+        FILTER2_TIMEFRAME
+        != FILTER1_TIMEFRAME
+        or USE_FILTER2 != USE_FILTER1
+    ):
+
+        labels.append(
+            f"{format_timeframe(FILTER2_TIMEFRAME)} "
+            f"({'Y' if USE_FILTER2 == 'Y' else 'N'})"
+        )
 
     return " / ".join(
         labels
@@ -1133,10 +1187,6 @@ def get_upbit_candle(
     if to:
         params["to"] = to
 
-    # =====================================================
-    # 1D = 업비트 days API
-    # =====================================================
-
     if unit == 1440:
 
         endpoint = (
@@ -1209,20 +1259,10 @@ def get_upbit_candle(
             errors="coerce"
         )
 
-        # 일봉도 KST 기준으로 통일
-        if unit == 1440:
-
-            df["datetime"] = pd.to_datetime(
-                df["candle_date_time_kst"],
-                errors="coerce"
-            )
-
-        else:
-
-            df["datetime"] = pd.to_datetime(
-                df["candle_date_time_kst"],
-                errors="coerce"
-            )
+        df["datetime"] = pd.to_datetime(
+            df["candle_date_time_kst"],
+            errors="coerce"
+        )
 
         df = df.dropna(
             subset=[
@@ -2768,6 +2808,73 @@ def format_volume(v):
 
 
 # =========================================================
+# 참고용 N 필터 분석
+#
+# 중요:
+# 실제 filter_pass에는 사용하지 않음.
+#
+# 대시보드에 참고용으로 보여주기 위한 데이터만 계산.
+# =========================================================
+
+def get_reference_filter_data(
+    market,
+    active_timeframes
+):
+
+    result = []
+
+    dashboard_timeframes = (
+        get_dashboard_filter_configs()
+    )
+
+    for timeframe_minutes in dashboard_timeframes:
+
+        # 실제 활성 필터는 기존 filter_results에서 사용
+        if timeframe_minutes in active_timeframes:
+
+            continue
+
+        df_reference = history_upbit(
+            market,
+            timeframe_minutes,
+            required=ROC_HISTORY_REQUIRED
+        )
+
+        if (
+            df_reference is None
+            or df_reference.empty
+        ):
+
+            continue
+
+        timeframe_name = (
+            format_timeframe(
+                timeframe_minutes
+            )
+        )
+
+        raw_reference = (
+            roc_filter_analysis(
+                df_reference,
+                get_all_periods()
+            )
+        )
+
+        reference = roc_filter_display(
+            raw_reference,
+            timeframe_name
+        )
+
+        reference["reference_only"] = True
+
+        result.append(
+            reference
+        )
+
+    return result
+
+
+# =========================================================
 # 분석
 # =========================================================
 
@@ -2783,7 +2890,7 @@ def analyze(
     # =====================================================
     # ROC 필터 데이터
     #
-    # 활성화된 필터만 가져옴
+    # 활성화된 필터만 실제 필터 판정에 사용
     # =====================================================
 
     filter_timeframes = (
@@ -2837,9 +2944,26 @@ def analyze(
             )
         )
 
+        display_filter[
+            "reference_only"
+        ] = False
+
         filter_results.append(
             display_filter
         )
+
+    # =====================================================
+    # N 필터 참고용 데이터
+    #
+    # 실제 필터 판정에는 사용하지 않음
+    # =====================================================
+
+    reference_filter_results = (
+        get_reference_filter_data(
+            market,
+            filter_timeframes
+        )
+    )
 
     # =====================================================
     # 신호 기준 native 데이터
@@ -2945,6 +3069,9 @@ def analyze(
 
     # =====================================================
     # ROC COUNT 필터
+    #
+    # 기존과 동일
+    # 활성화된 Y 필터만 사용
     # =====================================================
 
     filter_pass = (
@@ -3047,6 +3174,13 @@ def analyze(
 
         "roc_filters":
             filter_results,
+
+        # =================================================
+        # N 필터 참고용
+        # =================================================
+
+        "roc_reference_filters":
+            reference_filter_results,
 
         "roc":
             r,
@@ -3154,6 +3288,12 @@ def make_row(
         "roc_filters":
             a.get(
                 "roc_filters",
+                []
+            ),
+
+        "roc_reference_filters":
+            a.get(
+                "roc_reference_filters",
                 []
             ),
 
@@ -3434,12 +3574,14 @@ def format_market_price(
 # =========================================================
 # ROC 필터 HTML
 #
-# 실제 지정한 시간봉만 표시
+# Y = 활성
+# N = 참고용
 # =========================================================
 
 def roc_filter_html(
     r,
-    timeframe
+    timeframe,
+    reference_only=False
 ):
 
     settings = roc_settings()
@@ -3473,7 +3615,7 @@ def roc_filter_html(
         if value is None:
 
             icon = "⚪"
-            count = 0
+            count_text = "-"
 
         else:
 
@@ -3487,10 +3629,12 @@ def roc_filter_html(
 
                     icon = "🟢"
 
-                    count = int(
-                        positive_counts.get(
-                            period,
-                            0
+                    count_text = str(
+                        int(
+                            positive_counts.get(
+                                period,
+                                0
+                            )
                         )
                     )
 
@@ -3498,22 +3642,24 @@ def roc_filter_html(
 
                     icon = "🔴"
 
-                    count = int(
-                        negative_counts.get(
-                            period,
-                            0
+                    count_text = str(
+                        int(
+                            negative_counts.get(
+                                period,
+                                0
+                            )
                         )
                     )
 
                 else:
 
                     icon = "⚪"
-                    count = 1
+                    count_text = "1"
 
             except Exception:
 
                 icon = "⚪"
-                count = 0
+                count_text = "-"
 
         setting = settings[
             period
@@ -3528,9 +3674,16 @@ def roc_filter_html(
             else "roc-disabled"
         )
 
+        if reference_only:
+
+            setting_cls += " reference-only"
+
         items.append(
             f"""
-            <div class="btc-roc-item {setting_cls}">
+            <div class="
+                btc-roc-item
+                {setting_cls}
+            ">
 
                 <div class="btc-roc-period">
                     {period}
@@ -3541,19 +3694,37 @@ def roc_filter_html(
                 </div>
 
                 <div class="btc-roc-count">
-                    ({count})
+                    ({count_text})
                 </div>
 
             </div>
             """
         )
 
+    status_text = (
+        "참고용"
+        if reference_only
+        else "활성 필터"
+    )
+
+    status_class = (
+        "filter-status-reference"
+        if reference_only
+        else "filter-status-active"
+    )
+
     return f"""
     <div class="btc-roc-section">
 
         <div class="btc-roc-title">
 
-            {timeframe} ROC
+            <span>
+                {timeframe} ROC
+            </span>
+
+            <span class="{status_class}">
+                {status_text}
+            </span>
 
         </div>
 
@@ -3568,12 +3739,21 @@ def roc_filter_html(
 
 
 def filter_html(
-    filters
+    filters,
+    reference_filters=None
 ):
 
     sections = []
 
-    for r in filters:
+    # =====================================================
+    # 실제 활성 필터
+    # =====================================================
+
+    active_map = {}
+
+    for r in (
+        filters or []
+    ):
 
         if not r:
             continue
@@ -3583,12 +3763,174 @@ def filter_html(
             "-"
         )
 
-        sections.append(
-            roc_filter_html(
-                r,
+        active_map[
+            timeframe
+        ] = r
+
+    # =====================================================
+    # 참고용 N 필터
+    # =====================================================
+
+    reference_map = {}
+
+    for r in (
+        reference_filters or []
+    ):
+
+        if not r:
+            continue
+
+        timeframe = r.get(
+            "timeframe",
+            "-"
+        )
+
+        reference_map[
+            timeframe
+        ] = r
+
+    # =====================================================
+    # 설정된 FILTER1 / FILTER2 순서대로 표시
+    # =====================================================
+
+    displayed = set()
+
+    configured = [
+
+        (
+            FILTER1_TIMEFRAME,
+            USE_FILTER1
+        ),
+
+        (
+            FILTER2_TIMEFRAME,
+            USE_FILTER2
+        )
+
+    ]
+
+    for timeframe_minutes, use_flag in configured:
+
+        timeframe = format_timeframe(
+            timeframe_minutes
+        )
+
+        if timeframe in displayed:
+
+            continue
+
+        displayed.add(
+            timeframe
+        )
+
+        if use_flag == "Y":
+
+            r = active_map.get(
                 timeframe
             )
-        )
+
+            if r:
+
+                sections.append(
+                    roc_filter_html(
+                        r,
+                        timeframe,
+                        reference_only=False
+                    )
+                )
+
+        else:
+
+            r = reference_map.get(
+                timeframe
+            )
+
+            if r:
+
+                sections.append(
+                    roc_filter_html(
+                        r,
+                        timeframe,
+                        reference_only=True
+                    )
+                )
+
+            else:
+
+                # =========================================
+                # 데이터가 없을 경우에도 N 참고용 영역 표시
+                # =========================================
+
+                settings = roc_settings()
+
+                items = []
+
+                for period in ROC_FILTER_PERIODS:
+
+                    setting = settings[
+                        period
+                    ].get(
+                        timeframe,
+                        "N"
+                    )
+
+                    setting_cls = (
+                        "roc-active"
+                        if setting == "Y"
+                        else "roc-disabled"
+                    )
+
+                    items.append(
+                        f"""
+                        <div class="
+                            btc-roc-item
+                            {setting_cls}
+                            reference-only
+                        ">
+
+                            <div class="btc-roc-period">
+                                {period}
+                            </div>
+
+                            <div class="btc-roc-icon">
+                                ⚪
+                            </div>
+
+                            <div class="btc-roc-count">
+                                (-)
+                            </div>
+
+                        </div>
+                        """
+                    )
+
+                sections.append(
+                    f"""
+                    <div class="btc-roc-section">
+
+                        <div class="btc-roc-title">
+
+                            <span>
+                                {timeframe} ROC
+                            </span>
+
+                            <span class="
+                                filter-status-reference
+                            ">
+                                참고용
+                            </span>
+
+                        </div>
+
+                        <div class="btc-roc-grid">
+
+                            {"".join(items)}
+
+                        </div>
+
+                    </div>
+                    """
+                )
 
     if not sections:
         return ""
@@ -3597,6 +3939,22 @@ def filter_html(
     <div class="filter-detail">
 
         {"".join(sections)}
+
+        <div class="filter-reference-note">
+
+            <span class="reference-active">
+                ● 활성 필터
+            </span>
+
+            <span class="reference-n">
+                ● 참고용 N
+            </span>
+
+            <span class="reference-info">
+                N은 필터 판정에 사용하지 않음
+            </span>
+
+        </div>
 
     </div>
     """
@@ -3840,6 +4198,10 @@ def rows_html(
         filter_content = filter_html(
             x.get(
                 "roc_filters",
+                []
+            ),
+            x.get(
+                "roc_reference_filters",
                 []
             )
         )
@@ -4158,8 +4520,12 @@ def section(
 
             ·
 
-            {get_filter_setting_text()} ROC
-            업비트 원본
+            필터
+            {get_dashboard_filter_setting_text()}
+
+            ·
+
+            Y = 필터 / N = 참고용
 
         </span>
 
@@ -4280,8 +4646,14 @@ def btc_roc_status_html(
 
         <div class="btc-roc-title">
 
-            {format_timeframe(SIGNAL_TIMEFRAME)}
-            ROC
+            <span>
+                {format_timeframe(SIGNAL_TIMEFRAME)}
+                ROC
+            </span>
+
+            <span class="filter-status-active">
+                신호 기준
+            </span>
 
         </div>
 
@@ -4432,98 +4804,134 @@ font-family:
     Arial,
     sans-serif;
 
-font-size:8px;
+font-size:9px;
 
-padding:3px;
+padding:5px;
 }
 
 h1{
-margin:2px 3px 5px;
-color:#dfe4e8;
-font-size:12px;
-line-height:15px;
+margin:3px 4px 7px;
+
+color:#e5e9ed;
+
+font-size:15px;
+line-height:18px;
+
 font-weight:900;
 }
+
+
+/* =====================================================
+   TITLE
+   ===================================================== */
 
 .market-title,
 .section-title{
 display:flex;
 align-items:center;
-gap:6px;
+
+gap:8px;
+
 width:100%;
-min-height:21px;
-padding:4px 6px;
+min-height:28px;
+
+padding:5px 8px;
+
 background:#14181d;
-border:1px solid #252b32;
-border-left:3px solid #59616a;
-border-radius:5px;
+
+border:1px solid #292f36;
+border-left:3px solid #66717b;
+
+border-radius:6px;
+
 white-space:nowrap;
 overflow:hidden;
 }
 
 .section-title{
-margin:7px 0 5px;
+margin:9px 0 6px;
 }
 
 .market-title-main,
 .section-title-main{
 flex:none;
+
 color:#e7ebef;
-font-size:8px;
+
+font-size:10px;
 font-weight:900;
 }
 
 .market-title-sub,
 .section-title-sub{
 min-width:0;
-color:#737c86;
-font-size:5.5px;
+
+color:#858e98;
+
+font-size:7px;
 font-weight:700;
+
 overflow:hidden;
 text-overflow:ellipsis;
 }
 
+
+/* =====================================================
+   MARKET
+   ===================================================== */
+
 .market-summary{
 width:100%;
-margin:2px 0 4px;
-padding:4px;
+
+margin:3px 0 6px;
+
+padding:6px;
+
 background:#0f1318;
-border-top:1px solid #242a31;
-border-bottom:1px solid #242a31;
-border-radius:4px;
+
+border-top:1px solid #292f36;
+border-bottom:1px solid #292f36;
+
+border-radius:5px;
 }
 
 
 /* =====================================================
-   BTC 시황
-   기존 정렬 유지
+   BTC
    ===================================================== */
 
 .btc-top{
 display:flex;
 align-items:center;
-gap:5px;
-min-height:22px;
+
+gap:8px;
+
+min-height:27px;
+
 white-space:nowrap;
 overflow:hidden;
 }
 
 .btc-name{
-color:#dce1e5;
-font-size:6.5px;
+color:#e0e5e9;
+
+font-size:8px;
 font-weight:900;
 }
 
 .btc-price{
-color:#e5e9ed;
-font-size:6px;
+color:#edf1f4;
+
+font-size:8px;
 font-weight:800;
+
 white-space:nowrap;
 }
 
 .btc-change{
-font-size:8px;
+font-size:10px;
 font-weight:900;
+
 white-space:nowrap;
 }
 
@@ -4531,26 +4939,47 @@ white-space:nowrap;
 margin-left:2px;
 }
 
+
+/* =====================================================
+   ROC
+   ===================================================== */
+
 .btc-roc-section{
 width:100%;
-margin-top:3px;
-padding-top:3px;
-border-top:1px solid #20262c;
+
+margin-top:5px;
+padding-top:5px;
+
+border-top:1px solid #252b32;
 }
 
 .btc-roc-title{
-margin-bottom:2px;
-color:#737c86;
-font-size:5px;
+display:flex;
+align-items:center;
+justify-content:space-between;
+
+width:100%;
+
+margin-bottom:4px;
+padding:0 2px;
+
+color:#aeb6be;
+
+font-size:8px;
 font-weight:900;
-text-align:left;
+
+line-height:11px;
 }
 
 .btc-roc-grid{
 display:grid;
-grid-template-columns:repeat(4,1fr);
+
+grid-template-columns:
+    repeat(4, minmax(0, 1fr));
+
 width:100%;
-gap:2px;
+
+gap:4px;
 }
 
 .btc-roc-item{
@@ -4558,41 +4987,163 @@ display:flex;
 flex-direction:column;
 align-items:center;
 justify-content:center;
-min-height:25px;
-background:#14181d;
-border:1px solid #242a31;
-border-radius:3px;
+
+min-height:39px;
+
+background:#151a20;
+
+border:1px solid #293039;
+border-radius:5px;
+
 text-align:center;
+
+transition:
+    background .2s ease,
+    border-color .2s ease;
 }
 
 .btc-roc-period{
-color:#737c86;
-font-size:5.5px;
+color:#9aa3ad;
+
+font-size:8px;
 font-weight:900;
-line-height:7px;
+
+line-height:11px;
+
 text-align:center;
 }
 
 .btc-roc-icon{
-font-size:9px;
-line-height:10px;
+font-size:13px;
+
+line-height:15px;
+
 text-align:center;
 }
 
 .btc-roc-count{
-color:#cdd3d8;
-font-size:6px;
+color:#d5dbe0;
+
+font-size:8px;
 font-weight:900;
-line-height:8px;
+
+line-height:11px;
+
 text-align:center;
 }
+
+
+/* =====================================================
+   ACTIVE / DISABLED
+   ===================================================== */
 
 .roc-active{
 opacity:1;
 }
 
 .roc-disabled{
-opacity:.38;
+opacity:.55;
+}
+
+
+/* =====================================================
+   FILTER STATUS
+   ===================================================== */
+
+.filter-status-active{
+display:inline-flex;
+align-items:center;
+
+padding:2px 6px;
+
+border-radius:4px;
+
+background:#1b3027;
+
+color:#72bd98;
+
+font-size:7px;
+font-weight:900;
+
+line-height:10px;
+}
+
+.filter-status-reference{
+display:inline-flex;
+align-items:center;
+
+padding:2px 6px;
+
+border-radius:4px;
+
+background:#20252b;
+
+color:#8b949e;
+
+font-size:7px;
+font-weight:800;
+
+line-height:10px;
+}
+
+
+/* =====================================================
+   REFERENCE
+   ===================================================== */
+
+.reference-only{
+opacity:.65;
+
+background:#11151a;
+
+border-color:#252b31;
+}
+
+.reference-only .btc-roc-icon{
+opacity:.75;
+}
+
+.reference-only .btc-roc-count{
+color:#737c86;
+}
+
+
+/* =====================================================
+   FILTER NOTE
+   ===================================================== */
+
+.filter-reference-note{
+display:flex;
+align-items:center;
+
+gap:9px;
+
+margin-top:5px;
+padding:5px 6px;
+
+border-top:1px solid #242a31;
+
+color:#737c86;
+
+font-size:7px;
+font-weight:700;
+
+line-height:10px;
+
+white-space:nowrap;
+overflow:hidden;
+}
+
+.reference-active{
+color:#72bd98;
+}
+
+.reference-n{
+color:#929ba4;
+}
+
+.reference-info{
+color:#68727c;
 }
 
 
@@ -4602,15 +5153,21 @@ opacity:.38;
 
 .table-wrap{
 width:100%;
+
 overflow:hidden;
-border:1px solid #272d34;
-border-radius:6px;
+
+border:1px solid #2a3037;
+
+border-radius:7px;
+
 background:#15191e;
 }
 
 table{
 width:100%;
+
 table-layout:fixed;
+
 border-collapse:collapse;
 }
 
@@ -4619,39 +5176,39 @@ background:#101419;
 }
 
 th{
-height:18px;
-padding:2px 1px;
-color:#727b85;
+height:23px;
+
+padding:3px 2px;
+
+color:#818a94;
+
 border-bottom:1px solid #292f36;
-font-size:5px;
+
+font-size:7px;
 font-weight:800;
+
 text-align:center;
 vertical-align:middle;
-}
-
-.th-sub{
-display:block;
-font-size:4px;
-font-weight:700;
-color:#59616a;
-line-height:6px;
-text-align:center;
 }
 
 td{
-height:27px;
-padding:1px;
+height:32px;
+
+padding:2px;
+
 color:#d8dde2;
+
 border-bottom:1px solid #22282e;
+
 text-align:center;
 vertical-align:middle;
+
 overflow:hidden;
 }
 
 
 /* =====================================================
-   6열 비율
-   # / 코인 / 거래대금 / 가격 / 변동률 / 신호
+   6열
    ===================================================== */
 
 th:nth-child(1),
@@ -4686,153 +5243,179 @@ width:15%;
 
 
 /* =====================================================
-   순위
+   RANK
    ===================================================== */
 
 .rank-cell{
-color:#7d858e;
-font-size:5.5px;
+color:#8a939d;
+
+font-size:7px;
 font-weight:800;
+
 text-align:center!important;
 }
 
 
 /* =====================================================
-   코인
+   COIN
    ===================================================== */
 
 .coin-cell{
 text-align:center!important;
-padding-left:2px!important;
-padding-right:2px!important;
+
+padding-left:3px!important;
+padding-right:3px!important;
 }
 
 .coin-name{
 display:block;
-color:#e0e5e9;
-font-size:6.5px;
-line-height:9px;
+
+color:#e3e8ec;
+
+font-size:8px;
+line-height:11px;
+
 font-weight:800;
+
 white-space:nowrap;
 overflow:hidden;
 text-overflow:ellipsis;
+
 text-align:center;
 }
 
 
 /* =====================================================
-   거래대금
+   VOLUME
    ===================================================== */
 
 .volume-cell{
 text-align:center!important;
-padding-left:2px!important;
-padding-right:2px!important;
+
+padding-left:3px!important;
+padding-right:3px!important;
 }
 
 .volume-value{
 display:block;
-color:#737c86;
-font-size:5.4px;
-line-height:9px;
+
+color:#858e98;
+
+font-size:7px;
+line-height:10px;
+
 font-weight:700;
+
 white-space:nowrap;
 overflow:hidden;
 text-overflow:ellipsis;
+
 text-align:center;
 }
 
 
 /* =====================================================
-   가격
+   PRICE
    ===================================================== */
 
 .price-cell{
 text-align:center!important;
-padding-left:2px!important;
-padding-right:2px!important;
+
+padding-left:3px!important;
+padding-right:3px!important;
 }
 
 .price-value{
 display:block;
-color:#e5e9ed;
-font-size:5.9px;
+
+color:#edf1f4;
+
+font-size:7.5px;
+
 font-weight:800;
+
 white-space:nowrap;
 overflow:hidden;
 text-overflow:ellipsis;
+
 text-align:center;
 }
 
 
 /* =====================================================
-   변동률
+   CHANGE
    ===================================================== */
 
 .change-cell{
 text-align:center!important;
+
 white-space:nowrap;
-font-size:5.8px;
+
+font-size:7.5px;
 font-weight:900;
 }
 
 
 /* =====================================================
-   신호
+   SIGNAL
    ===================================================== */
 
 .signal-cell{
 text-align:center!important;
-padding-left:2px!important;
-padding-right:2px!important;
+
+padding-left:3px!important;
+padding-right:3px!important;
 }
 
 
 /* =====================================================
-   ROC 상세
+   ROC DETAIL
    ===================================================== */
 
 .filter-detail{
 display:flex;
+
 flex-direction:column;
-gap:3px;
+
+gap:4px;
+
 width:100%;
-padding:3px 4px 4px;
+
+padding:5px 6px 6px;
 }
 
 .filter-detail .btc-roc-section{
 margin-top:0;
+
 padding-top:0;
+
 border-top:0;
 }
 
 .filter-detail .btc-roc-title{
-margin-bottom:2px;
-font-size:5px;
-text-align:center;
+margin-bottom:4px;
+
+font-size:7.5px;
 }
 
 .filter-detail .btc-roc-grid{
-gap:2px;
+gap:3px;
 }
 
 .filter-detail .btc-roc-item{
-min-height:24px;
+min-height:36px;
 }
 
 .filter-detail .btc-roc-period{
-font-size:5px;
-text-align:center;
+font-size:7px;
 }
 
 .filter-detail .btc-roc-icon{
-font-size:8px;
-text-align:center;
+font-size:12px;
 }
 
 .filter-detail .btc-roc-count{
-font-size:5.8px;
-text-align:center;
+font-size:7px;
 }
 
 .roc-subrow{
@@ -4841,7 +5424,9 @@ background:#0f1318!important;
 
 .roc-subrow td{
 height:auto!important;
+
 padding:0!important;
+
 border-bottom:1px solid #22282e;
 }
 
@@ -4852,21 +5437,26 @@ border-bottom:1px solid #22282e;
 
 .top-count-wrap{
 display:flex;
+
 align-items:center;
 justify-content:center;
-gap:3px;
+
+gap:4px;
+
 white-space:nowrap;
 }
 
 .top-signal-count{
-color:#62b58a;
-font-size:7px;
+color:#72bd98;
+
+font-size:8px;
 font-weight:900;
 }
 
 .top-pullback-count{
-color:#c97878;
-font-size:7px;
+color:#cf8585;
+
+font-size:8px;
 font-weight:900;
 }
 
@@ -4877,38 +5467,47 @@ font-weight:900;
 
 .signal-wrap{
 display:flex;
+
 align-items:center;
 justify-content:center;
-gap:3px;
-min-height:20px;
+
+gap:4px;
+
+min-height:23px;
+
 white-space:nowrap;
 }
 
 .signal-item{
 display:inline-flex;
+
 align-items:center;
 justify-content:center;
+
 gap:1px;
+
 font-weight:900;
 }
 
 .signal-rocket{
-font-size:9px;
+font-size:11px;
 }
 
 .signal-count{
-color:#62b58a;
-font-size:7px;
+color:#72bd98;
+
+font-size:8px;
 font-weight:900;
 }
 
 .signal-pullback{
-font-size:9px;
+font-size:11px;
 }
 
 .pullback-count{
-color:#c97878;
-font-size:7px;
+color:#cf8585;
+
+font-size:8px;
 font-weight:900;
 }
 
@@ -4921,30 +5520,34 @@ font-weight:900;
 
 0%{
 background-color:#15191e;
+
 box-shadow:
 inset 0 0 0
-rgba(98,181,138,0);
+rgba(114,189,152,0);
 }
 
 30%{
 background-color:#2a3d34;
+
 box-shadow:
-inset 0 0 11px
-rgba(98,181,138,.32);
+inset 0 0 12px
+rgba(114,189,152,.32);
 }
 
 60%{
 background-color:#19221e;
+
 box-shadow:
 inset 0 0 3px
-rgba(98,181,138,.12);
+rgba(114,189,152,.12);
 }
 
 100%{
 background-color:#15191e;
+
 box-shadow:
 inset 0 0 0
-rgba(98,181,138,0);
+rgba(114,189,152,0);
 }
 
 }
@@ -4963,27 +5566,30 @@ infinite;
    ===================================================== */
 
 .up{
-color:#62b58a!important;
+color:#72bd98!important;
 font-weight:900;
 }
 
 .down{
-color:#c97878!important;
+color:#cf8585!important;
 font-weight:900;
 }
 
 .zero{
-color:#68717b!important;
+color:#707a84!important;
 }
 
 .muted{
-color:#68717b!important;
+color:#707a84!important;
 }
 
 .empty{
-height:30px;
-color:#555d67;
-font-size:6px;
+height:36px;
+
+color:#59626c;
+
+font-size:7px;
+
 text-align:center!important;
 }
 
@@ -4995,68 +5601,146 @@ text-align:center!important;
 @media(max-width:380px){
 
 body{
-padding:2px;
+padding:3px;
 }
 
 h1{
-font-size:11px;
-line-height:13px;
+font-size:13px;
+line-height:16px;
+
+margin:3px 3px 6px;
 }
 
 .market-title,
 .section-title{
-min-height:18px;
-padding:3px 4px;
-gap:4px;
+min-height:23px;
+
+padding:4px 6px;
+
+gap:5px;
 }
 
 .market-title-main,
 .section-title-main{
-font-size:7px;
+font-size:8px;
 }
 
 .market-title-sub,
 .section-title-sub{
-font-size:4.8px;
-}
-
-
-/* BTC 시황 기존 정렬 유지 */
-
-.btc-top{
-gap:4px;
-}
-
-.btc-name{
-font-size:6px;
-}
-
-.btc-price{
 font-size:5.5px;
-}
-
-.btc-change{
-font-size:7px;
-}
-
-th{
-height:16px;
-font-size:4.5px;
-text-align:center;
-}
-
-.th-sub{
-font-size:3.7px;
-line-height:5px;
-}
-
-td{
-height:27px;
 }
 
 
 /* =====================================================
-   모바일 6열
+   BTC
+   ===================================================== */
+
+.btc-top{
+gap:5px;
+}
+
+.btc-name{
+font-size:7px;
+}
+
+.btc-price{
+font-size:6.5px;
+}
+
+.btc-change{
+font-size:8px;
+}
+
+
+/* =====================================================
+   ROC
+   ===================================================== */
+
+.btc-roc-section{
+margin-top:4px;
+
+padding-top:4px;
+}
+
+.btc-roc-title{
+margin-bottom:3px;
+
+padding:0 1px;
+
+font-size:7px;
+
+line-height:10px;
+}
+
+.btc-roc-grid{
+gap:2px;
+}
+
+.btc-roc-item{
+min-height:34px;
+
+border-radius:4px;
+}
+
+.btc-roc-period{
+font-size:6.5px;
+
+line-height:9px;
+}
+
+.btc-roc-icon{
+font-size:11px;
+
+line-height:13px;
+}
+
+.btc-roc-count{
+font-size:6.5px;
+
+line-height:9px;
+}
+
+.filter-status-active,
+.filter-status-reference{
+padding:1px 4px;
+
+font-size:5.5px;
+
+line-height:8px;
+}
+
+.filter-reference-note{
+gap:5px;
+
+margin-top:4px;
+
+padding:3px 4px;
+
+font-size:5.5px;
+
+line-height:8px;
+}
+
+
+/* =====================================================
+   TABLE
+   ===================================================== */
+
+th{
+height:19px;
+
+padding:2px 1px;
+
+font-size:5.5px;
+}
+
+td{
+height:29px;
+}
+
+
+/* =====================================================
+   MOBILE 6열
    ===================================================== */
 
 th:nth-child(1),
@@ -5090,110 +5774,138 @@ width:15%;
 }
 
 
-/* 코인 */
+/* =====================================================
+   COIN
+   ===================================================== */
 
 .coin-cell{
 padding-left:2px!important;
 padding-right:2px!important;
+
 text-align:center!important;
 }
 
 .coin-name{
-font-size:6px;
+font-size:6.8px;
+
 text-align:center;
 }
 
 
-/* 거래대금 */
+/* =====================================================
+   VOLUME
+   ===================================================== */
 
 .volume-cell{
 padding-left:1px!important;
 padding-right:1px!important;
+
 text-align:center!important;
 }
 
 .volume-value{
-font-size:4.8px;
+font-size:5.3px;
+
 text-align:center;
 }
 
 
-/* 가격 */
+/* =====================================================
+   PRICE
+   ===================================================== */
 
 .price-cell{
 padding-left:1px!important;
 padding-right:1px!important;
+
 text-align:center!important;
 }
 
 .price-value{
-font-size:5.2px;
+font-size:5.7px;
+
 text-align:center;
 }
 
 
-/* 변동률 */
+/* =====================================================
+   CHANGE
+   ===================================================== */
 
 .change-cell{
-font-size:5.1px;
+font-size:5.6px;
+
 text-align:center!important;
 }
 
 
-/* 신호 */
+/* =====================================================
+   SIGNAL
+   ===================================================== */
 
 .signal-cell{
 padding-left:1px!important;
 padding-right:1px!important;
+
 text-align:center!important;
 }
 
 .top-count-wrap{
 gap:1px;
+
 justify-content:center;
 }
 
 .top-signal-count,
 .top-pullback-count{
-font-size:6.3px;
+font-size:6.5px;
 }
 
 
-/* ROC */
+/* =====================================================
+   ROC DETAIL
+   ===================================================== */
 
 .filter-detail{
 gap:2px;
-padding:2px 3px 3px;
+
+padding:3px 4px 4px;
 }
 
 .filter-detail .btc-roc-grid{
-gap:1px;
+gap:2px;
 }
 
 .filter-detail .btc-roc-item{
-min-height:22px;
+min-height:31px;
 }
 
 .filter-detail .btc-roc-period{
-font-size:4.7px;
+font-size:5.8px;
+
 text-align:center;
 }
 
 .filter-detail .btc-roc-icon{
-font-size:7px;
+font-size:9px;
+
 text-align:center;
 }
 
 .filter-detail .btc-roc-count{
-font-size:5.2px;
+font-size:5.8px;
+
 text-align:center;
 }
 
 
-/* Signal */
+/* =====================================================
+   SIGNAL
+   ===================================================== */
 
 .signal-wrap{
 gap:2px;
+
 justify-content:center;
 }
 
@@ -5208,25 +5920,30 @@ font-size:6.5px;
 }
 
 
-/* BTC ROC */
+/* =====================================================
+   BTC ROC
+   ===================================================== */
 
 .btc-roc-period{
-font-size:5px;
+font-size:5.8px;
+
 text-align:center;
 }
 
 .btc-roc-icon{
-font-size:8px;
+font-size:9px;
+
 text-align:center;
 }
 
 .btc-roc-count{
 font-size:5.8px;
+
 text-align:center;
 }
 
 .btc-roc-item{
-min-height:23px;
+min-height:31px;
 }
 
 }
@@ -5418,6 +6135,14 @@ def startup():
         f"★ FILTER2 = "
         f"{USE_FILTER2} / "
         f"{format_timeframe(FILTER2_TIMEFRAME)}"
+    )
+
+    log.info(
+        "★ N 필터는 대시보드 참고용으로 표시"
+    )
+
+    log.info(
+        "★ N 필터는 실제 filter_pass에 사용하지 않음"
     )
 
     log.info(
