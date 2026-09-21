@@ -91,7 +91,7 @@ ROC_FILTER_PERIODS = [
 # =========================================================
 
 DISPLAY_COUNT_MIN = 0
-DISPLAY_COUNT_MAX = 2
+DISPLAY_COUNT_MAX = 1
 
 
 # =========================================================
@@ -119,7 +119,7 @@ USE_1H_ROC50 = "Y"
 USE_1H_ROC200 = "Y"
 
 
-USE_4H_ROC5 = "Y"
+USE_4H_ROC5 = "N"
 USE_4H_ROC10 = "Y"
 USE_4H_ROC20 = "Y"
 USE_4H_ROC50 = "Y"
