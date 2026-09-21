@@ -56,11 +56,6 @@ MAX_RETRIES = 10
 
 # =========================================================
 # 신호 / COUNT 기준 시간봉
-#
-# 60  = 1시간
-# 240 = 4시간
-#
-# 상승 / 눌림 신호 = SIGNAL_TIMEFRAME ROC5
 # =========================================================
 
 SIGNAL_TIMEFRAME = 240
@@ -69,7 +64,6 @@ SIGNAL_TIMEFRAME = 240
 # =========================================================
 # ROC 필터 기간
 #
-# ★ ROC10 삭제
 # ★ ROC5 / 20 / 50 / 200 사용
 # =========================================================
 
@@ -83,17 +77,6 @@ ROC_FILTER_PERIODS = [
 
 # =========================================================
 # ROC 필터 최소 COUNT
-#
-# ★ 사용자가 직접 수정 가능
-#
-# ROC20 / ROC50 / ROC200이
-# 0선 이상인 상태가 최소 몇 개 캔들
-# 유지되어야 상승신호 필터를 통과할지 결정
-#
-# 예:
-# 10 → 모두 10개 이상
-# 15 → 모두 15개 이상
-# 20 → 모두 20개 이상
 # =========================================================
 
 ROC_FILTER_COUNT_MIN = 10
@@ -101,8 +84,6 @@ ROC_FILTER_COUNT_MIN = 10
 
 # =========================================================
 # 화면 COUNT
-#
-# ★ 상승 / 눌림 모두 0, 1까지만 표시
 # =========================================================
 
 DISPLAY_COUNT_MIN = 0
@@ -111,9 +92,6 @@ DISPLAY_COUNT_MAX = 1
 
 # =========================================================
 # 반짝임 COUNT
-#
-# ★ 상승신호 0, 1만 반짝임
-# ★ 눌림은 반짝임 없음
 # =========================================================
 
 FLASH_COUNT_MIN = 0
@@ -122,26 +100,20 @@ FLASH_COUNT_MAX = 1
 
 # =========================================================
 # ROC 필터
-#
-# ★ ROC5는 신호용
-# ★ ROC20 / 50 / 200은 필터용
 # =========================================================
 
-USE_1H_ROC_FILTER = "N"
+USE_1H_ROC_FILTER = "Y"
 USE_4H_ROC_FILTER = "Y"
 
-
-USE_1H_ROC5 = "Y"
+USE_1H_ROC5 = "N"
 USE_1H_ROC20 = "Y"
 USE_1H_ROC50 = "Y"
 USE_1H_ROC200 = "Y"
-
 
 USE_4H_ROC5 = "N"
 USE_4H_ROC20 = "Y"
 USE_4H_ROC50 = "Y"
 USE_4H_ROC200 = "Y"
-
 
 ROC_FILTER_TIMEFRAME = 60
 ROC_FILTER_HIGH_TIMEFRAME = 240
@@ -157,14 +129,38 @@ SIGNAL_ROC_PERIOD = 5
 # =========================================================
 # ROC 계산용 최소 데이터
 #
-# ROC200 현재값 + 직전값
-# 최소 202개
+# ★ 중요 수정
+#
+# 기존:
+#     200 + 2 = 202개
+#
+# 문제:
+# ROC200은 202개만 있으면 ROC가 사실상
+# 최근 2개 정도만 정상 계산되어 COUNT가 2처럼
+# 보이는 문제가 발생할 수 있음.
+#
+# 수정:
+# ROC200 + COUNT 여유 데이터 + 추가 여유분
+#
+# 현재 설정:
+# 200 + 10 + 100 + 2 = 312개
+#
+# ★ ROC5 / 20 / 50 / 200 모두 충분한 데이터 확보
 # =========================================================
+
+ROC_COUNT_HISTORY_EXTRA = 100
 
 ROC_HISTORY_REQUIRED = (
     max(
         ROC_FILTER_PERIODS
-    ) + 2
+    )
+    + max(
+        ROC_FILTER_COUNT_MIN,
+        DISPLAY_COUNT_MAX,
+        FLASH_COUNT_MAX
+    )
+    + ROC_COUNT_HISTORY_EXTRA
+    + 2
 )
 
 
@@ -571,9 +567,11 @@ def candle_distance(
 # =========================================================
 # ROC 0선 이상 연속 COUNT
 #
-# 현재 ROC가 0 이상이면
-# 최근부터 과거로 연속된 양봉(?)이 아니라
-# "ROC >= 0 상태가 몇 개 캔들 지속됐는지" 계산
+# ★ ROC5 / 20 / 50 / 200 동일 로직
+#
+# 현재 ROC >= 0이면
+# 최근 캔들부터 과거로 내려가면서
+# ROC >= 0인 캔들 개수를 계산
 # =========================================================
 
 def roc_positive_count(
@@ -1984,20 +1982,6 @@ def roc_filter_display(
 
 # =========================================================
 # 활성 ROC 필터
-#
-# ★ 핵심 필터
-#
-# 1H:
-#   ROC20 COUNT >= ROC_FILTER_COUNT_MIN
-#   ROC50 COUNT >= ROC_FILTER_COUNT_MIN
-#   ROC200 COUNT >= ROC_FILTER_COUNT_MIN
-#
-# 4H:
-#   ROC20 COUNT >= ROC_FILTER_COUNT_MIN
-#   ROC50 COUNT >= ROC_FILTER_COUNT_MIN
-#   ROC200 COUNT >= ROC_FILTER_COUNT_MIN
-#
-# 모두 만족해야 통과
 # =========================================================
 
 def get_roc_count_filter_periods():
@@ -2175,12 +2159,6 @@ def roc_signal_pullback_condition(r):
 
 # =========================================================
 # 가장 최근 ROC5 이벤트 찾기
-#
-# 반환:
-#
-# ("signal", 시간)
-# ("pullback", 시간)
-# (None, None)
 # =========================================================
 
 def find_latest_signal_event(
@@ -2315,16 +2293,6 @@ def find_latest_signal_event(
 
 # =========================================================
 # 신호 + COUNT
-#
-# ★ 상승신호와 눌림을 각각 관리
-#
-# 🚀(0)
-# 🚀(1)
-#
-# 📉(0)
-# 📉(1)
-#
-# 화면 표시 범위는 DISPLAY_COUNT로 제어
 # =========================================================
 
 def update_signal_and_pullback(
@@ -2440,7 +2408,6 @@ def update_signal_and_pullback(
                 ]
             )
 
-            # 상승신호 발생 시 눌림 상태 제거
             roc_pullback_state.pop(
                 market_key,
                 None
@@ -2462,9 +2429,6 @@ def update_signal_and_pullback(
 
     # =====================================================
     # ② 하락 0선 돌파
-    #
-    # 기존 🚀 종료
-    # 동시에 📉(0) 시작
     # =====================================================
 
     elif pullback_cross:
@@ -2536,10 +2500,6 @@ def update_signal_and_pullback(
 
     else:
 
-        # -------------------------------------------------
-        # 상승 상태 복구
-        # -------------------------------------------------
-
         if (
             signal_state is None
             and pullback_state is None
@@ -2565,7 +2525,6 @@ def update_signal_and_pullback(
                     )
                 )
 
-            # 최근 이벤트가 상승돌파
             if (
                 start_candle is not None
                 and current_value is not None
@@ -2620,10 +2579,6 @@ def update_signal_and_pullback(
                         f"{market_key} "
                         f"🚀({distance})"
                     )
-
-            # -------------------------------------------------
-            # 최근 이벤트가 눌림
-            # -------------------------------------------------
 
             elif (
                 pullback_start_candle is not None
@@ -2692,7 +2647,6 @@ def update_signal_and_pullback(
 
     if signal_state is not None:
 
-        # ROC가 음수가 되면 상승 종료
         if (
             current_value is not None
             and current_value < 0
@@ -2763,7 +2717,6 @@ def update_signal_and_pullback(
 
     if pullback_state is not None:
 
-        # ROC가 다시 0 이상이면 눌림 종료
         if (
             current_value is not None
             and current_value >= 0
@@ -2993,7 +2946,7 @@ def format_change(x):
 
         return (
             '<span class="up">'
-            f'▲+{x:.1f}%'
+            f'▲ +{x:.1f}%'
             '</span>'
         )
 
@@ -3001,7 +2954,7 @@ def format_change(x):
 
         return (
             '<span class="down">'
-            f'▼{x:.1f}%'
+            f'▼ {x:.1f}%'
             '</span>'
         )
 
@@ -3304,10 +3257,6 @@ def analyze(
 
     # =====================================================
     # 상승신호 자격
-    #
-    # ROC20/50/200 COUNT 필터
-    # +
-    # 상승신호
     # =====================================================
 
     breakout_qualified = (
@@ -3785,9 +3734,9 @@ def format_market_price(
 # =========================================================
 # ROC 필터 HTML
 #
-# ★ ROC10 삭제
-# ★ ROC5 / 20 / 50 / 200 표시
-# ★ 각 ROC 뒤에 0선 연속 COUNT 표시
+# ★ ROC5 / 20 / 50 / 200
+# ★ 띄어쓰기 조정
+# ★ ROC 글자 크기 +1pt
 # =========================================================
 
 def roc_filter_html(
@@ -3892,7 +3841,19 @@ def roc_filter_html(
                 {setting_cls}
                 {cls}
             ">
-                {period}{icon}({count})
+
+                <span class="roc-period">
+                    ROC{period}
+                </span>
+
+                <span class="roc-icon">
+                    {icon}
+                </span>
+
+                <span class="roc-count">
+                    COUNT {count}
+                </span>
+
             </span>
             """
         )
@@ -3944,10 +3905,6 @@ def filter_html(
 
 # =========================================================
 # 신호 HTML
-#
-# ★ 🚀 상승
-# ★ 📉 눌림
-# ★ 둘 다 표시
 # =========================================================
 
 def signal_html(
@@ -4048,8 +4005,6 @@ def signal_html(
 
 # =========================================================
 # TOP COUNT
-#
-# ★ 🚀 / 📉 모두 표시
 # =========================================================
 
 def top_signal_count_html(
@@ -4095,7 +4050,7 @@ def top_signal_count_html(
         items.append(
             f"""
             <span class="top-signal-count">
-                🚀({signal_count})
+                🚀 ({signal_count})
             </span>
             """
         )
@@ -4110,7 +4065,7 @@ def top_signal_count_html(
         items.append(
             f"""
             <span class="top-pullback-count">
-                📉({pullback_count})
+                📉 ({pullback_count})
             </span>
             """
         )
@@ -4263,9 +4218,6 @@ def orderbook_html(
 
 # =========================================================
 # ROW HTML
-#
-# ★ 상승 🚀 0~1 반짝임
-# ★ 눌림 📉은 표시하지만 반짝임 없음
 # =========================================================
 
 def rows_html(
@@ -4454,10 +4406,6 @@ def table_html(
 
 # =========================================================
 # 상승 / 눌림 신호
-#
-# ★ 🚀 상승신호
-# ★ 📉 눌림신호
-# ★ 둘 다 표시
 # =========================================================
 
 def focus_section(
@@ -4539,7 +4487,7 @@ def focus_section(
 
         <span class="section-title-sub">
 
-            ROC20/50/200 COUNT
+            ROC20 / ROC50 / ROC200 COUNT
             ≥ {ROC_FILTER_COUNT_MIN}
 
             ·
@@ -4600,7 +4548,7 @@ def section(
 
             ·
 
-            ROC20/50/200 COUNT
+            ROC20 / ROC50 / ROC200 COUNT
             ≥ {ROC_FILTER_COUNT_MIN}
 
             ·
@@ -4707,7 +4655,7 @@ def btc_roc_status_html(
             <div class="btc-roc-item">
 
                 <div class="btc-roc-period">
-                    {period}
+                    ROC{period}
                 </div>
 
                 <div class="btc-roc-icon">
@@ -4715,7 +4663,7 @@ def btc_roc_status_html(
                 </div>
 
                 <div class="btc-roc-count">
-                    ({count})
+                    COUNT {count}
                 </div>
 
             </div>
@@ -4801,7 +4749,7 @@ def market_summary_html():
 
             <span class="market-title-sub">
 
-                ROC20/50/200 COUNT
+                ROC20 / ROC50 / ROC200 COUNT
                 ≥ {ROC_FILTER_COUNT_MIN}
 
                 ·
@@ -5002,21 +4950,21 @@ border-radius:3px;
 
 .btc-roc-period{
 color:#737c86;
-font-size:4.5px;
+font-size:5.5px;
 font-weight:900;
-line-height:6px;
+line-height:7px;
 }
 
 .btc-roc-icon{
-font-size:8px;
-line-height:9px;
+font-size:9px;
+line-height:10px;
 }
 
 .btc-roc-count{
 color:#cdd3d8;
-font-size:5px;
+font-size:6px;
 font-weight:900;
-line-height:7px;
+line-height:8px;
 }
 
 .table-wrap{
@@ -5141,7 +5089,7 @@ text-align:left;
 display:flex;
 align-items:center;
 justify-content:space-between;
-gap:0;
+gap:1px;
 flex:1;
 min-width:0;
 width:100%;
@@ -5152,14 +5100,30 @@ white-space:nowrap;
 display:inline-flex;
 align-items:center;
 justify-content:center;
+gap:1px;
 margin:0;
-padding:0;
-font-size:3.9px;
-line-height:8px;
+padding:0 1px;
+font-size:4.9px;
+line-height:9px;
 font-weight:900;
-letter-spacing:-0.45px;
+letter-spacing:-0.2px;
 white-space:nowrap;
 flex:0 0 auto;
+}
+
+.roc-period{
+font-size:4.9px;
+font-weight:900;
+}
+
+.roc-icon{
+font-size:6px;
+line-height:9px;
+}
+
+.roc-count{
+font-size:4.9px;
+font-weight:900;
 }
 
 .roc-active{
@@ -5192,13 +5156,13 @@ white-space:nowrap;
 
 .top-signal-count{
 color:#62b58a;
-font-size:7px;
+font-size:8px;
 font-weight:900;
 }
 
 .top-pullback-count{
 color:#c97878;
-font-size:7px;
+font-size:8px;
 font-weight:900;
 }
 
@@ -5219,27 +5183,27 @@ white-space:nowrap;
 display:inline-flex;
 align-items:center;
 justify-content:center;
-gap:1px;
+gap:2px;
 font-weight:900;
 }
 
 .signal-rocket{
-font-size:9px;
+font-size:10px;
 }
 
 .signal-count{
 color:#62b58a;
-font-size:7px;
+font-size:8px;
 font-weight:900;
 }
 
 .signal-pullback{
-font-size:9px;
+font-size:10px;
 }
 
 .pullback-count{
 color:#c97878;
-font-size:7px;
+font-size:8px;
 font-weight:900;
 }
 
@@ -5485,18 +5449,32 @@ font-size:4px;
 }
 
 .roc-filter-all{
-gap:0;
+gap:1px;
 justify-content:space-between;
 width:100%;
 min-width:0;
 }
 
 .roc-item{
-font-size:3.25px;
-line-height:7px;
+font-size:4.25px;
+line-height:8px;
 margin:0;
-padding:0;
-letter-spacing:-0.55px;
+padding:0 1px;
+gap:1px;
+letter-spacing:-0.2px;
+}
+
+.roc-period{
+font-size:4.25px;
+}
+
+.roc-icon{
+font-size:5.5px;
+line-height:8px;
+}
+
+.roc-count{
+font-size:4.25px;
 }
 
 .top-count-wrap{
@@ -5505,7 +5483,7 @@ gap:2px;
 
 .top-signal-count,
 .top-pullback-count{
-font-size:5.8px;
+font-size:6.8px;
 }
 
 .signal-wrap{
@@ -5514,12 +5492,12 @@ gap:4px;
 
 .signal-rocket,
 .signal-pullback{
-font-size:8px;
+font-size:9px;
 }
 
 .signal-count,
 .pullback-count{
-font-size:6.5px;
+font-size:7.5px;
 }
 
 .orderbook-row{
@@ -5538,15 +5516,15 @@ font-size:4.8px;
 }
 
 .btc-roc-period{
-font-size:4px;
+font-size:5px;
 }
 
 .btc-roc-icon{
-font-size:7px;
+font-size:8px;
 }
 
 .btc-roc-count{
-font-size:4.8px;
+font-size:5.8px;
 }
 
 .btc-roc-item{
@@ -5711,10 +5689,6 @@ def startup():
     )
 
     log.info(
-        "★ ROC10 삭제"
-    )
-
-    log.info(
         "★ ROC5 / ROC20 / ROC50 / ROC200 사용"
     )
 
@@ -5752,6 +5726,21 @@ def startup():
     )
 
     log.info(
+        "★ ROC5 / ROC20 / ROC50 / ROC200 COUNT "
+        "동일 방식 계산"
+    )
+
+    log.info(
+        f"★ ROC HISTORY REQUIRED = "
+        f"{ROC_HISTORY_REQUIRED}개"
+    )
+
+    log.info(
+        "★ ROC200 COUNT 2 고정 방지용 "
+        "과거 데이터 확장"
+    )
+
+    log.info(
         "★ 1H 데이터 = 업비트 원본 60분봉"
     )
 
@@ -5769,8 +5758,8 @@ def startup():
     )
 
     log.info(
-        "★ ROC200 현재값 + 직전값 계산 필요 = "
-        f"{ROC_HISTORY_REQUIRED}개"
+        "★ ROC200 현재값 + 과거 COUNT 계산을 위해 "
+        f"{ROC_HISTORY_REQUIRED}개 데이터 확보"
     )
 
     log.info(
@@ -5778,7 +5767,7 @@ def startup():
     )
 
     log.info(
-        "★ 자료 부족 시 과거 200개 2차 요청"
+        "★ 자료 부족 시 과거 200개 추가 요청"
     )
 
     log.info(
