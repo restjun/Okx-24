@@ -61,43 +61,52 @@ MAX_RETRIES = 10
 # 240 = 4시간
 #
 # 현재:
-#   상승신호 = 1H ROC5
-#   눌림     = 1H ROC5
-#   ROC COUNT = 1H
+#   상승신호 = SIGNAL_TIMEFRAME ROC5
+#   눌림     = SIGNAL_TIMEFRAME ROC5
+#   ROC COUNT = SIGNAL_TIMEFRAME
 #
-# 4H는 ROC 필터용
+# 4H는 ROC 필터용으로 사용할 수 있음
 # =========================================================
 
 SIGNAL_TIMEFRAME = 240
 
 
 # =========================================================
-# EMA 배열 설정
-#
-# ★ ROC 필터와 완전히 독립
-#
-# 정배열:
-# EMA10 > EMA20 > EMA60 > EMA120
-#
-# 역배열:
-# EMA10 < EMA20 < EMA60 < EMA120
-#
-# COUNT:
-# 처음 배열 형성 = 0
-# 계속 유지      = 1, 2, 3...
+# ROC 필터 기간
 # =========================================================
 
-EMA_PERIODS = [
+ROC_FILTER_PERIODS = [
+    5,
     10,
     20,
     50,
-    240
+    200
 ]
 
-EMA_COUNT_TIMEFRAMES = [
-    "1H",
-    "4H"
-]
+
+# =========================================================
+# EMA 설정
+#
+# ★ EMA 길이 = ROC_FILTER_PERIODS를 그대로 사용
+#
+# 현재:
+# EMA5 / EMA10 / EMA20 / EMA50 / EMA200
+#
+# ★ EMA 시간봉 = SIGNAL_TIMEFRAME
+#
+# 현재 SIGNAL_TIMEFRAME = 240
+# → EMA도 4H
+#
+# SIGNAL_TIMEFRAME = 60
+# → EMA도 1H
+#
+# ★ EMA는 상승신호 조건에 사용하지 않음
+# ★ 화면 표시용
+# =========================================================
+
+EMA_PERIODS = ROC_FILTER_PERIODS.copy()
+
+EMA_TIMEFRAME = SIGNAL_TIMEFRAME
 
 
 # =========================================================
@@ -150,27 +159,18 @@ SIGNAL_ROC_PERIOD = 5
 
 
 # =========================================================
-# ROC 기간
-# =========================================================
-
-ROC_FILTER_PERIODS = [
-    5,
-    10,
-    20,
-    50,
-    200
-]
-
-
-# =========================================================
 # ROC 계산용 최소 데이터
 #
 # ROC200 현재값 + 직전값
+# EMA200 계산에도 사용
+#
 # 최소 202개
 # =========================================================
 
 ROC_HISTORY_REQUIRED = (
-    max(ROC_FILTER_PERIODS) + 2
+    max(
+        ROC_FILTER_PERIODS
+    ) + 2
 )
 
 
@@ -233,11 +233,8 @@ roc_signal_failed_candle = {}
 def count_display_allowed(count):
 
     try:
-
         count = int(count)
-
     except Exception:
-
         return False
 
     return (
@@ -254,11 +251,8 @@ def count_display_allowed(count):
 def count_flash_allowed(count):
 
     try:
-
         count = int(count)
-
     except Exception:
-
         return False
 
     return (
@@ -271,14 +265,10 @@ def count_flash_allowed(count):
 def count_display_text():
 
     if DISPLAY_COUNT_MAX >= 999999:
-
         return "전체"
 
     if DISPLAY_COUNT_MIN == DISPLAY_COUNT_MAX:
-
-        return str(
-            DISPLAY_COUNT_MIN
-        )
+        return str(DISPLAY_COUNT_MIN)
 
     return (
         f"{DISPLAY_COUNT_MIN}~"
@@ -289,10 +279,7 @@ def count_display_text():
 def count_flash_text():
 
     if FLASH_COUNT_MIN == FLASH_COUNT_MAX:
-
-        return str(
-            FLASH_COUNT_MIN
-        )
+        return str(FLASH_COUNT_MIN)
 
     return (
         f"{FLASH_COUNT_MIN}~"
@@ -341,13 +328,11 @@ def get_enabled_periods(timeframe):
     if timeframe == "1H":
 
         if USE_1H_ROC_FILTER != "Y":
-
             return []
 
     elif timeframe == "4H":
 
         if USE_4H_ROC_FILTER != "Y":
-
             return []
 
     else:
@@ -404,7 +389,6 @@ def get_enabled_filter_text(timeframe):
     )
 
     if not periods:
-
         return "-"
 
     return "/".join(
@@ -448,42 +432,23 @@ def format_timeframe(minutes):
     minutes = int(minutes)
 
     if minutes >= 1440:
-
-        return (
-            f"{minutes // 1440}D"
-        )
+        return f"{minutes // 1440}D"
 
     if minutes >= 60:
-
-        return (
-            f"{minutes // 60}H"
-        )
+        return f"{minutes // 60}H"
 
     return f"{minutes}M"
 
 
 # =========================================================
 # 현재 캔들 시작시간
-#
-# 4H:
-# 01:00
-# 05:00
-# 09:00
-# 13:00
-# 17:00
-# 21:00
-#
-# 1H:
-# 매 정시
 # =========================================================
 
 def get_current_candle_start(minutes):
 
     minutes = int(minutes)
 
-    now = datetime.now(
-        KST
-    )
+    now = datetime.now(KST)
 
     if minutes == 240:
 
@@ -547,7 +512,6 @@ def get_current_candle_start(minutes):
 def normalize_datetime(value):
 
     if value is None:
-
         return None
 
     try:
@@ -624,6 +588,20 @@ def validate_timeframe():
             "60 또는 240만 사용할 수 있습니다."
         )
 
+    if EMA_TIMEFRAME != SIGNAL_TIMEFRAME:
+
+        raise ValueError(
+            "EMA_TIMEFRAME은 "
+            "SIGNAL_TIMEFRAME을 따라야 합니다."
+        )
+
+    if EMA_PERIODS != ROC_FILTER_PERIODS:
+
+        raise ValueError(
+            "EMA_PERIODS는 "
+            "ROC_FILTER_PERIODS를 따라야 합니다."
+        )
+
     if USE_1H_ROC_FILTER not in (
         "Y",
         "N"
@@ -680,17 +658,6 @@ def validate_timeframe():
 
         raise ValueError(
             "FLASH_COUNT_MIN/MAX 설정이 올바르지 않습니다."
-        )
-
-    if EMA_PERIODS != [
-        10,
-        20,
-        60,
-        120
-    ]:
-
-        raise ValueError(
-            "EMA_PERIODS 설정 오류"
         )
 
 
@@ -785,9 +752,7 @@ def retry(
 
                 return response
 
-            time.sleep(
-                wait
-            )
+            time.sleep(wait)
 
         except Exception as e:
 
@@ -825,7 +790,6 @@ def get_upbit_markets():
     )
 
     if response is None:
-
         return []
 
     try:
@@ -864,7 +828,6 @@ def get_upbit_markets():
             )
 
             if ticker_response is None:
-
                 continue
 
             try:
@@ -956,7 +919,6 @@ def get_upbit_markets():
 def get_upbit_orderbooks(markets):
 
     if not markets:
-
         return {}
 
     result = {}
@@ -965,24 +927,13 @@ def get_upbit_orderbooks(markets):
 
     for x in markets:
 
-        if isinstance(
-            x,
-            str
-        ):
-
+        if isinstance(x, str):
             market = x
 
-        elif isinstance(
-            x,
-            dict
-        ):
-
-            market = x.get(
-                "market"
-            )
+        elif isinstance(x, dict):
+            market = x.get("market")
 
         else:
-
             market = None
 
         if (
@@ -1004,7 +955,6 @@ def get_upbit_orderbooks(markets):
     )
 
     if not market_codes:
-
         return {}
 
     for i in range(
@@ -1030,7 +980,6 @@ def get_upbit_orderbooks(markets):
         )
 
         if response is None:
-
             continue
 
         try:
@@ -1062,10 +1011,7 @@ def get_upbit_orderbooks(markets):
             )
 
             if market:
-
-                result[
-                    market
-                ] = item
+                result[market] = item
 
     return result
 
@@ -1096,21 +1042,16 @@ def calculate_orderbook_amount(
     }
 
     if not orderbook:
-
         return result
 
     try:
-
         current_price = float(
             current_price
         )
-
     except Exception:
-
         return result
 
     if current_price <= 0:
-
         return result
 
     lower_price = (
@@ -1123,13 +1064,8 @@ def calculate_orderbook_amount(
         * (1 + ORDERBOOK_RANGE)
     )
 
-    result["lower_price"] = (
-        lower_price
-    )
-
-    result["upper_price"] = (
-        upper_price
-    )
+    result["lower_price"] = lower_price
+    result["upper_price"] = upper_price
 
     units = orderbook.get(
         "orderbook_units",
@@ -1319,7 +1255,6 @@ def get_upbit_candle(
     }
 
     if to:
-
         params["to"] = to
 
     response = retry(
@@ -1330,7 +1265,6 @@ def get_upbit_candle(
     )
 
     if response is None:
-
         return None
 
     try:
@@ -1354,7 +1288,6 @@ def get_upbit_candle(
         )
 
         if df.empty:
-
             return None
 
         df["o"] = pd.to_numeric(
@@ -1398,7 +1331,6 @@ def get_upbit_candle(
         )
 
         if df.empty:
-
             return None
 
         df = (
@@ -1422,7 +1354,6 @@ def get_upbit_candle(
             ]
 
         if df.empty:
-
             return None
 
         return df
@@ -1448,10 +1379,7 @@ def history_upbit(
 ):
 
     unit = int(unit)
-
-    required = int(
-        required
-    )
+    required = int(required)
 
     all_df = None
     to = None
@@ -1524,7 +1452,6 @@ def history_upbit(
             )
 
     if all_df is None:
-
         return None
 
     log.warning(
@@ -1548,9 +1475,7 @@ def get_upbit_current_roc_data(
     timeframe
 ):
 
-    timeframe = int(
-        timeframe
-    )
+    timeframe = int(timeframe)
 
     df = get_upbit_candle(
         market=market,
@@ -1735,7 +1660,6 @@ def roc_filter_analysis(
 ):
 
     if periods is None:
-
         periods = get_all_periods()
 
     result = {
@@ -1828,24 +1752,16 @@ def roc_filter_analysis(
 
                 previous_value = None
 
-        values[
-            period
-        ] = current_value
+        values[period] = current_value
+        previous_values[period] = previous_value
 
-        previous_values[
-            period
-        ] = previous_value
-
-        zero_crosses[
-            period
-        ] = (
+        zero_crosses[period] = (
             previous_value is not None
             and previous_value <= 0
             and current_value >= 0
         )
 
         if current_value >= 0:
-
             positive_count += 1
 
     passed = (
@@ -1894,19 +1810,17 @@ def roc_filter_display(
         result or {}
     )
 
-    result[
-        "timeframe"
-    ] = timeframe
+    result["timeframe"] = timeframe
 
-    result[
-        "enabled_periods"
-    ] = get_enabled_periods(
-        timeframe
+    result["enabled_periods"] = (
+        get_enabled_periods(
+            timeframe
+        )
     )
 
-    result[
-        "all_periods"
-    ] = ROC_FILTER_PERIODS.copy()
+    result["all_periods"] = (
+        ROC_FILTER_PERIODS.copy()
+    )
 
     return result
 
@@ -1914,7 +1828,21 @@ def roc_filter_display(
 # =========================================================
 # EMA
 #
-# ★ 여기서부터 ROC 필터와 완전히 독립
+# ★ 중요
+#
+# EMA 기간:
+# ROC_FILTER_PERIODS
+#
+# EMA 시간:
+# SIGNAL_TIMEFRAME
+#
+# 현재:
+# SIGNAL_TIMEFRAME = 240
+# EMA = 4H
+# EMA5/10/20/50/200
+#
+# SIGNAL_TIMEFRAME = 60이면
+# EMA = 1H
 # =========================================================
 
 def ema_series(
@@ -1957,13 +1885,6 @@ def ema_alignment_analysis(
     timeframe
 ):
 
-    # =====================================================
-    # ★ EMA 기간은 ROC 설정을 사용하지 않는다.
-    #
-    # 항상:
-    # EMA10 / EMA20 / EMA60 / EMA120
-    # =====================================================
-
     periods = EMA_PERIODS.copy()
 
     result = {
@@ -1999,6 +1920,11 @@ def ema_alignment_analysis(
         return result
 
     if len(periods) < 2:
+        return result
+
+    if int(timeframe) != int(
+        EMA_TIMEFRAME
+    ):
 
         return result
 
@@ -2026,7 +1952,6 @@ def ema_alignment_analysis(
     )
 
     if temp.empty:
-
         return result
 
     ema_data = {}
@@ -2045,31 +1970,15 @@ def ema_alignment_analysis(
 
             return result
 
-        ema_data[
-            period
-        ] = series
+        ema_data[period] = series
 
     # =====================================================
     # 현재 진행봉 제외
-    #
-    # 확정된 캔들 기준으로 배열 기간을 계산
     # =====================================================
-
-    if timeframe == "1H":
-
-        unit = 60
-
-    elif timeframe == "4H":
-
-        unit = 240
-
-    else:
-
-        return result
 
     current_start = (
         get_current_candle_start(
-            unit
+            EMA_TIMEFRAME
         )
     )
 
@@ -2079,7 +1988,6 @@ def ema_alignment_analysis(
     ]
 
     if completed.empty:
-
         return result
 
     last_index = completed.index[-1]
@@ -2108,7 +2016,6 @@ def ema_alignment_analysis(
         ]
 
         if pd.isna(value):
-
             return result
 
         current_values[
@@ -2116,7 +2023,13 @@ def ema_alignment_analysis(
         ] = float(value)
 
     # =====================================================
-    # 현재 배열 판단
+    # 배열 판단
+    #
+    # EMA5 > EMA10 > EMA20 > EMA50 > EMA200
+    # = 정배열
+    #
+    # EMA5 < EMA10 < EMA20 < EMA50 < EMA200
+    # = 역배열
     # =====================================================
 
     values_in_order = [
@@ -2141,29 +2054,20 @@ def ema_alignment_analysis(
     )
 
     if long_alignment:
-
         direction = "long"
 
     elif short_alignment:
-
         direction = "short"
 
     else:
-
         direction = "none"
 
     # =====================================================
-    # 배열 유지 캔들 수 계산
+    # 배열 유지 COUNT
     #
-    # 중요:
-    #
-    # 최초 정배열/역배열 발생 = COUNT 0
-    #
-    # 연속 2개 캔들 = COUNT 1
-    # 연속 3개 캔들 = COUNT 2
-    #
-    # 따라서:
-    # consecutive candles - 1
+    # 최초 배열 = 0
+    # 다음 캔들 = 1
+    # 다음 캔들 = 2
     # =====================================================
 
     consecutive_candles = 0
@@ -2191,7 +2095,6 @@ def ema_alignment_analysis(
             if pd.isna(value):
 
                 valid_row = False
-
                 break
 
             row_values.append(
@@ -2199,7 +2102,6 @@ def ema_alignment_analysis(
             )
 
         if not valid_row:
-
             break
 
         row_long = all(
@@ -2221,7 +2123,6 @@ def ema_alignment_analysis(
         if direction == "long":
 
             if not row_long:
-
                 break
 
             consecutive_candles += 1
@@ -2229,7 +2130,6 @@ def ema_alignment_analysis(
         elif direction == "short":
 
             if not row_short:
-
                 break
 
             consecutive_candles += 1
@@ -2237,10 +2137,6 @@ def ema_alignment_analysis(
         else:
 
             break
-
-    # =====================================================
-    # 최초 배열 = 0
-    # =====================================================
 
     if consecutive_candles > 0:
 
@@ -2291,7 +2187,6 @@ def get_all_active_roc_status(
     )
 
     if not enabled:
-
         return False, False
 
     current_ok = True
@@ -2309,7 +2204,6 @@ def get_all_active_roc_status(
         )
 
         if not info:
-
             return False, False
 
         values = info.get(
@@ -2401,7 +2295,6 @@ def all_active_roc_filters_pass(
 def roc_signal_zero_cross(r):
 
     if not r:
-
         return False
 
     current = r.get(
@@ -2446,7 +2339,6 @@ def roc_signal_zero_cross(r):
 def roc_signal_pullback_condition(r):
 
     if not r:
-
         return False
 
     current = r.get(
@@ -2535,7 +2427,6 @@ def find_latest_signal_start(
         ]
 
         if len(temp) < 2:
-
             return None
 
         signal_roc_series = roc(
@@ -2643,7 +2534,6 @@ def find_latest_pullback_start(
         ]
 
         if len(temp) < 2:
-
             return None
 
         signal_roc_series = roc(
@@ -2729,9 +2619,7 @@ def update_signal_and_pullback(
     historical_pullback_start_candle=None
 ):
 
-    market_key = str(
-        market
-    )
+    market_key = str(market)
 
     progress_candle_time = (
         normalize_datetime(
@@ -3182,10 +3070,6 @@ def update_signal_and_pullback(
                     "last_candle"
                 ] = progress_candle_time
 
-    # =====================================================
-    # 최종 상태
-    # =====================================================
-
     signal_state = (
         roc_signal_state.get(
             market_key
@@ -3280,7 +3164,6 @@ def daily_change_upbit(
     )
 
     if response is None:
-
         return None
 
     try:
@@ -3288,7 +3171,6 @@ def daily_change_upbit(
         data = response.json()
 
         if len(data) < 2:
-
             return None
 
         current = float(
@@ -3300,7 +3182,6 @@ def daily_change_upbit(
         )
 
         if previous == 0:
-
             return None
 
         return [
@@ -3322,7 +3203,6 @@ def get_change_value(x):
     try:
 
         if x is None:
-
             return None
 
         if isinstance(
@@ -3331,7 +3211,6 @@ def get_change_value(x):
         ):
 
             if not x:
-
                 return None
 
             return float(
@@ -3347,12 +3226,9 @@ def get_change_value(x):
 
 def format_change(x):
 
-    x = get_change_value(
-        x
-    )
+    x = get_change_value(x)
 
     if x is None:
-
         return "-"
 
     if x > 0:
@@ -3389,15 +3265,12 @@ def format_volume(v):
         return "-"
 
     if v >= 1e12:
-
         return f"{v / 1e12:.1f}조"
 
     if v >= 1e8:
-
         return f"{v / 1e8:.0f}억"
 
     if v >= 1e4:
-
         return f"{v / 1e4:.0f}만"
 
     return f"{v:,.0f}"
@@ -3452,6 +3325,8 @@ def analyze(
 
     # =====================================================
     # 신호 기준 native 데이터
+    #
+    # EMA도 이 데이터를 사용
     # =====================================================
 
     df_signal = history_upbit(
@@ -3517,26 +3392,12 @@ def analyze(
     # =====================================================
     # EMA
     #
-    # ★ ROC 필터와 완전히 독립
+    # ★ ROC_FILTER_PERIODS 사용
+    # ★ SIGNAL_TIMEFRAME 사용
     #
-    # 1H = EMA10/20/60/120
-    # 4H = EMA10/20/60/120
-    #
-    # 정배열/역배열 유지 COUNT 계산
-    # =====================================================
-
-    ema_1h = ema_alignment_analysis(
-        df1h,
-        "1H"
-    )
-
-    ema_4h = ema_alignment_analysis(
-        df4h,
-        "4H"
-    )
-
-    # =====================================================
-    # 1H ROC5 신호
+    # 현재:
+    # EMA5/10/20/50/200
+    # 4H
     # =====================================================
 
     signal_timeframe_name = (
@@ -3544,6 +3405,15 @@ def analyze(
         if SIGNAL_TIMEFRAME == 60
         else "4H"
     )
+
+    ema_signal = ema_alignment_analysis(
+        df_signal,
+        SIGNAL_TIMEFRAME
+    )
+
+    # =====================================================
+    # SIGNAL ROC
+    # =====================================================
 
     r_signal_raw = roc_filter_analysis(
         df_current,
@@ -3603,9 +3473,6 @@ def analyze(
 
     # =====================================================
     # 활성 ROC 필터
-    #
-    # 현재:
-    # 4H ROC10/20/50/200
     # =====================================================
 
     filter_pass = (
@@ -3712,11 +3579,11 @@ def analyze(
     # =====================================================
     # 상승신호 자격
     #
-    # 4H ROC 필터 통과
+    # ROC 필터
     # +
-    # 1H ROC5 상승신호 또는 눌림
+    # SIGNAL_TIMEFRAME ROC5
     #
-    # EMA X
+    # EMA는 사용하지 않음
     # =====================================================
 
     breakout_qualified = (
@@ -3741,11 +3608,8 @@ def analyze(
         "roc_filter_high":
             r4,
 
-        "ema_1h":
-            ema_1h,
-
-        "ema_4h":
-            ema_4h,
+        "ema_signal":
+            ema_signal,
 
         "roc":
             r,
@@ -3867,15 +3731,9 @@ def make_row(
                 {}
             ),
 
-        "ema_1h":
+        "ema_signal":
             a.get(
-                "ema_1h",
-                {}
-            ),
-
-        "ema_4h":
-            a.get(
-                "ema_4h",
+                "ema_signal",
                 {}
             ),
 
@@ -4116,7 +3974,6 @@ def get_usdt_krw_internal():
     )
 
     if response is None:
-
         return None
 
     try:
@@ -4124,7 +3981,6 @@ def get_usdt_krw_internal():
         data = response.json()
 
         if not data:
-
             return None
 
         price = float(
@@ -4169,7 +4025,6 @@ def update_dashboard():
     try:
 
         if USE_UPBIT == "Y":
-
             update_upbit()
 
         if USE_OKX == "Y":
@@ -4179,10 +4034,7 @@ def update_dashboard():
             )
 
             if usdt:
-
-                update_okx(
-                    usdt
-                )
+                update_okx(usdt)
 
     except Exception as e:
 
@@ -4204,31 +4056,20 @@ def format_market_price(
 ):
 
     if price is None:
-
         return "-"
 
     try:
-
-        price = float(
-            price
-        )
-
+        price = float(price)
     except Exception:
-
         return "-"
 
     if price >= 100000000:
-
-        return (
-            f"{price / 100000000:.2f}억"
-        )
+        return f"{price / 100000000:.2f}억"
 
     if price >= 10000:
-
         return f"{price:,.0f}"
 
     if price >= 1:
-
         return f"{price:,.2f}"
 
     return f"{price:.6f}"
@@ -4246,7 +4087,6 @@ def roc_filter_html(
     settings = roc_settings()
 
     if not r:
-
         r = {}
 
     values = r.get(
@@ -4373,7 +4213,6 @@ def signal_html(
 ):
 
     if not row:
-
         return "-"
 
     signal_active = row.get(
@@ -4472,7 +4311,6 @@ def top_signal_count_html(
 ):
 
     if not row:
-
         return "-"
 
     signal_active = row.get(
@@ -4558,19 +4396,11 @@ def top_signal_count_html(
 # =========================================================
 # EMA HTML
 #
-# ★ ROC 필터와 무관하게 항상 표시
+# ★ EMA 기간 = ROC_FILTER_PERIODS
+# ★ EMA 시간 = SIGNAL_TIMEFRAME
 #
-# 1H:
-# 🟢 = 정배열
-# 🔴 = 역배열
-#
-# 4H:
-# 🟢 = 정배열
-# 🔴 = 역배열
-#
-# COUNT:
-# 최초 배열 = 0
-# 유지 = 1,2,3...
+# 현재:
+# 4H EMA5/10/20/50/200
 # =========================================================
 
 def ema_signal_html(
@@ -4578,108 +4408,67 @@ def ema_signal_html(
 ):
 
     if not row:
-
         return "-"
 
-    ema_1h = row.get(
-        "ema_1h",
+    ema = row.get(
+        "ema_signal",
         {}
     )
 
-    ema_4h = row.get(
-        "ema_4h",
-        {}
-    )
-
-    parts = []
-
-    # =====================================================
-    # 1H EMA
-    # =====================================================
-
-    direction_1h = ema_1h.get(
+    direction = ema.get(
         "direction",
         "none"
     )
 
-    count_1h = int(
-        ema_1h.get(
+    count = int(
+        ema.get(
             "count",
             0
         )
     )
 
-    if direction_1h == "long":
-
-        parts.append(
-            f"""
-            <span class="ema-signal-long">
-                1H 🟢({count_1h})
-            </span>
-            """
-        )
-
-    elif direction_1h == "short":
-
-        parts.append(
-            f"""
-            <span class="ema-signal-short">
-                1H 🔴({count_1h})
-            </span>
-            """
-        )
-
-    # =====================================================
-    # 4H EMA
-    # =====================================================
-
-    direction_4h = ema_4h.get(
-        "direction",
-        "none"
-    )
-
-    count_4h = int(
-        ema_4h.get(
-            "count",
-            0
+    timeframe = ema.get(
+        "timeframe",
+        format_timeframe(
+            SIGNAL_TIMEFRAME
         )
     )
 
-    if direction_4h == "long":
+    if direction == "long":
 
-        parts.append(
-            f"""
+        return f"""
+        <div class="ema-signal-wrap">
+
             <span class="ema-signal-long">
-                4H 🟢({count_4h})
+
+                {timeframe}
+                🟢({count})
+
             </span>
-            """
-        )
 
-    elif direction_4h == "short":
+        </div>
+        """
 
-        parts.append(
-            f"""
+    if direction == "short":
+
+        return f"""
+        <div class="ema-signal-wrap">
+
             <span class="ema-signal-short">
-                4H 🔴({count_4h})
+
+                {timeframe}
+                🔴({count})
+
             </span>
-            """
-        )
 
-    if not parts:
+        </div>
+        """
 
-        return (
-            '<span class="muted">'
-            '-'
-            '</span>'
-        )
-
-    return f"""
-    <div class="ema-signal-wrap">
-
-        {"".join(parts)}
-
-    </div>
-    """
+    return (
+        '<span class="muted">'
+        '-'
+        '</span>'
+    )
 
 
 # =========================================================
@@ -4691,7 +4480,6 @@ def orderbook_html(
 ):
 
     if not row:
-
         return "-"
 
     bid_ratio = float(
@@ -4858,12 +4646,13 @@ def rows_html(
         # =================================================
         # 반짝임
         #
-        # 4H ROC 필터 통과
+        # ROC 필터 통과
         # +
-        # 1H ROC5 신호/눌림
+        # SIGNAL_TIMEFRAME ROC5 신호/눌림
+        # +
+        # 당일 변동 0% 이상
         #
-        # ★ EMA 조건 없음
-        # ★ 일봉 음수 조건 추가
+        # EMA 조건 없음
         # =================================================
 
         if (
@@ -5049,16 +4838,6 @@ def table_html(
 
 # =========================================================
 # 상승 신호
-#
-# ★ 실제 조건
-#
-# 4H ROC10/20/50/200 통과
-# +
-# 1H ROC5 상승신호 또는 눌림
-# +
-# 당일 변동 0% 이상
-#
-# EMA X
 # =========================================================
 
 def focus_section(
@@ -5124,10 +4903,6 @@ def focus_section(
 
             and
 
-            # =================================================
-            # ★ 당일 변동 음수 제외
-            # =================================================
-
             x.get(
                 "daily_pass",
                 False
@@ -5146,7 +4921,7 @@ def focus_section(
 
         <span class="section-title-sub">
 
-            4H ROC 필터 통과
+            ROC 필터 통과
 
             ·
 
@@ -5191,6 +4966,11 @@ def section(
     update_time
 ):
 
+    ema_period_text = "/".join(
+        str(x)
+        for x in EMA_PERIODS
+    )
+
     return f"""
     <div class="section-title">
 
@@ -5204,8 +4984,9 @@ def section(
 
             ·
 
-            ROC5 상승신호/COUNT 기준
-            {format_timeframe(SIGNAL_TIMEFRAME)} native
+            ROC{SIGNAL_ROC_PERIOD}
+            {format_timeframe(SIGNAL_TIMEFRAME)}
+            상승신호/COUNT
 
             ·
 
@@ -5215,7 +4996,8 @@ def section(
             ·
 
             EMA =
-            10/20/60/120 배열 COUNT
+            {format_timeframe(EMA_TIMEFRAME)}
+            {ema_period_text}
 
         </span>
 
@@ -5234,7 +5016,6 @@ def btc_1h_roc_status_html(
 ):
 
     if not btc_row:
-
         return ""
 
     analysis = btc_row.get(
@@ -5243,7 +5024,6 @@ def btc_1h_roc_status_html(
     )
 
     if not analysis:
-
         return ""
 
     df_signal = analysis.get(
@@ -5257,13 +5037,7 @@ def btc_1h_roc_status_html(
 
         return ""
 
-    periods = [
-        5,
-        10,
-        20,
-        50,
-        200
-    ]
+    periods = ROC_FILTER_PERIODS.copy()
 
     items = []
 
@@ -5300,7 +5074,6 @@ def btc_1h_roc_status_html(
                 if current >= 0:
 
                     icon = "🟢"
-
                     count = 0
 
                     for value in reversed(
@@ -5308,17 +5081,13 @@ def btc_1h_roc_status_html(
                     ):
 
                         if float(value) >= 0:
-
                             count += 1
-
                         else:
-
                             break
 
                 else:
 
                     icon = "🔴"
-
                     count = 0
 
                     for value in reversed(
@@ -5326,11 +5095,8 @@ def btc_1h_roc_status_html(
                     ):
 
                         if float(value) < 0:
-
                             count += 1
-
                         else:
-
                             break
 
         items.append(
@@ -5357,7 +5123,10 @@ def btc_1h_roc_status_html(
     <div class="btc-roc-section">
 
         <div class="btc-roc-title">
-            {format_timeframe(SIGNAL_TIMEFRAME)} ROC
+
+            {format_timeframe(SIGNAL_TIMEFRAME)}
+            ROC
+
         </div>
 
         <div class="btc-roc-grid">
@@ -5385,8 +5154,12 @@ def market_summary_html():
         ) == "BTC":
 
             btc = row
-
             break
+
+    ema_period_text = "/".join(
+        str(x)
+        for x in EMA_PERIODS
+    )
 
     if btc:
 
@@ -5446,7 +5219,8 @@ def market_summary_html():
                 ·
 
                 EMA
-                10/20/60/120
+                {format_timeframe(EMA_TIMEFRAME)}
+                {ema_period_text}
 
                 ·
 
@@ -5913,49 +5687,49 @@ font-weight:900;
 @keyframes signalFlashOne{
 
 0%{
-    background-color:#15191e;
-    box-shadow:
-        inset 0 0 0
-        rgba(98,181,138,0);
+background-color:#15191e;
+box-shadow:
+inset 0 0 0
+rgba(98,181,138,0);
 }
 
 30%{
-    background-color:#2a3d34;
-    box-shadow:
-        inset 0 0 11px
-        rgba(98,181,138,.32);
+background-color:#2a3d34;
+box-shadow:
+inset 0 0 11px
+rgba(98,181,138,.32);
 }
 
 60%{
-    background-color:#19221e;
-    box-shadow:
-        inset 0 0 3px
-        rgba(98,181,138,.12);
+background-color:#19221e;
+box-shadow:
+inset 0 0 3px
+rgba(98,181,138,.12);
 }
 
 100%{
-    background-color:#15191e;
-    box-shadow:
-        inset 0 0 0
-        rgba(98,181,138,0);
+background-color:#15191e;
+box-shadow:
+inset 0 0 0
+rgba(98,181,138,0);
 }
 
 }
 
 tr.signal-flash-one td{
 animation:
-    signalFlashOne
-    1.35s
-    ease-in-out
-    infinite;
+signalFlashOne
+1.35s
+ease-in-out
+infinite;
 }
 
 tr.orderbook-subrow.signal-flash-one td{
 animation:
-    signalFlashOne
-    1.35s
-    ease-in-out
-    infinite;
+signalFlashOne
+1.35s
+ease-in-out
+infinite;
 }
 
 .orderbook-subrow{
@@ -5974,10 +5748,10 @@ width:100%;
 .orderbook-row{
 display:grid;
 grid-template-columns:
-    43px
-    43px
-    minmax(55px,1fr)
-    35px;
+43px
+43px
+minmax(55px,1fr)
+35px;
 align-items:center;
 gap:4px;
 min-height:13px;
@@ -6100,139 +5874,139 @@ font-size:6px;
 @media(max-width:380px){
 
 body{
-    padding:2px;
+padding:2px;
 }
 
 h1{
-    font-size:11px;
-    line-height:13px;
+font-size:11px;
+line-height:13px;
 }
 
 .market-title,
 .section-title{
-    min-height:18px;
-    padding:3px 4px;
-    gap:4px;
+min-height:18px;
+padding:3px 4px;
+gap:4px;
 }
 
 .market-title-main,
 .section-title-main{
-    font-size:7px;
+font-size:7px;
 }
 
 .market-title-sub,
 .section-title-sub{
-    font-size:4.8px;
+font-size:4.8px;
 }
 
 th{
-    height:16px;
-    font-size:4.5px;
+height:16px;
+font-size:4.5px;
 }
 
 td{
-    height:23px;
+height:23px;
 }
 
 .coin b{
-    font-size:6px;
+font-size:6px;
 }
 
 .coin small{
-    font-size:4px;
+font-size:4px;
 }
 
 .vol{
-    font-size:5.5px;
+font-size:5.5px;
 }
 
 .filter-timeframe{
-    width:10px;
-    font-size:4px;
+width:10px;
+font-size:4px;
 }
 
 .roc-filter-all{
-    gap:0;
-    justify-content:space-between;
-    width:100%;
-    min-width:0;
+gap:0;
+justify-content:space-between;
+width:100%;
+min-width:0;
 }
 
 .roc-item{
-    font-size:3.5px;
-    line-height:7px;
-    margin:0;
-    padding:0;
-    letter-spacing:-0.45px;
+font-size:3.5px;
+line-height:7px;
+margin:0;
+padding:0;
+letter-spacing:-0.45px;
 }
 
 .top-count-wrap{
-    gap:2px;
+gap:2px;
 }
 
 .top-signal-count,
 .top-pullback-count{
-    font-size:5.8px;
+font-size:5.8px;
 }
 
 .ema-signal-wrap{
-    gap:2px;
+gap:2px;
 }
 
 .ema-signal-long,
 .ema-signal-short{
-    font-size:5px;
+font-size:5px;
 }
 
 .signal-wrap{
-    gap:3px;
+gap:3px;
 }
 
 .signal-rocket{
-    font-size:8px;
+font-size:8px;
 }
 
 .signal-count{
-    font-size:6.5px;
+font-size:6.5px;
 }
 
 .pullback-icon{
-    font-size:7px;
+font-size:7px;
 }
 
 .pullback-count{
-    font-size:6.5px;
+font-size:6.5px;
 }
 
 .orderbook-row{
-    grid-template-columns:
-        37px
-        38px
-        minmax(42px,1fr)
-        31px;
-    gap:3px;
+grid-template-columns:
+37px
+38px
+minmax(42px,1fr)
+31px;
+gap:3px;
 }
 
 .orderbook-label,
 .orderbook-amount,
 .orderbook-ratio{
-    font-size:4.8px;
+font-size:4.8px;
 }
 
 .btc-roc-period{
-    font-size:4px;
+font-size:4px;
 }
 
 .btc-roc-icon{
-    font-size:7px;
+font-size:7px;
 }
 
 .btc-roc-count{
-    font-size:4.8px;
+font-size:4.8px;
 }
 
 .btc-roc-item{
-    min-height:23px;
+min-height:23px;
 }
 
 }
@@ -6241,7 +6015,7 @@ td{
 
 tr.signal-flash-one td,
 tr.orderbook-subrow.signal-flash-one td{
-    animation:none!important;
+animation:none!important;
 }
 
 }
@@ -6306,7 +6080,9 @@ def dashboard():
         >
 
         <title>
-            ROC{SIGNAL_ROC_PERIOD} 1H SIGNAL
+            ROC{SIGNAL_ROC_PERIOD}
+            {format_timeframe(SIGNAL_TIMEFRAME)}
+            SIGNAL
         </title>
 
         <style>
@@ -6375,7 +6151,8 @@ def startup():
 
     log.info(
         f"ROC{SIGNAL_ROC_PERIOD} "
-        "1H SIGNAL / PULLBACK SYSTEM START"
+        f"{format_timeframe(SIGNAL_TIMEFRAME)} "
+        "SIGNAL / PULLBACK SYSTEM START"
     )
 
     log.info(
@@ -6410,23 +6187,37 @@ def startup():
     # EMA 로그
     # =====================================================
 
-    log.info(
-        "★ EMA 배열 = "
-        "EMA10 / EMA20 / EMA60 / EMA120"
+    ema_period_text = "/".join(
+        str(x)
+        for x in EMA_PERIODS
     )
 
     log.info(
-        "★ EMA 배열은 ROC 필터와 독립적으로 계산"
+        f"★ EMA 기간 = "
+        f"{ema_period_text}"
     )
 
     log.info(
-        "★ EMA 정배열 = "
-        "10 > 20 > 60 > 120"
+        f"★ EMA 시간봉 = "
+        f"{format_timeframe(EMA_TIMEFRAME)}"
     )
 
     log.info(
-        "★ EMA 역배열 = "
-        "10 < 20 < 60 < 120"
+        "★ EMA 기간은 ROC_FILTER_PERIODS를 그대로 사용"
+    )
+
+    log.info(
+        "★ EMA 시간봉은 SIGNAL_TIMEFRAME을 그대로 사용"
+    )
+
+    log.info(
+        f"★ EMA 정배열 = "
+        f"{' > '.join(str(x) for x in EMA_PERIODS)}"
+    )
+
+    log.info(
+        f"★ EMA 역배열 = "
+        f"{' < '.join(str(x) for x in EMA_PERIODS)}"
     )
 
     log.info(
@@ -6461,6 +6252,11 @@ def startup():
     log.info(
         "★ ROC200 현재값 + 직전값 계산 필요 = "
         f"{ROC_HISTORY_REQUIRED}개"
+    )
+
+    log.info(
+        "★ EMA200 계산에도 "
+        f"{ROC_HISTORY_REQUIRED}개 이상 확정봉 사용"
     )
 
     log.info(
