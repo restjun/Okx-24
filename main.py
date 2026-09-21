@@ -3735,6 +3735,21 @@ def rows_html(
             "-"
         )
 
+        # =================================================
+        # ★ 코인 옆 거래대금 복구
+        # ★ 코인명 아래 24H 거래대금 표시
+        # =================================================
+
+        coin_name = x.get(
+            "name",
+            "-"
+        )
+
+        volume = x.get(
+            "volume",
+            "-"
+        )
+
         out.append(
             f"""
             <tr class="{cls}">
@@ -3746,7 +3761,11 @@ def rows_html(
                 <td class="coin-cell">
 
                     <span class="coin-name">
-                        {x.get("name", "-")}
+                        {coin_name}
+                    </span>
+
+                    <span class="coin-volume">
+                        {volume}
                     </span>
 
                 </td>
@@ -3831,7 +3850,12 @@ def table_html(
 
                     <th>#</th>
 
-                    <th>코인</th>
+                    <th>
+                        코인
+                        <span class="th-sub">
+                            거래대금
+                        </span>
+                    </th>
 
                     <th>가격</th>
 
@@ -4342,6 +4366,7 @@ border-radius:4px;
 .btc-top{
 display:flex;
 align-items:center;
+justify-content:center;
 gap:5px;
 min-height:22px;
 white-space:nowrap;
@@ -4383,7 +4408,7 @@ margin-bottom:2px;
 color:#737c86;
 font-size:5px;
 font-weight:900;
-text-align:left;
+text-align:center;
 }
 
 .btc-roc-grid{
@@ -4402,6 +4427,7 @@ min-height:25px;
 background:#14181d;
 border:1px solid #242a31;
 border-radius:3px;
+text-align:center;
 }
 
 .btc-roc-period{
@@ -4409,11 +4435,13 @@ color:#737c86;
 font-size:5.5px;
 font-weight:900;
 line-height:7px;
+text-align:center;
 }
 
 .btc-roc-icon{
 font-size:9px;
 line-height:10px;
+text-align:center;
 }
 
 .btc-roc-count{
@@ -4421,6 +4449,7 @@ color:#cdd3d8;
 font-size:6px;
 font-weight:900;
 line-height:8px;
+text-align:center;
 }
 
 .roc-active{
@@ -4456,6 +4485,16 @@ color:#727b85;
 border-bottom:1px solid #292f36;
 font-size:5px;
 font-weight:800;
+text-align:center;
+vertical-align:middle;
+}
+
+.th-sub{
+display:block;
+font-size:4px;
+font-weight:700;
+color:#59616a;
+line-height:6px;
 text-align:center;
 }
 
@@ -4498,11 +4537,12 @@ width:18%;
 color:#7d858e;
 font-size:5.5px;
 font-weight:800;
+text-align:center!important;
 }
 
 .coin-cell{
-text-align:left!important;
-padding-left:4px!important;
+text-align:center!important;
+padding-left:2px!important;
 padding-right:2px!important;
 }
 
@@ -4510,17 +4550,30 @@ padding-right:2px!important;
 display:block;
 color:#e0e5e9;
 font-size:6.5px;
-line-height:10px;
+line-height:9px;
 font-weight:800;
 white-space:nowrap;
 overflow:hidden;
 text-overflow:ellipsis;
+text-align:center;
+}
+
+.coin-volume{
+display:block;
+color:#737c86;
+font-size:4.8px;
+line-height:7px;
+font-weight:700;
+white-space:nowrap;
+overflow:hidden;
+text-overflow:ellipsis;
+text-align:center;
 }
 
 .price-cell{
-text-align:right!important;
+text-align:center!important;
 padding-left:2px!important;
-padding-right:3px!important;
+padding-right:2px!important;
 }
 
 .price-value{
@@ -4531,6 +4584,7 @@ font-weight:800;
 white-space:nowrap;
 overflow:hidden;
 text-overflow:ellipsis;
+text-align:center;
 }
 
 .change-cell{
@@ -4563,6 +4617,7 @@ border-top:0;
 .filter-detail .btc-roc-title{
 margin-bottom:2px;
 font-size:5px;
+text-align:center;
 }
 
 .filter-detail .btc-roc-grid{
@@ -4575,14 +4630,17 @@ min-height:24px;
 
 .filter-detail .btc-roc-period{
 font-size:5px;
+text-align:center;
 }
 
 .filter-detail .btc-roc-icon{
 font-size:8px;
+text-align:center;
 }
 
 .filter-detail .btc-roc-count{
 font-size:5.8px;
+text-align:center;
 }
 
 .roc-subrow{
@@ -4714,6 +4772,7 @@ color:#68717b!important;
 height:30px;
 color:#555d67;
 font-size:6px;
+text-align:center!important;
 }
 
 @media(max-width:380px){
@@ -4746,6 +4805,7 @@ font-size:4.8px;
 
 .btc-top{
 gap:4px;
+justify-content:center;
 }
 
 .btc-name{
@@ -4763,10 +4823,16 @@ font-size:7px;
 th{
 height:16px;
 font-size:4.5px;
+text-align:center;
+}
+
+.th-sub{
+font-size:3.7px;
+line-height:5px;
 }
 
 td{
-height:23px;
+height:27px;
 }
 
 th:nth-child(1),
@@ -4795,33 +4861,46 @@ width:18%;
 }
 
 .coin-cell{
-padding-left:3px!important;
+padding-left:2px!important;
+padding-right:2px!important;
+text-align:center!important;
 }
 
 .coin-name{
 font-size:6px;
+text-align:center;
+}
+
+.coin-volume{
+font-size:4.4px;
+text-align:center;
 }
 
 .price-cell{
 padding-left:1px!important;
-padding-right:2px!important;
+padding-right:1px!important;
+text-align:center!important;
 }
 
 .price-value{
 font-size:5.2px;
+text-align:center;
 }
 
 .change-cell{
 font-size:5.1px;
+text-align:center!important;
 }
 
 .signal-cell{
 padding-left:1px!important;
 padding-right:1px!important;
+text-align:center!important;
 }
 
 .top-count-wrap{
 gap:1px;
+justify-content:center;
 }
 
 .top-signal-count,
@@ -4844,18 +4923,22 @@ min-height:22px;
 
 .filter-detail .btc-roc-period{
 font-size:4.7px;
+text-align:center;
 }
 
 .filter-detail .btc-roc-icon{
 font-size:7px;
+text-align:center;
 }
 
 .filter-detail .btc-roc-count{
 font-size:5.2px;
+text-align:center;
 }
 
 .signal-wrap{
 gap:2px;
+justify-content:center;
 }
 
 .signal-rocket,
@@ -4870,14 +4953,17 @@ font-size:6.5px;
 
 .btc-roc-period{
 font-size:5px;
+text-align:center;
 }
 
 .btc-roc-icon{
 font-size:8px;
+text-align:center;
 }
 
 .btc-roc-count{
 font-size:5.8px;
+text-align:center;
 }
 
 .btc-roc-item{
