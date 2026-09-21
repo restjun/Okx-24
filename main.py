@@ -68,7 +68,7 @@ MAX_RETRIES = 10
 # 4H는 ROC 필터용
 # =========================================================
 
-SIGNAL_TIMEFRAME = 60
+SIGNAL_TIMEFRAME = 240
 
 
 # =========================================================
@@ -90,8 +90,8 @@ SIGNAL_TIMEFRAME = 60
 EMA_PERIODS = [
     10,
     20,
-    60,
-    120
+    50,
+    240
 ]
 
 EMA_COUNT_TIMEFRAMES = [
