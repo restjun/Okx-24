@@ -2280,7 +2280,6 @@ def update_signal_and_pullback(
                         roc_pullback_state[
                             market_key
                         ]
-                    )
 
                     log.info(
                         f"[ROC{SIGNAL_ROC_PERIOD} "
@@ -3735,11 +3734,6 @@ def rows_html(
             "-"
         )
 
-        # =================================================
-        # ★ 코인 옆 거래대금 복구
-        # ★ 코인명 아래 24H 거래대금 표시
-        # =================================================
-
         coin_name = x.get(
             "name",
             "-"
@@ -3764,7 +3758,11 @@ def rows_html(
                         {coin_name}
                     </span>
 
-                    <span class="coin-volume">
+                </td>
+
+                <td class="volume-cell">
+
+                    <span class="volume-value">
                         {volume}
                     </span>
 
@@ -3797,7 +3795,7 @@ def rows_html(
                 {cls}
             ">
 
-                <td colspan="5">
+                <td colspan="6">
 
                     {filter_content}
 
@@ -3830,7 +3828,7 @@ def table_html(
         <tr>
 
             <td
-                colspan="5"
+                colspan="6"
                 class="empty"
             >
                 현재 후보 없음
@@ -3850,12 +3848,9 @@ def table_html(
 
                     <th>#</th>
 
-                    <th>
-                        코인
-                        <span class="th-sub">
-                            거래대금
-                        </span>
-                    </th>
+                    <th>코인</th>
+
+                    <th>거래대금</th>
 
                     <th>가격</th>
 
@@ -4363,10 +4358,13 @@ border-bottom:1px solid #242a31;
 border-radius:4px;
 }
 
+/* ========================================================
+   BTC 시황은 기존 정렬 유지
+   ======================================================== */
+
 .btc-top{
 display:flex;
 align-items:center;
-justify-content:center;
 gap:5px;
 min-height:22px;
 white-space:nowrap;
@@ -4408,7 +4406,7 @@ margin-bottom:2px;
 color:#737c86;
 font-size:5px;
 font-weight:900;
-text-align:center;
+text-align:left;
 }
 
 .btc-roc-grid{
@@ -4489,15 +4487,6 @@ text-align:center;
 vertical-align:middle;
 }
 
-.th-sub{
-display:block;
-font-size:4px;
-font-weight:700;
-color:#59616a;
-line-height:6px;
-text-align:center;
-}
-
 td{
 height:27px;
 padding:1px;
@@ -4508,6 +4497,11 @@ vertical-align:middle;
 overflow:hidden;
 }
 
+/* ========================================================
+   TOP 6열
+   # / 코인 / 거래대금 / 가격 / 변동률 / 신호
+   ======================================================== */
+
 th:nth-child(1),
 td:nth-child(1){
 width:7%;
@@ -4515,22 +4509,27 @@ width:7%;
 
 th:nth-child(2),
 td:nth-child(2){
-width:24%;
+width:20%;
 }
 
 th:nth-child(3),
 td:nth-child(3){
-width:29%;
+width:18%;
 }
 
 th:nth-child(4),
 td:nth-child(4){
-width:22%;
+width:25%;
 }
 
 th:nth-child(5),
 td:nth-child(5){
-width:18%;
+width:15%;
+}
+
+th:nth-child(6),
+td:nth-child(6){
+width:15%;
 }
 
 .rank-cell{
@@ -4539,6 +4538,10 @@ font-size:5.5px;
 font-weight:800;
 text-align:center!important;
 }
+
+/* ========================================================
+   코인
+   ======================================================== */
 
 .coin-cell{
 text-align:center!important;
@@ -4558,17 +4561,31 @@ text-overflow:ellipsis;
 text-align:center;
 }
 
-.coin-volume{
+/* ========================================================
+   ★ 거래대금 별도 열
+   ======================================================== */
+
+.volume-cell{
+text-align:center!important;
+padding-left:2px!important;
+padding-right:2px!important;
+}
+
+.volume-value{
 display:block;
 color:#737c86;
-font-size:4.8px;
-line-height:7px;
-font-weight:700;
+font-size:5.2px;
+line-height:9px;
+font-weight:800;
 white-space:nowrap;
 overflow:hidden;
 text-overflow:ellipsis;
 text-align:center;
 }
+
+/* ========================================================
+   가격
+   ======================================================== */
 
 .price-cell{
 text-align:center!important;
@@ -4803,9 +4820,9 @@ font-size:7px;
 font-size:4.8px;
 }
 
+/* BTC 시황 기존 정렬 유지 */
 .btc-top{
 gap:4px;
-justify-content:center;
 }
 
 .btc-name{
@@ -4826,14 +4843,13 @@ font-size:4.5px;
 text-align:center;
 }
 
-.th-sub{
-font-size:3.7px;
-line-height:5px;
-}
-
 td{
 height:27px;
 }
+
+/* ========================================================
+   모바일 6열
+   ======================================================== */
 
 th:nth-child(1),
 td:nth-child(1){
@@ -4842,22 +4858,27 @@ width:7%;
 
 th:nth-child(2),
 td:nth-child(2){
-width:23%;
+width:20%;
 }
 
 th:nth-child(3),
 td:nth-child(3){
-width:29%;
+width:18%;
 }
 
 th:nth-child(4),
 td:nth-child(4){
-width:23%;
+width:25%;
 }
 
 th:nth-child(5),
 td:nth-child(5){
-width:18%;
+width:15%;
+}
+
+th:nth-child(6),
+td:nth-child(6){
+width:15%;
 }
 
 .coin-cell{
@@ -4871,8 +4892,14 @@ font-size:6px;
 text-align:center;
 }
 
-.coin-volume{
-font-size:4.4px;
+.volume-cell{
+padding-left:1px!important;
+padding-right:1px!important;
+text-align:center!important;
+}
+
+.volume-value{
+font-size:4.6px;
 text-align:center;
 }
 
