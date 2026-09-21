@@ -2280,6 +2280,7 @@ def update_signal_and_pullback(
                         roc_pullback_state[
                             market_key
                         ]
+                    )
 
                     log.info(
                         f"[ROC{SIGNAL_ROC_PERIOD} "
@@ -3321,7 +3322,7 @@ def format_market_price(
 # =========================================================
 # ROC 필터 HTML
 #
-# ★ BTC 시황 ROC와 같은 디자인
+# BTC 시황 ROC와 같은 디자인
 # =========================================================
 
 def roc_filter_html(
@@ -3848,15 +3849,25 @@ def table_html(
 
                     <th>#</th>
 
-                    <th>코인</th>
+                    <th>
+                        코인
+                    </th>
 
-                    <th>거래대금</th>
+                    <th>
+                        거래대금
+                    </th>
 
-                    <th>가격</th>
+                    <th>
+                        가격
+                    </th>
 
-                    <th>변동률</th>
+                    <th>
+                        변동률
+                    </th>
 
-                    <th>신호</th>
+                    <th>
+                        신호
+                    </th>
 
                 </tr>
 
@@ -4358,9 +4369,11 @@ border-bottom:1px solid #242a31;
 border-radius:4px;
 }
 
-/* ========================================================
-   BTC 시황은 기존 정렬 유지
-   ======================================================== */
+
+/* =====================================================
+   BTC 시황
+   기존 정렬 유지
+   ===================================================== */
 
 .btc-top{
 display:flex;
@@ -4458,6 +4471,11 @@ opacity:1;
 opacity:.38;
 }
 
+
+/* =====================================================
+   TABLE
+   ===================================================== */
+
 .table-wrap{
 width:100%;
 overflow:hidden;
@@ -4487,6 +4505,15 @@ text-align:center;
 vertical-align:middle;
 }
 
+.th-sub{
+display:block;
+font-size:4px;
+font-weight:700;
+color:#59616a;
+line-height:6px;
+text-align:center;
+}
+
 td{
 height:27px;
 padding:1px;
@@ -4497,10 +4524,11 @@ vertical-align:middle;
 overflow:hidden;
 }
 
-/* ========================================================
-   TOP 6열
+
+/* =====================================================
+   6열 비율
    # / 코인 / 거래대금 / 가격 / 변동률 / 신호
-   ======================================================== */
+   ===================================================== */
 
 th:nth-child(1),
 td:nth-child(1){
@@ -4532,6 +4560,11 @@ td:nth-child(6){
 width:15%;
 }
 
+
+/* =====================================================
+   순위
+   ===================================================== */
+
 .rank-cell{
 color:#7d858e;
 font-size:5.5px;
@@ -4539,9 +4572,10 @@ font-weight:800;
 text-align:center!important;
 }
 
-/* ========================================================
+
+/* =====================================================
    코인
-   ======================================================== */
+   ===================================================== */
 
 .coin-cell{
 text-align:center!important;
@@ -4561,9 +4595,10 @@ text-overflow:ellipsis;
 text-align:center;
 }
 
-/* ========================================================
-   ★ 거래대금 별도 열
-   ======================================================== */
+
+/* =====================================================
+   거래대금
+   ===================================================== */
 
 .volume-cell{
 text-align:center!important;
@@ -4574,18 +4609,19 @@ padding-right:2px!important;
 .volume-value{
 display:block;
 color:#737c86;
-font-size:5.2px;
+font-size:5.4px;
 line-height:9px;
-font-weight:800;
+font-weight:700;
 white-space:nowrap;
 overflow:hidden;
 text-overflow:ellipsis;
 text-align:center;
 }
 
-/* ========================================================
+
+/* =====================================================
    가격
-   ======================================================== */
+   ===================================================== */
 
 .price-cell{
 text-align:center!important;
@@ -4604,6 +4640,11 @@ text-overflow:ellipsis;
 text-align:center;
 }
 
+
+/* =====================================================
+   변동률
+   ===================================================== */
+
 .change-cell{
 text-align:center!important;
 white-space:nowrap;
@@ -4611,11 +4652,21 @@ font-size:5.8px;
 font-weight:900;
 }
 
+
+/* =====================================================
+   신호
+   ===================================================== */
+
 .signal-cell{
 text-align:center!important;
 padding-left:2px!important;
 padding-right:2px!important;
 }
+
+
+/* =====================================================
+   ROC 상세
+   ===================================================== */
 
 .filter-detail{
 display:flex;
@@ -4670,6 +4721,11 @@ padding:0!important;
 border-bottom:1px solid #22282e;
 }
 
+
+/* =====================================================
+   TOP COUNT
+   ===================================================== */
+
 .top-count-wrap{
 display:flex;
 align-items:center;
@@ -4689,6 +4745,11 @@ color:#c97878;
 font-size:7px;
 font-weight:900;
 }
+
+
+/* =====================================================
+   SIGNAL
+   ===================================================== */
 
 .signal-wrap{
 display:flex;
@@ -4726,6 +4787,11 @@ color:#c97878;
 font-size:7px;
 font-weight:900;
 }
+
+
+/* =====================================================
+   FLASH
+   ===================================================== */
 
 @keyframes signalFlashOne{
 
@@ -4767,6 +4833,11 @@ ease-in-out
 infinite;
 }
 
+
+/* =====================================================
+   COLORS
+   ===================================================== */
+
 .up{
 color:#62b58a!important;
 font-weight:900;
@@ -4791,6 +4862,11 @@ color:#555d67;
 font-size:6px;
 text-align:center!important;
 }
+
+
+/* =====================================================
+   MOBILE
+   ===================================================== */
 
 @media(max-width:380px){
 
@@ -4820,7 +4896,9 @@ font-size:7px;
 font-size:4.8px;
 }
 
+
 /* BTC 시황 기존 정렬 유지 */
+
 .btc-top{
 gap:4px;
 }
@@ -4843,13 +4921,19 @@ font-size:4.5px;
 text-align:center;
 }
 
+.th-sub{
+font-size:3.7px;
+line-height:5px;
+}
+
 td{
 height:27px;
 }
 
-/* ========================================================
+
+/* =====================================================
    모바일 6열
-   ======================================================== */
+   ===================================================== */
 
 th:nth-child(1),
 td:nth-child(1){
@@ -4881,6 +4965,9 @@ td:nth-child(6){
 width:15%;
 }
 
+
+/* 코인 */
+
 .coin-cell{
 padding-left:2px!important;
 padding-right:2px!important;
@@ -4892,6 +4979,9 @@ font-size:6px;
 text-align:center;
 }
 
+
+/* 거래대금 */
+
 .volume-cell{
 padding-left:1px!important;
 padding-right:1px!important;
@@ -4899,9 +4989,12 @@ text-align:center!important;
 }
 
 .volume-value{
-font-size:4.6px;
+font-size:4.8px;
 text-align:center;
 }
+
+
+/* 가격 */
 
 .price-cell{
 padding-left:1px!important;
@@ -4914,10 +5007,16 @@ font-size:5.2px;
 text-align:center;
 }
 
+
+/* 변동률 */
+
 .change-cell{
 font-size:5.1px;
 text-align:center!important;
 }
+
+
+/* 신호 */
 
 .signal-cell{
 padding-left:1px!important;
@@ -4934,6 +5033,9 @@ justify-content:center;
 .top-pullback-count{
 font-size:6.3px;
 }
+
+
+/* ROC */
 
 .filter-detail{
 gap:2px;
@@ -4963,6 +5065,9 @@ font-size:5.2px;
 text-align:center;
 }
 
+
+/* Signal */
+
 .signal-wrap{
 gap:2px;
 justify-content:center;
@@ -4977,6 +5082,9 @@ font-size:8px;
 .pullback-count{
 font-size:6.5px;
 }
+
+
+/* BTC ROC */
 
 .btc-roc-period{
 font-size:5px;
@@ -4998,6 +5106,11 @@ min-height:23px;
 }
 
 }
+
+
+/* =====================================================
+   REDUCED MOTION
+   ===================================================== */
 
 @media(prefers-reduced-motion:reduce){
 
@@ -5280,6 +5393,11 @@ def startup():
     log.info(
         f"ACTIVE FILTER = "
         f"{get_filter_setting_text()}"
+    )
+
+    log.info(
+        "★ TOP 테이블 = "
+        "순위 / 코인 / 거래대금 / 가격 / 변동률 / 신호"
     )
 
     log.info(
