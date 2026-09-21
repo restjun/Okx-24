@@ -85,31 +85,6 @@ ROC_FILTER_PERIODS = [
 
 
 # =========================================================
-# EMA 설정
-#
-# ★ EMA 길이 = ROC_FILTER_PERIODS를 그대로 사용
-#
-# 현재:
-# EMA5 / EMA10 / EMA20 / EMA50 / EMA200
-#
-# ★ EMA 시간봉 = SIGNAL_TIMEFRAME
-#
-# 현재 SIGNAL_TIMEFRAME = 240
-# → EMA도 4H
-#
-# SIGNAL_TIMEFRAME = 60
-# → EMA도 1H
-#
-# ★ EMA는 상승신호 조건에 사용하지 않음
-# ★ 화면 표시용
-# =========================================================
-
-EMA_PERIODS = ROC_FILTER_PERIODS.copy()
-
-EMA_TIMEFRAME = SIGNAL_TIMEFRAME
-
-
-# =========================================================
 # 화면 COUNT
 # =========================================================
 
@@ -162,8 +137,6 @@ SIGNAL_ROC_PERIOD = 5
 # ROC 계산용 최소 데이터
 #
 # ROC200 현재값 + 직전값
-# EMA200 계산에도 사용
-#
 # 최소 202개
 # =========================================================
 
@@ -586,20 +559,6 @@ def validate_timeframe():
         raise ValueError(
             "SIGNAL_TIMEFRAME은 "
             "60 또는 240만 사용할 수 있습니다."
-        )
-
-    if EMA_TIMEFRAME != SIGNAL_TIMEFRAME:
-
-        raise ValueError(
-            "EMA_TIMEFRAME은 "
-            "SIGNAL_TIMEFRAME을 따라야 합니다."
-        )
-
-    if EMA_PERIODS != ROC_FILTER_PERIODS:
-
-        raise ValueError(
-            "EMA_PERIODS는 "
-            "ROC_FILTER_PERIODS를 따라야 합니다."
         )
 
     if USE_1H_ROC_FILTER not in (
@@ -1826,354 +1785,6 @@ def roc_filter_display(
 
 
 # =========================================================
-# EMA
-#
-# ★ 중요
-#
-# EMA 기간:
-# ROC_FILTER_PERIODS
-#
-# EMA 시간:
-# SIGNAL_TIMEFRAME
-#
-# 현재:
-# SIGNAL_TIMEFRAME = 240
-# EMA = 4H
-# EMA5/10/20/50/200
-#
-# SIGNAL_TIMEFRAME = 60이면
-# EMA = 1H
-# =========================================================
-
-def ema_series(
-    df,
-    period
-):
-
-    if (
-        df is None
-        or df.empty
-        or "c" not in df.columns
-    ):
-
-        return None
-
-    try:
-
-        close = pd.to_numeric(
-            df["c"],
-            errors="coerce"
-        )
-
-        return (
-            close
-            .ewm(
-                span=int(period),
-                adjust=False,
-                min_periods=int(period)
-            )
-            .mean()
-        )
-
-    except Exception:
-
-        return None
-
-
-def ema_alignment_analysis(
-    df,
-    timeframe
-):
-
-    periods = EMA_PERIODS.copy()
-
-    result = {
-
-        "timeframe":
-            timeframe,
-
-        "periods":
-            periods.copy(),
-
-        "values":
-            {},
-
-        "direction":
-            "none",
-
-        "count":
-            0,
-
-        "valid":
-            False,
-
-        "alignment_candles":
-            0
-
-    }
-
-    if (
-        df is None
-        or df.empty
-    ):
-
-        return result
-
-    if len(periods) < 2:
-        return result
-
-    if int(timeframe) != int(
-        EMA_TIMEFRAME
-    ):
-
-        return result
-
-    temp = df.copy()
-
-    temp["datetime"] = pd.to_datetime(
-        temp["datetime"],
-        errors="coerce"
-    )
-
-    temp = (
-        temp
-        .dropna(
-            subset=["datetime"]
-        )
-        .sort_values(
-            "datetime"
-        )
-        .drop_duplicates(
-            "datetime"
-        )
-        .reset_index(
-            drop=True
-        )
-    )
-
-    if temp.empty:
-        return result
-
-    ema_data = {}
-
-    for period in periods:
-
-        series = ema_series(
-            temp,
-            period
-        )
-
-        if (
-            series is None
-            or series.empty
-        ):
-
-            return result
-
-        ema_data[period] = series
-
-    # =====================================================
-    # 현재 진행봉 제외
-    # =====================================================
-
-    current_start = (
-        get_current_candle_start(
-            EMA_TIMEFRAME
-        )
-    )
-
-    completed = temp[
-        temp["datetime"]
-        < current_start
-    ]
-
-    if completed.empty:
-        return result
-
-    last_index = completed.index[-1]
-
-    # =====================================================
-    # 현재 EMA 값
-    # =====================================================
-
-    current_values = {}
-
-    for period in periods:
-
-        series = ema_data.get(
-            period
-        )
-
-        if (
-            series is None
-            or last_index >= len(series)
-        ):
-
-            return result
-
-        value = series.iloc[
-            last_index
-        ]
-
-        if pd.isna(value):
-            return result
-
-        current_values[
-            period
-        ] = float(value)
-
-    # =====================================================
-    # 배열 판단
-    #
-    # EMA5 > EMA10 > EMA20 > EMA50 > EMA200
-    # = 정배열
-    #
-    # EMA5 < EMA10 < EMA20 < EMA50 < EMA200
-    # = 역배열
-    # =====================================================
-
-    values_in_order = [
-        current_values[p]
-        for p in periods
-    ]
-
-    long_alignment = all(
-        values_in_order[i]
-        > values_in_order[i + 1]
-        for i in range(
-            len(values_in_order) - 1
-        )
-    )
-
-    short_alignment = all(
-        values_in_order[i]
-        < values_in_order[i + 1]
-        for i in range(
-            len(values_in_order) - 1
-        )
-    )
-
-    if long_alignment:
-        direction = "long"
-
-    elif short_alignment:
-        direction = "short"
-
-    else:
-        direction = "none"
-
-    # =====================================================
-    # 배열 유지 COUNT
-    #
-    # 최초 배열 = 0
-    # 다음 캔들 = 1
-    # 다음 캔들 = 2
-    # =====================================================
-
-    consecutive_candles = 0
-
-    for idx in range(
-        last_index,
-        -1,
-        -1
-    ):
-
-        row_values = []
-
-        valid_row = True
-
-        for period in periods:
-
-            series = ema_data.get(
-                period
-            )
-
-            value = series.iloc[
-                idx
-            ]
-
-            if pd.isna(value):
-
-                valid_row = False
-                break
-
-            row_values.append(
-                float(value)
-            )
-
-        if not valid_row:
-            break
-
-        row_long = all(
-            row_values[i]
-            > row_values[i + 1]
-            for i in range(
-                len(row_values) - 1
-            )
-        )
-
-        row_short = all(
-            row_values[i]
-            < row_values[i + 1]
-            for i in range(
-                len(row_values) - 1
-            )
-        )
-
-        if direction == "long":
-
-            if not row_long:
-                break
-
-            consecutive_candles += 1
-
-        elif direction == "short":
-
-            if not row_short:
-                break
-
-            consecutive_candles += 1
-
-        else:
-
-            break
-
-    if consecutive_candles > 0:
-
-        count = (
-            consecutive_candles - 1
-        )
-
-    else:
-
-        count = 0
-
-    result.update({
-
-        "values":
-            current_values,
-
-        "direction":
-            direction,
-
-        "count":
-            count,
-
-        "alignment_candles":
-            consecutive_candles,
-
-        "valid":
-            direction in (
-                "long",
-                "short"
-            )
-
-    })
-
-    return result
-
-
-# =========================================================
 # 활성 ROC 필터
 # =========================================================
 
@@ -3325,8 +2936,6 @@ def analyze(
 
     # =====================================================
     # 신호 기준 native 데이터
-    #
-    # EMA도 이 데이터를 사용
     # =====================================================
 
     df_signal = history_upbit(
@@ -3390,30 +2999,14 @@ def analyze(
     )
 
     # =====================================================
-    # EMA
-    #
-    # ★ ROC_FILTER_PERIODS 사용
-    # ★ SIGNAL_TIMEFRAME 사용
-    #
-    # 현재:
-    # EMA5/10/20/50/200
-    # 4H
+    # SIGNAL ROC
     # =====================================================
 
     signal_timeframe_name = (
-        "1H"
-        if SIGNAL_TIMEFRAME == 60
-        else "4H"
+        format_timeframe(
+            SIGNAL_TIMEFRAME
+        )
     )
-
-    ema_signal = ema_alignment_analysis(
-        df_signal,
-        SIGNAL_TIMEFRAME
-    )
-
-    # =====================================================
-    # SIGNAL ROC
-    # =====================================================
 
     r_signal_raw = roc_filter_analysis(
         df_current,
@@ -3582,8 +3175,6 @@ def analyze(
     # ROC 필터
     # +
     # SIGNAL_TIMEFRAME ROC5
-    #
-    # EMA는 사용하지 않음
     # =====================================================
 
     breakout_qualified = (
@@ -3607,9 +3198,6 @@ def analyze(
 
         "roc_filter_high":
             r4,
-
-        "ema_signal":
-            ema_signal,
 
         "roc":
             r,
@@ -3728,12 +3316,6 @@ def make_row(
         "roc_filter_high":
             a.get(
                 "roc_filter_high",
-                {}
-            ),
-
-        "ema_signal":
-            a.get(
-                "ema_signal",
                 {}
             ),
 
@@ -4394,84 +3976,6 @@ def top_signal_count_html(
 
 
 # =========================================================
-# EMA HTML
-#
-# ★ EMA 기간 = ROC_FILTER_PERIODS
-# ★ EMA 시간 = SIGNAL_TIMEFRAME
-#
-# 현재:
-# 4H EMA5/10/20/50/200
-# =========================================================
-
-def ema_signal_html(
-    row
-):
-
-    if not row:
-        return "-"
-
-    ema = row.get(
-        "ema_signal",
-        {}
-    )
-
-    direction = ema.get(
-        "direction",
-        "none"
-    )
-
-    count = int(
-        ema.get(
-            "count",
-            0
-        )
-    )
-
-    timeframe = ema.get(
-        "timeframe",
-        format_timeframe(
-            SIGNAL_TIMEFRAME
-        )
-    )
-
-    if direction == "long":
-
-        return f"""
-        <div class="ema-signal-wrap">
-
-            <span class="ema-signal-long">
-
-                {timeframe}
-                🟢({count})
-
-            </span>
-
-        </div>
-        """
-
-    if direction == "short":
-
-        return f"""
-        <div class="ema-signal-wrap">
-
-            <span class="ema-signal-short">
-
-                {timeframe}
-                🔴({count})
-
-            </span>
-
-        </div>
-        """
-
-    return (
-        '<span class="muted">'
-        '-'
-        '</span>'
-    )
-
-
-# =========================================================
 # 호가 HTML
 # =========================================================
 
@@ -4651,8 +4155,6 @@ def rows_html(
         # SIGNAL_TIMEFRAME ROC5 신호/눌림
         # +
         # 당일 변동 0% 이상
-        #
-        # EMA 조건 없음
         # =================================================
 
         if (
@@ -4702,12 +4204,6 @@ def rows_html(
             )
         )
 
-        ema_content = (
-            ema_signal_html(
-                x
-            )
-        )
-
         orderbook_content = (
             orderbook_html(
                 x
@@ -4738,16 +4234,12 @@ def rows_html(
                     {x.get("volume", "-")}
                 </td>
 
-                <td class="ema">
+                <td class="roc-filter-cell">
                     {filter_content}
                 </td>
 
                 <td class="signal-cell">
                     {top_count_content}
-                </td>
-
-                <td class="signal-cell">
-                    {ema_content}
                 </td>
 
             </tr>
@@ -4757,7 +4249,7 @@ def rows_html(
                 {cls}
             ">
 
-                <td colspan="6">
+                <td colspan="5">
 
                     {orderbook_content}
 
@@ -4790,7 +4282,7 @@ def table_html(
         <tr>
 
             <td
-                colspan="6"
+                colspan="5"
                 class="empty"
             >
                 현재 후보 없음
@@ -4817,8 +4309,6 @@ def table_html(
                     <th>ROC 필터</th>
 
                     <th>ROC COUNT</th>
-
-                    <th>EMA 배열</th>
 
                 </tr>
 
@@ -4935,10 +4425,6 @@ def focus_section(
 
             ·
 
-            EMA 조건 미적용
-
-            ·
-
             COUNT 전체 표시
 
             ·
@@ -4966,11 +4452,6 @@ def section(
     update_time
 ):
 
-    ema_period_text = "/".join(
-        str(x)
-        for x in EMA_PERIODS
-    )
-
     return f"""
     <div class="section-title">
 
@@ -4993,12 +4474,6 @@ def section(
             4H ROC 필터 =
             업비트 원본 240분봉
 
-            ·
-
-            EMA =
-            {format_timeframe(EMA_TIMEFRAME)}
-            {ema_period_text}
-
         </span>
 
     </div>
@@ -5011,7 +4486,7 @@ def section(
 # BTC ROC 상태
 # =========================================================
 
-def btc_1h_roc_status_html(
+def btc_roc_status_html(
     btc_row
 ):
 
@@ -5156,11 +4631,6 @@ def market_summary_html():
             btc = row
             break
 
-    ema_period_text = "/".join(
-        str(x)
-        for x in EMA_PERIODS
-    )
-
     if btc:
 
         price = format_market_price(
@@ -5180,7 +4650,7 @@ def market_summary_html():
         )
 
         roc_status = (
-            btc_1h_roc_status_html(
+            btc_roc_status_html(
                 btc
             )
         )
@@ -5215,12 +4685,6 @@ def market_summary_html():
                 기준
                 {format_timeframe(SIGNAL_TIMEFRAME)}
                 native
-
-                ·
-
-                EMA
-                {format_timeframe(EMA_TIMEFRAME)}
-                {ema_period_text}
 
                 ·
 
@@ -5472,27 +4936,22 @@ width:6%;
 
 th:nth-child(2),
 td:nth-child(2){
-width:15%;
+width:17%;
 }
 
 th:nth-child(3),
 td:nth-child(3){
-width:14%;
+width:15%;
 }
 
 th:nth-child(4),
 td:nth-child(4){
-width:27%;
+width:38%;
 }
 
 th:nth-child(5),
 td:nth-child(5){
-width:17%;
-}
-
-th:nth-child(6),
-td:nth-child(6){
-width:21%;
+width:24%;
 }
 
 .coin{
@@ -5523,7 +4982,7 @@ font-weight:800;
 white-space:nowrap;
 }
 
-.ema{
+.roc-filter-cell{
 text-align:center!important;
 }
 
@@ -5613,33 +5072,6 @@ font-weight:900;
 color:#b6a77b;
 font-size:7px;
 font-weight:900;
-}
-
-.ema-signal-wrap{
-display:flex;
-align-items:center;
-justify-content:center;
-gap:3px;
-min-height:20px;
-white-space:nowrap;
-flex-wrap:wrap;
-}
-
-.ema-signal-long,
-.ema-signal-short{
-display:inline-flex;
-align-items:center;
-justify-content:center;
-font-size:6px;
-font-weight:900;
-}
-
-.ema-signal-long{
-color:#62b58a;
-}
-
-.ema-signal-short{
-color:#c97878;
 }
 
 .signal-cell{
@@ -5949,15 +5381,6 @@ gap:2px;
 font-size:5.8px;
 }
 
-.ema-signal-wrap{
-gap:2px;
-}
-
-.ema-signal-long,
-.ema-signal-short{
-font-size:5px;
-}
-
 .signal-wrap{
 gap:3px;
 }
@@ -6183,80 +5606,14 @@ def startup():
         "실제 240분봉 기준"
     )
 
-    # =====================================================
-    # EMA 로그
-    # =====================================================
-
-    ema_period_text = "/".join(
-        str(x)
-        for x in EMA_PERIODS
-    )
-
     log.info(
-        f"★ EMA 기간 = "
-        f"{ema_period_text}"
-    )
-
-    log.info(
-        f"★ EMA 시간봉 = "
-        f"{format_timeframe(EMA_TIMEFRAME)}"
-    )
-
-    log.info(
-        "★ EMA 기간은 ROC_FILTER_PERIODS를 그대로 사용"
-    )
-
-    log.info(
-        "★ EMA 시간봉은 SIGNAL_TIMEFRAME을 그대로 사용"
-    )
-
-    log.info(
-        f"★ EMA 정배열 = "
-        f"{' > '.join(str(x) for x in EMA_PERIODS)}"
-    )
-
-    log.info(
-        f"★ EMA 역배열 = "
-        f"{' < '.join(str(x) for x in EMA_PERIODS)}"
-    )
-
-    log.info(
-        "★ EMA 배열 최초 형성 = COUNT 0"
-    )
-
-    log.info(
-        "★ EMA 배열 유지 = COUNT 1,2,3..."
-    )
-
-    log.info(
-        "★ EMA 배열이 깨지면 COUNT 종료"
-    )
-
-    log.info(
-        "★ EMA는 상승신호 진입 조건에 사용하지 않음"
-    )
-
-    # =====================================================
-    # 기타
-    # =====================================================
-
-    log.info(
-        "★ 일봉 등락은 상승신호 조건에 사용하지 않음"
-    )
-
-    log.info(
-        "★ 상승신호 리스트에서는 "
-        "당일 변동 음수 제외"
+        "★ 일봉 등락 = "
+        "상승신호 리스트에서 음수 제외 기준"
     )
 
     log.info(
         "★ ROC200 현재값 + 직전값 계산 필요 = "
         f"{ROC_HISTORY_REQUIRED}개"
-    )
-
-    log.info(
-        "★ EMA200 계산에도 "
-        f"{ROC_HISTORY_REQUIRED}개 이상 확정봉 사용"
     )
 
     log.info(
