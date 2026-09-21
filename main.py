@@ -60,12 +60,7 @@ MAX_RETRIES = 10
 # 60  = 1시간
 # 240 = 4시간
 #
-# 현재:
-#   상승신호 = SIGNAL_TIMEFRAME ROC5
-#   ROC COUNT = SIGNAL_TIMEFRAME
-#
-# 눌림은 내부 종료 판단에만 사용하고
-# 화면에는 표시하지 않음
+# 상승 / 눌림 신호 = SIGNAL_TIMEFRAME ROC5
 # =========================================================
 
 SIGNAL_TIMEFRAME = 240
@@ -73,11 +68,13 @@ SIGNAL_TIMEFRAME = 240
 
 # =========================================================
 # ROC 필터 기간
+#
+# ★ ROC10 삭제
+# ★ ROC5 / 20 / 50 / 200 사용
 # =========================================================
 
 ROC_FILTER_PERIODS = [
     5,
-    10,
     20,
     50,
     200
@@ -85,9 +82,27 @@ ROC_FILTER_PERIODS = [
 
 
 # =========================================================
+# ROC 필터 최소 COUNT
+#
+# ★ 사용자가 직접 수정 가능
+#
+# ROC20 / ROC50 / ROC200이
+# 0선 이상인 상태가 최소 몇 개 캔들
+# 유지되어야 상승신호 필터를 통과할지 결정
+#
+# 예:
+# 10 → 모두 10개 이상
+# 15 → 모두 15개 이상
+# 20 → 모두 20개 이상
+# =========================================================
+
+ROC_FILTER_COUNT_MIN = 10
+
+
+# =========================================================
 # 화면 COUNT
 #
-# ★ 상승신호는 0, 1, 2까지만 표시
+# ★ 상승 / 눌림 모두 0, 1까지만 표시
 # =========================================================
 
 DISPLAY_COUNT_MIN = 0
@@ -97,7 +112,8 @@ DISPLAY_COUNT_MAX = 1
 # =========================================================
 # 반짝임 COUNT
 #
-# 0, 1까지만 반짝임
+# ★ 상승신호 0, 1만 반짝임
+# ★ 눌림은 반짝임 없음
 # =========================================================
 
 FLASH_COUNT_MIN = 0
@@ -106,6 +122,9 @@ FLASH_COUNT_MAX = 1
 
 # =========================================================
 # ROC 필터
+#
+# ★ ROC5는 신호용
+# ★ ROC20 / 50 / 200은 필터용
 # =========================================================
 
 USE_1H_ROC_FILTER = "Y"
@@ -113,14 +132,12 @@ USE_4H_ROC_FILTER = "Y"
 
 
 USE_1H_ROC5 = "N"
-USE_1H_ROC10 = "N"
 USE_1H_ROC20 = "Y"
 USE_1H_ROC50 = "Y"
 USE_1H_ROC200 = "Y"
 
 
 USE_4H_ROC5 = "N"
-USE_4H_ROC10 = "N"
 USE_4H_ROC20 = "Y"
 USE_4H_ROC50 = "Y"
 USE_4H_ROC200 = "Y"
@@ -190,10 +207,24 @@ roc_signal_state = {}
 
 
 # =========================================================
+# ROC 눌림 상태
+# =========================================================
+
+roc_pullback_state = {}
+
+
+# =========================================================
 # 진행 캔들에서 이미 종료된 ROC 신호
 # =========================================================
 
 roc_signal_failed_candle = {}
+
+
+# =========================================================
+# 진행 캔들에서 이미 종료된 ROC 눌림
+# =========================================================
+
+roc_pullback_failed_candle = {}
 
 
 # =========================================================
@@ -268,11 +299,6 @@ def roc_settings():
         5: {
             "1H": USE_1H_ROC5,
             "4H": USE_4H_ROC5
-        },
-
-        10: {
-            "1H": USE_1H_ROC10,
-            "4H": USE_4H_ROC10
         },
 
         20: {
@@ -543,6 +569,140 @@ def candle_distance(
 
 
 # =========================================================
+# ROC 0선 이상 연속 COUNT
+#
+# 현재 ROC가 0 이상이면
+# 최근부터 과거로 연속된 양봉(?)이 아니라
+# "ROC >= 0 상태가 몇 개 캔들 지속됐는지" 계산
+# =========================================================
+
+def roc_positive_count(
+    df,
+    period
+):
+
+    if (
+        df is None
+        or df.empty
+    ):
+
+        return 0
+
+    series = roc(
+        df,
+        period
+    )
+
+    if (
+        series is None
+        or series.empty
+    ):
+
+        return 0
+
+    valid = series.dropna()
+
+    if valid.empty:
+        return 0
+
+    current = float(
+        valid.iloc[-1]
+    )
+
+    if current < 0:
+        return 0
+
+    count = 0
+
+    for value in reversed(
+        valid.tolist()
+    ):
+
+        try:
+
+            value = float(value)
+
+        except Exception:
+
+            break
+
+        if value >= 0:
+
+            count += 1
+
+        else:
+
+            break
+
+    return count
+
+
+# =========================================================
+# ROC 0선 미만 연속 COUNT
+# =========================================================
+
+def roc_negative_count(
+    df,
+    period
+):
+
+    if (
+        df is None
+        or df.empty
+    ):
+
+        return 0
+
+    series = roc(
+        df,
+        period
+    )
+
+    if (
+        series is None
+        or series.empty
+    ):
+
+        return 0
+
+    valid = series.dropna()
+
+    if valid.empty:
+        return 0
+
+    current = float(
+        valid.iloc[-1]
+    )
+
+    if current >= 0:
+        return 0
+
+    count = 0
+
+    for value in reversed(
+        valid.tolist()
+    ):
+
+        try:
+
+            value = float(value)
+
+        except Exception:
+
+            break
+
+        if value < 0:
+
+            count += 1
+
+        else:
+
+            break
+
+    return count
+
+
+# =========================================================
 # 검증
 # =========================================================
 
@@ -580,6 +740,18 @@ def validate_timeframe():
 
         raise ValueError(
             "SIGNAL_ROC_PERIOD 설정 오류"
+        )
+
+    if (
+        not isinstance(
+            ROC_FILTER_COUNT_MIN,
+            int
+        )
+        or ROC_FILTER_COUNT_MIN < 0
+    ):
+
+        raise ValueError(
+            "ROC_FILTER_COUNT_MIN 설정 오류"
         )
 
     if (
@@ -1635,6 +1807,12 @@ def roc_filter_analysis(
         "zero_crosses":
             {},
 
+        "positive_counts":
+            {},
+
+        "negative_counts":
+            {},
+
         "positive_count":
             0,
 
@@ -1659,6 +1837,9 @@ def roc_filter_analysis(
     values = {}
     previous_values = {}
     zero_crosses = {}
+
+    positive_counts = {}
+    negative_counts = {}
 
     positive_count = 0
 
@@ -1717,6 +1898,20 @@ def roc_filter_analysis(
             and current_value >= 0
         )
 
+        positive_counts[period] = (
+            roc_positive_count(
+                df,
+                period
+            )
+        )
+
+        negative_counts[period] = (
+            roc_negative_count(
+                df,
+                period
+            )
+        )
+
         if current_value >= 0:
             positive_count += 1
 
@@ -1745,6 +1940,12 @@ def roc_filter_analysis(
 
         "zero_crosses":
             zero_crosses,
+
+        "positive_counts":
+            positive_counts,
+
+        "negative_counts":
+            negative_counts,
 
         "positive_count":
             positive_count,
@@ -1783,101 +1984,89 @@ def roc_filter_display(
 
 # =========================================================
 # 활성 ROC 필터
+#
+# ★ 핵심 필터
+#
+# 1H:
+#   ROC20 COUNT >= ROC_FILTER_COUNT_MIN
+#   ROC50 COUNT >= ROC_FILTER_COUNT_MIN
+#   ROC200 COUNT >= ROC_FILTER_COUNT_MIN
+#
+# 4H:
+#   ROC20 COUNT >= ROC_FILTER_COUNT_MIN
+#   ROC50 COUNT >= ROC_FILTER_COUNT_MIN
+#   ROC200 COUNT >= ROC_FILTER_COUNT_MIN
+#
+# 모두 만족해야 통과
 # =========================================================
+
+def get_roc_count_filter_periods():
+
+    return [
+        20,
+        50,
+        200
+    ]
+
+
+def get_roc_count_filter_status(
+    info
+):
+
+    required_periods = (
+        get_roc_count_filter_periods()
+    )
+
+    if not info:
+        return False
+
+    positive_counts = info.get(
+        "positive_counts",
+        {}
+    )
+
+    for period in required_periods:
+
+        count = positive_counts.get(
+            period
+        )
+
+        if count is None:
+            return False
+
+        if int(count) < ROC_FILTER_COUNT_MIN:
+            return False
+
+    return True
+
 
 def get_all_active_roc_status(
     filter_1h,
     filter_4h
 ):
 
-    enabled = (
-        get_enabled_all_filters()
-    )
+    h1_pass = True
+    h4_pass = True
 
-    if not enabled:
-        return False, False
+    if USE_1H_ROC_FILTER == "Y":
 
-    current_ok = True
-    previous_ok = True
-
-    current_count = 0
-    previous_count = 0
-
-    for timeframe, period in enabled:
-
-        info = (
-            filter_1h
-            if timeframe == "1H"
-            else filter_4h
+        h1_pass = (
+            get_roc_count_filter_status(
+                filter_1h
+            )
         )
 
-        if not info:
-            return False, False
+    if USE_4H_ROC_FILTER == "Y":
 
-        values = info.get(
-            "roc_values",
-            {}
+        h4_pass = (
+            get_roc_count_filter_status(
+                filter_4h
+            )
         )
-
-        previous = info.get(
-            "previous_values",
-            {}
-        )
-
-        current_value = values.get(
-            period
-        )
-
-        previous_value = previous.get(
-            period
-        )
-
-        if current_value is None:
-
-            current_ok = False
-
-        else:
-
-            current_count += 1
-
-            try:
-
-                if float(
-                    current_value
-                ) < 0:
-
-                    current_ok = False
-
-            except Exception:
-
-                current_ok = False
-
-        if previous_value is None:
-
-            previous_ok = False
-
-        else:
-
-            previous_count += 1
-
-            try:
-
-                if float(
-                    previous_value
-                ) < 0:
-
-                    previous_ok = False
-
-            except Exception:
-
-                previous_ok = False
 
     return (
-        current_count == len(enabled)
-        and current_ok,
-
-        previous_count == len(enabled)
-        and previous_ok
+        h1_pass and h4_pass,
+        False
     )
 
 
@@ -1942,9 +2131,6 @@ def roc_signal_zero_cross(r):
 
 # =========================================================
 # ROC 0선 하향 돌파
-#
-# 화면에 눌림으로 표시하지 않는다.
-# 기존 상승신호 종료 판단용으로만 사용.
 # =========================================================
 
 def roc_signal_pullback_condition(r):
@@ -1992,20 +2178,9 @@ def roc_signal_pullback_condition(r):
 #
 # 반환:
 #
-#   ("signal", 시간)
-#       → 최근 이벤트가 상승돌파
-#
-#   ("pullback", 시간)
-#       → 최근 이벤트가 하락돌파
-#
-#   (None, None)
-#
-# 중요:
-#
-# 과거 상승돌파와 그 이후 하락돌파가 같이 존재할 때
-# 오래된 상승돌파를 다시 복구하지 않는다.
-#
-# 항상 가장 최근 이벤트 하나만 사용한다.
+# ("signal", 시간)
+# ("pullback", 시간)
+# (None, None)
 # =========================================================
 
 def find_latest_signal_event(
@@ -2141,15 +2316,15 @@ def find_latest_signal_event(
 # =========================================================
 # 신호 + COUNT
 #
-# ★ 상승신호만 상태로 관리
-# ★ 눌림 상태는 만들지 않는다.
+# ★ 상승신호와 눌림을 각각 관리
 #
 # 🚀(0)
 # 🚀(1)
-# 🚀(2)
-# ...
 #
-# 반짝임은 화면에서 0~1만 적용
+# 📉(0)
+# 📉(1)
+#
+# 화면 표시 범위는 DISPLAY_COUNT로 제어
 # =========================================================
 
 def update_signal_and_pullback(
@@ -2221,11 +2396,21 @@ def update_signal_and_pullback(
             and current_value <= 0
         )
 
-    state = (
+    signal_state = (
         roc_signal_state.get(
             market_key
         )
     )
+
+    pullback_state = (
+        roc_pullback_state.get(
+            market_key
+        )
+    )
+
+    # =====================================================
+    # ① 상승 0선 돌파
+    # =====================================================
 
     if signal_cross:
 
@@ -2249,10 +2434,16 @@ def update_signal_and_pullback(
 
             }
 
-            state = (
+            signal_state = (
                 roc_signal_state[
                     market_key
                 ]
+            )
+
+            # 상승신호 발생 시 눌림 상태 제거
+            roc_pullback_state.pop(
+                market_key,
+                None
             )
 
             roc_signal_failed_candle.pop(
@@ -2269,12 +2460,19 @@ def update_signal_and_pullback(
                 f"{format_timeframe(SIGNAL_TIMEFRAME)}"
             )
 
+    # =====================================================
+    # ② 하락 0선 돌파
+    #
+    # 기존 🚀 종료
+    # 동시에 📉(0) 시작
+    # =====================================================
+
     elif pullback_cross:
 
-        if state is not None:
+        if signal_state is not None:
 
             old_count = int(
-                state.get(
+                signal_state.get(
                     "count",
                     0
                 )
@@ -2293,96 +2491,215 @@ def update_signal_and_pullback(
                 None
             )
 
-            state = None
+            signal_state = None
 
         if progress_candle_time is not None:
 
-            roc_signal_failed_candle[
+            roc_pullback_state[
                 market_key
-            ] = progress_candle_time
+            ] = {
 
-    elif state is None:
+                "active":
+                    True,
 
-        start_candle = None
+                "cross_candle":
+                    progress_candle_time,
 
-        if historical_start_candle is not None:
+                "count":
+                    0,
 
-            start_candle = (
-                normalize_datetime(
-                    historical_start_candle
-                )
+                "last_candle":
+                    progress_candle_time
+
+            }
+
+            pullback_state = (
+                roc_pullback_state[
+                    market_key
+                ]
             )
+
+            roc_pullback_failed_candle.pop(
+                market_key,
+                None
+            )
+
+            log.info(
+                f"[ROC{SIGNAL_ROC_PERIOD} "
+                f"PULLBACK START] "
+                f"{market_key} 📉(0)"
+            )
+
+    # =====================================================
+    # ③ 현재 상태가 없으면 과거 이벤트 복구
+    # =====================================================
+
+    else:
+
+        # -------------------------------------------------
+        # 상승 상태 복구
+        # -------------------------------------------------
 
         if (
-            start_candle is not None
-            and current_value is not None
-            and current_value >= 0
-            and progress_candle_time is not None
+            signal_state is None
+            and pullback_state is None
         ):
 
-            failed_candle = (
-                roc_signal_failed_candle.get(
-                    market_key
-                )
-            )
+            start_candle = None
 
+            if historical_start_candle is not None:
+
+                start_candle = (
+                    normalize_datetime(
+                        historical_start_candle
+                    )
+                )
+
+            pullback_start_candle = None
+
+            if historical_pullback_start_candle is not None:
+
+                pullback_start_candle = (
+                    normalize_datetime(
+                        historical_pullback_start_candle
+                    )
+                )
+
+            # 최근 이벤트가 상승돌파
             if (
-                failed_candle
-                != progress_candle_time
+                start_candle is not None
+                and current_value is not None
+                and current_value >= 0
+                and progress_candle_time is not None
             ):
 
-                distance = candle_distance(
-                    start_candle,
-                    progress_candle_time,
-                    SIGNAL_TIMEFRAME
+                failed_candle = (
+                    roc_signal_failed_candle.get(
+                        market_key
+                    )
                 )
 
-                roc_signal_state[
-                    market_key
-                ] = {
+                if (
+                    failed_candle
+                    != progress_candle_time
+                ):
 
-                    "active":
-                        True,
-
-                    "cross_candle":
+                    distance = candle_distance(
                         start_candle,
+                        progress_candle_time,
+                        SIGNAL_TIMEFRAME
+                    )
 
-                    "count":
-                        distance,
-
-                    "last_candle":
-                        progress_candle_time
-
-                }
-
-                state = (
                     roc_signal_state[
                         market_key
-                    ]
+                    ] = {
+
+                        "active":
+                            True,
+
+                        "cross_candle":
+                            start_candle,
+
+                        "count":
+                            distance,
+
+                        "last_candle":
+                            progress_candle_time
+
+                    }
+
+                    signal_state = (
+                        roc_signal_state[
+                            market_key
+                        ]
+                    )
+
+                    log.info(
+                        f"[ROC{SIGNAL_ROC_PERIOD} "
+                        f"SIGNAL RESTORE] "
+                        f"{market_key} "
+                        f"🚀({distance})"
+                    )
+
+            # -------------------------------------------------
+            # 최근 이벤트가 눌림
+            # -------------------------------------------------
+
+            elif (
+                pullback_start_candle is not None
+                and current_value is not None
+                and current_value <= 0
+                and progress_candle_time is not None
+            ):
+
+                failed_candle = (
+                    roc_pullback_failed_candle.get(
+                        market_key
+                    )
                 )
 
-                log.info(
-                    f"[ROC{SIGNAL_ROC_PERIOD} "
-                    f"SIGNAL RESTORE] "
-                    f"{market_key} "
-                    f"🚀({distance})"
-                )
+                if (
+                    failed_candle
+                    != progress_candle_time
+                ):
 
-    state = (
+                    distance = candle_distance(
+                        pullback_start_candle,
+                        progress_candle_time,
+                        SIGNAL_TIMEFRAME
+                    )
+
+                    roc_pullback_state[
+                        market_key
+                    ] = {
+
+                        "active":
+                            True,
+
+                        "cross_candle":
+                            pullback_start_candle,
+
+                        "count":
+                            distance,
+
+                        "last_candle":
+                            progress_candle_time
+
+                    }
+
+                    pullback_state = (
+                        roc_pullback_state[
+                            market_key
+                        ]
+                    )
+
+                    log.info(
+                        f"[ROC{SIGNAL_ROC_PERIOD} "
+                        f"PULLBACK RESTORE] "
+                        f"{market_key} "
+                        f"📉({distance})"
+                    )
+
+    # =====================================================
+    # ④ 상승 상태 COUNT
+    # =====================================================
+
+    signal_state = (
         roc_signal_state.get(
             market_key
         )
     )
 
-    if state is not None:
+    if signal_state is not None:
 
+        # ROC가 음수가 되면 상승 종료
         if (
             current_value is not None
             and current_value < 0
         ):
 
             old_count = int(
-                state.get(
+                signal_state.get(
                     "count",
                     0
                 )
@@ -2407,12 +2724,12 @@ def update_signal_and_pullback(
                 None
             )
 
-            state = None
+            signal_state = None
 
         else:
 
             cross_candle = (
-                state.get(
+                signal_state.get(
                     "cross_candle"
                 )
             )
@@ -2428,21 +2745,112 @@ def update_signal_and_pullback(
                     SIGNAL_TIMEFRAME
                 )
 
-                state["count"] = distance
+                signal_state["count"] = distance
 
-                state[
+                signal_state[
                     "last_candle"
                 ] = progress_candle_time
 
-    state = (
+    # =====================================================
+    # ⑤ 눌림 상태 COUNT
+    # =====================================================
+
+    pullback_state = (
+        roc_pullback_state.get(
+            market_key
+        )
+    )
+
+    if pullback_state is not None:
+
+        # ROC가 다시 0 이상이면 눌림 종료
+        if (
+            current_value is not None
+            and current_value >= 0
+        ):
+
+            old_count = int(
+                pullback_state.get(
+                    "count",
+                    0
+                )
+            )
+
+            if progress_candle_time is not None:
+
+                roc_pullback_failed_candle[
+                    market_key
+                ] = progress_candle_time
+
+            log.info(
+                f"[ROC{SIGNAL_ROC_PERIOD} "
+                f"PULLBACK END] "
+                f"{market_key} | "
+                f"COUNT={old_count} | "
+                f"ROC 양수"
+            )
+
+            roc_pullback_state.pop(
+                market_key,
+                None
+            )
+
+            pullback_state = None
+
+        else:
+
+            cross_candle = (
+                pullback_state.get(
+                    "cross_candle"
+                )
+            )
+
+            if (
+                cross_candle is not None
+                and progress_candle_time is not None
+            ):
+
+                distance = candle_distance(
+                    cross_candle,
+                    progress_candle_time,
+                    SIGNAL_TIMEFRAME
+                )
+
+                pullback_state[
+                    "count"
+                ] = distance
+
+                pullback_state[
+                    "last_candle"
+                ] = progress_candle_time
+
+    # =====================================================
+    # 최종 상태
+    # =====================================================
+
+    signal_state = (
         roc_signal_state.get(
             market_key
         )
     )
 
+    pullback_state = (
+        roc_pullback_state.get(
+            market_key
+        )
+    )
+
     signal_active = bool(
-        state
-        and state.get(
+        signal_state
+        and signal_state.get(
+            "active",
+            True
+        )
+    )
+
+    pullback_active = bool(
+        pullback_state
+        and pullback_state.get(
             "active",
             True
         )
@@ -2450,10 +2858,21 @@ def update_signal_and_pullback(
 
     signal_count = 0
 
-    if state is not None:
+    if signal_state is not None:
 
         signal_count = int(
-            state.get(
+            signal_state.get(
+                "count",
+                0
+            )
+        )
+
+    pullback_count = 0
+
+    if pullback_state is not None:
+
+        pullback_count = int(
+            pullback_state.get(
                 "count",
                 0
             )
@@ -2468,10 +2887,10 @@ def update_signal_and_pullback(
             signal_count,
 
         "pullback_active":
-            False,
+            pullback_active,
 
         "pullback_count":
-            0,
+            pullback_count,
 
         "signal_roc_cross":
             signal_cross,
@@ -2628,6 +3047,10 @@ def analyze(
         get_all_periods()
     )
 
+    # =====================================================
+    # 1H native
+    # =====================================================
+
     df1h = history_upbit(
         market,
         60,
@@ -2640,6 +3063,10 @@ def analyze(
     ):
 
         return None
+
+    # =====================================================
+    # 4H native
+    # =====================================================
 
     df4h = history_upbit(
         market,
@@ -2654,6 +3081,10 @@ def analyze(
 
         return None
 
+    # =====================================================
+    # 신호 기준 native 데이터
+    # =====================================================
+
     df_signal = history_upbit(
         market,
         SIGNAL_TIMEFRAME,
@@ -2666,6 +3097,10 @@ def analyze(
     ):
 
         return None
+
+    # =====================================================
+    # 현재 진행 중인 신호 시간봉
+    # =====================================================
 
     df_current = (
         get_upbit_current_roc_data(
@@ -2682,6 +3117,10 @@ def analyze(
 
         return None
 
+    # =====================================================
+    # 1H ROC
+    # =====================================================
+
     r1_raw = roc_filter_analysis(
         df1h,
         all_periods
@@ -2692,6 +3131,10 @@ def analyze(
         "1H"
     )
 
+    # =====================================================
+    # 4H ROC
+    # =====================================================
+
     r4_raw = roc_filter_analysis(
         df4h,
         all_periods
@@ -2701,6 +3144,10 @@ def analyze(
         r4_raw,
         "4H"
     )
+
+    # =====================================================
+    # SIGNAL ROC
+    # =====================================================
 
     signal_timeframe_name = (
         format_timeframe(
@@ -2764,6 +3211,10 @@ def analyze(
         roc_signal_pullback_condition(r)
     )
 
+    # =====================================================
+    # ROC COUNT 필터
+    # =====================================================
+
     filter_pass = (
         all_active_roc_filters_pass(
             r1,
@@ -2771,15 +3222,27 @@ def analyze(
         )
     )
 
+    # =====================================================
+    # 현재 진행 신호 캔들
+    # =====================================================
+
     progress_candle_time = (
         get_current_candle_start(
             SIGNAL_TIMEFRAME
         )
     )
 
-    historical_start_candle = None
+    # =====================================================
+    # 과거 가장 최근 이벤트
+    # =====================================================
 
-    if market not in roc_signal_state:
+    historical_start_candle = None
+    historical_pullback_start_candle = None
+
+    if (
+        market not in roc_signal_state
+        and market not in roc_pullback_state
+    ):
 
         latest_event_type, latest_event_candle = (
             find_latest_signal_event(
@@ -2793,9 +3256,15 @@ def analyze(
                 latest_event_candle
             )
 
-        else:
+        elif latest_event_type == "pullback":
 
-            historical_start_candle = None
+            historical_pullback_start_candle = (
+                latest_event_candle
+            )
+
+    # =====================================================
+    # 신호 / 눌림 / COUNT
+    # =====================================================
 
     state = update_signal_and_pullback(
         market=market,
@@ -2807,8 +3276,14 @@ def analyze(
         historical_start_candle=(
             historical_start_candle
         ),
-        historical_pullback_start_candle=None
+        historical_pullback_start_candle=(
+            historical_pullback_start_candle
+        )
     )
+
+    # =====================================================
+    # 일봉
+    # =====================================================
 
     changes = (
         daily_change_upbit(
@@ -2826,6 +3301,14 @@ def analyze(
         change_value is not None
         and change_value >= 0
     )
+
+    # =====================================================
+    # 상승신호 자격
+    #
+    # ROC20/50/200 COUNT 필터
+    # +
+    # 상승신호
+    # =====================================================
 
     breakout_qualified = (
         state["signal_active"]
@@ -2867,10 +3350,14 @@ def analyze(
             ],
 
         "pullback_active":
-            False,
+            state[
+                "pullback_active"
+            ],
 
         "pullback_count":
-            0,
+            state[
+                "pullback_count"
+            ],
 
         "signal_roc_cross":
             state[
@@ -2996,10 +3483,20 @@ def make_row(
             ),
 
         "pullback_active":
-            False,
+            bool(
+                a.get(
+                    "pullback_active",
+                    False
+                )
+            ),
 
         "pullback_count":
-            0,
+            int(
+                a.get(
+                    "pullback_count",
+                    0
+                )
+            ),
 
         "signal_roc_cross":
             bool(
@@ -3287,6 +3784,10 @@ def format_market_price(
 
 # =========================================================
 # ROC 필터 HTML
+#
+# ★ ROC10 삭제
+# ★ ROC5 / 20 / 50 / 200 표시
+# ★ 각 ROC 뒤에 0선 연속 COUNT 표시
 # =========================================================
 
 def roc_filter_html(
@@ -3304,6 +3805,16 @@ def roc_filter_html(
         {}
     )
 
+    positive_counts = r.get(
+        "positive_counts",
+        {}
+    )
+
+    negative_counts = r.get(
+        "negative_counts",
+        {}
+    )
+
     parts = []
 
     for period in ROC_FILTER_PERIODS:
@@ -3316,6 +3827,7 @@ def roc_filter_html(
 
             icon = "⚪"
             cls = "roc-zero"
+            count = 0
 
         else:
 
@@ -3330,20 +3842,36 @@ def roc_filter_html(
                     icon = "🟢"
                     cls = "roc-up"
 
+                    count = int(
+                        positive_counts.get(
+                            period,
+                            0
+                        )
+                    )
+
                 elif value < 0:
 
                     icon = "🔴"
                     cls = "roc-down"
 
+                    count = int(
+                        negative_counts.get(
+                            period,
+                            0
+                        )
+                    )
+
                 else:
 
                     icon = "⚪"
                     cls = "roc-zero"
+                    count = 1
 
             except Exception:
 
                 icon = "⚪"
                 cls = "roc-zero"
+                count = 0
 
         setting = settings[
             period
@@ -3364,7 +3892,7 @@ def roc_filter_html(
                 {setting_cls}
                 {cls}
             ">
-                {period}{icon}
+                {period}{icon}({count})
             </span>
             """
         )
@@ -3415,11 +3943,11 @@ def filter_html(
 
 
 # =========================================================
-# ROC COUNT HTML
+# 신호 HTML
 #
-# ★ 상승신호만 표시
-# ★ 0, 1, 2까지만 표시
-# ★ 눌림 표시 없음
+# ★ 🚀 상승
+# ★ 📉 눌림
+# ★ 둘 다 표시
 # =========================================================
 
 def signal_html(
@@ -3441,17 +3969,67 @@ def signal_html(
         )
     )
 
-    if not signal_active:
+    pullback_active = row.get(
+        "pullback_active",
+        False
+    )
 
-        return (
-            '<span class="muted">'
-            '-'
-            '</span>'
+    pullback_count = int(
+        row.get(
+            "pullback_count",
+            0
+        )
+    )
+
+    items = []
+
+    if (
+        signal_active
+        and count_display_allowed(
+            signal_count
+        )
+    ):
+
+        items.append(
+            f"""
+            <span class="signal-item">
+
+                <span class="signal-rocket">
+                    🚀
+                </span>
+
+                <span class="signal-count">
+                    ({signal_count})
+                </span>
+
+            </span>
+            """
         )
 
-    if not count_display_allowed(
-        signal_count
+    if (
+        pullback_active
+        and count_display_allowed(
+            pullback_count
+        )
     ):
+
+        items.append(
+            f"""
+            <span class="signal-item pullback-item">
+
+                <span class="signal-pullback">
+                    📉
+                </span>
+
+                <span class="pullback-count">
+                    ({pullback_count})
+                </span>
+
+            </span>
+            """
+        )
+
+    if not items:
 
         return (
             '<span class="muted">'
@@ -3462,17 +4040,7 @@ def signal_html(
     return f"""
     <div class="signal-wrap">
 
-        <span class="signal-item">
-
-            <span class="signal-rocket">
-                🚀
-            </span>
-
-            <span class="signal-count">
-                ({signal_count})
-            </span>
-
-        </span>
+        {"".join(items)}
 
     </div>
     """
@@ -3481,9 +4049,7 @@ def signal_html(
 # =========================================================
 # TOP COUNT
 #
-# ★ 상승신호만 표시
-# ★ 0, 1, 2까지만 표시
-# ★ 눌림 표시 없음
+# ★ 🚀 / 📉 모두 표시
 # =========================================================
 
 def top_signal_count_html(
@@ -3505,17 +4071,51 @@ def top_signal_count_html(
         )
     )
 
-    if not signal_active:
+    pullback_active = row.get(
+        "pullback_active",
+        False
+    )
 
-        return (
-            '<span class="muted">'
-            '-'
-            '</span>'
+    pullback_count = int(
+        row.get(
+            "pullback_count",
+            0
+        )
+    )
+
+    items = []
+
+    if (
+        signal_active
+        and count_display_allowed(
+            signal_count
+        )
+    ):
+
+        items.append(
+            f"""
+            <span class="top-signal-count">
+                🚀({signal_count})
+            </span>
+            """
         )
 
-    if not count_display_allowed(
-        signal_count
+    if (
+        pullback_active
+        and count_display_allowed(
+            pullback_count
+        )
     ):
+
+        items.append(
+            f"""
+            <span class="top-pullback-count">
+                📉({pullback_count})
+            </span>
+            """
+        )
+
+    if not items:
 
         return (
             '<span class="muted">'
@@ -3526,9 +4126,7 @@ def top_signal_count_html(
     return f"""
     <div class="top-count-wrap">
 
-        <span class="top-signal-count">
-            🚀({signal_count})
-        </span>
+        {"".join(items)}
 
     </div>
     """
@@ -3666,12 +4264,8 @@ def orderbook_html(
 # =========================================================
 # ROW HTML
 #
-# ★ 반짝임:
-#    🚀(0)
-#    🚀(1)
-#    만
-#
-# ★ 📉는 반짝임 대상에서 완전 제외
+# ★ 상승 🚀 0~1 반짝임
+# ★ 눌림 📉은 표시하지만 반짝임 없음
 # =========================================================
 
 def rows_html(
@@ -3859,11 +4453,11 @@ def table_html(
 
 
 # =========================================================
-# 상승 신호
+# 상승 / 눌림 신호
 #
-# ★ 🚀만 표시
-# ★ 📉 완전 제외
-# ★ COUNT 0, 1, 2까지만 표시
+# ★ 🚀 상승신호
+# ★ 📉 눌림신호
+# ★ 둘 다 표시
 # =========================================================
 
 def focus_section(
@@ -3885,18 +4479,42 @@ def focus_section(
 
             and
 
-            x.get(
-                "signal_active",
-                False
-            )
-
-            and
-
-            count_display_allowed(
-                int(
+            (
+                (
                     x.get(
-                        "signal_count",
-                        0
+                        "signal_active",
+                        False
+                    )
+
+                    and
+
+                    count_display_allowed(
+                        int(
+                            x.get(
+                                "signal_count",
+                                0
+                            )
+                        )
+                    )
+                )
+
+                or
+
+                (
+                    x.get(
+                        "pullback_active",
+                        False
+                    )
+
+                    and
+
+                    count_display_allowed(
+                        int(
+                            x.get(
+                                "pullback_count",
+                                0
+                            )
+                        )
                     )
                 )
             )
@@ -3916,18 +4534,19 @@ def focus_section(
     <div class="section-title long-title">
 
         <span class="section-title-main">
-            🚀 상승 신호
+            🚀 상승 / 📉 눌림 신호
         </span>
 
         <span class="section-title-sub">
 
-            ROC 필터 통과
+            ROC20/50/200 COUNT
+            ≥ {ROC_FILTER_COUNT_MIN}
 
             ·
 
             ROC{SIGNAL_ROC_PERIOD}
             {format_timeframe(SIGNAL_TIMEFRAME)}
-            상승 0선 돌파
+            0선 기준
 
             ·
 
@@ -3935,7 +4554,7 @@ def focus_section(
 
             ·
 
-            COUNT 0~2 표시
+            COUNT {count_display_text()} 표시
 
             ·
 
@@ -3977,11 +4596,16 @@ def section(
 
             ROC{SIGNAL_ROC_PERIOD}
             {format_timeframe(SIGNAL_TIMEFRAME)}
-            상승 0선 돌파 / COUNT
+            🚀 상승 / 📉 눌림
 
             ·
 
-            4H ROC 필터 =
+            ROC20/50/200 COUNT
+            ≥ {ROC_FILTER_COUNT_MIN}
+
+            ·
+
+            4H ROC =
             업비트 원본 240분봉
 
         </span>
@@ -4059,30 +4683,24 @@ def btc_roc_status_html(
                 if current >= 0:
 
                     icon = "🟢"
-                    count = 0
 
-                    for value in reversed(
-                        valid.tolist()
-                    ):
-
-                        if float(value) >= 0:
-                            count += 1
-                        else:
-                            break
+                    count = (
+                        roc_positive_count(
+                            df_signal,
+                            period
+                        )
+                    )
 
                 else:
 
                     icon = "🔴"
-                    count = 0
 
-                    for value in reversed(
-                        valid.tolist()
-                    ):
-
-                        if float(value) < 0:
-                            count += 1
-                        else:
-                            break
+                    count = (
+                        roc_negative_count(
+                            df_signal,
+                            period
+                        )
+                    )
 
         items.append(
             f"""
@@ -4183,8 +4801,8 @@ def market_summary_html():
 
             <span class="market-title-sub">
 
-                활성 ROC
-                {get_filter_setting_text()}
+                ROC20/50/200 COUNT
+                ≥ {ROC_FILTER_COUNT_MIN}
 
                 ·
 
@@ -4198,7 +4816,7 @@ def market_summary_html():
 
                 ·
 
-                4H 필터 =
+                4H =
                 업비트 원본 240분봉
 
             </span>
@@ -4366,7 +4984,7 @@ text-align:left;
 
 .btc-roc-grid{
 display:grid;
-grid-template-columns:repeat(5,1fr);
+grid-template-columns:repeat(4,1fr);
 width:100%;
 gap:2px;
 }
@@ -4536,10 +5154,10 @@ align-items:center;
 justify-content:center;
 margin:0;
 padding:0;
-font-size:4.1px;
+font-size:3.9px;
 line-height:8px;
 font-weight:900;
-letter-spacing:-0.35px;
+letter-spacing:-0.45px;
 white-space:nowrap;
 flex:0 0 auto;
 }
@@ -4568,12 +5186,18 @@ color:#68717b!important;
 display:flex;
 align-items:center;
 justify-content:center;
-gap:4px;
+gap:5px;
 white-space:nowrap;
 }
 
 .top-signal-count{
 color:#62b58a;
+font-size:7px;
+font-weight:900;
+}
+
+.top-pullback-count{
+color:#c97878;
 font-size:7px;
 font-weight:900;
 }
@@ -4586,7 +5210,7 @@ text-align:center!important;
 display:flex;
 align-items:center;
 justify-content:center;
-gap:5px;
+gap:6px;
 min-height:20px;
 white-space:nowrap;
 }
@@ -4605,6 +5229,16 @@ font-size:9px;
 
 .signal-count{
 color:#62b58a;
+font-size:7px;
+font-weight:900;
+}
+
+.signal-pullback{
+font-size:9px;
+}
+
+.pullback-count{
+color:#c97878;
 font-size:7px;
 font-weight:900;
 }
@@ -4858,30 +5492,33 @@ min-width:0;
 }
 
 .roc-item{
-font-size:3.5px;
+font-size:3.25px;
 line-height:7px;
 margin:0;
 padding:0;
-letter-spacing:-0.45px;
+letter-spacing:-0.55px;
 }
 
 .top-count-wrap{
 gap:2px;
 }
 
-.top-signal-count{
+.top-signal-count,
+.top-pullback-count{
 font-size:5.8px;
 }
 
 .signal-wrap{
-gap:3px;
+gap:4px;
 }
 
-.signal-rocket{
+.signal-rocket,
+.signal-pullback{
 font-size:8px;
 }
 
-.signal-count{
+.signal-count,
+.pullback-count{
 font-size:6.5px;
 }
 
@@ -5063,18 +5700,55 @@ def startup():
     )
 
     log.info(
-        f"상승신호 ROC = "
+        f"상승/눌림 신호 ROC = "
         f"ROC{SIGNAL_ROC_PERIOD} "
         f"{format_timeframe(SIGNAL_TIMEFRAME)}"
     )
 
     log.info(
-        f"상승신호 / ROC COUNT = "
-        f"{format_timeframe(SIGNAL_TIMEFRAME)} native"
+        f"ROC 필터 COUNT 최소값 = "
+        f"{ROC_FILTER_COUNT_MIN}"
     )
 
     log.info(
-        "★ 눌림은 화면에 표시하지 않음"
+        "★ ROC10 삭제"
+    )
+
+    log.info(
+        "★ ROC5 / ROC20 / ROC50 / ROC200 사용"
+    )
+
+    log.info(
+        "★ ROC20/50/200은 0선 이상 연속 COUNT 사용"
+    )
+
+    log.info(
+        f"★ ROC20/50/200 COUNT >= "
+        f"{ROC_FILTER_COUNT_MIN}"
+    )
+
+    log.info(
+        "★ 1H ROC20/50/200 필터"
+    )
+
+    log.info(
+        "★ 4H ROC20/50/200 필터"
+    )
+
+    log.info(
+        "★ 눌림은 화면에 표시"
+    )
+
+    log.info(
+        "★ ROC5 0선 상향 돌파 = 🚀"
+    )
+
+    log.info(
+        "★ ROC5 0선 하향 돌파 = 📉"
+    )
+
+    log.info(
+        "★ 상승/눌림 COUNT 화면 표시"
     )
 
     log.info(
@@ -5090,13 +5764,8 @@ def startup():
     )
 
     log.info(
-        "★ 4H ROC10/20/50/200 = "
-        "실제 240분봉 기준"
-    )
-
-    log.info(
         "★ 일봉 등락 = "
-        "상승신호 리스트에서 음수 제외 기준"
+        "상승/눌림 리스트의 기본 표시 기준"
     )
 
     log.info(
@@ -5123,69 +5792,25 @@ def startup():
     )
 
     log.info(
-        f"★ ROC{SIGNAL_ROC_PERIOD} "
-        f"{format_timeframe(SIGNAL_TIMEFRAME)} "
-        "0선 상향 돌파 = 🚀 COUNT 0"
-    )
-
-    log.info(
-        f"★ ROC{SIGNAL_ROC_PERIOD} "
-        f"{format_timeframe(SIGNAL_TIMEFRAME)} "
-        "0선 하향 돌파 = 기존 🚀 종료"
-    )
-
-    log.info(
-        f"★ ROC{SIGNAL_ROC_PERIOD} 음수 "
-        "→ 상승신호 종료"
-    )
-
-    log.info(
-        "★ 활성 ROC 필터 음수 "
-        "→ 상승신호 영역 제외"
-    )
-
-    log.info(
-        "★ 상승신호 조건 = "
-        "4H ROC 필터 통과 + "
-        f"{format_timeframe(SIGNAL_TIMEFRAME)} "
-        f"ROC{SIGNAL_ROC_PERIOD} "
-        "상승신호 + "
-        "당일 변동 0% 이상"
-    )
-
-    log.info(
-        f"COUNT = 0,1,2,3... "
-        f"{format_timeframe(SIGNAL_TIMEFRAME)} 기준"
-    )
-
-    log.info(
-        f"COUNT 화면 표시 = "
+        f"★ COUNT 화면 표시 = "
         f"{count_display_text()}"
     )
 
     log.info(
-        f"COUNT 반짝임 = "
+        f"★ COUNT 반짝임 = "
         f"{count_flash_text()}"
     )
 
     log.info(
-        "★ 화면에는 🚀(0), 🚀(1), 🚀(2)까지만 표시"
+        "★ 상승신호만 반짝임"
     )
 
     log.info(
-        "★ 반짝임은 🚀(0), 🚀(1)만 적용"
-    )
-
-    log.info(
-        "★ 📉 눌림 COUNT는 화면 표시 안 함"
+        "★ 눌림은 표시하지만 반짝이지 않음"
     )
 
     log.info(
         "★ 과거 이벤트는 가장 최근 이벤트 하나만 사용"
-    )
-
-    log.info(
-        "★ 최근 이벤트가 하락이면 과거 상승신호 복구 안 함"
     )
 
     log.info(
