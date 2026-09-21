@@ -2446,6 +2446,7 @@ def update_signal_and_pullback(
                         roc_pullback_state[
                             market_key
                         ]
+
                     )
 
                     log.info(
@@ -2829,7 +2830,6 @@ def get_reference_filter_data(
 
     for timeframe_minutes in dashboard_timeframes:
 
-        # 실제 활성 필터는 기존 filter_results에서 사용
         if timeframe_minutes in active_timeframes:
 
             continue
@@ -2886,12 +2886,6 @@ def analyze(
     all_periods = (
         get_all_periods()
     )
-
-    # =====================================================
-    # ROC 필터 데이터
-    #
-    # 활성화된 필터만 실제 필터 판정에 사용
-    # =====================================================
 
     filter_timeframes = (
         get_filter_configs()
@@ -2952,22 +2946,12 @@ def analyze(
             display_filter
         )
 
-    # =====================================================
-    # N 필터 참고용 데이터
-    #
-    # 실제 필터 판정에는 사용하지 않음
-    # =====================================================
-
     reference_filter_results = (
         get_reference_filter_data(
             market,
             filter_timeframes
         )
     )
-
-    # =====================================================
-    # 신호 기준 native 데이터
-    # =====================================================
 
     df_signal = history_upbit(
         market,
@@ -2981,10 +2965,6 @@ def analyze(
     ):
 
         return None
-
-    # =====================================================
-    # 현재 진행 중인 신호 시간봉
-    # =====================================================
 
     df_current = (
         get_upbit_current_roc_data(
@@ -3000,10 +2980,6 @@ def analyze(
     ):
 
         return None
-
-    # =====================================================
-    # SIGNAL ROC
-    # =====================================================
 
     signal_timeframe_name = (
         format_timeframe(
@@ -3067,32 +3043,17 @@ def analyze(
         roc_signal_pullback_condition(r)
     )
 
-    # =====================================================
-    # ROC COUNT 필터
-    #
-    # 기존과 동일
-    # 활성화된 Y 필터만 사용
-    # =====================================================
-
     filter_pass = (
         all_active_roc_filters_pass(
             filter_results
         )
     )
 
-    # =====================================================
-    # 현재 진행 신호 캔들
-    # =====================================================
-
     progress_candle_time = (
         get_current_candle_start(
             SIGNAL_TIMEFRAME
         )
     )
-
-    # =====================================================
-    # 과거 가장 최근 이벤트
-    # =====================================================
 
     historical_start_candle = None
     historical_pullback_start_candle = None
@@ -3120,10 +3081,6 @@ def analyze(
                 latest_event_candle
             )
 
-    # =====================================================
-    # 신호 / 눌림 / COUNT
-    # =====================================================
-
     state = update_signal_and_pullback(
         market=market,
         r=r,
@@ -3138,10 +3095,6 @@ def analyze(
             historical_pullback_start_candle
         )
     )
-
-    # =====================================================
-    # 일봉
-    # =====================================================
 
     changes = (
         daily_change_upbit(
@@ -3160,10 +3113,6 @@ def analyze(
         and change_value >= 0
     )
 
-    # =====================================================
-    # 상승신호 자격
-    # =====================================================
-
     breakout_qualified = (
         state["signal_active"]
         and
@@ -3174,10 +3123,6 @@ def analyze(
 
         "roc_filters":
             filter_results,
-
-        # =================================================
-        # N 필터 참고용
-        # =================================================
 
         "roc_reference_filters":
             reference_filter_results,
@@ -3745,10 +3690,6 @@ def filter_html(
 
     sections = []
 
-    # =====================================================
-    # 실제 활성 필터
-    # =====================================================
-
     active_map = {}
 
     for r in (
@@ -3767,10 +3708,6 @@ def filter_html(
             timeframe
         ] = r
 
-    # =====================================================
-    # 참고용 N 필터
-    # =====================================================
-
     reference_map = {}
 
     for r in (
@@ -3788,10 +3725,6 @@ def filter_html(
         reference_map[
             timeframe
         ] = r
-
-    # =====================================================
-    # 설정된 FILTER1 / FILTER2 순서대로 표시
-    # =====================================================
 
     displayed = set()
 
@@ -3856,10 +3789,6 @@ def filter_html(
                 )
 
             else:
-
-                # =========================================
-                # 데이터가 없을 경우에도 N 참고용 영역 표시
-                # =========================================
 
                 settings = roc_settings()
 
@@ -5299,12 +5228,12 @@ padding-right:3px!important;
 .volume-value{
 display:block;
 
-color:#858e98;
+color:#f1f3f5;
 
 font-size:7px;
 line-height:10px;
 
-font-weight:700;
+font-weight:800;
 
 white-space:nowrap;
 overflow:hidden;
@@ -5484,9 +5413,41 @@ display:inline-flex;
 align-items:center;
 justify-content:center;
 
-gap:1px;
+gap:2px;
+
+padding:2px 5px;
+
+border-radius:4px;
 
 font-weight:900;
+}
+
+
+/* =====================================================
+   상승 신호
+   ===================================================== */
+
+.signal-item:not(.pullback-item){
+
+background:#183329;
+
+border:1px solid #285b45;
+
+color:#72bd98;
+}
+
+
+/* =====================================================
+   눌림 신호
+   ===================================================== */
+
+.signal-item.pullback-item{
+
+background:#3a2023;
+
+border:1px solid #6a353a;
+
+color:#cf8585;
 }
 
 .signal-rocket{
@@ -5494,7 +5455,7 @@ font-size:11px;
 }
 
 .signal-count{
-color:#72bd98;
+color:#7ed3a5;
 
 font-size:8px;
 font-weight:900;
@@ -5505,7 +5466,7 @@ font-size:11px;
 }
 
 .pullback-count{
-color:#cf8585;
+color:#e18b8b;
 
 font-size:8px;
 font-weight:900;
@@ -5806,6 +5767,10 @@ text-align:center!important;
 .volume-value{
 font-size:5.3px;
 
+color:#f1f3f5;
+
+font-weight:800;
+
 text-align:center;
 }
 
@@ -5907,6 +5872,38 @@ text-align:center;
 gap:2px;
 
 justify-content:center;
+}
+
+.signal-item{
+padding:1px 4px;
+
+border-radius:3px;
+
+gap:1px;
+}
+
+
+/* =====================================================
+   모바일 상승
+   ===================================================== */
+
+.signal-item:not(.pullback-item){
+
+background:#183329;
+
+border:1px solid #285b45;
+}
+
+
+/* =====================================================
+   모바일 눌림
+   ===================================================== */
+
+.signal-item.pullback-item{
+
+background:#3a2023;
+
+border:1px solid #6a353a;
 }
 
 .signal-rocket,
