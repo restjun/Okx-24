@@ -10,7 +10,7 @@ import logging
 import pandas as pd
 import warnings
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 
@@ -64,26 +64,28 @@ MAX_RETRIES = 10
 #   ROC 돌파       = 4시간
 #   눌림           = 4시간
 #   COUNT          = 4시간
-#   진행 캔들       = 4시간
 #
-# 4시간봉 시작:
-#   00:00
-#   04:00
-#   08:00
-#   12:00
-#   16:00
-#   20:00
+# ★ 4시간봉 KST 시작 시간 ★
+#
+#   01:00
+#   05:00
+#   09:00
+#   13:00
+#   17:00
+#   21:00
+#
+# 다음날:
+#   01:00
+#
 # =========================================================
 
 SIGNAL_TIMEFRAME = 240
 
 
 # =========================================================
-# ★ COUNT 표시
+# 화면 COUNT
 #
-# 돌파 진행 중 = 0
-# 첫 완성       = 1
-# 이후          = 2, 3, 4...
+# 0부터 모든 COUNT 표시
 # =========================================================
 
 DISPLAY_COUNT_MIN = 0
@@ -93,13 +95,13 @@ DISPLAY_COUNT_MAX = 999999
 # =========================================================
 # 반짝임 COUNT
 #
-# 1~3만 반짝임
+# 0~3만 반짝임
 #
-# 0 = 돌파 진행 중
-#     → 표시만 하고 반짝이지 않음
+# 돌파 진행 중 = 0
+# 돌파 완료     = 1
 # =========================================================
 
-FLASH_COUNT_MIN = 1
+FLASH_COUNT_MIN = 0
 FLASH_COUNT_MAX = 3
 
 
@@ -425,11 +427,78 @@ def format_timeframe(minutes):
     return f"{minutes}M"
 
 
+# =========================================================
+# ★★★★★ 핵심 ★★★★★
+#
+# 4시간봉 시작시간을
+#
+# 01 / 05 / 09 / 13 / 17 / 21시
+#
+# 로 맞춤
+#
+# 예:
+#
+# 00:30 → 전날 21:00 캔들
+# 01:00 → 새로운 01:00 캔들
+# 04:59 → 01:00 캔들
+# 05:00 → 새로운 05:00 캔들
+#
+# =========================================================
+
 def get_current_candle_start(minutes):
 
     minutes = int(minutes)
 
     now = datetime.now(KST)
+
+    # =====================================================
+    # 4시간봉
+    # =====================================================
+
+    if minutes == 240:
+
+        # 오늘 01:00을 기준점으로 사용
+        anchor = now.replace(
+            hour=1,
+            minute=0,
+            second=0,
+            microsecond=0
+        )
+
+        # 현재가 오늘 01:00보다 이전이면
+        # 기준점은 전날 01:00
+        if now < anchor:
+
+            anchor = (
+                anchor
+                - timedelta(days=1)
+            )
+
+        elapsed = (
+            now - anchor
+        ).total_seconds()
+
+        blocks = int(
+            elapsed
+            // (240 * 60)
+        )
+
+        current = (
+            anchor
+            + timedelta(
+                minutes=blocks * 240
+            )
+        )
+
+        return current.replace(
+            tzinfo=None
+        )
+
+    # =====================================================
+    # 1시간봉
+    #
+    # 00 / 01 / 02 / 03...
+    # =====================================================
 
     total = (
         now.hour * 60
@@ -639,7 +708,7 @@ def validate_timeframe():
             FLASH_COUNT_MAX,
             int
         )
-        or FLASH_COUNT_MIN < 1
+        or FLASH_COUNT_MIN < 0
         or FLASH_COUNT_MAX < FLASH_COUNT_MIN
     ):
 
@@ -2226,8 +2295,10 @@ def roc_signal_pullback_condition(r):
 # =========================================================
 # ★ 과거 상승 신호 찾기
 #
-# 활성 ROC 필터와 무관
 # ROC5 4H 0선 상향 돌파 자체를 찾음
+#
+# 현재 진행 캔들은 history에 없으므로
+# 완료된 캔들에서만 과거 시작점을 찾음
 # =========================================================
 
 def find_latest_signal_start(
@@ -2459,20 +2530,30 @@ def find_latest_pullback_start(
 # =========================================================
 # ★★★★★ 핵심 ★★★★★
 #
-# 신호:
+# 신호 + 눌림 + COUNT
 #
-# 현재 진행 중인 돌파봉 = 0
-# 다음 완성봉 = 1
-# 다음 = 2
-# 다음 = 3
+# COUNT 기준
 #
-# 눌림:
+# 현재 진행 중인 돌파 캔들 = 0
+# 돌파 캔들이 완성된 후    = 1
+# 다음 캔들                = 2
+# 다음                    = 3
 #
-# 하향 돌파 발생봉 = 1
-# 다음 = 2
-# 다음 = 3
+# 예:
 #
-# ROC 필터와 COUNT는 독립
+# 09:00 현재 캔들에서 돌파
+# → 09:00~12:59 진행 중 = 🚀(0)
+#
+# 13:00
+# → 09:00 캔들 완성
+# → 🚀(1)
+#
+# 17:00
+# → 🚀(2)
+#
+# 21:00
+# → 🚀(3)
+#
 # =========================================================
 
 def update_signal_and_pullback(
@@ -2527,7 +2608,7 @@ def update_signal_and_pullback(
     # 1. 현재 ROC5 하향 돌파
     #
     # 상승 신호 종료
-    # 눌림 COUNT 1 시작
+    # 눌림 COUNT 0 시작
     # =====================================================
 
     if pullback_condition:
@@ -2568,8 +2649,9 @@ def update_signal_and_pullback(
                 "start_candle":
                     progress_candle_time,
 
+                # ★ 진행 중인 눌림 캔들 = 0
                 "count":
-                    1,
+                    0,
 
                 "last_candle":
                     progress_candle_time
@@ -2584,7 +2666,7 @@ def update_signal_and_pullback(
             log.info(
                 f"[ROC{SIGNAL_ROC_PERIOD} PULLBACK START] "
                 f"{market_key} "
-                f"📉1 | "
+                f"📉0 | "
                 f"ROC="
                 f"{signal_roc_current} | "
                 f"기준="
@@ -2595,9 +2677,9 @@ def update_signal_and_pullback(
     # =====================================================
     # 2. 현재 ROC5 상향 돌파
     #
-    # ★ 돌파 진행 중 = COUNT 0
+    # ★ filter_pass와 무관
     #
-    # 다음 4H봉부터 COUNT 1
+    # ★ 현재 진행 중인 돌파 캔들 = COUNT 0
     # =====================================================
 
     elif signal_cross:
@@ -2676,8 +2758,10 @@ def update_signal_and_pullback(
     # =====================================================
     # 3. 과거 상승 신호 복원
     #
-    # ★ 돌파봉 = 0
-    # ★ 다음 = 1
+    # 과거 돌파 캔들은 이미 완성된 상태이므로
+    #
+    # 현재가 바로 다음 캔들이면 COUNT 1
+    #
     # =====================================================
 
     elif signal_state is None:
@@ -2704,8 +2788,17 @@ def update_signal_and_pullback(
                     SIGNAL_TIMEFRAME
                 )
 
-            # ★ 돌파봉 자체 = 0
-            # ★ 다음 봉 = 1
+            # =================================================
+            # 과거 돌파 캔들은 완성 캔들이므로
+            #
+            # distance:
+            #
+            # 돌파 캔들 = 0
+            # 다음 캔들 = 1
+            #
+            # 현재 진행 캔들이 다음 캔들이면 1
+            # =================================================
+
             restored_count = distance
 
             roc_signal_state[
@@ -2736,6 +2829,7 @@ def update_signal_and_pullback(
                 f"{market_key} "
                 f"🚀({restored_count}) | "
                 f"시작={start_candle} | "
+                f"현재={progress_candle_time} | "
                 f"기준="
                 f"{format_timeframe(SIGNAL_TIMEFRAME)}"
             )
@@ -2778,9 +2872,10 @@ def update_signal_and_pullback(
                 SIGNAL_TIMEFRAME
             )
 
-            restored_count = (
-                distance + 1
-            )
+            # 과거 눌림도 동일하게
+            # 진행 중 = 0
+            # 다음 캔들 = 1
+            restored_count = distance
 
             roc_pullback_state[
                 market_key
@@ -2810,6 +2905,7 @@ def update_signal_and_pullback(
                 f"{market_key} "
                 f"📉({restored_count}) | "
                 f"시작={start_candle} | "
+                f"현재={progress_candle_time} | "
                 f"기준="
                 f"{format_timeframe(SIGNAL_TIMEFRAME)}"
             )
@@ -2818,10 +2914,14 @@ def update_signal_and_pullback(
     # =====================================================
     # 5. 상승 신호 COUNT 계속 진행
     #
-    # ★ filter_pass를 보지 않음
+    # 현재 진행 캔들:
     #
-    # 돌파봉 = 0
-    # 다음 4H봉 = 1
+    # cross_candle == progress_candle
+    # distance = 0
+    #
+    # 다음 캔들:
+    # distance = 1
+    #
     # =====================================================
 
     signal_state = (
@@ -2883,7 +2983,7 @@ def update_signal_and_pullback(
 
 
         # -------------------------------------------------
-        # filter_pass와 무관하게 COUNT 유지
+        # filter_pass와 관계없이 COUNT 진행
         # -------------------------------------------------
 
         else:
@@ -2905,9 +3005,8 @@ def update_signal_and_pullback(
                     SIGNAL_TIMEFRAME
                 )
 
-                # ★ 돌파봉 = 0
-                # ★ 다음 봉 = 1
-                # ★ 이후 = 2, 3...
+                # ★ 돌파 진행 캔들 = 0
+                # ★ 다음 캔들 = 1
                 signal_state[
                     "count"
                 ] = distance
@@ -2989,11 +3088,11 @@ def update_signal_and_pullback(
                     SIGNAL_TIMEFRAME
                 )
 
+                # ★ 눌림 진행 캔들 = 0
+                # ★ 다음 캔들 = 1
                 pullback_state[
                     "count"
-                ] = (
-                    distance + 1
-                )
+                ] = distance
 
                 pullback_state[
                     "last_candle"
@@ -3423,7 +3522,7 @@ def analyze(
     # =====================================================
     # 활성 ROC 필터 통과 여부
     #
-    # ★ COUNT와 별개
+    # ★ 이것은 신호 COUNT와 별개
     # =====================================================
 
     filter_pass = (
@@ -3438,6 +3537,8 @@ def analyze(
     # ★ 현재 진행 캔들
     #
     # 4시간 기준
+    #
+    # 01 / 05 / 09 / 13 / 17 / 21
     # =====================================================
 
     progress_candle_time = (
@@ -3450,7 +3551,8 @@ def analyze(
     # =====================================================
     # 과거 상승 신호 복원
     #
-    # ★ 필터와 관계없이 ROC5 상향돌파를 찾음
+    # ★ 필터 통과 여부와 관계없이
+    # ROC5 4H 상향돌파를 찾음
     # =====================================================
 
     historical_start_candle = None
@@ -4738,8 +4840,8 @@ def rows_html(
         # =================================================
         # ★ 반짝임
         #
-        # 0 = 돌파 진행 중
-        # 1~3 = 반짝임
+        # COUNT 0~3만 반짝임
+        # 필터 + EMA 조건은 기존 유지
         # =================================================
 
         if (
@@ -5005,12 +5107,12 @@ def focus_section(
         <span class="section-title-sub">
             ROC{SIGNAL_ROC_PERIOD} 돌파
             · 기준 {format_timeframe(SIGNAL_TIMEFRAME)}
+            · 01/05/09/13/17/21시
             · 필터 통과
             · 당일 음수 제외
             · EMA 상승 COUNT ≤ {EMA_LONG_MAX_COUNT}
-            · 🚀📉 모든 COUNT 표시
-            · 0 = 돌파 진행 중
-            · 1~3 = 반짝임
+            · 🚀📉 COUNT 0부터 전체 표시
+            · 반짝임 {count_flash_text()}
             · {kst()} KST
         </span>
 
@@ -5040,6 +5142,7 @@ def section(
             {update_time} KST
             · ROC/COUNT 기준
             {format_timeframe(SIGNAL_TIMEFRAME)}
+            · 01/05/09/13/17/21시
         </span>
 
     </div>
@@ -5252,6 +5355,7 @@ def market_summary_html():
                 {get_filter_setting_text()}
                 · 신호 ROC{SIGNAL_ROC_PERIOD}
                 · 기준 {format_timeframe(SIGNAL_TIMEFRAME)}
+                · 01/05/09/13/17/21시
             </span>
 
         </div>
@@ -6166,16 +6270,18 @@ def startup():
         f"{format_timeframe(SIGNAL_TIMEFRAME)}"
     )
 
-    # =====================================================
-    # ★ COUNT 기준 변경
-    # =====================================================
-
     log.info(
-        "★ 0선 돌파 진행 중인 현재 4H 캔들 = COUNT 0"
+        "★ 4H 캔들 시작 = "
+        "01:00 / 05:00 / 09:00 / "
+        "13:00 / 17:00 / 21:00 KST"
     )
 
     log.info(
-        "★ 돌파봉 완성 후 다음 4H 캔들 = COUNT 1"
+        "★ 돌파 진행 중인 현재 4H 캔들 = COUNT 0"
+    )
+
+    log.info(
+        "★ 돌파 캔들이 완성되고 다음 4H 캔들 = COUNT 1"
     )
 
     log.info(
@@ -6217,19 +6323,13 @@ def startup():
     log.info(
         f"ROC{SIGNAL_ROC_PERIOD} "
         f"{format_timeframe(SIGNAL_TIMEFRAME)} "
-        f"0선 상향 돌파 진행 중 = 🚀 COUNT 0"
+        f"0선 상향 돌파 = 🚀 COUNT 0"
     )
 
     log.info(
         f"ROC{SIGNAL_ROC_PERIOD} "
         f"{format_timeframe(SIGNAL_TIMEFRAME)} "
-        f"첫 완성 = 🚀 COUNT 1"
-    )
-
-    log.info(
-        f"ROC{SIGNAL_ROC_PERIOD} "
-        f"{format_timeframe(SIGNAL_TIMEFRAME)} "
-        f"0선 하향 돌파 = 📉 COUNT 1"
+        f"0선 하향 돌파 = 📉 COUNT 0"
     )
 
     log.info(
@@ -6250,7 +6350,7 @@ def startup():
 
     log.info(
         f"눌림 COUNT = "
-        f"1,2,3... 무제한 / "
+        f"0,1,2,3... 무제한 / "
         f"{format_timeframe(SIGNAL_TIMEFRAME)} 기준"
     )
 
@@ -6272,10 +6372,6 @@ def startup():
 
     log.info(
         f"COUNT {count_flash_text()} = 반짝임"
-    )
-
-    log.info(
-        "COUNT 0 = 표시만 / 반짝임 없음"
     )
 
     log.info(
