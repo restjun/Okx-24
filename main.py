@@ -85,7 +85,7 @@ ROC_FILTER_COUNT_MIN = 10
 # =========================================================
 
 DISPLAY_COUNT_MIN = 0
-DISPLAY_COUNT_MAX = 1
+DISPLAY_COUNT_MAX = 5
 
 
 # =========================================================
@@ -120,17 +120,17 @@ FILTER2_TIMEFRAME = 1440
 # ROC 기간별 화면 사용 설정
 # =========================================================
 
-USE_1H_ROC5 = "Y"
+USE_1H_ROC5 = "N"
 USE_1H_ROC20 = "Y"
 USE_1H_ROC50 = "Y"
 USE_1H_ROC200 = "Y"
 
-USE_4H_ROC5 = "Y"
+USE_4H_ROC5 = "N"
 USE_4H_ROC20 = "Y"
 USE_4H_ROC50 = "Y"
 USE_4H_ROC200 = "Y"
 
-USE_1D_ROC5 = "Y"
+USE_1D_ROC5 = "N"
 USE_1D_ROC20 = "Y"
 USE_1D_ROC50 = "Y"
 USE_1D_ROC200 = "Y"
