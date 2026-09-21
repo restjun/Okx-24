@@ -110,7 +110,7 @@ FLASH_COUNT_MAX = 1
 # =========================================================
 
 USE_FILTER1 = "Y"
-USE_FILTER2 = "Y"
+USE_FILTER2 = "N"
 
 FILTER1_TIMEFRAME = 240
 FILTER2_TIMEFRAME = 1440
