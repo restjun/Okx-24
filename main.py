@@ -55,7 +55,7 @@ MAX_RETRIES = 10
 
 
 # =========================================================
-# ★ 신호 / COUNT 기준 시간봉
+# 신호 / COUNT 기준 시간봉
 #
 # 60  = 1시간
 # 240 = 4시간
@@ -64,16 +64,6 @@ MAX_RETRIES = 10
 #   ROC 돌파       = 4시간
 #   눌림           = 4시간
 #   COUNT          = 4시간
-#
-# ★ 4시간봉 KST 시작시간
-#
-#   01:00
-#   05:00
-#   09:00
-#   13:00
-#   17:00
-#   21:00
-#
 # =========================================================
 
 SIGNAL_TIMEFRAME = 240
@@ -93,9 +83,6 @@ DISPLAY_COUNT_MAX = 999999
 # 반짝임 COUNT
 #
 # 0~3만 반짝임
-#
-# 돌파 진행 중 = 0
-# 돌파 완료     = 1
 # =========================================================
 
 FLASH_COUNT_MIN = 0
@@ -136,7 +123,7 @@ ROC_FILTER_HIGH_TIMEFRAME = 240
 
 
 # =========================================================
-# ★ 신호 ROC
+# 신호 ROC
 # =========================================================
 
 SIGNAL_ROC_PERIOD = 5
@@ -183,14 +170,14 @@ okx_ticker_cache = {}
 
 
 # =========================================================
-# ★ 신호 상태
+# 신호 상태
 # =========================================================
 
 roc_signal_state = {}
 
 
 # =========================================================
-# ★ 눌림 상태
+# 눌림 상태
 # =========================================================
 
 roc_pullback_state = {}
@@ -423,9 +410,9 @@ def format_timeframe(minutes):
 
 
 # =========================================================
-# ★★★★★ 4시간봉 시간 기준 ★★★★★
+# ★ 현재 캔들 시작시간
 #
-# KST
+# 4H KST 기준
 #
 # 01:00
 # 05:00
@@ -434,10 +421,9 @@ def format_timeframe(minutes):
 # 17:00
 # 21:00
 #
-# 00:xx → 전날 21:00 캔들
-# 01:00 → 새 01:00 캔들
-# 04:59 → 01:00 캔들
-# 05:00 → 새 05:00 캔들
+# 중요:
+# 이 시간 계산은 유지하지만
+# 4H 데이터 자체는 1H에서 합성하지 않음.
 #
 # =========================================================
 
@@ -449,6 +435,8 @@ def get_current_candle_start(minutes):
 
     # =====================================================
     # 4시간봉
+    #
+    # 업비트 240분봉의 KST 시작시간
     # =====================================================
 
     if minutes == 240:
@@ -1297,7 +1285,14 @@ def calculate_orderbook_amount(
 
 
 # =========================================================
-# 업비트 기본 캔들
+# ★ 업비트 캔들
+#
+# 중요 변경:
+#
+# 60분 = 실제 업비트 60분봉
+# 240분 = 실제 업비트 240분봉
+#
+# ★ 1H → 4H 합성하지 않음
 # =========================================================
 
 def get_upbit_candle(
@@ -1308,22 +1303,7 @@ def get_upbit_candle(
     include_current=False
 ):
 
-    # =====================================================
-    # ★ 240분봉은 사용하지 않고
-    #   60분봉을 받아서 아래에서 직접 4H 합성
-    #
-    # KST 기준:
-    # 01 / 05 / 09 / 13 / 17 / 21
-    # =====================================================
-
-    if int(unit) == 240:
-
-        return get_upbit_custom_4h(
-            market=market,
-            count=count,
-            to=to,
-            include_current=include_current
-        )
+    unit = int(unit)
 
     params = {
 
@@ -1355,12 +1335,30 @@ def get_upbit_candle(
 
     try:
 
+        data = response.json()
+
+        if not isinstance(
+            data,
+            list
+        ):
+
+            log.warning(
+                f"업비트 {unit}분봉 "
+                f"응답 형식 오류: {market}"
+            )
+
+            return None
+
         df = pd.DataFrame(
-            response.json()
+            data
         )
 
         if df.empty:
             return None
+
+        # =================================================
+        # 가격
+        # =================================================
 
         df["o"] = pd.to_numeric(
             df["opening_price"],
@@ -1382,10 +1380,18 @@ def get_upbit_candle(
             errors="coerce"
         )
 
+        # =================================================
+        # 거래대금
+        # =================================================
+
         df["volume_krw"] = pd.to_numeric(
             df["candle_acc_trade_price"],
             errors="coerce"
         )
+
+        # =================================================
+        # KST
+        # =================================================
 
         df["datetime"] = pd.to_datetime(
             df["candle_date_time_kst"],
@@ -1402,22 +1408,14 @@ def get_upbit_candle(
             ]
         )
 
-        if not include_current:
-
-            current = (
-                get_current_candle_start(
-                    unit
-                )
-            )
-
-            df = df[
-                df.datetime < current
-            ]
-
         if df.empty:
             return None
 
-        return (
+        # =================================================
+        # 정렬
+        # =================================================
+
+        df = (
             df
             .sort_values(
                 "datetime"
@@ -1430,294 +1428,22 @@ def get_upbit_candle(
             )
         )
 
-    except Exception as e:
-
-        log.error(
-            f"업비트 {unit}분 오류 "
-            f"{market}: {e}"
-        )
-
-        return None
-
-
-# =========================================================
-# ★ 1시간봉 → KST 01시 기준 4시간봉
-#
-# 01~04
-# 05~08
-# 09~12
-# 13~16
-# 17~20
-# 21~00
-#
-# =========================================================
-
-def get_upbit_custom_4h(
-    market,
-    count=200,
-    to=None,
-    include_current=False
-):
-
-    try:
-
-        required_4h = max(
-            int(count),
-            1
-        )
-
-        # -------------------------------------------------
-        # 4H 200개가 필요하면 최소 800개의 1H 필요
-        # -------------------------------------------------
-
-        hourly_count = min(
-            max(
-                required_4h * 4 + 20,
-                100
-            ),
-            200
-        )
-
-        # -------------------------------------------------
-        # 일반 호출
-        # -------------------------------------------------
-
-        params = {
-
-            "market":
-                market,
-
-            "count":
-                hourly_count
-        }
-
-        if to:
-            params["to"] = to
-
-        response = retry(
-            requests.get,
-            "https://api.upbit.com/v1/candles/minutes/60",
-            params=params,
-            timeout=15
-        )
-
-        if response is None:
-            return None
-
-        raw = pd.DataFrame(
-            response.json()
-        )
-
-        if raw.empty:
-            return None
-
-        raw["datetime"] = pd.to_datetime(
-            raw["candle_date_time_kst"],
-            errors="coerce"
-        )
-
-        raw["o"] = pd.to_numeric(
-            raw["opening_price"],
-            errors="coerce"
-        )
-
-        raw["h"] = pd.to_numeric(
-            raw["high_price"],
-            errors="coerce"
-        )
-
-        raw["l"] = pd.to_numeric(
-            raw["low_price"],
-            errors="coerce"
-        )
-
-        raw["c"] = pd.to_numeric(
-            raw["trade_price"],
-            errors="coerce"
-        )
-
-        raw["volume_krw"] = pd.to_numeric(
-            raw["candle_acc_trade_price"],
-            errors="coerce"
-        )
-
-        raw = raw.dropna(
-            subset=[
-                "datetime",
-                "o",
-                "h",
-                "l",
-                "c"
-            ]
-        )
-
-        raw = (
-            raw
-            .sort_values("datetime")
-            .drop_duplicates("datetime")
-            .reset_index(drop=True)
-        )
-
-        if raw.empty:
-            return None
-
-        # -------------------------------------------------
-        # KST 시간 기준으로 01시 기준 그룹 번호 계산
-        # -------------------------------------------------
-
-        def four_hour_start(dt):
-
-            dt = normalize_datetime(dt)
-
-            if dt is None:
-                return None
-
-            # 00:00~00:59는 전날 21시 캔들
-            day_anchor = dt.replace(
-                hour=1,
-                minute=0,
-                second=0,
-                microsecond=0
-            )
-
-            if dt < day_anchor:
-
-                day_anchor -= timedelta(
-                    days=1
-                )
-
-            elapsed_minutes = (
-                (
-                    dt
-                    - day_anchor
-                ).total_seconds()
-                / 60
-            )
-
-            blocks = int(
-                elapsed_minutes
-                // 240
-            )
-
-            return (
-                day_anchor
-                + timedelta(
-                    minutes=blocks * 240
-                )
-            )
-
-        raw["group_start"] = (
-            raw["datetime"]
-            .apply(
-                four_hour_start
-            )
-        )
-
-        # -------------------------------------------------
-        # 4H 합성
-        # -------------------------------------------------
-
-        grouped = []
-
-        for start_time, group in (
-            raw
-            .groupby(
-                "group_start",
-                sort=True
-            )
-        ):
-
-            group = (
-                group
-                .sort_values("datetime")
-            )
-
-            if group.empty:
-                continue
-
-            grouped.append({
-
-                "datetime":
-                    start_time,
-
-                "o":
-                    float(
-                        group["o"].iloc[0]
-                    ),
-
-                "h":
-                    float(
-                        group["h"].max()
-                    ),
-
-                "l":
-                    float(
-                        group["l"].min()
-                    ),
-
-                "c":
-                    float(
-                        group["c"].iloc[-1]
-                    ),
-
-                "volume_krw":
-                    float(
-                        group[
-                            "volume_krw"
-                        ].fillna(0).sum()
-                    )
-            })
-
-        df = pd.DataFrame(
-            grouped
-        )
-
-        if df.empty:
-            return None
-
-        df["datetime"] = pd.to_datetime(
-            df["datetime"],
-            errors="coerce"
-        )
-
-        df = (
-            df
-            .dropna(
-                subset=["datetime"]
-            )
-            .sort_values("datetime")
-            .drop_duplicates("datetime")
-            .reset_index(drop=True)
-        )
-
-        # -------------------------------------------------
-        # 현재 진행 중인 4H 봉 제외
-        # -------------------------------------------------
-
-        current_start = (
-            get_current_candle_start(
-                240
-            )
-        )
+        # =================================================
+        # 현재 진행봉 제외
+        # =================================================
 
         if not include_current:
+
+            current_start = (
+                get_current_candle_start(
+                    unit
+                )
+            )
 
             df = df[
                 df["datetime"]
                 < current_start
             ]
-
-        # -------------------------------------------------
-        # 필요한 개수만 뒤에서 사용
-        # -------------------------------------------------
-
-        if len(df) > required_4h:
-
-            df = (
-                df
-                .iloc[-required_4h:]
-                .reset_index(drop=True)
-            )
 
         if df.empty:
             return None
@@ -1727,7 +1453,7 @@ def get_upbit_custom_4h(
     except Exception as e:
 
         log.error(
-            f"업비트 KST 4H 합성 오류 "
+            f"업비트 {unit}분봉 오류 "
             f"{market}: {e}"
         )
 
@@ -1736,6 +1462,11 @@ def get_upbit_custom_4h(
 
 # =========================================================
 # 업비트 과거 데이터
+#
+# ★ 1H = 실제 60분봉
+# ★ 4H = 실제 240분봉
+#
+# ★ 4H를 1H에서 합성하지 않음
 # =========================================================
 
 def history_upbit(
@@ -1744,18 +1475,7 @@ def history_upbit(
     required=200
 ):
 
-    # =====================================================
-    # ★ 4H는 01/05/09/13/17/21 기준으로
-    #   custom aggregation 사용
-    # =====================================================
-
-    if int(unit) == 240:
-
-        return get_upbit_custom_4h(
-            market=market,
-            count=required,
-            include_current=False
-        )
+    unit = int(unit)
 
     all_df = None
     to = None
@@ -1765,10 +1485,11 @@ def history_upbit(
     ):
 
         df = get_upbit_candle(
-            market,
-            unit,
-            HISTORY_CHUNK,
-            to
+            market=market,
+            unit=unit,
+            count=HISTORY_CHUNK,
+            to=to,
+            include_current=False
         )
 
         if (
@@ -1778,17 +1499,19 @@ def history_upbit(
 
             break
 
-        all_df = (
-            df.copy()
-            if all_df is None
-            else pd.concat(
+        if all_df is None:
+
+            all_df = df.copy()
+
+        else:
+
+            all_df = pd.concat(
                 [
                     df,
                     all_df
                 ],
                 ignore_index=True
             )
-        )
 
         all_df = (
             all_df
@@ -1804,15 +1527,23 @@ def history_upbit(
         )
 
         if len(all_df) >= required:
-            return all_df
 
-        to = (
-            all_df
-            .datetime
-            .iloc[0]
-            .strftime(
-                "%Y-%m-%dT%H:%M:%S"
+            return (
+                all_df
+                .iloc[-required:]
+                .reset_index(
+                    drop=True
+                )
             )
+
+        oldest = (
+            all_df[
+                "datetime"
+            ].iloc[0]
+        )
+
+        to = oldest.strftime(
+            "%Y-%m-%dT%H:%M:%S"
         )
 
     return all_df
@@ -1821,8 +1552,10 @@ def history_upbit(
 # =========================================================
 # ★ 현재 진행 중인 4H ROC 데이터
 #
-# KST 01 / 05 / 09 / 13 / 17 / 21 기준
-# 현재 가격을 현재 4H봉 종가에 반영
+# 실제 업비트 240분봉 사용
+#
+# 현재 4H 캔들이 존재하면
+# 현재 가격을 임시 종가로 반영
 # =========================================================
 
 def get_upbit_current_roc_data(
@@ -1830,8 +1563,9 @@ def get_upbit_current_roc_data(
     current_price
 ):
 
-    df = get_upbit_custom_4h(
-        market,
+    df = get_upbit_candle(
+        market=market,
+        unit=240,
         count=200,
         include_current=True
     )
@@ -1845,18 +1579,19 @@ def get_upbit_current_roc_data(
 
     try:
 
-        start = (
-            get_current_candle_start(
-                SIGNAL_TIMEFRAME
-            )
-        )
-
-        price = float(
+        current_price = float(
             current_price
         )
 
+        current_start = (
+            get_current_candle_start(
+                240
+            )
+        )
+
         mask = (
-            df.datetime == start
+            df["datetime"]
+            == current_start
         )
 
         if mask.any():
@@ -1864,26 +1599,14 @@ def get_upbit_current_roc_data(
             df.loc[
                 mask,
                 "c"
-            ] = price
+            ] = current_price
 
         else:
 
-            row = (
-                df.iloc[-1]
-                .copy()
-            )
-
-            row["datetime"] = start
-            row["c"] = price
-
-            df = pd.concat(
-                [
-                    df,
-                    pd.DataFrame(
-                        [row]
-                    )
-                ],
-                ignore_index=True
+            log.warning(
+                f"{market} "
+                f"현재 240분봉 없음 | "
+                f"기준시간={current_start}"
             )
 
         return (
@@ -1902,7 +1625,7 @@ def get_upbit_current_roc_data(
     except Exception as e:
 
         log.error(
-            f"현재 ROC 오류 "
+            f"현재 4H ROC 데이터 오류 "
             f"{market}: {e}"
         )
 
@@ -2107,7 +1830,9 @@ def roc_filter_display(
         result or {}
     )
 
-    result["timeframe"] = timeframe
+    result[
+        "timeframe"
+    ] = timeframe
 
     result[
         "enabled_periods"
@@ -2846,12 +2571,6 @@ def find_latest_pullback_start(
 
 # =========================================================
 # 신호 + 눌림 + COUNT
-#
-# 현재 진행 중인 돌파 캔들 = 0
-# 다음 캔들 = 1
-# 다음 = 2
-# ...
-#
 # =========================================================
 
 def update_signal_and_pullback(
@@ -2897,9 +2616,8 @@ def update_signal_and_pullback(
         )
     )
 
-
     # =====================================================
-    # 1. ROC5 하향 돌파
+    # ROC 하향 돌파
     # =====================================================
 
     if pullback_condition:
@@ -2960,11 +2678,8 @@ def update_signal_and_pullback(
                 f"기준={format_timeframe(SIGNAL_TIMEFRAME)}"
             )
 
-
     # =====================================================
-    # 2. ROC5 상향 돌파
-    #
-    # filter_pass와 무관
+    # ROC 상향 돌파
     # =====================================================
 
     elif signal_cross:
@@ -3034,9 +2749,8 @@ def update_signal_and_pullback(
                     f"기준={format_timeframe(SIGNAL_TIMEFRAME)}"
                 )
 
-
     # =====================================================
-    # 3. 과거 상승 신호 복원
+    # 과거 상승 신호 복원
     # =====================================================
 
     elif signal_state is None:
@@ -3092,13 +2806,11 @@ def update_signal_and_pullback(
                 f"[ROC{SIGNAL_ROC_PERIOD} SIGNAL RESTORE] "
                 f"{market_key} 🚀({restored_count}) | "
                 f"시작={start_candle} | "
-                f"현재={progress_candle_time} | "
-                f"기준={format_timeframe(SIGNAL_TIMEFRAME)}"
+                f"현재={progress_candle_time}"
             )
 
-
     # =====================================================
-    # 4. 과거 눌림 복원
+    # 과거 눌림 복원
     # =====================================================
 
     if (
@@ -3161,15 +2873,11 @@ def update_signal_and_pullback(
 
             log.info(
                 f"[ROC{SIGNAL_ROC_PERIOD} PULLBACK RESTORE] "
-                f"{market_key} 📉({restored_count}) | "
-                f"시작={start_candle} | "
-                f"현재={progress_candle_time} | "
-                f"기준={format_timeframe(SIGNAL_TIMEFRAME)}"
+                f"{market_key} 📉({restored_count})"
             )
 
-
     # =====================================================
-    # 5. 상승 신호 COUNT 진행
+    # 상승 신호 COUNT 진행
     # =====================================================
 
     signal_state = (
@@ -3197,7 +2905,6 @@ def update_signal_and_pullback(
 
             pass
 
-        # ROC5가 다시 음수면 신호 종료
         if signal_roc_negative:
 
             old_count = int(
@@ -3256,9 +2963,8 @@ def update_signal_and_pullback(
                     progress_candle_time
                 )
 
-
     # =====================================================
-    # 6. 눌림 COUNT 진행
+    # 눌림 COUNT 진행
     # =====================================================
 
     pullback_state = (
@@ -3338,9 +3044,8 @@ def update_signal_and_pullback(
                     progress_candle_time
                 )
 
-
     # =====================================================
-    # 7. 최종 상태
+    # 최종 상태
     # =====================================================
 
     signal_state = (
@@ -3563,7 +3268,6 @@ def analyze(
         get_all_periods()
     )
 
-
     # =====================================================
     # 1H ROC 필터
     # =====================================================
@@ -3581,11 +3285,12 @@ def analyze(
 
         return None
 
-
     # =====================================================
-    # 4H ROC 필터
+    # ★ 4H ROC 필터
     #
-    # ★ KST 01/05/09/13/17/21 기준
+    # 실제 업비트 240분봉 직접 조회
+    #
+    # ★ 1H → 4H 합성하지 않음
     # =====================================================
 
     df4h = history_upbit(
@@ -3600,7 +3305,6 @@ def analyze(
     ):
 
         return None
-
 
     # =====================================================
     # 신호 기준 데이터
@@ -3618,7 +3322,6 @@ def analyze(
     ):
 
         return None
-
 
     # =====================================================
     # 현재 진행 중인 4H 캔들
@@ -3638,7 +3341,6 @@ def analyze(
 
         return None
 
-
     # =====================================================
     # ROC 필터 1H
     # =====================================================
@@ -3653,9 +3355,10 @@ def analyze(
         "1H"
     )
 
-
     # =====================================================
-    # ROC 필터 4H
+    # ★ ROC 필터 4H
+    #
+    # 실제 240분봉 기준
     # =====================================================
 
     r4_raw = roc_filter_analysis(
@@ -3668,9 +3371,8 @@ def analyze(
         "4H"
     )
 
-
     # =====================================================
-    # EMA
+    # EMA 1H
     # =====================================================
 
     ema_1h = ema_alignment_analysis(
@@ -3678,11 +3380,16 @@ def analyze(
         "1H"
     )
 
+    # =====================================================
+    # ★ EMA 4H
+    #
+    # 실제 240분봉 기준
+    # =====================================================
+
     ema_4h = ema_alignment_analysis(
         df4h,
         "4H"
     )
-
 
     # =====================================================
     # 신호 기준 ROC
@@ -3701,7 +3408,6 @@ def analyze(
             else "4H"
         )
     )
-
 
     signal_roc_current = (
         r_signal
@@ -3725,7 +3431,6 @@ def analyze(
         )
     )
 
-
     r = {
 
         "signal_roc":
@@ -3741,7 +3446,6 @@ def analyze(
             False
     }
 
-
     r["signal_roc_cross"] = (
         roc_signal_zero_cross(r)
     )
@@ -3750,11 +3454,8 @@ def analyze(
         roc_signal_pullback_condition(r)
     )
 
-
     # =====================================================
     # 활성 ROC 필터
-    #
-    # COUNT와 별개
     # =====================================================
 
     filter_pass = (
@@ -3764,10 +3465,10 @@ def analyze(
         )
     )
 
-
     # =====================================================
     # 현재 진행 캔들
     #
+    # 4H:
     # 01 / 05 / 09 / 13 / 17 / 21
     # =====================================================
 
@@ -3777,11 +3478,8 @@ def analyze(
         )
     )
 
-
     # =====================================================
     # 과거 상승 신호 복원
-    #
-    # 필터와 관계없이 ROC5 돌파 검색
     # =====================================================
 
     historical_start_candle = None
@@ -3795,7 +3493,6 @@ def analyze(
                 df4h
             )
         )
-
 
     # =====================================================
     # 과거 눌림 복원
@@ -3813,7 +3510,6 @@ def analyze(
 
         current_signal_roc_value = None
 
-
     if (
         market not in roc_pullback_state
         and current_signal_roc_value is not None
@@ -3825,7 +3521,6 @@ def analyze(
                 df_signal
             )
         )
-
 
     # =====================================================
     # 신호 / 눌림 / COUNT
@@ -3845,7 +3540,6 @@ def analyze(
             historical_pullback_start_candle
         )
     )
-
 
     # =====================================================
     # 일봉 등락
@@ -3867,7 +3561,6 @@ def analyze(
         change_value is not None
         and change_value >= 0
     )
-
 
     # =====================================================
     # 최종 분석
@@ -4383,10 +4076,6 @@ def format_market_price(
 
 # =========================================================
 # ROC 필터 HTML
-#
-# ★ 5 / 10 / 20 / 50 / 200
-# ★ 공백 최소화
-# ★ 200까지 표시되도록 수정
 # =========================================================
 
 def roc_filter_html(
@@ -5068,9 +4757,7 @@ def rows_html(
         )
 
         # =================================================
-        # ★ 반짝임
-        #
-        # COUNT 0~3
+        # 반짝임
         # =================================================
 
         if (
@@ -5336,7 +5023,7 @@ def focus_section(
         <span class="section-title-sub">
             ROC{SIGNAL_ROC_PERIOD} 돌파
             · 기준 {format_timeframe(SIGNAL_TIMEFRAME)}
-            · 01/05/09/13/17/21시
+            · 업비트 원본 240분봉
             · 필터 통과
             · 당일 음수 제외
             · EMA 상승 COUNT ≤ {EMA_LONG_MAX_COUNT}
@@ -5371,7 +5058,7 @@ def section(
             {update_time} KST
             · ROC/COUNT 기준
             {format_timeframe(SIGNAL_TIMEFRAME)}
-            · 01/05/09/13/17/21시
+            · 업비트 원본 240분봉
         </span>
 
     </div>
@@ -5584,7 +5271,7 @@ def market_summary_html():
                 {get_filter_setting_text()}
                 · 신호 ROC{SIGNAL_ROC_PERIOD}
                 · 기준 {format_timeframe(SIGNAL_TIMEFRAME)}
-                · 01/05/09/13/17/21시
+                · 업비트 원본 240분봉
             </span>
 
         </div>
@@ -5907,14 +5594,6 @@ font-size:4.2px;
 font-weight:900;
 text-align:left;
 }
-
-
-/* =======================================================
-   ★ ROC 필터
-   ★ 5 / 10 / 20 / 50 / 200
-   ★ 공백 제거
-   ★ 200까지 표시
-   ======================================================= */
 
 .roc-filter-all{
 display:flex;
@@ -6295,9 +5974,6 @@ td{
     font-size:4px;
 }
 
-
-/* ★ 모바일 ROC 필터 간격 최소화 */
-
 .roc-filter-all{
     gap:0;
     justify-content:space-between;
@@ -6530,18 +6206,31 @@ def startup():
     )
 
     log.info(
-        f"★ 신호 / 돌파 / 눌림 / COUNT 기준 = "
+        f"신호 / 돌파 / 눌림 / COUNT 기준 = "
         f"{format_timeframe(SIGNAL_TIMEFRAME)}"
     )
 
     log.info(
-        "★ 4H 캔들 시작 = "
-        "01:00 / 05:00 / 09:00 / "
-        "13:00 / 17:00 / 21:00 KST"
+        "★ 4H 데이터 = 업비트 원본 240분봉 API"
     )
 
     log.info(
-        "★ 4H 데이터 = 1H 캔들 기준 KST 직접 합성"
+        "★ 4H ROC 5/10/20/50/200 = "
+        "실제 240분봉 기준"
+    )
+
+    log.info(
+        "★ 4H EMA = 실제 240분봉 기준"
+    )
+
+    log.info(
+        "★ 4H를 1H 캔들로 합성하지 않음"
+    )
+
+    log.info(
+        "★ 4H KST 시작시간 = "
+        "01:00 / 05:00 / 09:00 / "
+        "13:00 / 17:00 / 21:00"
     )
 
     log.info(
