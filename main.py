@@ -79,12 +79,14 @@ SIGNAL_TIMEFRAME = 240
 
 
 # =========================================================
-# 화면 COUNT
+# ★ COUNT 표시
 #
-# 1부터 모든 COUNT 표시
+# 돌파 진행 중 = 0
+# 첫 완성       = 1
+# 이후          = 2, 3, 4...
 # =========================================================
 
-DISPLAY_COUNT_MIN = 1
+DISPLAY_COUNT_MIN = 0
 DISPLAY_COUNT_MAX = 999999
 
 
@@ -92,6 +94,9 @@ DISPLAY_COUNT_MAX = 999999
 # 반짝임 COUNT
 #
 # 1~3만 반짝임
+#
+# 0 = 돌파 진행 중
+#     → 표시만 하고 반짝이지 않음
 # =========================================================
 
 FLASH_COUNT_MIN = 1
@@ -617,7 +622,7 @@ def validate_timeframe():
             DISPLAY_COUNT_MAX,
             int
         )
-        or DISPLAY_COUNT_MIN < 1
+        or DISPLAY_COUNT_MIN < 0
         or DISPLAY_COUNT_MAX < DISPLAY_COUNT_MIN
     ):
 
@@ -2221,12 +2226,8 @@ def roc_signal_pullback_condition(r):
 # =========================================================
 # ★ 과거 상승 신호 찾기
 #
-# 중요:
-#
-# 여기서는 활성 ROC 필터를 보지 않습니다.
-#
-# ROC5 4H 0선 상향 돌파 자체를 찾아야
-# COUNT를 복원할 수 있습니다.
+# 활성 ROC 필터와 무관
+# ROC5 4H 0선 상향 돌파 자체를 찾음
 # =========================================================
 
 def find_latest_signal_start(
@@ -2290,7 +2291,6 @@ def find_latest_signal_start(
 
             return None
 
-        # 가장 최근의 ROC5 0선 상향 돌파를 찾음
         for i in range(
             len(temp) - 1,
             0,
@@ -2457,33 +2457,22 @@ def find_latest_pullback_start(
 
 
 # =========================================================
-# ★★★★★ 핵심 수정 ★★★★★
+# ★★★★★ 핵심 ★★★★★
 #
-# 신호 + 눌림 + COUNT
+# 신호:
 #
-# 가장 중요한 변경:
+# 현재 진행 중인 돌파봉 = 0
+# 다음 완성봉 = 1
+# 다음 = 2
+# 다음 = 3
 #
-# 1. ROC5 돌파 COUNT와 ROC 필터를 분리
-# 2. filter_pass가 False라고 해서
-#    ROC5 COUNT를 종료하지 않음
-# 3. signal_active도 filter_pass와 분리
-# 4. 화면의 상승신호 영역에서만 filter_pass 사용
+# 눌림:
 #
-# 따라서:
+# 하향 돌파 발생봉 = 1
+# 다음 = 2
+# 다음 = 3
 #
-# ROC5 4H 상향 돌파
-#       ↓
-# 🚀(1)
-#       ↓
-# 다음 4H
-#       ↓
-# 🚀(2)
-#       ↓
-# 다음 4H
-#       ↓
-# 🚀(3)
-#
-# ROC5가 음수로 내려갈 때만 종료
+# ROC 필터와 COUNT는 독립
 # =========================================================
 
 def update_signal_and_pullback(
@@ -2606,10 +2595,9 @@ def update_signal_and_pullback(
     # =====================================================
     # 2. 현재 ROC5 상향 돌파
     #
-    # ★★★ filter_pass를 여기서 사용하지 않음 ★★★
+    # ★ 돌파 진행 중 = COUNT 0
     #
-    # ROC5 돌파 자체가 발생하면
-    # 무조건 COUNT 상태를 생성
+    # 다음 4H봉부터 COUNT 1
     # =====================================================
 
     elif signal_cross:
@@ -2660,8 +2648,9 @@ def update_signal_and_pullback(
                     "cross_candle":
                         progress_candle_time,
 
+                    # ★ 돌파 진행 중 = 0
                     "count":
-                        1,
+                        0,
 
                     "last_candle":
                         progress_candle_time
@@ -2676,7 +2665,7 @@ def update_signal_and_pullback(
                 log.info(
                     f"[ROC{SIGNAL_ROC_PERIOD} SIGNAL START] "
                     f"{market_key} "
-                    f"🚀1 | "
+                    f"🚀0 | "
                     f"ROC="
                     f"{signal_roc_current} | "
                     f"기준="
@@ -2687,7 +2676,8 @@ def update_signal_and_pullback(
     # =====================================================
     # 3. 과거 상승 신호 복원
     #
-    # ★ filter_pass와 무관하게 복원
+    # ★ 돌파봉 = 0
+    # ★ 다음 = 1
     # =====================================================
 
     elif signal_state is None:
@@ -2714,9 +2704,9 @@ def update_signal_and_pullback(
                     SIGNAL_TIMEFRAME
                 )
 
-            restored_count = (
-                distance + 1
-            )
+            # ★ 돌파봉 자체 = 0
+            # ★ 다음 봉 = 1
+            restored_count = distance
 
             roc_signal_state[
                 market_key
@@ -2830,7 +2820,8 @@ def update_signal_and_pullback(
     #
     # ★ filter_pass를 보지 않음
     #
-    # 이것이 이번 수정의 핵심
+    # 돌파봉 = 0
+    # 다음 4H봉 = 1
     # =====================================================
 
     signal_state = (
@@ -2892,10 +2883,7 @@ def update_signal_and_pullback(
 
 
         # -------------------------------------------------
-        # ★★★ 중요 ★★★
-        #
-        # filter_pass가 False여도
-        # 절대로 여기서 종료하지 않음
+        # filter_pass와 무관하게 COUNT 유지
         # -------------------------------------------------
 
         else:
@@ -2917,11 +2905,12 @@ def update_signal_and_pullback(
                     SIGNAL_TIMEFRAME
                 )
 
+                # ★ 돌파봉 = 0
+                # ★ 다음 봉 = 1
+                # ★ 이후 = 2, 3...
                 signal_state[
                     "count"
-                ] = (
-                    distance + 1
-                )
+                ] = distance
 
                 signal_state[
                     "last_candle"
@@ -3016,10 +3005,7 @@ def update_signal_and_pullback(
     # =====================================================
     # 7. 최종 상태
     #
-    # ★ signal_active = filter_pass와 무관
-    #
-    # 실제 상승신호 영역에서는
-    # 별도로 filter_pass를 확인함
+    # signal_active는 filter_pass와 무관
     # =====================================================
 
     signal_state = (
@@ -3437,7 +3423,7 @@ def analyze(
     # =====================================================
     # 활성 ROC 필터 통과 여부
     #
-    # ★ 이것은 신호 COUNT와 별개
+    # ★ COUNT와 별개
     # =====================================================
 
     filter_pass = (
@@ -3464,8 +3450,7 @@ def analyze(
     # =====================================================
     # 과거 상승 신호 복원
     #
-    # ★ 필터 통과 여부와 관계없이
-    # ROC5 4H 상향돌파를 찾음
+    # ★ 필터와 관계없이 ROC5 상향돌파를 찾음
     # =====================================================
 
     historical_start_candle = None
@@ -4753,8 +4738,8 @@ def rows_html(
         # =================================================
         # ★ 반짝임
         #
-        # COUNT는 1~3만 반짝임
-        # 필터 + EMA 조건은 기존 유지
+        # 0 = 돌파 진행 중
+        # 1~3 = 반짝임
         # =================================================
 
         if (
@@ -5024,7 +5009,8 @@ def focus_section(
             · 당일 음수 제외
             · EMA 상승 COUNT ≤ {EMA_LONG_MAX_COUNT}
             · 🚀📉 모든 COUNT 표시
-            · 반짝임 {count_flash_text()}
+            · 0 = 돌파 진행 중
+            · 1~3 = 반짝임
             · {kst()} KST
         </span>
 
@@ -6180,12 +6166,16 @@ def startup():
         f"{format_timeframe(SIGNAL_TIMEFRAME)}"
     )
 
+    # =====================================================
+    # ★ COUNT 기준 변경
+    # =====================================================
+
     log.info(
-        "★ 0선 돌파한 현재 4H 캔들 = COUNT 1"
+        "★ 0선 돌파 진행 중인 현재 4H 캔들 = COUNT 0"
     )
 
     log.info(
-        "★ 다음 4H 캔들 = COUNT 2"
+        "★ 돌파봉 완성 후 다음 4H 캔들 = COUNT 1"
     )
 
     log.info(
@@ -6197,7 +6187,7 @@ def startup():
     )
 
     log.info(
-        "COUNT 화면 표시 = 1부터 모든 COUNT"
+        "COUNT 화면 표시 = 0부터 모든 COUNT"
     )
 
     log.info(
@@ -6227,7 +6217,13 @@ def startup():
     log.info(
         f"ROC{SIGNAL_ROC_PERIOD} "
         f"{format_timeframe(SIGNAL_TIMEFRAME)} "
-        f"0선 상향 돌파 = 🚀 COUNT 1"
+        f"0선 상향 돌파 진행 중 = 🚀 COUNT 0"
+    )
+
+    log.info(
+        f"ROC{SIGNAL_ROC_PERIOD} "
+        f"{format_timeframe(SIGNAL_TIMEFRAME)} "
+        f"첫 완성 = 🚀 COUNT 1"
     )
 
     log.info(
@@ -6248,7 +6244,7 @@ def startup():
 
     log.info(
         f"신호 COUNT = "
-        f"1,2,3... 무제한 / "
+        f"0,1,2,3... 무제한 / "
         f"{format_timeframe(SIGNAL_TIMEFRAME)} 기준"
     )
 
@@ -6276,6 +6272,10 @@ def startup():
 
     log.info(
         f"COUNT {count_flash_text()} = 반짝임"
+    )
+
+    log.info(
+        "COUNT 0 = 표시만 / 반짝임 없음"
     )
 
     log.info(
