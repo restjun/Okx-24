@@ -56,6 +56,8 @@ MAX_RETRIES = 10
 
 # =========================================================
 # 신호 / COUNT 기준 시간봉
+#
+# ★ 신호는 그대로 4H
 # =========================================================
 
 SIGNAL_TIMEFRAME = 240
@@ -98,23 +100,21 @@ FLASH_COUNT_MAX = 1
 
 # =========================================================
 # ROC 필터
+#
+# ★ 기존 1H / 4H 필터 제거
+# ★ 1D 일봉 필터로 변경
+#
+# ★ 신호는 별도로 4H 유지
 # =========================================================
 
-USE_1H_ROC_FILTER = "Y"
-USE_4H_ROC_FILTER = "Y"
+USE_1D_ROC_FILTER = "Y"
 
-USE_1H_ROC5 = "N"
-USE_1H_ROC20 = "Y"
-USE_1H_ROC50 = "Y"
-USE_1H_ROC200 = "Y"
+USE_1D_ROC5 = "N"
+USE_1D_ROC20 = "Y"
+USE_1D_ROC50 = "Y"
+USE_1D_ROC200 = "Y"
 
-USE_4H_ROC5 = "N"
-USE_4H_ROC20 = "Y"
-USE_4H_ROC50 = "Y"
-USE_4H_ROC200 = "Y"
-
-ROC_FILTER_TIMEFRAME = 60
-ROC_FILTER_HIGH_TIMEFRAME = 240
+ROC_FILTER_TIMEFRAME = 1440
 
 
 # =========================================================
@@ -275,23 +275,19 @@ def roc_settings():
     return {
 
         5: {
-            "1H": USE_1H_ROC5,
-            "4H": USE_4H_ROC5
+            "1D": USE_1D_ROC5
         },
 
         20: {
-            "1H": USE_1H_ROC20,
-            "4H": USE_4H_ROC20
+            "1D": USE_1D_ROC20
         },
 
         50: {
-            "1H": USE_1H_ROC50,
-            "4H": USE_4H_ROC50
+            "1D": USE_1D_ROC50
         },
 
         200: {
-            "1H": USE_1H_ROC200,
-            "4H": USE_4H_ROC200
+            "1D": USE_1D_ROC200
         }
 
     }
@@ -299,14 +295,9 @@ def roc_settings():
 
 def get_enabled_periods(timeframe):
 
-    if timeframe == "1H":
+    if timeframe == "1D":
 
-        if USE_1H_ROC_FILTER != "Y":
-            return []
-
-    elif timeframe == "4H":
-
-        if USE_4H_ROC_FILTER != "Y":
+        if USE_1D_ROC_FILTER != "Y":
             return []
 
     else:
@@ -333,24 +324,14 @@ def get_enabled_all_filters():
 
     settings = roc_settings()
 
-    if USE_1H_ROC_FILTER == "Y":
+    if USE_1D_ROC_FILTER == "Y":
 
         for period in ROC_FILTER_PERIODS:
 
-            if settings[period]["1H"] == "Y":
+            if settings[period]["1D"] == "Y":
 
                 result.append(
-                    ("1H", period)
-                )
-
-    if USE_4H_ROC_FILTER == "Y":
-
-        for period in ROC_FILTER_PERIODS:
-
-            if settings[period]["4H"] == "Y":
-
-                result.append(
-                    ("4H", period)
+                    ("1D", period)
                 )
 
     return result
@@ -373,19 +354,13 @@ def get_enabled_filter_text(timeframe):
 
 def get_filter_setting_text():
 
-    h1 = (
-        get_enabled_filter_text("1H")
-        if USE_1H_ROC_FILTER == "Y"
+    d1 = (
+        get_enabled_filter_text("1D")
+        if USE_1D_ROC_FILTER == "Y"
         else "-"
     )
 
-    h4 = (
-        get_enabled_filter_text("4H")
-        if USE_4H_ROC_FILTER == "Y"
-        else "-"
-    )
-
-    return f"1H:{h1} 4H:{h4}"
+    return f"1D:{d1}"
 
 
 # =========================================================
@@ -424,6 +399,36 @@ def get_current_candle_start(minutes):
 
     now = datetime.now(KST)
 
+    # =====================================================
+    # 1D
+    #
+    # 업비트 일봉 기준 = KST 09:00
+    # =====================================================
+
+    if minutes == 1440:
+
+        anchor = now.replace(
+            hour=9,
+            minute=0,
+            second=0,
+            microsecond=0
+        )
+
+        if now < anchor:
+
+            anchor = (
+                anchor
+                - timedelta(days=1)
+            )
+
+        return anchor.replace(
+            tzinfo=None
+        )
+
+    # =====================================================
+    # 4H
+    # =====================================================
+
     if minutes == 240:
 
         anchor = now.replace(
@@ -461,6 +466,10 @@ def get_current_candle_start(minutes):
         return current.replace(
             tzinfo=None
         )
+
+    # =====================================================
+    # 기타 분봉
+    # =====================================================
 
     total = (
         now.hour * 60
@@ -682,6 +691,10 @@ def roc_negative_count(
 
 def validate_timeframe():
 
+    # =====================================================
+    # 신호는 4H 그대로
+    # =====================================================
+
     if SIGNAL_TIMEFRAME not in (
         60,
         240
@@ -692,22 +705,17 @@ def validate_timeframe():
             "60 또는 240만 사용할 수 있습니다."
         )
 
-    if USE_1H_ROC_FILTER not in (
+    # =====================================================
+    # 일봉 ROC 필터
+    # =====================================================
+
+    if USE_1D_ROC_FILTER not in (
         "Y",
         "N"
     ):
 
         raise ValueError(
-            "USE_1H_ROC_FILTER는 Y/N만 가능합니다."
-        )
-
-    if USE_4H_ROC_FILTER not in (
-        "Y",
-        "N"
-    ):
-
-        raise ValueError(
-            "USE_4H_ROC_FILTER는 Y/N만 가능합니다."
+            "USE_1D_ROC_FILTER는 Y/N만 가능합니다."
         )
 
     if SIGNAL_ROC_PERIOD not in ROC_FILTER_PERIODS:
@@ -1328,6 +1336,9 @@ def calculate_orderbook_amount(
 
 # =========================================================
 # 업비트 native 캔들
+#
+# ★ 1440 = 업비트 일봉 API
+# ★ 나머지는 분봉 API
 # =========================================================
 
 def get_upbit_candle(
@@ -1359,9 +1370,29 @@ def get_upbit_candle(
     if to:
         params["to"] = to
 
+    # =====================================================
+    # 일봉
+    # =====================================================
+
+    if unit == 1440:
+
+        endpoint = (
+            "https://api.upbit.com/v1/candles/days"
+        )
+
+    # =====================================================
+    # 분봉
+    # =====================================================
+
+    else:
+
+        endpoint = (
+            f"https://api.upbit.com/v1/candles/minutes/{unit}"
+        )
+
     response = retry(
         requests.get,
-        f"https://api.upbit.com/v1/candles/minutes/{unit}",
+        endpoint,
         params=params,
         timeout=15
     )
@@ -1379,7 +1410,8 @@ def get_upbit_candle(
         ):
 
             log.warning(
-                f"업비트 {unit}분봉 "
+                f"업비트 "
+                f"{format_timeframe(unit)} "
                 f"응답 형식 오류: {market}"
             )
 
@@ -1463,8 +1495,9 @@ def get_upbit_candle(
     except Exception as e:
 
         log.error(
-            f"업비트 {unit}분봉 오류 "
-            f"{market}: {e}"
+            f"업비트 "
+            f"{format_timeframe(unit)} "
+            f"오류 {market}: {e}"
         )
 
         return None
@@ -2001,44 +2034,32 @@ def get_roc_count_filter_status(
 
 
 def get_all_active_roc_status(
-    filter_1h,
-    filter_4h
+    filter_1d
 ):
 
-    h1_pass = True
-    h4_pass = True
+    d1_pass = True
 
-    if USE_1H_ROC_FILTER == "Y":
+    if USE_1D_ROC_FILTER == "Y":
 
-        h1_pass = (
+        d1_pass = (
             get_roc_count_filter_status(
-                filter_1h
-            )
-        )
-
-    if USE_4H_ROC_FILTER == "Y":
-
-        h4_pass = (
-            get_roc_count_filter_status(
-                filter_4h
+                filter_1d
             )
         )
 
     return (
-        h1_pass and h4_pass,
+        d1_pass,
         False
     )
 
 
 def all_active_roc_filters_pass(
-    filter_1h,
-    filter_4h
+    filter_1d
 ):
 
     current, _ = (
         get_all_active_roc_status(
-            filter_1h,
-            filter_4h
+            filter_1d
         )
     )
 
@@ -2135,6 +2156,8 @@ def roc_signal_pullback_condition(r):
 
 # =========================================================
 # 가장 최근 ROC5 이벤트 찾기
+#
+# ★ 신호는 그대로 4H
 # =========================================================
 
 def find_latest_signal_event(
@@ -2965,6 +2988,9 @@ def format_volume(v):
 
 # =========================================================
 # 분석
+#
+# ★ ROC 필터 = 1D
+# ★ 신호 = 4H 그대로
 # =========================================================
 
 def analyze(
@@ -2977,41 +3003,26 @@ def analyze(
     )
 
     # =====================================================
-    # 1H native
+    # 1D ROC FILTER
     # =====================================================
 
-    df1h = history_upbit(
+    df1d = history_upbit(
         market,
-        60,
+        1440,
         required=ROC_HISTORY_REQUIRED
     )
 
     if (
-        df1h is None
-        or df1h.empty
-    ):
-
-        return None
-
-    # =====================================================
-    # 4H native
-    # =====================================================
-
-    df4h = history_upbit(
-        market,
-        240,
-        required=ROC_HISTORY_REQUIRED
-    )
-
-    if (
-        df4h is None
-        or df4h.empty
+        df1d is None
+        or df1d.empty
     ):
 
         return None
 
     # =====================================================
     # 신호 기준 native 데이터
+    #
+    # ★ 4H 그대로
     # =====================================================
 
     df_signal = history_upbit(
@@ -3029,6 +3040,8 @@ def analyze(
 
     # =====================================================
     # 현재 진행 중인 신호 시간봉
+    #
+    # ★ 4H 그대로
     # =====================================================
 
     df_current = (
@@ -3047,35 +3060,23 @@ def analyze(
         return None
 
     # =====================================================
-    # 1H ROC
+    # 1D ROC FILTER
     # =====================================================
 
-    r1_raw = roc_filter_analysis(
-        df1h,
+    r1d_raw = roc_filter_analysis(
+        df1d,
         all_periods
     )
 
-    r1 = roc_filter_display(
-        r1_raw,
-        "1H"
-    )
-
-    # =====================================================
-    # 4H ROC
-    # =====================================================
-
-    r4_raw = roc_filter_analysis(
-        df4h,
-        all_periods
-    )
-
-    r4 = roc_filter_display(
-        r4_raw,
-        "4H"
+    r1d = roc_filter_display(
+        r1d_raw,
+        "1D"
     )
 
     # =====================================================
     # SIGNAL ROC
+    #
+    # ★ 신호는 4H
     # =====================================================
 
     signal_timeframe_name = (
@@ -3142,17 +3143,20 @@ def analyze(
 
     # =====================================================
     # ROC COUNT 필터
+    #
+    # ★ 1D만 사용
     # =====================================================
 
     filter_pass = (
         all_active_roc_filters_pass(
-            r1,
-            r4
+            r1d
         )
     )
 
     # =====================================================
     # 현재 진행 신호 캔들
+    #
+    # ★ 4H
     # =====================================================
 
     progress_candle_time = (
@@ -3211,7 +3215,7 @@ def analyze(
     )
 
     # =====================================================
-    # 일봉
+    # 일봉 등락
     # =====================================================
 
     changes = (
@@ -3243,11 +3247,8 @@ def analyze(
 
     return {
 
-        "roc_filter_1h":
-            r1,
-
-        "roc_filter_high":
-            r4,
+        "roc_filter_1d":
+            r1d,
 
         "roc":
             r,
@@ -3294,8 +3295,8 @@ def analyze(
                 "signal_roc_pullback"
             ],
 
-        "df1h":
-            df1h,
+        "df1d":
+            df1d,
 
         "df_signal":
             df_signal
@@ -3357,15 +3358,9 @@ def make_row(
         "current_price":
             current_price,
 
-        "roc_filter_1h":
+        "roc_filter_1d":
             a.get(
-                "roc_filter_1h",
-                {}
-            ),
-
-        "roc_filter_high":
-            a.get(
-                "roc_filter_high",
+                "roc_filter_1d",
                 {}
             ),
 
@@ -3710,13 +3705,13 @@ def format_market_price(
 # =========================================================
 # ROC 필터 HTML
 #
-# ★ 모바일 표시
+# ★ 1D 일봉만 표시
 #
-# 기존:
-# ROC5 COUNT 12
-#
-# 수정:
+# 예:
 # 5 🟢 (12)
+# 20 🟢 (18)
+# 50 🔴 (7)
+# 200 🟢 (25)
 #
 # ★ ROC / COUNT 영문 제거
 # =========================================================
@@ -3848,8 +3843,7 @@ def roc_filter_html(
 
 
 def filter_html(
-    r1,
-    r4
+    r1d
 ):
 
     return f"""
@@ -3858,25 +3852,12 @@ def filter_html(
         <div class="filter-line">
 
             <span class="filter-timeframe">
-                1H
+                1D
             </span>
 
             {roc_filter_html(
-                r1,
-                "1H"
-            )}
-
-        </div>
-
-        <div class="filter-line">
-
-            <span class="filter-timeframe">
-                4H
-            </span>
-
-            {roc_filter_html(
-                r4,
-                "4H"
+                r1d,
+                "1D"
             )}
 
         </div>
@@ -4200,6 +4181,10 @@ def orderbook_html(
 
 # =========================================================
 # ROW HTML
+#
+# ★ 코인명 + 현재가격 + 상승률
+# 예:
+# BTC 95,420,000 ▲ +1.2%
 # =========================================================
 
 def rows_html(
@@ -4251,10 +4236,7 @@ def rows_html(
 
         filter_content = filter_html(
             x.get(
-                "roc_filter_1h"
-            ),
-            x.get(
-                "roc_filter_high"
+                "roc_filter_1d"
             )
         )
 
@@ -4270,6 +4252,14 @@ def rows_html(
             )
         )
 
+        current_price = (
+            format_market_price(
+                x.get(
+                    "current_price"
+                )
+            )
+        )
+
         out.append(
             f"""
             <tr class="{cls}">
@@ -4280,13 +4270,21 @@ def rows_html(
 
                 <td class="coin">
 
-                    <b>
-                        {x.get("name", "-")}
-                    </b>
+                    <div class="coin-main">
 
-                    <small>
-                        {x.get("change", "-")}
-                    </small>
+                        <b>
+                            {x.get("name", "-")}
+                        </b>
+
+                        <span class="coin-price">
+                            {current_price}
+                        </span>
+
+                        <span class="coin-change">
+                            {x.get("change", "-")}
+                        </span>
+
+                    </div>
 
                 </td>
 
@@ -4469,7 +4467,7 @@ def focus_section(
 
         <span class="section-title-sub">
 
-            ROC20 / ROC50 / ROC200 COUNT
+            1D ROC20 / ROC50 / ROC200 COUNT
             ≥ {ROC_FILTER_COUNT_MIN}
 
             ·
@@ -4530,13 +4528,13 @@ def section(
 
             ·
 
-            ROC20 / ROC50 / ROC200 COUNT
+            1D ROC20 / ROC50 / ROC200 COUNT
             ≥ {ROC_FILTER_COUNT_MIN}
 
             ·
 
-            4H ROC =
-            업비트 원본 240분봉
+            1D =
+            업비트 원본 일봉
 
         </span>
 
@@ -4549,11 +4547,7 @@ def section(
 # =========================================================
 # BTC ROC 상태
 #
-# ★ 여기에서도 ROC / COUNT 영문 제거
-# ★ 표시:
-#    5
-#    🟢
-#    (12)
+# ★ 신호 기준은 그대로 4H
 # =========================================================
 
 def btc_roc_status_html(
@@ -4737,7 +4731,7 @@ def market_summary_html():
 
             <span class="market-title-sub">
 
-                ROC20 / ROC50 / ROC200 COUNT
+                1D ROC20 / ROC50 / ROC200 COUNT
                 ≥ {ROC_FILTER_COUNT_MIN}
 
                 ·
@@ -4752,8 +4746,7 @@ def market_summary_html():
 
                 ·
 
-                4H =
-                업비트 원본 240분봉
+                ROC 필터 = 1D 일봉
 
             </span>
 
@@ -5000,17 +4993,17 @@ width:6%;
 
 th:nth-child(2),
 td:nth-child(2){
-width:17%;
+width:22%;
 }
 
 th:nth-child(3),
 td:nth-child(3){
-width:15%;
+width:13%;
 }
 
 th:nth-child(4),
 td:nth-child(4){
-width:38%;
+width:35%;
 }
 
 th:nth-child(5),
@@ -5022,21 +5015,45 @@ width:24%;
 text-align:left!important;
 }
 
+.coin-main{
+display:flex;
+align-items:center;
+gap:2px;
+width:100%;
+min-width:0;
+white-space:nowrap;
+overflow:hidden;
+}
+
 .coin b{
-display:block;
+display:inline-block;
 color:#e0e5e9;
-font-size:6.5px;
+font-size:6.3px;
+line-height:8px;
+font-weight:900;
+white-space:nowrap;
+flex:none;
+}
+
+.coin-price{
+display:inline-block;
+color:#d2d8dd;
+font-size:5.3px;
 line-height:8px;
 font-weight:800;
 white-space:nowrap;
 overflow:hidden;
 text-overflow:ellipsis;
+min-width:0;
 }
 
-.coin small{
-display:block;
-font-size:4.5px;
-line-height:6px;
+.coin-change{
+display:inline-block;
+font-size:4.9px;
+line-height:8px;
+font-weight:900;
+white-space:nowrap;
+flex:none;
 }
 
 .vol{
@@ -5419,16 +5436,44 @@ td{
 height:23px;
 }
 
-.coin b{
-font-size:6px;
+th:nth-child(2),
+td:nth-child(2){
+width:25%;
 }
 
-.coin small{
-font-size:4px;
+th:nth-child(3),
+td:nth-child(3){
+width:12%;
+}
+
+th:nth-child(4),
+td:nth-child(4){
+width:35%;
+}
+
+th:nth-child(5),
+td:nth-child(5){
+width:22%;
+}
+
+.coin-main{
+gap:2px;
+}
+
+.coin b{
+font-size:5.8px;
+}
+
+.coin-price{
+font-size:4.7px;
+}
+
+.coin-change{
+font-size:4.3px;
 }
 
 .vol{
-font-size:5.5px;
+font-size:5.3px;
 }
 
 .filter-timeframe{
@@ -5690,11 +5735,11 @@ def startup():
     )
 
     log.info(
-        "★ 1H ROC20/50/200 필터"
+        "★ 1D ROC20/50/200 필터"
     )
 
     log.info(
-        "★ 4H ROC20/50/200 필터"
+        "★ 신호는 4H ROC5 유지"
     )
 
     log.info(
@@ -5702,11 +5747,11 @@ def startup():
     )
 
     log.info(
-        "★ ROC5 0선 상향 돌파 = 🚀"
+        "★ ROC5 4H 0선 상향 돌파 = 🚀"
     )
 
     log.info(
-        "★ ROC5 0선 하향 돌파 = 📉"
+        "★ ROC5 4H 0선 하향 돌파 = 📉"
     )
 
     log.info(
@@ -5729,7 +5774,11 @@ def startup():
     )
 
     log.info(
-        "★ 1H 데이터 = 업비트 원본 60분봉"
+        "★ 1D 데이터 = 업비트 원본 일봉"
+    )
+
+    log.info(
+        "★ 일봉 기준 = KST 09:00"
     )
 
     log.info(
@@ -5737,7 +5786,7 @@ def startup():
     )
 
     log.info(
-        "★ 1H → 4H 캔들 합성하지 않음"
+        "★ 4H 캔들 합성하지 않음"
     )
 
     log.info(
@@ -5765,7 +5814,7 @@ def startup():
     )
 
     log.info(
-        "★ 1H 진행봉 기준 = 매 정시"
+        "★ 1D 진행봉 기준 = KST 09:00"
     )
 
     log.info(
@@ -5791,18 +5840,21 @@ def startup():
     )
 
     log.info(
-        f"1H ROC FILTER = "
-        f"{USE_1H_ROC_FILTER}"
-    )
-
-    log.info(
-        f"4H ROC FILTER = "
-        f"{USE_4H_ROC_FILTER}"
+        f"1D ROC FILTER = "
+        f"{USE_1D_ROC_FILTER}"
     )
 
     log.info(
         f"ACTIVE FILTER = "
         f"{get_filter_setting_text()}"
+    )
+
+    log.info(
+        "★ 코인명 옆 현재가격 표시"
+    )
+
+    log.info(
+        "★ 현재가격 옆 일봉 상승률 표시"
     )
 
     log.info(
