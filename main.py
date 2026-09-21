@@ -106,7 +106,7 @@ FLASH_COUNT_MAX = 1
 # ROC 필터
 # =========================================================
 
-USE_1H_ROC_FILTER = "N"
+USE_1H_ROC_FILTER = "Y"
 USE_4H_ROC_FILTER = "Y"
 
 
@@ -117,7 +117,7 @@ USE_1H_ROC50 = "Y"
 USE_1H_ROC200 = "Y"
 
 
-USE_4H_ROC5 = "N"
+USE_4H_ROC5 = "Y"
 USE_4H_ROC10 = "Y"
 USE_4H_ROC20 = "Y"
 USE_4H_ROC50 = "Y"
