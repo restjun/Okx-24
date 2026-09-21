@@ -43,10 +43,7 @@ VOLUME_HOURS = 24
 TOP_N = 10
 UPDATE_MINUTES = 1
 
-# 업비트 API 1회 최대 요청
 HISTORY_CHUNK = 200
-
-# 최대 과거 추가 요청 횟수
 MAX_HISTORY_CHUNKS = 10
 
 USE_UPBIT = "Y"
@@ -63,13 +60,15 @@ MAX_RETRIES = 10
 # 60  = 1시간
 # 240 = 4시간
 #
-# 현재 설정
-#   ROC 돌파       = 4시간
-#   눌림           = 4시간
-#   COUNT          = 4시간
+# 현재:
+#   상승신호     = 1H ROC5
+#   눌림         = 1H ROC5
+#   COUNT        = 1H
+#
+# 4H는 ROC 필터용
 # =========================================================
 
-SIGNAL_TIMEFRAME = 240
+SIGNAL_TIMEFRAME = 60
 
 
 # =========================================================
@@ -86,13 +85,6 @@ DISPLAY_COUNT_MAX = 999999
 
 FLASH_COUNT_MIN = 0
 FLASH_COUNT_MAX = 3
-
-
-# =========================================================
-# 상승 신호 영역 EMA COUNT 필터
-# =========================================================
-
-EMA_LONG_MAX_COUNT = 200
 
 
 # =========================================================
@@ -129,9 +121,7 @@ SIGNAL_ROC_PERIOD = 5
 
 
 # =========================================================
-# ★ ROC 기간
-#
-# 반드시 ROC_HISTORY_REQUIRED보다 먼저 선언
+# ROC 기간
 # =========================================================
 
 ROC_FILTER_PERIODS = [
@@ -144,17 +134,13 @@ ROC_FILTER_PERIODS = [
 
 
 # =========================================================
-# ★ ROC 계산용 최소 데이터
+# ROC 계산용 최소 데이터
 #
-# ROC200 현재값:
-#   최소 201개
+# ROC200 현재값 + 직전값
+# 최소 202개
 #
-# ROC200 현재값 + 직전값:
-#   최소 202개
-#
-# 따라서
-#   1차 요청 = 200개
-#   부족하면 2차 요청 = 과거 200개
+# 1차 200개
+# 부족하면 2차 요청
 # =========================================================
 
 ROC_HISTORY_REQUIRED = (
@@ -397,17 +383,6 @@ def get_filter_setting_text():
 
 
 # =========================================================
-# EMA 설정
-# =========================================================
-
-def get_enabled_ema_periods(timeframe):
-
-    return get_enabled_periods(
-        timeframe
-    )
-
-
-# =========================================================
 # 시간
 # =========================================================
 
@@ -436,8 +411,7 @@ def format_timeframe(minutes):
 # =========================================================
 # 현재 캔들 시작시간
 #
-# 4H 진행 COUNT 기준
-#
+# 4H:
 # 01:00
 # 05:00
 # 09:00
@@ -445,8 +419,8 @@ def format_timeframe(minutes):
 # 17:00
 # 21:00
 #
-# 중요:
-# 4H 데이터 자체는 업비트 native 240분봉
+# 1H:
+# 매 정시
 # =========================================================
 
 def get_current_candle_start(minutes):
@@ -577,58 +551,6 @@ def candle_distance(
         return 0
 
 
-def get_last_completed_candle_time(
-    df,
-    timeframe
-):
-
-    if (
-        df is None
-        or df.empty
-        or "datetime" not in df.columns
-    ):
-
-        return None
-
-    try:
-
-        current_start = (
-            get_current_candle_start(
-                timeframe
-            )
-        )
-
-        temp = df.copy()
-
-        temp["datetime"] = pd.to_datetime(
-            temp["datetime"],
-            errors="coerce"
-        )
-
-        temp = temp.dropna(
-            subset=["datetime"]
-        )
-
-        completed = temp[
-            temp["datetime"] < current_start
-        ]
-
-        if completed.empty:
-            return None
-
-        return completed[
-            "datetime"
-        ].iloc[-1]
-
-    except Exception as e:
-
-        log.warning(
-            f"완성캔들 시간 오류: {e}"
-        )
-
-        return None
-
-
 # =========================================================
 # 검증
 # =========================================================
@@ -663,16 +585,10 @@ def validate_timeframe():
             "USE_4H_ROC_FILTER는 Y/N만 가능합니다."
         )
 
-    if (
-        not isinstance(
-            EMA_LONG_MAX_COUNT,
-            int
-        )
-        or EMA_LONG_MAX_COUNT < 1
-    ):
+    if SIGNAL_ROC_PERIOD not in ROC_FILTER_PERIODS:
 
         raise ValueError(
-            "EMA_LONG_MAX_COUNT는 1 이상의 정수여야 합니다."
+            "SIGNAL_ROC_PERIOD 설정 오류"
         )
 
     if (
@@ -709,15 +625,9 @@ def validate_timeframe():
             "FLASH_COUNT_MIN/MAX 설정이 올바르지 않습니다."
         )
 
-    if SIGNAL_ROC_PERIOD not in ROC_FILTER_PERIODS:
-
-        raise ValueError(
-            "SIGNAL_ROC_PERIOD 설정 오류"
-        )
-
 
 # =========================================================
-# API
+# API 요청
 # =========================================================
 
 def wait_request():
@@ -1297,14 +1207,7 @@ def calculate_orderbook_amount(
 
 
 # =========================================================
-# 업비트 캔들
-#
-# ★ 60  = 업비트 native 60분봉
-# ★ 240 = 업비트 native 240분봉
-#
-# ★ 절대 1H → 4H 합성하지 않음
-#
-# ★ 1회 최대 200개
+# 업비트 native 캔들
 # =========================================================
 
 def get_upbit_candle(
@@ -1368,10 +1271,6 @@ def get_upbit_candle(
         if df.empty:
             return None
 
-        # =================================================
-        # 가격
-        # =================================================
-
         df["o"] = pd.to_numeric(
             df["opening_price"],
             errors="coerce"
@@ -1392,18 +1291,10 @@ def get_upbit_candle(
             errors="coerce"
         )
 
-        # =================================================
-        # 거래대금
-        # =================================================
-
         df["volume_krw"] = pd.to_numeric(
             df["candle_acc_trade_price"],
             errors="coerce"
         )
-
-        # =================================================
-        # KST
-        # =================================================
 
         df["datetime"] = pd.to_datetime(
             df["candle_date_time_kst"],
@@ -1423,26 +1314,12 @@ def get_upbit_candle(
         if df.empty:
             return None
 
-        # =================================================
-        # 정렬
-        # =================================================
-
         df = (
             df
-            .sort_values(
-                "datetime"
-            )
-            .drop_duplicates(
-                "datetime"
-            )
-            .reset_index(
-                drop=True
-            )
+            .sort_values("datetime")
+            .drop_duplicates("datetime")
+            .reset_index(drop=True)
         )
-
-        # =================================================
-        # 현재 진행봉 제외
-        # =================================================
 
         if not include_current:
 
@@ -1474,30 +1351,6 @@ def get_upbit_candle(
 
 # =========================================================
 # 과거 데이터
-#
-# ★ 1차 요청 = 최대 200개
-#
-# ★ 자료 부족하면 2차 요청
-#
-# 예:
-#
-# 필요 = 202개
-#
-# 1차
-# 200개
-#
-# ↓ 부족
-#
-# 2차
-# 과거 200개
-#
-# ↓
-#
-# 중복 제거
-#
-# ↓
-#
-# 최신 202개 사용
 # =========================================================
 
 def history_upbit(
@@ -1531,7 +1384,6 @@ def history_upbit(
             df is None
             or df.empty
         ):
-
             break
 
         if all_df is None:
@@ -1550,47 +1402,21 @@ def history_upbit(
 
         all_df = (
             all_df
-            .drop_duplicates(
-                "datetime"
-            )
-            .sort_values(
-                "datetime"
-            )
-            .reset_index(
-                drop=True
-            )
+            .drop_duplicates("datetime")
+            .sort_values("datetime")
+            .reset_index(drop=True)
         )
-
-        log.debug(
-            f"[HISTORY] "
-            f"{market} "
-            f"{format_timeframe(unit)} "
-            f"{chunk_index + 1}차 "
-            f"자료={len(all_df)}"
-        )
-
-        # =================================================
-        # 충분
-        # =================================================
 
         if len(all_df) >= required:
 
             return (
                 all_df
                 .iloc[-required:]
-                .reset_index(
-                    drop=True
-                )
+                .reset_index(drop=True)
             )
 
-        # =================================================
-        # 다음 요청
-        # =================================================
-
         oldest = (
-            all_df[
-                "datetime"
-            ].iloc[0]
+            all_df["datetime"].iloc[0]
         )
 
         to = oldest.strftime(
@@ -1608,10 +1434,6 @@ def history_upbit(
                 f"→ 2차 요청"
             )
 
-    # =====================================================
-    # 확보 가능한 자료 반환
-    # =====================================================
-
     if all_df is None:
         return None
 
@@ -1627,29 +1449,29 @@ def history_upbit(
 
 
 # =========================================================
-# ★ 현재 진행 중인 4H ROC 데이터
+# 현재 진행 중인 ROC 데이터
 #
-# 1차:
-#   최신 native 240분봉 200개
-#
-# 부족:
-#   과거 native 240분봉 200개 추가
-#
-# ★ 1H → 4H 합성 없음
+# SIGNAL_TIMEFRAME에 따라
+# native 60분봉 또는 native 240분봉
 # =========================================================
 
 def get_upbit_current_roc_data(
     market,
-    current_price
+    current_price,
+    timeframe
 ):
 
+    timeframe = int(
+        timeframe
+    )
+
     # =====================================================
-    # 1차 요청
+    # 1차
     # =====================================================
 
     df = get_upbit_candle(
         market=market,
-        unit=240,
+        unit=timeframe,
         count=HISTORY_CHUNK,
         include_current=True
     )
@@ -1663,30 +1485,21 @@ def get_upbit_current_roc_data(
 
     df = (
         df
-        .sort_values(
-            "datetime"
-        )
-        .drop_duplicates(
-            "datetime"
-        )
-        .reset_index(
-            drop=True
-        )
+        .sort_values("datetime")
+        .drop_duplicates("datetime")
+        .reset_index(drop=True)
     )
 
     required = ROC_HISTORY_REQUIRED
 
     # =====================================================
-    # 1차 자료가 부족하면
-    # 2차 요청
+    # 부족하면 2차
     # =====================================================
 
     if len(df) < required:
 
         oldest = (
-            df[
-                "datetime"
-            ].iloc[0]
+            df["datetime"].iloc[0]
         )
 
         to = oldest.strftime(
@@ -1695,7 +1508,8 @@ def get_upbit_current_roc_data(
 
         log.info(
             f"[현재 ROC 추가 요청] "
-            f"{market} 4H "
+            f"{market} "
+            f"{format_timeframe(timeframe)} "
             f"1차={len(df)}개 "
             f"/ 필요={required}개 "
             f"→ 2차 요청"
@@ -1703,7 +1517,7 @@ def get_upbit_current_roc_data(
 
         df_old = get_upbit_candle(
             market=market,
-            unit=240,
+            unit=timeframe,
             count=HISTORY_CHUNK,
             to=to,
             include_current=False
@@ -1724,19 +1538,13 @@ def get_upbit_current_roc_data(
 
             df = (
                 df
-                .drop_duplicates(
-                    "datetime"
-                )
-                .sort_values(
-                    "datetime"
-                )
-                .reset_index(
-                    drop=True
-                )
+                .drop_duplicates("datetime")
+                .sort_values("datetime")
+                .reset_index(drop=True)
             )
 
     # =====================================================
-    # 현재 진행 4H 봉에 현재가 반영
+    # 현재 진행봉에 현재가 반영
     # =====================================================
 
     try:
@@ -1747,7 +1555,7 @@ def get_upbit_current_roc_data(
 
         current_start = (
             get_current_candle_start(
-                240
+                timeframe
             )
         )
 
@@ -1766,9 +1574,10 @@ def get_upbit_current_roc_data(
         else:
 
             log.warning(
-                f"[4H CURRENT] "
+                f"[CURRENT] "
                 f"{market} | "
-                f"현재 240분봉 없음 | "
+                f"{format_timeframe(timeframe)} "
+                f"현재 진행봉 없음 | "
                 f"기준={current_start} | "
                 f"최근={df['datetime'].iloc[-1]}"
             )
@@ -1776,25 +1585,21 @@ def get_upbit_current_roc_data(
     except Exception as e:
 
         log.error(
-            f"현재 4H ROC 데이터 오류 "
+            f"현재 "
+            f"{format_timeframe(timeframe)} "
+            f"ROC 데이터 오류 "
             f"{market}: {e}"
         )
 
     # =====================================================
-    # 최종 최신 데이터만 사용
+    # 정리
     # =====================================================
 
     df = (
         df
-        .sort_values(
-            "datetime"
-        )
-        .drop_duplicates(
-            "datetime"
-        )
-        .reset_index(
-            drop=True
-        )
+        .sort_values("datetime")
+        .drop_duplicates("datetime")
+        .reset_index(drop=True)
     )
 
     if len(df) > required:
@@ -1802,15 +1607,14 @@ def get_upbit_current_roc_data(
         df = (
             df
             .iloc[-required:]
-            .reset_index(
-                drop=True
-            )
+            .reset_index(drop=True)
         )
 
     log.info(
-        f"[4H NATIVE] "
+        f"[NATIVE CURRENT] "
         f"{market} | "
-        f"240분봉={len(df)}개 | "
+        f"{format_timeframe(timeframe)}="
+        f"{len(df)}개 | "
         f"필요={required}개"
     )
 
@@ -2077,7 +1881,7 @@ def ema_alignment_analysis(
     timeframe
 ):
 
-    periods = get_enabled_ema_periods(
+    periods = get_enabled_periods(
         timeframe
     )
 
@@ -2224,15 +2028,12 @@ def ema_alignment_analysis(
     )
 
     if long_alignment:
-
         direction = "long"
 
     elif short_alignment:
-
         direction = "short"
 
     else:
-
         direction = "none"
 
     count = 0
@@ -2416,7 +2217,6 @@ def get_all_active_roc_status(
                 previous_ok = False
 
     return (
-
         current_count == len(enabled)
         and current_ok,
 
@@ -2806,7 +2606,7 @@ def update_signal_and_pullback(
     )
 
     # =====================================================
-    # ROC 하향 돌파
+    # 하향 돌파 → 눌림
     # =====================================================
 
     if pullback_condition:
@@ -2824,7 +2624,7 @@ def update_signal_and_pullback(
                 f"[ROC{SIGNAL_ROC_PERIOD} SIGNAL END] "
                 f"{market_key} | "
                 f"COUNT={old_count} | "
-                f"ROC{SIGNAL_ROC_PERIOD} 0선 하향 돌파"
+                f"ROC 하향 돌파"
             )
 
             roc_signal_state.pop(
@@ -2861,14 +2661,13 @@ def update_signal_and_pullback(
 
             log.info(
                 f"[ROC{SIGNAL_ROC_PERIOD} PULLBACK START] "
-                f"{market_key} "
-                f"📉0 | "
+                f"{market_key} 📉0 | "
                 f"ROC={signal_roc_current} | "
                 f"기준={format_timeframe(SIGNAL_TIMEFRAME)}"
             )
 
     # =====================================================
-    # ROC 상향 돌파
+    # 상향 돌파 → 상승신호
     # =====================================================
 
     elif signal_cross:
@@ -2886,7 +2685,7 @@ def update_signal_and_pullback(
                 f"[ROC{SIGNAL_ROC_PERIOD} PULLBACK END] "
                 f"{market_key} | "
                 f"COUNT={old_count} | "
-                f"ROC{SIGNAL_ROC_PERIOD} 0선 상향 돌파"
+                f"ROC 상향 돌파"
             )
 
             roc_pullback_state.pop(
@@ -2904,9 +2703,7 @@ def update_signal_and_pullback(
                 )
             )
 
-            if failed_candle != (
-                progress_candle_time
-            ):
+            if failed_candle != progress_candle_time:
 
                 roc_signal_state[
                     market_key
@@ -2939,7 +2736,7 @@ def update_signal_and_pullback(
                 )
 
     # =====================================================
-    # 과거 상승 신호 복원
+    # 과거 상승신호 복원
     # =====================================================
 
     elif signal_state is None:
@@ -2966,8 +2763,6 @@ def update_signal_and_pullback(
                     SIGNAL_TIMEFRAME
                 )
 
-            restored_count = distance
-
             roc_signal_state[
                 market_key
             ] = {
@@ -2979,7 +2774,7 @@ def update_signal_and_pullback(
                     start_candle,
 
                 "count":
-                    restored_count,
+                    distance,
 
                 "last_candle":
                     progress_candle_time
@@ -2993,9 +2788,7 @@ def update_signal_and_pullback(
 
             log.info(
                 f"[ROC{SIGNAL_ROC_PERIOD} SIGNAL RESTORE] "
-                f"{market_key} 🚀({restored_count}) | "
-                f"시작={start_candle} | "
-                f"현재={progress_candle_time}"
+                f"{market_key} 🚀({distance})"
             )
 
     # =====================================================
@@ -3035,8 +2828,6 @@ def update_signal_and_pullback(
                 SIGNAL_TIMEFRAME
             )
 
-            restored_count = distance
-
             roc_pullback_state[
                 market_key
             ] = {
@@ -3048,7 +2839,7 @@ def update_signal_and_pullback(
                     start_candle,
 
                 "count":
-                    restored_count,
+                    distance,
 
                 "last_candle":
                     progress_candle_time
@@ -3062,11 +2853,11 @@ def update_signal_and_pullback(
 
             log.info(
                 f"[ROC{SIGNAL_ROC_PERIOD} PULLBACK RESTORE] "
-                f"{market_key} 📉({restored_count})"
+                f"{market_key} 📉({distance})"
             )
 
     # =====================================================
-    # 상승 신호 COUNT 진행
+    # 상승신호 COUNT
     # =====================================================
 
     signal_state = (
@@ -3113,7 +2904,7 @@ def update_signal_and_pullback(
                 f"[ROC{SIGNAL_ROC_PERIOD} SIGNAL END] "
                 f"{market_key} | "
                 f"COUNT={old_count} | "
-                f"ROC{SIGNAL_ROC_PERIOD} 음수"
+                f"ROC 음수"
             )
 
             roc_signal_state.pop(
@@ -3148,12 +2939,10 @@ def update_signal_and_pullback(
 
                 signal_state[
                     "last_candle"
-                ] = (
-                    progress_candle_time
-                )
+                ] = progress_candle_time
 
     # =====================================================
-    # 눌림 COUNT 진행
+    # 눌림 COUNT
     # =====================================================
 
     pullback_state = (
@@ -3194,7 +2983,7 @@ def update_signal_and_pullback(
                 f"[ROC{SIGNAL_ROC_PERIOD} PULLBACK END] "
                 f"{market_key} | "
                 f"COUNT={old_count} | "
-                f"ROC{SIGNAL_ROC_PERIOD} 양수 복귀"
+                f"ROC 양수 복귀"
             )
 
             roc_pullback_state.pop(
@@ -3229,9 +3018,7 @@ def update_signal_and_pullback(
 
                 pullback_state[
                     "last_candle"
-                ] = (
-                    progress_candle_time
-                )
+                ] = progress_candle_time
 
     # =====================================================
     # 최종 상태
@@ -3458,13 +3245,7 @@ def analyze(
     )
 
     # =====================================================
-    # 1H
-    #
-    # ROC200 현재값 + 이전값 계산
-    # → 202개 필요
-    #
-    # 1차 200개
-    # 부족하면 2차 요청
+    # 1H native
     # =====================================================
 
     df1h = history_upbit(
@@ -3481,12 +3262,7 @@ def analyze(
         return None
 
     # =====================================================
-    # ★ 4H
-    #
-    # 반드시 native 240분봉
-    #
-    # 1차 200개
-    # 부족하면 2차 요청
+    # 4H native
     # =====================================================
 
     df4h = history_upbit(
@@ -3502,21 +3278,10 @@ def analyze(
 
         return None
 
-    if len(df4h) < ROC_HISTORY_REQUIRED:
-
-        log.warning(
-            f"[4H 자료 부족] "
-            f"{market} | "
-            f"{len(df4h)}개 / "
-            f"{ROC_HISTORY_REQUIRED}개"
-        )
-
     # =====================================================
-    # 신호 기준 데이터
+    # 신호 기준 native 데이터
     #
-    # SIGNAL_TIMEFRAME = 240
-    #
-    # 역시 native 240분봉
+    # 현재 SIGNAL_TIMEFRAME = 60
     # =====================================================
 
     df_signal = history_upbit(
@@ -3533,16 +3298,14 @@ def analyze(
         return None
 
     # =====================================================
-    # 현재 진행 중인 4H 캔들
-    #
-    # 현재봉 포함
-    # 부족하면 2차 요청
+    # 현재 진행 중인 신호 시간봉
     # =====================================================
 
     df_current = (
         get_upbit_current_roc_data(
             market,
-            current_price
+            current_price,
+            SIGNAL_TIMEFRAME
         )
     )
 
@@ -3554,7 +3317,7 @@ def analyze(
         return None
 
     # =====================================================
-    # ROC 필터 1H
+    # 1H ROC
     # =====================================================
 
     r1_raw = roc_filter_analysis(
@@ -3568,7 +3331,7 @@ def analyze(
     )
 
     # =====================================================
-    # ROC 필터 4H
+    # 4H ROC
     # =====================================================
 
     r4_raw = roc_filter_analysis(
@@ -3582,21 +3345,10 @@ def analyze(
     )
 
     # =====================================================
-    # 4H ROC 확인
-    # =====================================================
-
-    log.debug(
-        f"[4H ROC CHECK] "
-        f"{market} | "
-        f"ROC5={r4_raw.get('roc_values', {}).get(5)} | "
-        f"ROC10={r4_raw.get('roc_values', {}).get(10)} | "
-        f"ROC20={r4_raw.get('roc_values', {}).get(20)} | "
-        f"ROC50={r4_raw.get('roc_values', {}).get(50)} | "
-        f"ROC200={r4_raw.get('roc_values', {}).get(200)}"
-    )
-
-    # =====================================================
-    # EMA 1H
+    # EMA
+    #
+    # 화면에는 표시하지만
+    # 상승신호 조건에는 사용하지 않음
     # =====================================================
 
     ema_1h = ema_alignment_analysis(
@@ -3604,20 +3356,20 @@ def analyze(
         "1H"
     )
 
-    # =====================================================
-    # EMA 4H
-    #
-    # native 240분봉
-    # =====================================================
-
     ema_4h = ema_alignment_analysis(
         df4h,
         "4H"
     )
 
     # =====================================================
-    # 신호 기준 ROC
+    # 1H ROC5 신호
     # =====================================================
+
+    signal_timeframe_name = (
+        "1H"
+        if SIGNAL_TIMEFRAME == 60
+        else "4H"
+    )
 
     r_signal_raw = roc_filter_analysis(
         df_current,
@@ -3626,11 +3378,7 @@ def analyze(
 
     r_signal = roc_filter_display(
         r_signal_raw,
-        (
-            "1H"
-            if SIGNAL_TIMEFRAME == 60
-            else "4H"
-        )
+        signal_timeframe_name
     )
 
     signal_roc_current = (
@@ -3680,6 +3428,9 @@ def analyze(
 
     # =====================================================
     # 활성 ROC 필터
+    #
+    # 현재 설정:
+    # 4H ROC10/20/50/200
     # =====================================================
 
     filter_pass = (
@@ -3690,7 +3441,7 @@ def analyze(
     )
 
     # =====================================================
-    # 현재 진행 캔들
+    # 현재 진행 신호 캔들
     # =====================================================
 
     progress_candle_time = (
@@ -3700,7 +3451,7 @@ def analyze(
     )
 
     # =====================================================
-    # 과거 상승 신호 복원
+    # 과거 상승신호 복원
     # =====================================================
 
     historical_start_candle = None
@@ -3763,7 +3514,10 @@ def analyze(
     )
 
     # =====================================================
-    # 일봉 등락
+    # 일봉
+    #
+    # 화면 표시용
+    # 상승신호 조건에는 사용하지 않음
     # =====================================================
 
     changes = (
@@ -3784,7 +3538,29 @@ def analyze(
     )
 
     # =====================================================
-    # 최종 분석
+    # 상승신호 자격
+    #
+    # ★ 핵심 조건
+    #
+    # 4H ROC 필터 통과
+    # +
+    # 1H ROC5 상승신호 또는 눌림
+    #
+    # EMA/일봉 조건 없음
+    # =====================================================
+
+    breakout_qualified = (
+        (
+            state["signal_active"]
+            or
+            state["pullback_active"]
+        )
+        and
+        filter_pass
+    )
+
+    # =====================================================
+    # 최종
     # =====================================================
 
     return {
@@ -3814,19 +3590,7 @@ def analyze(
             daily_pass,
 
         "breakout_qualified":
-            (
-                (
-                    state[
-                        "signal_active"
-                    ]
-                    or
-                    state[
-                        "pullback_active"
-                    ]
-                )
-                and filter_pass
-                and daily_pass
-            ),
+            breakout_qualified,
 
         "signal_active":
             state[
@@ -4734,72 +4498,6 @@ def ema_signal_html(
 
 
 # =========================================================
-# 상승 신호 영역 EMA 필터
-# =========================================================
-
-def ema_long_filter_pass(
-    row
-):
-
-    if not row:
-        return False
-
-    ema_1h = row.get(
-        "ema_1h",
-        {}
-    )
-
-    ema_4h = row.get(
-        "ema_4h",
-        {}
-    )
-
-    if USE_1H_ROC_FILTER == "Y":
-
-        direction = ema_1h.get(
-            "direction",
-            "none"
-        )
-
-        count = int(
-            ema_1h.get(
-                "count",
-                0
-            )
-        )
-
-        if (
-            direction == "long"
-            and 0 < count <= EMA_LONG_MAX_COUNT
-        ):
-
-            return True
-
-    if USE_4H_ROC_FILTER == "Y":
-
-        direction = ema_4h.get(
-            "direction",
-            "none"
-        )
-
-        count = int(
-            ema_4h.get(
-                "count",
-                0
-            )
-        )
-
-        if (
-            direction == "long"
-            and 0 < count <= EMA_LONG_MAX_COUNT
-        ):
-
-            return True
-
-    return False
-
-
-# =========================================================
 # 호가 HTML
 # =========================================================
 
@@ -4971,15 +4669,18 @@ def rows_html(
             False
         )
 
-        ema_filter_pass = (
-            ema_long_filter_pass(
-                x
-            )
-        )
+        # =================================================
+        # 반짝임
+        #
+        # 4H ROC 필터 통과
+        # +
+        # 1H ROC5 신호/눌림
+        #
+        # EMA 조건 없음
+        # =================================================
 
         if (
             filter_pass
-            and ema_filter_pass
             and
             (
                 (
@@ -5157,6 +4858,15 @@ def table_html(
 
 # =========================================================
 # 상승 신호
+#
+# ★ 실제 조건
+#
+# 4H ROC10/20/50/200 통과
+# +
+# 1H ROC5 상승신호 또는 눌림
+#
+# EMA X
+# 일봉 X
 # =========================================================
 
 def focus_section(
@@ -5214,19 +4924,6 @@ def focus_section(
                     )
                 )
             )
-
-            and
-
-            ema_long_filter_pass(
-                x
-            )
-
-            and
-
-            x.get(
-                "daily_pass",
-                False
-            )
         )
     ]
 
@@ -5238,15 +4935,31 @@ def focus_section(
         </span>
 
         <span class="section-title-sub">
-            ROC{SIGNAL_ROC_PERIOD} 돌파
-            · 기준 {format_timeframe(SIGNAL_TIMEFRAME)}
-            · 업비트 원본 240분봉
-            · 필터 통과
-            · 당일 음수 제외
-            · EMA 상승 COUNT ≤ {EMA_LONG_MAX_COUNT}
-            · 🚀📉 COUNT 0부터 전체 표시
-            · 반짝임 {count_flash_text()}
-            · {kst()} KST
+
+            4H ROC 필터 통과
+
+            ·
+
+            ROC{SIGNAL_ROC_PERIOD}
+            {format_timeframe(SIGNAL_TIMEFRAME)}
+            상승신호/눌림
+
+            ·
+
+            COUNT 전체 표시
+
+            ·
+
+            EMA/일봉 조건 미적용
+
+            ·
+
+            반짝임 {count_flash_text()}
+
+            ·
+
+            {kst()} KST
+
         </span>
 
     </div>
@@ -5272,10 +4985,19 @@ def section(
         </span>
 
         <span class="section-title-sub">
+
             {update_time} KST
-            · ROC/COUNT 기준
-            {format_timeframe(SIGNAL_TIMEFRAME)}
-            · 업비트 원본 240분봉
+
+            ·
+
+            ROC5 상승신호/COUNT 기준
+            {format_timeframe(SIGNAL_TIMEFRAME)} native
+
+            ·
+
+            4H ROC 필터 =
+            업비트 원본 240분봉
+
         </span>
 
     </div>
@@ -5311,6 +5033,7 @@ def btc_1h_roc_status_html(
         df_signal is None
         or df_signal.empty
     ):
+
         return ""
 
     periods = [
@@ -5484,11 +5207,25 @@ def market_summary_html():
             </span>
 
             <span class="market-title-sub">
+
                 활성 ROC
                 {get_filter_setting_text()}
-                · 신호 ROC{SIGNAL_ROC_PERIOD}
-                · 기준 {format_timeframe(SIGNAL_TIMEFRAME)}
-                · 업비트 원본 240분봉
+
+                ·
+
+                신호 ROC{SIGNAL_ROC_PERIOD}
+
+                ·
+
+                기준
+                {format_timeframe(SIGNAL_TIMEFRAME)}
+                native
+
+                ·
+
+                4H 필터 =
+                업비트 원본 240분봉
+
             </span>
 
         </div>
@@ -5945,11 +5682,6 @@ font-size:7px;
 font-weight:900;
 }
 
-
-/* =======================================================
-   반짝임
-   ======================================================= */
-
 @keyframes signalFlashOne{
 
 0%{
@@ -6346,7 +6078,7 @@ def dashboard():
         >
 
         <title>
-            ROC{SIGNAL_ROC_PERIOD} SIGNAL
+            ROC{SIGNAL_ROC_PERIOD} 1H SIGNAL
         </title>
 
         <style>
@@ -6415,33 +6147,45 @@ def startup():
 
     log.info(
         f"ROC{SIGNAL_ROC_PERIOD} "
-        f"SIGNAL / PULLBACK SYSTEM START"
+        "1H SIGNAL / PULLBACK SYSTEM START"
     )
 
     log.info(
-        f"신호 ROC = ROC{SIGNAL_ROC_PERIOD}"
-    )
-
-    log.info(
-        f"신호 / 돌파 / 눌림 / COUNT 기준 = "
+        f"상승신호 ROC = "
+        f"ROC{SIGNAL_ROC_PERIOD} "
         f"{format_timeframe(SIGNAL_TIMEFRAME)}"
     )
 
     log.info(
-        "★ 4H 데이터 = 업비트 원본 240분봉 API"
+        f"상승신호 / 눌림 / COUNT = "
+        f"{format_timeframe(SIGNAL_TIMEFRAME)} native"
     )
 
     log.info(
-        "★ 4H ROC 5/10/20/50/200 = "
+        "★ 1H 데이터 = 업비트 원본 60분봉"
+    )
+
+    log.info(
+        "★ 4H 데이터 = 업비트 원본 240분봉"
+    )
+
+    log.info(
+        "★ 1H → 4H 캔들 합성하지 않음"
+    )
+
+    log.info(
+        "★ 4H ROC10/20/50/200 = "
         "실제 240분봉 기준"
     )
 
     log.info(
-        "★ 4H EMA = 실제 240분봉 기준"
+        "★ EMA는 표시용이며 "
+        "상승신호 조건에 사용하지 않음"
     )
 
     log.info(
-        "★ 4H를 1H 캔들로 합성하지 않음"
+        "★ 일봉 등락은 표시용이며 "
+        "상승신호 조건에 사용하지 않음"
     )
 
     log.info(
@@ -6454,39 +6198,65 @@ def startup():
     )
 
     log.info(
-        "★ 200개보다 부족하면 "
-        "과거 200개 2차 요청"
+        "★ 자료 부족 시 과거 200개 2차 요청"
     )
 
     log.info(
-        "★ 데이터가 충분하면 "
-        "추가 요청하지 않음"
-    )
-
-    log.info(
-        "★ 4H KST 진행 COUNT 기준 = "
+        "★ 4H 진행봉 기준 = "
         "01:00 / 05:00 / 09:00 / "
         "13:00 / 17:00 / 21:00"
     )
 
     log.info(
-        "★ 돌파 진행 중인 현재 4H 캔들 = COUNT 0"
+        "★ 1H 진행봉 기준 = 매 정시"
     )
 
     log.info(
-        "★ 돌파 캔들이 완성되고 다음 4H 캔들 = COUNT 1"
+        f"★ ROC{SIGNAL_ROC_PERIOD} "
+        f"{format_timeframe(SIGNAL_TIMEFRAME)} "
+        "0선 상향 돌파 = 🚀 COUNT 0"
     )
 
     log.info(
-        "★ 이후 4H 캔들마다 COUNT +1"
+        f"★ ROC{SIGNAL_ROC_PERIOD} "
+        f"{format_timeframe(SIGNAL_TIMEFRAME)} "
+        "0선 하향 돌파 = 📉 COUNT 0"
     )
 
     log.info(
-        "★ 활성 ROC 필터와 COUNT는 독립적으로 진행"
+        f"★ ROC{SIGNAL_ROC_PERIOD} 음수 "
+        "→ 상승신호 종료"
     )
 
     log.info(
-        "COUNT 화면 표시 = 0부터 모든 COUNT"
+        "★ 활성 ROC 필터 음수 "
+        "→ 상승신호 영역 제외"
+    )
+
+    log.info(
+        "★ 상승신호 조건 = "
+        "4H ROC 필터 통과 + "
+        f"{format_timeframe(SIGNAL_TIMEFRAME)} "
+        f"ROC{SIGNAL_ROC_PERIOD} "
+        "상승신호/눌림"
+    )
+
+    log.info(
+        "★ EMA 조건 = 상승신호에서 미적용"
+    )
+
+    log.info(
+        "★ 일봉 조건 = 상승신호에서 미적용"
+    )
+
+    log.info(
+        f"COUNT = 0,1,2,3... "
+        f"{format_timeframe(SIGNAL_TIMEFRAME)} 기준"
+    )
+
+    log.info(
+        f"COUNT 화면 표시 = "
+        f"{count_display_text()}"
     )
 
     log.info(
@@ -6507,130 +6277,6 @@ def startup():
     log.info(
         f"ACTIVE FILTER = "
         f"{get_filter_setting_text()}"
-    )
-
-    log.info(
-        "----------------------------------------"
-    )
-
-    log.info(
-        f"ROC{SIGNAL_ROC_PERIOD} "
-        f"{format_timeframe(SIGNAL_TIMEFRAME)} "
-        f"0선 상향 돌파 = 🚀 COUNT 0"
-    )
-
-    log.info(
-        f"ROC{SIGNAL_ROC_PERIOD} "
-        f"{format_timeframe(SIGNAL_TIMEFRAME)} "
-        f"0선 하향 돌파 = 📉 COUNT 0"
-    )
-
-    log.info(
-        f"ROC{SIGNAL_ROC_PERIOD} 음수 "
-        f"→ 상승 신호 종료"
-    )
-
-    log.info(
-        "활성 ROC 필터 음수 "
-        "→ 상승신호 영역에서는 제외"
-    )
-
-    log.info(
-        f"신호 COUNT = "
-        f"0,1,2,3... 무제한 / "
-        f"{format_timeframe(SIGNAL_TIMEFRAME)} 기준"
-    )
-
-    log.info(
-        f"눌림 COUNT = "
-        f"0,1,2,3... 무제한 / "
-        f"{format_timeframe(SIGNAL_TIMEFRAME)} 기준"
-    )
-
-    log.info(
-        "과거 신호 상태 = 자동 복원"
-    )
-
-    log.info(
-        "과거 눌림 상태 = 자동 복원"
-    )
-
-    log.info(
-        "TOP 리스트 = ROC COUNT 전체 표시"
-    )
-
-    log.info(
-        "상승 신호 영역 = ROC COUNT 전체 표시"
-    )
-
-    log.info(
-        f"COUNT {count_flash_text()} = 반짝임"
-    )
-
-    log.info(
-        f"COUNT {FLASH_COUNT_MAX + 1} 이상 = "
-        f"화면 COUNT 표시 / 반짝임 없음"
-    )
-
-    log.info(
-        f"상승 신호 영역 = "
-        f"필터 통과 + "
-        f"ROC{SIGNAL_ROC_PERIOD} COUNT 전체 + "
-        f"EMA 상승 COUNT <= {EMA_LONG_MAX_COUNT} "
-        f"+ 당일 등락 >= 0%"
-    )
-
-    log.info(
-        f"반짝임 EMA COUNT 필터 <= "
-        f"{EMA_LONG_MAX_COUNT}"
-    )
-
-    log.info(
-        "별도 눌림 대시보드 = 삭제"
-    )
-
-    log.info(
-        "----------------------------------------"
-    )
-
-    log.info(
-        "EMA 기간 = ROC 필터 Y/N 자동 연동"
-    )
-
-    log.info(
-        f"1H EMA = "
-        f"{get_enabled_filter_text('1H')}"
-    )
-
-    log.info(
-        f"4H EMA = "
-        f"{get_enabled_filter_text('4H')}"
-    )
-
-    log.info(
-        "EMA 정배열 = 🟢(N)"
-    )
-
-    log.info(
-        "EMA 역배열 = 🔴(N)"
-    )
-
-    log.info(
-        f"상승 신호 영역 EMA COUNT 필터 <= "
-        f"{EMA_LONG_MAX_COUNT}"
-    )
-
-    log.info(
-        f"반짝임 EMA COUNT 필터 <= "
-        f"{EMA_LONG_MAX_COUNT}"
-    )
-
-    log.info(
-        "TOP 리스트 EMA COUNT = 무제한 표시"
-    )
-
-    log.info(
-        "상승 신호 영역 당일 음수 = 제외"
     )
 
     log.info(
