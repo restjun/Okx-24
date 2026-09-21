@@ -40,7 +40,7 @@ KST = ZoneInfo("Asia/Seoul")
 # =========================================================
 
 VOLUME_HOURS = 24
-TOP_N = 30
+TOP_N = 20
 UPDATE_MINUTES = 1
 
 HISTORY_CHUNK = 200
@@ -85,7 +85,7 @@ ROC_FILTER_COUNT_MIN = 10
 # =========================================================
 
 DISPLAY_COUNT_MIN = 0
-DISPLAY_COUNT_MAX = 1
+DISPLAY_COUNT_MAX = 5
 
 
 # =========================================================
@@ -100,7 +100,7 @@ FLASH_COUNT_MAX = 1
 # ROC 필터
 # =========================================================
 
-USE_1H_ROC_FILTER = "Y"
+USE_1H_ROC_FILTER = "N"
 USE_4H_ROC_FILTER = "Y"
 
 USE_1H_ROC5 = "N"
