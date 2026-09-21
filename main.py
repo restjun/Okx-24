@@ -63,8 +63,6 @@ SIGNAL_TIMEFRAME = 240
 
 # =========================================================
 # ROC 필터 기간
-#
-# ★ ROC5 / 20 / 50 / 200 사용
 # =========================================================
 
 ROC_FILTER_PERIODS = [
@@ -129,23 +127,7 @@ SIGNAL_ROC_PERIOD = 5
 # =========================================================
 # ROC 계산용 최소 데이터
 #
-# ★ 중요 수정
-#
-# 기존:
-#     200 + 2 = 202개
-#
-# 문제:
-# ROC200은 202개만 있으면 ROC가 사실상
-# 최근 2개 정도만 정상 계산되어 COUNT가 2처럼
-# 보이는 문제가 발생할 수 있음.
-#
-# 수정:
-# ROC200 + COUNT 여유 데이터 + 추가 여유분
-#
-# 현재 설정:
-# 200 + 10 + 100 + 2 = 312개
-#
-# ★ ROC5 / 20 / 50 / 200 모두 충분한 데이터 확보
+# ROC200 COUNT가 2로 고정되는 문제 방지
 # =========================================================
 
 ROC_COUNT_HISTORY_EXTRA = 100
@@ -566,12 +548,6 @@ def candle_distance(
 
 # =========================================================
 # ROC 0선 이상 연속 COUNT
-#
-# ★ ROC5 / 20 / 50 / 200 동일 로직
-#
-# 현재 ROC >= 0이면
-# 최근 캔들부터 과거로 내려가면서
-# ROC >= 0인 캔들 개수를 계산
 # =========================================================
 
 def roc_positive_count(
@@ -3734,9 +3710,15 @@ def format_market_price(
 # =========================================================
 # ROC 필터 HTML
 #
-# ★ ROC5 / 20 / 50 / 200
-# ★ 띄어쓰기 조정
-# ★ ROC 글자 크기 +1pt
+# ★ 모바일 표시
+#
+# 기존:
+# ROC5 COUNT 12
+#
+# 수정:
+# 5 🟢 (12)
+#
+# ★ ROC / COUNT 영문 제거
 # =========================================================
 
 def roc_filter_html(
@@ -3843,7 +3825,7 @@ def roc_filter_html(
             ">
 
                 <span class="roc-period">
-                    ROC{period}
+                    {period}
                 </span>
 
                 <span class="roc-icon">
@@ -3851,7 +3833,7 @@ def roc_filter_html(
                 </span>
 
                 <span class="roc-count">
-                    COUNT {count}
+                    ({count})
                 </span>
 
             </span>
@@ -4566,6 +4548,12 @@ def section(
 
 # =========================================================
 # BTC ROC 상태
+#
+# ★ 여기에서도 ROC / COUNT 영문 제거
+# ★ 표시:
+#    5
+#    🟢
+#    (12)
 # =========================================================
 
 def btc_roc_status_html(
@@ -4655,7 +4643,7 @@ def btc_roc_status_html(
             <div class="btc-roc-item">
 
                 <div class="btc-roc-period">
-                    ROC{period}
+                    {period}
                 </div>
 
                 <div class="btc-roc-icon">
@@ -4663,7 +4651,7 @@ def btc_roc_status_html(
                 </div>
 
                 <div class="btc-roc-count">
-                    COUNT {count}
+                    ({count})
                 </div>
 
             </div>
