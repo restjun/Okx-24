@@ -55,37 +55,44 @@ MAX_RETRIES = 10
 
 
 # =========================================================
-# ★ ROC / 돌파 / 눌림 / COUNT 기준 시간봉
+# ★★★ 신호 / COUNT 기준 시간봉 ★★★
 #
-# 60  = 1시간봉
-# 240 = 4시간봉
+# 60  = 1시간
+# 240 = 4시간
 #
-# 이 값 하나만 변경하면
+# 현재 설정:
+#   ROC 돌파       = 4시간
+#   눌림           = 4시간
+#   COUNT          = 4시간
+#   진행 캔들       = 4시간
 #
-# ① ROC 0선 상향 돌파
-# ② ROC 0선 하향 돌파(눌림)
-# ③ 상승 신호 COUNT
-# ④ 눌림 COUNT
-# ⑤ 진행 캔들
-#
-# 모두 같은 시간봉 기준으로 변경됨
+# 4시간봉 시작:
+#   00:00
+#   04:00
+#   08:00
+#   12:00
+#   16:00
+#   20:00
 # =========================================================
 
 SIGNAL_TIMEFRAME = 240
 
 
 # =========================================================
-# 화면 COUNT / 반짝임 COUNT 설정
+# 화면 COUNT
 #
-# 화면 표시:
-#   1부터 모든 COUNT 표시
-#
-# 반짝임:
-#   기존과 동일하게 1~3만 반짝임
+# 1부터 모든 COUNT 표시
 # =========================================================
 
 DISPLAY_COUNT_MIN = 1
 DISPLAY_COUNT_MAX = 999999
+
+
+# =========================================================
+# 반짝임 COUNT
+#
+# 1~3만 반짝임
+# =========================================================
 
 FLASH_COUNT_MIN = 1
 FLASH_COUNT_MAX = 3
@@ -105,11 +112,13 @@ EMA_LONG_MAX_COUNT = 200
 USE_1H_ROC_FILTER = "N"
 USE_4H_ROC_FILTER = "Y"
 
+
 USE_1H_ROC5 = "Y"
 USE_1H_ROC10 = "Y"
 USE_1H_ROC20 = "Y"
 USE_1H_ROC50 = "Y"
 USE_1H_ROC200 = "Y"
+
 
 USE_4H_ROC5 = "N"
 USE_4H_ROC10 = "Y"
@@ -117,12 +126,15 @@ USE_4H_ROC20 = "Y"
 USE_4H_ROC50 = "Y"
 USE_4H_ROC200 = "Y"
 
+
 ROC_FILTER_TIMEFRAME = 60
 ROC_FILTER_HIGH_TIMEFRAME = 240
 
 
 # =========================================================
-# ★ 신호용 ROC 설정
+# ★ 신호 ROC
+#
+# ROC5 0선 상향 돌파
 # =========================================================
 
 SIGNAL_ROC_PERIOD = 5
@@ -169,28 +181,28 @@ okx_ticker_cache = {}
 
 
 # =========================================================
-# 신호 상태
+# ★ 신호 상태
 # =========================================================
 
 roc_signal_state = {}
 
 
 # =========================================================
-# 눌림 상태
+# ★ 눌림 상태
 # =========================================================
 
 roc_pullback_state = {}
 
 
 # =========================================================
-# 진행캔들에서 이미 실패한 신호
+# 진행 캔들에서 이미 실패한 신호
 # =========================================================
 
 roc_signal_failed_candle = {}
 
 
 # =========================================================
-# COUNT 화면 표시 범위
+# COUNT 화면 표시
 # =========================================================
 
 def count_display_allowed(count):
@@ -208,7 +220,7 @@ def count_display_allowed(count):
 
 
 # =========================================================
-# 반짝임 전용 COUNT 범위
+# COUNT 반짝임
 # =========================================================
 
 def count_flash_allowed(count):
@@ -563,7 +575,7 @@ def validate_timeframe():
 
         raise ValueError(
             "SIGNAL_TIMEFRAME은 "
-            "60(1시간) 또는 240(4시간)만 사용할 수 있습니다."
+            "60 또는 240만 사용할 수 있습니다."
         )
 
     if USE_1H_ROC_FILTER not in (
@@ -633,33 +645,8 @@ def validate_timeframe():
     if SIGNAL_ROC_PERIOD not in ROC_FILTER_PERIODS:
 
         raise ValueError(
-            "SIGNAL_ROC_PERIOD는 "
-            "ROC_FILTER_PERIODS에 있는 값만 사용할 수 있습니다."
+            "SIGNAL_ROC_PERIOD 설정 오류"
         )
-
-    settings = roc_settings()
-
-    for period in ROC_FILTER_PERIODS:
-
-        for timeframe in (
-            "1H",
-            "4H"
-        ):
-
-            value = settings[
-                period
-            ][
-                timeframe
-            ]
-
-            if value not in (
-                "Y",
-                "N"
-            ):
-
-                raise ValueError(
-                    f"{timeframe} ROC{period} 설정 오류"
-                )
 
 
 # =========================================================
@@ -987,7 +974,6 @@ def get_upbit_orderbooks(markets):
             params={
                 "markets":
                     ",".join(chunk),
-
                 "count":
                     ORDERBOOK_COUNT
             },
@@ -1438,11 +1424,9 @@ def history_upbit(
 
 
 # =========================================================
-# ★ 현재 신호 시간봉 ROC 데이터
+# ★ 현재 진행 중인 4H ROC 데이터
 #
-# SIGNAL_TIMEFRAME
-#   60  = 1H
-#   240 = 4H
+# 현재 가격을 현재 4시간봉 종가에 반영
 # =========================================================
 
 def get_upbit_current_roc_data(
@@ -1820,7 +1804,6 @@ def ema_alignment_analysis(
         return result
 
     if len(periods) < 2:
-
         return result
 
     temp = df.copy()
@@ -1906,7 +1889,6 @@ def ema_alignment_analysis(
         ]
 
         if pd.isna(value):
-
             return result
 
         current_values[
@@ -1935,15 +1917,12 @@ def ema_alignment_analysis(
     )
 
     if long_alignment:
-
         direction = "long"
 
     elif short_alignment:
-
         direction = "short"
 
     else:
-
         direction = "none"
 
     count = 0
@@ -2036,7 +2015,7 @@ def ema_alignment_analysis(
 
 
 # =========================================================
-# 활성 필터 상태
+# 활성 ROC 필터
 # =========================================================
 
 def get_all_active_roc_status(
@@ -2152,7 +2131,7 @@ def all_active_roc_filters_pass(
 
 
 # =========================================================
-# ★ 신호 ROC 0선 상향 돌파
+# ★ ROC 0선 상향 돌파
 # =========================================================
 
 def roc_signal_zero_cross(r):
@@ -2196,7 +2175,7 @@ def roc_signal_zero_cross(r):
 
 
 # =========================================================
-# ★ 신호 ROC 0선 하향 돌파 = 눌림
+# ★ ROC 0선 하향 돌파 = 눌림
 # =========================================================
 
 def roc_signal_pullback_condition(r):
@@ -2240,16 +2219,20 @@ def roc_signal_pullback_condition(r):
 
 
 # =========================================================
-# ★ 과거 신호 시작점
+# ★ 과거 상승 신호 찾기
 #
-# SIGNAL_TIMEFRAME 기준으로
-# ROC 0선 상향 돌파를 찾음
+# 중요:
+#
+# 여기서는 활성 ROC 필터를 보지 않습니다.
+#
+# ROC5 4H 0선 상향 돌파 자체를 찾아야
+# COUNT를 복원할 수 있습니다.
 # =========================================================
 
 def find_latest_signal_start(
     df_signal,
-    df1h,
-    df4h
+    df1h=None,
+    df4h=None
 ):
 
     if (
@@ -2300,16 +2283,14 @@ def find_latest_signal_start(
             SIGNAL_ROC_PERIOD
         )
 
-        if signal_roc_series is None:
+        if (
+            signal_roc_series is None
+            or signal_roc_series.empty
+        ):
+
             return None
 
-        enabled = (
-            get_enabled_all_filters()
-        )
-
-        if not enabled:
-            return None
-
+        # 가장 최근의 ROC5 0선 상향 돌파를 찾음
         for i in range(
             len(temp) - 1,
             0,
@@ -2331,158 +2312,15 @@ def find_latest_signal_start(
 
                 continue
 
-            if not (
+            if (
                 float(previous_value) < 0
                 and float(current_value) >= 0
             ):
 
-                continue
-
-            candle_time = (
-                temp[
-                    "datetime"
-                ].iloc[i]
-            )
-
-            filter_ok = True
-
-            for timeframe, period in enabled:
-
-                if timeframe == "1H":
-
-                    if (
-                        df1h is None
-                        or df1h.empty
-                    ):
-
-                        filter_ok = False
-                        break
-
-                    h1 = df1h.copy()
-
-                    h1["datetime"] = pd.to_datetime(
-                        h1["datetime"],
-                        errors="coerce"
-                    )
-
-                    h1 = (
-                        h1
-                        .dropna(
-                            subset=["datetime"]
-                        )
-                        .sort_values(
-                            "datetime"
-                        )
-                        .reset_index(
-                            drop=True
-                        )
-                    )
-
-                    candidates = h1[
-                        h1["datetime"]
-                        <= candle_time
-                    ]
-
-                    if candidates.empty:
-
-                        filter_ok = False
-                        break
-
-                    h1_index = (
-                        candidates.index[-1]
-                    )
-
-                    series = roc(
-                        h1,
-                        period
-                    )
-
-                    if (
-                        series is None
-                        or h1_index >= len(series)
-                    ):
-
-                        filter_ok = False
-                        break
-
-                    value = series.iloc[
-                        h1_index
-                    ]
-
-                else:
-
-                    if (
-                        df4h is None
-                        or df4h.empty
-                    ):
-
-                        filter_ok = False
-                        break
-
-                    h4 = df4h.copy()
-
-                    h4["datetime"] = pd.to_datetime(
-                        h4["datetime"],
-                        errors="coerce"
-                    )
-
-                    h4 = (
-                        h4
-                        .dropna(
-                            subset=["datetime"]
-                        )
-                        .sort_values(
-                            "datetime"
-                        )
-                        .reset_index(
-                            drop=True
-                        )
-                    )
-
-                    candidates = h4[
-                        h4["datetime"]
-                        <= candle_time
-                    ]
-
-                    if candidates.empty:
-
-                        filter_ok = False
-                        break
-
-                    h4_index = (
-                        candidates.index[-1]
-                    )
-
-                    series = roc(
-                        h4,
-                        period
-                    )
-
-                    if (
-                        series is None
-                        or h4_index >= len(series)
-                    ):
-
-                        filter_ok = False
-                        break
-
-                    value = series.iloc[
-                        h4_index
-                    ]
-
-                if (
-                    value is None
-                    or pd.isna(value)
-                    or float(value) < 0
-                ):
-
-                    filter_ok = False
-                    break
-
-            if filter_ok:
-
                 return normalize_datetime(
-                    candle_time
+                    temp[
+                        "datetime"
+                    ].iloc[i]
                 )
 
         return None
@@ -2499,8 +2337,6 @@ def find_latest_signal_start(
 
 # =========================================================
 # ★ 과거 눌림 시작점
-#
-# SIGNAL_TIMEFRAME 기준
 # =========================================================
 
 def find_latest_pullback_start(
@@ -2621,11 +2457,33 @@ def find_latest_pullback_start(
 
 
 # =========================================================
-# 신호 + 눌림 통합 상태
+# ★★★★★ 핵심 수정 ★★★★★
 #
-# ★ ROC 돌파 = SIGNAL_TIMEFRAME
-# ★ 눌림 돌파 = SIGNAL_TIMEFRAME
-# ★ COUNT = SIGNAL_TIMEFRAME
+# 신호 + 눌림 + COUNT
+#
+# 가장 중요한 변경:
+#
+# 1. ROC5 돌파 COUNT와 ROC 필터를 분리
+# 2. filter_pass가 False라고 해서
+#    ROC5 COUNT를 종료하지 않음
+# 3. signal_active도 filter_pass와 분리
+# 4. 화면의 상승신호 영역에서만 filter_pass 사용
+#
+# 따라서:
+#
+# ROC5 4H 상향 돌파
+#       ↓
+# 🚀(1)
+#       ↓
+# 다음 4H
+#       ↓
+# 🚀(2)
+#       ↓
+# 다음 4H
+#       ↓
+# 🚀(3)
+#
+# ROC5가 음수로 내려갈 때만 종료
 # =========================================================
 
 def update_signal_and_pullback(
@@ -2677,7 +2535,10 @@ def update_signal_and_pullback(
 
 
     # =====================================================
-    # 실시간 ROC 하향 돌파
+    # 1. 현재 ROC5 하향 돌파
+    #
+    # 상승 신호 종료
+    # 눌림 COUNT 1 시작
     # =====================================================
 
     if pullback_condition:
@@ -2735,7 +2596,7 @@ def update_signal_and_pullback(
                 f"[ROC{SIGNAL_ROC_PERIOD} PULLBACK START] "
                 f"{market_key} "
                 f"📉1 | "
-                f"ROC{SIGNAL_ROC_PERIOD}="
+                f"ROC="
                 f"{signal_roc_current} | "
                 f"기준="
                 f"{format_timeframe(SIGNAL_TIMEFRAME)}"
@@ -2743,7 +2604,12 @@ def update_signal_and_pullback(
 
 
     # =====================================================
-    # 실시간 ROC 상향 돌파
+    # 2. 현재 ROC5 상향 돌파
+    #
+    # ★★★ filter_pass를 여기서 사용하지 않음 ★★★
+    #
+    # ROC5 돌파 자체가 발생하면
+    # 무조건 COUNT 상태를 생성
     # =====================================================
 
     elif signal_cross:
@@ -2772,10 +2638,7 @@ def update_signal_and_pullback(
             pullback_state = None
 
 
-        if (
-            filter_pass
-            and progress_candle_time is not None
-        ):
+        if progress_candle_time is not None:
 
             failed_candle = (
                 roc_signal_failed_candle.get(
@@ -2814,7 +2677,7 @@ def update_signal_and_pullback(
                     f"[ROC{SIGNAL_ROC_PERIOD} SIGNAL START] "
                     f"{market_key} "
                     f"🚀1 | "
-                    f"ROC{SIGNAL_ROC_PERIOD}="
+                    f"ROC="
                     f"{signal_roc_current} | "
                     f"기준="
                     f"{format_timeframe(SIGNAL_TIMEFRAME)}"
@@ -2822,7 +2685,9 @@ def update_signal_and_pullback(
 
 
     # =====================================================
-    # 과거 상승신호 복원
+    # 3. 과거 상승 신호 복원
+    #
+    # ★ filter_pass와 무관하게 복원
     # =====================================================
 
     elif signal_state is None:
@@ -2832,10 +2697,26 @@ def update_signal_and_pullback(
         if historical_start_candle is not None:
 
             start_candle = (
-                historical_start_candle
+                normalize_datetime(
+                    historical_start_candle
+                )
             )
 
         if start_candle is not None:
+
+            distance = 0
+
+            if progress_candle_time is not None:
+
+                distance = candle_distance(
+                    start_candle,
+                    progress_candle_time,
+                    SIGNAL_TIMEFRAME
+                )
+
+            restored_count = (
+                distance + 1
+            )
 
             roc_signal_state[
                 market_key
@@ -2845,12 +2726,10 @@ def update_signal_and_pullback(
                     True,
 
                 "cross_candle":
-                    normalize_datetime(
-                        start_candle
-                    ),
+                    start_candle,
 
                 "count":
-                    1,
+                    restored_count,
 
                 "last_candle":
                     progress_candle_time
@@ -2862,9 +2741,18 @@ def update_signal_and_pullback(
                 ]
             )
 
+            log.info(
+                f"[ROC{SIGNAL_ROC_PERIOD} SIGNAL RESTORE] "
+                f"{market_key} "
+                f"🚀({restored_count}) | "
+                f"시작={start_candle} | "
+                f"기준="
+                f"{format_timeframe(SIGNAL_TIMEFRAME)}"
+            )
+
 
     # =====================================================
-    # 과거 눌림 복원
+    # 4. 과거 눌림 복원
     # =====================================================
 
     if (
@@ -2881,7 +2769,6 @@ def update_signal_and_pullback(
         except Exception:
 
             current_signal_roc = None
-
 
         if (
             current_signal_roc is not None
@@ -2933,15 +2820,17 @@ def update_signal_and_pullback(
                 f"{market_key} "
                 f"📉({restored_count}) | "
                 f"시작={start_candle} | "
-                f"ROC{SIGNAL_ROC_PERIOD}="
-                f"{signal_roc_current} | "
                 f"기준="
                 f"{format_timeframe(SIGNAL_TIMEFRAME)}"
             )
 
 
     # =====================================================
-    # 상승 신호 상태 확인
+    # 5. 상승 신호 COUNT 계속 진행
+    #
+    # ★ filter_pass를 보지 않음
+    #
+    # 이것이 이번 수정의 핵심
     # =====================================================
 
     signal_state = (
@@ -2967,6 +2856,10 @@ def update_signal_and_pullback(
 
             pass
 
+
+        # -------------------------------------------------
+        # ROC5가 다시 음수면 종료
+        # -------------------------------------------------
 
         if signal_roc_negative:
 
@@ -2998,35 +2891,12 @@ def update_signal_and_pullback(
             signal_state = None
 
 
-        elif not filter_pass:
-
-            old_count = int(
-                signal_state.get(
-                    "count",
-                    0
-                )
-            )
-
-            if progress_candle_time is not None:
-
-                roc_signal_failed_candle[
-                    market_key
-                ] = progress_candle_time
-
-            log.info(
-                f"[ROC{SIGNAL_ROC_PERIOD} SIGNAL END] "
-                f"{market_key} | "
-                f"COUNT={old_count} | "
-                f"활성 ROC 필터 미통과"
-            )
-
-            roc_signal_state.pop(
-                market_key,
-                None
-            )
-
-            signal_state = None
-
+        # -------------------------------------------------
+        # ★★★ 중요 ★★★
+        #
+        # filter_pass가 False여도
+        # 절대로 여기서 종료하지 않음
+        # -------------------------------------------------
 
         else:
 
@@ -3055,11 +2925,13 @@ def update_signal_and_pullback(
 
                 signal_state[
                     "last_candle"
-                ] = progress_candle_time
+                ] = (
+                    progress_candle_time
+                )
 
 
     # =====================================================
-    # 눌림 상태 확인
+    # 6. 눌림 COUNT 진행
     # =====================================================
 
     pullback_state = (
@@ -3109,7 +2981,6 @@ def update_signal_and_pullback(
 
             pullback_state = None
 
-
         else:
 
             start_candle = (
@@ -3143,7 +3014,12 @@ def update_signal_and_pullback(
 
 
     # =====================================================
-    # 최종 상태
+    # 7. 최종 상태
+    #
+    # ★ signal_active = filter_pass와 무관
+    #
+    # 실제 상승신호 영역에서는
+    # 별도로 filter_pass를 확인함
     # =====================================================
 
     signal_state = (
@@ -3164,7 +3040,6 @@ def update_signal_and_pullback(
             "active",
             True
         )
-        and filter_pass
     )
 
     pullback_active = bool(
@@ -3233,7 +3108,6 @@ def daily_change_upbit(
         params={
             "market":
                 market,
-
             "count":
                 2
         },
@@ -3370,7 +3244,7 @@ def analyze(
 
 
     # =====================================================
-    # 1H / 4H ROC 필터용 데이터
+    # 1H ROC 필터
     # =====================================================
 
     df1h = history_upbit(
@@ -3387,6 +3261,10 @@ def analyze(
         return None
 
 
+    # =====================================================
+    # 4H ROC 필터
+    # =====================================================
+
     df4h = history_upbit(
         market,
         240,
@@ -3402,11 +3280,10 @@ def analyze(
 
 
     # =====================================================
-    # ★ 실제 신호 기준 시간봉 데이터
+    # ★ 신호 기준 데이터
     #
-    # SIGNAL_TIMEFRAME
-    # 60  = 1H
-    # 240 = 4H
+    # SIGNAL_TIMEFRAME = 240
+    # → 4시간봉
     # =====================================================
 
     df_signal = history_upbit(
@@ -3424,7 +3301,7 @@ def analyze(
 
 
     # =====================================================
-    # ★ 현재 진행 중인 신호 기준 시간봉
+    # 현재 진행 중인 4H 캔들
     # =====================================================
 
     df_current = (
@@ -3443,7 +3320,7 @@ def analyze(
 
 
     # =====================================================
-    # ROC 필터
+    # ROC 필터 1H
     # =====================================================
 
     r1_raw = roc_filter_analysis(
@@ -3456,6 +3333,10 @@ def analyze(
         "1H"
     )
 
+
+    # =====================================================
+    # ROC 필터 4H
+    # =====================================================
 
     r4_raw = roc_filter_analysis(
         df4h,
@@ -3484,9 +3365,10 @@ def analyze(
 
 
     # =====================================================
-    # 현재 신호 기준 ROC
+    # ★ 신호 기준 ROC
     #
-    # SIGNAL_TIMEFRAME 기준
+    # SIGNAL_TIMEFRAME = 240
+    # → 현재 4H ROC
     # =====================================================
 
     r_signal_raw = roc_filter_analysis(
@@ -3503,12 +3385,6 @@ def analyze(
         )
     )
 
-
-    # =====================================================
-    # ★ 신호용 ROC 자동 선택
-    #
-    # SIGNAL_TIMEFRAME 기준
-    # =====================================================
 
     signal_roc_current = (
         r_signal
@@ -3561,7 +3437,7 @@ def analyze(
     # =====================================================
     # 활성 ROC 필터 통과 여부
     #
-    # 1H / 4H 필터는 기존 설정 그대로
+    # ★ 이것은 신호 COUNT와 별개
     # =====================================================
 
     filter_pass = (
@@ -3573,9 +3449,9 @@ def analyze(
 
 
     # =====================================================
-    # ★ 진행 캔들
+    # ★ 현재 진행 캔들
     #
-    # SIGNAL_TIMEFRAME과 동일
+    # 4시간 기준
     # =====================================================
 
     progress_candle_time = (
@@ -3587,6 +3463,9 @@ def analyze(
 
     # =====================================================
     # 과거 상승 신호 복원
+    #
+    # ★ 필터 통과 여부와 관계없이
+    # ROC5 4H 상향돌파를 찾음
     # =====================================================
 
     historical_start_candle = None
@@ -3633,9 +3512,9 @@ def analyze(
 
 
     # =====================================================
-    # ★ 신호 + 눌림 + COUNT
+    # ★ 신호 / 눌림 / COUNT
     #
-    # 모두 SIGNAL_TIMEFRAME 기준
+    # 모두 4H
     # =====================================================
 
     state = update_signal_and_pullback(
@@ -3675,6 +3554,10 @@ def analyze(
         and change_value >= 0
     )
 
+
+    # =====================================================
+    # 최종 분석
+    # =====================================================
 
     return {
 
@@ -4412,7 +4295,7 @@ def signal_html(
 
 
 # =========================================================
-# TOP 리스트 전용 ROC COUNT
+# TOP COUNT
 # =========================================================
 
 def top_signal_count_html(
@@ -4819,9 +4702,6 @@ def orderbook_html(
 
 # =========================================================
 # ROW HTML
-#
-# 화면 COUNT = 전체
-# 반짝임 COUNT = 1~3
 # =========================================================
 
 def rows_html(
@@ -4869,6 +4749,13 @@ def rows_html(
             )
         )
 
+
+        # =================================================
+        # ★ 반짝임
+        #
+        # COUNT는 1~3만 반짝임
+        # 필터 + EMA 조건은 기존 유지
+        # =================================================
 
         if (
             filter_pass
@@ -5176,9 +5063,7 @@ def section(
 
 
 # =========================================================
-# BTC ROC 상태 HTML
-#
-# ★ SIGNAL_TIMEFRAME 기준
+# BTC ROC 상태
 # =========================================================
 
 def btc_1h_roc_status_html(
@@ -5334,7 +5219,6 @@ def market_summary_html():
         ) == "BTC":
 
             btc = row
-
             break
 
     if btc:
@@ -5448,280 +5332,175 @@ padding:3px;
 }
 
 h1{
-
 margin:2px 3px 5px;
-
 color:#dfe4e8;
-
 font-size:12px;
-
 line-height:15px;
-
 font-weight:900;
 }
 
 .market-title,
 .section-title{
-
 display:flex;
-
 align-items:center;
-
 gap:6px;
-
 width:100%;
-
 min-height:21px;
-
 padding:4px 6px;
-
 background:#14181d;
-
 border:1px solid #252b32;
-
 border-left:3px solid #59616a;
-
 border-radius:5px;
-
 white-space:nowrap;
-
 overflow:hidden;
 }
 
 .section-title{
-
 margin:7px 0 5px;
 }
 
 .market-title-main,
 .section-title-main{
-
 flex:none;
-
 color:#e7ebef;
-
 font-size:8px;
-
 font-weight:900;
 }
 
 .market-title-sub,
 .section-title-sub{
-
 min-width:0;
-
 color:#737c86;
-
 font-size:5.5px;
-
 font-weight:700;
-
 overflow:hidden;
-
 text-overflow:ellipsis;
 }
 
 .market-summary{
-
 width:100%;
-
 margin:2px 0 4px;
-
 padding:4px;
-
 background:#0f1318;
-
 border-top:1px solid #242a31;
-
 border-bottom:1px solid #242a31;
-
 border-radius:4px;
 }
 
 .btc-top{
-
 display:flex;
-
 align-items:center;
-
 gap:5px;
-
 min-height:22px;
-
 white-space:nowrap;
-
 overflow:hidden;
 }
 
 .btc-name{
-
 color:#dce1e5;
-
 font-size:6.5px;
-
 font-weight:900;
 }
 
 .btc-price{
-
 flex:1;
-
 color:#e5e9ed;
-
 font-size:6px;
-
 font-weight:800;
 }
 
 .btc-change{
-
 font-size:8px;
-
 font-weight:900;
 }
 
 .btc-roc-section{
-
 width:100%;
-
 margin-top:3px;
-
 padding-top:3px;
-
 border-top:1px solid #20262c;
 }
 
 .btc-roc-title{
-
 margin-bottom:2px;
-
 color:#737c86;
-
 font-size:5px;
-
 font-weight:900;
-
 text-align:left;
 }
 
 .btc-roc-grid{
-
 display:grid;
-
-grid-template-columns:
-    repeat(5, 1fr);
-
+grid-template-columns:repeat(5,1fr);
 width:100%;
-
 gap:2px;
 }
 
 .btc-roc-item{
-
 display:flex;
-
 flex-direction:column;
-
 align-items:center;
-
 justify-content:center;
-
 min-height:25px;
-
 background:#14181d;
-
 border:1px solid #242a31;
-
 border-radius:3px;
 }
 
 .btc-roc-period{
-
 color:#737c86;
-
 font-size:4.5px;
-
 font-weight:900;
-
 line-height:6px;
 }
 
 .btc-roc-icon{
-
 font-size:8px;
-
 line-height:9px;
 }
 
 .btc-roc-count{
-
 color:#cdd3d8;
-
 font-size:5px;
-
 font-weight:900;
-
 line-height:7px;
 }
 
 .table-wrap{
-
 width:100%;
-
 overflow:hidden;
-
 border:1px solid #272d34;
-
 border-radius:6px;
-
 background:#15191e;
 }
 
 table{
-
 width:100%;
-
 table-layout:fixed;
-
 border-collapse:collapse;
 }
 
 thead{
-
 background:#101419;
 }
 
 th{
-
 height:18px;
-
 padding:2px 1px;
-
 color:#727b85;
-
 border-bottom:1px solid #292f36;
-
 font-size:5px;
-
 font-weight:800;
-
 text-align:center;
 }
 
 td{
-
 height:27px;
-
 padding:1px;
-
 color:#d8dde2;
-
 border-bottom:1px solid #22282e;
-
 text-align:center;
-
 vertical-align:middle;
-
 overflow:hidden;
 }
 
@@ -5756,302 +5535,209 @@ width:21%;
 }
 
 .coin{
-
 text-align:left!important;
 }
 
 .coin b{
-
 display:block;
-
 color:#e0e5e9;
-
 font-size:6.5px;
-
 line-height:8px;
-
 font-weight:800;
-
 white-space:nowrap;
-
 overflow:hidden;
-
 text-overflow:ellipsis;
 }
 
 .coin small{
-
 display:block;
-
 font-size:4.5px;
-
 line-height:6px;
 }
 
 .vol{
-
 color:#cdd3d8;
-
 font-size:6px;
-
 font-weight:800;
-
 white-space:nowrap;
 }
 
 .ema{
-
 text-align:center!important;
 }
 
 .filter-detail{
-
 display:flex;
-
 flex-direction:column;
-
 gap:1px;
-
 width:100%;
 }
 
 .filter-line{
-
 display:flex;
-
 align-items:center;
-
 width:100%;
 }
 
 .filter-timeframe{
-
 width:12px;
-
 color:#c4cbd1;
-
 font-size:4.5px;
-
 font-weight:900;
-
 text-align:left;
 }
 
 .roc-filter-all{
-
 display:flex;
-
 align-items:center;
-
 gap:2px;
-
 white-space:nowrap;
 }
 
 .roc-item{
-
 font-size:4.5px;
-
 line-height:8px;
-
 font-weight:900;
 }
 
 .roc-active{
-
 opacity:1;
 }
 
 .roc-disabled{
-
 opacity:.38;
 }
 
 .roc-up{
-
 color:#62b58a!important;
 }
 
 .roc-down{
-
 color:#c97878!important;
 }
 
 .roc-zero{
-
 color:#68717b!important;
 }
 
 .top-count-wrap{
-
 display:flex;
-
 align-items:center;
-
 justify-content:center;
-
 gap:4px;
-
 white-space:nowrap;
 }
 
 .top-signal-count{
-
 color:#62b58a;
-
 font-size:7px;
-
 font-weight:900;
 }
 
 .top-pullback-count{
-
 color:#b6a77b;
-
 font-size:7px;
-
 font-weight:900;
 }
 
 .ema-signal-wrap{
-
 display:flex;
-
 align-items:center;
-
 justify-content:center;
-
 gap:5px;
-
 min-height:20px;
-
 white-space:nowrap;
 }
 
 .ema-signal-long,
 .ema-signal-short{
-
 display:inline-flex;
-
 align-items:center;
-
 justify-content:center;
-
 font-size:7px;
-
 font-weight:900;
 }
 
 .ema-signal-long{
-
 color:#62b58a;
 }
 
 .ema-signal-short{
-
 color:#c97878;
 }
 
 .signal-cell{
-
 text-align:center!important;
 }
 
 .signal-wrap{
-
 display:flex;
-
 align-items:center;
-
 justify-content:center;
-
 gap:5px;
-
 min-height:20px;
-
 white-space:nowrap;
 }
 
 .signal-item,
 .pullback-item{
-
 display:inline-flex;
-
 align-items:center;
-
 justify-content:center;
-
 gap:1px;
-
 font-weight:900;
 }
 
 .signal-rocket{
-
 font-size:9px;
 }
 
 .signal-count{
-
 color:#62b58a;
-
 font-size:7px;
-
 font-weight:900;
 }
 
 .pullback-icon{
-
 font-size:8px;
 }
 
 .pullback-count{
-
 color:#b6a77b;
-
 font-size:7px;
-
 font-weight:900;
 }
 
 
 /* =======================================================
-   ★ 기존 반짝임 그대로 유지
+   반짝임
    ======================================================= */
 
 @keyframes signalFlashOne{
 
 0%{
-
     background-color:#15191e;
-
     box-shadow:
         inset 0 0 0
         rgba(98,181,138,0);
 }
 
 30%{
-
     background-color:#2a3d34;
-
     box-shadow:
         inset 0 0 11px
         rgba(98,181,138,.32);
 }
 
 60%{
-
     background-color:#19221e;
-
     box-shadow:
         inset 0 0 3px
         rgba(98,181,138,.12);
 }
 
 100%{
-
     background-color:#15191e;
-
     box-shadow:
         inset 0 0 0
         rgba(98,181,138,0);
@@ -6060,7 +5746,6 @@ font-weight:900;
 }
 
 tr.signal-flash-one td{
-
 animation:
     signalFlashOne
     1.35s
@@ -6069,7 +5754,6 @@ animation:
 }
 
 tr.orderbook-subrow.signal-flash-one td{
-
 animation:
     signalFlashOne
     1.35s
@@ -6078,357 +5762,269 @@ animation:
 }
 
 .orderbook-subrow{
-
 background:#0f1318!important;
 }
 
 .orderbook-subrow td{
-
 height:auto!important;
-
 padding:4px 5px!important;
 }
 
 .orderbook-wrap{
-
 width:100%;
 }
 
 .orderbook-row{
-
 display:grid;
-
 grid-template-columns:
     43px
     43px
     minmax(55px,1fr)
     35px;
-
 align-items:center;
-
 gap:4px;
-
 min-height:13px;
 }
 
 .orderbook-label{
-
 font-size:5.5px;
-
 font-weight:900;
 }
 
 .ask-label{
-
 color:#a96b6b;
 }
 
 .bid-label{
-
 color:#609276;
 }
 
 .orderbook-amount{
-
 font-size:5.5px;
-
 font-weight:900;
-
 text-align:right;
 }
 
 .ask-amount{
-
 color:#a96b6b;
 }
 
 .bid-amount{
-
 color:#609276;
 }
 
 .orderbook-bar-box{
-
 height:7px;
-
 background:#252b31;
-
 border-radius:4px;
-
 overflow:hidden;
 }
 
 .orderbook-bar{
-
 height:100%;
-
 border-radius:4px;
-
 opacity:.85;
 }
 
 .ask-bar{
-
 background:#754747;
 }
 
 .bid-bar{
-
 background:#416c58;
 }
 
 .orderbook-ratio{
-
 font-size:5.5px;
-
 font-weight:900;
-
 text-align:right;
 }
 
 .ask-ratio{
-
 color:#a96b6b;
 }
 
 .bid-ratio{
-
 color:#609276;
 }
 
 .orderbook-bottom{
-
 display:flex;
-
 align-items:center;
-
 justify-content:flex-end;
-
 gap:7px;
-
 margin-top:2px;
-
 color:#5e6670;
-
 font-size:5px;
-
 font-weight:800;
 }
 
 .ob-dominance{
-
 font-size:5.5px;
-
 font-weight:900;
 }
 
 .bid-dominance{
-
 color:#609276;
 }
 
 .ask-dominance{
-
 color:#a96b6b;
 }
 
 .balanced-dominance{
-
 color:#8b939c;
 }
 
 .up{
-
 color:#62b58a!important;
-
 font-weight:900;
 }
 
 .down{
-
 color:#c97878!important;
-
 font-weight:900;
 }
 
 .zero{
-
 color:#68717b!important;
 }
 
 .muted{
-
 color:#68717b!important;
 }
 
 .empty{
-
 height:30px;
-
 color:#555d67;
-
 font-size:6px;
 }
 
 @media(max-width:380px){
 
 body{
-
     padding:2px;
 }
 
 h1{
-
     font-size:11px;
-
     line-height:13px;
 }
 
 .market-title,
 .section-title{
-
     min-height:18px;
-
     padding:3px 4px;
-
     gap:4px;
 }
 
 .market-title-main,
 .section-title-main{
-
     font-size:7px;
 }
 
 .market-title-sub,
 .section-title-sub{
-
     font-size:4.8px;
 }
 
 th{
-
     height:16px;
-
     font-size:4.5px;
 }
 
 td{
-
     height:23px;
 }
 
 .coin b{
-
     font-size:6px;
 }
 
 .coin small{
-
     font-size:4px;
 }
 
 .vol{
-
     font-size:5.5px;
 }
 
 .filter-timeframe{
-
     width:11px;
-
     font-size:4.2px;
 }
 
 .roc-item{
-
     font-size:3.8px;
-
     line-height:7px;
 }
 
 .top-count-wrap{
-
     gap:2px;
 }
 
 .top-signal-count,
 .top-pullback-count{
-
     font-size:5.8px;
 }
 
 .ema-signal-wrap{
-
     gap:3px;
 }
 
 .ema-signal-long,
 .ema-signal-short{
-
     font-size:5.8px;
 }
 
 .signal-wrap{
-
     gap:3px;
 }
 
 .signal-rocket{
-
     font-size:8px;
 }
 
 .signal-count{
-
     font-size:6.5px;
 }
 
 .pullback-icon{
-
     font-size:7px;
 }
 
 .pullback-count{
-
     font-size:6.5px;
 }
 
 .orderbook-row{
-
     grid-template-columns:
         37px
         38px
         minmax(42px,1fr)
         31px;
-
     gap:3px;
 }
 
 .orderbook-label,
 .orderbook-amount,
 .orderbook-ratio{
-
     font-size:4.8px;
 }
 
 .btc-roc-period{
-
     font-size:4px;
 }
 
 .btc-roc-icon{
-
     font-size:7px;
 }
 
 .btc-roc-count{
-
     font-size:4.8px;
 }
 
 .btc-roc-item{
-
     min-height:23px;
 }
 
@@ -6438,7 +6034,6 @@ td{
 
 tr.signal-flash-one td,
 tr.orderbook-subrow.signal-flash-one td{
-
     animation:none!important;
 }
 
@@ -6586,6 +6181,22 @@ def startup():
     )
 
     log.info(
+        "★ 0선 돌파한 현재 4H 캔들 = COUNT 1"
+    )
+
+    log.info(
+        "★ 다음 4H 캔들 = COUNT 2"
+    )
+
+    log.info(
+        "★ 이후 4H 캔들마다 COUNT +1"
+    )
+
+    log.info(
+        "★ 활성 ROC 필터와 COUNT는 독립적으로 진행"
+    )
+
+    log.info(
         "COUNT 화면 표시 = 1부터 모든 COUNT"
     )
 
@@ -6616,13 +6227,13 @@ def startup():
     log.info(
         f"ROC{SIGNAL_ROC_PERIOD} "
         f"{format_timeframe(SIGNAL_TIMEFRAME)} "
-        f"0선 상향 돌파 진행 캔들 = 🚀 COUNT 1"
+        f"0선 상향 돌파 = 🚀 COUNT 1"
     )
 
     log.info(
         f"ROC{SIGNAL_ROC_PERIOD} "
         f"{format_timeframe(SIGNAL_TIMEFRAME)} "
-        f"0선 하향 돌파 진행 캔들 = 📉 COUNT 1"
+        f"0선 하향 돌파 = 📉 COUNT 1"
     )
 
     log.info(
@@ -6631,7 +6242,8 @@ def startup():
     )
 
     log.info(
-        "활성 ROC 필터 음수 → 상승 신호 종료"
+        "활성 ROC 필터 음수 "
+        "→ 상승신호 영역에서는 제외"
     )
 
     log.info(
@@ -6680,8 +6292,8 @@ def startup():
     )
 
     log.info(
-        f"반짝임 EMA 필터 = "
-        f"상승 EMA COUNT <= {EMA_LONG_MAX_COUNT}"
+        f"반짝임 EMA COUNT 필터 <= "
+        f"{EMA_LONG_MAX_COUNT}"
     )
 
     log.info(
@@ -6707,11 +6319,11 @@ def startup():
     )
 
     log.info(
-        "EMA 정배열 = 🟢(N) — COUNT 제한 없음"
+        "EMA 정배열 = 🟢(N)"
     )
 
     log.info(
-        "EMA 역배열 = 🔴(N) — COUNT 제한 없음"
+        "EMA 역배열 = 🔴(N)"
     )
 
     log.info(
