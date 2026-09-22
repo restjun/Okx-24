@@ -119,7 +119,7 @@ FLASH_COUNT_MAX = 3
 
 USE_SIGNAL1_ROC5 = "Y"
 USE_SIGNAL1_ROC20 = "Y"
-USE_SIGNAL1_ROC50 = "Y"
+USE_SIGNAL1_ROC50 = "N"
 USE_SIGNAL1_ROC200 = "Y"
 
 
@@ -129,7 +129,7 @@ USE_SIGNAL1_ROC200 = "Y"
 # 4시간봉만 사용
 # =========================================================
 
-USE_SIGNAL2_ROC5 = "Y"
+USE_SIGNAL2_ROC5 = "N"
 USE_SIGNAL2_ROC20 = "Y"
 USE_SIGNAL2_ROC50 = "Y"
 USE_SIGNAL2_ROC200 = "Y"
