@@ -84,7 +84,7 @@ ROC_FILTER_COUNT_MIN = 10
 # 화면 COUNT 기준
 # =========================================================
 
-DISPLAY_COUNT_MIN = 0
+DISPLAY_COUNT_MIN = 1
 DISPLAY_COUNT_MAX = 2
 
 
@@ -92,8 +92,8 @@ DISPLAY_COUNT_MAX = 2
 # 반짝임 COUNT
 # =========================================================
 
-FLASH_COUNT_MIN = 0
-FLASH_COUNT_MAX = 1
+FLASH_COUNT_MIN = 1
+FLASH_COUNT_MAX = 2
 
 
 # =========================================================
