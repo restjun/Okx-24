@@ -58,7 +58,7 @@ MAX_RETRIES = 10
 # 신호 / COUNT 기준 시간봉
 # =========================================================
 
-SIGNAL_TIMEFRAME = 240
+SIGNAL_TIMEFRAME = 60
 
 
 # =========================================================
@@ -112,8 +112,8 @@ FLASH_COUNT_MAX = 1
 USE_FILTER1 = "Y"
 USE_FILTER2 = "N"
 
-FILTER1_TIMEFRAME = 240
-FILTER2_TIMEFRAME = 1440
+FILTER1_TIMEFRAME = 60
+FILTER2_TIMEFRAME = 240
 
 
 # =========================================================
