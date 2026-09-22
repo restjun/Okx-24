@@ -55,14 +55,15 @@ MAX_RETRIES = 10
 
 
 # =========================================================
-# 신호 / COUNT 기준 시간봉
+# 시그널 기준 시간봉
+# 4시간봉만 사용
 # =========================================================
 
 SIGNAL_TIMEFRAME = 240
 
 
 # =========================================================
-# ROC 필터 기간
+# ROC 기간
 # =========================================================
 
 ROC_FILTER_PERIODS = [
@@ -74,11 +75,24 @@ ROC_FILTER_PERIODS = [
 
 
 # =========================================================
-# ROC 필터 COUNT 범위
+# 시그널 설정
+#
+# 시그널 1
+# ROC 50선
+# COUNT 1~200
+#
+# 시그널 2
+# ROC 5선
+# COUNT 10~30
 # =========================================================
 
-ROC_FILTER_COUNT_MIN = 1
-ROC_FILTER_COUNT_MAX = 200
+SIGNAL1_ROC_PERIOD = 50
+SIGNAL1_COUNT_MIN = 1
+SIGNAL1_COUNT_MAX = 200
+
+SIGNAL2_ROC_PERIOD = 5
+SIGNAL2_COUNT_MIN = 10
+SIGNAL2_COUNT_MAX = 30
 
 
 # =========================================================
@@ -98,50 +112,15 @@ FLASH_COUNT_MAX = 3
 
 
 # =========================================================
-# ROC 필터
-#
-# Y = 실제 필터
-# N = 필터 판정에서 제외
-#
-# 단, N도 대시보드에는 참고용으로 표시
-#
-# 60   = 1H
-# 240  = 4H
-# 1440 = 1D
-# =========================================================
-
-USE_FILTER1 = "Y"
-USE_FILTER2 = "N"
-
-FILTER1_TIMEFRAME = 240
-FILTER2_TIMEFRAME = 1440
-
-
-# =========================================================
 # ROC 기간별 화면 사용 설정
+#
+# 4시간봉만 사용
 # =========================================================
 
-USE_1H_ROC5 = "Y"
-USE_1H_ROC20 = "Y"
-USE_1H_ROC50 = "Y"
-USE_1H_ROC200 = "Y"
-
-USE_4H_ROC5 = "N"
-USE_4H_ROC20 = "N"
+USE_4H_ROC5 = "Y"
+USE_4H_ROC20 = "Y"
 USE_4H_ROC50 = "Y"
 USE_4H_ROC200 = "Y"
-
-USE_1D_ROC5 = "Y"
-USE_1D_ROC20 = "Y"
-USE_1D_ROC50 = "Y"
-USE_1D_ROC200 = "Y"
-
-
-# =========================================================
-# 신호 ROC
-# =========================================================
-
-SIGNAL_ROC_PERIOD = 50
 
 
 # =========================================================
@@ -155,7 +134,8 @@ ROC_HISTORY_REQUIRED = (
         ROC_FILTER_PERIODS
     )
     + max(
-        ROC_FILTER_COUNT_MAX,
+        SIGNAL1_COUNT_MAX,
+        SIGNAL2_COUNT_MAX,
         DISPLAY_COUNT_MAX,
         FLASH_COUNT_MAX
     )
@@ -186,17 +166,31 @@ okx_ticker_cache = {}
 
 
 # =========================================================
-# ROC 상승신호 상태
+# 시그널 1 상태
 # =========================================================
 
-roc_signal_state = {}
+roc_signal1_state = {}
 
 
 # =========================================================
-# 진행 캔들에서 이미 종료된 ROC 신호
+# 시그널 1 종료 캔들
 # =========================================================
 
-roc_signal_failed_candle = {}
+roc_signal1_failed_candle = {}
+
+
+# =========================================================
+# 시그널 2 상태
+# =========================================================
+
+roc_signal2_state = {}
+
+
+# =========================================================
+# 시그널 2 종료 캔들
+# =========================================================
+
+roc_signal2_failed_candle = {}
 
 
 # =========================================================
@@ -269,27 +263,19 @@ def roc_settings():
     return {
 
         5: {
-            "1H": USE_1H_ROC5,
-            "4H": USE_4H_ROC5,
-            "1D": USE_1D_ROC5
+            "4H": USE_4H_ROC5
         },
 
         20: {
-            "1H": USE_1H_ROC20,
-            "4H": USE_4H_ROC20,
-            "1D": USE_1D_ROC20
+            "4H": USE_4H_ROC20
         },
 
         50: {
-            "1H": USE_1H_ROC50,
-            "4H": USE_4H_ROC50,
-            "1D": USE_1D_ROC50
+            "4H": USE_4H_ROC50
         },
 
         200: {
-            "1H": USE_1H_ROC200,
-            "4H": USE_4H_ROC200,
-            "1D": USE_1D_ROC200
+            "4H": USE_4H_ROC200
         }
 
     }
@@ -299,11 +285,7 @@ def get_enabled_periods(timeframe):
 
     settings = roc_settings()
 
-    if timeframe not in (
-        "1H",
-        "4H",
-        "1D"
-    ):
+    if timeframe != "4H":
         return []
 
     return [
@@ -316,148 +298,6 @@ def get_enabled_periods(timeframe):
 def get_all_periods():
 
     return ROC_FILTER_PERIODS.copy()
-
-
-# =========================================================
-# 실제 필터만 반환
-# =========================================================
-
-def get_filter_configs():
-
-    result = []
-
-    if USE_FILTER1 == "Y":
-
-        result.append(
-            FILTER1_TIMEFRAME
-        )
-
-    if USE_FILTER2 == "Y":
-
-        result.append(
-            FILTER2_TIMEFRAME
-        )
-
-    return result
-
-
-# =========================================================
-# 대시보드에 표시할 필터
-# =========================================================
-
-def get_dashboard_filter_configs():
-
-    result = []
-
-    if FILTER1_TIMEFRAME not in result:
-
-        result.append(
-            FILTER1_TIMEFRAME
-        )
-
-    if FILTER2_TIMEFRAME not in result:
-
-        result.append(
-            FILTER2_TIMEFRAME
-        )
-
-    return result
-
-
-def get_enabled_all_filters():
-
-    result = []
-
-    for timeframe_minutes in (
-        get_filter_configs()
-    ):
-
-        timeframe = format_timeframe(
-            timeframe_minutes
-        )
-
-        periods = get_enabled_periods(
-            timeframe
-        )
-
-        for period in periods:
-
-            result.append(
-                (
-                    timeframe,
-                    period
-                )
-            )
-
-    return result
-
-
-def get_enabled_filter_text(timeframe):
-
-    periods = get_enabled_periods(
-        timeframe
-    )
-
-    if not periods:
-        return "-"
-
-    return "/".join(
-        str(x)
-        for x in periods
-    )
-
-
-def get_filter_setting_text():
-
-    labels = []
-
-    if USE_FILTER1 == "Y":
-
-        labels.append(
-            format_timeframe(
-                FILTER1_TIMEFRAME
-            )
-        )
-
-    if USE_FILTER2 == "Y":
-
-        labels.append(
-            format_timeframe(
-                FILTER2_TIMEFRAME
-            )
-        )
-
-    if not labels:
-        return "-"
-
-    return " / ".join(
-        labels
-    )
-
-
-def get_dashboard_filter_setting_text():
-
-    labels = []
-
-    labels.append(
-        f"{format_timeframe(FILTER1_TIMEFRAME)} "
-        f"({'Y' if USE_FILTER1 == 'Y' else 'N'})"
-    )
-
-    if (
-        FILTER2_TIMEFRAME
-        != FILTER1_TIMEFRAME
-        or USE_FILTER2 != USE_FILTER1
-    ):
-
-        labels.append(
-            f"{format_timeframe(FILTER2_TIMEFRAME)} "
-            f"({'Y' if USE_FILTER2 == 'Y' else 'N'})"
-        )
-
-    return " / ".join(
-        labels
-    )
 
 
 # =========================================================
@@ -495,26 +335,6 @@ def get_current_candle_start(minutes):
     minutes = int(minutes)
 
     now = datetime.now(KST)
-
-    if minutes == 1440:
-
-        anchor = now.replace(
-            hour=9,
-            minute=0,
-            second=0,
-            microsecond=0
-        )
-
-        if now < anchor:
-
-            anchor = (
-                anchor
-                - timedelta(days=1)
-            )
-
-        return anchor.replace(
-            tzinfo=None
-        )
 
     if minutes == 240:
 
@@ -780,82 +600,71 @@ def roc_negative_count(
 
 def validate_timeframe():
 
-    if SIGNAL_TIMEFRAME not in (
-        60,
-        240
-    ):
+    if SIGNAL_TIMEFRAME != 240:
 
         raise ValueError(
             "SIGNAL_TIMEFRAME은 "
-            "60 또는 240만 사용할 수 있습니다."
+            "240만 사용할 수 있습니다."
         )
 
-    if USE_FILTER1 not in (
-        "Y",
-        "N"
-    ):
+    if SIGNAL1_ROC_PERIOD not in ROC_FILTER_PERIODS:
 
         raise ValueError(
-            "USE_FILTER1은 Y/N만 가능합니다."
+            "SIGNAL1_ROC_PERIOD 설정 오류"
         )
 
-    if USE_FILTER2 not in (
-        "Y",
-        "N"
-    ):
+    if SIGNAL2_ROC_PERIOD not in ROC_FILTER_PERIODS:
 
         raise ValueError(
-            "USE_FILTER2는 Y/N만 가능합니다."
-        )
-
-    valid_filter_timeframes = (
-        60,
-        240,
-        1440
-    )
-
-    if FILTER1_TIMEFRAME not in valid_filter_timeframes:
-
-        raise ValueError(
-            "FILTER1_TIMEFRAME은 "
-            "60, 240, 1440만 사용할 수 있습니다."
-        )
-
-    if FILTER2_TIMEFRAME not in valid_filter_timeframes:
-
-        raise ValueError(
-            "FILTER2_TIMEFRAME은 "
-            "60, 240, 1440만 사용할 수 있습니다."
-        )
-
-    if SIGNAL_ROC_PERIOD not in ROC_FILTER_PERIODS:
-
-        raise ValueError(
-            "SIGNAL_ROC_PERIOD 설정 오류"
+            "SIGNAL2_ROC_PERIOD 설정 오류"
         )
 
     if (
         not isinstance(
-            ROC_FILTER_COUNT_MIN,
+            SIGNAL1_COUNT_MIN,
             int
         )
-        or ROC_FILTER_COUNT_MIN < 0
+        or SIGNAL1_COUNT_MIN < 0
     ):
 
         raise ValueError(
-            "ROC_FILTER_COUNT_MIN 설정 오류"
+            "SIGNAL1_COUNT_MIN 설정 오류"
         )
 
     if (
         not isinstance(
-            ROC_FILTER_COUNT_MAX,
+            SIGNAL1_COUNT_MAX,
             int
         )
-        or ROC_FILTER_COUNT_MAX < ROC_FILTER_COUNT_MIN
+        or SIGNAL1_COUNT_MAX < SIGNAL1_COUNT_MIN
     ):
 
         raise ValueError(
-            "ROC_FILTER_COUNT_MAX 설정 오류"
+            "SIGNAL1_COUNT_MAX 설정 오류"
+        )
+
+    if (
+        not isinstance(
+            SIGNAL2_COUNT_MIN,
+            int
+        )
+        or SIGNAL2_COUNT_MIN < 0
+    ):
+
+        raise ValueError(
+            "SIGNAL2_COUNT_MIN 설정 오류"
+        )
+
+    if (
+        not isinstance(
+            SIGNAL2_COUNT_MAX,
+            int
+        )
+        or SIGNAL2_COUNT_MAX < SIGNAL2_COUNT_MIN
+    ):
+
+        raise ValueError(
+            "SIGNAL2_COUNT_MAX 설정 오류"
         )
 
     if (
@@ -1177,19 +986,10 @@ def get_upbit_candle(
     if to:
         params["to"] = to
 
-    if unit == 1440:
-
-        endpoint = (
-            "https://api.upbit.com/"
-            "v1/candles/days"
-        )
-
-    else:
-
-        endpoint = (
-            "https://api.upbit.com/"
-            f"v1/candles/minutes/{unit}"
-        )
+    endpoint = (
+        "https://api.upbit.com/"
+        f"v1/candles/minutes/{unit}"
+    )
 
     response = retry(
         requests.get,
@@ -1764,142 +1564,14 @@ def roc_filter_analysis(
     return result
 
 
-def roc_filter_display(
-    result,
-    timeframe
-):
-
-    result = dict(
-        result or {}
-    )
-
-    result["timeframe"] = timeframe
-
-    result["enabled_periods"] = (
-        get_enabled_periods(
-            timeframe
-        )
-    )
-
-    result["all_periods"] = (
-        ROC_FILTER_PERIODS.copy()
-    )
-
-    return result
-
-
-# =========================================================
-# 활성 ROC 필터
-# =========================================================
-
-def get_roc_count_filter_periods():
-
-    return [
-        20,
-        50,
-        200
-    ]
-
-
-def get_roc_count_filter_status(
-    info
-):
-
-    required_periods = (
-        get_roc_count_filter_periods()
-    )
-
-    if not info:
-        return False
-
-    positive_counts = info.get(
-        "positive_counts",
-        {}
-    )
-
-    for period in required_periods:
-
-        count = positive_counts.get(
-            period
-        )
-
-        if count is None:
-            return False
-
-        count = int(count)
-
-        if (
-            count < ROC_FILTER_COUNT_MIN
-            or count > ROC_FILTER_COUNT_MAX
-        ):
-            return False
-
-    return True
-
-
-def get_all_active_roc_status(
-    filters
-):
-
-    if not filters:
-
-        return (
-            True,
-            False
-        )
-
-    for item in filters:
-
-        if not item:
-            return (
-                False,
-                False
-            )
-
-        if not get_roc_count_filter_status(
-            item
-        ):
-
-            return (
-                False,
-                False
-            )
-
-    return (
-        True,
-        False
-    )
-
-
-def all_active_roc_filters_pass(
-    filters
-):
-
-    current, _ = (
-        get_all_active_roc_status(
-            filters
-        )
-    )
-
-    return current
-
-
 # =========================================================
 # ROC 0선 상향 돌파
 # =========================================================
 
-def roc_signal_zero_cross(r):
-
-    if not r:
-        return False
-
-    current = r.get(
-        "signal_roc"
-    )
-
-    previous = r.get(
-        "signal_roc_previous"
-    )
+def roc_signal_zero_cross(
+    current,
+    previous
+):
 
     if (
         current is None
@@ -1929,11 +1601,12 @@ def roc_signal_zero_cross(r):
 
 
 # =========================================================
-# 가장 최근 ROC5 상승 0선 돌파 찾기
+# 최근 시그널 이벤트 찾기
 # =========================================================
 
 def find_latest_signal_event(
-    df_signal
+    df_signal,
+    signal_period
 ):
 
     if (
@@ -1977,7 +1650,7 @@ def find_latest_signal_event(
 
         signal_roc_series = roc(
             temp,
-            SIGNAL_ROC_PERIOD
+            signal_period
         )
 
         if (
@@ -2041,26 +1714,39 @@ def find_latest_signal_event(
     except Exception as e:
 
         log.warning(
-            f"ROC{SIGNAL_ROC_PERIOD} "
-            f"최근 상승 이벤트 검색 오류: {e}"
+            f"ROC{signal_period} "
+            f"최근 시그널 이벤트 검색 오류: {e}"
         )
 
         return None, None
 
 
 # =========================================================
-# 상승 신호 + COUNT
+# 시그널 상태 업데이트
 # =========================================================
 
 def update_signal(
     market,
-    r,
-    filter_pass,
+    signal_number,
+    current_value,
+    previous_value,
     progress_candle_time,
     historical_start_candle=None
 ):
 
     market_key = str(market)
+
+    if signal_number == 1:
+
+        state_dict = roc_signal1_state
+        failed_dict = roc_signal1_failed_candle
+        signal_period = SIGNAL1_ROC_PERIOD
+
+    else:
+
+        state_dict = roc_signal2_state
+        failed_dict = roc_signal2_failed_candle
+        signal_period = SIGNAL2_ROC_PERIOD
 
     progress_candle_time = (
         normalize_datetime(
@@ -2068,18 +1754,10 @@ def update_signal(
         )
     )
 
-    signal_roc_current = r.get(
-        "signal_roc"
-    )
-
-    signal_roc_previous = r.get(
-        "signal_roc_previous"
-    )
-
     try:
 
         current_value = float(
-            signal_roc_current
+            current_value
         )
 
     except Exception:
@@ -2089,40 +1767,33 @@ def update_signal(
     try:
 
         previous_value = float(
-            signal_roc_previous
+            previous_value
         )
 
     except Exception:
 
         previous_value = None
 
-    signal_cross = False
-
-    if (
-        current_value is not None
-        and previous_value is not None
-    ):
-
-        signal_cross = (
-            previous_value < 0
-            and current_value >= 0
-        )
+    signal_cross = roc_signal_zero_cross(
+        current_value,
+        previous_value
+    )
 
     signal_state = (
-        roc_signal_state.get(
+        state_dict.get(
             market_key
         )
     )
 
     # =====================================================
-    # ① 상승 0선 돌파
+    # ① 0선 상향 돌파
     # =====================================================
 
     if signal_cross:
 
         if progress_candle_time is not None:
 
-            roc_signal_state[
+            state_dict[
                 market_key
             ] = {
 
@@ -2141,23 +1812,22 @@ def update_signal(
             }
 
             signal_state = (
-                roc_signal_state[
+                state_dict[
                     market_key
                 ]
             )
 
-            roc_signal_failed_candle.pop(
+            failed_dict.pop(
                 market_key,
                 None
             )
 
             log.info(
-                f"[ROC{SIGNAL_ROC_PERIOD} "
-                f"SIGNAL START] "
+                f"[시그널 {signal_number} "
+                f"ROC{signal_period} START] "
                 f"{market_key} 🚀(0) | "
                 f"ROC={current_value} | "
-                f"기준="
-                f"{format_timeframe(SIGNAL_TIMEFRAME)}"
+                f"기준=4H"
             )
 
     # =====================================================
@@ -2186,7 +1856,7 @@ def update_signal(
             ):
 
                 failed_candle = (
-                    roc_signal_failed_candle.get(
+                    failed_dict.get(
                         market_key
                     )
                 )
@@ -2202,7 +1872,7 @@ def update_signal(
                         SIGNAL_TIMEFRAME
                     )
 
-                    roc_signal_state[
+                    state_dict[
                         market_key
                     ] = {
 
@@ -2221,14 +1891,14 @@ def update_signal(
                     }
 
                     signal_state = (
-                        roc_signal_state[
+                        state_dict[
                             market_key
                         ]
                     )
 
                     log.info(
-                        f"[ROC{SIGNAL_ROC_PERIOD} "
-                        f"SIGNAL RESTORE] "
+                        f"[시그널 {signal_number} "
+                        f"ROC{signal_period} RESTORE] "
                         f"{market_key} "
                         f"🚀({distance})"
                     )
@@ -2238,7 +1908,7 @@ def update_signal(
     # =====================================================
 
     signal_state = (
-        roc_signal_state.get(
+        state_dict.get(
             market_key
         )
     )
@@ -2259,19 +1929,19 @@ def update_signal(
 
             if progress_candle_time is not None:
 
-                roc_signal_failed_candle[
+                failed_dict[
                     market_key
                 ] = progress_candle_time
 
             log.info(
-                f"[ROC{SIGNAL_ROC_PERIOD} "
-                f"SIGNAL END] "
+                f"[시그널 {signal_number} "
+                f"ROC{signal_period} END] "
                 f"{market_key} | "
                 f"COUNT={old_count} | "
                 f"ROC 음수"
             )
 
-            roc_signal_state.pop(
+            state_dict.pop(
                 market_key,
                 None
             )
@@ -2308,7 +1978,7 @@ def update_signal(
     # =====================================================
 
     signal_state = (
-        roc_signal_state.get(
+        state_dict.get(
             market_key
         )
     )
@@ -2344,6 +2014,38 @@ def update_signal(
             signal_cross
 
     }
+
+
+# =========================================================
+# 시그널 COUNT 범위
+# =========================================================
+
+def signal_count_allowed(
+    signal_number,
+    count
+):
+
+    try:
+
+        count = int(count)
+
+    except Exception:
+
+        return False
+
+    if signal_number == 1:
+
+        return (
+            SIGNAL1_COUNT_MIN
+            <= count
+            <= SIGNAL1_COUNT_MAX
+        )
+
+    return (
+        SIGNAL2_COUNT_MIN
+        <= count
+        <= SIGNAL2_COUNT_MAX
+    )
 
 
 # =========================================================
@@ -2480,67 +2182,6 @@ def format_volume(v):
 
 
 # =========================================================
-# 참고용 N 필터 분석
-# =========================================================
-
-def get_reference_filter_data(
-    market,
-    active_timeframes
-):
-
-    result = []
-
-    dashboard_timeframes = (
-        get_dashboard_filter_configs()
-    )
-
-    for timeframe_minutes in dashboard_timeframes:
-
-        if timeframe_minutes in active_timeframes:
-
-            continue
-
-        df_reference = history_upbit(
-            market,
-            timeframe_minutes,
-            required=ROC_HISTORY_REQUIRED
-        )
-
-        if (
-            df_reference is None
-            or df_reference.empty
-        ):
-
-            continue
-
-        timeframe_name = (
-            format_timeframe(
-                timeframe_minutes
-            )
-        )
-
-        raw_reference = (
-            roc_filter_analysis(
-                df_reference,
-                get_all_periods()
-            )
-        )
-
-        reference = roc_filter_display(
-            raw_reference,
-            timeframe_name
-        )
-
-        reference["reference_only"] = True
-
-        result.append(
-            reference
-        )
-
-    return result
-
-
-# =========================================================
 # 분석
 # =========================================================
 
@@ -2553,71 +2194,9 @@ def analyze(
         get_all_periods()
     )
 
-    filter_timeframes = (
-        get_filter_configs()
-    )
-
-    filter_results = []
-
-    filter_df_cache = {}
-
-    for timeframe_minutes in filter_timeframes:
-
-        if timeframe_minutes not in filter_df_cache:
-
-            filter_df_cache[
-                timeframe_minutes
-            ] = history_upbit(
-                market,
-                timeframe_minutes,
-                required=ROC_HISTORY_REQUIRED
-            )
-
-        df_filter = filter_df_cache[
-            timeframe_minutes
-        ]
-
-        if (
-            df_filter is None
-            or df_filter.empty
-        ):
-
-            return None
-
-        timeframe_name = (
-            format_timeframe(
-                timeframe_minutes
-            )
-        )
-
-        raw_filter = (
-            roc_filter_analysis(
-                df_filter,
-                all_periods
-            )
-        )
-
-        display_filter = (
-            roc_filter_display(
-                raw_filter,
-                timeframe_name
-            )
-        )
-
-        display_filter[
-            "reference_only"
-        ] = False
-
-        filter_results.append(
-            display_filter
-        )
-
-    reference_filter_results = (
-        get_reference_filter_data(
-            market,
-            filter_timeframes
-        )
-    )
+    # =====================================================
+    # 4시간봉 과거 데이터
+    # =====================================================
 
     df_signal = history_upbit(
         market,
@@ -2631,6 +2210,10 @@ def analyze(
     ):
 
         return None
+
+    # =====================================================
+    # 4시간봉 현재 데이터
+    # =====================================================
 
     df_current = (
         get_upbit_current_roc_data(
@@ -2658,55 +2241,105 @@ def analyze(
         all_periods
     )
 
-    r_signal = roc_filter_display(
-        r_signal_raw,
-        signal_timeframe_name
-    )
+    r_signal = r_signal_raw
 
-    signal_roc_current = (
+    # =====================================================
+    # 시그널 1 ROC50
+    # =====================================================
+
+    signal1_roc_current = (
         r_signal
         .get(
             "roc_values",
             {}
         )
         .get(
-            SIGNAL_ROC_PERIOD
+            SIGNAL1_ROC_PERIOD
         )
     )
 
-    signal_roc_previous = (
+    signal1_roc_previous = (
         r_signal
         .get(
             "previous_values",
             {}
         )
         .get(
-            SIGNAL_ROC_PERIOD
+            SIGNAL1_ROC_PERIOD
         )
     )
 
-    r = {
+    # =====================================================
+    # 시그널 2 ROC5
+    # =====================================================
 
-        "signal_roc":
-            signal_roc_current,
-
-        "signal_roc_previous":
-            signal_roc_previous,
-
-        "signal_roc_cross":
-            False
-
-    }
-
-    r["signal_roc_cross"] = (
-        roc_signal_zero_cross(r)
-    )
-
-    filter_pass = (
-        all_active_roc_filters_pass(
-            filter_results
+    signal2_roc_current = (
+        r_signal
+        .get(
+            "roc_values",
+            {}
+        )
+        .get(
+            SIGNAL2_ROC_PERIOD
         )
     )
+
+    signal2_roc_previous = (
+        r_signal
+        .get(
+            "previous_values",
+            {}
+        )
+        .get(
+            SIGNAL2_ROC_PERIOD
+        )
+    )
+
+    # =====================================================
+    # 최근 시그널 1 이벤트 복구
+    # =====================================================
+
+    historical_start_candle1 = None
+
+    if market not in roc_signal1_state:
+
+        latest_event_type1, latest_event_candle1 = (
+            find_latest_signal_event(
+                df_signal,
+                SIGNAL1_ROC_PERIOD
+            )
+        )
+
+        if latest_event_type1 == "signal":
+
+            historical_start_candle1 = (
+                latest_event_candle1
+            )
+
+    # =====================================================
+    # 최근 시그널 2 이벤트 복구
+    # =====================================================
+
+    historical_start_candle2 = None
+
+    if market not in roc_signal2_state:
+
+        latest_event_type2, latest_event_candle2 = (
+            find_latest_signal_event(
+                df_signal,
+                SIGNAL2_ROC_PERIOD
+            )
+        )
+
+        if latest_event_type2 == "signal":
+
+            historical_start_candle2 = (
+                latest_event_candle2
+            )
+
+    # =====================================================
+    # 현재 진행봉
+    # =====================================================
 
     progress_candle_time = (
         get_current_candle_start(
@@ -2714,33 +2347,81 @@ def analyze(
         )
     )
 
-    historical_start_candle = None
+    # =====================================================
+    # 시그널 1 상태
+    # =====================================================
 
-    if market not in roc_signal_state:
-
-        latest_event_type, latest_event_candle = (
-            find_latest_signal_event(
-                df_signal
-            )
-        )
-
-        if latest_event_type == "signal":
-
-            historical_start_candle = (
-                latest_event_candle
-            )
-
-    state = update_signal(
+    state1 = update_signal(
         market=market,
-        r=r,
-        filter_pass=filter_pass,
+        signal_number=1,
+        current_value=signal1_roc_current,
+        previous_value=signal1_roc_previous,
         progress_candle_time=(
             progress_candle_time
         ),
         historical_start_candle=(
-            historical_start_candle
+            historical_start_candle1
         )
     )
+
+    # =====================================================
+    # 시그널 2 상태
+    # =====================================================
+
+    state2 = update_signal(
+        market=market,
+        signal_number=2,
+        current_value=signal2_roc_current,
+        previous_value=signal2_roc_previous,
+        progress_candle_time=(
+            progress_candle_time
+        ),
+        historical_start_candle=(
+            historical_start_candle2
+        )
+    )
+
+    # =====================================================
+    # 시그널 1 COUNT
+    # =====================================================
+
+    signal1_count = int(
+        state1[
+            "signal_count"
+        ]
+    )
+
+    signal1_count_pass = (
+        state1["signal_active"]
+        and
+        signal_count_allowed(
+            1,
+            signal1_count
+        )
+    )
+
+    # =====================================================
+    # 시그널 2 COUNT
+    # =====================================================
+
+    signal2_count = int(
+        state2[
+            "signal_count"
+        ]
+    )
+
+    signal2_count_pass = (
+        state2["signal_active"]
+        and
+        signal_count_allowed(
+            2,
+            signal2_count
+        )
+    )
+
+    # =====================================================
+    # 일봉 등락
+    # =====================================================
 
     changes = (
         daily_change_upbit(
@@ -2759,49 +2440,84 @@ def analyze(
         and change_value >= 0
     )
 
-    breakout_qualified = (
-        state["signal_active"]
+    # =====================================================
+    # 최종 시그널
+    #
+    # 각각 독립적으로 사용
+    # =====================================================
+
+    signal1_qualified = (
+        signal1_count_pass
         and
-        filter_pass
+        daily_pass
+    )
+
+    signal2_qualified = (
+        signal2_count_pass
+        and
+        daily_pass
     )
 
     return {
 
-        "roc_filters":
-            filter_results,
-
-        "roc_reference_filters":
-            reference_filter_results,
-
         "roc":
-            r,
+            r_signal,
 
         "changes":
             changes,
 
-        "filter_pass":
-            filter_pass,
-
         "daily_pass":
             daily_pass,
 
-        "breakout_qualified":
-            breakout_qualified,
-
-        "signal_active":
-            state[
+        "signal1_active":
+            state1[
                 "signal_active"
             ],
 
-        "signal_count":
-            state[
-                "signal_count"
-            ],
+        "signal1_count":
+            signal1_count,
 
-        "signal_roc_cross":
-            state[
+        "signal1_roc":
+            signal1_roc_current,
+
+        "signal1_roc_previous":
+            signal1_roc_previous,
+
+        "signal1_roc_cross":
+            state1[
                 "signal_roc_cross"
             ],
+
+        "signal1_count_pass":
+            signal1_count_pass,
+
+        "signal1_qualified":
+            signal1_qualified,
+
+        "signal2_active":
+            state2[
+                "signal_active"
+            ],
+
+        "signal2_count":
+            signal2_count,
+
+        "signal2_roc":
+            signal2_roc_current,
+
+        "signal2_roc_previous":
+            signal2_roc_previous,
+
+        "signal2_roc_cross":
+            state2[
+                "signal_roc_cross"
+            ],
+
+        "signal2_count_pass":
+            signal2_count_pass,
+
+        "signal2_qualified":
+            signal2_qualified,
 
         "df_signal":
             df_signal
@@ -2861,60 +2577,98 @@ def make_row(
         "current_price":
             current_price,
 
-        "roc_filters":
-            a.get(
-                "roc_filters",
-                []
-            ),
-
-        "roc_reference_filters":
-            a.get(
-                "roc_reference_filters",
-                []
-            ),
-
         "roc":
             a.get(
                 "roc",
                 {}
             ),
 
-        "filter_pass":
+        "signal1_active":
             bool(
                 a.get(
-                    "filter_pass",
+                    "signal1_active",
                     False
                 )
             ),
 
-        "breakout_qualified":
-            bool(
-                a.get(
-                    "breakout_qualified",
-                    False
-                )
-            ),
-
-        "signal_active":
-            bool(
-                a.get(
-                    "signal_active",
-                    False
-                )
-            ),
-
-        "signal_count":
+        "signal1_count":
             int(
                 a.get(
-                    "signal_count",
+                    "signal1_count",
                     0
                 )
             ),
 
-        "signal_roc_cross":
+        "signal1_roc":
+            a.get(
+                "signal1_roc"
+            ),
+
+        "signal1_roc_cross":
             bool(
                 a.get(
-                    "signal_roc_cross",
+                    "signal1_roc_cross",
+                    False
+                )
+            ),
+
+        "signal1_count_pass":
+            bool(
+                a.get(
+                    "signal1_count_pass",
+                    False
+                )
+            ),
+
+        "signal1_qualified":
+            bool(
+                a.get(
+                    "signal1_qualified",
+                    False
+                )
+            ),
+
+        "signal2_active":
+            bool(
+                a.get(
+                    "signal2_active",
+                    False
+                )
+            ),
+
+        "signal2_count":
+            int(
+                a.get(
+                    "signal2_count",
+                    0
+                )
+            ),
+
+        "signal2_roc":
+            a.get(
+                "signal2_roc"
+            ),
+
+        "signal2_roc_cross":
+            bool(
+                a.get(
+                    "signal2_roc_cross",
+                    False
+                )
+            ),
+
+        "signal2_count_pass":
+            bool(
+                a.get(
+                    "signal2_count_pass",
+                    False
+                )
+            ),
+
+        "signal2_qualified":
+            bool(
+                a.get(
+                    "signal2_qualified",
                     False
                 )
             ),
@@ -3124,19 +2878,187 @@ def format_market_price(
 
 
 # =========================================================
-# ROC 필터 HTML
-#
-# Y = 활성
-# N = 참고용
+# 시그널 표시 HTML
+# =========================================================
+
+def signal_item_html(
+    signal_number,
+    active,
+    count,
+    qualified
+):
+
+    if not active:
+        return "-"
+
+    try:
+        count = int(count)
+    except Exception:
+        return "-"
+
+    if qualified:
+
+        return f"""
+        <span class="signal-item signal-{signal_number}">
+
+            <span class="signal-rocket">
+                🚀
+            </span>
+
+            <span class="signal-label">
+                시그널 {signal_number}
+            </span>
+
+            <span class="signal-count">
+                ({count})
+            </span>
+
+        </span>
+        """
+
+    if count_display_allowed(count):
+
+        return f"""
+        <span class="
+            signal-item
+            signal-{signal_number}
+            signal-normal
+        ">
+
+            <span class="signal-label">
+                시그널 {signal_number}
+            </span>
+
+            <span class="signal-count">
+                ({count})
+            </span>
+
+        </span>
+        """
+
+    return "-"
+
+
+def signal_html(
+    row
+):
+
+    if not row:
+        return "-"
+
+    signal1 = signal_item_html(
+        1,
+        row.get(
+            "signal1_active",
+            False
+        ),
+        row.get(
+            "signal1_count",
+            0
+        ),
+        row.get(
+            "signal1_qualified",
+            False
+        )
+    )
+
+    signal2 = signal_item_html(
+        2,
+        row.get(
+            "signal2_active",
+            False
+        ),
+        row.get(
+            "signal2_count",
+            0
+        ),
+        row.get(
+            "signal2_qualified",
+            False
+        )
+    )
+
+    return f"""
+    <div class="signal-wrap">
+
+        <div class="signal-row">
+            {signal1}
+        </div>
+
+        <div class="signal-row">
+            {signal2}
+        </div>
+
+    </div>
+    """
+
+
+# =========================================================
+# TOP COUNT
+# =========================================================
+
+def top_signal_count_html(
+    row
+):
+
+    if not row:
+        return "-"
+
+    signal1 = signal_item_html(
+        1,
+        row.get(
+            "signal1_active",
+            False
+        ),
+        row.get(
+            "signal1_count",
+            0
+        ),
+        row.get(
+            "signal1_qualified",
+            False
+        )
+    )
+
+    signal2 = signal_item_html(
+        2,
+        row.get(
+            "signal2_active",
+            False
+        ),
+        row.get(
+            "signal2_count",
+            0
+        ),
+        row.get(
+            "signal2_qualified",
+            False
+        )
+    )
+
+    return f"""
+    <div class="top-count-wrap">
+
+        <div>
+            {signal1}
+        </div>
+
+        <div>
+            {signal2}
+        </div>
+
+    </div>
+    """
+
+
+# =========================================================
+# ROC HTML
 # =========================================================
 
 def roc_filter_html(
     r,
-    timeframe,
-    reference_only=False
+    timeframe
 ):
-
-    settings = roc_settings()
 
     if not r:
         r = {}
@@ -3213,32 +3135,12 @@ def roc_filter_html(
                 icon = "⚪"
                 count_text = "-"
 
-        setting = settings[
-            period
-        ].get(
-            timeframe,
-            "N"
-        )
-
-        setting_cls = (
-            "roc-active"
-            if setting == "Y"
-            else "roc-disabled"
-        )
-
-        if reference_only:
-
-            setting_cls += " reference-only"
-
         items.append(
             f"""
-            <div class="
-                btc-roc-item
-                {setting_cls}
-            ">
+            <div class="btc-roc-item">
 
                 <div class="btc-roc-period">
-                    {period}
+                    ROC{period}
                 </div>
 
                 <div class="btc-roc-icon">
@@ -3253,18 +3155,6 @@ def roc_filter_html(
             """
         )
 
-    status_text = (
-        "참고용"
-        if reference_only
-        else "활성 필터"
-    )
-
-    status_class = (
-        "filter-status-reference"
-        if reference_only
-        else "filter-status-active"
-    )
-
     return f"""
     <div class="btc-roc-section">
 
@@ -3274,8 +3164,8 @@ def roc_filter_html(
                 {timeframe} ROC
             </span>
 
-            <span class="{status_class}">
-                {status_text}
+            <span class="filter-status-active">
+                4시간 기준
             </span>
 
         </div>
@@ -3291,310 +3181,12 @@ def roc_filter_html(
 
 
 def filter_html(
-    filters,
-    reference_filters=None
+    r
 ):
 
-    sections = []
-
-    active_map = {}
-
-    for r in (
-        filters or []
-    ):
-
-        if not r:
-            continue
-
-        timeframe = r.get(
-            "timeframe",
-            "-"
-        )
-
-        active_map[
-            timeframe
-        ] = r
-
-    reference_map = {}
-
-    for r in (
-        reference_filters or []
-    ):
-
-        if not r:
-            continue
-
-        timeframe = r.get(
-            "timeframe",
-            "-"
-        )
-
-        reference_map[
-            timeframe
-        ] = r
-
-    displayed = set()
-
-    configured = [
-
-        (
-            FILTER1_TIMEFRAME,
-            USE_FILTER1
-        ),
-
-        (
-            FILTER2_TIMEFRAME,
-            USE_FILTER2
-        )
-
-    ]
-
-    for timeframe_minutes, use_flag in configured:
-
-        timeframe = format_timeframe(
-            timeframe_minutes
-        )
-
-        if timeframe in displayed:
-
-            continue
-
-        displayed.add(
-            timeframe
-        )
-
-        if use_flag == "Y":
-
-            r = active_map.get(
-                timeframe
-            )
-
-            if r:
-
-                sections.append(
-                    roc_filter_html(
-                        r,
-                        timeframe,
-                        reference_only=False
-                    )
-                )
-
-        else:
-
-            r = reference_map.get(
-                timeframe
-            )
-
-            if r:
-
-                sections.append(
-                    roc_filter_html(
-                        r,
-                        timeframe,
-                        reference_only=True
-                    )
-                )
-
-            else:
-
-                settings = roc_settings()
-
-                items = []
-
-                for period in ROC_FILTER_PERIODS:
-
-                    setting = settings[
-                        period
-                    ].get(
-                        timeframe,
-                        "N"
-                    )
-
-                    setting_cls = (
-                        "roc-active"
-                        if setting == "Y"
-                        else "roc-disabled"
-                    )
-
-                    items.append(
-                        f"""
-                        <div class="
-                            btc-roc-item
-                            {setting_cls}
-                            reference-only
-                        ">
-
-                            <div class="btc-roc-period">
-                                {period}
-                            </div>
-
-                            <div class="btc-roc-icon">
-                                ⚪
-                            </div>
-
-                            <div class="btc-roc-count">
-                                (-)
-                            </div>
-
-                        </div>
-                        """
-                    )
-
-                sections.append(
-                    f"""
-                    <div class="btc-roc-section">
-
-                        <div class="btc-roc-title">
-
-                            <span>
-                                {timeframe} ROC
-                            </span>
-
-                            <span class="
-                                filter-status-reference
-                            ">
-                                참고용
-                            </span>
-
-                        </div>
-
-                        <div class="btc-roc-grid">
-
-                            {"".join(items)}
-
-                        </div>
-
-                    </div>
-                    """
-                )
-
-    if not sections:
-        return ""
-
-    return f"""
-    <div class="filter-detail">
-
-        {"".join(sections)}
-
-        <div class="filter-reference-note">
-
-            <span class="reference-active">
-                ● 활성 필터
-            </span>
-
-            <span class="reference-n">
-                ● 참고용 N
-            </span>
-
-            <span class="reference-info">
-                N은 필터 판정에 사용하지 않음
-            </span>
-
-        </div>
-
-    </div>
-    """
-
-
-# =========================================================
-# 신호 HTML
-# =========================================================
-
-def signal_html(
-    row
-):
-
-    if not row:
-        return "-"
-
-    signal_active = row.get(
-        "signal_active",
-        False
-    )
-
-    signal_count = int(
-        row.get(
-            "signal_count",
-            0
-        )
-    )
-
-    if (
-        signal_active
-        and count_display_allowed(
-            signal_count
-        )
-    ):
-
-        return f"""
-        <div class="signal-wrap">
-
-            <span class="signal-item">
-
-                <span class="signal-rocket">
-                    🚀
-                </span>
-
-                <span class="signal-count">
-                    ({signal_count})
-                </span>
-
-            </span>
-
-        </div>
-        """
-
-    return (
-        '<span class="muted">'
-        '-'
-        '</span>'
-    )
-
-
-# =========================================================
-# TOP COUNT
-# =========================================================
-
-def top_signal_count_html(
-    row
-):
-
-    if not row:
-        return "-"
-
-    signal_active = row.get(
-        "signal_active",
-        False
-    )
-
-    signal_count = int(
-        row.get(
-            "signal_count",
-            0
-        )
-    )
-
-    if (
-        signal_active
-        and count_display_allowed(
-            signal_count
-        )
-    ):
-
-        return f"""
-        <div class="top-count-wrap">
-
-            <span class="top-signal-count">
-                🚀 ({signal_count})
-            </span>
-
-        </div>
-        """
-
-    return (
-        '<span class="muted">'
-        '-'
-        '</span>'
+    return roc_filter_html(
+        r,
+        "4H"
     )
 
 
@@ -3612,32 +3204,38 @@ def rows_html(
 
         cls_list = []
 
-        signal_active = x.get(
-            "signal_active",
+        signal1_qualified = x.get(
+            "signal1_qualified",
             False
         )
 
-        signal_count = int(
+        signal2_qualified = x.get(
+            "signal2_qualified",
+            False
+        )
+
+        signal1_count = int(
             x.get(
-                "signal_count",
+                "signal1_count",
                 0
             )
         )
 
-        filter_pass = x.get(
-            "filter_pass",
-            False
+        signal2_count = int(
+            x.get(
+                "signal2_count",
+                0
+            )
         )
 
+        # =================================================
+        # 시그널 1 반짝임
+        # =================================================
+
         if (
-            filter_pass
-            and x.get(
-                "daily_pass",
-                False
-            )
-            and signal_active
+            signal1_qualified
             and count_flash_allowed(
-                signal_count
+                signal1_count
             )
         ):
 
@@ -3645,18 +3243,29 @@ def rows_html(
                 "signal-flash-one"
             )
 
+        # =================================================
+        # 시그널 2 반짝임
+        # =================================================
+
+        if (
+            signal2_qualified
+            and count_flash_allowed(
+                signal2_count
+            )
+        ):
+
+            cls_list.append(
+                "signal-flash-two"
+            )
+
         cls = " ".join(
             cls_list
         )
 
-        filter_content = filter_html(
+        roc_content = filter_html(
             x.get(
-                "roc_filters",
-                []
-            ),
-            x.get(
-                "roc_reference_filters",
-                []
+                "roc",
+                {}
             )
         )
 
@@ -3738,7 +3347,7 @@ def rows_html(
 
                 <td colspan="6">
 
-                    {filter_content}
+                    {roc_content}
 
                 </td>
 
@@ -3806,7 +3415,7 @@ def table_html(
                     </th>
 
                     <th>
-                        신호
+                        시그널
                     </th>
 
                 </tr>
@@ -3826,14 +3435,14 @@ def table_html(
 
 
 # =========================================================
-# 상승 신호
+# 시그널 1 / 시그널 2
 # =========================================================
 
 def focus_section(
     data
 ):
 
-    rows = [
+    signal1_rows = [
 
         x
 
@@ -3842,14 +3451,7 @@ def focus_section(
         if (
 
             x.get(
-                "filter_pass",
-                False
-            )
-
-            and
-
-            x.get(
-                "signal_active",
+                "signal1_qualified",
                 False
             )
 
@@ -3858,39 +3460,72 @@ def focus_section(
             count_display_allowed(
                 int(
                     x.get(
-                        "signal_count",
+                        "signal1_count",
                         0
                     )
                 )
-            )
-
-            and
-
-            x.get(
-                "daily_pass",
-                False
             )
 
         )
 
     ]
 
+    signal2_rows = [
+
+        x
+
+        for x in data
+
+        if (
+
+            x.get(
+                "signal2_qualified",
+                False
+            )
+
+            and
+
+            count_display_allowed(
+                int(
+                    x.get(
+                        "signal2_count",
+                        0
+                    )
+                )
+            )
+
+        )
+
+    ]
+
+    signal1_table = table_html(
+        signal1_rows
+    )
+
+    signal2_table = table_html(
+        signal2_rows
+    )
+
     return f"""
     <div class="section-title long-title">
 
         <span class="section-title-main">
-            🚀 상승 신호
+            🚀 시그널 1
         </span>
 
         <span class="section-title-sub">
 
-            ROC20 / ROC50 / ROC200 COUNT
-            {ROC_FILTER_COUNT_MIN}~{ROC_FILTER_COUNT_MAX}
+            ROC{SIGNAL1_ROC_PERIOD}
+            4H
 
             ·
 
-            ROC{SIGNAL_ROC_PERIOD}
-            {format_timeframe(SIGNAL_TIMEFRAME)}
+            COUNT
+            {SIGNAL1_COUNT_MIN}~
+            {SIGNAL1_COUNT_MAX}
+
+            ·
+
             0선 상향 돌파
 
             ·
@@ -3899,11 +3534,13 @@ def focus_section(
 
             ·
 
-            COUNT {count_display_text()} 표시
+            화면 COUNT
+            {count_display_text()}
 
             ·
 
-            반짝임 {count_flash_text()}
+            반짝임
+            {count_flash_text()}
 
             ·
 
@@ -3913,7 +3550,52 @@ def focus_section(
 
     </div>
 
-    {table_html(rows)}
+    {signal1_table}
+
+    <div class="section-title long-title">
+
+        <span class="section-title-main">
+            🚀 시그널 2
+        </span>
+
+        <span class="section-title-sub">
+
+            ROC{SIGNAL2_ROC_PERIOD}
+            4H
+
+            ·
+
+            COUNT
+            {SIGNAL2_COUNT_MIN}~
+            {SIGNAL2_COUNT_MAX}
+
+            ·
+
+            0선 상향 돌파
+
+            ·
+
+            당일 변동 0% 이상
+
+            ·
+
+            화면 COUNT
+            {count_display_text()}
+
+            ·
+
+            반짝임
+            {count_flash_text()}
+
+            ·
+
+            {kst()} KST
+
+        </span>
+
+    </div>
+
+    {signal2_table}
     """
 
 
@@ -3939,23 +3621,25 @@ def section(
 
             ·
 
-            ROC{SIGNAL_ROC_PERIOD}
-            {format_timeframe(SIGNAL_TIMEFRAME)}
-            🚀 상승
+            시그널 1
+            ROC{SIGNAL1_ROC_PERIOD}
+            4H
+            COUNT
+            {SIGNAL1_COUNT_MIN}~
+            {SIGNAL1_COUNT_MAX}
 
             ·
 
-            ROC20 / ROC50 / ROC200 COUNT
-            {ROC_FILTER_COUNT_MIN}~{ROC_FILTER_COUNT_MAX}
+            시그널 2
+            ROC{SIGNAL2_ROC_PERIOD}
+            4H
+            COUNT
+            {SIGNAL2_COUNT_MIN}~
+            {SIGNAL2_COUNT_MAX}
 
             ·
 
-            필터
-            {get_dashboard_filter_setting_text()}
-
-            ·
-
-            Y = 필터 / N = 참고용
+            4H native
 
         </span>
 
@@ -4056,7 +3740,7 @@ def btc_roc_status_html(
             <div class="btc-roc-item">
 
                 <div class="btc-roc-period">
-                    {period}
+                    ROC{period}
                 </div>
 
                 <div class="btc-roc-icon">
@@ -4077,12 +3761,11 @@ def btc_roc_status_html(
         <div class="btc-roc-title">
 
             <span>
-                {format_timeframe(SIGNAL_TIMEFRAME)}
-                ROC
+                4H ROC
             </span>
 
             <span class="filter-status-active">
-                신호 기준
+                시그널 기준
             </span>
 
         </div>
@@ -4156,23 +3839,23 @@ def market_summary_html():
 
             <span class="market-title-sub">
 
-                ROC20 / ROC50 / ROC200 COUNT
-                {ROC_FILTER_COUNT_MIN}~{ROC_FILTER_COUNT_MAX}
+                시그널 1
+                ROC{SIGNAL1_ROC_PERIOD}
+                COUNT
+                {SIGNAL1_COUNT_MIN}~
+                {SIGNAL1_COUNT_MAX}
 
                 ·
 
-                신호 ROC{SIGNAL_ROC_PERIOD}
+                시그널 2
+                ROC{SIGNAL2_ROC_PERIOD}
+                COUNT
+                {SIGNAL2_COUNT_MIN}~
+                {SIGNAL2_COUNT_MAX}
 
                 ·
 
-                기준
-                {format_timeframe(SIGNAL_TIMEFRAME)}
-                native
-
-                ·
-
-                4H =
-                업비트 원본 240분봉
+                기준 4H native
 
             </span>
 
@@ -4442,14 +4125,6 @@ line-height:11px;
 text-align:center;
 }
 
-.roc-active{
-opacity:1;
-}
-
-.roc-disabled{
-opacity:.55;
-}
-
 .filter-status-active{
 display:inline-flex;
 align-items:center;
@@ -4466,74 +4141,6 @@ font-size:7px;
 font-weight:900;
 
 line-height:10px;
-}
-
-.filter-status-reference{
-display:inline-flex;
-align-items:center;
-
-padding:2px 6px;
-
-border-radius:4px;
-
-background:#20252b;
-
-color:#8b949e;
-
-font-size:7px;
-font-weight:800;
-
-line-height:10px;
-}
-
-.reference-only{
-opacity:.65;
-
-background:#11151a;
-
-border-color:#252b31;
-}
-
-.reference-only .btc-roc-icon{
-opacity:.75;
-}
-
-.reference-only .btc-roc-count{
-color:#737c86;
-}
-
-.filter-reference-note{
-display:flex;
-align-items:center;
-
-gap:9px;
-
-margin-top:5px;
-padding:5px 6px;
-
-border-top:1px solid #242a31;
-
-color:#737c86;
-
-font-size:7px;
-font-weight:700;
-
-line-height:10px;
-
-white-space:nowrap;
-overflow:hidden;
-}
-
-.reference-active{
-color:#72bd98;
-}
-
-.reference-n{
-color:#929ba4;
-}
-
-.reference-info{
-color:#68727c;
 }
 
 .table-wrap{
@@ -4713,8 +4320,122 @@ font-weight:900;
 .signal-cell{
 text-align:center!important;
 
-padding-left:3px!important;
-padding-right:3px!important;
+padding-left:2px!important;
+padding-right:2px!important;
+}
+
+.signal-wrap{
+display:flex;
+
+flex-direction:column;
+
+align-items:center;
+justify-content:center;
+
+gap:2px;
+
+min-height:23px;
+
+white-space:nowrap;
+}
+
+.signal-row{
+display:flex;
+
+align-items:center;
+justify-content:center;
+}
+
+.signal-item{
+display:inline-flex;
+
+align-items:center;
+justify-content:center;
+
+gap:2px;
+
+padding:2px 5px;
+
+border-radius:4px;
+
+font-weight:900;
+
+background:#20252b;
+
+border:1px solid #343b43;
+
+color:#aeb6be;
+}
+
+.signal-rocket{
+font-size:10px;
+}
+
+.signal-label{
+font-size:7px;
+font-weight:900;
+}
+
+.signal-count{
+font-size:8px;
+font-weight:900;
+}
+
+.signal-1{
+background:#183329;
+
+border-color:#285b45;
+
+color:#72bd98;
+}
+
+.signal-2{
+background:#222b35;
+
+border-color:#3a4856;
+
+color:#9eb5c9;
+}
+
+.signal-normal{
+opacity:.9;
+}
+
+.top-count-wrap{
+display:flex;
+
+flex-direction:column;
+
+align-items:center;
+justify-content:center;
+
+gap:2px;
+
+white-space:nowrap;
+}
+
+.top-count-wrap .signal-item{
+padding:1px 3px;
+}
+
+.top-count-wrap .signal-label{
+font-size:6px;
+}
+
+.top-count-wrap .signal-count{
+font-size:6.5px;
+}
+
+.roc-subrow{
+background:#0f1318!important;
+}
+
+.roc-subrow td{
+height:auto!important;
+
+padding:0!important;
+
+border-bottom:1px solid #22282e;
 }
 
 .filter-detail{
@@ -4763,81 +4484,6 @@ font-size:12px;
 font-size:7px;
 }
 
-.roc-subrow{
-background:#0f1318!important;
-}
-
-.roc-subrow td{
-height:auto!important;
-
-padding:0!important;
-
-border-bottom:1px solid #22282e;
-}
-
-.top-count-wrap{
-display:flex;
-
-align-items:center;
-justify-content:center;
-
-gap:4px;
-
-white-space:nowrap;
-}
-
-.top-signal-count{
-color:#72bd98;
-
-font-size:8px;
-font-weight:900;
-}
-
-.signal-wrap{
-display:flex;
-
-align-items:center;
-justify-content:center;
-
-gap:4px;
-
-min-height:23px;
-
-white-space:nowrap;
-}
-
-.signal-item{
-display:inline-flex;
-
-align-items:center;
-justify-content:center;
-
-gap:2px;
-
-padding:2px 5px;
-
-border-radius:4px;
-
-font-weight:900;
-
-background:#183329;
-
-border:1px solid #285b45;
-
-color:#72bd98;
-}
-
-.signal-rocket{
-font-size:11px;
-}
-
-.signal-count{
-color:#7ed3a5;
-
-font-size:8px;
-font-weight:900;
-}
-
 @keyframes signalFlashOne{
 
 0%{
@@ -4874,9 +4520,53 @@ rgba(114,189,152,0);
 
 }
 
+@keyframes signalFlashTwo{
+
+0%{
+background-color:#15191e;
+
+box-shadow:
+inset 0 0 0
+rgba(158,181,201,0);
+}
+
+30%{
+background-color:#29343e;
+
+box-shadow:
+inset 0 0 12px
+rgba(158,181,201,.30);
+}
+
+60%{
+background-color:#1b2228;
+
+box-shadow:
+inset 0 0 3px
+rgba(158,181,201,.12);
+}
+
+100%{
+background-color:#15191e;
+
+box-shadow:
+inset 0 0 0
+rgba(158,181,201,0);
+}
+
+}
+
 tr.signal-flash-one td{
 animation:
 signalFlashOne
+1.35s
+ease-in-out
+infinite;
+}
+
+tr.signal-flash-two td{
+animation:
+signalFlashTwo
 1.35s
 ease-in-out
 infinite;
@@ -5002,21 +4692,8 @@ font-size:6.5px;
 line-height:9px;
 }
 
-.filter-status-active,
-.filter-status-reference{
+.filter-status-active{
 padding:1px 4px;
-
-font-size:5.5px;
-
-line-height:8px;
-}
-
-.filter-reference-note{
-gap:5px;
-
-margin-top:4px;
-
-padding:3px 4px;
 
 font-size:5.5px;
 
@@ -5127,8 +4804,32 @@ gap:1px;
 justify-content:center;
 }
 
-.top-signal-count{
-font-size:6.5px;
+.top-count-wrap .signal-label{
+font-size:5px;
+}
+
+.top-count-wrap .signal-count{
+font-size:5.5px;
+}
+
+.signal-item{
+padding:1px 3px;
+
+border-radius:3px;
+
+gap:1px;
+}
+
+.signal-label{
+font-size:5.5px;
+}
+
+.signal-count{
+font-size:6px;
+}
+
+.signal-rocket{
+font-size:8px;
 }
 
 .filter-detail{
@@ -5163,28 +4864,6 @@ font-size:5.8px;
 text-align:center;
 }
 
-.signal-wrap{
-gap:2px;
-
-justify-content:center;
-}
-
-.signal-item{
-padding:1px 4px;
-
-border-radius:3px;
-
-gap:1px;
-}
-
-.signal-rocket{
-font-size:8px;
-}
-
-.signal-count{
-font-size:6.5px;
-}
-
 .btc-roc-period{
 font-size:5.8px;
 
@@ -5211,7 +4890,8 @@ min-height:31px;
 
 @media(prefers-reduced-motion:reduce){
 
-tr.signal-flash-one td{
+tr.signal-flash-one td,
+tr.signal-flash-two td{
 animation:none!important;
 }
 
@@ -5277,9 +4957,7 @@ def dashboard():
         >
 
         <title>
-            ROC{SIGNAL_ROC_PERIOD}
-            {format_timeframe(SIGNAL_TIMEFRAME)}
-            SIGNAL
+            시그널 1 / 시그널 2
         </title>
 
         <style>
@@ -5347,21 +5025,43 @@ def startup():
     )
 
     log.info(
-        f"ROC{SIGNAL_ROC_PERIOD} "
-        f"{format_timeframe(SIGNAL_TIMEFRAME)} "
-        "SIGNAL SYSTEM START"
+        "4H 시그널 시스템 START"
     )
 
     log.info(
-        f"상승 신호 ROC = "
-        f"ROC{SIGNAL_ROC_PERIOD} "
-        f"{format_timeframe(SIGNAL_TIMEFRAME)}"
+        f"★ 시그널 1 = "
+        f"ROC{SIGNAL1_ROC_PERIOD} / "
+        f"COUNT "
+        f"{SIGNAL1_COUNT_MIN}~"
+        f"{SIGNAL1_COUNT_MAX}"
     )
 
     log.info(
-        f"ROC 필터 COUNT 범위 = "
-        f"{ROC_FILTER_COUNT_MIN}~"
-        f"{ROC_FILTER_COUNT_MAX}"
+        f"★ 시그널 2 = "
+        f"ROC{SIGNAL2_ROC_PERIOD} / "
+        f"COUNT "
+        f"{SIGNAL2_COUNT_MIN}~"
+        f"{SIGNAL2_COUNT_MAX}"
+    )
+
+    log.info(
+        "★ 기준 시간봉 = 4H"
+    )
+
+    log.info(
+        "★ 시그널 1 / 시그널 2 각각 독립 계산"
+    )
+
+    log.info(
+        "★ 시그널 1 = ROC50 0선 상향 돌파"
+    )
+
+    log.info(
+        "★ 시그널 2 = ROC5 0선 상향 돌파"
+    )
+
+    log.info(
+        "★ 시그널 COUNT는 0선 이상 연속 캔들 수"
     )
 
     log.info(
@@ -5369,51 +5069,25 @@ def startup():
     )
 
     log.info(
-        "★ ROC20/50/200은 0선 이상 연속 COUNT 사용"
+        "★ ROC20/ROC50/ROC200은 0선 이상 연속 COUNT 표시"
     )
 
     log.info(
-        f"★ ROC20/50/200 COUNT = "
-        f"{ROC_FILTER_COUNT_MIN}~"
-        f"{ROC_FILTER_COUNT_MAX}"
+        f"★ COUNT 화면 표시 = "
+        f"{count_display_text()}"
     )
 
     log.info(
-        f"★ 활성 ROC 필터 = "
-        f"{get_filter_setting_text()}"
+        f"★ COUNT 반짝임 = "
+        f"{count_flash_text()}"
     )
 
     log.info(
-        f"★ FILTER1 = "
-        f"{USE_FILTER1} / "
-        f"{format_timeframe(FILTER1_TIMEFRAME)}"
+        "★ 시그널만 반짝임"
     )
 
     log.info(
-        f"★ FILTER2 = "
-        f"{USE_FILTER2} / "
-        f"{format_timeframe(FILTER2_TIMEFRAME)}"
-    )
-
-    log.info(
-        "★ N 필터는 대시보드 참고용으로 표시"
-    )
-
-    log.info(
-        "★ N 필터는 실제 filter_pass에 사용하지 않음"
-    )
-
-    log.info(
-        "★ ROC5 0선 상향 돌파 = 🚀"
-    )
-
-    log.info(
-        "★ 상승 COUNT 화면 표시"
-    )
-
-    log.info(
-        "★ ROC5 / ROC20 / ROC50 / ROC200 COUNT "
-        "동일 방식 계산"
+        "★ 과거 이벤트는 가장 최근 상승 이벤트 하나만 사용"
     )
 
     log.info(
@@ -5422,13 +5096,8 @@ def startup():
     )
 
     log.info(
-        "★ ROC200 COUNT 2 고정 방지용 "
-        "과거 데이터 확장"
-    )
-
-    log.info(
-        "★ 선택한 ROC 필터 시간봉은 "
-        "업비트 원본 데이터 사용"
+        "★ 선택한 시간봉은 "
+        "업비트 원본 240분봉 사용"
     )
 
     log.info(
@@ -5436,7 +5105,7 @@ def startup():
     )
 
     log.info(
-        "★ 1D = 업비트 원본 일봉"
+        "★ 1D 필터 사용하지 않음"
     )
 
     log.info(
@@ -5445,7 +5114,7 @@ def startup():
     )
 
     log.info(
-        f"★ ROC200 현재값 + 과거 COUNT 계산을 위해 "
+        f"★ ROC200 현재값 + COUNT 계산을 위해 "
         f"{ROC_HISTORY_REQUIRED}개 데이터 확보"
     )
 
@@ -5464,39 +5133,18 @@ def startup():
     )
 
     log.info(
-        "★ 1H 진행봉 기준 = 매 정시"
-    )
-
-    log.info(
-        "★ 1D 진행봉 기준 = 09:00 KST"
-    )
-
-    log.info(
-        f"★ COUNT 화면 표시 = "
+        f"★ 화면 COUNT 표시 = "
         f"{count_display_text()}"
     )
 
     log.info(
-        f"★ COUNT 반짝임 = "
+        f"★ 반짝임 COUNT = "
         f"{count_flash_text()}"
     )
 
     log.info(
-        "★ 상승신호만 반짝임"
-    )
-
-    log.info(
-        "★ 과거 이벤트는 가장 최근 상승 이벤트 하나만 사용"
-    )
-
-    log.info(
-        f"ACTIVE FILTER = "
-        f"{get_filter_setting_text()}"
-    )
-
-    log.info(
         "★ TOP 테이블 = "
-        "순위 / 코인 / 거래대금 / 가격 / 변동률 / 신호"
+        "순위 / 코인 / 거래대금 / 가격 / 변동률 / 시그널"
     )
 
     log.info(
