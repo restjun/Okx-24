@@ -106,9 +106,9 @@ FLASH_COUNT_MAX = 3
 # 시그널 1 ROC 기간별 사용 설정
 # =========================================================
 
-USE_SIGNAL1_ROC5 = "Y"
-USE_SIGNAL1_ROC20 = "Y"
-USE_SIGNAL1_ROC50 = "Y"
+USE_SIGNAL1_ROC5 = "N"
+USE_SIGNAL1_ROC20 = "N"
+USE_SIGNAL1_ROC50 = "N"
 USE_SIGNAL1_ROC200 = "Y"
 
 
@@ -116,7 +116,7 @@ USE_SIGNAL1_ROC200 = "Y"
 # 시그널 2 ROC 기간별 사용 설정
 # =========================================================
 
-USE_SIGNAL2_ROC5 = "Y"
+USE_SIGNAL2_ROC5 = "N"
 USE_SIGNAL2_ROC20 = "Y"
 USE_SIGNAL2_ROC50 = "Y"
 USE_SIGNAL2_ROC200 = "Y"
