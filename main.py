@@ -56,7 +56,6 @@ MAX_RETRIES = 10
 
 # =========================================================
 # 시그널 기준 시간봉
-# 4시간봉만 사용
 # =========================================================
 
 SIGNAL_TIMEFRAME = 240
@@ -76,14 +75,6 @@ ROC_FILTER_PERIODS = [
 
 # =========================================================
 # 시그널 설정
-#
-# 시그널 1
-# ROC 50선
-# COUNT 1~200
-#
-# 시그널 2
-# ROC 5선
-# COUNT 10~30
 # =========================================================
 
 SIGNAL1_ROC_PERIOD = 50
@@ -1801,10 +1792,6 @@ def update_signal(
         )
     )
 
-    # =====================================================
-    # ① 0선 상향 돌파
-    # =====================================================
-
     if signal_cross:
 
         if progress_candle_time is not None:
@@ -1845,10 +1832,6 @@ def update_signal(
                 f"ROC={current_value} | "
                 f"기준=4H"
             )
-
-    # =====================================================
-    # ② 현재 상태가 없으면 과거 상승 이벤트 복구
-    # =====================================================
 
     else:
 
@@ -1919,10 +1902,6 @@ def update_signal(
                         f"🚀({distance})"
                     )
 
-    # =====================================================
-    # ③ 상승 상태 COUNT
-    # =====================================================
-
     signal_state = (
         state_dict.get(
             market_key
@@ -1988,10 +1967,6 @@ def update_signal(
                 signal_state[
                     "last_candle"
                 ] = progress_candle_time
-
-    # =====================================================
-    # ④ 최종 상태
-    # =====================================================
 
     signal_state = (
         state_dict.get(
@@ -2210,10 +2185,6 @@ def analyze(
         get_all_periods()
     )
 
-    # =====================================================
-    # 4시간봉 과거 데이터
-    # =====================================================
-
     df_signal = history_upbit(
         market,
         SIGNAL_TIMEFRAME,
@@ -2226,10 +2197,6 @@ def analyze(
     ):
 
         return None
-
-    # =====================================================
-    # 4시간봉 현재 데이터
-    # =====================================================
 
     df_current = (
         get_upbit_current_roc_data(
@@ -2246,22 +2213,12 @@ def analyze(
 
         return None
 
-    signal_timeframe_name = (
-        format_timeframe(
-            SIGNAL_TIMEFRAME
-        )
-    )
-
     r_signal_raw = roc_filter_analysis(
         df_current,
         all_periods
     )
 
     r_signal = r_signal_raw
-
-    # =====================================================
-    # 시그널 1 ROC50
-    # =====================================================
 
     signal1_roc_current = (
         r_signal
@@ -2285,10 +2242,6 @@ def analyze(
         )
     )
 
-    # =====================================================
-    # 시그널 2 ROC5
-    # =====================================================
-
     signal2_roc_current = (
         r_signal
         .get(
@@ -2311,10 +2264,6 @@ def analyze(
         )
     )
 
-    # =====================================================
-    # 최근 시그널 1 이벤트 복구
-    # =====================================================
-
     historical_start_candle1 = None
 
     if market not in roc_signal1_state:
@@ -2331,10 +2280,6 @@ def analyze(
             historical_start_candle1 = (
                 latest_event_candle1
             )
-
-    # =====================================================
-    # 최근 시그널 2 이벤트 복구
-    # =====================================================
 
     historical_start_candle2 = None
 
@@ -2353,19 +2298,11 @@ def analyze(
                 latest_event_candle2
             )
 
-    # =====================================================
-    # 현재 진행봉
-    # =====================================================
-
     progress_candle_time = (
         get_current_candle_start(
             SIGNAL_TIMEFRAME
         )
     )
-
-    # =====================================================
-    # 시그널 1 상태
-    # =====================================================
 
     state1 = update_signal(
         market=market,
@@ -2380,10 +2317,6 @@ def analyze(
         )
     )
 
-    # =====================================================
-    # 시그널 2 상태
-    # =====================================================
-
     state2 = update_signal(
         market=market,
         signal_number=2,
@@ -2396,10 +2329,6 @@ def analyze(
             historical_start_candle2
         )
     )
-
-    # =====================================================
-    # 시그널 1 COUNT
-    # =====================================================
 
     signal1_count = int(
         state1[
@@ -2416,10 +2345,6 @@ def analyze(
         )
     )
 
-    # =====================================================
-    # 시그널 2 COUNT
-    # =====================================================
-
     signal2_count = int(
         state2[
             "signal_count"
@@ -2434,10 +2359,6 @@ def analyze(
             signal2_count
         )
     )
-
-    # =====================================================
-    # 일봉 등락
-    # =====================================================
 
     changes = (
         daily_change_upbit(
@@ -2455,12 +2376,6 @@ def analyze(
         change_value is not None
         and change_value >= 0
     )
-
-    # =====================================================
-    # 최종 시그널
-    #
-    # 각각 독립적으로 사용
-    # =====================================================
 
     signal1_qualified = (
         signal1_count_pass
@@ -2895,9 +2810,6 @@ def format_market_price(
 
 # =========================================================
 # 개별 시그널 표시 HTML
-#
-# 한글 시그널 문구 제거
-# 1 / 2 각각 별도 표시
 # =========================================================
 
 def signal_item_html(
@@ -2960,8 +2872,6 @@ def signal_item_html(
 
 # =========================================================
 # BTC / 시장용 시그널
-#
-# 1 / 2 각각 독립 표시
 # =========================================================
 
 def signal_html(
@@ -3020,8 +2930,6 @@ def signal_html(
 
 # =========================================================
 # TOP COUNT
-#
-# 1 / 2를 각각 별도 반환
 # =========================================================
 
 def top_signal1_html(
@@ -3249,10 +3157,6 @@ def rows_html(
             )
         )
 
-        # =================================================
-        # 시그널 1 반짝임
-        # =================================================
-
         if (
             signal1_qualified
             and count_flash_allowed(
@@ -3263,10 +3167,6 @@ def rows_html(
             cls_list.append(
                 "signal-flash-one"
             )
-
-        # =================================================
-        # 시그널 2 반짝임
-        # =================================================
 
         if (
             signal2_qualified
@@ -3289,10 +3189,6 @@ def rows_html(
                 {}
             )
         )
-
-        # =================================================
-        # 시그널 1 / 2 각각 별도
-        # =================================================
 
         signal1_content = top_signal1_html(
             x
@@ -4237,24 +4133,30 @@ vertical-align:middle;
 overflow:hidden;
 }
 
+
+/* =====================================================
+   PC 테이블 폭
+   시그널 1 / 2 각각 13%
+   ===================================================== */
+
 th:nth-child(1),
 td:nth-child(1){
-width:6%;
+width:5%;
 }
 
 th:nth-child(2),
 td:nth-child(2){
-width:19%;
+width:18%;
 }
 
 th:nth-child(3),
 td:nth-child(3){
-width:17%;
+width:15%;
 }
 
 th:nth-child(4),
 td:nth-child(4){
-width:24%;
+width:22%;
 }
 
 th:nth-child(5),
@@ -4264,13 +4166,14 @@ width:14%;
 
 th:nth-child(6),
 td:nth-child(6){
-width:10%;
+width:13%;
 }
 
 th:nth-child(7),
 td:nth-child(7){
-width:10%;
+width:13%;
 }
+
 
 .rank-cell{
 color:#8a939d;
@@ -4361,11 +4264,19 @@ font-size:7.5px;
 font-weight:900;
 }
 
+
+/* =====================================================
+   시그널 칸
+   ===================================================== */
+
 .signal-cell{
 text-align:center!important;
 
 padding-left:2px!important;
 padding-right:2px!important;
+
+white-space:nowrap;
+overflow:hidden;
 }
 
 .signal-wrap{
@@ -4388,6 +4299,10 @@ display:flex;
 
 align-items:center;
 justify-content:center;
+
+width:100%;
+
+white-space:nowrap;
 }
 
 .signal-item{
@@ -4398,11 +4313,17 @@ justify-content:center;
 
 gap:2px;
 
-padding:2px 5px;
+min-width:48px;
+
+padding:2px 4px;
 
 border-radius:4px;
 
 font-weight:900;
+
+white-space:nowrap;
+
+overflow:visible;
 
 background:#20252b;
 
@@ -4412,17 +4333,29 @@ color:#aeb6be;
 }
 
 .signal-rocket{
-font-size:10px;
+font-size:9px;
+
+line-height:10px;
+
+flex:none;
 }
 
 .signal-number{
-font-size:7px;
+font-size:8px;
 font-weight:900;
+
+line-height:10px;
+
+flex:none;
 }
 
 .signal-count{
 font-size:8px;
 font-weight:900;
+
+line-height:10px;
+
+flex:none;
 }
 
 .signal-1{
@@ -4502,6 +4435,11 @@ font-size:12px;
 .filter-detail .btc-roc-count{
 font-size:7px;
 }
+
+
+/* =====================================================
+   시그널 반짝임
+   ===================================================== */
 
 @keyframes signalFlashOne{
 
@@ -4619,6 +4557,11 @@ font-size:7px;
 text-align:center!important;
 }
 
+
+/* =====================================================
+   모바일
+   ===================================================== */
+
 @media(max-width:380px){
 
 body{
@@ -4731,24 +4674,29 @@ td{
 height:29px;
 }
 
+
+/* =====================================================
+   모바일 테이블 폭
+   ===================================================== */
+
 th:nth-child(1),
 td:nth-child(1){
-width:6%;
+width:5%;
 }
 
 th:nth-child(2),
 td:nth-child(2){
-width:19%;
+width:18%;
 }
 
 th:nth-child(3),
 td:nth-child(3){
-width:17%;
+width:15%;
 }
 
 th:nth-child(4),
 td:nth-child(4){
-width:24%;
+width:22%;
 }
 
 th:nth-child(5),
@@ -4758,13 +4706,14 @@ width:14%;
 
 th:nth-child(6),
 td:nth-child(6){
-width:10%;
+width:13%;
 }
 
 th:nth-child(7),
 td:nth-child(7){
-width:10%;
+width:13%;
 }
+
 
 .coin-cell{
 padding-left:2px!important;
@@ -4815,31 +4764,62 @@ font-size:5.6px;
 text-align:center!important;
 }
 
+
+/* =====================================================
+   모바일 시그널
+   ===================================================== */
+
 .signal-cell{
 padding-left:1px!important;
 padding-right:1px!important;
 
 text-align:center!important;
+
+white-space:nowrap;
+overflow:hidden;
 }
 
 .signal-item{
-padding:1px 3px;
+display:inline-flex;
+
+align-items:center;
+justify-content:center;
+
+min-width:38px;
+
+padding:1px 2px;
 
 border-radius:3px;
 
 gap:1px;
+
+white-space:nowrap;
+
+overflow:visible;
 }
 
 .signal-number{
-font-size:5.5px;
+font-size:6px;
+
+line-height:8px;
+
+flex:none;
 }
 
 .signal-count{
 font-size:6px;
+
+line-height:8px;
+
+flex:none;
 }
 
 .signal-rocket{
-font-size:8px;
+font-size:7px;
+
+line-height:8px;
+
+flex:none;
 }
 
 .filter-detail{
@@ -4897,6 +4877,7 @@ min-height:31px;
 }
 
 }
+
 
 @media(prefers-reduced-motion:reduce){
 
