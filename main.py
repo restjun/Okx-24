@@ -3151,11 +3151,7 @@ def rows_html(
             <tr class="{cls}">
 
                 <td class="rank-cell">
-
-                    <span class="rank-circle">
-                        {x.get("rank", "-")}
-                    </span>
-
+                    {x.get("rank", "-")}.
                 </td>
 
                 <td class="coin-cell">
@@ -4141,44 +4137,22 @@ width:13%;
 
 /* =====================================================
    순위
+   ★ 원형 제거
+   ★ 1. / 2. / 3. 형태로 표시
    ===================================================== */
 
 .rank-cell{
-color:#8a939d;
-
-font-size:7px;
-font-weight:800;
-
-text-align:center!important;
-
-padding:2px!important;
-}
-
-.rank-circle{
-display:inline-flex;
-
-align-items:center;
-justify-content:center;
-
-width:18px;
-height:18px;
-
-border:1px solid #46505a;
-
-border-radius:50%;
-
 color:#cbd2d8;
 
-font-size:7px;
+font-size:8px;
 font-weight:900;
 
-line-height:1;
+text-align:left!important;
 
-text-align:center;
+padding-left:5px!important;
+padding-right:1px!important;
 
-vertical-align:middle;
-
-background:#11161b;
+white-space:nowrap;
 }
 
 
@@ -4771,21 +4745,19 @@ width:13%;
 
 /* =====================================================
    모바일 순위
+   ★ 원형 제거
    ===================================================== */
 
 .rank-cell{
-padding:2px 1px!important;
+padding-left:3px!important;
+padding-right:1px!important;
 
-text-align:center!important;
-}
+text-align:left!important;
 
-.rank-circle{
-width:15px;
-height:15px;
+font-size:6.8px;
+font-weight:900;
 
-font-size:5.8px;
-
-line-height:1;
+white-space:nowrap;
 }
 
 
