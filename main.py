@@ -2771,7 +2771,9 @@ def format_market_price(
 
 # =========================================================
 # 개별 시그널 표시
-# ★ 수정: 신호 칸에는 그림만 표시
+# ★ 수정된 부분
+# ★ 최종 조건(qualified)을 만족할 때만 🚀
+# ★ 조건 미충족은 무조건 -
 # ★ 숫자/COUNT는 표시하지 않음
 # =========================================================
 
@@ -2782,43 +2784,18 @@ def signal_item_html(
     qualified
 ):
 
-    if not active:
+    if not qualified:
         return "-"
 
-    try:
-        count = int(count)
-    except Exception:
-        return "-"
+    return f"""
+    <span class="signal-item signal-{signal_number}">
 
-    if qualified:
-
-        return f"""
-        <span class="signal-item signal-{signal_number}">
-
-            <span class="signal-rocket">
-                🚀
-            </span>
-
+        <span class="signal-rocket">
+            🚀
         </span>
-        """
 
-    if count_display_allowed(count):
-
-        return f"""
-        <span class="
-            signal-item
-            signal-{signal_number}
-            signal-normal
-        ">
-
-            <span class="signal-rocket">
-                🚀
-            </span>
-
-        </span>
-        """
-
-    return "-"
+    </span>
+    """
 
 
 # =========================================================
