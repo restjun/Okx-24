@@ -3048,6 +3048,7 @@ def filter_html(
 
 # =========================================================
 # ROW HTML
+# ★ 각 순위 + ROC 상세를 하나의 그룹으로 구성
 # =========================================================
 
 def rows_html(
@@ -3148,10 +3149,12 @@ def rows_html(
 
         out.append(
             f"""
-            <tr class="{cls}">
+            <tr class="rank-main-row {cls}">
 
                 <td class="rank-cell">
+
                     {x.get("rank", "-")}.
+
                 </td>
 
                 <td class="coin-cell">
@@ -3200,6 +3203,7 @@ def rows_html(
 
             <tr class="
                 roc-subrow
+                rank-roc-row
                 {cls}
             ">
 
@@ -3797,7 +3801,6 @@ font-weight:900;
 
 /* =====================================================
    공통 제목
-   시그널 1 / 2 / TOP 동일
    ===================================================== */
 
 .market-title,
@@ -4030,7 +4033,6 @@ line-height:10px;
 /* =====================================================
    TABLE
    ★ 열 사이 세로 구분선 없음
-   ★ 가로선만 사용
    ===================================================== */
 
 .table-wrap{
@@ -4038,11 +4040,9 @@ width:100%;
 
 overflow:hidden;
 
-border:1px solid #2a3037;
+border:none;
 
-border-radius:7px;
-
-background:#15191e;
+background:transparent;
 }
 
 table{
@@ -4050,7 +4050,8 @@ width:100%;
 
 table-layout:fixed;
 
-border-collapse:collapse;
+border-collapse:separate;
+border-spacing:0 7px;
 }
 
 thead{
@@ -4082,8 +4083,6 @@ height:32px;
 padding:2px;
 
 color:#d8dde2;
-
-border-bottom:1px solid #22282e;
 
 border-left:none!important;
 border-right:none!important;
@@ -4136,9 +4135,35 @@ width:13%;
 
 
 /* =====================================================
+   ★ 순위별 하나의 박스
+   ★ 메인 행 + ROC 상세를 하나의 영역으로 묶음
+   ===================================================== */
+
+.rank-main-row td{
+background:#15191e;
+
+border-top:1px solid #303740!important;
+border-bottom:none!important;
+
+}
+
+.rank-main-row td:first-child{
+border-left:1px solid #303740!important;
+
+border-top-left-radius:7px;
+}
+
+.rank-main-row td:last-child{
+border-right:1px solid #303740!important;
+
+border-top-right-radius:7px;
+}
+
+
+/* =====================================================
    순위
    ★ 원형 제거
-   ★ 1. / 2. / 3. 형태로 표시
+   ★ 1. / 2. / 3.
    ===================================================== */
 
 .rank-cell{
@@ -4258,7 +4283,6 @@ font-weight:900;
 
 /* =====================================================
    시그널
-   ★ 세로선 없음
    ===================================================== */
 
 .signal-cell{
@@ -4277,17 +4301,8 @@ border-right:none!important;
 
 /* 시그널 칸은 색상으로만 구분 */
 
-thead th:nth-child(6),
-thead th:nth-child(7){
-
-background:#11161b;
-
-border-left:none!important;
-border-right:none!important;
-}
-
-tbody td:nth-child(6),
-tbody td:nth-child(7){
+.rank-main-row td:nth-child(6),
+.rank-main-row td:nth-child(7){
 
 background:#11161b;
 
@@ -4385,28 +4400,38 @@ opacity:.9;
 
 /* =====================================================
    ROC 상세
-   ★ 세로 열 구분선 완전 제거
-   ★ 가로 구분선만 유지
+   ★ 같은 순위 박스의 아래쪽 영역
    ===================================================== */
 
 .roc-subrow{
 background:#0f1318!important;
 }
 
-.roc-subrow td{
+.rank-roc-row td{
 
 height:auto!important;
 
 padding:0!important;
 
-border-top:1px solid #252b32!important;
+background:#0f1318!important;
 
-border-bottom:1px solid #22282e!important;
+border-top:1px solid #252b32!important;
+border-bottom:1px solid #303740!important;
 
 border-left:none!important;
 border-right:none!important;
+}
 
-background:#0f1318!important;
+.rank-roc-row td:first-child{
+border-left:1px solid #303740!important;
+
+border-bottom-left-radius:7px;
+}
+
+.rank-roc-row td:last-child{
+border-right:1px solid #303740!important;
+
+border-bottom-right-radius:7px;
 }
 
 
@@ -4744,8 +4769,30 @@ width:13%;
 
 
 /* =====================================================
+   모바일 순위별 박스
+   ===================================================== */
+
+.rank-main-row td{
+
+border-top:1px solid #303740!important;
+
+}
+
+.rank-main-row td:first-child{
+border-left:1px solid #303740!important;
+
+border-top-left-radius:6px;
+}
+
+.rank-main-row td:last-child{
+border-right:1px solid #303740!important;
+
+border-top-right-radius:6px;
+}
+
+
+/* =====================================================
    모바일 순위
-   ★ 원형 제거
    ===================================================== */
 
 .rank-cell{
@@ -4832,19 +4879,30 @@ text-align:center!important;
 
 /* =====================================================
    모바일 ROC
-   ★ 세로선 없음
    ===================================================== */
 
-.roc-subrow td{
+.rank-roc-row td{
 
 border-top:1px solid #252b32!important;
 
-border-bottom:1px solid #22282e!important;
+border-bottom:1px solid #303740!important;
 
 border-left:none!important;
 border-right:none!important;
 
 background:#0f1318!important;
+}
+
+.rank-roc-row td:first-child{
+border-left:1px solid #303740!important;
+
+border-bottom-left-radius:6px;
+}
+
+.rank-roc-row td:last-child{
+border-right:1px solid #303740!important;
+
+border-bottom-right-radius:6px;
 }
 
 
@@ -5226,6 +5284,10 @@ def startup():
 
     log.info(
         "★ COUNT 숫자는 아래 ROC 상세에서 표시"
+    )
+
+    log.info(
+        "★ 각 순위별 메인 행 + ROC 상세를 하나의 박스로 표시"
     )
 
     log.info(
