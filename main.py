@@ -3152,7 +3152,11 @@ def rows_html(
             <tr class="{cls}">
 
                 <td class="rank-cell">
-                    {x.get("rank", "-")}
+
+                    <span class="rank-circle">
+                        {x.get("rank", "-")}
+                    </span>
+
                 </td>
 
                 <td class="coin-cell">
@@ -4097,6 +4101,10 @@ width:13%;
 }
 
 
+/* =====================================================
+   순위 원형 표시
+   ===================================================== */
+
 .rank-cell{
 color:#8a939d;
 
@@ -4104,6 +4112,35 @@ font-size:7px;
 font-weight:800;
 
 text-align:center!important;
+
+padding:2px!important;
+}
+
+.rank-circle{
+display:inline-flex;
+
+align-items:center;
+justify-content:center;
+
+width:18px;
+height:18px;
+
+border:1px solid #46505a;
+
+border-radius:50%;
+
+color:#cbd2d8;
+
+font-size:7px;
+font-weight:900;
+
+line-height:1;
+
+text-align:center;
+
+vertical-align:middle;
+
+background:#11161b;
 }
 
 .coin-cell{
@@ -4189,7 +4226,6 @@ font-weight:900;
 
 /* =====================================================
    시그널 칸
-   ★ 숫자/COUNT 없이 그림만 표시
    ===================================================== */
 
 .signal-cell{
@@ -4284,6 +4320,12 @@ color:#9eb5c9;
 opacity:.9;
 }
 
+
+/* =====================================================
+   ROC 상세 영역
+   ★ 메인 테이블 컬럼 경계를 아래까지 연결
+   ===================================================== */
+
 .roc-subrow{
 background:#0f1318!important;
 }
@@ -4294,6 +4336,57 @@ height:auto!important;
 padding:0!important;
 
 border-bottom:1px solid #22282e;
+
+/*
+   메인 테이블 컬럼 폭과 동일한 경계
+
+   1번  #          = 5%
+   2번  코인       = 18% → 누적 23%
+   3번  거래대금   = 15% → 누적 38%
+   4번  가격       = 22% → 누적 60%
+   5번  변동률     = 14% → 누적 74%
+   6번  시그널 1   = 13% → 누적 87%
+   7번  시그널 2   = 13% → 100%
+*/
+
+background:
+    linear-gradient(
+        to right,
+
+        transparent 0%,
+        transparent calc(5% - 1px),
+        #3b444d calc(5% - 1px),
+        #3b444d calc(5% + 1px),
+        transparent calc(5% + 1px),
+
+        transparent calc(23% - 1px),
+        #3b444d calc(23% - 1px),
+        #3b444d calc(23% + 1px),
+        transparent calc(23% + 1px),
+
+        transparent calc(38% - 1px),
+        #3b444d calc(38% - 1px),
+        #3b444d calc(38% + 1px),
+        transparent calc(38% + 1px),
+
+        transparent calc(60% - 1px),
+        #3b444d calc(60% - 1px),
+        #3b444d calc(60% + 1px),
+        transparent calc(60% + 1px),
+
+        transparent calc(74% - 1px),
+        #3b444d calc(74% - 1px),
+        #3b444d calc(74% + 1px),
+        transparent calc(74% + 1px),
+
+        transparent calc(87% - 1px),
+        #3b444d calc(87% - 1px),
+        #3b444d calc(87% + 1px),
+        transparent calc(87% + 1px),
+
+        transparent 100%
+    ),
+    #0f1318!important;
 }
 
 .filter-detail{
@@ -4609,6 +4702,25 @@ width:13%;
 }
 
 
+/* =====================================================
+   모바일 순위 원형
+   ===================================================== */
+
+.rank-cell{
+padding:2px 1px!important;
+
+text-align:center!important;
+}
+
+.rank-circle{
+width:15px;
+height:15px;
+
+font-size:5.8px;
+
+line-height:1;
+}
+
 .coin-cell{
 padding-left:2px!important;
 padding-right:2px!important;
@@ -4660,8 +4772,54 @@ text-align:center!important;
 
 
 /* =====================================================
+   모바일 ROC 경계
+   ===================================================== */
+
+.roc-subrow td{
+
+background:
+    linear-gradient(
+        to right,
+
+        transparent 0%,
+        transparent calc(5% - 1px),
+        #3b444d calc(5% - 1px),
+        #3b444d calc(5% + 1px),
+        transparent calc(5% + 1px),
+
+        transparent calc(23% - 1px),
+        #3b444d calc(23% - 1px),
+        #3b444d calc(23% + 1px),
+        transparent calc(23% + 1px),
+
+        transparent calc(38% - 1px),
+        #3b444d calc(38% - 1px),
+        #3b444d calc(38% + 1px),
+        transparent calc(38% + 1px),
+
+        transparent calc(60% - 1px),
+        #3b444d calc(60% - 1px),
+        #3b444d calc(60% + 1px),
+        transparent calc(60% + 1px),
+
+        transparent calc(74% - 1px),
+        #3b444d calc(74% - 1px),
+        #3b444d calc(74% + 1px),
+        transparent calc(74% + 1px),
+
+        transparent calc(87% - 1px),
+        #3b444d calc(87% - 1px),
+        #3b444d calc(87% + 1px),
+        transparent calc(87% + 1px),
+
+        transparent 100%
+    ),
+    #0f1318!important;
+}
+
+
+/* =====================================================
    모바일 시그널
-   ★ 그림만 표시
    ===================================================== */
 
 .signal-cell{
