@@ -77,8 +77,8 @@ ROC_FILTER_PERIODS = [
 # ROC 필터 COUNT 범위
 # =========================================================
 
-ROC_FILTER_COUNT_MIN = 10
-ROC_FILTER_COUNT_MAX = 30
+ROC_FILTER_COUNT_MIN = 1
+ROC_FILTER_COUNT_MAX = 200
 
 
 # =========================================================
@@ -127,7 +127,7 @@ USE_1H_ROC50 = "Y"
 USE_1H_ROC200 = "Y"
 
 USE_4H_ROC5 = "N"
-USE_4H_ROC20 = "Y"
+USE_4H_ROC20 = "N"
 USE_4H_ROC50 = "Y"
 USE_4H_ROC200 = "Y"
 
@@ -141,7 +141,7 @@ USE_1D_ROC200 = "Y"
 # 신호 ROC
 # =========================================================
 
-SIGNAL_ROC_PERIOD = 5
+SIGNAL_ROC_PERIOD = 50
 
 
 # =========================================================
