@@ -113,23 +113,19 @@ FLASH_COUNT_MAX = 3
 
 # =========================================================
 # 시그널 1 ROC 기간별 사용 설정
-#
-# 4시간봉만 사용
 # =========================================================
 
 USE_SIGNAL1_ROC5 = "Y"
 USE_SIGNAL1_ROC20 = "Y"
-USE_SIGNAL1_ROC50 = "N"
+USE_SIGNAL1_ROC50 = "Y"
 USE_SIGNAL1_ROC200 = "Y"
 
 
 # =========================================================
 # 시그널 2 ROC 기간별 사용 설정
-#
-# 4시간봉만 사용
 # =========================================================
 
-USE_SIGNAL2_ROC5 = "N"
+USE_SIGNAL2_ROC5 = "Y"
 USE_SIGNAL2_ROC20 = "Y"
 USE_SIGNAL2_ROC50 = "Y"
 USE_SIGNAL2_ROC200 = "Y"
@@ -2898,7 +2894,10 @@ def format_market_price(
 
 
 # =========================================================
-# 시그널 표시 HTML
+# 개별 시그널 표시 HTML
+#
+# 한글 시그널 문구 제거
+# 1 / 2 각각 별도 표시
 # =========================================================
 
 def signal_item_html(
@@ -2925,8 +2924,8 @@ def signal_item_html(
                 🚀
             </span>
 
-            <span class="signal-label">
-                시그널 {signal_number}
+            <span class="signal-number">
+                {signal_number}
             </span>
 
             <span class="signal-count">
@@ -2945,8 +2944,8 @@ def signal_item_html(
             signal-normal
         ">
 
-            <span class="signal-label">
-                시그널 {signal_number}
+            <span class="signal-number">
+                {signal_number}
             </span>
 
             <span class="signal-count">
@@ -2958,6 +2957,12 @@ def signal_item_html(
 
     return "-"
 
+
+# =========================================================
+# BTC / 시장용 시그널
+#
+# 1 / 2 각각 독립 표시
+# =========================================================
 
 def signal_html(
     row
@@ -3015,16 +3020,18 @@ def signal_html(
 
 # =========================================================
 # TOP COUNT
+#
+# 1 / 2를 각각 별도 반환
 # =========================================================
 
-def top_signal_count_html(
+def top_signal1_html(
     row
 ):
 
     if not row:
         return "-"
 
-    signal1 = signal_item_html(
+    return signal_item_html(
         1,
         row.get(
             "signal1_active",
@@ -3040,7 +3047,15 @@ def top_signal_count_html(
         )
     )
 
-    signal2 = signal_item_html(
+
+def top_signal2_html(
+    row
+):
+
+    if not row:
+        return "-"
+
+    return signal_item_html(
         2,
         row.get(
             "signal2_active",
@@ -3055,20 +3070,6 @@ def top_signal_count_html(
             False
         )
     )
-
-    return f"""
-    <div class="top-count-wrap">
-
-        <div>
-            {signal1}
-        </div>
-
-        <div>
-            {signal2}
-        </div>
-
-    </div>
-    """
 
 
 # =========================================================
@@ -3289,7 +3290,15 @@ def rows_html(
             )
         )
 
-        signal_content = top_signal_count_html(
+        # =================================================
+        # 시그널 1 / 2 각각 별도
+        # =================================================
+
+        signal1_content = top_signal1_html(
+            x
+        )
+
+        signal2_content = top_signal2_html(
             x
         )
 
@@ -3354,7 +3363,13 @@ def rows_html(
 
                 <td class="signal-cell">
 
-                    {signal_content}
+                    {signal1_content}
+
+                </td>
+
+                <td class="signal-cell">
+
+                    {signal2_content}
 
                 </td>
 
@@ -3365,7 +3380,7 @@ def rows_html(
                 {cls}
             ">
 
-                <td colspan="6">
+                <td colspan="7">
 
                     {roc_content}
 
@@ -3398,7 +3413,7 @@ def table_html(
         <tr>
 
             <td
-                colspan="6"
+                colspan="7"
                 class="empty"
             >
                 현재 후보 없음
@@ -3435,7 +3450,11 @@ def table_html(
                     </th>
 
                     <th>
-                        시그널
+                        1
+                    </th>
+
+                    <th>
+                        2
                     </th>
 
                 </tr>
@@ -3530,7 +3549,7 @@ def focus_section(
     <div class="section-title long-title">
 
         <span class="section-title-main">
-            🚀 시그널 1
+            1
         </span>
 
         <span class="section-title-sub">
@@ -3575,7 +3594,7 @@ def focus_section(
     <div class="section-title long-title">
 
         <span class="section-title-main">
-            🚀 시그널 2
+            2
         </span>
 
         <span class="section-title-sub">
@@ -3641,7 +3660,7 @@ def section(
 
             ·
 
-            시그널 1
+            1
             ROC{SIGNAL1_ROC_PERIOD}
             4H
             COUNT
@@ -3650,7 +3669,7 @@ def section(
 
             ·
 
-            시그널 2
+            2
             ROC{SIGNAL2_ROC_PERIOD}
             4H
             COUNT
@@ -3859,7 +3878,7 @@ def market_summary_html():
 
             <span class="market-title-sub">
 
-                시그널 1
+                1
                 ROC{SIGNAL1_ROC_PERIOD}
                 COUNT
                 {SIGNAL1_COUNT_MIN}~
@@ -3867,7 +3886,7 @@ def market_summary_html():
 
                 ·
 
-                시그널 2
+                2
                 ROC{SIGNAL2_ROC_PERIOD}
                 COUNT
                 {SIGNAL2_COUNT_MIN}~
@@ -4220,32 +4239,37 @@ overflow:hidden;
 
 th:nth-child(1),
 td:nth-child(1){
-width:7%;
+width:6%;
 }
 
 th:nth-child(2),
 td:nth-child(2){
-width:20%;
+width:19%;
 }
 
 th:nth-child(3),
 td:nth-child(3){
-width:18%;
+width:17%;
 }
 
 th:nth-child(4),
 td:nth-child(4){
-width:25%;
+width:24%;
 }
 
 th:nth-child(5),
 td:nth-child(5){
-width:15%;
+width:14%;
 }
 
 th:nth-child(6),
 td:nth-child(6){
-width:15%;
+width:10%;
+}
+
+th:nth-child(7),
+td:nth-child(7){
+width:10%;
 }
 
 .rank-cell{
@@ -4391,7 +4415,7 @@ color:#aeb6be;
 font-size:10px;
 }
 
-.signal-label{
+.signal-number{
 font-size:7px;
 font-weight:900;
 }
@@ -4419,31 +4443,6 @@ color:#9eb5c9;
 
 .signal-normal{
 opacity:.9;
-}
-
-.top-count-wrap{
-display:flex;
-
-flex-direction:column;
-
-align-items:center;
-justify-content:center;
-
-gap:2px;
-
-white-space:nowrap;
-}
-
-.top-count-wrap .signal-item{
-padding:1px 3px;
-}
-
-.top-count-wrap .signal-label{
-font-size:6px;
-}
-
-.top-count-wrap .signal-count{
-font-size:6.5px;
 }
 
 .roc-subrow{
@@ -4734,32 +4733,37 @@ height:29px;
 
 th:nth-child(1),
 td:nth-child(1){
-width:7%;
+width:6%;
 }
 
 th:nth-child(2),
 td:nth-child(2){
-width:20%;
+width:19%;
 }
 
 th:nth-child(3),
 td:nth-child(3){
-width:18%;
+width:17%;
 }
 
 th:nth-child(4),
 td:nth-child(4){
-width:25%;
+width:24%;
 }
 
 th:nth-child(5),
 td:nth-child(5){
-width:15%;
+width:14%;
 }
 
 th:nth-child(6),
 td:nth-child(6){
-width:15%;
+width:10%;
+}
+
+th:nth-child(7),
+td:nth-child(7){
+width:10%;
 }
 
 .coin-cell{
@@ -4818,20 +4822,6 @@ padding-right:1px!important;
 text-align:center!important;
 }
 
-.top-count-wrap{
-gap:1px;
-
-justify-content:center;
-}
-
-.top-count-wrap .signal-label{
-font-size:5px;
-}
-
-.top-count-wrap .signal-count{
-font-size:5.5px;
-}
-
 .signal-item{
 padding:1px 3px;
 
@@ -4840,7 +4830,7 @@ border-radius:3px;
 gap:1px;
 }
 
-.signal-label{
+.signal-number{
 font-size:5.5px;
 }
 
@@ -4977,7 +4967,7 @@ def dashboard():
         >
 
         <title>
-            시그널 1 / 시그널 2
+            1 / 2
         </title>
 
         <style>
@@ -5049,7 +5039,7 @@ def startup():
     )
 
     log.info(
-        f"★ 시그널 1 = "
+        f"★ 1 = "
         f"ROC{SIGNAL1_ROC_PERIOD} / "
         f"COUNT "
         f"{SIGNAL1_COUNT_MIN}~"
@@ -5057,7 +5047,7 @@ def startup():
     )
 
     log.info(
-        f"★ 시그널 2 = "
+        f"★ 2 = "
         f"ROC{SIGNAL2_ROC_PERIOD} / "
         f"COUNT "
         f"{SIGNAL2_COUNT_MIN}~"
@@ -5069,15 +5059,15 @@ def startup():
     )
 
     log.info(
-        "★ 시그널 1 / 시그널 2 각각 독립 계산"
+        "★ 1 / 2 각각 독립 계산"
     )
 
     log.info(
-        "★ 시그널 1 = ROC50 0선 상향 돌파"
+        "★ 1 = ROC50 0선 상향 돌파"
     )
 
     log.info(
-        "★ 시그널 2 = ROC5 0선 상향 돌파"
+        "★ 2 = ROC5 0선 상향 돌파"
     )
 
     log.info(
@@ -5164,7 +5154,7 @@ def startup():
 
     log.info(
         "★ TOP 테이블 = "
-        "순위 / 코인 / 거래대금 / 가격 / 변동률 / 시그널"
+        "순위 / 코인 / 거래대금 / 가격 / 변동률 / 1 / 2"
     )
 
     log.info(
