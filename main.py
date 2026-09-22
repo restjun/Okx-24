@@ -112,15 +112,27 @@ FLASH_COUNT_MAX = 3
 
 
 # =========================================================
-# ROC 기간별 화면 사용 설정
+# 시그널 1 ROC 기간별 사용 설정
 #
 # 4시간봉만 사용
 # =========================================================
 
-USE_4H_ROC5 = "Y"
-USE_4H_ROC20 = "Y"
-USE_4H_ROC50 = "Y"
-USE_4H_ROC200 = "Y"
+USE_SIGNAL1_ROC5 = "Y"
+USE_SIGNAL1_ROC20 = "Y"
+USE_SIGNAL1_ROC50 = "Y"
+USE_SIGNAL1_ROC200 = "Y"
+
+
+# =========================================================
+# 시그널 2 ROC 기간별 사용 설정
+#
+# 4시간봉만 사용
+# =========================================================
+
+USE_SIGNAL2_ROC5 = "Y"
+USE_SIGNAL2_ROC20 = "Y"
+USE_SIGNAL2_ROC50 = "Y"
+USE_SIGNAL2_ROC200 = "Y"
 
 
 # =========================================================
@@ -263,19 +275,27 @@ def roc_settings():
     return {
 
         5: {
-            "4H": USE_4H_ROC5
+            "4H": "Y",
+            "SIGNAL1": USE_SIGNAL1_ROC5,
+            "SIGNAL2": USE_SIGNAL2_ROC5
         },
 
         20: {
-            "4H": USE_4H_ROC20
+            "4H": "Y",
+            "SIGNAL1": USE_SIGNAL1_ROC20,
+            "SIGNAL2": USE_SIGNAL2_ROC20
         },
 
         50: {
-            "4H": USE_4H_ROC50
+            "4H": "Y",
+            "SIGNAL1": USE_SIGNAL1_ROC50,
+            "SIGNAL2": USE_SIGNAL2_ROC50
         },
 
         200: {
-            "4H": USE_4H_ROC200
+            "4H": "Y",
+            "SIGNAL1": USE_SIGNAL1_ROC200,
+            "SIGNAL2": USE_SIGNAL2_ROC200
         }
 
     }
@@ -291,7 +311,7 @@ def get_enabled_periods(timeframe):
     return [
         p
         for p in ROC_FILTER_PERIODS
-        if settings[p][timeframe] == "Y"
+        if settings[p]["4H"] == "Y"
     ]
 
 
