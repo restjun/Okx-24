@@ -2771,7 +2771,6 @@ def format_market_price(
 
 # =========================================================
 # 개별 시그널 표시
-# ★ 수정된 부분
 # ★ 최종 조건(qualified)을 만족할 때만 🚀
 # ★ 조건 미충족은 무조건 -
 # ★ 숫자/COUNT는 표시하지 않음
@@ -3476,7 +3475,7 @@ def section(
 ):
 
     return f"""
-    <div class="section-title">
+    <div class="section-title top-title">
 
         <span class="section-title-main">
             🏆 업비트 TOP{TOP_N}
@@ -3799,6 +3798,12 @@ line-height:18px;
 font-weight:900;
 }
 
+
+/* =====================================================
+   공통 제목
+   시그널 1 / 2 / TOP 동일
+   ===================================================== */
+
 .market-title,
 .section-title{
 display:flex;
@@ -3848,6 +3853,21 @@ font-weight:700;
 overflow:hidden;
 text-overflow:ellipsis;
 }
+
+
+/* =====================================================
+   TOP 제목
+   ===================================================== */
+
+.top-title{
+margin-top:9px;
+margin-bottom:6px;
+}
+
+
+/* =====================================================
+   시장 요약
+   ===================================================== */
 
 .market-summary{
 width:100%;
@@ -3902,6 +3922,11 @@ white-space:nowrap;
 .btc-top > span:last-child{
 margin-left:2px;
 }
+
+
+/* =====================================================
+   BTC ROC
+   ===================================================== */
 
 .btc-roc-section{
 width:100%;
@@ -4005,6 +4030,13 @@ font-weight:900;
 line-height:10px;
 }
 
+
+/* =====================================================
+   TABLE
+   ★ 열 사이 세로 구분선 없음
+   ★ 가로선만 사용
+   ===================================================== */
+
 .table-wrap{
 width:100%;
 
@@ -4038,6 +4070,9 @@ color:#818a94;
 
 border-bottom:1px solid #292f36;
 
+border-left:none!important;
+border-right:none!important;
+
 font-size:7px;
 font-weight:800;
 
@@ -4054,6 +4089,9 @@ color:#d8dde2;
 
 border-bottom:1px solid #22282e;
 
+border-left:none!important;
+border-right:none!important;
+
 text-align:center;
 vertical-align:middle;
 
@@ -4062,7 +4100,7 @@ overflow:hidden;
 
 
 /* =====================================================
-   PC 테이블 폭
+   테이블 폭
    ===================================================== */
 
 th:nth-child(1),
@@ -4102,7 +4140,7 @@ width:13%;
 
 
 /* =====================================================
-   순위 원형 표시
+   순위
    ===================================================== */
 
 .rank-cell{
@@ -4143,6 +4181,11 @@ vertical-align:middle;
 background:#11161b;
 }
 
+
+/* =====================================================
+   코인
+   ===================================================== */
+
 .coin-cell{
 text-align:center!important;
 
@@ -4166,6 +4209,11 @@ text-overflow:ellipsis;
 
 text-align:center;
 }
+
+
+/* =====================================================
+   거래대금
+   ===================================================== */
 
 .volume-cell{
 text-align:center!important;
@@ -4191,6 +4239,11 @@ text-overflow:ellipsis;
 text-align:center;
 }
 
+
+/* =====================================================
+   가격
+   ===================================================== */
+
 .price-cell{
 text-align:center!important;
 
@@ -4214,6 +4267,11 @@ text-overflow:ellipsis;
 text-align:center;
 }
 
+
+/* =====================================================
+   변동률
+   ===================================================== */
+
 .change-cell{
 text-align:center!important;
 
@@ -4225,7 +4283,8 @@ font-weight:900;
 
 
 /* =====================================================
-   시그널 칸
+   시그널
+   ★ 세로선 없음
    ===================================================== */
 
 .signal-cell{
@@ -4236,7 +4295,36 @@ padding-right:2px!important;
 
 white-space:nowrap;
 overflow:hidden;
+
+border-left:none!important;
+border-right:none!important;
 }
+
+
+/* 시그널 칸은 색상으로만 구분 */
+
+thead th:nth-child(6),
+thead th:nth-child(7){
+
+background:#11161b;
+
+border-left:none!important;
+border-right:none!important;
+}
+
+tbody td:nth-child(6),
+tbody td:nth-child(7){
+
+background:#11161b;
+
+border-left:none!important;
+border-right:none!important;
+}
+
+
+/* =====================================================
+   시그널
+   ===================================================== */
 
 .signal-wrap{
 display:flex;
@@ -4322,8 +4410,9 @@ opacity:.9;
 
 
 /* =====================================================
-   ROC 상세 영역
-   ★ 메인 테이블 컬럼 경계를 아래까지 연결
+   ROC 상세
+   ★ 세로 열 구분선 완전 제거
+   ★ 가로 구분선만 유지
    ===================================================== */
 
 .roc-subrow{
@@ -4331,63 +4420,25 @@ background:#0f1318!important;
 }
 
 .roc-subrow td{
+
 height:auto!important;
 
 padding:0!important;
 
-border-bottom:1px solid #22282e;
+border-top:1px solid #252b32!important;
 
-/*
-   메인 테이블 컬럼 폭과 동일한 경계
+border-bottom:1px solid #22282e!important;
 
-   1번  #          = 5%
-   2번  코인       = 18% → 누적 23%
-   3번  거래대금   = 15% → 누적 38%
-   4번  가격       = 22% → 누적 60%
-   5번  변동률     = 14% → 누적 74%
-   6번  시그널 1   = 13% → 누적 87%
-   7번  시그널 2   = 13% → 100%
-*/
+border-left:none!important;
+border-right:none!important;
 
-background:
-    linear-gradient(
-        to right,
-
-        transparent 0%,
-        transparent calc(5% - 1px),
-        #3b444d calc(5% - 1px),
-        #3b444d calc(5% + 1px),
-        transparent calc(5% + 1px),
-
-        transparent calc(23% - 1px),
-        #3b444d calc(23% - 1px),
-        #3b444d calc(23% + 1px),
-        transparent calc(23% + 1px),
-
-        transparent calc(38% - 1px),
-        #3b444d calc(38% - 1px),
-        #3b444d calc(38% + 1px),
-        transparent calc(38% + 1px),
-
-        transparent calc(60% - 1px),
-        #3b444d calc(60% - 1px),
-        #3b444d calc(60% + 1px),
-        transparent calc(60% + 1px),
-
-        transparent calc(74% - 1px),
-        #3b444d calc(74% - 1px),
-        #3b444d calc(74% + 1px),
-        transparent calc(74% + 1px),
-
-        transparent calc(87% - 1px),
-        #3b444d calc(87% - 1px),
-        #3b444d calc(87% + 1px),
-        transparent calc(87% + 1px),
-
-        transparent 100%
-    ),
-    #0f1318!important;
+background:#0f1318!important;
 }
+
+
+/* =====================================================
+   ROC 상세 내용
+   ===================================================== */
 
 .filter-detail{
 display:flex;
@@ -4425,7 +4476,7 @@ min-height:36px;
 
 
 /* =====================================================
-   시그널 반짝임
+   반짝임
    ===================================================== */
 
 @keyframes signalFlashOne{
@@ -4516,6 +4567,11 @@ ease-in-out
 infinite;
 }
 
+
+/* =====================================================
+   변동률 색상
+   ===================================================== */
+
 .up{
 color:#72bd98!important;
 font-weight:900;
@@ -4546,7 +4602,7 @@ text-align:center!important;
 
 
 /* =====================================================
-   모바일
+   MOBILE
    ===================================================== */
 
 @media(max-width:380px){
@@ -4649,16 +4705,27 @@ font-size:5.5px;
 line-height:8px;
 }
 
+
+/* =====================================================
+   모바일 테이블
+   ===================================================== */
+
 th{
 height:19px;
 
 padding:2px 1px;
 
 font-size:5.5px;
+
+border-left:none!important;
+border-right:none!important;
 }
 
 td{
 height:29px;
+
+border-left:none!important;
+border-right:none!important;
 }
 
 
@@ -4703,7 +4770,7 @@ width:13%;
 
 
 /* =====================================================
-   모바일 순위 원형
+   모바일 순위
    ===================================================== */
 
 .rank-cell{
@@ -4721,6 +4788,11 @@ font-size:5.8px;
 line-height:1;
 }
 
+
+/* =====================================================
+   모바일 코인
+   ===================================================== */
+
 .coin-cell{
 padding-left:2px!important;
 padding-right:2px!important;
@@ -4733,6 +4805,11 @@ font-size:6.8px;
 
 text-align:center;
 }
+
+
+/* =====================================================
+   모바일 거래대금
+   ===================================================== */
 
 .volume-cell{
 padding-left:1px!important;
@@ -4751,6 +4828,11 @@ font-weight:800;
 text-align:center;
 }
 
+
+/* =====================================================
+   모바일 가격
+   ===================================================== */
+
 .price-cell{
 padding-left:1px!important;
 padding-right:1px!important;
@@ -4764,6 +4846,11 @@ font-size:5.7px;
 text-align:center;
 }
 
+
+/* =====================================================
+   모바일 변동률
+   ===================================================== */
+
 .change-cell{
 font-size:5.6px;
 
@@ -4772,49 +4859,20 @@ text-align:center!important;
 
 
 /* =====================================================
-   모바일 ROC 경계
+   모바일 ROC
+   ★ 세로선 없음
    ===================================================== */
 
 .roc-subrow td{
 
-background:
-    linear-gradient(
-        to right,
+border-top:1px solid #252b32!important;
 
-        transparent 0%,
-        transparent calc(5% - 1px),
-        #3b444d calc(5% - 1px),
-        #3b444d calc(5% + 1px),
-        transparent calc(5% + 1px),
+border-bottom:1px solid #22282e!important;
 
-        transparent calc(23% - 1px),
-        #3b444d calc(23% - 1px),
-        #3b444d calc(23% + 1px),
-        transparent calc(23% + 1px),
+border-left:none!important;
+border-right:none!important;
 
-        transparent calc(38% - 1px),
-        #3b444d calc(38% - 1px),
-        #3b444d calc(38% + 1px),
-        transparent calc(38% + 1px),
-
-        transparent calc(60% - 1px),
-        #3b444d calc(60% - 1px),
-        #3b444d calc(60% + 1px),
-        transparent calc(60% + 1px),
-
-        transparent calc(74% - 1px),
-        #3b444d calc(74% - 1px),
-        #3b444d calc(74% + 1px),
-        transparent calc(74% + 1px),
-
-        transparent calc(87% - 1px),
-        #3b444d calc(87% - 1px),
-        #3b444d calc(87% + 1px),
-        transparent calc(87% + 1px),
-
-        transparent 100%
-    ),
-    #0f1318!important;
+background:#0f1318!important;
 }
 
 
@@ -4830,6 +4888,9 @@ text-align:center!important;
 
 white-space:nowrap;
 overflow:hidden;
+
+border-left:none!important;
+border-right:none!important;
 }
 
 .signal-item{
@@ -4861,6 +4922,11 @@ line-height:10px;
 
 flex:none;
 }
+
+
+/* =====================================================
+   모바일 ROC 상세
+   ===================================================== */
 
 .filter-detail{
 gap:2px;
@@ -4918,6 +4984,10 @@ min-height:31px;
 
 }
 
+
+/* =====================================================
+   REDUCED MOTION
+   ===================================================== */
 
 @media(prefers-reduced-motion:reduce){
 
