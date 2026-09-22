@@ -129,9 +129,7 @@ USE_SIGNAL2_ROC200 = "Y"
 ROC_COUNT_HISTORY_EXTRA = 100
 
 ROC_HISTORY_REQUIRED = (
-    max(
-        ROC_FILTER_PERIODS
-    )
+    max(ROC_FILTER_PERIODS)
     + max(
         SIGNAL1_COUNT_MAX,
         SIGNAL2_COUNT_MAX,
@@ -353,7 +351,6 @@ def get_current_candle_start(minutes):
         )
 
         if now < anchor:
-
             anchor = (
                 anchor
                 - timedelta(days=1)
@@ -514,21 +511,13 @@ def roc_positive_count(
     ):
 
         try:
-
-            value = float(
-                value
-            )
-
+            value = float(value)
         except Exception:
-
             break
 
         if value >= 0:
-
             count += 1
-
         else:
-
             break
 
     return count
@@ -581,21 +570,13 @@ def roc_negative_count(
     ):
 
         try:
-
-            value = float(
-                value
-            )
-
+            value = float(value)
         except Exception:
-
             break
 
         if value < 0:
-
             count += 1
-
         else:
-
             break
 
     return count
@@ -879,20 +860,16 @@ def get_upbit_markets():
                 continue
 
             try:
-
                 data = (
                     ticker_response.json()
                 )
-
             except Exception:
-
                 continue
 
             if isinstance(
                 data,
                 list
             ):
-
                 ticker_result.extend(
                     data
                 )
@@ -1141,15 +1118,11 @@ def history_upbit(
             df is None
             or df.empty
         ):
-
             break
 
         if all_df is None:
-
             all_df = df.copy()
-
         else:
-
             all_df = pd.concat(
                 [
                     df,
@@ -1229,7 +1202,6 @@ def get_upbit_current_roc_data(
         df is None
         or df.empty
     ):
-
         return None
 
     df = (
@@ -1372,7 +1344,6 @@ def roc(
         or df.empty
         or "c" not in df.columns
     ):
-
         return None
 
     try:
@@ -1444,7 +1415,6 @@ def roc_filter_analysis(
         df is None
         or df.empty
     ):
-
         return result
 
     values = {}
@@ -1467,7 +1437,6 @@ def roc_filter_analysis(
             series is None
             or series.empty
         ):
-
             continue
 
         current_value = series.iloc[-1]
@@ -1475,7 +1444,6 @@ def roc_filter_analysis(
         if pd.isna(
             current_value
         ):
-
             continue
 
         current_value = float(
@@ -1584,7 +1552,6 @@ def roc_signal_zero_cross(
         current is None
         or previous is None
     ):
-
         return False
 
     try:
@@ -1620,7 +1587,6 @@ def find_latest_signal_event(
         df_signal is None
         or df_signal.empty
     ):
-
         return None, None
 
     try:
@@ -1664,7 +1630,6 @@ def find_latest_signal_event(
             signal_roc_series is None
             or signal_roc_series.empty
         ):
-
             return None, None
 
         for i in range(
@@ -1685,7 +1650,6 @@ def find_latest_signal_event(
                 pd.isna(current_value)
                 or pd.isna(previous_value)
             ):
-
                 continue
 
             try:
@@ -2195,7 +2159,6 @@ def analyze(
         df_signal is None
         or df_signal.empty
     ):
-
         return None
 
     df_current = (
@@ -2210,7 +2173,6 @@ def analyze(
         df_current is None
         or df_current.empty
     ):
-
         return None
 
     r_signal_raw = roc_filter_analysis(
@@ -2752,7 +2714,6 @@ def update_dashboard():
     if not update_lock.acquire(
         False
     ):
-
         return
 
     try:
@@ -2809,7 +2770,9 @@ def format_market_price(
 
 
 # =========================================================
-# 개별 시그널 표시 HTML
+# 개별 시그널 표시
+# ★ 수정: 신호 칸에는 그림만 표시
+# ★ 숫자/COUNT는 표시하지 않음
 # =========================================================
 
 def signal_item_html(
@@ -2836,14 +2799,6 @@ def signal_item_html(
                 🚀
             </span>
 
-            <span class="signal-number">
-                {signal_number}
-            </span>
-
-            <span class="signal-count">
-                ({count})
-            </span>
-
         </span>
         """
 
@@ -2856,12 +2811,8 @@ def signal_item_html(
             signal-normal
         ">
 
-            <span class="signal-number">
-                {signal_number}
-            </span>
-
-            <span class="signal-count">
-                ({count})
+            <span class="signal-rocket">
+                🚀
             </span>
 
         </span>
@@ -2929,7 +2880,7 @@ def signal_html(
 
 
 # =========================================================
-# TOP COUNT
+# TOP 시그널
 # =========================================================
 
 def top_signal1_html(
@@ -3611,7 +3562,6 @@ def btc_roc_status_html(
         df_signal is None
         or df_signal.empty
     ):
-
         return ""
 
     periods = ROC_FILTER_PERIODS.copy()
@@ -4024,10 +3974,6 @@ border:1px solid #293039;
 border-radius:5px;
 
 text-align:center;
-
-transition:
-    background .2s ease,
-    border-color .2s ease;
 }
 
 .btc-roc-period{
@@ -4136,7 +4082,6 @@ overflow:hidden;
 
 /* =====================================================
    PC 테이블 폭
-   시그널 1 / 2 각각 13%
    ===================================================== */
 
 th:nth-child(1),
@@ -4267,6 +4212,7 @@ font-weight:900;
 
 /* =====================================================
    시그널 칸
+   ★ 숫자/COUNT 없이 그림만 표시
    ===================================================== */
 
 .signal-cell{
@@ -4311,11 +4257,12 @@ display:inline-flex;
 align-items:center;
 justify-content:center;
 
-gap:2px;
+width:28px;
+min-width:28px;
 
-min-width:48px;
+height:20px;
 
-padding:2px 4px;
+padding:2px;
 
 border-radius:4px;
 
@@ -4333,27 +4280,9 @@ color:#aeb6be;
 }
 
 .signal-rocket{
-font-size:9px;
+font-size:11px;
 
-line-height:10px;
-
-flex:none;
-}
-
-.signal-number{
-font-size:8px;
-font-weight:900;
-
-line-height:10px;
-
-flex:none;
-}
-
-.signal-count{
-font-size:8px;
-font-weight:900;
-
-line-height:10px;
+line-height:12px;
 
 flex:none;
 }
@@ -4422,18 +4351,6 @@ gap:3px;
 
 .filter-detail .btc-roc-item{
 min-height:36px;
-}
-
-.filter-detail .btc-roc-period{
-font-size:7px;
-}
-
-.filter-detail .btc-roc-icon{
-font-size:12px;
-}
-
-.filter-detail .btc-roc-count{
-font-size:7px;
 }
 
 
@@ -4767,6 +4684,7 @@ text-align:center!important;
 
 /* =====================================================
    모바일 시그널
+   ★ 그림만 표시
    ===================================================== */
 
 .signal-cell{
@@ -4785,39 +4703,26 @@ display:inline-flex;
 align-items:center;
 justify-content:center;
 
-min-width:38px;
+width:23px;
+min-width:23px;
 
-padding:1px 2px;
+height:18px;
+
+padding:1px;
 
 border-radius:3px;
 
-gap:1px;
+gap:0;
 
 white-space:nowrap;
 
 overflow:visible;
 }
 
-.signal-number{
-font-size:6px;
-
-line-height:8px;
-
-flex:none;
-}
-
-.signal-count{
-font-size:6px;
-
-line-height:8px;
-
-flex:none;
-}
-
 .signal-rocket{
-font-size:7px;
+font-size:9px;
 
-line-height:8px;
+line-height:10px;
 
 flex:none;
 }
@@ -5136,6 +5041,14 @@ def startup():
     log.info(
         "★ TOP 테이블 = "
         "순위 / 코인 / 거래대금 / 가격 / 변동률 / 1 / 2"
+    )
+
+    log.info(
+        "★ 신호 칸 = 🚀 그림만 표시"
+    )
+
+    log.info(
+        "★ COUNT 숫자는 아래 ROC 상세에서 표시"
     )
 
     log.info(
