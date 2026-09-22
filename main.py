@@ -74,10 +74,11 @@ ROC_FILTER_PERIODS = [
 
 
 # =========================================================
-# ROC 필터 최소 COUNT
+# ROC 필터 COUNT 범위
 # =========================================================
 
 ROC_FILTER_COUNT_MIN = 10
+ROC_FILTER_COUNT_MAX = 20
 
 
 # =========================================================
@@ -154,7 +155,7 @@ ROC_HISTORY_REQUIRED = (
         ROC_FILTER_PERIODS
     )
     + max(
-        ROC_FILTER_COUNT_MIN,
+        ROC_FILTER_COUNT_MAX,
         DISPLAY_COUNT_MAX,
         FLASH_COUNT_MAX
     )
@@ -495,10 +496,6 @@ def get_current_candle_start(minutes):
 
     now = datetime.now(KST)
 
-    # =====================================================
-    # 1D = 업비트 일봉 기준 09:00 KST
-    # =====================================================
-
     if minutes == 1440:
 
         anchor = now.replace(
@@ -518,10 +515,6 @@ def get_current_candle_start(minutes):
         return anchor.replace(
             tzinfo=None
         )
-
-    # =====================================================
-    # 4H
-    # =====================================================
 
     if minutes == 240:
 
@@ -695,7 +688,9 @@ def roc_positive_count(
 
         try:
 
-            value = float(value)
+            value = float(
+                value
+            )
 
         except Exception:
 
@@ -760,7 +755,9 @@ def roc_negative_count(
 
         try:
 
-            value = float(value)
+            value = float(
+                value
+            )
 
         except Exception:
 
@@ -847,6 +844,18 @@ def validate_timeframe():
 
         raise ValueError(
             "ROC_FILTER_COUNT_MIN 설정 오류"
+        )
+
+    if (
+        not isinstance(
+            ROC_FILTER_COUNT_MAX,
+            int
+        )
+        or ROC_FILTER_COUNT_MAX < ROC_FILTER_COUNT_MIN
+    ):
+
+        raise ValueError(
+            "ROC_FILTER_COUNT_MAX 설정 오류"
         )
 
     if (
@@ -1817,7 +1826,12 @@ def get_roc_count_filter_status(
         if count is None:
             return False
 
-        if int(count) < ROC_FILTER_COUNT_MIN:
+        count = int(count)
+
+        if (
+            count < ROC_FILTER_COUNT_MIN
+            or count > ROC_FILTER_COUNT_MAX
+        ):
             return False
 
     return True
@@ -3871,7 +3885,7 @@ def focus_section(
         <span class="section-title-sub">
 
             ROC20 / ROC50 / ROC200 COUNT
-            ≥ {ROC_FILTER_COUNT_MIN}
+            {ROC_FILTER_COUNT_MIN}~{ROC_FILTER_COUNT_MAX}
 
             ·
 
@@ -3932,7 +3946,7 @@ def section(
             ·
 
             ROC20 / ROC50 / ROC200 COUNT
-            ≥ {ROC_FILTER_COUNT_MIN}
+            {ROC_FILTER_COUNT_MIN}~{ROC_FILTER_COUNT_MAX}
 
             ·
 
@@ -4143,7 +4157,7 @@ def market_summary_html():
             <span class="market-title-sub">
 
                 ROC20 / ROC50 / ROC200 COUNT
-                ≥ {ROC_FILTER_COUNT_MIN}
+                {ROC_FILTER_COUNT_MIN}~{ROC_FILTER_COUNT_MAX}
 
                 ·
 
@@ -4236,11 +4250,6 @@ line-height:18px;
 font-weight:900;
 }
 
-
-/* =====================================================
-   TITLE
-   ===================================================== */
-
 .market-title,
 .section-title{
 display:flex;
@@ -4291,11 +4300,6 @@ overflow:hidden;
 text-overflow:ellipsis;
 }
 
-
-/* =====================================================
-   MARKET
-   ===================================================== */
-
 .market-summary{
 width:100%;
 
@@ -4310,11 +4314,6 @@ border-bottom:1px solid #292f36;
 
 border-radius:5px;
 }
-
-
-/* =====================================================
-   BTC
-   ===================================================== */
 
 .btc-top{
 display:flex;
@@ -4354,11 +4353,6 @@ white-space:nowrap;
 .btc-top > span:last-child{
 margin-left:2px;
 }
-
-
-/* =====================================================
-   ROC
-   ===================================================== */
 
 .btc-roc-section{
 width:100%;
@@ -4448,11 +4442,6 @@ line-height:11px;
 text-align:center;
 }
 
-
-/* =====================================================
-   ACTIVE / DISABLED
-   ===================================================== */
-
 .roc-active{
 opacity:1;
 }
@@ -4460,11 +4449,6 @@ opacity:1;
 .roc-disabled{
 opacity:.55;
 }
-
-
-/* =====================================================
-   FILTER STATUS
-   ===================================================== */
 
 .filter-status-active{
 display:inline-flex;
@@ -4502,11 +4486,6 @@ font-weight:800;
 line-height:10px;
 }
 
-
-/* =====================================================
-   REFERENCE
-   ===================================================== */
-
 .reference-only{
 opacity:.65;
 
@@ -4522,11 +4501,6 @@ opacity:.75;
 .reference-only .btc-roc-count{
 color:#737c86;
 }
-
-
-/* =====================================================
-   FILTER NOTE
-   ===================================================== */
 
 .filter-reference-note{
 display:flex;
@@ -4561,11 +4535,6 @@ color:#929ba4;
 .reference-info{
 color:#68727c;
 }
-
-
-/* =====================================================
-   TABLE
-   ===================================================== */
 
 .table-wrap{
 width:100%;
@@ -4622,11 +4591,6 @@ vertical-align:middle;
 overflow:hidden;
 }
 
-
-/* =====================================================
-   6열
-   ===================================================== */
-
 th:nth-child(1),
 td:nth-child(1){
 width:7%;
@@ -4657,11 +4621,6 @@ td:nth-child(6){
 width:15%;
 }
 
-
-/* =====================================================
-   RANK
-   ===================================================== */
-
 .rank-cell{
 color:#8a939d;
 
@@ -4670,11 +4629,6 @@ font-weight:800;
 
 text-align:center!important;
 }
-
-
-/* =====================================================
-   COIN
-   ===================================================== */
 
 .coin-cell{
 text-align:center!important;
@@ -4700,11 +4654,6 @@ text-overflow:ellipsis;
 text-align:center;
 }
 
-
-/* =====================================================
-   VOLUME
-   ===================================================== */
-
 .volume-cell{
 text-align:center!important;
 
@@ -4729,11 +4678,6 @@ text-overflow:ellipsis;
 text-align:center;
 }
 
-
-/* =====================================================
-   PRICE
-   ===================================================== */
-
 .price-cell{
 text-align:center!important;
 
@@ -4757,11 +4701,6 @@ text-overflow:ellipsis;
 text-align:center;
 }
 
-
-/* =====================================================
-   CHANGE
-   ===================================================== */
-
 .change-cell{
 text-align:center!important;
 
@@ -4771,22 +4710,12 @@ font-size:7.5px;
 font-weight:900;
 }
 
-
-/* =====================================================
-   SIGNAL
-   ===================================================== */
-
 .signal-cell{
 text-align:center!important;
 
 padding-left:3px!important;
 padding-right:3px!important;
 }
-
-
-/* =====================================================
-   ROC DETAIL
-   ===================================================== */
 
 .filter-detail{
 display:flex;
@@ -4846,11 +4775,6 @@ padding:0!important;
 border-bottom:1px solid #22282e;
 }
 
-
-/* =====================================================
-   TOP COUNT
-   ===================================================== */
-
 .top-count-wrap{
 display:flex;
 
@@ -4868,11 +4792,6 @@ color:#72bd98;
 font-size:8px;
 font-weight:900;
 }
-
-
-/* =====================================================
-   SIGNAL
-   ===================================================== */
 
 .signal-wrap{
 display:flex;
@@ -4919,11 +4838,6 @@ font-size:8px;
 font-weight:900;
 }
 
-
-/* =====================================================
-   FLASH
-   ===================================================== */
-
 @keyframes signalFlashOne{
 
 0%{
@@ -4968,11 +4882,6 @@ ease-in-out
 infinite;
 }
 
-
-/* =====================================================
-   COLORS
-   ===================================================== */
-
 .up{
 color:#72bd98!important;
 font-weight:900;
@@ -5000,11 +4909,6 @@ font-size:7px;
 
 text-align:center!important;
 }
-
-
-/* =====================================================
-   MOBILE
-   ===================================================== */
 
 @media(max-width:380px){
 
@@ -5038,11 +4942,6 @@ font-size:8px;
 font-size:5.5px;
 }
 
-
-/* =====================================================
-   BTC
-   ===================================================== */
-
 .btc-top{
 gap:5px;
 }
@@ -5058,11 +4957,6 @@ font-size:6.5px;
 .btc-change{
 font-size:8px;
 }
-
-
-/* =====================================================
-   ROC
-   ===================================================== */
 
 .btc-roc-section{
 margin-top:4px;
@@ -5129,11 +5023,6 @@ font-size:5.5px;
 line-height:8px;
 }
 
-
-/* =====================================================
-   TABLE
-   ===================================================== */
-
 th{
 height:19px;
 
@@ -5145,11 +5034,6 @@ font-size:5.5px;
 td{
 height:29px;
 }
-
-
-/* =====================================================
-   MOBILE 6열
-   ===================================================== */
 
 th:nth-child(1),
 td:nth-child(1){
@@ -5181,11 +5065,6 @@ td:nth-child(6){
 width:15%;
 }
 
-
-/* =====================================================
-   COIN
-   ===================================================== */
-
 .coin-cell{
 padding-left:2px!important;
 padding-right:2px!important;
@@ -5198,11 +5077,6 @@ font-size:6.8px;
 
 text-align:center;
 }
-
-
-/* =====================================================
-   VOLUME
-   ===================================================== */
 
 .volume-cell{
 padding-left:1px!important;
@@ -5221,11 +5095,6 @@ font-weight:800;
 text-align:center;
 }
 
-
-/* =====================================================
-   PRICE
-   ===================================================== */
-
 .price-cell{
 padding-left:1px!important;
 padding-right:1px!important;
@@ -5239,21 +5108,11 @@ font-size:5.7px;
 text-align:center;
 }
 
-
-/* =====================================================
-   CHANGE
-   ===================================================== */
-
 .change-cell{
 font-size:5.6px;
 
 text-align:center!important;
 }
-
-
-/* =====================================================
-   SIGNAL
-   ===================================================== */
 
 .signal-cell{
 padding-left:1px!important;
@@ -5271,11 +5130,6 @@ justify-content:center;
 .top-signal-count{
 font-size:6.5px;
 }
-
-
-/* =====================================================
-   ROC DETAIL
-   ===================================================== */
 
 .filter-detail{
 gap:2px;
@@ -5309,11 +5163,6 @@ font-size:5.8px;
 text-align:center;
 }
 
-
-/* =====================================================
-   SIGNAL
-   ===================================================== */
-
 .signal-wrap{
 gap:2px;
 
@@ -5335,11 +5184,6 @@ font-size:8px;
 .signal-count{
 font-size:6.5px;
 }
-
-
-/* =====================================================
-   BTC ROC
-   ===================================================== */
 
 .btc-roc-period{
 font-size:5.8px;
@@ -5364,11 +5208,6 @@ min-height:31px;
 }
 
 }
-
-
-/* =====================================================
-   REDUCED MOTION
-   ===================================================== */
 
 @media(prefers-reduced-motion:reduce){
 
@@ -5520,8 +5359,9 @@ def startup():
     )
 
     log.info(
-        f"ROC 필터 COUNT 최소값 = "
-        f"{ROC_FILTER_COUNT_MIN}"
+        f"ROC 필터 COUNT 범위 = "
+        f"{ROC_FILTER_COUNT_MIN}~"
+        f"{ROC_FILTER_COUNT_MAX}"
     )
 
     log.info(
@@ -5533,8 +5373,9 @@ def startup():
     )
 
     log.info(
-        f"★ ROC20/50/200 COUNT >= "
-        f"{ROC_FILTER_COUNT_MIN}"
+        f"★ ROC20/50/200 COUNT = "
+        f"{ROC_FILTER_COUNT_MIN}~"
+        f"{ROC_FILTER_COUNT_MAX}"
     )
 
     log.info(
