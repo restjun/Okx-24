@@ -2154,54 +2154,6 @@ def format_volume(v):
 
 
 # =========================================================
-# Signal 2 추가 조건
-# ★ USE_SIGNAL2_ROC = Y 인 ROC들이 모두 0 이상이어야 함
-# ★ ROC5는 기존대로 0선 상향돌파 트리거
-# =========================================================
-
-def signal2_roc_filter_pass(
-    roc_result
-):
-
-    if not roc_result:
-        return False
-
-    values = roc_result.get(
-        "roc_values",
-        {}
-    )
-
-    enabled_periods = (
-        get_signal_enabled_periods(
-            2
-        )
-    )
-
-    if not enabled_periods:
-        return True
-
-    for period in enabled_periods:
-
-        value = values.get(
-            period
-        )
-
-        if value is None:
-            return False
-
-        try:
-
-            if float(value) < 0:
-                return False
-
-        except Exception:
-
-            return False
-
-    return True
-
-
-# =========================================================
 # 분석
 # =========================================================
 
@@ -2410,7 +2362,10 @@ def analyze(
 
     # -----------------------------------------------------
     # Signal 1
-    # 기존 조건 유지
+    #
+    # ROC50 0선 상향돌파
+    # COUNT 1~200
+    # 일봉 변동률 >= 0
     # -----------------------------------------------------
 
     signal1_qualified = (
@@ -2422,28 +2377,18 @@ def analyze(
     # -----------------------------------------------------
     # Signal 2
     #
-    # 기존:
     # ROC5 0선 상향돌파
     # COUNT 10~30
     # 일봉 변동률 >= 0
     #
-    # 추가:
-    # USE_SIGNAL2_ROC20/50/200 = Y인 경우
-    # 해당 ROC들이 모두 0 이상
+    # ★ 별도의 ROC20 / ROC50 / ROC200
+    #   0 이상 조건은 사용하지 않음
     # -----------------------------------------------------
-
-    signal2_roc_pass = (
-        signal2_roc_filter_pass(
-            r_signal
-        )
-    )
 
     signal2_qualified = (
         signal2_count_pass
         and
         daily_pass
-        and
-        signal2_roc_pass
     )
 
     return {
@@ -2505,7 +2450,7 @@ def analyze(
             signal2_count_pass,
 
         "signal2_roc_filter_pass":
-            signal2_roc_pass,
+            True,
 
         "signal2_qualified":
             signal2_qualified,
@@ -2660,7 +2605,7 @@ def make_row(
             bool(
                 a.get(
                     "signal2_roc_filter_pass",
-                    False
+                    True
                 )
             ),
 
@@ -3012,7 +2957,7 @@ def top_signal2_html(
 
 # =========================================================
 # ROC HTML
-# ★ 괄호 안에는 COUNT가 아니라 실제 ROC 수치 표시
+# ★ 괄호 안에는 실제 ROC 수치가 아니라 COUNT 표시
 # =========================================================
 
 def roc_filter_html(
@@ -3028,6 +2973,16 @@ def roc_filter_html(
         {}
     )
 
+    positive_counts = r.get(
+        "positive_counts",
+        {}
+    )
+
+    negative_counts = r.get(
+        "negative_counts",
+        {}
+    )
+
     items = []
 
     for period in ROC_FILTER_PERIODS:
@@ -3039,7 +2994,7 @@ def roc_filter_html(
         if value is None:
 
             icon = "⚪"
-            value_text = "-"
+            count_text = "0"
 
         else:
 
@@ -3053,22 +3008,37 @@ def roc_filter_html(
 
                     icon = "🟢"
 
+                    count_text = str(
+                        int(
+                            positive_counts.get(
+                                period,
+                                0
+                            )
+                        )
+                    )
+
                 elif value < 0:
 
                     icon = "🔴"
 
+                    count_text = str(
+                        int(
+                            negative_counts.get(
+                                period,
+                                0
+                            )
+                        )
+                    )
+
                 else:
 
                     icon = "⚪"
-
-                value_text = (
-                    f"{value:+.1f}%"
-                )
+                    count_text = "0"
 
             except Exception:
 
                 icon = "⚪"
-                value_text = "-"
+                count_text = "0"
 
         items.append(
             f"""
@@ -3083,7 +3053,7 @@ def roc_filter_html(
                 </div>
 
                 <div class="btc-roc-count">
-                    ({value_text})
+                    ({count_text})
                 </div>
 
             </div>
@@ -3512,11 +3482,6 @@ def focus_section(
 
             ·
 
-            ROC20 / ROC50 / ROC200
-            0 이상
-
-            ·
-
             당일 변동 0% 이상
 
             ·
@@ -3593,7 +3558,7 @@ def section(
 
 # =========================================================
 # BTC ROC 상태
-# ★ 실제 ROC 수치 표시
+# ★ 괄호 안에는 COUNT 표시
 # =========================================================
 
 def btc_roc_status_html(
@@ -3638,7 +3603,7 @@ def btc_roc_status_html(
         ):
 
             icon = "⚪"
-            value_text = "-"
+            count_text = "0"
 
         else:
 
@@ -3647,7 +3612,7 @@ def btc_roc_status_html(
             if valid.empty:
 
                 icon = "⚪"
-                value_text = "-"
+                count_text = "0"
 
             else:
 
@@ -3659,17 +3624,32 @@ def btc_roc_status_html(
 
                     icon = "🟢"
 
+                    count_text = str(
+                        int(
+                            roc_positive_count(
+                                df_signal,
+                                period
+                            )
+                        )
+                    )
+
                 elif current < 0:
 
                     icon = "🔴"
 
+                    count_text = str(
+                        int(
+                            roc_negative_count(
+                                df_signal,
+                                period
+                            )
+                        )
+                    )
+
                 else:
 
                     icon = "⚪"
-
-                value_text = (
-                    f"{current:+.1f}%"
-                )
+                    count_text = "0"
 
         items.append(
             f"""
@@ -3684,7 +3664,7 @@ def btc_roc_status_html(
                 </div>
 
                 <div class="btc-roc-count">
-                    ({value_text})
+                    ({count_text})
                 </div>
 
             </div>
@@ -4121,6 +4101,11 @@ width:100%;
 table-layout:fixed;
 
 border-collapse:separate;
+
+/*
+   메인 행 ↔ ROC 행은 붙이고
+   각 순위 그룹 사이에만 간격을 둔다.
+*/
 border-spacing:0 7px;
 }
 
@@ -5245,10 +5230,6 @@ def startup():
     )
 
     log.info(
-        "★ 2 추가조건 = ROC20 / ROC50 / ROC200 0 이상"
-    )
-
-    log.info(
         "★ 시그널 COUNT는 0선 이상 연속 캔들 수"
     )
 
@@ -5257,7 +5238,7 @@ def startup():
     )
 
     log.info(
-        "★ 화면 ROC 괄호 = 실제 ROC 수치"
+        "★ 화면 ROC 괄호 = COUNT"
     )
 
     log.info(
