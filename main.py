@@ -4144,7 +4144,6 @@ background:#15191e;
 
 border-top:1px solid #303740!important;
 border-bottom:none!important;
-
 }
 
 .rank-main-row td:first-child{
