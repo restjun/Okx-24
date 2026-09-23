@@ -75,10 +75,6 @@ ROC_FILTER_PERIODS = [
 
 # =========================================================
 # Signal 1
-#
-# 트리거 = ROC50 0선 상향 돌파
-# 자체 COUNT = 0,1,2,3...
-# 필터 = ROC20 / ROC50 / ROC200 COUNT 각각 10~30
 # =========================================================
 
 SIGNAL1_ROC_PERIOD = 50
@@ -95,10 +91,6 @@ SIGNAL1_FLASH_COUNT_MAX = 2
 
 # =========================================================
 # Signal 2
-#
-# 트리거 = ROC5 0선 상향 돌파
-# 자체 COUNT = 0,1,2,3...
-# 필터 = ROC20 / ROC50 / ROC200 COUNT 각각 10~30
 # =========================================================
 
 SIGNAL2_ROC_PERIOD = 5
@@ -358,9 +350,6 @@ def format_timeframe(minutes):
 
 # =========================================================
 # 현재 4H 캔들 시작시간
-#
-# Upbit native 4H 기준
-# 01 / 05 / 09 / 13 / 17 / 21
 # =========================================================
 
 def get_current_candle_start(minutes):
@@ -539,8 +528,6 @@ def roc(
 
 # =========================================================
 # ROC 양수 연속 COUNT
-#
-# 현재 ROC >= 0이면 COUNT
 # =========================================================
 
 def roc_positive_count(
@@ -1687,15 +1674,6 @@ def find_latest_signal_event(
 
 # =========================================================
 # Signal 상태 업데이트
-#
-# 자체 COUNT는 필터 COUNT와 독립
-#
-# 돌파 캔들 = 0
-# 다음 캔들 = 1
-# 다음 캔들 = 2
-# ...
-#
-# 트리거 ROC가 음수가 되면 종료
 # =========================================================
 
 def update_signal(
@@ -1901,10 +1879,6 @@ def update_signal(
     )
 
     if signal_state is not None:
-
-        # =================================================
-        # 트리거 ROC 음수 → Signal 종료
-        # =================================================
 
         if (
             current_value is not None
@@ -2283,9 +2257,7 @@ def analyze(
     )
 
     # =====================================================
-    # Signal 1 독립 계산
-    #
-    # ROC50
+    # Signal 1
     # =====================================================
 
     state1 = update_signal(
@@ -2302,9 +2274,7 @@ def analyze(
     )
 
     # =====================================================
-    # Signal 2 독립 계산
-    #
-    # ROC5
+    # Signal 2
     # =====================================================
 
     state2 = update_signal(
@@ -2322,8 +2292,6 @@ def analyze(
 
     # =====================================================
     # 자체 Signal COUNT
-    #
-    # ★ 필터 COUNT와 완전히 별개
     # =====================================================
 
     signal1_count = int(
@@ -2340,9 +2308,6 @@ def analyze(
 
     # =====================================================
     # 필터 COUNT
-    #
-    # ROC20 / ROC50 / ROC200
-    # 각각 10~30
     # =====================================================
 
     roc20_count = int(
@@ -2429,10 +2394,6 @@ def analyze(
 
     # =====================================================
     # Signal 1 최종
-    #
-    # ROC50 돌파 후 활성
-    # + ROC20/50/200 COUNT 10~30
-    # + 일봉 >= 0
     # =====================================================
 
     signal1_qualified = (
@@ -2452,10 +2413,6 @@ def analyze(
 
     # =====================================================
     # Signal 2 최종
-    #
-    # ROC5 돌파 후 활성
-    # + ROC20/50/200 COUNT 10~30
-    # + 일봉 >= 0
     # =====================================================
 
     signal2_qualified = (
@@ -2483,10 +2440,6 @@ def analyze(
 
         "daily_pass":
             daily_pass,
-
-        # =================================================
-        # Signal 1
-        # =================================================
 
         "signal1_active":
             state1[
@@ -2524,10 +2477,6 @@ def analyze(
 
         "signal1_qualified":
             signal1_qualified,
-
-        # =================================================
-        # Signal 2
-        # =================================================
 
         "signal2_active":
             state2[
@@ -2632,10 +2581,6 @@ def make_row(
                 {}
             ),
 
-        # =================================================
-        # Signal 1
-        # =================================================
-
         "signal1_active":
             bool(
                 a.get(
@@ -2688,10 +2633,6 @@ def make_row(
                     False
                 )
             ),
-
-        # =================================================
-        # Signal 2
-        # =================================================
 
         "signal2_active":
             bool(
@@ -3087,7 +3028,6 @@ def top_signal2_html(
 
 # =========================================================
 # ROC HTML
-# 괄호 = COUNT
 # =========================================================
 
 def roc_filter_html(
@@ -3172,18 +3112,22 @@ def roc_filter_html(
 
         items.append(
             f"""
-            <div class="btc-roc-item">
+            <div class="roc-card-item">
 
-                <div class="btc-roc-period">
+                <div class="roc-card-period">
                     ROC{period}
                 </div>
 
-                <div class="btc-roc-icon">
-                    {icon}
-                </div>
+                <div class="roc-card-value">
 
-                <div class="btc-roc-count">
-                    ({count_text})
+                    <span class="roc-dot">
+                        {icon}
+                    </span>
+
+                    <span class="roc-count">
+                        ({count_text})
+                    </span>
+
                 </div>
 
             </div>
@@ -3191,24 +3135,20 @@ def roc_filter_html(
         )
 
     return f"""
-    <div class="btc-roc-section">
+    <div class="roc-detail">
 
-        <div class="btc-roc-title">
-
-            <span>
-                {timeframe} ROC
-            </span>
-
-            <span class="filter-status-active">
-                4시간 기준
-            </span>
-
+        <div class="roc-label">
+            {timeframe} ROC
         </div>
 
-        <div class="btc-roc-grid">
+        <div class="roc-grid">
 
             {"".join(items)}
 
+        </div>
+
+        <div class="roc-badge">
+            4시간 기준
         </div>
 
     </div>
@@ -3267,7 +3207,6 @@ def rows_html(
 
         # =================================================
         # Signal 1 반짝임
-        # 자체 COUNT 0~2
         # =================================================
 
         if (
@@ -3284,7 +3223,6 @@ def rows_html(
 
         # =================================================
         # Signal 2 반짝임
-        # 자체 COUNT 0~2
         # =================================================
 
         if (
@@ -3345,75 +3283,61 @@ def rows_html(
 
         out.append(
             f"""
-            <tr class="rank-main-row {cls}">
+            <div class="coin-card {cls}">
 
-                <td class="rank-cell">
-                    {x.get("rank", "-")}.
-                </td>
+                <div class="coin-main-row">
 
-                <td class="coin-cell">
+                    <div class="rank-cell">
+                        {x.get("rank", "-")}
+                    </div>
 
-                    <span class="coin-name">
-                        {coin_name}
-                    </span>
+                    <div class="coin-cell">
 
-                </td>
+                        <span class="coin-name">
+                            {coin_name}
+                        </span>
 
-                <td class="volume-cell">
+                    </div>
 
-                    <span class="volume-value">
-                        {volume}
-                    </span>
+                    <div class="volume-cell">
 
-                </td>
+                        <span class="volume-value">
+                            {volume}
+                        </span>
 
-                <td class="price-cell">
+                    </div>
 
-                    <span class="price-value">
-                        {price}
-                    </span>
+                    <div class="price-cell">
 
-                </td>
+                        <span class="price-value">
+                            {price}
+                        </span>
 
-                <td class="change-cell">
-                    {change}
-                </td>
+                    </div>
 
-                <td class="signal-cell">
-                    {signal1_content}
-                </td>
+                    <div class="change-cell">
+                        {change}
+                    </div>
 
-                <td class="signal-cell">
-                    {signal2_content}
-                </td>
+                    <div class="signal-cell">
+                        {signal1_content}
+                    </div>
 
-            </tr>
+                    <div class="signal-cell">
+                        {signal2_content}
+                    </div>
 
-            <tr class="
-                roc-subrow
-                rank-roc-row
-                {cls}
-            ">
+                </div>
 
-                <td colspan="7">
+                <div class="coin-roc-row">
 
                     {roc_content}
 
-                </td>
+                </div>
 
-            </tr>
+            </div>
             """
         )
-
-        if index < len(data) - 1:
-
-            out.append(
-                """
-                <tr class="rank-gap-row">
-                    <td colspan="7"></td>
-                </tr>
-                """
-            )
 
     return "".join(
         out
@@ -3435,64 +3359,15 @@ def table_html(
     if not rows:
 
         rows = """
-        <tr>
-
-            <td
-                colspan="7"
-                class="empty"
-            >
-                현재 후보 없음
-            </td>
-
-        </tr>
+        <div class="empty-card">
+            현재 후보 없음
+        </div>
         """
 
     return f"""
-    <div class="table-wrap">
+    <div class="card-list">
 
-        <table>
-
-            <thead>
-
-                <tr>
-
-                    <th>#</th>
-
-                    <th>
-                        코인
-                    </th>
-
-                    <th>
-                        거래대금
-                    </th>
-
-                    <th>
-                        가격
-                    </th>
-
-                    <th>
-                        변동률
-                    </th>
-
-                    <th>
-                        1
-                    </th>
-
-                    <th>
-                        2
-                    </th>
-
-                </tr>
-
-            </thead>
-
-            <tbody>
-
-                {rows}
-
-            </tbody>
-
-        </table>
+        {rows}
 
     </div>
     """
@@ -3508,8 +3383,6 @@ def focus_section(
 
     # =====================================================
     # Signal 1
-    #
-    # 자체 COUNT 0~2
     # =====================================================
 
     signal1_rows = [
@@ -3542,8 +3415,6 @@ def focus_section(
 
     # =====================================================
     # Signal 2
-    #
-    # 자체 COUNT 0~2
     # =====================================================
 
     signal2_rows = [
@@ -3583,96 +3454,100 @@ def focus_section(
     )
 
     return f"""
-    <div class="section-title long-title">
+    <div class="unified-section">
 
-        <span class="section-title-main">
-            1
-        </span>
+        <div class="section-title-card">
 
-        <span class="section-title-sub">
+            <div class="section-number">
+                1
+            </div>
 
-            ROC{SIGNAL1_ROC_PERIOD}
-            4H
+            <div class="section-heading">
 
-            ·
+                <div class="section-heading-main">
+                    Signal 1
+                </div>
 
-            0선 상향 돌파
+                <div class="section-heading-sub">
 
-            ·
+                    ROC{SIGNAL1_ROC_PERIOD}
+                    4H
 
-            ROC20/50/200 COUNT
-            {SIGNAL1_FILTER_COUNT_MIN}~
-            {SIGNAL1_FILTER_COUNT_MAX}
+                    ·
 
-            ·
+                    0선 상향 돌파
 
-            당일 변동 0% 이상
+                    ·
 
-            ·
+                    ROC20/50/200 COUNT
+                    {SIGNAL1_FILTER_COUNT_MIN}~
+                    {SIGNAL1_FILTER_COUNT_MAX}
 
-            자체 COUNT
-            {signal1_display_text()}
+                    ·
 
-            ·
+                    당일 변동 0% 이상
 
-            반짝임
-            {signal1_flash_text()}
+                </div>
 
-            ·
+            </div>
 
-            {kst()} KST
+            <div class="section-time">
+                {kst()} KST
+            </div>
 
-        </span>
+        </div>
 
-    </div>
-
-    {signal1_table}
-
-
-    <div class="section-title long-title">
-
-        <span class="section-title-main">
-            2
-        </span>
-
-        <span class="section-title-sub">
-
-            ROC{SIGNAL2_ROC_PERIOD}
-            4H
-
-            ·
-
-            0선 상향 돌파
-
-            ·
-
-            ROC20/50/200 COUNT
-            {SIGNAL2_FILTER_COUNT_MIN}~
-            {SIGNAL2_FILTER_COUNT_MAX}
-
-            ·
-
-            당일 변동 0% 이상
-
-            ·
-
-            자체 COUNT
-            {signal2_display_text()}
-
-            ·
-
-            반짝임
-            {signal2_flash_text()}
-
-            ·
-
-            {kst()} KST
-
-        </span>
+        {signal1_table}
 
     </div>
 
-    {signal2_table}
+
+    <div class="unified-section">
+
+        <div class="section-title-card">
+
+            <div class="section-number signal-two-number">
+                2
+            </div>
+
+            <div class="section-heading">
+
+                <div class="section-heading-main">
+                    Signal 2
+                </div>
+
+                <div class="section-heading-sub">
+
+                    ROC{SIGNAL2_ROC_PERIOD}
+                    4H
+
+                    ·
+
+                    0선 상향 돌파
+
+                    ·
+
+                    ROC20/50/200 COUNT
+                    {SIGNAL2_FILTER_COUNT_MIN}~
+                    {SIGNAL2_FILTER_COUNT_MAX}
+
+                    ·
+
+                    당일 변동 0% 이상
+
+                </div>
+
+            </div>
+
+            <div class="section-time">
+                {kst()} KST
+            </div>
+
+        </div>
+
+        {signal2_table}
+
+    </div>
     """
 
 
@@ -3686,42 +3561,54 @@ def section(
 ):
 
     return f"""
-    <div class="section-title top-title">
+    <div class="unified-section">
 
-        <span class="section-title-main">
-            🏆 업비트 TOP{TOP_N}
-        </span>
+        <div class="section-title-card">
 
-        <span class="section-title-sub">
+            <div class="section-number top-number">
+                🏆
+            </div>
 
-            {update_time} KST
+            <div class="section-heading">
 
-            ·
+                <div class="section-heading-main">
+                    업비트 TOP{TOP_N}
+                </div>
 
-            1
-            ROC50
-            4H
+                <div class="section-heading-sub">
 
-            ·
+                    거래대금 순위
 
-            2
-            ROC5
-            4H
+                    ·
 
-            ·
+                    1 = ROC50 4H
 
-            ROC20/50/200 COUNT
-            10~30
+                    ·
 
-            ·
+                    2 = ROC5 4H
 
-            4H native
+                    ·
 
-        </span>
+                    ROC20/50/200 COUNT
+                    10~30
+
+                    ·
+
+                    4H native
+
+                </div>
+
+            </div>
+
+            <div class="section-time">
+                {update_time} KST
+            </div>
+
+        </div>
+
+        {table_html(data)}
 
     </div>
-
-    {table_html(data)}
     """
 
 
@@ -3816,18 +3703,22 @@ def btc_roc_status_html(
 
         items.append(
             f"""
-            <div class="btc-roc-item">
+            <div class="roc-card-item">
 
-                <div class="btc-roc-period">
+                <div class="roc-card-period">
                     ROC{period}
                 </div>
 
-                <div class="btc-roc-icon">
-                    {icon}
-                </div>
+                <div class="roc-card-value">
 
-                <div class="btc-roc-count">
-                    ({count_text})
+                    <span class="roc-dot">
+                        {icon}
+                    </span>
+
+                    <span class="roc-count">
+                        ({count_text})
+                    </span>
+
                 </div>
 
             </div>
@@ -3835,24 +3726,20 @@ def btc_roc_status_html(
         )
 
     return f"""
-    <div class="btc-roc-section">
+    <div class="btc-roc-detail">
 
-        <div class="btc-roc-title">
-
-            <span>
-                4H ROC
-            </span>
-
-            <span class="filter-status-active">
-                시그널 기준
-            </span>
-
+        <div class="btc-roc-label">
+            4H ROC
         </div>
 
-        <div class="btc-roc-grid">
+        <div class="roc-grid btc-roc-grid">
 
             {"".join(items)}
 
+        </div>
+
+        <div class="roc-badge">
+            시그널 기준
         </div>
 
     </div>
@@ -3909,57 +3796,67 @@ def market_summary_html():
         roc_status = ""
 
     return f"""
-    <div class="market-summary">
+    <div class="market-card">
 
-        <div class="market-title">
+        <div class="market-card-header">
 
-            <span class="market-title-main">
-                ₿ BTC 시장 시황
-            </span>
+            <div class="market-title-block">
 
-            <span class="market-title-sub">
+                <div class="market-title-main">
+                    ₿ BTC 시장 시황
+                </div>
 
-                1 = ROC50 돌파
+                <div class="market-title-sub">
 
-                ·
+                    1 = ROC50 돌파
 
-                2 = ROC5 돌파
+                    ·
 
-                ·
+                    2 = ROC5 돌파
 
-                ROC20/50/200 COUNT 10~30
+                    ·
 
-                ·
+                    ROC20/50/200 COUNT 10~30
 
-                자체 COUNT 0~2
+                    ·
 
-                ·
+                    자체 COUNT 0~2
 
-                기준 4H native
+                    ·
 
-            </span>
+                    기준 4H native
+
+                </div>
+
+            </div>
+
+            <div class="market-time">
+                {kst()} KST
+            </div>
 
         </div>
 
-        <div class="btc-top">
 
-            <span class="btc-name">
+        <div class="btc-main-row">
+
+            <div class="btc-name">
                 ₿ BTC
-            </span>
+            </div>
 
-            <span class="btc-price">
+            <div class="btc-price">
                 {price}
-            </span>
+            </div>
 
-            <span class="btc-change">
+            <div class="btc-change">
                 {change}
-            </span>
+            </div>
 
-            <span>
+            <div class="btc-signal-box">
                 {signal}
-            </span>
+            </div>
 
         </div>
+
 
         {roc_status}
 
@@ -3974,552 +3871,663 @@ def market_summary_html():
 CSS = """
 
 *{
-box-sizing:border-box;
--webkit-tap-highlight-color:transparent;
+    box-sizing:border-box;
+    -webkit-tap-highlight-color:transparent;
 }
 
 html,
 body{
-margin:0;
-padding:0;
-width:100%;
-overflow-x:hidden;
+    margin:0;
+    padding:0;
+    width:100%;
+    overflow-x:hidden;
 }
 
 body{
-background:#0b0e12;
-color:#e5e9ed;
+    background:#080c11;
+    color:#e7ebef;
 
-font-family:
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    Arial,
-    sans-serif;
+    font-family:
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        Arial,
+        sans-serif;
 
-font-size:9px;
+    font-size:9px;
 
-padding:5px;
+    padding:12px;
 }
 
 h1{
-margin:3px 4px 7px;
+    margin:3px 4px 10px;
 
-color:#e5e9ed;
+    color:#eef2f5;
 
-font-size:15px;
-line-height:18px;
+    font-size:15px;
+    line-height:18px;
 
-font-weight:900;
+    font-weight:900;
 }
 
 
 /* =====================================================
-   공통 제목
+   전체 섹션
    ===================================================== */
 
-.market-title,
-.section-title{
-display:flex;
-align-items:center;
-
-gap:8px;
-
-width:100%;
-min-height:28px;
-
-padding:5px 8px;
-
-background:#14181d;
-
-border:1px solid #292f36;
-border-left:3px solid #66717b;
-
-border-radius:6px;
-
-white-space:nowrap;
-overflow:hidden;
-}
-
-.section-title{
-margin:9px 0 6px;
-}
-
-.market-title-main,
-.section-title-main{
-flex:none;
-
-color:#e7ebef;
-
-font-size:10px;
-font-weight:900;
-}
-
-.market-title-sub,
-.section-title-sub{
-min-width:0;
-
-color:#858e98;
-
-font-size:7px;
-font-weight:700;
-
-overflow:hidden;
-text-overflow:ellipsis;
+.unified-section{
+    width:100%;
+    margin:10px 0 12px;
 }
 
 
 /* =====================================================
-   시장 요약
+   공통 섹션 헤더
    ===================================================== */
 
-.market-summary{
-width:100%;
+.section-title-card{
+    display:flex;
+    align-items:center;
 
-margin:3px 0 6px;
+    width:100%;
+    min-height:48px;
 
-padding:6px;
+    padding:7px 10px;
 
-background:#0f1318;
+    background:#10151b;
 
-border-top:1px solid #292f36;
-border-bottom:1px solid #292f36;
+    border:2px solid #252e38;
 
-border-radius:5px;
+    border-radius:12px;
+
+    box-shadow:
+        inset 0 0 18px
+        rgba(255,255,255,.018);
+
+    overflow:hidden;
 }
 
-.btc-top{
-display:flex;
-align-items:center;
+.section-number{
+    flex:none;
 
-gap:8px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
 
-min-height:27px;
+    width:34px;
+    height:34px;
 
-white-space:nowrap;
-overflow:hidden;
+    margin-right:9px;
+
+    border-radius:8px;
+
+    background:#18251f;
+
+    border:1px solid #315a48;
+
+    color:#82d5a8;
+
+    font-size:16px;
+    font-weight:900;
+}
+
+.signal-two-number{
+    background:#17202a;
+
+    border-color:#365266;
+
+    color:#9eb9cd;
+}
+
+.top-number{
+    background:#1d1a13;
+
+    border-color:#665331;
+
+    color:#e0bd6d;
+
+    font-size:14px;
+}
+
+.section-heading{
+    min-width:0;
+    flex:1;
+
+    overflow:hidden;
+}
+
+.section-heading-main{
+    color:#e9edf1;
+
+    font-size:12px;
+    line-height:15px;
+
+    font-weight:900;
+
+    white-space:nowrap;
+}
+
+.section-heading-sub{
+    margin-top:2px;
+
+    color:#87919b;
+
+    font-size:7px;
+    line-height:10px;
+
+    font-weight:700;
+
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+}
+
+.section-time{
+    flex:none;
+
+    margin-left:8px;
+
+    color:#68737e;
+
+    font-size:6.5px;
+    font-weight:800;
+
+    white-space:nowrap;
+}
+
+
+/* =====================================================
+   BTC 시장 카드
+   ===================================================== */
+
+.market-card{
+    width:100%;
+
+    margin:3px 0 12px;
+
+    background:#0f141a;
+
+    border:2px solid #252e38;
+
+    border-radius:13px;
+
+    overflow:hidden;
+
+    box-shadow:
+        inset 0 0 20px
+        rgba(255,255,255,.018);
+}
+
+.market-card-header{
+    display:flex;
+    align-items:center;
+
+    min-height:44px;
+
+    padding:7px 10px;
+
+    background:#121820;
+
+    border-bottom:1px solid #29323c;
+}
+
+.market-title-block{
+    min-width:0;
+    flex:1;
+
+    overflow:hidden;
+}
+
+.market-title-main{
+    color:#eef2f5;
+
+    font-size:11px;
+    line-height:14px;
+
+    font-weight:900;
+
+    white-space:nowrap;
+}
+
+.market-title-sub{
+    margin-top:2px;
+
+    color:#7e8994;
+
+    font-size:6.5px;
+    line-height:9px;
+
+    font-weight:700;
+
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+}
+
+.market-time{
+    flex:none;
+
+    margin-left:8px;
+
+    color:#68737e;
+
+    font-size:6.5px;
+    font-weight:800;
+
+    white-space:nowrap;
+}
+
+
+/* =====================================================
+   BTC 메인 행
+   ===================================================== */
+
+.btc-main-row{
+    display:grid;
+
+    grid-template-columns:
+        1.1fr
+        1.3fr
+        1fr
+        1.4fr;
+
+    align-items:center;
+
+    min-height:58px;
+
+    background:#11161c;
+
+    border-bottom:1px solid #29323c;
 }
 
 .btc-name{
-color:#e0e5e9;
+    padding-left:13px;
 
-font-size:8px;
-font-weight:900;
+    color:#edf1f4;
+
+    font-size:11px;
+    font-weight:900;
+
+    white-space:nowrap;
 }
 
 .btc-price{
-color:#edf1f4;
+    color:#f1f4f6;
 
-font-size:8px;
-font-weight:800;
+    font-size:11px;
+    font-weight:900;
 
-white-space:nowrap;
+    text-align:center;
+
+    white-space:nowrap;
 }
 
 .btc-change{
-font-size:10px;
-font-weight:900;
+    color:#79cda1;
 
-white-space:nowrap;
+    font-size:11px;
+    font-weight:900;
+
+    text-align:center;
+
+    white-space:nowrap;
 }
 
-.btc-top > span:last-child{
-margin-left:2px;
-}
+.btc-signal-box{
+    min-height:58px;
 
+    display:flex;
+    align-items:center;
+    justify-content:center;
 
-/* =====================================================
-   BTC ROC
-   ===================================================== */
-
-.btc-roc-section{
-width:100%;
-
-margin-top:5px;
-padding-top:5px;
-
-border-top:1px solid #252b32;
-}
-
-.btc-roc-title{
-display:flex;
-align-items:center;
-justify-content:space-between;
-
-width:100%;
-
-margin-bottom:4px;
-padding:0 2px;
-
-color:#aeb6be;
-
-font-size:8px;
-font-weight:900;
-
-line-height:11px;
-}
-
-.btc-roc-grid{
-display:grid;
-
-grid-template-columns:
-    repeat(4, minmax(0, 1fr));
-
-width:100%;
-
-gap:4px;
-}
-
-.btc-roc-item{
-display:flex;
-flex-direction:column;
-align-items:center;
-justify-content:center;
-
-min-height:39px;
-
-background:#151a20;
-
-border:1px solid #293039;
-border-radius:5px;
-
-text-align:center;
-}
-
-.btc-roc-period{
-color:#9aa3ad;
-
-font-size:8px;
-font-weight:900;
-
-line-height:11px;
-
-text-align:center;
-}
-
-.btc-roc-icon{
-font-size:13px;
-
-line-height:15px;
-
-text-align:center;
-}
-
-.btc-roc-count{
-color:#d5dbe0;
-
-font-size:8px;
-font-weight:900;
-
-line-height:11px;
-
-text-align:center;
-}
-
-.filter-status-active{
-display:inline-flex;
-align-items:center;
-
-padding:2px 6px;
-
-border-radius:4px;
-
-background:#1b3027;
-
-color:#72bd98;
-
-font-size:7px;
-font-weight:900;
-
-line-height:10px;
+    border-left:1px solid #29323c;
 }
 
 
 /* =====================================================
-   TABLE
+   BTC ROC / 공통 ROC
    ===================================================== */
 
-.table-wrap{
-width:100%;
+.btc-roc-detail{
+    display:grid;
 
-overflow:hidden;
+    grid-template-columns:
+        1.1fr
+        5fr
+        1.1fr;
 
-border:none;
+    align-items:center;
 
-background:transparent;
+    min-height:69px;
+
+    padding:7px 9px;
+
+    background:#0d1218;
 }
 
-table{
-width:100%;
+.btc-roc-label{
+    color:#dce2e7;
 
-table-layout:fixed;
+    font-size:10px;
+    font-weight:900;
 
-border-collapse:separate;
+    text-align:center;
 
-border-spacing:0;
+    white-space:nowrap;
 }
 
-thead{
-background:#101419;
+.roc-detail{
+    display:grid;
+
+    grid-template-columns:
+        1.05fr
+        5fr
+        1.05fr;
+
+    align-items:center;
+
+    min-height:68px;
+
+    padding:6px 8px;
+
+    background:#0d1218;
 }
 
-th{
-height:23px;
+.roc-label{
+    color:#dce2e7;
 
-padding:3px 2px;
+    font-size:10px;
+    font-weight:900;
 
-color:#818a94;
+    text-align:center;
 
-border-bottom:1px solid #292f36;
-
-border-left:none!important;
-border-right:none!important;
-
-font-size:7px;
-font-weight:800;
-
-text-align:center;
-vertical-align:middle;
+    white-space:nowrap;
 }
 
-td{
-height:32px;
+.roc-grid{
+    display:grid;
 
-padding:2px;
+    grid-template-columns:
+        repeat(4,minmax(0,1fr));
 
-color:#d8dde2;
+    gap:6px;
 
-border-left:none!important;
-border-right:none!important;
+    width:100%;
+}
 
-text-align:center;
-vertical-align:middle;
+.roc-card-item{
+    min-height:52px;
 
-overflow:hidden;
+    display:flex;
+    flex-direction:column;
+
+    align-items:center;
+    justify-content:center;
+
+    background:#11171e;
+
+    border:2px solid #27313c;
+
+    border-radius:9px;
+
+    box-shadow:
+        inset 0 0 10px
+        rgba(255,255,255,.018);
+}
+
+.roc-card-period{
+    color:#9aa5b0;
+
+    font-size:8px;
+    line-height:11px;
+
+    font-weight:900;
+
+    white-space:nowrap;
+}
+
+.roc-card-value{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+
+    gap:5px;
+
+    margin-top:2px;
+}
+
+.roc-dot{
+    font-size:18px;
+    line-height:18px;
+
+    filter:
+        drop-shadow(
+            0 0 4px
+            rgba(120,220,130,.18)
+        );
+}
+
+.roc-count{
+    color:#eef2f5;
+
+    font-size:10px;
+    line-height:14px;
+
+    font-weight:900;
+
+    white-space:nowrap;
+}
+
+.roc-badge{
+    justify-self:end;
+
+    padding:5px 7px;
+
+    border-radius:8px;
+
+    background:#183126;
+
+    border:1px solid #285840;
+
+    color:#78c99d;
+
+    font-size:7px;
+    line-height:10px;
+
+    font-weight:900;
+
+    white-space:nowrap;
 }
 
 
 /* =====================================================
-   순위 사이 간격
+   카드 리스트
    ===================================================== */
 
-.rank-gap-row{
-height:7px!important;
-}
+.card-list{
+    width:100%;
 
-.rank-gap-row td{
-height:7px!important;
+    display:flex;
+    flex-direction:column;
 
-padding:0!important;
+    gap:9px;
 
-border:none!important;
-
-background:transparent!important;
+    margin-top:8px;
 }
 
 
 /* =====================================================
-   테이블 폭
+   코인 카드
    ===================================================== */
 
-th:nth-child(1),
-td:nth-child(1){
-width:5%;
-}
+.coin-card{
+    width:100%;
 
-th:nth-child(2),
-td:nth-child(2){
-width:18%;
-}
+    background:#0f141a;
 
-th:nth-child(3),
-td:nth-child(3){
-width:15%;
-}
+    border:2px solid #252e38;
 
-th:nth-child(4),
-td:nth-child(4){
-width:22%;
-}
+    border-radius:12px;
 
-th:nth-child(5),
-td:nth-child(5){
-width:14%;
-}
+    overflow:hidden;
 
-th:nth-child(6),
-td:nth-child(6){
-width:13%;
-}
-
-th:nth-child(7),
-td:nth-child(7){
-width:13%;
+    box-shadow:
+        inset 0 0 18px
+        rgba(255,255,255,.015);
 }
 
 
 /* =====================================================
-   순위 하나의 박스
+   코인 메인 행
    ===================================================== */
 
-.rank-main-row td{
-background:#15191e;
+.coin-main-row{
+    display:grid;
 
-border-top:1px solid #303740!important;
-border-bottom:none!important;
+    grid-template-columns:
+        6%
+        18%
+        15%
+        21%
+        14%
+        13%
+        13%;
+
+    align-items:center;
+
+    min-height:56px;
+
+    background:#11161c;
 }
 
-.rank-main-row td:first-child{
-border-left:1px solid #303740!important;
+.coin-main-row > div{
+    min-width:0;
 
-border-top-left-radius:7px;
-}
+    height:56px;
 
-.rank-main-row td:last-child{
-border-right:1px solid #303740!important;
+    display:flex;
+    align-items:center;
+    justify-content:center;
 
-border-top-right-radius:7px;
+    overflow:hidden;
 }
 
 .rank-cell{
-color:#cbd2d8;
+    justify-content:flex-start!important;
 
-font-size:8px;
-font-weight:900;
+    padding-left:12px;
 
-text-align:left!important;
+    color:#e2e7eb;
 
-padding-left:5px!important;
-padding-right:1px!important;
+    font-size:11px;
+    font-weight:900;
 
-white-space:nowrap;
+    white-space:nowrap;
 }
 
-
-/* =====================================================
-   코인
-   ===================================================== */
-
 .coin-cell{
-text-align:center!important;
-
-padding-left:3px!important;
-padding-right:3px!important;
+    text-align:center;
 }
 
 .coin-name{
-display:block;
+    display:block;
 
-color:#e3e8ec;
+    width:100%;
 
-font-size:8px;
-line-height:11px;
+    padding:0 3px;
 
-font-weight:800;
+    color:#eef2f5;
 
-white-space:nowrap;
-overflow:hidden;
-text-overflow:ellipsis;
+    font-size:11px;
+    line-height:14px;
 
-text-align:center;
+    font-weight:900;
+
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+
+    text-align:center;
 }
 
-
-/* =====================================================
-   거래대금
-   ===================================================== */
-
 .volume-cell{
-text-align:center!important;
-
-padding-left:3px!important;
-padding-right:3px!important;
+    text-align:center;
 }
 
 .volume-value{
-display:block;
+    display:block;
 
-color:#f1f3f5;
+    width:100%;
 
-font-size:7px;
-line-height:10px;
+    color:#f1f4f6;
 
-font-weight:800;
+    font-size:10px;
+    line-height:13px;
 
-white-space:nowrap;
-overflow:hidden;
-text-overflow:ellipsis;
+    font-weight:900;
 
-text-align:center;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+
+    text-align:center;
 }
 
-
-/* =====================================================
-   가격
-   ===================================================== */
-
 .price-cell{
-text-align:center!important;
-
-padding-left:3px!important;
-padding-right:3px!important;
+    text-align:center;
 }
 
 .price-value{
-display:block;
+    display:block;
 
-color:#edf1f4;
+    width:100%;
 
-font-size:7.5px;
+    color:#eef2f5;
 
-font-weight:800;
+    font-size:10px;
+    line-height:13px;
 
-white-space:nowrap;
-overflow:hidden;
-text-overflow:ellipsis;
+    font-weight:900;
 
-text-align:center;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+
+    text-align:center;
 }
-
-
-/* =====================================================
-   변동률
-   ===================================================== */
 
 .change-cell{
-text-align:center!important;
+    text-align:center;
 
-white-space:nowrap;
+    font-size:10px;
+    font-weight:900;
 
-font-size:7.5px;
-font-weight:900;
+    white-space:nowrap;
+}
+
+.signal-cell{
+    height:56px!important;
+
+    border-left:1px solid #29323c;
+
+    background:#0e141a;
+
+    text-align:center;
+
+    overflow:hidden!important;
 }
 
 
 /* =====================================================
-   시그널
+   코인 ROC 행
    ===================================================== */
 
-.signal-cell{
-text-align:center!important;
+.coin-roc-row{
+    min-height:68px;
 
-padding-left:2px!important;
-padding-right:2px!important;
+    background:#0d1218;
 
-white-space:nowrap;
-overflow:hidden;
-
-border-left:none!important;
-border-right:none!important;
-}
-
-.rank-main-row td:nth-child(6),
-.rank-main-row td:nth-child(7){
-
-background:#11161b;
-
-border-left:none!important;
-border-right:none!important;
+    border-top:1px solid #29323c;
 }
 
 
@@ -4528,117 +4536,84 @@ border-right:none!important;
    ===================================================== */
 
 .signal-wrap{
-display:flex;
+    display:flex;
 
-flex-direction:column;
+    align-items:center;
+    justify-content:center;
 
-align-items:center;
-justify-content:center;
+    width:100%;
+    height:100%;
 
-gap:2px;
-
-min-height:23px;
-
-white-space:nowrap;
+    white-space:nowrap;
 }
 
 .signal-row{
-display:flex;
+    display:flex;
 
-align-items:center;
-justify-content:center;
+    align-items:center;
+    justify-content:center;
 
-width:100%;
-
-white-space:nowrap;
+    width:100%;
 }
 
 .signal-item{
-display:inline-flex;
+    display:inline-flex;
 
-align-items:center;
-justify-content:center;
+    align-items:center;
+    justify-content:center;
 
-width:28px;
-min-width:28px;
+    width:43px;
+    min-width:43px;
 
-height:20px;
+    height:38px;
 
-padding:2px;
+    padding:3px;
 
-border-radius:4px;
+    border-radius:9px;
 
-font-weight:900;
+    font-weight:900;
 
-white-space:nowrap;
+    white-space:nowrap;
 
-overflow:visible;
+    overflow:visible;
 
-background:#20252b;
+    background:#20272e;
 
-border:1px solid #343b43;
+    border:2px solid #343e47;
 
-color:#aeb6be;
+    color:#aeb8c1;
 }
 
 .signal-rocket{
-font-size:11px;
+    font-size:20px;
 
-line-height:12px;
+    line-height:21px;
 
-flex:none;
+    flex:none;
 }
 
 .signal-1{
-background:#183329;
+    background:#153126;
 
-border-color:#285b45;
+    border-color:#24724e;
 
-color:#72bd98;
+    color:#78c99d;
+
+    box-shadow:
+        0 0 10px
+        rgba(72,190,130,.12);
 }
 
 .signal-2{
-background:#222b35;
+    background:#17232e;
 
-border-color:#3a4856;
+    border-color:#31556e;
 
-color:#9eb5c9;
-}
+    color:#9ebbd0;
 
-
-/* =====================================================
-   ROC 상세
-   ===================================================== */
-
-.roc-subrow{
-background:#0f1318!important;
-}
-
-.rank-roc-row td{
-
-height:auto!important;
-
-padding:0!important;
-
-background:#0f1318!important;
-
-border-top:1px solid #252b32!important;
-border-bottom:1px solid #303740!important;
-
-border-left:none!important;
-border-right:none!important;
-}
-
-.rank-roc-row td:first-child{
-border-left:1px solid #303740!important;
-
-border-bottom-left-radius:7px;
-}
-
-.rank-roc-row td:last-child{
-border-right:1px solid #303740!important;
-
-border-bottom-right-radius:7px;
+    box-shadow:
+        0 0 10px
+        rgba(100,160,200,.10);
 }
 
 
@@ -4648,90 +4623,92 @@ border-bottom-right-radius:7px;
 
 @keyframes signalFlashOne{
 
-0%{
-background-color:#15191e;
+    0%{
+        background-color:#11161c;
 
-box-shadow:
-inset 0 0 0
-rgba(114,189,152,0);
-}
+        box-shadow:
+            inset 0 0 0
+            rgba(114,189,152,0);
+    }
 
-30%{
-background-color:#2a3d34;
+    30%{
+        background-color:#294238;
 
-box-shadow:
-inset 0 0 12px
-rgba(114,189,152,.32);
-}
+        box-shadow:
+            inset 0 0 16px
+            rgba(114,189,152,.32);
+    }
 
-60%{
-background-color:#19221e;
+    60%{
+        background-color:#18231f;
 
-box-shadow:
-inset 0 0 3px
-rgba(114,189,152,.12);
-}
+        box-shadow:
+            inset 0 0 5px
+            rgba(114,189,152,.12);
+    }
 
-100%{
-background-color:#15191e;
+    100%{
+        background-color:#11161c;
 
-box-shadow:
-inset 0 0 0
-rgba(114,189,152,0);
-}
+        box-shadow:
+            inset 0 0 0
+            rgba(114,189,152,0);
+    }
 
 }
 
 @keyframes signalFlashTwo{
 
-0%{
-background-color:#15191e;
+    0%{
+        background-color:#11161c;
 
-box-shadow:
-inset 0 0 0
-rgba(158,181,201,0);
+        box-shadow:
+            inset 0 0 0
+            rgba(158,181,201,0);
+    }
+
+    30%{
+        background-color:#293844;
+
+        box-shadow:
+            inset 0 0 16px
+            rgba(158,181,201,.30);
+    }
+
+    60%{
+        background-color:#1b252d;
+
+        box-shadow:
+            inset 0 0 5px
+            rgba(158,181,201,.12);
+    }
+
+    100%{
+        background-color:#11161c;
+
+        box-shadow:
+            inset 0 0 0
+            rgba(158,181,201,0);
+    }
+
 }
 
-30%{
-background-color:#29343e;
-
-box-shadow:
-inset 0 0 12px
-rgba(158,181,201,.30);
+.coin-card.signal-flash-one .coin-main-row > div,
+.coin-card.signal-flash-one .coin-roc-row{
+    animation:
+        signalFlashOne
+        1.35s
+        ease-in-out
+        infinite;
 }
 
-60%{
-background-color:#1b2228;
-
-box-shadow:
-inset 0 0 3px
-rgba(158,181,201,.12);
-}
-
-100%{
-background-color:#15191e;
-
-box-shadow:
-inset 0 0 0
-rgba(158,181,201,0);
-}
-
-}
-
-tr.signal-flash-one td{
-animation:
-signalFlashOne
-1.35s
-ease-in-out
-infinite;
-}
-
-tr.signal-flash-two td{
-animation:
-signalFlashTwo
-1.35s
-ease-in-out
-infinite;
+.coin-card.signal-flash-two .coin-main-row > div,
+.coin-card.signal-flash-two .coin-roc-row{
+    animation:
+        signalFlashTwo
+        1.35s
+        ease-in-out
+        infinite;
 }
 
 
@@ -4740,27 +4717,41 @@ infinite;
    ===================================================== */
 
 .up{
-color:#72bd98!important;
-font-weight:900;
+    color:#78cfa2!important;
+    font-weight:900;
 }
 
 .down{
-color:#cf8585!important;
-font-weight:900;
+    color:#df8588!important;
+    font-weight:900;
 }
 
 .zero{
-color:#707a84!important;
+    color:#727c86!important;
 }
 
-.empty{
-height:36px;
 
-color:#59626c;
+/* =====================================================
+   빈 카드
+   ===================================================== */
 
-font-size:7px;
+.empty-card{
+    min-height:56px;
 
-text-align:center!important;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+
+    background:#10151b;
+
+    border:2px solid #252e38;
+
+    border-radius:12px;
+
+    color:#59636e;
+
+    font-size:8px;
+    font-weight:800;
 }
 
 
@@ -4768,404 +4759,537 @@ text-align:center!important;
    MOBILE
    ===================================================== */
 
+@media(max-width:600px){
+
+    body{
+        padding:7px;
+    }
+
+    h1{
+        margin:3px 3px 8px;
+
+        font-size:13px;
+        line-height:16px;
+    }
+
+
+    /* ================================================
+       공통 섹션
+       ================================================ */
+
+    .unified-section{
+        margin:8px 0 10px;
+    }
+
+    .section-title-card{
+        min-height:40px;
+
+        padding:5px 6px;
+
+        border-radius:9px;
+    }
+
+    .section-number{
+        width:27px;
+        height:27px;
+
+        margin-right:6px;
+
+        border-radius:6px;
+
+        font-size:12px;
+    }
+
+    .top-number{
+        font-size:11px;
+    }
+
+    .section-heading-main{
+        font-size:9px;
+        line-height:11px;
+    }
+
+    .section-heading-sub{
+        margin-top:1px;
+
+        font-size:5px;
+        line-height:7px;
+    }
+
+    .section-time{
+        margin-left:4px;
+
+        font-size:5px;
+    }
+
+
+    /* ================================================
+       BTC
+       ================================================ */
+
+    .market-card{
+        margin:3px 0 9px;
+
+        border-radius:9px;
+    }
+
+    .market-card-header{
+        min-height:36px;
+
+        padding:5px 7px;
+    }
+
+    .market-title-main{
+        font-size:8px;
+        line-height:10px;
+    }
+
+    .market-title-sub{
+        margin-top:1px;
+
+        font-size:4.8px;
+        line-height:6px;
+    }
+
+    .market-time{
+        margin-left:4px;
+
+        font-size:4.8px;
+    }
+
+    .btc-main-row{
+        min-height:43px;
+
+        grid-template-columns:
+            1.1fr
+            1.3fr
+            1fr
+            1.3fr;
+    }
+
+    .btc-name{
+        padding-left:8px;
+
+        font-size:8px;
+    }
+
+    .btc-price{
+        font-size:8px;
+    }
+
+    .btc-change{
+        font-size:8px;
+    }
+
+    .btc-signal-box{
+        min-height:43px;
+    }
+
+
+    /* ================================================
+       ROC
+       ================================================ */
+
+    .btc-roc-detail,
+    .roc-detail{
+        grid-template-columns:
+            .95fr
+            5.5fr
+            .95fr;
+
+        min-height:52px;
+
+        padding:4px 4px;
+    }
+
+    .btc-roc-label,
+    .roc-label{
+        font-size:7px;
+    }
+
+    .roc-grid{
+        gap:3px;
+    }
+
+    .roc-card-item{
+        min-height:39px;
+
+        border-width:1px;
+
+        border-radius:5px;
+    }
+
+    .roc-card-period{
+        font-size:5.8px;
+        line-height:7px;
+    }
+
+    .roc-card-value{
+        gap:2px;
+
+        margin-top:1px;
+    }
+
+    .roc-dot{
+        font-size:12px;
+        line-height:12px;
+    }
+
+    .roc-count{
+        font-size:6.5px;
+        line-height:8px;
+    }
+
+    .roc-badge{
+        padding:3px 4px;
+
+        border-radius:5px;
+
+        font-size:5px;
+        line-height:7px;
+    }
+
+
+    /* ================================================
+       카드
+       ================================================ */
+
+    .card-list{
+        gap:6px;
+
+        margin-top:6px;
+    }
+
+    .coin-card{
+        border-width:1px;
+
+        border-radius:8px;
+    }
+
+    .coin-main-row{
+        min-height:40px;
+
+        grid-template-columns:
+            6%
+            18%
+            15%
+            21%
+            14%
+            13%
+            13%;
+    }
+
+    .coin-main-row > div{
+        height:40px;
+    }
+
+    .rank-cell{
+        padding-left:5px;
+
+        font-size:6.8px;
+    }
+
+    .coin-name{
+        padding:0 1px;
+
+        font-size:6.8px;
+        line-height:9px;
+    }
+
+    .volume-value{
+        font-size:5.5px;
+        line-height:8px;
+    }
+
+    .price-value{
+        font-size:5.8px;
+        line-height:8px;
+    }
+
+    .change-cell{
+        font-size:5.8px;
+    }
+
+    .signal-cell{
+        height:40px!important;
+
+        border-left:1px solid #29323c;
+    }
+
+    .signal-item{
+        width:28px;
+        min-width:28px;
+
+        height:27px;
+
+        border-width:1px;
+
+        border-radius:5px;
+    }
+
+    .signal-rocket{
+        font-size:13px;
+
+        line-height:14px;
+    }
+
+    .coin-roc-row{
+        min-height:49px;
+    }
+
+
+    /* ================================================
+       모바일 ROC 카드
+       ================================================ */
+
+    .coin-roc-row .roc-detail{
+        min-height:49px;
+
+        padding:3px 3px;
+    }
+
+    .coin-roc-row .roc-card-item{
+        min-height:37px;
+    }
+
+    .coin-roc-row .roc-card-period{
+        font-size:5.2px;
+    }
+
+    .coin-roc-row .roc-dot{
+        font-size:10px;
+    }
+
+    .coin-roc-row .roc-count{
+        font-size:5.8px;
+    }
+
+    .coin-roc-row .roc-badge{
+        font-size:4.7px;
+
+        padding:2px 3px;
+    }
+
+
+    /* ================================================
+       빈 카드
+       ================================================ */
+
+    .empty-card{
+        min-height:43px;
+
+        border-width:1px;
+
+        border-radius:8px;
+
+        font-size:6px;
+    }
+
+}
+
+
 @media(max-width:380px){
 
-body{
-padding:3px;
-}
+    body{
+        padding:4px;
+    }
 
-h1{
-font-size:13px;
-line-height:16px;
+    h1{
+        font-size:12px;
+        line-height:15px;
 
-margin:3px 3px 6px;
-}
+        margin:2px 2px 6px;
+    }
 
-.market-title,
-.section-title{
-min-height:23px;
+    .section-title-card{
+        min-height:35px;
 
-padding:4px 6px;
+        padding:4px 5px;
+    }
 
-gap:5px;
-}
+    .section-number{
+        width:23px;
+        height:23px;
 
-.market-title-main,
-.section-title-main{
-font-size:8px;
-}
+        margin-right:4px;
 
-.market-title-sub,
-.section-title-sub{
-font-size:5.5px;
-}
+        font-size:10px;
+    }
 
-.btc-top{
-gap:5px;
-}
+    .section-heading-main{
+        font-size:8px;
+        line-height:10px;
+    }
 
-.btc-name{
-font-size:7px;
-}
+    .section-heading-sub{
+        font-size:4.2px;
+        line-height:6px;
+    }
 
-.btc-price{
-font-size:6.5px;
-}
+    .section-time{
+        font-size:4.2px;
+    }
 
-.btc-change{
-font-size:8px;
-}
+    .market-card-header{
+        min-height:32px;
 
-.btc-roc-section{
-margin-top:4px;
+        padding:4px 5px;
+    }
 
-padding-top:4px;
-}
+    .market-title-main{
+        font-size:7px;
+    }
 
-.btc-roc-title{
-margin-bottom:3px;
+    .market-title-sub{
+        font-size:4px;
+    }
 
-padding:0 1px;
+    .market-time{
+        font-size:4px;
+    }
 
-font-size:7px;
+    .btc-main-row{
+        min-height:38px;
+    }
 
-line-height:10px;
-}
+    .btc-name{
+        padding-left:6px;
 
-.btc-roc-grid{
-gap:2px;
-}
+        font-size:7px;
+    }
 
-.btc-roc-item{
-min-height:34px;
+    .btc-price{
+        font-size:7px;
+    }
 
-border-radius:4px;
-}
+    .btc-change{
+        font-size:7px;
+    }
 
-.btc-roc-period{
-font-size:6.5px;
+    .btc-signal-box{
+        min-height:38px;
+    }
 
-line-height:9px;
-}
+    .btc-roc-detail,
+    .roc-detail{
+        min-height:47px;
 
-.btc-roc-icon{
-font-size:11px;
+        grid-template-columns:
+            .8fr
+            5.8fr
+            .8fr;
 
-line-height:13px;
-}
+        padding:3px 2px;
+    }
 
-.btc-roc-count{
-font-size:6.5px;
+    .btc-roc-label,
+    .roc-label{
+        font-size:6px;
+    }
 
-line-height:9px;
-}
+    .roc-grid{
+        gap:2px;
+    }
 
-.filter-status-active{
-padding:1px 4px;
+    .roc-card-item{
+        min-height:34px;
 
-font-size:5.5px;
+        border-radius:4px;
+    }
 
-line-height:8px;
-}
+    .roc-card-period{
+        font-size:4.8px;
+    }
 
+    .roc-dot{
+        font-size:9px;
+    }
 
-/* =====================================================
-   모바일 테이블
-   ===================================================== */
+    .roc-count{
+        font-size:5px;
+    }
 
-th{
-height:19px;
+    .roc-badge{
+        font-size:4px;
 
-padding:2px 1px;
+        padding:2px 3px;
+    }
 
-font-size:5.5px;
+    .card-list{
+        gap:5px;
+    }
 
-border-left:none!important;
-border-right:none!important;
-}
+    .coin-main-row{
+        min-height:36px;
+    }
 
-td{
-height:29px;
+    .coin-main-row > div{
+        height:36px;
+    }
 
-border-left:none!important;
-border-right:none!important;
-}
+    .rank-cell{
+        padding-left:3px;
 
+        font-size:6px;
+    }
 
-/* =====================================================
-   모바일 순위 사이 간격
-   ===================================================== */
+    .coin-name{
+        font-size:6px;
+    }
 
-.rank-gap-row{
-height:6px!important;
-}
+    .volume-value{
+        font-size:5px;
+    }
 
-.rank-gap-row td{
-height:6px!important;
+    .price-value{
+        font-size:5.2px;
+    }
 
-padding:0!important;
+    .change-cell{
+        font-size:5.1px;
+    }
 
-border:none!important;
+    .signal-cell{
+        height:36px!important;
+    }
 
-background:transparent!important;
-}
+    .signal-item{
+        width:24px;
+        min-width:24px;
 
+        height:23px;
 
-/* =====================================================
-   모바일 테이블 폭
-   ===================================================== */
+        border-radius:4px;
+    }
 
-th:nth-child(1),
-td:nth-child(1){
-width:5%;
-}
+    .signal-rocket{
+        font-size:11px;
+        line-height:12px;
+    }
 
-th:nth-child(2),
-td:nth-child(2){
-width:18%;
-}
+    .coin-roc-row{
+        min-height:45px;
+    }
 
-th:nth-child(3),
-td:nth-child(3){
-width:15%;
-}
+    .coin-roc-row .roc-detail{
+        min-height:45px;
+    }
 
-th:nth-child(4),
-td:nth-child(4){
-width:22%;
-}
+    .coin-roc-row .roc-card-item{
+        min-height:32px;
+    }
 
-th:nth-child(5),
-td:nth-child(5){
-width:14%;
-}
+    .coin-roc-row .roc-card-period{
+        font-size:4.5px;
+    }
 
-th:nth-child(6),
-td:nth-child(6){
-width:13%;
-}
+    .coin-roc-row .roc-dot{
+        font-size:8px;
+    }
 
-th:nth-child(7),
-td:nth-child(7){
-width:13%;
-}
-
-
-/* =====================================================
-   모바일 박스
-   ===================================================== */
-
-.rank-main-row td{
-
-border-top:1px solid #303740!important;
-
-}
-
-.rank-main-row td:first-child{
-border-left:1px solid #303740!important;
-
-border-top-left-radius:6px;
-}
-
-.rank-main-row td:last-child{
-border-right:1px solid #303740!important;
-
-border-top-right-radius:6px;
-}
-
-
-/* =====================================================
-   모바일 순위
-   ===================================================== */
-
-.rank-cell{
-padding-left:3px!important;
-padding-right:1px!important;
-
-text-align:left!important;
-
-font-size:6.8px;
-font-weight:900;
-
-white-space:nowrap;
-}
-
-
-/* =====================================================
-   모바일 코인
-   ===================================================== */
-
-.coin-cell{
-padding-left:2px!important;
-padding-right:2px!important;
-
-text-align:center!important;
-}
-
-.coin-name{
-font-size:6.8px;
-
-text-align:center;
-}
-
-
-/* =====================================================
-   모바일 거래대금
-   ===================================================== */
-
-.volume-cell{
-padding-left:1px!important;
-padding-right:1px!important;
-
-text-align:center!important;
-}
-
-.volume-value{
-font-size:5.3px;
-
-color:#f1f3f5;
-
-font-weight:800;
-
-text-align:center;
-}
-
-
-/* =====================================================
-   모바일 가격
-   ===================================================== */
-
-.price-cell{
-padding-left:1px!important;
-padding-right:1px!important;
-
-text-align:center!important;
-}
-
-.price-value{
-font-size:5.7px;
-
-text-align:center;
-}
-
-
-/* =====================================================
-   모바일 변동률
-   ===================================================== */
-
-.change-cell{
-font-size:5.6px;
-
-text-align:center!important;
-}
-
-
-/* =====================================================
-   모바일 ROC
-   ===================================================== */
-
-.rank-roc-row td{
-
-border-top:1px solid #252b32!important;
-
-border-bottom:1px solid #303740!important;
-
-border-left:none!important;
-border-right:none!important;
-
-background:#0f1318!important;
-}
-
-.rank-roc-row td:first-child{
-border-left:1px solid #303740!important;
-
-border-bottom-left-radius:6px;
-}
-
-.rank-roc-row td:last-child{
-border-right:1px solid #303740!important;
-
-border-bottom-right-radius:6px;
-}
-
-
-/* =====================================================
-   모바일 Signal
-   ===================================================== */
-
-.signal-cell{
-padding-left:1px!important;
-padding-right:1px!important;
-
-text-align:center!important;
-
-white-space:nowrap;
-overflow:hidden;
-
-border-left:none!important;
-border-right:none!important;
-}
-
-.signal-item{
-display:inline-flex;
-
-align-items:center;
-justify-content:center;
-
-width:23px;
-min-width:23px;
-
-height:18px;
-
-padding:1px;
-
-border-radius:3px;
-
-gap:0;
-
-white-space:nowrap;
-
-overflow:visible;
-}
-
-.signal-rocket{
-font-size:9px;
-
-line-height:10px;
-
-flex:none;
-}
-
-
-/* =====================================================
-   모바일 ROC
-   ===================================================== */
-
-.btc-roc-grid{
-gap:2px;
-}
-
-.btc-roc-item{
-min-height:31px;
-}
-
-.btc-roc-period{
-font-size:5.8px;
-
-text-align:center;
-}
-
-.btc-roc-icon{
-font-size:9px;
-
-text-align:center;
-}
-
-.btc-roc-count{
-font-size:5.8px;
-
-text-align:center;
-}
+    .coin-roc-row .roc-count{
+        font-size:4.7px;
+    }
 
 }
 
@@ -5176,10 +5300,12 @@ text-align:center;
 
 @media(prefers-reduced-motion:reduce){
 
-tr.signal-flash-one td,
-tr.signal-flash-two td{
-animation:none!important;
-}
+    .coin-card.signal-flash-one .coin-main-row > div,
+    .coin-card.signal-flash-one .coin-roc-row,
+    .coin-card.signal-flash-two .coin-main-row > div,
+    .coin-card.signal-flash-two .coin-roc-row{
+        animation:none!important;
+    }
 
 }
 
@@ -5239,7 +5365,7 @@ def dashboard():
 
         <meta
             name="theme-color"
-            content="#0b0e12"
+            content="#080c11"
         >
 
         <title>
@@ -5395,11 +5521,15 @@ def startup():
     )
 
     log.info(
-        "★ 메인 행 + ROC 상세 = 하나의 박스"
+        "★ 모든 화면을 카드형 디자인으로 통일"
     )
 
     log.info(
-        "★ 순위 사이에만 간격"
+        "★ 메인 행 + ROC 상세 = 하나의 카드"
+    )
+
+    log.info(
+        "★ 카드 사이에만 간격"
     )
 
     log.info(
