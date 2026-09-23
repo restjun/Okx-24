@@ -2384,8 +2384,6 @@ def analyze(
     # ROC50 0선 상향돌파
     # COUNT 1~200
     # 일봉 변동률 >= 0
-    #
-    # Signal 2와 완전히 독립
     # =====================================================
 
     signal1_qualified = (
@@ -2400,8 +2398,6 @@ def analyze(
     # ROC5 0선 상향돌파
     # COUNT 10~30
     # 일봉 변동률 >= 0
-    #
-    # Signal 1과 완전히 독립
     #
     # ROC20 / ROC50 / ROC200 조건 없음
     # =====================================================
@@ -2471,7 +2467,7 @@ def analyze(
             signal2_count_pass,
 
         # 기존 구조 유지
-        # Signal 2의 실제 판정에는 사용하지 않음
+        # 실제 Signal 2 판정에는 사용하지 않음
         "signal2_roc_filter_pass":
             True,
 
@@ -2624,7 +2620,6 @@ def make_row(
                 )
             ),
 
-        # 구조 유지
         "signal2_roc_filter_pass":
             bool(
                 a.get(
@@ -2633,7 +2628,7 @@ def make_row(
                 )
             ),
 
-        # ★ 실제 Signal 2 표시 기준
+        # ★ 실제 Signal 2 최종 판정
         "signal2_qualified":
             bool(
                 a.get(
@@ -2856,11 +2851,8 @@ def signal_item_html(
     qualified
 ):
 
-    # ★ Signal 1 / Signal 2의 최종 판정은
-    #    qualified 값만 사용
-    #
-    # ★ count는 여기서 표시하지 않음
-    # ★ ROC 상세의 COUNT와 완전히 분리
+    # ★ 최종 표시 여부는 qualified만 사용
+    # ★ COUNT는 ROC 상세와 분리
 
     if not qualified:
         return "-"
@@ -2969,8 +2961,9 @@ def top_signal2_html(
     if not row:
         return "-"
 
-    # ★ Signal 2는 반드시
-    #    signal2_qualified를 직접 확인
+    # ★ Signal 2 최종 판정
+    # ★ signal2_qualified가 True면 무조건 🚀 표시
+
     return signal_item_html(
         2,
         row.get(
@@ -2990,7 +2983,7 @@ def top_signal2_html(
 
 # =========================================================
 # ROC HTML
-# ★ 괄호 안에는 실제 ROC 수치가 아니라 COUNT 표시
+# ★ 괄호 안에는 ROC 수치가 아니라 COUNT
 # =========================================================
 
 def roc_filter_html(
@@ -3041,8 +3034,6 @@ def roc_filter_html(
 
                     icon = "🟢"
 
-                    # ★ ROC 수치가 아니라
-                    #   0선 위 연속 COUNT
                     count_text = str(
                         int(
                             positive_counts.get(
@@ -3056,8 +3047,6 @@ def roc_filter_html(
 
                     icon = "🔴"
 
-                    # ★ ROC 수치가 아니라
-                    #   0선 아래 연속 COUNT
                     count_text = str(
                         int(
                             negative_counts.get(
@@ -3134,8 +3123,15 @@ def filter_html(
 
 # =========================================================
 # ROW HTML
-# ★ 메인 행 + ROC 행은 붙이고
-# ★ 순위 그룹 사이에만 7px 간격
+#
+# ★ 메인 행 + ROC 행은 붙임
+# ★ 순위 사이에만 간격
+#
+# ★ Signal 1 반짝임
+#    → Signal 1 COUNT 1~200
+#
+# ★ Signal 2 반짝임
+#    → Signal 2 COUNT 10~30
 # =========================================================
 
 def rows_html(
@@ -3172,22 +3168,37 @@ def rows_html(
             )
         )
 
+        # =================================================
+        # Signal 1 반짝임
+        #
+        # Signal 1 실제 범위 = 1~200
+        # =================================================
+
         if (
             signal1_qualified
-            and count_flash_allowed(
-                signal1_count
-            )
+            and
+            SIGNAL1_COUNT_MIN
+            <= signal1_count
+            <= SIGNAL1_COUNT_MAX
         ):
 
             cls_list.append(
                 "signal-flash-one"
             )
 
+        # =================================================
+        # Signal 2 반짝임
+        #
+        # ★ 수정 핵심
+        # ★ Signal 2 실제 범위 = 10~30
+        # =================================================
+
         if (
             signal2_qualified
-            and count_flash_allowed(
-                signal2_count
-            )
+            and
+            SIGNAL2_COUNT_MIN
+            <= signal2_count
+            <= SIGNAL2_COUNT_MAX
         ):
 
             cls_list.append(
@@ -3296,8 +3307,10 @@ def rows_html(
             """
         )
 
-        # ★ 메인 행 + ROC 행 사이에는 공백 없음
-        # ★ 다음 순위와의 사이에만 7px
+        # =================================================
+        # 순위 사이에만 간격
+        # =================================================
+
         if index < len(data) - 1:
 
             out.append(
@@ -3393,11 +3406,22 @@ def table_html(
 
 # =========================================================
 # 시그널 1 / 시그널 2
+#
+# ★ Signal 1
+#    화면 표시 COUNT = 기존 DISPLAY_COUNT 0~3
+#
+# ★ Signal 2
+#    실제 시그널 COUNT = 10~30
+#    ★ 수정: 화면에서도 10~30 표시
 # =========================================================
 
 def focus_section(
     data
 ):
+
+    # =====================================================
+    # Signal 1
+    # =====================================================
 
     signal1_rows = [
 
@@ -3427,6 +3451,15 @@ def focus_section(
 
     ]
 
+    # =====================================================
+    # Signal 2
+    #
+    # ★ 기존 DISPLAY_COUNT 0~3로 걸러내면
+    #   COUNT 10~30인 Signal 2가 화면에서 사라짐
+    #
+    # ★ Signal 2는 실제 조건인 10~30을 그대로 사용
+    # =====================================================
+
     signal2_rows = [
 
         x
@@ -3442,14 +3475,14 @@ def focus_section(
 
             and
 
-            count_display_allowed(
-                int(
-                    x.get(
-                        "signal2_count",
-                        0
-                    )
+            SIGNAL2_COUNT_MIN
+            <= int(
+                x.get(
+                    "signal2_count",
+                    0
                 )
             )
+            <= SIGNAL2_COUNT_MAX
 
         )
 
@@ -3497,7 +3530,8 @@ def focus_section(
             ·
 
             반짝임
-            {count_flash_text()}
+            {SIGNAL1_COUNT_MIN}~
+            {SIGNAL1_COUNT_MAX}
 
             ·
 
@@ -3537,12 +3571,14 @@ def focus_section(
             ·
 
             화면 COUNT
-            {count_display_text()}
+            {SIGNAL2_COUNT_MIN}~
+            {SIGNAL2_COUNT_MAX}
 
             ·
 
             반짝임
-            {count_flash_text()}
+            {SIGNAL2_COUNT_MIN}~
+            {SIGNAL2_COUNT_MAX}
 
             ·
 
@@ -3608,7 +3644,7 @@ def section(
 
 # =========================================================
 # BTC ROC 상태
-# ★ 괄호 안에는 COUNT 표시
+# ★ 괄호 안에는 COUNT
 # =========================================================
 
 def btc_roc_status_html(
@@ -4152,10 +4188,6 @@ table-layout:fixed;
 
 border-collapse:separate;
 
-/*
-   ★ 메인 행 ↔ ROC 행 사이에는 공백 없음
-   ★ 순위 그룹 사이의 간격은 rank-gap-row가 담당
-*/
 border-spacing:0;
 }
 
@@ -5322,7 +5354,7 @@ def startup():
     )
 
     log.info(
-        "★ ROC5 / ROC20 / ROC50 / ROC200 사용"
+        "★ ROC5 / ROC20 / ROC50 / ROC200 표시"
     )
 
     log.info(
@@ -5330,13 +5362,27 @@ def startup():
     )
 
     log.info(
-        f"★ COUNT 화면 표시 = "
-        f"{count_display_text()}"
+        f"★ Signal 1 COUNT = "
+        f"{SIGNAL1_COUNT_MIN}~"
+        f"{SIGNAL1_COUNT_MAX}"
     )
 
     log.info(
-        f"★ COUNT 반짝임 = "
-        f"{count_flash_text()}"
+        f"★ Signal 2 COUNT = "
+        f"{SIGNAL2_COUNT_MIN}~"
+        f"{SIGNAL2_COUNT_MAX}"
+    )
+
+    log.info(
+        "★ Signal 1 / 2 각각 독립 표시"
+    )
+
+    log.info(
+        "★ Signal 2 ROC20/50/200 조건 사용 안 함"
+    )
+
+    log.info(
+        "★ Signal 2 = ROC5 + COUNT10~30 + 일봉0%이상"
     )
 
     log.info(
@@ -5390,16 +5436,6 @@ def startup():
     )
 
     log.info(
-        f"★ 화면 COUNT 표시 = "
-        f"{count_display_text()}"
-    )
-
-    log.info(
-        f"★ 반짝임 COUNT = "
-        f"{count_flash_text()}"
-    )
-
-    log.info(
         "★ TOP 테이블 = "
         "순위 / 코인 / 거래대금 / 가격 / 변동률 / 1 / 2"
     )
@@ -5421,7 +5457,19 @@ def startup():
     )
 
     log.info(
+        "★ 순위 사이에만 간격"
+    )
+
+    log.info(
         "★ Signal 1 / Signal 2 조건 완전 독립"
+    )
+
+    log.info(
+        "★ Signal 2 화면 COUNT = 10~30"
+    )
+
+    log.info(
+        "★ Signal 2 반짝임 COUNT = 10~30"
     )
 
     log.info(
