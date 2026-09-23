@@ -2470,6 +2470,8 @@ def analyze(
         "signal2_count_pass":
             signal2_count_pass,
 
+        # 기존 구조 유지
+        # Signal 2의 실제 판정에는 사용하지 않음
         "signal2_roc_filter_pass":
             True,
 
@@ -2622,6 +2624,7 @@ def make_row(
                 )
             ),
 
+        # 구조 유지
         "signal2_roc_filter_pass":
             bool(
                 a.get(
@@ -2630,6 +2633,7 @@ def make_row(
                 )
             ),
 
+        # ★ 실제 Signal 2 표시 기준
         "signal2_qualified":
             bool(
                 a.get(
@@ -2852,6 +2856,12 @@ def signal_item_html(
     qualified
 ):
 
+    # ★ Signal 1 / Signal 2의 최종 판정은
+    #    qualified 값만 사용
+    #
+    # ★ count는 여기서 표시하지 않음
+    # ★ ROC 상세의 COUNT와 완전히 분리
+
     if not qualified:
         return "-"
 
@@ -2959,6 +2969,8 @@ def top_signal2_html(
     if not row:
         return "-"
 
+    # ★ Signal 2는 반드시
+    #    signal2_qualified를 직접 확인
     return signal_item_html(
         2,
         row.get(
@@ -3029,6 +3041,8 @@ def roc_filter_html(
 
                     icon = "🟢"
 
+                    # ★ ROC 수치가 아니라
+                    #   0선 위 연속 COUNT
                     count_text = str(
                         int(
                             positive_counts.get(
@@ -3042,6 +3056,8 @@ def roc_filter_html(
 
                     icon = "🔴"
 
+                    # ★ ROC 수치가 아니라
+                    #   0선 아래 연속 COUNT
                     count_text = str(
                         int(
                             negative_counts.get(
@@ -3280,7 +3296,8 @@ def rows_html(
             """
         )
 
-        # 마지막 순위 뒤에는 간격을 만들지 않음
+        # ★ 메인 행 + ROC 행 사이에는 공백 없음
+        # ★ 다음 순위와의 사이에만 7px
         if index < len(data) - 1:
 
             out.append(
@@ -4136,8 +4153,8 @@ table-layout:fixed;
 border-collapse:separate;
 
 /*
-   메인 행 ↔ ROC 행 사이에는 공백 없음.
-   순위 그룹 사이의 간격은 rank-gap-row가 담당.
+   ★ 메인 행 ↔ ROC 행 사이에는 공백 없음
+   ★ 순위 그룹 사이의 간격은 rank-gap-row가 담당
 */
 border-spacing:0;
 }
