@@ -74,52 +74,54 @@ ROC_FILTER_PERIODS = [
 
 
 # =========================================================
-# 시그널 설정
+# Signal 1
+#
+# 트리거 = ROC50 0선 상향 돌파
+# 자체 COUNT = 0,1,2,3...
+# 필터 = ROC20 / ROC50 / ROC200 COUNT 각각 10~30
 # =========================================================
 
 SIGNAL1_ROC_PERIOD = 50
-SIGNAL1_COUNT_MIN = 1
-SIGNAL1_COUNT_MAX = 200
+
+SIGNAL1_FILTER_COUNT_MIN = 10
+SIGNAL1_FILTER_COUNT_MAX = 30
+
+SIGNAL1_DISPLAY_COUNT_MIN = 0
+SIGNAL1_DISPLAY_COUNT_MAX = 2
+
+SIGNAL1_FLASH_COUNT_MIN = 0
+SIGNAL1_FLASH_COUNT_MAX = 2
+
+
+# =========================================================
+# Signal 2
+#
+# 트리거 = ROC5 0선 상향 돌파
+# 자체 COUNT = 0,1,2,3...
+# 필터 = ROC20 / ROC50 / ROC200 COUNT 각각 10~30
+# =========================================================
 
 SIGNAL2_ROC_PERIOD = 5
-SIGNAL2_COUNT_MIN = 10
-SIGNAL2_COUNT_MAX = 30
+
+SIGNAL2_FILTER_COUNT_MIN = 10
+SIGNAL2_FILTER_COUNT_MAX = 30
+
+SIGNAL2_DISPLAY_COUNT_MIN = 0
+SIGNAL2_DISPLAY_COUNT_MAX = 2
+
+SIGNAL2_FLASH_COUNT_MIN = 0
+SIGNAL2_FLASH_COUNT_MAX = 2
 
 
 # =========================================================
-# 화면 COUNT 기준
+# 필터에 사용할 ROC
 # =========================================================
 
-DISPLAY_COUNT_MIN = 0
-DISPLAY_COUNT_MAX = 3
-
-
-# =========================================================
-# 반짝임 COUNT
-# =========================================================
-
-FLASH_COUNT_MIN = 0
-FLASH_COUNT_MAX = 3
-
-
-# =========================================================
-# 시그널 1 ROC 기간별 사용 설정
-# =========================================================
-
-USE_SIGNAL1_ROC5 = "N"
-USE_SIGNAL1_ROC20 = "N"
-USE_SIGNAL1_ROC50 = "N"
-USE_SIGNAL1_ROC200 = "Y"
-
-
-# =========================================================
-# 시그널 2 ROC 기간별 사용 설정
-# =========================================================
-
-USE_SIGNAL2_ROC5 = "N"
-USE_SIGNAL2_ROC20 = "Y"
-USE_SIGNAL2_ROC50 = "Y"
-USE_SIGNAL2_ROC200 = "Y"
+SIGNAL_FILTER_PERIODS = [
+    20,
+    50,
+    200
+]
 
 
 # =========================================================
@@ -131,10 +133,10 @@ ROC_COUNT_HISTORY_EXTRA = 100
 ROC_HISTORY_REQUIRED = (
     max(ROC_FILTER_PERIODS)
     + max(
-        SIGNAL1_COUNT_MAX,
-        SIGNAL2_COUNT_MAX,
-        DISPLAY_COUNT_MAX,
-        FLASH_COUNT_MAX
+        SIGNAL1_DISPLAY_COUNT_MAX,
+        SIGNAL1_FLASH_COUNT_MAX,
+        SIGNAL2_DISPLAY_COUNT_MAX,
+        SIGNAL2_FLASH_COUNT_MAX
     )
     + ROC_COUNT_HISTORY_EXTRA
     + 2
@@ -163,38 +165,38 @@ okx_ticker_cache = {}
 
 
 # =========================================================
-# 시그널 1 상태
+# Signal 1 상태
 # =========================================================
 
 roc_signal1_state = {}
 
 
 # =========================================================
-# 시그널 1 종료 캔들
+# Signal 1 종료 캔들
 # =========================================================
 
 roc_signal1_failed_candle = {}
 
 
 # =========================================================
-# 시그널 2 상태
+# Signal 2 상태
 # =========================================================
 
 roc_signal2_state = {}
 
 
 # =========================================================
-# 시그널 2 종료 캔들
+# Signal 2 종료 캔들
 # =========================================================
 
 roc_signal2_failed_candle = {}
 
 
 # =========================================================
-# COUNT 화면 표시
+# COUNT 표시
 # =========================================================
 
-def count_display_allowed(count):
+def signal1_display_allowed(count):
 
     try:
         count = int(count)
@@ -202,17 +204,13 @@ def count_display_allowed(count):
         return False
 
     return (
-        DISPLAY_COUNT_MIN
+        SIGNAL1_DISPLAY_COUNT_MIN
         <= count
-        <= DISPLAY_COUNT_MAX
+        <= SIGNAL1_DISPLAY_COUNT_MAX
     )
 
 
-# =========================================================
-# COUNT 반짝임
-# =========================================================
-
-def count_flash_allowed(count):
+def signal2_display_allowed(count):
 
     try:
         count = int(count)
@@ -220,34 +218,69 @@ def count_flash_allowed(count):
         return False
 
     return (
-        FLASH_COUNT_MIN
+        SIGNAL2_DISPLAY_COUNT_MIN
         <= count
-        <= FLASH_COUNT_MAX
+        <= SIGNAL2_DISPLAY_COUNT_MAX
     )
 
 
-def count_display_text():
+def signal1_flash_allowed(count):
 
-    if DISPLAY_COUNT_MAX >= 999999:
-        return "전체"
-
-    if DISPLAY_COUNT_MIN == DISPLAY_COUNT_MAX:
-        return str(DISPLAY_COUNT_MIN)
+    try:
+        count = int(count)
+    except Exception:
+        return False
 
     return (
-        f"{DISPLAY_COUNT_MIN}~"
-        f"{DISPLAY_COUNT_MAX}"
+        SIGNAL1_FLASH_COUNT_MIN
+        <= count
+        <= SIGNAL1_FLASH_COUNT_MAX
     )
 
 
-def count_flash_text():
+def signal2_flash_allowed(count):
 
-    if FLASH_COUNT_MIN == FLASH_COUNT_MAX:
-        return str(FLASH_COUNT_MIN)
+    try:
+        count = int(count)
+    except Exception:
+        return False
 
     return (
-        f"{FLASH_COUNT_MIN}~"
-        f"{FLASH_COUNT_MAX}"
+        SIGNAL2_FLASH_COUNT_MIN
+        <= count
+        <= SIGNAL2_FLASH_COUNT_MAX
+    )
+
+
+def signal1_display_text():
+
+    return (
+        f"{SIGNAL1_DISPLAY_COUNT_MIN}~"
+        f"{SIGNAL1_DISPLAY_COUNT_MAX}"
+    )
+
+
+def signal2_display_text():
+
+    return (
+        f"{SIGNAL2_DISPLAY_COUNT_MIN}~"
+        f"{SIGNAL2_DISPLAY_COUNT_MAX}"
+    )
+
+
+def signal1_flash_text():
+
+    return (
+        f"{SIGNAL1_FLASH_COUNT_MIN}~"
+        f"{SIGNAL1_FLASH_COUNT_MAX}"
+    )
+
+
+def signal2_flash_text():
+
+    return (
+        f"{SIGNAL2_FLASH_COUNT_MIN}~"
+        f"{SIGNAL2_FLASH_COUNT_MAX}"
     )
 
 
@@ -260,27 +293,19 @@ def roc_settings():
     return {
 
         5: {
-            "4H": "Y",
-            "SIGNAL1": USE_SIGNAL1_ROC5,
-            "SIGNAL2": USE_SIGNAL2_ROC5
+            "4H": "Y"
         },
 
         20: {
-            "4H": "Y",
-            "SIGNAL1": USE_SIGNAL1_ROC20,
-            "SIGNAL2": USE_SIGNAL2_ROC20
+            "4H": "Y"
         },
 
         50: {
-            "4H": "Y",
-            "SIGNAL1": USE_SIGNAL1_ROC50,
-            "SIGNAL2": USE_SIGNAL2_ROC50
+            "4H": "Y"
         },
 
         200: {
-            "4H": "Y",
-            "SIGNAL1": USE_SIGNAL1_ROC200,
-            "SIGNAL2": USE_SIGNAL2_ROC200
+            "4H": "Y"
         }
 
     }
@@ -297,23 +322,6 @@ def get_enabled_periods(timeframe):
         p
         for p in ROC_FILTER_PERIODS
         if settings[p]["4H"] == "Y"
-    ]
-
-
-def get_signal_enabled_periods(signal_number):
-
-    settings = roc_settings()
-
-    key = (
-        "SIGNAL1"
-        if signal_number == 1
-        else "SIGNAL2"
-    )
-
-    return [
-        p
-        for p in ROC_FILTER_PERIODS
-        if settings[p][key] == "Y"
     ]
 
 
@@ -349,7 +357,10 @@ def format_timeframe(minutes):
 
 
 # =========================================================
-# 현재 캔들 시작시간
+# 현재 4H 캔들 시작시간
+#
+# Upbit native 4H 기준
+# 01 / 05 / 09 / 13 / 17 / 21
 # =========================================================
 
 def get_current_candle_start(minutes):
@@ -368,6 +379,7 @@ def get_current_candle_start(minutes):
         )
 
         if now < anchor:
+
             anchor = (
                 anchor
                 - timedelta(days=1)
@@ -417,6 +429,10 @@ def get_current_candle_start(minutes):
     )
 
 
+# =========================================================
+# 날짜 정규화
+# =========================================================
+
 def normalize_datetime(value):
 
     if value is None:
@@ -436,6 +452,10 @@ def normalize_datetime(value):
 
         return None
 
+
+# =========================================================
+# 캔들 거리
+# =========================================================
 
 def candle_distance(
     start_time,
@@ -482,7 +502,45 @@ def candle_distance(
 
 
 # =========================================================
-# ROC 0선 이상 연속 COUNT
+# ROC
+# =========================================================
+
+def roc(
+    df,
+    period
+):
+
+    if (
+        df is None
+        or df.empty
+        or "c" not in df.columns
+    ):
+        return None
+
+    try:
+
+        close = pd.to_numeric(
+            df["c"],
+            errors="coerce"
+        )
+
+        return (
+            close
+            / close.shift(
+                int(period)
+            )
+            - 1
+        ) * 100
+
+    except Exception:
+
+        return None
+
+
+# =========================================================
+# ROC 양수 연속 COUNT
+#
+# 현재 ROC >= 0이면 COUNT
 # =========================================================
 
 def roc_positive_count(
@@ -514,9 +572,15 @@ def roc_positive_count(
     if valid.empty:
         return 0
 
-    current = float(
-        valid.iloc[-1]
-    )
+    try:
+
+        current = float(
+            valid.iloc[-1]
+        )
+
+    except Exception:
+
+        return 0
 
     if current < 0:
         return 0
@@ -541,7 +605,7 @@ def roc_positive_count(
 
 
 # =========================================================
-# ROC 0선 미만 연속 COUNT
+# ROC 음수 연속 COUNT
 # =========================================================
 
 def roc_negative_count(
@@ -573,9 +637,15 @@ def roc_negative_count(
     if valid.empty:
         return 0
 
-    current = float(
-        valid.iloc[-1]
-    )
+    try:
+
+        current = float(
+            valid.iloc[-1]
+        )
+
+    except Exception:
+
+        return 0
 
     if current >= 0:
         return 0
@@ -600,7 +670,7 @@ def roc_negative_count(
 
 
 # =========================================================
-# 검증
+# 시간봉 검증
 # =========================================================
 
 def validate_timeframe():
@@ -625,85 +695,43 @@ def validate_timeframe():
         )
 
     if (
-        not isinstance(
-            SIGNAL1_COUNT_MIN,
-            int
-        )
-        or SIGNAL1_COUNT_MIN < 0
+        SIGNAL1_FILTER_COUNT_MIN < 0
+        or SIGNAL1_FILTER_COUNT_MAX
+        < SIGNAL1_FILTER_COUNT_MIN
     ):
 
         raise ValueError(
-            "SIGNAL1_COUNT_MIN 설정 오류"
+            "Signal 1 필터 COUNT 설정 오류"
         )
 
     if (
-        not isinstance(
-            SIGNAL1_COUNT_MAX,
-            int
-        )
-        or SIGNAL1_COUNT_MAX < SIGNAL1_COUNT_MIN
+        SIGNAL2_FILTER_COUNT_MIN < 0
+        or SIGNAL2_FILTER_COUNT_MAX
+        < SIGNAL2_FILTER_COUNT_MIN
     ):
 
         raise ValueError(
-            "SIGNAL1_COUNT_MAX 설정 오류"
+            "Signal 2 필터 COUNT 설정 오류"
         )
 
     if (
-        not isinstance(
-            SIGNAL2_COUNT_MIN,
-            int
-        )
-        or SIGNAL2_COUNT_MIN < 0
+        SIGNAL1_DISPLAY_COUNT_MIN < 0
+        or SIGNAL1_DISPLAY_COUNT_MAX
+        < SIGNAL1_DISPLAY_COUNT_MIN
     ):
 
         raise ValueError(
-            "SIGNAL2_COUNT_MIN 설정 오류"
+            "Signal 1 표시 COUNT 설정 오류"
         )
 
     if (
-        not isinstance(
-            SIGNAL2_COUNT_MAX,
-            int
-        )
-        or SIGNAL2_COUNT_MAX < SIGNAL2_COUNT_MIN
+        SIGNAL2_DISPLAY_COUNT_MIN < 0
+        or SIGNAL2_DISPLAY_COUNT_MAX
+        < SIGNAL2_DISPLAY_COUNT_MIN
     ):
 
         raise ValueError(
-            "SIGNAL2_COUNT_MAX 설정 오류"
-        )
-
-    if (
-        not isinstance(
-            DISPLAY_COUNT_MIN,
-            int
-        )
-        or not isinstance(
-            DISPLAY_COUNT_MAX,
-            int
-        )
-        or DISPLAY_COUNT_MIN < 0
-        or DISPLAY_COUNT_MAX < DISPLAY_COUNT_MIN
-    ):
-
-        raise ValueError(
-            "DISPLAY_COUNT_MIN/MAX 설정이 올바르지 않습니다."
-        )
-
-    if (
-        not isinstance(
-            FLASH_COUNT_MIN,
-            int
-        )
-        or not isinstance(
-            FLASH_COUNT_MAX,
-            int
-        )
-        or FLASH_COUNT_MIN < 0
-        or FLASH_COUNT_MAX < FLASH_COUNT_MIN
-    ):
-
-        raise ValueError(
-            "FLASH_COUNT_MIN/MAX 설정이 올바르지 않습니다."
+            "Signal 2 표시 COUNT 설정 오류"
         )
 
 
@@ -798,7 +826,9 @@ def retry(
 
                 return response
 
-            time.sleep(wait)
+            time.sleep(
+                wait
+            )
 
         except Exception as e:
 
@@ -819,7 +849,7 @@ def retry(
 
 
 # =========================================================
-# 업비트 마켓
+# Upbit 마켓
 # =========================================================
 
 def get_upbit_markets():
@@ -877,16 +907,20 @@ def get_upbit_markets():
                 continue
 
             try:
+
                 data = (
                     ticker_response.json()
                 )
+
             except Exception:
+
                 continue
 
             if isinstance(
                 data,
                 list
             ):
+
                 ticker_result.extend(
                     data
                 )
@@ -955,7 +989,7 @@ def get_upbit_markets():
 
 
 # =========================================================
-# 업비트 native 캔들
+# Upbit native 캔들
 # =========================================================
 
 def get_upbit_candle(
@@ -1010,11 +1044,6 @@ def get_upbit_candle(
             data,
             list
         ):
-
-            log.warning(
-                f"업비트 {format_timeframe(unit)} "
-                f"응답 형식 오류: {market}"
-            )
 
             return None
 
@@ -1096,7 +1125,8 @@ def get_upbit_candle(
     except Exception as e:
 
         log.error(
-            f"업비트 {format_timeframe(unit)} 오류 "
+            f"업비트 "
+            f"{format_timeframe(unit)} 오류 "
             f"{market}: {e}"
         )
 
@@ -1138,8 +1168,11 @@ def history_upbit(
             break
 
         if all_df is None:
+
             all_df = df.copy()
+
         else:
+
             all_df = pd.concat(
                 [
                     df,
@@ -1171,33 +1204,14 @@ def history_upbit(
             "%Y-%m-%dT%H:%M:%S"
         )
 
-        if chunk_index == 0:
-
-            log.info(
-                f"[추가 데이터 요청] "
-                f"{market} "
-                f"{format_timeframe(unit)} "
-                f"1차={len(all_df)}개 "
-                f"/ 필요={required}개 "
-                f"→ 2차 요청"
-            )
-
     if all_df is None:
         return None
-
-    log.warning(
-        f"[자료 부족] "
-        f"{market} "
-        f"{format_timeframe(unit)} "
-        f"확보={len(all_df)}개 "
-        f"/ 필요={required}개"
-    )
 
     return all_df
 
 
 # =========================================================
-# 현재 진행 중인 ROC 데이터
+# 현재 진행 중 ROC 데이터
 # =========================================================
 
 def get_upbit_current_roc_data(
@@ -1238,15 +1252,6 @@ def get_upbit_current_roc_data(
 
         to = oldest.strftime(
             "%Y-%m-%dT%H:%M:%S"
-        )
-
-        log.info(
-            f"[현재 ROC 추가 요청] "
-            f"{market} "
-            f"{format_timeframe(timeframe)} "
-            f"1차={len(df)}개 "
-            f"/ 필요={required}개 "
-            f"→ 2차 요청"
         )
 
         df_old = get_upbit_candle(
@@ -1306,18 +1311,14 @@ def get_upbit_current_roc_data(
             log.warning(
                 f"[CURRENT] "
                 f"{market} | "
-                f"{format_timeframe(timeframe)} "
-                f"현재 진행봉 없음 | "
-                f"기준={current_start} | "
-                f"최근={df['datetime'].iloc[-1]}"
+                f"4H 진행봉 없음 | "
+                f"기준={current_start}"
             )
 
     except Exception as e:
 
         log.error(
-            f"현재 "
-            f"{format_timeframe(timeframe)} "
-            f"ROC 데이터 오류 "
+            f"현재 ROC 데이터 오류 "
             f"{market}: {e}"
         )
 
@@ -1336,52 +1337,12 @@ def get_upbit_current_roc_data(
             .reset_index(drop=True)
         )
 
-    log.info(
-        f"[NATIVE CURRENT] "
-        f"{market} | "
-        f"{format_timeframe(timeframe)}="
-        f"{len(df)}개 | "
-        f"필요={required}개"
-    )
-
     return df
 
 
 # =========================================================
-# ROC
+# ROC 분석
 # =========================================================
-
-def roc(
-    df,
-    period
-):
-
-    if (
-        df is None
-        or df.empty
-        or "c" not in df.columns
-    ):
-        return None
-
-    try:
-
-        close = pd.to_numeric(
-            df["c"],
-            errors="coerce"
-        )
-
-        return (
-            close
-            / close.shift(
-                int(period)
-            )
-            - 1
-        ) * 100
-
-    except Exception:
-
-        return None
-
 
 def roc_filter_analysis(
     df,
@@ -1432,6 +1393,7 @@ def roc_filter_analysis(
         df is None
         or df.empty
     ):
+
         return result
 
     values = {}
@@ -1454,13 +1416,17 @@ def roc_filter_analysis(
             series is None
             or series.empty
         ):
+
             continue
 
-        current_value = series.iloc[-1]
+        current_value = (
+            series.iloc[-1]
+        )
 
         if pd.isna(
             current_value
         ):
+
             continue
 
         current_value = float(
@@ -1488,26 +1454,31 @@ def roc_filter_analysis(
                 previous_value = None
 
         values[period] = current_value
-        previous_values[period] = previous_value
 
-        zero_crosses[period] = (
+        previous_values[
+            period
+        ] = previous_value
+
+        zero_crosses[
+            period
+        ] = (
             previous_value is not None
-            and previous_value <= 0
+            and previous_value < 0
             and current_value >= 0
         )
 
-        positive_counts[period] = (
-            roc_positive_count(
-                df,
-                period
-            )
+        positive_counts[
+            period
+        ] = roc_positive_count(
+            df,
+            period
         )
 
-        negative_counts[period] = (
-            roc_negative_count(
-                df,
-                period
-            )
+        negative_counts[
+            period
+        ] = roc_negative_count(
+            df,
+            period
         )
 
         if current_value >= 0:
@@ -1516,7 +1487,8 @@ def roc_filter_analysis(
     passed = (
         len(values)
         == len(periods)
-        and positive_count
+        and
+        positive_count
         == len(periods)
     )
 
@@ -1557,7 +1529,7 @@ def roc_filter_analysis(
 
 
 # =========================================================
-# ROC 0선 상향 돌파
+# 0선 상향 돌파
 # =========================================================
 
 def roc_signal_zero_cross(
@@ -1569,6 +1541,7 @@ def roc_signal_zero_cross(
         current is None
         or previous is None
     ):
+
         return False
 
     try:
@@ -1592,7 +1565,7 @@ def roc_signal_zero_cross(
 
 
 # =========================================================
-# 최근 시그널 이벤트 찾기
+# 최근 시그널 이벤트
 # =========================================================
 
 def find_latest_signal_event(
@@ -1604,6 +1577,7 @@ def find_latest_signal_event(
         df_signal is None
         or df_signal.empty
     ):
+
         return None, None
 
     try:
@@ -1638,15 +1612,16 @@ def find_latest_signal_event(
         if len(temp) < 2:
             return None, None
 
-        signal_roc_series = roc(
+        series = roc(
             temp,
             signal_period
         )
 
         if (
-            signal_roc_series is None
-            or signal_roc_series.empty
+            series is None
+            or series.empty
         ):
+
             return None, None
 
         for i in range(
@@ -1656,17 +1631,18 @@ def find_latest_signal_event(
         ):
 
             current_value = (
-                signal_roc_series.iloc[i]
+                series.iloc[i]
             )
 
             previous_value = (
-                signal_roc_series.iloc[i - 1]
+                series.iloc[i - 1]
             )
 
             if (
                 pd.isna(current_value)
                 or pd.isna(previous_value)
             ):
+
                 continue
 
             try:
@@ -1703,14 +1679,23 @@ def find_latest_signal_event(
 
         log.warning(
             f"ROC{signal_period} "
-            f"최근 시그널 이벤트 검색 오류: {e}"
+            f"최근 이벤트 검색 오류: {e}"
         )
 
         return None, None
 
 
 # =========================================================
-# 시그널 상태 업데이트
+# Signal 상태 업데이트
+#
+# 자체 COUNT는 필터 COUNT와 독립
+#
+# 돌파 캔들 = 0
+# 다음 캔들 = 1
+# 다음 캔들 = 2
+# ...
+#
+# 트리거 ROC가 음수가 되면 종료
 # =========================================================
 
 def update_signal(
@@ -1722,19 +1707,33 @@ def update_signal(
     historical_start_candle=None
 ):
 
-    market_key = str(market)
+    market_key = str(
+        market
+    )
 
     if signal_number == 1:
 
         state_dict = roc_signal1_state
-        failed_dict = roc_signal1_failed_candle
-        signal_period = SIGNAL1_ROC_PERIOD
+
+        failed_dict = (
+            roc_signal1_failed_candle
+        )
+
+        signal_period = (
+            SIGNAL1_ROC_PERIOD
+        )
 
     else:
 
         state_dict = roc_signal2_state
-        failed_dict = roc_signal2_failed_candle
-        signal_period = SIGNAL2_ROC_PERIOD
+
+        failed_dict = (
+            roc_signal2_failed_candle
+        )
+
+        signal_period = (
+            SIGNAL2_ROC_PERIOD
+        )
 
     progress_candle_time = (
         normalize_datetime(
@@ -1762,9 +1761,11 @@ def update_signal(
 
         previous_value = None
 
-    signal_cross = roc_signal_zero_cross(
-        current_value,
-        previous_value
+    signal_cross = (
+        roc_signal_zero_cross(
+            current_value,
+            previous_value
+        )
     )
 
     signal_state = (
@@ -1772,6 +1773,10 @@ def update_signal(
             market_key
         )
     )
+
+    # =====================================================
+    # 신규 돌파
+    # =====================================================
 
     if signal_cross:
 
@@ -1807,12 +1812,15 @@ def update_signal(
             )
 
             log.info(
-                f"[시그널 {signal_number} "
-                f"ROC{signal_period} START] "
-                f"{market_key} 🚀(0) | "
-                f"ROC={current_value} | "
-                f"기준=4H"
+                f"[Signal {signal_number} START] "
+                f"{market_key} "
+                f"ROC{signal_period} "
+                f"🚀(0)"
             )
+
+    # =====================================================
+    # 기존 상태가 없으면 과거 이벤트 복원
+    # =====================================================
 
     else:
 
@@ -1877,11 +1885,14 @@ def update_signal(
                     )
 
                     log.info(
-                        f"[시그널 {signal_number} "
-                        f"ROC{signal_period} RESTORE] "
+                        f"[Signal {signal_number} RESTORE] "
                         f"{market_key} "
                         f"🚀({distance})"
                     )
+
+    # =====================================================
+    # 상태 확인
+    # =====================================================
 
     signal_state = (
         state_dict.get(
@@ -1890,6 +1901,10 @@ def update_signal(
     )
 
     if signal_state is not None:
+
+        # =================================================
+        # 트리거 ROC 음수 → Signal 종료
+        # =================================================
 
         if (
             current_value is not None
@@ -1910,8 +1925,7 @@ def update_signal(
                 ] = progress_candle_time
 
             log.info(
-                f"[시그널 {signal_number} "
-                f"ROC{signal_period} END] "
+                f"[Signal {signal_number} END] "
                 f"{market_key} | "
                 f"COUNT={old_count} | "
                 f"ROC 음수"
@@ -1943,7 +1957,9 @@ def update_signal(
                     SIGNAL_TIMEFRAME
                 )
 
-                signal_state["count"] = distance
+                signal_state[
+                    "count"
+                ] = distance
 
                 signal_state[
                     "last_candle"
@@ -1989,39 +2005,7 @@ def update_signal(
 
 
 # =========================================================
-# 시그널 COUNT 범위
-# =========================================================
-
-def signal_count_allowed(
-    signal_number,
-    count
-):
-
-    try:
-
-        count = int(count)
-
-    except Exception:
-
-        return False
-
-    if signal_number == 1:
-
-        return (
-            SIGNAL1_COUNT_MIN
-            <= count
-            <= SIGNAL1_COUNT_MAX
-        )
-
-    return (
-        SIGNAL2_COUNT_MIN
-        <= count
-        <= SIGNAL2_COUNT_MAX
-    )
-
-
-# =========================================================
-# 일봉 등락
+# 일봉 변동률
 # =========================================================
 
 def daily_change_upbit(
@@ -2061,14 +2045,10 @@ def daily_change_upbit(
         if previous == 0:
             return None
 
-        return [
-            (
-                current
-                - previous
-            )
-            / previous
-            * 100
-        ]
+        return (
+            current
+            - previous
+        ) / previous * 100
 
     except Exception:
 
@@ -2131,6 +2111,10 @@ def format_change(x):
     )
 
 
+# =========================================================
+# 거래대금
+# =========================================================
+
 def format_volume(v):
 
     try:
@@ -2162,10 +2146,6 @@ def analyze(
     current_price
 ):
 
-    all_periods = (
-        get_all_periods()
-    )
-
     df_signal = history_upbit(
         market,
         SIGNAL_TIMEFRAME,
@@ -2176,6 +2156,7 @@ def analyze(
         df_signal is None
         or df_signal.empty
     ):
+
         return None
 
     df_current = (
@@ -2190,92 +2171,110 @@ def analyze(
         df_current is None
         or df_current.empty
     ):
+
         return None
 
-    r_signal_raw = roc_filter_analysis(
+    # =====================================================
+    # 모든 ROC
+    # =====================================================
+
+    r_signal = roc_filter_analysis(
         df_current,
-        all_periods
+        ROC_FILTER_PERIODS
     )
 
-    r_signal = r_signal_raw
+    roc_values = r_signal.get(
+        "roc_values",
+        {}
+    )
+
+    previous_values = r_signal.get(
+        "previous_values",
+        {}
+    )
+
+    positive_counts = r_signal.get(
+        "positive_counts",
+        {}
+    )
+
+    # =====================================================
+    # Signal 1 ROC50
+    # =====================================================
 
     signal1_roc_current = (
-        r_signal
-        .get(
-            "roc_values",
-            {}
-        )
-        .get(
+        roc_values.get(
             SIGNAL1_ROC_PERIOD
         )
     )
 
     signal1_roc_previous = (
-        r_signal
-        .get(
-            "previous_values",
-            {}
-        )
-        .get(
+        previous_values.get(
             SIGNAL1_ROC_PERIOD
         )
     )
 
+    # =====================================================
+    # Signal 2 ROC5
+    # =====================================================
+
     signal2_roc_current = (
-        r_signal
-        .get(
-            "roc_values",
-            {}
-        )
-        .get(
+        roc_values.get(
             SIGNAL2_ROC_PERIOD
         )
     )
 
     signal2_roc_previous = (
-        r_signal
-        .get(
-            "previous_values",
-            {}
-        )
-        .get(
+        previous_values.get(
             SIGNAL2_ROC_PERIOD
         )
     )
+
+    # =====================================================
+    # 과거 Signal 1 이벤트
+    # =====================================================
 
     historical_start_candle1 = None
 
     if market not in roc_signal1_state:
 
-        latest_event_type1, latest_event_candle1 = (
+        event_type1, event_candle1 = (
             find_latest_signal_event(
                 df_signal,
                 SIGNAL1_ROC_PERIOD
             )
         )
 
-        if latest_event_type1 == "signal":
+        if event_type1 == "signal":
 
             historical_start_candle1 = (
-                latest_event_candle1
+                event_candle1
             )
+
+    # =====================================================
+    # 과거 Signal 2 이벤트
+    # =====================================================
 
     historical_start_candle2 = None
 
     if market not in roc_signal2_state:
 
-        latest_event_type2, latest_event_candle2 = (
+        event_type2, event_candle2 = (
             find_latest_signal_event(
                 df_signal,
                 SIGNAL2_ROC_PERIOD
             )
         )
 
-        if latest_event_type2 == "signal":
+        if event_type2 == "signal":
 
             historical_start_candle2 = (
-                latest_event_candle2
+                event_candle2
             )
+
+    # =====================================================
+    # 현재 진행 4H 캔들
+    # =====================================================
 
     progress_candle_time = (
         get_current_candle_start(
@@ -2285,6 +2284,7 @@ def analyze(
 
     # =====================================================
     # Signal 1 독립 계산
+    #
     # ROC50
     # =====================================================
 
@@ -2303,6 +2303,7 @@ def analyze(
 
     # =====================================================
     # Signal 2 독립 계산
+    #
     # ROC5
     # =====================================================
 
@@ -2320,7 +2321,9 @@ def analyze(
     )
 
     # =====================================================
-    # Signal 1 COUNT
+    # 자체 Signal COUNT
+    #
+    # ★ 필터 COUNT와 완전히 별개
     # =====================================================
 
     signal1_count = int(
@@ -2329,47 +2332,93 @@ def analyze(
         ]
     )
 
-    signal1_count_pass = (
-        state1["signal_active"]
-        and
-        signal_count_allowed(
-            1,
-            signal1_count
-        )
-    )
-
-    # =====================================================
-    # Signal 2 COUNT
-    # =====================================================
-
     signal2_count = int(
         state2[
             "signal_count"
         ]
     )
 
-    signal2_count_pass = (
-        state2["signal_active"]
+    # =====================================================
+    # 필터 COUNT
+    #
+    # ROC20 / ROC50 / ROC200
+    # 각각 10~30
+    # =====================================================
+
+    roc20_count = int(
+        positive_counts.get(
+            20,
+            0
+        )
+    )
+
+    roc50_count = int(
+        positive_counts.get(
+            50,
+            0
+        )
+    )
+
+    roc200_count = int(
+        positive_counts.get(
+            200,
+            0
+        )
+    )
+
+    # =====================================================
+    # Signal 1 필터
+    # =====================================================
+
+    signal1_filter_pass = (
+
+        SIGNAL1_FILTER_COUNT_MIN
+        <= roc20_count
+        <= SIGNAL1_FILTER_COUNT_MAX
+
         and
-        signal_count_allowed(
-            2,
-            signal2_count
-        )
+
+        SIGNAL1_FILTER_COUNT_MIN
+        <= roc50_count
+        <= SIGNAL1_FILTER_COUNT_MAX
+
+        and
+
+        SIGNAL1_FILTER_COUNT_MIN
+        <= roc200_count
+        <= SIGNAL1_FILTER_COUNT_MAX
     )
 
     # =====================================================
-    # 일봉 변동률
+    # Signal 2 필터
     # =====================================================
 
-    changes = (
-        daily_change_upbit(
-            market
-        )
+    signal2_filter_pass = (
+
+        SIGNAL2_FILTER_COUNT_MIN
+        <= roc20_count
+        <= SIGNAL2_FILTER_COUNT_MAX
+
+        and
+
+        SIGNAL2_FILTER_COUNT_MIN
+        <= roc50_count
+        <= SIGNAL2_FILTER_COUNT_MAX
+
+        and
+
+        SIGNAL2_FILTER_COUNT_MIN
+        <= roc200_count
+        <= SIGNAL2_FILTER_COUNT_MAX
     )
+
+    # =====================================================
+    # 일봉
+    # =====================================================
 
     change_value = (
-        get_change_value(
-            changes
+        daily_change_upbit(
+            market
         )
     )
 
@@ -2379,32 +2428,48 @@ def analyze(
     )
 
     # =====================================================
-    # Signal 1
+    # Signal 1 최종
     #
-    # ROC50 0선 상향돌파
-    # COUNT 1~200
-    # 일봉 변동률 >= 0
+    # ROC50 돌파 후 활성
+    # + ROC20/50/200 COUNT 10~30
+    # + 일봉 >= 0
     # =====================================================
 
     signal1_qualified = (
-        signal1_count_pass
+
+        state1[
+            "signal_active"
+        ]
+
         and
+
+        signal1_filter_pass
+
+        and
+
         daily_pass
     )
 
     # =====================================================
-    # Signal 2
+    # Signal 2 최종
     #
-    # ROC5 0선 상향돌파
-    # COUNT 10~30
-    # 일봉 변동률 >= 0
-    #
-    # ROC20 / ROC50 / ROC200 조건 없음
+    # ROC5 돌파 후 활성
+    # + ROC20/50/200 COUNT 10~30
+    # + 일봉 >= 0
     # =====================================================
 
     signal2_qualified = (
-        signal2_count_pass
+
+        state2[
+            "signal_active"
+        ]
+
         and
+
+        signal2_filter_pass
+
+        and
+
         daily_pass
     )
 
@@ -2414,10 +2479,14 @@ def analyze(
             r_signal,
 
         "changes":
-            changes,
+            change_value,
 
         "daily_pass":
             daily_pass,
+
+        # =================================================
+        # Signal 1
+        # =================================================
 
         "signal1_active":
             state1[
@@ -2438,11 +2507,27 @@ def analyze(
                 "signal_roc_cross"
             ],
 
+        "signal1_filter_pass":
+            signal1_filter_pass,
+
         "signal1_count_pass":
-            signal1_count_pass,
+            signal1_filter_pass,
+
+        "signal1_roc20_count":
+            roc20_count,
+
+        "signal1_roc50_count":
+            roc50_count,
+
+        "signal1_roc200_count":
+            roc200_count,
 
         "signal1_qualified":
             signal1_qualified,
+
+        # =================================================
+        # Signal 2
+        # =================================================
 
         "signal2_active":
             state2[
@@ -2463,20 +2548,29 @@ def analyze(
                 "signal_roc_cross"
             ],
 
-        "signal2_count_pass":
-            signal2_count_pass,
+        "signal2_filter_pass":
+            signal2_filter_pass,
 
-        # 기존 구조 유지
-        # 실제 Signal 2 판정에는 사용하지 않음
+        "signal2_count_pass":
+            signal2_filter_pass,
+
+        "signal2_roc20_count":
+            roc20_count,
+
+        "signal2_roc50_count":
+            roc50_count,
+
+        "signal2_roc200_count":
+            roc200_count,
+
         "signal2_roc_filter_pass":
-            True,
+            signal2_filter_pass,
 
         "signal2_qualified":
             signal2_qualified,
 
         "df_signal":
             df_signal
-
     }
 
 
@@ -2538,6 +2632,10 @@ def make_row(
                 {}
             ),
 
+        # =================================================
+        # Signal 1
+        # =================================================
+
         "signal1_active":
             bool(
                 a.get(
@@ -2567,6 +2665,14 @@ def make_row(
                 )
             ),
 
+        "signal1_filter_pass":
+            bool(
+                a.get(
+                    "signal1_filter_pass",
+                    False
+                )
+            ),
+
         "signal1_count_pass":
             bool(
                 a.get(
@@ -2582,6 +2688,10 @@ def make_row(
                     False
                 )
             ),
+
+        # =================================================
+        # Signal 2
+        # =================================================
 
         "signal2_active":
             bool(
@@ -2612,6 +2722,14 @@ def make_row(
                 )
             ),
 
+        "signal2_filter_pass":
+            bool(
+                a.get(
+                    "signal2_filter_pass",
+                    False
+                )
+            ),
+
         "signal2_count_pass":
             bool(
                 a.get(
@@ -2620,15 +2738,6 @@ def make_row(
                 )
             ),
 
-        "signal2_roc_filter_pass":
-            bool(
-                a.get(
-                    "signal2_roc_filter_pass",
-                    True
-                )
-            ),
-
-        # ★ 실제 Signal 2 최종 판정
         "signal2_qualified":
             bool(
                 a.get(
@@ -2639,12 +2748,11 @@ def make_row(
 
         "analysis":
             analysis
-
     }
 
 
 # =========================================================
-# TOP 업데이트
+# Upbit TOP 업데이트
 # =========================================================
 
 def update_upbit():
@@ -2724,7 +2832,7 @@ def update_upbit():
 
 
 # =========================================================
-# OKX
+# USDT / OKX
 # =========================================================
 
 def get_usdt_krw_internal():
@@ -2749,11 +2857,9 @@ def get_usdt_krw_internal():
         if not data:
             return None
 
-        price = float(
+        return float(
             data[0]["trade_price"]
         )
-
-        return price
 
     except Exception:
 
@@ -2790,6 +2896,7 @@ def update_dashboard():
     try:
 
         if USE_UPBIT == "Y":
+
             update_upbit()
 
         if USE_OKX == "Y":
@@ -2799,7 +2906,10 @@ def update_dashboard():
             )
 
             if usdt:
-                update_okx(usdt)
+
+                update_okx(
+                    usdt
+                )
 
     except Exception as e:
 
@@ -2824,24 +2934,34 @@ def format_market_price(
         return "-"
 
     try:
-        price = float(price)
+
+        price = float(
+            price
+        )
+
     except Exception:
+
         return "-"
 
     if price >= 100000000:
-        return f"{price / 100000000:.2f}억"
+
+        return (
+            f"{price / 100000000:.2f}억"
+        )
 
     if price >= 10000:
+
         return f"{price:,.0f}"
 
     if price >= 1:
+
         return f"{price:,.2f}"
 
     return f"{price:.6f}"
 
 
 # =========================================================
-# 개별 시그널 표시
+# Signal 표시
 # =========================================================
 
 def signal_item_html(
@@ -2851,26 +2971,17 @@ def signal_item_html(
     qualified
 ):
 
-    # ★ 최종 표시 여부는 qualified만 사용
-    # ★ COUNT는 ROC 상세와 분리
-
     if not qualified:
         return "-"
 
     return f"""
     <span class="signal-item signal-{signal_number}">
-
         <span class="signal-rocket">
             🚀
         </span>
-
     </span>
     """
 
-
-# =========================================================
-# BTC / 시장용 시그널
-# =========================================================
 
 def signal_html(
     row
@@ -2926,10 +3037,6 @@ def signal_html(
     """
 
 
-# =========================================================
-# TOP 시그널
-# =========================================================
-
 def top_signal1_html(
     row
 ):
@@ -2961,9 +3068,6 @@ def top_signal2_html(
     if not row:
         return "-"
 
-    # ★ Signal 2 최종 판정
-    # ★ signal2_qualified가 True면 무조건 🚀 표시
-
     return signal_item_html(
         2,
         row.get(
@@ -2983,7 +3087,7 @@ def top_signal2_html(
 
 # =========================================================
 # ROC HTML
-# ★ 괄호 안에는 ROC 수치가 아니라 COUNT
+# 괄호 = COUNT
 # =========================================================
 
 def roc_filter_html(
@@ -3123,15 +3227,6 @@ def filter_html(
 
 # =========================================================
 # ROW HTML
-#
-# ★ 메인 행 + ROC 행은 붙임
-# ★ 순위 사이에만 간격
-#
-# ★ Signal 1 반짝임
-#    → Signal 1 COUNT 1~200
-#
-# ★ Signal 2 반짝임
-#    → Signal 2 COUNT 10~30
 # =========================================================
 
 def rows_html(
@@ -3140,7 +3235,9 @@ def rows_html(
 
     out = []
 
-    for index, x in enumerate(data):
+    for index, x in enumerate(
+        data
+    ):
 
         cls_list = []
 
@@ -3170,16 +3267,15 @@ def rows_html(
 
         # =================================================
         # Signal 1 반짝임
-        #
-        # Signal 1 실제 범위 = 1~200
+        # 자체 COUNT 0~2
         # =================================================
 
         if (
             signal1_qualified
             and
-            SIGNAL1_COUNT_MIN
-            <= signal1_count
-            <= SIGNAL1_COUNT_MAX
+            signal1_flash_allowed(
+                signal1_count
+            )
         ):
 
             cls_list.append(
@@ -3188,17 +3284,15 @@ def rows_html(
 
         # =================================================
         # Signal 2 반짝임
-        #
-        # ★ 수정 핵심
-        # ★ Signal 2 실제 범위 = 10~30
+        # 자체 COUNT 0~2
         # =================================================
 
         if (
             signal2_qualified
             and
-            SIGNAL2_COUNT_MIN
-            <= signal2_count
-            <= SIGNAL2_COUNT_MAX
+            signal2_flash_allowed(
+                signal2_count
+            )
         ):
 
             cls_list.append(
@@ -3216,12 +3310,16 @@ def rows_html(
             )
         )
 
-        signal1_content = top_signal1_html(
-            x
+        signal1_content = (
+            top_signal1_html(
+                x
+            )
         )
 
-        signal2_content = top_signal2_html(
-            x
+        signal2_content = (
+            top_signal2_html(
+                x
+            )
         )
 
         price = format_market_price(
@@ -3306,10 +3404,6 @@ def rows_html(
             </tr>
             """
         )
-
-        # =================================================
-        # 순위 사이에만 간격
-        # =================================================
 
         if index < len(data) - 1:
 
@@ -3405,14 +3499,7 @@ def table_html(
 
 
 # =========================================================
-# 시그널 1 / 시그널 2
-#
-# ★ Signal 1
-#    화면 표시 COUNT = 기존 DISPLAY_COUNT 0~3
-#
-# ★ Signal 2
-#    실제 시그널 COUNT = 10~30
-#    ★ 수정: 화면에서도 10~30 표시
+# Signal 1 / Signal 2 집중 영역
 # =========================================================
 
 def focus_section(
@@ -3421,6 +3508,8 @@ def focus_section(
 
     # =====================================================
     # Signal 1
+    #
+    # 자체 COUNT 0~2
     # =====================================================
 
     signal1_rows = [
@@ -3438,7 +3527,7 @@ def focus_section(
 
             and
 
-            count_display_allowed(
+            signal1_display_allowed(
                 int(
                     x.get(
                         "signal1_count",
@@ -3454,10 +3543,7 @@ def focus_section(
     # =====================================================
     # Signal 2
     #
-    # ★ 기존 DISPLAY_COUNT 0~3로 걸러내면
-    #   COUNT 10~30인 Signal 2가 화면에서 사라짐
-    #
-    # ★ Signal 2는 실제 조건인 10~30을 그대로 사용
+    # 자체 COUNT 0~2
     # =====================================================
 
     signal2_rows = [
@@ -3475,14 +3561,14 @@ def focus_section(
 
             and
 
-            SIGNAL2_COUNT_MIN
-            <= int(
-                x.get(
-                    "signal2_count",
-                    0
+            signal2_display_allowed(
+                int(
+                    x.get(
+                        "signal2_count",
+                        0
+                    )
                 )
             )
-            <= SIGNAL2_COUNT_MAX
 
         )
 
@@ -3510,13 +3596,13 @@ def focus_section(
 
             ·
 
-            COUNT
-            {SIGNAL1_COUNT_MIN}~
-            {SIGNAL1_COUNT_MAX}
+            0선 상향 돌파
 
             ·
 
-            0선 상향 돌파
+            ROC20/50/200 COUNT
+            {SIGNAL1_FILTER_COUNT_MIN}~
+            {SIGNAL1_FILTER_COUNT_MAX}
 
             ·
 
@@ -3524,14 +3610,13 @@ def focus_section(
 
             ·
 
-            화면 COUNT
-            {count_display_text()}
+            자체 COUNT
+            {signal1_display_text()}
 
             ·
 
             반짝임
-            {SIGNAL1_COUNT_MIN}~
-            {SIGNAL1_COUNT_MAX}
+            {signal1_flash_text()}
 
             ·
 
@@ -3542,6 +3627,7 @@ def focus_section(
     </div>
 
     {signal1_table}
+
 
     <div class="section-title long-title">
 
@@ -3556,13 +3642,13 @@ def focus_section(
 
             ·
 
-            COUNT
-            {SIGNAL2_COUNT_MIN}~
-            {SIGNAL2_COUNT_MAX}
+            0선 상향 돌파
 
             ·
 
-            0선 상향 돌파
+            ROC20/50/200 COUNT
+            {SIGNAL2_FILTER_COUNT_MIN}~
+            {SIGNAL2_FILTER_COUNT_MAX}
 
             ·
 
@@ -3570,15 +3656,13 @@ def focus_section(
 
             ·
 
-            화면 COUNT
-            {SIGNAL2_COUNT_MIN}~
-            {SIGNAL2_COUNT_MAX}
+            자체 COUNT
+            {signal2_display_text()}
 
             ·
 
             반짝임
-            {SIGNAL2_COUNT_MIN}~
-            {SIGNAL2_COUNT_MAX}
+            {signal2_flash_text()}
 
             ·
 
@@ -3615,20 +3699,19 @@ def section(
             ·
 
             1
-            ROC{SIGNAL1_ROC_PERIOD}
+            ROC50
             4H
-            COUNT
-            {SIGNAL1_COUNT_MIN}~
-            {SIGNAL1_COUNT_MAX}
 
             ·
 
             2
-            ROC{SIGNAL2_ROC_PERIOD}
+            ROC5
             4H
-            COUNT
-            {SIGNAL2_COUNT_MIN}~
-            {SIGNAL2_COUNT_MAX}
+
+            ·
+
+            ROC20/50/200 COUNT
+            10~30
 
             ·
 
@@ -3644,7 +3727,6 @@ def section(
 
 # =========================================================
 # BTC ROC 상태
-# ★ 괄호 안에는 COUNT
 # =========================================================
 
 def btc_roc_status_html(
@@ -3670,13 +3752,12 @@ def btc_roc_status_html(
         df_signal is None
         or df_signal.empty
     ):
-        return ""
 
-    periods = ROC_FILTER_PERIODS.copy()
+        return ""
 
     items = []
 
-    for period in periods:
+    for period in ROC_FILTER_PERIODS:
 
         series = roc(
             df_signal,
@@ -3711,11 +3792,9 @@ def btc_roc_status_html(
                     icon = "🟢"
 
                     count_text = str(
-                        int(
-                            roc_positive_count(
-                                df_signal,
-                                period
-                            )
+                        roc_positive_count(
+                            df_signal,
+                            period
                         )
                     )
 
@@ -3724,11 +3803,9 @@ def btc_roc_status_html(
                     icon = "🔴"
 
                     count_text = str(
-                        int(
-                            roc_negative_count(
-                                df_signal,
-                                period
-                            )
+                        roc_negative_count(
+                            df_signal,
+                            period
                         )
                     )
 
@@ -3797,6 +3874,7 @@ def market_summary_html():
         ) == "BTC":
 
             btc = row
+
             break
 
     if btc:
@@ -3841,19 +3919,19 @@ def market_summary_html():
 
             <span class="market-title-sub">
 
-                1
-                ROC{SIGNAL1_ROC_PERIOD}
-                COUNT
-                {SIGNAL1_COUNT_MIN}~
-                {SIGNAL1_COUNT_MAX}
+                1 = ROC50 돌파
 
                 ·
 
-                2
-                ROC{SIGNAL2_ROC_PERIOD}
-                COUNT
-                {SIGNAL2_COUNT_MIN}~
-                {SIGNAL2_COUNT_MAX}
+                2 = ROC5 돌파
+
+                ·
+
+                ROC20/50/200 COUNT 10~30
+
+                ·
+
+                자체 COUNT 0~2
 
                 ·
 
@@ -3988,16 +4066,6 @@ font-weight:700;
 
 overflow:hidden;
 text-overflow:ellipsis;
-}
-
-
-/* =====================================================
-   TOP 제목
-   ===================================================== */
-
-.top-title{
-margin-top:9px;
-margin-bottom:6px;
 }
 
 
@@ -4291,7 +4359,7 @@ width:13%;
 
 
 /* =====================================================
-   순위별 하나의 박스
+   순위 하나의 박스
    ===================================================== */
 
 .rank-main-row td{
@@ -4456,7 +4524,7 @@ border-right:none!important;
 
 
 /* =====================================================
-   시그널
+   Signal
    ===================================================== */
 
 .signal-wrap{
@@ -4575,45 +4643,6 @@ border-bottom-right-radius:7px;
 
 
 /* =====================================================
-   ROC 상세 내용
-   ===================================================== */
-
-.filter-detail{
-display:flex;
-
-flex-direction:column;
-
-gap:4px;
-
-width:100%;
-
-padding:5px 6px 6px;
-}
-
-.filter-detail .btc-roc-section{
-margin-top:0;
-
-padding-top:0;
-
-border-top:0;
-}
-
-.filter-detail .btc-roc-title{
-margin-bottom:4px;
-
-font-size:7.5px;
-}
-
-.filter-detail .btc-roc-grid{
-gap:3px;
-}
-
-.filter-detail .btc-roc-item{
-min-height:36px;
-}
-
-
-/* =====================================================
    반짝임
    ===================================================== */
 
@@ -4721,10 +4750,6 @@ font-weight:900;
 }
 
 .zero{
-color:#707a84!important;
-}
-
-.muted{
 color:#707a84!important;
 }
 
@@ -4927,7 +4952,7 @@ width:13%;
 
 
 /* =====================================================
-   모바일 순위별 박스
+   모바일 박스
    ===================================================== */
 
 .rank-main-row td{
@@ -5065,7 +5090,7 @@ border-bottom-right-radius:6px;
 
 
 /* =====================================================
-   모바일 시그널
+   모바일 Signal
    ===================================================== */
 
 .signal-cell{
@@ -5113,39 +5138,15 @@ flex:none;
 
 
 /* =====================================================
-   모바일 ROC 상세
+   모바일 ROC
    ===================================================== */
 
-.filter-detail{
-gap:2px;
-
-padding:3px 4px 4px;
-}
-
-.filter-detail .btc-roc-grid{
+.btc-roc-grid{
 gap:2px;
 }
 
-.filter-detail .btc-roc-item{
+.btc-roc-item{
 min-height:31px;
-}
-
-.filter-detail .btc-roc-period{
-font-size:5.8px;
-
-text-align:center;
-}
-
-.filter-detail .btc-roc-icon{
-font-size:9px;
-
-text-align:center;
-}
-
-.filter-detail .btc-roc-count{
-font-size:5.8px;
-
-text-align:center;
 }
 
 .btc-roc-period{
@@ -5164,10 +5165,6 @@ text-align:center;
 font-size:5.8px;
 
 text-align:center;
-}
-
-.btc-roc-item{
-min-height:31px;
 }
 
 }
@@ -5318,39 +5315,54 @@ def startup():
     )
 
     log.info(
-        f"★ 1 = "
-        f"ROC{SIGNAL1_ROC_PERIOD} / "
-        f"COUNT "
-        f"{SIGNAL1_COUNT_MIN}~"
-        f"{SIGNAL1_COUNT_MAX}"
+        "★ Signal 1 = ROC50 0선 상향 돌파"
     )
 
     log.info(
-        f"★ 2 = "
-        f"ROC{SIGNAL2_ROC_PERIOD} / "
-        f"COUNT "
-        f"{SIGNAL2_COUNT_MIN}~"
-        f"{SIGNAL2_COUNT_MAX}"
+        "★ Signal 1 자체 COUNT = 0,1,2,3..."
     )
 
     log.info(
-        "★ 기준 시간봉 = 4H"
+        "★ Signal 1 필터 = ROC20/50/200 "
+        "COUNT 각각 10~30"
     )
 
     log.info(
-        "★ 1 / 2 각각 독립 계산"
+        "★ Signal 1 화면/반짝임 = 자체 COUNT 0~2"
     )
 
     log.info(
-        "★ 1 = ROC50 0선 상향 돌파"
+        "★ Signal 2 = ROC5 0선 상향 돌파"
     )
 
     log.info(
-        "★ 2 = ROC5 0선 상향 돌파"
+        "★ Signal 2 자체 COUNT = 0,1,2,3..."
     )
 
     log.info(
-        "★ 시그널 COUNT는 0선 이상 연속 캔들 수"
+        "★ Signal 2 필터 = ROC20/50/200 "
+        "COUNT 각각 10~30"
+    )
+
+    log.info(
+        "★ Signal 2 화면/반짝임 = 자체 COUNT 0~2"
+    )
+
+    log.info(
+        "★ 일봉 변동률 >= 0%"
+    )
+
+    log.info(
+        "★ 필터 COUNT가 10~30을 벗어나도 "
+        "Signal 자체는 종료하지 않음"
+    )
+
+    log.info(
+        "★ Signal 종료 = 트리거 ROC가 음수"
+    )
+
+    log.info(
+        "★ Signal 1 / 2 각각 독립 계산"
     )
 
     log.info(
@@ -5358,39 +5370,19 @@ def startup():
     )
 
     log.info(
-        "★ 화면 ROC 괄호 = COUNT"
+        "★ ROC 상세 괄호 = COUNT"
     )
 
     log.info(
-        f"★ Signal 1 COUNT = "
-        f"{SIGNAL1_COUNT_MIN}~"
-        f"{SIGNAL1_COUNT_MAX}"
+        "★ 기준 시간봉 = Upbit native 4H"
     )
 
     log.info(
-        f"★ Signal 2 COUNT = "
-        f"{SIGNAL2_COUNT_MIN}~"
-        f"{SIGNAL2_COUNT_MAX}"
+        "★ 1H → 4H 합성하지 않음"
     )
 
     log.info(
-        "★ Signal 1 / 2 각각 독립 표시"
-    )
-
-    log.info(
-        "★ Signal 2 ROC20/50/200 조건 사용 안 함"
-    )
-
-    log.info(
-        "★ Signal 2 = ROC5 + COUNT10~30 + 일봉0%이상"
-    )
-
-    log.info(
-        "★ 시그널만 반짝임"
-    )
-
-    log.info(
-        "★ 과거 이벤트는 가장 최근 상승 이벤트 하나만 사용"
+        "★ 1D 필터 사용하지 않음"
     )
 
     log.info(
@@ -5399,77 +5391,15 @@ def startup():
     )
 
     log.info(
-        "★ 선택한 시간봉은 "
-        "업비트 원본 240분봉 사용"
+        f"★ TOP = {TOP_N}"
     )
 
     log.info(
-        "★ 1H → 4H 캔들 합성하지 않음"
-    )
-
-    log.info(
-        "★ 1D 필터 사용하지 않음"
-    )
-
-    log.info(
-        "★ 일봉 등락 = "
-        "상승 리스트의 기본 표시 기준"
-    )
-
-    log.info(
-        f"★ ROC200 현재값 + COUNT 계산을 위해 "
-        f"{ROC_HISTORY_REQUIRED}개 데이터 확보"
-    )
-
-    log.info(
-        "★ 1차 요청 = 최대 200개"
-    )
-
-    log.info(
-        "★ 자료 부족 시 과거 200개 추가 요청"
-    )
-
-    log.info(
-        "★ 4H 진행봉 기준 = "
-        "01:00 / 05:00 / 09:00 / "
-        "13:00 / 17:00 / 21:00"
-    )
-
-    log.info(
-        "★ TOP 테이블 = "
-        "순위 / 코인 / 거래대금 / 가격 / 변동률 / 1 / 2"
-    )
-
-    log.info(
-        "★ 신호 칸 = 🚀 그림만 표시"
-    )
-
-    log.info(
-        "★ COUNT 숫자는 아래 ROC 상세에서 표시"
-    )
-
-    log.info(
-        "★ 각 순위별 메인 행 + ROC 상세를 하나의 박스로 표시"
-    )
-
-    log.info(
-        "★ 메인 행과 ROC 상세 사이 공백 제거"
+        "★ 메인 행 + ROC 상세 = 하나의 박스"
     )
 
     log.info(
         "★ 순위 사이에만 간격"
-    )
-
-    log.info(
-        "★ Signal 1 / Signal 2 조건 완전 독립"
-    )
-
-    log.info(
-        "★ Signal 2 화면 COUNT = 10~30"
-    )
-
-    log.info(
-        "★ Signal 2 반짝임 COUNT = 10~30"
     )
 
     log.info(
