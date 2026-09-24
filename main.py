@@ -58,12 +58,12 @@ MAX_RETRIES = 10
 # =========================================================
 # ROC / SIGNAL 기준 시간봉
 #
-# ★ 이 숫자 하나만 변경하면
-#    ROC와 Signal 전체 시간봉이 같이 변경됨
-#
 # 15  = 15분봉
 # 60  = 1시간봉
 # 240 = 4시간봉
+#
+# 이 숫자 하나만 변경하면
+# ROC와 Signal 전체 시간봉이 같이 변경됨
 # =========================================================
 
 SIGNAL_TIMEFRAME = 15
@@ -71,9 +71,6 @@ SIGNAL_TIMEFRAME = 15
 
 # =========================================================
 # ROC 전체 설정
-#
-# Y = 사용
-# N = 사용하지 않음
 # =========================================================
 
 ROC_SETTINGS = {
@@ -128,9 +125,9 @@ SIGNAL1_DISPLAY_COUNT_MAX = 5
 # =========================================================
 # Signal 2
 #
-# ★ ROC200 0선 상향돌파
+# ROC200 0선 상향돌파
 # +
-# ★ ROC50 COUNT 1~200
+# ROC50 COUNT 1~200
 #
 # 돌파 = 0
 # 다음 시간봉 = 1
@@ -186,6 +183,23 @@ last_request_time = 0
 latest_usdt_krw_internal = 0
 
 okx_ticker_cache = {}
+
+
+# =========================================================
+# ★ BTC 시황 Signal 필터
+#
+# BTC ROC50 또는 ROC200 중
+# 하나라도 0선 위에 있으면 TRUE
+#
+# ROC50 > 0 OR ROC200 > 0
+#
+# 둘 다 0 이하이면 FALSE
+# =========================================================
+
+btc_market_filter_pass = False
+
+btc_market_roc50 = None
+btc_market_roc200 = None
 
 
 # =========================================================
@@ -294,6 +308,38 @@ def signal2_display_allowed(count):
 
 
 # =========================================================
+# ★ BTC 시황 필터
+# =========================================================
+
+def btc_signal_filter_pass():
+
+    global btc_market_filter_pass
+    global btc_market_roc50
+    global btc_market_roc200
+
+    roc50 = btc_market_roc50
+    roc200 = btc_market_roc200
+
+    btc_market_filter_pass = (
+
+        (
+            roc50 is not None
+            and roc50 > 0
+        )
+
+        or
+
+        (
+            roc200 is not None
+            and roc200 > 0
+        )
+
+    )
+
+    return btc_market_filter_pass
+
+
+# =========================================================
 # 시간
 # =========================================================
 
@@ -329,18 +375,6 @@ def format_timeframe(minutes):
 
 # =========================================================
 # 현재 진행 중 캔들 시작시간
-#
-# ★ SIGNAL_TIMEFRAME 하나로 전체 시간봉 변경
-#
-# 15분봉:
-# 00 / 15 / 30 / 45
-#
-# 60분봉:
-# 매 정각
-#
-# 240분봉:
-# 00 / 04 / 08 / 12 / 16 / 20시
-#
 # =========================================================
 
 def get_current_candle_start(
@@ -697,7 +731,7 @@ def signal1_filter_pass(
 # =========================================================
 # Signal 2 필터
 #
-# ★ ROC50 COUNT 1~200
+# ROC50 COUNT 1~200
 # =========================================================
 
 def signal2_filter_pass(
@@ -1768,8 +1802,6 @@ def update_signal(
 
     # =====================================================
     # 신규 돌파
-    #
-    # 반드시 해당 Signal 필터 통과 시 생성
     # =====================================================
 
     if signal_cross:
@@ -2198,7 +2230,8 @@ def format_volume(v):
 
 def analyze(
     market,
-    current_price
+    current_price,
+    btc_filter=True
 ):
 
     df_signal = history_upbit(
@@ -2276,7 +2309,7 @@ def analyze(
     # =====================================================
     # Signal 2 트리거
     #
-    # ★ ROC200
+    # ROC200
     # =====================================================
 
     signal2_roc_current = (
@@ -2336,9 +2369,6 @@ def analyze(
 
     # =====================================================
     # 과거 Signal 2 유효 이벤트
-    #
-    # ★ ROC200 돌파
-    # ★ ROC50 COUNT 1~200
     # =====================================================
 
     historical_start_candle2 = None
@@ -2403,8 +2433,6 @@ def analyze(
 
     # =====================================================
     # Signal 2
-    #
-    # ★ ROC200 0선 상향돌파
     # =====================================================
 
     state2 = update_signal(
@@ -2500,14 +2528,27 @@ def analyze(
 
 
     # =====================================================
+    # ★ BTC 시황 필터
+    #
+    # BTC ROC50 또는 ROC200 중
+    # 하나라도 0선 위에 있으면 통과
+    #
+    # BTC 자체를 분석할 때는 btc_filter=True가
+    # 전달되지만, BTC 필터는 update_upbit()에서
+    # 먼저 계산하여 각 코인에 전달함
+    # =====================================================
+
+    market_filter_pass = bool(
+        btc_filter
+    )
+
+
+    # =====================================================
     # Signal 1 표시 조건
     #
-    # 1. Signal 활성
-    # 2. 자체 COUNT 0~5
-    # 3. ROC200 COUNT 1~200
-    # 4. ROC50 Y
-    # 5. ROC200 Y
-    # 6. 일봉 >= 0
+    # 기존 조건
+    # +
+    # ★ BTC ROC50 OR ROC200 > 0
     # =====================================================
 
     signal1_display_count_pass = (
@@ -2544,18 +2585,19 @@ def analyze(
 
         roc_is_enabled(200)
 
+        and
+
+        market_filter_pass
+
     )
 
 
     # =====================================================
     # Signal 2 표시 조건
     #
-    # 1. Signal 활성
-    # 2. 자체 COUNT 0~5
-    # 3. ROC50 COUNT 1~200
-    # 4. ROC200 Y
-    # 5. ROC50 Y
-    # 6. 일봉 >= 0
+    # 기존 조건
+    # +
+    # ★ BTC ROC50 OR ROC200 > 0
     # =====================================================
 
     signal2_display_count_pass = (
@@ -2592,6 +2634,10 @@ def analyze(
 
         roc_is_enabled(50)
 
+        and
+
+        market_filter_pass
+
     )
 
 
@@ -2609,6 +2655,9 @@ def analyze(
 
         "daily_pass":
             daily_pass,
+
+        "btc_market_filter_pass":
+            market_filter_pass,
 
 
         # =================================================
@@ -2881,13 +2930,21 @@ def make_row(
 
 
 # =========================================================
-# Upbit TOP 업데이트
+# ★ Upbit TOP 업데이트
+#
+# BTC를 먼저 분석하여
+# BTC ROC50 / ROC200 필터를 확정한 후
+# 나머지 코인에 동일한 필터 적용
 # =========================================================
 
 def update_upbit():
 
     global latest_upbit_data
     global latest_upbit_update_time
+
+    global btc_market_filter_pass
+    global btc_market_roc50
+    global btc_market_roc200
 
     markets = sorted(
         get_upbit_markets(),
@@ -2899,6 +2956,196 @@ def update_upbit():
     top_markets = markets[
         :TOP_N
     ]
+
+    if not top_markets:
+
+        latest_upbit_data = []
+
+        latest_upbit_update_time = (
+            kst()
+        )
+
+        return
+
+
+    # =====================================================
+    # BTC 먼저 찾기
+    # =====================================================
+
+    btc_item = None
+
+    for item in top_markets:
+
+        if item.get(
+            "market"
+        ) == "KRW-BTC":
+
+            btc_item = item
+
+            break
+
+
+    # =====================================================
+    # BTC 필터 기본값
+    # =====================================================
+
+    btc_market_filter_pass = False
+    btc_market_roc50 = None
+    btc_market_roc200 = None
+
+
+    # =====================================================
+    # BTC 분석
+    #
+    # TOP10 안에 BTC가 없더라도
+    # 별도로 BTC를 분석해서 필터 기준으로 사용
+    # =====================================================
+
+    if btc_item is None:
+
+        btc_market_response = retry(
+            requests.get,
+            "https://api.upbit.com/v1/ticker",
+            params={
+                "markets":
+                    "KRW-BTC"
+            },
+            timeout=15
+        )
+
+        if btc_market_response is not None:
+
+            try:
+
+                btc_data = (
+                    btc_market_response.json()
+                )
+
+                if btc_data:
+
+                    btc_item = {
+
+                        "market":
+                            "KRW-BTC",
+
+                        "volume_24h":
+                            float(
+                                btc_data[0].get(
+                                    "acc_trade_price_24h",
+                                    0
+                                )
+                            ),
+
+                        "current_price":
+                            float(
+                                btc_data[0].get(
+                                    "trade_price",
+                                    0
+                                )
+                            )
+
+                    }
+
+            except Exception as e:
+
+                log.warning(
+                    f"BTC 티커 오류: {e}"
+                )
+
+
+    # =====================================================
+    # BTC 분석 실행
+    #
+    # BTC 자체는 BTC 필터와 독립적으로
+    # 기존 Signal 계산을 수행
+    # =====================================================
+
+    btc_analysis = None
+
+    if btc_item is not None:
+
+        try:
+
+            btc_analysis = analyze(
+                "KRW-BTC",
+                btc_item[
+                    "current_price"
+                ],
+                btc_filter=True
+            )
+
+        except Exception as e:
+
+            log.exception(
+                f"BTC 분석 오류: {e}"
+            )
+
+            btc_analysis = None
+
+
+    # =====================================================
+    # BTC ROC50 / ROC200 추출
+    # =====================================================
+
+    if btc_analysis is not None:
+
+        btc_roc = btc_analysis.get(
+            "roc",
+            {}
+        )
+
+        btc_values = btc_roc.get(
+            "roc_values",
+            {}
+        )
+
+        btc_market_roc50 = (
+            btc_values.get(
+                50
+            )
+        )
+
+        btc_market_roc200 = (
+            btc_values.get(
+                200
+            )
+        )
+
+
+    # =====================================================
+    # ★ 최종 BTC 시장 필터
+    #
+    # ROC50 > 0
+    # OR
+    # ROC200 > 0
+    # =====================================================
+
+    btc_market_filter_pass = (
+        (
+            btc_market_roc50 is not None
+            and
+            btc_market_roc50 > 0
+        )
+        or
+        (
+            btc_market_roc200 is not None
+            and
+            btc_market_roc200 > 0
+        )
+    )
+
+
+    log.info(
+        f"[BTC FILTER] "
+        f"ROC50={btc_market_roc50} | "
+        f"ROC200={btc_market_roc200} | "
+        f"PASS={btc_market_filter_pass}"
+    )
+
+
+    # =====================================================
+    # TOP 코인 분석
+    # =====================================================
 
     rows = []
 
@@ -2920,20 +3167,59 @@ def update_upbit():
             "current_price"
         ]
 
-        try:
 
-            analysis = analyze(
-                market,
-                price
-            )
+        # =================================================
+        # BTC는 이미 분석한 결과 재사용
+        # =================================================
 
-        except Exception as e:
+        if market == "KRW-BTC":
 
-            log.exception(
-                f"분석 오류 {market}: {e}"
-            )
+            analysis = btc_analysis
 
-            analysis = None
+        else:
+
+            try:
+
+                analysis = analyze(
+                    market,
+                    price,
+                    btc_filter=
+                        btc_market_filter_pass
+                )
+
+            except Exception as e:
+
+                log.exception(
+                    f"분석 오류 {market}: {e}"
+                )
+
+                analysis = None
+
+
+        # =================================================
+        # BTC도 최종 표시에는 BTC 필터 적용
+        # =================================================
+
+        if (
+            market == "KRW-BTC"
+            and
+            analysis is not None
+        ):
+
+            analysis[
+                "btc_market_filter_pass"
+            ] = btc_market_filter_pass
+
+            if not btc_market_filter_pass:
+
+                analysis[
+                    "signal1_qualified"
+                ] = False
+
+                analysis[
+                    "signal2_qualified"
+                ] = False
+
 
         row = make_row(
             rank,
@@ -2949,6 +3235,7 @@ def update_upbit():
             row
         )
 
+
     latest_upbit_data = rows
 
     latest_upbit_update_time = (
@@ -2956,7 +3243,9 @@ def update_upbit():
     )
 
     log.info(
-        f"TOP{TOP_N} 업데이트 완료"
+        f"TOP{TOP_N} 업데이트 완료 | "
+        f"BTC FILTER="
+        f"{btc_market_filter_pass}"
     )
 
 
@@ -3607,10 +3896,6 @@ def focus_section(
     data
 ):
 
-    # =====================================================
-    # Signal 1
-    # =====================================================
-
     signal1_rows = [
 
         x
@@ -3639,10 +3924,6 @@ def focus_section(
 
     ]
 
-
-    # =====================================================
-    # Signal 2
-    # =====================================================
 
     signal2_rows = [
 
@@ -3718,6 +3999,11 @@ def focus_section(
 
                     당일 변동 0% 이상
 
+                    ·
+
+                    BTC ROC50 또는 ROC200
+                    0선 위
+
                 </div>
 
             </div>
@@ -3768,6 +4054,11 @@ def focus_section(
                     ·
 
                     당일 변동 0% 이상
+
+                    ·
+
+                    BTC ROC50 또는 ROC200
+                    0선 위
 
                 </div>
 
@@ -3824,6 +4115,11 @@ def section(
 
                     Signal 2 =
                     ROC200 돌파
+
+                    ·
+
+                    BTC ROC50 또는 ROC200
+                    0선 위
 
                     ·
 
@@ -3991,7 +4287,12 @@ def btc_roc_status_html(
         </div>
 
         <div class="roc-badge">
-            시그널 기준
+            BTC 필터:
+            {
+                "ON"
+                if btc_market_filter_pass
+                else "OFF"
+            }
         </div>
 
     </div>
@@ -4062,6 +4363,12 @@ def market_summary_html():
 
                 <div class="market-title-sub">
 
+                    BTC ROC50 또는 ROC200
+                    0선 위일 때만
+                    Signal 표시
+
+                    ·
+
                     Signal 1 =
                     ROC50
                     {format_timeframe(SIGNAL_TIMEFRAME)}
@@ -4069,18 +4376,10 @@ def market_summary_html():
 
                     ·
 
-                    ROC200 COUNT 1~200
-
-                    ·
-
                     Signal 2 =
                     ROC200
                     {format_timeframe(SIGNAL_TIMEFRAME)}
                     0선 돌파
-
-                    ·
-
-                    ROC50 COUNT 1~200
 
                 </div>
 
@@ -4167,20 +4466,10 @@ h1{
     font-weight:900;
 }
 
-
-/* =====================================================
-   전체 섹션
-   ===================================================== */
-
 .unified-section{
     width:100%;
     margin:10px 0 12px;
 }
-
-
-/* =====================================================
-   공통 섹션 헤더
-   ===================================================== */
 
 .section-title-card{
     display:flex;
@@ -4292,11 +4581,6 @@ h1{
     white-space:nowrap;
 }
 
-
-/* =====================================================
-   BTC 시장 카드
-   ===================================================== */
-
 .market-card{
     width:100%;
 
@@ -4374,11 +4658,6 @@ h1{
     white-space:nowrap;
 }
 
-
-/* =====================================================
-   BTC 메인 행
-   ===================================================== */
-
 .btc-main-row{
     display:grid;
 
@@ -4439,11 +4718,6 @@ h1{
 
     border-left:1px solid #29323c;
 }
-
-
-/* =====================================================
-   BTC ROC / 공통 ROC
-   ===================================================== */
 
 .btc-roc-detail{
     display:grid;
@@ -4596,11 +4870,6 @@ h1{
     white-space:nowrap;
 }
 
-
-/* =====================================================
-   카드 리스트
-   ===================================================== */
-
 .card-list{
     width:100%;
 
@@ -4611,11 +4880,6 @@ h1{
 
     margin-top:8px;
 }
-
-
-/* =====================================================
-   코인 카드
-   ===================================================== */
 
 .coin-card{
     width:100%;
@@ -4632,11 +4896,6 @@ h1{
         inset 0 0 18px
         rgba(255,255,255,.015);
 }
-
-
-/* =====================================================
-   코인 메인 행
-   ===================================================== */
 
 .coin-main-row{
     display:grid;
@@ -4774,11 +5033,6 @@ h1{
     overflow:hidden!important;
 }
 
-
-/* =====================================================
-   코인 ROC 행
-   ===================================================== */
-
 .coin-roc-row{
     min-height:68px;
 
@@ -4786,11 +5040,6 @@ h1{
 
     border-top:1px solid #29323c;
 }
-
-
-/* =====================================================
-   Signal
-   ===================================================== */
 
 .signal-wrap{
     display:flex;
@@ -4872,11 +5121,6 @@ h1{
         0 0 10px
         rgba(100,160,200,.10);
 }
-
-
-/* =====================================================
-   반짝임
-   ===================================================== */
 
 @keyframes signalFlashOne{
 
@@ -4968,11 +5212,6 @@ h1{
         infinite;
 }
 
-
-/* =====================================================
-   변동률
-   ===================================================== */
-
 .up{
     color:#78cfa2!important;
     font-weight:900;
@@ -4986,11 +5225,6 @@ h1{
 .zero{
     color:#727c86!important;
 }
-
-
-/* =====================================================
-   빈 카드
-   ===================================================== */
 
 .empty-card{
     min-height:56px;
@@ -5011,11 +5245,6 @@ h1{
     font-weight:800;
 }
 
-
-/* =====================================================
-   MOBILE
-   ===================================================== */
-
 @media(max-width:600px){
 
     body{
@@ -5028,7 +5257,6 @@ h1{
         font-size:13px;
         line-height:16px;
     }
-
 
     .unified-section{
         margin:8px 0 10px;
@@ -5074,9 +5302,6 @@ h1{
 
         font-size:5px;
     }
-
-
-    /* BTC */
 
     .market-card{
         margin:3px 0 9px;
@@ -5136,9 +5361,6 @@ h1{
         min-height:43px;
     }
 
-
-    /* ROC */
-
     .btc-roc-detail,
     .roc-detail{
         grid-template-columns:
@@ -5197,9 +5419,6 @@ h1{
         font-size:5px;
         line-height:7px;
     }
-
-
-    /* 카드 */
 
     .card-list{
         gap:6px;
@@ -5284,7 +5503,6 @@ h1{
         min-height:49px;
     }
 
-
     .coin-roc-row .roc-detail{
         min-height:49px;
 
@@ -5312,7 +5530,6 @@ h1{
 
         padding:2px 3px;
     }
-
 
     .empty-card{
         min-height:43px;
@@ -5532,11 +5749,6 @@ h1{
 
 }
 
-
-/* =====================================================
-   REDUCED MOTION
-   ===================================================== */
-
 @media(prefers-reduced-motion:reduce){
 
     .coin-card.signal-flash-one .coin-main-row > div,
@@ -5690,8 +5902,6 @@ def validate_settings():
 
     # =====================================================
     # 시간봉
-    #
-    # ★ 앞으로 이 값 하나만 변경
     # =====================================================
 
     if SIGNAL_TIMEFRAME not in (
@@ -5729,8 +5939,6 @@ def validate_settings():
 
     # =====================================================
     # Signal 2
-    #
-    # ROC50 COUNT 1~200
     # =====================================================
 
     if (
@@ -5827,6 +6035,22 @@ def startup():
 
     log.info(
         f"ROC 설정 = {roc_setting_text()}"
+    )
+
+    log.info(
+        "----------------------------------------"
+    )
+
+    log.info(
+        "★ BTC 시장 필터"
+    )
+
+    log.info(
+        "★ BTC ROC50 > 0 OR BTC ROC200 > 0"
+    )
+
+    log.info(
+        "★ 둘 다 0 이하이면 Signal 표시 안 함"
     )
 
     log.info(
