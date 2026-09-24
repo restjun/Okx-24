@@ -56,7 +56,14 @@ MAX_RETRIES = 10
 
 
 # =========================================================
-# 시그널 기준 시간봉
+# ROC / SIGNAL 기준 시간봉
+#
+# ★ 이 숫자 하나만 변경하면
+#    ROC와 Signal 전체 시간봉이 같이 변경됨
+#
+# 15  = 15분봉
+# 60  = 1시간봉
+# 240 = 4시간봉
 # =========================================================
 
 SIGNAL_TIMEFRAME = 15
@@ -64,8 +71,6 @@ SIGNAL_TIMEFRAME = 15
 
 # =========================================================
 # ROC 전체 설정
-#
-# 5 / 20 / 50 / 200 각각 독립적으로 Y / N 설정
 #
 # Y = 사용
 # N = 사용하지 않음
@@ -99,23 +104,19 @@ ROC_PERIODS = [
 # =========================================================
 # Signal 1
 #
-# ROC200 COUNT 1~200
-# +
 # ROC50 0선 상향돌파
+# +
+# ROC200 COUNT 1~200
 #
 # 돌파 = 0
-# 다음 4H = 1
-# 다음 4H = 2
-# 2 이후 화면 제외
+# 다음 시간봉 = 1
+# 다음 시간봉 = 2
+#
+# 표시 COUNT
+# 0~5
 # =========================================================
 
 SIGNAL1_ROC_PERIOD = 50
-
-SIGNAL1_ROC5_COUNT_MIN = 1
-SIGNAL1_ROC5_COUNT_MAX = 200
-
-SIGNAL1_ROC20_COUNT_MIN = 1
-SIGNAL1_ROC20_COUNT_MAX = 200
 
 SIGNAL1_ROC200_COUNT_MIN = 1
 SIGNAL1_ROC200_COUNT_MAX = 200
@@ -127,14 +128,16 @@ SIGNAL1_DISPLAY_COUNT_MAX = 5
 # =========================================================
 # Signal 2
 #
-# ROC200 0선 상향돌파
+# ★ ROC200 0선 상향돌파
 # +
-# ROC50 COUNT 1~200
+# ★ ROC50 COUNT 1~200
 #
 # 돌파 = 0
-# 다음 4H = 1
-# 다음 4H = 2
-# 2 이후 화면 제외
+# 다음 시간봉 = 1
+# 다음 시간봉 = 2
+#
+# 표시 COUNT
+# 0~5
 # =========================================================
 
 SIGNAL2_ROC_PERIOD = 200
@@ -325,10 +328,19 @@ def format_timeframe(minutes):
 
 
 # =========================================================
-# 현재 4H 캔들 시작시간
+# 현재 진행 중 캔들 시작시간
 #
-# Upbit native 240분 기준
-# 기존 시스템의 01:00 KST 기준 유지
+# ★ SIGNAL_TIMEFRAME 하나로 전체 시간봉 변경
+#
+# 15분봉:
+# 00 / 15 / 30 / 45
+#
+# 60분봉:
+# 매 정각
+#
+# 240분봉:
+# 00 / 04 / 08 / 12 / 16 / 20시
+#
 # =========================================================
 
 def get_current_candle_start(
@@ -339,52 +351,13 @@ def get_current_candle_start(
 
     now = datetime.now(KST)
 
-    if minutes == 240:
-
-        anchor = now.replace(
-            hour=1,
-            minute=0,
-            second=0,
-            microsecond=0
-        )
-
-        if now < anchor:
-
-            anchor = (
-                anchor
-                - timedelta(days=1)
-            )
-
-        elapsed = (
-            now - anchor
-        ).total_seconds()
-
-        blocks = int(
-            elapsed
-            //
-            (
-                240 * 60
-            )
-        )
-
-        current = (
-            anchor
-            + timedelta(
-                minutes=blocks * 240
-            )
-        )
-
-        return current.replace(
-            tzinfo=None
-        )
-
-    total = (
+    total_minutes = (
         now.hour * 60
         + now.minute
     )
 
     block = (
-        total // minutes
+        total_minutes // minutes
     ) * minutes
 
     current = now.replace(
@@ -724,7 +697,7 @@ def signal1_filter_pass(
 # =========================================================
 # Signal 2 필터
 #
-# ROC50 COUNT 1~200
+# ★ ROC50 COUNT 1~200
 # =========================================================
 
 def signal2_filter_pass(
@@ -1373,7 +1346,9 @@ def get_upbit_current_roc_data(
             log.warning(
                 f"[CURRENT] "
                 f"{market} | "
-                f"현재 4H 진행봉 없음 | "
+                f"현재 "
+                f"{format_timeframe(timeframe)} "
+                f"진행봉 없음 | "
                 f"기준={current_start}"
             )
 
@@ -1565,9 +1540,6 @@ def roc_filter_analysis(
 
 # =========================================================
 # 과거 유효 Signal 이벤트 찾기
-#
-# 단순히 최근 0선 돌파를 찾는 것이 아니라
-# 그 돌파 당시에도 필터를 만족했는지 확인
 # =========================================================
 
 def find_latest_valid_signal_event(
@@ -1710,9 +1682,6 @@ def find_latest_valid_signal_event(
 
 # =========================================================
 # Signal 상태 업데이트
-#
-# filter_pass_at_trigger가 True일 때만
-# 신규 Signal을 생성한다.
 # =========================================================
 
 def update_signal(
@@ -1800,7 +1769,7 @@ def update_signal(
     # =====================================================
     # 신규 돌파
     #
-    # 반드시 필터를 통과한 경우에만 생성
+    # 반드시 해당 Signal 필터 통과 시 생성
     # =====================================================
 
     if signal_cross:
@@ -2286,7 +2255,9 @@ def analyze(
 
 
     # =====================================================
-    # Signal 1 트리거 ROC50
+    # Signal 1 트리거
+    #
+    # ROC50
     # =====================================================
 
     signal1_roc_current = (
@@ -2303,7 +2274,9 @@ def analyze(
 
 
     # =====================================================
-    # Signal 2 트리거 ROC200
+    # Signal 2 트리거
+    #
+    # ★ ROC200
     # =====================================================
 
     signal2_roc_current = (
@@ -2363,6 +2336,9 @@ def analyze(
 
     # =====================================================
     # 과거 Signal 2 유효 이벤트
+    #
+    # ★ ROC200 돌파
+    # ★ ROC50 COUNT 1~200
     # =====================================================
 
     historical_start_candle2 = None
@@ -2387,7 +2363,7 @@ def analyze(
 
 
     # =====================================================
-    # 현재 진행 4H
+    # 현재 진행 시간봉
     # =====================================================
 
     progress_candle_time = (
@@ -2427,6 +2403,8 @@ def analyze(
 
     # =====================================================
     # Signal 2
+    #
+    # ★ ROC200 0선 상향돌파
     # =====================================================
 
     state2 = update_signal(
@@ -2525,10 +2503,10 @@ def analyze(
     # Signal 1 표시 조건
     #
     # 1. Signal 활성
-    # 2. 자체 COUNT 0~2
+    # 2. 자체 COUNT 0~5
     # 3. ROC200 COUNT 1~200
-    # 4. ROC50이 Y
-    # 5. ROC200이 Y
+    # 4. ROC50 Y
+    # 5. ROC200 Y
     # 6. 일봉 >= 0
     # =====================================================
 
@@ -2573,10 +2551,11 @@ def analyze(
     # Signal 2 표시 조건
     #
     # 1. Signal 활성
-    # 2. 자체 COUNT 0~2
+    # 2. 자체 COUNT 0~5
     # 3. ROC50 COUNT 1~200
-    # 4. ROC50 / ROC200 모두 Y
-    # 5. 일봉 >= 0
+    # 4. ROC200 Y
+    # 5. ROC50 Y
+    # 6. 일봉 >= 0
     # =====================================================
 
     signal2_display_count_pass = (
@@ -2605,11 +2584,13 @@ def analyze(
 
         and
 
-        roc_is_enabled(50)
+        roc_is_enabled(
+            SIGNAL2_ROC_PERIOD
+        )
 
         and
 
-        roc_is_enabled(200)
+        roc_is_enabled(50)
 
     )
 
@@ -3387,7 +3368,7 @@ def roc_filter_html(
         </div>
 
         <div class="roc-badge">
-            4시간 기준
+            {format_timeframe(SIGNAL_TIMEFRAME)} 기준
         </div>
 
     </div>
@@ -3400,7 +3381,9 @@ def filter_html(
 
     return roc_filter_html(
         r,
-        "4H"
+        format_timeframe(
+            SIGNAL_TIMEFRAME
+        )
     )
 
 
@@ -3715,7 +3698,9 @@ def focus_section(
 
                 <div class="section-heading-sub">
 
-                    ROC50 4H 0선 상향돌파
+                    ROC50
+                    {format_timeframe(SIGNAL_TIMEFRAME)}
+                    0선 상향돌파
 
                     ·
 
@@ -3726,7 +3711,8 @@ def focus_section(
                     ·
 
                     Signal COUNT
-                    0~2
+                    0~
+                    {SIGNAL1_DISPLAY_COUNT_MAX}
 
                     ·
 
@@ -3763,7 +3749,9 @@ def focus_section(
 
                 <div class="section-heading-sub">
 
-                    ROC200 4H 0선 상향돌파
+                    ROC200
+                    {format_timeframe(SIGNAL_TIMEFRAME)}
+                    0선 상향돌파
 
                     ·
 
@@ -3773,7 +3761,9 @@ def focus_section(
 
                     ·
 
-                    Signal COUNT 0~2
+                    Signal COUNT
+                    0~
+                    {SIGNAL2_DISPLAY_COUNT_MAX}
 
                     ·
 
@@ -3827,11 +3817,13 @@ def section(
 
                     ·
 
-                    Signal 1 = ROC50 돌파
+                    Signal 1 =
+                    ROC50 돌파
 
                     ·
 
-                    Signal 2 = ROC200 돌파
+                    Signal 2 =
+                    ROC200 돌파
 
                     ·
 
@@ -3840,7 +3832,8 @@ def section(
 
                     ·
 
-                    4H native
+                    기준:
+                    {format_timeframe(SIGNAL_TIMEFRAME)}
 
                 </div>
 
@@ -3988,7 +3981,7 @@ def btc_roc_status_html(
     <div class="btc-roc-detail">
 
         <div class="btc-roc-label">
-            4H ROC
+            {format_timeframe(SIGNAL_TIMEFRAME)} ROC
         </div>
 
         <div class="roc-grid btc-roc-grid">
@@ -4069,7 +4062,10 @@ def market_summary_html():
 
                 <div class="market-title-sub">
 
-                    Signal 1 = ROC50 0선 돌파
+                    Signal 1 =
+                    ROC50
+                    {format_timeframe(SIGNAL_TIMEFRAME)}
+                    0선 돌파
 
                     ·
 
@@ -4077,7 +4073,10 @@ def market_summary_html():
 
                     ·
 
-                    Signal 2 = ROC200 0선 돌파
+                    Signal 2 =
+                    ROC200
+                    {format_timeframe(SIGNAL_TIMEFRAME)}
+                    0선 돌파
 
                     ·
 
@@ -5689,10 +5688,26 @@ def validate_settings():
             )
 
 
-    if SIGNAL_TIMEFRAME != 240:
+    # =====================================================
+    # 시간봉
+    #
+    # ★ 앞으로 이 값 하나만 변경
+    # =====================================================
+
+    if SIGNAL_TIMEFRAME not in (
+        1,
+        3,
+        5,
+        15,
+        30,
+        60,
+        120,
+        240
+    ):
 
         raise ValueError(
-            "SIGNAL_TIMEFRAME은 240만 사용할 수 있습니다."
+            "SIGNAL_TIMEFRAME이 "
+            "Upbit 지원 분봉이 아닙니다."
         )
 
 
@@ -5714,6 +5729,8 @@ def validate_settings():
 
     # =====================================================
     # Signal 2
+    #
+    # ROC50 COUNT 1~200
     # =====================================================
 
     if (
@@ -5780,7 +5797,7 @@ def validate_settings():
 
         log.warning(
             "ROC50이 N입니다. "
-            "Signal 1 / Signal 2 필터가 작동하지 않습니다."
+            "Signal 1 / Signal 2는 발생하지 않습니다."
         )
 
 
@@ -5800,7 +5817,12 @@ def startup():
     )
 
     log.info(
-        "4H ROC SIGNAL SYSTEM START"
+        "ROC SIGNAL SYSTEM START"
+    )
+
+    log.info(
+        f"기준 시간봉 = "
+        f"{format_timeframe(SIGNAL_TIMEFRAME)}"
     )
 
     log.info(
@@ -5816,11 +5838,13 @@ def startup():
     )
 
     log.info(
-        "★ ROC200 COUNT 1~200"
+        f"★ ROC50 "
+        f"{format_timeframe(SIGNAL_TIMEFRAME)} "
+        f"0선 상향돌파"
     )
 
     log.info(
-        "★ ROC50 0선 상향돌파"
+        "★ ROC200 COUNT 1~200"
     )
 
     log.info(
@@ -5828,15 +5852,17 @@ def startup():
     )
 
     log.info(
-        "★ 다음 4H = 1"
+        f"★ 다음 {format_timeframe(SIGNAL_TIMEFRAME)} = 1"
     )
 
     log.info(
-        "★ 다음 4H = 2"
+        f"★ 다음 {format_timeframe(SIGNAL_TIMEFRAME)} = 2"
     )
 
     log.info(
-        "★ COUNT 2 초과 화면 제외"
+        f"★ COUNT "
+        f"{SIGNAL1_DISPLAY_COUNT_MAX} "
+        f"초과 화면 제외"
     )
 
     log.info(
@@ -5848,7 +5874,9 @@ def startup():
     )
 
     log.info(
-        "★ ROC200 0선 상향돌파"
+        f"★ ROC200 "
+        f"{format_timeframe(SIGNAL_TIMEFRAME)} "
+        f"0선 상향돌파"
     )
 
     log.info(
@@ -5860,15 +5888,17 @@ def startup():
     )
 
     log.info(
-        "★ 다음 4H = 1"
+        f"★ 다음 {format_timeframe(SIGNAL_TIMEFRAME)} = 1"
     )
 
     log.info(
-        "★ 다음 4H = 2"
+        f"★ 다음 {format_timeframe(SIGNAL_TIMEFRAME)} = 2"
     )
 
     log.info(
-        "★ COUNT 2 초과 화면 제외"
+        f"★ COUNT "
+        f"{SIGNAL2_DISPLAY_COUNT_MAX} "
+        f"초과 화면 제외"
     )
 
     log.info(
@@ -5902,7 +5932,8 @@ def startup():
     )
 
     log.info(
-        "★ 기준 시간봉 = Upbit native 4H"
+        f"★ 기준 시간봉 = "
+        f"{format_timeframe(SIGNAL_TIMEFRAME)}"
     )
 
     log.info(
