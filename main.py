@@ -41,7 +41,7 @@ KST = ZoneInfo("Asia/Seoul")
 # =========================================================
 
 VOLUME_HOURS = 24
-TOP_N = 50
+TOP_N = 20
 UPDATE_MINUTES = 1
 
 HISTORY_CHUNK = 200
@@ -66,7 +66,7 @@ MAX_RETRIES = 10
 # ROC와 Signal 전체 시간봉이 같이 변경됨
 # =========================================================
 
-SIGNAL_TIMEFRAME = 240
+SIGNAL_TIMEFRAME = 15
 
 
 # =========================================================
