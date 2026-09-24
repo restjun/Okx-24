@@ -121,17 +121,15 @@ SIGNAL1_ROC200_COUNT_MIN = 1
 SIGNAL1_ROC200_COUNT_MAX = 200
 
 SIGNAL1_DISPLAY_COUNT_MIN = 0
-SIGNAL1_DISPLAY_COUNT_MAX = 5
+SIGNAL1_DISPLAY_COUNT_MAX = 2
 
 
 # =========================================================
 # Signal 2
 #
-# ROC20 COUNT 5~30
-# ROC50 COUNT 5~30
-# ROC200 COUNT 1~200
+# ROC200 0선 상향돌파
 # +
-# ROC5 0선 상향돌파
+# ROC50 COUNT 1~200
 #
 # 돌파 = 0
 # 다음 4H = 1
@@ -141,17 +139,11 @@ SIGNAL1_DISPLAY_COUNT_MAX = 5
 
 SIGNAL2_ROC_PERIOD = 200
 
-SIGNAL2_ROC5_COUNT_MIN = 1
-SIGNAL2_ROC5_COUNT_MAX = 200
-
-SIGNAL2_ROC20_COUNT_MIN = 1
-SIGNAL2_ROC20_COUNT_MAX = 200
-
 SIGNAL2_ROC50_COUNT_MIN = 1
 SIGNAL2_ROC50_COUNT_MAX = 200
 
 SIGNAL2_DISPLAY_COUNT_MIN = 0
-SIGNAL2_DISPLAY_COUNT_MAX = 5
+SIGNAL2_DISPLAY_COUNT_MAX = 2
 
 
 # =========================================================
@@ -732,60 +724,26 @@ def signal1_filter_pass(
 # =========================================================
 # Signal 2 필터
 #
-# ROC20 5~30
-# ROC50 5~30
-# ROC200 1~200
+# ROC50 COUNT 1~200
 # =========================================================
 
 def signal2_filter_pass(
     df
 ):
 
-    if not roc_is_enabled(20):
-
-        return False
-
     if not roc_is_enabled(50):
 
         return False
-
-    if not roc_is_enabled(200):
-
-        return False
-
-    count_20 = roc_positive_count(
-        df,
-        20
-    )
 
     count_50 = roc_positive_count(
         df,
         50
     )
 
-    count_200 = roc_positive_count(
-        df,
-        200
-    )
-
     return (
-
-        SIGNAL2_ROC20_COUNT_MIN
-        <= count_20
-        <= SIGNAL2_ROC20_COUNT_MAX
-
-        and
-
         SIGNAL2_ROC50_COUNT_MIN
         <= count_50
         <= SIGNAL2_ROC50_COUNT_MAX
-
-        and
-
-        SIGNAL2_ROC200_COUNT_MIN
-        <= count_200
-        <= SIGNAL2_ROC200_COUNT_MAX
-
     )
 
 
@@ -2345,7 +2303,7 @@ def analyze(
 
 
     # =====================================================
-    # Signal 2 트리거 ROC5
+    # Signal 2 트리거 ROC200
     # =====================================================
 
     signal2_roc_current = (
@@ -2416,11 +2374,7 @@ def analyze(
                 SIGNAL2_ROC_PERIOD
             )
             and
-            roc_is_enabled(20)
-            and
             roc_is_enabled(50)
-            and
-            roc_is_enabled(200)
         ):
 
             historical_start_candle2 = (
@@ -2552,7 +2506,6 @@ def analyze(
     # =====================================================
     # 일봉
     #
-    # 기존 조건 유지
     # 당일 변동 >= 0%
     # =====================================================
 
@@ -2621,11 +2574,9 @@ def analyze(
     #
     # 1. Signal 활성
     # 2. 자체 COUNT 0~2
-    # 3. ROC20 COUNT 5~30
-    # 4. ROC50 COUNT 5~30
-    # 5. ROC200 COUNT 1~200
-    # 6. ROC5/20/50/200 모두 Y
-    # 7. 일봉 >= 0
+    # 3. ROC50 COUNT 1~200
+    # 4. ROC50 / ROC200 모두 Y
+    # 5. 일봉 >= 0
     # =====================================================
 
     signal2_display_count_pass = (
@@ -2651,14 +2602,6 @@ def analyze(
         and
 
         daily_pass
-
-        and
-
-        roc_is_enabled(5)
-
-        and
-
-        roc_is_enabled(20)
 
         and
 
@@ -2752,14 +2695,8 @@ def analyze(
         "signal2_count_pass":
             signal2_display_count_pass,
 
-        "signal2_roc20_count":
-            roc20_count,
-
         "signal2_roc50_count":
             roc50_count,
-
-        "signal2_roc200_count":
-            roc200_count,
 
         "signal2_qualified":
             signal2_qualified,
@@ -2940,26 +2877,10 @@ def make_row(
                 )
             ),
 
-        "signal2_roc20_count":
-            int(
-                a.get(
-                    "signal2_roc20_count",
-                    0
-                )
-            ),
-
         "signal2_roc50_count":
             int(
                 a.get(
                     "signal2_roc50_count",
-                    0
-                )
-            ),
-
-        "signal2_roc200_count":
-            int(
-                a.get(
-                    "signal2_roc200_count",
                     0
                 )
             ),
@@ -3842,13 +3763,7 @@ def focus_section(
 
                 <div class="section-heading-sub">
 
-                    ROC5 4H 0선 상향돌파
-
-                    ·
-
-                    ROC20 COUNT
-                    {SIGNAL2_ROC20_COUNT_MIN}~
-                    {SIGNAL2_ROC20_COUNT_MAX}
+                    ROC200 4H 0선 상향돌파
 
                     ·
 
@@ -3858,13 +3773,11 @@ def focus_section(
 
                     ·
 
-                    ROC200 COUNT
-                    {SIGNAL2_ROC200_COUNT_MIN}~
-                    {SIGNAL2_ROC200_COUNT_MAX}
+                    Signal COUNT 0~2
 
                     ·
 
-                    Signal COUNT 0~2
+                    당일 변동 0% 이상
 
                 </div>
 
@@ -3918,7 +3831,7 @@ def section(
 
                     ·
 
-                    Signal 2 = ROC5 돌파
+                    Signal 2 = ROC200 돌파
 
                     ·
 
@@ -4164,19 +4077,11 @@ def market_summary_html():
 
                     ·
 
-                    Signal 2 = ROC5 0선 돌파
+                    Signal 2 = ROC200 0선 돌파
 
                     ·
 
-                    ROC20 5~30
-
-                    ·
-
-                    ROC50 5~30
-
-                    ·
-
-                    ROC200 1~200
+                    ROC50 COUNT 1~200
 
                 </div>
 
@@ -5791,7 +5696,9 @@ def validate_settings():
         )
 
 
+    # =====================================================
     # Signal 1
+    # =====================================================
 
     if (
         SIGNAL1_ROC200_COUNT_MIN < 1
@@ -5805,21 +5712,12 @@ def validate_settings():
         )
 
 
+    # =====================================================
     # Signal 2
+    # =====================================================
 
     if (
-        SIGNAL2_ROC20_COUNT_MIN < 0
-        or
-        SIGNAL2_ROC20_COUNT_MAX
-        < SIGNAL2_ROC20_COUNT_MIN
-    ):
-
-        raise ValueError(
-            "Signal 2 ROC20 COUNT 설정 오류"
-        )
-
-    if (
-        SIGNAL2_ROC50_COUNT_MIN < 0
+        SIGNAL2_ROC50_COUNT_MIN < 1
         or
         SIGNAL2_ROC50_COUNT_MAX
         < SIGNAL2_ROC50_COUNT_MIN
@@ -5829,19 +5727,10 @@ def validate_settings():
             "Signal 2 ROC50 COUNT 설정 오류"
         )
 
-    if (
-        SIGNAL2_ROC200_COUNT_MIN < 1
-        or
-        SIGNAL2_ROC200_COUNT_MAX
-        < SIGNAL2_ROC200_COUNT_MIN
-    ):
 
-        raise ValueError(
-            "Signal 2 ROC200 COUNT 설정 오류"
-        )
-
-
+    # =====================================================
     # 표시 COUNT
+    # =====================================================
 
     if (
         SIGNAL1_DISPLAY_COUNT_MIN < 0
@@ -5867,7 +5756,9 @@ def validate_settings():
         )
 
 
+    # =====================================================
     # 필요한 ROC가 N이면 경고
+    # =====================================================
 
     if not roc_is_enabled(
         SIGNAL1_ROC_PERIOD
@@ -5885,18 +5776,11 @@ def validate_settings():
             "Signal 1 / Signal 2는 발생하지 않습니다."
         )
 
-    if not roc_is_enabled(5):
+    if not roc_is_enabled(50):
 
         log.warning(
-            "Signal 2 트리거 ROC5가 N입니다. "
-            "Signal 2는 발생하지 않습니다."
-        )
-
-    if not roc_is_enabled(20):
-
-        log.warning(
-            "ROC20이 N입니다. "
-            "Signal 2는 발생하지 않습니다."
+            "ROC50이 N입니다. "
+            "Signal 1 / Signal 2 필터가 작동하지 않습니다."
         )
 
 
@@ -5964,23 +5848,11 @@ def startup():
     )
 
     log.info(
-        "★ ROC20 COUNT 5~30"
+        "★ ROC200 0선 상향돌파"
     )
 
     log.info(
-        "★ ROC50 COUNT 5~30"
-    )
-
-    log.info(
-        "★ ROC200 COUNT 1~200"
-    )
-
-    log.info(
-        "★ 위 3개 필터 동시 만족"
-    )
-
-    log.info(
-        "★ ROC5 0선 상향돌파"
+        "★ ROC50 COUNT 1~200"
     )
 
     log.info(
