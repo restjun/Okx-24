@@ -109,7 +109,7 @@ ROC_PERIODS = [
 # 2 이후 화면 제외
 # =========================================================
 
-SIGNAL1_ROC_PERIOD = 5
+SIGNAL1_ROC_PERIOD = 50
 
 SIGNAL1_ROC5_COUNT_MIN = 1
 SIGNAL1_ROC5_COUNT_MAX = 200
