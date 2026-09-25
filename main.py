@@ -102,8 +102,9 @@ ROC_PERIODS = [
 # ROC20 > 0
 #
 # Signal COUNT
-# 조건 시작 봉 = 0
-# 다음 봉 = 1
+#
+# 0선 위로 처음 진입한 캔들 = COUNT 0
+# 다음 캔들 = COUNT 1
 #
 # 화면 표시
 # COUNT 0~1
@@ -112,8 +113,8 @@ ROC_PERIODS = [
 SIGNAL1_ROC10_PERIOD = 10
 SIGNAL1_ROC20_PERIOD = 20
 
-SIGNAL1_DISPLAY_COUNT_MIN = 1
-SIGNAL1_DISPLAY_COUNT_MAX = 5
+SIGNAL1_DISPLAY_COUNT_MIN = 0
+SIGNAL1_DISPLAY_COUNT_MAX = 1
 
 
 # =========================================================
@@ -124,10 +125,10 @@ SIGNAL1_DISPLAY_COUNT_MAX = 5
 # =========================================================
 
 SIGNAL1_ROC10_COUNT_MIN = 1
-SIGNAL1_ROC10_COUNT_MAX = 10
+SIGNAL1_ROC10_COUNT_MAX = 5
 
 SIGNAL1_ROC20_COUNT_MIN = 1
-SIGNAL1_ROC20_COUNT_MAX = 10
+SIGNAL1_ROC20_COUNT_MAX = 5
 
 
 # =========================================================
@@ -171,6 +172,20 @@ okx_ticker_cache = {}
 # =========================================================
 
 roc_signal1_state = {}
+
+
+# =========================================================
+# Signal 1
+# 직전 업데이트의 트리거 상태
+#
+# 현재 진행봉에서
+#
+# False -> True
+#
+# 로 바뀌는 순간을 Signal 시작으로 사용
+# =========================================================
+
+roc_signal1_previous_trigger = {}
 
 
 # =========================================================
@@ -1317,106 +1332,27 @@ def roc_filter_analysis(df):
 
 
 # =========================================================
-# 과거 유효 Signal 이벤트 찾기
-#
-# ROC10 > 0
-# AND
-# ROC20 > 0
-#
-# 동시에 조건을 만족한 가장 최근 봉
-# =========================================================
-
-def find_latest_valid_signal_event(
-    df_signal,
-    filter_function
-):
-
-    if (
-        df_signal is None
-        or df_signal.empty
-    ):
-        return None
-
-    try:
-
-        current_start = (
-            get_current_candle_start(
-                SIGNAL_TIMEFRAME
-            )
-        )
-
-        temp = df_signal.copy()
-
-        temp["datetime"] = pd.to_datetime(
-            temp["datetime"],
-            errors="coerce"
-        )
-
-        temp = (
-            temp
-            .dropna(
-                subset=["datetime"]
-            )
-            .sort_values("datetime")
-            .reset_index(drop=True)
-        )
-
-        temp = temp[
-            temp["datetime"]
-            < current_start
-        ].reset_index(drop=True)
-
-        if temp.empty:
-            return None
-
-        for i in range(
-            len(temp) - 1,
-            -1,
-            -1
-        ):
-
-            event_df = (
-                temp
-                .iloc[:i + 1]
-                .copy()
-            )
-
-            if filter_function(
-                event_df
-            ):
-
-                return normalize_datetime(
-                    temp[
-                        "datetime"
-                    ].iloc[i]
-                )
-
-        return None
-
-    except Exception as e:
-
-        log.warning(
-            f"유효 Signal 이벤트 검색 오류: {e}"
-        )
-
-        return None
-
-
-# =========================================================
 # Signal 1 상태 업데이트
 #
-# ROC10 > 0
-# AND ROC20 > 0
+# 중요:
 #
-# 두 조건이 동시에 성립한 시점부터
-# COUNT 계산
+# 과거 완성봉을 찾아 Signal 시작점을 복원하지 않음.
+#
+# 현재 진행 중인 캔들에서
+#
+# False -> True
+#
+# 로 바뀌는 순간을 Signal 시작으로 사용.
+#
+# 시작 캔들 = COUNT 0
+#
+# 다음 4시간봉 = COUNT 1
 # =========================================================
 
 def update_signal1(
     market,
     trigger_pass_now,
-    progress_candle_time,
-    historical_start_candle=None
+    progress_candle_time
 ):
 
     market_key = str(market)
@@ -1433,94 +1369,124 @@ def update_signal1(
         )
     )
 
+    previous_trigger = (
+        roc_signal1_previous_trigger.get(
+            market_key
+        )
+    )
+
 
     # =====================================================
-    # 현재 조건 통과
+    # 처음 관찰하는 코인
+    #
+    # 과거 Signal을 임의로 복원하지 않음.
+    #
+    # 현재 진행봉의 상태만 저장.
+    #
+    # 다음 업데이트에서
+    # False -> True가 되면
+    # 그 순간 Signal 시작.
     # =====================================================
 
-    if trigger_pass_now:
+    if previous_trigger is None:
 
-        if signal_state is None:
+        roc_signal1_previous_trigger[
+            market_key
+        ] = bool(
+            trigger_pass_now
+        )
 
-            start_candle = None
+        # 현재 이미 조건이 true인 상태에서
+        # 프로그램이 처음 해당 코인을 관찰했다면
+        # 과거에 언제 0선을 넘었는지 알 수 없으므로
+        # 임의로 Signal을 만들지 않는다.
 
-            if historical_start_candle is not None:
+        return {
 
-                start_candle = (
-                    normalize_datetime(
-                        historical_start_candle
+            "signal_active":
+                bool(
+                    signal_state
+                    and signal_state.get(
+                        "active",
+                        False
+                    )
+                ),
+
+            "signal_count":
+                int(
+                    signal_state.get(
+                        "count",
+                        0
                     )
                 )
+                if signal_state
+                else 0,
 
-            if start_candle is None:
-
-                start_candle = (
-                    progress_candle_time
+            "trigger_pass":
+                bool(
+                    trigger_pass_now
                 )
+        }
 
-            if start_candle is not None:
 
-                distance = candle_distance(
-                    start_candle,
-                    progress_candle_time,
-                    SIGNAL_TIMEFRAME
-                )
+    # =====================================================
+    # False -> True
+    #
+    # 현재 진행 중인 캔들에서
+    # 두 ROC가 모두 0선 위로 진입
+    #
+    # 바로 Signal 발생
+    # COUNT = 0
+    # =====================================================
 
-                roc_signal1_state[
-                    market_key
-                ] = {
+    if (
+        not previous_trigger
+        and trigger_pass_now
+    ):
 
-                    "active": True,
+        roc_signal1_state[
+            market_key
+        ] = {
 
-                    "start_candle":
-                        start_candle,
+            "active":
+                True,
 
-                    "count":
-                        distance,
+            "start_candle":
+                progress_candle_time,
 
-                    "last_candle":
-                        progress_candle_time
-                }
+            "count":
+                0,
 
-                signal_state = (
-                    roc_signal1_state[
-                        market_key
-                    ]
-                )
+            "last_candle":
+                progress_candle_time
+        }
 
-                roc_signal1_failed_candle.pop(
-                    market_key,
-                    None
-                )
-
-                if (
-                    start_candle
-                    == progress_candle_time
-                ):
-
-                    log.info(
-                        f"[Signal 1 START] "
-                        f"{market_key} | "
-                        f"ROC10 > 0 | "
-                        f"ROC20 > 0 | "
-                        f"COUNT=0"
-                    )
-
-                else:
-
-                    log.info(
-                        f"[Signal 1 RESTORE] "
-                        f"{market_key} | "
-                        f"시작={start_candle} | "
-                        f"COUNT={distance}"
-                    )
-
+        roc_signal1_failed_candle.pop(
+            market_key,
+            None
+        )
 
         signal_state = (
-            roc_signal1_state.get(
+            roc_signal1_state[
                 market_key
-            )
+            ]
         )
+
+        log.info(
+            f"[Signal 1 START] "
+            f"{market_key} | "
+            f"ROC10 > 0 | "
+            f"ROC20 > 0 | "
+            f"COUNT=0 | "
+            f"캔들={progress_candle_time}"
+        )
+
+
+    # =====================================================
+    # 조건 유지
+    # =====================================================
+
+    elif trigger_pass_now:
 
         if signal_state is not None:
 
@@ -1541,9 +1507,9 @@ def update_signal1(
                     SIGNAL_TIMEFRAME
                 )
 
-                signal_state["count"] = (
-                    distance
-                )
+                signal_state[
+                    "count"
+                ] = distance
 
                 signal_state[
                     "last_candle"
@@ -1551,7 +1517,11 @@ def update_signal1(
 
 
     # =====================================================
-    # 현재 조건 불통과
+    # True -> False
+    #
+    # ROC10 또는 ROC20이 0 이하
+    #
+    # Signal 종료
     # =====================================================
 
     else:
@@ -1583,7 +1553,22 @@ def update_signal1(
                 None
             )
 
-            signal_state = None
+
+    # =====================================================
+    # 직전 트리거 상태 저장
+    #
+    # 다음 1분 업데이트에서
+    # False -> True
+    # 또는
+    # True -> False
+    # 판단
+    # =====================================================
+
+    roc_signal1_previous_trigger[
+        market_key
+    ] = bool(
+        trigger_pass_now
+    )
 
 
     # =====================================================
@@ -1835,11 +1820,13 @@ def analyze(
 
 
     # =====================================================
-    # Signal 1
+    # Signal 1 현재 조건
     #
     # ROC10 > 0
     # AND
     # ROC20 > 0
+    #
+    # 현재 진행봉 가격 반영
     # =====================================================
 
     signal1_trigger_now = (
@@ -1850,7 +1837,7 @@ def analyze(
 
 
     # =====================================================
-    # Signal 1 COUNT 필터
+    # Signal 1 ROC COUNT 필터
     #
     # ROC10 COUNT 1~5
     # ROC20 COUNT 1~5
@@ -1861,32 +1848,6 @@ def analyze(
             df_current
         )
     )
-
-
-    # =====================================================
-    # 과거 Signal 시작점
-    # =====================================================
-
-    historical_start_candle1 = None
-
-    if market not in roc_signal1_state:
-
-        if (
-            roc_is_enabled(
-                SIGNAL1_ROC10_PERIOD
-            )
-            and
-            roc_is_enabled(
-                SIGNAL1_ROC20_PERIOD
-            )
-        ):
-
-            historical_start_candle1 = (
-                find_latest_valid_signal_event(
-                    df_signal,
-                    signal1_trigger_pass
-                )
-            )
 
 
     # =====================================================
@@ -1902,6 +1863,13 @@ def analyze(
 
     # =====================================================
     # Signal 1 상태
+    #
+    # 중요:
+    # 과거 완성봉에서 시작점을 찾지 않음.
+    #
+    # 현재 진행봉에서
+    # False -> True
+    # 가 되는 순간 COUNT 0
     # =====================================================
 
     state1 = update_signal1(
@@ -1912,10 +1880,7 @@ def analyze(
             signal1_trigger_now,
 
         progress_candle_time=
-            progress_candle_time,
-
-        historical_start_candle=
-            historical_start_candle1
+            progress_candle_time
     )
 
 
@@ -1983,6 +1948,8 @@ def analyze(
 
     # =====================================================
     # Signal 표시 COUNT
+    #
+    # 0~1
     # =====================================================
 
     signal1_display_count_pass = (
@@ -4582,6 +4549,18 @@ def startup():
 
     log.info(
         "★ ROC10 AND ROC20 두 선 모두 0선 위"
+    )
+
+    log.info(
+        "★ 0선 위 진입 순간 Signal 발생"
+    )
+
+    log.info(
+        "★ Signal 시작 캔들 = COUNT 0"
+    )
+
+    log.info(
+        "★ 다음 캔들 = COUNT 1"
     )
 
     log.info(
