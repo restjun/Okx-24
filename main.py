@@ -80,7 +80,6 @@ ROC_SETTINGS = {
     200: "Y"
 }
 
-
 ROC_PERIODS = [
     10,
     20,
@@ -102,9 +101,8 @@ ROC_PERIODS = [
 # ROC20 > 0
 #
 # Signal COUNT
-#
-# 0선 위로 처음 진입한 캔들 = COUNT 0
-# 다음 캔들 = COUNT 1
+# 조건 시작 봉 = 0
+# 다음 봉 = 1
 #
 # 화면 표시
 # COUNT 0~1
@@ -113,22 +111,22 @@ ROC_PERIODS = [
 SIGNAL1_ROC10_PERIOD = 10
 SIGNAL1_ROC20_PERIOD = 20
 
-SIGNAL1_DISPLAY_COUNT_MIN = 0
+SIGNAL1_DISPLAY_COUNT_MIN = 1
 SIGNAL1_DISPLAY_COUNT_MAX = 5
 
 
 # =========================================================
 # Signal 1 ROC COUNT
 #
-# ROC10 양수 COUNT 1~5
-# ROC20 양수 COUNT 1~5
+# ROC10 양수 COUNT 1~10
+# ROC20 양수 COUNT 1~10
 # =========================================================
 
 SIGNAL1_ROC10_COUNT_MIN = 1
-SIGNAL1_ROC10_COUNT_MAX = 5
+SIGNAL1_ROC10_COUNT_MAX = 10
 
 SIGNAL1_ROC20_COUNT_MIN = 1
-SIGNAL1_ROC20_COUNT_MAX = 5
+SIGNAL1_ROC20_COUNT_MAX = 10
 
 
 # =========================================================
@@ -172,20 +170,6 @@ okx_ticker_cache = {}
 # =========================================================
 
 roc_signal1_state = {}
-
-
-# =========================================================
-# Signal 1
-# 직전 업데이트의 트리거 상태
-#
-# 현재 진행봉에서
-#
-# False -> True
-#
-# 로 바뀌는 순간을 Signal 시작으로 사용
-# =========================================================
-
-roc_signal1_previous_trigger = {}
 
 
 # =========================================================
@@ -600,8 +584,8 @@ def signal1_trigger_pass(df):
 # =========================================================
 # Signal 1 COUNT 필터
 #
-# ROC10 COUNT 1~5
-# ROC20 COUNT 1~5
+# ROC10 COUNT 1~10
+# ROC20 COUNT 1~10
 # =========================================================
 
 def signal1_filter_pass(df):
@@ -1332,27 +1316,106 @@ def roc_filter_analysis(df):
 
 
 # =========================================================
+# 과거 유효 Signal 이벤트 찾기
+#
+# ROC10 > 0
+# AND
+# ROC20 > 0
+#
+# 동시에 조건을 만족한 가장 최근 봉
+# =========================================================
+
+def find_latest_valid_signal_event(
+    df_signal,
+    filter_function
+):
+
+    if (
+        df_signal is None
+        or df_signal.empty
+    ):
+        return None
+
+    try:
+
+        current_start = (
+            get_current_candle_start(
+                SIGNAL_TIMEFRAME
+            )
+        )
+
+        temp = df_signal.copy()
+
+        temp["datetime"] = pd.to_datetime(
+            temp["datetime"],
+            errors="coerce"
+        )
+
+        temp = (
+            temp
+            .dropna(
+                subset=["datetime"]
+            )
+            .sort_values("datetime")
+            .reset_index(drop=True)
+        )
+
+        temp = temp[
+            temp["datetime"]
+            < current_start
+        ].reset_index(drop=True)
+
+        if temp.empty:
+            return None
+
+        for i in range(
+            len(temp) - 1,
+            -1,
+            -1
+        ):
+
+            event_df = (
+                temp
+                .iloc[:i + 1]
+                .copy()
+            )
+
+            if filter_function(
+                event_df
+            ):
+
+                return normalize_datetime(
+                    temp[
+                        "datetime"
+                    ].iloc[i]
+                )
+
+        return None
+
+    except Exception as e:
+
+        log.warning(
+            f"유효 Signal 이벤트 검색 오류: {e}"
+        )
+
+        return None
+
+
+# =========================================================
 # Signal 1 상태 업데이트
 #
-# 중요:
+# ROC10 > 0
+# AND ROC20 > 0
 #
-# 과거 완성봉을 찾아 Signal 시작점을 복원하지 않음.
-#
-# 현재 진행 중인 캔들에서
-#
-# False -> True
-#
-# 로 바뀌는 순간을 Signal 시작으로 사용.
-#
-# 시작 캔들 = COUNT 0
-#
-# 다음 4시간봉 = COUNT 1
+# 두 조건이 동시에 성립한 시점부터
+# COUNT 계산
 # =========================================================
 
 def update_signal1(
     market,
     trigger_pass_now,
-    progress_candle_time
+    progress_candle_time,
+    historical_start_candle=None
 ):
 
     market_key = str(market)
@@ -1369,124 +1432,94 @@ def update_signal1(
         )
     )
 
-    previous_trigger = (
-        roc_signal1_previous_trigger.get(
-            market_key
-        )
-    )
-
 
     # =====================================================
-    # 처음 관찰하는 코인
-    #
-    # 과거 Signal을 임의로 복원하지 않음.
-    #
-    # 현재 진행봉의 상태만 저장.
-    #
-    # 다음 업데이트에서
-    # False -> True가 되면
-    # 그 순간 Signal 시작.
+    # 현재 조건 통과
     # =====================================================
 
-    if previous_trigger is None:
+    if trigger_pass_now:
 
-        roc_signal1_previous_trigger[
-            market_key
-        ] = bool(
-            trigger_pass_now
-        )
+        if signal_state is None:
 
-        # 현재 이미 조건이 true인 상태에서
-        # 프로그램이 처음 해당 코인을 관찰했다면
-        # 과거에 언제 0선을 넘었는지 알 수 없으므로
-        # 임의로 Signal을 만들지 않는다.
+            start_candle = None
 
-        return {
+            if historical_start_candle is not None:
 
-            "signal_active":
-                bool(
-                    signal_state
-                    and signal_state.get(
-                        "active",
-                        False
-                    )
-                ),
-
-            "signal_count":
-                int(
-                    signal_state.get(
-                        "count",
-                        0
+                start_candle = (
+                    normalize_datetime(
+                        historical_start_candle
                     )
                 )
-                if signal_state
-                else 0,
 
-            "trigger_pass":
-                bool(
-                    trigger_pass_now
+            if start_candle is None:
+
+                start_candle = (
+                    progress_candle_time
                 )
-        }
 
+            if start_candle is not None:
 
-    # =====================================================
-    # False -> True
-    #
-    # 현재 진행 중인 캔들에서
-    # 두 ROC가 모두 0선 위로 진입
-    #
-    # 바로 Signal 발생
-    # COUNT = 0
-    # =====================================================
+                distance = candle_distance(
+                    start_candle,
+                    progress_candle_time,
+                    SIGNAL_TIMEFRAME
+                )
 
-    if (
-        not previous_trigger
-        and trigger_pass_now
-    ):
+                roc_signal1_state[
+                    market_key
+                ] = {
 
-        roc_signal1_state[
-            market_key
-        ] = {
+                    "active": True,
 
-            "active":
-                True,
+                    "start_candle":
+                        start_candle,
 
-            "start_candle":
-                progress_candle_time,
+                    "count":
+                        distance,
 
-            "count":
-                0,
+                    "last_candle":
+                        progress_candle_time
+                }
 
-            "last_candle":
-                progress_candle_time
-        }
+                signal_state = (
+                    roc_signal1_state[
+                        market_key
+                    ]
+                )
 
-        roc_signal1_failed_candle.pop(
-            market_key,
-            None
-        )
+                roc_signal1_failed_candle.pop(
+                    market_key,
+                    None
+                )
+
+                if (
+                    start_candle
+                    == progress_candle_time
+                ):
+
+                    log.info(
+                        f"[Signal 1 START] "
+                        f"{market_key} | "
+                        f"ROC10 > 0 | "
+                        f"ROC20 > 0 | "
+                        f"COUNT=0"
+                    )
+
+                else:
+
+                    log.info(
+                        f"[Signal 1 RESTORE] "
+                        f"{market_key} | "
+                        f"시작={start_candle} | "
+                        f"COUNT={distance}"
+                    )
+
 
         signal_state = (
-            roc_signal1_state[
+            roc_signal1_state.get(
                 market_key
-            ]
+            )
         )
-
-        log.info(
-            f"[Signal 1 START] "
-            f"{market_key} | "
-            f"ROC10 > 0 | "
-            f"ROC20 > 0 | "
-            f"COUNT=0 | "
-            f"캔들={progress_candle_time}"
-        )
-
-
-    # =====================================================
-    # 조건 유지
-    # =====================================================
-
-    elif trigger_pass_now:
 
         if signal_state is not None:
 
@@ -1507,9 +1540,9 @@ def update_signal1(
                     SIGNAL_TIMEFRAME
                 )
 
-                signal_state[
-                    "count"
-                ] = distance
+                signal_state["count"] = (
+                    distance
+                )
 
                 signal_state[
                     "last_candle"
@@ -1517,11 +1550,7 @@ def update_signal1(
 
 
     # =====================================================
-    # True -> False
-    #
-    # ROC10 또는 ROC20이 0 이하
-    #
-    # Signal 종료
+    # 현재 조건 불통과
     # =====================================================
 
     else:
@@ -1553,22 +1582,7 @@ def update_signal1(
                 None
             )
 
-
-    # =====================================================
-    # 직전 트리거 상태 저장
-    #
-    # 다음 1분 업데이트에서
-    # False -> True
-    # 또는
-    # True -> False
-    # 판단
-    # =====================================================
-
-    roc_signal1_previous_trigger[
-        market_key
-    ] = bool(
-        trigger_pass_now
-    )
+            signal_state = None
 
 
     # =====================================================
@@ -1820,13 +1834,11 @@ def analyze(
 
 
     # =====================================================
-    # Signal 1 현재 조건
+    # Signal 1
     #
     # ROC10 > 0
     # AND
     # ROC20 > 0
-    #
-    # 현재 진행봉 가격 반영
     # =====================================================
 
     signal1_trigger_now = (
@@ -1837,10 +1849,10 @@ def analyze(
 
 
     # =====================================================
-    # Signal 1 ROC COUNT 필터
+    # Signal 1 COUNT 필터
     #
-    # ROC10 COUNT 1~5
-    # ROC20 COUNT 1~5
+    # ROC10 COUNT 1~10
+    # ROC20 COUNT 1~10
     # =====================================================
 
     signal1_filter_pass_now = (
@@ -1848,6 +1860,32 @@ def analyze(
             df_current
         )
     )
+
+
+    # =====================================================
+    # 과거 Signal 시작점
+    # =====================================================
+
+    historical_start_candle1 = None
+
+    if market not in roc_signal1_state:
+
+        if (
+            roc_is_enabled(
+                SIGNAL1_ROC10_PERIOD
+            )
+            and
+            roc_is_enabled(
+                SIGNAL1_ROC20_PERIOD
+            )
+        ):
+
+            historical_start_candle1 = (
+                find_latest_valid_signal_event(
+                    df_signal,
+                    signal1_trigger_pass
+                )
+            )
 
 
     # =====================================================
@@ -1863,13 +1901,6 @@ def analyze(
 
     # =====================================================
     # Signal 1 상태
-    #
-    # 중요:
-    # 과거 완성봉에서 시작점을 찾지 않음.
-    #
-    # 현재 진행봉에서
-    # False -> True
-    # 가 되는 순간 COUNT 0
     # =====================================================
 
     state1 = update_signal1(
@@ -1880,7 +1911,10 @@ def analyze(
             signal1_trigger_now,
 
         progress_candle_time=
-            progress_candle_time
+            progress_candle_time,
+
+        historical_start_candle=
+            historical_start_candle1
     )
 
 
@@ -1948,8 +1982,6 @@ def analyze(
 
     # =====================================================
     # Signal 표시 COUNT
-    #
-    # 0~1
     # =====================================================
 
     signal1_display_count_pass = (
@@ -1964,9 +1996,9 @@ def analyze(
     #
     # 1. ROC10 > 0
     # 2. ROC20 > 0
-    # 3. ROC10 COUNT 1~5
-    # 4. ROC20 COUNT 1~5
-    # 5. Signal COUNT 0~1
+    # 3. ROC10 COUNT 1~10
+    # 4. ROC20 COUNT 1~10
+    # 5. Signal COUNT 1~5
     # 6. 당일 변동률 >= 0%
     #
     # BTC 필터 없음
@@ -3245,349 +3277,735 @@ def market_summary_html():
 CSS = """
 
 *{
-    box-sizing:border-box;
-    -webkit-tap-highlight-color:transparent;
+box-sizing:border-box;
+-webkit-tap-highlight-color:transparent;
 }
 
 html,
 body{
-    margin:0;
-    padding:0;
-    width:100%;
-    overflow-x:hidden;
+margin:0;
+padding:0;
+width:100%;
+overflow-x:hidden;
 }
 
 body{
-    background:#080c11;
-    color:#e7ebef;
+background:#080c11;
+color:#e7ebef;
 
-    font-family:
-        -apple-system,
-        BlinkMacSystemFont,
-        "Segoe UI",
-        Arial,
-        sans-serif;
+font-family:
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Arial,
+    sans-serif;
 
-    font-size:9px;
-    padding:12px;
+font-size:9px;
+padding:12px;
+
 }
 
 h1{
-    margin:3px 4px 10px;
-    color:#eef2f5;
-    font-size:15px;
-    line-height:18px;
-    font-weight:900;
+margin:3px 4px 10px;
+color:#eef2f5;
+font-size:15px;
+line-height:18px;
+font-weight:900;
 }
 
 .unified-section{
-    width:100%;
-    margin:10px 0 12px;
+width:100%;
+margin:10px 0 12px;
 }
 
 .section-title-card{
-    display:flex;
-    align-items:center;
-    width:100%;
-    min-height:48px;
-    padding:7px 10px;
-    background:#10151b;
-    border:2px solid #252e38;
-    border-radius:12px;
-    box-shadow:
-        inset 0 0 18px
-        rgba(255,255,255,.018);
-    overflow:hidden;
+display:flex;
+align-items:center;
+width:100%;
+min-height:48px;
+padding:7px 10px;
+background:#10151b;
+border:2px solid #252e38;
+border-radius:12px;
+box-shadow:
+inset 0 0 18px
+rgba(255,255,255,.018);
+overflow:hidden;
 }
 
 .section-number{
-    flex:none;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    width:34px;
-    height:34px;
-    margin-right:9px;
-    border-radius:8px;
-    background:#18251f;
-    border:1px solid #315a48;
-    color:#82d5a8;
-    font-size:16px;
-    font-weight:900;
+flex:none;
+display:flex;
+align-items:center;
+justify-content:center;
+width:34px;
+height:34px;
+margin-right:9px;
+border-radius:8px;
+background:#18251f;
+border:1px solid #315a48;
+color:#82d5a8;
+font-size:16px;
+font-weight:900;
 }
 
 .top-number{
-    background:#1d1a13;
-    border-color:#665331;
-    color:#e0bd6d;
-    font-size:14px;
+background:#1d1a13;
+border-color:#665331;
+color:#e0bd6d;
+font-size:14px;
 }
 
 .section-heading{
-    min-width:0;
-    flex:1;
-    overflow:hidden;
+min-width:0;
+flex:1;
+overflow:hidden;
 }
 
 .section-heading-main{
-    color:#e9edf1;
-    font-size:12px;
-    line-height:15px;
-    font-weight:900;
-    white-space:nowrap;
+color:#e9edf1;
+font-size:12px;
+line-height:15px;
+font-weight:900;
+white-space:nowrap;
 }
 
 .section-heading-sub{
-    margin-top:2px;
-    color:#87919b;
-    font-size:7px;
-    line-height:10px;
-    font-weight:700;
-    white-space:nowrap;
-    overflow:hidden;
-    text-overflow:ellipsis;
+margin-top:2px;
+color:#87919b;
+font-size:7px;
+line-height:10px;
+font-weight:700;
+white-space:nowrap;
+overflow:hidden;
+text-overflow:ellipsis;
 }
 
 .section-time{
-    flex:none;
-    margin-left:8px;
-    color:#68737e;
-    font-size:6.5px;
-    font-weight:800;
-    white-space:nowrap;
+flex:none;
+margin-left:8px;
+color:#68737e;
+font-size:6.5px;
+font-weight:800;
+white-space:nowrap;
 }
 
 .market-card{
-    width:100%;
-    margin:3px 0 12px;
-    background:#0f141a;
-    border:2px solid #252e38;
-    border-radius:13px;
-    overflow:hidden;
-    box-shadow:
-        inset 0 0 20px
-        rgba(255,255,255,.018);
+width:100%;
+margin:3px 0 12px;
+background:#0f141a;
+border:2px solid #252e38;
+border-radius:13px;
+overflow:hidden;
+box-shadow:
+inset 0 0 20px
+rgba(255,255,255,.018);
 }
 
 .market-card-header{
-    display:flex;
-    align-items:center;
-    min-height:44px;
-    padding:7px 10px;
-    background:#121820;
-    border-bottom:1px solid #29323c;
+display:flex;
+align-items:center;
+min-height:44px;
+padding:7px 10px;
+background:#121820;
+border-bottom:1px solid #29323c;
 }
 
 .market-title-block{
-    min-width:0;
-    flex:1;
-    overflow:hidden;
+min-width:0;
+flex:1;
+overflow:hidden;
 }
 
 .market-title-main{
-    color:#eef2f5;
-    font-size:11px;
-    line-height:14px;
-    font-weight:900;
-    white-space:nowrap;
+color:#eef2f5;
+font-size:11px;
+line-height:14px;
+font-weight:900;
+white-space:nowrap;
 }
 
 .market-title-sub{
-    margin-top:2px;
-    color:#7e8994;
-    font-size:6.5px;
-    line-height:9px;
-    font-weight:700;
-    white-space:nowrap;
-    overflow:hidden;
-    text-overflow:ellipsis;
+margin-top:2px;
+color:#7e8994;
+font-size:6.5px;
+line-height:9px;
+font-weight:700;
+white-space:nowrap;
+overflow:hidden;
+text-overflow:ellipsis;
 }
 
 .market-time{
-    flex:none;
-    margin-left:8px;
-    color:#68737e;
-    font-size:6.5px;
-    font-weight:800;
-    white-space:nowrap;
+flex:none;
+margin-left:8px;
+color:#68737e;
+font-size:6.5px;
+font-weight:800;
+white-space:nowrap;
 }
 
 .btc-main-row{
-    display:grid;
+display:grid;
+
+grid-template-columns:
+    1.1fr
+    1.3fr
+    1fr
+    1.4fr;
+
+align-items:center;
+min-height:58px;
+background:#11161c;
+border-bottom:1px solid #29323c;
+
+}
+
+.btc-name{
+padding-left:13px;
+color:#edf1f4;
+font-size:11px;
+font-weight:900;
+white-space:nowrap;
+}
+
+.btc-price{
+color:#f1f4f6;
+font-size:11px;
+font-weight:900;
+text-align:center;
+white-space:nowrap;
+}
+
+.btc-change{
+color:#79cda1;
+font-size:11px;
+font-weight:900;
+text-align:center;
+white-space:nowrap;
+}
+
+.btc-signal-box{
+min-height:58px;
+display:flex;
+align-items:center;
+justify-content:center;
+border-left:1px solid #29323c;
+}
+
+.btc-roc-detail{
+display:grid;
+
+grid-template-columns:
+    1.1fr
+    5fr
+    1.1fr;
+
+align-items:center;
+min-height:69px;
+padding:7px 9px;
+background:#0d1218;
+
+}
+
+.btc-roc-label{
+color:#dce2e7;
+font-size:10px;
+font-weight:900;
+text-align:center;
+white-space:nowrap;
+}
+
+.roc-detail{
+display:grid;
+
+grid-template-columns:
+    1.05fr
+    5fr
+    1.05fr;
+
+align-items:center;
+min-height:68px;
+padding:6px 8px;
+background:#0d1218;
+
+}
+
+.roc-label{
+color:#dce2e7;
+font-size:10px;
+font-weight:900;
+text-align:center;
+white-space:nowrap;
+}
+
+.roc-grid{
+display:grid;
+grid-template-columns:
+repeat(4,minmax(0,1fr));
+gap:6px;
+width:100%;
+}
+
+.roc-card-item{
+min-height:52px;
+display:flex;
+flex-direction:column;
+align-items:center;
+justify-content:center;
+background:#11171e;
+border:2px solid #27313c;
+border-radius:9px;
+box-shadow:
+inset 0 0 10px
+rgba(255,255,255,.018);
+}
+
+.roc-card-period{
+color:#9aa5b0;
+font-size:8px;
+line-height:11px;
+font-weight:900;
+white-space:nowrap;
+}
+
+.roc-card-value{
+display:flex;
+align-items:center;
+justify-content:center;
+gap:5px;
+margin-top:2px;
+}
+
+.roc-dot{
+font-size:18px;
+line-height:18px;
+}
+
+.roc-count{
+color:#eef2f5;
+font-size:10px;
+line-height:14px;
+font-weight:900;
+white-space:nowrap;
+}
+
+.roc-badge{
+justify-self:end;
+padding:5px 7px;
+border-radius:8px;
+background:#183126;
+border:1px solid #285840;
+color:#78c99d;
+font-size:7px;
+line-height:10px;
+font-weight:900;
+white-space:nowrap;
+}
+
+.card-list{
+width:100%;
+display:flex;
+flex-direction:column;
+gap:9px;
+margin-top:8px;
+}
+
+.coin-card{
+width:100%;
+background:#0f141a;
+border:2px solid #252e38;
+border-radius:12px;
+overflow:hidden;
+box-shadow:
+inset 0 0 18px
+rgba(255,255,255,.015);
+}
+
+.coin-main-row{
+display:grid;
+
+grid-template-columns:
+    6%
+    18%
+    15%
+    21%
+    14%
+    26%;
+
+align-items:center;
+min-height:56px;
+background:#11161c;
+
+}
+
+.coin-main-row > div{
+min-width:0;
+height:56px;
+display:flex;
+align-items:center;
+justify-content:center;
+overflow:hidden;
+}
+
+.rank-cell{
+justify-content:flex-start!important;
+padding-left:12px;
+color:#e2e7eb;
+font-size:11px;
+font-weight:900;
+white-space:nowrap;
+}
+
+.coin-cell{
+text-align:center;
+}
+
+.coin-name{
+display:block;
+width:100%;
+padding:0 3px;
+color:#eef2f5;
+font-size:11px;
+line-height:14px;
+font-weight:900;
+white-space:nowrap;
+overflow:hidden;
+text-overflow:ellipsis;
+text-align:center;
+}
+
+.volume-cell{
+text-align:center;
+}
+
+.volume-value{
+display:block;
+width:100%;
+color:#f1f4f6;
+font-size:10px;
+line-height:13px;
+font-weight:900;
+white-space:nowrap;
+overflow:hidden;
+text-overflow:ellipsis;
+text-align:center;
+}
+
+.price-cell{
+text-align:center;
+}
+
+.price-value{
+display:block;
+width:100%;
+color:#eef2f5;
+font-size:10px;
+line-height:13px;
+font-weight:900;
+white-space:nowrap;
+overflow:hidden;
+text-overflow:ellipsis;
+text-align:center;
+}
+
+.change-cell{
+text-align:center;
+font-size:10px;
+font-weight:900;
+white-space:nowrap;
+}
+
+.signal-cell{
+height:56px!important;
+border-left:1px solid #29323c;
+background:#0e141a;
+text-align:center;
+overflow:hidden!important;
+}
+
+.coin-roc-row{
+min-height:68px;
+background:#0d1218;
+border-top:1px solid #29323c;
+}
+
+.signal-wrap{
+display:flex;
+align-items:center;
+justify-content:center;
+width:100%;
+height:100%;
+white-space:nowrap;
+}
+
+.signal-item{
+display:inline-flex;
+align-items:center;
+justify-content:center;
+width:43px;
+min-width:43px;
+height:38px;
+padding:3px;
+border-radius:9px;
+font-weight:900;
+white-space:nowrap;
+overflow:visible;
+background:#153126;
+border:2px solid #24724e;
+color:#78c99d;
+box-shadow:
+0 0 10px
+rgba(72,190,130,.12);
+}
+
+.signal-rocket{
+font-size:20px;
+line-height:21px;
+flex:none;
+}
+
+@keyframes signalFlashOne{
+
+0%{
+    background-color:#11161c;
+
+    box-shadow:
+        inset 0 0 0
+        rgba(114,189,152,0);
+}
+
+30%{
+    background-color:#294238;
+
+    box-shadow:
+        inset 0 0 16px
+        rgba(114,189,152,.32);
+}
+
+60%{
+    background-color:#18231f;
+
+    box-shadow:
+        inset 0 0 5px
+        rgba(114,189,152,.12);
+}
+
+100%{
+    background-color:#11161c;
+
+    box-shadow:
+        inset 0 0 0
+        rgba(114,189,152,0);
+}
+
+}
+
+.coin-card.signal-flash-one .coin-main-row > div,
+.coin-card.signal-flash-one .coin-roc-row{
+animation:
+signalFlashOne
+1.35s
+ease-in-out
+infinite;
+}
+
+.up{
+color:#78cfa2!important;
+font-weight:900;
+}
+
+.down{
+color:#df8588!important;
+font-weight:900;
+}
+
+.zero{
+color:#727c86!important;
+}
+
+.empty-card{
+min-height:56px;
+display:flex;
+align-items:center;
+justify-content:center;
+background:#10151b;
+border:2px solid #252e38;
+border-radius:12px;
+color:#59636e;
+font-size:8px;
+font-weight:800;
+}
+
+@media(max-width:600px){
+
+body{
+    padding:7px;
+}
+
+h1{
+    margin:3px 3px 8px;
+    font-size:13px;
+    line-height:16px;
+}
+
+.unified-section{
+    margin:8px 0 10px;
+}
+
+.section-title-card{
+    min-height:40px;
+    padding:5px 6px;
+    border-radius:9px;
+}
+
+.section-number{
+    width:27px;
+    height:27px;
+    margin-right:6px;
+    border-radius:6px;
+    font-size:12px;
+}
+
+.top-number{
+    font-size:11px;
+}
+
+.section-heading-main{
+    font-size:9px;
+    line-height:11px;
+}
+
+.section-heading-sub{
+    margin-top:1px;
+    font-size:5px;
+    line-height:7px;
+}
+
+.section-time{
+    margin-left:4px;
+    font-size:5px;
+}
+
+.market-card{
+    margin:3px 0 9px;
+    border-radius:9px;
+}
+
+.market-card-header{
+    min-height:36px;
+    padding:5px 7px;
+}
+
+.market-title-main{
+    font-size:8px;
+    line-height:10px;
+}
+
+.market-title-sub{
+    margin-top:1px;
+    font-size:4.8px;
+    line-height:6px;
+}
+
+.market-time{
+    margin-left:4px;
+    font-size:4.8px;
+}
+
+.btc-main-row{
+    min-height:43px;
 
     grid-template-columns:
         1.1fr
         1.3fr
         1fr
-        1.4fr;
-
-    align-items:center;
-    min-height:58px;
-    background:#11161c;
-    border-bottom:1px solid #29323c;
+        1.3fr;
 }
 
 .btc-name{
-    padding-left:13px;
-    color:#edf1f4;
-    font-size:11px;
-    font-weight:900;
-    white-space:nowrap;
+    padding-left:8px;
+    font-size:8px;
 }
 
 .btc-price{
-    color:#f1f4f6;
-    font-size:11px;
-    font-weight:900;
-    text-align:center;
-    white-space:nowrap;
+    font-size:8px;
 }
 
 .btc-change{
-    color:#79cda1;
-    font-size:11px;
-    font-weight:900;
-    text-align:center;
-    white-space:nowrap;
+    font-size:8px;
 }
 
 .btc-signal-box{
-    min-height:58px;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    border-left:1px solid #29323c;
+    min-height:43px;
 }
 
-.btc-roc-detail{
-    display:grid;
-
-    grid-template-columns:
-        1.1fr
-        5fr
-        1.1fr;
-
-    align-items:center;
-    min-height:69px;
-    padding:7px 9px;
-    background:#0d1218;
-}
-
-.btc-roc-label{
-    color:#dce2e7;
-    font-size:10px;
-    font-weight:900;
-    text-align:center;
-    white-space:nowrap;
-}
-
+.btc-roc-detail,
 .roc-detail{
-    display:grid;
-
     grid-template-columns:
-        1.05fr
-        5fr
-        1.05fr;
+        .95fr
+        5.5fr
+        .95fr;
 
-    align-items:center;
-    min-height:68px;
-    padding:6px 8px;
-    background:#0d1218;
+    min-height:52px;
+    padding:4px 4px;
 }
 
+.btc-roc-label,
 .roc-label{
-    color:#dce2e7;
-    font-size:10px;
-    font-weight:900;
-    text-align:center;
-    white-space:nowrap;
+    font-size:7px;
 }
 
 .roc-grid{
-    display:grid;
-    grid-template-columns:
-        repeat(4,minmax(0,1fr));
-    gap:6px;
-    width:100%;
+    gap:3px;
 }
 
 .roc-card-item{
-    min-height:52px;
-    display:flex;
-    flex-direction:column;
-    align-items:center;
-    justify-content:center;
-    background:#11171e;
-    border:2px solid #27313c;
-    border-radius:9px;
-    box-shadow:
-        inset 0 0 10px
-        rgba(255,255,255,.018);
+    min-height:39px;
+    border-width:1px;
+    border-radius:5px;
 }
 
 .roc-card-period{
-    color:#9aa5b0;
-    font-size:8px;
-    line-height:11px;
-    font-weight:900;
-    white-space:nowrap;
+    font-size:5.8px;
+    line-height:7px;
 }
 
 .roc-card-value{
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    gap:5px;
-    margin-top:2px;
+    gap:2px;
+    margin-top:1px;
 }
 
 .roc-dot{
-    font-size:18px;
-    line-height:18px;
+    font-size:12px;
+    line-height:12px;
 }
 
 .roc-count{
-    color:#eef2f5;
-    font-size:10px;
-    line-height:14px;
-    font-weight:900;
-    white-space:nowrap;
+    font-size:6.5px;
+    line-height:8px;
 }
 
 .roc-badge{
-    justify-self:end;
-    padding:5px 7px;
-    border-radius:8px;
-    background:#183126;
-    border:1px solid #285840;
-    color:#78c99d;
-    font-size:7px;
-    line-height:10px;
-    font-weight:900;
-    white-space:nowrap;
+    padding:3px 4px;
+    border-radius:5px;
+    font-size:5px;
+    line-height:7px;
 }
 
 .card-list{
-    width:100%;
-    display:flex;
-    flex-direction:column;
-    gap:9px;
-    margin-top:8px;
+    gap:6px;
+    margin-top:6px;
 }
 
 .coin-card{
-    width:100%;
-    background:#0f141a;
-    border:2px solid #252e38;
-    border-radius:12px;
-    overflow:hidden;
-    box-shadow:
-        inset 0 0 18px
-        rgba(255,255,255,.015);
+    border-width:1px;
+    border-radius:8px;
 }
 
 .coin-main-row{
-    display:grid;
+
+    min-height:40px;
 
     grid-template-columns:
         6%
@@ -3596,680 +4014,303 @@ h1{
         21%
         14%
         26%;
-
-    align-items:center;
-    min-height:56px;
-    background:#11161c;
 }
 
 .coin-main-row > div{
-    min-width:0;
-    height:56px;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    overflow:hidden;
+    height:40px;
 }
 
 .rank-cell{
-    justify-content:flex-start!important;
-    padding-left:12px;
-    color:#e2e7eb;
-    font-size:11px;
-    font-weight:900;
-    white-space:nowrap;
-}
-
-.coin-cell{
-    text-align:center;
+    padding-left:5px;
+    font-size:6.8px;
 }
 
 .coin-name{
-    display:block;
-    width:100%;
-    padding:0 3px;
-    color:#eef2f5;
-    font-size:11px;
-    line-height:14px;
-    font-weight:900;
-    white-space:nowrap;
-    overflow:hidden;
-    text-overflow:ellipsis;
-    text-align:center;
-}
-
-.volume-cell{
-    text-align:center;
+    padding:0 1px;
+    font-size:6.8px;
+    line-height:9px;
 }
 
 .volume-value{
-    display:block;
-    width:100%;
-    color:#f1f4f6;
-    font-size:10px;
-    line-height:13px;
-    font-weight:900;
-    white-space:nowrap;
-    overflow:hidden;
-    text-overflow:ellipsis;
-    text-align:center;
-}
-
-.price-cell{
-    text-align:center;
+    font-size:5.5px;
+    line-height:8px;
 }
 
 .price-value{
-    display:block;
-    width:100%;
-    color:#eef2f5;
-    font-size:10px;
-    line-height:13px;
-    font-weight:900;
-    white-space:nowrap;
-    overflow:hidden;
-    text-overflow:ellipsis;
-    text-align:center;
+    font-size:5.8px;
+    line-height:8px;
 }
 
 .change-cell{
-    text-align:center;
-    font-size:10px;
-    font-weight:900;
-    white-space:nowrap;
+    font-size:5.8px;
 }
 
 .signal-cell{
-    height:56px!important;
+    height:40px!important;
     border-left:1px solid #29323c;
-    background:#0e141a;
-    text-align:center;
-    overflow:hidden!important;
-}
-
-.coin-roc-row{
-    min-height:68px;
-    background:#0d1218;
-    border-top:1px solid #29323c;
-}
-
-.signal-wrap{
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    width:100%;
-    height:100%;
-    white-space:nowrap;
 }
 
 .signal-item{
-    display:inline-flex;
-    align-items:center;
-    justify-content:center;
-    width:43px;
-    min-width:43px;
-    height:38px;
-    padding:3px;
-    border-radius:9px;
-    font-weight:900;
-    white-space:nowrap;
-    overflow:visible;
-    background:#153126;
-    border:2px solid #24724e;
-    color:#78c99d;
-    box-shadow:
-        0 0 10px
-        rgba(72,190,130,.12);
+    width:28px;
+    min-width:28px;
+    height:27px;
+    border-width:1px;
+    border-radius:5px;
 }
 
 .signal-rocket{
-    font-size:20px;
-    line-height:21px;
-    flex:none;
+    font-size:13px;
+    line-height:14px;
 }
 
-@keyframes signalFlashOne{
-
-    0%{
-        background-color:#11161c;
-
-        box-shadow:
-            inset 0 0 0
-            rgba(114,189,152,0);
-    }
-
-    30%{
-        background-color:#294238;
-
-        box-shadow:
-            inset 0 0 16px
-            rgba(114,189,152,.32);
-    }
-
-    60%{
-        background-color:#18231f;
-
-        box-shadow:
-            inset 0 0 5px
-            rgba(114,189,152,.12);
-    }
-
-    100%{
-        background-color:#11161c;
-
-        box-shadow:
-            inset 0 0 0
-            rgba(114,189,152,0);
-    }
+.coin-roc-row{
+    min-height:49px;
 }
 
-.coin-card.signal-flash-one .coin-main-row > div,
-.coin-card.signal-flash-one .coin-roc-row{
-    animation:
-        signalFlashOne
-        1.35s
-        ease-in-out
-        infinite;
+.coin-roc-row .roc-detail{
+    min-height:49px;
+    padding:3px 3px;
 }
 
-.up{
-    color:#78cfa2!important;
-    font-weight:900;
+.coin-roc-row .roc-card-item{
+    min-height:37px;
 }
 
-.down{
-    color:#df8588!important;
-    font-weight:900;
+.coin-roc-row .roc-card-period{
+    font-size:5.2px;
 }
 
-.zero{
-    color:#727c86!important;
+.coin-roc-row .roc-dot{
+    font-size:10px;
+}
+
+.coin-roc-row .roc-count{
+    font-size:5.8px;
+}
+
+.coin-roc-row .roc-badge{
+    font-size:4.7px;
+    padding:2px 3px;
 }
 
 .empty-card{
-    min-height:56px;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    background:#10151b;
-    border:2px solid #252e38;
-    border-radius:12px;
-    color:#59636e;
-    font-size:8px;
-    font-weight:800;
+    min-height:43px;
+    border-width:1px;
+    border-radius:8px;
+    font-size:6px;
 }
 
-@media(max-width:600px){
-
-    body{
-        padding:7px;
-    }
-
-    h1{
-        margin:3px 3px 8px;
-        font-size:13px;
-        line-height:16px;
-    }
-
-    .unified-section{
-        margin:8px 0 10px;
-    }
-
-    .section-title-card{
-        min-height:40px;
-        padding:5px 6px;
-        border-radius:9px;
-    }
-
-    .section-number{
-        width:27px;
-        height:27px;
-        margin-right:6px;
-        border-radius:6px;
-        font-size:12px;
-    }
-
-    .top-number{
-        font-size:11px;
-    }
-
-    .section-heading-main{
-        font-size:9px;
-        line-height:11px;
-    }
-
-    .section-heading-sub{
-        margin-top:1px;
-        font-size:5px;
-        line-height:7px;
-    }
-
-    .section-time{
-        margin-left:4px;
-        font-size:5px;
-    }
-
-    .market-card{
-        margin:3px 0 9px;
-        border-radius:9px;
-    }
-
-    .market-card-header{
-        min-height:36px;
-        padding:5px 7px;
-    }
-
-    .market-title-main{
-        font-size:8px;
-        line-height:10px;
-    }
-
-    .market-title-sub{
-        margin-top:1px;
-        font-size:4.8px;
-        line-height:6px;
-    }
-
-    .market-time{
-        margin-left:4px;
-        font-size:4.8px;
-    }
-
-    .btc-main-row{
-        min-height:43px;
-
-        grid-template-columns:
-            1.1fr
-            1.3fr
-            1fr
-            1.3fr;
-    }
-
-    .btc-name{
-        padding-left:8px;
-        font-size:8px;
-    }
-
-    .btc-price{
-        font-size:8px;
-    }
-
-    .btc-change{
-        font-size:8px;
-    }
-
-    .btc-signal-box{
-        min-height:43px;
-    }
-
-    .btc-roc-detail,
-    .roc-detail{
-        grid-template-columns:
-            .95fr
-            5.5fr
-            .95fr;
-
-        min-height:52px;
-        padding:4px 4px;
-    }
-
-    .btc-roc-label,
-    .roc-label{
-        font-size:7px;
-    }
-
-    .roc-grid{
-        gap:3px;
-    }
-
-    .roc-card-item{
-        min-height:39px;
-        border-width:1px;
-        border-radius:5px;
-    }
-
-    .roc-card-period{
-        font-size:5.8px;
-        line-height:7px;
-    }
-
-    .roc-card-value{
-        gap:2px;
-        margin-top:1px;
-    }
-
-    .roc-dot{
-        font-size:12px;
-        line-height:12px;
-    }
-
-    .roc-count{
-        font-size:6.5px;
-        line-height:8px;
-    }
-
-    .roc-badge{
-        padding:3px 4px;
-        border-radius:5px;
-        font-size:5px;
-        line-height:7px;
-    }
-
-    .card-list{
-        gap:6px;
-        margin-top:6px;
-    }
-
-    .coin-card{
-        border-width:1px;
-        border-radius:8px;
-    }
-
-    .coin-main-row{
-
-        min-height:40px;
-
-        grid-template-columns:
-            6%
-            18%
-            15%
-            21%
-            14%
-            26%;
-    }
-
-    .coin-main-row > div{
-        height:40px;
-    }
-
-    .rank-cell{
-        padding-left:5px;
-        font-size:6.8px;
-    }
-
-    .coin-name{
-        padding:0 1px;
-        font-size:6.8px;
-        line-height:9px;
-    }
-
-    .volume-value{
-        font-size:5.5px;
-        line-height:8px;
-    }
-
-    .price-value{
-        font-size:5.8px;
-        line-height:8px;
-    }
-
-    .change-cell{
-        font-size:5.8px;
-    }
-
-    .signal-cell{
-        height:40px!important;
-        border-left:1px solid #29323c;
-    }
-
-    .signal-item{
-        width:28px;
-        min-width:28px;
-        height:27px;
-        border-width:1px;
-        border-radius:5px;
-    }
-
-    .signal-rocket{
-        font-size:13px;
-        line-height:14px;
-    }
-
-    .coin-roc-row{
-        min-height:49px;
-    }
-
-    .coin-roc-row .roc-detail{
-        min-height:49px;
-        padding:3px 3px;
-    }
-
-    .coin-roc-row .roc-card-item{
-        min-height:37px;
-    }
-
-    .coin-roc-row .roc-card-period{
-        font-size:5.2px;
-    }
-
-    .coin-roc-row .roc-dot{
-        font-size:10px;
-    }
-
-    .coin-roc-row .roc-count{
-        font-size:5.8px;
-    }
-
-    .coin-roc-row .roc-badge{
-        font-size:4.7px;
-        padding:2px 3px;
-    }
-
-    .empty-card{
-        min-height:43px;
-        border-width:1px;
-        border-radius:8px;
-        font-size:6px;
-    }
 }
 
 @media(max-width:380px){
 
-    body{
-        padding:4px;
-    }
+body{
+    padding:4px;
+}
 
-    h1{
-        font-size:12px;
-        line-height:15px;
-        margin:2px 2px 6px;
-    }
+h1{
+    font-size:12px;
+    line-height:15px;
+    margin:2px 2px 6px;
+}
 
-    .section-title-card{
-        min-height:35px;
-        padding:4px 5px;
-    }
+.section-title-card{
+    min-height:35px;
+    padding:4px 5px;
+}
 
-    .section-number{
-        width:23px;
-        height:23px;
-        margin-right:4px;
-        font-size:10px;
-    }
+.section-number{
+    width:23px;
+    height:23px;
+    margin-right:4px;
+    font-size:10px;
+}
 
-    .section-heading-main{
-        font-size:8px;
-        line-height:10px;
-    }
+.section-heading-main{
+    font-size:8px;
+    line-height:10px;
+}
 
-    .section-heading-sub{
-        font-size:4.2px;
-        line-height:6px;
-    }
+.section-heading-sub{
+    font-size:4.2px;
+    line-height:6px;
+}
 
-    .section-time{
-        font-size:4.2px;
-    }
+.section-time{
+    font-size:4.2px;
+}
 
-    .market-card-header{
-        min-height:32px;
-        padding:4px 5px;
-    }
+.market-card-header{
+    min-height:32px;
+    padding:4px 5px;
+}
 
-    .market-title-main{
-        font-size:7px;
-    }
+.market-title-main{
+    font-size:7px;
+}
 
-    .market-title-sub{
-        font-size:4px;
-    }
+.market-title-sub{
+    font-size:4px;
+}
 
-    .market-time{
-        font-size:4px;
-    }
+.market-time{
+    font-size:4px;
+}
 
-    .btc-main-row{
-        min-height:38px;
-    }
+.btc-main-row{
+    min-height:38px;
+}
 
-    .btc-name{
-        padding-left:6px;
-        font-size:7px;
-    }
+.btc-name{
+    padding-left:6px;
+    font-size:7px;
+}
 
-    .btc-price{
-        font-size:7px;
-    }
+.btc-price{
+    font-size:7px;
+}
 
-    .btc-change{
-        font-size:7px;
-    }
+.btc-change{
+    font-size:7px;
+}
 
-    .btc-signal-box{
-        min-height:38px;
-    }
+.btc-signal-box{
+    min-height:38px;
+}
 
-    .btc-roc-detail,
-    .roc-detail{
-        min-height:47px;
+.btc-roc-detail,
+.roc-detail{
+    min-height:47px;
 
-        grid-template-columns:
-            .8fr
-            5.8fr
-            .8fr;
+    grid-template-columns:
+        .8fr
+        5.8fr
+        .8fr;
 
-        padding:3px 2px;
-    }
+    padding:3px 2px;
+}
 
-    .btc-roc-label,
-    .roc-label{
-        font-size:6px;
-    }
+.btc-roc-label,
+.roc-label{
+    font-size:6px;
+}
 
-    .roc-grid{
-        gap:2px;
-    }
+.roc-grid{
+    gap:2px;
+}
 
-    .roc-card-item{
-        min-height:34px;
-        border-radius:4px;
-    }
+.roc-card-item{
+    min-height:34px;
+    border-radius:4px;
+}
 
-    .roc-card-period{
-        font-size:4.8px;
-    }
+.roc-card-period{
+    font-size:4.8px;
+}
 
-    .roc-dot{
-        font-size:9px;
-    }
+.roc-dot{
+    font-size:9px;
+}
 
-    .roc-count{
-        font-size:5px;
-    }
+.roc-count{
+    font-size:5px;
+}
 
-    .roc-badge{
-        font-size:4px;
-        padding:2px 3px;
-    }
+.roc-badge{
+    font-size:4px;
+    padding:2px 3px;
+}
 
-    .card-list{
-        gap:5px;
-    }
+.card-list{
+    gap:5px;
+}
 
-    .coin-main-row{
-        min-height:36px;
+.coin-main-row{
+    min-height:36px;
 
-        grid-template-columns:
-            6%
-            18%
-            15%
-            21%
-            14%
-            26%;
-    }
+    grid-template-columns:
+        6%
+        18%
+        15%
+        21%
+        14%
+        26%;
+}
 
-    .coin-main-row > div{
-        height:36px;
-    }
+.coin-main-row > div{
+    height:36px;
+}
 
-    .rank-cell{
-        padding-left:3px;
-        font-size:6px;
-    }
+.rank-cell{
+    padding-left:3px;
+    font-size:6px;
+}
 
-    .coin-name{
-        font-size:6px;
-    }
+.coin-name{
+    font-size:6px;
+}
 
-    .volume-value{
-        font-size:5px;
-    }
+.volume-value{
+    font-size:5px;
+}
 
-    .price-value{
-        font-size:5.2px;
-    }
+.price-value{
+    font-size:5.2px;
+}
 
-    .change-cell{
-        font-size:5.1px;
-    }
+.change-cell{
+    font-size:5.1px;
+}
 
-    .signal-cell{
-        height:36px!important;
-    }
+.signal-cell{
+    height:36px!important;
+}
 
-    .signal-item{
-        width:24px;
-        min-width:24px;
-        height:23px;
-        border-radius:4px;
-    }
+.signal-item{
+    width:24px;
+    min-width:24px;
+    height:23px;
+    border-radius:4px;
+}
 
-    .signal-rocket{
-        font-size:11px;
-        line-height:12px;
-    }
+.signal-rocket{
+    font-size:11px;
+    line-height:12px;
+}
 
-    .coin-roc-row{
-        min-height:45px;
-    }
+.coin-roc-row{
+    min-height:45px;
+}
 
-    .coin-roc-row .roc-detail{
-        min-height:45px;
-    }
+.coin-roc-row .roc-detail{
+    min-height:45px;
+}
 
-    .coin-roc-row .roc-card-item{
-        min-height:32px;
-    }
+.coin-roc-row .roc-card-item{
+    min-height:32px;
+}
 
-    .coin-roc-row .roc-card-period{
-        font-size:4.5px;
-    }
+.coin-roc-row .roc-card-period{
+    font-size:4.5px;
+}
 
-    .coin-roc-row .roc-dot{
-        font-size:8px;
-    }
+.coin-roc-row .roc-dot{
+    font-size:8px;
+}
 
-    .coin-roc-row .roc-count{
-        font-size:4.7px;
-    }
+.coin-roc-row .roc-count{
+    font-size:4.7px;
+}
+
 }
 
 @media(prefers-reduced-motion:reduce){
 
-    .coin-card.signal-flash-one .coin-main-row > div,
-    .coin-card.signal-flash-one .coin-roc-row{
-        animation:none!important;
-    }
+.coin-card.signal-flash-one .coin-main-row > div,
+.coin-card.signal-flash-one .coin-roc-row{
+    animation:none!important;
+}
+
 }
 
 """
@@ -4552,27 +4593,21 @@ def startup():
     )
 
     log.info(
-        "★ 0선 위 진입 순간 Signal 발생"
+        f"★ ROC10 COUNT "
+        f"{SIGNAL1_ROC10_COUNT_MIN}~"
+        f"{SIGNAL1_ROC10_COUNT_MAX}"
     )
 
     log.info(
-        "★ Signal 시작 캔들 = COUNT 0"
+        f"★ ROC20 COUNT "
+        f"{SIGNAL1_ROC20_COUNT_MIN}~"
+        f"{SIGNAL1_ROC20_COUNT_MAX}"
     )
 
     log.info(
-        "★ 다음 캔들 = COUNT 1"
-    )
-
-    log.info(
-        "★ ROC10 COUNT 1~5"
-    )
-
-    log.info(
-        "★ ROC20 COUNT 1~5"
-    )
-
-    log.info(
-        "★ Signal COUNT 0~1"
+        f"★ Signal COUNT "
+        f"{SIGNAL1_DISPLAY_COUNT_MIN}~"
+        f"{SIGNAL1_DISPLAY_COUNT_MAX}"
     )
 
     log.info(
