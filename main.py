@@ -71,10 +71,15 @@ SIGNAL_TIMEFRAME = 240
 
 # =========================================================
 # ROC 전체 설정
+#
+# ROC10
+# ROC20
+# ROC50
+# ROC200
 # =========================================================
 
 ROC_SETTINGS = {
-    5: "Y",
+    10: "Y",
     20: "Y",
     50: "Y",
     200: "Y"
@@ -82,7 +87,7 @@ ROC_SETTINGS = {
 
 
 ROC_PERIODS = [
-    5,
+    10,
     20,
     50,
     200
@@ -92,31 +97,41 @@ ROC_PERIODS = [
 # =========================================================
 # Signal 1
 #
-# ROC50 0선 상향돌파
-# +
-# ROC200 COUNT 1~200
+# Signal 선
+# ROC10
+# ROC20
 #
-# 돌파 = 0
-# 다음 시간봉 = 1
-# 다음 시간봉 = 2
+# 두 선이 모두 0선 위에 있을 때
+# Signal 1 활성
 #
-# 표시 COUNT
-# 0~5
+# ROC10 > 0
+# AND
+# ROC20 > 0
+#
+# Signal COUNT
+# 조건이 처음 성립한 봉 = 0
+# 다음 봉 = 1
+# 다음 봉 = 2
+#
+# 화면 표시 COUNT
+# 0~1
 # =========================================================
 
-SIGNAL1_ROC_PERIOD = 5
-
-SIGNAL1_ROC20_COUNT_MIN = 1
-SIGNAL1_ROC20_COUNT_MAX = 200
-
-SIGNAL1_ROC50_COUNT_MIN = 1
-SIGNAL1_ROC50_COUNT_MAX = 200
-
-SIGNAL1_ROC200_COUNT_MIN = 1
-SIGNAL1_ROC200_COUNT_MAX = 200
+SIGNAL1_ROC10_PERIOD = 10
+SIGNAL1_ROC20_PERIOD = 20
 
 SIGNAL1_DISPLAY_COUNT_MIN = 0
 SIGNAL1_DISPLAY_COUNT_MAX = 1
+
+
+# =========================================================
+# Signal 1 추가 필터
+#
+# ROC200 양수 COUNT 1~200
+# =========================================================
+
+SIGNAL1_ROC200_COUNT_MIN = 1
+SIGNAL1_ROC200_COUNT_MAX = 200
 
 
 # =========================================================
@@ -153,23 +168,6 @@ last_request_time = 0
 latest_usdt_krw_internal = 0
 
 okx_ticker_cache = {}
-
-
-# =========================================================
-# BTC 시황 Signal 필터
-#
-# BTC ROC50 또는 ROC200 중
-# 하나라도 0선 위에 있으면 TRUE
-#
-# ROC50 > 0 OR ROC200 > 0
-#
-# 둘 다 0 이하이면 FALSE
-# =========================================================
-
-btc_market_filter_pass = False
-
-btc_market_roc50 = None
-btc_market_roc200 = None
 
 
 # =========================================================
@@ -236,34 +234,6 @@ def signal1_display_allowed(count):
         <= count
         <= SIGNAL1_DISPLAY_COUNT_MAX
     )
-
-
-# =========================================================
-# BTC 시황 필터
-# =========================================================
-
-def btc_signal_filter_pass():
-
-    global btc_market_filter_pass
-    global btc_market_roc50
-    global btc_market_roc200
-
-    roc50 = btc_market_roc50
-    roc200 = btc_market_roc200
-
-    btc_market_filter_pass = (
-        (
-            roc50 is not None
-            and roc50 > 0
-        )
-        or
-        (
-            roc200 is not None
-            and roc200 > 0
-        )
-    )
-
-    return btc_market_filter_pass
 
 
 # =========================================================
@@ -457,10 +427,13 @@ def roc_positive_count(
         return 0
 
     try:
+
         current = float(
             valid.iloc[-1]
         )
+
     except Exception:
+
         return 0
 
     if current < 0:
@@ -517,10 +490,13 @@ def roc_negative_count(
         return 0
 
     try:
+
         current = float(
             valid.iloc[-1]
         )
+
     except Exception:
+
         return 0
 
     if current >= 0:
@@ -546,32 +522,70 @@ def roc_negative_count(
 
 
 # =========================================================
-# ROC 0선 상향돌파
+# Signal 1
+#
+# ROC10 > 0
+# AND
+# ROC20 > 0
+#
+# 두 선이 모두 0선 위에 있으면 통과
 # =========================================================
 
-def roc_signal_zero_cross(
-    current,
-    previous
-):
+def signal1_trigger_pass(df):
 
     if (
-        current is None
-        or previous is None
+        df is None
+        or df.empty
+    ):
+        return False
+
+    if not roc_is_enabled(
+        SIGNAL1_ROC10_PERIOD
+    ):
+        return False
+
+    if not roc_is_enabled(
+        SIGNAL1_ROC20_PERIOD
+    ):
+        return False
+
+    series10 = roc(
+        df,
+        SIGNAL1_ROC10_PERIOD
+    )
+
+    series20 = roc(
+        df,
+        SIGNAL1_ROC20_PERIOD
+    )
+
+    if (
+        series10 is None
+        or series20 is None
+        or series10.empty
+        or series20.empty
     ):
         return False
 
     try:
 
-        current = float(current)
-        previous = float(previous)
+        roc10 = float(
+            series10.iloc[-1]
+        )
 
-        return (
-            previous < 0
-            and current >= 0
+        roc20 = float(
+            series20.iloc[-1]
         )
 
     except Exception:
+
         return False
+
+    return (
+        roc10 > 0
+        and
+        roc20 > 0
+    )
 
 
 # =========================================================
@@ -1290,11 +1304,16 @@ def roc_filter_analysis(df):
 
 # =========================================================
 # 과거 유효 Signal 이벤트 찾기
+#
+# ROC10 > 0
+# AND
+# ROC20 > 0
+#
+# 동시에 조건을 만족한 가장 최근 봉
 # =========================================================
 
 def find_latest_valid_signal_event(
     df_signal,
-    signal_period,
     filter_function
 ):
 
@@ -1321,7 +1340,9 @@ def find_latest_valid_signal_event(
 
         temp = (
             temp
-            .dropna(subset=["datetime"])
+            .dropna(
+                subset=["datetime"]
+            )
             .sort_values("datetime")
             .reset_index(drop=True)
         )
@@ -1331,55 +1352,14 @@ def find_latest_valid_signal_event(
             < current_start
         ].reset_index(drop=True)
 
-        if len(temp) < 2:
-            return None
-
-        series = roc(
-            temp,
-            signal_period
-        )
-
-        if (
-            series is None
-            or series.empty
-        ):
+        if temp.empty:
             return None
 
         for i in range(
             len(temp) - 1,
-            0,
+            -1,
             -1
         ):
-
-            current_value = series.iloc[i]
-            previous_value = series.iloc[i - 1]
-
-            if (
-                pd.isna(current_value)
-                or pd.isna(previous_value)
-            ):
-                continue
-
-            try:
-
-                current_value = float(
-                    current_value
-                )
-
-                previous_value = float(
-                    previous_value
-                )
-
-            except Exception:
-                continue
-
-            crossed = (
-                previous_value < 0
-                and current_value >= 0
-            )
-
-            if not crossed:
-                continue
 
             event_df = (
                 temp
@@ -1402,8 +1382,7 @@ def find_latest_valid_signal_event(
     except Exception as e:
 
         log.warning(
-            f"유효 Signal 이벤트 검색 오류 "
-            f"ROC{signal_period}: {e}"
+            f"유효 Signal 이벤트 검색 오류: {e}"
         )
 
         return None
@@ -1411,14 +1390,18 @@ def find_latest_valid_signal_event(
 
 # =========================================================
 # Signal 1 상태 업데이트
+#
+# ROC10 > 0
+# AND ROC20 > 0
+#
+# 두 조건이 동시에 처음 성립한 시점부터
+# COUNT를 계산
 # =========================================================
 
 def update_signal1(
     market,
-    current_value,
-    previous_value,
+    trigger_pass_now,
     progress_candle_time,
-    filter_pass_now,
     historical_start_candle=None
 ):
 
@@ -1430,27 +1413,6 @@ def update_signal1(
         )
     )
 
-    try:
-        current_value = float(
-            current_value
-        )
-    except Exception:
-        current_value = None
-
-    try:
-        previous_value = float(
-            previous_value
-        )
-    except Exception:
-        previous_value = None
-
-    signal_cross = (
-        roc_signal_zero_cross(
-            current_value,
-            previous_value
-        )
-    )
-
     signal_state = (
         roc_signal1_state.get(
             market_key
@@ -1459,101 +1421,34 @@ def update_signal1(
 
 
     # =====================================================
-    # 신규 돌파
+    # 현재 조건이 통과
     # =====================================================
 
-    if signal_cross:
+    if trigger_pass_now:
 
-        if (
-            filter_pass_now
-            and progress_candle_time is not None
-        ):
+        # -----------------------------------------------
+        # 기존 상태가 없으면 신규 Signal 시작
+        # -----------------------------------------------
 
-            roc_signal1_state[
-                market_key
-            ] = {
+        if signal_state is None:
 
-                "active": True,
+            start_candle = None
 
-                "cross_candle":
-                    progress_candle_time,
+            if historical_start_candle is not None:
 
-                "count": 0,
+                start_candle = (
+                    normalize_datetime(
+                        historical_start_candle
+                    )
+                )
 
-                "last_candle":
+            if start_candle is None:
+
+                start_candle = (
                     progress_candle_time
-            }
-
-            signal_state = (
-                roc_signal1_state[
-                    market_key
-                ]
-            )
-
-            roc_signal1_failed_candle.pop(
-                market_key,
-                None
-            )
-
-            log.info(
-                f"[Signal 1 START] "
-                f"{market_key} | "
-                f"ROC{SIGNAL1_ROC_PERIOD} "
-                f"0선 상향돌파 | "
-                f"필터 통과 | "
-                f"COUNT=0"
-            )
-
-        else:
-
-            log.info(
-                f"[Signal 1 IGNORE] "
-                f"{market_key} | "
-                f"ROC{SIGNAL1_ROC_PERIOD} "
-                f"0선 상향돌파 | "
-                f"필터 불통과"
-            )
-
-
-    # =====================================================
-    # 상태가 없으면 과거 유효 이벤트 복원
-    # =====================================================
-
-    signal_state = (
-        roc_signal1_state.get(
-            market_key
-        )
-    )
-
-    if signal_state is None:
-
-        start_candle = None
-
-        if historical_start_candle is not None:
-
-            start_candle = (
-                normalize_datetime(
-                    historical_start_candle
                 )
-            )
 
-        if (
-            start_candle is not None
-            and current_value is not None
-            and current_value >= 0
-            and progress_candle_time is not None
-        ):
-
-            failed_candle = (
-                roc_signal1_failed_candle.get(
-                    market_key
-                )
-            )
-
-            if (
-                failed_candle
-                != progress_candle_time
-            ):
+            if start_candle is not None:
 
                 distance = candle_distance(
                     start_candle,
@@ -1567,7 +1462,7 @@ def update_signal1(
 
                     "active": True,
 
-                    "cross_candle":
+                    "start_candle":
                         start_candle,
 
                     "count":
@@ -1583,34 +1478,79 @@ def update_signal1(
                     ]
                 )
 
-                log.info(
-                    f"[Signal 1 RESTORE] "
-                    f"{market_key} | "
-                    f"유효 돌파={start_candle} | "
-                    f"COUNT={distance}"
+                roc_signal1_failed_candle.pop(
+                    market_key,
+                    None
                 )
 
+                if (
+                    start_candle
+                    == progress_candle_time
+                ):
 
-    # =====================================================
-    # 기존 상태 확인
-    # =====================================================
+                    log.info(
+                        f"[Signal 1 START] "
+                        f"{market_key} | "
+                        f"ROC10 > 0 | "
+                        f"ROC20 > 0 | "
+                        f"COUNT=0"
+                    )
 
-    signal_state = (
-        roc_signal1_state.get(
-            market_key
+                else:
+
+                    log.info(
+                        f"[Signal 1 RESTORE] "
+                        f"{market_key} | "
+                        f"시작={start_candle} | "
+                        f"COUNT={distance}"
+                    )
+
+
+        # -----------------------------------------------
+        # 기존 상태가 있으면 COUNT 갱신
+        # -----------------------------------------------
+
+        signal_state = (
+            roc_signal1_state.get(
+                market_key
+            )
         )
-    )
 
-    if signal_state is not None:
+        if signal_state is not None:
 
-        # =================================================
-        # 트리거 ROC가 다시 음수면 종료
-        # =================================================
+            start_candle = (
+                signal_state.get(
+                    "start_candle"
+                )
+            )
 
-        if (
-            current_value is not None
-            and current_value < 0
-        ):
+            if (
+                start_candle is not None
+                and progress_candle_time is not None
+            ):
+
+                distance = candle_distance(
+                    start_candle,
+                    progress_candle_time,
+                    SIGNAL_TIMEFRAME
+                )
+
+                signal_state["count"] = (
+                    distance
+                )
+
+                signal_state[
+                    "last_candle"
+                ] = progress_candle_time
+
+
+    # =====================================================
+    # 현재 조건 불통과
+    # =====================================================
+
+    else:
+
+        if signal_state is not None:
 
             old_count = int(
                 signal_state.get(
@@ -1629,7 +1569,7 @@ def update_signal1(
                 f"[Signal 1 END] "
                 f"{market_key} | "
                 f"COUNT={old_count} | "
-                f"트리거 ROC 음수"
+                f"ROC10 또는 ROC20이 0 이하"
             )
 
             roc_signal1_state.pop(
@@ -1639,31 +1579,10 @@ def update_signal1(
 
             signal_state = None
 
-        else:
 
-            cross_candle = (
-                signal_state.get(
-                    "cross_candle"
-                )
-            )
-
-            if (
-                cross_candle is not None
-                and progress_candle_time is not None
-            ):
-
-                distance = candle_distance(
-                    cross_candle,
-                    progress_candle_time,
-                    SIGNAL_TIMEFRAME
-                )
-
-                signal_state["count"] = distance
-
-                signal_state[
-                    "last_candle"
-                ] = progress_candle_time
-
+    # =====================================================
+    # 최종 상태
+    # =====================================================
 
     signal_state = (
         roc_signal1_state.get(
@@ -1698,12 +1617,9 @@ def update_signal1(
         "signal_count":
             signal_count,
 
-        "signal_roc_cross":
-            signal_cross,
-
-        "filter_pass":
+        "trigger_pass":
             bool(
-                filter_pass_now
+                trigger_pass_now
             )
     }
 
@@ -1846,8 +1762,7 @@ def format_volume(v):
 
 def analyze(
     market,
-    current_price,
-    btc_filter=True
+    current_price
 ):
 
     df_signal = history_upbit(
@@ -1902,26 +1817,34 @@ def analyze(
 
 
     # =====================================================
-    # Signal 1 트리거
+    # Signal 1
     #
-    # ROC50
+    # ROC10 > 0
+    # AND
+    # ROC20 > 0
     # =====================================================
 
-    signal1_roc_current = (
+    signal1_roc10_current = (
         roc_values.get(
-            SIGNAL1_ROC_PERIOD
+            SIGNAL1_ROC10_PERIOD
         )
     )
 
-    signal1_roc_previous = (
-        previous_values.get(
-            SIGNAL1_ROC_PERIOD
+    signal1_roc20_current = (
+        roc_values.get(
+            SIGNAL1_ROC20_PERIOD
+        )
+    )
+
+    signal1_trigger_now = (
+        signal1_trigger_pass(
+            df_current
         )
     )
 
 
     # =====================================================
-    # 현재 Signal 1 필터
+    # Signal 1 필터
     #
     # ROC200 COUNT 1~200
     # =====================================================
@@ -1934,7 +1857,7 @@ def analyze(
 
 
     # =====================================================
-    # 과거 Signal 1 유효 이벤트
+    # 과거 Signal 1 시작점
     # =====================================================
 
     historical_start_candle1 = None
@@ -1943,17 +1866,18 @@ def analyze(
 
         if (
             roc_is_enabled(
-                SIGNAL1_ROC_PERIOD
+                SIGNAL1_ROC10_PERIOD
             )
             and
-            roc_is_enabled(200)
+            roc_is_enabled(
+                SIGNAL1_ROC20_PERIOD
+            )
         ):
 
             historical_start_candle1 = (
                 find_latest_valid_signal_event(
                     df_signal,
-                    SIGNAL1_ROC_PERIOD,
-                    signal1_filter_pass
+                    signal1_trigger_pass
                 )
             )
 
@@ -1970,24 +1894,18 @@ def analyze(
 
 
     # =====================================================
-    # Signal 1
+    # Signal 1 상태 업데이트
     # =====================================================
 
     state1 = update_signal1(
 
         market=market,
 
-        current_value=
-            signal1_roc_current,
-
-        previous_value=
-            signal1_roc_previous,
+        trigger_pass_now=
+            signal1_trigger_now,
 
         progress_candle_time=
             progress_candle_time,
-
-        filter_pass_now=
-            signal1_filter_pass_now,
 
         historical_start_candle=
             historical_start_candle1
@@ -2009,9 +1927,9 @@ def analyze(
     # 개별 ROC COUNT
     # =====================================================
 
-    roc5_count = int(
+    roc10_count = int(
         positive_counts.get(
-            5,
+            10,
             0
         )
     )
@@ -2057,29 +1975,7 @@ def analyze(
 
 
     # =====================================================
-    # BTC 시황 필터
-    #
-    # BTC ROC50 또는 ROC200 중
-    # 하나라도 0선 위에 있으면 통과
-    # =====================================================
-
-    market_filter_pass = bool(
-        btc_filter
-    )
-
-
-    # =====================================================
-    # Signal 1 표시 조건
-    #
-    # ROC50 0선 상향돌파
-    # +
-    # ROC200 COUNT 1~200
-    # +
-    # Signal COUNT 0~5
-    # +
-    # 당일 변동 0% 이상
-    # +
-    # BTC ROC50 OR ROC200 > 0
+    # Signal 1 표시 COUNT
     # =====================================================
 
     signal1_display_count_pass = (
@@ -2087,6 +1983,19 @@ def analyze(
             signal1_count
         )
     )
+
+
+    # =====================================================
+    # Signal 1 최종 조건
+    #
+    # 1. ROC10 > 0
+    # 2. ROC20 > 0
+    # 3. ROC200 COUNT 1~200
+    # 4. Signal COUNT 0~1
+    # 5. 당일 변동 0% 이상
+    #
+    # BTC 필터 없음
+    # =====================================================
 
     signal1_qualified = (
 
@@ -2109,16 +2018,18 @@ def analyze(
         and
 
         roc_is_enabled(
-            SIGNAL1_ROC_PERIOD
+            SIGNAL1_ROC10_PERIOD
+        )
+
+        and
+
+        roc_is_enabled(
+            SIGNAL1_ROC20_PERIOD
         )
 
         and
 
         roc_is_enabled(200)
-
-        and
-
-        market_filter_pass
     )
 
 
@@ -2137,9 +2048,6 @@ def analyze(
         "daily_pass":
             daily_pass,
 
-        "btc_market_filter_pass":
-            market_filter_pass,
-
 
         # =================================================
         # Signal 1
@@ -2153,22 +2061,26 @@ def analyze(
         "signal1_count":
             signal1_count,
 
-        "signal1_roc":
-            signal1_roc_current,
+        "signal1_roc10":
+            signal1_roc10_current,
 
-        "signal1_roc_previous":
-            signal1_roc_previous,
+        "signal1_roc20":
+            signal1_roc20_current,
 
-        "signal1_roc_cross":
-            state1[
-                "signal_roc_cross"
-            ],
+        "signal1_trigger":
+            signal1_trigger_now,
 
         "signal1_filter_pass":
             signal1_filter_pass_now,
 
         "signal1_count_pass":
             signal1_display_count_pass,
+
+        "signal1_roc10_count":
+            roc10_count,
+
+        "signal1_roc20_count":
+            roc20_count,
 
         "signal1_roc200_count":
             roc200_count,
@@ -2258,15 +2170,20 @@ def make_row(
                 )
             ),
 
-        "signal1_roc":
+        "signal1_roc10":
             a.get(
-                "signal1_roc"
+                "signal1_roc10"
             ),
 
-        "signal1_roc_cross":
+        "signal1_roc20":
+            a.get(
+                "signal1_roc20"
+            ),
+
+        "signal1_trigger":
             bool(
                 a.get(
-                    "signal1_roc_cross",
+                    "signal1_trigger",
                     False
                 )
             ),
@@ -2310,20 +2227,12 @@ def make_row(
 
 # =========================================================
 # Upbit TOP 업데이트
-#
-# BTC를 먼저 분석하여
-# BTC ROC50 / ROC200 필터를 확정한 후
-# 나머지 코인에 동일한 필터 적용
 # =========================================================
 
 def update_upbit():
 
     global latest_upbit_data
     global latest_upbit_update_time
-
-    global btc_market_filter_pass
-    global btc_market_roc50
-    global btc_market_roc200
 
     markets = sorted(
         get_upbit_markets(),
@@ -2345,171 +2254,6 @@ def update_upbit():
         )
 
         return
-
-
-    # =====================================================
-    # BTC 찾기
-    # =====================================================
-
-    btc_item = None
-
-    for item in top_markets:
-
-        if item.get(
-            "market"
-        ) == "KRW-BTC":
-
-            btc_item = item
-
-            break
-
-
-    # =====================================================
-    # BTC 필터 기본값
-    # =====================================================
-
-    btc_market_filter_pass = False
-    btc_market_roc50 = None
-    btc_market_roc200 = None
-
-
-    # =====================================================
-    # TOP20 안에 BTC가 없어도
-    # 별도로 BTC 분석
-    # =====================================================
-
-    if btc_item is None:
-
-        btc_market_response = retry(
-            requests.get,
-            "https://api.upbit.com/v1/ticker",
-            params={
-                "markets":
-                    "KRW-BTC"
-            },
-            timeout=15
-        )
-
-        if btc_market_response is not None:
-
-            try:
-
-                btc_data = (
-                    btc_market_response.json()
-                )
-
-                if btc_data:
-
-                    btc_item = {
-
-                        "market":
-                            "KRW-BTC",
-
-                        "volume_24h":
-                            float(
-                                btc_data[0].get(
-                                    "acc_trade_price_24h",
-                                    0
-                                )
-                            ),
-
-                        "current_price":
-                            float(
-                                btc_data[0].get(
-                                    "trade_price",
-                                    0
-                                )
-                            )
-                    }
-
-            except Exception as e:
-
-                log.warning(
-                    f"BTC 티커 오류: {e}"
-                )
-
-
-    # =====================================================
-    # BTC 분석
-    # =====================================================
-
-    btc_analysis = None
-
-    if btc_item is not None:
-
-        try:
-
-            btc_analysis = analyze(
-                "KRW-BTC",
-                btc_item[
-                    "current_price"
-                ],
-                btc_filter=True
-            )
-
-        except Exception as e:
-
-            log.exception(
-                f"BTC 분석 오류: {e}"
-            )
-
-            btc_analysis = None
-
-
-    # =====================================================
-    # BTC ROC50 / ROC200 추출
-    # =====================================================
-
-    if btc_analysis is not None:
-
-        btc_roc = btc_analysis.get(
-            "roc",
-            {}
-        )
-
-        btc_values = btc_roc.get(
-            "roc_values",
-            {}
-        )
-
-        btc_market_roc50 = (
-            btc_values.get(50)
-        )
-
-        btc_market_roc200 = (
-            btc_values.get(200)
-        )
-
-
-    # =====================================================
-    # BTC 시장 필터
-    #
-    # ROC50 > 0
-    # OR
-    # ROC200 > 0
-    # =====================================================
-
-    btc_market_filter_pass = (
-        (
-            btc_market_roc50 is not None
-            and
-            btc_market_roc50 > 0
-        )
-        or
-        (
-            btc_market_roc200 is not None
-            and
-            btc_market_roc200 > 0
-        )
-    )
-
-
-    log.info(
-        f"[BTC FILTER] "
-        f"ROC50={btc_market_roc50} | "
-        f"ROC200={btc_market_roc200} | "
-        f"PASS={btc_market_filter_pass}"
-    )
 
 
     # =====================================================
@@ -2536,50 +2280,20 @@ def update_upbit():
             "current_price"
         ]
 
+        try:
 
-        if market == "KRW-BTC":
+            analysis = analyze(
+                market,
+                price
+            )
 
-            analysis = btc_analysis
+        except Exception as e:
 
-        else:
+            log.exception(
+                f"분석 오류 {market}: {e}"
+            )
 
-            try:
-
-                analysis = analyze(
-                    market,
-                    price,
-                    btc_filter=
-                        btc_market_filter_pass
-                )
-
-            except Exception as e:
-
-                log.exception(
-                    f"분석 오류 {market}: {e}"
-                )
-
-                analysis = None
-
-
-        # =================================================
-        # BTC 최종 표시
-        # =================================================
-
-        if (
-            market == "KRW-BTC"
-            and
-            analysis is not None
-        ):
-
-            analysis[
-                "btc_market_filter_pass"
-            ] = btc_market_filter_pass
-
-            if not btc_market_filter_pass:
-
-                analysis[
-                    "signal1_qualified"
-                ] = False
+            analysis = None
 
 
         row = make_row(
@@ -2604,9 +2318,7 @@ def update_upbit():
     )
 
     log.info(
-        f"TOP{TOP_N} 업데이트 완료 | "
-        f"BTC FILTER="
-        f"{btc_market_filter_pass}"
+        f"TOP{TOP_N} 업데이트 완료"
     )
 
 
@@ -3159,9 +2871,15 @@ def focus_section(data):
 
                 <div class="section-heading-sub">
 
-                    ROC50
+                    ROC10 + ROC20
                     {format_timeframe(SIGNAL_TIMEFRAME)}
-                    0선 상향돌파
+                    0선 위
+
+                    ·
+
+                    ROC10 > 0
+                    AND
+                    ROC20 > 0
 
                     ·
 
@@ -3172,17 +2890,12 @@ def focus_section(data):
                     ·
 
                     Signal COUNT
-                    0~
+                    {SIGNAL1_DISPLAY_COUNT_MIN}~
                     {SIGNAL1_DISPLAY_COUNT_MAX}
 
                     ·
 
                     당일 변동 0% 이상
-
-                    ·
-
-                    BTC ROC50 또는 ROC200
-                    0선 위
 
                 </div>
 
@@ -3233,11 +2946,7 @@ def section(
                     ·
 
                     Signal 1 =
-                    ROC50 돌파
-
-                    ·
-
-                    BTC ROC50 또는 ROC200
+                    ROC10 + ROC20
                     0선 위
 
                     ·
@@ -3401,14 +3110,9 @@ def btc_roc_status_html(btc_row):
         </div>
 
         <div class="roc-badge">
-
-            BTC 필터:
-            {
-                "ON"
-                if btc_market_filter_pass
-                else "OFF"
-            }
-
+            Signal =
+            ROC10 + ROC20
+            0선 위
         </div>
 
     </div>
@@ -3479,16 +3183,16 @@ def market_summary_html():
 
                 <div class="market-title-sub">
 
-                    BTC ROC50 또는 ROC200
-                    0선 위일 때만
-                    Signal 1 표시
+                    Signal 1 =
+                    ROC10 + ROC20
+                    {format_timeframe(SIGNAL_TIMEFRAME)}
+                    0선 위
 
                     ·
 
-                    Signal 1 =
-                    ROC50
-                    {format_timeframe(SIGNAL_TIMEFRAME)}
-                    0선 돌파
+                    ROC10 > 0
+                    AND
+                    ROC20 > 0
 
                 </div>
 
@@ -4702,6 +4406,38 @@ def validate_settings():
 
 
     # =====================================================
+    # Signal 1 ROC
+    # =====================================================
+
+    if not roc_is_enabled(
+        SIGNAL1_ROC10_PERIOD
+    ):
+
+        log.warning(
+            "Signal 1 ROC10이 N입니다. "
+            "Signal 1은 발생하지 않습니다."
+        )
+
+
+    if not roc_is_enabled(
+        SIGNAL1_ROC20_PERIOD
+    ):
+
+        log.warning(
+            "Signal 1 ROC20이 N입니다. "
+            "Signal 1은 발생하지 않습니다."
+        )
+
+
+    if not roc_is_enabled(200):
+
+        log.warning(
+            "ROC200이 N입니다. "
+            "Signal 1은 발생하지 않습니다."
+        )
+
+
+    # =====================================================
     # 시간봉
     # =====================================================
 
@@ -4723,7 +4459,7 @@ def validate_settings():
 
 
     # =====================================================
-    # Signal 1
+    # ROC200 COUNT
     # =====================================================
 
     if (
@@ -4751,27 +4487,6 @@ def validate_settings():
 
         raise ValueError(
             "Signal 1 표시 COUNT 설정 오류"
-        )
-
-
-    # =====================================================
-    # 필요한 ROC가 N이면 경고
-    # =====================================================
-
-    if not roc_is_enabled(
-        SIGNAL1_ROC_PERIOD
-    ):
-
-        log.warning(
-            "Signal 1 트리거 ROC50이 N입니다. "
-            "Signal 1은 발생하지 않습니다."
-        )
-
-    if not roc_is_enabled(200):
-
-        log.warning(
-            "ROC200이 N입니다. "
-            "Signal 1은 발생하지 않습니다."
         )
 
 
@@ -4808,29 +4523,23 @@ def startup():
     )
 
     log.info(
-        "★ BTC 시장 필터"
-    )
-
-    log.info(
-        "★ BTC ROC50 > 0 OR BTC ROC200 > 0"
-    )
-
-    log.info(
-        "★ 둘 다 0 이하이면 Signal 1 표시 안 함"
-    )
-
-    log.info(
-        "----------------------------------------"
-    )
-
-    log.info(
         "Signal 1"
     )
 
     log.info(
-        f"★ ROC50 "
+        f"★ ROC10 "
         f"{format_timeframe(SIGNAL_TIMEFRAME)} "
-        f"0선 상향돌파"
+        f"> 0"
+    )
+
+    log.info(
+        f"★ ROC20 "
+        f"{format_timeframe(SIGNAL_TIMEFRAME)} "
+        f"> 0"
+    )
+
+    log.info(
+        "★ ROC10 AND ROC20 두 선 모두 0선 위"
     )
 
     log.info(
@@ -4838,15 +4547,11 @@ def startup():
     )
 
     log.info(
-        "★ 돌파 COUNT = 0"
+        "★ 조건 시작 COUNT = 0"
     )
 
     log.info(
         f"★ 다음 {format_timeframe(SIGNAL_TIMEFRAME)} = 1"
-    )
-
-    log.info(
-        f"★ 다음 {format_timeframe(SIGNAL_TIMEFRAME)} = 2"
     )
 
     log.info(
@@ -4860,12 +4565,16 @@ def startup():
     )
 
     log.info(
-        "★ 필터를 만족하지 않은 코인은 "
-        "Signal 1 표시 제외"
+        "★ BTC 시장 필터 사용 안 함"
     )
 
     log.info(
-        "★ 트리거 ROC가 음수이면 Signal 1 종료"
+        "★ 각 코인을 독립적으로 판단"
+    )
+
+    log.info(
+        "★ ROC10 또는 ROC20이 0 이하가 되면 "
+        "Signal 1 종료"
     )
 
     log.info(
