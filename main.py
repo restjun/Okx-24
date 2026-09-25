@@ -113,7 +113,7 @@ SIGNAL1_ROC10_PERIOD = 10
 SIGNAL1_ROC20_PERIOD = 20
 
 SIGNAL1_DISPLAY_COUNT_MIN = 0
-SIGNAL1_DISPLAY_COUNT_MAX = 1
+SIGNAL1_DISPLAY_COUNT_MAX = 5
 
 
 # =========================================================
@@ -123,11 +123,11 @@ SIGNAL1_DISPLAY_COUNT_MAX = 1
 # ROC20 양수 COUNT 1~5
 # =========================================================
 
-SIGNAL1_ROC10_COUNT_MIN = 1
-SIGNAL1_ROC10_COUNT_MAX = 5
+SIGNAL1_ROC10_COUNT_MIN = 0
+SIGNAL1_ROC10_COUNT_MAX = 10
 
-SIGNAL1_ROC20_COUNT_MIN = 1
-SIGNAL1_ROC20_COUNT_MAX = 5
+SIGNAL1_ROC20_COUNT_MIN = 0
+SIGNAL1_ROC20_COUNT_MAX = 10
 
 
 # =========================================================
