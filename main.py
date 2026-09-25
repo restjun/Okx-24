@@ -130,9 +130,11 @@ SIGNAL1_DISPLAY_COUNT_MAX = 1
 # ROC200 양수 COUNT 1~200
 # =========================================================
 
-SIGNAL1_ROC200_COUNT_MIN = 1
-SIGNAL1_ROC200_COUNT_MAX = 200
+SIGNAL1_ROC10_COUNT_MIN = 1
+SIGNAL1_ROC10_COUNT_MAX = 10
 
+SIGNAL1_ROC20_COUNT_MIN = 1
+SIGNAL1_ROC20_COUNT_MAX = 10
 
 # =========================================================
 # ROC 데이터 최소 필요 개수
