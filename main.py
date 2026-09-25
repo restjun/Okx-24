@@ -41,7 +41,7 @@ KST = ZoneInfo("Asia/Seoul")
 # =========================================================
 
 VOLUME_HOURS = 24
-TOP_N = 10
+TOP_N = 30
 UPDATE_MINUTES = 1
 
 HISTORY_CHUNK = 200
@@ -115,8 +115,8 @@ SIGNAL1_ROC50_COUNT_MAX = 200
 SIGNAL1_ROC200_COUNT_MIN = 1
 SIGNAL1_ROC200_COUNT_MAX = 200
 
-SIGNAL1_DISPLAY_COUNT_MIN = 1
-SIGNAL1_DISPLAY_COUNT_MAX = 100
+SIGNAL1_DISPLAY_COUNT_MIN = 0
+SIGNAL1_DISPLAY_COUNT_MAX = 1
 
 
 # =========================================================
