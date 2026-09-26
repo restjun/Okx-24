@@ -123,10 +123,10 @@ SIGNAL1_DISPLAY_COUNT_MAX = 2
 # =========================================================
 
 SIGNAL1_ROC10_COUNT_MIN = 1
-SIGNAL1_ROC10_COUNT_MAX = 5
+SIGNAL1_ROC10_COUNT_MAX = 10
 
 SIGNAL1_ROC20_COUNT_MIN = 1
-SIGNAL1_ROC20_COUNT_MAX = 5
+SIGNAL1_ROC20_COUNT_MAX = 10
 
 
 # =========================================================
