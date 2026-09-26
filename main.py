@@ -42,7 +42,8 @@ KST = ZoneInfo("Asia/Seoul")
 
 VOLUME_HOURS = 24
 
-TOP_N = 10
+TOP_N = 1
+20
 
 UPDATE_MINUTES = 1
 
