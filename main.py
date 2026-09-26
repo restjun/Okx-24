@@ -100,12 +100,21 @@ ROC_PERIODS = [
 # AND
 # ROC20 > 0
 #
-# Signal COUNT
-# 조건 시작 봉 = 0
-# 다음 봉 = 1
+# ★ 시작 기준
 #
-# 화면 표시
-# COUNT 0~1
+# 이전 캔들:
+# ROC10 / ROC20이 동시에 0선 위가 아님
+#
+# 현재 캔들:
+# ROC10 > 0
+# AND
+# ROC20 > 0
+#
+# 이 캔들이 실제 Signal 시작 캔들
+# COUNT = 0
+#
+# 다음 캔들 = 1
+# 다음 캔들 = 2
 # =========================================================
 
 SIGNAL1_ROC10_PERIOD = 10
@@ -517,7 +526,7 @@ def roc_negative_count(
 
 
 # =========================================================
-# Signal 1 트리거
+# Signal 1 현재 조건
 #
 # ROC10 > 0
 # AND
@@ -578,6 +587,121 @@ def signal1_trigger_pass(df):
         roc10 > 0
         and
         roc20 > 0
+    )
+
+
+# =========================================================
+# ★ Signal 1 실제 0선 상향 전환 확인
+#
+# 현재 캔들:
+# ROC10 > 0
+# AND
+# ROC20 > 0
+#
+# 이전 캔들:
+# 두 ROC가 동시에 모두 > 0 이면 안 됨
+#
+# 즉,
+#
+# 이전 = NOT(ROC10 > 0 AND ROC20 > 0)
+# 현재 = ROC10 > 0 AND ROC20 > 0
+#
+# 이 캔들이 실제 Signal 시작 캔들
+# COUNT = 0
+# =========================================================
+
+def signal1_zero_cross_now(df):
+
+    if (
+        df is None
+        or df.empty
+    ):
+        return False
+
+    if len(df) < 2:
+        return False
+
+    if not roc_is_enabled(
+        SIGNAL1_ROC10_PERIOD
+    ):
+        return False
+
+    if not roc_is_enabled(
+        SIGNAL1_ROC20_PERIOD
+    ):
+        return False
+
+    series10 = roc(
+        df,
+        SIGNAL1_ROC10_PERIOD
+    )
+
+    series20 = roc(
+        df,
+        SIGNAL1_ROC20_PERIOD
+    )
+
+    if (
+        series10 is None
+        or series20 is None
+    ):
+        return False
+
+    if (
+        len(series10) < 2
+        or len(series20) < 2
+    ):
+        return False
+
+    try:
+
+        current10 = float(
+            series10.iloc[-1]
+        )
+
+        current20 = float(
+            series20.iloc[-1]
+        )
+
+        previous10 = float(
+            series10.iloc[-2]
+        )
+
+        previous20 = float(
+            series20.iloc[-2]
+        )
+
+    except Exception:
+
+        return False
+
+    if any(
+        pd.isna(x)
+        for x in [
+            current10,
+            current20,
+            previous10,
+            previous20
+        ]
+    ):
+        return False
+
+    current_pass = (
+        current10 > 0
+        and
+        current20 > 0
+    )
+
+    previous_pass = (
+        previous10 > 0
+        and
+        previous20 > 0
+    )
+
+    return (
+        current_pass
+        and
+        not previous_pass
     )
 
 
@@ -1286,8 +1410,8 @@ def roc_filter_analysis(df):
 
         zero_crosses[period] = (
             previous_value is not None
-            and previous_value < 0
-            and current_value >= 0
+            and previous_value <= 0
+            and current_value > 0
         )
 
         positive_counts[period] = (
@@ -1316,13 +1440,20 @@ def roc_filter_analysis(df):
 
 
 # =========================================================
-# 과거 유효 Signal 이벤트 찾기
+# ★ 실제 Signal 시작 캔들 찾기
 #
-# ROC10 > 0
-# AND
-# ROC20 > 0
+# 과거 완성봉 중에서
 #
-# 동시에 조건을 만족한 가장 최근 봉
+# 이전 캔들:
+# ROC10 > 0 AND ROC20 > 0
+# 가 아니고
+#
+# 현재 캔들:
+# ROC10 > 0 AND ROC20 > 0
+#
+# 가 되는 첫 캔들을 찾음
+#
+# 이 캔들이 COUNT 0
 # =========================================================
 
 def find_latest_valid_signal_event(
@@ -1365,23 +1496,55 @@ def find_latest_valid_signal_event(
             < current_start
         ].reset_index(drop=True)
 
-        if temp.empty:
+        if len(temp) < 2:
             return None
+
+
+        # =================================================
+        # 뒤에서부터 가장 최근 실제 전환 캔들 검색
+        # =================================================
 
         for i in range(
             len(temp) - 1,
-            -1,
+            0,
             -1
         ):
 
-            event_df = (
+            current_df = (
                 temp
                 .iloc[:i + 1]
                 .copy()
             )
 
-            if filter_function(
-                event_df
+            previous_df = (
+                temp
+                .iloc[:i]
+                .copy()
+            )
+
+            current_pass = (
+                filter_function(
+                    current_df
+                )
+            )
+
+            previous_pass = (
+                filter_function(
+                    previous_df
+                )
+            )
+
+            # ---------------------------------------------
+            # 실제 Signal 시작
+            #
+            # 현재 = 통과
+            # 이전 = 불통과
+            # ---------------------------------------------
+
+            if (
+                current_pass
+                and
+                not previous_pass
             ):
 
                 return normalize_datetime(
@@ -1404,18 +1567,28 @@ def find_latest_valid_signal_event(
 # =========================================================
 # Signal 1 상태 업데이트
 #
-# ROC10 > 0
-# AND ROC20 > 0
+# ★ 핵심
 #
-# 두 조건이 동시에 성립한 시점부터
-# COUNT 계산
+# 실제 0선 상향 전환 캔들 = COUNT 0
+#
+# 이후 캔들:
+# 거리 계산
+#
+# 예:
+#
+# 12:00 전환 = COUNT 0
+# 16:00       = COUNT 1
+# 20:00       = COUNT 2
+#
+# ROC10 또는 ROC20이 0 이하가 되는 순간 종료
 # =========================================================
 
 def update_signal1(
     market,
     trigger_pass_now,
     progress_candle_time,
-    historical_start_candle=None
+    historical_start_candle=None,
+    zero_cross_now=False
 ):
 
     market_key = str(market)
@@ -1439,17 +1612,56 @@ def update_signal1(
 
     if trigger_pass_now:
 
+        # -------------------------------------------------
+        # 기존 Signal이 없을 때
+        # -------------------------------------------------
+
         if signal_state is None:
 
             start_candle = None
 
-            if historical_start_candle is not None:
+            # ---------------------------------------------
+            # ★ 현재 캔들이 실제 0선 전환이면
+            # 무조건 현재 캔들을 COUNT 0
+            #
+            # 과거 Signal을 잘못 복원하지 않음
+            # ---------------------------------------------
+
+            if zero_cross_now:
+
+                start_candle = (
+                    progress_candle_time
+                )
+
+                log.info(
+                    f"[Signal 1 ZERO CROSS] "
+                    f"{market_key} | "
+                    f"ROC10 > 0 | "
+                    f"ROC20 > 0 | "
+                    f"COUNT=0"
+                )
+
+            # ---------------------------------------------
+            # 현재가 전환 캔들이 아니면
+            # 과거 실제 전환 캔들 복원
+            # ---------------------------------------------
+
+            elif historical_start_candle is not None:
 
                 start_candle = (
                     normalize_datetime(
                         historical_start_candle
                     )
                 )
+
+            # ---------------------------------------------
+            # 과거 전환점도 없으면
+            # 현재를 기준으로 시작
+            #
+            # 정상적인 신규 시작은 위 zero_cross_now가
+            # 잡기 때문에 일반적으로 이 경로는
+            # 초기 데이터 부족 상황에 사용됨
+            # ---------------------------------------------
 
             if start_candle is None:
 
@@ -1500,8 +1712,7 @@ def update_signal1(
                     log.info(
                         f"[Signal 1 START] "
                         f"{market_key} | "
-                        f"ROC10 > 0 | "
-                        f"ROC20 > 0 | "
+                        f"시작={start_candle} | "
                         f"COUNT=0"
                     )
 
@@ -1514,6 +1725,10 @@ def update_signal1(
                         f"COUNT={distance}"
                     )
 
+
+        # -------------------------------------------------
+        # Signal 상태 갱신
+        # -------------------------------------------------
 
         signal_state = (
             roc_signal1_state.get(
@@ -1551,6 +1766,8 @@ def update_signal1(
 
     # =====================================================
     # 현재 조건 불통과
+    #
+    # ROC10 또는 ROC20 <= 0
     # =====================================================
 
     else:
@@ -1625,6 +1842,11 @@ def update_signal1(
         "trigger_pass":
             bool(
                 trigger_pass_now
+            ),
+
+        "zero_cross":
+            bool(
+                zero_cross_now
             )
     }
 
@@ -1834,7 +2056,7 @@ def analyze(
 
 
     # =====================================================
-    # Signal 1
+    # Signal 1 현재 조건
     #
     # ROC10 > 0
     # AND
@@ -1843,6 +2065,17 @@ def analyze(
 
     signal1_trigger_now = (
         signal1_trigger_pass(
+            df_current
+        )
+    )
+
+
+    # =====================================================
+    # ★ 현재 캔들이 실제 0선 전환인지 확인
+    # =====================================================
+
+    signal1_zero_cross = (
+        signal1_zero_cross_now(
             df_current
         )
     )
@@ -1864,11 +2097,19 @@ def analyze(
 
     # =====================================================
     # 과거 Signal 시작점
+    #
+    # 현재 캔들 자체가 0선 전환이면
+    # 과거 Signal을 찾지 않음
+    #
+    # ★ 현재 캔들 = COUNT 0
     # =====================================================
 
     historical_start_candle1 = None
 
-    if market not in roc_signal1_state:
+    if (
+        market not in roc_signal1_state
+        and not signal1_zero_cross
+    ):
 
         if (
             roc_is_enabled(
@@ -1914,7 +2155,10 @@ def analyze(
             progress_candle_time,
 
         historical_start_candle=
-            historical_start_candle1
+            historical_start_candle1,
+
+        zero_cross_now=
+            signal1_zero_cross
     )
 
 
@@ -1998,7 +2242,7 @@ def analyze(
     # 2. ROC20 > 0
     # 3. ROC10 COUNT 1~10
     # 4. ROC20 COUNT 1~10
-    # 5. Signal COUNT 1~5
+    # 5. Signal COUNT 0~2
     # 6. 당일 변동률 >= 0%
     #
     # BTC 필터 없음
@@ -2072,6 +2316,9 @@ def analyze(
 
         "signal1_trigger":
             signal1_trigger_now,
+
+        "signal1_zero_cross":
+            signal1_zero_cross,
 
         "signal1_filter_pass":
             signal1_filter_pass_now,
@@ -2187,6 +2434,14 @@ def make_row(
             bool(
                 a.get(
                     "signal1_trigger",
+                    False
+                )
+            ),
+
+        "signal1_zero_cross":
+            bool(
+                a.get(
+                    "signal1_zero_cross",
                     False
                 )
             ),
@@ -4593,6 +4848,14 @@ def startup():
     )
 
     log.info(
+        "★ 두 ROC가 동시에 0선 위로 전환되는 캔들 = COUNT 0"
+    )
+
+    log.info(
+        "★ 다음 캔들부터 COUNT 1, 2..."
+    )
+
+    log.info(
         f"★ ROC10 COUNT "
         f"{SIGNAL1_ROC10_COUNT_MIN}~"
         f"{SIGNAL1_ROC10_COUNT_MAX}"
@@ -4623,8 +4886,8 @@ def startup():
     )
 
     log.info(
-        "★ ROC10 또는 ROC20이 0 이하가 되면 "
-        "Signal 1 종료"
+        "★ ROC10 또는 ROC20이 "
+        "0 이하가 되면 Signal 1 종료"
     )
 
     log.info(
