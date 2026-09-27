@@ -11,7 +11,7 @@ import pandas as pd
 import warnings
 import html
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 
@@ -64,15 +64,13 @@ MAX_RETRIES = 10
 # =========================================================
 # ROC / SIGNAL 기준 시간봉
 #
-# 15  = 15분
-# 60  = 1시간
-# 240 = 4시간
+# 1440 = 업비트 일봉
 #
-# 이 숫자 하나만 변경하면
-# ROC / Signal 시간봉 전체 변경
+# ★ 업비트 일봉 기준
+# ★ KST 09:00 ~ 다음날 08:59:59
 # =========================================================
 
-SIGNAL_TIMEFRAME = 240
+SIGNAL_TIMEFRAME = 1440
 
 
 # =========================================================
@@ -81,7 +79,7 @@ SIGNAL_TIMEFRAME = 240
 
 ROC_SETTINGS = {
 
-    10: "Y",
+    5: "Y",
 
     20: "Y",
 
@@ -94,7 +92,7 @@ ROC_SETTINGS = {
 
 ROC_PERIODS = [
 
-    10,
+    5,
 
     20,
 
@@ -108,7 +106,7 @@ ROC_PERIODS = [
 # =========================================================
 # Signal 1
 #
-# ROC10
+# ROC5
 # ROC20
 # ROC50
 # ROC200
@@ -118,20 +116,17 @@ ROC_PERIODS = [
 # 이전 캔들 <= 0
 # 현재 캔들 > 0
 #
-# 새롭게 0선을 상향 돌파하면
-# Signal 발생
+# 새로운 0선 상향 돌파
 #
-# 돌파 진행 캔들 = COUNT 0
-# 다음 캔들       = COUNT 1
+# 진행 중 일봉 = COUNT 0
+# 다음 일봉     = COUNT 1
 #
 # COUNT 0~1까지만 Signal 표시
-#
-# COUNT 2 이상은 표시하지 않음
 # =========================================================
 
 SIGNAL1_ROC_PERIODS = [
 
-    10,
+    5,
 
     20,
 
@@ -150,8 +145,8 @@ SIGNAL1_DISPLAY_COUNT_MAX = 1
 # =========================================================
 # ROC COUNT
 #
-# Signal 발생 여부와 별개로
-# 각 ROC의 양수/음수 연속 COUNT는 계산
+# Signal 발생 여부와 별개
+# 각 ROC의 양수/음수 연속 COUNT 계산
 # =========================================================
 
 ROC_COUNT_MIN = 1
@@ -213,19 +208,6 @@ okx_ticker_cache = {}
 # =========================================================
 # Signal 1 상태
 # =========================================================
-#
-# 예:
-#
-# {
-#   "KRW-BTC": {
-#       "active": True,
-#       "start_candle": datetime(...),
-#       "count": 0,
-#       "last_candle": datetime(...)
-#   }
-# }
-#
-# =========================================================
 
 roc_signal1_state = {}
 
@@ -233,8 +215,8 @@ roc_signal1_state = {}
 # =========================================================
 # Signal 1 마지막 돌파 캔들
 #
-# 같은 진행봉에서 매분마다
-# 0선 돌파가 다시 감지되는 것을 방지
+# 같은 진행 일봉에서 매분마다
+# 0선 돌파가 반복 감지되는 것을 방지
 # =========================================================
 
 roc_signal1_last_trigger_candle = {}
@@ -334,15 +316,17 @@ def kst():
     )
 
 
+# =========================================================
+# 시간봉 표시
+# =========================================================
+
 def format_timeframe(minutes):
 
     minutes = int(minutes)
 
-    if minutes >= 1440:
+    if minutes == 1440:
 
-        return (
-            f"{minutes // 1440}D"
-        )
+        return "1D"
 
     if minutes >= 60:
 
@@ -356,9 +340,15 @@ def format_timeframe(minutes):
 
 
 # =========================================================
-# 현재 진행 중 캔들 시작시간
+# ★ 현재 진행 중 캔들 시작시간
 #
-# ★ 업비트 KST 기준
+# 업비트 기준
+#
+# 일봉:
+# KST 09:00 시작
+#
+# 분봉:
+# 기존 방식 유지
 # =========================================================
 
 def get_current_candle_start(minutes):
@@ -366,6 +356,42 @@ def get_current_candle_start(minutes):
     minutes = int(minutes)
 
     now = datetime.now(KST)
+
+    # =====================================================
+    # ★ 업비트 일봉
+    #
+    # KST 09:00 기준
+    # =====================================================
+
+    if minutes == 1440:
+
+        today_0900 = now.replace(
+
+            hour=9,
+
+            minute=0,
+
+            second=0,
+
+            microsecond=0
+
+        )
+
+        if now < today_0900:
+
+            today_0900 = (
+                today_0900
+                -
+                timedelta(days=1)
+            )
+
+        return today_0900.replace(
+            tzinfo=None
+        )
+
+    # =====================================================
+    # 분봉
+    # =====================================================
 
     total_minutes = (
 
@@ -727,10 +753,7 @@ def roc_negative_count(
 # 하나라도 0선 위면 True
 #
 # 단,
-# 이것만으로 Signal을 발생시키지 않음
-#
-# 실제 Signal은
-# "새로운 0선 상향 돌파"에서만 발생
+# 이것만으로 Signal 발생시키지 않음
 # =========================================================
 
 def signal1_trigger_pass(df):
@@ -794,21 +817,11 @@ def signal1_trigger_pass(df):
 # =========================================================
 # ★ 새로운 0선 상향 돌파
 #
-# ROC10 / ROC20 / ROC50 / ROC200 중
+# ROC5 / ROC20 / ROC50 / ROC200 중
 # 하나라도
 #
 # 이전 <= 0
 # 현재 > 0
-#
-# 이면 True
-#
-# 중요:
-#
-# 이미 위에 있는 경우
-# 새 Signal 아님
-#
-# 이미 아래에 있는 경우
-# 새 Signal 아님
 # =========================================================
 
 def signal1_zero_cross_now(df):
@@ -877,13 +890,6 @@ def signal1_zero_cross_now(df):
         ):
 
             continue
-
-        # ---------------------------------------------
-        # ★ 핵심
-        #
-        # 이전 <= 0
-        # 현재 > 0
-        # ---------------------------------------------
 
         if (
 
@@ -993,14 +999,9 @@ def signal1_zero_cross_periods(df):
 # =========================================================
 # 과거 새로운 0선 돌파 찾기
 #
-# 완성된 업비트 캔들만 사용
+# 완성된 업비트 일봉만 사용
 #
-# 가장 최근의
-#
-# 이전 <= 0
-# 현재 > 0
-#
-# 를 찾음
+# 현재 진행 중인 일봉은 제외
 # =========================================================
 
 def find_latest_signal_event(df):
@@ -1028,8 +1029,11 @@ def find_latest_signal_event(df):
         temp = df.copy()
 
         temp["datetime"] = pd.to_datetime(
+
             temp["datetime"],
+
             errors="coerce"
+
         )
 
         temp = (
@@ -1046,14 +1050,18 @@ def find_latest_signal_event(df):
 
         )
 
-        # ---------------------------------------------
-        # 현재 진행 중인 캔들은 과거 이벤트 검색에서 제외
-        # ---------------------------------------------
+        # =================================================
+        # 현재 진행 중 일봉 제외
+        # =================================================
 
         temp = temp[
+
             temp["datetime"]
+
             <
+
             current_start
+
         ].reset_index(
             drop=True
         )
@@ -1062,9 +1070,9 @@ def find_latest_signal_event(df):
 
             return None
 
-        # ---------------------------------------------
+        # =================================================
         # 가장 최근부터 검색
-        # ---------------------------------------------
+        # =================================================
 
         for i in range(
             len(temp) - 1,
@@ -1072,37 +1080,46 @@ def find_latest_signal_event(df):
             -1
         ):
 
-            previous_df = (
-                temp
-                .iloc[:i]
-                .copy()
-            )
-
             current_df = (
+
                 temp
+
                 .iloc[:i + 1]
+
                 .copy()
+
             )
 
             if signal1_zero_cross_now(
                 current_df
             ):
 
-                # 실제로 어떤 ROC가 돌파했는지 로그용
                 crossed = (
+
                     signal1_zero_cross_periods(
+
                         current_df
+
                     )
+
                 )
 
                 log.info(
+
                     f"[Signal 1 HISTORICAL] "
+
                     f"캔들={temp['datetime'].iloc[i]} | "
+
                     f"돌파 ROC={crossed}"
+
                 )
 
                 return normalize_datetime(
-                    temp["datetime"].iloc[i]
+
+                    temp[
+                        "datetime"
+                    ].iloc[i]
+
                 )
 
         return None
@@ -1110,7 +1127,9 @@ def find_latest_signal_event(df):
     except Exception as e:
 
         log.warning(
+
             f"Signal 과거 이벤트 검색 오류: {e}"
+
         )
 
         return None
@@ -1119,13 +1138,11 @@ def find_latest_signal_event(df):
 # =========================================================
 # Signal 1 상태 업데이트
 #
-# 핵심:
-#
-# 현재 진행봉에서 새 돌파
+# 새로운 진행 일봉 돌파
 #     ↓
 # COUNT 0
 #
-# 다음 업비트 캔들
+# 다음 일봉
 #     ↓
 # COUNT 1
 #
@@ -1134,10 +1151,8 @@ def find_latest_signal_event(df):
 # COUNT 2 이상
 # 표시 안 함
 #
-# 기존 Signal을 0선 하락 때문에 종료하지 않음
-#
-# 새로운 0선 상향 돌파가 발생하면
-# 새 Signal로 다시 COUNT 0
+# 0선 아래로 내려가더라도
+# 기존 Signal COUNT를 종료하지 않음
 # =========================================================
 
 def update_signal1(
@@ -1164,25 +1179,28 @@ def update_signal1(
     )
 
     # =====================================================
-    # ★ 현재 진행 캔들에서 새로운 0선 돌파
+    # 현재 진행 일봉에서 새로운 0선 돌파
     # =====================================================
 
     if zero_cross_now:
 
         last_trigger = (
+
             roc_signal1_last_trigger_candle.get(
+
                 market_key
+
             )
+
         )
 
         last_trigger = normalize_datetime(
             last_trigger
         )
 
-        # ---------------------------------------------
-        # 같은 캔들에서 매분마다
-        # 반복적으로 Signal 0을 생성하지 않음
-        # ---------------------------------------------
+        # =================================================
+        # 같은 진행 일봉에서 반복 생성 방지
+        # =================================================
 
         if last_trigger != progress_candle_time:
 
@@ -1212,27 +1230,30 @@ def update_signal1(
             signal_state = crossed_state
 
             log.info(
+
                 f"[Signal 1 NEW ZERO CROSS] "
+
                 f"{market_key} | "
+
                 f"시작={progress_candle_time} | "
+
                 f"COUNT=0"
+
             )
 
         else:
 
-            # 같은 캔들이므로
-            # 기존 상태만 유지
-
             signal_state = (
+
                 roc_signal1_state.get(
                     market_key
                 )
+
             )
 
     # =====================================================
-    # 현재 돌파가 없고
-    # 기존 상태도 없으면
-    # 과거 완성봉에서 가장 최근 돌파 복원
+    # 기존 상태가 없으면
+    # 가장 최근 완성 일봉 돌파 복원
     # =====================================================
 
     if (
@@ -1250,7 +1271,9 @@ def update_signal1(
     ):
 
         start_candle = normalize_datetime(
+
             historical_start_candle
+
         )
 
         if (
@@ -1297,31 +1320,40 @@ def update_signal1(
             ] = start_candle
 
             log.info(
+
                 f"[Signal 1 RESTORE] "
+
                 f"{market_key} | "
+
                 f"시작={start_candle} | "
+
                 f"COUNT={distance}"
+
             )
 
     # =====================================================
     # 기존 Signal COUNT 갱신
     #
-    # 0선 위/아래 여부와 관계없이
-    # 시작 캔들로부터 시간 거리만 계산
+    # 현재 ROC가 0선 위인지 아래인지는
+    # COUNT 계산에 영향을 주지 않음
     # =====================================================
 
     signal_state = (
+
         roc_signal1_state.get(
             market_key
         )
+
     )
 
     if signal_state is not None:
 
         start_candle = (
+
             signal_state.get(
                 "start_candle"
             )
+
         )
 
         if (
@@ -1357,9 +1389,11 @@ def update_signal1(
     # =====================================================
 
     signal_state = (
+
         roc_signal1_state.get(
             market_key
         )
+
     )
 
     signal_active = bool(
@@ -1371,10 +1405,15 @@ def update_signal1(
     if signal_state is not None:
 
         signal_count = int(
+
             signal_state.get(
+
                 "count",
+
                 0
+
             )
+
         )
 
     return {
@@ -1514,7 +1553,9 @@ def retry(
         except Exception as e:
 
             log.error(
+
                 f"[API 오류] {url}: {e}"
+
             )
 
             if n < MAX_RETRIES - 1:
@@ -1596,8 +1637,10 @@ def get_upbit_markets():
                 "https://api.upbit.com/v1/ticker",
 
                 params={
+
                     "markets":
                         ",".join(chunk)
+
                 },
 
                 timeout=15
@@ -1639,17 +1682,27 @@ def get_upbit_markets():
             try:
 
                 volume = float(
+
                     item.get(
+
                         "acc_trade_price_24h",
+
                         0
+
                     )
+
                 )
 
                 price = float(
+
                     item.get(
+
                         "trade_price",
+
                         0
+
                     )
+
                 )
 
             except Exception:
@@ -1692,14 +1745,22 @@ def get_upbit_markets():
     except Exception as e:
 
         log.error(
+
             f"업비트 마켓 오류: {e}"
+
         )
 
         return []
 
 
 # =========================================================
-# Upbit native 캔들
+# ★ Upbit 캔들
+#
+# unit == 1440
+#     → 업비트 일봉 API
+#
+# 그 외
+#     → 업비트 분봉 API
 # =========================================================
 
 def get_upbit_candle(
@@ -1719,11 +1780,17 @@ def get_upbit_candle(
 
         "count":
             min(
+
                 max(
+
                     int(count),
+
                     1
+
                 ),
+
                 200
+
             )
 
     }
@@ -1732,13 +1799,29 @@ def get_upbit_candle(
 
         params["to"] = to
 
-    endpoint = (
+    # =====================================================
+    # ★ 업비트 일봉
+    # =====================================================
 
-        "https://api.upbit.com/"
+    if unit == 1440:
 
-        f"v1/candles/minutes/{unit}"
+        endpoint = (
 
-    )
+            "https://api.upbit.com/"
+
+            "v1/candles/days"
+
+        )
+
+    else:
+
+        endpoint = (
+
+            "https://api.upbit.com/"
+
+            f"v1/candles/minutes/{unit}"
+
+        )
 
     response = retry(
 
@@ -1772,6 +1855,10 @@ def get_upbit_candle(
         if df.empty:
 
             return None
+
+        # =================================================
+        # 공통 OHLC
+        # =================================================
 
         df["o"] = pd.to_numeric(
 
@@ -1812,6 +1899,14 @@ def get_upbit_candle(
             errors="coerce"
 
         )
+
+        # =================================================
+        # ★ KST 시간
+        #
+        # 일봉:
+        # candle_date_time_kst
+        # = KST 09:00 기준
+        # =================================================
 
         df["datetime"] = pd.to_datetime(
 
@@ -1859,12 +1954,20 @@ def get_upbit_candle(
 
         )
 
+        # =================================================
+        # ★ 현재 진행 중 캔들 제외
+        #
+        # 일봉은 KST 09:00 기준
+        # =================================================
+
         if not include_current:
 
             current_start = (
+
                 get_current_candle_start(
                     unit
                 )
+
             )
 
             df = df[
@@ -2003,7 +2106,9 @@ def history_upbit(
         )
 
         to = oldest.strftime(
+
             "%Y-%m-%dT%H:%M:%S"
+
         )
 
     if all_df is None:
@@ -2015,6 +2120,9 @@ def history_upbit(
 
 # =========================================================
 # 현재 진행 중 ROC 데이터
+#
+# ★ 업비트 일봉 현재 진행봉에
+# 현재 가격을 반영
 # =========================================================
 
 def get_upbit_current_roc_data(
@@ -2074,7 +2182,9 @@ def get_upbit_current_roc_data(
         )
 
         to = oldest.strftime(
+
             "%Y-%m-%dT%H:%M:%S"
+
         )
 
         df_old = get_upbit_candle(
@@ -2141,6 +2251,10 @@ def get_upbit_current_roc_data(
 
             break
 
+    # =====================================================
+    # ★ 현재 진행 중 일봉의 종가를 현재가로 교체
+    # =====================================================
+
     try:
 
         current_price = float(
@@ -2148,9 +2262,11 @@ def get_upbit_current_roc_data(
         )
 
         current_start = (
+
             get_current_candle_start(
                 timeframe
             )
+
         )
 
         mask = (
@@ -2172,15 +2288,18 @@ def get_upbit_current_roc_data(
 
         else:
 
+            # =================================================
+            # 업비트 API 상황에 따라 현재 진행봉이
+            # 아직 반환되지 않을 경우 직접 생성
+            # =================================================
+
             log.warning(
 
                 f"[CURRENT] "
 
                 f"{market} | "
 
-                f"현재 "
-
-                f"{format_timeframe(timeframe)} "
+                f"현재 {format_timeframe(timeframe)} "
 
                 f"진행봉 없음 | "
 
@@ -2293,8 +2412,11 @@ def roc_filter_analysis(df):
     for period in ROC_PERIODS:
 
         series = roc(
+
             df,
+
             period
+
         )
 
         if (
@@ -2407,6 +2529,9 @@ def roc_filter_analysis(df):
 
 # =========================================================
 # 일봉 변동률
+#
+# ★ 업비트 일봉 기준
+# ★ 현재 일봉 / 직전 일봉
 # =========================================================
 
 def daily_change_upbit(market):
@@ -2607,6 +2732,10 @@ def analyze(
     current_price
 ):
 
+    # =====================================================
+    # 완성 일봉 데이터
+    # =====================================================
+
     df_signal = history_upbit(
 
         market,
@@ -2629,6 +2758,10 @@ def analyze(
     ):
 
         return None
+
+    # =====================================================
+    # 현재 진행 일봉 포함 데이터
+    # =====================================================
 
     df_current = (
         get_upbit_current_roc_data(
@@ -2654,7 +2787,6 @@ def analyze(
 
         return None
 
-
     # =====================================================
     # 현재 ROC
     # =====================================================
@@ -2673,11 +2805,8 @@ def analyze(
         {}
     )
 
-
     # =====================================================
-    # Signal 현재 조건
-    #
-    # 하나라도 0선 위인지
+    # 현재 ROC가 하나라도 0선 위인지
     # =====================================================
 
     signal1_trigger_now = (
@@ -2685,7 +2814,6 @@ def analyze(
             df_current
         )
     )
-
 
     # =====================================================
     # ★ 새로운 0선 상향 돌파
@@ -2697,9 +2825,8 @@ def analyze(
         )
     )
 
-
     # =====================================================
-    # 현재 어떤 ROC가 돌파했는지
+    # 어떤 ROC가 돌파했는지
     # =====================================================
 
     signal1_cross_periods = (
@@ -2708,12 +2835,11 @@ def analyze(
         )
     )
 
-
     # =====================================================
     # 과거 Signal 시작점
     #
-    # 현재 캔들이 새로운 돌파가 아니면
-    # 가장 최근 완성봉 돌파를 복원
+    # 현재 새로운 돌파가 아니면
+    # 최근 완성 일봉 돌파를 복원
     # =====================================================
 
     historical_start_candle1 = None
@@ -2736,9 +2862,10 @@ def analyze(
             )
         )
 
-
     # =====================================================
-    # 현재 진행 중 업비트 캔들
+    # 현재 진행 중 업비트 일봉
+    #
+    # KST 09:00 기준
     # =====================================================
 
     progress_candle_time = (
@@ -2746,7 +2873,6 @@ def analyze(
             SIGNAL_TIMEFRAME
         )
     )
-
 
     # =====================================================
     # Signal 1 상태
@@ -2767,7 +2893,6 @@ def analyze(
 
     )
 
-
     signal1_count = int(
 
         state1[
@@ -2776,15 +2901,14 @@ def analyze(
 
     )
 
-
     # =====================================================
     # ROC COUNT
     # =====================================================
 
-    roc10_count = int(
+    roc5_count = int(
 
         positive_counts.get(
-            10,
+            5,
             0
         )
 
@@ -2817,11 +2941,10 @@ def analyze(
 
     )
 
-
     # =====================================================
-    # 일봉
+    # 일봉 변동률
     #
-    # 당일 변동 >= 0%
+    # 현재 업비트 일봉 기준
     # =====================================================
 
     change_value = (
@@ -2840,11 +2963,8 @@ def analyze(
 
     )
 
-
     # =====================================================
     # Signal 표시 COUNT
-    #
-    # 0~1만 허용
     # =====================================================
 
     signal1_display_count_pass = (
@@ -2853,15 +2973,12 @@ def analyze(
         )
     )
 
-
     # =====================================================
     # Signal 1 최종 조건
     #
-    # 새로운 돌파 Signal 자체가 발생한 이후
-    # COUNT 0~1에서만 화면 표시
-    #
-    # 당일 변동률 >= 0%
-    #
+    # 새로운 돌파 이벤트가 존재
+    # COUNT 0~1
+    # 당일 변동률 >= 0
     # =====================================================
 
     signal1_qualified = (
@@ -2878,12 +2995,7 @@ def analyze(
 
         daily_pass
 
-        and
-
-        len(signal1_cross_periods) >= 0
-
     )
-
 
     # =====================================================
     # 결과
@@ -2920,8 +3032,8 @@ def analyze(
         "signal1_count_pass":
             signal1_display_count_pass,
 
-        "signal1_roc10_count":
-            roc10_count,
+        "signal1_roc5_count":
+            roc5_count,
 
         "signal1_roc20_count":
             roc20_count,
@@ -3045,10 +3157,10 @@ def make_row(
                 )
             ),
 
-        "signal1_roc10_count":
+        "signal1_roc5_count":
             int(
                 a.get(
-                    "signal1_roc10_count",
+                    "signal1_roc5_count",
                     0
                 )
             ),
@@ -3129,8 +3241,11 @@ def update_upbit():
     rows = []
 
     for rank, item in enumerate(
+
         top_markets,
+
         1
+
     ):
 
         market = item[
@@ -3191,7 +3306,9 @@ def update_upbit():
     )
 
     log.info(
+
         f"TOP{TOP_N} 업데이트 완료"
+
     )
 
 
@@ -3208,8 +3325,10 @@ def get_usdt_krw_internal():
         "https://api.upbit.com/v1/ticker",
 
         params={
+
             "markets":
                 "KRW-USDT"
+
         },
 
         timeout=15
@@ -3229,7 +3348,9 @@ def get_usdt_krw_internal():
             return None
 
         return float(
+
             data[0]["trade_price"]
+
         )
 
     except Exception:
@@ -3861,7 +3982,7 @@ def focus_section(data):
 
                 <div class="section-heading-sub">
 
-                    ROC10 / ROC20 / ROC50 / ROC200
+                    ROC5 / ROC20 / ROC50 / ROC200
 
                     중
 
@@ -3869,11 +3990,11 @@ def focus_section(data):
 
                     ·
 
-                    진행 캔들 COUNT 0
+                    진행 일봉 COUNT 0
 
                     ·
 
-                    완성 후 COUNT 1
+                    다음 일봉 COUNT 1
 
                     ·
 
@@ -3933,7 +4054,7 @@ def section(
 
                     Signal 1 =
 
-                    ROC10 / ROC20 / ROC50 / ROC200
+                    ROC5 / ROC20 / ROC50 / ROC200
 
                     중
 
@@ -3951,11 +4072,11 @@ def section(
                     ·
 
                     기준:
-                    {format_timeframe(SIGNAL_TIMEFRAME)}
+                    업비트 일봉
 
                     ·
 
-                    업비트 KST
+                    KST 09:00 기준
 
                 </div>
 
@@ -4133,7 +4254,7 @@ def btc_roc_status_html(btc_row):
     <div class="btc-roc-detail">
 
         <div class="btc-roc-label">
-            {format_timeframe(SIGNAL_TIMEFRAME)} ROC
+            1D ROC
         </div>
 
         <div class="roc-grid btc-roc-grid">
@@ -4146,7 +4267,7 @@ def btc_roc_status_html(btc_row):
 
             Signal =
 
-            10 / 20 / 50 / 200
+            ROC5 / 20 / 50 / 200
 
             중 새로운 0선 돌파
 
@@ -4229,7 +4350,7 @@ def market_summary_html():
 
                     Signal 1 =
 
-                    ROC10 / ROC20 / ROC50 / ROC200
+                    ROC5 / ROC20 / ROC50 / ROC200
 
                     중
 
@@ -4241,7 +4362,11 @@ def market_summary_html():
 
                     ·
 
-                    업비트 KST
+                    업비트 일봉
+
+                    ·
+
+                    KST 09:00 기준
 
                 </div>
 
@@ -5382,7 +5507,7 @@ def dashboard():
         >
 
         <title>
-            1
+            1D ROC SIGNAL CENTER
         </title>
 
         <style>
@@ -5446,6 +5571,10 @@ def validate_settings():
         "N"
     }
 
+    # =====================================================
+    # ROC 설정
+    # =====================================================
+
     for period in ROC_PERIODS:
 
         value = ROC_SETTINGS.get(
@@ -5480,6 +5609,8 @@ def validate_settings():
 
     # =====================================================
     # 시간봉
+    #
+    # 1440 = 업비트 일봉
     # =====================================================
 
     if SIGNAL_TIMEFRAME not in (
@@ -5498,14 +5629,16 @@ def validate_settings():
 
         120,
 
-        240
+        240,
+
+        1440
 
     ):
 
         raise ValueError(
 
             "SIGNAL_TIMEFRAME이 "
-            "Upbit 지원 분봉이 아닙니다."
+            "지원되는 시간봉이 아닙니다."
 
         )
 
@@ -5552,23 +5685,23 @@ def startup():
     )
 
     log.info(
-
-        f"기준 시간봉 = "
-
-        f"{format_timeframe(SIGNAL_TIMEFRAME)}"
-
+        "★ 기준 = 업비트 일봉"
     )
 
     log.info(
-
-        "시간 기준 = 업비트 KST"
-
+        "★ 일봉 기준 = KST 09:00"
     )
 
     log.info(
+        "★ 일봉 = 09:00 ~ 다음날 08:59:59"
+    )
 
+    log.info(
+        "----------------------------------------"
+    )
+
+    log.info(
         f"ROC 설정 = {roc_setting_text()}"
-
     )
 
     log.info(
@@ -5580,7 +5713,7 @@ def startup():
     )
 
     log.info(
-        "★ ROC10 / ROC20 / ROC50 / ROC200"
+        "★ ROC5 / ROC20 / ROC50 / ROC200"
     )
 
     log.info(
@@ -5592,11 +5725,11 @@ def startup():
     )
 
     log.info(
-        "★ 진행 중 돌파 캔들 = COUNT 0"
+        "★ 진행 중 일봉 = COUNT 0"
     )
 
     log.info(
-        "★ 다음 업비트 캔들 = COUNT 1"
+        "★ 다음 일봉 = COUNT 1"
     )
 
     log.info(
@@ -5647,10 +5780,11 @@ def startup():
     )
 
     log.info(
+        "★ 기준 시간봉 = 1D"
+    )
 
-        f"★ 기준 시간봉 = "
-        f"{format_timeframe(SIGNAL_TIMEFRAME)}"
-
+    log.info(
+        "★ 업비트 일봉 API 사용"
     )
 
     log.info(
