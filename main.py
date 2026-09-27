@@ -139,7 +139,7 @@ SIGNAL1_ROC_PERIODS = [
 
 SIGNAL1_DISPLAY_COUNT_MIN = 0
 
-SIGNAL1_DISPLAY_COUNT_MAX = 0
+SIGNAL1_DISPLAY_COUNT_MAX = 1
 
 
 # =========================================================
@@ -151,7 +151,7 @@ SIGNAL1_DISPLAY_COUNT_MAX = 0
 
 ROC_COUNT_MIN = 1
 
-ROC_COUNT_MAX = 100
+ROC_COUNT_MAX = 200
 
 
 # =========================================================
