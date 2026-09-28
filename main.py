@@ -42,7 +42,7 @@ KST = ZoneInfo("Asia/Seoul")
 
 VOLUME_HOURS = 24
 
-TOP_N = 30
+TOP_N = 15
 
 UPDATE_MINUTES = 1
 
@@ -70,7 +70,7 @@ MAX_RETRIES = 10
 # ★ KST 09:00 ~ 다음날 08:59:59
 # =========================================================
 
-SIGNAL_TIMEFRAME = 1440
+SIGNAL_TIMEFRAME = 240
 
 
 # =========================================================
