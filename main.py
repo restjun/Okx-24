@@ -582,7 +582,14 @@ def daily_change_upbit(
 #
 # RSI(14)
 #
-# 현재 진행 중인 일봉에는 현재가 반영
+# TradingView 기본 RSI와 최대한 동일하게 계산
+#
+# 기준:
+# - UPBIT 일봉
+# - 09:00 KST 기준
+# - Wilder RMA
+# - 충분한 과거 데이터 사용
+# - 현재 진행 중인 일봉은 실시간 현재가 반영
 #
 # RSI는 표시용
 # Signal 조건에는 사용하지 않음
@@ -594,6 +601,18 @@ def daily_rsi_upbit(
     current_price=None
 ):
 
+    # =====================================================
+    # 충분한 과거 데이터 확보
+    #
+    # TradingView의 RMA 초기값 영향을 줄이기 위해
+    # RSI 기간보다 훨씬 많은 일봉을 사용
+    # =====================================================
+
+    history_count = max(
+        period * 8,
+        100
+    )
+
     response = retry(
         requests.get,
         "https://api.upbit.com/v1/candles/days",
@@ -602,7 +621,7 @@ def daily_rsi_upbit(
                 market,
 
             "count":
-                period + 1
+                history_count
         },
         timeout=15
     )
@@ -626,6 +645,15 @@ def daily_rsi_upbit(
 
             return None
 
+        # =================================================
+        # 업비트 API
+        #
+        # 최신 → 과거
+        #
+        # RSI 계산을 위해
+        # 과거 → 최신으로 변경
+        # =================================================
+
         data = list(
             reversed(data)
         )
@@ -642,7 +670,19 @@ def daily_rsi_upbit(
                 )
             )
 
+        if len(closes) < period + 1:
+
+            return None
+
+        # =================================================
         # 현재 진행 중인 일봉
+        #
+        # 마지막 종가를
+        # 업비트 현재 실시간 가격으로 교체
+        #
+        # 따라서 장중 RSI도 실시간 변화
+        # =================================================
+
         if current_price is not None:
 
             closes[-1] = float(
@@ -654,28 +694,116 @@ def daily_rsi_upbit(
             dtype="float64"
         )
 
+        # =================================================
+        # 가격 변화
+        # =================================================
+
         delta = series.diff()
 
+        # 상승분
         gain = delta.clip(
             lower=0
         )
 
+        # 하락분
         loss = -delta.clip(
             upper=0
         )
 
-        # Wilder RSI
-        avg_gain = gain.ewm(
-            alpha=1 / period,
-            adjust=False,
-            min_periods=period
-        ).mean()
+        # =================================================
+        # Wilder RMA
+        #
+        # TradingView RSI의 핵심
+        #
+        # 최초값:
+        # SMA(period)
+        #
+        # 이후:
+        #
+        # RMA =
+        # (이전 RMA × (period - 1)
+        #  + 현재값) / period
+        # =================================================
 
-        avg_loss = loss.ewm(
-            alpha=1 / period,
-            adjust=False,
-            min_periods=period
-        ).mean()
+        def wilder_rma(
+            source,
+            length
+        ):
+
+            values = source.to_numpy(
+                dtype="float64"
+            )
+
+            result = [
+                float("nan")
+            ] * len(values)
+
+            if len(values) <= length:
+
+                return pd.Series(
+                    result,
+                    index=source.index
+                )
+
+            # ---------------------------------------------
+            # 최초 RMA
+            #
+            # 첫 length개의 실제 변화값을 사용
+            # ---------------------------------------------
+
+            first_rma = (
+                source.iloc[
+                    1:length + 1
+                ].sum()
+                /
+                length
+            )
+
+            result[length] = float(
+                first_rma
+            )
+
+            # ---------------------------------------------
+            # Wilder RMA 반복 계산
+            # ---------------------------------------------
+
+            for i in range(
+                length + 1,
+                len(values)
+            ):
+
+                result[i] = (
+                    (
+                        result[i - 1]
+                        *
+                        (length - 1)
+                    )
+                    +
+                    values[i]
+                ) / length
+
+            return pd.Series(
+                result,
+                index=source.index
+            )
+
+        # =================================================
+        # 평균 상승폭
+        # =================================================
+
+        avg_gain = wilder_rma(
+            gain,
+            period
+        )
+
+        # =================================================
+        # 평균 하락폭
+        # =================================================
+
+        avg_loss = wilder_rma(
+            loss,
+            period
+        )
 
         last_avg_gain = (
             avg_gain.iloc[-1]
@@ -687,13 +815,25 @@ def daily_rsi_upbit(
 
         if pd.isna(
             last_avg_gain
-        ) or pd.isna(
+        ):
+
+            return None
+
+        if pd.isna(
             last_avg_loss
         ):
 
             return None
 
+        # =================================================
+        # RSI 계산
+        # =================================================
+
         if last_avg_loss == 0:
+
+            if last_avg_gain == 0:
+
+                return 50.0
 
             return 100.0
 
@@ -2984,7 +3124,6 @@ font-weight:900;
    RSI
    ========================================================= */
 
-/* 기본 */
 .rsi-normal,
 .rsi-blue,
 .rsi-green,
@@ -3730,6 +3869,14 @@ def startup():
 
     log.info(
         "★ TOP 마지막 칸 = 업비트 일봉 RSI(14)"
+    )
+
+    log.info(
+        "★ RSI = TradingView Wilder RMA 방식"
+    )
+
+    log.info(
+        "★ RSI = 현재 진행 중인 일봉 실시간 가격 반영"
     )
 
     log.info(
