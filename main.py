@@ -64,17 +64,36 @@ MAX_RETRIES = 10
 # =========================================================
 # ROC / SIGNAL 기준 시간봉
 #
-# 240 = 업비트 4시간봉
-#
-# ★ 업비트 4시간봉 기준
-# ★ 01:00 / 05:00 / 09:00
-# ★ 13:00 / 17:00 / 21:00 KST
+# 현재 사용자 코드 그대로 유지
 #
 # 1440 = 업비트 일봉
-# ★ KST 09:00 기준
 # =========================================================
 
 SIGNAL_TIMEFRAME = 1440
+
+
+# =========================================================
+# ★ BTC 시황용 OKX 설정
+#
+# BTC 시황만 OKX BTC-USDT 사용
+#
+# OKX는 1시간봉을 받아서
+# KST 기준으로 직접 4시간봉 / 일봉을 구성
+# =========================================================
+
+OKX_BASE_URL = "https://www.okx.com"
+
+OKX_BTC_INST_ID = "BTC-USDT"
+
+BTC_MARKET_TIMEFRAME = 240
+
+BTC_DAILY_TIMEFRAME = 1440
+
+OKX_CANDLE_HOURS = 1
+
+OKX_HISTORY_COUNT = 1000
+
+OKX_HISTORY_CHUNK = 300
 
 
 # =========================================================
@@ -82,61 +101,30 @@ SIGNAL_TIMEFRAME = 1440
 # =========================================================
 
 ROC_SETTINGS = {
-
     5: "Y",
-
     20: "Y",
-
     50: "Y",
-
     200: "Y"
-
 }
 
-
 ROC_PERIODS = [
-
     5,
-
     20,
-
     50,
-
     200
-
 ]
 
 
 # =========================================================
 # Signal 1
-#
-# ROC5 / ROC20 / ROC50 / ROC200
-#
-# 위 4개 중 하나라도
-#
-# 이전 캔들 <= 0
-# 현재 캔들 > 0
-#
-# 새로운 0선 상향 돌파
-#
-# 진행 중 4시간봉 = COUNT 0
-# 다음 4시간봉     = COUNT 1
-#
-# COUNT 0~1까지만 Signal 표시
 # =========================================================
 
 SIGNAL1_ROC_PERIODS = [
-
     5,
-
     20,
-
     50,
-
     200
-
 ]
-
 
 SIGNAL1_DISPLAY_COUNT_MIN = 0
 
@@ -145,9 +133,6 @@ SIGNAL1_DISPLAY_COUNT_MAX = 1
 
 # =========================================================
 # ROC COUNT
-#
-# Signal 발생 여부와 별개
-# 각 ROC의 양수/음수 연속 COUNT 계산
 # =========================================================
 
 ROC_COUNT_MIN = 1
@@ -161,23 +146,14 @@ ROC_COUNT_MAX = 200
 
 ROC_HISTORY_EXTRA = 120
 
-
 ROC_HISTORY_REQUIRED = (
-
     max(ROC_PERIODS)
-
     +
-
     SIGNAL1_DISPLAY_COUNT_MAX
-
     +
-
     ROC_HISTORY_EXTRA
-
     +
-
     5
-
 )
 
 
@@ -207,15 +183,16 @@ okx_ticker_cache = {}
 
 
 # =========================================================
-# ★ BTC 일봉 변동률
-#
-# Signal 필터용
-#
-# BTC 일봉 변동률 > 0%
-# 일 때만 Signal 표시
+# ★ BTC 시황 데이터
 # =========================================================
 
+latest_btc_okx_price = None
+
 latest_btc_daily_change = None
+
+latest_btc_okx_4h_df = None
+
+latest_btc_okx_daily_df = None
 
 
 # =========================================================
@@ -224,95 +201,59 @@ latest_btc_daily_change = None
 
 roc_signal1_state = {}
 
-
-# =========================================================
-# Signal 1 마지막 돌파 캔들
-#
-# 같은 진행 4시간봉에서
-# 매분마다 0선 돌파가 반복 감지되는 것을 방지
-# =========================================================
-
 roc_signal1_last_trigger_candle = {}
 
 
 # =========================================================
-# ROC Y/N
+# ROC 설정
 # =========================================================
 
 def roc_is_enabled(period):
 
     try:
-
         period = int(period)
-
     except Exception:
-
         return False
 
     return (
-
         ROC_SETTINGS.get(
             period,
             "N"
         )
-
-        ==
-
-        "Y"
-
+        == "Y"
     )
 
 
 def enabled_roc_periods():
 
     return [
-
         period
-
         for period in ROC_PERIODS
-
         if roc_is_enabled(period)
-
     ]
 
 
 def roc_setting_text():
 
     return " · ".join(
-
         f"ROC{period} {ROC_SETTINGS.get(period, 'N')}"
-
         for period in ROC_PERIODS
-
     )
 
-
-# =========================================================
-# Signal 표시 COUNT
-# =========================================================
 
 def signal1_display_allowed(count):
 
     try:
-
         count = int(count)
-
     except Exception:
-
         return False
 
     return (
-
         SIGNAL1_DISPLAY_COUNT_MIN
-
         <=
-
         count
-
         <=
-
         SIGNAL1_DISPLAY_COUNT_MAX
-
     )
 
 
@@ -329,46 +270,21 @@ def kst():
     )
 
 
-# =========================================================
-# 시간봉 표시
-# =========================================================
-
 def format_timeframe(minutes):
 
     minutes = int(minutes)
 
     if minutes == 1440:
-
         return "1D"
 
     if minutes >= 60:
+        return f"{minutes // 60}H"
 
-        return (
-            f"{minutes // 60}H"
-        )
-
-    return (
-        f"{minutes}M"
-    )
+    return f"{minutes}M"
 
 
 # =========================================================
-# ★ 현재 진행 중 캔들 시작시간
-#
-# 업비트 기준
-#
-# 240분봉:
-#
-# 01:00
-# 05:00
-# 09:00
-# 13:00
-# 17:00
-# 21:00
-#
-# 1440분봉:
-#
-# KST 09:00
+# 업비트 기준 현재 캔들 시작시간
 # =========================================================
 
 def get_current_candle_start(minutes):
@@ -378,76 +294,40 @@ def get_current_candle_start(minutes):
     now = datetime.now(KST)
 
     # =====================================================
-    # ★ 업비트 240분봉
+    # 업비트 240분봉
     #
     # 01 / 05 / 09 / 13 / 17 / 21
     # =====================================================
 
     if minutes == 240:
 
-        # 00:00 ~ 00:59
-        # → 전날 21:00 봉
-
         if now.hour == 0:
 
             current = now.replace(
-
                 hour=21,
-
                 minute=0,
-
                 second=0,
-
                 microsecond=0
-
-            ) - timedelta(
-                days=1
-            )
+            ) - timedelta(days=1)
 
             return current.replace(
                 tzinfo=None
             )
 
-        # =================================================
-        # 01:00 이후
-        # =================================================
-
         start_hour = (
-
             1
-
             +
-
             (
-
-                (
-
-                    now.hour
-
-                    -
-
-                    1
-
-                )
-
-                // 4
-
+                (now.hour - 1) // 4
             )
-
             * 4
-
         )
 
         current = now.replace(
-
             hour=start_hour,
-
             minute=0,
-
             second=0,
-
             microsecond=0
-
         )
 
         return current.replace(
@@ -455,35 +335,24 @@ def get_current_candle_start(minutes):
         )
 
     # =====================================================
-    # ★ 업비트 일봉
+    # 업비트 일봉
     #
-    # KST 09:00 기준
+    # 09:00
     # =====================================================
 
     if minutes == 1440:
 
         today_0900 = now.replace(
-
             hour=9,
-
             minute=0,
-
             second=0,
-
             microsecond=0
-
         )
 
         if now < today_0900:
 
-            today_0900 = (
-
-                today_0900
-
-                -
-
-                timedelta(days=1)
-
+            today_0900 -= timedelta(
+                days=1
             )
 
         return today_0900.replace(
@@ -491,40 +360,24 @@ def get_current_candle_start(minutes):
         )
 
     # =====================================================
-    # 기타 분봉
-    #
-    # 업비트 API가 반환하는 캔들 시간을
-    # 사용하는 것이 기본.
-    #
-    # 단순 계산이 필요한 경우에만 사용.
+    # 기타
     # =====================================================
 
     total_minutes = (
-
         now.hour * 60
-
         +
-
         now.minute
-
     )
 
     block = (
-
         total_minutes // minutes
-
     ) * minutes
 
     current = now.replace(
-
         hour=block // 60,
-
         minute=block % 60,
-
         second=0,
-
         microsecond=0
-
     )
 
     return current.replace(
@@ -539,21 +392,16 @@ def get_current_candle_start(minutes):
 def normalize_datetime(value):
 
     if value is None:
-
         return None
 
     try:
 
         return (
-
             pd.Timestamp(value)
-
             .to_pydatetime()
-
             .replace(
                 tzinfo=None
             )
-
         )
 
     except Exception:
@@ -580,49 +428,30 @@ def candle_distance(
     )
 
     if (
-
         start_time is None
-
         or
-
         end_time is None
-
     ):
-
         return 0
 
     try:
 
         seconds = (
-
             end_time
-
             -
-
             start_time
-
         ).total_seconds()
 
         return max(
-
             int(
-
                 seconds
-
                 //
-
                 (
-
                     int(timeframe)
-
                     * 60
-
                 )
-
             ),
-
             0
-
         )
 
     except Exception:
@@ -640,45 +469,29 @@ def roc(
 ):
 
     if (
-
         df is None
-
         or
-
         df.empty
-
         or
-
         "c" not in df.columns
-
     ):
-
         return None
 
     try:
 
         close = pd.to_numeric(
-
             df["c"],
-
             errors="coerce"
-
         )
 
         return (
-
             close
-
             /
-
             close.shift(
                 int(period)
             )
-
             -
-
             1
-
         ) * 100
 
     except Exception:
@@ -687,7 +500,7 @@ def roc(
 
 
 # =========================================================
-# ROC 양수 연속 COUNT
+# ROC 양수 COUNT
 # =========================================================
 
 def roc_positive_count(
@@ -696,15 +509,10 @@ def roc_positive_count(
 ):
 
     if (
-
         df is None
-
         or
-
         df.empty
-
     ):
-
         return 0
 
     series = roc(
@@ -713,21 +521,15 @@ def roc_positive_count(
     )
 
     if (
-
         series is None
-
         or
-
         series.empty
-
     ):
-
         return 0
 
     valid = series.dropna()
 
     if valid.empty:
-
         return 0
 
     try:
@@ -741,7 +543,6 @@ def roc_positive_count(
         return 0
 
     if current < 0:
-
         return 0
 
     count = 0
@@ -751,26 +552,20 @@ def roc_positive_count(
     ):
 
         try:
-
             value = float(value)
-
         except Exception:
-
             break
 
         if value >= 0:
-
             count += 1
-
         else:
-
             break
 
     return count
 
 
 # =========================================================
-# ROC 음수 연속 COUNT
+# ROC 음수 COUNT
 # =========================================================
 
 def roc_negative_count(
@@ -779,15 +574,10 @@ def roc_negative_count(
 ):
 
     if (
-
         df is None
-
         or
-
         df.empty
-
     ):
-
         return 0
 
     series = roc(
@@ -796,21 +586,15 @@ def roc_negative_count(
     )
 
     if (
-
         series is None
-
         or
-
         series.empty
-
     ):
-
         return 0
 
     valid = series.dropna()
 
     if valid.empty:
-
         return 0
 
     try:
@@ -824,7 +608,6 @@ def roc_negative_count(
         return 0
 
     if current >= 0:
-
         return 0
 
     count = 0
@@ -834,52 +617,34 @@ def roc_negative_count(
     ):
 
         try:
-
             value = float(value)
-
         except Exception:
-
             break
 
         if value < 0:
-
             count += 1
-
         else:
-
             break
 
     return count
 
 
 # =========================================================
-# Signal 1
-# 현재 ROC 상태
-#
-# 하나라도 0선 위면 True
-#
-# 단,
-# 이것만으로 Signal 발생시키지 않음
+# Signal 현재 ROC 상태
 # =========================================================
 
 def signal1_trigger_pass(df):
 
     if (
-
         df is None
-
         or
-
         df.empty
-
     ):
-
         return False
 
     for period in SIGNAL1_ROC_PERIODS:
 
         if not roc_is_enabled(period):
-
             continue
 
         series = roc(
@@ -888,15 +653,10 @@ def signal1_trigger_pass(df):
         )
 
         if (
-
             series is None
-
             or
-
             series.empty
-
         ):
-
             continue
 
         try:
@@ -910,45 +670,32 @@ def signal1_trigger_pass(df):
             continue
 
         if pd.isna(value):
-
             continue
 
         if value > 0:
-
             return True
 
     return False
 
 
 # =========================================================
-# ★ 새로운 0선 상향 돌파
-#
-# 이전 <= 0
-# 현재 > 0
+# 새로운 0선 상향 돌파
 # =========================================================
 
 def signal1_zero_cross_now(df):
 
     if (
-
         df is None
-
         or
-
         df.empty
-
+        or
+        len(df) < 2
     ):
-
-        return False
-
-    if len(df) < 2:
-
         return False
 
     for period in SIGNAL1_ROC_PERIODS:
 
         if not roc_is_enabled(period):
-
             continue
 
         series = roc(
@@ -957,15 +704,10 @@ def signal1_zero_cross_now(df):
         )
 
         if (
-
             series is None
-
             or
-
             len(series) < 2
-
         ):
-
             continue
 
         try:
@@ -983,34 +725,24 @@ def signal1_zero_cross_now(df):
             continue
 
         if (
-
             pd.isna(previous_value)
-
             or
-
             pd.isna(current_value)
-
         ):
-
             continue
 
         if (
-
             previous_value <= 0
-
             and
-
             current_value > 0
-
         ):
-
             return True
 
     return False
 
 
 # =========================================================
-# 어떤 ROC가 돌파했는지 확인
+# 어떤 ROC가 돌파했는지
 # =========================================================
 
 def signal1_zero_cross_periods(df):
@@ -1018,25 +750,17 @@ def signal1_zero_cross_periods(df):
     result = []
 
     if (
-
         df is None
-
         or
-
         df.empty
-
         or
-
         len(df) < 2
-
     ):
-
         return result
 
     for period in SIGNAL1_ROC_PERIODS:
 
         if not roc_is_enabled(period):
-
             continue
 
         series = roc(
@@ -1045,15 +769,10 @@ def signal1_zero_cross_periods(df):
         )
 
         if (
-
             series is None
-
             or
-
             len(series) < 2
-
         ):
-
             continue
 
         try:
@@ -1071,27 +790,17 @@ def signal1_zero_cross_periods(df):
             continue
 
         if (
-
             pd.isna(previous_value)
-
             or
-
             pd.isna(current_value)
-
         ):
-
             continue
 
         if (
-
             previous_value <= 0
-
             and
-
             current_value > 0
-
         ):
-
             result.append(
                 period
             )
@@ -1100,24 +809,16 @@ def signal1_zero_cross_periods(df):
 
 
 # =========================================================
-# 과거 새로운 0선 돌파 찾기
-#
-# 현재 진행 중 4시간봉은 제외
-# 업비트 240분봉 기준
+# 과거 Signal 찾기
 # =========================================================
 
 def find_latest_signal_event(df):
 
     if (
-
         df is None
-
         or
-
         df.empty
-
     ):
-
         return None
 
     try:
@@ -1131,50 +832,29 @@ def find_latest_signal_event(df):
         temp = df.copy()
 
         temp["datetime"] = pd.to_datetime(
-
             temp["datetime"],
-
             errors="coerce"
-
         )
 
         temp = (
-
             temp
-
             .dropna(
                 subset=["datetime"]
             )
-
             .sort_values("datetime")
-
             .reset_index(drop=True)
-
         )
 
-        # =================================================
-        # 현재 진행 중 캔들 제외
-        # =================================================
-
         temp = temp[
-
             temp["datetime"]
-
             <
-
             current_start
-
         ].reset_index(
             drop=True
         )
 
         if len(temp) < 2:
-
             return None
-
-        # =================================================
-        # 가장 최근부터 검색
-        # =================================================
 
         for i in range(
             len(temp) - 1,
@@ -1183,13 +863,9 @@ def find_latest_signal_event(df):
         ):
 
             current_df = (
-
                 temp
-
                 .iloc[:i + 1]
-
                 .copy()
-
             )
 
             if signal1_zero_cross_now(
@@ -1197,31 +873,19 @@ def find_latest_signal_event(df):
             ):
 
                 crossed = (
-
                     signal1_zero_cross_periods(
-
                         current_df
-
                     )
-
                 )
 
                 log.info(
-
-                    f"[Signal 1 HISTORICAL] "
-
+                    f"[Signal HISTORICAL] "
                     f"캔들={temp['datetime'].iloc[i]} | "
-
                     f"돌파 ROC={crossed}"
-
                 )
 
                 return normalize_datetime(
-
-                    temp[
-                        "datetime"
-                    ].iloc[i]
-
+                    temp["datetime"].iloc[i]
                 )
 
         return None
@@ -1229,32 +893,14 @@ def find_latest_signal_event(df):
     except Exception as e:
 
         log.warning(
-
             f"Signal 과거 이벤트 검색 오류: {e}"
-
         )
 
         return None
 
 
 # =========================================================
-# Signal 1 상태 업데이트
-#
-# 새로운 진행 4시간봉 돌파
-#     ↓
-# COUNT 0
-#
-# 다음 4시간봉
-#     ↓
-# COUNT 1
-#
-# 그 이후
-#     ↓
-# COUNT 2 이상
-# 표시 안 함
-#
-# 0선 아래로 내려가더라도
-# 기존 Signal COUNT를 종료하지 않음
+# Signal 상태
 # =========================================================
 
 def update_signal1(
@@ -1280,29 +926,17 @@ def update_signal1(
         )
     )
 
-    # =====================================================
-    # 현재 진행 4시간봉에서 새로운 0선 돌파
-    # =====================================================
-
     if zero_cross_now:
 
         last_trigger = (
-
             roc_signal1_last_trigger_candle.get(
-
                 market_key
-
             )
-
         )
 
         last_trigger = normalize_datetime(
             last_trigger
         )
-
-        # =================================================
-        # 같은 진행 4시간봉에서 반복 생성 방지
-        # =================================================
 
         if last_trigger != progress_candle_time:
 
@@ -1332,70 +966,34 @@ def update_signal1(
             signal_state = crossed_state
 
             log.info(
-
-                f"[Signal 1 NEW ZERO CROSS] "
-
+                f"[Signal NEW ZERO CROSS] "
                 f"{market_key} | "
-
                 f"시작={progress_candle_time} | "
-
                 f"COUNT=0"
-
             )
-
-        else:
-
-            signal_state = (
-
-                roc_signal1_state.get(
-                    market_key
-                )
-
-            )
-
-    # =====================================================
-    # 기존 상태가 없으면
-    # 가장 최근 완성 캔들 돌파 복원
-    # =====================================================
 
     if (
-
         signal_state is None
-
         and
-
         not zero_cross_now
-
         and
-
         historical_start_candle is not None
-
     ):
 
         start_candle = normalize_datetime(
-
             historical_start_candle
-
         )
 
         if (
-
             start_candle is not None
-
             and
-
             progress_candle_time is not None
-
         ):
 
             distance = candle_distance(
-
                 start_candle,
-
                 progress_candle_time,
-
                 SIGNAL_TIMEFRAME
-
             )
 
             signal_state = {
@@ -1421,81 +1019,42 @@ def update_signal1(
                 market_key
             ] = start_candle
 
-            log.info(
-
-                f"[Signal 1 RESTORE] "
-
-                f"{market_key} | "
-
-                f"시작={start_candle} | "
-
-                f"COUNT={distance}"
-
-            )
-
-    # =====================================================
-    # 기존 Signal COUNT 갱신
-    #
-    # 현재 ROC가 0선 위인지 아래인지는
-    # COUNT 계산에 영향을 주지 않음
-    # =====================================================
-
     signal_state = (
-
         roc_signal1_state.get(
             market_key
         )
-
     )
 
     if signal_state is not None:
 
         start_candle = (
-
             signal_state.get(
                 "start_candle"
             )
-
         )
 
         if (
-
             start_candle is not None
-
             and
-
             progress_candle_time is not None
-
         ):
 
             distance = candle_distance(
-
                 start_candle,
-
                 progress_candle_time,
-
                 SIGNAL_TIMEFRAME
-
             )
 
-            signal_state["count"] = (
-                distance
-            )
+            signal_state["count"] = distance
 
             signal_state[
                 "last_candle"
             ] = progress_candle_time
 
-    # =====================================================
-    # 최종
-    # =====================================================
-
     signal_state = (
-
         roc_signal1_state.get(
             market_key
         )
-
     )
 
     signal_active = bool(
@@ -1507,15 +1066,10 @@ def update_signal1(
     if signal_state is not None:
 
         signal_count = int(
-
             signal_state.get(
-
                 "count",
-
                 0
-
             )
-
         )
 
     return {
@@ -1545,25 +1099,17 @@ def wait_request():
     with request_lock:
 
         gap = (
-
             time.monotonic()
-
             -
-
             last_request_time
-
         )
 
         if gap < REQUEST_INTERVAL:
 
             time.sleep(
-
                 REQUEST_INTERVAL
-
                 -
-
                 gap
-
             )
 
         last_request_time = (
@@ -1578,27 +1124,19 @@ def retry(
 ):
 
     url = (
-
         args[0]
-
         if (
-
             args
-
             and
-
             isinstance(
                 args[0],
                 str
             )
-
         )
-
         else kwargs.get(
             "url",
             ""
         )
-
     )
 
     for n in range(
@@ -1618,32 +1156,24 @@ def retry(
                 response,
                 "status_code"
             ):
-
                 return response
 
             if response.status_code == 200:
-
                 return response
 
             if response.status_code == 429:
 
                 wait = min(
-
                     RATE_LIMIT_WAIT
                     * 2 ** n,
-
                     60
-
                 )
 
             elif response.status_code >= 500:
 
                 wait = min(
-
                     2 * 2 ** n,
-
                     30
-
                 )
 
             else:
@@ -1655,30 +1185,23 @@ def retry(
         except Exception as e:
 
             log.error(
-
                 f"[API 오류] {url}: {e}"
-
             )
 
             if n < MAX_RETRIES - 1:
 
                 time.sleep(
-
                     min(
-
                         2 * (n + 1),
-
                         20
-
                     )
-
                 )
 
     return None
 
 
 # =========================================================
-# Upbit 마켓
+# UPBIT
 # =========================================================
 
 def get_upbit_markets():
@@ -1686,21 +1209,15 @@ def get_upbit_markets():
     global latest_upbit_markets
 
     response = retry(
-
         requests.get,
-
         "https://api.upbit.com/v1/market/all",
-
         params={
             "isDetails": "false"
         },
-
         timeout=15
-
     )
 
     if response is None:
-
         return []
 
     try:
@@ -1708,16 +1225,12 @@ def get_upbit_markets():
         markets = response.json()
 
         krw_markets = [
-
             x["market"]
-
             for x in markets
-
             if x.get(
                 "market",
                 ""
             ).startswith("KRW-")
-
         ]
 
         ticker_result = []
@@ -1733,41 +1246,27 @@ def get_upbit_markets():
             ]
 
             ticker_response = retry(
-
                 requests.get,
-
                 "https://api.upbit.com/v1/ticker",
-
                 params={
-
                     "markets":
                         ",".join(chunk)
-
                 },
-
                 timeout=15
-
             )
 
             if ticker_response is None:
-
                 continue
 
             try:
-
-                data = (
-                    ticker_response.json()
-                )
-
+                data = ticker_response.json()
             except Exception:
-
                 continue
 
             if isinstance(
                 data,
                 list
             ):
-
                 ticker_result.extend(
                     data
                 )
@@ -1784,41 +1283,26 @@ def get_upbit_markets():
             try:
 
                 volume = float(
-
                     item.get(
-
                         "acc_trade_price_24h",
-
                         0
-
                     )
-
                 )
 
                 price = float(
-
                     item.get(
-
                         "trade_price",
-
                         0
-
                     )
-
                 )
 
             except Exception:
-
                 continue
 
             if (
-
                 volume > 0
-
                 and
-
                 price > 0
-
             ):
 
                 result.append({
@@ -1835,11 +1319,8 @@ def get_upbit_markets():
                 })
 
         latest_upbit_markets = [
-
             x["market"]
-
             for x in result
-
         ]
 
         return result
@@ -1847,24 +1328,14 @@ def get_upbit_markets():
     except Exception as e:
 
         log.error(
-
             f"업비트 마켓 오류: {e}"
-
         )
 
         return []
 
 
 # =========================================================
-# ★ Upbit 캔들
-#
-# unit == 1440
-#     → 업비트 일봉
-#
-# unit == 240
-#     → 업비트 240분봉
-#
-# 모든 시간은 candle_date_time_kst 사용
+# UPBIT 캔들
 # =========================================================
 
 def get_upbit_candle(
@@ -1884,63 +1355,40 @@ def get_upbit_candle(
 
         "count":
             min(
-
                 max(
-
                     int(count),
-
                     1
-
                 ),
-
                 200
-
             )
 
     }
 
     if to:
-
         params["to"] = to
-
-    # =====================================================
-    # 업비트 일봉
-    # =====================================================
 
     if unit == 1440:
 
         endpoint = (
-
             "https://api.upbit.com/"
-
             "v1/candles/days"
-
         )
 
     else:
 
         endpoint = (
-
             "https://api.upbit.com/"
-
             f"v1/candles/minutes/{unit}"
-
         )
 
     response = retry(
-
         requests.get,
-
         endpoint,
-
         params=params,
-
         timeout=15
-
     )
 
     if response is None:
-
         return None
 
     try:
@@ -1951,143 +1399,80 @@ def get_upbit_candle(
             data,
             list
         ):
-
             return None
 
         df = pd.DataFrame(data)
 
         if df.empty:
-
             return None
 
-        # =================================================
-        # 공통 OHLC
-        # =================================================
-
         df["o"] = pd.to_numeric(
-
             df["opening_price"],
-
             errors="coerce"
-
         )
 
         df["h"] = pd.to_numeric(
-
             df["high_price"],
-
             errors="coerce"
-
         )
 
         df["l"] = pd.to_numeric(
-
             df["low_price"],
-
             errors="coerce"
-
         )
 
         df["c"] = pd.to_numeric(
-
             df["trade_price"],
-
             errors="coerce"
-
         )
 
         df["volume_krw"] = pd.to_numeric(
-
             df["candle_acc_trade_price"],
-
             errors="coerce"
-
         )
 
-        # =================================================
-        # ★ 업비트 KST 시간
-        #
-        # 4시간봉:
-        # 01 / 05 / 09 / 13 / 17 / 21
-        #
-        # 일봉:
-        # 09:00
-        # =================================================
-
         df["datetime"] = pd.to_datetime(
-
             df["candle_date_time_kst"],
-
             errors="coerce"
-
         )
 
         df = df.dropna(
-
             subset=[
-
                 "datetime",
-
                 "o",
-
                 "h",
-
                 "l",
-
                 "c"
-
             ]
-
         )
 
         if df.empty:
-
             return None
 
         df = (
-
             df
-
             .sort_values("datetime")
-
             .drop_duplicates(
                 "datetime"
             )
-
-            .reset_index(
-                drop=True
-            )
-
+            .reset_index(drop=True)
         )
-
-        # =================================================
-        # 현재 진행 캔들 제외
-        #
-        # 업비트 API의 실제 candle_date_time_kst 기준
-        # =================================================
 
         if not include_current:
 
             current_start = (
-
                 get_current_candle_start(
                     unit
                 )
-
             )
 
             df = df[
-
                 df["datetime"]
-
                 <
-
                 current_start
-
             ]
 
         if df.empty:
-
             return None
 
         return df
@@ -2095,20 +1480,16 @@ def get_upbit_candle(
     except Exception as e:
 
         log.error(
-
             f"업비트 "
-
             f"{format_timeframe(unit)} 오류 "
-
             f"{market}: {e}"
-
         )
 
         return None
 
 
 # =========================================================
-# 과거 데이터
+# UPBIT HISTORY
 # =========================================================
 
 def history_upbit(
@@ -2130,29 +1511,18 @@ def history_upbit(
     ):
 
         df = get_upbit_candle(
-
             market=market,
-
             unit=unit,
-
             count=HISTORY_CHUNK,
-
             to=to,
-
             include_current=False
-
         )
 
         if (
-
             df is None
-
             or
-
             df.empty
-
         ):
-
             break
 
         if all_df is None:
@@ -2162,49 +1532,34 @@ def history_upbit(
         else:
 
             all_df = pd.concat(
-
                 [
-
                     df,
-
                     all_df
-
                 ],
-
                 ignore_index=True
-
             )
 
         all_df = (
-
             all_df
-
             .drop_duplicates(
                 "datetime"
             )
-
             .sort_values(
                 "datetime"
             )
-
             .reset_index(
                 drop=True
             )
-
         )
 
         if len(all_df) >= required:
 
             return (
-
                 all_df
-
                 .iloc[-required:]
-
                 .reset_index(
                     drop=True
                 )
-
             )
 
         oldest = (
@@ -2212,23 +1567,17 @@ def history_upbit(
         )
 
         to = oldest.strftime(
-
             "%Y-%m-%dT%H:%M:%S"
-
         )
 
     if all_df is None:
-
         return None
 
     return all_df
 
 
 # =========================================================
-# 현재 진행 중 ROC 데이터
-#
-# ★ 업비트 4시간봉 또는 일봉
-# ★ 현재가 반영
+# UPBIT 현재 ROC
 # =========================================================
 
 def get_upbit_current_roc_data(
@@ -2240,43 +1589,26 @@ def get_upbit_current_roc_data(
     timeframe = int(timeframe)
 
     df = get_upbit_candle(
-
         market=market,
-
         unit=timeframe,
-
         count=HISTORY_CHUNK,
-
         include_current=True
-
     )
 
     if (
-
         df is None
-
         or
-
         df.empty
-
     ):
-
         return None
 
     df = (
-
         df
-
         .sort_values("datetime")
-
         .drop_duplicates(
             "datetime"
         )
-
-        .reset_index(
-            drop=True
-        )
-
+        .reset_index(drop=True)
     )
 
     required = ROC_HISTORY_REQUIRED
@@ -2288,78 +1620,47 @@ def get_upbit_current_roc_data(
         )
 
         to = oldest.strftime(
-
             "%Y-%m-%dT%H:%M:%S"
-
         )
 
         df_old = get_upbit_candle(
-
             market=market,
-
             unit=timeframe,
-
             count=HISTORY_CHUNK,
-
             to=to,
-
             include_current=False
-
         )
 
         if (
-
             df_old is None
-
             or
-
             df_old.empty
-
         ):
-
             break
 
         old_len = len(df)
 
         df = pd.concat(
-
             [
-
                 df_old,
-
                 df
-
             ],
-
             ignore_index=True
-
         )
 
         df = (
-
             df
-
             .drop_duplicates(
                 "datetime"
             )
-
             .sort_values(
                 "datetime"
             )
-
-            .reset_index(
-                drop=True
-            )
-
+            .reset_index(drop=True)
         )
 
         if len(df) <= old_len:
-
             break
-
-    # =====================================================
-    # ★ 현재 진행 중 캔들의 종가를 현재가로 교체
-    # =====================================================
 
     try:
 
@@ -2368,21 +1669,15 @@ def get_upbit_current_roc_data(
         )
 
         current_start = (
-
             get_current_candle_start(
                 timeframe
             )
-
         )
 
         mask = (
-
             df["datetime"]
-
             ==
-
             current_start
-
         )
 
         if mask.any():
@@ -2392,60 +1687,28 @@ def get_upbit_current_roc_data(
                 "c"
             ] = current_price
 
-        else:
-
-            log.warning(
-
-                f"[CURRENT] "
-
-                f"{market} | "
-
-                f"현재 {format_timeframe(timeframe)} "
-
-                f"진행봉 없음 | "
-
-                f"기준={current_start}"
-
-            )
-
     except Exception as e:
 
         log.error(
-
             f"현재 ROC 데이터 오류 "
-
             f"{market}: {e}"
-
         )
 
     df = (
-
         df
-
         .sort_values("datetime")
-
         .drop_duplicates(
             "datetime"
         )
-
-        .reset_index(
-            drop=True
-        )
-
+        .reset_index(drop=True)
     )
 
     if len(df) > required:
 
         df = (
-
             df
-
             .iloc[-required:]
-
-            .reset_index(
-                drop=True
-            )
-
+            .reset_index(drop=True)
         )
 
     return df
@@ -2489,15 +1752,10 @@ def roc_filter_analysis(df):
     }
 
     if (
-
         df is None
-
         or
-
         df.empty
-
     ):
-
         return result
 
     values = {}
@@ -2513,31 +1771,20 @@ def roc_filter_analysis(df):
     for period in ROC_PERIODS:
 
         series = roc(
-
             df,
-
             period
-
         )
 
         if (
-
             series is None
-
             or
-
             series.empty
-
         ):
-
             continue
 
         current_value = series.iloc[-1]
 
-        if pd.isna(
-            current_value
-        ):
-
+        if pd.isna(current_value):
             continue
 
         current_value = float(
@@ -2573,37 +1820,25 @@ def roc_filter_analysis(df):
         zero_crosses[
             period
         ] = (
-
             previous_value is not None
-
             and
-
             previous_value <= 0
-
             and
-
             current_value > 0
-
         )
 
         positive_counts[
             period
         ] = roc_positive_count(
-
             df,
-
             period
-
         )
 
         negative_counts[
             period
         ] = roc_negative_count(
-
             df,
-
             period
-
         )
 
     result.update({
@@ -2629,36 +1864,27 @@ def roc_filter_analysis(df):
 
 
 # =========================================================
-# 업비트 일봉 변동률
+# UPBIT 일봉 변동률
 #
-# ★ 업비트 일봉 기준
-# ★ 현재 일봉 vs 직전 일봉
+# 코인용
+# BTC 시황에는 사용하지 않음
 # =========================================================
 
 def daily_change_upbit(market):
 
     response = retry(
-
         requests.get,
-
         "https://api.upbit.com/v1/candles/days",
-
         params={
-
             "market":
                 market,
-
             "count":
                 2
-
         },
-
         timeout=15
-
     )
 
     if response is None:
-
         return None
 
     try:
@@ -2666,45 +1892,29 @@ def daily_change_upbit(market):
         data = response.json()
 
         if len(data) < 2:
-
             return None
 
         current = float(
-
             data[0]["trade_price"]
-
         )
 
         previous = float(
-
             data[1]["trade_price"]
-
         )
 
         if previous == 0:
-
             return None
 
         return (
-
             (
-
                 current
-
                 -
-
                 previous
-
             )
-
             /
-
             previous
-
             *
-
             100
-
         )
 
     except Exception:
@@ -2713,115 +1923,910 @@ def daily_change_upbit(market):
 
 
 # =========================================================
-# 변화값
+# =========================================================
+# ★★★ OKX BTC 시황 전용 ★★★
+# =========================================================
 # =========================================================
 
-def get_change_value(x):
+
+# =========================================================
+# OKX BTC 현재가
+#
+# 공개 Market API이므로 API KEY 불필요
+# =========================================================
+
+def get_okx_btc_price():
+
+    response = retry(
+        requests.get,
+        f"{OKX_BASE_URL}/api/v5/market/ticker",
+        params={
+            "instId":
+                OKX_BTC_INST_ID
+        },
+        timeout=15
+    )
+
+    if response is None:
+        return None
 
     try:
 
-        if x is None:
+        data = response.json()
+
+        if data.get("code") != "0":
+            return None
+
+        rows = data.get(
+            "data",
+            []
+        )
+
+        if not rows:
+            return None
+
+        return float(
+            rows[0]["last"]
+        )
+
+    except Exception as e:
+
+        log.warning(
+            f"OKX BTC 현재가 오류: {e}"
+        )
+
+        return None
+
+
+# =========================================================
+# OKX 1H 캔들 1회
+# =========================================================
+
+def get_okx_1h_candles(
+    limit=300,
+    after=None
+):
+
+    params = {
+
+        "instId":
+            OKX_BTC_INST_ID,
+
+        "bar":
+            "1H",
+
+        "limit":
+            str(
+                min(
+                    int(limit),
+                    OKX_HISTORY_CHUNK
+                )
+            )
+
+    }
+
+    if after is not None:
+
+        params["after"] = str(
+            int(after)
+        )
+
+    response = retry(
+        requests.get,
+        f"{OKX_BASE_URL}/api/v5/market/candles",
+        params=params,
+        timeout=15
+    )
+
+    if response is None:
+        return None
+
+    try:
+
+        payload = response.json()
+
+        if payload.get("code") != "0":
+
+            log.warning(
+                f"OKX candle API 오류: "
+                f"{payload}"
+            )
 
             return None
 
-        if isinstance(
-            x,
-            (list, tuple)
-        ):
+        data = payload.get(
+            "data",
+            []
+        )
 
-            if not x:
+        if not data:
+            return None
 
-                return None
+        rows = []
 
-            return float(
-                x[0]
+        for item in data:
+
+            if len(item) < 9:
+                continue
+
+            rows.append({
+
+                "ts":
+                    int(item[0]),
+
+                "o":
+                    float(item[1]),
+
+                "h":
+                    float(item[2]),
+
+                "l":
+                    float(item[3]),
+
+                "c":
+                    float(item[4]),
+
+                "vol":
+                    float(item[5]),
+
+                "volCcy":
+                    float(item[6]),
+
+                "volCcyQuote":
+                    float(item[7]),
+
+                "confirm":
+                    str(item[8])
+
+            })
+
+        if not rows:
+            return None
+
+        df = pd.DataFrame(
+            rows
+        )
+
+        df["datetime_utc"] = (
+            pd.to_datetime(
+                df["ts"],
+                unit="ms",
+                utc=True
             )
+        )
 
-        return float(x)
+        df["datetime"] = (
+            df["datetime_utc"]
+            .dt
+            .tz_convert(KST)
+            .dt
+            .tz_localize(None)
+        )
 
-    except Exception:
+        return (
+            df
+            .sort_values("datetime")
+            .drop_duplicates(
+                "datetime"
+            )
+            .reset_index(drop=True)
+        )
+
+    except Exception as e:
+
+        log.warning(
+            f"OKX BTC 1H 데이터 오류: {e}"
+        )
 
         return None
 
 
-def format_change(x):
+# =========================================================
+# OKX BTC 1H HISTORY
+#
+# 최근 약 1000개 1H 확보
+# =========================================================
 
-    x = get_change_value(x)
+def get_okx_btc_1h_history(
+    required=1000
+):
 
-    if x is None:
+    required = int(
+        required
+    )
 
-        return "-"
+    all_df = None
 
-    if x > 0:
+    after = None
 
-        return (
+    for _ in range(10):
 
-            '<span class="up">'
-
-            f'▲ +{x:.1f}%'
-
-            '</span>'
-
+        df = get_okx_1h_candles(
+            limit=OKX_HISTORY_CHUNK,
+            after=after
         )
 
-    if x < 0:
+        if (
+            df is None
+            or
+            df.empty
+        ):
+            break
 
-        return (
+        if all_df is None:
 
-            '<span class="down">'
+            all_df = df.copy()
 
-            f'▼ {x:.1f}%'
+        else:
 
-            '</span>'
+            all_df = pd.concat(
+                [
+                    df,
+                    all_df
+                ],
+                ignore_index=True
+            )
 
+        all_df = (
+            all_df
+            .drop_duplicates(
+                "datetime"
+            )
+            .sort_values(
+                "datetime"
+            )
+            .reset_index(drop=True)
         )
+
+        if len(all_df) >= required:
+
+            return (
+                all_df
+                .iloc[-required:]
+                .reset_index(drop=True)
+            )
+
+        oldest_ts = (
+            all_df["ts"].iloc[0]
+        )
+
+        after = int(
+            oldest_ts
+        )
+
+    return all_df
+
+
+# =========================================================
+# ★ OKX 1H → 업비트 기준 4H
+#
+# KST 기준:
+#
+# 01:00
+# 05:00
+# 09:00
+# 13:00
+# 17:00
+# 21:00
+#
+# 업비트 4시간봉과 동일한 경계
+# =========================================================
+
+def aggregate_okx_to_upbit_4h(
+    df
+):
+
+    if (
+        df is None
+        or
+        df.empty
+    ):
+        return None
+
+    temp = df.copy()
+
+    temp["datetime"] = pd.to_datetime(
+        temp["datetime"],
+        errors="coerce"
+    )
+
+    temp = (
+        temp
+        .dropna(
+            subset=["datetime"]
+        )
+        .sort_values("datetime")
+        .reset_index(drop=True)
+    )
+
+    def get_4h_start(dt):
+
+        hour = dt.hour
+
+        if hour == 0:
+
+            return (
+                dt
+                -
+                timedelta(days=1)
+            ).replace(
+                hour=21,
+                minute=0,
+                second=0,
+                microsecond=0
+            )
+
+        start_hour = (
+            1
+            +
+            (
+                (hour - 1) // 4
+            )
+            * 4
+        )
+
+        return dt.replace(
+            hour=start_hour,
+            minute=0,
+            second=0,
+            microsecond=0
+        )
+
+    temp["candle_start"] = (
+        temp["datetime"].apply(
+            get_4h_start
+        )
+    )
+
+    grouped = []
+
+    for candle_start, g in (
+        temp.groupby(
+            "candle_start",
+            sort=True
+        )
+    ):
+
+        g = g.sort_values(
+            "datetime"
+        )
+
+        grouped.append({
+
+            "datetime":
+                candle_start,
+
+            "o":
+                float(g["o"].iloc[0]),
+
+            "h":
+                float(g["h"].max()),
+
+            "l":
+                float(g["l"].min()),
+
+            "c":
+                float(g["c"].iloc[-1]),
+
+            "volume":
+                float(g["vol"].sum()),
+
+            "volume_quote":
+                float(
+                    g["volCcyQuote"].sum()
+                )
+
+        })
+
+    result = pd.DataFrame(
+        grouped
+    )
+
+    if result.empty:
+        return None
+
+    result = (
+        result
+        .sort_values("datetime")
+        .drop_duplicates(
+            "datetime"
+        )
+        .reset_index(drop=True)
+    )
+
+    return result
+
+
+# =========================================================
+# ★ OKX 1H → 업비트 기준 일봉
+#
+# 09:00 ~ 다음날 08:59
+# =========================================================
+
+def aggregate_okx_to_upbit_daily(
+    df
+):
+
+    if (
+        df is None
+        or
+        df.empty
+    ):
+        return None
+
+    temp = df.copy()
+
+    temp["datetime"] = pd.to_datetime(
+        temp["datetime"],
+        errors="coerce"
+    )
+
+    temp = (
+        temp
+        .dropna(
+            subset=["datetime"]
+        )
+        .sort_values("datetime")
+        .reset_index(drop=True)
+    )
+
+    def get_daily_start(dt):
+
+        base = dt.replace(
+            hour=9,
+            minute=0,
+            second=0,
+            microsecond=0
+        )
+
+        if dt < base:
+
+            base -= timedelta(
+                days=1
+            )
+
+        return base
+
+    temp["candle_start"] = (
+        temp["datetime"].apply(
+            get_daily_start
+        )
+    )
+
+    grouped = []
+
+    for candle_start, g in (
+        temp.groupby(
+            "candle_start",
+            sort=True
+        )
+    ):
+
+        g = g.sort_values(
+            "datetime"
+        )
+
+        grouped.append({
+
+            "datetime":
+                candle_start,
+
+            "o":
+                float(g["o"].iloc[0]),
+
+            "h":
+                float(g["h"].max()),
+
+            "l":
+                float(g["l"].min()),
+
+            "c":
+                float(g["c"].iloc[-1]),
+
+            "volume":
+                float(g["vol"].sum()),
+
+            "volume_quote":
+                float(
+                    g["volCcyQuote"].sum()
+                )
+
+        })
+
+    result = pd.DataFrame(
+        grouped
+    )
+
+    if result.empty:
+        return None
 
     return (
-
-        '<span class="zero">'
-
-        '0.0%'
-
-        '</span>'
-
+        result
+        .sort_values("datetime")
+        .drop_duplicates(
+            "datetime"
+        )
+        .reset_index(drop=True)
     )
 
 
 # =========================================================
-# 거래대금
+# ★ 현재 진행 중 OKX BTC 4H
+#
+# 현재가는 OKX 실시간 가격 사용
+# 시간 경계는 업비트 기준
 # =========================================================
 
-def format_volume(v):
+def get_okx_btc_4h_data():
 
-    try:
+    global latest_btc_okx_price
 
-        v = float(v)
+    price = get_okx_btc_price()
 
-    except Exception:
+    if price is None:
+        return None
 
-        return "-"
+    latest_btc_okx_price = price
 
-    if v >= 1e12:
+    raw = get_okx_btc_1h_history(
+        required=1100
+    )
 
-        return (
-            f"{v / 1e12:.1f}조"
+    if (
+        raw is None
+        or
+        raw.empty
+    ):
+        return None
+
+    df = aggregate_okx_to_upbit_4h(
+        raw
+    )
+
+    if (
+        df is None
+        or
+        df.empty
+    ):
+        return None
+
+    current_start = (
+        get_current_candle_start(
+            240
         )
+    )
 
-    if v >= 1e8:
+    mask = (
+        df["datetime"]
+        ==
+        current_start
+    )
 
-        return (
-            f"{v / 1e8:.0f}억"
-        )
+    if mask.any():
 
-    if v >= 1e4:
+        df.loc[
+            mask,
+            "c"
+        ] = float(price)
 
-        return (
-            f"{v / 1e4:.0f}만"
+    else:
+
+        # 현재 진행봉이 API 결과에 없는 경우
+        # 현재가를 이용해 현재봉을 새로 구성
+        previous = df.iloc[-1]
+
+        current_row = {
+
+            "datetime":
+                current_start,
+
+            "o":
+                float(price),
+
+            "h":
+                max(
+                    float(price),
+                    float(previous["c"])
+                ),
+
+            "l":
+                min(
+                    float(price),
+                    float(previous["c"])
+                ),
+
+            "c":
+                float(price),
+
+            "volume":
+                0.0,
+
+            "volume_quote":
+                0.0
+
+        }
+
+        df = pd.concat(
+            [
+                df,
+                pd.DataFrame(
+                    [current_row]
+                )
+            ],
+            ignore_index=True
         )
 
     return (
-        f"{v:,.0f}"
+        df
+        .sort_values("datetime")
+        .drop_duplicates(
+            "datetime"
+        )
+        .reset_index(drop=True)
     )
+
+
+# =========================================================
+# ★ OKX BTC 일봉
+#
+# 업비트와 동일한 KST 09:00 기준
+# 현재 가격 반영
+# =========================================================
+
+def get_okx_btc_daily_data():
+
+    global latest_btc_okx_price
+
+    price = (
+        latest_btc_okx_price
+    )
+
+    if price is None:
+
+        price = get_okx_btc_price()
+
+        if price is None:
+            return None
+
+        latest_btc_okx_price = price
+
+    raw = get_okx_btc_1h_history(
+        required=1100
+    )
+
+    if (
+        raw is None
+        or
+        raw.empty
+    ):
+        return None
+
+    df = aggregate_okx_to_upbit_daily(
+        raw
+    )
+
+    if (
+        df is None
+        or
+        df.empty
+    ):
+        return None
+
+    current_start = (
+        get_current_candle_start(
+            1440
+        )
+    )
+
+    mask = (
+        df["datetime"]
+        ==
+        current_start
+    )
+
+    if mask.any():
+
+        df.loc[
+            mask,
+            "c"
+        ] = float(price)
+
+    else:
+
+        previous = df.iloc[-1]
+
+        current_row = {
+
+            "datetime":
+                current_start,
+
+            "o":
+                float(price),
+
+            "h":
+                max(
+                    float(price),
+                    float(previous["c"])
+                ),
+
+            "l":
+                min(
+                    float(price),
+                    float(previous["c"])
+                ),
+
+            "c":
+                float(price),
+
+            "volume":
+                0.0,
+
+            "volume_quote":
+                0.0
+
+        }
+
+        df = pd.concat(
+            [
+                df,
+                pd.DataFrame(
+                    [current_row]
+                )
+            ],
+            ignore_index=True
+        )
+
+    return (
+        df
+        .sort_values("datetime")
+        .drop_duplicates(
+            "datetime"
+        )
+        .reset_index(drop=True)
+    )
+
+
+# =========================================================
+# ★ BTC OKX 일봉 변동률
+#
+# 현재 진행 일봉 / 직전 완성 일봉
+#
+# 현재가는 OKX
+# 날짜 경계는 KST 09:00
+# =========================================================
+
+def calculate_okx_btc_daily_change(
+    daily_df
+):
+
+    if (
+        daily_df is None
+        or
+        daily_df.empty
+    ):
+        return None
+
+    current_start = (
+        get_current_candle_start(
+            1440
+        )
+    )
+
+    completed = daily_df[
+        daily_df["datetime"]
+        <
+        current_start
+    ].copy()
+
+    if len(completed) < 1:
+        return None
+
+    previous_close = float(
+        completed.iloc[-1]["c"]
+    )
+
+    current_rows = daily_df[
+        daily_df["datetime"]
+        ==
+        current_start
+    ]
+
+    if (
+        current_rows.empty
+        or
+        latest_btc_okx_price is None
+    ):
+
+        return None
+
+    current_price = float(
+        latest_btc_okx_price
+    )
+
+    if previous_close == 0:
+        return None
+
+    return (
+        (
+            current_price
+            -
+            previous_close
+        )
+        /
+        previous_close
+        *
+        100
+    )
+
+
+# =========================================================
+# ★ BTC OKX 시황 업데이트
+# =========================================================
+
+def update_btc_market():
+
+    global latest_btc_okx_price
+    global latest_btc_daily_change
+    global latest_btc_okx_4h_df
+    global latest_btc_okx_daily_df
+
+    price = get_okx_btc_price()
+
+    if price is None:
+
+        log.warning(
+            "[BTC OKX] 현재가 조회 실패"
+        )
+
+        return False
+
+    latest_btc_okx_price = price
+
+    df_4h = get_okx_btc_4h_data()
+
+    df_daily = get_okx_btc_daily_data()
+
+    if (
+        df_4h is None
+        or
+        df_4h.empty
+    ):
+
+        log.warning(
+            "[BTC OKX] 4H 데이터 없음"
+        )
+
+    else:
+
+        latest_btc_okx_4h_df = df_4h
+
+    if (
+        df_daily is None
+        or
+        df_daily.empty
+    ):
+
+        log.warning(
+            "[BTC OKX] 일봉 데이터 없음"
+        )
+
+    else:
+
+        latest_btc_okx_daily_df = df_daily
+
+        latest_btc_daily_change = (
+            calculate_okx_btc_daily_change(
+                df_daily
+            )
+        )
+
+    log.info(
+        f"[BTC OKX] "
+        f"가격={latest_btc_okx_price} | "
+        f"KST 일봉={latest_btc_daily_change}"
+    )
+
+    return True
 
 
 # =========================================================
@@ -2833,82 +2838,45 @@ def analyze(
     current_price
 ):
 
-    # =====================================================
-    # 완성 4시간봉 데이터
-    # =====================================================
-
     df_signal = history_upbit(
-
         market,
-
         SIGNAL_TIMEFRAME,
-
         required=
             ROC_HISTORY_REQUIRED
-
     )
 
     if (
-
         df_signal is None
-
         or
-
         df_signal.empty
-
     ):
-
         return None
-
-    # =====================================================
-    # 현재 진행 4시간봉 포함 데이터
-    # =====================================================
 
     df_current = (
         get_upbit_current_roc_data(
-
             market,
-
             current_price,
-
             SIGNAL_TIMEFRAME
-
         )
     )
 
     if (
-
         df_current is None
-
         or
-
         df_current.empty
-
     ):
-
         return None
-
-    # =====================================================
-    # 현재 ROC
-    # =====================================================
 
     r_signal = roc_filter_analysis(
         df_current
     )
 
-    roc_values = r_signal.get(
-        "roc_values",
-        {}
+    positive_counts = (
+        r_signal.get(
+            "positive_counts",
+            {}
+        )
     )
-
-    positive_counts = r_signal.get(
-        "positive_counts",
-        {}
-    )
-
-    # =====================================================
-    # 현재 ROC가 하나라도 0선 위인지
-    # =====================================================
 
     signal1_trigger_now = (
         signal1_trigger_pass(
@@ -2916,19 +2884,11 @@ def analyze(
         )
     )
 
-    # =====================================================
-    # 새로운 0선 상향 돌파
-    # =====================================================
-
     signal1_zero_cross = (
         signal1_zero_cross_now(
             df_current
         )
     )
-
-    # =====================================================
-    # 어떤 ROC가 돌파했는지
-    # =====================================================
 
     signal1_cross_periods = (
         signal1_zero_cross_periods(
@@ -2936,22 +2896,14 @@ def analyze(
         )
     )
 
-    # =====================================================
-    # 과거 Signal 시작점
-    # =====================================================
-
     historical_start_candle1 = None
 
     if (
-
         market
         not in
         roc_signal1_state
-
         and
-
         not signal1_zero_cross
-
     ):
 
         historical_start_candle1 = (
@@ -2960,19 +2912,11 @@ def analyze(
             )
         )
 
-    # =====================================================
-    # 현재 진행 중 업비트 4시간봉
-    # =====================================================
-
     progress_candle_time = (
         get_current_candle_start(
             SIGNAL_TIMEFRAME
         )
     )
-
-    # =====================================================
-    # Signal 1 상태
-    # =====================================================
 
     state1 = update_signal1(
 
@@ -2986,59 +2930,42 @@ def analyze(
 
         historical_start_candle=
             historical_start_candle1
-
     )
 
     signal1_count = int(
-
-        state1[
-            "signal_count"
-        ]
-
+        state1["signal_count"]
     )
 
-    # =====================================================
-    # ROC COUNT
-    # =====================================================
-
     roc5_count = int(
-
         positive_counts.get(
             5,
             0
         )
-
     )
 
     roc20_count = int(
-
         positive_counts.get(
             20,
             0
         )
-
     )
 
     roc50_count = int(
-
         positive_counts.get(
             50,
             0
         )
-
     )
 
     roc200_count = int(
-
         positive_counts.get(
             200,
             0
         )
-
     )
 
     # =====================================================
-    # 해당 코인 업비트 일봉 변동률
+    # 해당 코인 업비트 일봉
     # =====================================================
 
     change_value = (
@@ -3048,18 +2975,10 @@ def analyze(
     )
 
     daily_pass = (
-
         change_value is not None
-
         and
-
         change_value >= 0
-
     )
-
-    # =====================================================
-    # Signal 표시 COUNT
-    # =====================================================
 
     signal1_display_count_pass = (
         signal1_display_allowed(
@@ -3068,39 +2987,21 @@ def analyze(
     )
 
     # =====================================================
-    # ★ BTC 일봉 양수 필터
+    # ★ BTC 필터
     #
-    # BTC 일봉 변동률이
-    #
-    # 0% 초과
-    #
-    # 일 때만 Signal 표시
+    # 이제 업비트 BTC가 아니라
+    # OKX BTC-USDT KST 기준 일봉
     # =====================================================
 
     btc_positive = (
-
         latest_btc_daily_change is not None
-
         and
-
         latest_btc_daily_change > 0
-
     )
-
-    # =====================================================
-    # Signal 1 최종 조건
-    #
-    # ① 새로운 0선 상향 돌파
-    # ② COUNT 0~1
-    # ③ 해당 코인 일봉 변동률 >= 0%
-    # ④ BTC 일봉 변동률 > 0%
-    # =====================================================
 
     signal1_qualified = (
 
-        state1[
-            "signal_active"
-        ]
+        state1["signal_active"]
 
         and
 
@@ -3113,12 +3014,7 @@ def analyze(
         and
 
         btc_positive
-
     )
-
-    # =====================================================
-    # 결과
-    # =====================================================
 
     return {
 
@@ -3138,9 +3034,7 @@ def analyze(
             latest_btc_daily_change,
 
         "signal1_active":
-            state1[
-                "signal_active"
-            ],
+            state1["signal_active"],
 
         "signal1_count":
             signal1_count,
@@ -3329,52 +3223,25 @@ def make_row(
 
 
 # =========================================================
-# ★ Upbit TOP 업데이트
+# UPBIT TOP 업데이트
 # =========================================================
 
 def update_upbit():
 
     global latest_upbit_data
-
     global latest_upbit_update_time
 
-    global latest_btc_daily_change
-
     # =====================================================
-    # ★ BTC 일봉 변동률 먼저 계산
-    #
-    # Signal 전체의 공통 필터
+    # ★ BTC 시황은 여기서 OKX 사용
     # =====================================================
 
-    latest_btc_daily_change = (
-        daily_change_upbit(
-            "KRW-BTC"
-        )
-    )
-
-    log.info(
-
-        f"[BTC DAILY] "
-
-        f"변동률="
-
-        f"{latest_btc_daily_change}"
-
-    )
-
-    # =====================================================
-    # 업비트 거래대금 TOP
-    # =====================================================
+    update_btc_market()
 
     markets = sorted(
-
         get_upbit_markets(),
-
         key=lambda x:
             x["volume_24h"],
-
         reverse=True
-
     )
 
     top_markets = markets[
@@ -3394,11 +3261,8 @@ def update_upbit():
     rows = []
 
     for rank, item in enumerate(
-
         top_markets,
-
         1
-
     ):
 
         market = item[
@@ -3417,19 +3281,14 @@ def update_upbit():
         try:
 
             analysis = analyze(
-
                 market,
-
                 price
-
             )
 
         except Exception as e:
 
             log.exception(
-
                 f"분석 오류 {market}: {e}"
-
             )
 
             analysis = None
@@ -3459,11 +3318,8 @@ def update_upbit():
     )
 
     log.info(
-
         f"TOP{TOP_N} 업데이트 완료 | "
-
-        f"BTC 일봉={latest_btc_daily_change}"
-
+        f"BTC OKX 일봉={latest_btc_daily_change}"
     )
 
 
@@ -3474,24 +3330,16 @@ def update_upbit():
 def get_usdt_krw_internal():
 
     response = retry(
-
         requests.get,
-
         "https://api.upbit.com/v1/ticker",
-
         params={
-
             "markets":
                 "KRW-USDT"
-
         },
-
         timeout=15
-
     )
 
     if response is None:
-
         return None
 
     try:
@@ -3499,13 +3347,10 @@ def get_usdt_krw_internal():
         data = response.json()
 
         if not data:
-
             return None
 
         return float(
-
             data[0]["trade_price"]
-
         )
 
     except Exception:
@@ -3514,7 +3359,9 @@ def get_usdt_krw_internal():
 
 
 # =========================================================
-# OKX
+# OKX 기존 영역
+#
+# 현재 BTC 시황은 위의 전용 함수 사용
 # =========================================================
 
 def update_okx(
@@ -3543,7 +3390,6 @@ def update_dashboard():
     if not update_lock.acquire(
         False
     ):
-
         return
 
     try:
@@ -3567,9 +3413,7 @@ def update_dashboard():
     except Exception as e:
 
         log.exception(
-
             f"전체 업데이트 오류: {e}"
-
         )
 
     finally:
@@ -3584,15 +3428,11 @@ def update_dashboard():
 def format_market_price(price):
 
     if price is None:
-
         return "-"
 
     try:
-
         price = float(price)
-
     except Exception:
-
         return "-"
 
     if price >= 100000000:
@@ -3619,7 +3459,101 @@ def format_market_price(price):
 
 
 # =========================================================
-# Signal 표시
+# 변화값
+# =========================================================
+
+def get_change_value(x):
+
+    try:
+
+        if x is None:
+            return None
+
+        if isinstance(
+            x,
+            (list, tuple)
+        ):
+
+            if not x:
+                return None
+
+            return float(
+                x[0]
+            )
+
+        return float(x)
+
+    except Exception:
+
+        return None
+
+
+def format_change(x):
+
+    x = get_change_value(x)
+
+    if x is None:
+        return "-"
+
+    if x > 0:
+
+        return (
+            '<span class="up">'
+            f'▲ +{x:.1f}%'
+            '</span>'
+        )
+
+    if x < 0:
+
+        return (
+            '<span class="down">'
+            f'▼ {x:.1f}%'
+            '</span>'
+        )
+
+    return (
+        '<span class="zero">'
+        '0.0%'
+        '</span>'
+    )
+
+
+# =========================================================
+# 거래대금
+# =========================================================
+
+def format_volume(v):
+
+    try:
+        v = float(v)
+    except Exception:
+        return "-"
+
+    if v >= 1e12:
+
+        return (
+            f"{v / 1e12:.1f}조"
+        )
+
+    if v >= 1e8:
+
+        return (
+            f"{v / 1e8:.0f}억"
+        )
+
+    if v >= 1e4:
+
+        return (
+            f"{v / 1e4:.0f}만"
+        )
+
+    return (
+        f"{v:,.0f}"
+    )
+
+
+# =========================================================
+# Signal HTML
 # =========================================================
 
 def signal_item_html(
@@ -3629,7 +3563,6 @@ def signal_item_html(
 ):
 
     if not qualified:
-
         return "-"
 
     return """
@@ -3648,7 +3581,6 @@ def signal_item_html(
 def signal_html(row):
 
     if not row:
-
         return "-"
 
     return signal_item_html(
@@ -3674,7 +3606,6 @@ def signal_html(row):
 def top_signal1_html(row):
 
     if not row:
-
         return "-"
 
     return signal_item_html(
@@ -3707,7 +3638,6 @@ def roc_filter_html(
 ):
 
     if not r:
-
         r = {}
 
     values = r.get(
@@ -3762,19 +3692,12 @@ def roc_filter_html(
                     icon = "🟢"
 
                     count_text = str(
-
                         int(
-
                             positive_counts.get(
-
                                 period,
-
                                 0
-
                             )
-
                         )
-
                     )
 
                 elif value < 0:
@@ -3782,19 +3705,12 @@ def roc_filter_html(
                     icon = "🔴"
 
                     count_text = str(
-
                         int(
-
                             negative_counts.get(
-
                                 period,
-
                                 0
-
                             )
-
                         )
-
                     )
 
                 else:
@@ -3886,39 +3802,23 @@ def rows_html(data):
         cls_list = []
 
         signal1_qualified = x.get(
-
             "signal1_qualified",
-
             False
-
         )
 
         signal1_count = int(
-
             x.get(
-
                 "signal1_count",
-
                 0
-
             )
-
         )
 
-        # =================================================
-        # Signal 0~1 반짝임
-        # =================================================
-
         if (
-
             signal1_qualified
-
             and
-
             signal1_display_allowed(
                 signal1_count
             )
-
         ):
 
             cls_list.append(
@@ -3930,12 +3830,10 @@ def rows_html(data):
         )
 
         roc_content = filter_html(
-
             x.get(
                 "roc",
                 {}
             )
-
         )
 
         signal1_content = (
@@ -3945,43 +3843,28 @@ def rows_html(data):
         )
 
         price = format_market_price(
-
             x.get(
                 "current_price"
             )
-
         )
 
         change = x.get(
-
             "change",
-
             "-"
-
         )
 
         coin_name = html.escape(
-
             str(
-
                 x.get(
-
                     "name",
-
                     "-"
-
                 )
-
             )
-
         )
 
         volume = x.get(
-
             "volume",
-
             "-"
-
         )
 
         out.append(
@@ -4087,7 +3970,6 @@ def focus_section(data):
         for x in data
 
         if (
-
             x.get(
                 "signal1_qualified",
                 False
@@ -4096,21 +3978,13 @@ def focus_section(data):
             and
 
             signal1_display_allowed(
-
                 int(
-
                     x.get(
-
                         "signal1_count",
-
                         0
-
                     )
-
                 )
-
             )
-
         )
 
     ]
@@ -4137,7 +4011,8 @@ def focus_section(data):
 
                 <div class="section-heading-sub">
 
-                    업비트 4시간봉 ROC5 / ROC20 / ROC50 / ROC200
+                    업비트 {format_timeframe(SIGNAL_TIMEFRAME)}
+                    ROC5 / ROC20 / ROC50 / ROC200
 
                     중
 
@@ -4145,23 +4020,15 @@ def focus_section(data):
 
                     ·
 
-                    진행 4시간봉 COUNT 0
+                    COUNT 0~1
 
                     ·
 
-                    다음 4시간봉 COUNT 1
+                    해당 코인 업비트 일봉 변동 0% 이상
 
                     ·
 
-                    COUNT 0~1 표시
-
-                    ·
-
-                    해당 코인 일봉 변동 0% 이상
-
-                    ·
-
-                    BTC 일봉 변동 0% 초과
+                    OKX BTC KST 일봉 변동 0% 초과
 
                 </div>
 
@@ -4220,8 +4087,8 @@ def section(
                     ·
 
                     Signal 1 =
-
-                    업비트 4H ROC5 / ROC20 / ROC50 / ROC200
+                    업비트 {format_timeframe(SIGNAL_TIMEFRAME)}
+                    ROC5 / ROC20 / ROC50 / ROC200
 
                     중
 
@@ -4238,7 +4105,7 @@ def section(
 
                     ·
 
-                    BTC 일봉:
+                    OKX BTC KST 일봉:
                     {btc_filter_text}
 
                     ·
@@ -4263,41 +4130,26 @@ def section(
 
 
 # =========================================================
-# BTC ROC 상태
+# ★ BTC OKX ROC 상태
+#
+# BTC 시황은 업비트가 아니라
+# OKX BTC-USDT 4H
+#
+# 시간 경계:
+# 업비트 기준 01/05/09/13/17/21
 # =========================================================
 
-def btc_roc_status_html(btc_row):
+def btc_roc_status_html():
 
-    if not btc_row:
-
-        return ""
-
-    analysis = btc_row.get(
-
-        "analysis",
-
-        {}
-
-    )
-
-    if not analysis:
-
-        return ""
-
-    df_signal = analysis.get(
-        "df_signal"
+    df_signal = (
+        latest_btc_okx_4h_df
     )
 
     if (
-
         df_signal is None
-
         or
-
         df_signal.empty
-
     ):
-
         return ""
 
     items = []
@@ -4313,21 +4165,14 @@ def btc_roc_status_html(btc_row):
         else:
 
             series = roc(
-
                 df_signal,
-
                 period
-
             )
 
             if (
-
                 series is None
-
                 or
-
                 series.empty
-
             ):
 
                 icon = "⚪"
@@ -4355,15 +4200,10 @@ def btc_roc_status_html(btc_row):
                         icon = "🟢"
 
                         count_text = str(
-
                             roc_positive_count(
-
                                 df_signal,
-
                                 period
-
                             )
-
                         )
 
                     elif current < 0:
@@ -4371,15 +4211,10 @@ def btc_roc_status_html(btc_row):
                         icon = "🔴"
 
                         count_text = str(
-
                             roc_negative_count(
-
                                 df_signal,
-
                                 period
-
                             )
-
                         )
 
                     else:
@@ -4429,7 +4264,7 @@ def btc_roc_status_html(btc_row):
     <div class="btc-roc-detail">
 
         <div class="btc-roc-label">
-            4H ROC
+            OKX 4H ROC
         </div>
 
         <div class="roc-grid btc-roc-grid">
@@ -4440,13 +4275,16 @@ def btc_roc_status_html(btc_row):
 
         <div class="roc-badge">
 
+            KST 01/05/09/13/17/21
+
+            ·
+
             BTC 일봉
             {btc_change_text}
 
             ·
 
-            Signal 필터
-            {"> 0%"}
+            OKX BTC-USDT
 
         </div>
 
@@ -4461,55 +4299,41 @@ def btc_roc_status_html(btc_row):
 
 def market_summary_html():
 
-    btc = None
+    price = format_market_price(
+        latest_btc_okx_price
+    )
 
-    for row in latest_upbit_data:
-
-        if row.get(
-            "name"
-        ) == "BTC":
-
-            btc = row
-
-            break
-
-    if btc:
-
-        price = format_market_price(
-
-            btc.get(
-                "current_price"
-            )
-
-        )
+    if latest_btc_daily_change is not None:
 
         change = format_change(
-
-            btc.get(
-                "change_value"
-            )
-
-        )
-
-        signal = signal_html(
-            btc
-        )
-
-        roc_status = (
-            btc_roc_status_html(
-                btc
-            )
+            latest_btc_daily_change
         )
 
     else:
 
-        price = "-"
-
         change = "-"
 
-        signal = "-"
+    btc_positive = (
+        latest_btc_daily_change is not None
+        and
+        latest_btc_daily_change > 0
+    )
 
-        roc_status = ""
+    if btc_positive:
+
+        signal_filter = (
+            '<span class="up">'
+            'ON'
+            '</span>'
+        )
+
+    else:
+
+        signal_filter = (
+            '<span class="down">'
+            'OFF'
+            '</span>'
+        )
 
     return f"""
 
@@ -4525,21 +4349,23 @@ def market_summary_html():
 
                 <div class="market-title-sub">
 
-                    Signal 1 =
-
-                    업비트 4H ROC5 / ROC20 / ROC50 / ROC200
-
-                    중
-
-                    새로운 0선 상향 돌파
+                    데이터:
+                    OKX BTC-USDT
 
                     ·
 
-                    COUNT 0~1
+                    시간 기준:
+                    업비트 KST
 
                     ·
 
-                    BTC 일봉 > 0%일 때 Signal 표시
+                    4H:
+                    01 / 05 / 09 / 13 / 17 / 21
+
+                    ·
+
+                    일봉:
+                    09:00
 
                 </div>
 
@@ -4566,12 +4392,27 @@ def market_summary_html():
             </div>
 
             <div class="btc-signal-box">
-                {signal}
+
+                <div class="signal-wrap">
+
+                    <span
+                        style="
+                            font-size:8px;
+                            font-weight:900;
+                            color:#8b969f;
+                        "
+                    >
+                        SIGNAL
+                        {signal_filter}
+                    </span>
+
+                </div>
+
             </div>
 
         </div>
 
-        {roc_status}
+        {btc_roc_status_html()}
 
     </div>
 
@@ -4784,7 +4625,6 @@ white-space:nowrap;
 }
 
 .btc-change{
-color:#79cda1;
 font-size:11px;
 font-weight:900;
 text-align:center;
@@ -5027,12 +4867,6 @@ text-align:center;
 overflow:hidden!important;
 }
 
-.coin-roc-row{
-min-height:68px;
-background:#0d1218;
-border-top:1px solid #29323c;
-}
-
 .signal-wrap{
 display:flex;
 align-items:center;
@@ -5072,7 +4906,6 @@ flex:none;
 
 0%{
     background-color:#11161c;
-
     box-shadow:
         inset 0 0 0
         rgba(114,189,152,0);
@@ -5080,7 +4913,6 @@ flex:none;
 
 30%{
     background-color:#294238;
-
     box-shadow:
         inset 0 0 16px
         rgba(114,189,152,.32);
@@ -5088,7 +4920,6 @@ flex:none;
 
 60%{
     background-color:#18231f;
-
     box-shadow:
         inset 0 0 5px
         rgba(114,189,152,.12);
@@ -5096,7 +4927,6 @@ flex:none;
 
 100%{
     background-color:#11161c;
-
     box-shadow:
         inset 0 0 0
         rgba(114,189,152,0);
@@ -5641,11 +5471,8 @@ def dashboard():
 
         sections += (
             section(
-
                 latest_upbit_data,
-
                 latest_upbit_update_time
-
             )
         )
 
@@ -5680,7 +5507,7 @@ def dashboard():
         >
 
         <title>
-            4H ROC SIGNAL CENTER
+            ROC SIGNAL CENTER
         </title>
 
         <style>
@@ -5744,10 +5571,6 @@ def validate_settings():
         "N"
     }
 
-    # =====================================================
-    # ROC 설정
-    # =====================================================
-
     for period in ROC_PERIODS:
 
         value = ROC_SETTINGS.get(
@@ -5757,85 +5580,45 @@ def validate_settings():
         if value not in valid_values:
 
             raise ValueError(
-
                 f"ROC{period} 설정은 "
                 f"Y 또는 N이어야 합니다."
-
             )
-
-    # =====================================================
-    # Signal ROC
-    # =====================================================
 
     for period in SIGNAL1_ROC_PERIODS:
 
         if not roc_is_enabled(period):
 
             log.warning(
-
-                f"Signal 1 ROC{period}가 N입니다. "
-
-                f"해당 ROC는 Signal 돌파 판정에서 "
-                f"제외됩니다."
-
+                f"Signal 1 ROC{period}가 N입니다."
             )
 
-    # =====================================================
-    # 시간봉
-    #
-    # 240 = 업비트 4시간봉
-    # 1440 = 업비트 일봉
-    # =====================================================
-
     if SIGNAL_TIMEFRAME not in (
-
         1,
-
         3,
-
         5,
-
         15,
-
         30,
-
         60,
-
         120,
-
         240,
-
         1440
-
     ):
 
         raise ValueError(
-
             "SIGNAL_TIMEFRAME이 "
             "지원되는 시간봉이 아닙니다."
-
         )
 
-    # =====================================================
-    # 표시 COUNT
-    # =====================================================
-
     if (
-
         SIGNAL1_DISPLAY_COUNT_MIN < 0
-
         or
-
         SIGNAL1_DISPLAY_COUNT_MAX
         <
         SIGNAL1_DISPLAY_COUNT_MIN
-
     ):
 
         raise ValueError(
-
             "Signal 1 표시 COUNT 설정 오류"
-
         )
 
 
@@ -5859,27 +5642,60 @@ def startup():
     )
 
     log.info(
-        "★ 모든 캔들 기준 = 업비트"
+        "★ 코인 데이터 = 업비트"
     )
 
     log.info(
-        "★ Signal 기준 = 업비트 240분봉"
+        "★ TOP 거래대금 = 업비트"
     )
 
     log.info(
-        "★ 240분봉 = 01 / 05 / 09 / 13 / 17 / 21 KST"
+        "★ 코인 ROC = 업비트"
     )
 
     log.info(
-        "★ 일봉 = KST 09:00 기준"
-    )
-
-    log.info(
-        "★ 일봉 = 09:00 ~ 다음날 08:59:59"
+        "★ 코인 일봉 = 업비트"
     )
 
     log.info(
         "----------------------------------------"
+    )
+
+    log.info(
+        "★ BTC 시장 시황 = OKX BTC-USDT"
+    )
+
+    log.info(
+        "★ BTC 현재가 = OKX BTC-USDT"
+    )
+
+    log.info(
+        "★ BTC 4H ROC = OKX BTC-USDT"
+    )
+
+    log.info(
+        "★ BTC 일봉 변동률 = OKX BTC-USDT"
+    )
+
+    log.info(
+        "★ BTC 시간 기준 = 업비트 KST"
+    )
+
+    log.info(
+        "★ BTC 4H = 01 / 05 / 09 / 13 / 17 / 21"
+    )
+
+    log.info(
+        "★ BTC 일봉 = KST 09:00"
+    )
+
+    log.info(
+        "----------------------------------------"
+    )
+
+    log.info(
+        f"Signal timeframe = "
+        f"{format_timeframe(SIGNAL_TIMEFRAME)}"
     )
 
     log.info(
@@ -5895,15 +5711,7 @@ def startup():
     )
 
     log.info(
-        "★ 업비트 4시간봉 기준"
-    )
-
-    log.info(
-        "★ ROC5 / ROC20 / ROC50 / ROC200"
-    )
-
-    log.info(
-        "★ 4개 중 하나라도 새로운 0선 상향 돌파"
+        "★ 새로운 0선 상향 돌파"
     )
 
     log.info(
@@ -5911,43 +5719,15 @@ def startup():
     )
 
     log.info(
-        "★ 진행 중 4시간봉 = COUNT 0"
+        "★ COUNT 0~1만 표시"
     )
 
     log.info(
-        "★ 다음 4시간봉 = COUNT 1"
+        "★ 해당 코인 업비트 일봉 >= 0%"
     )
 
     log.info(
-        "★ COUNT 0~1만 Signal 표시"
-    )
-
-    log.info(
-        "★ COUNT 2 이상 Signal 표시 안 함"
-    )
-
-    log.info(
-        "★ 이미 0선 위에 있는 경우 새 Signal 없음"
-    )
-
-    log.info(
-        "★ 이미 0선 아래에 있는 경우 새 Signal 없음"
-    )
-
-    log.info(
-        "★ 0선 위/아래 상태는 ROC COUNT만 계산"
-    )
-
-    log.info(
-        "★ 새로운 상향 돌파가 발생하면 새 COUNT 0"
-    )
-
-    log.info(
-        "★ 해당 코인 일봉 변동률 >= 0%"
-    )
-
-    log.info(
-        "★ BTC 일봉 변동률 > 0%일 때만 Signal 표시"
+        "★ OKX BTC KST 일봉 > 0%일 때만 Signal"
     )
 
     log.info(
@@ -5955,18 +5735,12 @@ def startup():
     )
 
     log.info(
-        "★ BTC 자체에는 Signal 필터 적용하지 않음"
-    )
-
-    log.info(
         "----------------------------------------"
     )
 
     log.info(
-
         f"★ ROC HISTORY REQUIRED = "
         f"{ROC_HISTORY_REQUIRED}"
-
     )
 
     log.info(
@@ -5974,31 +5748,12 @@ def startup():
     )
 
     log.info(
-        "★ 기준 시간봉 = 업비트 4H"
-    )
-
-    log.info(
-        "★ 업비트 240분봉 API 사용"
-    )
-
-    log.info(
-        "★ 업비트 일봉 API 사용"
-    )
-
-    log.info(
-        "★ 모든 ROC 개별 Y/N 설정"
-    )
-
-    log.info(
         "========================================"
     )
 
     threading.Thread(
-
         target=update_dashboard,
-
         daemon=True
-
     ).start()
 
     schedule.every(
@@ -6008,11 +5763,8 @@ def startup():
     )
 
     threading.Thread(
-
         target=scheduler,
-
         daemon=True
-
     ).start()
 
 
@@ -6023,11 +5775,7 @@ def startup():
 if __name__ == "__main__":
 
     uvicorn.run(
-
         app,
-
         host="0.0.0.0",
-
         port=8000
-
     )
