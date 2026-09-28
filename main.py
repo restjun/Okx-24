@@ -145,20 +145,6 @@ def get_current_12h_period():
 
 # =========================================================
 # 12시간 구간 계산
-#
-# 현재 시간이
-#
-# 09~21
-#   현재  = 오늘 09~21
-#   이전  = 어제 21~오늘 09
-#
-# 21~24
-#   현재  = 오늘 21~내일 09
-#   이전  = 오늘 09~21
-#
-# 00~09
-#   현재  = 어제 21~오늘 09
-#   이전  = 어제 09~21
 # =========================================================
 
 def get_12h_periods(now=None):
@@ -640,8 +626,6 @@ def daily_change_upbit(
 # 업비트 60분봉
 #
 # 12시간봉 생성용
-#
-# 최소 36시간 이상 확보
 # =========================================================
 
 def get_upbit_60m_candles(
@@ -686,20 +670,15 @@ def get_upbit_60m_candles(
 # =========================================================
 # 업비트 12시간봉 생성
 #
-# ★ 핵심
-#
 # 업비트에는 12시간봉 API를 사용하지 않고
 # 1시간봉 12개를 직접 합쳐서 만든다.
 #
 # 09:00 ~ 21:00
-#
 # 21:00 ~ 09:00
 #
-# 각각
-#
 # Open  = 첫 1시간봉 시가
-# High  = 12개 최고가
-# Low   = 12개 최저가
+# High  = 12시간 최고가
+# Low   = 12시간 최저가
 # Close = 마지막 1시간봉 종가
 #
 # 현재 진행 중인 봉은 Close = 현재가
@@ -810,7 +789,6 @@ def build_upbit_12h_candles(
 
     result = {}
 
-    # 현재봉 + 직전봉
     check_periods = [
 
         periods["current"],
@@ -828,10 +806,6 @@ def build_upbit_12h_candles(
         end = period[
             "end"
         ]
-
-        # -------------------------------------------------
-        # 해당 12시간 구간의 1시간봉만 추출
-        # -------------------------------------------------
 
         part = df[
             (
@@ -859,10 +833,6 @@ def build_upbit_12h_candles(
             "datetime"
         )
 
-        # -------------------------------------------------
-        # 실제 12시간봉 OHLC
-        # -------------------------------------------------
-
         open_price = float(
             part.iloc[0]["open"]
         )
@@ -879,11 +849,7 @@ def build_upbit_12h_candles(
             part.iloc[-1]["close"]
         )
 
-        # -------------------------------------------------
         # 현재 진행 중인 12시간봉
-        # 현재가를 종가로 사용
-        # -------------------------------------------------
-
         if period["active"]:
 
             if current_price is not None:
@@ -911,10 +877,6 @@ def build_upbit_12h_candles(
                 except Exception:
 
                     pass
-
-        # -------------------------------------------------
-        # 12시간봉 변동률
-        # -------------------------------------------------
 
         if open_price == 0:
 
@@ -978,9 +940,6 @@ def build_upbit_12h_candles(
 
 # =========================================================
 # 업비트 12시간 상승률
-#
-# 실제로 생성한 12시간봉의
-# OHLC 중 Open / Close로 변동률 계산
 # =========================================================
 
 def get_upbit_12h_changes(
@@ -1031,205 +990,7 @@ def get_upbit_12h_changes(
             ]
         )
 
-    log.info(
-        f"[UPBIT 12H] "
-        f"{market} | "
-        f"09~21="
-        f"{result['09_21']} | "
-        f"21~09="
-        f"{result['21_09']}"
-    )
-
     return result
-
-
-# =========================================================
-# 업비트 일봉 RSI
-# =========================================================
-
-def daily_rsi_upbit(
-    market,
-    period=14,
-    current_price=None
-):
-
-    history_count = max(
-        period * 8,
-        100
-    )
-
-    response = retry(
-        requests.get,
-        "https://api.upbit.com/v1/candles/days",
-        params={
-            "market":
-                market,
-            "count":
-                history_count
-        },
-        timeout=15
-    )
-
-    if response is None:
-
-        return None
-
-    try:
-
-        data = response.json()
-
-        if not isinstance(
-            data,
-            list
-        ):
-
-            return None
-
-        if len(data) < period + 1:
-
-            return None
-
-        data = list(
-            reversed(data)
-        )
-
-        closes = [
-
-            float(
-                item[
-                    "trade_price"
-                ]
-            )
-
-            for item in data
-
-        ]
-
-        if current_price is not None:
-
-            closes[-1] = float(
-                current_price
-            )
-
-        series = pd.Series(
-            closes,
-            dtype="float64"
-        )
-
-        delta = series.diff()
-
-        gain = delta.clip(
-            lower=0
-        )
-
-        loss = -delta.clip(
-            upper=0
-        )
-
-        def wilder_rma(
-            source,
-            length
-        ):
-
-            values = source.to_numpy(
-                dtype="float64"
-            )
-
-            result = [
-                float("nan")
-            ] * len(values)
-
-            if len(values) <= length:
-
-                return pd.Series(
-                    result,
-                    index=source.index
-                )
-
-            first_rma = (
-                source.iloc[
-                    1:length + 1
-                ].sum()
-                /
-                length
-            )
-
-            result[length] = float(
-                first_rma
-            )
-
-            for i in range(
-                length + 1,
-                len(values)
-            ):
-
-                result[i] = (
-                    (
-                        result[i - 1]
-                        *
-                        (length - 1)
-                    )
-                    +
-                    values[i]
-                ) / length
-
-            return pd.Series(
-                result,
-                index=source.index
-            )
-
-        avg_gain = wilder_rma(
-            gain,
-            period
-        )
-
-        avg_loss = wilder_rma(
-            loss,
-            period
-        )
-
-        last_gain = avg_gain.iloc[-1]
-
-        last_loss = avg_loss.iloc[-1]
-
-        if pd.isna(
-            last_gain
-        ) or pd.isna(
-            last_loss
-        ):
-
-            return None
-
-        if last_loss == 0:
-
-            if last_gain == 0:
-
-                return 50.0
-
-            return 100.0
-
-        rs = (
-            last_gain
-            /
-            last_loss
-        )
-
-        rsi = (
-            100
-            -
-            100 / (1 + rs)
-        )
-
-        return float(rsi)
-
-    except Exception as e:
-
-        log.warning(
-            f"업비트 RSI 오류 "
-            f"{market}: {e}"
-        )
-
-        return None
 
 
 # =========================================================
@@ -1617,11 +1378,6 @@ def get_okx_btc_daily_change(
 
 # =========================================================
 # BTC 12시간봉 생성
-#
-# ★ OKX 1시간봉 → KST 12시간봉
-#
-# 09~21
-# 21~09
 # =========================================================
 
 def build_okx_btc_12h_candles(
@@ -1703,10 +1459,6 @@ def build_okx_btc_12h_candles(
             "kst_naive"
         )
 
-        # -------------------------------------------------
-        # 실제 12시간봉 OHLC
-        # -------------------------------------------------
-
         open_price = float(
             part.iloc[0]["open"]
         )
@@ -1723,10 +1475,7 @@ def build_okx_btc_12h_candles(
             part.iloc[-1]["close"]
         )
 
-        # -------------------------------------------------
-        # 진행 중인 12시간봉
-        # -------------------------------------------------
-
+        # 현재 진행 중인 12시간봉
         if period["active"]:
 
             close_price = float(
@@ -1742,10 +1491,6 @@ def build_okx_btc_12h_candles(
                 low_price,
                 close_price
             )
-
-        # -------------------------------------------------
-        # 변동률
-        # -------------------------------------------------
 
         if open_price == 0:
 
@@ -1970,14 +1715,6 @@ def analyze(
         )
     )
 
-    rsi = (
-        daily_rsi_upbit(
-            market,
-            period=14,
-            current_price=current_price
-        )
-    )
-
     period = (
         get_current_12h_period()
     )
@@ -2006,10 +1743,7 @@ def analyze(
             twelve["21_09"],
 
         "current_12h_change":
-            current_12h,
-
-        "rsi":
-            rsi
+            current_12h
 
     }
 
@@ -2245,11 +1979,6 @@ def make_row(
 
         "current_12h_change":
             current_12h,
-
-        "rsi":
-            a.get(
-                "rsi"
-            ),
 
         "analysis":
             analysis
@@ -2832,63 +2561,6 @@ def rows_html(data):
             )
         )
 
-        # =================================================
-        # RSI
-        # =================================================
-
-        rsi_value = x.get(
-            "rsi"
-        )
-
-        try:
-
-            rsi_value = (
-
-                float(rsi_value)
-
-                if rsi_value is not None
-
-                else None
-
-            )
-
-        except (
-            TypeError,
-            ValueError
-        ):
-
-            rsi_value = None
-
-        if rsi_value is None:
-
-            rsi_html = "-"
-
-        else:
-
-            if rsi_value <= 30:
-
-                rsi_class = "rsi-blue"
-
-            elif 40 <= rsi_value <= 60:
-
-                rsi_class = "rsi-green"
-
-            elif rsi_value >= 70:
-
-                rsi_class = "rsi-red"
-
-            else:
-
-                rsi_class = "rsi-normal"
-
-            rsi_html = (
-
-                f'<span class="{rsi_class}">'
-                f'RSI {rsi_value:.1f}'
-                '</span>'
-
-            )
-
         out.append(
 
             f"""
@@ -2957,12 +2629,6 @@ def rows_html(data):
 
                     </div>
 
-                    <div class="rsi-cell">
-
-                        {rsi_html}
-
-                    </div>
-
                 </div>
 
             </div>
@@ -3003,13 +2669,18 @@ def table_html(data):
     <div class="top-header">
 
         <div>순위</div>
+
         <div>코인</div>
+
         <div>거래대금</div>
+
         <div>현재가</div>
+
         <div>당일</div>
+
         <div>09~21</div>
+
         <div>21~09</div>
-        <div>RSI</div>
 
     </div>
 
@@ -3056,7 +2727,7 @@ def section(
                 <div class="section-heading-sub">
 
                     거래대금 · 당일 · 09~21 ·
-                    21~09 · RSI ·
+                    21~09 ·
                     Signal 현재구간 =
                     {period["label"]}
 
@@ -3354,7 +3025,9 @@ white-space:nowrap;
 }
 
 
-/* BTC */
+/* =========================================================
+   BTC
+   ========================================================= */
 
 .market-card{
 width:100%;
@@ -3471,7 +3144,9 @@ font-weight:900;
 }
 
 
-/* BTC 12H */
+/* =========================================================
+   BTC 12H
+   ========================================================= */
 
 .btc-12h-row{
 display:grid;
@@ -3543,20 +3218,21 @@ white-space:nowrap;
 }
 
 
-/* TOP */
+/* =========================================================
+   TOP
+   ========================================================= */
 
 .top-header{
 display:grid;
 
 grid-template-columns:
-    6%
-    13%
-    14%
+    7%
     15%
-    12%
-    13%
-    13%
-    14%;
+    16%
+    16%
+    15%
+    16%
+    15%;
 
 align-items:center;
 
@@ -3598,14 +3274,13 @@ overflow:hidden;
 display:grid;
 
 grid-template-columns:
-    6%
-    13%
-    14%
+    7%
     15%
-    12%
-    13%
-    13%
-    14%;
+    16%
+    16%
+    15%
+    16%
+    15%;
 
 align-items:center;
 
@@ -3647,21 +3322,17 @@ text-align:center;
 .price-cell,
 .daily-cell,
 .h09-cell,
-.h21-cell,
-.rsi-cell{
+.h21-cell{
 font-size:8px;
 font-weight:900;
 text-align:center;
 white-space:nowrap;
 }
 
-.rsi-cell{
-border-left:1px solid #29323c;
-background:#0e141a;
-}
 
-
-/* SIGNAL */
+/* =========================================================
+   SIGNAL
+   ========================================================= */
 
 .signal-header,
 .signal-row{
@@ -3756,31 +3427,9 @@ margin-top:8px;
 }
 
 
-/* RSI */
-
-.rsi-normal,
-.rsi-blue,
-.rsi-green,
-.rsi-red{
-font-size:8px;
-font-weight:900;
-white-space:nowrap;
-}
-
-.rsi-blue{
-color:#459dff;
-}
-
-.rsi-green{
-color:#78cfa2;
-}
-
-.rsi-red{
-color:#ff6b6b;
-}
-
-
-/* 상승 / 하락 */
+/* =========================================================
+   상승 / 하락
+   ========================================================= */
 
 .up{
 color:#78cfa2!important;
@@ -3810,7 +3459,9 @@ font-weight:800;
 }
 
 
-/* 모바일 */
+/* =========================================================
+   모바일
+   ========================================================= */
 
 @media(max-width:600px){
 
@@ -3955,14 +3606,13 @@ h1{
     min-height:40px;
 
     grid-template-columns:
-        6%
-        13%
-        14%
+        7%
         15%
-        12%
-        13%
-        13%
-        14%;
+        16%
+        16%
+        15%
+        16%
+        15%;
 }
 
 .coin-main-row > div{
@@ -3982,8 +3632,7 @@ h1{
 .price-cell,
 .daily-cell,
 .h09-cell,
-.h21-cell,
-.rsi-cell{
+.h21-cell{
     font-size:5.2px;
 }
 
@@ -4037,16 +3686,6 @@ h1{
     min-height:44px;
     font-size:5.5px;
     line-height:9px;
-}
-
-
-/* RSI */
-
-.rsi-normal,
-.rsi-blue,
-.rsi-green,
-.rsi-red{
-    font-size:5.2px;
 }
 
 }
@@ -4184,8 +3823,7 @@ h1{
 .price-cell,
 .daily-cell,
 .h09-cell,
-.h21-cell,
-.rsi-cell{
+.h21-cell{
     font-size:4.4px;
 }
 
@@ -4409,11 +4047,11 @@ def startup():
     )
 
     log.info(
-        "★ TOP = 당일 + 09~21 + 21~09 표시"
+        "★ TOP = 당일 + 09~21 + 21~09"
     )
 
     log.info(
-        "★ Signal = 당일 + 09~21 + 21~09 표시"
+        "★ Signal = 당일 + 09~21 + 21~09"
     )
 
     log.info(
@@ -4433,23 +4071,11 @@ def startup():
     )
 
     log.info(
-        "★ RSI = 업비트 일봉 RSI(14)"
+        "★ RSI = 삭제"
     )
 
     log.info(
-        "★ RSI = Wilder RMA"
-    )
-
-    log.info(
-        "★ RSI = Signal 조건에 사용하지 않음"
-    )
-
-    log.info(
-        "★ ROC = 완전 삭제"
-    )
-
-    log.info(
-        "★ 0선 돌파 조건 = 삭제"
+        "★ ROC = 삭제"
     )
 
     log.info(
