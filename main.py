@@ -64,8 +64,6 @@ MAX_RETRIES = 10
 # =========================================================
 # ROC / SIGNAL 기준 시간봉
 #
-# 현재 사용자 코드 그대로 유지
-#
 # 1440 = 업비트 일봉
 # =========================================================
 
@@ -73,7 +71,7 @@ SIGNAL_TIMEFRAME = 1440
 
 
 # =========================================================
-# ★ BTC 시황용 OKX 설정
+# BTC 시황용 OKX 설정
 #
 # BTC 시황만 OKX BTC-USDT 사용
 #
@@ -183,7 +181,7 @@ okx_ticker_cache = {}
 
 
 # =========================================================
-# ★ BTC 시황 데이터
+# BTC 시황 데이터
 # =========================================================
 
 latest_btc_okx_price = None
@@ -1932,7 +1930,7 @@ def daily_change_upbit(market):
 # =========================================================
 # OKX BTC 현재가
 #
-# 공개 Market API이므로 API KEY 불필요
+# 공개 Market API
 # =========================================================
 
 def get_okx_btc_price():
@@ -2123,8 +2121,6 @@ def get_okx_1h_candles(
 
 # =========================================================
 # OKX BTC 1H HISTORY
-#
-# 최근 약 1000개 1H 확보
 # =========================================================
 
 def get_okx_btc_1h_history(
@@ -2198,7 +2194,7 @@ def get_okx_btc_1h_history(
 
 
 # =========================================================
-# ★ OKX 1H → 업비트 기준 4H
+# OKX 1H → 업비트 기준 4H
 #
 # KST 기준:
 #
@@ -2208,8 +2204,6 @@ def get_okx_btc_1h_history(
 # 13:00
 # 17:00
 # 21:00
-#
-# 업비트 4시간봉과 동일한 경계
 # =========================================================
 
 def aggregate_okx_to_upbit_4h(
@@ -2338,7 +2332,7 @@ def aggregate_okx_to_upbit_4h(
 
 
 # =========================================================
-# ★ OKX 1H → 업비트 기준 일봉
+# OKX 1H → 업비트 기준 일봉
 #
 # 09:00 ~ 다음날 08:59
 # =========================================================
@@ -2451,10 +2445,7 @@ def aggregate_okx_to_upbit_daily(
 
 
 # =========================================================
-# ★ 현재 진행 중 OKX BTC 4H
-#
-# 현재가는 OKX 실시간 가격 사용
-# 시간 경계는 업비트 기준
+# 현재 진행 중 OKX BTC 4H
 # =========================================================
 
 def get_okx_btc_4h_data():
@@ -2511,8 +2502,6 @@ def get_okx_btc_4h_data():
 
     else:
 
-        # 현재 진행봉이 API 결과에 없는 경우
-        # 현재가를 이용해 현재봉을 새로 구성
         previous = df.iloc[-1]
 
         current_row = {
@@ -2567,10 +2556,7 @@ def get_okx_btc_4h_data():
 
 
 # =========================================================
-# ★ OKX BTC 일봉
-#
-# 업비트와 동일한 KST 09:00 기준
-# 현재 가격 반영
+# 현재 진행 중 OKX BTC 일봉
 # =========================================================
 
 def get_okx_btc_daily_data():
@@ -2687,12 +2673,7 @@ def get_okx_btc_daily_data():
 
 
 # =========================================================
-# ★ BTC OKX 일봉 변동률
-#
-# 현재 진행 일봉 / 직전 완성 일봉
-#
-# 현재가는 OKX
-# 날짜 경계는 KST 09:00
+# BTC OKX 일봉 변동률
 # =========================================================
 
 def calculate_okx_btc_daily_change(
@@ -2760,7 +2741,7 @@ def calculate_okx_btc_daily_change(
 
 
 # =========================================================
-# ★ BTC OKX 시황 업데이트
+# BTC OKX 시황 업데이트
 # =========================================================
 
 def update_btc_market():
@@ -2987,10 +2968,10 @@ def analyze(
     )
 
     # =====================================================
-    # ★ BTC 필터
+    # BTC 필터
     #
-    # 이제 업비트 BTC가 아니라
-    # OKX BTC-USDT KST 기준 일봉
+    # OKX BTC-USDT
+    # KST 기준 일봉
     # =====================================================
 
     btc_positive = (
@@ -3232,7 +3213,7 @@ def update_upbit():
     global latest_upbit_update_time
 
     # =====================================================
-    # ★ BTC 시황은 여기서 OKX 사용
+    # BTC 시황 = OKX
     # =====================================================
 
     update_btc_market()
@@ -3360,8 +3341,6 @@ def get_usdt_krw_internal():
 
 # =========================================================
 # OKX 기존 영역
-#
-# 현재 BTC 시황은 위의 전용 함수 사용
 # =========================================================
 
 def update_okx(
@@ -4132,11 +4111,13 @@ def section(
 # =========================================================
 # ★ BTC OKX ROC 상태
 #
-# BTC 시황은 업비트가 아니라
-# OKX BTC-USDT 4H
+# 수정:
 #
-# 시간 경계:
-# 업비트 기준 01/05/09/13/17/21
+# 1줄
+# OKX 4H ROC + ROC5 / ROC20 / ROC50 / ROC200
+#
+# 2줄
+# KST 기준표
 # =========================================================
 
 def btc_roc_status_html():
@@ -4263,17 +4244,30 @@ def btc_roc_status_html():
 
     <div class="btc-roc-detail">
 
-        <div class="btc-roc-label">
-            OKX 4H ROC
+        <!-- =========================================
+             1줄 : ROC 제목 + ROC 카드
+             ========================================= -->
+
+        <div class="btc-roc-main">
+
+            <div class="btc-roc-label">
+                OKX 4H ROC
+            </div>
+
+            <div class="roc-grid btc-roc-grid">
+
+                {"".join(items)}
+
+            </div>
+
         </div>
 
-        <div class="roc-grid btc-roc-grid">
 
-            {"".join(items)}
+        <!-- =========================================
+             2줄 : 기준표
+             ========================================= -->
 
-        </div>
-
-        <div class="roc-badge">
+        <div class="btc-roc-badge">
 
             KST 01/05/09/13/17/21
 
@@ -4639,18 +4633,33 @@ justify-content:center;
 border-left:1px solid #29323c;
 }
 
+
+/* =========================================================
+   BTC ROC
+   1줄 = 제목 + ROC 카드
+   2줄 = 기준표
+   ========================================================= */
+
 .btc-roc-detail{
+display:flex;
+flex-direction:column;
+width:100%;
+min-height:69px;
+padding:7px 9px;
+background:#0d1218;
+gap:5px;
+}
+
+.btc-roc-main{
 display:grid;
 
 grid-template-columns:
     1.1fr
-    5fr
-    1.1fr;
+    5fr;
 
 align-items:center;
-min-height:69px;
-padding:7px 9px;
-background:#0d1218;
+width:100%;
+min-width:0;
 }
 
 .btc-roc-label{
@@ -4660,6 +4669,37 @@ font-weight:900;
 text-align:center;
 white-space:nowrap;
 }
+
+.btc-roc-grid{
+width:100%;
+min-width:0;
+}
+
+.btc-roc-badge{
+width:100%;
+padding:4px 7px;
+border-radius:7px;
+
+background:#183126;
+border:1px solid #285840;
+
+color:#78c99d;
+
+font-size:7px;
+line-height:10px;
+font-weight:900;
+
+text-align:center;
+
+white-space:nowrap;
+overflow:hidden;
+text-overflow:ellipsis;
+}
+
+
+/* =========================================================
+   일반 ROC
+   ========================================================= */
 
 .roc-detail{
 display:grid;
@@ -4746,6 +4786,7 @@ line-height:10px;
 font-weight:900;
 white-space:nowrap;
 }
+
 
 .card-list{
 width:100%;
@@ -4902,6 +4943,7 @@ line-height:21px;
 flex:none;
 }
 
+
 @keyframes signalFlashOne{
 
 0%{
@@ -4934,6 +4976,7 @@ flex:none;
 
 }
 
+
 .coin-card.signal-flash-one .coin-main-row > div,
 .coin-card.signal-flash-one .coin-roc-row{
 animation:
@@ -4942,6 +4985,7 @@ signalFlashOne
 ease-in-out
 infinite;
 }
+
 
 .up{
 color:#78cfa2!important;
@@ -4969,6 +5013,7 @@ color:#59636e;
 font-size:8px;
 font-weight:800;
 }
+
 
 @media(max-width:600px){
 
@@ -5073,7 +5118,60 @@ h1{
     min-height:43px;
 }
 
-.btc-roc-detail,
+
+/* =====================================================
+   모바일 BTC ROC
+   1줄 = 제목 + 카드
+   2줄 = 기준표
+   ===================================================== */
+
+.btc-roc-detail{
+    display:flex;
+    flex-direction:column;
+    width:100%;
+    min-height:52px;
+    padding:4px 4px;
+    gap:3px;
+}
+
+.btc-roc-main{
+    display:grid;
+
+    grid-template-columns:
+        .95fr
+        5.5fr;
+
+    align-items:center;
+    width:100%;
+    min-width:0;
+}
+
+.btc-roc-label{
+    font-size:7px;
+}
+
+.btc-roc-grid{
+    width:100%;
+}
+
+.btc-roc-badge{
+    width:100%;
+    padding:3px 4px;
+    border-radius:5px;
+
+    font-size:5px;
+    line-height:7px;
+
+    text-align:center;
+
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+}
+
+
+/* 일반 ROC */
+
 .roc-detail{
     grid-template-columns:
         .95fr
@@ -5084,10 +5182,10 @@ h1{
     padding:4px 4px;
 }
 
-.btc-roc-label,
 .roc-label{
     font-size:7px;
 }
+
 
 .roc-grid{
     gap:3px;
@@ -5125,6 +5223,7 @@ h1{
     font-size:5px;
     line-height:7px;
 }
+
 
 .card-list{
     gap:6px;
@@ -5235,6 +5334,7 @@ h1{
 
 }
 
+
 @media(max-width:380px){
 
 body{
@@ -5311,7 +5411,36 @@ h1{
     min-height:38px;
 }
 
-.btc-roc-detail,
+
+/* =====================================================
+   380px 이하 BTC ROC
+   ===================================================== */
+
+.btc-roc-detail{
+    min-height:47px;
+    padding:3px 2px;
+    gap:2px;
+}
+
+.btc-roc-main{
+    grid-template-columns:
+        .8fr
+        5.8fr;
+}
+
+.btc-roc-label{
+    font-size:6px;
+}
+
+.btc-roc-badge{
+    font-size:4px;
+    padding:2px 3px;
+    line-height:6px;
+}
+
+
+/* 일반 ROC */
+
 .roc-detail{
     min-height:47px;
 
@@ -5321,11 +5450,6 @@ h1{
         .8fr;
 
     padding:3px 2px;
-}
-
-.btc-roc-label,
-.roc-label{
-    font-size:6px;
 }
 
 .roc-grid{
@@ -5353,6 +5477,7 @@ h1{
     font-size:4px;
     padding:2px 3px;
 }
+
 
 .card-list{
     gap:5px;
@@ -5436,6 +5561,7 @@ h1{
 }
 
 }
+
 
 @media(prefers-reduced-motion:reduce){
 
