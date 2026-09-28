@@ -626,11 +626,6 @@ def daily_rsi_upbit(
 
             return None
 
-        # =================================================
-        # 업비트는 최신 → 과거 순서
-        # RSI 계산을 위해 과거 → 최신으로 변경
-        # =================================================
-
         data = list(
             reversed(data)
         )
@@ -647,11 +642,7 @@ def daily_rsi_upbit(
                 )
             )
 
-        # =================================================
         # 현재 진행 중인 일봉
-        # 현재가 반영
-        # =================================================
-
         if current_price is not None:
 
             closes[-1] = float(
@@ -673,10 +664,7 @@ def daily_rsi_upbit(
             upper=0
         )
 
-        # =================================================
-        # Wilder 방식 RSI
-        # =================================================
-
+        # Wilder RSI
         avg_gain = gain.ewm(
             alpha=1 / period,
             adjust=False,
@@ -689,15 +677,17 @@ def daily_rsi_upbit(
             min_periods=period
         ).mean()
 
-        last_avg_loss = (
-            avg_loss.iloc[-1]
-        )
-
         last_avg_gain = (
             avg_gain.iloc[-1]
         )
 
+        last_avg_loss = (
+            avg_loss.iloc[-1]
+        )
+
         if pd.isna(
+            last_avg_gain
+        ) or pd.isna(
             last_avg_loss
         ):
 
@@ -1005,7 +995,6 @@ def aggregate_btc_kst_daily(
 
     temp = df.copy()
 
-    # KST 09:00 기준 날짜
     temp["daily_start"] = (
         temp["datetime_kst"]
         - pd.Timedelta(
@@ -1039,8 +1028,6 @@ def aggregate_btc_kst_daily(
 # BTC OKX 일봉 변동률
 #
 # KST 09:00 기준
-#
-# 현재가 / 직전 KST 일봉 종가
 # =========================================================
 
 def get_okx_btc_daily_change():
@@ -1096,11 +1083,8 @@ def get_okx_btc_daily_change():
 
     else:
 
-        current_start = (
-            today_0900
-        )
+        current_start = today_0900
 
-    # timezone 제거
     daily["daily_start"] = (
         daily["daily_start"]
         .dt
@@ -1179,8 +1163,6 @@ def update_btc_market():
 
 # =========================================================
 # 코인 분석
-#
-# ROC 완전 삭제
 #
 # 업비트 일봉 상승률
 # +
@@ -1377,13 +1359,9 @@ def update_upbit():
         )
 
         # =================================================
-        # BTC 필터까지 반영
+        # BTC + 코인 상승률
         #
-        # BTC 당일 양수
-        # +
-        # 코인 당일 양수
-        #
-        # RSI는 여기에서 사용하지 않음
+        # RSI는 Signal 조건에 사용하지 않음
         # =================================================
 
         btc_positive = (
@@ -1420,12 +1398,6 @@ def update_upbit():
     latest_upbit_update_time = (
         kst()
     )
-
-    # =====================================================
-    # Signal 로그
-    #
-    # BTC 양수일 때만 통과
-    # =====================================================
 
     signal_rows = [
 
@@ -1520,8 +1492,6 @@ def get_usdt_krw_internal():
 
 # =========================================================
 # OKX 기존 영역
-#
-# 현재 USE_OKX = N
 # =========================================================
 
 def update_okx(
@@ -1543,10 +1513,6 @@ def update_okx(
 
 # =========================================================
 # 전체 업데이트
-#
-# 중요:
-# BTC를 먼저 업데이트
-# → 최신 BTC 필터를 업비트 Signal에서 사용
 # =========================================================
 
 def update_dashboard():
@@ -1559,16 +1525,10 @@ def update_dashboard():
 
     try:
 
-        # =================================================
         # BTC 먼저
-        # =================================================
-
         update_btc_market()
 
-        # =================================================
-        # 그 다음 UPBIT
-        # =================================================
-
+        # UPBIT
         if USE_UPBIT == "Y":
 
             update_upbit()
@@ -1741,19 +1701,6 @@ def format_volume(v):
 
 # =========================================================
 # Signal HTML
-#
-# TOP15 전체 정보를 그대로 사용
-#
-# Signal 정렬:
-# 상승률 높은 순
-#
-# 표시:
-# Signal순위
-# TOP순위
-# 코인
-# 거래대금
-# 현재가
-# 상승률
 # =========================================================
 
 def signal_item_html(
@@ -1863,10 +1810,6 @@ def signal_item_html(
 
 # =========================================================
 # Signal 전체
-#
-# 1. BTC 당일 상승률 > 0
-# 2. TOP15 중 코인 당일 상승률 > 0
-# 3. 상승률 높은 순
 # =========================================================
 
 def focus_section(data):
@@ -1877,10 +1820,6 @@ def focus_section(data):
         and
         latest_btc_daily_change > 0
     )
-
-    # =====================================================
-    # BTC 필터가 OFF면 Signal 없음
-    # =====================================================
 
     if not btc_positive:
 
@@ -1954,10 +1893,6 @@ def focus_section(data):
 
         """
 
-    # =====================================================
-    # BTC 양수
-    # =====================================================
-
     signal_rows = [
 
         x.copy()
@@ -1978,10 +1913,6 @@ def focus_section(data):
 
     ]
 
-    # =====================================================
-    # 상승률 높은 순
-    # =====================================================
-
     signal_rows.sort(
         key=lambda x:
             x["change_value"],
@@ -1996,10 +1927,6 @@ def focus_section(data):
         row[
             "signal_rank"
         ] = signal_rank
-
-    # =====================================================
-    # Signal 없음
-    # =====================================================
 
     if not signal_rows:
 
@@ -2192,10 +2119,6 @@ def market_summary_html():
 
         change = "-"
 
-    # =====================================================
-    # BTC Signal 상태
-    # =====================================================
-
     if latest_btc_daily_change is None:
 
         signal_status = "OFF"
@@ -2302,10 +2225,10 @@ def market_summary_html():
 # 마지막 칸:
 # RSI(14)
 #
-# RSI >= 70 → 강조
-# RSI < 70 → 일반
-#
-# RSI는 Signal 조건과 무관
+# RSI <= 30       → 파란색
+# RSI 40 ~ 60     → 녹색
+# RSI >= 70       → 빨간색
+# 그 외            → 회색
 # =========================================================
 
 def rows_html(data):
@@ -2347,57 +2270,69 @@ def rows_html(data):
             "rsi"
         )
 
+        try:
+
+            rsi_value = (
+                float(rsi_value)
+                if rsi_value is not None
+                else None
+            )
+
+        except (
+            TypeError,
+            ValueError
+        ):
+
+            rsi_value = None
+
         if rsi_value is None:
 
-            rsi_html = (
-
-                '<span class="rsi-normal">'
-                '-'
-                '</span>'
-
-            )
+            rsi_html = "-"
 
         else:
 
-            try:
+            # =================================================
+            # RSI 색상 구간
+            #
+            # 30 이하       파란색
+            # 40 ~ 60       녹색
+            # 70 이상       빨간색
+            # 그 외          회색
+            # =================================================
 
-                rsi_value = float(
-                    rsi_value
+            if rsi_value <= 30:
+
+                rsi_class = (
+                    "rsi-blue"
                 )
 
-            except Exception:
+            elif (
+                40 <= rsi_value <= 60
+            ):
 
-                rsi_value = None
-
-            if rsi_value is None:
-
-                rsi_html = (
-
-                    '<span class="rsi-normal">'
-                    '-'
-                    '</span>'
-
+                rsi_class = (
+                    "rsi-green"
                 )
 
             elif rsi_value >= 70:
 
-                rsi_html = (
-
-                    '<span class="rsi-hot">'
-                    f'RSI {rsi_value:.1f}'
-                    '</span>'
-
+                rsi_class = (
+                    "rsi-red"
                 )
 
             else:
 
-                rsi_html = (
-
-                    '<span class="rsi-normal">'
-                    f'RSI {rsi_value:.1f}'
-                    '</span>'
-
+                rsi_class = (
+                    "rsi-normal"
                 )
+
+            rsi_html = (
+
+                f'<span class="{rsi_class}">'
+                f'RSI {rsi_value:.1f}'
+                '</span>'
+
+            )
 
         out.append(
 
@@ -3049,22 +2984,57 @@ font-weight:900;
    RSI
    ========================================================= */
 
-.rsi-normal{
-color:#8d98a3;
-font-size:9px;
-font-weight:800;
+/* 기본 */
+.rsi-normal,
+.rsi-blue,
+.rsi-green,
+.rsi-red{
+
+font-size:10px;
+
+font-weight:900;
+
 white-space:nowrap;
 }
 
-.rsi-hot{
+
+/* 30 이하 */
+.rsi-blue{
+
+color:#459dff;
+
+text-shadow:
+    0 0 6px
+    rgba(69,157,255,.35);
+}
+
+
+/* 40 ~ 60 */
+.rsi-green{
+
+color:#78cfa2;
+
+text-shadow:
+    0 0 6px
+    rgba(120,207,162,.35);
+}
+
+
+/* 70 이상 */
+.rsi-red{
+
 color:#ff6b6b;
-font-size:10px;
-font-weight:900;
-white-space:nowrap;
 
 text-shadow:
     0 0 6px
     rgba(255,80,80,.35);
+}
+
+
+/* 그 외 */
+.rsi-normal{
+
+color:#8d98a3;
 }
 
 
@@ -3351,11 +3321,10 @@ h1{
 
 /* RSI */
 
-.rsi-normal{
-    font-size:5.5px;
-}
-
-.rsi-hot{
+.rsi-normal,
+.rsi-blue,
+.rsi-green,
+.rsi-red{
     font-size:6px;
 }
 
@@ -3570,11 +3539,10 @@ h1{
 
 /* RSI */
 
-.rsi-normal{
-    font-size:4.8px;
-}
-
-.rsi-hot{
+.rsi-normal,
+.rsi-blue,
+.rsi-green,
+.rsi-red{
     font-size:5.2px;
 }
 
@@ -3765,7 +3733,15 @@ def startup():
     )
 
     log.info(
-        "★ RSI 70 이상 = 색상 강조"
+        "★ RSI <= 30 = 파란색"
+    )
+
+    log.info(
+        "★ RSI 40~60 = 녹색"
+    )
+
+    log.info(
+        "★ RSI >= 70 = 빨간색"
     )
 
     log.info(
