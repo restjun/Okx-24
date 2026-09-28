@@ -578,6 +578,168 @@ def daily_change_upbit(
 
 
 # =========================================================
+# UPBIT 일봉 RSI
+#
+# RSI(14)
+#
+# 현재 진행 중인 일봉에는 현재가 반영
+#
+# RSI는 표시용
+# Signal 조건에는 사용하지 않음
+# =========================================================
+
+def daily_rsi_upbit(
+    market,
+    period=14,
+    current_price=None
+):
+
+    response = retry(
+        requests.get,
+        "https://api.upbit.com/v1/candles/days",
+        params={
+            "market":
+                market,
+
+            "count":
+                period + 1
+        },
+        timeout=15
+    )
+
+    if response is None:
+
+        return None
+
+    try:
+
+        data = response.json()
+
+        if not isinstance(
+            data,
+            list
+        ):
+
+            return None
+
+        if len(data) < period + 1:
+
+            return None
+
+        # =================================================
+        # 업비트는 최신 → 과거 순서
+        # RSI 계산을 위해 과거 → 최신으로 변경
+        # =================================================
+
+        data = list(
+            reversed(data)
+        )
+
+        closes = []
+
+        for item in data:
+
+            closes.append(
+                float(
+                    item[
+                        "trade_price"
+                    ]
+                )
+            )
+
+        # =================================================
+        # 현재 진행 중인 일봉
+        # 현재가 반영
+        # =================================================
+
+        if current_price is not None:
+
+            closes[-1] = float(
+                current_price
+            )
+
+        series = pd.Series(
+            closes,
+            dtype="float64"
+        )
+
+        delta = series.diff()
+
+        gain = delta.clip(
+            lower=0
+        )
+
+        loss = -delta.clip(
+            upper=0
+        )
+
+        # =================================================
+        # Wilder 방식 RSI
+        # =================================================
+
+        avg_gain = gain.ewm(
+            alpha=1 / period,
+            adjust=False,
+            min_periods=period
+        ).mean()
+
+        avg_loss = loss.ewm(
+            alpha=1 / period,
+            adjust=False,
+            min_periods=period
+        ).mean()
+
+        last_avg_loss = (
+            avg_loss.iloc[-1]
+        )
+
+        last_avg_gain = (
+            avg_gain.iloc[-1]
+        )
+
+        if pd.isna(
+            last_avg_loss
+        ):
+
+            return None
+
+        if last_avg_loss == 0:
+
+            return 100.0
+
+        rs = (
+            last_avg_gain
+            /
+            last_avg_loss
+        )
+
+        rsi = (
+            100
+            -
+            (
+                100
+                /
+                (1 + rs)
+            )
+        )
+
+        if pd.isna(rsi):
+
+            return None
+
+        return float(rsi)
+
+    except Exception as e:
+
+        log.warning(
+            f"업비트 RSI 오류 "
+            f"{market}: {e}"
+        )
+
+        return None
+
+
+# =========================================================
 # BTC OKX 현재가
 # =========================================================
 
@@ -1020,7 +1182,11 @@ def update_btc_market():
 #
 # ROC 완전 삭제
 #
-# 업비트 일봉 상승률만 계산
+# 업비트 일봉 상승률
+# +
+# 업비트 일봉 RSI(14)
+#
+# RSI는 표시용
 # =========================================================
 
 def analyze(
@@ -1032,6 +1198,14 @@ def analyze(
         daily_change_upbit(
             market,
             current_price
+        )
+    )
+
+    rsi_value = (
+        daily_rsi_upbit(
+            market,
+            period=14,
+            current_price=current_price
         )
     )
 
@@ -1047,7 +1221,10 @@ def analyze(
             change_value,
 
         "daily_pass":
-            daily_pass
+            daily_pass,
+
+        "rsi":
+            rsi_value
 
     }
 
@@ -1096,6 +1273,11 @@ def make_row(
                     "daily_pass",
                     False
                 )
+            ),
+
+        "rsi":
+            a.get(
+                "rsi"
             ),
 
         "volume":
@@ -1200,6 +1382,8 @@ def update_upbit():
         # BTC 당일 양수
         # +
         # 코인 당일 양수
+        #
+        # RSI는 여기에서 사용하지 않음
         # =================================================
 
         btc_positive = (
@@ -1965,6 +2149,10 @@ def section(
 
                     Signal은 BTC 양수 + 상승률 양수
 
+                    ·
+
+                    RSI(14) 표시
+
                 </div>
 
             </div>
@@ -2110,6 +2298,14 @@ def market_summary_html():
 
 # =========================================================
 # ROW HTML
+#
+# 마지막 칸:
+# RSI(14)
+#
+# RSI >= 70 → 강조
+# RSI < 70 → 일반
+#
+# RSI는 Signal 조건과 무관
 # =========================================================
 
 def rows_html(data):
@@ -2144,22 +2340,64 @@ def rows_html(data):
         )
 
         # =================================================
-        # TOP 리스트에서도
-        # 실제 Signal 통과 종목은 🚀 표시
+        # RSI
         # =================================================
 
-        signal_icon = (
+        rsi_value = x.get(
+            "rsi"
+        )
 
-            "🚀"
+        if rsi_value is None:
 
-            if x.get(
-                "signal_pass",
-                False
+            rsi_html = (
+
+                '<span class="rsi-normal">'
+                '-'
+                '</span>'
+
             )
 
-            else "-"
+        else:
 
-        )
+            try:
+
+                rsi_value = float(
+                    rsi_value
+                )
+
+            except Exception:
+
+                rsi_value = None
+
+            if rsi_value is None:
+
+                rsi_html = (
+
+                    '<span class="rsi-normal">'
+                    '-'
+                    '</span>'
+
+                )
+
+            elif rsi_value >= 70:
+
+                rsi_html = (
+
+                    '<span class="rsi-hot">'
+                    f'RSI {rsi_value:.1f}'
+                    '</span>'
+
+                )
+
+            else:
+
+                rsi_html = (
+
+                    '<span class="rsi-normal">'
+                    f'RSI {rsi_value:.1f}'
+                    '</span>'
+
+                )
 
         out.append(
 
@@ -2213,7 +2451,7 @@ def rows_html(data):
 
                     <div class="signal-cell">
 
-                        {signal_icon}
+                        {rsi_html}
 
                     </div>
 
@@ -2808,6 +3046,29 @@ font-weight:900;
 
 
 /* =========================================================
+   RSI
+   ========================================================= */
+
+.rsi-normal{
+color:#8d98a3;
+font-size:9px;
+font-weight:800;
+white-space:nowrap;
+}
+
+.rsi-hot{
+color:#ff6b6b;
+font-size:10px;
+font-weight:900;
+white-space:nowrap;
+
+text-shadow:
+    0 0 6px
+    rgba(255,80,80,.35);
+}
+
+
+/* =========================================================
    색상
    ========================================================= */
 
@@ -3087,6 +3348,17 @@ h1{
     font-size:10px;
 }
 
+
+/* RSI */
+
+.rsi-normal{
+    font-size:5.5px;
+}
+
+.rsi-hot{
+    font-size:6px;
+}
+
 .empty-card{
     min-height:43px;
     border-width:1px;
@@ -3295,6 +3567,17 @@ h1{
     font-size:8px;
 }
 
+
+/* RSI */
+
+.rsi-normal{
+    font-size:4.8px;
+}
+
+.rsi-hot{
+    font-size:5.2px;
+}
+
 }
 
 """
@@ -3475,6 +3758,18 @@ def startup():
 
     log.info(
         "★ Signal = TOP 순위/거래대금/현재가/상승률 전체 표시"
+    )
+
+    log.info(
+        "★ TOP 마지막 칸 = 업비트 일봉 RSI(14)"
+    )
+
+    log.info(
+        "★ RSI 70 이상 = 색상 강조"
+    )
+
+    log.info(
+        "★ RSI = Signal 조건에 사용하지 않음"
     )
 
     log.info(
