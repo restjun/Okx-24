@@ -2260,7 +2260,6 @@ def update_upbit():
             "pattern_2_last_positive":
                 pattern_2_last_positive,
 
-            # 현재 4H는 판정하지 않음
             "current_4h_ignored":
                 True
 
@@ -3338,41 +3337,9 @@ def unified_card_html(
         get_current_4h_period()
     )
 
-    previous_period = (
-        get_previous_4h_period()
-    )
-
-    pre_previous_period = (
-        get_pre_previous_4h_period()
-    )
-
-    pre_pre_previous_period = (
-        get_pre_pre_previous_4h_period()
-    )
-
-    pre_pre_pre_previous_period = (
-        get_pre_pre_pre_previous_4h_period()
-    )
-
 
     current_change = row.get(
         "current_4h_change"
-    )
-
-    previous_change = row.get(
-        "previous_4h_change"
-    )
-
-    pre_previous_change = row.get(
-        "pre_previous_4h_change"
-    )
-
-    pre_pre_previous_change = row.get(
-        "pre_pre_previous_4h_change"
-    )
-
-    pre_pre_pre_previous_change = row.get(
-        "pre_pre_pre_previous_4h_change"
     )
 
 
@@ -3398,6 +3365,10 @@ def unified_card_html(
 
         volume_rank_text = ""
 
+
+    # =====================================================
+    # SIGNAL / TOP 제목
+    # =====================================================
 
     if card_type == "SIGNAL":
 
@@ -3434,6 +3405,15 @@ def unified_card_html(
         badge = ""
 
 
+    # =====================================================
+    # SIGNAL 조건
+    #
+    # ★ 아래에 변동률을 다시 표시하지 않음
+    #
+    # 6칸에서 시간대 + 변동률을 보여주고
+    # 아래에는 조건만 표시
+    # =====================================================
+
     condition_html = ""
 
 
@@ -3441,136 +3421,12 @@ def unified_card_html(
 
         condition_html = f"""
 
-        <div class="unified-condition-row">
-
-            <div class="unified-condition">
-
-                <div class="condition-label">
-                    당일
-                </div>
-
-                <div class="condition-period">
-                    업비트 일봉
-                </div>
-
-                <div class="condition-value">
-                    {row.get(
-                        "daily_html",
-                        "-"
-                    )}
-                </div>
-
-            </div>
-
-
-            <div class="unified-condition">
-
-                <div class="condition-label">
-                    전전전전 4H
-                </div>
-
-                <div class="condition-period">
-                    {(
-                        pre_pre_pre_previous_period
-                        or {}
-                    ).get(
-                        "display_label",
-                        "-"
-                    )}
-                </div>
-
-                <div class="condition-value">
-                    {format_change(
-                        pre_pre_pre_previous_change
-                    )}
-                </div>
-
-            </div>
-
-
-            <div class="unified-condition">
-
-                <div class="condition-label">
-                    전전전 4H
-                </div>
-
-                <div class="condition-period">
-                    {(
-                        pre_pre_previous_period
-                        or {}
-                    ).get(
-                        "display_label",
-                        "-"
-                    )}
-                </div>
-
-                <div class="condition-value">
-                    {format_change(
-                        pre_pre_previous_change
-                    )}
-                </div>
-
-            </div>
-
-
-            <div class="unified-condition">
-
-                <div class="condition-label">
-                    전전 4H
-                </div>
-
-                <div class="condition-period">
-                    {(
-                        pre_previous_period
-                        or {}
-                    ).get(
-                        "display_label",
-                        "-"
-                    )}
-                </div>
-
-                <div class="condition-value">
-                    {format_change(
-                        pre_previous_change
-                    )}
-                </div>
-
-            </div>
-
-        </div>
-
-
-        <div class="unified-condition-row">
-
-            <div class="unified-condition">
-
-                <div class="condition-label">
-                    전 4H
-                </div>
-
-                <div class="condition-period">
-                    {(
-                        previous_period
-                        or {}
-                    ).get(
-                        "display_label",
-                        "-"
-                    )}
-                </div>
-
-                <div class="condition-value">
-                    {format_change(
-                        previous_change
-                    )}
-                </div>
-
-            </div>
-
+        <div class="unified-condition-row signal-condition-only">
 
             <div
                 class="unified-condition"
                 style="
-                    grid-column:2 / -1;
+                    grid-column:1 / -1;
                 "
             >
 
@@ -3582,8 +3438,6 @@ def unified_card_html(
                     양 → 음 → 양
                     또는
                     양 → 음 → 음 → 양
-                    <br>
-                    현재 4H는 판정 제외
                 </div>
 
                 <div class="condition-value">
@@ -3592,8 +3446,63 @@ def unified_card_html(
                         ON
                     </span>
 
+                    <span
+                        style="
+                            color:#68747e;
+                            margin-left:5px;
+                            font-size:6px;
+                        "
+                    >
+                        현재 4H 판정 제외
+                    </span>
+
                 </div>
 
+            </div>
+
+        </div>
+
+        """
+
+
+    # =====================================================
+    # 현재 4H 행
+    #
+    # SIGNAL:
+    #   삭제
+    #
+    # TOP:
+    #   기존 유지
+    # =====================================================
+
+    if card_type == "SIGNAL":
+
+        current_row_html = ""
+
+    else:
+
+        current_row_html = f"""
+
+        <div class="unified-current-row">
+
+            <div class="unified-current-title">
+                현재 4H
+            </div>
+
+            <div class="unified-current-period">
+                {(
+                    current_period
+                    or {}
+                ).get(
+                    "display_label",
+                    "-"
+                )}
+            </div>
+
+            <div class="unified-current-value">
+                {format_change(
+                    current_change
+                )}
             </div>
 
         </div>
@@ -3677,30 +3586,17 @@ def unified_card_html(
         </div>
 
 
-        <div class="unified-current-row">
+        {current_row_html}
 
-            <div class="unified-current-title">
-                현재 4H
-            </div>
 
-            <div class="unified-current-period">
-                {(
-                    current_period
-                    or {}
-                ).get(
-                    "display_label",
-                    "-"
-                )}
-            </div>
+        <!-- =================================================
+             최근 6개 4H
+             
+             SIGNAL:
+             6칸 그대로 표시
 
-            <div class="unified-current-value">
-                {format_change(
-                    current_change
-                )}
-            </div>
-
-        </div>
-
+             시간대 + 변동률은 여기에서만 표시
+             ================================================= -->
 
         <div class="unified-4h-grid">
 
@@ -3714,7 +3610,12 @@ def unified_card_html(
         </div>
 
 
+        <!-- =================================================
+             SIGNAL 조건만 표시
+             ================================================= -->
+
         {condition_html}
+
 
     </div>
 
@@ -3734,7 +3635,7 @@ def unified_card_html(
 #
 # 현재 4H는 완전히 제외
 #
-# ★ SIGNAL 순위:
+# SIGNAL 순위:
 # 패턴 완성 마지막 4H
 # = 전 4H 변동률 높은 순
 # =========================================================
@@ -3777,14 +3678,10 @@ def focus_section(data):
 
 
     # =====================================================
-    # ★ 수정
+    # SIGNAL 순위
     #
-    # SIGNAL 순위는 당일 변동률이 아니라
-    # 패턴을 완성한 마지막 4H의 변동률
-    #
-    # 두 패턴 모두 마지막 캔들은 "전 4H"
-    #
-    # 따라서 previous_4h_change 기준
+    # 패턴을 완성한 마지막 4H
+    # = 전 4H 변동률 높은 순
     # =====================================================
 
     signal_rows.sort(
@@ -4647,6 +4544,30 @@ font-weight:900;
 
 
 /* =========================================================
+   SIGNAL 조건
+   ========================================================= */
+
+.signal-condition-only{
+min-height:50px;
+}
+
+.signal-condition-only .unified-condition{
+padding:5px 8px;
+}
+
+.signal-condition-only .condition-period{
+color:#b9f0cf;
+font-size:7px;
+font-weight:900;
+}
+
+.signal-condition-only .condition-value{
+font-size:8px;
+font-weight:900;
+}
+
+
+/* =========================================================
    SIGNAL
    ========================================================= */
 
@@ -4994,6 +4915,18 @@ h1{
     min-height:42px;
 }
 
+.signal-condition-only{
+    min-height:42px;
+}
+
+.signal-condition-only .condition-period{
+    font-size:5.5px;
+}
+
+.signal-condition-only .condition-value{
+    font-size:7px;
+}
+
 .condition-label{
     font-size:4.5px;
 }
@@ -5210,6 +5143,18 @@ h1{
 
 .unified-condition-row{
     min-height:37px;
+}
+
+.signal-condition-only{
+    min-height:37px;
+}
+
+.signal-condition-only .condition-period{
+    font-size:4.5px;
+}
+
+.signal-condition-only .condition-value{
+    font-size:6px;
 }
 
 .condition-label{
@@ -5429,12 +5374,6 @@ def startup():
     log.info(
         "SIGNAL = 당일+ AND (양→음→양 OR 양→음→음→양)"
     )
-
-    # =====================================================
-    # ★ 수정
-    # SIGNAL 순위 = 패턴 완성 마지막 4H
-    # 즉 전 4H 변동률 높은 순
-    # =====================================================
 
     log.info(
         "SIGNAL 순위 = 패턴 완성 마지막 4H(전 4H) 변동률 높은 순서"
