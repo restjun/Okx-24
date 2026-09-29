@@ -3176,12 +3176,17 @@ def btc_4h_cells_html():
 
 # =========================================================
 # BTC 시장 카드
+#
+# 구조:
+#
+# 헤더
+# 현재가 / 당일 / MARKET 상태
+# 4H 6칸
+#
+# ★ 현재 4H 별도 행 삭제
 # =========================================================
 
 def market_summary_html():
-
-    period = get_current_4h_period()
-
 
     price = format_market_price(
         latest_btc_okx_price
@@ -3189,10 +3194,6 @@ def market_summary_html():
 
     daily = format_change(
         latest_btc_daily_change
-    )
-
-    current = format_change(
-        latest_btc_current_4h_change
     )
 
 
@@ -3282,26 +3283,6 @@ def market_summary_html():
         </div>
 
 
-        <div class="btc-current-box">
-
-            <div class="btc-current-title">
-                현재 4H
-            </div>
-
-            <div class="btc-current-period">
-                {period.get(
-                    "display_label",
-                    "-"
-                )}
-            </div>
-
-            <div class="btc-current-value">
-                {current}
-            </div>
-
-        </div>
-
-
         <div class="btc-4h-grid">
 
             {btc_4h_cells_html()}
@@ -3315,6 +3296,15 @@ def market_summary_html():
 
 # =========================================================
 # 공통 SIGNAL / TOP 카드
+#
+# 구조:
+#
+# 헤더
+# 현재가 / 24H 거래대금 / 당일
+# 4H 6칸
+# SIGNAL이면 SIGNAL 조건
+#
+# ★ 현재 4H 별도 행 삭제
 # =========================================================
 
 def unified_card_html(
@@ -3331,39 +3321,6 @@ def unified_card_html(
             )
         )
     )
-
-
-    current_period = (
-        get_current_4h_period()
-    )
-
-
-    current_change = row.get(
-        "current_4h_change"
-    )
-
-
-    if card_type == "SIGNAL":
-
-        volume_rank = row.get(
-            "volume_rank"
-        )
-
-        if volume_rank is not None:
-
-            volume_rank_text = (
-                f"거래대금 {volume_rank}위"
-            )
-
-        else:
-
-            volume_rank_text = (
-                "거래대금 -"
-            )
-
-    else:
-
-        volume_rank_text = ""
 
 
     # =====================================================
@@ -3383,6 +3340,25 @@ def unified_card_html(
             "unified-card-header "
             "signal-header"
         )
+
+
+        volume_rank = row.get(
+            "volume_rank"
+        )
+
+
+        if volume_rank is not None:
+
+            volume_rank_text = (
+                f"거래대금 {volume_rank}위"
+            )
+
+        else:
+
+            volume_rank_text = (
+                "거래대금 -"
+            )
+
 
         badge = f"""
         <span class="signal-badge">
@@ -3408,10 +3384,9 @@ def unified_card_html(
     # =====================================================
     # SIGNAL 조건
     #
-    # ★ 아래에 변동률을 다시 표시하지 않음
+    # 6칸 아래에 조건만 표시
     #
-    # 6칸에서 시간대 + 변동률을 보여주고
-    # 아래에는 조건만 표시
+    # 실제 SIGNAL 판정은 기존 로직 그대로
     # =====================================================
 
     condition_html = ""
@@ -3419,16 +3394,11 @@ def unified_card_html(
 
     if card_type == "SIGNAL":
 
-        condition_html = f"""
+        condition_html = """
 
         <div class="unified-condition-row signal-condition-only">
 
-            <div
-                class="unified-condition"
-                style="
-                    grid-column:1 / -1;
-                "
-            >
+            <div class="unified-condition">
 
                 <div class="condition-label">
                     SIGNAL 조건
@@ -3446,13 +3416,7 @@ def unified_card_html(
                         ON
                     </span>
 
-                    <span
-                        style="
-                            color:#68747e;
-                            margin-left:5px;
-                            font-size:6px;
-                        "
-                    >
+                    <span class="condition-note">
                         현재 4H 판정 제외
                     </span>
 
@@ -3465,54 +3429,13 @@ def unified_card_html(
         """
 
 
-    # =====================================================
-    # 현재 4H 행
-    #
-    # SIGNAL:
-    #   삭제
-    #
-    # TOP:
-    #   기존 유지
-    # =====================================================
-
-    if card_type == "SIGNAL":
-
-        current_row_html = ""
-
-    else:
-
-        current_row_html = f"""
-
-        <div class="unified-current-row">
-
-            <div class="unified-current-title">
-                현재 4H
-            </div>
-
-            <div class="unified-current-period">
-                {(
-                    current_period
-                    or {}
-                ).get(
-                    "display_label",
-                    "-"
-                )}
-            </div>
-
-            <div class="unified-current-value">
-                {format_change(
-                    current_change
-                )}
-            </div>
-
-        </div>
-
-        """
-
-
     return f"""
 
     <div class="{card_class}">
+
+        <!-- =============================================
+             카드 헤더
+             ============================================= -->
 
         <div class="{header_class}">
 
@@ -3532,6 +3455,14 @@ def unified_card_html(
 
         </div>
 
+
+        <!-- =============================================
+             기본 정보
+             
+             현재가
+             24H 거래대금
+             당일 변동률
+             ============================================= -->
 
         <div class="unified-main-row">
 
@@ -3586,17 +3517,12 @@ def unified_card_html(
         </div>
 
 
-        {current_row_html}
-
-
-        <!-- =================================================
+        <!-- =============================================
              최근 6개 4H
              
-             SIGNAL:
-             6칸 그대로 표시
-
-             시간대 + 변동률은 여기에서만 표시
-             ================================================= -->
+             현재 4H도 여기에서 표시
+             별도 현재 4H 행은 없음
+             ============================================= -->
 
         <div class="unified-4h-grid">
 
@@ -3610,12 +3536,11 @@ def unified_card_html(
         </div>
 
 
-        <!-- =================================================
-             SIGNAL 조건만 표시
-             ================================================= -->
+        <!-- =============================================
+             SIGNAL 조건
+             ============================================= -->
 
         {condition_html}
-
 
     </div>
 
@@ -4010,536 +3935,445 @@ def section(
 CSS = """
 
 *{
-box-sizing:border-box;
--webkit-tap-highlight-color:transparent;
+    box-sizing:border-box;
+    -webkit-tap-highlight-color:transparent;
 }
 
 html,
 body{
-margin:0;
-padding:0;
-width:100%;
-overflow-x:hidden;
+    margin:0;
+    padding:0;
+    width:100%;
+    overflow-x:hidden;
 }
 
 body{
-background:#080c11;
-color:#e7ebef;
-font-family:
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    Arial,
-    sans-serif;
-font-size:10px;
-padding:10px;
+    background:#080c11;
+    color:#e7ebef;
+    font-family:
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        Arial,
+        sans-serif;
+    font-size:10px;
+    padding:10px;
 }
 
 h1{
-margin:3px 4px 10px;
-color:#eef2f5;
-font-size:15px;
-line-height:18px;
-font-weight:900;
+    margin:3px 4px 10px;
+    color:#eef2f5;
+    font-size:15px;
+    line-height:18px;
+    font-weight:900;
 }
 
 .unified-section{
-width:100%;
-margin:10px 0 14px;
+    width:100%;
+    margin:10px 0 14px;
 }
 
+
+/* =========================================================
+   SECTION HEADER
+   ========================================================= */
+
 .section-title-card{
-display:flex;
-align-items:center;
-width:100%;
-min-height:50px;
-padding:8px 10px;
-background:#10151b;
-border:2px solid #252e38;
-border-radius:12px;
-overflow:hidden;
+    display:flex;
+    align-items:center;
+    width:100%;
+    min-height:50px;
+    padding:8px 10px;
+    background:#10151b;
+    border:2px solid #252e38;
+    border-radius:12px;
+    overflow:hidden;
 }
 
 .section-number{
-flex:none;
-display:flex;
-align-items:center;
-justify-content:center;
-width:35px;
-height:35px;
-margin-right:9px;
-border-radius:8px;
-background:#18251f;
-border:1px solid #315a48;
-color:#82d5a8;
-font-size:16px;
-font-weight:900;
+    flex:none;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    width:35px;
+    height:35px;
+    margin-right:9px;
+    border-radius:8px;
+    background:#18251f;
+    border:1px solid #315a48;
+    color:#82d5a8;
+    font-size:16px;
+    font-weight:900;
 }
 
 .top-number{
-background:#1d1a13;
-border-color:#665331;
-color:#e0bd6d;
+    background:#1d1a13;
+    border-color:#665331;
+    color:#e0bd6d;
 }
 
 .section-heading{
-min-width:0;
-flex:1;
-overflow:hidden;
+    min-width:0;
+    flex:1;
+    overflow:hidden;
 }
 
 .section-heading-main{
-color:#e9edf1;
-font-size:12px;
-line-height:15px;
-font-weight:900;
-white-space:nowrap;
+    color:#e9edf1;
+    font-size:12px;
+    line-height:15px;
+    font-weight:900;
+    white-space:nowrap;
 }
 
 .section-heading-sub{
-margin-top:2px;
-color:#87919b;
-font-size:7px;
-line-height:10px;
-font-weight:700;
-white-space:nowrap;
-overflow:hidden;
-text-overflow:ellipsis;
+    margin-top:2px;
+    color:#87919b;
+    font-size:7px;
+    line-height:10px;
+    font-weight:700;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
 }
 
 .current-time-badge{
-flex:none;
-display:flex;
-align-items:center;
-justify-content:center;
-min-height:28px;
-margin-left:8px;
-padding:5px 8px;
-border-radius:7px;
-background:#173326;
-border:1px solid #4f9b73;
-color:#8fe0b2;
-font-size:7px;
-font-weight:900;
-white-space:nowrap;
+    flex:none;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    min-height:28px;
+    margin-left:8px;
+    padding:5px 8px;
+    border-radius:7px;
+    background:#173326;
+    border:1px solid #4f9b73;
+    color:#8fe0b2;
+    font-size:7px;
+    font-weight:900;
+    white-space:nowrap;
 }
 
 
 /* =========================================================
-   BTC
+   BTC MARKET
    ========================================================= */
 
 .market-card{
-width:100%;
-margin:3px 0 14px;
-background:#0f141a;
-border:2px solid #252e38;
-border-radius:13px;
-overflow:hidden;
+    width:100%;
+    margin:3px 0 14px;
+    background:#0f141a;
+    border:2px solid #252e38;
+    border-radius:13px;
+    overflow:hidden;
 }
 
 .market-card-header{
-display:flex;
-align-items:center;
-min-height:44px;
-padding:7px 10px;
-background:#121820;
-border-bottom:1px solid #29323c;
+    display:flex;
+    align-items:center;
+    min-height:44px;
+    padding:7px 10px;
+    background:#121820;
+    border-bottom:1px solid #29323c;
 }
 
 .market-title-block{
-min-width:0;
-flex:1;
+    min-width:0;
+    flex:1;
 }
 
 .market-title-main{
-color:#eef2f5;
-font-size:11px;
-line-height:14px;
-font-weight:900;
+    color:#eef2f5;
+    font-size:11px;
+    line-height:14px;
+    font-weight:900;
 }
 
 .market-title-sub{
-margin-top:2px;
-color:#7e8994;
-font-size:6.5px;
-font-weight:700;
-white-space:nowrap;
-overflow:hidden;
-text-overflow:ellipsis;
+    margin-top:2px;
+    color:#7e8994;
+    font-size:6.5px;
+    font-weight:700;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
 }
 
 .market-time{
-flex:none;
-margin-left:8px;
-color:#68737e;
-font-size:6.5px;
-font-weight:800;
+    flex:none;
+    margin-left:8px;
+    color:#68737e;
+    font-size:6.5px;
+    font-weight:800;
 }
 
+
+/* =========================================================
+   BTC MAIN
+   ========================================================= */
+
 .btc-main-row{
-display:grid;
-grid-template-columns:
-    1fr
-    1.3fr
-    1fr
-    1.2fr;
-align-items:center;
-min-height:58px;
-background:#11161c;
+    display:grid;
+    grid-template-columns:
+        1fr
+        1.3fr
+        1fr
+        1.2fr;
+    align-items:center;
+    min-height:58px;
+    background:#11161c;
 }
 
 .btc-name{
-padding-left:13px;
-color:#edf1f4;
-font-size:11px;
-font-weight:900;
+    padding-left:13px;
+    color:#edf1f4;
+    font-size:11px;
+    font-weight:900;
 }
 
 .btc-price{
-color:#f1f4f6;
-font-size:11px;
-font-weight:900;
-text-align:center;
+    color:#f1f4f6;
+    font-size:11px;
+    font-weight:900;
+    text-align:center;
 }
 
 .btc-change{
-font-size:11px;
-font-weight:900;
-text-align:center;
+    font-size:11px;
+    font-weight:900;
+    text-align:center;
 }
 
 .btc-signal-box{
-min-height:58px;
-display:flex;
-align-items:center;
-justify-content:center;
-gap:5px;
-border-left:1px solid #29323c;
+    min-height:58px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:5px;
+    border-left:1px solid #29323c;
 }
 
 .btc-info{
-color:#7f8a94;
-font-size:8px;
-font-weight:900;
+    color:#7f8a94;
+    font-size:8px;
+    font-weight:900;
 }
 
 .btc-on{
-color:#78cfa2;
-font-size:10px;
-font-weight:900;
+    color:#78cfa2;
+    font-size:10px;
+    font-weight:900;
 }
 
 .btc-off{
-color:#df8588;
-font-size:10px;
-font-weight:900;
-}
-
-.btc-current-box{
-display:flex;
-align-items:center;
-justify-content:center;
-gap:12px;
-min-height:48px;
-background:#101820;
-border-top:1px solid #29323c;
-}
-
-.btc-current-title{
-color:#7d8993;
-font-size:7px;
-font-weight:900;
-}
-
-.btc-current-period{
-color:#b9f0cf;
-font-size:8px;
-font-weight:900;
-}
-
-.btc-current-value{
-font-size:11px;
-font-weight:900;
-}
-
-.btc-4h-grid{
-display:grid;
-grid-template-columns:
-    repeat(6,1fr);
-gap:1px;
-background:#29323c;
-border-top:1px solid #29323c;
+    color:#df8588;
+    font-size:10px;
+    font-weight:900;
 }
 
 
 /* =========================================================
-   공통 4H
+   4H 공통
    ========================================================= */
 
+.btc-4h-grid,
+.unified-4h-grid{
+    display:grid;
+    grid-template-columns:
+        repeat(6,1fr);
+    gap:1px;
+    background:#29323c;
+    border-top:1px solid #29323c;
+}
+
 .four-hour-cell{
-display:flex;
-flex-direction:column;
-align-items:center;
-justify-content:center;
-min-height:70px;
-background:#0d1319;
-gap:3px;
-padding:4px 2px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    min-height:70px;
+    background:#0d1319;
+    gap:3px;
+    padding:4px 2px;
 }
 
 .four-hour-label{
-color:#68747e;
-font-size:6px;
-font-weight:800;
+    color:#68747e;
+    font-size:6px;
+    font-weight:800;
 }
 
 .four-hour-time{
-color:#b6bec5;
-font-size:7px;
-font-weight:900;
+    color:#b6bec5;
+    font-size:7px;
+    font-weight:900;
 }
 
 .four-hour-value{
-font-size:8px;
-font-weight:900;
+    font-size:8px;
+    font-weight:900;
 }
 
 .candle-pattern{
-color:#e0bd6d;
-font-size:6px;
-line-height:8px;
-font-weight:900;
-text-align:center;
-white-space:nowrap;
-overflow:hidden;
-text-overflow:ellipsis;
-max-width:100%;
+    color:#e0bd6d;
+    font-size:6px;
+    line-height:8px;
+    font-weight:900;
+    text-align:center;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    max-width:100%;
 }
 
 .current-4h{
-background:#173326!important;
-box-shadow:
-    inset 0 0 0 1px rgba(116,213,157,0.18),
-    inset 0 0 15px rgba(78,164,111,0.08);
+    background:#173326 !important;
+    box-shadow:
+        inset 0 0 0 1px rgba(116,213,157,0.18),
+        inset 0 0 15px rgba(78,164,111,0.08);
 }
 
 .current-4h .four-hour-label{
-color:#91dcb0;
+    color:#91dcb0;
 }
 
 .current-4h .four-hour-time{
-color:#b9f0cf;
+    color:#b9f0cf;
 }
 
 .current-4h .candle-pattern{
-color:#f0d486;
+    color:#f0d486;
 }
 
 .no-4h-data{
-display:flex;
-align-items:center;
-justify-content:center;
-min-height:50px;
-color:#59636e;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    min-height:50px;
+    color:#59636e;
 }
 
 
 /* =========================================================
-   SIGNAL / TOP 카드
+   SIGNAL / TOP CARD
    ========================================================= */
 
 .top-card-list,
 .signal-card-list{
-display:flex;
-flex-direction:column;
-gap:8px;
+    display:flex;
+    flex-direction:column;
+    gap:8px;
 }
 
 .unified-market-card{
-width:100%;
-background:#0f141a;
-border:2px solid #252e38;
-border-radius:13px;
-overflow:hidden;
+    width:100%;
+    background:#0f141a;
+    border:2px solid #252e38;
+    border-radius:13px;
+    overflow:hidden;
 }
 
 .signal-market-card{
-border-color:#31513f;
+    border-color:#31513f;
 }
 
 .unified-card-header{
-display:flex;
-align-items:center;
-min-height:44px;
-padding:7px 10px;
-background:#121820;
-border-bottom:1px solid #29323c;
+    display:flex;
+    align-items:center;
+    min-height:44px;
+    padding:7px 10px;
+    background:#121820;
+    border-bottom:1px solid #29323c;
 }
 
 .signal-header{
-background:#14231c;
-border-bottom-color:#31513f;
+    background:#14231c;
+    border-bottom-color:#31513f;
 }
 
 .unified-card-rank{
-width:38px;
-flex:none;
-color:#e0bd6d;
-font-size:9px;
-font-weight:900;
+    width:38px;
+    flex:none;
+    color:#e0bd6d;
+    font-size:9px;
+    font-weight:900;
 }
 
 .unified-card-coin{
-flex:1;
-min-width:0;
-color:#eef2f5;
-font-size:11px;
-font-weight:900;
+    flex:1;
+    min-width:0;
+    color:#eef2f5;
+    font-size:11px;
+    font-weight:900;
 }
 
 .unified-card-title{
-flex:none;
-color:#7f8a94;
-font-size:7px;
-font-weight:900;
-margin-right:7px;
+    flex:none;
+    color:#7f8a94;
+    font-size:7px;
+    font-weight:900;
+    margin-right:7px;
 }
 
 .signal-badge{
-padding:4px 7px;
-border-radius:6px;
-background:#183528;
-border:1px solid #4f9b73;
-color:#8fe0b2;
-font-size:6px;
-font-weight:900;
-white-space:nowrap;
+    padding:4px 7px;
+    border-radius:6px;
+    background:#183528;
+    border:1px solid #4f9b73;
+    color:#8fe0b2;
+    font-size:6px;
+    font-weight:900;
+    white-space:nowrap;
 }
 
+
+/* =========================================================
+   공통 기본 정보
+   ========================================================= */
+
 .unified-main-row{
-display:grid;
-grid-template-columns:
-    1.2fr
-    1fr
-    1fr;
-min-height:58px;
-background:#11161c;
+    display:grid;
+    grid-template-columns:
+        1.2fr
+        1fr
+        1fr;
+    min-height:58px;
+    background:#11161c;
 }
 
 .unified-main-item{
-display:flex;
-flex-direction:column;
-align-items:center;
-justify-content:center;
-gap:4px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:4px;
 }
 
 .unified-main-item + .unified-main-item{
-border-left:1px solid #29323c;
+    border-left:1px solid #29323c;
 }
 
 .unified-label{
-color:#68747e;
-font-size:6px;
-font-weight:800;
+    color:#68747e;
+    font-size:6px;
+    font-weight:800;
 }
 
 .unified-price{
-color:#f1f4f6;
-font-size:10px;
-font-weight:900;
+    color:#f1f4f6;
+    font-size:10px;
+    font-weight:900;
 }
 
 .unified-volume{
-color:#cfd6dc;
-font-size:9px;
-font-weight:900;
+    color:#cfd6dc;
+    font-size:9px;
+    font-weight:900;
 }
 
 .unified-daily{
-font-size:9px;
-font-weight:900;
-}
-
-.unified-current-row{
-display:grid;
-grid-template-columns:
-    1fr
-    1.4fr
-    1fr;
-align-items:center;
-min-height:42px;
-background:#101820;
-border-top:1px solid #29323c;
-border-bottom:1px solid #29323c;
-text-align:center;
-}
-
-.unified-current-title{
-color:#7d8993;
-font-size:7px;
-font-weight:900;
-}
-
-.unified-current-period{
-color:#8fe0b2;
-font-size:7px;
-font-weight:900;
-}
-
-.unified-current-value{
-font-size:9px;
-font-weight:900;
-}
-
-.unified-4h-grid{
-display:grid;
-grid-template-columns:
-    repeat(6,1fr);
-gap:1px;
-background:#29323c;
-}
-
-.unified-condition-row{
-display:grid;
-grid-template-columns:
-    1fr
-    1fr
-    1fr
-    1fr;
-min-height:50px;
-background:#0f171d;
-border-top:1px solid #29343d;
-}
-
-.unified-condition{
-display:flex;
-flex-direction:column;
-align-items:center;
-justify-content:center;
-gap:3px;
-}
-
-.unified-condition + .unified-condition{
-border-left:1px solid #29343d;
-}
-
-.condition-label{
-color:#68747e;
-font-size:6px;
-font-weight:800;
-}
-
-.condition-period{
-color:#aeb7be;
-font-size:6px;
-font-weight:800;
-}
-
-.condition-value{
-font-size:8px;
-font-weight:900;
+    font-size:9px;
+    font-weight:900;
 }
 
 
@@ -4547,62 +4381,85 @@ font-weight:900;
    SIGNAL 조건
    ========================================================= */
 
-.signal-condition-only{
-min-height:50px;
+.unified-condition-row{
+    width:100%;
+    min-height:50px;
+    background:#0f171d;
+    border-top:1px solid #29343d;
 }
 
-.signal-condition-only .unified-condition{
-padding:5px 8px;
+.unified-condition{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    min-height:50px;
+    gap:3px;
+    padding:5px 8px;
 }
 
-.signal-condition-only .condition-period{
-color:#b9f0cf;
-font-size:7px;
-font-weight:900;
+.condition-label{
+    color:#68747e;
+    font-size:6px;
+    font-weight:800;
 }
 
-.signal-condition-only .condition-value{
-font-size:8px;
-font-weight:900;
+.condition-period{
+    color:#b9f0cf;
+    font-size:7px;
+    font-weight:900;
+    text-align:center;
+}
+
+.condition-value{
+    font-size:8px;
+    font-weight:900;
+}
+
+.condition-note{
+    color:#68747e;
+    margin-left:5px;
+    font-size:6px;
+    font-weight:700;
 }
 
 
 /* =========================================================
-   SIGNAL
+   SIGNAL BAR
    ========================================================= */
 
 .signal-btc-bar{
-display:grid;
-grid-template-columns:
-    1fr
-    1.4fr
-    1fr;
-align-items:center;
-min-height:42px;
-margin-top:8px;
-background:#111820;
-border:1px solid #29343d;
-border-radius:8px;
+    display:grid;
+    grid-template-columns:
+        1fr
+        1.4fr
+        1fr;
+    align-items:center;
+    min-height:42px;
+    margin-top:8px;
+    background:#111820;
+    border:1px solid #29343d;
+    border-radius:8px;
 }
 
 .signal-btc-title{
-text-align:center;
-color:#78858f;
-font-size:7px;
-font-weight:900;
+    text-align:center;
+    color:#78858f;
+    font-size:7px;
+    font-weight:900;
 }
 
 .signal-btc-period{
-text-align:center;
-color:#b9f0cf;
-font-size:7px;
-font-weight:900;
+    text-align:center;
+    color:#b9f0cf;
+    font-size:7px;
+    font-weight:900;
 }
 
 .signal-btc-value{
-text-align:center;
-font-size:9px;
-font-weight:900;
+    text-align:center;
+    font-size:9px;
+    font-weight:900;
 }
 
 
@@ -4611,13 +4468,13 @@ font-weight:900;
    ========================================================= */
 
 .top-update-bar{
-display:flex;
-justify-content:space-between;
-align-items:center;
-padding:6px 4px;
-color:#65717b;
-font-size:6.5px;
-font-weight:800;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    padding:6px 4px;
+    color:#65717b;
+    font-size:6.5px;
+    font-weight:800;
 }
 
 
@@ -4626,42 +4483,42 @@ font-weight:800;
    ========================================================= */
 
 .signal-empty-card{
-display:flex;
-flex-direction:column;
-align-items:center;
-justify-content:center;
-min-height:120px;
-margin-top:8px;
-background:#10161c;
-border:1px solid #29333d;
-border-radius:11px;
-text-align:center;
-padding:15px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    min-height:120px;
+    margin-top:8px;
+    background:#10161c;
+    border:1px solid #29333d;
+    border-radius:11px;
+    text-align:center;
+    padding:15px;
 }
 
 .signal-empty-icon{
-font-size:20px;
-margin-bottom:5px;
+    font-size:20px;
+    margin-bottom:5px;
 }
 
 .signal-empty-title{
-color:#e1e7eb;
-font-size:10px;
-font-weight:900;
+    color:#e1e7eb;
+    font-size:10px;
+    font-weight:900;
 }
 
 .signal-empty-text{
-margin-top:7px;
-color:#77838d;
-font-size:7px;
-font-weight:800;
+    margin-top:7px;
+    color:#77838d;
+    font-size:7px;
+    font-weight:800;
 }
 
 .signal-empty-sub{
-margin-top:6px;
-color:#59646e;
-font-size:6px;
-font-weight:700;
+    margin-top:6px;
+    color:#59646e;
+    font-size:6px;
+    font-weight:700;
 }
 
 
@@ -4670,31 +4527,31 @@ font-weight:700;
    ========================================================= */
 
 .up{
-color:#78cfa2!important;
-font-weight:900;
+    color:#78cfa2 !important;
+    font-weight:900;
 }
 
 .down{
-color:#df8588!important;
-font-weight:900;
+    color:#df8588 !important;
+    font-weight:900;
 }
 
 .zero{
-color:#727c86!important;
-font-weight:900;
+    color:#727c86 !important;
+    font-weight:900;
 }
 
 .empty-card{
-min-height:70px;
-display:flex;
-align-items:center;
-justify-content:center;
-background:#10151b;
-border:1px solid #252e38;
-border-radius:11px;
-color:#59636e;
-font-size:8px;
-font-weight:800;
+    min-height:70px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    background:#10151b;
+    border:1px solid #252e38;
+    border-radius:11px;
+    color:#59636e;
+    font-size:8px;
+    font-weight:800;
 }
 
 
@@ -4704,277 +4561,248 @@ font-weight:800;
 
 @media(max-width:600px){
 
-body{
-    padding:6px;
-}
+    body{
+        padding:6px;
+    }
 
-h1{
-    margin:3px 3px 8px;
-    font-size:12px;
-    line-height:15px;
-}
+    h1{
+        margin:3px 3px 8px;
+        font-size:12px;
+        line-height:15px;
+    }
 
-.unified-section{
-    margin:8px 0 10px;
-}
+    .unified-section{
+        margin:8px 0 10px;
+    }
 
-.section-title-card{
-    min-height:40px;
-    padding:5px 6px;
-    border-radius:9px;
-}
+    .section-title-card{
+        min-height:40px;
+        padding:5px 6px;
+        border-radius:9px;
+    }
 
-.section-number{
-    width:27px;
-    height:27px;
-    margin-right:6px;
-    border-radius:6px;
-    font-size:12px;
-}
+    .section-number{
+        width:27px;
+        height:27px;
+        margin-right:6px;
+        border-radius:6px;
+        font-size:12px;
+    }
 
-.section-heading-main{
-    font-size:9px;
-    line-height:11px;
-}
+    .section-heading-main{
+        font-size:9px;
+        line-height:11px;
+    }
 
-.section-heading-sub{
-    font-size:5px;
-    line-height:7px;
-}
+    .section-heading-sub{
+        font-size:5px;
+        line-height:7px;
+    }
 
-.current-time-badge{
-    min-height:22px;
-    margin-left:5px;
-    padding:3px 5px;
-    border-radius:5px;
-    font-size:4.8px;
-}
-
-
-/* BTC */
-
-.market-card{
-    margin:3px 0 9px;
-    border-radius:9px;
-}
-
-.market-card-header{
-    min-height:36px;
-    padding:5px 7px;
-}
-
-.market-title-main{
-    font-size:8px;
-}
-
-.market-title-sub{
-    font-size:4.8px;
-}
-
-.market-time{
-    font-size:4.8px;
-}
-
-.btc-main-row{
-    min-height:43px;
-}
-
-.btc-name{
-    padding-left:8px;
-    font-size:8px;
-}
-
-.btc-price{
-    font-size:8px;
-}
-
-.btc-change{
-    font-size:8px;
-}
-
-.btc-signal-box{
-    min-height:43px;
-}
-
-.btc-info{
-    font-size:6px;
-}
-
-.btc-on,
-.btc-off{
-    font-size:7px;
-}
-
-.btc-current-box{
-    min-height:38px;
-    gap:7px;
-}
-
-.btc-current-title{
-    font-size:5px;
-}
-
-.btc-current-period{
-    font-size:5.5px;
-}
-
-.btc-current-value{
-    font-size:7px;
-}
-
-.btc-4h-grid{
-    grid-template-columns:
-        repeat(3,1fr);
-}
-
-.four-hour-cell{
-    min-height:52px;
-}
-
-.four-hour-label{
-    font-size:4px;
-}
-
-.four-hour-time{
-    font-size:5px;
-}
-
-.four-hour-value{
-    font-size:6px;
-}
-
-.candle-pattern{
-    font-size:4.5px;
-    line-height:6px;
-}
+    .current-time-badge{
+        min-height:22px;
+        margin-left:5px;
+        padding:3px 5px;
+        border-radius:5px;
+        font-size:4.8px;
+    }
 
 
-/* TOP / SIGNAL */
+    /* =====================================================
+       BTC
+       ===================================================== */
 
-.unified-market-card{
-    border-radius:9px;
-}
+    .market-card{
+        margin:3px 0 9px;
+        border-radius:9px;
+    }
 
-.unified-card-header{
-    min-height:36px;
-    padding:5px 7px;
-}
+    .market-card-header{
+        min-height:36px;
+        padding:5px 7px;
+    }
 
-.unified-card-rank{
-    width:27px;
-    font-size:7px;
-}
+    .market-title-main{
+        font-size:8px;
+    }
 
-.unified-card-coin{
-    font-size:8px;
-}
+    .market-title-sub{
+        font-size:4.8px;
+    }
 
-.unified-card-title{
-    font-size:5px;
-    margin-right:5px;
-}
+    .market-time{
+        font-size:4.8px;
+    }
 
-.signal-badge{
-    font-size:4px;
-    padding:3px 5px;
-}
+    .btc-main-row{
+        min-height:43px;
+    }
 
-.unified-main-row{
-    min-height:48px;
-}
+    .btc-name{
+        padding-left:8px;
+        font-size:8px;
+    }
 
-.unified-label{
-    font-size:4.5px;
-}
+    .btc-price{
+        font-size:8px;
+    }
 
-.unified-price,
-.unified-volume,
-.unified-daily{
-    font-size:7px;
-}
+    .btc-change{
+        font-size:8px;
+    }
 
-.unified-current-row{
-    min-height:34px;
-}
+    .btc-signal-box{
+        min-height:43px;
+    }
 
-.unified-current-title,
-.unified-current-period{
-    font-size:5px;
-}
+    .btc-info{
+        font-size:6px;
+    }
 
-.unified-current-value{
-    font-size:7px;
-}
+    .btc-on,
+    .btc-off{
+        font-size:7px;
+    }
 
-.unified-4h-grid{
-    grid-template-columns:
-        repeat(3,1fr);
-}
+    .btc-4h-grid{
+        grid-template-columns:
+            repeat(3,1fr);
+    }
 
-.unified-condition-row{
-    min-height:42px;
-}
+    .four-hour-cell{
+        min-height:52px;
+    }
 
-.signal-condition-only{
-    min-height:42px;
-}
+    .four-hour-label{
+        font-size:4px;
+    }
 
-.signal-condition-only .condition-period{
-    font-size:5.5px;
-}
+    .four-hour-time{
+        font-size:5px;
+    }
 
-.signal-condition-only .condition-value{
-    font-size:7px;
-}
+    .four-hour-value{
+        font-size:6px;
+    }
 
-.condition-label{
-    font-size:4.5px;
-}
+    .candle-pattern{
+        font-size:4.5px;
+        line-height:6px;
+    }
 
-.condition-period{
-    font-size:4px;
-}
 
-.condition-value{
-    font-size:7px;
-}
+    /* =====================================================
+       SIGNAL / TOP
+       ===================================================== */
 
-.top-update-bar{
-    font-size:5px;
-}
+    .unified-market-card{
+        border-radius:9px;
+    }
 
-.signal-btc-bar{
-    min-height:34px;
-}
+    .unified-card-header{
+        min-height:36px;
+        padding:5px 7px;
+    }
 
-.signal-btc-title,
-.signal-btc-period{
-    font-size:5px;
-}
+    .unified-card-rank{
+        width:27px;
+        font-size:7px;
+    }
 
-.signal-btc-value{
-    font-size:7px;
-}
+    .unified-card-coin{
+        font-size:8px;
+    }
 
-.signal-empty-card{
-    min-height:90px;
-}
+    .unified-card-title{
+        font-size:5px;
+        margin-right:5px;
+    }
 
-.signal-empty-icon{
-    font-size:16px;
-}
+    .signal-badge{
+        font-size:4px;
+        padding:3px 5px;
+    }
 
-.signal-empty-title{
-    font-size:8px;
-}
+    .unified-main-row{
+        min-height:48px;
+    }
 
-.signal-empty-text{
-    font-size:5.5px;
-}
+    .unified-label{
+        font-size:4.5px;
+    }
 
-.signal-empty-sub{
-    font-size:4.5px;
-}
+    .unified-price,
+    .unified-volume,
+    .unified-daily{
+        font-size:7px;
+    }
+
+    .unified-4h-grid{
+        grid-template-columns:
+            repeat(3,1fr);
+    }
+
+    .unified-condition-row{
+        min-height:42px;
+    }
+
+    .unified-condition{
+        min-height:42px;
+        padding:4px 6px;
+    }
+
+    .condition-label{
+        font-size:4.5px;
+    }
+
+    .condition-period{
+        font-size:5.5px;
+    }
+
+    .condition-value{
+        font-size:7px;
+    }
+
+    .condition-note{
+        font-size:4.5px;
+    }
+
+    .top-update-bar{
+        font-size:5px;
+    }
+
+    .signal-btc-bar{
+        min-height:34px;
+    }
+
+    .signal-btc-title,
+    .signal-btc-period{
+        font-size:5px;
+    }
+
+    .signal-btc-value{
+        font-size:7px;
+    }
+
+    .signal-empty-card{
+        min-height:90px;
+    }
+
+    .signal-empty-icon{
+        font-size:16px;
+    }
+
+    .signal-empty-title{
+        font-size:8px;
+    }
+
+    .signal-empty-text{
+        font-size:5.5px;
+    }
+
+    .signal-empty-sub{
+        font-size:4.5px;
+    }
 
 }
 
@@ -4985,189 +4813,156 @@ h1{
 
 @media(max-width:380px){
 
-body{
-    padding:4px;
-}
+    body{
+        padding:4px;
+    }
 
-h1{
-    font-size:11px;
-}
+    h1{
+        font-size:11px;
+    }
 
-.section-title-card{
-    min-height:35px;
-}
+    .section-title-card{
+        min-height:35px;
+    }
 
-.section-number{
-    width:23px;
-    height:23px;
-}
+    .section-number{
+        width:23px;
+        height:23px;
+    }
 
-.section-heading-main{
-    font-size:8px;
-}
+    .section-heading-main{
+        font-size:8px;
+    }
 
-.section-heading-sub{
-    font-size:4px;
-}
+    .section-heading-sub{
+        font-size:4px;
+    }
 
-.current-time-badge{
-    min-height:19px;
-    padding:2px 4px;
-    font-size:4px;
-}
+    .current-time-badge{
+        min-height:19px;
+        padding:2px 4px;
+        font-size:4px;
+    }
 
-.market-title-main{
-    font-size:7px;
-}
+    .market-title-main{
+        font-size:7px;
+    }
 
-.market-title-sub{
-    font-size:4px;
-}
+    .market-title-sub{
+        font-size:4px;
+    }
 
-.market-time{
-    font-size:4px;
-}
+    .market-time{
+        font-size:4px;
+    }
 
-.btc-main-row{
-    min-height:38px;
-}
+    .btc-main-row{
+        min-height:38px;
+    }
 
-.btc-name{
-    font-size:7px;
-}
+    .btc-name{
+        font-size:7px;
+    }
 
-.btc-price{
-    font-size:7px;
-}
+    .btc-price{
+        font-size:7px;
+    }
 
-.btc-change{
-    font-size:7px;
-}
+    .btc-change{
+        font-size:7px;
+    }
 
-.btc-signal-box{
-    min-height:38px;
-}
+    .btc-signal-box{
+        min-height:38px;
+    }
 
-.btc-info{
-    font-size:5px;
-}
+    .btc-info{
+        font-size:5px;
+    }
 
-.btc-on,
-.btc-off{
-    font-size:6px;
-}
+    .btc-on,
+    .btc-off{
+        font-size:6px;
+    }
 
-.btc-current-box{
-    min-height:34px;
-}
+    .four-hour-cell{
+        min-height:45px;
+    }
 
-.btc-current-title{
-    font-size:4.5px;
-}
+    .four-hour-label{
+        font-size:3.7px;
+    }
 
-.btc-current-period{
-    font-size:4.5px;
-}
+    .four-hour-time{
+        font-size:4px;
+    }
 
-.btc-current-value{
-    font-size:6px;
-}
+    .four-hour-value{
+        font-size:5px;
+    }
 
-.four-hour-cell{
-    min-height:45px;
-}
+    .candle-pattern{
+        font-size:3.8px;
+        line-height:5px;
+    }
 
-.four-hour-label{
-    font-size:3.7px;
-}
+    .unified-card-header{
+        min-height:32px;
+    }
 
-.four-hour-time{
-    font-size:4px;
-}
+    .unified-card-rank{
+        font-size:6px;
+    }
 
-.four-hour-value{
-    font-size:5px;
-}
+    .unified-card-coin{
+        font-size:7px;
+    }
 
-.candle-pattern{
-    font-size:3.8px;
-    line-height:5px;
-}
+    .unified-card-title{
+        font-size:4px;
+    }
 
-.unified-card-header{
-    min-height:32px;
-}
+    .signal-badge{
+        font-size:3.5px;
+    }
 
-.unified-card-rank{
-    font-size:6px;
-}
+    .unified-main-row{
+        min-height:43px;
+    }
 
-.unified-card-coin{
-    font-size:7px;
-}
+    .unified-label{
+        font-size:4px;
+    }
 
-.unified-card-title{
-    font-size:4px;
-}
+    .unified-price,
+    .unified-volume,
+    .unified-daily{
+        font-size:6px;
+    }
 
-.signal-badge{
-    font-size:3.5px;
-}
+    .unified-condition-row{
+        min-height:37px;
+    }
 
-.unified-main-row{
-    min-height:43px;
-}
+    .unified-condition{
+        min-height:37px;
+    }
 
-.unified-label{
-    font-size:4px;
-}
+    .condition-label{
+        font-size:4px;
+    }
 
-.unified-price,
-.unified-volume,
-.unified-daily{
-    font-size:6px;
-}
+    .condition-period{
+        font-size:4.5px;
+    }
 
-.unified-current-row{
-    min-height:29px;
-}
+    .condition-value{
+        font-size:6px;
+    }
 
-.unified-current-title,
-.unified-current-period{
-    font-size:4px;
-}
-
-.unified-current-value{
-    font-size:6px;
-}
-
-.unified-condition-row{
-    min-height:37px;
-}
-
-.signal-condition-only{
-    min-height:37px;
-}
-
-.signal-condition-only .condition-period{
-    font-size:4.5px;
-}
-
-.signal-condition-only .condition-value{
-    font-size:6px;
-}
-
-.condition-label{
-    font-size:4px;
-}
-
-.condition-period{
-    font-size:3.5px;
-}
-
-.condition-value{
-    font-size:6px;
-}
+    .condition-note{
+        font-size:4px;
+    }
 
 }
 
@@ -5177,11 +4972,11 @@ h1{
    ========================================================= */
 
 .top-market-card .current-4h{
-    background:#173326!important;
+    background:#173326 !important;
 }
 
 .signal-market-card .current-4h{
-    background:#173326!important;
+    background:#173326 !important;
 }
 
 """
