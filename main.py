@@ -144,6 +144,29 @@ def get_current_12h_period():
 
 
 # =========================================================
+# 현재 시간대 CSS 클래스
+# =========================================================
+
+def get_current_period_classes():
+
+    period = get_current_12h_period()
+
+    if period["key"] == "09_21":
+
+        return {
+            "active_09": "current-period",
+            "active_21": "inactive-period",
+            "badge": "current-badge-09"
+        }
+
+    return {
+        "active_09": "inactive-period",
+        "active_21": "current-period",
+        "badge": "current-badge-21"
+    }
+
+
+# =========================================================
 # 12시간 구간 계산
 # =========================================================
 
@@ -624,8 +647,6 @@ def daily_change_upbit(
 
 # =========================================================
 # 업비트 60분봉
-#
-# 12시간봉 생성용
 # =========================================================
 
 def get_upbit_60m_candles(
@@ -669,19 +690,6 @@ def get_upbit_60m_candles(
 
 # =========================================================
 # 업비트 12시간봉 생성
-#
-# 업비트에는 12시간봉 API를 사용하지 않고
-# 1시간봉 12개를 직접 합쳐서 만든다.
-#
-# 09:00 ~ 21:00
-# 21:00 ~ 09:00
-#
-# Open  = 첫 1시간봉 시가
-# High  = 12시간 최고가
-# Low   = 12시간 최저가
-# Close = 마지막 1시간봉 종가
-#
-# 현재 진행 중인 봉은 Close = 현재가
 # =========================================================
 
 def build_upbit_12h_candles(
@@ -849,7 +857,6 @@ def build_upbit_12h_candles(
             part.iloc[-1]["close"]
         )
 
-        # 현재 진행 중인 12시간봉
         if period["active"]:
 
             if current_price is not None:
@@ -1475,7 +1482,6 @@ def build_okx_btc_12h_candles(
             part.iloc[-1]["close"]
         )
 
-        # 현재 진행 중인 12시간봉
         if period["active"]:
 
             close_price = float(
@@ -2251,6 +2257,32 @@ def signal_item_html(
         )
     )
 
+    period = get_current_12h_period()
+
+    if period["key"] == "09_21":
+
+        current_class = "current-period"
+
+        previous_class = "inactive-period"
+
+    else:
+
+        current_class = "current-period"
+
+        previous_class = "inactive-period"
+
+    c09_class = (
+        current_class
+        if period["key"] == "09_21"
+        else previous_class
+    )
+
+    c21_class = (
+        current_class
+        if period["key"] == "21_09"
+        else previous_class
+    )
+
     return f"""
 
     <div class="signal-row">
@@ -2286,14 +2318,14 @@ def signal_item_html(
             )}
         </div>
 
-        <div class="signal-09">
+        <div class="signal-09 {c09_class}">
             {row.get(
                 "change_09_21_html",
                 "-"
             )}
         </div>
 
-        <div class="signal-21">
+        <div class="signal-21 {c21_class}">
             {row.get(
                 "change_21_09_html",
                 "-"
@@ -2327,6 +2359,14 @@ def focus_section(data):
 
         btc_change > 0
 
+    )
+
+    # =====================================================
+    # 현재 시간대 표시
+    # =====================================================
+
+    current_period_text = (
+        f'▶ 현재 {period["label"]}'
     )
 
     # =====================================================
@@ -2372,8 +2412,8 @@ def focus_section(data):
 
                 </div>
 
-                <div class="section-time">
-                    {kst()} KST
+                <div class="current-time-badge">
+                    {current_period_text}
                 </div>
 
             </div>
@@ -2381,12 +2421,12 @@ def focus_section(data):
             <div class="signal-empty">
 
                 BTC 현재 필터 구간
-                {period["label"]}
+                <strong>{period["label"]}</strong>
 
                 <br>
 
                 BTC 상승률
-                {btc_text}
+                <strong>{btc_text}</strong>
 
                 <br>
 
@@ -2459,6 +2499,20 @@ def focus_section(data):
 
     else:
 
+        period = get_current_12h_period()
+
+        if period["key"] == "09_21":
+
+            header_09_class = "current-period"
+
+            header_21_class = "inactive-period"
+
+        else:
+
+            header_09_class = "inactive-period"
+
+            header_21_class = "current-period"
+
         signal_items = []
 
         for signal_rank, row in enumerate(
@@ -2489,9 +2543,13 @@ def focus_section(data):
 
             <div>당일</div>
 
-            <div>09~21</div>
+            <div class="{header_09_class}">
+                09~21
+            </div>
 
-            <div>21~09</div>
+            <div class="{header_21_class}">
+                21~09
+            </div>
 
         </div>
 
@@ -2529,8 +2587,8 @@ def focus_section(data):
 
             </div>
 
-            <div class="section-time">
-                {period["label"]}
+            <div class="current-time-badge">
+                {current_period_text}
             </div>
 
         </div>
@@ -2549,6 +2607,20 @@ def focus_section(data):
 def rows_html(data):
 
     out = []
+
+    period = get_current_12h_period()
+
+    if period["key"] == "09_21":
+
+        class_09 = "current-period"
+
+        class_21 = "inactive-period"
+
+    else:
+
+        class_09 = "inactive-period"
+
+        class_21 = "current-period"
 
     for x in data:
 
@@ -2611,7 +2683,7 @@ def rows_html(data):
 
                     </div>
 
-                    <div class="h09-cell">
+                    <div class="h09-cell {class_09}">
 
                         {x.get(
                             "change_09_21_html",
@@ -2620,7 +2692,7 @@ def rows_html(data):
 
                     </div>
 
-                    <div class="h21-cell">
+                    <div class="h21-cell {class_21}">
 
                         {x.get(
                             "change_21_09_html",
@@ -2652,6 +2724,20 @@ def table_html(data):
         data
     )
 
+    period = get_current_12h_period()
+
+    if period["key"] == "09_21":
+
+        header_09_class = "current-period"
+
+        header_21_class = "inactive-period"
+
+    else:
+
+        header_09_class = "inactive-period"
+
+        header_21_class = "current-period"
+
     if not rows:
 
         rows = """
@@ -2678,9 +2764,13 @@ def table_html(data):
 
         <div>당일</div>
 
-        <div>09~21</div>
+        <div class="{header_09_class}">
+            ▶ 09~21
+        </div>
 
-        <div>21~09</div>
+        <div class="{header_21_class}">
+            ▶ 21~09
+        </div>
 
     </div>
 
@@ -2726,17 +2816,17 @@ def section(
 
                 <div class="section-heading-sub">
 
-                    거래대금 · 당일 · 09~21 ·
-                    21~09 ·
-                    Signal 현재구간 =
-                    {period["label"]}
+                    거래대금 · 당일 ·
+                    09~21 · 21~09
 
                 </div>
 
             </div>
 
-            <div class="section-time">
-                {update_time} KST
+            <div class="current-time-badge">
+
+                ▶ 현재 {period["label"]}
+
             </div>
 
         </div>
@@ -2753,6 +2843,8 @@ def section(
 # =========================================================
 
 def market_summary_html():
+
+    period = get_current_12h_period()
 
     price = format_market_price(
         latest_btc_okx_price
@@ -2795,6 +2887,18 @@ def market_summary_html():
         signal_status = "OFF"
 
         signal_class = "btc-off"
+
+    if period["key"] == "09_21":
+
+        btc_09_class = "btc-current-period"
+
+        btc_21_class = "btc-inactive-period"
+
+    else:
+
+        btc_09_class = "btc-inactive-period"
+
+        btc_21_class = "btc-current-period"
 
     return f"""
 
@@ -2858,14 +2962,22 @@ def market_summary_html():
 
         <div class="btc-12h-row">
 
-            <div class="btc-12h-item">
+            <div class="btc-12h-item {btc_09_class}">
 
                 <div class="btc-12h-label">
+
                     09:00 ~ 21:00
+
                 </div>
 
                 <div class="btc-12h-value">
                     {change_09}
+                </div>
+
+                <div class="btc-period-state">
+
+                    {"현재 시간대" if period["key"] == "09_21" else "이전 시간대"}
+
                 </div>
 
             </div>
@@ -2874,14 +2986,22 @@ def market_summary_html():
             <div class="btc-12h-divider"></div>
 
 
-            <div class="btc-12h-item">
+            <div class="btc-12h-item {btc_21_class}">
 
                 <div class="btc-12h-label">
+
                     21:00 ~ 09:00
+
                 </div>
 
                 <div class="btc-12h-value">
                     {change_21}
+                </div>
+
+                <div class="btc-period-state">
+
+                    {"현재 시간대" if period["key"] == "21_09" else "이전 시간대"}
+
                 </div>
 
             </div>
@@ -2890,11 +3010,15 @@ def market_summary_html():
             <div class="btc-current-filter">
 
                 <div class="btc-filter-label">
-                    현재 필터
+
+                    ▶ 현재 필터
+
                 </div>
 
                 <div class="btc-filter-period">
-                    {latest_btc_current_12h_label}
+
+                    {period["label"]}
+
                 </div>
 
                 <div class="btc-filter-value">
@@ -2949,6 +3073,11 @@ font-size:15px;
 line-height:18px;
 font-weight:900;
 }
+
+
+/* =========================================================
+   공통 Section
+   ========================================================= */
 
 .unified-section{
 width:100%;
@@ -3022,6 +3151,62 @@ color:#68737e;
 font-size:6.5px;
 font-weight:800;
 white-space:nowrap;
+}
+
+
+/* =========================================================
+   현재 시간대 배지
+   ========================================================= */
+
+.current-time-badge{
+flex:none;
+display:flex;
+align-items:center;
+justify-content:center;
+min-height:27px;
+margin-left:8px;
+padding:4px 8px;
+border-radius:7px;
+background:#173326;
+border:1px solid #4f9b73;
+color:#8fe0b2;
+font-size:7px;
+font-weight:900;
+white-space:nowrap;
+box-shadow:
+    0 0 8px rgba(94,190,135,0.12);
+}
+
+.current-badge-09{
+background:#173326;
+border-color:#4f9b73;
+color:#8fe0b2;
+}
+
+.current-badge-21{
+background:#173326;
+border-color:#4f9b73;
+color:#8fe0b2;
+}
+
+
+/* =========================================================
+   현재 시간대 / 이전 시간대 공통
+   ========================================================= */
+
+.current-period{
+background:#172d22!important;
+color:#eafff1!important;
+border-color:#4f9b73!important;
+box-shadow:
+    inset 0 0 0 1px rgba(116,213,157,0.10),
+    0 0 7px rgba(94,190,135,0.10);
+}
+
+.inactive-period{
+background:#0c1116!important;
+color:#65717b!important;
+opacity:0.72;
 }
 
 
@@ -3166,7 +3351,8 @@ display:flex;
 flex-direction:column;
 align-items:center;
 justify-content:center;
-gap:4px;
+gap:3px;
+height:66px;
 }
 
 .btc-12h-label{
@@ -3180,6 +3366,37 @@ white-space:nowrap;
 font-size:10px;
 font-weight:900;
 white-space:nowrap;
+}
+
+.btc-period-state{
+font-size:5.5px;
+font-weight:900;
+color:#68747e;
+white-space:nowrap;
+}
+
+.btc-current-period{
+background:#173326!important;
+box-shadow:
+    inset 0 0 0 1px rgba(116,213,157,0.18),
+    inset 0 0 15px rgba(78,164,111,0.08);
+}
+
+.btc-current-period .btc-12h-label{
+color:#91dcb0;
+}
+
+.btc-current-period .btc-period-state{
+color:#8fe0b2;
+}
+
+.btc-inactive-period{
+background:#0b1015!important;
+opacity:0.55;
+}
+
+.btc-current-period .btc-12h-value{
+font-size:11px;
 }
 
 .btc-12h-divider{
@@ -3199,20 +3416,20 @@ background:#111820;
 }
 
 .btc-filter-label{
-color:#6f7a85;
+color:#7fa18e;
 font-size:6px;
-font-weight:800;
+font-weight:900;
 }
 
 .btc-filter-period{
-color:#e3e8ec;
+color:#b9f0cf;
 font-size:7px;
 font-weight:900;
 white-space:nowrap;
 }
 
 .btc-filter-value{
-font-size:9px;
+font-size:10px;
 font-weight:900;
 white-space:nowrap;
 }
@@ -3426,6 +3643,11 @@ font-weight:800;
 margin-top:8px;
 }
 
+.signal-empty strong{
+color:#9be1b8;
+font-weight:900;
+}
+
 
 /* =========================================================
    상승 / 하락
@@ -3511,6 +3733,14 @@ h1{
     font-size:5px;
 }
 
+.current-time-badge{
+    min-height:22px;
+    margin-left:5px;
+    padding:3px 5px;
+    border-radius:5px;
+    font-size:4.8px;
+}
+
 
 /* BTC */
 
@@ -3570,12 +3800,25 @@ h1{
     min-height:50px;
 }
 
+.btc-12h-item{
+    height:50px;
+    gap:2px;
+}
+
 .btc-12h-label{
     font-size:5px;
 }
 
 .btc-12h-value{
     font-size:7px;
+}
+
+.btc-period-state{
+    font-size:4px;
+}
+
+.btc-current-period .btc-12h-value{
+    font-size:8px;
 }
 
 .btc-current-filter{
@@ -3591,7 +3834,7 @@ h1{
 }
 
 .btc-filter-value{
-    font-size:6px;
+    font-size:7px;
 }
 
 
@@ -3722,6 +3965,12 @@ h1{
     font-size:4px;
 }
 
+.current-time-badge{
+    min-height:19px;
+    padding:2px 4px;
+    font-size:4px;
+}
+
 
 /* BTC */
 
@@ -3770,12 +4019,20 @@ h1{
     min-height:43px;
 }
 
+.btc-12h-item{
+    height:43px;
+}
+
 .btc-12h-label{
     font-size:4px;
 }
 
 .btc-12h-value{
     font-size:5.5px;
+}
+
+.btc-period-state{
+    font-size:3.5px;
 }
 
 .btc-current-filter{
@@ -4068,6 +4325,10 @@ def startup():
 
     log.info(
         "★ Signal 정렬 = 현재 12H 상승률 높은 순"
+    )
+
+    log.info(
+        "★ 현재 시간대 = 화면에서 녹색 강조"
     )
 
     log.info(
