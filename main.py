@@ -354,9 +354,7 @@ def get_current_4h_period():
 # =========================================================
 # 이전 4H
 #
-# 화면 표시용
-#
-# SIGNAL 필터에는 사용하지 않음
+# SIGNAL 필터에도 사용
 # =========================================================
 
 def get_previous_4h_period():
@@ -1500,6 +1498,11 @@ def build_upbit_4h_candles(
         )
 
 
+        # =================================================
+        # 현재 진행 중인 4H
+        # 현재가 반영
+        # =================================================
+
         if period["active"]:
 
             if current_price is not None:
@@ -1576,6 +1579,10 @@ def build_upbit_4h_candles(
 
         })
 
+
+    # =====================================================
+    # 4H 캔들 패턴 탐지
+    # =====================================================
 
     pattern_results = (
         detect_4h_patterns(
@@ -1961,10 +1968,11 @@ def update_upbit():
 
 
     # =====================================================
-    # BTC 현재 4H 조건
+    # SIGNAL 조건 1
+    # BTC 현재 4H 양수
     # =====================================================
 
-    btc_pass = (
+    btc_condition = (
 
         latest_btc_current_4h_change
         is not None
@@ -2024,14 +2032,6 @@ def update_upbit():
 
 
         # =================================================
-        # SIGNAL 조건 1
-        # BTC 현재 4H 양수
-        # =================================================
-
-        btc_condition = btc_pass
-
-
-        # =================================================
         # SIGNAL 조건 2
         # 업비트 당일 변동률 양수
         # =================================================
@@ -2051,6 +2051,24 @@ def update_upbit():
 
         # =================================================
         # SIGNAL 조건 3
+        # 해당 코인 이전 4H 양수
+        # =================================================
+
+        previous_4h_condition = (
+
+            row["previous_4h_change"]
+            is not None
+
+            and
+
+            row["previous_4h_change"]
+            > 0
+
+        )
+
+
+        # =================================================
+        # SIGNAL 조건 4
         # 해당 코인 현재 4H 음수
         # =================================================
 
@@ -2072,7 +2090,8 @@ def update_upbit():
         #
         # BTC 현재4H 양수
         # + 업비트 당일 양수
-        # + 코인 현재4H 음수
+        # + 이전4H 양수
+        # + 현재4H 음수
         # =================================================
 
         row["signal_pass"] = (
@@ -2082,6 +2101,10 @@ def update_upbit():
             and
 
             daily_condition
+
+            and
+
+            previous_4h_condition
 
             and
 
@@ -2101,6 +2124,9 @@ def update_upbit():
 
             "daily":
                 daily_condition,
+
+            "previous_4h":
+                previous_4h_condition,
 
             "current_4h":
                 current_4h_condition
@@ -2908,14 +2934,17 @@ def update_dashboard():
 
     try:
 
+        # BTC 먼저
         update_btc_market()
 
 
+        # 업비트
         if USE_UPBIT == "Y":
 
             update_upbit()
 
 
+        # OKX
         if USE_OKX == "Y":
 
             usdt = get_usdt_krw()
@@ -3338,7 +3367,7 @@ def unified_card_html(
                 </div>
 
                 <div class="condition-period">
-                    BTC 4H+ · 당일+ · 코인 4H-
+                    BTC 4H+ · 당일+ · 이전4H+ · 현재4H-
                 </div>
 
                 <div class="condition-value">
@@ -3553,8 +3582,9 @@ def focus_section(data):
 
             message = (
                 "BTC 현재 4H는 양수지만 "
-                "당일 양수 + 현재 4H 음수 "
-                "조건을 모두 만족하는 종목 없음"
+                "당일 양수 + 이전 4H 양수 + "
+                "현재 4H 음수 조건을 "
+                "모두 만족하는 종목 없음"
             )
 
 
@@ -3641,6 +3671,7 @@ def focus_section(data):
 
                     BTC 현재 4H 양수
                     · 업비트 당일 양수
+                    · 이전 4H 양수
                     · 코인 현재 4H 음수
 
                 </div>
@@ -3857,11 +3888,6 @@ font-size:15px;
 line-height:18px;
 font-weight:900;
 }
-
-
-/* =========================================================
-   공통 SECTION
-   ========================================================= */
 
 .unified-section{
 width:100%;
@@ -5135,15 +5161,15 @@ def startup():
     )
 
     log.info(
-        "3. 코인 현재 4H < 0"
+        "3. 코인 이전 4H > 0"
     )
 
     log.info(
-        "이전 4H = 화면 표시만 사용"
+        "4. 코인 현재 4H < 0"
     )
 
     log.info(
-        "이전 4H는 SIGNAL 필터에서 제외"
+        "이전 4H = SIGNAL 필터 및 화면 표시"
     )
 
     log.info(
