@@ -295,14 +295,13 @@ def make_4h_period(
 #
 # 현재 포함 6개
 #
-# [5개 전]
 # [전전전전]
 # [전전전]
 # [전전]
 # [전]
 # [현재]
 #
-# SIGNAL은 현재를 사용하지 않음
+# SIGNAL은 현재 4H를 마지막으로 사용
 # =========================================================
 
 def get_recent_4h_periods(
@@ -969,6 +968,9 @@ def detect_single_candle_pattern(
 
 # =========================================================
 # 2개 캔들 패턴
+#
+# 현재 캔들이 진행 중이어도
+# 현재가를 close로 사용하여 실시간 판정
 # =========================================================
 
 def detect_two_candle_pattern(
@@ -990,6 +992,19 @@ def detect_two_candle_pattern(
 
     patterns = []
 
+
+    # =====================================================
+    # 상승장악
+    #
+    # 이전 = 음봉
+    # 현재 = 양봉
+    #
+    # 현재 시가 <= 이전 종가
+    # 현재 종가 >= 이전 시가
+    # 현재 몸통 > 이전 몸통
+    #
+    # 현재 캔들이 진행 중이어도 실시간 판정
+    # =====================================================
 
     if (
 
@@ -1015,6 +1030,10 @@ def detect_two_candle_pattern(
 
         patterns.append("상승장악")
 
+
+    # =====================================================
+    # 관통형
+    # =====================================================
 
     midpoint = (
         p1["open"] +
@@ -1137,6 +1156,8 @@ def detect_three_candle_pattern(
 
 # =========================================================
 # 4H 전체 캔들 패턴
+#
+# 현재 진행 중인 캔들도 포함
 # =========================================================
 
 def detect_4h_patterns(
@@ -1383,6 +1404,12 @@ def build_upbit_4h_candles(
         )
 
 
+        # =================================================
+        # 현재 진행 중인 4H
+        #
+        # 현재가를 실시간 close로 사용
+        # =================================================
+
         if period["active"]:
 
             if current_price is not None:
@@ -1452,6 +1479,10 @@ def build_upbit_4h_candles(
 
         })
 
+
+    # =====================================================
+    # 현재 4H까지 포함해서 패턴 계산
+    # =====================================================
 
     pattern_results = detect_4h_patterns(
         result
@@ -1911,6 +1942,19 @@ def make_row(
 
 # =========================================================
 # 업비트 TOP 업데이트
+#
+# SIGNAL 최종 조건
+#
+# 공통:
+# 당일 변동률 > 0
+#
+# 패턴 1:
+# 양 → 음 → 현재 양 + 상승장악
+#
+# 패턴 2:
+# 양 → 음 → 음 → 현재 양 + 상승장악
+#
+# 현재 진행 중인 4H가 마지막
 # =========================================================
 
 def update_upbit():
@@ -1999,22 +2043,11 @@ def update_upbit():
         )
 
 
-        # =================================================
-        # SIGNAL
+        # =====================================================
+        # SIGNAL 공통 조건
         #
-        # 공통:
         # 당일 변동률 > 0
-        #
-        # 패턴 1:
-        #
-        # 양 → 음 → 양
-        #
-        # 전전전 4H = 양
-        # 전전 4H   = 음
-        # 전 4H     = 양
-        #
-        # 현재 4H는 완전히 제외
-        # =================================================
+        # =====================================================
 
         daily_condition = (
 
@@ -2028,13 +2061,82 @@ def update_upbit():
         )
 
 
-        # =================================================
+        # =====================================================
+        # 현재 / 이전 4H 가져오기
+        # =====================================================
+
+        periods = row.get(
+            "four_hour_periods",
+            []
+        )
+
+
+        current_candle = None
+        previous_candle = None
+
+
+        if len(periods) >= 2:
+
+            previous_candle = periods[-2]
+
+            current_candle = periods[-1]
+
+
+        # =====================================================
+        # 현재 4H 상승장악 여부
+        #
+        # 반드시:
+        #
+        # 이전 4H = 음봉
+        # 현재 4H = 양봉
+        # 현재 몸통 > 이전 몸통
+        #
+        # 그리고
+        #
+        # 현재 시가 <= 이전 종가
+        # 현재 종가 >= 이전 시가
+        #
+        # 현재 진행 중이므로
+        # 현재가에 따라 실시간 변경
+        # =====================================================
+
+        current_bullish_engulfing = False
+
+
+        if (
+            previous_candle is not None
+            and
+            current_candle is not None
+        ):
+
+            current_patterns = (
+                current_candle.get(
+                    "patterns",
+                    []
+                )
+            )
+
+
+            current_bullish_engulfing = (
+
+                "상승장악"
+                in
+                current_patterns
+
+            )
+
+
+        # =====================================================
         # 패턴 1
         #
-        # 양 → 음 → 양
+        # 양 → 음 → 현재 양(상승장악)
         #
-        # 현재 4H는 사용하지 않음
-        # =================================================
+        # 전전전 4H = 양
+        # 전전   4H = 음
+        # 현재   4H = 양 + 상승장악
+        #
+        # 현재 4H가 마지막
+        # =====================================================
 
         pattern_1_first_positive = (
 
@@ -2071,14 +2173,14 @@ def update_upbit():
         pattern_1_last_positive = (
 
             row[
-                "previous_4h_change"
+                "current_4h_change"
             ]
             is not None
 
             and
 
             row[
-                "previous_4h_change"
+                "current_4h_change"
             ] > 0
 
         )
@@ -2096,21 +2198,25 @@ def update_upbit():
 
             pattern_1_last_positive
 
+            and
+
+            current_bullish_engulfing
+
         )
 
 
-        # =================================================
+        # =====================================================
         # 패턴 2
         #
-        # 양 → 음 → 음 → 양
-        #
-        # 현재 4H는 사용하지 않음
+        # 양 → 음 → 음 → 현재 양(상승장악)
         #
         # 전전전전 4H = 양
-        # 전전전 4H   = 음
-        # 전전 4H     = 음
-        # 전 4H       = 양
-        # =================================================
+        # 전전전   4H = 음
+        # 전전     4H = 음
+        # 현재     4H = 양 + 상승장악
+        #
+        # 현재 4H가 마지막
+        # =====================================================
 
         pattern_2_first_positive = (
 
@@ -2163,14 +2269,14 @@ def update_upbit():
         pattern_2_last_positive = (
 
             row[
-                "previous_4h_change"
+                "current_4h_change"
             ]
             is not None
 
             and
 
             row[
-                "previous_4h_change"
+                "current_4h_change"
             ] > 0
 
         )
@@ -2192,10 +2298,14 @@ def update_upbit():
 
             pattern_2_last_positive
 
+            and
+
+            current_bullish_engulfing
+
         )
 
 
-        # =================================================
+        # =====================================================
         # 최종 SIGNAL
         #
         # 당일+
@@ -2203,15 +2313,13 @@ def update_upbit():
         # AND
         #
         # (
-        #   양 → 음 → 양
+        #   양 → 음 → 현재 양(상승장악)
         #
         #   OR
         #
-        #   양 → 음 → 음 → 양
+        #   양 → 음 → 음 → 현재 양(상승장악)
         # )
-        #
-        # 현재 4H는 완전히 무시
-        # =================================================
+        # =====================================================
 
         row["signal_pass"] = (
 
@@ -2227,6 +2335,10 @@ def update_upbit():
 
         )
 
+
+        # =====================================================
+        # SIGNAL 상세 조건
+        # =====================================================
 
         row["signal_conditions"] = {
 
@@ -2260,7 +2372,22 @@ def update_upbit():
             "pattern_2_last_positive":
                 pattern_2_last_positive,
 
-            "current_4h_ignored":
+            "current_4h_positive":
+                (
+                    row[
+                        "current_4h_change"
+                    ]
+                    is not None
+                    and
+                    row[
+                        "current_4h_change"
+                    ] > 0
+                ),
+
+            "current_bullish_engulfing":
+                current_bullish_engulfing,
+
+            "current_4h_used":
                 True
 
         }
@@ -2295,7 +2422,7 @@ def update_upbit():
     pre_previous = get_pre_previous_4h_period()
 
     pre_pre_previous = (
-        get_pre_pre_previous_4h_period()
+        get_pre_previous_4h_period()
     )
 
     pre_pre_pre_previous = (
@@ -2308,24 +2435,23 @@ def update_upbit():
         f"TOP{TOP_N} 업데이트 | "
 
         f"패턴1="
-        f"{pre_pre_previous['display_label'] if pre_pre_previous else '-'}"
-        "→"
         f"{pre_previous['display_label'] if pre_previous else '-'}"
         "→"
-        f"{previous['display_label'] if previous else '-'}"
+        f"{current['display_label'] if current else '-'}"
         " | "
 
         f"패턴2="
-        f"{pre_pre_pre_previous['display_label'] if pre_pre_pre_previous else '-'}"
-        "→"
         f"{pre_pre_previous['display_label'] if pre_pre_previous else '-'}"
         "→"
         f"{pre_previous['display_label'] if pre_previous else '-'}"
         "→"
-        f"{previous['display_label'] if previous else '-'}"
+        f"{current['display_label'] if current else '-'}"
         " | "
 
         f"현재={current['display_label'] if current else '-'}"
+        " | "
+
+        f"현재 4H = 상승장악 포함"
         " | "
 
         f"BTC4H(참고)="
@@ -3176,14 +3302,6 @@ def btc_4h_cells_html():
 
 # =========================================================
 # BTC 시장 카드
-#
-# 구조:
-#
-# 헤더
-# 현재가 / 당일 / MARKET 상태
-# 4H 6칸
-#
-# ★ 현재 4H 별도 행 삭제
 # =========================================================
 
 def market_summary_html():
@@ -3296,15 +3414,6 @@ def market_summary_html():
 
 # =========================================================
 # 공통 SIGNAL / TOP 카드
-#
-# 구조:
-#
-# 헤더
-# 현재가 / 24H 거래대금 / 당일
-# 4H 6칸
-# SIGNAL이면 SIGNAL 조건
-#
-# ★ 현재 4H 별도 행 삭제
 # =========================================================
 
 def unified_card_html(
@@ -3322,10 +3431,6 @@ def unified_card_html(
         )
     )
 
-
-    # =====================================================
-    # SIGNAL / TOP 제목
-    # =====================================================
 
     if card_type == "SIGNAL":
 
@@ -3383,10 +3488,6 @@ def unified_card_html(
 
     # =====================================================
     # SIGNAL 조건
-    #
-    # 6칸 아래에 조건만 표시
-    #
-    # 실제 SIGNAL 판정은 기존 로직 그대로
     # =====================================================
 
     condition_html = ""
@@ -3405,9 +3506,9 @@ def unified_card_html(
                 </div>
 
                 <div class="condition-period">
-                    양 → 음 → 양
+                    양 → 음 → 현재 양(상승장악)
                     또는
-                    양 → 음 → 음 → 양
+                    양 → 음 → 음 → 현재 양(상승장악)
                 </div>
 
                 <div class="condition-value">
@@ -3417,7 +3518,7 @@ def unified_card_html(
                     </span>
 
                     <span class="condition-note">
-                        현재 4H 판정 제외
+                        현재 4H 실시간 판정
                     </span>
 
                 </div>
@@ -3432,10 +3533,6 @@ def unified_card_html(
     return f"""
 
     <div class="{card_class}">
-
-        <!-- =============================================
-             카드 헤더
-             ============================================= -->
 
         <div class="{header_class}">
 
@@ -3455,14 +3552,6 @@ def unified_card_html(
 
         </div>
 
-
-        <!-- =============================================
-             기본 정보
-             
-             현재가
-             24H 거래대금
-             당일 변동률
-             ============================================= -->
 
         <div class="unified-main-row">
 
@@ -3517,13 +3606,6 @@ def unified_card_html(
         </div>
 
 
-        <!-- =============================================
-             최근 6개 4H
-             
-             현재 4H도 여기에서 표시
-             별도 현재 4H 행은 없음
-             ============================================= -->
-
         <div class="unified-4h-grid">
 
             {four_hour_cells_html(
@@ -3536,10 +3618,6 @@ def unified_card_html(
         </div>
 
 
-        <!-- =============================================
-             SIGNAL 조건
-             ============================================= -->
-
         {condition_html}
 
     </div>
@@ -3550,19 +3628,13 @@ def unified_card_html(
 # =========================================================
 # SIGNAL Section
 #
-# 당일 변동률 > 0
+# 현재 진행 중인 4H가 마지막
 #
-# 패턴 1:
-# 양 → 음 → 양
+# 패턴1:
+# 양 → 음 → 현재 양(상승장악)
 #
-# 패턴 2:
-# 양 → 음 → 음 → 양
-#
-# 현재 4H는 완전히 제외
-#
-# SIGNAL 순위:
-# 패턴 완성 마지막 4H
-# = 전 4H 변동률 높은 순
+# 패턴2:
+# 양 → 음 → 음 → 현재 양(상승장악)
 # =========================================================
 
 def focus_section(data):
@@ -3605,8 +3677,7 @@ def focus_section(data):
     # =====================================================
     # SIGNAL 순위
     #
-    # 패턴을 완성한 마지막 4H
-    # = 전 4H 변동률 높은 순
+    # 현재 진행 중인 4H 변동률 높은 순
     # =====================================================
 
     signal_rows.sort(
@@ -3614,7 +3685,7 @@ def focus_section(data):
         key=lambda row:
 
             row.get(
-                "previous_4h_change",
+                "current_4h_change",
                 float("-inf")
             ),
 
@@ -3627,11 +3698,10 @@ def focus_section(data):
 
         message = (
             "당일 양수 + "
-            "(양 → 음 → 양) "
+            "(양 → 음 → 현재 양봉·상승장악) "
             "또는 "
-            "(양 → 음 → 음 → 양) "
-            "패턴이 현재 4H 전에 완성된 "
-            "종목 없음"
+            "(양 → 음 → 음 → 현재 양봉·상승장악) "
+            "조건을 만족하는 종목 없음"
         )
 
 
@@ -3756,10 +3826,10 @@ def focus_section(data):
                 <div class="section-heading-sub">
 
                     당일 양수
-                    · 양→음→양
+                    · 양→음→현재 양봉(상승장악)
                     또는
-                    양→음→음→양
-                    · 현재 4H 판정 제외
+                    양→음→음→현재 양봉(상승장악)
+                    · 현재 4H 실시간 판정
                     · BTC 필터 제외
 
                 </div>
@@ -3788,11 +3858,11 @@ def focus_section(data):
             </div>
 
             <div class="signal-btc-period">
-                패턴 완성 마지막 4H 기준
+                현재 4H 상승장악 기준
             </div>
 
             <div class="signal-btc-value">
-                전 4H 변동률 우선
+                현재 4H 변동률 우선
             </div>
 
         </div>
@@ -5155,23 +5225,27 @@ def startup():
     )
 
     log.info(
-        "패턴1: 전전전 4H 양수 → 전전 4H 음수 → 전 4H 양수"
+        "패턴1: 양 → 음 → 현재 양봉 + 상승장악"
     )
 
     log.info(
-        "패턴2: 전전전전 4H 양수 → 전전전 4H 음수 → 전전 4H 음수 → 전 4H 양수"
+        "패턴2: 양 → 음 → 음 → 현재 양봉 + 상승장악"
     )
 
     log.info(
-        "현재 4H는 SIGNAL 판정에서 제외"
+        "현재 진행 중인 4H를 SIGNAL 마지막 캔들로 사용"
     )
 
     log.info(
-        "SIGNAL = 당일+ AND (양→음→양 OR 양→음→음→양)"
+        "현재 4H 상승장악 = 실시간 현재가 기준"
     )
 
     log.info(
-        "SIGNAL 순위 = 패턴 완성 마지막 4H(전 4H) 변동률 높은 순서"
+        "SIGNAL = 당일+ AND (양→음→현재 상승장악 OR 양→음→음→현재 상승장악)"
+    )
+
+    log.info(
+        "SIGNAL 순위 = 현재 4H 변동률 높은 순서"
     )
 
     log.info(
@@ -5183,7 +5257,7 @@ def startup():
     )
 
     log.info(
-        "캔들 패턴 = 화면 표시만 사용"
+        "캔들 패턴 = 화면 표시 및 상승장악 SIGNAL 판정에 사용"
     )
 
     log.info(
