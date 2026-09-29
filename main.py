@@ -769,6 +769,588 @@ def get_upbit_60m_candles(
 
 
 # =========================================================
+# 캔들 구성요소
+# =========================================================
+
+def candle_parts(candle):
+
+    try:
+
+        o = float(
+            candle["open"]
+        )
+
+        h = float(
+            candle["high"]
+        )
+
+        l = float(
+            candle["low"]
+        )
+
+        c = float(
+            candle["close"]
+        )
+
+    except Exception:
+
+        return None
+
+
+    total = h - l
+
+    if total <= 0:
+
+        return None
+
+
+    body = abs(
+        c - o
+    )
+
+    upper = (
+        h
+        -
+        max(o, c)
+    )
+
+    lower = (
+        min(o, c)
+        -
+        l
+    )
+
+    body_ratio = (
+        body / total
+    )
+
+
+    return {
+
+        "open":
+            o,
+
+        "high":
+            h,
+
+        "low":
+            l,
+
+        "close":
+            c,
+
+        "body":
+            body,
+
+        "total":
+            total,
+
+        "upper":
+            upper,
+
+        "lower":
+            lower,
+
+        "body_ratio":
+            body_ratio,
+
+        "bull":
+            c > o,
+
+        "bear":
+            c < o
+
+    }
+
+
+# =========================================================
+# 1개 캔들 패턴
+# =========================================================
+
+def detect_single_candle_pattern(
+    candle
+):
+
+    p = candle_parts(
+        candle
+    )
+
+
+    if p is None:
+
+        return []
+
+
+    patterns = []
+
+
+    body = p["body"]
+
+    total = p["total"]
+
+    upper = p["upper"]
+
+    lower = p["lower"]
+
+    body_ratio = p["body_ratio"]
+
+
+    # =====================================================
+    # 도지
+    # =====================================================
+
+    if body_ratio <= 0.10:
+
+        patterns.append(
+            "도지"
+        )
+
+
+    # =====================================================
+    # 망치형
+    #
+    # 작은 몸통
+    # 긴 아래꼬리
+    # 짧은 위꼬리
+    # =====================================================
+
+    if (
+
+        body_ratio <= 0.40
+
+        and
+
+        lower >= max(
+            body * 2,
+            total * 0.45
+        )
+
+        and
+
+        upper <= max(
+            body,
+            total * 0.15
+        )
+
+    ):
+
+        patterns.append(
+            "망치형"
+        )
+
+
+    # =====================================================
+    # 역망치형
+    # =====================================================
+
+    if (
+
+        body_ratio <= 0.40
+
+        and
+
+        upper >= max(
+            body * 2,
+            total * 0.45
+        )
+
+        and
+
+        lower <= max(
+            body,
+            total * 0.15
+        )
+
+    ):
+
+        patterns.append(
+            "역망치형"
+        )
+
+
+    return patterns
+
+
+# =========================================================
+# 2개 캔들 패턴
+# =========================================================
+
+def detect_two_candle_pattern(
+    previous,
+    current
+):
+
+    p1 = candle_parts(
+        previous
+    )
+
+    p2 = candle_parts(
+        current
+    )
+
+
+    if (
+        p1 is None
+        or
+        p2 is None
+    ):
+
+        return []
+
+
+    patterns = []
+
+
+    # =====================================================
+    # 상승 장악형
+    # =====================================================
+
+    if (
+
+        p1["bear"]
+
+        and
+
+        p2["bull"]
+
+        and
+
+        p2["open"] <= p1["close"]
+
+        and
+
+        p2["close"] >= p1["open"]
+
+        and
+
+        p2["body"] > p1["body"]
+
+    ):
+
+        patterns.append(
+            "상승장악"
+        )
+
+
+    # =====================================================
+    # 관통형
+    # =====================================================
+
+    midpoint = (
+        p1["open"]
+        +
+        p1["close"]
+    ) / 2
+
+
+    if (
+
+        p1["bear"]
+
+        and
+
+        p2["bull"]
+
+        and
+
+        p2["close"] > midpoint
+
+        and
+
+        p2["close"] < p1["open"]
+
+    ):
+
+        patterns.append(
+            "관통형"
+        )
+
+
+    return patterns
+
+
+# =========================================================
+# 3개 캔들 패턴
+# =========================================================
+
+def detect_three_candle_pattern(
+    c1,
+    c2,
+    c3
+):
+
+    p1 = candle_parts(
+        c1
+    )
+
+    p2 = candle_parts(
+        c2
+    )
+
+    p3 = candle_parts(
+        c3
+    )
+
+
+    if (
+        p1 is None
+        or
+        p2 is None
+        or
+        p3 is None
+    ):
+
+        return []
+
+
+    patterns = []
+
+
+    # =====================================================
+    # 모닝스타
+    # =====================================================
+
+    if (
+
+        p1["bear"]
+
+        and
+
+        p1["body_ratio"] >= 0.45
+
+        and
+
+        p2["body_ratio"] <= 0.35
+
+        and
+
+        p3["bull"]
+
+        and
+
+        p3["body_ratio"] >= 0.45
+
+        and
+
+        p3["close"]
+        >
+        (
+            p1["open"]
+            +
+            p1["close"]
+        ) / 2
+
+    ):
+
+        patterns.append(
+            "모닝스타"
+        )
+
+
+    # =====================================================
+    # 3연속 양봉
+    # =====================================================
+
+    if (
+
+        p1["bull"]
+
+        and
+
+        p2["bull"]
+
+        and
+
+        p3["bull"]
+
+        and
+
+        p2["close"] > p1["close"]
+
+        and
+
+        p3["close"] > p2["close"]
+
+    ):
+
+        patterns.append(
+            "3연속양봉"
+        )
+
+
+    return patterns
+
+
+# =========================================================
+# 4H 전체 캔들 패턴 탐지
+# =========================================================
+
+def detect_4h_patterns(
+    periods
+):
+
+    if not periods:
+
+        return []
+
+
+    result = []
+
+
+    for i, period in enumerate(
+        periods
+    ):
+
+        patterns = []
+
+
+        # =================================================
+        # 현재 캔들 데이터 확인
+        # =================================================
+
+        if (
+
+            period.get("open") is None
+
+            or
+
+            period.get("high") is None
+
+            or
+
+            period.get("low") is None
+
+            or
+
+            period.get("close") is None
+
+        ):
+
+            result.append(
+                []
+            )
+
+            continue
+
+
+        # =================================================
+        # 1개 캔들
+        # =================================================
+
+        patterns.extend(
+
+            detect_single_candle_pattern(
+                period
+            )
+
+        )
+
+
+        # =================================================
+        # 2개 캔들
+        # =================================================
+
+        if i >= 1:
+
+            previous = periods[
+                i - 1
+            ]
+
+
+            if all(
+
+                previous.get(
+                    x
+                ) is not None
+
+                for x in [
+                    "open",
+                    "high",
+                    "low",
+                    "close"
+                ]
+
+            ):
+
+                patterns.extend(
+
+                    detect_two_candle_pattern(
+                        previous,
+                        period
+                    )
+
+                )
+
+
+        # =================================================
+        # 3개 캔들
+        # =================================================
+
+        if i >= 2:
+
+            c1 = periods[
+                i - 2
+            ]
+
+            c2 = periods[
+                i - 1
+            ]
+
+            c3 = period
+
+
+            if all(
+
+                x.get(
+                    key
+                ) is not None
+
+                for x in [
+                    c1,
+                    c2,
+                    c3
+                ]
+
+                for key in [
+                    "open",
+                    "high",
+                    "low",
+                    "close"
+                ]
+
+            ):
+
+                patterns.extend(
+
+                    detect_three_candle_pattern(
+                        c1,
+                        c2,
+                        c3
+                    )
+
+                )
+
+
+        # =================================================
+        # 중복 제거
+        # =================================================
+
+        patterns = list(
+            dict.fromkeys(
+                patterns
+            )
+        )
+
+
+        result.append(
+            patterns
+        )
+
+
+    return result
+
+
+# =========================================================
 # 업비트 4H 생성
 # =========================================================
 
@@ -910,7 +1492,10 @@ def build_upbit_4h_candles(
                     None,
 
                 "change":
-                    None
+                    None,
+
+                "patterns":
+                    []
 
             })
 
@@ -939,7 +1524,11 @@ def build_upbit_4h_candles(
         )
 
 
-        # 현재 진행 중인 4H는 현재가 반영
+        # =================================================
+        # 현재 진행 중인 4H
+        # 현재가 반영
+        # =================================================
+
         if period["active"]:
 
             if current_price is not None:
@@ -974,15 +1563,21 @@ def build_upbit_4h_candles(
         else:
 
             change = (
+
                 (
                     close_price
                     -
                     open_price
                 )
+
                 /
+
                 open_price
+
                 *
+
                 100
+
             )
 
 
@@ -1003,9 +1598,32 @@ def build_upbit_4h_candles(
                 close_price,
 
             "change":
-                change
+                change,
+
+            "patterns":
+                []
 
         })
+
+
+    # =====================================================
+    # ★ 4H 캔들 패턴 탐지
+    # =====================================================
+
+    pattern_results = (
+        detect_4h_patterns(
+            result
+        )
+    )
+
+
+    for i, pattern_list in enumerate(
+        pattern_results
+    ):
+
+        result[i]["patterns"] = (
+            pattern_list
+        )
 
 
     return result
@@ -1147,7 +1765,9 @@ def get_change_value(x):
 
 def format_change(x):
 
-    x = get_change_value(x)
+    x = get_change_value(
+        x
+    )
 
 
     if x is None:
@@ -1356,6 +1976,7 @@ def make_row(
 def update_upbit():
 
     global latest_upbit_data
+
     global latest_upbit_update_time
 
 
@@ -1483,14 +2104,6 @@ def update_upbit():
             > 0
 
         )
-
-
-        # =================================================
-        # ★ 이전 4H 조건은 여기서 제거
-        #
-        # previous_4h_condition은
-        # SIGNAL 판정에 사용하지 않는다.
-        # =================================================
 
 
         # =================================================
@@ -2155,9 +2768,32 @@ def build_btc_4h(
                 close_price,
 
             "change":
-                change
+                change,
+
+            "patterns":
+                []
 
         })
+
+
+    # =====================================================
+    # BTC 4H 캔들 패턴
+    # =====================================================
+
+    pattern_results = (
+        detect_4h_patterns(
+            result
+        )
+    )
+
+
+    for i, pattern_list in enumerate(
+        pattern_results
+    ):
+
+        result[i]["patterns"] = (
+            pattern_list
+        )
 
 
     return result
@@ -2170,9 +2806,13 @@ def build_btc_4h(
 def update_btc_market():
 
     global latest_btc_okx_price
+
     global latest_btc_daily_change
+
     global latest_btc_4h_periods
+
     global latest_btc_current_4h_change
+
     global latest_btc_current_4h_label
 
 
@@ -2250,7 +2890,9 @@ def update_okx(
 ):
 
     global latest_okx_data
+
     global latest_okx_update_time
+
 
     latest_okx_data = []
 
@@ -2342,6 +2984,39 @@ def update_dashboard():
 
 
 # =========================================================
+# 캔들 패턴 HTML
+# =========================================================
+
+def candle_pattern_html(
+    patterns
+):
+
+    if not patterns:
+
+        return ""
+
+
+    return (
+
+        '<div class="candle-pattern">'
+
+        +
+
+        " · ".join(
+            html.escape(
+                str(x)
+            )
+            for x in patterns
+        )
+
+        +
+
+        '</div>'
+
+    )
+
+
+# =========================================================
 # 4H 셀
 # =========================================================
 
@@ -2391,13 +3066,19 @@ def four_hour_cells_html(
             <div class="{cell_class}">
 
                 <div class="four-hour-label">
-                    {day_text}
+                    {html.escape(
+                        str(day_text)
+                    )}
                 </div>
 
                 <div class="four-hour-time">
-                    {period.get(
-                        "label",
-                        "-"
+                    {html.escape(
+                        str(
+                            period.get(
+                                "label",
+                                "-"
+                            )
+                        )
                     )}
                 </div>
 
@@ -2408,6 +3089,13 @@ def four_hour_cells_html(
                         )
                     )}
                 </div>
+
+                {candle_pattern_html(
+                    period.get(
+                        "patterns",
+                        []
+                    )
+                )}
 
             </div>
 
@@ -2652,13 +3340,6 @@ def unified_card_html(
         badge = ""
 
 
-    # =====================================================
-    # SIGNAL 전용 하단 영역
-    #
-    # 이전 4H는 표시만 함
-    # SIGNAL 조건에는 사용하지 않음
-    # =====================================================
-
     condition_html = ""
 
 
@@ -2718,10 +3399,6 @@ def unified_card_html(
 
         """
 
-
-    # =====================================================
-    # 카드 전체
-    # =====================================================
 
     return f"""
 
@@ -2967,17 +3644,21 @@ def focus_section(data):
 
         signal_cards = []
 
+
         for index, row in enumerate(
             signal_rows
         ):
 
             signal_cards.append(
+
                 unified_card_html(
                     row,
                     "SIGNAL",
                     index + 1
                 )
+
             )
+
 
         body = "".join(
             signal_cards
@@ -3101,13 +3782,17 @@ def section(
 
         top_cards = []
 
+
         for row in data:
 
             top_cards.append(
+
                 top_card_html(
                     row
                 )
+
             )
+
 
         cards = "".join(
             top_cards
@@ -3135,6 +3820,7 @@ def section(
                     거래대금 순위
                     · 당일 변동률
                     · 최근 6개 4H
+                    · 캔들 패턴
 
                 </div>
 
@@ -3460,9 +4146,10 @@ display:flex;
 flex-direction:column;
 align-items:center;
 justify-content:center;
-min-height:62px;
+min-height:70px;
 background:#0d1319;
-gap:4px;
+gap:3px;
+padding:4px 2px;
 }
 
 .four-hour-label{
@@ -3482,6 +4169,18 @@ font-size:8px;
 font-weight:900;
 }
 
+.candle-pattern{
+color:#e0bd6d;
+font-size:6px;
+line-height:8px;
+font-weight:900;
+text-align:center;
+white-space:nowrap;
+overflow:hidden;
+text-overflow:ellipsis;
+max-width:100%;
+}
+
 .current-4h{
 background:#173326!important;
 box-shadow:
@@ -3495,6 +4194,10 @@ color:#91dcb0;
 
 .current-4h .four-hour-time{
 color:#b9f0cf;
+}
+
+.current-4h .candle-pattern{
+color:#f0d486;
 }
 
 .no-4h-data{
@@ -3962,7 +4665,7 @@ h1{
 }
 
 .four-hour-cell{
-    min-height:43px;
+    min-height:52px;
 }
 
 .four-hour-label{
@@ -3975,6 +4678,11 @@ h1{
 
 .four-hour-value{
     font-size:6px;
+}
+
+.candle-pattern{
+    font-size:4.5px;
+    line-height:6px;
 }
 
 
@@ -4191,7 +4899,7 @@ h1{
 }
 
 .four-hour-cell{
-    min-height:37px;
+    min-height:45px;
 }
 
 .four-hour-label{
@@ -4204,6 +4912,11 @@ h1{
 
 .four-hour-value{
     font-size:5px;
+}
+
+.candle-pattern{
+    font-size:3.8px;
+    line-height:5px;
 }
 
 .unified-card-header{
@@ -4478,7 +5191,11 @@ def startup():
     )
 
     log.info(
-        "예: 현재 13~17 → 이전 09~13"
+        "캔들 패턴 = 화면 표시만 사용"
+    )
+
+    log.info(
+        "캔들 패턴: 도지 / 망치형 / 역망치형 / 상승장악 / 관통형 / 모닝스타 / 3연속양봉"
     )
 
     log.info(
