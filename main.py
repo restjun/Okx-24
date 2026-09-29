@@ -28,12 +28,8 @@ app = FastAPI()
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s %(levelname)s:%(name)s:%(message)s"
+    format="%(asctime)s [%(levelname)s] %(message)s"
 )
-
-log = logging.getLogger("trading")
-
-KST = ZoneInfo("Asia/Seoul")
 
 
 # =========================================================
@@ -45,381 +41,161 @@ TOP_N = 20
 UPDATE_MINUTES = 1
 
 HISTORY_CHUNK = 200
-
 MAX_HISTORY_CHUNKS = 10
 
 USE_UPBIT = "Y"
-
 USE_OKX = "N"
 
 REQUEST_INTERVAL = 0.08
-
 RATE_LIMIT_WAIT = 3
-
 MAX_RETRIES = 10
 
 
 # =========================================================
-# 전역
+# 전역 상태
 # =========================================================
 
-latest_upbit_data = []
+latest_rows = []
+latest_btc = {}
 
-latest_okx_data = []
+last_update_time = None
 
-latest_upbit_update_time = "-"
+upbit_markets_cache = []
 
-latest_okx_update_time = "-"
-
-latest_upbit_markets = []
-
-request_lock = threading.Lock()
-
-update_lock = threading.Lock()
-
-last_request_time = 0
+lock = threading.Lock()
 
 
 # =========================================================
-# BTC
-#
-# ※ BTC는 SIGNAL 필터에 사용하지 않음
-# ※ 시장 시황 표시용으로만 사용
+# KST
 # =========================================================
 
-OKX_BASE_URL = "https://www.okx.com"
+KST = ZoneInfo("Asia/Seoul")
 
-OKX_BTC_INST_ID = "BTC-USDT"
-
-latest_btc_okx_price = None
-
-latest_btc_daily_change = None
-
-latest_btc_4h_periods = []
-
-latest_btc_current_4h_change = None
-
-latest_btc_current_4h_label = "-"
-
-
-# =========================================================
-# 업비트 4H 기준
-# =========================================================
-
-FOUR_HOUR_DEFINITIONS = [
-
-    {
-        "key": "01_05",
-        "start_hour": 1,
-        "end_hour": 5
-    },
-
-    {
-        "key": "05_09",
-        "start_hour": 5,
-        "end_hour": 9
-    },
-
-    {
-        "key": "09_13",
-        "start_hour": 9,
-        "end_hour": 13
-    },
-
-    {
-        "key": "13_17",
-        "start_hour": 13,
-        "end_hour": 17
-    },
-
-    {
-        "key": "17_21",
-        "start_hour": 17,
-        "end_hour": 21
-    },
-
-    {
-        "key": "21_01",
-        "start_hour": 21,
-        "end_hour": 1
-    }
-
-]
-
-
-# =========================================================
-# 현재 KST 문자열
-# =========================================================
 
 def kst():
-
-    return datetime.now(
-        KST
-    ).strftime(
-        "%Y-%m-%d %H:%M:%S"
-    )
+    return datetime.now(KST)
 
 
 # =========================================================
-# 현재 4H 시작시간
+# 4H 구간
 # =========================================================
 
-def get_current_4h_start():
+def get_current_4h_start(now=None):
 
-    now = datetime.now(KST)
+    if now is None:
+        now = kst()
 
     hour = now.hour
 
-    if hour < 1:
-
-        return (
-            now
-            -
-            timedelta(days=1)
-        ).replace(
-            hour=21,
-            minute=0,
-            second=0,
-            microsecond=0
-        )
-
-    if hour < 5:
-
+    if 1 <= hour < 5:
         start_hour = 1
-
-    elif hour < 9:
-
+    elif 5 <= hour < 9:
         start_hour = 5
-
-    elif hour < 13:
-
+    elif 9 <= hour < 13:
         start_hour = 9
-
-    elif hour < 17:
-
+    elif 13 <= hour < 17:
         start_hour = 13
-
-    elif hour < 21:
-
+    elif 17 <= hour < 21:
         start_hour = 17
-
     else:
-
         start_hour = 21
 
-    return now.replace(
-        hour=start_hour,
-        minute=0,
-        second=0,
-        microsecond=0
+    if hour < 1:
+        date_value = now.date() - timedelta(days=1)
+        start_hour = 21
+    else:
+        date_value = now.date()
+
+    return datetime(
+        date_value.year,
+        date_value.month,
+        date_value.day,
+        start_hour,
+        0,
+        0,
+        tzinfo=KST
     )
 
 
-# =========================================================
-# 4H 기간 만들기
-# =========================================================
+def make_4h_period(start):
 
-def make_4h_period(
-    start,
-    active=False
-):
-
-    start = start.astimezone(KST)
-
-    end = (
-        start
-        +
-        timedelta(hours=4)
-    )
-
-    if start.date() == datetime.now(KST).date():
-
-        day_label = "오늘"
-
-    elif start.date() == (
-        datetime.now(KST).date()
-        -
-        timedelta(days=1)
-    ):
-
-        day_label = "어제"
-
-    else:
-
-        day_label = "전일"
-
-
-    if active:
-
-        display_label = (
-            f"현재 {start:%H}~{end:%H}"
-        )
-
-    else:
-
-        display_label = (
-            f"{day_label} "
-            f"{start:%H}~{end:%H}"
-        )
-
+    end = start + timedelta(hours=4)
 
     return {
-
-        "key":
-            f"{start:%Y%m%d_%H}",
-
-        "time_key":
-            start.strftime("%H"),
-
-        "label":
-            f"{start:%H}~{end:%H}",
-
-        "display_label":
-            display_label,
-
-        "day_label":
-            day_label,
-
-        "start":
-            start,
-
-        "end":
-            end,
-
-        "active":
-            active
-
+        "start": start,
+        "end": end,
+        "label": f"{start.strftime('%m/%d %H:%M')}~{end.strftime('%H:%M')}"
     }
 
 
-# =========================================================
-# 최근 6개 4H
-# =========================================================
+def get_recent_4h_periods(count=6):
 
-def get_recent_4h_periods(
-    count=6
-):
-
-    current_start = (
-        get_current_4h_start()
-    )
+    current_start = get_current_4h_start()
 
     periods = []
 
-    for i in range(
-        count - 1,
-        -1,
-        -1
-    ):
+    for i in range(count - 1, -1, -1):
 
-        start = (
-            current_start
-            -
-            timedelta(
-                hours=4 * i
-            )
-        )
+        start = current_start - timedelta(hours=4 * i)
 
         periods.append(
-            make_4h_period(
-                start,
-                active=(i == 0)
-            )
+            make_4h_period(start)
         )
 
     return periods
 
 
-# =========================================================
-# 현재 4H
-# =========================================================
-
 def get_current_4h_period():
 
-    periods = get_recent_4h_periods(
-        1
+    return make_4h_period(
+        get_current_4h_start()
     )
 
-    if not periods:
-
-        return None
-
-    return periods[0]
-
-
-# =========================================================
-# 이전 4H
-# =========================================================
 
 def get_previous_4h_period():
 
-    current = get_current_4h_period()
-
-    if current is None:
-
-        return None
-
-    previous_start = (
-        current["start"]
-        -
-        timedelta(hours=4)
+    return make_4h_period(
+        get_current_4h_start() - timedelta(hours=4)
     )
+
+
+# =========================================================
+# ★ 추가 : 전전 4H
+# =========================================================
+
+def get_pre_previous_4h_period():
 
     return make_4h_period(
-        previous_start,
-        active=False
+        get_current_4h_start() - timedelta(hours=8)
     )
 
 
 # =========================================================
-# API 요청 제한
+# 요청 제어
 # =========================================================
+
+_last_request_time = 0
+
 
 def wait_request():
 
-    global last_request_time
+    global _last_request_time
 
-    with request_lock:
+    now = time.time()
 
-        elapsed = (
-            time.monotonic()
-            -
-            last_request_time
+    elapsed = now - _last_request_time
+
+    if elapsed < REQUEST_INTERVAL:
+        time.sleep(
+            REQUEST_INTERVAL - elapsed
         )
 
-        if elapsed < REQUEST_INTERVAL:
-
-            time.sleep(
-                REQUEST_INTERVAL - elapsed
-            )
-
-        last_request_time = (
-            time.monotonic()
-        )
+    _last_request_time = time.time()
 
 
-# =========================================================
-# API 재시도
-# =========================================================
+def retry(func, *args, **kwargs):
 
-def retry(
-    func,
-    *args,
-    **kwargs
-):
-
-    url = ""
-
-    if args and isinstance(
-        args[0],
-        str
-    ):
-
-        url = args[0]
-
-    for attempt in range(
-        MAX_RETRIES
-    ):
+    for attempt in range(MAX_RETRIES):
 
         try:
 
@@ -430,64 +206,30 @@ def retry(
                 **kwargs
             )
 
-            if not hasattr(
-                response,
-                "status_code"
-            ):
-
-                return response
-
-            if response.status_code == 200:
-
-                return response
-
             if response.status_code == 429:
 
+                logging.warning(
+                    "Upbit 429 rate limit"
+                )
+
                 time.sleep(
-                    min(
-                        RATE_LIMIT_WAIT
-                        *
-                        (attempt + 1),
-                        60
-                    )
+                    RATE_LIMIT_WAIT
                 )
 
                 continue
 
-            if response.status_code >= 500:
-
-                time.sleep(
-                    min(
-                        2
-                        *
-                        (attempt + 1),
-                        30
-                    )
-                )
-
-                continue
+            response.raise_for_status()
 
             return response
 
         except Exception as e:
 
-            log.warning(
-                f"API 오류 "
-                f"{url} "
-                f"{attempt + 1}/{MAX_RETRIES}: "
-                f"{e}"
+            logging.warning(
+                f"API 요청 실패 {attempt + 1}/{MAX_RETRIES}: {e}"
             )
 
             if attempt < MAX_RETRIES - 1:
-
-                time.sleep(
-                    min(
-                        2
-                        *
-                        (attempt + 1),
-                        20
-                    )
-                )
+                time.sleep(1)
 
     return None
 
@@ -498,136 +240,101 @@ def retry(
 
 def get_upbit_markets():
 
-    global latest_upbit_markets
+    url = "https://api.upbit.com/v1/market/all"
 
     response = retry(
         requests.get,
-        "https://api.upbit.com/v1/market/all",
+        url,
         params={
             "isDetails": "false"
         },
-        timeout=15
+        timeout=10
     )
 
     if response is None:
-
         return []
 
-
-    try:
-
-        markets = response.json()
-
-    except Exception:
-
-        return []
-
+    markets = response.json()
 
     krw_markets = [
-
-        x["market"]
-
-        for x in markets
-
-        if x.get(
-            "market",
-            ""
-        ).startswith("KRW-")
-
+        x for x in markets
+        if x.get("market", "").startswith("KRW-")
     ]
 
+    if not krw_markets:
+        return []
+
+    market_codes = [
+        x["market"]
+        for x in krw_markets
+    ]
+
+    ticker_url = "https://api.upbit.com/v1/ticker"
+
+    ticker_response = retry(
+        requests.get,
+        ticker_url,
+        params={
+            "markets": ",".join(market_codes)
+        },
+        timeout=10
+    )
+
+    if ticker_response is None:
+        return []
+
+    tickers = ticker_response.json()
+
+    ticker_map = {
+        x["market"]: x
+        for x in tickers
+    }
 
     result = []
 
+    for market in krw_markets:
 
-    for i in range(
-        0,
-        len(krw_markets),
-        100
-    ):
+        code = market["market"]
 
-        chunk = krw_markets[
-            i:i + 100
-        ]
+        ticker = ticker_map.get(code)
 
-
-        response = retry(
-            requests.get,
-            "https://api.upbit.com/v1/ticker",
-            params={
-                "markets":
-                    ",".join(chunk)
-            },
-            timeout=15
-        )
-
-
-        if response is None:
-
+        if not ticker:
             continue
 
+        result.append({
+            "market": code,
+            "korean_name": market.get(
+                "korean_name",
+                code.replace("KRW-", "")
+            ),
+            "english_name": market.get(
+                "english_name",
+                code.replace("KRW-", "")
+            ),
+            "price": ticker.get(
+                "trade_price",
+                0
+            ),
+            "volume_24h": ticker.get(
+                "acc_trade_price_24h",
+                0
+            )
+        })
 
-        try:
+    # =====================================================
+    # 24H 실제 거래대금 순
+    # =====================================================
 
-            data = response.json()
-
-        except Exception:
-
-            continue
-
-
-        if not isinstance(
-            data,
-            list
-        ):
-
-            continue
-
-
-        for item in data:
-
-            try:
-
-                price = float(
-                    item["trade_price"]
-                )
-
-                volume = float(
-                    item["acc_trade_price_24h"]
-                )
-
-                result.append({
-
-                    "market":
-                        item["market"],
-
-                    "current_price":
-                        price,
-
-                    "volume_24h":
-                        volume
-
-                })
-
-            except Exception:
-
-                continue
-
-
-    latest_upbit_markets = [
-
-        x["market"]
-
-        for x in result
-
-    ]
-
+    result.sort(
+        key=lambda x: x["volume_24h"],
+        reverse=True
+    )
 
     return result
 
 
 # =========================================================
-# 업비트 당일 변동률
+# 일봉 변동률
 # =========================================================
 
 def daily_change_upbit(
@@ -635,81 +342,42 @@ def daily_change_upbit(
     current_price
 ):
 
+    url = "https://api.upbit.com/v1/candles/days"
+
     response = retry(
         requests.get,
-        "https://api.upbit.com/v1/candles/days",
+        url,
         params={
-            "market":
-                market,
-            "count":
-                2
+            "market": market,
+            "count": 2
         },
-        timeout=15
+        timeout=10
     )
-
 
     if response is None:
+        return 0.0
 
-        return None
-
-
-    try:
-
-        data = response.json()
-
-    except Exception:
-
-        return None
-
-
-    if not isinstance(
-        data,
-        list
-    ):
-
-        return None
-
+    data = response.json()
 
     if len(data) < 2:
+        return 0.0
 
-        return None
+    previous_close = data[1].get(
+        "trade_price",
+        0
+    )
 
-
-    try:
-
-        previous_close = float(
-            data[1]["trade_price"]
-        )
-
-        current_price = float(
-            current_price
-        )
-
-    except Exception:
-
-        return None
-
-
-    if previous_close == 0:
-
-        return None
-
+    if not previous_close:
+        return 0.0
 
     return (
-        (
-            current_price
-            -
-            previous_close
-        )
-        /
-        previous_close
-        *
-        100
-    )
+        (current_price - previous_close)
+        / previous_close
+    ) * 100
 
 
 # =========================================================
-# 업비트 1H
+# 업비트 60분봉
 # =========================================================
 
 def get_upbit_60m_candles(
@@ -717,846 +385,131 @@ def get_upbit_60m_candles(
     count=300
 ):
 
+    url = "https://api.upbit.com/v1/candles/minutes/60"
+
     response = retry(
         requests.get,
-        "https://api.upbit.com/v1/candles/minutes/60",
+        url,
         params={
-            "market":
-                market,
-            "count":
-                count
+            "market": market,
+            "count": count
         },
-        timeout=15
+        timeout=10
     )
-
 
     if response is None:
-
         return []
 
-
-    try:
-
-        data = response.json()
-
-    except Exception:
-
-        return []
-
-
-    if not isinstance(
-        data,
-        list
-    ):
-
-        return []
-
-
-    return data
+    return response.json()
 
 
 # =========================================================
-# 캔들 구성요소
-# =========================================================
-
-def candle_parts(candle):
-
-    try:
-
-        o = float(
-            candle["open"]
-        )
-
-        h = float(
-            candle["high"]
-        )
-
-        l = float(
-            candle["low"]
-        )
-
-        c = float(
-            candle["close"]
-        )
-
-    except Exception:
-
-        return None
-
-
-    total = h - l
-
-    if total <= 0:
-
-        return None
-
-
-    body = abs(
-        c - o
-    )
-
-    upper = (
-        h
-        -
-        max(o, c)
-    )
-
-    lower = (
-        min(o, c)
-        -
-        l
-    )
-
-    body_ratio = (
-        body / total
-    )
-
-
-    return {
-
-        "open":
-            o,
-
-        "high":
-            h,
-
-        "low":
-            l,
-
-        "close":
-            c,
-
-        "body":
-            body,
-
-        "total":
-            total,
-
-        "upper":
-            upper,
-
-        "lower":
-            lower,
-
-        "body_ratio":
-            body_ratio,
-
-        "bull":
-            c > o,
-
-        "bear":
-            c < o
-
-    }
-
-
-# =========================================================
-# 1개 캔들 패턴
-# =========================================================
-
-def detect_single_candle_pattern(
-    candle
-):
-
-    p = candle_parts(
-        candle
-    )
-
-
-    if p is None:
-
-        return []
-
-
-    patterns = []
-
-
-    body = p["body"]
-
-    total = p["total"]
-
-    upper = p["upper"]
-
-    lower = p["lower"]
-
-    body_ratio = p["body_ratio"]
-
-
-    if body_ratio <= 0.10:
-
-        patterns.append(
-            "도지"
-        )
-
-
-    if (
-
-        body_ratio <= 0.40
-
-        and
-
-        lower >= max(
-            body * 2,
-            total * 0.45
-        )
-
-        and
-
-        upper <= max(
-            body,
-            total * 0.15
-        )
-
-    ):
-
-        patterns.append(
-            "망치형"
-        )
-
-
-    if (
-
-        body_ratio <= 0.40
-
-        and
-
-        upper >= max(
-            body * 2,
-            total * 0.45
-        )
-
-        and
-
-        lower <= max(
-            body,
-            total * 0.15
-        )
-
-    ):
-
-        patterns.append(
-            "역망치형"
-        )
-
-
-    return patterns
-
-
-# =========================================================
-# 2개 캔들 패턴
-# =========================================================
-
-def detect_two_candle_pattern(
-    previous,
-    current
-):
-
-    p1 = candle_parts(
-        previous
-    )
-
-    p2 = candle_parts(
-        current
-    )
-
-
-    if (
-        p1 is None
-        or
-        p2 is None
-    ):
-
-        return []
-
-
-    patterns = []
-
-
-    if (
-
-        p1["bear"]
-
-        and
-
-        p2["bull"]
-
-        and
-
-        p2["open"] <= p1["close"]
-
-        and
-
-        p2["close"] >= p1["open"]
-
-        and
-
-        p2["body"] > p1["body"]
-
-    ):
-
-        patterns.append(
-            "상승장악"
-        )
-
-
-    midpoint = (
-        p1["open"]
-        +
-        p1["close"]
-    ) / 2
-
-
-    if (
-
-        p1["bear"]
-
-        and
-
-        p2["bull"]
-
-        and
-
-        p2["close"] > midpoint
-
-        and
-
-        p2["close"] < p1["open"]
-
-    ):
-
-        patterns.append(
-            "관통형"
-        )
-
-
-    return patterns
-
-
-# =========================================================
-# 3개 캔들 패턴
-# =========================================================
-
-def detect_three_candle_pattern(
-    c1,
-    c2,
-    c3
-):
-
-    p1 = candle_parts(
-        c1
-    )
-
-    p2 = candle_parts(
-        c2
-    )
-
-    p3 = candle_parts(
-        c3
-    )
-
-
-    if (
-        p1 is None
-        or
-        p2 is None
-        or
-        p3 is None
-    ):
-
-        return []
-
-
-    patterns = []
-
-
-    if (
-
-        p1["bear"]
-
-        and
-
-        p1["body_ratio"] >= 0.45
-
-        and
-
-        p2["body_ratio"] <= 0.35
-
-        and
-
-        p3["bull"]
-
-        and
-
-        p3["body_ratio"] >= 0.45
-
-        and
-
-        p3["close"]
-        >
-        (
-            p1["open"]
-            +
-            p1["close"]
-        ) / 2
-
-    ):
-
-        patterns.append(
-            "모닝스타"
-        )
-
-
-    if (
-
-        p1["bull"]
-
-        and
-
-        p2["bull"]
-
-        and
-
-        p3["bull"]
-
-        and
-
-        p2["close"] > p1["close"]
-
-        and
-
-        p3["close"] > p2["close"]
-
-    ):
-
-        patterns.append(
-            "3연속양봉"
-        )
-
-
-    return patterns
-
-
-# =========================================================
-# 4H 전체 캔들 패턴 탐지
-# =========================================================
-
-def detect_4h_patterns(
-    periods
-):
-
-    if not periods:
-
-        return []
-
-
-    result = []
-
-
-    for i, period in enumerate(
-        periods
-    ):
-
-        patterns = []
-
-
-        if (
-
-            period.get("open") is None
-
-            or
-
-            period.get("high") is None
-
-            or
-
-            period.get("low") is None
-
-            or
-
-            period.get("close") is None
-
-        ):
-
-            result.append(
-                []
-            )
-
-            continue
-
-
-        patterns.extend(
-
-            detect_single_candle_pattern(
-                period
-            )
-
-        )
-
-
-        if i >= 1:
-
-            previous = periods[
-                i - 1
-            ]
-
-
-            if all(
-
-                previous.get(
-                    x
-                ) is not None
-
-                for x in [
-                    "open",
-                    "high",
-                    "low",
-                    "close"
-                ]
-
-            ):
-
-                patterns.extend(
-
-                    detect_two_candle_pattern(
-                        previous,
-                        period
-                    )
-
-                )
-
-
-        if i >= 2:
-
-            c1 = periods[
-                i - 2
-            ]
-
-            c2 = periods[
-                i - 1
-            ]
-
-            c3 = period
-
-
-            if all(
-
-                x.get(
-                    key
-                ) is not None
-
-                for x in [
-                    c1,
-                    c2,
-                    c3
-                ]
-
-                for key in [
-                    "open",
-                    "high",
-                    "low",
-                    "close"
-                ]
-
-            ):
-
-                patterns.extend(
-
-                    detect_three_candle_pattern(
-                        c1,
-                        c2,
-                        c3
-                    )
-
-                )
-
-
-        patterns = list(
-            dict.fromkeys(
-                patterns
-            )
-        )
-
-
-        result.append(
-            patterns
-        )
-
-
-    return result
-
-
-# =========================================================
-# 업비트 4H 생성
+# 4H 캔들 생성
 # =========================================================
 
 def build_upbit_4h_candles(
-    market,
-    current_price=None
+    market
 ):
 
-    candles = get_upbit_60m_candles(
+    data = get_upbit_60m_candles(
         market,
         300
     )
 
-
-    if not candles:
-
+    if not data:
         return []
-
 
     rows = []
 
+    for item in reversed(data):
 
-    for candle in candles:
-
-        try:
-
-            dt = datetime.strptime(
-                candle[
-                    "candle_date_time_kst"
-                ],
-                "%Y-%m-%dT%H:%M:%S"
-            ).replace(
-                tzinfo=KST
-            )
-
-
-            rows.append({
-
-                "datetime":
-                    dt,
-
-                "open":
-                    float(
-                        candle[
-                            "opening_price"
-                        ]
-                    ),
-
-                "high":
-                    float(
-                        candle[
-                            "high_price"
-                        ]
-                    ),
-
-                "low":
-                    float(
-                        candle[
-                            "low_price"
-                        ]
-                    ),
-
-                "close":
-                    float(
-                        candle[
-                            "trade_price"
-                        ]
-                    )
-
-            })
-
-        except Exception:
-
-            continue
-
-
-    if not rows:
-
-        return []
-
-
-    df = pd.DataFrame(
-        rows
-    )
-
-
-    df = (
-        df
-        .sort_values(
-            "datetime"
-        )
-        .drop_duplicates(
-            "datetime"
-        )
-    )
-
-
-    periods = get_recent_4h_periods(
-        6
-    )
-
-
-    result = []
-
-
-    for period in periods:
-
-        part = df[
-            (
-                df["datetime"]
-                >=
-                period["start"]
-            )
-            &
-            (
-                df["datetime"]
-                <
-                period["end"]
-            )
-        ].copy()
-
-
-        if part.empty:
-
-            result.append({
-
-                **period,
-
-                "open":
-                    None,
-
-                "high":
-                    None,
-
-                "low":
-                    None,
-
-                "close":
-                    None,
-
-                "change":
-                    None,
-
-                "patterns":
-                    []
-
-            })
-
-            continue
-
-
-        part = part.sort_values(
-            "datetime"
+        candle_time = datetime.fromisoformat(
+            item["candle_date_time_kst"]
+        ).replace(
+            tzinfo=KST
         )
 
-
-        open_price = float(
-            part.iloc[0]["open"]
-        )
-
-        high_price = float(
-            part["high"].max()
-        )
-
-        low_price = float(
-            part["low"].min()
-        )
-
-        close_price = float(
-            part.iloc[-1]["close"]
-        )
-
-
-        if period["active"]:
-
-            if current_price is not None:
-
-                try:
-
-                    cp = float(
-                        current_price
-                    )
-
-                    close_price = cp
-
-                    high_price = max(
-                        high_price,
-                        cp
-                    )
-
-                    low_price = min(
-                        low_price,
-                        cp
-                    )
-
-                except Exception:
-
-                    pass
-
-
-        if open_price == 0:
-
-            change = None
-
-        else:
-
-            change = (
-
-                (
-                    close_price
-                    -
-                    open_price
-                )
-
-                /
-
-                open_price
-
-                *
-
-                100
-
-            )
-
-
-        result.append({
-
-            **period,
-
-            "open":
-                open_price,
-
-            "high":
-                high_price,
-
-            "low":
-                low_price,
-
-            "close":
-                close_price,
-
-            "change":
-                change,
-
-            "patterns":
-                []
-
+        rows.append({
+            "time": candle_time,
+            "open": item["opening_price"],
+            "high": item["high_price"],
+            "low": item["low_price"],
+            "close": item["trade_price"],
+            "volume": item["candle_acc_trade_volume"],
+            "value": item["candle_acc_trade_price"]
         })
 
+    if not rows:
+        return []
 
-    pattern_results = (
-        detect_4h_patterns(
-            result
+    df = pd.DataFrame(rows)
+
+    def period_start(dt):
+
+        if 1 <= dt.hour < 5:
+            h = 1
+            d = dt.date()
+
+        elif 5 <= dt.hour < 9:
+            h = 5
+            d = dt.date()
+
+        elif 9 <= dt.hour < 13:
+            h = 9
+            d = dt.date()
+
+        elif 13 <= dt.hour < 17:
+            h = 13
+            d = dt.date()
+
+        elif 17 <= dt.hour < 21:
+            h = 17
+            d = dt.date()
+
+        elif dt.hour >= 21:
+            h = 21
+            d = dt.date()
+
+        else:
+            h = 21
+            d = dt.date() - timedelta(days=1)
+
+        return datetime(
+            d.year,
+            d.month,
+            d.day,
+            h,
+            tzinfo=KST
         )
+
+    df["period"] = df["time"].apply(
+        period_start
     )
 
+    grouped = []
 
-    for i, pattern_list in enumerate(
-        pattern_results
+    for period, group in df.groupby(
+        "period",
+        sort=True
     ):
 
-        result[i]["patterns"] = (
-            pattern_list
-        )
+        group = group.sort_values("time")
 
+        grouped.append({
+            "start": period,
+            "open": group.iloc[0]["open"],
+            "high": group["high"].max(),
+            "low": group["low"].min(),
+            "close": group.iloc[-1]["close"],
+            "volume": group["volume"].sum(),
+            "value": group["value"].sum()
+        })
 
-    return result
+    return grouped
 
 
 # =========================================================
-# 코인의 4H 분석
+# 4H 분석
 # =========================================================
 
 def analyze_4h(
@@ -1564,66 +517,104 @@ def analyze_4h(
     current_price
 ):
 
-    periods = build_upbit_4h_candles(
-        market,
-        current_price
+    candles = build_upbit_4h_candles(
+        market
     )
 
+    if not candles:
+        return {
+            "periods": [],
+            "current_4h_change": 0.0,
+            "previous_4h_change": 0.0,
+            "pre_previous_4h_change": 0.0
+        }
 
-    current_period = (
-        get_current_4h_period()
-    )
+    current_period = get_current_4h_period()
+    previous_period = get_previous_4h_period()
+    pre_previous_period = get_pre_previous_4h_period()
 
-    previous_period = (
-        get_previous_4h_period()
-    )
+    current_start = current_period["start"]
+    previous_start = previous_period["start"]
+    pre_previous_start = pre_previous_period["start"]
 
+    current_candle = None
+    previous_candle = None
+    pre_previous_candle = None
 
-    current_change = None
+    for candle in candles:
 
-    previous_change = None
+        if candle["start"] == current_start:
+            current_candle = candle
 
+        elif candle["start"] == previous_start:
+            previous_candle = candle
 
-    for period in periods:
+        elif candle["start"] == pre_previous_start:
+            pre_previous_candle = candle
 
-        if (
-            period["start"]
-            ==
-            current_period["start"]
-        ):
+    # =====================================================
+    # 현재 4H
+    # =====================================================
+
+    current_change = 0.0
+
+    if current_candle:
+
+        current_open = current_candle["open"]
+
+        if current_open:
 
             current_change = (
-                period["change"]
-            )
+                (current_price - current_open)
+                / current_open
+            ) * 100
 
+    # =====================================================
+    # 이전 4H
+    # =====================================================
 
-        if (
-            period["start"]
-            ==
-            previous_period["start"]
-        ):
+    previous_change = 0.0
+
+    if previous_candle:
+
+        previous_open = previous_candle["open"]
+        previous_close = previous_candle["close"]
+
+        if previous_open:
 
             previous_change = (
-                period["change"]
-            )
+                (previous_close - previous_open)
+                / previous_open
+            ) * 100
 
+    # =====================================================
+    # ★ 전전 4H
+    # =====================================================
+
+    pre_previous_change = 0.0
+
+    if pre_previous_candle:
+
+        pre_previous_open = pre_previous_candle["open"]
+        pre_previous_close = pre_previous_candle["close"]
+
+        if pre_previous_open:
+
+            pre_previous_change = (
+                (pre_previous_close - pre_previous_open)
+                / pre_previous_open
+            ) * 100
 
     return {
-
-        "periods":
-            periods,
-
-        "current_4h_change":
-            current_change,
-
-        "previous_4h_change":
-            previous_change
-
+        "periods": candles,
+        "current_4h_change": current_change,
+        "previous_4h_change": previous_change,
+        "pre_previous_4h_change": pre_previous_change
     }
 
 
 # =========================================================
-# 코인 전체 분석
+# 종목 분석
 # =========================================================
 
 def analyze(
@@ -1636,498 +627,230 @@ def analyze(
         current_price
     )
 
-
     four_hour = analyze_4h(
         market,
         current_price
     )
 
-
     return {
-
-        "daily_change":
-            daily_change,
-
-        "four_hour_periods":
-            four_hour[
-                "periods"
-            ],
+        "daily_change": daily_change,
 
         "current_4h_change":
-            four_hour[
-                "current_4h_change"
-            ],
+            four_hour["current_4h_change"],
 
         "previous_4h_change":
-            four_hour[
-                "previous_4h_change"
-            ]
+            four_hour["previous_4h_change"],
 
+        "pre_previous_4h_change":
+            four_hour["pre_previous_4h_change"],
+
+        "periods":
+            four_hour["periods"]
     }
 
 
 # =========================================================
-# 값 변환
+# 변동률
 # =========================================================
 
-def get_change_value(x):
+def get_change_value(
+    value
+):
 
     try:
-
-        if x is None:
-
-            return None
-
-        return float(x)
+        return float(value)
 
     except Exception:
-
-        return None
-
-
-# =========================================================
-# 변화율 표시
-# =========================================================
-
-def format_change(x):
-
-    x = get_change_value(
-        x
-    )
+        return 0.0
 
 
-    if x is None:
+def format_change(
+    value
+):
 
-        return (
-            '<span class="zero">-</span>'
-        )
+    value = get_change_value(value)
 
+    if value > 0:
+        return f"+{value:.2f}%"
 
-    if x > 0:
-
-        return (
-            '<span class="up">'
-            f'▲ +{x:.2f}%'
-            '</span>'
-        )
-
-
-    if x < 0:
-
-        return (
-            '<span class="down">'
-            f'▼ {x:.2f}%'
-            '</span>'
-        )
-
-
-    return (
-        '<span class="zero">'
-        '0.00%'
-        '</span>'
-    )
+    return f"{value:.2f}%"
 
 
 # =========================================================
-# 가격 표시
+# 가격
 # =========================================================
 
 def format_market_price(
     price
 ):
 
-    if price is None:
-
-        return "-"
-
-
     try:
-
         price = float(price)
 
+        if price >= 1_000_000:
+            return f"{price:,.0f}"
+
+        if price >= 1000:
+            return f"{price:,.1f}"
+
+        if price >= 1:
+            return f"{price:,.2f}"
+
+        if price >= 0.01:
+            return f"{price:,.4f}"
+
+        return f"{price:,.8f}"
+
     except Exception:
 
         return "-"
 
 
-    if price >= 100000000:
-
-        return (
-            f"{price / 100000000:.2f}억"
-        )
-
-
-    if price >= 10000:
-
-        return (
-            f"{price:,.0f}"
-        )
-
-
-    if price >= 1:
-
-        return (
-            f"{price:,.2f}"
-        )
-
-
-    return (
-        f"{price:.6f}"
-    )
-
-
 # =========================================================
-# 거래대금 표시
+# 거래대금
 # =========================================================
 
-def format_volume(v):
+def format_volume(
+    value
+):
 
     try:
 
-        v = float(v)
+        value = float(value)
+
+        if value >= 1_000_000_000_000:
+            return (
+                f"{value / 1_000_000_000_000:.1f}조"
+            )
+
+        if value >= 100_000_000:
+            return (
+                f"{value / 100_000_000:.1f}억"
+            )
+
+        if value >= 10_000:
+            return (
+                f"{value / 10_000:.1f}만원"
+            )
+
+        return f"{value:,.0f}원"
 
     except Exception:
 
         return "-"
-
-
-    if v >= 1e12:
-
-        return (
-            f"{v / 1e12:.1f}조"
-        )
-
-
-    if v >= 1e8:
-
-        return (
-            f"{v / 1e8:.0f}억"
-        )
-
-
-    if v >= 1e4:
-
-        return (
-            f"{v / 1e4:.0f}만"
-        )
-
-
-    return (
-        f"{v:,.0f}"
-    )
 
 
 # =========================================================
 # Row 생성
-#
-# ※ 기존 기능 유지
-# ※ volume_24h / volume_rank 추가
 # =========================================================
 
 def make_row(
-    rank,
-    name,
-    volume,
+    item,
     analysis,
-    current_price,
-    volume_rank=None
+    volume_rank
 ):
 
-    analysis = (
-        analysis
-        or
-        {}
+    market = item["market"]
+
+    symbol = market.replace(
+        "KRW-",
+        ""
     )
 
+    current_price = item["price"]
+
+    daily_change = analysis[
+        "daily_change"
+    ]
+
+    current_4h_change = analysis[
+        "current_4h_change"
+    ]
+
+    previous_4h_change = analysis[
+        "previous_4h_change"
+    ]
+
+    # ★ 전전 4H
+    pre_previous_4h_change = analysis[
+        "pre_previous_4h_change"
+    ]
+
+    # =====================================================
+    # SIGNAL 조건
+    #
+    # 전전 4H 양수
+    # 전 4H 음수
+    # 현재 4H 양수
+    # =====================================================
+
+    pre_previous_4h_condition = (
+        pre_previous_4h_change > 0
+    )
+
+    previous_4h_condition = (
+        previous_4h_change < 0
+    )
+
+    current_4h_condition = (
+        current_4h_change > 0
+    )
+
+    signal_pass = (
+        pre_previous_4h_condition
+        and previous_4h_condition
+        and current_4h_condition
+    )
 
     return {
 
-        "rank":
-            rank,
+        "market": market,
 
-        "name":
-            name,
+        "symbol": symbol,
 
-        # 실제 24H 거래대금 숫자
-        # SIGNAL 정렬에 사용
-        "volume_24h":
-            volume,
-
-        # 실제 업비트 전체 거래대금 순위
-        # SIGNAL 화면에 표시
-        "volume_rank":
-            volume_rank,
-
-        "volume":
-            format_volume(
-                volume
+        "korean_name":
+            item.get(
+                "korean_name",
+                symbol
             ),
 
-        "current_price":
+        "english_name":
+            item.get(
+                "english_name",
+                symbol
+            ),
+
+        "price":
             current_price,
 
         "daily_change":
-            get_change_value(
-                analysis.get(
-                    "daily_change"
-                )
-            ),
-
-        "daily_html":
-            format_change(
-                analysis.get(
-                    "daily_change"
-                )
-            ),
-
-        "four_hour_periods":
-            analysis.get(
-                "four_hour_periods",
-                []
-            ),
+            daily_change,
 
         "current_4h_change":
-            get_change_value(
-                analysis.get(
-                    "current_4h_change"
-                )
-            ),
+            current_4h_change,
 
         "previous_4h_change":
-            get_change_value(
-                analysis.get(
-                    "previous_4h_change"
-                )
-            )
+            previous_4h_change,
 
-    }
+        "pre_previous_4h_change":
+            pre_previous_4h_change,
 
+        "volume_24h":
+            item.get(
+                "volume_24h",
+                0
+            ),
 
-# =========================================================
-# 업비트 TOP 업데이트
-#
-# 기존 TOP_N 로직 유지
-#
-# 추가:
-# 전체 업비트 거래대금 순위를 먼저 부여
-# =========================================================
+        "volume_rank":
+            volume_rank,
 
-def update_upbit():
+        "signal_pass":
+            signal_pass,
 
-    global latest_upbit_data
+        "signal_conditions": {
 
-    global latest_upbit_update_time
-
-
-    markets = get_upbit_markets()
-
-
-    # =====================================================
-    # 기존 거래대금 순 정렬
-    # =====================================================
-
-    markets = sorted(
-        markets,
-        key=lambda x:
-            x["volume_24h"],
-        reverse=True
-    )
-
-
-    # =====================================================
-    # 추가 요청
-    #
-    # 업비트 전체 KRW 마켓 실제 거래대금 순위
-    #
-    # 1 = 전체 KRW 마켓 거래대금 1위
-    # 2 = 전체 KRW 마켓 거래대금 2위
-    # ...
-    # =====================================================
-
-    volume_rank_map = {
-
-        item["market"]:
-            rank
-
-        for rank, item in enumerate(
-            markets,
-            1
-        )
-
-    }
-
-
-    # =====================================================
-    # 기존 TOP_N 유지
-    # =====================================================
-
-    top_markets = markets[
-        :TOP_N
-    ]
-
-
-    rows = []
-
-
-    for rank, item in enumerate(
-        top_markets,
-        1
-    ):
-
-        market = item[
-            "market"
-        ]
-
-        coin = market.replace(
-            "KRW-",
-            ""
-        )
-
-        price = item[
-            "current_price"
-        ]
-
-        volume = item[
-            "volume_24h"
-        ]
-
-
-        # =================================================
-        # 실제 전체 거래대금 순위
-        # =================================================
-
-        actual_volume_rank = (
-            volume_rank_map.get(
-                market
-            )
-        )
-
-
-        try:
-
-            analysis = analyze(
-                market,
-                price
-            )
-
-        except Exception as e:
-
-            log.exception(
-                f"{market} 분석 오류: {e}"
-            )
-
-            analysis = {}
-
-
-        row = make_row(
-
-            rank,
-
-            coin,
-
-            volume,
-
-            analysis,
-
-            price,
-
-            actual_volume_rank
-
-        )
-
-
-        # =================================================
-        # SIGNAL 조건 1
-        #
-        # 업비트 당일 변동률 양수
-        # =================================================
-
-        daily_condition = (
-
-            row["daily_change"]
-            is not None
-
-            and
-
-            row["daily_change"]
-            > 0
-
-        )
-
-
-        # =================================================
-        # SIGNAL 조건 2
-        #
-        # 해당 코인 이전 4H 양수
-        # =================================================
-
-        previous_4h_condition = (
-
-            row["previous_4h_change"]
-            is not None
-
-            and
-
-            row["previous_4h_change"]
-            > 0
-
-        )
-
-
-        # =================================================
-        # SIGNAL 조건 3
-        #
-        # 해당 코인 현재 4H 음수
-        # =================================================
-
-        current_4h_condition = (
-
-            row["current_4h_change"]
-            is not None
-
-            and
-
-            row["current_4h_change"]
-            < 0
-
-        )
-
-
-        # =================================================
-        # 최종 SIGNAL
-        #
-        # 기존 조건 그대로
-        #
-        # 당일+
-        # + 이전 4H+
-        # + 현재 4H-
-        #
-        # BTC 조건 없음
-        # =================================================
-
-        row["signal_pass"] = (
-
-            daily_condition
-
-            and
-
-            previous_4h_condition
-
-            and
-
-            current_4h_condition
-
-        )
-
-
-        # =================================================
-        # 디버깅용 조건
-        # =================================================
-
-        row["signal_conditions"] = {
-
-            "daily":
-                daily_condition,
+            "pre_previous_4h":
+                pre_previous_4h_condition,
 
             "previous_4h":
                 previous_4h_condition,
@@ -2135,2898 +858,893 @@ def update_upbit():
             "current_4h":
                 current_4h_condition
 
-        }
-
-
-        rows.append(
-            row
-        )
-
-
-    latest_upbit_data = rows
-
-    latest_upbit_update_time = kst()
-
-
-    signal_count = sum(
-
-        1
-
-        for row in rows
-
-        if row.get(
-            "signal_pass",
-            False
-        )
-
-    )
-
-
-    current = get_current_4h_period()
-
-    previous = get_previous_4h_period()
-
-
-    log.info(
-
-        f"TOP{TOP_N} 업데이트 | "
-        f"현재={current['display_label'] if current else '-'} | "
-        f"이전={previous['display_label'] if previous else '-'} | "
-        f"BTC4H(참고)={latest_btc_current_4h_change} | "
-        f"SIGNAL={signal_count}"
-
-    )
-
-
-# =========================================================
-# OKX BTC 현재가
-# =========================================================
-
-def get_okx_btc_price():
-
-    response = retry(
-        requests.get,
-        f"{OKX_BASE_URL}/api/v5/market/ticker",
-        params={
-            "instId":
-                OKX_BTC_INST_ID
         },
-        timeout=15
-    )
 
-
-    if response is None:
-
-        return None
-
-
-    try:
-
-        payload = response.json()
-
-    except Exception:
-
-        return None
-
-
-    if payload.get(
-        "code"
-    ) != "0":
-
-        return None
-
-
-    data = payload.get(
-        "data",
-        []
-    )
-
-
-    if not data:
-
-        return None
-
-
-    try:
-
-        return float(
-            data[0]["last"]
-        )
-
-    except Exception:
-
-        return None
-
-
-# =========================================================
-# BTC 1H
-# =========================================================
-
-def get_okx_btc_1h_candles(
-    limit=200,
-    after=None
-):
-
-    params = {
-
-        "instId":
-            OKX_BTC_INST_ID,
-
-        "bar":
-            "1H",
-
-        "limit":
-            str(limit)
-
+        "periods":
+            analysis.get(
+                "periods",
+                []
+            )
     }
 
 
-    if after is not None:
+# =========================================================
+# 업비트 업데이트
+# =========================================================
 
-        params["after"] = str(
-            after
-        )
+def update_upbit():
 
+    global latest_rows
+    global upbit_markets_cache
 
-    response = retry(
-        requests.get,
-        f"{OKX_BASE_URL}/api/v5/market/candles",
-        params=params,
-        timeout=15
-    )
-
-
-    if response is None:
-
-        return []
-
+    if USE_UPBIT != "Y":
+        return
 
     try:
 
-        payload = response.json()
+        markets = get_upbit_markets()
 
-    except Exception:
+        if not markets:
+            logging.warning(
+                "업비트 마켓 데이터를 가져오지 못했습니다."
+            )
+            return
 
-        return []
+        upbit_markets_cache = markets
+
+        # =================================================
+        # 실제 업비트 전체 거래대금 순위
+        # =================================================
+
+        volume_rank_map = {
+            item["market"]: rank
+            for rank, item in enumerate(
+                markets,
+                start=1
+            )
+        }
+
+        # =================================================
+        # TOP_N만 분석
+        # =================================================
+
+        top_markets = markets[:TOP_N]
+
+        rows = []
+
+        for item in top_markets:
+
+            market = item["market"]
+
+            current_price = item["price"]
+
+            try:
+
+                analysis = analyze(
+                    market,
+                    current_price
+                )
+
+                row = make_row(
+                    item,
+                    analysis,
+                    volume_rank_map.get(
+                        market,
+                        0
+                    )
+                )
+
+                rows.append(row)
+
+            except Exception as e:
+
+                logging.warning(
+                    f"{market} 분석 실패: {e}"
+                )
+
+        # =================================================
+        # SIGNAL
+        #
+        # 전전 4H +
+        # 전 4H -
+        # 현재 4H +
+        #
+        # SIGNAL 순위는 24H 거래대금 큰 순
+        # =================================================
+
+        signal_rows = [
+            row
+            for row in rows
+            if row["signal_pass"]
+        ]
+
+        signal_rows.sort(
+            key=lambda x: x["volume_24h"],
+            reverse=True
+        )
+
+        # =================================================
+        # 일반 TOP 리스트도 거래대금 순
+        # =================================================
+
+        rows.sort(
+            key=lambda x: x["volume_24h"],
+            reverse=True
+        )
+
+        # =================================================
+        # signal rank 저장
+        # =================================================
+
+        signal_rank_map = {
+            row["market"]: rank
+            for rank, row in enumerate(
+                signal_rows,
+                start=1
+            )
+        }
+
+        for row in rows:
+
+            row["signal_rank"] = (
+                signal_rank_map.get(
+                    row["market"]
+                )
+            )
+
+        with lock:
+
+            latest_rows = rows
+
+        logging.info(
+            f"업비트 업데이트 완료 "
+            f"TOP={len(rows)} / "
+            f"SIGNAL={len(signal_rows)}"
+        )
+
+    except Exception as e:
+
+        logging.exception(
+            f"update_upbit 오류: {e}"
+        )
 
 
-    if payload.get(
-        "code"
-    ) != "0":
+# =========================================================
+# OKX BTC
+# =========================================================
 
-        return []
+def get_okx_btc():
 
+    url = "https://www.okx.com/api/v5/market/ticker"
 
-    return payload.get(
+    response = retry(
+        requests.get,
+        url,
+        params={
+            "instId": "BTC-USDT-SWAP"
+        },
+        timeout=10
+    )
+
+    if response is None:
+        return None
+
+    data = response.json()
+
+    if data.get("code") != "0":
+        return None
+
+    result = data.get(
         "data",
         []
     )
 
-
-# =========================================================
-# BTC 1H history
-# =========================================================
-
-def get_okx_btc_1h_history():
-
-    rows = []
-
-    after = None
-
-
-    for _ in range(
-        MAX_HISTORY_CHUNKS
-    ):
-
-        data = get_okx_btc_1h_candles(
-            HISTORY_CHUNK,
-            after
-        )
-
-
-        if not data:
-
-            break
-
-
-        rows.extend(
-            data
-        )
-
-
-        try:
-
-            oldest = min(
-                int(row[0])
-                for row in data
-            )
-
-        except Exception:
-
-            break
-
-
-        after = oldest
-
-
-        if len(data) < HISTORY_CHUNK:
-
-            break
-
-
-    if not rows:
-
-        return pd.DataFrame()
-
-
-    unique = {}
-
-
-    for row in rows:
-
-        try:
-
-            unique[
-                int(row[0])
-            ] = row
-
-        except Exception:
-
-            continue
-
-
-    ordered = sorted(
-        unique.values(),
-        key=lambda x:
-            int(x[0])
-    )
-
-
-    result = []
-
-
-    for row in ordered:
-
-        try:
-
-            result.append({
-
-                "timestamp":
-                    int(row[0]),
-
-                "open":
-                    float(row[1]),
-
-                "high":
-                    float(row[2]),
-
-                "low":
-                    float(row[3]),
-
-                "close":
-                    float(row[4])
-
-            })
-
-        except Exception:
-
-            continue
-
-
     if not result:
-
-        return pd.DataFrame()
-
-
-    df = pd.DataFrame(
-        result
-    )
-
-
-    df["datetime_utc"] = pd.to_datetime(
-        df["timestamp"],
-        unit="ms",
-        utc=True
-    )
-
-
-    df["datetime_kst"] = (
-        df["datetime_utc"]
-        .dt
-        .tz_convert(KST)
-    )
-
-
-    return df
-
-
-# =========================================================
-# BTC KST 일봉
-# =========================================================
-
-def aggregate_btc_daily(
-    df
-):
-
-    if df is None or df.empty:
-
-        return pd.DataFrame()
-
-
-    temp = df.copy()
-
-
-    temp["daily_start"] = (
-
-        temp["datetime_kst"]
-
-        -
-
-        pd.Timedelta(
-            hours=9
-        )
-
-    ).dt.floor(
-        "D"
-    ) + pd.Timedelta(
-        hours=9
-    )
-
-
-    return (
-        temp
-        .sort_values(
-            "datetime_kst"
-        )
-        .groupby(
-            "daily_start"
-        )
-        .agg(
-            open=("open", "first"),
-            high=("high", "max"),
-            low=("low", "min"),
-            close=("close", "last")
-        )
-        .reset_index()
-    )
-
-
-# =========================================================
-# BTC 당일 변동률
-# =========================================================
-
-def get_btc_daily_change(
-    price,
-    df
-):
-
-    if price is None:
-
         return None
 
-
-    daily = aggregate_btc_daily(
-        df
-    )
+    return result[0]
 
 
-    if daily.empty:
+def update_btc_market():
 
-        return None
+    global latest_btc
 
+    try:
 
-    now = datetime.now(KST)
+        ticker = get_okx_btc()
 
+        if not ticker:
+            return
 
-    today_0900 = now.replace(
-        hour=9,
-        minute=0,
-        second=0,
-        microsecond=0
-    )
-
-
-    if now < today_0900:
-
-        current_start = (
-            today_0900
-            -
-            timedelta(days=1)
-        )
-
-    else:
-
-        current_start = today_0900
-
-
-    daily["daily_start"] = (
-        daily["daily_start"]
-        .dt
-        .tz_localize(None)
-    )
-
-
-    target = (
-        current_start.replace(
-            tzinfo=None
-        )
-    )
-
-
-    previous = daily[
-        daily["daily_start"]
-        <
-        target
-    ]
-
-
-    if previous.empty:
-
-        return None
-
-
-    previous_close = float(
-        previous.iloc[-1][
-            "close"
-        ]
-    )
-
-
-    if previous_close == 0:
-
-        return None
-
-
-    return (
-        (
-            price
-            -
-            previous_close
-        )
-        /
-        previous_close
-        *
-        100
-    )
-
-
-# =========================================================
-# BTC 4H
-# =========================================================
-
-def build_btc_4h(
-    price,
-    df
-):
-
-    if (
-        price is None
-        or
-        df is None
-        or
-        df.empty
-    ):
-
-        return []
-
-
-    temp = df.copy()
-
-
-    temp["kst_naive"] = (
-        temp["datetime_kst"]
-        .dt
-        .tz_localize(None)
-    )
-
-
-    periods = get_recent_4h_periods(
-        6
-    )
-
-
-    result = []
-
-
-    for period in periods:
-
-        start = (
-            period["start"]
-            .replace(
-                tzinfo=None
+        last_price = float(
+            ticker.get(
+                "last",
+                0
             )
         )
 
-        end = (
-            period["end"]
-            .replace(
-                tzinfo=None
+        open_24h = float(
+            ticker.get(
+                "open24h",
+                0
             )
         )
 
+        if open_24h:
 
-        part = temp[
-            (
-                temp["kst_naive"]
-                >=
-                start
-            )
-            &
-            (
-                temp["kst_naive"]
-                <
-                end
-            )
-        ].copy()
-
-
-        if part.empty:
-
-            result.append({
-
-                **period,
-
-                "open":
-                    None,
-
-                "high":
-                    None,
-
-                "low":
-                    None,
-
-                "close":
-                    None,
-
-                "change":
-                    None
-
-            })
-
-            continue
-
-
-        part = part.sort_values(
-            "kst_naive"
-        )
-
-
-        open_price = float(
-            part.iloc[0]["open"]
-        )
-
-        high_price = float(
-            part["high"].max()
-        )
-
-        low_price = float(
-            part["low"].min()
-        )
-
-        close_price = float(
-            part.iloc[-1]["close"]
-        )
-
-
-        if period["active"]:
-
-            close_price = float(
-                price
-            )
-
-            high_price = max(
-                high_price,
-                close_price
-            )
-
-            low_price = min(
-                low_price,
-                close_price
-            )
-
-
-        if open_price == 0:
-
-            change = None
+            change = (
+                (last_price - open_24h)
+                / open_24h
+            ) * 100
 
         else:
 
-            change = (
-                (
-                    close_price
-                    -
-                    open_price
-                )
-                /
-                open_price
-                *
-                100
-            )
+            change = 0
 
+        latest_btc = {
 
-        result.append({
-
-            **period,
-
-            "open":
-                open_price,
-
-            "high":
-                high_price,
-
-            "low":
-                low_price,
-
-            "close":
-                close_price,
+            "price":
+                last_price,
 
             "change":
                 change,
 
-            "patterns":
-                []
+            "state":
+                "☀️"
+                if change > 0
+                else "🌧️"
+                if change < 0
+                else "⚪"
 
-        })
+        }
 
+    except Exception as e:
 
-    pattern_results = (
-        detect_4h_patterns(
-            result
-        )
-    )
-
-
-    for i, pattern_list in enumerate(
-        pattern_results
-    ):
-
-        result[i]["patterns"] = (
-            pattern_list
+        logging.warning(
+            f"BTC 업데이트 실패: {e}"
         )
 
 
-    return result
-
-
 # =========================================================
-# BTC 업데이트
+# OKX 업데이트
 # =========================================================
 
-def update_btc_market():
+def update_okx():
 
-    global latest_btc_okx_price
-
-    global latest_btc_daily_change
-
-    global latest_btc_4h_periods
-
-    global latest_btc_current_4h_change
-
-    global latest_btc_current_4h_label
-
-
-    price = get_okx_btc_price()
-
-
-    if price is None:
-
+    if USE_OKX != "Y":
         return
 
-
-    latest_btc_okx_price = price
-
-
-    df = get_okx_btc_1h_history()
-
-
-    latest_btc_daily_change = (
-        get_btc_daily_change(
-            price,
-            df
-        )
-    )
-
-
-    latest_btc_4h_periods = (
-        build_btc_4h(
-            price,
-            df
-        )
-    )
-
-
-    current = (
-        get_current_4h_period()
-    )
-
-
-    if current is None:
-
-        return
-
-
-    latest_btc_current_4h_label = (
-        current[
-            "display_label"
-        ]
-    )
-
-
-    latest_btc_current_4h_change = None
-
-
-    for period in latest_btc_4h_periods:
-
-        if (
-            period["start"]
-            ==
-            current["start"]
-        ):
-
-            latest_btc_current_4h_change = (
-                period["change"]
-            )
-
-            break
+    # 기존 OKX 기능 자리
+    pass
 
 
 # =========================================================
-# OKX placeholder
-# =========================================================
-
-def update_okx(
-    usdt
-):
-
-    global latest_okx_data
-
-    global latest_okx_update_time
-
-
-    latest_okx_data = []
-
-    latest_okx_update_time = kst()
-
-
-# =========================================================
-# USDT
+# USDT/KRW
 # =========================================================
 
 def get_usdt_krw():
 
+    url = (
+        "https://api.upbit.com/v1/ticker"
+    )
+
     response = retry(
         requests.get,
-        "https://api.upbit.com/v1/ticker",
+        url,
         params={
-            "markets":
-                "KRW-USDT"
+            "markets": "KRW-USDT"
         },
-        timeout=15
+        timeout=10
+    )
+
+    if response is None:
+        return 0
+
+    data = response.json()
+
+    if not data:
+        return 0
+
+    return data[0].get(
+        "trade_price",
+        0
     )
 
 
-    if response is None:
-
-        return None
-
-
-    try:
-
-        data = response.json()
-
-        return float(
-            data[0]["trade_price"]
-        )
-
-    except Exception:
-
-        return None
-
-
 # =========================================================
-# 전체 업데이트
+# 대시보드 업데이트
 # =========================================================
 
 def update_dashboard():
 
-    if not update_lock.acquire(
-        False
-    ):
+    global last_update_time
 
-        return
+    update_upbit()
 
+    if USE_OKX == "Y":
+        update_okx()
 
-    try:
+    update_btc_market()
 
-        update_btc_market()
-
-
-        if USE_UPBIT == "Y":
-
-            update_upbit()
-
-
-        if USE_OKX == "Y":
-
-            usdt = get_usdt_krw()
-
-            if usdt:
-
-                update_okx(
-                    usdt
-                )
-
-
-    except Exception as e:
-
-        log.exception(
-            f"전체 업데이트 오류: {e}"
-        )
-
-
-    finally:
-
-        update_lock.release()
+    last_update_time = kst()
 
 
 # =========================================================
-# 캔들 패턴 HTML
+# 공통 색상
 # =========================================================
 
-def candle_pattern_html(
-    patterns
+def change_class(value):
+
+    value = get_change_value(value)
+
+    if value > 0:
+        return "positive"
+
+    if value < 0:
+        return "negative"
+
+    return "neutral"
+
+
+# =========================================================
+# 4H 미니 표시
+# =========================================================
+
+def four_hour_item(
+    title,
+    period,
+    value
 ):
 
-    if not patterns:
-
-        return ""
-
-
-    return (
-
-        '<div class="candle-pattern">'
-
-        +
-
-        " · ".join(
-            html.escape(
-                str(x)
-            )
-            for x in patterns
-        )
-
-        +
-
-        '</div>'
-
-    )
-
-
-# =========================================================
-# 4H 셀
-# =========================================================
-
-def four_hour_cells_html(
-    periods
-):
-
-    if not periods:
-
-        return (
-            '<div class="no-4h-data">-</div>'
-        )
-
-
-    cells = []
-
-
-    for period in periods:
-
-        if period.get(
-            "active",
-            False
-        ):
-
-            cell_class = (
-                "four-hour-cell current-4h"
-            )
-
-            day_text = "현재"
-
-        else:
-
-            cell_class = (
-                "four-hour-cell"
-            )
-
-            day_text = period.get(
-                "day_label",
-                ""
-            )
-
-
-        cells.append(
-
-            f"""
-
-            <div class="{cell_class}">
-
-                <div class="four-hour-label">
-                    {html.escape(
-                        str(day_text)
-                    )}
-                </div>
-
-                <div class="four-hour-time">
-                    {html.escape(
-                        str(
-                            period.get(
-                                "label",
-                                "-"
-                            )
-                        )
-                    )}
-                </div>
-
-                <div class="four-hour-value">
-                    {format_change(
-                        period.get(
-                            "change"
-                        )
-                    )}
-                </div>
-
-                {candle_pattern_html(
-                    period.get(
-                        "patterns",
-                        []
-                    )
-                )}
-
-            </div>
-
-            """
-
-        )
-
-
-    return "".join(
-        cells
-    )
-
-
-# =========================================================
-# BTC 4H HTML
-# =========================================================
-
-def btc_4h_cells_html():
-
-    return four_hour_cells_html(
-        latest_btc_4h_periods
-    )
-
-
-# =========================================================
-# BTC 시장 카드
-# =========================================================
-
-def market_summary_html():
-
-    period = (
-        get_current_4h_period()
-    )
-
-
-    price = format_market_price(
-        latest_btc_okx_price
-    )
-
-
-    daily = format_change(
-        latest_btc_daily_change
-    )
-
-
-    current = format_change(
-        latest_btc_current_4h_change
-    )
-
-
-    if (
-        latest_btc_current_4h_change
-        is not None
-        and
-        latest_btc_current_4h_change
-        > 0
-    ):
-
-        market_status = "상승"
-
-        market_status_class = "btc-on"
-
-    elif (
-        latest_btc_current_4h_change
-        is not None
-        and
-        latest_btc_current_4h_change
-        < 0
-    ):
-
-        market_status = "하락"
-
-        market_status_class = "btc-off"
-
-    else:
-
-        market_status = "-"
-
-        market_status_class = "btc-off"
-
+    cls = change_class(value)
 
     return f"""
-
-    <div class="market-card">
-
-        <div class="market-card-header">
-
-            <div class="market-title-block">
-
-                <div class="market-title-main">
-                    ₿ BTC 시장 시황
-                </div>
-
-                <div class="market-title-sub">
-                    OKX BTC-USDT
-                    · 당일 KST 09:00 기준
-                    · 4H 업비트 시간 기준
-                    · SIGNAL 필터 제외
-                </div>
-
-            </div>
-
-            <div class="market-time">
-                {kst()} KST
-            </div>
-
+    <div class="four-hour-item">
+        <div class="four-hour-title">
+            {html.escape(title)}
         </div>
 
-
-        <div class="btc-main-row">
-
-            <div class="btc-name">
-                ₿ BTC
-            </div>
-
-            <div class="btc-price">
-                {price}
-            </div>
-
-            <div class="btc-change">
-                {daily}
-            </div>
-
-            <div class="btc-signal-box">
-
-                <span class="btc-info">
-                    MARKET
-                </span>
-
-                <span class="{market_status_class}">
-                    {market_status}
-                </span>
-
-            </div>
-
+        <div class="four-hour-period">
+            {html.escape(period)}
         </div>
 
-
-        <div class="btc-current-box">
-
-            <div class="btc-current-title">
-                현재 4H
-            </div>
-
-            <div class="btc-current-period">
-
-                {period.get(
-                    "display_label",
-                    "-"
-                )}
-
-            </div>
-
-            <div class="btc-current-value">
-                {current}
-            </div>
-
+        <div class="four-hour-change {cls}">
+            {format_change(value)}
         </div>
-
-
-        <div class="btc-4h-grid">
-
-            {btc_4h_cells_html()}
-
-        </div>
-
     </div>
-
     """
 
 
 # =========================================================
-# 공통 SIGNAL / TOP 카드
-#
-# ※ 기존 카드 구조 유지
-# ※ SIGNAL에 실제 거래대금 순위만 추가
+# SIGNAL 카드
 # =========================================================
 
-def unified_card_html(
+def signal_card_html(
     row,
-    card_type,
-    rank
+    signal_rank
 ):
 
-    coin = html.escape(
-        str(
-            row.get(
-                "name",
-                "-"
-            )
-        )
+    symbol = html.escape(
+        row["symbol"]
     )
 
-
-    current_period = (
-        get_current_4h_period()
+    korean_name = html.escape(
+        row["korean_name"]
     )
 
-    previous_period = (
-        get_previous_4h_period()
+    volume_rank = row.get(
+        "volume_rank",
+        0
     )
 
-
-    current_change = (
-        row.get(
-            "current_4h_change"
-        )
+    volume_24h = row.get(
+        "volume_24h",
+        0
     )
 
-
-    previous_change = (
-        row.get(
-            "previous_4h_change"
-        )
+    price = row.get(
+        "price",
+        0
     )
 
+    pre_previous_change = row.get(
+        "pre_previous_4h_change",
+        0
+    )
 
-    # =====================================================
-    # SIGNAL 카드일 때만 실제 거래대금 순위 표시
-    # =====================================================
+    previous_change = row.get(
+        "previous_4h_change",
+        0
+    )
 
-    if card_type == "SIGNAL":
+    current_change = row.get(
+        "current_4h_change",
+        0
+    )
 
-        volume_rank = row.get(
-            "volume_rank"
-        )
+    periods = row.get(
+        "periods",
+        []
+    )
 
-        if volume_rank is not None:
+    period_map = {
+        p["start"]: p
+        for p in periods
+    }
 
-            volume_rank_text = (
-                f"거래대금 {volume_rank}위"
-            )
+    current_period = get_current_4h_period()
+    previous_period = get_previous_4h_period()
+    pre_previous_period = get_pre_previous_4h_period()
 
-        else:
+    pre_previous_label = (
+        pre_previous_period["label"]
+    )
 
-            volume_rank_text = (
-                "거래대금 -"
-            )
+    previous_label = (
+        previous_period["label"]
+    )
 
-    else:
-
-        volume_rank_text = ""
-
-
-    if card_type == "SIGNAL":
-
-        title = "🚀 SIGNAL"
-
-        card_class = (
-            "unified-market-card signal-market-card"
-        )
-
-        header_class = (
-            "unified-card-header signal-header"
-        )
-
-        badge = f"""
-        <span class="signal-badge">
-            {volume_rank_text}
-        </span>
-        """
-
-    else:
-
-        title = "🏆 업비트 TOP"
-
-        card_class = (
-            "unified-market-card"
-        )
-
-        header_class = (
-            "unified-card-header"
-        )
-
-        badge = ""
-
-
-    condition_html = ""
-
-
-    if card_type == "SIGNAL":
-
-        condition_html = f"""
-
-        <div class="unified-condition-row">
-
-            <div class="unified-condition">
-
-                <div class="condition-label">
-                    이전 4H
-                </div>
-
-                <div class="condition-period">
-
-                    {previous_period.get(
-                        "display_label",
-                        "-"
-                    )}
-
-                </div>
-
-                <div class="condition-value">
-
-                    {format_change(
-                        previous_change
-                    )}
-
-                </div>
-
-            </div>
-
-
-            <div class="unified-condition">
-
-                <div class="condition-label">
-                    SIGNAL 조건
-                </div>
-
-                <div class="condition-period">
-                    당일+ · 이전4H+ · 현재4H-
-                </div>
-
-                <div class="condition-value">
-
-                    <span class="up">
-                        ON
-                    </span>
-
-                </div>
-
-            </div>
-
-        </div>
-
-        """
-
+    current_label = (
+        current_period["label"]
+    )
 
     return f"""
+    <div class="signal-card">
 
-    <div class="{card_class}">
+        <div class="signal-card-top">
 
-        <div class="{header_class}">
+            <div>
 
-            <div class="unified-card-rank">
-                #{rank}
-            </div>
-
-            <div class="unified-card-coin">
-                {coin}
-            </div>
-
-            <div class="unified-card-title">
-                {title}
-            </div>
-
-            {badge}
-
-        </div>
-
-
-        <div class="unified-main-row">
-
-            <div class="unified-main-item">
-
-                <div class="unified-label">
-                    현재가
+                <div class="signal-rank">
+                    #{signal_rank}
                 </div>
 
-                <div class="unified-price">
+                <div class="signal-symbol">
+                    {symbol}
+                </div>
 
-                    {format_market_price(
-                        row.get(
-                            "current_price"
-                        )
-                    )}
-
+                <div class="signal-name">
+                    {korean_name}
                 </div>
 
             </div>
 
-
-            <div class="unified-main-item">
-
-                <div class="unified-label">
-                    24H 거래대금
-                </div>
-
-                <div class="unified-volume">
-
-                    {row.get(
-                        "volume",
-                        "-"
-                    )}
-
-                </div>
-
-            </div>
-
-
-            <div class="unified-main-item">
-
-                <div class="unified-label">
-                    당일
-                </div>
-
-                <div class="unified-daily">
-
-                    {row.get(
-                        "daily_html",
-                        "-"
-                    )}
-
-                </div>
-
+            <div class="signal-volume-rank">
+                거래대금 {volume_rank}위
             </div>
 
         </div>
 
+        <div class="signal-price">
+            {format_market_price(price)}
+        </div>
 
-        <div class="unified-current-row">
+        <div class="signal-volume">
+            24H 거래대금
+            <strong>
+                {format_volume(volume_24h)}
+            </strong>
+        </div>
 
-            <div class="unified-current-title">
-                현재 4H
+        <div class="signal-pattern">
+
+            <div class="signal-pattern-title">
+                SIGNAL
             </div>
 
-            <div class="unified-current-period">
-
-                {current_period.get(
-                    "display_label",
-                    "-"
-                )}
-
-            </div>
-
-            <div class="unified-current-value">
-
-                {format_change(
-                    current_change
-                )}
-
+            <div class="signal-pattern-text">
+                전전 4H 양수
+                →
+                전 4H 음수
+                →
+                현재 4H 양수
             </div>
 
         </div>
 
+        <div class="four-hour-grid">
 
-        <div class="unified-4h-grid">
+            {four_hour_item(
+                "전전 4H",
+                pre_previous_label,
+                pre_previous_change
+            )}
 
-            {four_hour_cells_html(
-                row.get(
-                    "four_hour_periods",
-                    []
-                )
+            {four_hour_item(
+                "전 4H",
+                previous_label,
+                previous_change
+            )}
+
+            {four_hour_item(
+                "현재 4H",
+                current_label,
+                current_change
             )}
 
         </div>
 
-
-        {condition_html}
-
     </div>
-
     """
 
 
 # =========================================================
-# SIGNAL Section
-#
-# 기존 조건 유지
-#
-# SIGNAL 순위만
-# 현재 4H 변동률 → 24H 거래대금
+# TOP 카드
 # =========================================================
 
-def focus_section(data):
+def top_card_html(
+    row,
+    rank
+):
 
-    current_period = (
-        get_current_4h_period()
+    symbol = html.escape(
+        row["symbol"]
     )
 
-    previous_period = (
-        get_previous_4h_period()
+    korean_name = html.escape(
+        row["korean_name"]
     )
 
+    price = row.get(
+        "price",
+        0
+    )
+
+    daily_change = row.get(
+        "daily_change",
+        0
+    )
+
+    current_4h_change = row.get(
+        "current_4h_change",
+        0
+    )
+
+    previous_4h_change = row.get(
+        "previous_4h_change",
+        0
+    )
+
+    pre_previous_4h_change = row.get(
+        "pre_previous_4h_change",
+        0
+    )
+
+    volume = row.get(
+        "volume_24h",
+        0
+    )
+
+    volume_rank = row.get(
+        "volume_rank",
+        rank
+    )
+
+    return f"""
+    <div class="top-card">
+
+        <div class="top-header">
+
+            <div class="top-rank">
+                #{rank}
+            </div>
+
+            <div class="top-symbol">
+                {symbol}
+            </div>
+
+            <div class="top-name">
+                {korean_name}
+            </div>
+
+            <div class="top-volume-rank">
+                거래대금 {volume_rank}위
+            </div>
+
+        </div>
+
+        <div class="top-price">
+            {format_market_price(price)}
+        </div>
+
+        <div class="top-stats">
+
+            <div class="top-stat">
+
+                <div class="stat-title">
+                    일봉
+                </div>
+
+                <div class="
+                    stat-value
+                    {change_class(daily_change)}
+                ">
+                    {format_change(daily_change)}
+                </div>
+
+            </div>
+
+            <div class="top-stat">
+
+                <div class="stat-title">
+                    전전 4H
+                </div>
+
+                <div class="
+                    stat-value
+                    {change_class(pre_previous_4h_change)}
+                ">
+                    {format_change(pre_previous_4h_change)}
+                </div>
+
+            </div>
+
+            <div class="top-stat">
+
+                <div class="stat-title">
+                    전 4H
+                </div>
+
+                <div class="
+                    stat-value
+                    {change_class(previous_4h_change)}
+                ">
+                    {format_change(previous_4h_change)}
+                </div>
+
+            </div>
+
+            <div class="top-stat">
+
+                <div class="stat-title">
+                    현재 4H
+                </div>
+
+                <div class="
+                    stat-value
+                    {change_class(current_4h_change)}
+                ">
+                    {format_change(current_4h_change)}
+                </div>
+
+            </div>
+
+            <div class="top-stat">
+
+                <div class="stat-title">
+                    24H 거래대금
+                </div>
+
+                <div class="stat-value">
+                    {format_volume(volume)}
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+    """
+
+
+# =========================================================
+# SIGNAL 섹션
+# =========================================================
+
+def focus_section(
+    rows
+):
 
     signal_rows = [
-
         row
-
-        for row in data
-
+        for row in rows
         if row.get(
             "signal_pass",
             False
         )
-
     ]
 
-
-    # =====================================================
-    # SIGNAL 순위
-    #
-    # 기존:
-    # 현재 4H 변동률 기준
-    #
-    # 변경:
-    # 24H 실제 거래대금 큰 순서
-    # =====================================================
-
     signal_rows.sort(
-
-        key=lambda row:
-
-            row.get(
-                "volume_24h",
-                0
-            ),
-
+        key=lambda x: x.get(
+            "volume_24h",
+            0
+        ),
         reverse=True
-
     )
 
+    cards = []
 
-    if not signal_rows:
+    for rank, row in enumerate(
+        signal_rows,
+        start=1
+    ):
 
-        message = (
-            "당일 양수 + 이전 4H 양수 + "
-            "현재 4H 음수 조건을 "
-            "모두 만족하는 종목 없음"
+        cards.append(
+            signal_card_html(
+                row,
+                rank
+            )
         )
 
+    if not cards:
 
-        body = f"""
-
-        <div class="signal-empty-card">
-
-            <div class="signal-empty-icon">
-                🔎
-            </div>
-
-            <div class="signal-empty-title">
-                SIGNAL 없음
-            </div>
-
-            <div class="signal-empty-text">
-                {message}
-            </div>
-
-            <div class="signal-empty-sub">
-
-                현재:
-                {current_period.get(
-                    "display_label",
-                    "-"
-                )}
-
-                ·
-
-                이전:
-                {previous_period.get(
-                    "display_label",
-                    "-"
-                )}
-
-            </div>
-
+        cards_html = """
+        <div class="empty-message">
+            전전 4H 양수 + 전 4H 음수 + 현재 4H 양수
+            조건을 모두 만족하는 종목 없음
         </div>
-
         """
 
     else:
 
-        signal_cards = []
-
-
-        for index, row in enumerate(
-            signal_rows
-        ):
-
-            signal_cards.append(
-
-                unified_card_html(
-                    row,
-                    "SIGNAL",
-                    index + 1
-                )
-
-            )
-
-
-        body = "".join(
-            signal_cards
+        cards_html = "".join(
+            cards
         )
 
-
     return f"""
+    <section class="section signal-section">
 
-    <div class="unified-section">
+        <div class="section-header">
 
-        <div class="section-title-card">
+            <div>
 
-            <div class="section-number">
-                🚀
-            </div>
-
-            <div class="section-heading">
-
-                <div class="section-heading-main">
+                <div class="section-title">
                     SIGNAL
                 </div>
 
-                <div class="section-heading-sub">
-
-                    거래대금 우선
-                    · 당일 양수
-                    · 이전 4H 양수
-                    · 현재 4H 음수
-                    · BTC 필터 제외
-
+                <div class="section-subtitle">
+                    전전 4H 양수 · 전 4H 음수 · 현재 4H 양수
                 </div>
 
             </div>
 
-            <div class="current-time-badge">
-
-                ▶ {current_period.get(
-                    "display_label",
-                    "-"
-                )}
-
+            <div class="section-count">
+                {len(signal_rows)}
             </div>
 
         </div>
 
+        <div class="signal-grid">
 
-        <div class="signal-btc-bar">
-
-            <div class="signal-btc-title">
-                SIGNAL 순위
-            </div>
-
-            <div class="signal-btc-period">
-                24H 실제 거래대금 기준
-            </div>
-
-            <div class="signal-btc-value">
-                거래대금 우선
-            </div>
+            {cards_html}
 
         </div>
 
-
-        <div class="signal-card-list">
-
-            {body}
-
-        </div>
-
-    </div>
-
+    </section>
     """
 
 
 # =========================================================
-# TOP Section
+# TOP 리스트
 # =========================================================
 
-def top_card_html(
-    row
+def top_list_section(
+    rows
 ):
 
-    return unified_card_html(
-        row,
-        "TOP",
-        row.get(
-            "rank",
-            "-"
-        )
-    )
+    cards = []
 
+    for rank, row in enumerate(
+        rows,
+        start=1
+    ):
 
-def section(
-    data,
-    update_time
-):
-
-    current_period = (
-        get_current_4h_period()
-    )
-
-
-    if not data:
-
-        cards = """
-
-        <div class="empty-card">
-            현재 데이터 없음
-        </div>
-
-        """
-
-    else:
-
-        top_cards = []
-
-
-        for row in data:
-
-            top_cards.append(
-
-                top_card_html(
-                    row
-                )
-
+        cards.append(
+            top_card_html(
+                row,
+                rank
             )
-
-
-        cards = "".join(
-            top_cards
         )
-
 
     return f"""
+    <section class="section">
 
-    <div class="unified-section">
+        <div class="section-header">
 
-        <div class="section-title-card">
+            <div>
 
-            <div class="section-number top-number">
-                🏆
-            </div>
-
-            <div class="section-heading">
-
-                <div class="section-heading-main">
-                    업비트 TOP{TOP_N}
+                <div class="section-title">
+                    TOP {TOP_N}
                 </div>
 
-                <div class="section-heading-sub">
-
-                    거래대금 순위
-                    · 당일 변동률
-                    · 최근 6개 4H
-                    · 캔들 패턴
-
+                <div class="section-subtitle">
+                    24H 실제 거래대금 기준
                 </div>
 
             </div>
 
-            <div class="current-time-badge">
+        </div>
 
-                ▶ {current_period.get(
-                    "display_label",
-                    "-"
-                )}
+        <div class="top-grid">
 
-            </div>
+            {"".join(cards)}
 
         </div>
 
-
-        <div class="top-update-bar">
-
-            <span>
-                TOP {TOP_N}
-            </span>
-
-            <span>
-                업데이트 {update_time}
-            </span>
-
-        </div>
-
-
-        <div class="top-card-list">
-
-            {cards}
-
-        </div>
-
-    </div>
-
+    </section>
     """
 
 
 # =========================================================
-# CSS
+# BTC BAR
 # =========================================================
 
-CSS = """
+def btc_bar_html():
 
-*{
-box-sizing:border-box;
--webkit-tap-highlight-color:transparent;
-}
+    price = latest_btc.get(
+        "price",
+        0
+    )
 
-html,
-body{
-margin:0;
-padding:0;
-width:100%;
-overflow-x:hidden;
-}
+    change = latest_btc.get(
+        "change",
+        0
+    )
 
-body{
-background:#080c11;
-color:#e7ebef;
-font-family:
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    Arial,
-    sans-serif;
-font-size:10px;
-padding:10px;
-}
+    state = latest_btc.get(
+        "state",
+        "⚪"
+    )
 
-h1{
-margin:3px 4px 10px;
-color:#eef2f5;
-font-size:15px;
-line-height:18px;
-font-weight:900;
-}
+    return f"""
+    <div class="btc-bar">
 
-.unified-section{
-width:100%;
-margin:10px 0 14px;
-}
+        <div class="btc-left">
 
-.section-title-card{
-display:flex;
-align-items:center;
-width:100%;
-min-height:50px;
-padding:8px 10px;
-background:#10151b;
-border:2px solid #252e38;
-border-radius:12px;
-overflow:hidden;
-}
+            <div class="btc-icon">
+                {state}
+            </div>
 
-.section-number{
-flex:none;
-display:flex;
-align-items:center;
-justify-content:center;
-width:35px;
-height:35px;
-margin-right:9px;
-border-radius:8px;
-background:#18251f;
-border:1px solid #315a48;
-color:#82d5a8;
-font-size:16px;
-font-weight:900;
-}
+            <div>
 
-.top-number{
-background:#1d1a13;
-border-color:#665331;
-color:#e0bd6d;
-}
+                <div class="btc-title">
+                    BTC
+                </div>
 
-.section-heading{
-min-width:0;
-flex:1;
-overflow:hidden;
-}
+                <div class="btc-subtitle">
+                    시장 기준
+                </div>
 
-.section-heading-main{
-color:#e9edf1;
-font-size:12px;
-line-height:15px;
-font-weight:900;
-white-space:nowrap;
-}
+            </div>
 
-.section-heading-sub{
-margin-top:2px;
-color:#87919b;
-font-size:7px;
-line-height:10px;
-font-weight:700;
-white-space:nowrap;
-overflow:hidden;
-text-overflow:ellipsis;
-}
+        </div>
 
-.current-time-badge{
-flex:none;
-display:flex;
-align-items:center;
-justify-content:center;
-min-height:28px;
-margin-left:8px;
-padding:5px 8px;
-border-radius:7px;
-background:#173326;
-border:1px solid #4f9b73;
-color:#8fe0b2;
-font-size:7px;
-font-weight:900;
-white-space:nowrap;
-}
+        <div class="btc-price">
+            {format_market_price(price)}
+        </div>
 
+        <div class="
+            btc-change
+            {change_class(change)}
+        ">
+            {format_change(change)}
+        </div>
 
-/* =========================================================
-   BTC
-   ========================================================= */
-
-.market-card{
-width:100%;
-margin:3px 0 14px;
-background:#0f141a;
-border:2px solid #252e38;
-border-radius:13px;
-overflow:hidden;
-}
-
-.market-card-header{
-display:flex;
-align-items:center;
-min-height:44px;
-padding:7px 10px;
-background:#121820;
-border-bottom:1px solid #29323c;
-}
-
-.market-title-block{
-min-width:0;
-flex:1;
-}
-
-.market-title-main{
-color:#eef2f5;
-font-size:11px;
-line-height:14px;
-font-weight:900;
-}
-
-.market-title-sub{
-margin-top:2px;
-color:#7e8994;
-font-size:6.5px;
-font-weight:700;
-white-space:nowrap;
-overflow:hidden;
-text-overflow:ellipsis;
-}
-
-.market-time{
-flex:none;
-margin-left:8px;
-color:#68737e;
-font-size:6.5px;
-font-weight:800;
-}
-
-.btc-main-row{
-display:grid;
-grid-template-columns:
-    1fr
-    1.3fr
-    1fr
-    1.2fr;
-align-items:center;
-min-height:58px;
-background:#11161c;
-}
-
-.btc-name{
-padding-left:13px;
-color:#edf1f4;
-font-size:11px;
-font-weight:900;
-}
-
-.btc-price{
-color:#f1f4f6;
-font-size:11px;
-font-weight:900;
-text-align:center;
-}
-
-.btc-change{
-font-size:11px;
-font-weight:900;
-text-align:center;
-}
-
-.btc-signal-box{
-min-height:58px;
-display:flex;
-align-items:center;
-justify-content:center;
-gap:5px;
-border-left:1px solid #29323c;
-}
-
-.btc-info{
-color:#7f8a94;
-font-size:8px;
-font-weight:900;
-}
-
-.btc-on{
-color:#78cfa2;
-font-size:10px;
-font-weight:900;
-}
-
-.btc-off{
-color:#df8588;
-font-size:10px;
-font-weight:900;
-}
-
-.btc-current-box{
-display:flex;
-align-items:center;
-justify-content:center;
-gap:12px;
-min-height:48px;
-background:#101820;
-border-top:1px solid #29323c;
-}
-
-.btc-current-title{
-color:#7d8993;
-font-size:7px;
-font-weight:900;
-}
-
-.btc-current-period{
-color:#b9f0cf;
-font-size:8px;
-font-weight:900;
-}
-
-.btc-current-value{
-font-size:11px;
-font-weight:900;
-}
-
-.btc-4h-grid{
-display:grid;
-grid-template-columns:
-    repeat(6,1fr);
-gap:1px;
-background:#29323c;
-border-top:1px solid #29323c;
-}
-
-
-/* =========================================================
-   공통 4H
-   ========================================================= */
-
-.four-hour-cell{
-display:flex;
-flex-direction:column;
-align-items:center;
-justify-content:center;
-min-height:70px;
-background:#0d1319;
-gap:3px;
-padding:4px 2px;
-}
-
-.four-hour-label{
-color:#68747e;
-font-size:6px;
-font-weight:800;
-}
-
-.four-hour-time{
-color:#b6bec5;
-font-size:7px;
-font-weight:900;
-}
-
-.four-hour-value{
-font-size:8px;
-font-weight:900;
-}
-
-.candle-pattern{
-color:#e0bd6d;
-font-size:6px;
-line-height:8px;
-font-weight:900;
-text-align:center;
-white-space:nowrap;
-overflow:hidden;
-text-overflow:ellipsis;
-max-width:100%;
-}
-
-.current-4h{
-background:#173326!important;
-box-shadow:
-    inset 0 0 0 1px rgba(116,213,157,0.18),
-    inset 0 0 15px rgba(78,164,111,0.08);
-}
-
-.current-4h .four-hour-label{
-color:#91dcb0;
-}
-
-.current-4h .four-hour-time{
-color:#b9f0cf;
-}
-
-.current-4h .candle-pattern{
-color:#f0d486;
-}
-
-.no-4h-data{
-display:flex;
-align-items:center;
-justify-content:center;
-min-height:50px;
-color:#59636e;
-}
-
-
-/* =========================================================
-   SIGNAL / TOP 카드
-   ========================================================= */
-
-.top-card-list,
-.signal-card-list{
-display:flex;
-flex-direction:column;
-gap:8px;
-}
-
-.unified-market-card{
-width:100%;
-background:#0f141a;
-border:2px solid #252e38;
-border-radius:13px;
-overflow:hidden;
-}
-
-.signal-market-card{
-border-color:#31513f;
-}
-
-.unified-card-header{
-display:flex;
-align-items:center;
-min-height:44px;
-padding:7px 10px;
-background:#121820;
-border-bottom:1px solid #29323c;
-}
-
-.signal-header{
-background:#14231c;
-border-bottom-color:#31513f;
-}
-
-.unified-card-rank{
-width:38px;
-flex:none;
-color:#e0bd6d;
-font-size:9px;
-font-weight:900;
-}
-
-.unified-card-coin{
-flex:1;
-min-width:0;
-color:#eef2f5;
-font-size:11px;
-font-weight:900;
-}
-
-.unified-card-title{
-flex:none;
-color:#7f8a94;
-font-size:7px;
-font-weight:900;
-margin-right:7px;
-}
-
-.signal-badge{
-padding:4px 7px;
-border-radius:6px;
-background:#183528;
-border:1px solid #4f9b73;
-color:#8fe0b2;
-font-size:6px;
-font-weight:900;
-white-space:nowrap;
-}
-
-.unified-main-row{
-display:grid;
-grid-template-columns:
-    1.2fr
-    1fr
-    1fr;
-min-height:58px;
-background:#11161c;
-}
-
-.unified-main-item{
-display:flex;
-flex-direction:column;
-align-items:center;
-justify-content:center;
-gap:4px;
-}
-
-.unified-main-item + .unified-main-item{
-border-left:1px solid #29323c;
-}
-
-.unified-label{
-color:#68747e;
-font-size:6px;
-font-weight:800;
-}
-
-.unified-price{
-color:#f1f4f6;
-font-size:10px;
-font-weight:900;
-}
-
-.unified-volume{
-color:#cfd6dc;
-font-size:9px;
-font-weight:900;
-}
-
-.unified-daily{
-font-size:9px;
-font-weight:900;
-}
-
-.unified-current-row{
-display:grid;
-grid-template-columns:
-    1fr
-    1.4fr
-    1fr;
-align-items:center;
-min-height:42px;
-background:#101820;
-border-top:1px solid #29323c;
-border-bottom:1px solid #29323c;
-text-align:center;
-}
-
-.unified-current-title{
-color:#7d8993;
-font-size:7px;
-font-weight:900;
-}
-
-.unified-current-period{
-color:#8fe0b2;
-font-size:7px;
-font-weight:900;
-}
-
-.unified-current-value{
-font-size:9px;
-font-weight:900;
-}
-
-.unified-4h-grid{
-display:grid;
-grid-template-columns:
-    repeat(6,1fr);
-gap:1px;
-background:#29323c;
-}
-
-.unified-condition-row{
-display:grid;
-grid-template-columns:
-    1fr
-    1fr;
-min-height:50px;
-background:#0f171d;
-border-top:1px solid #29343d;
-}
-
-.unified-condition{
-display:flex;
-flex-direction:column;
-align-items:center;
-justify-content:center;
-gap:3px;
-}
-
-.unified-condition + .unified-condition{
-border-left:1px solid #29343d;
-}
-
-.condition-label{
-color:#68747e;
-font-size:6px;
-font-weight:800;
-}
-
-.condition-period{
-color:#aeb7be;
-font-size:6px;
-font-weight:800;
-}
-
-.condition-value{
-font-size:8px;
-font-weight:900;
-}
-
-
-/* =========================================================
-   SIGNAL 조건 BAR
-   ========================================================= */
-
-.signal-btc-bar{
-display:grid;
-grid-template-columns:
-    1fr
-    1.4fr
-    1fr;
-align-items:center;
-min-height:42px;
-margin-top:8px;
-background:#111820;
-border:1px solid #29343d;
-border-radius:8px;
-}
-
-.signal-btc-title{
-text-align:center;
-color:#78858f;
-font-size:7px;
-font-weight:900;
-}
-
-.signal-btc-period{
-text-align:center;
-color:#b9f0cf;
-font-size:7px;
-font-weight:900;
-}
-
-.signal-btc-value{
-text-align:center;
-font-size:9px;
-font-weight:900;
-}
-
-
-/* =========================================================
-   TOP 업데이트
-   ========================================================= */
-
-.top-update-bar{
-display:flex;
-justify-content:space-between;
-align-items:center;
-padding:6px 4px;
-color:#65717b;
-font-size:6.5px;
-font-weight:800;
-}
-
-
-/* =========================================================
-   SIGNAL 없음
-   ========================================================= */
-
-.signal-empty-card{
-display:flex;
-flex-direction:column;
-align-items:center;
-justify-content:center;
-min-height:120px;
-margin-top:8px;
-background:#10161c;
-border:1px solid #29333d;
-border-radius:11px;
-text-align:center;
-padding:15px;
-}
-
-.signal-empty-icon{
-font-size:20px;
-margin-bottom:5px;
-}
-
-.signal-empty-title{
-color:#e1e7eb;
-font-size:10px;
-font-weight:900;
-}
-
-.signal-empty-text{
-margin-top:7px;
-color:#77838d;
-font-size:7px;
-font-weight:800;
-}
-
-.signal-empty-sub{
-margin-top:6px;
-color:#59646e;
-font-size:6px;
-font-weight:700;
-}
-
-
-/* =========================================================
-   색상
-   ========================================================= */
-
-.up{
-color:#78cfa2!important;
-font-weight:900;
-}
-
-.down{
-color:#df8588!important;
-font-weight:900;
-}
-
-.zero{
-color:#727c86!important;
-font-weight:900;
-}
-
-.empty-card{
-min-height:70px;
-display:flex;
-align-items:center;
-justify-content:center;
-background:#10151b;
-border:1px solid #252e38;
-border-radius:11px;
-color:#59636e;
-font-size:8px;
-font-weight:800;
-}
-
-
-/* =========================================================
-   모바일
-   ========================================================= */
-
-@media(max-width:600px){
-
-body{
-    padding:6px;
-}
-
-h1{
-    margin:3px 3px 8px;
-    font-size:12px;
-    line-height:15px;
-}
-
-.unified-section{
-    margin:8px 0 10px;
-}
-
-.section-title-card{
-    min-height:40px;
-    padding:5px 6px;
-    border-radius:9px;
-}
-
-.section-number{
-    width:27px;
-    height:27px;
-    margin-right:6px;
-    border-radius:6px;
-    font-size:12px;
-}
-
-.section-heading-main{
-    font-size:9px;
-    line-height:11px;
-}
-
-.section-heading-sub{
-    font-size:5px;
-    line-height:7px;
-}
-
-.current-time-badge{
-    min-height:22px;
-    margin-left:5px;
-    padding:3px 5px;
-    border-radius:5px;
-    font-size:4.8px;
-}
-
-
-/* BTC */
-
-.market-card{
-    margin:3px 0 9px;
-    border-radius:9px;
-}
-
-.market-card-header{
-    min-height:36px;
-    padding:5px 7px;
-}
-
-.market-title-main{
-    font-size:8px;
-}
-
-.market-title-sub{
-    font-size:4.8px;
-}
-
-.market-time{
-    font-size:4.8px;
-}
-
-.btc-main-row{
-    min-height:43px;
-}
-
-.btc-name{
-    padding-left:8px;
-    font-size:8px;
-}
-
-.btc-price{
-    font-size:8px;
-}
-
-.btc-change{
-    font-size:8px;
-}
-
-.btc-signal-box{
-    min-height:43px;
-}
-
-.btc-info{
-    font-size:6px;
-}
-
-.btc-on,
-.btc-off{
-    font-size:7px;
-}
-
-.btc-current-box{
-    min-height:38px;
-    gap:7px;
-}
-
-.btc-current-title{
-    font-size:5px;
-}
-
-.btc-current-period{
-    font-size:5.5px;
-}
-
-.btc-current-value{
-    font-size:7px;
-}
-
-.btc-4h-grid{
-    grid-template-columns:
-        repeat(3,1fr);
-}
-
-.four-hour-cell{
-    min-height:52px;
-}
-
-.four-hour-label{
-    font-size:4px;
-}
-
-.four-hour-time{
-    font-size:5px;
-}
-
-.four-hour-value{
-    font-size:6px;
-}
-
-.candle-pattern{
-    font-size:4.5px;
-    line-height:6px;
-}
-
-
-/* TOP / SIGNAL */
-
-.unified-market-card{
-    border-radius:9px;
-}
-
-.unified-card-header{
-    min-height:36px;
-    padding:5px 7px;
-}
-
-.unified-card-rank{
-    width:27px;
-    font-size:7px;
-}
-
-.unified-card-coin{
-    font-size:8px;
-}
-
-.unified-card-title{
-    font-size:5px;
-    margin-right:5px;
-}
-
-.signal-badge{
-    font-size:4px;
-    padding:3px 5px;
-}
-
-.unified-main-row{
-    min-height:48px;
-}
-
-.unified-label{
-    font-size:4.5px;
-}
-
-.unified-price,
-.unified-volume,
-.unified-daily{
-    font-size:7px;
-}
-
-.unified-current-row{
-    min-height:34px;
-}
-
-.unified-current-title,
-.unified-current-period{
-    font-size:5px;
-}
-
-.unified-current-value{
-    font-size:7px;
-}
-
-.unified-4h-grid{
-    grid-template-columns:
-        repeat(3,1fr);
-}
-
-.unified-condition-row{
-    min-height:42px;
-}
-
-.condition-label{
-    font-size:4.5px;
-}
-
-.condition-period{
-    font-size:4px;
-}
-
-.condition-value{
-    font-size:7px;
-}
-
-.top-update-bar{
-    font-size:5px;
-}
-
-.signal-btc-bar{
-    min-height:34px;
-}
-
-.signal-btc-title,
-.signal-btc-period{
-    font-size:5px;
-}
-
-.signal-btc-value{
-    font-size:7px;
-}
-
-.signal-empty-card{
-    min-height:90px;
-}
-
-.signal-empty-icon{
-    font-size:16px;
-}
-
-.signal-empty-title{
-    font-size:8px;
-}
-
-.signal-empty-text{
-    font-size:5.5px;
-}
-
-.signal-empty-sub{
-    font-size:4.5px;
-}
-
-}
-
-
-/* =========================================================
-   작은 모바일
-   ========================================================= */
-
-@media(max-width:380px){
-
-body{
-    padding:4px;
-}
-
-h1{
-    font-size:11px;
-}
-
-.section-title-card{
-    min-height:35px;
-}
-
-.section-number{
-    width:23px;
-    height:23px;
-}
-
-.section-heading-main{
-    font-size:8px;
-}
-
-.section-heading-sub{
-    font-size:4px;
-}
-
-.current-time-badge{
-    min-height:19px;
-    padding:2px 4px;
-    font-size:4px;
-}
-
-.market-title-main{
-    font-size:7px;
-}
-
-.market-title-sub{
-    font-size:4px;
-}
-
-.market-time{
-    font-size:4px;
-}
-
-.btc-main-row{
-    min-height:38px;
-}
-
-.btc-name{
-    font-size:7px;
-}
-
-.btc-price{
-    font-size:7px;
-}
-
-.btc-change{
-    font-size:7px;
-}
-
-.btc-signal-box{
-    min-height:38px;
-}
-
-.btc-info{
-    font-size:5px;
-}
-
-.btc-on,
-.btc-off{
-    font-size:6px;
-}
-
-.btc-current-box{
-    min-height:34px;
-}
-
-.btc-current-title{
-    font-size:4.5px;
-}
-
-.btc-current-period{
-    font-size:4.5px;
-}
-
-.btc-current-value{
-    font-size:6px;
-}
-
-.four-hour-cell{
-    min-height:45px;
-}
-
-.four-hour-label{
-    font-size:3.7px;
-}
-
-.four-hour-time{
-    font-size:4px;
-}
-
-.four-hour-value{
-    font-size:5px;
-}
-
-.candle-pattern{
-    font-size:3.8px;
-    line-height:5px;
-}
-
-.unified-card-header{
-    min-height:32px;
-}
-
-.unified-card-rank{
-    font-size:6px;
-}
-
-.unified-card-coin{
-    font-size:7px;
-}
-
-.unified-card-title{
-    font-size:4px;
-}
-
-.signal-badge{
-    font-size:3.5px;
-}
-
-.unified-main-row{
-    min-height:43px;
-}
-
-.unified-label{
-    font-size:4px;
-}
-
-.unified-price,
-.unified-volume,
-.unified-daily{
-    font-size:6px;
-}
-
-.unified-current-row{
-    min-height:29px;
-}
-
-.unified-current-title,
-.unified-current-period{
-    font-size:4px;
-}
-
-.unified-current-value{
-    font-size:6px;
-}
-
-.unified-condition-row{
-    min-height:37px;
-}
-
-.condition-label{
-    font-size:4px;
-}
-
-.condition-period{
-    font-size:3.5px;
-}
-
-.condition-value{
-    font-size:6px;
-}
-
-}
-
-
-/* =========================================================
-   강조
-   ========================================================= */
-
-.top-market-card .current-4h{
-    background:#173326!important;
-}
-
-.signal-market-card .current-4h{
-    background:#173326!important;
-}
-
-"""
+    </div>
+    """
 
 
 # =========================================================
-# Dashboard
+# 전체 HTML
 # =========================================================
 
-@app.get(
-    "/",
-    response_class=HTMLResponse
-)
 def dashboard():
 
-    content = ""
+    with lock:
 
-
-    if USE_UPBIT == "Y":
-
-        content += focus_section(
-            latest_upbit_data
+        rows = list(
+            latest_rows
         )
 
-        content += section(
-            latest_upbit_data,
-            latest_upbit_update_time
+    now_text = (
+        last_update_time.strftime(
+            "%Y-%m-%d %H:%M:%S"
         )
-
+        if last_update_time
+        else "-"
+    )
 
     return f"""
-
     <!DOCTYPE html>
 
     <html lang="ko">
@@ -5037,67 +1755,465 @@ def dashboard():
 
         <meta
             name="viewport"
-            content="
-                width=device-width,
-                initial-scale=1,
-                maximum-scale=1,
-                user-scalable=no
-            "
+            content="width=device-width,
+            initial-scale=1.0"
         >
 
         <meta
             http-equiv="refresh"
-            content="60"
-        >
-
-        <meta
-            name="theme-color"
-            content="#080c11"
+            content="{UPDATE_MINUTES * 60}"
         >
 
         <title>
-            TRADING SIGNAL CENTER
+            Crypto Dashboard
         </title>
 
         <style>
 
-            {CSS}
+        * {{
+            box-sizing: border-box;
+        }}
+
+        body {{
+            margin: 0;
+            padding: 0;
+            background: #0b0f14;
+            color: #e8edf3;
+            font-family:
+                -apple-system,
+                BlinkMacSystemFont,
+                "Segoe UI",
+                sans-serif;
+        }}
+
+        .container {{
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }}
+
+        .page-header {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }}
+
+        .page-title {{
+            font-size: 25px;
+            font-weight: 800;
+        }}
+
+        .update-time {{
+            color: #87919d;
+            font-size: 12px;
+        }}
+
+        .btc-bar {{
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 15px;
+
+            padding: 17px 20px;
+            margin-bottom: 20px;
+
+            background: #121820;
+            border: 1px solid #26313d;
+            border-radius: 14px;
+        }}
+
+        .btc-left {{
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }}
+
+        .btc-icon {{
+            font-size: 23px;
+        }}
+
+        .btc-title {{
+            font-size: 17px;
+            font-weight: 800;
+        }}
+
+        .btc-subtitle {{
+            color: #7d8996;
+            font-size: 11px;
+        }}
+
+        .btc-price {{
+            font-weight: 800;
+        }}
+
+        .btc-change {{
+            font-weight: 800;
+        }}
+
+        .section {{
+            margin-bottom: 30px;
+        }}
+
+        .section-header {{
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 13px;
+        }}
+
+        .section-title {{
+            font-size: 21px;
+            font-weight: 800;
+        }}
+
+        .section-subtitle {{
+            margin-top: 4px;
+            color: #7d8996;
+            font-size: 12px;
+        }}
+
+        .section-count {{
+            min-width: 28px;
+            height: 28px;
+
+            display: flex;
+            align-items: center;
+            justify-content: center;
+
+            border-radius: 50%;
+            background: #1d2731;
+
+            font-size: 12px;
+            font-weight: 800;
+        }}
+
+        .signal-grid {{
+            display: grid;
+            grid-template-columns:
+                repeat(auto-fill, minmax(290px, 1fr));
+            gap: 12px;
+        }}
+
+        .signal-card {{
+            padding: 16px;
+
+            background: #121820;
+            border: 1px solid #26313d;
+            border-radius: 14px;
+        }}
+
+        .signal-card-top {{
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+        }}
+
+        .signal-rank {{
+            color: #8f9aa7;
+            font-size: 11px;
+            font-weight: 700;
+        }}
+
+        .signal-symbol {{
+            margin-top: 2px;
+            font-size: 19px;
+            font-weight: 900;
+        }}
+
+        .signal-name {{
+            margin-top: 2px;
+            color: #7d8996;
+            font-size: 11px;
+        }}
+
+        .signal-volume-rank {{
+            padding: 5px 8px;
+            border-radius: 8px;
+
+            background: #1b2832;
+            color: #b9c5d1;
+
+            font-size: 11px;
+            font-weight: 700;
+        }}
+
+        .signal-price {{
+            margin-top: 14px;
+            font-size: 18px;
+            font-weight: 800;
+        }}
+
+        .signal-volume {{
+            margin-top: 4px;
+            color: #7d8996;
+            font-size: 11px;
+        }}
+
+        .signal-volume strong {{
+            color: #dbe3ea;
+            margin-left: 4px;
+        }}
+
+        .signal-pattern {{
+            margin-top: 14px;
+            padding: 10px;
+
+            background: #0d1319;
+            border-radius: 10px;
+        }}
+
+        .signal-pattern-title {{
+            color: #8794a1;
+            font-size: 10px;
+            font-weight: 800;
+        }}
+
+        .signal-pattern-text {{
+            margin-top: 5px;
+            color: #dfe7ee;
+            font-size: 12px;
+            font-weight: 800;
+        }}
+
+        .four-hour-grid {{
+            display: grid;
+            grid-template-columns:
+                repeat(3, 1fr);
+
+            gap: 6px;
+            margin-top: 9px;
+        }}
+
+        .four-hour-item {{
+            padding: 9px 5px;
+
+            background: #0d1319;
+            border-radius: 9px;
+
+            text-align: center;
+        }}
+
+        .four-hour-title {{
+            color: #8b96a2;
+            font-size: 10px;
+            font-weight: 700;
+        }}
+
+        .four-hour-period {{
+            margin-top: 3px;
+            color: #66727f;
+            font-size: 8px;
+        }}
+
+        .four-hour-change {{
+            margin-top: 5px;
+            font-size: 12px;
+            font-weight: 900;
+        }}
+
+        .top-grid {{
+            display: grid;
+            grid-template-columns:
+                repeat(auto-fill, minmax(320px, 1fr));
+            gap: 10px;
+        }}
+
+        .top-card {{
+            padding: 14px 15px;
+
+            background: #121820;
+            border: 1px solid #202b36;
+            border-radius: 12px;
+        }}
+
+        .top-header {{
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }}
+
+        .top-rank {{
+            color: #697581;
+            font-size: 11px;
+            font-weight: 700;
+        }}
+
+        .top-symbol {{
+            font-weight: 900;
+        }}
+
+        .top-name {{
+            color: #7d8996;
+            font-size: 11px;
+        }}
+
+        .top-volume-rank {{
+            margin-left: auto;
+
+            padding: 4px 7px;
+
+            border-radius: 7px;
+
+            background: #1a242e;
+            color: #9aa6b2;
+
+            font-size: 10px;
+        }}
+
+        .top-price {{
+            margin-top: 9px;
+            font-size: 16px;
+            font-weight: 800;
+        }}
+
+        .top-stats {{
+            display: grid;
+            grid-template-columns:
+                repeat(5, 1fr);
+
+            gap: 5px;
+            margin-top: 11px;
+        }}
+
+        .top-stat {{
+            padding: 7px 3px;
+
+            background: #0d1319;
+            border-radius: 7px;
+
+            text-align: center;
+        }}
+
+        .stat-title {{
+            color: #697581;
+            font-size: 9px;
+        }}
+
+        .stat-value {{
+            margin-top: 3px;
+            font-size: 10px;
+            font-weight: 800;
+        }}
+
+        .positive {{
+            color: #4cd97b;
+        }}
+
+        .negative {{
+            color: #ff6675;
+        }}
+
+        .neutral {{
+            color: #9aa6b2;
+        }}
+
+        .empty-message {{
+            padding: 40px 20px;
+
+            text-align: center;
+
+            background: #121820;
+            border: 1px solid #26313d;
+            border-radius: 14px;
+
+            color: #7d8996;
+            font-size: 13px;
+        }}
+
+        @media (max-width: 700px) {{
+
+            .container {{
+                padding: 12px;
+            }}
+
+            .page-title {{
+                font-size: 21px;
+            }}
+
+            .btc-bar {{
+                flex-wrap: wrap;
+            }}
+
+            .top-stats {{
+                grid-template-columns:
+                    repeat(3, 1fr);
+            }}
+
+        }}
 
         </style>
 
     </head>
 
-
     <body>
 
-        <h1>
-            📊 TRADING SIGNAL CENTER
-        </h1>
+        <div class="container">
 
+            <div class="page-header">
 
-        {market_summary_html()}
+                <div class="page-title">
+                    Crypto Dashboard
+                </div>
 
+                <div class="update-time">
+                    업데이트 {now_text}
+                </div>
 
-        {content}
+            </div>
 
+            {btc_bar_html()}
+
+            {focus_section(rows)}
+
+            {top_list_section(rows)}
+
+        </div>
 
     </body>
 
     </html>
-
     """
 
 
 # =========================================================
-# Scheduler
+# FastAPI
 # =========================================================
 
-def scheduler():
+@app.get(
+    "/",
+    response_class=HTMLResponse
+)
+def home():
 
-    log.info(
-        "스케줄러 시작"
+    return dashboard()
+
+
+@app.get(
+    "/health"
+)
+def health():
+
+    return {
+        "status": "ok",
+        "updated":
+            last_update_time.isoformat()
+            if last_update_time
+            else None
+    }
+
+
+# =========================================================
+# 스케줄러
+# =========================================================
+
+def scheduler_loop():
+
+    schedule.every(
+        UPDATE_MINUTES
+    ).minutes.do(
+        update_dashboard
     )
-
 
     while True:
 
@@ -5107,7 +2223,7 @@ def scheduler():
 
         except Exception as e:
 
-            log.exception(
+            logging.exception(
                 f"스케줄러 오류: {e}"
             )
 
@@ -5120,122 +2236,84 @@ def scheduler():
 
 def validate_settings():
 
-    if TOP_N < 1:
+    logging.info(
+        "========================================"
+    )
 
-        raise ValueError(
-            "TOP_N은 1 이상이어야 합니다."
-        )
+    logging.info(
+        "Crypto Dashboard 시작"
+    )
 
+    logging.info(
+        f"TOP_N = {TOP_N}"
+    )
 
-    if UPDATE_MINUTES < 1:
+    logging.info(
+        f"UPDATE_MINUTES = {UPDATE_MINUTES}"
+    )
 
-        raise ValueError(
-            "UPDATE_MINUTES는 1 이상이어야 합니다."
-        )
+    logging.info(
+        "========================================"
+    )
+
+    logging.info(
+        "SIGNAL 조건"
+    )
+
+    logging.info(
+        "1. 전전 4H > 0"
+    )
+
+    logging.info(
+        "2. 전 4H < 0"
+    )
+
+    logging.info(
+        "3. 현재 4H > 0"
+    )
+
+    logging.info(
+        "=> 양 → 음 → 양"
+    )
+
+    logging.info(
+        "SIGNAL 순위 = 24H 실제 거래대금 큰 순"
+    )
+
+    logging.info(
+        "SIGNAL 화면 = 업비트 전체 거래대금 순위도 표시"
+    )
+
+    logging.info(
+        "BTC는 SIGNAL 조건에서 제외"
+    )
+
+    logging.info(
+        "========================================"
+    )
 
 
 # =========================================================
 # Startup
 # =========================================================
 
-@app.on_event(
-    "startup"
-)
+@app.on_event("startup")
 def startup():
 
     validate_settings()
 
+    update_dashboard()
 
-    log.info(
-        "========================================"
-    )
-
-    log.info(
-        "TRADING SIGNAL SYSTEM START"
-    )
-
-    log.info(
-        f"UPBIT TOP = {TOP_N}"
-    )
-
-    log.info(
-        "4H 기준 = 01 / 05 / 09 / 13 / 17 / 21"
-    )
-
-    log.info(
-        "당일 변동률 = 업비트 일봉"
-    )
-
-    log.info(
-        "SIGNAL 조건:"
-    )
-
-    log.info(
-        "1. 업비트 당일 변동률 > 0"
-    )
-
-    log.info(
-        "2. 코인 이전 4H > 0"
-    )
-
-    log.info(
-        "3. 코인 현재 4H < 0"
-    )
-
-    log.info(
-        "SIGNAL 순위 = 24H 거래대금 큰 순서"
-    )
-
-    log.info(
-        "SIGNAL 화면 = 실제 업비트 거래대금 순위 표시"
-    )
-
-    log.info(
-        "BTC = SIGNAL 필터에서 제외"
-    )
-
-    log.info(
-        "이전 4H = SIGNAL 필터 및 화면 표시"
-    )
-
-    log.info(
-        "캔들 패턴 = 화면 표시만 사용"
-    )
-
-    log.info(
-        "캔들 패턴: 도지 / 망치형 / 역망치형 / 상승장악 / 관통형 / 모닝스타 / 3연속양봉"
-    )
-
-    log.info(
-        "RSI = 삭제"
-    )
-
-    log.info(
-        "ROC = 삭제"
-    )
-
-    log.info(
-        "========================================"
-    )
-
-
-    threading.Thread(
-        target=update_dashboard,
+    thread = threading.Thread(
+        target=scheduler_loop,
         daemon=True
-    ).start()
-
-
-    schedule.every(
-        UPDATE_MINUTES
-    ).minutes.do(
-        update_dashboard
     )
 
+    thread.start()
 
-    threading.Thread(
-        target=scheduler,
-        daemon=True
-    ).start()
+    logging.info(
+        "스케줄러 시작 완료"
+    )
 
 
 # =========================================================
