@@ -40,7 +40,7 @@ KST = ZoneInfo("Asia/Seoul")
 # 설정
 # =========================================================
 
-TOP_N = 30
+TOP_N = 20
 
 UPDATE_MINUTES = 1
 
@@ -292,10 +292,6 @@ def make_4h_period(
 
 # =========================================================
 # 최근 6개 4H
-#
-# 현재 포함 6개
-#
-# 현재 진행 중인 4H를 마지막으로 사용
 # =========================================================
 
 def get_recent_4h_periods(
@@ -582,7 +578,6 @@ def get_upbit_markets():
 
         return []
 
-
     try:
 
         markets = response.json()
@@ -590,7 +585,6 @@ def get_upbit_markets():
     except Exception:
 
         return []
-
 
     krw_markets = [
 
@@ -605,9 +599,7 @@ def get_upbit_markets():
 
     ]
 
-
     result = []
-
 
     for i in range(
         0,
@@ -619,7 +611,6 @@ def get_upbit_markets():
             i:i + 100
         ]
 
-
         response = retry(
             requests.get,
             "https://api.upbit.com/v1/ticker",
@@ -630,11 +621,9 @@ def get_upbit_markets():
             timeout=15
         )
 
-
         if response is None:
 
             continue
-
 
         try:
 
@@ -644,14 +633,12 @@ def get_upbit_markets():
 
             continue
 
-
         if not isinstance(
             data,
             list
         ):
 
             continue
-
 
         for item in data:
 
@@ -681,7 +668,6 @@ def get_upbit_markets():
             except Exception:
 
                 continue
-
 
     latest_upbit_markets = [
 
@@ -715,11 +701,9 @@ def daily_change_upbit(
         timeout=15
     )
 
-
     if response is None:
 
         return None
-
 
     try:
 
@@ -729,7 +713,6 @@ def daily_change_upbit(
 
         return None
 
-
     if not isinstance(
         data,
         list
@@ -737,11 +720,9 @@ def daily_change_upbit(
 
         return None
 
-
     if len(data) < 2:
 
         return None
-
 
     try:
 
@@ -757,11 +738,9 @@ def daily_change_upbit(
 
         return None
 
-
     if previous_close == 0:
 
         return None
-
 
     return (
         (
@@ -796,11 +775,9 @@ def get_upbit_60m_candles(
         timeout=15
     )
 
-
     if response is None:
 
         return []
-
 
     try:
 
@@ -810,14 +787,12 @@ def get_upbit_60m_candles(
 
         return []
 
-
     if not isinstance(
         data,
         list
     ):
 
         return []
-
 
     return data
 
@@ -839,13 +814,11 @@ def candle_parts(candle):
 
         return None
 
-
     total = h - l
 
     if total <= 0:
 
         return None
-
 
     body = abs(c - o)
 
@@ -863,7 +836,6 @@ def candle_parts(candle):
         body /
         total
     )
-
 
     return {
 
@@ -884,6 +856,14 @@ def candle_parts(candle):
 
 # =========================================================
 # 1개 캔들 패턴
+#
+# 기존 패턴 유지
+#
+# 추가:
+# 장대양봉
+#
+# 장대양봉 정의:
+# 양봉 AND 몸통/전체 길이 >= 60%
 # =========================================================
 
 def detect_single_candle_pattern(
@@ -896,7 +876,6 @@ def detect_single_candle_pattern(
 
         return []
 
-
     patterns = []
 
     body = p["body"]
@@ -906,10 +885,38 @@ def detect_single_candle_pattern(
     body_ratio = p["body_ratio"]
 
 
+    # =====================================================
+    # 도지
+    # =====================================================
+
     if body_ratio <= 0.10:
 
         patterns.append("도지")
 
+
+    # =====================================================
+    # 장대양봉
+    #
+    # 양봉
+    # 몸통 비율 60% 이상
+    # =====================================================
+
+    if (
+
+        p["bull"]
+
+        and
+
+        body_ratio >= 0.60
+
+    ):
+
+        patterns.append("장대양봉")
+
+
+    # =====================================================
+    # 망치형
+    # =====================================================
 
     if (
 
@@ -933,6 +940,10 @@ def detect_single_candle_pattern(
 
         patterns.append("망치형")
 
+
+    # =====================================================
+    # 역망치형
+    # =====================================================
 
     if (
 
@@ -962,9 +973,6 @@ def detect_single_candle_pattern(
 
 # =========================================================
 # 2개 캔들 패턴
-#
-# 현재 캔들이 진행 중이어도
-# 현재가를 close로 사용하여 실시간 판정
 # =========================================================
 
 def detect_two_candle_pattern(
@@ -983,21 +991,11 @@ def detect_two_candle_pattern(
 
         return []
 
-
     patterns = []
 
 
     # =====================================================
     # 상승장악
-    #
-    # 이전 = 음봉
-    # 현재 = 양봉
-    #
-    # 현재 시가 <= 이전 종가
-    # 현재 종가 >= 이전 시가
-    # 현재 몸통 > 이전 몸통
-    #
-    # 현재 캔들이 진행 중이어도 실시간 판정
     # =====================================================
 
     if (
@@ -1033,7 +1031,6 @@ def detect_two_candle_pattern(
         p1["open"] +
         p1["close"]
     ) / 2
-
 
     if (
 
@@ -1083,9 +1080,12 @@ def detect_three_candle_pattern(
 
         return []
 
-
     patterns = []
 
+
+    # =====================================================
+    # 모닝스타
+    # =====================================================
 
     if (
 
@@ -1120,6 +1120,10 @@ def detect_three_candle_pattern(
         patterns.append("모닝스타")
 
 
+    # =====================================================
+    # 3연속양봉
+    # =====================================================
+
     if (
 
         p1["bull"]
@@ -1150,8 +1154,6 @@ def detect_three_candle_pattern(
 
 # =========================================================
 # 4H 전체 캔들 패턴
-#
-# 현재 진행 중인 캔들도 포함
 # =========================================================
 
 def detect_4h_patterns(
@@ -1161,7 +1163,6 @@ def detect_4h_patterns(
     if not periods:
 
         return []
-
 
     result = []
 
@@ -1264,7 +1265,6 @@ def build_upbit_4h_candles(
         market,
         300
     )
-
 
     if not candles:
 
@@ -1398,12 +1398,6 @@ def build_upbit_4h_candles(
         )
 
 
-        # =================================================
-        # 현재 진행 중인 4H
-        #
-        # 현재가를 실시간 close로 사용
-        # =================================================
-
         if period["active"]:
 
             if current_price is not None:
@@ -1473,10 +1467,6 @@ def build_upbit_4h_candles(
 
         })
 
-
-    # =====================================================
-    # 현재 4H까지 포함해서 패턴 계산
-    # =====================================================
 
     pattern_results = detect_4h_patterns(
         result
@@ -1845,9 +1835,16 @@ def make_row(
 #
 # 1. 당일 변동률 > 0
 # 2. 현재 4H 양봉
-# 3. 현재 4H 상승장악
+# 3. 현재 4H 상승캔들 5종 중 하나 이상
 #
-# 과거 4H의 양/음 패턴은 사용하지 않음
+# 상승캔들:
+# - 상승장악
+# - 장대양봉
+# - 망치형
+# - 역망치형
+# - 관통형
+#
+# 과거 4H 패턴의 순서는 SIGNAL에서 사용하지 않음
 # =========================================================
 
 def update_upbit():
@@ -1937,9 +1934,7 @@ def update_upbit():
 
 
         # =====================================================
-        # SIGNAL 공통 조건
-        #
-        # 당일 변동률 > 0
+        # 당일 양수
         # =====================================================
 
         daily_condition = (
@@ -1955,7 +1950,7 @@ def update_upbit():
 
 
         # =====================================================
-        # 현재 / 이전 4H 가져오기
+        # 현재 / 이전 4H
         # =====================================================
 
         periods = row.get(
@@ -1976,29 +1971,38 @@ def update_upbit():
 
 
         # =====================================================
-        # 현재 4H 상승장악
+        # 현재 4H 상승캔들 5종
         #
-        # 반드시:
+        # 하나라도 있으면 통과
         #
-        # 이전 4H = 음봉
-        # 현재 4H = 양봉
-        #
-        # 현재 시가 <= 이전 종가
-        # 현재 종가 >= 이전 시가
-        # 현재 몸통 > 이전 몸통
-        #
-        # 현재 진행 중이므로
-        # 현재가에 따라 실시간 변경
+        # 상승장악
+        # 장대양봉
+        # 망치형
+        # 역망치형
+        # 관통형
         # =====================================================
 
-        current_bullish_engulfing = False
+        signal_candle_patterns = [
+
+            "상승장악",
+
+            "장대양봉",
+
+            "망치형",
+
+            "역망치형",
+
+            "관통형"
+
+        ]
 
 
-        if (
-            previous_candle is not None
-            and
-            current_candle is not None
-        ):
+        current_bullish_pattern = False
+
+        current_signal_patterns = []
+
+
+        if current_candle is not None:
 
             current_patterns = (
                 current_candle.get(
@@ -2008,12 +2012,20 @@ def update_upbit():
             )
 
 
-            current_bullish_engulfing = (
+            current_signal_patterns = [
 
-                "상승장악"
-                in
-                current_patterns
+                pattern
 
+                for pattern in
+                signal_candle_patterns
+
+                if pattern in current_patterns
+
+            ]
+
+
+            current_bullish_pattern = bool(
+                current_signal_patterns
             )
 
 
@@ -2044,9 +2056,7 @@ def update_upbit():
         # AND
         # 현재 4H 양봉
         # AND
-        # 현재 4H 상승장악
-        #
-        # 패턴 1 / 패턴 2 구분 없음
+        # 현재 4H 상승캔들 5종 중 하나 이상
         # =====================================================
 
         row["signal_pass"] = (
@@ -2059,7 +2069,7 @@ def update_upbit():
 
             and
 
-            current_bullish_engulfing
+            current_bullish_pattern
 
         )
 
@@ -2076,8 +2086,11 @@ def update_upbit():
             "current_4h_positive":
                 current_4h_positive,
 
-            "current_bullish_engulfing":
-                current_bullish_engulfing,
+            "current_bullish_pattern":
+                current_bullish_pattern,
+
+            "current_signal_patterns":
+                current_signal_patterns,
 
             "current_4h_used":
                 True
@@ -2124,7 +2137,7 @@ def update_upbit():
         f"{previous['display_label'] if previous else '-'}"
         " | "
 
-        f"현재 4H = 양봉 + 상승장악"
+        f"현재 4H = 양봉 + 상승캔들 5종"
         " | "
 
         f"BTC4H(참고)="
@@ -3168,7 +3181,29 @@ def unified_card_html(
 
     if card_type == "SIGNAL":
 
-        condition_html = """
+        signal_patterns = row.get(
+            "signal_conditions",
+            {}
+        ).get(
+            "current_signal_patterns",
+            []
+        )
+
+
+        if signal_patterns:
+
+            pattern_text = (
+                " / ".join(
+                    signal_patterns
+                )
+            )
+
+        else:
+
+            pattern_text = "-"
+
+
+        condition_html = f"""
 
         <div class="unified-condition-row signal-condition-only">
 
@@ -3179,13 +3214,15 @@ def unified_card_html(
                 </div>
 
                 <div class="condition-period">
-                    당일 양수 + 현재 4H 양봉 + 상승장악
+                    당일 양수 + 현재 4H 양봉
                 </div>
 
                 <div class="condition-value">
 
                     <span class="up">
-                        ON
+                        {html.escape(
+                            pattern_text
+                        )}
                     </span>
 
                     <span class="condition-note">
@@ -3305,9 +3342,10 @@ def unified_card_html(
 # +
 # 현재 4H 양봉
 # +
-# 현재 4H 상승장악
+# 현재 4H 상승캔들 5종 중 하나
 #
-# 과거 4H 패턴 무관
+# 5종:
+# 상승장악 / 장대양봉 / 망치형 / 역망치형 / 관통형
 # =========================================================
 
 def focus_section(data):
@@ -3335,12 +3373,6 @@ def focus_section(data):
     ]
 
 
-    # =====================================================
-    # SIGNAL 순위
-    #
-    # 현재 진행 중인 4H 변동률 높은 순
-    # =====================================================
-
     signal_rows.sort(
 
         key=lambda row:
@@ -3360,8 +3392,9 @@ def focus_section(data):
         message = (
             "당일 양수 + "
             "현재 4H 양봉 + "
-            "현재 4H 상승장악 "
-            "조건을 만족하는 종목 없음"
+            "상승장악 / 장대양봉 / 망치형 / "
+            "역망치형 / 관통형 "
+            "중 하나 조건을 만족하는 종목 없음"
         )
 
 
@@ -3454,7 +3487,8 @@ def focus_section(data):
 
                     당일 양수
                     · 현재 4H 양봉
-                    · 상승장악
+                    · 상승장악 / 장대양봉 / 망치형
+                    · 역망치형 / 관통형
                     · 현재 4H 실시간 판정
                     · BTC 필터 제외
 
@@ -3484,7 +3518,7 @@ def focus_section(data):
             </div>
 
             <div class="signal-btc-period">
-                현재 4H 상승장악 기준
+                현재 4H 상승캔들 기준
             </div>
 
             <div class="signal-btc-value">
@@ -3669,11 +3703,6 @@ h1{
     margin:10px 0 14px;
 }
 
-
-/* =========================================================
-   SECTION HEADER
-   ========================================================= */
-
 .section-title-card{
     display:flex;
     align-items:center;
@@ -3750,11 +3779,6 @@ h1{
     white-space:nowrap;
 }
 
-
-/* =========================================================
-   BTC MARKET
-   ========================================================= */
-
 .market-card{
     width:100%;
     margin:3px 0 14px;
@@ -3802,11 +3826,6 @@ h1{
     font-size:6.5px;
     font-weight:800;
 }
-
-
-/* =========================================================
-   BTC MAIN
-   ========================================================= */
 
 .btc-main-row{
     display:grid;
@@ -3866,11 +3885,6 @@ h1{
     font-size:10px;
     font-weight:900;
 }
-
-
-/* =========================================================
-   4H 공통
-   ========================================================= */
 
 .btc-4h-grid,
 .unified-4h-grid{
@@ -3949,11 +3963,6 @@ h1{
     color:#59636e;
 }
 
-
-/* =========================================================
-   SIGNAL / TOP CARD
-   ========================================================= */
-
 .top-card-list,
 .signal-card-list{
     display:flex;
@@ -4022,11 +4031,6 @@ h1{
     white-space:nowrap;
 }
 
-
-/* =========================================================
-   공통 기본 정보
-   ========================================================= */
-
 .unified-main-row{
     display:grid;
     grid-template-columns:
@@ -4072,11 +4076,6 @@ h1{
     font-weight:900;
 }
 
-
-/* =========================================================
-   SIGNAL 조건
-   ========================================================= */
-
 .unified-condition-row{
     width:100%;
     min-height:50px;
@@ -4119,11 +4118,6 @@ h1{
     font-weight:700;
 }
 
-
-/* =========================================================
-   SIGNAL BAR
-   ========================================================= */
-
 .signal-btc-bar{
     display:grid;
     grid-template-columns:
@@ -4158,11 +4152,6 @@ h1{
     font-weight:900;
 }
 
-
-/* =========================================================
-   TOP
-   ========================================================= */
-
 .top-update-bar{
     display:flex;
     justify-content:space-between;
@@ -4172,11 +4161,6 @@ h1{
     font-size:6.5px;
     font-weight:800;
 }
-
-
-/* =========================================================
-   SIGNAL 없음
-   ========================================================= */
 
 .signal-empty-card{
     display:flex;
@@ -4217,11 +4201,6 @@ h1{
     font-weight:700;
 }
 
-
-/* =========================================================
-   색상
-   ========================================================= */
-
 .up{
     color:#78cfa2 !important;
     font-weight:900;
@@ -4249,11 +4228,6 @@ h1{
     font-size:8px;
     font-weight:800;
 }
-
-
-/* =========================================================
-   모바일
-   ========================================================= */
 
 @media(max-width:600px){
 
@@ -4302,11 +4276,6 @@ h1{
         border-radius:5px;
         font-size:4.8px;
     }
-
-
-    /* =====================================================
-       BTC
-       ===================================================== */
 
     .market-card{
         margin:3px 0 9px;
@@ -4385,11 +4354,6 @@ h1{
         font-size:4.5px;
         line-height:6px;
     }
-
-
-    /* =====================================================
-       SIGNAL / TOP
-       ===================================================== */
 
     .unified-market-card{
         border-radius:9px;
@@ -4501,11 +4465,6 @@ h1{
     }
 
 }
-
-
-/* =========================================================
-   작은 모바일
-   ========================================================= */
 
 @media(max-width:380px){
 
@@ -4661,11 +4620,6 @@ h1{
     }
 
 }
-
-
-/* =========================================================
-   강조
-   ========================================================= */
 
 .top-market-card .current-4h{
     background:#173326 !important;
@@ -4855,7 +4809,7 @@ def startup():
     )
 
     log.info(
-        "현재 4H = 상승장악"
+        "현재 4H = 상승장악 / 장대양봉 / 망치형 / 역망치형 / 관통형 중 하나"
     )
 
     log.info(
@@ -4867,11 +4821,15 @@ def startup():
     )
 
     log.info(
-        "현재 4H 상승장악 = 실시간 현재가 기준"
+        "현재 4H 상승캔들 = 실시간 현재가 기준"
     )
 
     log.info(
-        "SIGNAL = 당일+ AND 현재 4H 양봉 AND 현재 4H 상승장악"
+        "장대양봉 = 양봉 AND 몸통비율 >= 60%"
+    )
+
+    log.info(
+        "SIGNAL = 당일+ AND 현재 4H 양봉 AND 5개 상승캔들 중 하나"
     )
 
     log.info(
@@ -4887,11 +4845,15 @@ def startup():
     )
 
     log.info(
-        "캔들 패턴 = 화면 표시 및 현재 4H 상승장악 판정에 사용"
+        "캔들 패턴 = 화면 표시 및 현재 4H SIGNAL 판정에 사용"
     )
 
     log.info(
-        "캔들 패턴: 도지 / 망치형 / 역망치형 / 상승장악 / 관통형 / 모닝스타 / 3연속양봉"
+        "SIGNAL 패턴 = 상승장악 / 장대양봉 / 망치형 / 역망치형 / 관통형"
+    )
+
+    log.info(
+        "기타 표시 패턴 = 도지 / 모닝스타 / 3연속양봉"
     )
 
     log.info(
