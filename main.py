@@ -1323,7 +1323,6 @@ def build_upbit_4h_candles(
     )
 
 
-    # 현재 포함 6개
     periods = get_recent_4h_periods(6)
 
     result = []
@@ -1473,20 +1472,6 @@ def build_upbit_4h_candles(
 
 # =========================================================
 # 코인의 4H 분석
-#
-# ★ 현재 기준 과거 4개까지 반환
-#
-# previous:
-#   현재 바로 전
-#
-# pre_previous:
-#   현재 2개 전
-#
-# pre_pre_previous:
-#   현재 3개 전
-#
-# pre_pre_pre_previous:
-#   현재 4개 전
 # =========================================================
 
 def analyze_4h(
@@ -2022,14 +2007,13 @@ def update_upbit():
         #
         # 패턴 1:
         #
-        # 현재 4H 바로 이전까지
-        #
         # 양 → 음 → 양
         #
         # 전전전 4H = 양
         # 전전 4H   = 음
         # 전 4H     = 양
         #
+        # 현재 4H는 완전히 제외
         # =================================================
 
         daily_condition = (
@@ -2212,7 +2196,7 @@ def update_upbit():
 
 
         # =================================================
-        # ★ 최종 SIGNAL
+        # 최종 SIGNAL
         #
         # 당일+
         #
@@ -2226,7 +2210,7 @@ def update_upbit():
         #   양 → 음 → 음 → 양
         # )
         #
-        # ★ 현재 4H는 완전히 무시
+        # 현재 4H는 완전히 무시
         # =================================================
 
         row["signal_pass"] = (
@@ -2276,7 +2260,7 @@ def update_upbit():
             "pattern_2_last_positive":
                 pattern_2_last_positive,
 
-            # ★ 현재 4H는 판정하지 않음
+            # 현재 4H는 판정하지 않음
             "current_4h_ignored":
                 True
 
@@ -2315,6 +2299,10 @@ def update_upbit():
         get_pre_pre_previous_4h_period()
     )
 
+    pre_pre_pre_previous = (
+        get_pre_pre_pre_previous_4h_period()
+    )
+
 
     log.info(
 
@@ -2329,7 +2317,7 @@ def update_upbit():
         " | "
 
         f"패턴2="
-        f"{get_pre_pre_pre_previous_4h_period()['display_label'] if get_pre_pre_pre_previous_4h_period() else '-'}"
+        f"{pre_pre_pre_previous['display_label'] if pre_pre_pre_previous else '-'}"
         "→"
         f"{pre_pre_previous['display_label'] if pre_pre_previous else '-'}"
         "→"
@@ -3739,17 +3727,16 @@ def unified_card_html(
 # 당일 변동률 > 0
 #
 # 패턴 1:
-# 현재 이전까지
 # 양 → 음 → 양
 #
 # 패턴 2:
-# 현재 이전까지
 # 양 → 음 → 음 → 양
 #
 # 현재 4H는 완전히 제외
 #
-# SIGNAL 순위:
-# 당일 변동률 높은 순
+# ★ SIGNAL 순위:
+# 패턴 완성 마지막 4H
+# = 전 4H 변동률 높은 순
 # =========================================================
 
 def focus_section(data):
@@ -3789,12 +3776,23 @@ def focus_section(data):
     ]
 
 
+    # =====================================================
+    # ★ 수정
+    #
+    # SIGNAL 순위는 당일 변동률이 아니라
+    # 패턴을 완성한 마지막 4H의 변동률
+    #
+    # 두 패턴 모두 마지막 캔들은 "전 4H"
+    #
+    # 따라서 previous_4h_change 기준
+    # =====================================================
+
     signal_rows.sort(
 
         key=lambda row:
 
             row.get(
-                "daily_change",
+                "previous_4h_change",
                 float("-inf")
             ),
 
@@ -3968,11 +3966,11 @@ def focus_section(data):
             </div>
 
             <div class="signal-btc-period">
-                당일 변동률 기준
+                패턴 완성 마지막 4H 기준
             </div>
 
             <div class="signal-btc-value">
-                변동률 우선
+                전 4H 변동률 우선
             </div>
 
         </div>
@@ -5432,8 +5430,14 @@ def startup():
         "SIGNAL = 당일+ AND (양→음→양 OR 양→음→음→양)"
     )
 
+    # =====================================================
+    # ★ 수정
+    # SIGNAL 순위 = 패턴 완성 마지막 4H
+    # 즉 전 4H 변동률 높은 순
+    # =====================================================
+
     log.info(
-        "SIGNAL 순위 = 당일 변동률 높은 순서"
+        "SIGNAL 순위 = 패턴 완성 마지막 4H(전 4H) 변동률 높은 순서"
     )
 
     log.info(
