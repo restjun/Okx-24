@@ -361,13 +361,9 @@ def get_current_4h_period():
 # =========================================================
 # 이전 4H
 #
-# ★ 핵심
+# 참고용으로만 사용
 #
-# 현재가 13~17이면
-# 이전은 09~13
-#
-# 현재가 09~13이면
-# 이전은 05~09
+# SIGNAL 필터에서는 사용하지 않음
 # =========================================================
 
 def get_previous_4h_period():
@@ -671,8 +667,8 @@ def get_upbit_markets():
 # =========================================================
 # 업비트 당일 변동률
 #
-# ★ SIGNAL의 "당일" 조건
-# ★ 업비트 일봉 기준
+# SIGNAL 당일 조건
+# 업비트 일봉 기준
 # =========================================================
 
 def daily_change_upbit(
@@ -1028,7 +1024,6 @@ def build_upbit_4h_candles(
                     low_price = min(
                         low_price,
                         cp
-
                     )
 
                 except Exception:
@@ -1420,7 +1415,9 @@ def make_row(
                 )
             ),
 
-        # ★ 바로 이전 4H
+        # 이전 4H
+        # 화면 표시용
+        # SIGNAL 필터에는 사용하지 않음
         "previous_4h_change":
             get_change_value(
                 analysis.get(
@@ -1465,7 +1462,7 @@ def update_upbit():
 
 
     # =====================================================
-    # BTC 현재 4H를 먼저 확보
+    # BTC 현재 4H
     # =====================================================
 
     btc_pass = (
@@ -1540,7 +1537,7 @@ def update_upbit():
 
 
         # =================================================
-        # ★ SIGNAL 조건 1
+        # SIGNAL 조건 1
         # BTC 현재 4H 양수
         # =================================================
 
@@ -1548,7 +1545,7 @@ def update_upbit():
 
 
         # =================================================
-        # ★ SIGNAL 조건 2
+        # SIGNAL 조건 2
         # 업비트 당일 변동률 양수
         # =================================================
 
@@ -1565,7 +1562,7 @@ def update_upbit():
 
 
         # =================================================
-        # ★ SIGNAL 조건 3
+        # SIGNAL 조건 3
         # 현재 4H 양수
         # =================================================
 
@@ -1582,24 +1579,17 @@ def update_upbit():
 
 
         # =================================================
-        # ★ SIGNAL 조건 4
-        # 바로 이전 4H 양수
+        # ★ 이전 4H 조건 제거
+        #
+        # previous_4h_condition은 더 이상
+        # SIGNAL 판정에 사용하지 않음
         # =================================================
-
-        previous_4h_condition = (
-
-            row["previous_4h_change"]
-            is not None
-
-            and
-
-            row["previous_4h_change"] > 0
-
-        )
 
 
         # =================================================
         # 최종 SIGNAL
+        #
+        # BTC + 당일 + 현재4H
         # =================================================
 
         row["signal_pass"] = (
@@ -1614,10 +1604,6 @@ def update_upbit():
 
             current_4h_condition
 
-            and
-
-            previous_4h_condition
-
         )
 
 
@@ -1631,10 +1617,7 @@ def update_upbit():
                 daily_condition,
 
             "current_4h":
-                current_4h_condition,
-
-            "previous_4h":
-                previous_4h_condition
+                current_4h_condition
 
         }
 
@@ -2997,7 +2980,7 @@ def unified_card_html(
                     </div>
 
                     <div class="condition-period">
-                        BTC + 당일 + 현재4H + 이전4H
+                        BTC + 당일 + 현재4H
                     </div>
 
                     <div class="condition-value">
@@ -3100,7 +3083,7 @@ def focus_section(data):
             message = (
 
                 "BTC 현재 4H는 양수지만 "
-                "당일 변동률 + 현재 4H + 이전 4H "
+                "당일 변동률 + 현재 4H "
                 "조건을 모두 만족하는 종목 없음"
 
             )
@@ -3187,7 +3170,6 @@ def focus_section(data):
                     BTC 현재 4H 양수
                     · 업비트 당일 양수
                     · 현재 4H 양수
-                    · 이전 4H 양수
 
                 </div>
 
@@ -4656,11 +4638,11 @@ def startup():
     )
 
     log.info(
-        "4. 코인 이전 4H > 0"
+        "이전 4H = 화면 표시만 사용"
     )
 
     log.info(
-        "이전 4H = 바로 직전 시간대"
+        "이전 4H는 SIGNAL 필터에서 제외"
     )
 
     log.info(
