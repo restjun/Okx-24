@@ -908,10 +908,6 @@ def detect_single_candle_pattern(
 
     # =====================================================
     # 망치형
-    #
-    # 작은 몸통
-    # 긴 아래꼬리
-    # 짧은 위꼬리
     # =====================================================
 
     if (
@@ -1204,10 +1200,6 @@ def detect_4h_patterns(
         patterns = []
 
 
-        # =================================================
-        # 현재 캔들 데이터 확인
-        # =================================================
-
         if (
 
             period.get("open") is None
@@ -1233,10 +1225,6 @@ def detect_4h_patterns(
             continue
 
 
-        # =================================================
-        # 1개 캔들
-        # =================================================
-
         patterns.extend(
 
             detect_single_candle_pattern(
@@ -1245,10 +1233,6 @@ def detect_4h_patterns(
 
         )
 
-
-        # =================================================
-        # 2개 캔들
-        # =================================================
 
         if i >= 1:
 
@@ -1281,10 +1265,6 @@ def detect_4h_patterns(
 
                 )
 
-
-        # =================================================
-        # 3개 캔들
-        # =================================================
 
         if i >= 2:
 
@@ -1330,10 +1310,6 @@ def detect_4h_patterns(
 
                 )
 
-
-        # =================================================
-        # 중복 제거
-        # =================================================
 
         patterns = list(
             dict.fromkeys(
@@ -1524,11 +1500,6 @@ def build_upbit_4h_candles(
         )
 
 
-        # =================================================
-        # 현재 진행 중인 4H
-        # 현재가 반영
-        # =================================================
-
         if period["active"]:
 
             if current_price is not None:
@@ -1605,10 +1576,6 @@ def build_upbit_4h_candles(
 
         })
 
-
-    # =====================================================
-    # ★ 4H 캔들 패턴 탐지
-    # =====================================================
 
     pattern_results = (
         detect_4h_patterns(
@@ -1926,7 +1893,6 @@ def make_row(
         "current_price":
             current_price,
 
-        # 업비트 당일 변동률
         "daily_change":
             get_change_value(
                 analysis.get(
@@ -1941,14 +1907,12 @@ def make_row(
                 )
             ),
 
-        # 최근 6개 4H
         "four_hour_periods":
             analysis.get(
                 "four_hour_periods",
                 []
             ),
 
-        # 현재 4H
         "current_4h_change":
             get_change_value(
                 analysis.get(
@@ -1956,9 +1920,6 @@ def make_row(
                 )
             ),
 
-        # 이전 4H
-        # 화면 표시용
-        # SIGNAL 필터에는 사용하지 않음
         "previous_4h_change":
             get_change_value(
                 analysis.get(
@@ -2090,7 +2051,7 @@ def update_upbit():
 
         # =================================================
         # SIGNAL 조건 3
-        # 현재 4H 양수
+        # 해당 코인 현재 4H 음수
         # =================================================
 
         current_4h_condition = (
@@ -2101,7 +2062,7 @@ def update_upbit():
             and
 
             row["current_4h_change"]
-            > 0
+            < 0
 
         )
 
@@ -2109,7 +2070,9 @@ def update_upbit():
         # =================================================
         # 최종 SIGNAL
         #
-        # BTC + 당일 + 현재4H
+        # BTC 현재4H 양수
+        # + 업비트 당일 양수
+        # + 코인 현재4H 음수
         # =================================================
 
         row["signal_pass"] = (
@@ -2776,10 +2739,6 @@ def build_btc_4h(
         })
 
 
-    # =====================================================
-    # BTC 4H 캔들 패턴
-    # =====================================================
-
     pattern_results = (
         detect_4h_patterns(
             result
@@ -2949,17 +2908,14 @@ def update_dashboard():
 
     try:
 
-        # BTC 먼저
         update_btc_market()
 
 
-        # 업비트
         if USE_UPBIT == "Y":
 
             update_upbit()
 
 
-        # OKX
         if USE_OKX == "Y":
 
             usdt = get_usdt_krw()
@@ -3382,7 +3338,7 @@ def unified_card_html(
                 </div>
 
                 <div class="condition-period">
-                    BTC + 당일 + 현재4H
+                    BTC 4H+ · 당일+ · 코인 4H-
                 </div>
 
                 <div class="condition-value">
@@ -3597,7 +3553,7 @@ def focus_section(data):
 
             message = (
                 "BTC 현재 4H는 양수지만 "
-                "당일 변동률 + 현재 4H "
+                "당일 양수 + 현재 4H 음수 "
                 "조건을 모두 만족하는 종목 없음"
             )
 
@@ -3685,7 +3641,7 @@ def focus_section(data):
 
                     BTC 현재 4H 양수
                     · 업비트 당일 양수
-                    · 현재 4H 양수
+                    · 코인 현재 4H 음수
 
                 </div>
 
@@ -5179,7 +5135,7 @@ def startup():
     )
 
     log.info(
-        "3. 코인 현재 4H > 0"
+        "3. 코인 현재 4H < 0"
     )
 
     log.info(
