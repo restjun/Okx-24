@@ -40,8 +40,6 @@ KST = ZoneInfo("Asia/Seoul")
 # 설정
 # =========================================================
 
-VOLUME_HOURS = 24
-
 TOP_N = 20
 
 UPDATE_MINUTES = 1
@@ -94,13 +92,16 @@ latest_btc_okx_price = None
 
 latest_btc_daily_change = None
 
-latest_btc_09_21_change = None
+latest_btc_01_05_change = None
+latest_btc_05_09_change = None
+latest_btc_09_13_change = None
+latest_btc_13_17_change = None
+latest_btc_17_21_change = None
+latest_btc_21_01_change = None
 
-latest_btc_21_09_change = None
+latest_btc_current_4h_change = None
 
-latest_btc_current_12h_change = None
-
-latest_btc_current_12h_label = "-"
+latest_btc_current_4h_label = "-"
 
 
 # =========================================================
@@ -117,181 +118,250 @@ def kst():
 
 
 # =========================================================
-# 현재 12시간 구간
+# 4시간 구간
 #
-# 09:00 ~ 20:59
-#     → 09:00 ~ 21:00
+# 업비트 기준
 #
-# 21:00 ~ 08:59
-#     → 21:00 ~ 09:00
+# 01:00 ~ 05:00
+# 05:00 ~ 09:00
+# 09:00 ~ 13:00
+# 13:00 ~ 17:00
+# 17:00 ~ 21:00
+# 21:00 ~ 01:00
 # =========================================================
 
-def get_current_12h_period():
+FOUR_HOUR_PERIODS = [
+
+    {
+        "key": "01_05",
+        "label": "01:00 ~ 05:00",
+        "start_hour": 1,
+        "end_hour": 5
+    },
+
+    {
+        "key": "05_09",
+        "label": "05:00 ~ 09:00",
+        "start_hour": 5,
+        "end_hour": 9
+    },
+
+    {
+        "key": "09_13",
+        "label": "09:00 ~ 13:00",
+        "start_hour": 9,
+        "end_hour": 13
+    },
+
+    {
+        "key": "13_17",
+        "label": "13:00 ~ 17:00",
+        "start_hour": 13,
+        "end_hour": 17
+    },
+
+    {
+        "key": "17_21",
+        "label": "17:00 ~ 21:00",
+        "start_hour": 17,
+        "end_hour": 21
+    },
+
+    {
+        "key": "21_01",
+        "label": "21:00 ~ 01:00",
+        "start_hour": 21,
+        "end_hour": 1
+    }
+
+]
+
+
+# =========================================================
+# 현재 4시간 구간
+# =========================================================
+
+def get_current_4h_period():
 
     now = datetime.now(KST)
 
-    if 9 <= now.hour < 21:
+    hour = now.hour
+
+    if 1 <= hour < 5:
 
         return {
-            "label": "09:00 ~ 21:00",
-            "key": "09_21"
+            **FOUR_HOUR_PERIODS[0],
+            "active": True
         }
 
+    if 5 <= hour < 9:
+
+        return {
+            **FOUR_HOUR_PERIODS[1],
+            "active": True
+        }
+
+    if 9 <= hour < 13:
+
+        return {
+            **FOUR_HOUR_PERIODS[2],
+            "active": True
+        }
+
+    if 13 <= hour < 17:
+
+        return {
+            **FOUR_HOUR_PERIODS[3],
+            "active": True
+        }
+
+    if 17 <= hour < 21:
+
+        return {
+            **FOUR_HOUR_PERIODS[4],
+            "active": True
+        }
+
+    # 21:00 ~ 00:59
+
     return {
-        "label": "21:00 ~ 09:00",
-        "key": "21_09"
+        **FOUR_HOUR_PERIODS[5],
+        "active": True
     }
 
 
 # =========================================================
-# 현재 시간대 CSS 클래스
+# 현재 4시간 구간 시작시간
 # =========================================================
 
-def get_current_period_classes():
+def get_current_4h_start():
 
-    period = get_current_12h_period()
+    now = datetime.now(KST)
 
-    if period["key"] == "09_21":
+    period = get_current_4h_period()
 
-        return {
-            "active_09": "current-period",
-            "active_21": "inactive-period",
-            "badge": "current-badge-09"
-        }
+    start_hour = period[
+        "start_hour"
+    ]
 
-    return {
-        "active_09": "inactive-period",
-        "active_21": "current-period",
-        "badge": "current-badge-21"
-    }
+    if start_hour == 21:
 
+        if now.hour >= 21:
 
-# =========================================================
-# 12시간 구간 계산
-# =========================================================
+            return now.replace(
+                hour=21,
+                minute=0,
+                second=0,
+                microsecond=0
+            )
 
-def get_12h_periods(now=None):
+    if now.hour >= start_hour:
 
-    if now is None:
+        return now.replace(
+            hour=start_hour,
+            minute=0,
+            second=0,
+            microsecond=0
+        )
 
-        now = datetime.now(KST)
-
-    today = now.replace(
-        hour=0,
+    return (
+        now
+        -
+        timedelta(days=1)
+    ).replace(
+        hour=start_hour,
         minute=0,
         second=0,
         microsecond=0
     )
 
-    today_09 = today + timedelta(
-        hours=9
+
+# =========================================================
+# 4시간 구간 계산
+#
+# current
+# previous
+# =========================================================
+
+def get_4h_periods(now=None):
+
+    if now is None:
+
+        now = datetime.now(KST)
+
+    current_start = get_current_4h_start()
+
+    current_period = get_current_4h_period()
+
+    current_index = next(
+
+        i
+
+        for i, p in enumerate(
+            FOUR_HOUR_PERIODS
+        )
+
+        if p["key"] == current_period["key"]
+
     )
 
-    today_21 = today + timedelta(
-        hours=21
+    previous_index = (
+        current_index - 1
+    ) % len(
+        FOUR_HOUR_PERIODS
     )
 
-    yesterday_09 = (
-        today_09
+    previous_period = (
+        FOUR_HOUR_PERIODS[
+            previous_index
+        ]
+    )
+
+    previous_start = (
+        current_start
         -
-        timedelta(days=1)
+        timedelta(hours=4)
     )
 
-    yesterday_21 = (
-        today_21
-        -
-        timedelta(days=1)
-    )
-
-    tomorrow_09 = (
-        today_09
+    current_end = (
+        current_start
         +
-        timedelta(days=1)
+        timedelta(hours=4)
     )
-
-    # =====================================================
-    # 09:00 ~ 20:59
-    # =====================================================
-
-    if 9 <= now.hour < 21:
-
-        current = {
-            "key": "09_21",
-            "label": "09:00 ~ 21:00",
-            "start": today_09,
-            "end": today_21,
-            "active": True
-        }
-
-        previous = {
-            "key": "21_09",
-            "label": "21:00 ~ 09:00",
-            "start": yesterday_21,
-            "end": today_09,
-            "active": False
-        }
-
-    # =====================================================
-    # 21:00 ~ 23:59
-    # =====================================================
-
-    elif now.hour >= 21:
-
-        current = {
-            "key": "21_09",
-            "label": "21:00 ~ 09:00",
-            "start": today_21,
-            "end": tomorrow_09,
-            "active": True
-        }
-
-        previous = {
-            "key": "09_21",
-            "label": "09:00 ~ 21:00",
-            "start": today_09,
-            "end": today_21,
-            "active": False
-        }
-
-    # =====================================================
-    # 00:00 ~ 08:59
-    # =====================================================
-
-    else:
-
-        current = {
-            "key": "21_09",
-            "label": "21:00 ~ 09:00",
-            "start": yesterday_21,
-            "end": today_09,
-            "active": True
-        }
-
-        previous = {
-            "key": "09_21",
-            "label": "09:00 ~ 21:00",
-            "start": yesterday_09,
-            "end": yesterday_21,
-            "active": False
-        }
 
     return {
-        "current": current,
-        "previous": previous
+
+        "current": {
+
+            **current_period,
+
+            "start":
+                current_start,
+
+            "end":
+                current_end,
+
+            "active":
+                True
+
+        },
+
+        "previous": {
+
+            **previous_period,
+
+            "start":
+                previous_start,
+
+            "end":
+                current_start,
+
+            "active":
+                False
+
+        }
+
     }
-
-
-# =========================================================
-# 현재 12시간 시작시간
-# =========================================================
-
-def get_current_12h_start():
-
-    periods = get_12h_periods()
-
-    return periods[
-        "current"
-    ]["start"]
 
 
 # =========================================================
@@ -332,19 +402,27 @@ def retry(
 ):
 
     url = (
+
         args[0]
+
         if (
+
             args
+
             and
+
             isinstance(
                 args[0],
                 str
             )
+
         )
+
         else kwargs.get(
             "url",
             ""
         )
+
     )
 
     for n in range(
@@ -624,6 +702,7 @@ def daily_change_upbit(
             return None
 
         return (
+
             (
                 float(current_price)
                 -
@@ -633,6 +712,7 @@ def daily_change_upbit(
             previous_close
             *
             100
+
         )
 
     except Exception as e:
@@ -647,11 +727,13 @@ def daily_change_upbit(
 
 # =========================================================
 # 업비트 60분봉
+#
+# 4시간 계산용
 # =========================================================
 
 def get_upbit_60m_candles(
     market,
-    count=72
+    count=120
 ):
 
     response = retry(
@@ -689,17 +771,26 @@ def get_upbit_60m_candles(
 
 
 # =========================================================
-# 업비트 12시간봉 생성
+# 업비트 4시간봉 생성
+#
+# 업비트 기준
+#
+# 01~05
+# 05~09
+# 09~13
+# 13~17
+# 17~21
+# 21~01
 # =========================================================
 
-def build_upbit_12h_candles(
+def build_upbit_4h_candles(
     market,
     current_price=None
 ):
 
     candles = get_upbit_60m_candles(
         market,
-        count=72
+        count=120
     )
 
     if not candles:
@@ -765,7 +856,7 @@ def build_upbit_12h_candles(
         except Exception as e:
 
             log.warning(
-                f"[업비트 12H 변환 오류] "
+                f"[업비트 4H 변환 오류] "
                 f"{market}: {e}"
             )
 
@@ -791,7 +882,7 @@ def build_upbit_12h_candles(
 
     now = datetime.now(KST)
 
-    periods = get_12h_periods(
+    periods = get_4h_periods(
         now
     )
 
@@ -816,17 +907,21 @@ def build_upbit_12h_candles(
         ]
 
         part = df[
+
             (
                 df["datetime"]
                 >=
                 start
             )
+
             &
+
             (
                 df["datetime"]
                 <
                 end
             )
+
         ].copy()
 
         if part.empty:
@@ -857,9 +952,7 @@ def build_upbit_12h_candles(
             part.iloc[-1]["close"]
         )
 
-        # =================================================
-        # 현재 진행 중인 12H만 현재가 적용
-        # =================================================
+        # 현재 진행 중인 4H에만 현재가 적용
 
         if period["active"]:
 
@@ -867,22 +960,20 @@ def build_upbit_12h_candles(
 
                 try:
 
-                    current_price_float = (
-                        float(current_price)
+                    cp = float(
+                        current_price
                     )
 
-                    close_price = (
-                        current_price_float
-                    )
+                    close_price = cp
 
                     high_price = max(
                         high_price,
-                        current_price_float
+                        cp
                     )
 
                     low_price = min(
                         low_price,
-                        current_price_float
+                        cp
                     )
 
                 except Exception:
@@ -896,6 +987,7 @@ def build_upbit_12h_candles(
         else:
 
             change = (
+
                 (
                     close_price
                     -
@@ -905,6 +997,7 @@ def build_upbit_12h_candles(
                 open_price
                 *
                 100
+
             )
 
         result[
@@ -950,25 +1043,31 @@ def build_upbit_12h_candles(
 
 
 # =========================================================
-# 업비트 12시간 상승률
+# 업비트 4시간 상승률
 # =========================================================
 
-def get_upbit_12h_changes(
+def get_upbit_4h_changes(
     market,
     current_price=None
 ):
 
     result = {
 
-        "09_21":
-            None,
+        "01_05": None,
 
-        "21_09":
-            None
+        "05_09": None,
+
+        "09_13": None,
+
+        "13_17": None,
+
+        "17_21": None,
+
+        "21_01": None
 
     }
 
-    candles = build_upbit_12h_candles(
+    candles = build_upbit_4h_candles(
         market,
         current_price
     )
@@ -977,29 +1076,17 @@ def get_upbit_12h_changes(
 
         return result
 
-    candle_09_21 = candles.get(
-        "09_21"
-    )
+    for key in result.keys():
 
-    candle_21_09 = candles.get(
-        "21_09"
-    )
-
-    if candle_09_21 is not None:
-
-        result["09_21"] = (
-            candle_09_21[
-                "change"
-            ]
+        candle = candles.get(
+            key
         )
 
-    if candle_21_09 is not None:
+        if candle is not None:
 
-        result["21_09"] = (
-            candle_21_09[
+            result[key] = candle[
                 "change"
             ]
-        )
 
     return result
 
@@ -1248,6 +1335,8 @@ def get_okx_btc_1h_history():
 
 # =========================================================
 # BTC KST 일봉
+#
+# 09:00 기준
 # =========================================================
 
 def aggregate_btc_kst_daily(
@@ -1265,12 +1354,18 @@ def aggregate_btc_kst_daily(
     temp = df.copy()
 
     temp["daily_start"] = (
+
         temp["datetime_kst"]
+
         -
+
         pd.Timedelta(
             hours=9
         )
-    ).dt.floor("D") + pd.Timedelta(
+
+    ).dt.floor(
+        "D"
+    ) + pd.Timedelta(
         hours=9
     )
 
@@ -1375,6 +1470,7 @@ def get_okx_btc_daily_change(
         return None
 
     return (
+
         (
             price
             -
@@ -1384,14 +1480,17 @@ def get_okx_btc_daily_change(
         previous_close
         *
         100
+
     )
 
 
 # =========================================================
-# BTC 12시간봉 생성
+# BTC 4시간봉
+#
+# OKX 1H를 KST 기준으로 합성
 # =========================================================
 
-def build_okx_btc_12h_candles(
+def build_okx_btc_4h_candles(
     price,
     df
 ):
@@ -1414,11 +1513,7 @@ def build_okx_btc_12h_candles(
         .tz_localize(None)
     )
 
-    now = datetime.now(KST)
-
-    periods = get_12h_periods(
-        now
-    )
+    periods = get_4h_periods()
 
     result = {}
 
@@ -1445,17 +1540,21 @@ def build_okx_btc_12h_candles(
         )
 
         part = temp[
+
             (
                 temp["kst_naive"]
                 >=
                 start
             )
+
             &
+
             (
                 temp["kst_naive"]
                 <
                 end
             )
+
         ].copy()
 
         if part.empty:
@@ -1486,9 +1585,7 @@ def build_okx_btc_12h_candles(
             part.iloc[-1]["close"]
         )
 
-        # =================================================
-        # 현재 진행 중인 12H에만 현재가 적용
-        # =================================================
+        # 현재 진행 중인 4H에만 현재가 적용
 
         if period["active"]:
 
@@ -1513,6 +1610,7 @@ def build_okx_btc_12h_candles(
         else:
 
             change = (
+
                 (
                     close_price
                     -
@@ -1522,6 +1620,7 @@ def build_okx_btc_12h_candles(
                 open_price
                 *
                 100
+
             )
 
         result[
@@ -1567,26 +1666,32 @@ def build_okx_btc_12h_candles(
 
 
 # =========================================================
-# BTC 12시간 상승률
+# BTC 4시간 상승률
 # =========================================================
 
-def get_okx_btc_12h_changes(
+def get_okx_btc_4h_changes(
     price,
     df
 ):
 
     result = {
 
-        "09_21":
-            None,
+        "01_05": None,
 
-        "21_09":
-            None
+        "05_09": None,
+
+        "09_13": None,
+
+        "13_17": None,
+
+        "17_21": None,
+
+        "21_01": None
 
     }
 
     candles = (
-        build_okx_btc_12h_candles(
+        build_okx_btc_4h_candles(
             price,
             df
         )
@@ -1596,29 +1701,17 @@ def get_okx_btc_12h_changes(
 
         return result
 
-    candle_09_21 = candles.get(
-        "09_21"
-    )
+    for key in result.keys():
 
-    candle_21_09 = candles.get(
-        "21_09"
-    )
-
-    if candle_09_21 is not None:
-
-        result["09_21"] = (
-            candle_09_21[
-                "change"
-            ]
+        candle = candles.get(
+            key
         )
 
-    if candle_21_09 is not None:
+        if candle is not None:
 
-        result["21_09"] = (
-            candle_21_09[
+            result[key] = candle[
                 "change"
             ]
-        )
 
     return result
 
@@ -1633,13 +1726,16 @@ def update_btc_market():
 
     global latest_btc_daily_change
 
-    global latest_btc_09_21_change
+    global latest_btc_01_05_change
+    global latest_btc_05_09_change
+    global latest_btc_09_13_change
+    global latest_btc_13_17_change
+    global latest_btc_17_21_change
+    global latest_btc_21_01_change
 
-    global latest_btc_21_09_change
+    global latest_btc_current_4h_change
 
-    global latest_btc_current_12h_change
-
-    global latest_btc_current_12h_label
+    global latest_btc_current_4h_label
 
     price = get_okx_btc_price()
 
@@ -1651,58 +1747,76 @@ def update_btc_market():
 
     df = get_okx_btc_1h_history()
 
-    daily_change = (
+    latest_btc_daily_change = (
         get_okx_btc_daily_change(
             price,
             df
         )
     )
 
-    latest_btc_daily_change = (
-        daily_change
-    )
-
     changes = (
-        get_okx_btc_12h_changes(
+        get_okx_btc_4h_changes(
             price,
             df
         )
     )
 
-    latest_btc_09_21_change = (
-        changes["09_21"]
+    latest_btc_01_05_change = (
+        changes["01_05"]
     )
 
-    latest_btc_21_09_change = (
-        changes["21_09"]
+    latest_btc_05_09_change = (
+        changes["05_09"]
     )
 
-    period = (
-        get_current_12h_period()
+    latest_btc_09_13_change = (
+        changes["09_13"]
     )
 
-    latest_btc_current_12h_label = (
+    latest_btc_13_17_change = (
+        changes["13_17"]
+    )
+
+    latest_btc_17_21_change = (
+        changes["17_21"]
+    )
+
+    latest_btc_21_01_change = (
+        changes["21_01"]
+    )
+
+    period = get_current_4h_period()
+
+    latest_btc_current_4h_label = (
         period["label"]
     )
 
-    if period["key"] == "09_21":
-
-        latest_btc_current_12h_change = (
-            latest_btc_09_21_change
+    latest_btc_current_4h_change = (
+        changes.get(
+            period["key"]
         )
-
-    else:
-
-        latest_btc_current_12h_change = (
-            latest_btc_21_09_change
-        )
+    )
 
     log.info(
-        f"[BTC 12H] "
-        f"09~21={latest_btc_09_21_change} | "
-        f"21~09={latest_btc_21_09_change} | "
-        f"현재={latest_btc_current_12h_label} "
-        f"{latest_btc_current_12h_change}"
+
+        f"[BTC 4H] "
+
+        f"01~05={latest_btc_01_05_change} | "
+
+        f"05~09={latest_btc_05_09_change} | "
+
+        f"09~13={latest_btc_09_13_change} | "
+
+        f"13~17={latest_btc_13_17_change} | "
+
+        f"17~21={latest_btc_17_21_change} | "
+
+        f"21~01={latest_btc_21_01_change} | "
+
+        f"현재={latest_btc_current_4h_label} "
+
+        f"{latest_btc_current_4h_change}"
+
     )
 
 
@@ -1722,42 +1836,57 @@ def analyze(
         )
     )
 
-    twelve = (
-        get_upbit_12h_changes(
+    four_hour = (
+        get_upbit_4h_changes(
             market,
             current_price
         )
     )
 
-    period = (
-        get_current_12h_period()
+    period = get_current_4h_period()
+
+    current_4h = four_hour.get(
+        period["key"]
     )
 
-    if period["key"] == "09_21":
+    periods = get_4h_periods()
 
-        current_12h = twelve[
-            "09_21"
-        ]
+    previous_key = periods[
+        "previous"
+    ]["key"]
 
-    else:
-
-        current_12h = twelve[
-            "21_09"
-        ]
+    previous_4h = four_hour.get(
+        previous_key
+    )
 
     return {
 
         "daily_change":
             daily_change,
 
-        "change_09_21":
-            twelve["09_21"],
+        "change_01_05":
+            four_hour["01_05"],
 
-        "change_21_09":
-            twelve["21_09"],
+        "change_05_09":
+            four_hour["05_09"],
 
-        "current_12h_change":
-            current_12h
+        "change_09_13":
+            four_hour["09_13"],
+
+        "change_13_17":
+            four_hour["13_17"],
+
+        "change_17_21":
+            four_hour["17_21"],
+
+        "change_21_01":
+            four_hour["21_01"],
+
+        "current_4h_change":
+            current_4h,
+
+        "previous_4h_change":
+            previous_4h
 
     }
 
@@ -1805,9 +1934,7 @@ def format_change(x):
     if x is None:
 
         return (
-            '<span class="zero">'
-            '-'
-            '</span>'
+            '<span class="zero">-</span>'
         )
 
     if x > 0:
@@ -1845,9 +1972,7 @@ def format_market_price(price):
 
     try:
 
-        price = float(
-            price
-        )
+        price = float(price)
 
     except Exception:
 
@@ -1927,30 +2052,6 @@ def make_row(
 
     a = analysis or {}
 
-    daily = get_change_value(
-        a.get(
-            "daily_change"
-        )
-    )
-
-    c09 = get_change_value(
-        a.get(
-            "change_09_21"
-        )
-    )
-
-    c21 = get_change_value(
-        a.get(
-            "change_21_09"
-        )
-    )
-
-    current_12h = get_change_value(
-        a.get(
-            "current_12h_change"
-        )
-    )
-
     return {
 
         "rank":
@@ -1968,31 +2069,74 @@ def make_row(
             current_price,
 
         "daily_change":
-            daily,
+            get_change_value(
+                a.get(
+                    "daily_change"
+                )
+            ),
 
         "daily_html":
             format_change(
-                daily
+                a.get(
+                    "daily_change"
+                )
             ),
 
-        "change_09_21":
-            c09,
-
-        "change_09_21_html":
-            format_change(
-                c09
+        "change_01_05":
+            get_change_value(
+                a.get(
+                    "change_01_05"
+                )
             ),
 
-        "change_21_09":
-            c21,
-
-        "change_21_09_html":
-            format_change(
-                c21
+        "change_05_09":
+            get_change_value(
+                a.get(
+                    "change_05_09"
+                )
             ),
 
-        "current_12h_change":
-            current_12h,
+        "change_09_13":
+            get_change_value(
+                a.get(
+                    "change_09_13"
+                )
+            ),
+
+        "change_13_17":
+            get_change_value(
+                a.get(
+                    "change_13_17"
+                )
+            ),
+
+        "change_17_21":
+            get_change_value(
+                a.get(
+                    "change_17_21"
+                )
+            ),
+
+        "change_21_01":
+            get_change_value(
+                a.get(
+                    "change_21_01"
+                )
+            ),
+
+        "current_4h_change":
+            get_change_value(
+                a.get(
+                    "current_4h_change"
+                )
+            ),
+
+        "previous_4h_change":
+            get_change_value(
+                a.get(
+                    "previous_4h_change"
+                )
+            ),
 
         "analysis":
             analysis
@@ -2011,10 +2155,14 @@ def update_upbit():
     global latest_upbit_update_time
 
     markets = sorted(
+
         get_upbit_markets(),
+
         key=lambda x:
             x["volume_24h"],
+
         reverse=True
+
     )
 
     top_markets = markets[
@@ -2033,11 +2181,7 @@ def update_upbit():
 
     rows = []
 
-    # =====================================================
-    # 현재 시간대
-    # =====================================================
-
-    period = get_current_12h_period()
+    period = get_current_4h_period()
 
     for rank, item in enumerate(
         top_markets,
@@ -2089,28 +2233,28 @@ def update_upbit():
         )
 
         # =================================================
-        # BTC 현재 12H 양수
+        # BTC 현재 4H 양수
         # =================================================
 
         btc_pass = (
 
-            latest_btc_current_12h_change
+            latest_btc_current_4h_change
             is not None
 
             and
 
-            latest_btc_current_12h_change
+            latest_btc_current_4h_change
             > 0
 
         )
 
         # =================================================
-        # 코인 현재 12H
+        # 코인 현재 4H 양수
         # =================================================
 
         coin_current = (
             row.get(
-                "current_12h_change"
+                "current_4h_change"
             )
         )
 
@@ -2125,30 +2269,14 @@ def update_upbit():
         )
 
         # =================================================
-        # 코인 이전 12H
-        #
-        # 현재 09~21
-        # → 이전 21~09
-        #
-        # 현재 21~09
-        # → 이전 09~21
+        # 코인 이전 4H 양수
         # =================================================
 
-        if period["key"] == "09_21":
-
-            coin_previous = (
-                row.get(
-                    "change_21_09"
-                )
+        coin_previous = (
+            row.get(
+                "previous_4h_change"
             )
-
-        else:
-
-            coin_previous = (
-                row.get(
-                    "change_09_21"
-                )
-            )
+        )
 
         coin_previous_pass = (
 
@@ -2161,19 +2289,7 @@ def update_upbit():
         )
 
         # =================================================
-        # 이전 12H 값 저장
-        # =================================================
-
-        row["previous_12h_change"] = (
-            coin_previous
-        )
-
-        # =================================================
-        # 최종 Signal
-        #
-        # ① BTC 현재 12H > 0
-        # ② 코인 현재 12H > 0
-        # ③ 코인 이전 12H > 0
+        # Signal
         # =================================================
 
         row["signal_pass"] = (
@@ -2214,10 +2330,16 @@ def update_upbit():
     )
 
     log.info(
+
         f"TOP{TOP_N} 업데이트 | "
-        f"현재구간={period['label']} | "
-        f"BTC 현재12H={latest_btc_current_12h_change} | "
+
+        f"현재={period['label']} | "
+
+        f"BTC 현재4H="
+        f"{latest_btc_current_4h_change} | "
+
         f"Signal={signal_count}"
+
     )
 
 
@@ -2294,14 +2416,17 @@ def update_dashboard():
     try:
 
         # BTC 먼저
+
         update_btc_market()
 
         # 업비트
+
         if USE_UPBIT == "Y":
 
             update_upbit()
 
         # OKX
+
         if USE_OKX == "Y":
 
             usdt = (
@@ -2326,10 +2451,119 @@ def update_dashboard():
 
 
 # =========================================================
-# Signal 한 줄
+# 4H 카드
 # =========================================================
 
-def signal_item_html(
+def four_hour_cells_html(
+    row
+):
+
+    current_period = (
+        get_current_4h_period()
+    )
+
+    current_key = (
+        current_period["key"]
+    )
+
+    periods = [
+
+        (
+            "01_05",
+            "01~05"
+        ),
+
+        (
+            "05_09",
+            "05~09"
+        ),
+
+        (
+            "09_13",
+            "09~13"
+        ),
+
+        (
+            "13_17",
+            "13~17"
+        ),
+
+        (
+            "17_21",
+            "17~21"
+        ),
+
+        (
+            "21_01",
+            "21~01"
+        )
+
+    ]
+
+    cells = []
+
+    for key, label in periods:
+
+        value = row.get(
+            f"change_{key}"
+        )
+
+        if key == current_key:
+
+            class_name = (
+                "four-hour-cell current-4h"
+            )
+
+            state = "현재"
+
+        else:
+
+            class_name = (
+                "four-hour-cell"
+            )
+
+            state = ""
+
+        cells.append(
+
+            f"""
+
+            <div class="{class_name}">
+
+                <div class="four-hour-label">
+
+                    {label}
+
+                    {
+                        f'<span class="four-hour-now">{state}</span>'
+                        if state
+                        else ""
+                    }
+
+                </div>
+
+                <div class="four-hour-value">
+
+                    {format_change(value)}
+
+                </div>
+
+            </div>
+
+            """
+
+        )
+
+    return "".join(
+        cells
+    )
+
+
+# =========================================================
+# Signal 카드
+# =========================================================
+
+def signal_card_html(
     row,
     signal_rank
 ):
@@ -2343,75 +2577,172 @@ def signal_item_html(
         )
     )
 
-    period = get_current_12h_period()
+    current_4h = row.get(
+        "current_4h_change"
+    )
 
-    if period["key"] == "09_21":
+    previous_4h = row.get(
+        "previous_4h_change"
+    )
 
-        c09_class = (
-            "current-period"
-        )
+    current_period = (
+        get_current_4h_period()
+    )
 
-        c21_class = (
-            "inactive-period"
-        )
-
-    else:
-
-        c09_class = (
-            "inactive-period"
-        )
-
-        c21_class = (
-            "current-period"
-        )
+    previous_period = (
+        get_4h_periods()
+        ["previous"]
+    )
 
     return f"""
 
-    <div class="signal-row">
+    <div class="signal-card">
 
-        <div class="signal-rank">
-            #{signal_rank}
+        <div class="signal-card-top">
+
+            <div class="signal-rank">
+
+                #{signal_rank}
+
+            </div>
+
+            <div class="signal-coin">
+
+                {coin}
+
+            </div>
+
+            <div class="signal-top-rank">
+
+                TOP {row.get("rank", "-")}
+
+            </div>
+
+            <div class="signal-badge">
+
+                SIGNAL
+
+            </div>
+
         </div>
 
-        <div class="signal-top">
-            TOP {row.get("rank", "-")}
+
+        <div class="signal-card-main">
+
+            <div class="signal-price-block">
+
+                <div class="signal-price-label">
+
+                    현재가
+
+                </div>
+
+                <div class="signal-price">
+
+                    {format_market_price(
+                        row.get(
+                            "current_price"
+                        )
+                    )}
+
+                </div>
+
+            </div>
+
+
+            <div class="signal-volume-block">
+
+                <div class="signal-price-label">
+
+                    24H 거래대금
+
+                </div>
+
+                <div class="signal-volume">
+
+                    {row.get(
+                        "volume",
+                        "-"
+                    )}
+
+                </div>
+
+            </div>
+
+
+            <div class="signal-daily-block">
+
+                <div class="signal-price-label">
+
+                    당일
+
+                </div>
+
+                <div class="signal-daily">
+
+                    {row.get(
+                        "daily_html",
+                        "-"
+                    )}
+
+                </div>
+
+            </div>
+
         </div>
 
-        <div class="signal-coin">
-            {coin}
-        </div>
 
-        <div class="signal-volume">
-            {row.get("volume", "-")}
-        </div>
+        <div class="signal-condition-row">
 
-        <div class="signal-price">
-            {format_market_price(
-                row.get(
-                    "current_price"
-                )
-            )}
-        </div>
+            <div class="signal-condition">
 
-        <div class="signal-daily">
-            {row.get(
-                "daily_html",
-                "-"
-            )}
-        </div>
+                <div class="condition-label">
 
-        <div class="signal-09 {c09_class}">
-            {row.get(
-                "change_09_21_html",
-                "-"
-            )}
-        </div>
+                    현재 4H
 
-        <div class="signal-21 {c21_class}">
-            {row.get(
-                "change_21_09_html",
-                "-"
-            )}
+                    <span>
+
+                        {current_period["label"]}
+
+                    </span>
+
+                </div>
+
+                <div class="condition-value">
+
+                    {format_change(
+                        current_4h
+                    )}
+
+                </div>
+
+            </div>
+
+
+            <div class="signal-condition">
+
+                <div class="condition-label">
+
+                    이전 4H
+
+                    <span>
+
+                        {previous_period["label"]}
+
+                    </span>
+
+                </div>
+
+                <div class="condition-value">
+
+                    {format_change(
+                        previous_4h
+                    )}
+
+                </div>
+
+            </div>
+
         </div>
 
     </div>
@@ -2420,17 +2751,15 @@ def signal_item_html(
 
 
 # =========================================================
-# Signal
+# Signal Section
 # =========================================================
 
 def focus_section(data):
 
-    period = (
-        get_current_12h_period()
-    )
+    period = get_current_4h_period()
 
     btc_change = (
-        latest_btc_current_12h_change
+        latest_btc_current_4h_change
     )
 
     btc_positive = (
@@ -2443,29 +2772,36 @@ def focus_section(data):
 
     )
 
-    current_period_text = (
-        f'▶ 현재 {period["label"]}'
+    current_signal_rows = [
+
+        x.copy()
+
+        for x in data
+
+        if x.get(
+            "signal_pass",
+            False
+        )
+
+    ]
+
+    current_signal_rows.sort(
+
+        key=lambda x:
+
+            x.get(
+                "current_4h_change"
+            )
+
+            if x.get(
+                "current_4h_change"
+            ) is not None
+
+            else -999999,
+
+        reverse=True
+
     )
-
-    # =====================================================
-    # 이전 시간대
-    # =====================================================
-
-    if period["key"] == "09_21":
-
-        previous_period_label = (
-            "21:00 ~ 09:00"
-        )
-
-    else:
-
-        previous_period_label = (
-            "09:00 ~ 21:00"
-        )
-
-    # =====================================================
-    # BTC OFF
-    # =====================================================
 
     if not btc_positive:
 
@@ -2481,51 +2817,42 @@ def focus_section(data):
 
         )
 
-        return f"""
+        body = f"""
 
-        <div class="unified-section">
+        <div class="signal-empty-card">
 
-            <div class="section-title-card">
+            <div class="signal-empty-icon">
 
-                <div class="section-number">
-                    🚀
-                </div>
-
-                <div class="section-heading">
-
-                    <div class="section-heading-main">
-                        Signal
-                    </div>
-
-                    <div class="section-heading-sub">
-
-                        BTC {period["label"]}
-                        양수 필터 OFF
-
-                    </div>
-
-                </div>
-
-                <div class="current-time-badge">
-                    {current_period_text}
-                </div>
+                ⛔
 
             </div>
 
-            <div class="signal-empty">
+            <div class="signal-empty-title">
 
-                BTC 현재 필터 구간
-                <strong>{period["label"]}</strong>
+                Signal OFF
 
-                <br>
+            </div>
 
-                BTC 현재 12시간 상승률
-                <strong>{btc_text}</strong>
+            <div class="signal-empty-text">
 
-                <br>
+                BTC 현재 4H
 
-                BTC 현재 12시간 상승률이
-                0% 초과일 때만 Signal 통과
+                <strong>
+                    {period["label"]}
+                </strong>
+
+                상승률
+
+                <strong>
+                    {btc_text}
+                </strong>
+
+            </div>
+
+            <div class="signal-empty-sub">
+
+                BTC 현재 4시간 상승률이
+                0% 초과일 때 Signal 활성화
 
             </div>
 
@@ -2533,74 +2860,46 @@ def focus_section(data):
 
         """
 
-    # =====================================================
-    # Signal 필터
-    #
-    # update_upbit()에서 계산된
-    # signal_pass를 사용
-    # =====================================================
+    elif not current_signal_rows:
 
-    signal_rows = [
+        body = f"""
 
-        x.copy()
+        <div class="signal-empty-card">
 
-        for x in data
+            <div class="signal-empty-icon">
 
-        if x.get(
-            "signal_pass",
-            False
-        )
+                🔎
 
-    ]
+            </div>
 
-    # =====================================================
-    # 현재 12H 상승률 높은 순
-    # =====================================================
+            <div class="signal-empty-title">
 
-    signal_rows.sort(
+                Signal 없음
 
-        key=lambda x:
-            x.get(
-                "current_12h_change"
-            )
-            if x.get(
-                "current_12h_change"
-            ) is not None
-            else -999999,
+            </div>
 
-        reverse=True
+            <div class="signal-empty-text">
 
-    )
+                BTC 현재 4H
 
-    # =====================================================
-    # Signal 없음
-    # =====================================================
+                <strong>
+                    {period["label"]}
+                </strong>
 
-    if not signal_rows:
+                양수
 
-        signal_table = f"""
+            </div>
 
-        <div class="signal-empty">
+            <div class="signal-empty-sub">
 
-            BTC 현재 구간
-            <strong>{period["label"]}</strong>
-            양수
+                현재 4H 양수
+                +
+                이전 4H 양수
 
-            <br>
+                조건을 만족하는
+                TOP{TOP_N} 종목 없음
 
-            TOP{TOP_N} 중
-
-            <strong>
-                현재 12H 양수
-            </strong>
-
-            +
-
-            <strong>
-                이전 12H 양수 마감
-            </strong>
-
-            조건을 모두 만족하는 종목 없음
+            </div>
 
         </div>
 
@@ -2608,113 +2907,98 @@ def focus_section(data):
 
     else:
 
-        # =================================================
-        # 현재 시간대 강조
-        # =================================================
-
-        if period["key"] == "09_21":
-
-            header_09_class = (
-                "current-period"
-            )
-
-            header_21_class = (
-                "inactive-period"
-            )
-
-        else:
-
-            header_09_class = (
-                "inactive-period"
-            )
-
-            header_21_class = (
-                "current-period"
-            )
-
-        signal_items = []
+        cards = []
 
         for signal_rank, row in enumerate(
-            signal_rows,
+
+            current_signal_rows,
+
             1
+
         ):
 
-            signal_items.append(
-                signal_item_html(
+            cards.append(
+
+                signal_card_html(
                     row,
                     signal_rank
                 )
+
             )
 
-        signal_table = f"""
-
-        <div class="signal-header">
-
-            <div>Signal</div>
-
-            <div>TOP</div>
-
-            <div>코인</div>
-
-            <div>거래대금</div>
-
-            <div>현재가</div>
-
-            <div>당일</div>
-
-            <div class="{header_09_class}">
-                09~21
-            </div>
-
-            <div class="{header_21_class}">
-                21~09
-            </div>
-
-        </div>
-
-        <div class="signal-list">
-
-            {"".join(signal_items)}
-
-        </div>
-
-        """
+        body = "".join(
+            cards
+        )
 
     return f"""
 
     <div class="unified-section">
 
-        <div class="section-title-card">
+        <div class="section-title-card signal-title">
 
             <div class="section-number">
+
                 🚀
+
             </div>
 
             <div class="section-heading">
 
                 <div class="section-heading-main">
-                    Signal
+
+                    SIGNAL
+
                 </div>
 
                 <div class="section-heading-sub">
 
-                    BTC {period["label"]} 양수
-                    · 현재 12H 양수
-                    · 이전 12H 양수 마감
-                    · TOP{TOP_N}
-                    · 현재 12H 높은 순
+                    BTC 현재 4H 양수
+                    · 코인 현재 4H 양수
+                    · 이전 4H 양수
 
                 </div>
 
             </div>
 
             <div class="current-time-badge">
-                {current_period_text}
+
+                ▶ {period["label"]}
+
             </div>
 
         </div>
 
-        {signal_table}
+
+        <div class="signal-btc-bar">
+
+            <div class="signal-btc-title">
+
+                BTC 현재 4H
+
+            </div>
+
+            <div class="signal-btc-period">
+
+                {period["label"]}
+
+            </div>
+
+            <div class="signal-btc-value">
+
+                {format_change(
+                    btc_change
+                )}
+
+            </div>
+
+        </div>
+
+
+        <div class="signal-card-list">
+
+            {body}
+
+        </div>
 
     </div>
 
@@ -2722,190 +3006,174 @@ def focus_section(data):
 
 
 # =========================================================
-# TOP 리스트
+# TOP 카드
 # =========================================================
 
-def rows_html(data):
+def top_card_html(
+    row
+):
 
-    out = []
-
-    period = get_current_12h_period()
-
-    if period["key"] == "09_21":
-
-        class_09 = "current-period"
-
-        class_21 = "inactive-period"
-
-    else:
-
-        class_09 = "inactive-period"
-
-        class_21 = "current-period"
-
-    for x in data:
-
-        coin_name = html.escape(
-            str(
-                x.get(
-                    "name",
-                    "-"
-                )
+    coin = html.escape(
+        str(
+            row.get(
+                "name",
+                "-"
             )
         )
-
-        out.append(
-
-            f"""
-
-            <div class="coin-card">
-
-                <div class="coin-main-row">
-
-                    <div class="rank-cell">
-                        {x.get("rank", "-")}
-                    </div>
-
-                    <div class="coin-cell">
-
-                        <span class="coin-name">
-
-                            {coin_name}
-
-                        </span>
-
-                    </div>
-
-                    <div class="volume-cell">
-
-                        {x.get(
-                            "volume",
-                            "-"
-                        )}
-
-                    </div>
-
-                    <div class="price-cell">
-
-                        {format_market_price(
-                            x.get(
-                                "current_price"
-                            )
-                        )}
-
-                    </div>
-
-                    <div class="daily-cell">
-
-                        {x.get(
-                            "daily_html",
-                            "-"
-                        )}
-
-                    </div>
-
-                    <div class="h09-cell {class_09}">
-
-                        {x.get(
-                            "change_09_21_html",
-                            "-"
-                        )}
-
-                    </div>
-
-                    <div class="h21-cell {class_21}">
-
-                        {x.get(
-                            "change_21_09_html",
-                            "-"
-                        )}
-
-                    </div>
-
-                </div>
-
-            </div>
-
-            """
-
-        )
-
-    return "".join(
-        out
     )
 
-
-# =========================================================
-# TOP 테이블
-# =========================================================
-
-def table_html(data):
-
-    rows = rows_html(
-        data
+    current_period = (
+        get_current_4h_period()
     )
 
-    period = get_current_12h_period()
+    current_4h = row.get(
+        "current_4h_change"
+    )
 
-    if period["key"] == "09_21":
+    signal_pass = row.get(
+        "signal_pass",
+        False
+    )
 
-        header_09_class = (
-            "current-period"
-        )
+    if signal_pass:
 
-        header_21_class = (
-            "inactive-period"
-        )
+        signal_mark = """
 
-    else:
+        <div class="top-signal-mark">
 
-        header_09_class = (
-            "inactive-period"
-        )
-
-        header_21_class = (
-            "current-period"
-        )
-
-    if not rows:
-
-        rows = """
-
-        <div class="empty-card">
-
-            현재 데이터 없음
+            🚀 SIGNAL
 
         </div>
 
         """
 
+    else:
+
+        signal_mark = ""
+
     return f"""
 
-    <div class="top-header">
+    <div class="top-card">
 
-        <div>순위</div>
+        <div class="top-card-header">
 
-        <div>코인</div>
+            <div class="top-rank">
 
-        <div>거래대금</div>
+                #{row.get(
+                    "rank",
+                    "-"
+                )}
 
-        <div>현재가</div>
+            </div>
 
-        <div>당일</div>
+            <div class="top-coin">
 
-        <div class="{header_09_class}">
-            ▶ 09~21
+                {coin}
+
+            </div>
+
+            {signal_mark}
+
         </div>
 
-        <div class="{header_21_class}">
-            ▶ 21~09
+
+        <div class="top-main-info">
+
+            <div class="top-price-block">
+
+                <div class="top-label">
+
+                    현재가
+
+                </div>
+
+                <div class="top-price">
+
+                    {format_market_price(
+                        row.get(
+                            "current_price"
+                        )
+                    )}
+
+                </div>
+
+            </div>
+
+
+            <div class="top-volume-block">
+
+                <div class="top-label">
+
+                    24H 거래대금
+
+                </div>
+
+                <div class="top-volume">
+
+                    {row.get(
+                        "volume",
+                        "-"
+                    )}
+
+                </div>
+
+            </div>
+
+
+            <div class="top-daily-block">
+
+                <div class="top-label">
+
+                    당일
+
+                </div>
+
+                <div class="top-daily">
+
+                    {row.get(
+                        "daily_html",
+                        "-"
+                    )}
+
+                </div>
+
+            </div>
+
         </div>
 
-    </div>
 
-    <div class="card-list">
+        <div class="top-current-row">
 
-        {rows}
+            <div class="top-current-title">
+
+                현재 4H
+
+            </div>
+
+            <div class="top-current-period">
+
+                {current_period["label"]}
+
+            </div>
+
+            <div class="top-current-value">
+
+                {format_change(
+                    current_4h
+                )}
+
+            </div>
+
+        </div>
+
+
+        <div class="four-hour-grid">
+
+            {four_hour_cells_html(
+                row
+            )}
+
+        </div>
 
     </div>
 
@@ -2921,9 +3189,31 @@ def section(
     update_time
 ):
 
-    period = (
-        get_current_12h_period()
-    )
+    period = get_current_4h_period()
+
+    if not data:
+
+        cards = """
+
+        <div class="empty-card">
+
+            현재 데이터 없음
+
+        </div>
+
+        """
+
+    else:
+
+        cards = "".join(
+
+            top_card_html(
+                row
+            )
+
+            for row in data
+
+        )
 
     return f"""
 
@@ -2932,7 +3222,9 @@ def section(
         <div class="section-title-card">
 
             <div class="section-number top-number">
+
                 🏆
+
             </div>
 
             <div class="section-heading">
@@ -2945,8 +3237,8 @@ def section(
 
                 <div class="section-heading-sub">
 
-                    거래대금 · 당일 ·
-                    09~21 · 21~09
+                    거래대금 순위 · 당일 ·
+                    4H 전체 구간
 
                 </div>
 
@@ -2954,17 +3246,141 @@ def section(
 
             <div class="current-time-badge">
 
-                ▶ 현재 {period["label"]}
+                ▶ {period["label"]}
 
             </div>
 
         </div>
 
-        {table_html(data)}
+
+        <div class="top-update-bar">
+
+            <span>
+
+                TOP {TOP_N}
+
+            </span>
+
+            <span>
+
+                업데이트 {update_time}
+
+            </span>
+
+        </div>
+
+
+        <div class="top-card-list">
+
+            {cards}
+
+        </div>
 
     </div>
 
     """
+
+
+# =========================================================
+# BTC 4H HTML
+# =========================================================
+
+def btc_4h_cells_html():
+
+    period = get_current_4h_period()
+
+    current_key = period[
+        "key"
+    ]
+
+    btc_values = {
+
+        "01_05":
+            latest_btc_01_05_change,
+
+        "05_09":
+            latest_btc_05_09_change,
+
+        "09_13":
+            latest_btc_09_13_change,
+
+        "13_17":
+            latest_btc_13_17_change,
+
+        "17_21":
+            latest_btc_17_21_change,
+
+        "21_01":
+            latest_btc_21_01_change
+
+    }
+
+    periods = [
+
+        ("01_05", "01~05"),
+        ("05_09", "05~09"),
+        ("09_13", "09~13"),
+        ("13_17", "13~17"),
+        ("17_21", "17~21"),
+        ("21_01", "21~01")
+
+    ]
+
+    cells = []
+
+    for key, label in periods:
+
+        if key == current_key:
+
+            class_name = (
+                "btc-period-card btc-current-4h"
+            )
+
+            state = "현재"
+
+        else:
+
+            class_name = (
+                "btc-period-card"
+            )
+
+            state = ""
+
+        cells.append(
+
+            f"""
+
+            <div class="{class_name}">
+
+                <div class="btc-period-label">
+
+                    {label}
+
+                    {
+                        f'<span>{state}</span>'
+                        if state
+                        else ""
+                    }
+
+                </div>
+
+                <div class="btc-period-value">
+
+                    {format_change(
+                        btc_values[key]
+                    )}
+
+                </div>
+
+            </div>
+
+            """
+
+        )
+
+    return "".join(
+        cells
+    )
 
 
 # =========================================================
@@ -2973,7 +3389,7 @@ def section(
 
 def market_summary_html():
 
-    period = get_current_12h_period()
+    period = get_current_4h_period()
 
     price = format_market_price(
         latest_btc_okx_price
@@ -2983,30 +3399,18 @@ def market_summary_html():
         latest_btc_daily_change
     )
 
-    change_09 = format_change(
-        latest_btc_09_21_change
-    )
-
-    change_21 = format_change(
-        latest_btc_21_09_change
-    )
-
     current = format_change(
-        latest_btc_current_12h_change
+        latest_btc_current_4h_change
     )
-
-    # =====================================================
-    # BTC Signal 상태
-    # =====================================================
 
     if (
 
-        latest_btc_current_12h_change
+        latest_btc_current_4h_change
         is not None
 
         and
 
-        latest_btc_current_12h_change
+        latest_btc_current_4h_change
         > 0
 
     ):
@@ -3021,30 +3425,6 @@ def market_summary_html():
 
         signal_class = "btc-off"
 
-    # =====================================================
-    # 현재 시간대 강조
-    # =====================================================
-
-    if period["key"] == "09_21":
-
-        btc_09_class = (
-            "btc-current-period"
-        )
-
-        btc_21_class = (
-            "btc-inactive-period"
-        )
-
-    else:
-
-        btc_09_class = (
-            "btc-inactive-period"
-        )
-
-        btc_21_class = (
-            "btc-current-period"
-        )
-
     return f"""
 
     <div class="market-card">
@@ -3054,23 +3434,25 @@ def market_summary_html():
             <div class="market-title-block">
 
                 <div class="market-title-main">
+
                     ₿ BTC 시장 시황
+
                 </div>
 
                 <div class="market-title-sub">
 
                     OKX BTC-USDT
-                    ·
-                    당일 = KST 09:00 기준
-                    ·
-                    12H = 09:00 / 21:00 기준
+                    · 당일 = KST 09:00
+                    · 4H = 업비트 기준
 
                 </div>
 
             </div>
 
             <div class="market-time">
+
                 {kst()} KST
+
             </div>
 
         </div>
@@ -3079,25 +3461,35 @@ def market_summary_html():
         <div class="btc-main-row">
 
             <div class="btc-name">
+
                 ₿ BTC
+
             </div>
 
             <div class="btc-price">
+
                 {price}
+
             </div>
 
             <div class="btc-change">
+
                 {daily}
+
             </div>
 
             <div class="btc-signal-box">
 
                 <span class="btc-info">
+
                     SIGNAL
+
                 </span>
 
                 <span class="{signal_class}">
+
                     {signal_status}
+
                 </span>
 
             </div>
@@ -3105,82 +3497,32 @@ def market_summary_html():
         </div>
 
 
-        <div class="btc-12h-row">
+        <div class="btc-current-box">
 
-            <div class="btc-12h-item {btc_09_class}">
+            <div class="btc-current-title">
 
-                <div class="btc-12h-label">
-
-                    09:00 ~ 21:00
-
-                </div>
-
-                <div class="btc-12h-value">
-                    {change_09}
-                </div>
-
-                <div class="btc-period-state">
-
-                    {
-                        "현재 시간대"
-                        if period["key"] == "09_21"
-                        else
-                        "이전 시간대"
-                    }
-
-                </div>
+                현재 4H
 
             </div>
 
+            <div class="btc-current-period">
 
-            <div class="btc-12h-divider"></div>
-
-
-            <div class="btc-12h-item {btc_21_class}">
-
-                <div class="btc-12h-label">
-
-                    21:00 ~ 09:00
-
-                </div>
-
-                <div class="btc-12h-value">
-                    {change_21}
-                </div>
-
-                <div class="btc-period-state">
-
-                    {
-                        "현재 시간대"
-                        if period["key"] == "21_09"
-                        else
-                        "이전 시간대"
-                    }
-
-                </div>
+                {period["label"]}
 
             </div>
 
+            <div class="btc-current-value">
 
-            <div class="btc-current-filter">
-
-                <div class="btc-filter-label">
-
-                    ▶ 현재 필터
-
-                </div>
-
-                <div class="btc-filter-period">
-
-                    {period["label"]}
-
-                </div>
-
-                <div class="btc-filter-value">
-                    {current}
-                </div>
+                {current}
 
             </div>
+
+        </div>
+
+
+        <div class="btc-4h-grid">
+
+            {btc_4h_cells_html()}
 
         </div>
 
@@ -3217,8 +3559,8 @@ font-family:
     "Segoe UI",
     Arial,
     sans-serif;
-font-size:9px;
-padding:12px;
+font-size:10px;
+padding:10px;
 }
 
 h1{
@@ -3231,20 +3573,20 @@ font-weight:900;
 
 
 /* =========================================================
-   공통 Section
+   공통
    ========================================================= */
 
 .unified-section{
 width:100%;
-margin:10px 0 12px;
+margin:10px 0 14px;
 }
 
 .section-title-card{
 display:flex;
 align-items:center;
 width:100%;
-min-height:48px;
-padding:7px 10px;
+min-height:50px;
+padding:8px 10px;
 background:#10151b;
 border:2px solid #252e38;
 border-radius:12px;
@@ -3256,8 +3598,8 @@ flex:none;
 display:flex;
 align-items:center;
 justify-content:center;
-width:34px;
-height:34px;
+width:35px;
+height:35px;
 margin-right:9px;
 border-radius:8px;
 background:#18251f;
@@ -3271,7 +3613,6 @@ font-weight:900;
 background:#1d1a13;
 border-color:#665331;
 color:#e0bd6d;
-font-size:14px;
 }
 
 .section-heading{
@@ -3299,28 +3640,14 @@ overflow:hidden;
 text-overflow:ellipsis;
 }
 
-.section-time{
-flex:none;
-margin-left:8px;
-color:#68737e;
-font-size:6.5px;
-font-weight:800;
-white-space:nowrap;
-}
-
-
-/* =========================================================
-   현재 시간대 배지
-   ========================================================= */
-
 .current-time-badge{
 flex:none;
 display:flex;
 align-items:center;
 justify-content:center;
-min-height:27px;
+min-height:28px;
 margin-left:8px;
-padding:4px 8px;
+padding:5px 8px;
 border-radius:7px;
 background:#173326;
 border:1px solid #4f9b73;
@@ -3328,40 +3655,6 @@ color:#8fe0b2;
 font-size:7px;
 font-weight:900;
 white-space:nowrap;
-box-shadow:
-    0 0 8px rgba(94,190,135,0.12);
-}
-
-.current-badge-09{
-background:#173326;
-border-color:#4f9b73;
-color:#8fe0b2;
-}
-
-.current-badge-21{
-background:#173326;
-border-color:#4f9b73;
-color:#8fe0b2;
-}
-
-
-/* =========================================================
-   현재 / 이전 시간대
-   ========================================================= */
-
-.current-period{
-background:#172d22!important;
-color:#eafff1!important;
-border-color:#4f9b73!important;
-box-shadow:
-    inset 0 0 0 1px rgba(116,213,157,0.10),
-    0 0 7px rgba(94,190,135,0.10);
-}
-
-.inactive-period{
-background:#0c1116!important;
-color:#65717b!important;
-opacity:0.72;
 }
 
 
@@ -3371,7 +3664,7 @@ opacity:0.72;
 
 .market-card{
 width:100%;
-margin:3px 0 12px;
+margin:3px 0 14px;
 background:#0f141a;
 border:2px solid #252e38;
 border-radius:13px;
@@ -3390,7 +3683,6 @@ border-bottom:1px solid #29323c;
 .market-title-block{
 min-width:0;
 flex:1;
-overflow:hidden;
 }
 
 .market-title-main{
@@ -3398,14 +3690,12 @@ color:#eef2f5;
 font-size:11px;
 line-height:14px;
 font-weight:900;
-white-space:nowrap;
 }
 
 .market-title-sub{
 margin-top:2px;
 color:#7e8994;
 font-size:6.5px;
-line-height:9px;
 font-weight:700;
 white-space:nowrap;
 overflow:hidden;
@@ -3418,16 +3708,15 @@ margin-left:8px;
 color:#68737e;
 font-size:6.5px;
 font-weight:800;
-white-space:nowrap;
 }
 
 .btc-main-row{
 display:grid;
 grid-template-columns:
-    1.1fr
+    1fr
     1.3fr
     1fr
-    1.4fr;
+    1.2fr;
 align-items:center;
 min-height:58px;
 background:#11161c;
@@ -3438,7 +3727,6 @@ padding-left:13px;
 color:#edf1f4;
 font-size:11px;
 font-weight:900;
-white-space:nowrap;
 }
 
 .btc-price{
@@ -3446,14 +3734,12 @@ color:#f1f4f6;
 font-size:11px;
 font-weight:900;
 text-align:center;
-white-space:nowrap;
 }
 
 .btc-change{
 font-size:11px;
 font-weight:900;
 text-align:center;
-white-space:nowrap;
 }
 
 .btc-signal-box{
@@ -3485,220 +3771,295 @@ font-weight:900;
 
 
 /* =========================================================
-   BTC 12H
+   BTC 현재 4H
    ========================================================= */
 
-.btc-12h-row{
-display:grid;
-grid-template-columns:
-    1fr
-    1px
-    1fr
-    1.25fr;
+.btc-current-box{
+display:flex;
 align-items:center;
-min-height:66px;
-background:#0e141a;
+justify-content:center;
+gap:12px;
+min-height:48px;
+background:#101820;
 border-top:1px solid #29323c;
 }
 
-.btc-12h-item{
+.btc-current-title{
+color:#7d8993;
+font-size:7px;
+font-weight:900;
+}
+
+.btc-current-period{
+color:#b9f0cf;
+font-size:8px;
+font-weight:900;
+}
+
+.btc-current-value{
+font-size:11px;
+font-weight:900;
+}
+
+
+/* =========================================================
+   BTC 4H 전체
+   ========================================================= */
+
+.btc-4h-grid{
+display:grid;
+grid-template-columns:
+    repeat(6, 1fr);
+gap:1px;
+background:#29323c;
+border-top:1px solid #29323c;
+}
+
+.btc-period-card{
 display:flex;
 flex-direction:column;
 align-items:center;
 justify-content:center;
-gap:3px;
-height:66px;
+min-height:62px;
+background:#0d1319;
+gap:5px;
 }
 
-.btc-12h-label{
-color:#7d8893;
+.btc-period-label{
+color:#6f7b85;
 font-size:7px;
 font-weight:800;
-white-space:nowrap;
 }
 
-.btc-12h-value{
+.btc-period-label span{
+display:block;
+margin-top:2px;
+color:#8fe0b2;
+font-size:5px;
+}
+
+.btc-period-value{
+font-size:9px;
+font-weight:900;
+}
+
+.btc-current-4h{
+background:#173326;
+box-shadow:
+    inset 0 0 0 1px rgba(116,213,157,0.18),
+    inset 0 0 15px rgba(78,164,111,0.08);
+}
+
+.btc-current-4h .btc-period-label{
+color:#91dcb0;
+}
+
+
+/* =========================================================
+   TOP UPDATE
+   ========================================================= */
+
+.top-update-bar{
+display:flex;
+justify-content:space-between;
+align-items:center;
+padding:6px 4px;
+color:#65717b;
+font-size:6.5px;
+font-weight:800;
+}
+
+
+/* =========================================================
+   TOP CARD
+   ========================================================= */
+
+.top-card-list{
+display:flex;
+flex-direction:column;
+gap:8px;
+}
+
+.top-card{
+width:100%;
+background:#10161c;
+border:1px solid #29333d;
+border-radius:11px;
+overflow:hidden;
+}
+
+.top-card-header{
+display:flex;
+align-items:center;
+min-height:39px;
+padding:6px 9px;
+background:#141b22;
+border-bottom:1px solid #29333d;
+}
+
+.top-rank{
+width:32px;
+color:#e0bd6d;
+font-size:9px;
+font-weight:900;
+}
+
+.top-coin{
+flex:1;
+color:#eef2f5;
 font-size:10px;
 font-weight:900;
-white-space:nowrap;
 }
 
-.btc-period-state{
-font-size:5.5px;
+.top-signal-mark{
+padding:4px 7px;
+border-radius:6px;
+background:#183528;
+border:1px solid #4f9b73;
+color:#8fe0b2;
+font-size:6px;
 font-weight:900;
-color:#68747e;
-white-space:nowrap;
 }
 
-.btc-current-period{
+
+/* =========================================================
+   TOP 기본 정보
+   ========================================================= */
+
+.top-main-info{
+display:grid;
+grid-template-columns:
+    1.2fr
+    1fr
+    1fr;
+min-height:58px;
+background:#11171d;
+}
+
+.top-price-block,
+.top-volume-block,
+.top-daily-block{
+display:flex;
+flex-direction:column;
+align-items:center;
+justify-content:center;
+gap:4px;
+}
+
+.top-volume-block,
+.top-daily-block{
+border-left:1px solid #29333d;
+}
+
+.top-label{
+color:#68747e;
+font-size:6px;
+font-weight:800;
+}
+
+.top-price{
+color:#f1f4f6;
+font-size:10px;
+font-weight:900;
+}
+
+.top-volume{
+color:#cfd6dc;
+font-size:9px;
+font-weight:900;
+}
+
+.top-daily{
+font-size:9px;
+font-weight:900;
+}
+
+
+/* =========================================================
+   TOP 현재 4H
+   ========================================================= */
+
+.top-current-row{
+display:grid;
+grid-template-columns:
+    1fr
+    1.4fr
+    1fr;
+align-items:center;
+min-height:38px;
+background:#101820;
+border-top:1px solid #29333d;
+border-bottom:1px solid #29333d;
+text-align:center;
+}
+
+.top-current-title{
+color:#7d8993;
+font-size:7px;
+font-weight:900;
+}
+
+.top-current-period{
+color:#8fe0b2;
+font-size:7px;
+font-weight:900;
+}
+
+.top-current-value{
+font-size:9px;
+font-weight:900;
+}
+
+
+/* =========================================================
+   4H 전체 그리드
+   ========================================================= */
+
+.four-hour-grid{
+display:grid;
+grid-template-columns:
+    repeat(6, 1fr);
+gap:1px;
+background:#29333d;
+}
+
+.four-hour-cell{
+min-height:57px;
+display:flex;
+flex-direction:column;
+align-items:center;
+justify-content:center;
+gap:4px;
+background:#0d1319;
+}
+
+.four-hour-label{
+color:#66727c;
+font-size:6.5px;
+font-weight:800;
+}
+
+.four-hour-now{
+display:block;
+margin-top:2px;
+color:#8fe0b2;
+font-size:4.8px;
+}
+
+.four-hour-value{
+font-size:7.5px;
+font-weight:900;
+}
+
+.current-4h{
 background:#173326!important;
 box-shadow:
     inset 0 0 0 1px rgba(116,213,157,0.18),
     inset 0 0 15px rgba(78,164,111,0.08);
 }
 
-.btc-current-period .btc-12h-label{
+.current-4h .four-hour-label{
 color:#91dcb0;
-}
-
-.btc-current-period .btc-period-state{
-color:#8fe0b2;
-}
-
-.btc-inactive-period{
-background:#0b1015!important;
-opacity:0.55;
-}
-
-.btc-current-period .btc-12h-value{
-font-size:11px;
-}
-
-.btc-12h-divider{
-height:36px;
-background:#29323c;
-}
-
-.btc-current-filter{
-display:flex;
-flex-direction:column;
-align-items:center;
-justify-content:center;
-gap:2px;
-height:66px;
-border-left:1px solid #29323c;
-background:#111820;
-}
-
-.btc-filter-label{
-color:#7fa18e;
-font-size:6px;
-font-weight:900;
-}
-
-.btc-filter-period{
-color:#b9f0cf;
-font-size:7px;
-font-weight:900;
-white-space:nowrap;
-}
-
-.btc-filter-value{
-font-size:10px;
-font-weight:900;
-white-space:nowrap;
-}
-
-
-/* =========================================================
-   TOP
-   ========================================================= */
-
-.top-header{
-display:grid;
-
-grid-template-columns:
-    7%
-    15%
-    16%
-    16%
-    15%
-    16%
-    15%;
-
-align-items:center;
-
-min-height:30px;
-
-background:#10151b;
-
-border:1px solid #252e38;
-
-border-radius:8px 8px 0 0;
-
-color:#68737e;
-
-font-size:7px;
-
-font-weight:800;
-
-text-align:center;
-
-margin-top:8px;
-}
-
-.card-list{
-width:100%;
-display:flex;
-flex-direction:column;
-gap:6px;
-}
-
-.coin-card{
-width:100%;
-background:#0f141a;
-border:1px solid #252e38;
-border-radius:8px;
-overflow:hidden;
-}
-
-.coin-main-row{
-display:grid;
-
-grid-template-columns:
-    7%
-    15%
-    16%
-    16%
-    15%
-    16%
-    15%;
-
-align-items:center;
-
-min-height:52px;
-
-background:#11161c;
-}
-
-.coin-main-row > div{
-min-width:0;
-height:52px;
-display:flex;
-align-items:center;
-justify-content:center;
-overflow:hidden;
-}
-
-.rank-cell{
-justify-content:flex-start!important;
-padding-left:9px;
-color:#e2e7eb;
-font-size:9px;
-font-weight:900;
-}
-
-.coin-name{
-width:100%;
-padding:0 2px;
-color:#eef2f5;
-font-size:9px;
-font-weight:900;
-white-space:nowrap;
-overflow:hidden;
-text-overflow:ellipsis;
-text-align:center;
-}
-
-.volume-cell,
-.price-cell,
-.daily-cell,
-.h09-cell,
-.h21-cell{
-font-size:8px;
-font-weight:900;
-text-align:center;
-white-space:nowrap;
 }
 
 
@@ -3706,101 +4067,227 @@ white-space:nowrap;
    SIGNAL
    ========================================================= */
 
-.signal-header,
-.signal-row{
+.signal-btc-bar{
 display:grid;
-
 grid-template-columns:
-    8%
-    8%
-    14%
-    14%
-    14%
-    12%
-    15%
-    15%;
-
+    1fr
+    1.3fr
+    1fr;
 align-items:center;
-}
-
-.signal-header{
+min-height:42px;
 margin-top:8px;
-min-height:30px;
-background:#10151b;
-border:1px solid #252e38;
-border-radius:8px 8px 0 0;
-color:#68737e;
-font-size:6.5px;
-font-weight:800;
-text-align:center;
+background:#111820;
+border:1px solid #29343d;
+border-radius:8px;
 }
 
-.signal-row{
-min-height:48px;
-background:#10171d;
-border-left:1px solid #26333c;
-border-right:1px solid #26333c;
-border-bottom:1px solid #26333c;
+.signal-btc-title{
+text-align:center;
+color:#78858f;
 font-size:7px;
-font-weight:800;
-text-align:center;
+font-weight:900;
 }
 
-.signal-row:last-child{
-border-radius:0 0 8px 8px;
+.signal-btc-period{
+text-align:center;
+color:#b9f0cf;
+font-size:7px;
+font-weight:900;
+}
+
+.signal-btc-value{
+text-align:center;
+font-size:9px;
+font-weight:900;
+}
+
+.signal-card-list{
+display:flex;
+flex-direction:column;
+gap:8px;
+margin-top:8px;
+}
+
+.signal-card{
+width:100%;
+background:#10171d;
+border:1px solid #31513f;
+border-radius:11px;
+overflow:hidden;
+}
+
+.signal-card-top{
+display:flex;
+align-items:center;
+min-height:40px;
+padding:6px 9px;
+background:#14231c;
+border-bottom:1px solid #31513f;
 }
 
 .signal-rank{
+width:32px;
 color:#e0bd6d;
 font-size:9px;
 font-weight:900;
 }
 
-.signal-top{
-color:#78838d;
-font-size:7px;
-}
-
 .signal-coin{
+flex:1;
 color:#eef2f5;
-font-size:8px;
+font-size:10px;
 font-weight:900;
-white-space:nowrap;
-overflow:hidden;
-text-overflow:ellipsis;
 }
 
-.signal-volume,
-.signal-price,
-.signal-daily,
-.signal-09,
-.signal-21{
-white-space:nowrap;
+.signal-top-rank{
+margin-right:7px;
+color:#78858f;
+font-size:6px;
+font-weight:800;
 }
 
-.signal-list{
-width:100%;
+.signal-badge{
+padding:4px 6px;
+border-radius:5px;
+background:#183528;
+border:1px solid #4f9b73;
+color:#8fe0b2;
+font-size:5.5px;
+font-weight:900;
 }
 
-.signal-empty{
+.signal-card-main{
+display:grid;
+grid-template-columns:
+    1.3fr
+    1fr
+    1fr;
 min-height:58px;
+background:#11181e;
+}
+
+.signal-price-block,
+.signal-volume-block,
+.signal-daily-block{
 display:flex;
+flex-direction:column;
 align-items:center;
 justify-content:center;
-text-align:center;
-background:#10151b;
-border:2px solid #252e38;
-border-radius:10px;
-color:#59636e;
-font-size:8px;
-line-height:13px;
-font-weight:800;
-margin-top:8px;
+gap:4px;
 }
 
-.signal-empty strong{
-color:#9be1b8;
+.signal-volume-block,
+.signal-daily-block{
+border-left:1px solid #29343d;
+}
+
+.signal-price-label{
+color:#69757f;
+font-size:6px;
+font-weight:800;
+}
+
+.signal-price{
+color:#f1f4f6;
+font-size:10px;
 font-weight:900;
+}
+
+.signal-volume{
+color:#cfd6dc;
+font-size:9px;
+font-weight:900;
+}
+
+.signal-daily{
+font-size:9px;
+font-weight:900;
+}
+
+.signal-condition-row{
+display:grid;
+grid-template-columns:
+    1fr
+    1fr;
+min-height:48px;
+background:#0f171d;
+border-top:1px solid #29343d;
+}
+
+.signal-condition{
+display:flex;
+flex-direction:column;
+align-items:center;
+justify-content:center;
+gap:3px;
+}
+
+.signal-condition + .signal-condition{
+border-left:1px solid #29343d;
+}
+
+.condition-label{
+color:#75818b;
+font-size:6px;
+font-weight:800;
+}
+
+.condition-label span{
+color:#8fe0b2;
+margin-left:3px;
+}
+
+.condition-value{
+font-size:9px;
+font-weight:900;
+}
+
+
+/* =========================================================
+   SIGNAL EMPTY
+   ========================================================= */
+
+.signal-empty-card{
+display:flex;
+flex-direction:column;
+align-items:center;
+justify-content:center;
+min-height:120px;
+margin-top:8px;
+background:#10161c;
+border:1px solid #29333d;
+border-radius:11px;
+text-align:center;
+padding:15px;
+}
+
+.signal-empty-icon{
+font-size:20px;
+margin-bottom:5px;
+}
+
+.signal-empty-title{
+color:#e1e7eb;
+font-size:10px;
+font-weight:900;
+}
+
+.signal-empty-text{
+margin-top:7px;
+color:#77838d;
+font-size:7px;
+font-weight:800;
+}
+
+.signal-empty-text strong{
+color:#9be1b8;
+}
+
+.signal-empty-sub{
+margin-top:6px;
+color:#59646e;
+font-size:6px;
+font-weight:700;
 }
 
 
@@ -3820,16 +4307,17 @@ font-weight:900;
 
 .zero{
 color:#727c86!important;
+font-weight:900;
 }
 
 .empty-card{
-min-height:56px;
+min-height:70px;
 display:flex;
 align-items:center;
 justify-content:center;
 background:#10151b;
-border:2px solid #252e38;
-border-radius:12px;
+border:1px solid #252e38;
+border-radius:11px;
 color:#59636e;
 font-size:8px;
 font-weight:800;
@@ -3882,10 +4370,6 @@ h1{
 .section-heading-sub{
     font-size:5px;
     line-height:7px;
-}
-
-.section-time{
-    font-size:5px;
 }
 
 .current-time-badge{
@@ -3951,139 +4435,211 @@ h1{
     font-size:7px;
 }
 
-.btc-12h-row{
-    min-height:50px;
+.btc-current-box{
+    min-height:38px;
+    gap:7px;
 }
 
-.btc-12h-item{
-    height:50px;
-    gap:2px;
-}
-
-.btc-12h-label{
+.btc-current-title{
     font-size:5px;
 }
 
-.btc-12h-value{
+.btc-current-period{
+    font-size:5.5px;
+}
+
+.btc-current-value{
     font-size:7px;
 }
 
-.btc-period-state{
-    font-size:4px;
+.btc-4h-grid{
+    grid-template-columns:
+        repeat(3, 1fr);
 }
 
-.btc-current-period .btc-12h-value{
-    font-size:8px;
+.btc-period-card{
+    min-height:43px;
 }
 
-.btc-current-filter{
-    height:50px;
-}
-
-.btc-filter-label{
-    font-size:4.5px;
-}
-
-.btc-filter-period{
+.btc-period-label{
     font-size:5px;
 }
 
-.btc-filter-value{
-    font-size:7px;
+.btc-period-label span{
+    font-size:3.8px;
+}
+
+.btc-period-value{
+    font-size:6px;
 }
 
 
 /* TOP */
 
-.top-header{
-    min-height:24px;
-    font-size:4.5px;
-}
-
-.coin-main-row{
-    min-height:40px;
-
-    grid-template-columns:
-        7%
-        15%
-        16%
-        16%
-        15%
-        16%
-        15%;
-}
-
-.coin-main-row > div{
-    height:40px;
-}
-
-.rank-cell{
-    padding-left:4px;
-    font-size:6px;
-}
-
-.coin-name{
-    font-size:6px;
-}
-
-.volume-cell,
-.price-cell,
-.daily-cell,
-.h09-cell,
-.h21-cell{
-    font-size:5.2px;
-}
-
-
-/* Signal */
-
-.signal-header,
-.signal-row{
-    grid-template-columns:
-        8%
-        8%
-        14%
-        14%
-        14%
-        12%
-        15%
-        15%;
-}
-
-.signal-header{
-    min-height:23px;
-    font-size:4.2px;
-}
-
-.signal-row{
-    min-height:38px;
+.top-update-bar{
     font-size:5px;
 }
 
-.signal-rank{
-    font-size:6px;
+.top-card{
+    border-radius:9px;
 }
 
-.signal-top{
+.top-card-header{
+    min-height:35px;
+    padding:5px 7px;
+}
+
+.top-rank{
+    width:25px;
+    font-size:7px;
+}
+
+.top-coin{
+    font-size:8px;
+}
+
+.top-signal-mark{
+    font-size:4.5px;
+    padding:3px 5px;
+}
+
+.top-main-info{
+    min-height:48px;
+}
+
+.top-price,
+.top-volume,
+.top-daily{
+    font-size:7px;
+}
+
+.top-label{
     font-size:4.5px;
 }
 
+.top-current-row{
+    min-height:32px;
+}
+
+.top-current-title,
+.top-current-period{
+    font-size:5px;
+}
+
+.top-current-value{
+    font-size:7px;
+}
+
+.four-hour-grid{
+    grid-template-columns:
+        repeat(3, 1fr);
+}
+
+.four-hour-cell{
+    min-height:40px;
+}
+
+.four-hour-label{
+    font-size:4.5px;
+}
+
+.four-hour-now{
+    font-size:3.5px;
+}
+
+.four-hour-value{
+    font-size:5.5px;
+}
+
+
+/* SIGNAL */
+
+.signal-btc-bar{
+    min-height:34px;
+}
+
+.signal-btc-title,
+.signal-btc-period{
+    font-size:5px;
+}
+
+.signal-btc-value{
+    font-size:7px;
+}
+
+.signal-card-top{
+    min-height:35px;
+    padding:5px 7px;
+}
+
+.signal-rank{
+    width:25px;
+    font-size:7px;
+}
+
 .signal-coin{
-    font-size:5.5px;
+    font-size:8px;
 }
 
-.signal-volume,
+.signal-top-rank{
+    font-size:4.5px;
+}
+
+.signal-badge{
+    font-size:4px;
+}
+
+.signal-card-main{
+    min-height:48px;
+}
+
 .signal-price,
-.signal-daily,
-.signal-09,
-.signal-21{
-    font-size:4.8px;
+.signal-volume,
+.signal-daily{
+    font-size:7px;
 }
 
-.signal-empty{
-    min-height:44px;
+.signal-price-label{
+    font-size:4.5px;
+}
+
+.signal-condition-row{
+    min-height:40px;
+}
+
+.condition-label{
+    font-size:4.5px;
+}
+
+.condition-label span{
+    display:block;
+    margin-top:2px;
+    margin-left:0;
+    font-size:4px;
+}
+
+.condition-value{
+    font-size:7px;
+}
+
+.signal-empty-card{
+    min-height:90px;
+}
+
+.signal-empty-icon{
+    font-size:16px;
+}
+
+.signal-empty-title{
+    font-size:8px;
+}
+
+.signal-empty-text{
     font-size:5.5px;
-    line-height:9px;
+}
+
+.signal-empty-sub{
+    font-size:4.5px;
 }
 
 }
@@ -4113,10 +4669,6 @@ h1{
 }
 
 .section-heading-sub{
-    font-size:4px;
-}
-
-.section-time{
     font-size:4px;
 }
 
@@ -4170,110 +4722,127 @@ h1{
     font-size:6px;
 }
 
-.btc-12h-row{
-    min-height:43px;
+.btc-current-box{
+    min-height:34px;
 }
 
-.btc-12h-item{
-    height:43px;
+.btc-current-title{
+    font-size:4.5px;
 }
 
-.btc-12h-label{
+.btc-current-period{
+    font-size:4.5px;
+}
+
+.btc-current-value{
+    font-size:6px;
+}
+
+.btc-period-card{
+    min-height:38px;
+}
+
+.btc-period-label{
     font-size:4px;
 }
 
-.btc-12h-value{
-    font-size:5.5px;
-}
-
-.btc-period-state{
-    font-size:3.5px;
-}
-
-.btc-current-filter{
-    height:43px;
-}
-
-.btc-filter-label{
-    font-size:3.7px;
-}
-
-.btc-filter-period{
-    font-size:4px;
-}
-
-.btc-filter-value{
+.btc-period-value{
     font-size:5px;
 }
 
 
 /* TOP */
 
-.top-header{
-    min-height:21px;
-    font-size:3.7px;
+.top-card-header{
+    min-height:32px;
 }
 
-.coin-main-row{
-    min-height:35px;
+.top-rank{
+    font-size:6px;
 }
 
-.coin-main-row > div{
-    height:35px;
+.top-coin{
+    font-size:7px;
 }
 
-.rank-cell{
-    font-size:5.5px;
-    padding-left:2px;
+.top-main-info{
+    min-height:43px;
 }
 
-.coin-name{
-    font-size:5.5px;
+.top-price,
+.top-volume,
+.top-daily{
+    font-size:6px;
 }
 
-.volume-cell,
-.price-cell,
-.daily-cell,
-.h09-cell,
-.h21-cell{
-    font-size:4.4px;
+.top-label{
+    font-size:4px;
+}
+
+.top-current-row{
+    min-height:29px;
+}
+
+.top-current-title,
+.top-current-period{
+    font-size:4px;
+}
+
+.top-current-value{
+    font-size:6px;
+}
+
+.four-hour-cell{
+    min-height:37px;
+}
+
+.four-hour-label{
+    font-size:4px;
+}
+
+.four-hour-value{
+    font-size:5px;
 }
 
 
-/* Signal */
+/* SIGNAL */
 
-.signal-header{
-    min-height:20px;
-    font-size:3.7px;
-}
-
-.signal-row{
+.signal-card-top{
     min-height:32px;
 }
 
 .signal-rank{
-    font-size:5px;
-}
-
-.signal-top{
-    font-size:4px;
+    font-size:6px;
 }
 
 .signal-coin{
-    font-size:4.8px;
+    font-size:7px;
 }
 
-.signal-volume,
+.signal-card-main{
+    min-height:43px;
+}
+
 .signal-price,
-.signal-daily,
-.signal-09,
-.signal-21{
-    font-size:4.1px;
+.signal-volume,
+.signal-daily{
+    font-size:6px;
 }
 
-.signal-empty{
+.signal-price-label{
+    font-size:4px;
+}
+
+.signal-condition-row{
     min-height:37px;
-    font-size:4.7px;
+}
+
+.condition-label{
+    font-size:4px;
+}
+
+.condition-value{
+    font-size:6px;
 }
 
 }
@@ -4295,11 +4864,15 @@ def dashboard():
 
     if USE_UPBIT == "Y":
 
+        # Signal
+
         sections += (
             focus_section(
                 latest_upbit_data
             )
         )
+
+        # TOP20
 
         sections += (
             section(
@@ -4447,47 +5020,67 @@ def startup():
     )
 
     log.info(
-        "★ 12H = 1시간봉 12개를 직접 합성"
+        "★ 4H = 업비트 기준"
     )
 
     log.info(
-        "★ 12H = KST 09:00~21:00"
+        "★ 4H = 01~05"
     )
 
     log.info(
-        "★ 12H = KST 21:00~09:00"
+        "★ 4H = 05~09"
     )
 
     log.info(
-        "★ TOP = 당일 + 09~21 + 21~09"
+        "★ 4H = 09~13"
     )
 
     log.info(
-        "★ Signal = 당일 + 09~21 + 21~09"
+        "★ 4H = 13~17"
     )
 
     log.info(
-        "★ Signal 조건 ① = BTC 현재 12H > 0"
+        "★ 4H = 17~21"
     )
 
     log.info(
-        "★ Signal 조건 ② = 코인 현재 12H > 0"
+        "★ 4H = 21~01"
     )
 
     log.info(
-        "★ Signal 조건 ③ = 코인 이전 12H > 0"
+        "★ TOP = 거래대금 순"
     )
 
     log.info(
-        "★ Signal = 현재 + 이전 12H 모두 양수"
+        "★ TOP = 4H 전체 구간 표시"
     )
 
     log.info(
-        "★ Signal 정렬 = 현재 12H 상승률 높은 순"
+        "★ Signal = 카드형 전체 표시"
     )
 
     log.info(
-        "★ 현재 시간대 = 화면에서 녹색 강조"
+        "★ TOP = 카드형 전체 표시"
+    )
+
+    log.info(
+        "★ Signal 조건 ① = BTC 현재 4H > 0"
+    )
+
+    log.info(
+        "★ Signal 조건 ② = 코인 현재 4H > 0"
+    )
+
+    log.info(
+        "★ Signal 조건 ③ = 코인 이전 4H > 0"
+    )
+
+    log.info(
+        "★ Signal 정렬 = 현재 4H 상승률 높은 순"
+    )
+
+    log.info(
+        "★ 현재 4H = 화면에서 녹색 강조"
     )
 
     log.info(
