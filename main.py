@@ -82,9 +82,6 @@ last_request_time = 0
 
 # =========================================================
 # BTC
-#
-# ※ BTC는 SIGNAL 필터에 사용하지 않음
-# ※ 시장 시황 표시용으로만 사용
 # =========================================================
 
 OKX_BASE_URL = "https://www.okx.com"
@@ -232,13 +229,14 @@ def make_4h_period(
         timedelta(hours=4)
     )
 
-    if start.date() == datetime.now(KST).date():
+    today = datetime.now(KST).date()
+
+    if start.date() == today:
 
         day_label = "오늘"
 
     elif start.date() == (
-        datetime.now(KST).date()
-        -
+        today -
         timedelta(days=1)
     ):
 
@@ -294,6 +292,17 @@ def make_4h_period(
 
 # =========================================================
 # 최근 6개 4H
+#
+# 현재 포함 6개
+#
+# [5개 전]
+# [전전전전]
+# [전전전]
+# [전전]
+# [전]
+# [현재]
+#
+# SIGNAL은 현재를 사용하지 않음
 # =========================================================
 
 def get_recent_4h_periods(
@@ -336,9 +345,7 @@ def get_recent_4h_periods(
 
 def get_current_4h_period():
 
-    periods = get_recent_4h_periods(
-        1
-    )
+    periods = get_recent_4h_periods(1)
 
     if not periods:
 
@@ -359,14 +366,14 @@ def get_previous_4h_period():
 
         return None
 
-    previous_start = (
+    start = (
         current["start"]
         -
         timedelta(hours=4)
     )
 
     return make_4h_period(
-        previous_start,
+        start,
         active=False
     )
 
@@ -383,20 +390,20 @@ def get_pre_previous_4h_period():
 
         return None
 
-    pre_previous_start = (
+    start = (
         current["start"]
         -
         timedelta(hours=8)
     )
 
     return make_4h_period(
-        pre_previous_start,
+        start,
         active=False
     )
 
 
 # =========================================================
-# ★ 전전전 4H
+# 전전전 4H
 # =========================================================
 
 def get_pre_pre_previous_4h_period():
@@ -407,14 +414,38 @@ def get_pre_pre_previous_4h_period():
 
         return None
 
-    pre_pre_previous_start = (
+    start = (
         current["start"]
         -
         timedelta(hours=12)
     )
 
     return make_4h_period(
-        pre_pre_previous_start,
+        start,
+        active=False
+    )
+
+
+# =========================================================
+# 전전전전 4H
+# =========================================================
+
+def get_pre_pre_pre_previous_4h_period():
+
+    current = get_current_4h_period()
+
+    if current is None:
+
+        return None
+
+    start = (
+        current["start"]
+        -
+        timedelta(hours=16)
+    )
+
+    return make_4h_period(
+        start,
         active=False
     )
 
@@ -438,7 +469,8 @@ def wait_request():
         if elapsed < REQUEST_INTERVAL:
 
             time.sleep(
-                REQUEST_INTERVAL - elapsed
+                REQUEST_INTERVAL -
+                elapsed
             )
 
         last_request_time = (
@@ -493,8 +525,7 @@ def retry(
 
                 time.sleep(
                     min(
-                        RATE_LIMIT_WAIT
-                        *
+                        RATE_LIMIT_WAIT *
                         (attempt + 1),
                         60
                     )
@@ -506,8 +537,7 @@ def retry(
 
                 time.sleep(
                     min(
-                        2
-                        *
+                        2 *
                         (attempt + 1),
                         30
                     )
@@ -520,8 +550,7 @@ def retry(
         except Exception as e:
 
             log.warning(
-                f"API 오류 "
-                f"{url} "
+                f"API 오류 {url} "
                 f"{attempt + 1}/{MAX_RETRIES}: "
                 f"{e}"
             )
@@ -530,8 +559,7 @@ def retry(
 
                 time.sleep(
                     min(
-                        2
-                        *
+                        2 *
                         (attempt + 1),
                         20
                     )
@@ -670,7 +698,6 @@ def get_upbit_markets():
 
     ]
 
-
     return result
 
 
@@ -745,8 +772,7 @@ def daily_change_upbit(
 
     return (
         (
-            current_price
-            -
+            current_price -
             previous_close
         )
         /
@@ -811,21 +837,10 @@ def candle_parts(candle):
 
     try:
 
-        o = float(
-            candle["open"]
-        )
-
-        h = float(
-            candle["high"]
-        )
-
-        l = float(
-            candle["low"]
-        )
-
-        c = float(
-            candle["close"]
-        )
+        o = float(candle["open"])
+        h = float(candle["high"])
+        l = float(candle["low"])
+        c = float(candle["close"])
 
     except Exception:
 
@@ -839,61 +854,37 @@ def candle_parts(candle):
         return None
 
 
-    body = abs(
-        c - o
-    )
+    body = abs(c - o)
 
     upper = (
-        h
-        -
+        h -
         max(o, c)
     )
 
     lower = (
-        min(o, c)
-        -
+        min(o, c) -
         l
     )
 
     body_ratio = (
-        body / total
+        body /
+        total
     )
 
 
     return {
 
-        "open":
-            o,
-
-        "high":
-            h,
-
-        "low":
-            l,
-
-        "close":
-            c,
-
-        "body":
-            body,
-
-        "total":
-            total,
-
-        "upper":
-            upper,
-
-        "lower":
-            lower,
-
-        "body_ratio":
-            body_ratio,
-
-        "bull":
-            c > o,
-
-        "bear":
-            c < o
+        "open": o,
+        "high": h,
+        "low": l,
+        "close": c,
+        "body": body,
+        "total": total,
+        "upper": upper,
+        "lower": lower,
+        "body_ratio": body_ratio,
+        "bull": c > o,
+        "bear": c < o
 
     }
 
@@ -906,10 +897,7 @@ def detect_single_candle_pattern(
     candle
 ):
 
-    p = candle_parts(
-        candle
-    )
-
+    p = candle_parts(candle)
 
     if p is None:
 
@@ -918,23 +906,16 @@ def detect_single_candle_pattern(
 
     patterns = []
 
-
     body = p["body"]
-
     total = p["total"]
-
     upper = p["upper"]
-
     lower = p["lower"]
-
     body_ratio = p["body_ratio"]
 
 
     if body_ratio <= 0.10:
 
-        patterns.append(
-            "도지"
-        )
+        patterns.append("도지")
 
 
     if (
@@ -957,9 +938,7 @@ def detect_single_candle_pattern(
 
     ):
 
-        patterns.append(
-            "망치형"
-        )
+        patterns.append("망치형")
 
 
     if (
@@ -982,9 +961,7 @@ def detect_single_candle_pattern(
 
     ):
 
-        patterns.append(
-            "역망치형"
-        )
+        patterns.append("역망치형")
 
 
     return patterns
@@ -999,14 +976,8 @@ def detect_two_candle_pattern(
     current
 ):
 
-    p1 = candle_parts(
-        previous
-    )
-
-    p2 = candle_parts(
-        current
-    )
-
+    p1 = candle_parts(previous)
+    p2 = candle_parts(current)
 
     if (
         p1 is None
@@ -1042,14 +1013,11 @@ def detect_two_candle_pattern(
 
     ):
 
-        patterns.append(
-            "상승장악"
-        )
+        patterns.append("상승장악")
 
 
     midpoint = (
-        p1["open"]
-        +
+        p1["open"] +
         p1["close"]
     ) / 2
 
@@ -1072,9 +1040,7 @@ def detect_two_candle_pattern(
 
     ):
 
-        patterns.append(
-            "관통형"
-        )
+        patterns.append("관통형")
 
 
     return patterns
@@ -1090,18 +1056,9 @@ def detect_three_candle_pattern(
     c3
 ):
 
-    p1 = candle_parts(
-        c1
-    )
-
-    p2 = candle_parts(
-        c2
-    )
-
-    p3 = candle_parts(
-        c3
-    )
-
+    p1 = candle_parts(c1)
+    p2 = candle_parts(c2)
+    p3 = candle_parts(c3)
 
     if (
         p1 is None
@@ -1139,19 +1096,15 @@ def detect_three_candle_pattern(
 
         and
 
-        p3["close"]
-        >
+        p3["close"] >
         (
-            p1["open"]
-            +
+            p1["open"] +
             p1["close"]
         ) / 2
 
     ):
 
-        patterns.append(
-            "모닝스타"
-        )
+        patterns.append("모닝스타")
 
 
     if (
@@ -1176,16 +1129,14 @@ def detect_three_candle_pattern(
 
     ):
 
-        patterns.append(
-            "3연속양봉"
-        )
+        patterns.append("3연속양봉")
 
 
     return patterns
 
 
 # =========================================================
-# 4H 전체 캔들 패턴 탐지
+# 4H 전체 캔들 패턴
 # =========================================================
 
 def detect_4h_patterns(
@@ -1200,134 +1151,86 @@ def detect_4h_patterns(
     result = []
 
 
-    for i, period in enumerate(
-        periods
-    ):
+    for i, period in enumerate(periods):
 
         patterns = []
 
 
-        if (
-
-            period.get("open") is None
-
-            or
-
-            period.get("high") is None
-
-            or
-
-            period.get("low") is None
-
-            or
-
-            period.get("close") is None
-
+        if any(
+            period.get(x) is None
+            for x in [
+                "open",
+                "high",
+                "low",
+                "close"
+            ]
         ):
 
-            result.append(
-                []
-            )
+            result.append([])
 
             continue
 
 
         patterns.extend(
-
             detect_single_candle_pattern(
                 period
             )
-
         )
 
 
         if i >= 1:
 
-            previous = periods[
-                i - 1
-            ]
-
+            previous = periods[i - 1]
 
             if all(
-
-                previous.get(
-                    x
-                ) is not None
-
+                previous.get(x) is not None
                 for x in [
                     "open",
                     "high",
                     "low",
                     "close"
                 ]
-
             ):
 
                 patterns.extend(
-
                     detect_two_candle_pattern(
                         previous,
                         period
                     )
-
                 )
 
 
         if i >= 2:
 
-            c1 = periods[
-                i - 2
-            ]
-
-            c2 = periods[
-                i - 1
-            ]
-
+            c1 = periods[i - 2]
+            c2 = periods[i - 1]
             c3 = period
 
-
             if all(
-
-                x.get(
-                    key
-                ) is not None
-
-                for x in [
-                    c1,
-                    c2,
-                    c3
-                ]
-
+                x.get(key) is not None
+                for x in [c1, c2, c3]
                 for key in [
                     "open",
                     "high",
                     "low",
                     "close"
                 ]
-
             ):
 
                 patterns.extend(
-
                     detect_three_candle_pattern(
                         c1,
                         c2,
                         c3
                     )
-
                 )
 
 
         patterns = list(
-            dict.fromkeys(
-                patterns
-            )
+            dict.fromkeys(patterns)
         )
 
-
-        result.append(
-            patterns
-        )
+        result.append(patterns)
 
 
     return result
@@ -1372,36 +1275,31 @@ def build_upbit_4h_candles(
 
             rows.append({
 
-                "datetime":
-                    dt,
+                "datetime": dt,
 
-                "open":
-                    float(
-                        candle[
-                            "opening_price"
-                        ]
-                    ),
+                "open": float(
+                    candle[
+                        "opening_price"
+                    ]
+                ),
 
-                "high":
-                    float(
-                        candle[
-                            "high_price"
-                        ]
-                    ),
+                "high": float(
+                    candle[
+                        "high_price"
+                    ]
+                ),
 
-                "low":
-                    float(
-                        candle[
-                            "low_price"
-                        ]
-                    ),
+                "low": float(
+                    candle[
+                        "low_price"
+                    ]
+                ),
 
-                "close":
-                    float(
-                        candle[
-                            "trade_price"
-                        ]
-                    )
+                "close": float(
+                    candle[
+                        "trade_price"
+                    ]
+                )
 
             })
 
@@ -1415,26 +1313,18 @@ def build_upbit_4h_candles(
         return []
 
 
-    df = pd.DataFrame(
-        rows
-    )
+    df = pd.DataFrame(rows)
 
 
     df = (
         df
-        .sort_values(
-            "datetime"
-        )
-        .drop_duplicates(
-            "datetime"
-        )
+        .sort_values("datetime")
+        .drop_duplicates("datetime")
     )
 
 
-    periods = get_recent_4h_periods(
-        6
-    )
-
+    # 현재 포함 6개
+    periods = get_recent_4h_periods(6)
 
     result = []
 
@@ -1444,14 +1334,12 @@ def build_upbit_4h_candles(
         part = df[
             (
                 df["datetime"]
-                >=
-                period["start"]
+                >= period["start"]
             )
             &
             (
                 df["datetime"]
-                <
-                period["end"]
+                < period["end"]
             )
         ].copy()
 
@@ -1462,23 +1350,12 @@ def build_upbit_4h_candles(
 
                 **period,
 
-                "open":
-                    None,
-
-                "high":
-                    None,
-
-                "low":
-                    None,
-
-                "close":
-                    None,
-
-                "change":
-                    None,
-
-                "patterns":
-                    []
+                "open": None,
+                "high": None,
+                "low": None,
+                "close": None,
+                "change": None,
+                "patterns": []
 
             })
 
@@ -1541,21 +1418,14 @@ def build_upbit_4h_candles(
         else:
 
             change = (
-
                 (
-                    close_price
-                    -
+                    close_price -
                     open_price
                 )
-
                 /
-
                 open_price
-
                 *
-
                 100
-
             )
 
 
@@ -1584,10 +1454,8 @@ def build_upbit_4h_candles(
         })
 
 
-    pattern_results = (
-        detect_4h_patterns(
-            result
-        )
+    pattern_results = detect_4h_patterns(
+        result
     )
 
 
@@ -1605,6 +1473,20 @@ def build_upbit_4h_candles(
 
 # =========================================================
 # 코인의 4H 분석
+#
+# ★ 현재 기준 과거 4개까지 반환
+#
+# previous:
+#   현재 바로 전
+#
+# pre_previous:
+#   현재 2개 전
+#
+# pre_pre_previous:
+#   현재 3개 전
+#
+# pre_pre_pre_previous:
+#   현재 4개 전
 # =========================================================
 
 def analyze_4h(
@@ -1634,23 +1516,27 @@ def analyze_4h(
         get_pre_pre_previous_4h_period()
     )
 
+    pre_pre_pre_previous_period = (
+        get_pre_pre_pre_previous_4h_period()
+    )
+
 
     current_change = None
-
     previous_change = None
-
     pre_previous_change = None
-
     pre_pre_previous_change = None
+    pre_pre_pre_previous_change = None
 
 
     for period in periods:
 
+        start = period["start"]
+
+
         if (
             current_period is not None
             and
-            period["start"]
-            ==
+            start ==
             current_period["start"]
         ):
 
@@ -1662,8 +1548,7 @@ def analyze_4h(
         if (
             previous_period is not None
             and
-            period["start"]
-            ==
+            start ==
             previous_period["start"]
         ):
 
@@ -1675,8 +1560,7 @@ def analyze_4h(
         if (
             pre_previous_period is not None
             and
-            period["start"]
-            ==
+            start ==
             pre_previous_period["start"]
         ):
 
@@ -1685,19 +1569,26 @@ def analyze_4h(
             )
 
 
-        # =================================================
-        # ★ 전전전 4H
-        # =================================================
-
         if (
             pre_pre_previous_period is not None
             and
-            period["start"]
-            ==
+            start ==
             pre_pre_previous_period["start"]
         ):
 
             pre_pre_previous_change = (
+                period["change"]
+            )
+
+
+        if (
+            pre_pre_pre_previous_period is not None
+            and
+            start ==
+            pre_pre_pre_previous_period["start"]
+        ):
+
+            pre_pre_pre_previous_change = (
                 period["change"]
             )
 
@@ -1716,9 +1607,11 @@ def analyze_4h(
         "pre_previous_4h_change":
             pre_previous_change,
 
-        # ★ 추가
         "pre_pre_previous_4h_change":
-            pre_pre_previous_change
+            pre_pre_previous_change,
+
+        "pre_pre_pre_previous_4h_change":
+            pre_pre_pre_previous_change
 
     }
 
@@ -1769,10 +1662,14 @@ def analyze(
                 "pre_previous_4h_change"
             ],
 
-        # ★ 추가
         "pre_pre_previous_4h_change":
             four_hour[
                 "pre_pre_previous_4h_change"
+            ],
+
+        "pre_pre_pre_previous_4h_change":
+            four_hour[
+                "pre_pre_pre_previous_4h_change"
             ]
 
     }
@@ -1803,9 +1700,7 @@ def get_change_value(x):
 
 def format_change(x):
 
-    x = get_change_value(
-        x
-    )
+    x = get_change_value(x)
 
 
     if x is None:
@@ -2012,11 +1907,17 @@ def make_row(
                 )
             ),
 
-        # ★ 추가
         "pre_pre_previous_4h_change":
             get_change_value(
                 analysis.get(
                     "pre_pre_previous_4h_change"
+                )
+            ),
+
+        "pre_pre_pre_previous_4h_change":
+            get_change_value(
+                analysis.get(
+                    "pre_pre_pre_previous_4h_change"
                 )
             )
 
@@ -2030,7 +1931,6 @@ def make_row(
 def update_upbit():
 
     global latest_upbit_data
-
     global latest_upbit_update_time
 
 
@@ -2058,9 +1958,7 @@ def update_upbit():
     }
 
 
-    top_markets = markets[
-        :TOP_N
-    ]
+    top_markets = markets[:TOP_N]
 
 
     rows = []
@@ -2071,22 +1969,16 @@ def update_upbit():
         1
     ):
 
-        market = item[
-            "market"
-        ]
+        market = item["market"]
 
         coin = market.replace(
             "KRW-",
             ""
         )
 
-        price = item[
-            "current_price"
-        ]
+        price = item["current_price"]
 
-        volume = item[
-            "volume_24h"
-        ]
+        volume = item["volume_24h"]
 
 
         actual_volume_rank = (
@@ -2113,26 +2005,31 @@ def update_upbit():
 
 
         row = make_row(
-
             rank,
-
             coin,
-
             volume,
-
             analysis,
-
             price,
-
             actual_volume_rank
-
         )
 
 
         # =================================================
-        # SIGNAL 조건 1
+        # SIGNAL
         #
+        # 공통:
         # 당일 변동률 > 0
+        #
+        # 패턴 1:
+        #
+        # 현재 4H 바로 이전까지
+        #
+        # 양 → 음 → 양
+        #
+        # 전전전 4H = 양
+        # 전전 4H   = 음
+        # 전 4H     = 양
+        #
         # =================================================
 
         daily_condition = (
@@ -2142,171 +2039,194 @@ def update_upbit():
 
             and
 
-            row["daily_change"]
-            > 0
+            row["daily_change"] > 0
 
         )
 
 
         # =================================================
-        # SIGNAL 조건 2
+        # 패턴 1
         #
-        # 기존 패턴
+        # 양 → 음 → 양
         #
-        # 전전 4H > 0
+        # 현재 4H는 사용하지 않음
         # =================================================
 
-        pre_previous_4h_condition = (
+        pattern_1_first_positive = (
 
-            row["pre_previous_4h_change"]
+            row[
+                "pre_pre_previous_4h_change"
+            ]
             is not None
 
             and
 
-            row["pre_previous_4h_change"]
-            > 0
+            row[
+                "pre_pre_previous_4h_change"
+            ] > 0
 
         )
 
 
-        # =================================================
-        # SIGNAL 조건 3
-        #
-        # 전 4H < 0
-        # =================================================
+        pattern_1_negative = (
 
-        previous_4h_condition = (
-
-            row["previous_4h_change"]
+            row[
+                "pre_previous_4h_change"
+            ]
             is not None
 
             and
 
-            row["previous_4h_change"]
-            < 0
+            row[
+                "pre_previous_4h_change"
+            ] < 0
 
         )
 
 
-        # =================================================
-        # SIGNAL 조건 4
-        #
-        # 현재 4H > 0
-        # =================================================
+        pattern_1_last_positive = (
 
-        current_4h_condition = (
-
-            row["current_4h_change"]
+            row[
+                "previous_4h_change"
+            ]
             is not None
 
             and
 
-            row["current_4h_change"]
-            > 0
+            row[
+                "previous_4h_change"
+            ] > 0
 
         )
 
-
-        # =================================================
-        # ★ 추가 SIGNAL 조건
-        #
-        # 전전전 4H > 0
-        # 전전 4H < 0
-        # 전 4H < 0
-        # 현재 4H > 0
-        # =================================================
-
-        pre_pre_previous_4h_condition = (
-
-            row["pre_pre_previous_4h_change"]
-            is not None
-
-            and
-
-            row["pre_pre_previous_4h_change"]
-            > 0
-
-        )
-
-
-        pre_previous_4h_negative_condition = (
-
-            row["pre_previous_4h_change"]
-            is not None
-
-            and
-
-            row["pre_previous_4h_change"]
-            < 0
-
-        )
-
-
-        # =================================================
-        # 기존 SIGNAL 패턴
-        #
-        # 전전+
-        # 전-
-        # 현재+
-        # =================================================
 
         signal_pattern_1 = (
 
-            pre_previous_4h_condition
+            pattern_1_first_positive
 
             and
 
-            previous_4h_condition
+            pattern_1_negative
 
             and
 
-            current_4h_condition
+            pattern_1_last_positive
 
         )
 
 
         # =================================================
-        # 추가 SIGNAL 패턴
+        # 패턴 2
         #
-        # 전전전+
-        # 전전-
-        # 전-
-        # 현재+
+        # 양 → 음 → 음 → 양
+        #
+        # 현재 4H는 사용하지 않음
+        #
+        # 전전전전 4H = 양
+        # 전전전 4H   = 음
+        # 전전 4H     = 음
+        # 전 4H       = 양
         # =================================================
+
+        pattern_2_first_positive = (
+
+            row[
+                "pre_pre_pre_previous_4h_change"
+            ]
+            is not None
+
+            and
+
+            row[
+                "pre_pre_pre_previous_4h_change"
+            ] > 0
+
+        )
+
+
+        pattern_2_first_negative = (
+
+            row[
+                "pre_pre_previous_4h_change"
+            ]
+            is not None
+
+            and
+
+            row[
+                "pre_pre_previous_4h_change"
+            ] < 0
+
+        )
+
+
+        pattern_2_second_negative = (
+
+            row[
+                "pre_previous_4h_change"
+            ]
+            is not None
+
+            and
+
+            row[
+                "pre_previous_4h_change"
+            ] < 0
+
+        )
+
+
+        pattern_2_last_positive = (
+
+            row[
+                "previous_4h_change"
+            ]
+            is not None
+
+            and
+
+            row[
+                "previous_4h_change"
+            ] > 0
+
+        )
+
 
         signal_pattern_2 = (
 
-            pre_pre_previous_4h_condition
+            pattern_2_first_positive
 
             and
 
-            pre_previous_4h_negative_condition
+            pattern_2_first_negative
 
             and
 
-            previous_4h_condition
+            pattern_2_second_negative
 
             and
 
-            current_4h_condition
+            pattern_2_last_positive
 
         )
 
 
         # =================================================
-        # 최종 SIGNAL
+        # ★ 최종 SIGNAL
         #
         # 당일+
         #
         # AND
         #
         # (
-        #     기존 패턴
+        #   양 → 음 → 양
         #
-        #     OR
+        #   OR
         #
-        #     추가 패턴
+        #   양 → 음 → 음 → 양
         # )
+        #
+        # ★ 현재 4H는 완전히 무시
         # =================================================
 
         row["signal_pass"] = (
@@ -2317,9 +2237,7 @@ def update_upbit():
 
             (
                 signal_pattern_1
-
                 or
-
                 signal_pattern_2
             )
 
@@ -2331,31 +2249,41 @@ def update_upbit():
             "daily":
                 daily_condition,
 
-            "pre_previous_4h":
-                pre_previous_4h_condition,
-
-            "previous_4h":
-                previous_4h_condition,
-
-            "current_4h":
-                current_4h_condition,
-
-            # ★ 추가
-            "pre_pre_previous_4h":
-                pre_pre_previous_4h_condition,
-
             "pattern_1":
                 signal_pattern_1,
 
             "pattern_2":
-                signal_pattern_2
+                signal_pattern_2,
+
+            "pattern_1_first_positive":
+                pattern_1_first_positive,
+
+            "pattern_1_negative":
+                pattern_1_negative,
+
+            "pattern_1_last_positive":
+                pattern_1_last_positive,
+
+            "pattern_2_first_positive":
+                pattern_2_first_positive,
+
+            "pattern_2_first_negative":
+                pattern_2_first_negative,
+
+            "pattern_2_second_negative":
+                pattern_2_second_negative,
+
+            "pattern_2_last_positive":
+                pattern_2_last_positive,
+
+            # ★ 현재 4H는 판정하지 않음
+            "current_4h_ignored":
+                True
 
         }
 
 
-        rows.append(
-            row
-        )
+        rows.append(row)
 
 
     latest_upbit_data = rows
@@ -2383,15 +2311,42 @@ def update_upbit():
 
     pre_previous = get_pre_previous_4h_period()
 
+    pre_pre_previous = (
+        get_pre_pre_previous_4h_period()
+    )
+
 
     log.info(
 
         f"TOP{TOP_N} 업데이트 | "
-        f"전전={pre_previous['display_label'] if pre_previous else '-'} | "
-        f"이전={previous['display_label'] if previous else '-'} | "
-        f"현재={current['display_label'] if current else '-'} | "
-        f"BTC4H(참고)={latest_btc_current_4h_change} | "
-        f"SIGNAL={signal_count}"
+
+        f"패턴1="
+        f"{pre_pre_previous['display_label'] if pre_pre_previous else '-'}"
+        "→"
+        f"{pre_previous['display_label'] if pre_previous else '-'}"
+        "→"
+        f"{previous['display_label'] if previous else '-'}"
+        " | "
+
+        f"패턴2="
+        f"{get_pre_pre_pre_previous_4h_period()['display_label'] if get_pre_pre_pre_previous_4h_period() else '-'}"
+        "→"
+        f"{pre_pre_previous['display_label'] if pre_pre_previous else '-'}"
+        "→"
+        f"{pre_previous['display_label'] if pre_previous else '-'}"
+        "→"
+        f"{previous['display_label'] if previous else '-'}"
+        " | "
+
+        f"현재={current['display_label'] if current else '-'}"
+        " | "
+
+        f"BTC4H(참고)="
+        f"{latest_btc_current_4h_change}"
+        " | "
+
+        f"SIGNAL="
+        f"{signal_count}"
 
     )
 
@@ -2427,9 +2382,7 @@ def get_okx_btc_price():
         return None
 
 
-    if payload.get(
-        "code"
-    ) != "0":
+    if payload.get("code") != "0":
 
         return None
 
@@ -2481,9 +2434,7 @@ def get_okx_btc_1h_candles(
 
     if after is not None:
 
-        params["after"] = str(
-            after
-        )
+        params["after"] = str(after)
 
 
     response = retry(
@@ -2508,9 +2459,7 @@ def get_okx_btc_1h_candles(
         return []
 
 
-    if payload.get(
-        "code"
-    ) != "0":
+    if payload.get("code") != "0":
 
         return []
 
@@ -2547,9 +2496,7 @@ def get_okx_btc_1h_history():
             break
 
 
-        rows.extend(
-            data
-        )
+        rows.extend(data)
 
 
         try:
@@ -2636,9 +2583,7 @@ def get_okx_btc_1h_history():
         return pd.DataFrame()
 
 
-    df = pd.DataFrame(
-        result
-    )
+    df = pd.DataFrame(result)
 
 
     df["datetime_utc"] = pd.to_datetime(
@@ -2662,9 +2607,7 @@ def get_okx_btc_1h_history():
 # BTC KST 일봉
 # =========================================================
 
-def aggregate_btc_daily(
-    df
-):
+def aggregate_btc_daily(df):
 
     if df is None or df.empty:
 
@@ -2680,25 +2623,15 @@ def aggregate_btc_daily(
 
         -
 
-        pd.Timedelta(
-            hours=9
-        )
+        pd.Timedelta(hours=9)
 
-    ).dt.floor(
-        "D"
-    ) + pd.Timedelta(
-        hours=9
-    )
+    ).dt.floor("D") + pd.Timedelta(hours=9)
 
 
     return (
         temp
-        .sort_values(
-            "datetime_kst"
-        )
-        .groupby(
-            "daily_start"
-        )
+        .sort_values("datetime_kst")
+        .groupby("daily_start")
         .agg(
             open=("open", "first"),
             high=("high", "max"),
@@ -2723,9 +2656,7 @@ def get_btc_daily_change(
         return None
 
 
-    daily = aggregate_btc_daily(
-        df
-    )
+    daily = aggregate_btc_daily(df)
 
 
     if daily.empty:
@@ -2747,8 +2678,7 @@ def get_btc_daily_change(
     if now < today_0900:
 
         current_start = (
-            today_0900
-            -
+            today_0900 -
             timedelta(days=1)
         )
 
@@ -2764,17 +2694,13 @@ def get_btc_daily_change(
     )
 
 
-    target = (
-        current_start.replace(
-            tzinfo=None
-        )
+    target = current_start.replace(
+        tzinfo=None
     )
 
 
     previous = daily[
-        daily["daily_start"]
-        <
-        target
+        daily["daily_start"] < target
     ]
 
 
@@ -2784,9 +2710,7 @@ def get_btc_daily_change(
 
 
     previous_close = float(
-        previous.iloc[-1][
-            "close"
-        ]
+        previous.iloc[-1]["close"]
     )
 
 
@@ -2797,8 +2721,7 @@ def get_btc_daily_change(
 
     return (
         (
-            price
-            -
+            price -
             previous_close
         )
         /
@@ -2838,9 +2761,7 @@ def build_btc_4h(
     )
 
 
-    periods = get_recent_4h_periods(
-        6
-    )
+    periods = get_recent_4h_periods(6)
 
 
     result = []
@@ -2848,32 +2769,22 @@ def build_btc_4h(
 
     for period in periods:
 
-        start = (
-            period["start"]
-            .replace(
-                tzinfo=None
-            )
+        start = period["start"].replace(
+            tzinfo=None
         )
 
-        end = (
-            period["end"]
-            .replace(
-                tzinfo=None
-            )
+        end = period["end"].replace(
+            tzinfo=None
         )
 
 
         part = temp[
             (
-                temp["kst_naive"]
-                >=
-                start
+                temp["kst_naive"] >= start
             )
             &
             (
-                temp["kst_naive"]
-                <
-                end
+                temp["kst_naive"] < end
             )
         ].copy()
 
@@ -2884,20 +2795,11 @@ def build_btc_4h(
 
                 **period,
 
-                "open":
-                    None,
-
-                "high":
-                    None,
-
-                "low":
-                    None,
-
-                "close":
-                    None,
-
-                "change":
-                    None
+                "open": None,
+                "high": None,
+                "low": None,
+                "close": None,
+                "change": None
 
             })
 
@@ -2928,9 +2830,7 @@ def build_btc_4h(
 
         if period["active"]:
 
-            close_price = float(
-                price
-            )
+            close_price = float(price)
 
             high_price = max(
                 high_price,
@@ -2951,8 +2851,7 @@ def build_btc_4h(
 
             change = (
                 (
-                    close_price
-                    -
+                    close_price -
                     open_price
                 )
                 /
@@ -2987,10 +2886,8 @@ def build_btc_4h(
         })
 
 
-    pattern_results = (
-        detect_4h_patterns(
-            result
-        )
+    pattern_results = detect_4h_patterns(
+        result
     )
 
 
@@ -3013,13 +2910,9 @@ def build_btc_4h(
 def update_btc_market():
 
     global latest_btc_okx_price
-
     global latest_btc_daily_change
-
     global latest_btc_4h_periods
-
     global latest_btc_current_4h_change
-
     global latest_btc_current_4h_label
 
 
@@ -3053,9 +2946,7 @@ def update_btc_market():
     )
 
 
-    current = (
-        get_current_4h_period()
-    )
+    current = get_current_4h_period()
 
 
     if current is None:
@@ -3064,9 +2955,7 @@ def update_btc_market():
 
 
     latest_btc_current_4h_label = (
-        current[
-            "display_label"
-        ]
+        current["display_label"]
     )
 
 
@@ -3092,14 +2981,10 @@ def update_btc_market():
 # OKX placeholder
 # =========================================================
 
-def update_okx(
-    usdt
-):
+def update_okx(usdt):
 
     global latest_okx_data
-
     global latest_okx_update_time
-
 
     latest_okx_data = []
 
@@ -3147,9 +3032,7 @@ def get_usdt_krw():
 
 def update_dashboard():
 
-    if not update_lock.acquire(
-        False
-    ):
+    if not update_lock.acquire(False):
 
         return
 
@@ -3170,9 +3053,7 @@ def update_dashboard():
 
             if usdt:
 
-                update_okx(
-                    usdt
-                )
+                update_okx(usdt)
 
 
     except Exception as e:
@@ -3191,9 +3072,7 @@ def update_dashboard():
 # 캔들 패턴 HTML
 # =========================================================
 
-def candle_pattern_html(
-    patterns
-):
+def candle_pattern_html(patterns):
 
     if not patterns:
 
@@ -3201,22 +3080,14 @@ def candle_pattern_html(
 
 
     return (
-
         '<div class="candle-pattern">'
-
         +
-
         " · ".join(
-            html.escape(
-                str(x)
-            )
+            html.escape(str(x))
             for x in patterns
         )
-
         +
-
         '</div>'
-
     )
 
 
@@ -3224,9 +3095,7 @@ def candle_pattern_html(
 # 4H 셀
 # =========================================================
 
-def four_hour_cells_html(
-    periods
-):
+def four_hour_cells_html(periods):
 
     if not periods:
 
@@ -3266,7 +3135,6 @@ def four_hour_cells_html(
         cells.append(
 
             f"""
-
             <div class="{cell_class}">
 
                 <div class="four-hour-label">
@@ -3288,9 +3156,7 @@ def four_hour_cells_html(
 
                 <div class="four-hour-value">
                     {format_change(
-                        period.get(
-                            "change"
-                        )
+                        period.get("change")
                     )}
                 </div>
 
@@ -3302,15 +3168,12 @@ def four_hour_cells_html(
                 )}
 
             </div>
-
             """
 
         )
 
 
-    return "".join(
-        cells
-    )
+    return "".join(cells)
 
 
 # =========================================================
@@ -3330,20 +3193,16 @@ def btc_4h_cells_html():
 
 def market_summary_html():
 
-    period = (
-        get_current_4h_period()
-    )
+    period = get_current_4h_period()
 
 
     price = format_market_price(
         latest_btc_okx_price
     )
 
-
     daily = format_change(
         latest_btc_daily_change
     )
-
 
     current = format_change(
         latest_btc_current_4h_change
@@ -3354,8 +3213,7 @@ def market_summary_html():
         latest_btc_current_4h_change
         is not None
         and
-        latest_btc_current_4h_change
-        > 0
+        latest_btc_current_4h_change > 0
     ):
 
         market_status = "상승"
@@ -3366,8 +3224,7 @@ def market_summary_html():
         latest_btc_current_4h_change
         is not None
         and
-        latest_btc_current_4h_change
-        < 0
+        latest_btc_current_4h_change < 0
     ):
 
         market_status = "하락"
@@ -3445,12 +3302,10 @@ def market_summary_html():
             </div>
 
             <div class="btc-current-period">
-
                 {period.get(
                     "display_label",
                     "-"
                 )}
-
             </div>
 
             <div class="btc-current-value">
@@ -3503,25 +3358,33 @@ def unified_card_html(
         get_pre_previous_4h_period()
     )
 
+    pre_pre_previous_period = (
+        get_pre_pre_previous_4h_period()
+    )
 
-    current_change = (
-        row.get(
-            "current_4h_change"
-        )
+    pre_pre_pre_previous_period = (
+        get_pre_pre_pre_previous_4h_period()
     )
 
 
-    previous_change = (
-        row.get(
-            "previous_4h_change"
-        )
+    current_change = row.get(
+        "current_4h_change"
     )
 
+    previous_change = row.get(
+        "previous_4h_change"
+    )
 
-    pre_previous_change = (
-        row.get(
-            "pre_previous_4h_change"
-        )
+    pre_previous_change = row.get(
+        "pre_previous_4h_change"
+    )
+
+    pre_pre_previous_change = row.get(
+        "pre_pre_previous_4h_change"
+    )
+
+    pre_pre_pre_previous_change = row.get(
+        "pre_pre_pre_previous_4h_change"
     )
 
 
@@ -3553,11 +3416,13 @@ def unified_card_html(
         title = "🚀 SIGNAL"
 
         card_class = (
-            "unified-market-card signal-market-card"
+            "unified-market-card "
+            "signal-market-card"
         )
 
         header_class = (
-            "unified-card-header signal-header"
+            "unified-card-header "
+            "signal-header"
         )
 
         badge = f"""
@@ -3601,12 +3466,60 @@ def unified_card_html(
                 </div>
 
                 <div class="condition-value">
-
                     {row.get(
                         "daily_html",
                         "-"
                     )}
+                </div>
 
+            </div>
+
+
+            <div class="unified-condition">
+
+                <div class="condition-label">
+                    전전전전 4H
+                </div>
+
+                <div class="condition-period">
+                    {(
+                        pre_pre_pre_previous_period
+                        or {}
+                    ).get(
+                        "display_label",
+                        "-"
+                    )}
+                </div>
+
+                <div class="condition-value">
+                    {format_change(
+                        pre_pre_pre_previous_change
+                    )}
+                </div>
+
+            </div>
+
+
+            <div class="unified-condition">
+
+                <div class="condition-label">
+                    전전전 4H
+                </div>
+
+                <div class="condition-period">
+                    {(
+                        pre_pre_previous_period
+                        or {}
+                    ).get(
+                        "display_label",
+                        "-"
+                    )}
+                </div>
+
+                <div class="condition-value">
+                    {format_change(
+                        pre_pre_previous_change
+                    )}
                 </div>
 
             </div>
@@ -3619,7 +3532,6 @@ def unified_card_html(
                 </div>
 
                 <div class="condition-period">
-
                     {(
                         pre_previous_period
                         or {}
@@ -3627,73 +3539,12 @@ def unified_card_html(
                         "display_label",
                         "-"
                     )}
-
                 </div>
 
                 <div class="condition-value">
-
                     {format_change(
                         pre_previous_change
                     )}
-
-                </div>
-
-            </div>
-
-
-            <div class="unified-condition">
-
-                <div class="condition-label">
-                    전 4H
-                </div>
-
-                <div class="condition-period">
-
-                    {(
-                        previous_period
-                        or {}
-                    ).get(
-                        "display_label",
-                        "-"
-                    )}
-
-                </div>
-
-                <div class="condition-value">
-
-                    {format_change(
-                        previous_change
-                    )}
-
-                </div>
-
-            </div>
-
-
-            <div class="unified-condition">
-
-                <div class="condition-label">
-                    현재 4H
-                </div>
-
-                <div class="condition-period">
-
-                    {(
-                        current_period
-                        or {}
-                    ).get(
-                        "display_label",
-                        "-"
-                    )}
-
-                </div>
-
-                <div class="condition-value">
-
-                    {format_change(
-                        current_change
-                    )}
-
                 </div>
 
             </div>
@@ -3703,11 +3554,35 @@ def unified_card_html(
 
         <div class="unified-condition-row">
 
+            <div class="unified-condition">
+
+                <div class="condition-label">
+                    전 4H
+                </div>
+
+                <div class="condition-period">
+                    {(
+                        previous_period
+                        or {}
+                    ).get(
+                        "display_label",
+                        "-"
+                    )}
+                </div>
+
+                <div class="condition-value">
+                    {format_change(
+                        previous_change
+                    )}
+                </div>
+
+            </div>
+
+
             <div
                 class="unified-condition"
                 style="
-                    grid-column:
-                    1 / -1;
+                    grid-column:2 / -1;
                 "
             >
 
@@ -3716,9 +3591,11 @@ def unified_card_html(
                 </div>
 
                 <div class="condition-period">
-                    당일+ · 기존: 전전4H+ · 전4H- · 현재4H+
+                    양 → 음 → 양
+                    또는
+                    양 → 음 → 음 → 양
                     <br>
-                    추가: 전전전4H+ · 전전4H- · 전4H- · 현재4H+
+                    현재 4H는 판정 제외
                 </div>
 
                 <div class="condition-value">
@@ -3768,13 +3645,11 @@ def unified_card_html(
                 </div>
 
                 <div class="unified-price">
-
                     {format_market_price(
                         row.get(
                             "current_price"
                         )
                     )}
-
                 </div>
 
             </div>
@@ -3787,12 +3662,10 @@ def unified_card_html(
                 </div>
 
                 <div class="unified-volume">
-
                     {row.get(
                         "volume",
                         "-"
                     )}
-
                 </div>
 
             </div>
@@ -3805,12 +3678,10 @@ def unified_card_html(
                 </div>
 
                 <div class="unified-daily">
-
                     {row.get(
                         "daily_html",
                         "-"
                     )}
-
                 </div>
 
             </div>
@@ -3825,7 +3696,6 @@ def unified_card_html(
             </div>
 
             <div class="unified-current-period">
-
                 {(
                     current_period
                     or {}
@@ -3833,15 +3703,12 @@ def unified_card_html(
                     "display_label",
                     "-"
                 )}
-
             </div>
 
             <div class="unified-current-value">
-
                 {format_change(
                     current_change
                 )}
-
             </div>
 
         </div>
@@ -3869,23 +3736,17 @@ def unified_card_html(
 # =========================================================
 # SIGNAL Section
 #
-# SIGNAL 조건:
-#
-# 공통:
-# 당일 양수
+# 당일 변동률 > 0
 #
 # 패턴 1:
-# 전전 4H 양수
-# 전 4H 음수
-# 현재 4H 양수
+# 현재 이전까지
+# 양 → 음 → 양
 #
 # 패턴 2:
-# 전전전 4H 양수
-# 전전 4H 음수
-# 전 4H 음수
-# 현재 4H 양수
+# 현재 이전까지
+# 양 → 음 → 음 → 양
 #
-# 둘 중 하나 만족
+# 현재 4H는 완전히 제외
 #
 # SIGNAL 순위:
 # 당일 변동률 높은 순
@@ -3905,6 +3766,14 @@ def focus_section(data):
         get_pre_previous_4h_period()
     )
 
+    pre_pre_previous_period = (
+        get_pre_pre_previous_4h_period()
+    )
+
+    pre_pre_pre_previous_period = (
+        get_pre_pre_pre_previous_4h_period()
+    )
+
 
     signal_rows = [
 
@@ -3919,12 +3788,6 @@ def focus_section(data):
 
     ]
 
-
-    # =====================================================
-    # ★ SIGNAL 순위
-    #
-    # 당일 변동률 높은 순
-    # =====================================================
 
     signal_rows.sort(
 
@@ -3944,11 +3807,11 @@ def focus_section(data):
 
         message = (
             "당일 양수 + "
-            "(전전 4H 양수 → 전 4H 음수 → 현재 4H 양수) "
+            "(양 → 음 → 양) "
             "또는 "
-            "(전전전 4H 양수 → 전전 4H 음수 → "
-            "전 4H 음수 → 현재 4H 양수) "
-            "조건을 만족하는 종목 없음"
+            "(양 → 음 → 음 → 양) "
+            "패턴이 현재 4H 전에 완성된 "
+            "종목 없음"
         )
 
 
@@ -3970,14 +3833,9 @@ def focus_section(data):
 
             <div class="signal-empty-sub">
 
-                당일:
-                업비트 일봉
-
-                ·
-
-                전전:
+                현재 4H:
                 {(
-                    pre_previous_period
+                    current_period
                     or {}
                 ).get(
                     "display_label",
@@ -3986,7 +3844,7 @@ def focus_section(data):
 
                 ·
 
-                이전:
+                전 4H:
                 {(
                     previous_period
                     or {}
@@ -3997,9 +3855,31 @@ def focus_section(data):
 
                 ·
 
-                현재:
+                전전 4H:
                 {(
-                    current_period
+                    pre_previous_period
+                    or {}
+                ).get(
+                    "display_label",
+                    "-"
+                )}
+
+                ·
+
+                전전전 4H:
+                {(
+                    pre_pre_previous_period
+                    or {}
+                ).get(
+                    "display_label",
+                    "-"
+                )}
+
+                ·
+
+                전전전전 4H:
+                {(
+                    pre_pre_pre_previous_period
                     or {}
                 ).get(
                     "display_label",
@@ -4055,17 +3935,11 @@ def focus_section(data):
 
                 <div class="section-heading-sub">
 
-                    당일 변동률 우선
-                    · 당일 양수
-                    · 기존:
-                    전전 4H 양수
-                    · 전 4H 음수
-                    · 현재 4H 양수
-                    · 추가:
-                    전전전 4H 양수
-                    · 전전 4H 음수
-                    · 전 4H 음수
-                    · 현재 4H 양수
+                    당일 양수
+                    · 양→음→양
+                    또는
+                    양→음→음→양
+                    · 현재 4H 판정 제외
                     · BTC 필터 제외
 
                 </div>
@@ -4119,9 +3993,7 @@ def focus_section(data):
 # TOP Section
 # =========================================================
 
-def top_card_html(
-    row
-):
+def top_card_html(row):
 
     return unified_card_html(
         row,
@@ -4161,11 +4033,7 @@ def section(
         for row in data:
 
             top_cards.append(
-
-                top_card_html(
-                    row
-                )
-
+                top_card_html(row)
             )
 
 
@@ -4781,7 +4649,7 @@ font-weight:900;
 
 
 /* =========================================================
-   SIGNAL 조건 BAR
+   SIGNAL
    ========================================================= */
 
 .signal-btc-bar{
@@ -4820,7 +4688,7 @@ font-weight:900;
 
 
 /* =========================================================
-   TOP 업데이트
+   TOP
    ========================================================= */
 
 .top-update-bar{
@@ -5514,9 +5382,7 @@ def validate_settings():
 # Startup
 # =========================================================
 
-@app.on_event(
-    "startup"
-)
+@app.on_event("startup")
 def startup():
 
     validate_settings()
@@ -5551,15 +5417,19 @@ def startup():
     )
 
     log.info(
-        "패턴1: 전전 4H > 0 / 전 4H < 0 / 현재 4H > 0"
+        "패턴1: 전전전 4H 양수 → 전전 4H 음수 → 전 4H 양수"
     )
 
     log.info(
-        "패턴2: 전전전 4H > 0 / 전전 4H < 0 / 전 4H < 0 / 현재 4H > 0"
+        "패턴2: 전전전전 4H 양수 → 전전전 4H 음수 → 전전 4H 음수 → 전 4H 양수"
     )
 
     log.info(
-        "SIGNAL = 당일+ AND (패턴1 OR 패턴2)"
+        "현재 4H는 SIGNAL 판정에서 제외"
+    )
+
+    log.info(
+        "SIGNAL = 당일+ AND (양→음→양 OR 양→음→음→양)"
     )
 
     log.info(
@@ -5572,10 +5442,6 @@ def startup():
 
     log.info(
         "BTC = SIGNAL 필터에서 제외"
-    )
-
-    log.info(
-        "당일 / 전전전 4H / 전전 4H / 전 4H / 현재 4H = SIGNAL 필터"
     )
 
     log.info(
