@@ -40,7 +40,7 @@ KST = ZoneInfo("Asia/Seoul")
 # 설정
 # =========================================================
 
-TOP_N = 30
+TOP_N = 20
 
 UPDATE_MINUTES = 1
 
@@ -104,13 +104,6 @@ latest_btc_current_4h_label = "-"
 
 # =========================================================
 # 업비트 4H 기준
-#
-# 01~05
-# 05~09
-# 09~13
-# 13~17
-# 17~21
-# 21~01
 # =========================================================
 
 FOUR_HOUR_DEFINITIONS = [
@@ -356,8 +349,6 @@ def get_current_4h_period():
 
 # =========================================================
 # 이전 4H
-#
-# SIGNAL 필터에 사용
 # =========================================================
 
 def get_previous_4h_period():
@@ -637,11 +628,6 @@ def get_upbit_markets():
 
 # =========================================================
 # 업비트 당일 변동률
-#
-# 기준:
-# 업비트 일봉
-#
-# 현재가 - 전일 종가
 # =========================================================
 
 def daily_change_upbit(
@@ -896,20 +882,12 @@ def detect_single_candle_pattern(
     body_ratio = p["body_ratio"]
 
 
-    # =====================================================
-    # 도지
-    # =====================================================
-
     if body_ratio <= 0.10:
 
         patterns.append(
             "도지"
         )
 
-
-    # =====================================================
-    # 망치형
-    # =====================================================
 
     if (
 
@@ -935,10 +913,6 @@ def detect_single_candle_pattern(
             "망치형"
         )
 
-
-    # =====================================================
-    # 역망치형
-    # =====================================================
 
     if (
 
@@ -998,10 +972,6 @@ def detect_two_candle_pattern(
     patterns = []
 
 
-    # =====================================================
-    # 상승 장악형
-    # =====================================================
-
     if (
 
         p1["bear"]
@@ -1028,10 +998,6 @@ def detect_two_candle_pattern(
             "상승장악"
         )
 
-
-    # =====================================================
-    # 관통형
-    # =====================================================
 
     midpoint = (
         p1["open"]
@@ -1103,10 +1069,6 @@ def detect_three_candle_pattern(
     patterns = []
 
 
-    # =====================================================
-    # 모닝스타
-    # =====================================================
-
     if (
 
         p1["bear"]
@@ -1143,10 +1105,6 @@ def detect_three_candle_pattern(
             "모닝스타"
         )
 
-
-    # =====================================================
-    # 3연속 양봉
-    # =====================================================
 
     if (
 
@@ -1501,11 +1459,6 @@ def build_upbit_4h_candles(
         )
 
 
-        # =================================================
-        # 현재 진행 중인 4H
-        # 현재가 반영
-        # =================================================
-
         if period["active"]:
 
             if current_price is not None:
@@ -1582,10 +1535,6 @@ def build_upbit_4h_candles(
 
         })
 
-
-    # =====================================================
-    # 4H 캔들 패턴 탐지
-    # =====================================================
 
     pattern_results = (
         detect_4h_patterns(
@@ -1870,6 +1819,9 @@ def format_volume(v):
 
 # =========================================================
 # Row 생성
+#
+# ※ 기존 기능 유지
+# ※ volume_24h / volume_rank 추가
 # =========================================================
 
 def make_row(
@@ -1877,7 +1829,8 @@ def make_row(
     name,
     volume,
     analysis,
-    current_price
+    current_price,
+    volume_rank=None
 ):
 
     analysis = (
@@ -1894,6 +1847,16 @@ def make_row(
 
         "name":
             name,
+
+        # 실제 24H 거래대금 숫자
+        # SIGNAL 정렬에 사용
+        "volume_24h":
+            volume,
+
+        # 실제 업비트 전체 거래대금 순위
+        # SIGNAL 화면에 표시
+        "volume_rank":
+            volume_rank,
 
         "volume":
             format_volume(
@@ -1942,6 +1905,11 @@ def make_row(
 
 # =========================================================
 # 업비트 TOP 업데이트
+#
+# 기존 TOP_N 로직 유지
+#
+# 추가:
+# 전체 업비트 거래대금 순위를 먼저 부여
 # =========================================================
 
 def update_upbit():
@@ -1954,6 +1922,10 @@ def update_upbit():
     markets = get_upbit_markets()
 
 
+    # =====================================================
+    # 기존 거래대금 순 정렬
+    # =====================================================
+
     markets = sorted(
         markets,
         key=lambda x:
@@ -1961,6 +1933,33 @@ def update_upbit():
         reverse=True
     )
 
+
+    # =====================================================
+    # 추가 요청
+    #
+    # 업비트 전체 KRW 마켓 실제 거래대금 순위
+    #
+    # 1 = 전체 KRW 마켓 거래대금 1위
+    # 2 = 전체 KRW 마켓 거래대금 2위
+    # ...
+    # =====================================================
+
+    volume_rank_map = {
+
+        item["market"]:
+            rank
+
+        for rank, item in enumerate(
+            markets,
+            1
+        )
+
+    }
+
+
+    # =====================================================
+    # 기존 TOP_N 유지
+    # =====================================================
 
     top_markets = markets[
         :TOP_N
@@ -1988,6 +1987,21 @@ def update_upbit():
             "current_price"
         ]
 
+        volume = item[
+            "volume_24h"
+        ]
+
+
+        # =================================================
+        # 실제 전체 거래대금 순위
+        # =================================================
+
+        actual_volume_rank = (
+            volume_rank_map.get(
+                market
+            )
+        )
+
 
         try:
 
@@ -2006,13 +2020,19 @@ def update_upbit():
 
 
         row = make_row(
+
             rank,
+
             coin,
-            item[
-                "volume_24h"
-            ],
+
+            volume,
+
             analysis,
-            price
+
+            price,
+
+            actual_volume_rank
+
         )
 
 
@@ -2076,11 +2096,13 @@ def update_upbit():
         # =================================================
         # 최종 SIGNAL
         #
-        # 업비트 당일 양수
-        # + 이전 4H 양수
-        # + 현재 4H 음수
+        # 기존 조건 그대로
         #
-        # ※ BTC 조건 없음
+        # 당일+
+        # + 이전 4H+
+        # + 현재 4H-
+        #
+        # BTC 조건 없음
         # =================================================
 
         row["signal_pass"] = (
@@ -2916,21 +2938,13 @@ def update_dashboard():
 
     try:
 
-        # BTC
-        # ※ 시장 시황 표시용
-        # ※ SIGNAL 필터에는 사용하지 않음
-
         update_btc_market()
 
-
-        # 업비트
 
         if USE_UPBIT == "Y":
 
             update_upbit()
 
-
-        # OKX
 
         if USE_OKX == "Y":
 
@@ -3094,8 +3108,6 @@ def btc_4h_cells_html():
 
 # =========================================================
 # BTC 시장 카드
-#
-# ※ SIGNAL 필터와 무관
 # =========================================================
 
 def market_summary_html():
@@ -3119,9 +3131,6 @@ def market_summary_html():
         latest_btc_current_4h_change
     )
 
-
-    # BTC는 SIGNAL 필터가 아니므로
-    # 여기서는 단순 시장 상태 표시
 
     if (
         latest_btc_current_4h_change
@@ -3246,6 +3255,9 @@ def market_summary_html():
 
 # =========================================================
 # 공통 SIGNAL / TOP 카드
+#
+# ※ 기존 카드 구조 유지
+# ※ SIGNAL에 실제 거래대금 순위만 추가
 # =========================================================
 
 def unified_card_html(
@@ -3287,6 +3299,33 @@ def unified_card_html(
     )
 
 
+    # =====================================================
+    # SIGNAL 카드일 때만 실제 거래대금 순위 표시
+    # =====================================================
+
+    if card_type == "SIGNAL":
+
+        volume_rank = row.get(
+            "volume_rank"
+        )
+
+        if volume_rank is not None:
+
+            volume_rank_text = (
+                f"거래대금 {volume_rank}위"
+            )
+
+        else:
+
+            volume_rank_text = (
+                "거래대금 -"
+            )
+
+    else:
+
+        volume_rank_text = ""
+
+
     if card_type == "SIGNAL":
 
         title = "🚀 SIGNAL"
@@ -3299,9 +3338,9 @@ def unified_card_html(
             "unified-card-header signal-header"
         )
 
-        badge = """
+        badge = f"""
         <span class="signal-badge">
-            SIGNAL
+            {volume_rank_text}
         </span>
         """
 
@@ -3510,12 +3549,10 @@ def unified_card_html(
 # =========================================================
 # SIGNAL Section
 #
-# SIGNAL 조건:
-# 1. 당일 > 0
-# 2. 이전 4H > 0
-# 3. 현재 4H < 0
+# 기존 조건 유지
 #
-# BTC 완전 제외
+# SIGNAL 순위만
+# 현재 4H 변동률 → 24H 거래대금
 # =========================================================
 
 def focus_section(data):
@@ -3543,19 +3580,24 @@ def focus_section(data):
     ]
 
 
+    # =====================================================
+    # SIGNAL 순위
+    #
+    # 기존:
+    # 현재 4H 변동률 기준
+    #
+    # 변경:
+    # 24H 실제 거래대금 큰 순서
+    # =====================================================
+
     signal_rows.sort(
 
         key=lambda row:
 
             row.get(
-                "current_4h_change"
-            )
-
-            if row.get(
-                "current_4h_change"
-            ) is not None
-
-            else -999999,
+                "volume_24h",
+                0
+            ),
 
         reverse=True
 
@@ -3652,7 +3694,8 @@ def focus_section(data):
 
                 <div class="section-heading-sub">
 
-                    업비트 당일 양수
+                    거래대금 우선
+                    · 당일 양수
                     · 이전 4H 양수
                     · 현재 4H 음수
                     · BTC 필터 제외
@@ -3676,19 +3719,15 @@ def focus_section(data):
         <div class="signal-btc-bar">
 
             <div class="signal-btc-title">
-                SIGNAL 조건
+                SIGNAL 순위
             </div>
 
             <div class="signal-btc-period">
-
-                당일+ · 이전4H+ · 현재4H-
-
+                24H 실제 거래대금 기준
             </div>
 
             <div class="signal-btc-value">
-
-                3조건
-
+                거래대금 우선
             </div>
 
         </div>
@@ -4238,6 +4277,7 @@ border:1px solid #4f9b73;
 color:#8fe0b2;
 font-size:6px;
 font-weight:900;
+white-space:nowrap;
 }
 
 .unified-main-row{
@@ -5140,6 +5180,14 @@ def startup():
 
     log.info(
         "3. 코인 현재 4H < 0"
+    )
+
+    log.info(
+        "SIGNAL 순위 = 24H 거래대금 큰 순서"
+    )
+
+    log.info(
+        "SIGNAL 화면 = 실제 업비트 거래대금 순위 표시"
     )
 
     log.info(
