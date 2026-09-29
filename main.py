@@ -372,7 +372,7 @@ def get_previous_4h_period():
 
 
 # =========================================================
-# ★ 전전 4H
+# 전전 4H
 # =========================================================
 
 def get_pre_previous_4h_period():
@@ -2095,6 +2095,27 @@ def update_upbit():
         # =================================================
         # SIGNAL 조건 1
         #
+        # 당일 변동률 양수
+        #
+        # 업비트 일봉 기준
+        # =================================================
+
+        daily_condition = (
+
+            row["daily_change"]
+            is not None
+
+            and
+
+            row["daily_change"]
+            > 0
+
+        )
+
+
+        # =================================================
+        # SIGNAL 조건 2
+        #
         # 전전 4H 양수
         # =================================================
 
@@ -2112,7 +2133,7 @@ def update_upbit():
 
 
         # =================================================
-        # SIGNAL 조건 2
+        # SIGNAL 조건 3
         #
         # 전 4H 음수
         # =================================================
@@ -2131,7 +2152,7 @@ def update_upbit():
 
 
         # =================================================
-        # SIGNAL 조건 3
+        # SIGNAL 조건 4
         #
         # 현재 4H 양수
         # =================================================
@@ -2152,7 +2173,8 @@ def update_upbit():
         # =================================================
         # 최종 SIGNAL
         #
-        # 전전 4H+
+        # 당일+
+        # + 전전 4H+
         # + 전 4H-
         # + 현재 4H+
         #
@@ -2160,6 +2182,10 @@ def update_upbit():
         # =================================================
 
         row["signal_pass"] = (
+
+            daily_condition
+
+            and
 
             pre_previous_4h_condition
 
@@ -2179,6 +2205,9 @@ def update_upbit():
         # =================================================
 
         row["signal_conditions"] = {
+
+            "daily":
+                daily_condition,
 
             "pre_previous_4h":
                 pre_previous_4h_condition,
@@ -3314,7 +3343,7 @@ def market_summary_html():
 # 공통 SIGNAL / TOP 카드
 #
 # ※ 기존 카드 구조 유지
-# ※ SIGNAL에 실제 거래대금 순위만 추가
+# ※ SIGNAL에 실제 거래대금 순위 표시
 # =========================================================
 
 def unified_card_html(
@@ -3439,6 +3468,28 @@ def unified_card_html(
             <div class="unified-condition">
 
                 <div class="condition-label">
+                    당일
+                </div>
+
+                <div class="condition-period">
+                    업비트 일봉
+                </div>
+
+                <div class="condition-value">
+
+                    {row.get(
+                        "daily_html",
+                        "-"
+                    )}
+
+                </div>
+
+            </div>
+
+
+            <div class="unified-condition">
+
+                <div class="condition-label">
                     전전 4H
                 </div>
 
@@ -3473,7 +3524,10 @@ def unified_card_html(
 
                 <div class="condition-period">
 
-                    {previous_period.get(
+                    {(
+                        previous_period
+                        or {}
+                    ).get(
                         "display_label",
                         "-"
                     )}
@@ -3490,10 +3544,6 @@ def unified_card_html(
 
             </div>
 
-        </div>
-
-
-        <div class="unified-condition-row">
 
             <div class="unified-condition">
 
@@ -3503,7 +3553,10 @@ def unified_card_html(
 
                 <div class="condition-period">
 
-                    {current_period.get(
+                    {(
+                        current_period
+                        or {}
+                    ).get(
                         "display_label",
                         "-"
                     )}
@@ -3520,15 +3573,25 @@ def unified_card_html(
 
             </div>
 
+        </div>
 
-            <div class="unified-condition">
+
+        <div class="unified-condition-row">
+
+            <div
+                class="unified-condition"
+                style="
+                    grid-column:
+                    1 / -1;
+                "
+            >
 
                 <div class="condition-label">
                     SIGNAL 조건
                 </div>
 
                 <div class="condition-period">
-                    전전4H+ · 전4H- · 현재4H+
+                    당일+ · 전전4H+ · 전4H- · 현재4H+
                 </div>
 
                 <div class="condition-value">
@@ -3636,7 +3699,10 @@ def unified_card_html(
 
             <div class="unified-current-period">
 
-                {current_period.get(
+                {(
+                    current_period
+                    or {}
+                ).get(
                     "display_label",
                     "-"
                 )}
@@ -3677,6 +3743,7 @@ def unified_card_html(
 # SIGNAL Section
 #
 # SIGNAL 조건:
+# 당일 양수
 # 전전 4H 양수
 # 전 4H 음수
 # 현재 4H 양수
@@ -3737,8 +3804,8 @@ def focus_section(data):
     if not signal_rows:
 
         message = (
-            "전전 4H 양수 + 전 4H 음수 + "
-            "현재 4H 양수 조건을 "
+            "당일 양수 + 전전 4H 양수 + "
+            "전 4H 음수 + 현재 4H 양수 조건을 "
             "모두 만족하는 종목 없음"
         )
 
@@ -3761,8 +3828,16 @@ def focus_section(data):
 
             <div class="signal-empty-sub">
 
+                당일:
+                업비트 일봉
+
+                ·
+
                 전전:
-                {pre_previous_period.get(
+                {(
+                    pre_previous_period
+                    or {}
+                ).get(
                     "display_label",
                     "-"
                 )}
@@ -3770,7 +3845,10 @@ def focus_section(data):
                 ·
 
                 이전:
-                {previous_period.get(
+                {(
+                    previous_period
+                    or {}
+                ).get(
                     "display_label",
                     "-"
                 )}
@@ -3778,7 +3856,10 @@ def focus_section(data):
                 ·
 
                 현재:
-                {current_period.get(
+                {(
+                    current_period
+                    or {}
+                ).get(
                     "display_label",
                     "-"
                 )}
@@ -3833,6 +3914,7 @@ def focus_section(data):
                 <div class="section-heading-sub">
 
                     거래대금 우선
+                    · 당일 양수
                     · 전전 4H 양수
                     · 전 4H 음수
                     · 현재 4H 양수
@@ -3844,7 +3926,10 @@ def focus_section(data):
 
             <div class="current-time-badge">
 
-                ▶ {current_period.get(
+                ▶ {(
+                    current_period
+                    or {}
+                ).get(
                     "display_label",
                     "-"
                 )}
@@ -3970,7 +4055,10 @@ def section(
 
             <div class="current-time-badge">
 
-                ▶ {current_period.get(
+                ▶ {(
+                    current_period
+                    or {}
+                ).get(
                     "display_label",
                     "-"
                 )}
@@ -4505,6 +4593,8 @@ background:#29323c;
 .unified-condition-row{
 display:grid;
 grid-template-columns:
+    1fr
+    1fr
     1fr
     1fr;
 min-height:50px;
@@ -5309,15 +5399,19 @@ def startup():
     )
 
     log.info(
-        "1. 코인 전전 4H > 0"
+        "1. 코인 당일 변동률 > 0"
     )
 
     log.info(
-        "2. 코인 전 4H < 0"
+        "2. 코인 전전 4H > 0"
     )
 
     log.info(
-        "3. 코인 현재 4H > 0"
+        "3. 코인 전 4H < 0"
+    )
+
+    log.info(
+        "4. 코인 현재 4H > 0"
     )
 
     log.info(
@@ -5333,7 +5427,7 @@ def startup():
     )
 
     log.info(
-        "전전 4H / 전 4H / 현재 4H = SIGNAL 필터 및 화면 표시"
+        "당일 / 전전 4H / 전 4H / 현재 4H = SIGNAL 필터 및 화면 표시"
     )
 
     log.info(
