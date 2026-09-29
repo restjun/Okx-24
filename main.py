@@ -857,6 +857,10 @@ def build_upbit_12h_candles(
             part.iloc[-1]["close"]
         )
 
+        # =================================================
+        # 현재 진행 중인 12H만 현재가 적용
+        # =================================================
+
         if period["active"]:
 
             if current_price is not None:
@@ -1482,6 +1486,10 @@ def build_okx_btc_12h_candles(
             part.iloc[-1]["close"]
         )
 
+        # =================================================
+        # 현재 진행 중인 12H에만 현재가 적용
+        # =================================================
+
         if period["active"]:
 
             close_price = float(
@@ -2025,6 +2033,12 @@ def update_upbit():
 
     rows = []
 
+    # =====================================================
+    # 현재 시간대
+    # =====================================================
+
+    period = get_current_12h_period()
+
     for rank, item in enumerate(
         top_markets,
         1
@@ -2075,7 +2089,7 @@ def update_upbit():
         )
 
         # =================================================
-        # 현재 시간대 BTC 필터
+        # BTC 현재 12H 양수
         # =================================================
 
         btc_pass = (
@@ -2091,7 +2105,7 @@ def update_upbit():
         )
 
         # =================================================
-        # 현재 시간대 코인 필터
+        # 코인 현재 12H
         # =================================================
 
         coin_current = (
@@ -2100,7 +2114,7 @@ def update_upbit():
             )
         )
 
-        coin_pass = (
+        coin_current_pass = (
 
             coin_current is not None
 
@@ -2110,11 +2124,69 @@ def update_upbit():
 
         )
 
+        # =================================================
+        # 코인 이전 12H
+        #
+        # 현재 09~21
+        # → 이전 21~09
+        #
+        # 현재 21~09
+        # → 이전 09~21
+        # =================================================
+
+        if period["key"] == "09_21":
+
+            coin_previous = (
+                row.get(
+                    "change_21_09"
+                )
+            )
+
+        else:
+
+            coin_previous = (
+                row.get(
+                    "change_09_21"
+                )
+            )
+
+        coin_previous_pass = (
+
+            coin_previous is not None
+
+            and
+
+            coin_previous > 0
+
+        )
+
+        # =================================================
+        # 이전 12H 값 저장
+        # =================================================
+
+        row["previous_12h_change"] = (
+            coin_previous
+        )
+
+        # =================================================
+        # 최종 Signal
+        #
+        # ① BTC 현재 12H > 0
+        # ② 코인 현재 12H > 0
+        # ③ 코인 이전 12H > 0
+        # =================================================
+
         row["signal_pass"] = (
 
             btc_pass
+
             and
-            coin_pass
+
+            coin_current_pass
+
+            and
+
+            coin_previous_pass
 
         )
 
@@ -2128,10 +2200,24 @@ def update_upbit():
         kst()
     )
 
+    signal_count = sum(
+
+        1
+
+        for x in rows
+
+        if x.get(
+            "signal_pass",
+            False
+        )
+
+    )
+
     log.info(
         f"TOP{TOP_N} 업데이트 | "
-        f"현재구간={latest_btc_current_12h_label} | "
-        f"BTC 12H={latest_btc_current_12h_change}"
+        f"현재구간={period['label']} | "
+        f"BTC 현재12H={latest_btc_current_12h_change} | "
+        f"Signal={signal_count}"
     )
 
 
@@ -2261,27 +2347,23 @@ def signal_item_html(
 
     if period["key"] == "09_21":
 
-        current_class = "current-period"
+        c09_class = (
+            "current-period"
+        )
 
-        previous_class = "inactive-period"
+        c21_class = (
+            "inactive-period"
+        )
 
     else:
 
-        current_class = "current-period"
+        c09_class = (
+            "inactive-period"
+        )
 
-        previous_class = "inactive-period"
-
-    c09_class = (
-        current_class
-        if period["key"] == "09_21"
-        else previous_class
-    )
-
-    c21_class = (
-        current_class
-        if period["key"] == "21_09"
-        else previous_class
-    )
+        c21_class = (
+            "current-period"
+        )
 
     return f"""
 
@@ -2361,16 +2443,28 @@ def focus_section(data):
 
     )
 
-    # =====================================================
-    # 현재 시간대 표시
-    # =====================================================
-
     current_period_text = (
         f'▶ 현재 {period["label"]}'
     )
 
     # =====================================================
-    # BTC 필터 OFF
+    # 이전 시간대
+    # =====================================================
+
+    if period["key"] == "09_21":
+
+        previous_period_label = (
+            "21:00 ~ 09:00"
+        )
+
+    else:
+
+        previous_period_label = (
+            "09:00 ~ 21:00"
+        )
+
+    # =====================================================
+    # BTC OFF
     # =====================================================
 
     if not btc_positive:
@@ -2425,12 +2519,12 @@ def focus_section(data):
 
                 <br>
 
-                BTC 상승률
+                BTC 현재 12시간 상승률
                 <strong>{btc_text}</strong>
 
                 <br>
 
-                BTC 12시간 상승률이
+                BTC 현재 12시간 상승률이
                 0% 초과일 때만 Signal 통과
 
             </div>
@@ -2440,7 +2534,10 @@ def focus_section(data):
         """
 
     # =====================================================
-    # 코인 양수
+    # Signal 필터
+    #
+    # update_upbit()에서 계산된
+    # signal_pass를 사용
     # =====================================================
 
     signal_rows = [
@@ -2449,24 +2546,15 @@ def focus_section(data):
 
         for x in data
 
-        if (
-
-            x.get(
-                "current_12h_change"
-            ) is not None
-
-            and
-
-            x.get(
-                "current_12h_change"
-            ) > 0
-
+        if x.get(
+            "signal_pass",
+            False
         )
 
     ]
 
     # =====================================================
-    # 현재 12시간 상승률 높은 순
+    # 현재 12H 상승률 높은 순
     # =====================================================
 
     signal_rows.sort(
@@ -2474,24 +2562,45 @@ def focus_section(data):
         key=lambda x:
             x.get(
                 "current_12h_change"
-            ),
+            )
+            if x.get(
+                "current_12h_change"
+            ) is not None
+            else -999999,
 
         reverse=True
 
     )
 
+    # =====================================================
+    # Signal 없음
+    # =====================================================
+
     if not signal_rows:
 
-        signal_table = """
+        signal_table = f"""
 
         <div class="signal-empty">
 
-            BTC 현재 구간은 양수
+            BTC 현재 구간
+            <strong>{period["label"]}</strong>
+            양수
 
             <br>
 
-            TOP15 중 현재 12시간 상승률
-            양수 종목 없음
+            TOP{TOP_N} 중
+
+            <strong>
+                현재 12H 양수
+            </strong>
+
+            +
+
+            <strong>
+                이전 12H 양수 마감
+            </strong>
+
+            조건을 모두 만족하는 종목 없음
 
         </div>
 
@@ -2499,19 +2608,29 @@ def focus_section(data):
 
     else:
 
-        period = get_current_12h_period()
+        # =================================================
+        # 현재 시간대 강조
+        # =================================================
 
         if period["key"] == "09_21":
 
-            header_09_class = "current-period"
+            header_09_class = (
+                "current-period"
+            )
 
-            header_21_class = "inactive-period"
+            header_21_class = (
+                "inactive-period"
+            )
 
         else:
 
-            header_09_class = "inactive-period"
+            header_09_class = (
+                "inactive-period"
+            )
 
-            header_21_class = "current-period"
+            header_21_class = (
+                "current-period"
+            )
 
         signal_items = []
 
@@ -2580,8 +2699,10 @@ def focus_section(data):
                 <div class="section-heading-sub">
 
                     BTC {period["label"]} 양수
+                    · 현재 12H 양수
+                    · 이전 12H 양수 마감
                     · TOP{TOP_N}
-                    · 현재 12H 상승률 높은 순
+                    · 현재 12H 높은 순
 
                 </div>
 
@@ -2728,15 +2849,23 @@ def table_html(data):
 
     if period["key"] == "09_21":
 
-        header_09_class = "current-period"
+        header_09_class = (
+            "current-period"
+        )
 
-        header_21_class = "inactive-period"
+        header_21_class = (
+            "inactive-period"
+        )
 
     else:
 
-        header_09_class = "inactive-period"
+        header_09_class = (
+            "inactive-period"
+        )
 
-        header_21_class = "current-period"
+        header_21_class = (
+            "current-period"
+        )
 
     if not rows:
 
@@ -2866,6 +2995,10 @@ def market_summary_html():
         latest_btc_current_12h_change
     )
 
+    # =====================================================
+    # BTC Signal 상태
+    # =====================================================
+
     if (
 
         latest_btc_current_12h_change
@@ -2888,17 +3021,29 @@ def market_summary_html():
 
         signal_class = "btc-off"
 
+    # =====================================================
+    # 현재 시간대 강조
+    # =====================================================
+
     if period["key"] == "09_21":
 
-        btc_09_class = "btc-current-period"
+        btc_09_class = (
+            "btc-current-period"
+        )
 
-        btc_21_class = "btc-inactive-period"
+        btc_21_class = (
+            "btc-inactive-period"
+        )
 
     else:
 
-        btc_09_class = "btc-inactive-period"
+        btc_09_class = (
+            "btc-inactive-period"
+        )
 
-        btc_21_class = "btc-current-period"
+        btc_21_class = (
+            "btc-current-period"
+        )
 
     return f"""
 
@@ -2976,7 +3121,12 @@ def market_summary_html():
 
                 <div class="btc-period-state">
 
-                    {"현재 시간대" if period["key"] == "09_21" else "이전 시간대"}
+                    {
+                        "현재 시간대"
+                        if period["key"] == "09_21"
+                        else
+                        "이전 시간대"
+                    }
 
                 </div>
 
@@ -3000,7 +3150,12 @@ def market_summary_html():
 
                 <div class="btc-period-state">
 
-                    {"현재 시간대" if period["key"] == "21_09" else "이전 시간대"}
+                    {
+                        "현재 시간대"
+                        if period["key"] == "21_09"
+                        else
+                        "이전 시간대"
+                    }
 
                 </div>
 
@@ -3191,7 +3346,7 @@ color:#8fe0b2;
 
 
 /* =========================================================
-   현재 시간대 / 이전 시간대 공통
+   현재 / 이전 시간대
    ========================================================= */
 
 .current-period{
@@ -4312,15 +4467,19 @@ def startup():
     )
 
     log.info(
-        "★ Signal 필터 = 현재 시간대 12H"
+        "★ Signal 조건 ① = BTC 현재 12H > 0"
     )
 
     log.info(
-        "★ Signal = BTC 현재 12H > 0"
+        "★ Signal 조건 ② = 코인 현재 12H > 0"
     )
 
     log.info(
-        "★ Signal = 코인 현재 12H > 0"
+        "★ Signal 조건 ③ = 코인 이전 12H > 0"
+    )
+
+    log.info(
+        "★ Signal = 현재 + 이전 12H 모두 양수"
     )
 
     log.info(
