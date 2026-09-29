@@ -325,17 +325,10 @@ def get_recent_4h_periods(
         )
 
         periods.append(
-
             make_4h_period(
-
                 start,
-
-                active=(
-                    i == 0
-                )
-
+                active=(i == 0)
             )
-
         )
 
     return periods
@@ -361,9 +354,9 @@ def get_current_4h_period():
 # =========================================================
 # 이전 4H
 #
-# 참고용으로만 사용
+# 화면 표시용
 #
-# SIGNAL 필터에서는 사용하지 않음
+# SIGNAL 필터에는 사용하지 않음
 # =========================================================
 
 def get_previous_4h_period():
@@ -375,19 +368,14 @@ def get_previous_4h_period():
         return None
 
     previous_start = (
-
         current["start"]
         -
         timedelta(hours=4)
-
     )
 
     return make_4h_period(
-
         previous_start,
-
         active=False
-
     )
 
 
@@ -402,11 +390,9 @@ def wait_request():
     with request_lock:
 
         elapsed = (
-
             time.monotonic()
             -
             last_request_time
-
         )
 
         if elapsed < REQUEST_INTERVAL:
@@ -523,17 +509,12 @@ def get_upbit_markets():
     global latest_upbit_markets
 
     response = retry(
-
         requests.get,
-
         "https://api.upbit.com/v1/market/all",
-
         params={
             "isDetails": "false"
         },
-
         timeout=15
-
     )
 
     if response is None:
@@ -579,18 +560,13 @@ def get_upbit_markets():
 
 
         response = retry(
-
             requests.get,
-
             "https://api.upbit.com/v1/ticker",
-
             params={
                 "markets":
                     ",".join(chunk)
             },
-
             timeout=15
-
         )
 
 
@@ -621,23 +597,17 @@ def get_upbit_markets():
             try:
 
                 price = float(
-                    item[
-                        "trade_price"
-                    ]
+                    item["trade_price"]
                 )
 
                 volume = float(
-                    item[
-                        "acc_trade_price_24h"
-                    ]
+                    item["acc_trade_price_24h"]
                 )
 
                 result.append({
 
                     "market":
-                        item[
-                            "market"
-                        ],
+                        item["market"],
 
                     "current_price":
                         price,
@@ -667,8 +637,10 @@ def get_upbit_markets():
 # =========================================================
 # 업비트 당일 변동률
 #
-# SIGNAL 당일 조건
-# 업비트 일봉 기준
+# 기준:
+# 업비트 일봉
+#
+# 현재가 - 전일 종가
 # =========================================================
 
 def daily_change_upbit(
@@ -677,23 +649,15 @@ def daily_change_upbit(
 ):
 
     response = retry(
-
         requests.get,
-
         "https://api.upbit.com/v1/candles/days",
-
         params={
-
             "market":
                 market,
-
             "count":
                 2
-
         },
-
         timeout=15
-
     )
 
 
@@ -727,11 +691,7 @@ def daily_change_upbit(
     try:
 
         previous_close = float(
-
-            data[1][
-                "trade_price"
-            ]
-
+            data[1]["trade_price"]
         )
 
         current_price = float(
@@ -749,7 +709,6 @@ def daily_change_upbit(
 
 
     return (
-
         (
             current_price
             -
@@ -759,7 +718,6 @@ def daily_change_upbit(
         previous_close
         *
         100
-
     )
 
 
@@ -773,23 +731,15 @@ def get_upbit_60m_candles(
 ):
 
     response = retry(
-
         requests.get,
-
         "https://api.upbit.com/v1/candles/minutes/60",
-
         params={
-
             "market":
                 market,
-
             "count":
                 count
-
         },
-
         timeout=15
-
     )
 
 
@@ -828,11 +778,8 @@ def build_upbit_4h_candles(
 ):
 
     candles = get_upbit_60m_candles(
-
         market,
-
         300
-
     )
 
 
@@ -849,13 +796,10 @@ def build_upbit_4h_candles(
         try:
 
             dt = datetime.strptime(
-
                 candle[
                     "candle_date_time_kst"
                 ],
-
                 "%Y-%m-%dT%H:%M:%S"
-
             ).replace(
                 tzinfo=KST
             )
@@ -912,17 +856,13 @@ def build_upbit_4h_candles(
 
 
     df = (
-
         df
-
         .sort_values(
             "datetime"
         )
-
         .drop_duplicates(
             "datetime"
         )
-
     )
 
 
@@ -937,21 +877,17 @@ def build_upbit_4h_candles(
     for period in periods:
 
         part = df[
-
             (
                 df["datetime"]
                 >=
                 period["start"]
             )
-
             &
-
             (
                 df["datetime"]
                 <
                 period["end"]
             )
-
         ].copy()
 
 
@@ -1038,7 +974,6 @@ def build_upbit_4h_candles(
         else:
 
             change = (
-
                 (
                     close_price
                     -
@@ -1048,7 +983,6 @@ def build_upbit_4h_candles(
                 open_price
                 *
                 100
-
             )
 
 
@@ -1087,11 +1021,8 @@ def analyze_4h(
 ):
 
     periods = build_upbit_4h_candles(
-
         market,
-
         current_price
-
     )
 
 
@@ -1112,11 +1043,9 @@ def analyze_4h(
     for period in periods:
 
         if (
-
             period["start"]
             ==
             current_period["start"]
-
         ):
 
             current_change = (
@@ -1125,11 +1054,9 @@ def analyze_4h(
 
 
         if (
-
             period["start"]
             ==
             previous_period["start"]
-
         ):
 
             previous_change = (
@@ -1161,20 +1088,14 @@ def analyze(
 ):
 
     daily_change = daily_change_upbit(
-
         market,
-
         current_price
-
     )
 
 
     four_hour = analyze_4h(
-
         market,
-
         current_price
-
     )
 
 
@@ -1442,14 +1363,10 @@ def update_upbit():
 
 
     markets = sorted(
-
         markets,
-
         key=lambda x:
             x["volume_24h"],
-
         reverse=True
-
     )
 
 
@@ -1462,7 +1379,7 @@ def update_upbit():
 
 
     # =====================================================
-    # BTC 현재 4H
+    # BTC 현재 4H 조건
     # =====================================================
 
     btc_pass = (
@@ -1479,11 +1396,8 @@ def update_upbit():
 
 
     for rank, item in enumerate(
-
         top_markets,
-
         1
-
     ):
 
         market = item[
@@ -1503,11 +1417,8 @@ def update_upbit():
         try:
 
             analysis = analyze(
-
                 market,
-
                 price
-
             )
 
         except Exception as e:
@@ -1520,19 +1431,13 @@ def update_upbit():
 
 
         row = make_row(
-
             rank,
-
             coin,
-
             item[
                 "volume_24h"
             ],
-
             analysis,
-
             price
-
         )
 
 
@@ -1556,7 +1461,8 @@ def update_upbit():
 
             and
 
-            row["daily_change"] > 0
+            row["daily_change"]
+            > 0
 
         )
 
@@ -1573,16 +1479,17 @@ def update_upbit():
 
             and
 
-            row["current_4h_change"] > 0
+            row["current_4h_change"]
+            > 0
 
         )
 
 
         # =================================================
-        # ★ 이전 4H 조건 제거
+        # ★ 이전 4H 조건은 여기서 제거
         #
-        # previous_4h_condition은 더 이상
-        # SIGNAL 판정에 사용하지 않음
+        # previous_4h_condition은
+        # SIGNAL 판정에 사용하지 않는다.
         # =================================================
 
 
@@ -1607,7 +1514,10 @@ def update_upbit():
         )
 
 
-        # 디버깅용
+        # =================================================
+        # 디버깅용 조건
+        # =================================================
+
         row["signal_conditions"] = {
 
             "btc":
@@ -1669,18 +1579,13 @@ def update_upbit():
 def get_okx_btc_price():
 
     response = retry(
-
         requests.get,
-
         f"{OKX_BASE_URL}/api/v5/market/ticker",
-
         params={
             "instId":
                 OKX_BTC_INST_ID
         },
-
         timeout=15
-
     )
 
 
@@ -1758,15 +1663,10 @@ def get_okx_btc_1h_candles(
 
 
     response = retry(
-
         requests.get,
-
         f"{OKX_BASE_URL}/api/v5/market/candles",
-
         params=params,
-
         timeout=15
-
     )
 
 
@@ -1813,11 +1713,8 @@ def get_okx_btc_1h_history():
     ):
 
         data = get_okx_btc_1h_candles(
-
             HISTORY_CHUNK,
-
             after
-
         )
 
 
@@ -1834,13 +1731,8 @@ def get_okx_btc_1h_history():
         try:
 
             oldest = min(
-
-                int(
-                    row[0]
-                )
-
+                int(row[0])
                 for row in data
-
             )
 
         except Exception:
@@ -1878,12 +1770,9 @@ def get_okx_btc_1h_history():
 
 
     ordered = sorted(
-
         unique.values(),
-
         key=lambda x:
             int(x[0])
-
     )
 
 
@@ -1929,24 +1818,16 @@ def get_okx_btc_1h_history():
 
 
     df["datetime_utc"] = pd.to_datetime(
-
         df["timestamp"],
-
         unit="ms",
-
         utc=True
-
     )
 
 
     df["datetime_kst"] = (
-
         df["datetime_utc"]
-
         .dt
-
         .tz_convert(KST)
-
     )
 
 
@@ -1987,31 +1868,20 @@ def aggregate_btc_daily(
 
 
     return (
-
         temp
-
         .sort_values(
             "datetime_kst"
         )
-
         .groupby(
             "daily_start"
         )
-
         .agg(
-
             open=("open", "first"),
-
             high=("high", "max"),
-
             low=("low", "min"),
-
             close=("close", "last")
-
         )
-
         .reset_index()
-
     )
 
 
@@ -2043,26 +1913,19 @@ def get_btc_daily_change(
 
 
     today_0900 = now.replace(
-
         hour=9,
-
         minute=0,
-
         second=0,
-
         microsecond=0
-
     )
 
 
     if now < today_0900:
 
         current_start = (
-
             today_0900
             -
             timedelta(days=1)
-
         )
 
     else:
@@ -2071,13 +1934,9 @@ def get_btc_daily_change(
 
 
     daily["daily_start"] = (
-
         daily["daily_start"]
-
         .dt
-
         .tz_localize(None)
-
     )
 
 
@@ -2089,11 +1948,9 @@ def get_btc_daily_change(
 
 
     previous = daily[
-
         daily["daily_start"]
         <
         target
-
     ]
 
 
@@ -2103,11 +1960,9 @@ def get_btc_daily_change(
 
 
     previous_close = float(
-
         previous.iloc[-1][
             "close"
         ]
-
     )
 
 
@@ -2117,7 +1972,6 @@ def get_btc_daily_change(
 
 
     return (
-
         (
             price
             -
@@ -2127,7 +1981,6 @@ def get_btc_daily_change(
         previous_close
         *
         100
-
     )
 
 
@@ -2155,13 +2008,9 @@ def build_btc_4h(
 
 
     temp["kst_naive"] = (
-
         temp["datetime_kst"]
-
         .dt
-
         .tz_localize(None)
-
     )
 
 
@@ -2175,35 +2024,33 @@ def build_btc_4h(
 
     for period in periods:
 
-        start = period[
-            "start"
-        ].replace(
-            tzinfo=None
+        start = (
+            period["start"]
+            .replace(
+                tzinfo=None
+            )
         )
 
-        end = period[
-            "end"
-        ].replace(
-            tzinfo=None
+        end = (
+            period["end"]
+            .replace(
+                tzinfo=None
+            )
         )
 
 
         part = temp[
-
             (
                 temp["kst_naive"]
                 >=
                 start
             )
-
             &
-
             (
                 temp["kst_naive"]
                 <
                 end
             )
-
         ].copy()
 
 
@@ -2279,7 +2126,6 @@ def build_btc_4h(
         else:
 
             change = (
-
                 (
                     close_price
                     -
@@ -2289,7 +2135,6 @@ def build_btc_4h(
                 open_price
                 *
                 100
-
             )
 
 
@@ -2346,22 +2191,18 @@ def update_btc_market():
 
 
     latest_btc_daily_change = (
-
         get_btc_daily_change(
             price,
             df
         )
-
     )
 
 
     latest_btc_4h_periods = (
-
         build_btc_4h(
             price,
             df
         )
-
     )
 
 
@@ -2376,11 +2217,9 @@ def update_btc_market():
 
 
     latest_btc_current_4h_label = (
-
         current[
             "display_label"
         ]
-
     )
 
 
@@ -2390,17 +2229,13 @@ def update_btc_market():
     for period in latest_btc_4h_periods:
 
         if (
-
             period["start"]
             ==
             current["start"]
-
         ):
 
             latest_btc_current_4h_change = (
-
                 period["change"]
-
             )
 
             break
@@ -2429,18 +2264,13 @@ def update_okx(
 def get_usdt_krw():
 
     response = retry(
-
         requests.get,
-
         "https://api.upbit.com/v1/ticker",
-
         params={
             "markets":
                 "KRW-USDT"
         },
-
         timeout=15
-
     )
 
 
@@ -2598,9 +2428,7 @@ def four_hour_cells_html(
 def btc_4h_cells_html():
 
     return four_hour_cells_html(
-
         latest_btc_4h_periods
-
     )
 
 
@@ -2637,7 +2465,8 @@ def market_summary_html():
 
         and
 
-        latest_btc_current_4h_change > 0
+        latest_btc_current_4h_change
+        > 0
 
     )
 
@@ -2823,6 +2652,77 @@ def unified_card_html(
         badge = ""
 
 
+    # =====================================================
+    # SIGNAL 전용 하단 영역
+    #
+    # 이전 4H는 표시만 함
+    # SIGNAL 조건에는 사용하지 않음
+    # =====================================================
+
+    condition_html = ""
+
+
+    if card_type == "SIGNAL":
+
+        condition_html = f"""
+
+        <div class="unified-condition-row">
+
+            <div class="unified-condition">
+
+                <div class="condition-label">
+                    이전 4H
+                </div>
+
+                <div class="condition-period">
+
+                    {previous_period.get(
+                        "display_label",
+                        "-"
+                    )}
+
+                </div>
+
+                <div class="condition-value">
+
+                    {format_change(
+                        previous_change
+                    )}
+
+                </div>
+
+            </div>
+
+
+            <div class="unified-condition">
+
+                <div class="condition-label">
+                    SIGNAL 조건
+                </div>
+
+                <div class="condition-period">
+                    BTC + 당일 + 현재4H
+                </div>
+
+                <div class="condition-value">
+
+                    <span class="up">
+                        ON
+                    </span>
+
+                </div>
+
+            </div>
+
+        </div>
+
+        """
+
+
+    # =====================================================
+    # 카드 전체
+    # =====================================================
+
     return f"""
 
     <div class="{card_class}">
@@ -2855,11 +2755,13 @@ def unified_card_html(
                 </div>
 
                 <div class="unified-price">
+
                     {format_market_price(
                         row.get(
                             "current_price"
                         )
                     )}
+
                 </div>
 
             </div>
@@ -2872,10 +2774,12 @@ def unified_card_html(
                 </div>
 
                 <div class="unified-volume">
+
                     {row.get(
                         "volume",
                         "-"
                     )}
+
                 </div>
 
             </div>
@@ -2888,10 +2792,12 @@ def unified_card_html(
                 </div>
 
                 <div class="unified-daily">
+
                     {row.get(
                         "daily_html",
                         "-"
                     )}
+
                 </div>
 
             </div>
@@ -2937,73 +2843,7 @@ def unified_card_html(
         </div>
 
 
-        """
-
-        +
-
-        (
-
-            f"""
-
-            <div class="unified-condition-row">
-
-                <div class="unified-condition">
-
-                    <div class="condition-label">
-                        이전 4H
-                    </div>
-
-                    <div class="condition-period">
-
-                        {previous_period.get(
-                            "display_label",
-                            "-"
-                        )}
-
-                    </div>
-
-                    <div class="condition-value">
-
-                        {format_change(
-                            previous_change
-                        )}
-
-                    </div>
-
-                </div>
-
-
-                <div class="unified-condition">
-
-                    <div class="condition-label">
-                        SIGNAL 조건
-                    </div>
-
-                    <div class="condition-period">
-                        BTC + 당일 + 현재4H
-                    </div>
-
-                    <div class="condition-value">
-                        <span class="up">
-                            ON
-                        </span>
-                    </div>
-
-                </div>
-
-            </div>
-
-            """
-
-            if card_type == "SIGNAL"
-
-            else ""
-
-        )
-
-        +
-
-        """
+        {condition_html}
 
     </div>
 
@@ -3066,11 +2906,9 @@ def focus_section(data):
     if not signal_rows:
 
         if (
-
             btc_change is None
             or
             btc_change <= 0
-
         ):
 
             message = (
@@ -3081,11 +2919,9 @@ def focus_section(data):
         else:
 
             message = (
-
                 "BTC 현재 4H는 양수지만 "
                 "당일 변동률 + 현재 4H "
                 "조건을 모두 만족하는 종목 없음"
-
             )
 
 
@@ -3129,23 +2965,22 @@ def focus_section(data):
 
     else:
 
+        signal_cards = []
+
+        for index, row in enumerate(
+            signal_rows
+        ):
+
+            signal_cards.append(
+                unified_card_html(
+                    row,
+                    "SIGNAL",
+                    index + 1
+                )
+            )
+
         body = "".join(
-
-            unified_card_html(
-
-                row,
-
-                "SIGNAL",
-
-                index + 1
-
-            )
-
-            for index, row
-            in enumerate(
-                signal_rows
-            )
-
+            signal_cards
         )
 
 
@@ -3233,16 +3068,12 @@ def top_card_html(
 ):
 
     return unified_card_html(
-
         row,
-
         "TOP",
-
         row.get(
             "rank",
             "-"
         )
-
     )
 
 
@@ -3268,14 +3099,18 @@ def section(
 
     else:
 
-        cards = "".join(
+        top_cards = []
 
-            top_card_html(
-                row
+        for row in data:
+
+            top_cards.append(
+                top_card_html(
+                    row
+                )
             )
 
-            for row in data
-
+        cards = "".join(
+            top_cards
         )
 
 
@@ -4472,11 +4307,8 @@ def dashboard():
         )
 
         content += section(
-
             latest_upbit_data,
-
             latest_upbit_update_time
-
         )
 
 
@@ -4663,31 +4495,21 @@ def startup():
 
 
     threading.Thread(
-
         target=update_dashboard,
-
         daemon=True
-
     ).start()
 
 
     schedule.every(
-
         UPDATE_MINUTES
-
     ).minutes.do(
-
         update_dashboard
-
     )
 
 
     threading.Thread(
-
         target=scheduler,
-
         daemon=True
-
     ).start()
 
 
@@ -4698,11 +4520,7 @@ def startup():
 if __name__ == "__main__":
 
     uvicorn.run(
-
         app,
-
         host="0.0.0.0",
-
         port=8000
-
     )
