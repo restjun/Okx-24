@@ -82,6 +82,9 @@ last_request_time = 0
 
 # =========================================================
 # BTC
+#
+# ※ BTC는 SIGNAL 필터에 사용하지 않음
+# ※ 시장 시황 표시용으로만 사용
 # =========================================================
 
 OKX_BASE_URL = "https://www.okx.com"
@@ -354,7 +357,7 @@ def get_current_4h_period():
 # =========================================================
 # 이전 4H
 #
-# SIGNAL 필터에도 사용
+# SIGNAL 필터에 사용
 # =========================================================
 
 def get_previous_4h_period():
@@ -1967,24 +1970,6 @@ def update_upbit():
     rows = []
 
 
-    # =====================================================
-    # SIGNAL 조건 1
-    # BTC 현재 4H 양수
-    # =====================================================
-
-    btc_condition = (
-
-        latest_btc_current_4h_change
-        is not None
-
-        and
-
-        latest_btc_current_4h_change
-        > 0
-
-    )
-
-
     for rank, item in enumerate(
         top_markets,
         1
@@ -2032,7 +2017,8 @@ def update_upbit():
 
 
         # =================================================
-        # SIGNAL 조건 2
+        # SIGNAL 조건 1
+        #
         # 업비트 당일 변동률 양수
         # =================================================
 
@@ -2050,7 +2036,8 @@ def update_upbit():
 
 
         # =================================================
-        # SIGNAL 조건 3
+        # SIGNAL 조건 2
+        #
         # 해당 코인 이전 4H 양수
         # =================================================
 
@@ -2068,7 +2055,8 @@ def update_upbit():
 
 
         # =================================================
-        # SIGNAL 조건 4
+        # SIGNAL 조건 3
+        #
         # 해당 코인 현재 4H 음수
         # =================================================
 
@@ -2088,17 +2076,14 @@ def update_upbit():
         # =================================================
         # 최종 SIGNAL
         #
-        # BTC 현재4H 양수
-        # + 업비트 당일 양수
-        # + 이전4H 양수
-        # + 현재4H 음수
+        # 업비트 당일 양수
+        # + 이전 4H 양수
+        # + 현재 4H 음수
+        #
+        # ※ BTC 조건 없음
         # =================================================
 
         row["signal_pass"] = (
-
-            btc_condition
-
-            and
 
             daily_condition
 
@@ -2118,9 +2103,6 @@ def update_upbit():
         # =================================================
 
         row["signal_conditions"] = {
-
-            "btc":
-                btc_condition,
 
             "daily":
                 daily_condition,
@@ -2168,7 +2150,7 @@ def update_upbit():
         f"TOP{TOP_N} 업데이트 | "
         f"현재={current['display_label'] if current else '-'} | "
         f"이전={previous['display_label'] if previous else '-'} | "
-        f"BTC4H={latest_btc_current_4h_change} | "
+        f"BTC4H(참고)={latest_btc_current_4h_change} | "
         f"SIGNAL={signal_count}"
 
     )
@@ -2934,17 +2916,22 @@ def update_dashboard():
 
     try:
 
-        # BTC 먼저
+        # BTC
+        # ※ 시장 시황 표시용
+        # ※ SIGNAL 필터에는 사용하지 않음
+
         update_btc_market()
 
 
         # 업비트
+
         if USE_UPBIT == "Y":
 
             update_upbit()
 
 
         # OKX
+
         if USE_OKX == "Y":
 
             usdt = get_usdt_krw()
@@ -3107,6 +3094,8 @@ def btc_4h_cells_html():
 
 # =========================================================
 # BTC 시장 카드
+#
+# ※ SIGNAL 필터와 무관
 # =========================================================
 
 def market_summary_html():
@@ -3131,33 +3120,38 @@ def market_summary_html():
     )
 
 
-    signal_on = (
+    # BTC는 SIGNAL 필터가 아니므로
+    # 여기서는 단순 시장 상태 표시
 
+    if (
         latest_btc_current_4h_change
         is not None
-
         and
-
         latest_btc_current_4h_change
         > 0
+    ):
 
-    )
+        market_status = "상승"
 
+        market_status_class = "btc-on"
 
-    signal_status = (
-        "ON"
-        if signal_on
-        else
-        "OFF"
-    )
+    elif (
+        latest_btc_current_4h_change
+        is not None
+        and
+        latest_btc_current_4h_change
+        < 0
+    ):
 
+        market_status = "하락"
 
-    signal_class = (
-        "btc-on"
-        if signal_on
-        else
-        "btc-off"
-    )
+        market_status_class = "btc-off"
+
+    else:
+
+        market_status = "-"
+
+        market_status_class = "btc-off"
 
 
     return f"""
@@ -3176,6 +3170,7 @@ def market_summary_html():
                     OKX BTC-USDT
                     · 당일 KST 09:00 기준
                     · 4H 업비트 시간 기준
+                    · SIGNAL 필터 제외
                 </div>
 
             </div>
@@ -3204,11 +3199,11 @@ def market_summary_html():
             <div class="btc-signal-box">
 
                 <span class="btc-info">
-                    SIGNAL
+                    MARKET
                 </span>
 
-                <span class="{signal_class}">
-                    {signal_status}
+                <span class="{market_status_class}">
+                    {market_status}
                 </span>
 
             </div>
@@ -3367,7 +3362,7 @@ def unified_card_html(
                 </div>
 
                 <div class="condition-period">
-                    BTC 4H+ · 당일+ · 이전4H+ · 현재4H-
+                    당일+ · 이전4H+ · 현재4H-
                 </div>
 
                 <div class="condition-value">
@@ -3514,6 +3509,13 @@ def unified_card_html(
 
 # =========================================================
 # SIGNAL Section
+#
+# SIGNAL 조건:
+# 1. 당일 > 0
+# 2. 이전 4H > 0
+# 3. 현재 4H < 0
+#
+# BTC 완전 제외
 # =========================================================
 
 def focus_section(data):
@@ -3524,11 +3526,6 @@ def focus_section(data):
 
     previous_period = (
         get_previous_4h_period()
-    )
-
-
-    btc_change = (
-        latest_btc_current_4h_change
     )
 
 
@@ -3567,25 +3564,11 @@ def focus_section(data):
 
     if not signal_rows:
 
-        if (
-            btc_change is None
-            or
-            btc_change <= 0
-        ):
-
-            message = (
-                "BTC 현재 4H가 "
-                "양수가 아니므로 SIGNAL 없음"
-            )
-
-        else:
-
-            message = (
-                "BTC 현재 4H는 양수지만 "
-                "당일 양수 + 이전 4H 양수 + "
-                "현재 4H 음수 조건을 "
-                "모두 만족하는 종목 없음"
-            )
+        message = (
+            "당일 양수 + 이전 4H 양수 + "
+            "현재 4H 음수 조건을 "
+            "모두 만족하는 종목 없음"
+        )
 
 
         body = f"""
@@ -3669,10 +3652,10 @@ def focus_section(data):
 
                 <div class="section-heading-sub">
 
-                    BTC 현재 4H 양수
-                    · 업비트 당일 양수
+                    업비트 당일 양수
                     · 이전 4H 양수
-                    · 코인 현재 4H 음수
+                    · 현재 4H 음수
+                    · BTC 필터 제외
 
                 </div>
 
@@ -3693,23 +3676,18 @@ def focus_section(data):
         <div class="signal-btc-bar">
 
             <div class="signal-btc-title">
-                BTC 현재 4H
+                SIGNAL 조건
             </div>
 
             <div class="signal-btc-period">
 
-                {current_period.get(
-                    "display_label",
-                    "-"
-                )}
+                당일+ · 이전4H+ · 현재4H-
 
             </div>
 
             <div class="signal-btc-value">
 
-                {format_change(
-                    btc_change
-                )}
+                3조건
 
             </div>
 
@@ -4387,7 +4365,7 @@ font-weight:900;
 
 
 /* =========================================================
-   SIGNAL BTC BAR
+   SIGNAL 조건 BAR
    ========================================================= */
 
 .signal-btc-bar{
@@ -5153,19 +5131,19 @@ def startup():
     )
 
     log.info(
-        "1. BTC 현재 4H > 0"
+        "1. 업비트 당일 변동률 > 0"
     )
 
     log.info(
-        "2. 업비트 당일 변동률 > 0"
+        "2. 코인 이전 4H > 0"
     )
 
     log.info(
-        "3. 코인 이전 4H > 0"
+        "3. 코인 현재 4H < 0"
     )
 
     log.info(
-        "4. 코인 현재 4H < 0"
+        "BTC = SIGNAL 필터에서 제외"
     )
 
     log.info(
