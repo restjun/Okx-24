@@ -2756,10 +2756,12 @@ def calculate_signal_conditions(
 ):
 
     # =====================================================
-    # 일봉 SIGNAL 조건 계산
+    # 일봉 SIGNAL 조건
     #
-    # 화면에서는 일봉 SIGNAL 리스트를 삭제하지만
-    # 기존 데이터 계산은 그대로 유지
+    # 화면에서는 일봉 SIGNAL 전용 리스트를
+    # 표시하지 않지만,
+    # 4H SIGNAL과 동시 충족 여부를 판단하기 위해
+    # 계산은 반드시 유지
     # =====================================================
 
     daily_change = (
@@ -3123,6 +3125,27 @@ def update_upbit():
     )
 
 
+    dual_signal_count = sum(
+
+        1
+
+        for row in rows
+
+        if (
+            row.get(
+                "signal_pass",
+                False
+            )
+            and
+            row.get(
+                "daily_signal_pass",
+                False
+            )
+        )
+
+    )
+
+
     current_daily = (
         get_current_daily_period()
     )
@@ -3150,6 +3173,10 @@ def update_upbit():
 
         f"4H SIGNAL="
         f"{signal_count}"
+        " | "
+
+        f"일봉+4H 동시 SIGNAL="
+        f"{dual_signal_count}"
 
     )
 
@@ -4530,17 +4557,48 @@ def unified_card_html(
 
     elif card_type == "SIGNAL_4H":
 
-        title = "🚀 4H SIGNAL"
+        # =================================================
+        # 4H SIGNAL
+        #
+        # 일봉 SIGNAL까지 동시에 충족하면
+        # 별도 강조
+        # =================================================
 
-        card_class = (
-            "unified-market-card "
-            "signal-market-card"
+        daily_signal_pass = row.get(
+            "daily_signal_pass",
+            False
         )
 
-        header_class = (
-            "unified-card-header "
-            "signal-header"
-        )
+
+        if daily_signal_pass:
+
+            title = "🔥 일봉 + 4H SIGNAL"
+
+            card_class = (
+                "unified-market-card "
+                "signal-market-card "
+                "dual-signal-card"
+            )
+
+            header_class = (
+                "unified-card-header "
+                "signal-header "
+                "dual-signal-header"
+            )
+
+        else:
+
+            title = "🚀 4H SIGNAL"
+
+            card_class = (
+                "unified-market-card "
+                "signal-market-card"
+            )
+
+            header_class = (
+                "unified-card-header "
+                "signal-header"
+            )
 
 
         volume_rank = row.get(
@@ -4561,11 +4619,21 @@ def unified_card_html(
             )
 
 
-        badge = f"""
-        <span class="signal-badge">
-            {volume_rank_text}
-        </span>
-        """
+        if daily_signal_pass:
+
+            badge = f"""
+            <span class="signal-badge dual-signal-badge">
+                🔥 일봉+4H
+            </span>
+            """
+
+        else:
+
+            badge = f"""
+            <span class="signal-badge">
+                {volume_rank_text}
+            </span>
+            """
 
 
         signal_patterns = row.get(
@@ -4590,39 +4658,124 @@ def unified_card_html(
             pattern_text = "-"
 
 
-        condition_html = f"""
+        # =================================================
+        # 일봉 + 4H 동시 SIGNAL
+        # =================================================
 
-        <div class="unified-condition-row signal-condition-only">
+        if daily_signal_pass:
 
-            <div class="unified-condition">
+            daily_signal_patterns = row.get(
+                "daily_signal_conditions",
+                {}
+            ).get(
+                "current_signal_patterns",
+                []
+            )
 
-                <div class="condition-label">
-                    4H SIGNAL 조건
-                </div>
 
-                <div class="condition-period">
-                    당일 양수 + 현재 4H 양봉
-                </div>
+            if daily_signal_patterns:
 
-                <div class="condition-value">
+                daily_pattern_text = (
+                    " / ".join(
+                        daily_signal_patterns
+                    )
+                )
 
-                    <span class="up">
-                        {html.escape(
-                            pattern_text
-                        )}
-                    </span>
+            else:
 
-                    <span class="condition-note">
-                        현재 4H 실시간 판정
-                    </span>
+                daily_pattern_text = "-"
+
+
+            condition_html = f"""
+
+            <div class="
+                unified-condition-row
+                dual-signal-condition
+            ">
+
+                <div class="unified-condition">
+
+                    <div class="condition-label">
+                        🔥 일봉 + 4H SIGNAL 동시 충족
+                    </div>
+
+
+                    <div class="condition-period">
+                        일봉 SIGNAL
+                    </div>
+
+
+                    <div class="condition-value">
+
+                        <span class="up">
+                            {html.escape(
+                                daily_pattern_text
+                            )}
+                        </span>
+
+                    </div>
+
+
+                    <div class="condition-period">
+                        4H SIGNAL
+                    </div>
+
+
+                    <div class="condition-value">
+
+                        <span class="up">
+                            {html.escape(
+                                pattern_text
+                            )}
+                        </span>
+
+                    </div>
+
 
                 </div>
 
             </div>
 
-        </div>
+            """
 
-        """
+        else:
+
+            condition_html = f"""
+
+            <div class="
+                unified-condition-row
+                signal-condition-only
+            ">
+
+                <div class="unified-condition">
+
+                    <div class="condition-label">
+                        4H SIGNAL 조건
+                    </div>
+
+                    <div class="condition-period">
+                        당일 양수 + 현재 4H 양봉
+                    </div>
+
+                    <div class="condition-value">
+
+                        <span class="up">
+                            {html.escape(
+                                pattern_text
+                            )}
+                        </span>
+
+                        <span class="condition-note">
+                            현재 4H 실시간 판정
+                        </span>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+            """
 
 
     else:
@@ -4906,6 +5059,7 @@ def focus_section(
                     · 2캔들 상승장악 / 관통형
                     · 3캔들 상승장악 / 관통형
                     · 4캔들 상승장악 / 관통형
+                    · 🔥 일봉 SIGNAL 동시 충족 강조
 
                 </div>
 
@@ -5473,6 +5627,54 @@ h1{
     white-space:nowrap;
 }
 
+/* =========================================================
+   일봉 + 4H 동시 SIGNAL 강조
+   ========================================================= */
+
+.dual-signal-card{
+    border:2px solid #d9a83f !important;
+    background:#15150f !important;
+    box-shadow:
+        0 0 0 1px rgba(224,189,109,0.25),
+        0 0 18px rgba(224,189,109,0.10);
+}
+
+.dual-signal-header{
+    background:#211d11 !important;
+    border-bottom:1px solid #8a6c2e !important;
+}
+
+.dual-signal-header .unified-card-title{
+    color:#f0d486 !important;
+}
+
+.dual-signal-header .unified-card-coin{
+    color:#fff1b5 !important;
+}
+
+.dual-signal-badge{
+    background:#3a2c12 !important;
+    border-color:#d9a83f !important;
+    color:#f0d486 !important;
+}
+
+.dual-signal-condition{
+    background:#18160e !important;
+    border-top:1px solid #8a6c2e !important;
+}
+
+.dual-signal-condition .condition-label{
+    color:#f0d486 !important;
+}
+
+.dual-signal-condition .condition-period{
+    color:#d8c078 !important;
+}
+
+.dual-signal-condition .condition-value{
+    color:#8fe0b2 !important;
+}
+
 .unified-main-row{
     display:grid;
     grid-template-columns:
@@ -5937,6 +6139,13 @@ h1{
         font-size:4.5px;
     }
 
+    .dual-signal-card{
+        border-width:2px !important;
+        box-shadow:
+            0 0 0 1px rgba(224,189,109,0.25),
+            0 0 12px rgba(224,189,109,0.10);
+    }
+
 }
 
 
@@ -6118,13 +6327,16 @@ h1{
 # =========================================================
 # Dashboard
 #
-# 변경:
-# 일봉 SIGNAL Section 출력 제거
-#
 # 화면:
 # 1. BTC 시장 시황
 # 2. 4H SIGNAL
 # 3. 업비트 TOP20
+#
+# 일봉 SIGNAL 전용 리스트는 표시하지 않음
+#
+# 단,
+# 일봉 SIGNAL 판정 자체는 유지하여
+# 4H SIGNAL과 동시 충족 시 강조
 #
 # TOP20 카드 내부의 일봉은 그대로 유지
 # =========================================================
@@ -6141,12 +6353,12 @@ def dashboard():
     if USE_UPBIT == "Y":
 
         # =================================================
-        # 요청 순서
+        # 화면 출력 순서
         #
         # 1. 4H SIGNAL
         # 2. 업비트 TOP20
         #
-        # 일봉 SIGNAL 리스트는 화면에서 제거
+        # 일봉 SIGNAL 전용 리스트는 제거
         # =================================================
 
         content += focus_section(
@@ -6307,11 +6519,19 @@ def startup():
     )
 
     log.info(
-        "일봉 SIGNAL 리스트 화면 출력 = 삭제"
+        "일봉 SIGNAL 전용 리스트 화면 출력 = 삭제"
+    )
+
+    log.info(
+        "일봉 SIGNAL 판정 = 유지"
     )
 
     log.info(
         "4H SIGNAL = 상승 패턴만"
+    )
+
+    log.info(
+        "일봉 + 4H SIGNAL 동시 충족 = 카드 강조"
     )
 
     log.info(
