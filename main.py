@@ -3015,6 +3015,11 @@ def update_upbit():
     )
 
 
+    # =====================================================
+    # 전체 업비트 KRW 마켓 거래대금 순위
+    # 1위 = 가장 거래대금이 큰 종목
+    # =====================================================
+
     volume_rank_map = {
 
         item["market"]:
@@ -4619,11 +4624,16 @@ def unified_card_html(
             )
 
 
+        # =================================================
+        # 일봉 + 4H 동시 충족이면
+        # 거래대금 순위도 같이 표시
+        # =================================================
+
         if daily_signal_pass:
 
             badge = f"""
             <span class="signal-badge dual-signal-badge">
-                🔥 일봉+4H
+                🔥 일봉+4H · {volume_rank_text}
             </span>
             """
 
@@ -4941,16 +4951,23 @@ def focus_section(
     ]
 
 
+    # =====================================================
+    # SIGNAL 정렬
+    #
+    # 변동률이 아니라
+    # 업비트 전체 거래대금 순위 기준
+    #
+    # volume_rank = 1 이 가장 높은 거래대금
+    # =====================================================
+
     signal_rows.sort(
 
         key=lambda row:
 
             row.get(
-                "current_4h_change",
-                float("-inf")
-            ),
-
-        reverse=True
+                "volume_rank",
+                float("inf")
+            )
 
     )
 
@@ -5060,6 +5077,7 @@ def focus_section(
                     · 3캔들 상승장악 / 관통형
                     · 4캔들 상승장악 / 관통형
                     · 🔥 일봉 SIGNAL 동시 충족 강조
+                    · 거래대금 순위 우선
 
                 </div>
 
@@ -5091,7 +5109,7 @@ def focus_section(
             </div>
 
             <div class="signal-btc-value">
-                현재 4H 변동률 우선
+                거래대금 순위 우선
             </div>
 
         </div>
@@ -5627,6 +5645,7 @@ h1{
     white-space:nowrap;
 }
 
+
 /* =========================================================
    일봉 + 4H 동시 SIGNAL 강조
    ========================================================= */
@@ -5806,16 +5825,6 @@ h1{
     text-align:center;
     font-size:9px;
     font-weight:900;
-}
-
-.top-update-bar{
-    display:flex;
-    justify-content:space-between;
-    align-items:center;
-    padding:6px 4px;
-    color:#65717b;
-    font-size:6.5px;
-    font-weight:800;
 }
 
 .signal-empty-card{
@@ -6532,6 +6541,10 @@ def startup():
 
     log.info(
         "일봉 + 4H SIGNAL 동시 충족 = 카드 강조"
+    )
+
+    log.info(
+        "SIGNAL 정렬 = 거래대금 순위"
     )
 
     log.info(
