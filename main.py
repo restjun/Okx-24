@@ -2808,13 +2808,6 @@ def calculate_signal_conditions(
 
     # =====================================================
     # 일봉 SIGNAL 조건
-    #
-    # 화면에서는 일봉 SIGNAL 전용 리스트를
-    # 표시하지 않지만,
-    # 4H SIGNAL과 동시 충족 여부를 판단하기 위해
-    # 계산은 유지
-    #
-    # 관통형은 SIGNAL에서 제외
     # =====================================================
 
     daily_change = (
@@ -2930,8 +2923,6 @@ def calculate_signal_conditions(
 
     # =====================================================
     # 4H SIGNAL
-    #
-    # 관통형 제외
     # =====================================================
 
     daily_condition_4h = (
@@ -4945,11 +4936,6 @@ def unified_card_html(
 
 # =========================================================
 # 4H SIGNAL Section
-#
-# 정렬 기준
-# 거래대금 순위
-#
-# 거래대금 1위 → 2위 → 3위...
 # =========================================================
 
 def focus_section(
@@ -4978,12 +4964,6 @@ def focus_section(
 
     ]
 
-
-    # =====================================================
-    # SIGNAL 순위
-    #
-    # 변동률이 아니라 거래대금 순위
-    # =====================================================
 
     signal_rows.sort(
 
@@ -5764,6 +5744,46 @@ h1{
     font-weight:900;
 }
 
+
+/* =========================================================
+   당일 시세 양수 / 음수 강조
+   ========================================================= */
+
+.unified-main-item:has(.unified-daily .up){
+    background:#10271c;
+    box-shadow:
+        inset 0 0 0 1px rgba(120,207,162,0.25);
+}
+
+.unified-main-item:has(.unified-daily .down){
+    background:#2a1518;
+    box-shadow:
+        inset 0 0 0 1px rgba(223,133,136,0.25);
+}
+
+.unified-daily .up{
+    color:#78cfa2 !important;
+    font-size:11px;
+    font-weight:900;
+}
+
+.unified-daily .down{
+    color:#df8588 !important;
+    font-size:11px;
+    font-weight:900;
+}
+
+.unified-daily .zero{
+    color:#727c86 !important;
+    font-size:10px;
+    font-weight:900;
+}
+
+
+/* =========================================================
+   시간대 카드
+   ========================================================= */
+
 .timeframe-card-title{
     min-height:29px;
     display:flex;
@@ -6110,6 +6130,19 @@ h1{
         font-size:7px;
     }
 
+    /* =====================================================
+       모바일 당일 시세 강조
+       ===================================================== */
+
+    .unified-daily .up,
+    .unified-daily .down{
+        font-size:8px;
+    }
+
+    .unified-daily .zero{
+        font-size:7px;
+    }
+
     .timeframe-card-title{
         min-height:23px;
         padding:4px 6px;
@@ -6323,6 +6356,19 @@ h1{
     .unified-price,
     .unified-volume,
     .unified-daily{
+        font-size:6px;
+    }
+
+    /* =====================================================
+       380px 이하 당일 시세 강조
+       ===================================================== */
+
+    .unified-daily .up,
+    .unified-daily .down{
+        font-size:7px;
+    }
+
+    .unified-daily .zero{
         font-size:6px;
     }
 
@@ -6691,6 +6737,18 @@ def startup():
 
     log.info(
         "ROC = 삭제"
+    )
+
+    log.info(
+        "당일 시세 양수 = 초록색 강조"
+    )
+
+    log.info(
+        "당일 시세 음수 = 빨간색 강조"
+    )
+
+    log.info(
+        "당일 시세 0% = 회색 표시"
     )
 
     log.info(
