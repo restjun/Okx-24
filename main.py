@@ -1141,10 +1141,6 @@ def candle_parts(candle):
 
 # =========================================================
 # 1개 캔들 패턴
-#
-# 도지
-# 망치형
-# 역망치형
 # =========================================================
 
 def detect_single_candle_pattern(
@@ -1223,12 +1219,6 @@ def detect_single_candle_pattern(
 
 # =========================================================
 # 2개 캔들 패턴
-#
-# 상승장악
-# 관통형
-#
-# 하락장악
-# 먹구름형
 # =========================================================
 
 def detect_two_candle_pattern(
@@ -1251,9 +1241,7 @@ def detect_two_candle_pattern(
     patterns = []
 
 
-    # -----------------------------------------------------
     # 상승장악
-    # -----------------------------------------------------
 
     if (
 
@@ -1280,12 +1268,7 @@ def detect_two_candle_pattern(
         patterns.append("상승장악")
 
 
-    # -----------------------------------------------------
     # 관통형
-    #
-    # 일반 캔들 패턴 표시용
-    # SIGNAL에서는 사용하지 않음
-    # -----------------------------------------------------
 
     midpoint = (
         p1["open"] +
@@ -1314,9 +1297,7 @@ def detect_two_candle_pattern(
         patterns.append("관통형")
 
 
-    # -----------------------------------------------------
     # 하락장악
-    # -----------------------------------------------------
 
     if (
 
@@ -1343,9 +1324,7 @@ def detect_two_candle_pattern(
         patterns.append("하락장악")
 
 
-    # -----------------------------------------------------
     # 먹구름형
-    # -----------------------------------------------------
 
     if (
 
@@ -1399,9 +1378,7 @@ def detect_three_candle_pattern(
     patterns = []
 
 
-    # -----------------------------------------------------
     # 모닝스타
-    # -----------------------------------------------------
 
     if (
 
@@ -1436,9 +1413,7 @@ def detect_three_candle_pattern(
         patterns.append("모닝스타")
 
 
-    # -----------------------------------------------------
     # 3연속양봉
-    # -----------------------------------------------------
 
     if (
 
@@ -1465,9 +1440,7 @@ def detect_three_candle_pattern(
         patterns.append("3연속양봉")
 
 
-    # -----------------------------------------------------
     # 3캔들 상승패턴
-    # -----------------------------------------------------
 
     if (
 
@@ -1495,8 +1468,6 @@ def detect_three_candle_pattern(
         ) / 2
 
 
-        # 3캔들 상승장악
-
         if (
 
             p3["open"] <= first_body_low
@@ -1516,11 +1487,6 @@ def detect_three_candle_pattern(
             )
 
 
-        # 3캔들 관통형
-        #
-        # 일반 캔들 패턴 표시용
-        # SIGNAL에서는 사용하지 않음
-
         if (
 
             p3["close"] > first_midpoint
@@ -1536,9 +1502,7 @@ def detect_three_candle_pattern(
             )
 
 
-    # -----------------------------------------------------
     # 3캔들 하락패턴
-    # -----------------------------------------------------
 
     if (
 
@@ -1673,10 +1637,6 @@ def detect_four_candle_pattern(
         ) / 2
 
 
-        # -------------------------------------------------
-        # 4캔들 상승장악
-        # -------------------------------------------------
-
         if (
 
             p4["open"] <= first_body_low
@@ -1695,13 +1655,6 @@ def detect_four_candle_pattern(
                 "4캔들 상승장악"
             )
 
-
-        # -------------------------------------------------
-        # 4캔들 관통형
-        #
-        # 일반 캔들 패턴 표시용
-        # SIGNAL에서는 사용하지 않음
-        # -------------------------------------------------
 
         if (
 
@@ -2781,10 +2734,6 @@ def make_row(
 
 # =========================================================
 # SIGNAL 패턴 목록
-#
-# 관통형 제외
-#
-# SIGNAL에서는 상승장악 계열만 사용
 # =========================================================
 
 SIGNAL_CANDLE_PATTERNS = [
@@ -2805,10 +2754,6 @@ SIGNAL_CANDLE_PATTERNS = [
 def calculate_signal_conditions(
     row
 ):
-
-    # =====================================================
-    # 일봉 SIGNAL 조건
-    # =====================================================
 
     daily_change = (
         row.get(
@@ -4474,6 +4419,39 @@ def market_summary_html():
 
 
 # =========================================================
+# 첫 줄 색상 클래스
+#
+# 당일 변동률 기준으로
+# 현재가 / 거래대금 / 당일 변동률
+# 3개 영역을 함께 색상 처리
+# =========================================================
+
+def get_main_row_class(row):
+
+    daily_change = get_change_value(
+        row.get(
+            "daily_change"
+        )
+    )
+
+
+    if daily_change is not None:
+
+        if daily_change > 0:
+
+            return "unified-main-row daily-positive"
+
+        if daily_change < 0:
+
+            return "unified-main-row daily-negative"
+
+        return "unified-main-row daily-zero"
+
+
+    return "unified-main-row daily-zero"
+
+
+# =========================================================
 # 공통 카드
 # =========================================================
 
@@ -4819,6 +4797,11 @@ def unified_card_html(
         condition_html = ""
 
 
+    main_row_class = get_main_row_class(
+        row
+    )
+
+
     return f"""
 
     <div class="{card_class}">
@@ -4842,7 +4825,7 @@ def unified_card_html(
         </div>
 
 
-        <div class="unified-main-row">
+        <div class="{main_row_class}">
 
             <div class="unified-main-item">
 
@@ -5307,15 +5290,15 @@ h1{
 
 .unified-section{
     width:100%;
-    margin:10px 0 14px;
+    margin:8px 0 10px;
 }
 
 .section-title-card{
     display:flex;
     align-items:center;
     width:100%;
-    min-height:50px;
-    padding:8px 10px;
+    min-height:46px;
+    padding:6px 9px;
     background:#10151b;
     border:2px solid #252e38;
     border-radius:12px;
@@ -5328,8 +5311,8 @@ h1{
     align-items:center;
     justify-content:center;
     width:35px;
-    height:35px;
-    margin-right:9px;
+    height:32px;
+    margin-right:8px;
     border-radius:8px;
     background:#18251f;
     border:1px solid #315a48;
@@ -5359,10 +5342,10 @@ h1{
 }
 
 .section-heading-sub{
-    margin-top:2px;
+    margin-top:1px;
     color:#87919b;
     font-size:7px;
-    line-height:10px;
+    line-height:9px;
     font-weight:700;
     white-space:nowrap;
     overflow:hidden;
@@ -5374,9 +5357,9 @@ h1{
     display:flex;
     align-items:center;
     justify-content:center;
-    min-height:28px;
-    margin-left:8px;
-    padding:5px 8px;
+    min-height:25px;
+    margin-left:7px;
+    padding:4px 7px;
     border-radius:7px;
     background:#173326;
     border:1px solid #4f9b73;
@@ -5386,9 +5369,14 @@ h1{
     white-space:nowrap;
 }
 
+
+/* =========================================================
+   BTC
+   ========================================================= */
+
 .market-card{
     width:100%;
-    margin:3px 0 14px;
+    margin:3px 0 10px;
     background:#0f141a;
     border:2px solid #252e38;
     border-radius:13px;
@@ -5398,8 +5386,8 @@ h1{
 .market-card-header{
     display:flex;
     align-items:center;
-    min-height:44px;
-    padding:7px 10px;
+    min-height:40px;
+    padding:5px 9px;
     background:#121820;
     border-bottom:1px solid #29323c;
 }
@@ -5417,7 +5405,7 @@ h1{
 }
 
 .market-title-sub{
-    margin-top:2px;
+    margin-top:1px;
     color:#7e8994;
     font-size:6.5px;
     font-weight:700;
@@ -5428,7 +5416,7 @@ h1{
 
 .market-time{
     flex:none;
-    margin-left:8px;
+    margin-left:7px;
     color:#68737e;
     font-size:6.5px;
     font-weight:800;
@@ -5442,12 +5430,12 @@ h1{
         1fr
         1.6fr;
     align-items:center;
-    min-height:58px;
+    min-height:51px;
     background:#11161c;
 }
 
 .btc-name{
-    padding-left:13px;
+    padding-left:12px;
     color:#edf1f4;
     font-size:11px;
     font-weight:900;
@@ -5467,7 +5455,7 @@ h1{
 }
 
 .btc-signal-box{
-    min-height:58px;
+    min-height:51px;
     display:flex;
     align-items:center;
     justify-content:center;
@@ -5494,16 +5482,21 @@ h1{
 }
 
 .btc-timeframe-title{
-    min-height:30px;
+    min-height:26px;
     display:flex;
     align-items:center;
-    padding:5px 10px;
+    padding:4px 9px;
     background:#111820;
     border-top:1px solid #29323c;
     color:#aeb8c0;
     font-size:8px;
     font-weight:900;
 }
+
+
+/* =========================================================
+   6칸 영역
+   ========================================================= */
 
 .btc-4h-grid,
 .unified-4h-grid{
@@ -5520,10 +5513,10 @@ h1{
     flex-direction:column;
     align-items:center;
     justify-content:center;
-    min-height:70px;
+    min-height:61px;
     background:#0d1319;
-    gap:3px;
-    padding:4px 2px;
+    gap:2px;
+    padding:3px 2px;
 }
 
 .four-hour-label{
@@ -5546,7 +5539,7 @@ h1{
 .candle-pattern{
     color:#e0bd6d;
     font-size:6px;
-    line-height:8px;
+    line-height:7px;
     font-weight:900;
     text-align:center;
     white-space:nowrap;
@@ -5574,19 +5567,16 @@ h1{
     color:#f0d486;
 }
 
-.no-4h-data{
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    min-height:50px;
-    color:#59636e;
-}
+
+/* =========================================================
+   카드
+   ========================================================= */
 
 .top-card-list,
 .signal-card-list{
     display:flex;
     flex-direction:column;
-    gap:8px;
+    gap:6px;
 }
 
 .unified-market-card{
@@ -5604,8 +5594,8 @@ h1{
 .unified-card-header{
     display:flex;
     align-items:center;
-    min-height:44px;
-    padding:7px 10px;
+    min-height:39px;
+    padding:5px 9px;
     background:#121820;
     border-bottom:1px solid #29323c;
 }
@@ -5640,7 +5630,7 @@ h1{
 }
 
 .signal-badge{
-    padding:4px 7px;
+    padding:3px 6px;
     border-radius:6px;
     background:#183528;
     border:1px solid #4f9b73;
@@ -5652,7 +5642,7 @@ h1{
 
 
 /* =========================================================
-   일봉 + 4H 동시 SIGNAL 강조
+   일봉 + 4H 동시 SIGNAL
    ========================================================= */
 
 .dual-signal-card{
@@ -5682,22 +5672,13 @@ h1{
     color:#f0d486 !important;
 }
 
-.dual-signal-condition{
-    background:#18160e !important;
-    border-top:1px solid #8a6c2e !important;
-}
 
-.dual-signal-condition .condition-label{
-    color:#f0d486 !important;
-}
-
-.dual-signal-condition .condition-period{
-    color:#d8c078 !important;
-}
-
-.dual-signal-condition .condition-value{
-    color:#8fe0b2 !important;
-}
+/* =========================================================
+   첫 번째 줄
+   현재가 / 거래대금 / 당일
+   높이만 축소
+   글자 크기는 기존 유지
+   ========================================================= */
 
 .unified-main-row{
     display:grid;
@@ -5705,7 +5686,7 @@ h1{
         1.2fr
         1fr
         1fr;
-    min-height:58px;
+    min-height:51px;
     background:#11161c;
 }
 
@@ -5714,7 +5695,8 @@ h1{
     flex-direction:column;
     align-items:center;
     justify-content:center;
-    gap:4px;
+    gap:2px;
+    padding:3px 2px;
 }
 
 .unified-main-item + .unified-main-item{
@@ -5746,20 +5728,82 @@ h1{
 
 
 /* =========================================================
-   당일 시세 양수 / 음수 강조
+   당일 변동률 기준
+   현재가 + 거래대금 + 당일
+   3칸 전체 색상
    ========================================================= */
 
-.unified-main-item:has(.unified-daily .up){
+.unified-main-row.daily-positive
+.unified-main-item{
     background:#10271c;
-    box-shadow:
-        inset 0 0 0 1px rgba(120,207,162,0.25);
 }
 
-.unified-main-item:has(.unified-daily .down){
+.unified-main-row.daily-negative
+.unified-main-item{
     background:#2a1518;
-    box-shadow:
-        inset 0 0 0 1px rgba(223,133,136,0.25);
 }
+
+.unified-main-row.daily-zero
+.unified-main-item{
+    background:#15191d;
+}
+
+
+/* 상승 */
+
+.unified-main-row.daily-positive
+.unified-main-item{
+    box-shadow:
+        inset 0 0 0 1px rgba(120,207,162,0.18);
+}
+
+.unified-main-row.daily-positive
+.unified-price,
+.unified-main-row.daily-positive
+.unified-volume,
+.unified-main-row.daily-positive
+.unified-daily{
+    color:#78cfa2 !important;
+}
+
+
+/* 하락 */
+
+.unified-main-row.daily-negative
+.unified-main-item{
+    box-shadow:
+        inset 0 0 0 1px rgba(223,133,136,0.18);
+}
+
+.unified-main-row.daily-negative
+.unified-price,
+.unified-main-row.daily-negative
+.unified-volume,
+.unified-main-row.daily-negative
+.unified-daily{
+    color:#df8588 !important;
+}
+
+
+/* 0 */
+
+.unified-main-row.daily-zero
+.unified-main-item{
+    box-shadow:
+        inset 0 0 0 1px rgba(114,124,134,0.12);
+}
+
+.unified-main-row.daily-zero
+.unified-price,
+.unified-main-row.daily-zero
+.unified-volume,
+.unified-main-row.daily-zero
+.unified-daily{
+    color:#727c86 !important;
+}
+
+
+/* 당일 변동률 자체 */
 
 .unified-daily .up{
     color:#78cfa2 !important;
@@ -5781,14 +5825,14 @@ h1{
 
 
 /* =========================================================
-   시간대 카드
+   시간대
    ========================================================= */
 
 .timeframe-card-title{
-    min-height:29px;
+    min-height:26px;
     display:flex;
     align-items:center;
-    padding:5px 9px;
+    padding:4px 8px;
     background:#111820;
     border-top:1px solid #29323c;
     color:#9da8b1;
@@ -5798,7 +5842,7 @@ h1{
 
 .unified-condition-row{
     width:100%;
-    min-height:50px;
+    min-height:45px;
     background:#0f171d;
     border-top:1px solid #29343d;
 }
@@ -5808,9 +5852,9 @@ h1{
     flex-direction:column;
     align-items:center;
     justify-content:center;
-    min-height:50px;
-    gap:3px;
-    padding:5px 8px;
+    min-height:45px;
+    gap:2px;
+    padding:4px 7px;
 }
 
 .condition-label{
@@ -5838,6 +5882,11 @@ h1{
     font-weight:700;
 }
 
+
+/* =========================================================
+   SIGNAL
+   ========================================================= */
+
 .signal-btc-bar{
     display:grid;
     grid-template-columns:
@@ -5845,8 +5894,8 @@ h1{
         1.4fr
         1fr;
     align-items:center;
-    min-height:42px;
-    margin-top:8px;
+    min-height:37px;
+    margin-top:6px;
     background:#111820;
     border:1px solid #29343d;
     border-radius:8px;
@@ -5876,7 +5925,7 @@ h1{
     display:flex;
     justify-content:space-between;
     align-items:center;
-    padding:6px 4px;
+    padding:5px 4px;
     color:#65717b;
     font-size:6.5px;
     font-weight:800;
@@ -5887,18 +5936,18 @@ h1{
     flex-direction:column;
     align-items:center;
     justify-content:center;
-    min-height:120px;
-    margin-top:8px;
+    min-height:105px;
+    margin-top:6px;
     background:#10161c;
     border:1px solid #29333d;
     border-radius:11px;
     text-align:center;
-    padding:15px;
+    padding:12px;
 }
 
 .signal-empty-icon{
     font-size:20px;
-    margin-bottom:5px;
+    margin-bottom:4px;
 }
 
 .signal-empty-title{
@@ -5908,14 +5957,14 @@ h1{
 }
 
 .signal-empty-text{
-    margin-top:7px;
+    margin-top:6px;
     color:#77838d;
     font-size:7px;
     font-weight:800;
 }
 
 .signal-empty-sub{
-    margin-top:6px;
+    margin-top:5px;
     color:#59646e;
     font-size:6px;
     font-weight:700;
@@ -5937,7 +5986,7 @@ h1{
 }
 
 .empty-card{
-    min-height:70px;
+    min-height:60px;
     display:flex;
     align-items:center;
     justify-content:center;
@@ -5949,6 +5998,12 @@ h1{
     font-weight:800;
 }
 
+
+/* =========================================================
+   모바일
+   글자 크기는 기존 유지
+   높이와 여백만 축소
+   ========================================================= */
 
 @media(max-width:600px){
 
@@ -5963,12 +6018,12 @@ h1{
     }
 
     .unified-section{
-        margin:8px 0 10px;
+        margin:6px 0 8px;
     }
 
     .section-title-card{
-        min-height:40px;
-        padding:5px 6px;
+        min-height:38px;
+        padding:4px 6px;
         border-radius:9px;
     }
 
@@ -5991,7 +6046,7 @@ h1{
     }
 
     .current-time-badge{
-        min-height:22px;
+        min-height:21px;
         margin-left:5px;
         padding:3px 5px;
         border-radius:5px;
@@ -5999,13 +6054,13 @@ h1{
     }
 
     .market-card{
-        margin:3px 0 9px;
+        margin:3px 0 8px;
         border-radius:9px;
     }
 
     .market-card-header{
-        min-height:36px;
-        padding:5px 7px;
+        min-height:34px;
+        padding:4px 7px;
     }
 
     .market-title-main{
@@ -6021,7 +6076,7 @@ h1{
     }
 
     .btc-main-row{
-        min-height:43px;
+        min-height:40px;
         grid-template-columns:
             0.8fr
             1.1fr
@@ -6043,7 +6098,7 @@ h1{
     }
 
     .btc-signal-box{
-        min-height:43px;
+        min-height:40px;
         gap:3px;
     }
 
@@ -6057,8 +6112,8 @@ h1{
     }
 
     .btc-timeframe-title{
-        min-height:24px;
-        padding:4px 7px;
+        min-height:22px;
+        padding:3px 7px;
         font-size:6px;
     }
 
@@ -6068,7 +6123,9 @@ h1{
     }
 
     .four-hour-cell{
-        min-height:52px;
+        min-height:47px;
+        padding:2px 2px;
+        gap:2px;
     }
 
     .four-hour-label{
@@ -6093,8 +6150,8 @@ h1{
     }
 
     .unified-card-header{
-        min-height:36px;
-        padding:5px 7px;
+        min-height:33px;
+        padding:4px 7px;
     }
 
     .unified-card-rank{
@@ -6116,8 +6173,16 @@ h1{
         padding:3px 5px;
     }
 
+
+    /* 첫 줄 높이만 축소 */
+
     .unified-main-row{
-        min-height:48px;
+        min-height:43px;
+    }
+
+    .unified-main-item{
+        padding:2px 1px;
+        gap:2px;
     }
 
     .unified-label{
@@ -6130,10 +6195,6 @@ h1{
         font-size:7px;
     }
 
-    /* =====================================================
-       모바일 당일 시세 강조
-       ===================================================== */
-
     .unified-daily .up,
     .unified-daily .down{
         font-size:8px;
@@ -6143,9 +6204,10 @@ h1{
         font-size:7px;
     }
 
+
     .timeframe-card-title{
-        min-height:23px;
-        padding:4px 6px;
+        min-height:21px;
+        padding:3px 6px;
         font-size:5px;
     }
 
@@ -6155,12 +6217,13 @@ h1{
     }
 
     .unified-condition-row{
-        min-height:42px;
+        min-height:38px;
     }
 
     .unified-condition{
-        min-height:42px;
-        padding:4px 6px;
+        min-height:38px;
+        padding:3px 6px;
+        gap:2px;
     }
 
     .condition-label{
@@ -6181,10 +6244,12 @@ h1{
 
     .top-update-bar{
         font-size:5px;
+        padding:4px;
     }
 
     .signal-btc-bar{
-        min-height:34px;
+        min-height:31px;
+        margin-top:5px;
     }
 
     .signal-btc-title,
@@ -6197,7 +6262,8 @@ h1{
     }
 
     .signal-empty-card{
-        min-height:90px;
+        min-height:85px;
+        padding:10px;
     }
 
     .signal-empty-icon{
@@ -6216,15 +6282,14 @@ h1{
         font-size:4.5px;
     }
 
-    .dual-signal-card{
-        border-width:2px !important;
-        box-shadow:
-            0 0 0 1px rgba(224,189,109,0.25),
-            0 0 12px rgba(224,189,109,0.10);
-    }
-
 }
 
+
+/* =========================================================
+   380px 이하
+   글자 크기 유지
+   높이만 추가 압축
+   ========================================================= */
 
 @media(max-width:380px){
 
@@ -6237,7 +6302,7 @@ h1{
     }
 
     .section-title-card{
-        min-height:35px;
+        min-height:34px;
     }
 
     .section-number{
@@ -6254,7 +6319,7 @@ h1{
     }
 
     .current-time-badge{
-        min-height:19px;
+        min-height:18px;
         padding:2px 4px;
         font-size:4px;
     }
@@ -6272,7 +6337,7 @@ h1{
     }
 
     .btc-main-row{
-        min-height:38px;
+        min-height:35px;
     }
 
     .btc-name{
@@ -6288,7 +6353,7 @@ h1{
     }
 
     .btc-signal-box{
-        min-height:38px;
+        min-height:35px;
     }
 
     .btc-info{
@@ -6301,11 +6366,13 @@ h1{
     }
 
     .btc-timeframe-title{
+        min-height:20px;
         font-size:5px;
     }
 
     .four-hour-cell{
-        min-height:45px;
+        min-height:41px;
+        padding:2px 1px;
     }
 
     .four-hour-label{
@@ -6326,7 +6393,7 @@ h1{
     }
 
     .unified-card-header{
-        min-height:32px;
+        min-height:30px;
     }
 
     .unified-card-rank{
@@ -6345,8 +6412,16 @@ h1{
         font-size:3.5px;
     }
 
+
+    /* 첫 줄 높이 */
+
     .unified-main-row{
-        min-height:43px;
+        min-height:39px;
+    }
+
+    .unified-main-item{
+        padding:2px 1px;
+        gap:1px;
     }
 
     .unified-label{
@@ -6359,10 +6434,6 @@ h1{
         font-size:6px;
     }
 
-    /* =====================================================
-       380px 이하 당일 시세 강조
-       ===================================================== */
-
     .unified-daily .up,
     .unified-daily .down{
         font-size:7px;
@@ -6372,16 +6443,20 @@ h1{
         font-size:6px;
     }
 
+
     .timeframe-card-title{
+        min-height:19px;
+        padding:3px 5px;
         font-size:4.5px;
     }
 
     .unified-condition-row{
-        min-height:37px;
+        min-height:34px;
     }
 
     .unified-condition{
-        min-height:37px;
+        min-height:34px;
+        padding:3px 5px;
     }
 
     .condition-label{
@@ -6403,6 +6478,10 @@ h1{
 }
 
 
+/* =========================================================
+   추가 기존 스타일
+   ========================================================= */
+
 .top-market-card .current-4h{
     background:#173326 !important;
 }
@@ -6411,24 +6490,33 @@ h1{
     background:#173326 !important;
 }
 
+
+/* =========================================================
+   일봉 + 4H 동시 SIGNAL
+   ========================================================= */
+
+.dual-signal-condition{
+    background:#18160e !important;
+    border-top:1px solid #8a6c2e !important;
+}
+
+.dual-signal-condition .condition-label{
+    color:#f0d486 !important;
+}
+
+.dual-signal-condition .condition-period{
+    color:#d8c078 !important;
+}
+
+.dual-signal-condition .condition-value{
+    color:#8fe0b2 !important;
+}
+
 """
 
 
 # =========================================================
 # Dashboard
-#
-# 화면:
-# 1. BTC 시장 시황
-# 2. 4H SIGNAL
-# 3. 업비트 TOP20
-#
-# 일봉 SIGNAL 전용 리스트는 표시하지 않음
-#
-# 단,
-# 일봉 SIGNAL 판정 자체는 유지하여
-# 4H SIGNAL과 동시 충족 시 강조
-#
-# TOP20 카드 내부의 일봉은 그대로 유지
 # =========================================================
 
 @app.get(
@@ -6740,15 +6828,27 @@ def startup():
     )
 
     log.info(
-        "당일 시세 양수 = 초록색 강조"
+        "당일 시세 양수 = 현재가/거래대금/당일 전체 초록색"
     )
 
     log.info(
-        "당일 시세 음수 = 빨간색 강조"
+        "당일 시세 음수 = 현재가/거래대금/당일 전체 빨간색"
     )
 
     log.info(
-        "당일 시세 0% = 회색 표시"
+        "당일 시세 0% = 현재가/거래대금/당일 전체 회색"
+    )
+
+    log.info(
+        "글자 크기 = 기존 유지"
+    )
+
+    log.info(
+        "카드 높이 = 세로 여백 및 padding만 축소"
+    )
+
+    log.info(
+        "카드 내용 = 전체 표시 유지"
     )
 
     log.info(
