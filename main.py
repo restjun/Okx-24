@@ -253,17 +253,33 @@ def make_4h_period(
         day_label = "전일"
 
 
+    # =====================================================
+    # 시간 표시
+    #
+    # 기존:
+    # 오늘 09~13
+    # 어제 09~13
+    #
+    # 변경:
+    # 오늘_09-13
+    # 어제_09-13
+    # 현재_21-01
+    # =====================================================
+
     if active:
 
         display_label = (
-            f"현재 {start:%H}~{end:%H}"
+            f"현재_"
+            f"{start:%H}-"
+            f"{end:%H}"
         )
 
     else:
 
         display_label = (
-            f"{day_label} "
-            f"{start:%H}~{end:%H}"
+            f"{day_label}_"
+            f"{start:%H}-"
+            f"{end:%H}"
         )
 
 
@@ -276,7 +292,7 @@ def make_4h_period(
             start.strftime("%H"),
 
         "label":
-            f"{start:%H}~{end:%H}",
+            display_label,
 
         "display_label":
             display_label,
@@ -4141,6 +4157,20 @@ def candle_pattern_html(patterns):
 
 # =========================================================
 # 기간 셀 HTML
+#
+# 변경:
+#
+# 기존
+# 어제
+# 09~13
+# ▲ +1.25%
+# 상승장악
+#
+# 변경
+# 어제_09-13  ▲ +1.25%
+# 상승장악
+#
+# 시간과 변동률을 한 줄로 표시
 # =========================================================
 
 def period_cells_html(
@@ -4169,17 +4199,10 @@ def period_cells_html(
                 "four-hour-cell current-4h"
             )
 
-            day_text = "현재"
-
         else:
 
             cell_class = (
                 "four-hour-cell"
-            )
-
-            day_text = period.get(
-                "day_label",
-                ""
             )
 
 
@@ -4196,22 +4219,20 @@ def period_cells_html(
             f"""
             <div class="{cell_class}">
 
-                <div class="four-hour-label">
-                    {html.escape(
-                        str(day_text)
-                    )}
-                </div>
+                <div class="four-hour-main">
 
-                <div class="four-hour-time">
-                    {html.escape(
-                        str(time_text)
-                    )}
-                </div>
+                    <div class="four-hour-time">
+                        {html.escape(
+                            str(time_text)
+                        )}
+                    </div>
 
-                <div class="four-hour-value">
-                    {format_change(
-                        period.get("change")
-                    )}
+                    <div class="four-hour-value">
+                        {format_change(
+                            period.get("change")
+                        )}
+                    </div>
+
                 </div>
 
                 {candle_pattern_html(
@@ -5513,27 +5534,33 @@ h1{
     flex-direction:column;
     align-items:center;
     justify-content:center;
-    min-height:61px;
+    min-height:43px;
     background:#0d1319;
-    gap:2px;
-    padding:3px 2px;
+    gap:1px;
+    padding:2px 2px;
 }
 
-.four-hour-label{
-    color:#68747e;
-    font-size:6px;
-    font-weight:800;
+.four-hour-main{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:3px;
+    width:100%;
+    min-width:0;
+    white-space:nowrap;
 }
 
 .four-hour-time{
     color:#b6bec5;
     font-size:7px;
     font-weight:900;
+    white-space:nowrap;
 }
 
 .four-hour-value{
     font-size:8px;
     font-weight:900;
+    white-space:nowrap;
 }
 
 .candle-pattern{
@@ -5553,10 +5580,6 @@ h1{
     box-shadow:
         inset 0 0 0 1px rgba(116,213,157,0.18),
         inset 0 0 15px rgba(78,164,111,0.08);
-}
-
-.current-4h .four-hour-label{
-    color:#91dcb0;
 }
 
 .current-4h .four-hour-time{
@@ -5676,27 +5699,27 @@ h1{
 /* =========================================================
    첫 번째 줄
    현재가 / 거래대금 / 당일
-   높이만 축소
-   글자 크기는 기존 유지
+   하단 6칸과 동일한 비율
+   각 영역 = 2칸
    ========================================================= */
 
 .unified-main-row{
     display:grid;
     grid-template-columns:
-        1.2fr
-        1fr
-        1fr;
-    min-height:51px;
+        repeat(6,1fr);
+    min-height:45px;
     background:#11161c;
 }
 
 .unified-main-item{
+    grid-column:span 2;
+
     display:flex;
     flex-direction:column;
     align-items:center;
     justify-content:center;
     gap:2px;
-    padding:3px 2px;
+    padding:2px 2px;
 }
 
 .unified-main-item + .unified-main-item{
@@ -6002,7 +6025,7 @@ h1{
 /* =========================================================
    모바일
    글자 크기는 기존 유지
-   높이와 여백만 축소
+   상단 3개 영역 = 각각 1칸
    ========================================================= */
 
 @media(max-width:600px){
@@ -6128,10 +6151,6 @@ h1{
         gap:2px;
     }
 
-    .four-hour-label{
-        font-size:4px;
-    }
-
     .four-hour-time{
         font-size:5px;
     }
@@ -6174,16 +6193,22 @@ h1{
     }
 
 
-    /* 첫 줄 높이만 축소 */
+    /* =====================================================
+       첫 줄
+       하단 3칸과 동일하게 3등분
+       ===================================================== */
 
     .unified-main-row{
-        min-height:43px;
+        grid-template-columns:
+            repeat(3,1fr);
+        min-height:40px;
     }
 
     .unified-main-item{
+        grid-column:span 1;
         padding:2px 1px;
-        gap:2px;
     }
+
 
     .unified-label{
         font-size:4.5px;
@@ -6375,10 +6400,6 @@ h1{
         padding:2px 1px;
     }
 
-    .four-hour-label{
-        font-size:3.7px;
-    }
-
     .four-hour-time{
         font-size:4px;
     }
@@ -6413,16 +6434,22 @@ h1{
     }
 
 
-    /* 첫 줄 높이 */
+    /* =====================================================
+       첫 줄
+       모바일 3칸과 동일하게 3등분
+       ===================================================== */
 
     .unified-main-row{
-        min-height:39px;
+        grid-template-columns:
+            repeat(3,1fr);
+        min-height:37px;
     }
 
     .unified-main-item{
-        padding:2px 1px;
-        gap:1px;
+        grid-column:span 1;
+        padding:1px;
     }
+
 
     .unified-label{
         font-size:4px;
@@ -6849,6 +6876,22 @@ def startup():
 
     log.info(
         "카드 내용 = 전체 표시 유지"
+    )
+
+    log.info(
+        "상단 3개 영역 = 하단 6칸 기준 각 2칸"
+    )
+
+    log.info(
+        "모바일 상단 3개 영역 = 하단 3칸 기준 각 1칸"
+    )
+
+    log.info(
+        "시간 + 변동률 = 한 줄 표시"
+    )
+
+    log.info(
+        "시간 형식 = 어제_09-13"
     )
 
     log.info(
