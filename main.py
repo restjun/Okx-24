@@ -4158,19 +4158,7 @@ def candle_pattern_html(patterns):
 # =========================================================
 # 기간 셀 HTML
 #
-# 변경:
-#
-# 기존
-# 어제
-# 09~13
-# ▲ +1.25%
-# 상승장악
-#
-# 변경
-# 어제_09-13  ▲ +1.25%
-# 상승장악
-#
-# 시간과 변동률을 한 줄로 표시
+# 시간 + 변동률 = 한 줄
 # =========================================================
 
 def period_cells_html(
@@ -4390,19 +4378,39 @@ def market_summary_html():
                 {daily}
             </div>
 
+
+            <!-- =================================================
+                 BTC 일봉 / 4H 상태
+                 왼쪽 : 일봉 / 상승
+                 오른쪽 : 4H / 상승
+                 ================================================= -->
+
             <div class="btc-signal-box">
 
-                <span class="btc-info">
-                    MARKET
-                </span>
+                <div class="btc-status-item">
 
-                <span class="{daily_status_class}">
-                    일봉 {daily_status}
-                </span>
+                    <div class="btc-info">
+                        일봉
+                    </div>
 
-                <span class="{market_status_class}">
-                    4H {market_status}
-                </span>
+                    <div class="{daily_status_class}">
+                        {daily_status}
+                    </div>
+
+                </div>
+
+
+                <div class="btc-status-item">
+
+                    <div class="btc-info">
+                        4H
+                    </div>
+
+                    <div class="{market_status_class}">
+                        {market_status}
+                    </div>
+
+                </div>
 
             </div>
 
@@ -5475,12 +5483,31 @@ h1{
     text-align:center;
 }
 
+
+/* =========================================================
+   BTC 일봉 / 4H 상태
+   ========================================================= */
+
 .btc-signal-box{
     min-height:51px;
-    display:flex;
+    display:grid;
+    grid-template-columns:1fr 1fr;
     align-items:center;
     justify-content:center;
-    gap:5px;
+    border-left:1px solid #29323c;
+}
+
+.btc-status-item{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:2px;
+    min-width:0;
+    min-height:100%;
+}
+
+.btc-status-item + .btc-status-item{
     border-left:1px solid #29323c;
 }
 
@@ -6025,7 +6052,7 @@ h1{
 /* =========================================================
    모바일
    글자 크기는 기존 유지
-   상단 3개 영역 = 각각 1칸
+   상단 3개 영역 = 하단 3칸 기준 각 1칸
    ========================================================= */
 
 @media(max-width:600px){
@@ -6120,9 +6147,18 @@ h1{
         font-size:8px;
     }
 
+
+    /* =====================================================
+       BTC 일봉 / 4H 상태
+       ===================================================== */
+
     .btc-signal-box{
         min-height:40px;
-        gap:3px;
+        grid-template-columns:1fr 1fr;
+    }
+
+    .btc-status-item{
+        gap:1px;
     }
 
     .btc-info{
@@ -6377,8 +6413,18 @@ h1{
         font-size:7px;
     }
 
+
+    /* =====================================================
+       BTC 일봉 / 4H 상태
+       ===================================================== */
+
     .btc-signal-box{
         min-height:35px;
+        grid-template-columns:1fr 1fr;
+    }
+
+    .btc-status-item{
+        gap:1px;
     }
 
     .btc-info{
@@ -6892,6 +6938,10 @@ def startup():
 
     log.info(
         "시간 형식 = 어제_09-13"
+    )
+
+    log.info(
+        "BTC 상태 표시 = 일봉/상승 + 4H/상승 2칸 구조"
     )
 
     log.info(
