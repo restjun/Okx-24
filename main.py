@@ -40,7 +40,7 @@ KST = ZoneInfo("Asia/Seoul")
 # 설정
 # =========================================================
 
-TOP_N = 10
+TOP_N = 20
 
 UPDATE_MINUTES = 1
 
