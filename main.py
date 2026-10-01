@@ -4196,6 +4196,12 @@ def candle_pattern_html(patterns):
 
 # =========================================================
 # 기간 셀 HTML
+#
+# 현재 일봉 / 현재 4H
+#
+# 양수 = 녹색
+# 음수 = 적색
+# 0 = 회색
 # =========================================================
 
 def period_cells_html(
@@ -4220,9 +4226,35 @@ def period_cells_html(
             False
         ):
 
-            cell_class = (
-                "four-hour-cell current-4h"
+            change = period.get(
+                "change"
             )
+
+
+            if change is not None and change > 0:
+
+                cell_class = (
+                    "four-hour-cell "
+                    "current-period "
+                    "current-positive"
+                )
+
+            elif change is not None and change < 0:
+
+                cell_class = (
+                    "four-hour-cell "
+                    "current-period "
+                    "current-negative"
+                )
+
+            else:
+
+                cell_class = (
+                    "four-hour-cell "
+                    "current-period "
+                    "current-zero"
+                )
+
 
             day_text = "현재"
 
@@ -5555,32 +5587,102 @@ h1{
     max-width:100%;
 }
 
-.current-4h{
-    background:#173326 !important;
+
+/* =========================================================
+   현재 기간 공통
+   일봉 + 4H
+   ========================================================= */
+
+.current-period{
     box-shadow:
-        inset 0 0 0 1px rgba(116,213,157,0.18),
-        inset 0 0 15px rgba(78,164,111,0.08);
+        inset 0 0 0 1px rgba(120,130,140,0.20);
 }
 
-.current-4h .four-hour-label{
-    color:#91dcb0;
+
+/* =========================================================
+   현재 기간 + 양수
+   ========================================================= */
+
+.current-period.current-positive{
+    background:#10271c !important;
+
+    box-shadow:
+        inset 0 0 0 1px rgba(120,207,162,0.40);
 }
 
-.current-4h .four-hour-time{
-    color:#b9f0cf;
+.current-period.current-positive .four-hour-label{
+    color:#91dcb0 !important;
 }
 
-.current-4h .candle-pattern{
-    color:#f0d486;
+.current-period.current-positive .four-hour-time{
+    color:#b9f0cf !important;
 }
 
-.no-4h-data{
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    min-height:50px;
-    color:#59636e;
+.current-period.current-positive .four-hour-value{
+    color:#78cfa2 !important;
 }
+
+
+/* =========================================================
+   현재 기간 + 음수
+   ========================================================= */
+
+.current-period.current-negative{
+    background:#2a1518 !important;
+
+    box-shadow:
+        inset 0 0 0 1px rgba(223,133,136,0.40);
+}
+
+.current-period.current-negative .four-hour-label{
+    color:#e69a9d !important;
+}
+
+.current-period.current-negative .four-hour-time{
+    color:#f0b4b7 !important;
+}
+
+.current-period.current-negative .four-hour-value{
+    color:#df8588 !important;
+}
+
+
+/* =========================================================
+   현재 기간 + 0%
+   ========================================================= */
+
+.current-period.current-zero{
+    background:#15191e !important;
+
+    box-shadow:
+        inset 0 0 0 1px rgba(120,130,140,0.25);
+}
+
+.current-period.current-zero .four-hour-label{
+    color:#89939c !important;
+}
+
+.current-period.current-zero .four-hour-time{
+    color:#aab3ba !important;
+}
+
+.current-period.current-zero .four-hour-value{
+    color:#727c86 !important;
+}
+
+
+/* =========================================================
+   현재 캔들의 패턴
+   ========================================================= */
+
+.current-period .candle-pattern{
+    color:#e0bd6d;
+}
+
+
+/* =========================================================
+   SIGNAL / TOP
+   ========================================================= */
 
 .top-card-list,
 .signal-card-list{
@@ -5743,46 +5845,6 @@ h1{
     font-size:9px;
     font-weight:900;
 }
-
-
-/* =========================================================
-   당일 시세 양수 / 음수 강조
-   ========================================================= */
-
-.unified-main-item:has(.unified-daily .up){
-    background:#10271c;
-    box-shadow:
-        inset 0 0 0 1px rgba(120,207,162,0.25);
-}
-
-.unified-main-item:has(.unified-daily .down){
-    background:#2a1518;
-    box-shadow:
-        inset 0 0 0 1px rgba(223,133,136,0.25);
-}
-
-.unified-daily .up{
-    color:#78cfa2 !important;
-    font-size:11px;
-    font-weight:900;
-}
-
-.unified-daily .down{
-    color:#df8588 !important;
-    font-size:11px;
-    font-weight:900;
-}
-
-.unified-daily .zero{
-    color:#727c86 !important;
-    font-size:10px;
-    font-weight:900;
-}
-
-
-/* =========================================================
-   시간대 카드
-   ========================================================= */
 
 .timeframe-card-title{
     min-height:29px;
@@ -5949,6 +6011,10 @@ h1{
     font-weight:800;
 }
 
+
+/* =========================================================
+   모바일
+   ========================================================= */
 
 @media(max-width:600px){
 
@@ -6130,19 +6196,6 @@ h1{
         font-size:7px;
     }
 
-    /* =====================================================
-       모바일 당일 시세 강조
-       ===================================================== */
-
-    .unified-daily .up,
-    .unified-daily .down{
-        font-size:8px;
-    }
-
-    .unified-daily .zero{
-        font-size:7px;
-    }
-
     .timeframe-card-title{
         min-height:23px;
         padding:4px 6px;
@@ -6225,6 +6278,10 @@ h1{
 
 }
 
+
+/* =========================================================
+   초소형 화면
+   ========================================================= */
 
 @media(max-width:380px){
 
@@ -6359,19 +6416,6 @@ h1{
         font-size:6px;
     }
 
-    /* =====================================================
-       380px 이하 당일 시세 강조
-       ===================================================== */
-
-    .unified-daily .up,
-    .unified-daily .down{
-        font-size:7px;
-    }
-
-    .unified-daily .zero{
-        font-size:6px;
-    }
-
     .timeframe-card-title{
         font-size:4.5px;
     }
@@ -6403,14 +6447,6 @@ h1{
 }
 
 
-.top-market-card .current-4h{
-    background:#173326 !important;
-}
-
-.signal-market-card .current-4h{
-    background:#173326 !important;
-}
-
 """
 
 
@@ -6424,11 +6460,12 @@ h1{
 #
 # 일봉 SIGNAL 전용 리스트는 표시하지 않음
 #
-# 단,
-# 일봉 SIGNAL 판정 자체는 유지하여
-# 4H SIGNAL과 동시 충족 시 강조
+# 일봉 SIGNAL 판정은 유지
 #
-# TOP20 카드 내부의 일봉은 그대로 유지
+# 현재 일봉 / 현재 4H
+# 양수 = 녹색
+# 음수 = 적색
+# 0 = 회색
 # =========================================================
 
 @app.get(
@@ -6600,6 +6637,26 @@ def startup():
     )
 
     log.info(
+        "현재 일봉 양수 = 녹색"
+    )
+
+    log.info(
+        "현재 일봉 음수 = 적색"
+    )
+
+    log.info(
+        "현재 4H 양수 = 녹색"
+    )
+
+    log.info(
+        "현재 4H 음수 = 적색"
+    )
+
+    log.info(
+        "현재 기간 0% = 회색"
+    )
+
+    log.info(
         "일봉 SIGNAL 전용 리스트 화면 출력 = 삭제"
     )
 
@@ -6737,18 +6794,6 @@ def startup():
 
     log.info(
         "ROC = 삭제"
-    )
-
-    log.info(
-        "당일 시세 양수 = 초록색 강조"
-    )
-
-    log.info(
-        "당일 시세 음수 = 빨간색 강조"
-    )
-
-    log.info(
-        "당일 시세 0% = 회색 표시"
     )
 
     log.info(
