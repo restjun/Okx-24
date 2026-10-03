@@ -572,53 +572,6 @@ def get_upbit_markets():
 
 
 # =========================================================
-# 업비트 1H
-# =========================================================
-
-def get_upbit_60m_candles(
-    market,
-    count=300
-):
-
-    response = retry(
-        requests.get,
-        "https://api.upbit.com/v1/candles/minutes/60",
-        params={
-            "market":
-                market,
-            "count":
-                count
-        },
-        timeout=15
-    )
-
-
-    if response is None:
-
-        return []
-
-
-    try:
-
-        data = response.json()
-
-    except Exception:
-
-        return []
-
-
-    if not isinstance(
-        data,
-        list
-    ):
-
-        return []
-
-
-    return data
-
-
-# =========================================================
 # 업비트 일봉
 # =========================================================
 
@@ -727,6 +680,9 @@ def candle_parts(candle):
 
 # =========================================================
 # 1개 캔들 패턴
+#
+# 일반 일봉 패턴 표시용
+# SIGNAL에는 사용하지 않음
 # =========================================================
 
 def detect_single_candle_pattern(
@@ -811,6 +767,12 @@ def detect_single_candle_pattern(
 
 # =========================================================
 # 2개 캔들 패턴
+#
+# 일반 일봉 패턴 표시용
+#
+# SIGNAL:
+# 상승장악만 사용
+# 관통형은 SIGNAL에서 제외
 # =========================================================
 
 def detect_two_candle_pattern(
@@ -833,7 +795,9 @@ def detect_two_candle_pattern(
     patterns = []
 
 
+    # =====================================================
     # 상승장악
+    # =====================================================
 
     if (
 
@@ -860,7 +824,12 @@ def detect_two_candle_pattern(
         patterns.append("상승장악")
 
 
+    # =====================================================
     # 관통형
+    #
+    # 일반 패턴 표시에는 유지
+    # SIGNAL에서는 제외
+    # =====================================================
 
     midpoint = (
         p1["open"] +
@@ -889,7 +858,9 @@ def detect_two_candle_pattern(
         patterns.append("관통형")
 
 
+    # =====================================================
     # 하락장악
+    # =====================================================
 
     if (
 
@@ -916,7 +887,9 @@ def detect_two_candle_pattern(
         patterns.append("하락장악")
 
 
+    # =====================================================
     # 먹구름형
+    # =====================================================
 
     if (
 
@@ -970,7 +943,9 @@ def detect_three_candle_pattern(
     patterns = []
 
 
+    # =====================================================
     # 모닝스타
+    # =====================================================
 
     if (
 
@@ -1005,7 +980,9 @@ def detect_three_candle_pattern(
         patterns.append("모닝스타")
 
 
+    # =====================================================
     # 3연속양봉
+    # =====================================================
 
     if (
 
@@ -1032,7 +1009,9 @@ def detect_three_candle_pattern(
         patterns.append("3연속양봉")
 
 
+    # =====================================================
     # 3캔들 상승패턴
+    # =====================================================
 
     if (
 
@@ -1060,6 +1039,8 @@ def detect_three_candle_pattern(
         ) / 2
 
 
+        # 3캔들 상승장악
+
         if (
 
             p3["open"] <= first_body_low
@@ -1079,6 +1060,11 @@ def detect_three_candle_pattern(
             )
 
 
+        # 3캔들 관통형
+        #
+        # 일반 패턴 표시용
+        # SIGNAL에서는 제외
+
         if (
 
             p3["close"] > first_midpoint
@@ -1094,7 +1080,9 @@ def detect_three_candle_pattern(
             )
 
 
+    # =====================================================
     # 3캔들 하락패턴
+    # =====================================================
 
     if (
 
@@ -1126,6 +1114,8 @@ def detect_three_candle_pattern(
         ) / 2
 
 
+        # 3캔들 하락장악
+
         if (
 
             p1["bull"]
@@ -1148,6 +1138,8 @@ def detect_three_candle_pattern(
                 "3캔들 하락장악"
             )
 
+
+        # 3캔들 먹구름형
 
         if (
 
@@ -1205,6 +1197,10 @@ def detect_four_candle_pattern(
     patterns = []
 
 
+    # =====================================================
+    # 4캔들 상승패턴
+    # =====================================================
+
     if (
 
         p1["bear"]
@@ -1231,6 +1227,8 @@ def detect_four_candle_pattern(
         ) / 2
 
 
+        # 4캔들 상승장악
+
         if (
 
             p4["open"] <= first_body_low
@@ -1249,6 +1247,11 @@ def detect_four_candle_pattern(
                 "4캔들 상승장악"
             )
 
+
+        # 4캔들 관통형
+        #
+        # 일반 패턴 표시용
+        # SIGNAL에서는 제외
 
         if (
 
@@ -1271,7 +1274,7 @@ def detect_four_candle_pattern(
 # =========================================================
 # 전체 캔들 패턴
 #
-# 일봉 일반 패턴 표시용
+# 일반 일봉 패턴 표시용
 # =========================================================
 
 def detect_daily_patterns(
@@ -1306,7 +1309,9 @@ def detect_daily_patterns(
             continue
 
 
+        # =================================================
         # 1봉
+        # =================================================
 
         patterns.extend(
             detect_single_candle_pattern(
@@ -1315,7 +1320,9 @@ def detect_daily_patterns(
         )
 
 
+        # =================================================
         # 2봉
+        # =================================================
 
         if i >= 1:
 
@@ -1339,7 +1346,9 @@ def detect_daily_patterns(
                 )
 
 
+        # =================================================
         # 3봉
+        # =================================================
 
         if i >= 2:
 
@@ -1367,7 +1376,9 @@ def detect_daily_patterns(
                 )
 
 
+        # =================================================
         # 4봉
+        # =================================================
 
         if i >= 3:
 
@@ -1991,18 +2002,32 @@ def make_row(
 
 
 # =========================================================
-# 1봉 SIGNAL 패턴
+# 일봉 SIGNAL 패턴
 #
-# 현재 일봉의 단일 캔들만 사용
+# 기존 4H SIGNAL 패턴을
+# 시간봉만 일봉으로 변경
+#
+# SIGNAL 사용:
+# 1. 상승장악
+# 2. 3캔들 상승장악
+# 3. 4캔들 상승장악
+#
+# SIGNAL 제외:
+# - 도지
+# - 망치형
+# - 역망치형
+# - 관통형
+# - 하락장악
+# - 먹구름형
 # =========================================================
 
-SIGNAL_SINGLE_CANDLE_PATTERNS = [
+SIGNAL_CANDLE_PATTERNS = [
 
-    "도지",
+    "상승장악",
 
-    "망치형",
+    "3캔들 상승장악",
 
-    "역망치형"
+    "4캔들 상승장악"
 
 ]
 
@@ -2010,13 +2035,14 @@ SIGNAL_SINGLE_CANDLE_PATTERNS = [
 # =========================================================
 # SIGNAL 조건 계산
 #
-# 1봉 SIGNAL
-#
 # 조건:
+#
 # 1. 당일 변동률 양수
 # 2. 현재 일봉 양봉
-# 3. 현재 일봉에서 1봉 패턴 발생
+# 3. 상승장악 계열 패턴
 #
+# 기준 시간봉:
+# 기존 4H → 현재 일봉
 # =========================================================
 
 def calculate_signal_conditions(
@@ -2030,6 +2056,11 @@ def calculate_signal_conditions(
     )
 
 
+    # =====================================================
+    # 조건 1
+    # 당일 변동률 양수
+    # =====================================================
+
     daily_condition = (
 
         daily_change is not None
@@ -2040,6 +2071,10 @@ def calculate_signal_conditions(
 
     )
 
+
+    # =====================================================
+    # 현재 일봉
+    # =====================================================
 
     daily_periods = row.get(
         "daily_periods",
@@ -2057,30 +2092,10 @@ def calculate_signal_conditions(
         )
 
 
-    current_single_patterns = []
-
-
-    if current_daily_candle is not None:
-
-        current_patterns = (
-            current_daily_candle.get(
-                "patterns",
-                []
-            )
-        )
-
-
-        current_single_patterns = [
-
-            pattern
-
-            for pattern
-            in SIGNAL_SINGLE_CANDLE_PATTERNS
-
-            if pattern in current_patterns
-
-        ]
-
+    # =====================================================
+    # 조건 2
+    # 현재 일봉 양봉
+    # =====================================================
 
     current_daily_bullish = False
 
@@ -2109,9 +2124,11 @@ def calculate_signal_conditions(
             try:
 
                 current_daily_bullish = (
+
                     float(close_price)
                     >
                     float(open_price)
+
                 )
 
             except Exception:
@@ -2119,12 +2136,46 @@ def calculate_signal_conditions(
                 current_daily_bullish = False
 
 
-    current_single_candle_pattern = bool(
-        current_single_patterns
+    # =====================================================
+    # 조건 3
+    # 상승장악 계열 SIGNAL 패턴
+    # =====================================================
+
+    current_signal_patterns = []
+
+
+    if current_daily_candle is not None:
+
+        current_patterns = (
+            current_daily_candle.get(
+                "patterns",
+                []
+            )
+        )
+
+
+        current_signal_patterns = [
+
+            pattern
+
+            for pattern
+            in SIGNAL_CANDLE_PATTERNS
+
+            if pattern in current_patterns
+
+        ]
+
+
+    current_signal_pattern = bool(
+        current_signal_patterns
     )
 
 
-    row["signal_pass"] = (
+    # =====================================================
+    # 최종 SIGNAL
+    # =====================================================
+
+    signal_pass = (
 
         daily_condition
 
@@ -2134,9 +2185,12 @@ def calculate_signal_conditions(
 
         and
 
-        current_single_candle_pattern
+        current_signal_pattern
 
     )
+
+
+    row["signal_pass"] = signal_pass
 
 
     row["signal_conditions"] = {
@@ -2150,11 +2204,11 @@ def calculate_signal_conditions(
         "current_daily_bullish":
             current_daily_bullish,
 
-        "current_single_candle_pattern":
-            current_single_candle_pattern,
+        "current_signal_pattern":
+            current_signal_pattern,
 
         "current_signal_patterns":
-            current_single_patterns,
+            current_signal_patterns,
 
         "current_daily_used":
             True
@@ -2163,22 +2217,10 @@ def calculate_signal_conditions(
 
 
     # =====================================================
-    # 기존 일봉 SIGNAL 판정도 동일한 1봉 기준으로 통합
+    # daily_signal도 동일 조건
     # =====================================================
 
-    row["daily_signal_pass"] = (
-
-        daily_condition
-
-        and
-
-        current_daily_bullish
-
-        and
-
-        current_single_candle_pattern
-
-    )
+    row["daily_signal_pass"] = signal_pass
 
 
     row["daily_signal_conditions"] = {
@@ -2192,11 +2234,11 @@ def calculate_signal_conditions(
         "current_daily_bullish":
             current_daily_bullish,
 
-        "current_single_candle_pattern":
-            current_single_candle_pattern,
+        "current_signal_pattern":
+            current_signal_pattern,
 
         "current_signal_patterns":
-            current_single_patterns,
+            current_signal_patterns,
 
         "current_daily_used":
             True
@@ -2337,7 +2379,7 @@ def update_upbit():
         f"{current_daily['display_label'] if current_daily else '-'}"
         " | "
 
-        f"1봉 SIGNAL="
+        f"일봉 SIGNAL="
         f"{signal_count}"
 
     )
@@ -2403,6 +2445,8 @@ def get_okx_btc_price():
 
 # =========================================================
 # BTC 1H
+#
+# BTC 일봉 구성용
 # =========================================================
 
 def get_okx_btc_1h_candles(
@@ -3352,7 +3396,7 @@ def unified_card_html(
 
     if card_type == "SIGNAL_1":
 
-        title = "🚀 1봉 SIGNAL"
+        title = "🚀 일봉 SIGNAL"
 
         card_class = (
             "unified-market-card "
@@ -3419,7 +3463,7 @@ def unified_card_html(
             <div class="unified-condition">
 
                 <div class="condition-label">
-                    1봉 SIGNAL 조건
+                    일봉 SIGNAL 조건
                 </div>
 
                 <div class="condition-period">
@@ -3435,7 +3479,7 @@ def unified_card_html(
                     </span>
 
                     <span class="condition-note">
-                        현재 일봉 1봉 판정
+                        상승장악 계열
                     </span>
 
                 </div>
@@ -3569,7 +3613,7 @@ def unified_card_html(
 
 
 # =========================================================
-# 1봉 SIGNAL Section
+# 일봉 SIGNAL Section
 # =========================================================
 
 def focus_section(
@@ -3612,7 +3656,9 @@ def focus_section(
         message = (
             "당일 양수 + "
             "현재 일봉 양봉 + "
-            "1봉 도지/망치형/역망치형 "
+            "상승장악 / "
+            "3캔들 상승장악 / "
+            "4캔들 상승장악 "
             "조건을 만족하는 종목 없음"
         )
 
@@ -3626,7 +3672,7 @@ def focus_section(
             </div>
 
             <div class="signal-empty-title">
-                1봉 SIGNAL 없음
+                일봉 SIGNAL 없음
             </div>
 
             <div class="signal-empty-text">
@@ -3688,16 +3734,16 @@ def focus_section(
             <div class="section-heading">
 
                 <div class="section-heading-main">
-                    1봉 SIGNAL
+                    일봉 SIGNAL
                 </div>
 
                 <div class="section-heading-sub">
 
                     당일 양수
                     · 현재 일봉 양봉
-                    · 도지
-                    · 망치형
-                    · 역망치형
+                    · 상승장악
+                    · 3캔들 상승장악
+                    · 4캔들 상승장악
                     · 거래대금 순위
 
                 </div>
@@ -3722,11 +3768,11 @@ def focus_section(
         <div class="signal-btc-bar">
 
             <div class="signal-btc-title">
-                1봉 SIGNAL
+                일봉 SIGNAL
             </div>
 
             <div class="signal-btc-period">
-                단일 캔들
+                상승장악 계열
             </div>
 
             <div class="signal-btc-value">
@@ -5046,7 +5092,7 @@ h1{
 
 
 /* =========================================================
-   1봉 SIGNAL 강조
+   일봉 SIGNAL 강조
    ========================================================= */
 
 .signal-market-card{
@@ -5238,19 +5284,39 @@ def startup():
     )
 
     log.info(
-        "1봉 SIGNAL = 현재 일봉 1개 캔들 기준"
+        "일봉 SIGNAL = 기존 4H SIGNAL을 일봉으로 변경"
     )
 
     log.info(
-        "1봉 SIGNAL 조건 = 당일 양수"
+        "일봉 SIGNAL 조건 = 당일 양수"
     )
 
     log.info(
-        "1봉 SIGNAL 조건 = 현재 일봉 양봉"
+        "일봉 SIGNAL 조건 = 현재 일봉 양봉"
     )
 
     log.info(
-        "1봉 SIGNAL 패턴 = 도지 / 망치형 / 역망치형"
+        "일봉 SIGNAL 패턴 = 상승장악"
+    )
+
+    log.info(
+        "일봉 SIGNAL 패턴 = 3캔들 상승장악"
+    )
+
+    log.info(
+        "일봉 SIGNAL 패턴 = 4캔들 상승장악"
+    )
+
+    log.info(
+        "일봉 SIGNAL 제외 = 도지 / 망치형 / 역망치형"
+    )
+
+    log.info(
+        "일봉 SIGNAL 제외 = 관통형"
+    )
+
+    log.info(
+        "일봉 SIGNAL 제외 = 하락 패턴"
     )
 
     log.info(
@@ -5258,23 +5324,7 @@ def startup():
     )
 
     log.info(
-        "관통형 = SIGNAL에서 제외"
-    )
-
-    log.info(
-        "상승장악 = SIGNAL에서 제외"
-    )
-
-    log.info(
-        "하락 패턴 = SIGNAL에서 제외"
-    )
-
-    log.info(
         "SIGNAL 순위 = 거래대금 순위"
-    )
-
-    log.info(
-        "일봉 SIGNAL과 1봉 SIGNAL = 동일한 현재 일봉 기준"
     )
 
     log.info(
@@ -5286,7 +5336,7 @@ def startup():
     )
 
     log.info(
-        "화면 순서 = BTC → 1봉 SIGNAL → TOP20"
+        "화면 순서 = BTC → 일봉 SIGNAL → TOP20"
     )
 
     log.info(
