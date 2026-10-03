@@ -679,6 +679,97 @@ def candle_parts(candle):
 
 
 # =========================================================
+# 상승장악 기준
+#
+# 첫 번째 캔들은 양봉/음봉 관계없이 허용
+#
+# 예:
+# - 장대음봉
+# - 도지
+# - 망치형
+# - 역망치형
+# - 일반 양봉
+# - 일반 음봉
+#
+# 두 번째 캔들은 반드시 양봉
+#
+# 두 번째 캔들의 몸통이
+# 첫 번째 캔들의 몸통 전체를 장악하고
+# 몸통 크기도 더 커야 함
+# =========================================================
+
+def is_bullish_engulfing(
+    first,
+    current
+):
+
+    p1 = candle_parts(first)
+    p2 = candle_parts(current)
+
+    if (
+        p1 is None
+        or
+        p2 is None
+    ):
+
+        return False
+
+
+    # =====================================================
+    # 두 번째 캔들은 반드시 양봉
+    # =====================================================
+
+    if not p2["bull"]:
+
+        return False
+
+
+    # =====================================================
+    # 첫 번째 캔들의 몸통 상단 / 하단
+    #
+    # 첫 번째가 양봉이든 음봉이든
+    # 동일하게 몸통 범위를 계산
+    # =====================================================
+
+    first_body_high = max(
+        p1["open"],
+        p1["close"]
+    )
+
+    first_body_low = min(
+        p1["open"],
+        p1["close"]
+    )
+
+
+    # =====================================================
+    # 두 번째 양봉이
+    # 첫 번째 몸통 전체를 장악
+    # =====================================================
+
+    if p2["open"] > first_body_low:
+
+        return False
+
+
+    if p2["close"] < first_body_high:
+
+        return False
+
+
+    # =====================================================
+    # 현재 양봉 몸통이 첫 캔들보다 커야 함
+    # =====================================================
+
+    if p2["body"] <= p1["body"]:
+
+        return False
+
+
+    return True
+
+
+# =========================================================
 # 1개 캔들 패턴
 #
 # 일반 일봉 패턴 표시용
@@ -770,9 +861,13 @@ def detect_single_candle_pattern(
 #
 # 일반 일봉 패턴 표시용
 #
-# SIGNAL:
-# 상승장악만 사용
-# 관통형은 SIGNAL에서 제외
+# 상승장악:
+# 첫 캔들 방향 관계없이 허용
+# 다음 캔들이 양봉으로 첫 캔들 몸통을 장악
+#
+# 관통형:
+# 일반 패턴 표시에는 유지
+# SIGNAL에서는 제외
 # =========================================================
 
 def detect_two_candle_pattern(
@@ -797,37 +892,28 @@ def detect_two_candle_pattern(
 
     # =====================================================
     # 상승장악
+    #
+    # 첫 번째 캔들:
+    # 양봉/음봉 관계없음
+    #
+    # 두 번째 캔들:
+    # 반드시 양봉
     # =====================================================
 
-    if (
-
-        p1["bear"]
-
-        and
-
-        p2["bull"]
-
-        and
-
-        p2["open"] <= p1["close"]
-
-        and
-
-        p2["close"] >= p1["open"]
-
-        and
-
-        p2["body"] > p1["body"]
-
+    if is_bullish_engulfing(
+        previous,
+        current
     ):
 
-        patterns.append("상승장악")
+        patterns.append(
+            "상승장악"
+        )
 
 
     # =====================================================
     # 관통형
     #
-    # 일반 패턴 표시에는 유지
+    # 일반 패턴 표시용
     # SIGNAL에서는 제외
     # =====================================================
 
@@ -1010,8 +1096,36 @@ def detect_three_candle_pattern(
 
 
     # =====================================================
-    # 3캔들 상승패턴
+    # 3캔들 상승장악
+    #
+    # 첫 번째 캔들 방향 관계없음
+    # 두 번째 캔들 방향 관계없음
+    # 세 번째 캔들이 양봉으로
+    # 첫 번째 캔들 몸통 전체를 장악
     # =====================================================
+
+    if is_bullish_engulfing(
+        c1,
+        c3
+    ):
+
+        patterns.append(
+            "3캔들 상승장악"
+        )
+
+
+    # =====================================================
+    # 3캔들 관통형
+    #
+    # 일반 패턴 표시용
+    # SIGNAL에서는 제외
+    # =====================================================
+
+    first_midpoint = (
+        p1["open"] +
+        p1["close"]
+    ) / 2
+
 
     if (
 
@@ -1021,63 +1135,19 @@ def detect_three_candle_pattern(
 
         p3["bull"]
 
+        and
+
+        p3["close"] > first_midpoint
+
+        and
+
+        p3["close"] < p1["open"]
+
     ):
 
-        first_body_high = max(
-            p1["open"],
-            p1["close"]
+        patterns.append(
+            "3캔들 관통형"
         )
-
-        first_body_low = min(
-            p1["open"],
-            p1["close"]
-        )
-
-        first_midpoint = (
-            p1["open"] +
-            p1["close"]
-        ) / 2
-
-
-        # 3캔들 상승장악
-
-        if (
-
-            p3["open"] <= first_body_low
-
-            and
-
-            p3["close"] >= first_body_high
-
-            and
-
-            p3["body"] > p1["body"]
-
-        ):
-
-            patterns.append(
-                "3캔들 상승장악"
-            )
-
-
-        # 3캔들 관통형
-        #
-        # 일반 패턴 표시용
-        # SIGNAL에서는 제외
-
-        if (
-
-            p3["close"] > first_midpoint
-
-            and
-
-            p3["close"] < p1["open"]
-
-        ):
-
-            patterns.append(
-                "3캔들 관통형"
-            )
 
 
     # =====================================================
@@ -1165,8 +1235,6 @@ def detect_three_candle_pattern(
 
 # =========================================================
 # 4개 캔들 패턴
-#
-# 일반 일봉 패턴 표시에는 유지
 # =========================================================
 
 def detect_four_candle_pattern(
@@ -1198,8 +1266,36 @@ def detect_four_candle_pattern(
 
 
     # =====================================================
-    # 4캔들 상승패턴
+    # 4캔들 상승장악
+    #
+    # 첫 번째 캔들 방향 관계없음
+    # 중간 2개 캔들 방향 관계없음
+    # 네 번째 캔들이 양봉으로
+    # 첫 번째 캔들 몸통 전체를 장악
     # =====================================================
+
+    if is_bullish_engulfing(
+        c1,
+        c4
+    ):
+
+        patterns.append(
+            "4캔들 상승장악"
+        )
+
+
+    # =====================================================
+    # 4캔들 관통형
+    #
+    # 일반 패턴 표시용
+    # SIGNAL에서는 제외
+    # =====================================================
+
+    first_midpoint = (
+        p1["open"] +
+        p1["close"]
+    ) / 2
+
 
     if (
 
@@ -1209,63 +1305,19 @@ def detect_four_candle_pattern(
 
         p4["bull"]
 
+        and
+
+        p4["close"] > first_midpoint
+
+        and
+
+        p4["close"] < p1["open"]
+
     ):
 
-        first_body_high = max(
-            p1["open"],
-            p1["close"]
+        patterns.append(
+            "4캔들 관통형"
         )
-
-        first_body_low = min(
-            p1["open"],
-            p1["close"]
-        )
-
-        first_midpoint = (
-            p1["open"] +
-            p1["close"]
-        ) / 2
-
-
-        # 4캔들 상승장악
-
-        if (
-
-            p4["open"] <= first_body_low
-
-            and
-
-            p4["close"] >= first_body_high
-
-            and
-
-            p4["body"] > p1["body"]
-
-        ):
-
-            patterns.append(
-                "4캔들 상승장악"
-            )
-
-
-        # 4캔들 관통형
-        #
-        # 일반 패턴 표시용
-        # SIGNAL에서는 제외
-
-        if (
-
-            p4["close"] > first_midpoint
-
-            and
-
-            p4["close"] < p1["open"]
-
-        ):
-
-            patterns.append(
-                "4캔들 관통형"
-            )
 
 
     return patterns
@@ -2004,18 +2056,20 @@ def make_row(
 # =========================================================
 # 일봉 SIGNAL 패턴
 #
-# 기존 4H SIGNAL 패턴을
-# 시간봉만 일봉으로 변경
+# 상승장악 계열만 SIGNAL
 #
-# SIGNAL 사용:
-# 1. 상승장악
-# 2. 3캔들 상승장악
-# 3. 4캔들 상승장악
+# 첫 번째 캔들:
+# 양봉/음봉 관계없음
+# 도지/망치형/역망치형/장대음봉 등 모두 가능
+#
+# 마지막 캔들:
+# 반드시 양봉
+# 첫 번째 캔들의 몸통 전체를 장악
 #
 # SIGNAL 제외:
-# - 도지
-# - 망치형
-# - 역망치형
+# - 도지 단독
+# - 망치형 단독
+# - 역망치형 단독
 # - 관통형
 # - 하락장악
 # - 먹구름형
@@ -2040,9 +2094,6 @@ SIGNAL_CANDLE_PATTERNS = [
 # 1. 당일 변동률 양수
 # 2. 현재 일봉 양봉
 # 3. 상승장악 계열 패턴
-#
-# 기준 시간봉:
-# 기존 4H → 현재 일봉
 # =========================================================
 
 def calculate_signal_conditions(
@@ -3656,6 +3707,7 @@ def focus_section(
         message = (
             "당일 양수 + "
             "현재 일봉 양봉 + "
+            "첫 캔들 방향 무관 + "
             "상승장악 / "
             "3캔들 상승장악 / "
             "4캔들 상승장악 "
@@ -3727,7 +3779,7 @@ def focus_section(
 
         <div class="section-title-card">
 
-            <div class="section-number">
+            <div class="section-number signal-section-number">
                 🚀
             </div>
 
@@ -3741,6 +3793,7 @@ def focus_section(
 
                     당일 양수
                     · 현재 일봉 양봉
+                    · 첫 캔들 방향 무관
                     · 상승장악
                     · 3캔들 상승장악
                     · 4캔들 상승장악
@@ -3989,6 +4042,19 @@ h1{
     background:#1d1a13;
     border-color:#665331;
     color:#e0bd6d;
+}
+
+
+/* =========================================================
+   SIGNAL SECTION 금빛
+   ========================================================= */
+
+.signal-section-number{
+    background:#2a2413;
+    border-color:#d4af37;
+    color:#f0cf67;
+    box-shadow:
+        0 0 8px rgba(212,175,55,0.18);
 }
 
 .section-heading{
@@ -4262,8 +4328,16 @@ h1{
     overflow:hidden;
 }
 
+
+/* =========================================================
+   SIGNAL 카드 금빛 테두리
+   ========================================================= */
+
 .signal-market-card{
-    border-color:#31513f;
+    border:2px solid #d4af37;
+    box-shadow:
+        0 0 8px rgba(212,175,55,0.16),
+        inset 0 0 0 1px rgba(212,175,55,0.12);
 }
 
 .unified-card-header{
@@ -4276,8 +4350,10 @@ h1{
 }
 
 .signal-header{
-    background:#14231c;
-    border-bottom-color:#31513f;
+    background:#211d11;
+    border-bottom:1px solid #d4af37;
+    box-shadow:
+        inset 0 -1px 0 rgba(240,207,103,0.25);
 }
 
 .unified-card-rank{
@@ -4304,12 +4380,24 @@ h1{
     margin-right:7px;
 }
 
+.signal-market-card .unified-card-rank{
+    color:#f0cf67;
+}
+
+.signal-market-card .unified-card-coin{
+    color:#fff2bf;
+}
+
+.signal-market-card .unified-card-title{
+    color:#c8ae5b;
+}
+
 .signal-badge{
     padding:3px 6px;
     border-radius:6px;
-    background:#183528;
-    border:1px solid #4f9b73;
-    color:#8fe0b2;
+    background:#2a2413;
+    border:1px solid #d4af37;
+    color:#f0cf67;
     font-size:6px;
     font-weight:900;
     white-space:nowrap;
@@ -4475,7 +4563,7 @@ h1{
     width:100%;
     min-height:45px;
     background:#0f171d;
-    border-top:1px solid #29343d;
+    border-top:1px solid #d4af37;
 }
 
 .unified-condition{
@@ -4489,13 +4577,13 @@ h1{
 }
 
 .condition-label{
-    color:#68747e;
+    color:#b99d46;
     font-size:6px;
     font-weight:800;
 }
 
 .condition-period{
-    color:#b9f0cf;
+    color:#f0cf67;
     font-size:7px;
     font-weight:900;
     text-align:center;
@@ -4507,7 +4595,7 @@ h1{
 }
 
 .condition-note{
-    color:#68747e;
+    color:#b99d46;
     margin-left:5px;
     font-size:6px;
     font-weight:700;
@@ -4522,27 +4610,30 @@ h1{
     align-items:center;
     min-height:37px;
     margin-top:6px;
-    background:#111820;
-    border:1px solid #29343d;
+    background:#19160e;
+    border:1px solid #d4af37;
     border-radius:8px;
+    box-shadow:
+        0 0 6px rgba(212,175,55,0.12);
 }
 
 .signal-btc-title{
     text-align:center;
-    color:#78858f;
+    color:#c8ae5b;
     font-size:7px;
     font-weight:900;
 }
 
 .signal-btc-period{
     text-align:center;
-    color:#b9f0cf;
+    color:#f0cf67;
     font-size:7px;
     font-weight:900;
 }
 
 .signal-btc-value{
     text-align:center;
+    color:#e8d083;
     font-size:9px;
     font-weight:900;
 }
@@ -4564,11 +4655,13 @@ h1{
     justify-content:center;
     min-height:105px;
     margin-top:6px;
-    background:#10161c;
-    border:1px solid #29333d;
+    background:#18150e;
+    border:2px solid #8f7728;
     border-radius:11px;
     text-align:center;
     padding:12px;
+    box-shadow:
+        0 0 7px rgba(212,175,55,0.10);
 }
 
 .signal-empty-icon{
@@ -4577,21 +4670,21 @@ h1{
 }
 
 .signal-empty-title{
-    color:#e1e7eb;
+    color:#f0cf67;
     font-size:10px;
     font-weight:900;
 }
 
 .signal-empty-text{
     margin-top:6px;
-    color:#77838d;
+    color:#a58d4a;
     font-size:7px;
     font-weight:800;
 }
 
 .signal-empty-sub{
     margin-top:5px;
-    color:#59646e;
+    color:#796a3d;
     font-size:6px;
     font-weight:700;
 }
@@ -4772,6 +4865,10 @@ h1{
         border-radius:9px;
     }
 
+    .signal-market-card{
+        border-width:2px;
+    }
+
     .unified-card-header{
         min-height:33px;
         padding:4px 7px;
@@ -4839,6 +4936,7 @@ h1{
 
     .unified-condition-row{
         min-height:38px;
+        border-top-color:#d4af37;
     }
 
     .unified-condition{
@@ -5096,12 +5194,15 @@ h1{
    ========================================================= */
 
 .signal-market-card{
-    border-color:#31513f;
+    border:2px solid #d4af37;
+    box-shadow:
+        0 0 8px rgba(212,175,55,0.16),
+        inset 0 0 0 1px rgba(212,175,55,0.12);
 }
 
 .signal-header{
-    background:#14231c;
-    border-bottom-color:#31513f;
+    background:#211d11;
+    border-bottom:1px solid #d4af37;
 }
 
 """
@@ -5296,6 +5397,14 @@ def startup():
     )
 
     log.info(
+        "일봉 SIGNAL 패턴 = 첫 캔들 방향 무관"
+    )
+
+    log.info(
+        "일봉 SIGNAL 패턴 = 다음 캔들 양봉 몸통 장악"
+    )
+
+    log.info(
         "일봉 SIGNAL 패턴 = 상승장악"
     )
 
@@ -5308,7 +5417,7 @@ def startup():
     )
 
     log.info(
-        "일봉 SIGNAL 제외 = 도지 / 망치형 / 역망치형"
+        "일봉 SIGNAL 제외 = 도지 단독 / 망치형 단독 / 역망치형 단독"
     )
 
     log.info(
@@ -5325,6 +5434,10 @@ def startup():
 
     log.info(
         "SIGNAL 순위 = 거래대금 순위"
+    )
+
+    log.info(
+        "SIGNAL 테두리 = 금빛"
     )
 
     log.info(
