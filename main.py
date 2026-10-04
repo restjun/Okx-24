@@ -69,7 +69,6 @@ TIMEFRAME_LABEL = {
     "1d": "일봉"
 }
 
-
 SIGNAL_CANDLE_PATTERNS = [
     "상승장악",
     "3캔들 상승장악",
@@ -704,7 +703,6 @@ def two_patterns(
 
     out = []
 
-    # 상승장악
     if bullish_engulfing(
         a,
         b
@@ -714,7 +712,6 @@ def two_patterns(
             "상승장악"
         )
 
-    # 장대양봉 후 양봉
     if (
         long_bullish(a)
         and p2["bull"]
@@ -724,7 +721,6 @@ def two_patterns(
             "장대양봉 후 양봉"
         )
 
-    # 관통형
     mid = (
         p1["open"]
         + p1["close"]
@@ -741,7 +737,6 @@ def two_patterns(
             "관통형"
         )
 
-    # 하락장악
     if (
         p1["bull"]
         and p2["bear"]
@@ -757,7 +752,6 @@ def two_patterns(
             "하락장악"
         )
 
-    # 먹구름형
     if (
         p1["bull"]
         and p2["bear"]
@@ -794,7 +788,6 @@ def three_patterns(
 
     out = []
 
-    # 모닝스타
     if (
         p1["bear"]
         and p1["body_ratio"] >= 0.45
@@ -812,7 +805,6 @@ def three_patterns(
             "모닝스타"
         )
 
-    # 3연속 양봉
     if (
         p1["bull"]
         and p2["bull"]
@@ -825,7 +817,6 @@ def three_patterns(
             "3연속양봉"
         )
 
-    # 3캔들 상승장악
     if bullish_engulfing(
         a,
         c
@@ -835,7 +826,6 @@ def three_patterns(
             "3캔들 상승장악"
         )
 
-    # 상승장악 후 양봉
     if (
         bullish_engulfing(
             a,
@@ -848,7 +838,6 @@ def three_patterns(
             "상승장악 후 양봉"
         )
 
-    # 관통형 후 양봉
     if (
         "관통형"
         in two_patterns(
@@ -877,11 +866,8 @@ def four_patterns(
 ):
 
     p1 = candle_parts(a)
-
     p2 = candle_parts(b)
-
     p3 = candle_parts(c)
-
     p4 = candle_parts(d)
 
     if not all(
@@ -973,7 +959,6 @@ def build_periods(
             part.iloc[-1].close
         )
 
-        # 현재 진행봉
         if (
             p["active"]
             and current_price is not None
@@ -1016,7 +1001,6 @@ def build_periods(
             "patterns": []
         })
 
-    # 패턴 계산
     for i, p in enumerate(out):
 
         pats = []
@@ -1090,11 +1074,6 @@ def signal_pass(
 
         return False
 
-    # -----------------------------------------------------
-    # 15분
-    # 직전 완료봉
-    # -----------------------------------------------------
-
     if timeframe == "15m":
 
         if len(periods) < 2:
@@ -1102,11 +1081,6 @@ def signal_pass(
             return False
 
         target = periods[-2]
-
-    # -----------------------------------------------------
-    # 일봉
-    # 현재 KST 09:00 진행봉
-    # -----------------------------------------------------
 
     else:
 
@@ -1130,32 +1104,23 @@ def signal_pass(
     )
 
     if change is None:
-
         return False
 
     if open_price is None:
-
         return False
 
     if close_price is None:
-
         return False
 
-    # 상승
     if change <= 0:
-
         return False
 
-    # 양봉
     if close_price <= open_price:
-
         return False
 
-    # 지정 패턴
     if not any(
         pattern in patterns
-        for pattern
-        in SIGNAL_CANDLE_PATTERNS
+        for pattern in SIGNAL_CANDLE_PATTERNS
     ):
 
         return False
@@ -1292,11 +1257,6 @@ def make_row(
         "volume_rank":
             rank,
 
-
-        # =============================================
-        # 15분
-        # =============================================
-
         "periods_15m":
             analysis_15m[
                 "periods"
@@ -1315,11 +1275,6 @@ def make_row(
                 "signal_patterns"
             ],
 
-
-        # =============================================
-        # 일봉
-        # =============================================
-
         "periods_daily":
             analysis_daily[
                 "periods"
@@ -1337,11 +1292,6 @@ def make_row(
             analysis_daily[
                 "signal_patterns"
             ],
-
-
-        # =============================================
-        # 동시
-        # =============================================
 
         "simultaneous_signal":
             simultaneous
@@ -1383,10 +1333,6 @@ def update_upbit():
             "current_price"
         ]
 
-        # -----------------------------------------
-        # 15분
-        # -----------------------------------------
-
         try:
 
             analysis_15m = analyze(
@@ -1413,10 +1359,6 @@ def update_upbit():
 
                 "signal_patterns": []
             }
-
-        # -----------------------------------------
-        # 일봉
-        # -----------------------------------------
 
         try:
 
@@ -1783,29 +1725,20 @@ def update_dashboard():
 def fmt_price(v):
 
     if v is None:
-
         return "-"
 
     try:
-
         v = float(v)
-
     except Exception:
-
         return "-"
 
     if v >= 100000000:
-
-        return (
-            f"{v / 100000000:.2f}억"
-        )
+        return f"{v / 100000000:.2f}억"
 
     if v >= 10000:
-
         return f"{v:,.0f}"
 
     if v >= 1:
-
         return f"{v:,.2f}"
 
     return f"{v:.6f}"
@@ -1814,30 +1747,18 @@ def fmt_price(v):
 def fmt_vol(v):
 
     try:
-
         v = float(v)
-
     except Exception:
-
         return "-"
 
     if v >= 1e12:
-
-        return (
-            f"{v / 1e12:.1f}조"
-        )
+        return f"{v / 1e12:.1f}조"
 
     if v >= 1e8:
-
-        return (
-            f"{v / 1e8:.0f}억"
-        )
+        return f"{v / 1e8:.0f}억"
 
     if v >= 1e4:
-
-        return (
-            f"{v / 1e4:.0f}만"
-        )
+        return f"{v / 1e4:.0f}만"
 
     return f"{v:,.0f}"
 
@@ -1845,23 +1766,14 @@ def fmt_vol(v):
 def fmt_change(v):
 
     if v is None:
-
-        return (
-            '<span class="zero">-</span>'
-        )
+        return '<span class="zero">-</span>'
 
     try:
-
         v = float(v)
-
     except Exception:
-
-        return (
-            '<span class="zero">-</span>'
-        )
+        return '<span class="zero">-</span>'
 
     if v > 0:
-
         return (
             '<span class="up">'
             f'▲ +{v:.2f}%'
@@ -1869,7 +1781,6 @@ def fmt_change(v):
         )
 
     if v < 0:
-
         return (
             '<span class="down">'
             f'▼ {v:.2f}%'
@@ -1921,7 +1832,7 @@ def cells(periods):
             f"""
             <div class="tf-cell {active_class}">
 
-                <div>
+                <div class="tf-date">
                     {html.escape(
                         p.get(
                             "label",
@@ -1954,72 +1865,94 @@ def cells(periods):
 def btc_html():
 
     return f"""
-    <div class="market-card">
+    <section class="btc-panel">
 
-        <div class="market-head">
+        <div class="section-head">
 
-            <b>
-                ₿ BTC 시장 시황 · OKX
-            </b>
+            <div>
+                <span class="section-kicker">
+                    MARKET
+                </span>
 
-            <span>
-                BTC-USDT-SWAP · {kst()}
+                <b>
+                    ₿ BTC 시황
+                </b>
+            </div>
+
+            <span class="update-time">
+                OKX · {kst()}
             </span>
 
         </div>
 
 
-        <div class="btc-row">
+        <div class="btc-main">
 
-            <b>
+            <div class="btc-name">
                 BTC
-            </b>
+            </div>
 
-            <strong>
+            <div class="btc-price">
                 {fmt_price(
                     latest_btc_okx_price
                 )}
-            </strong>
+            </div>
 
-            <strong>
+            <div class="btc-change">
                 {fmt_change(
                     latest_btc_15m_change
                 )}
-            </strong>
-
-            <strong>
-                15분
-            </strong>
+            </div>
 
         </div>
 
 
-        <div class="btc-label">
-            15분
-        </div>
+        <div class="market-timeframe">
 
-        <div class="grid">
+            <div class="timeframe-head">
 
-            {cells(
-                latest_btc_15m_periods
-            )}
+                <b>
+                    15분
+                </b>
 
-        </div>
+                <span>
+                    단기 흐름
+                </span>
 
+            </div>
 
-        <div class="btc-label">
-            일봉 · KST 09:00
-        </div>
-
-        <div class="grid">
-
-            {cells(
-                latest_btc_daily_periods
-            )}
+            <div class="grid">
+                {cells(
+                    latest_btc_15m_periods
+                )}
+            </div>
 
         </div>
 
-    </div>
+
+        <div class="market-timeframe">
+
+            <div class="timeframe-head">
+
+                <b>
+                    일봉
+                </b>
+
+                <span>
+                    KST 09:00 기준
+                </span>
+
+            </div>
+
+            <div class="grid">
+                {cells(
+                    latest_btc_daily_periods
+                )}
+            </div>
+
+        </div>
+
+    </section>
     """
 
 
@@ -2044,64 +1977,45 @@ def card(
 
     if kind == "top":
 
+        status = ""
+
         if both:
 
             status = (
-                '<span class="top-status both">'
-                '⭐ 동시'
+                '<span class="signal-badge">'
+                '⭐ 동시 SIGNAL'
                 '</span>'
             )
-
-        else:
-
-            status = (
-                '<span class="top-status none">'
-                '—'
-                '</span>'
-            )
-
 
         return f"""
+        <article class="coin-card">
 
-        <div class="card top-card">
+            <div class="coin-head">
 
+                <div class="coin-title">
 
-            <!-- =========================================
-                 종목 헤더
-                 ========================================= -->
+                    <span class="rank">
+                        #{row["rank"]}
+                    </span>
 
-            <div class="card-head top-head">
+                    <b>
+                        {html.escape(
+                            row["name"]
+                        )}
+                    </b>
 
-                <span>
-                    #{row["rank"]}
-                </span>
-
-                <b>
-                    {html.escape(
-                        row["name"]
-                    )}
-                </b>
+                </div>
 
                 {status}
 
             </div>
 
 
-            <!-- =========================================
-                 시황
-                 ========================================= -->
+            <!-- 시황 -->
 
-            <div class="info-section-title">
+            <div class="market-summary">
 
-                📊 시황
-
-            </div>
-
-
-            <div class="top-summary">
-
-
-                <div class="top-summary-item">
+                <div>
 
                     <span>
                         현재가
@@ -2109,16 +2023,14 @@ def card(
 
                     <strong>
                         {fmt_price(
-                            row[
-                                "current_price"
-                            ]
+                            row["current_price"]
                         )}
                     </strong>
 
                 </div>
 
 
-                <div class="top-summary-item">
+                <div>
 
                     <span>
                         24H 거래대금
@@ -2126,19 +2038,17 @@ def card(
 
                     <strong>
                         {fmt_vol(
-                            row[
-                                "volume_24h"
-                            ]
+                            row["volume_24h"]
                         )}
                     </strong>
 
                 </div>
 
 
-                <div class="top-summary-item">
+                <div>
 
                     <span>
-                        15분 변동
+                        15분
                     </span>
 
                     <strong>
@@ -2152,10 +2062,10 @@ def card(
                 </div>
 
 
-                <div class="top-summary-item">
+                <div>
 
                     <span>
-                        일봉 변동
+                        일봉
                     </span>
 
                     <strong>
@@ -2168,137 +2078,115 @@ def card(
 
                 </div>
 
-
             </div>
 
 
-            <!-- =========================================
-                 시황 / SIGNAL 강한 구분
-                 ========================================= -->
+            <!-- SIGNAL -->
 
-            <div class="major-divider">
+            <div class="signal-bar">
 
                 <span>
-                    ⭐ SIGNAL
+                    SIGNAL
                 </span>
 
-            </div>
+                <i></i>
 
-
-            <!-- =========================================
-                 15분 SIGNAL
-                 ========================================= -->
-
-            <div class="signal-title">
-
-                <b>
-                    15분 SIGNAL
-                </b>
-
-                <span>
-                    이전 확정봉
-                </span>
+                <small>
+                    15분 + 일봉
+                </small>
 
             </div>
 
 
-            <div class="grid">
+            <div class="signal-section">
 
-                {cells(
-                    row.get(
-                        "periods_15m",
-                        []
-                    )
-                )}
+                <div class="signal-head">
 
-            </div>
+                    <b>
+                        15분 SIGNAL
+                    </b>
 
+                    <span>
+                        이전 확정봉
+                    </span>
 
-            <!-- =========================================
-                 15분 / 일봉 구분
-                 ========================================= -->
+                </div>
 
-            <div class="signal-separator">
-            </div>
-
-
-            <!-- =========================================
-                 일봉 SIGNAL
-                 ========================================= -->
-
-            <div class="signal-title daily-signal">
-
-                <b>
-                    일봉 SIGNAL
-                </b>
-
-                <span>
-                    KST 09:00 기준
-                </span>
+                <div class="grid">
+                    {cells(
+                        row.get(
+                            "periods_15m",
+                            []
+                        )
+                    )}
+                </div>
 
             </div>
 
 
-            <div class="grid">
+            <div class="signal-gap"></div>
 
-                {cells(
-                    row.get(
-                        "periods_daily",
-                        []
-                    )
-                )}
+
+            <div class="signal-section">
+
+                <div class="signal-head">
+
+                    <b>
+                        일봉 SIGNAL
+                    </b>
+
+                    <span>
+                        KST 09:00
+                    </span>
+
+                </div>
+
+                <div class="grid">
+                    {cells(
+                        row.get(
+                            "periods_daily",
+                            []
+                        )
+                    )}
+                </div>
 
             </div>
 
-
-        </div>
-
+        </article>
         """
 
 
     # =====================================================
-    # 동시 SIGNAL 카드
+    # 동시 SIGNAL
     # =====================================================
 
-    badge = ""
-
-    if both:
-
-        badge = (
-            '<span class="both">'
-            '⭐ 동시 SIGNAL'
-            '</span>'
-        )
-
-
     return f"""
+    <article class="both-card">
 
-    <div class="card both-card">
+        <div class="both-head">
 
+            <div>
 
-        <div class="card-head">
+                <span class="rank">
+                    #{row["rank"]}
+                </span>
 
-            <span>
-                #{row["rank"]}
+                <b>
+                    {html.escape(
+                        row["name"]
+                    )}
+                </b>
+
+            </div>
+
+            <span class="both-badge">
+                ⭐ 동시 SIGNAL
             </span>
-
-            <b>
-                {html.escape(
-                    row["name"]
-                )}
-            </b>
-
-            {badge}
-
-            <em>
-                ⭐ 15분 + 일봉
-            </em>
 
         </div>
 
 
-        <div class="signal-summary">
-
+        <div class="both-summary">
 
             <div>
 
@@ -2342,74 +2230,70 @@ def card(
 
                 <strong>
                     {fmt_price(
-                        row[
-                            "current_price"
-                        ]
+                        row["current_price"]
                     )}
                 </strong>
 
             </div>
 
+        </div>
+
+
+        <div class="signal-section">
+
+            <div class="signal-head">
+
+                <b>
+                    15분
+                </b>
+
+                <span>
+                    이전 확정봉
+                </span>
+
+            </div>
+
+            <div class="grid">
+                {cells(
+                    row.get(
+                        "periods_15m",
+                        []
+                    )
+                )}
+            </div>
 
         </div>
 
 
-        <div class="tf-title">
-
-            <b>
-                15분
-            </b>
-
-            <span>
-                이전 확정봉
-            </span>
-
-        </div>
+        <div class="signal-gap"></div>
 
 
-        <div class="grid">
+        <div class="signal-section">
 
-            {cells(
-                row.get(
-                    "periods_15m",
-                    []
-                )
-            )}
+            <div class="signal-head">
 
-        </div>
+                <b>
+                    일봉
+                </b>
 
+                <span>
+                    현재봉 · KST 09:00
+                </span>
 
-        <div class="signal-separator">
-        </div>
+            </div>
 
-
-        <div class="tf-title daily-signal">
-
-            <b>
-                일봉
-            </b>
-
-            <span>
-                현재봉 · KST 09:00
-            </span>
+            <div class="grid">
+                {cells(
+                    row.get(
+                        "periods_daily",
+                        []
+                    )
+                )}
+            </div>
 
         </div>
 
-
-        <div class="grid">
-
-            {cells(
-                row.get(
-                    "periods_daily",
-                    []
-                )
-            )}
-
-        </div>
-
-
-    </div>
-
+    </article>
     """
 
 
@@ -2449,18 +2333,25 @@ def both_section(data):
 
     <section>
 
-        <header class="gold">
+        <div class="section-title signal-section-title">
 
-            <b>
-                ⭐ 15분 + 일봉 동시 SIGNAL
-            </b>
+            <div>
+
+                <span class="section-kicker">
+                    SIGNAL
+                </span>
+
+                <b>
+                    ⭐ 15분 + 일봉 동시 SIGNAL
+                </b>
+
+            </div>
 
             <small>
-                15분 SIGNAL과 일봉 SIGNAL이
-                동시에 발생한 종목
+                두 조건 동시 충족
             </small>
 
-        </header>
+        </div>
 
         {content}
 
@@ -2476,128 +2367,143 @@ def both_section(data):
 CSS = """
 
 * {
-    box-sizing:
-        border-box;
+    box-sizing: border-box;
+}
+
+
+html {
+    background: #080b0f;
 }
 
 
 body {
 
-    margin:
-        0;
+    margin: 0;
 
-    background:
-        #080c11;
+    padding: 8px;
 
-    color:
-        #e7ebef;
+    background: #080b0f;
+
+    color: #e8edf2;
 
     font-family:
         Arial,
+        "Noto Sans KR",
         sans-serif;
 
-    font-size:
-        11px;
-
-    padding:
-        8px;
+    font-size: 11px;
 }
 
 
 h1 {
 
-    font-size:
-        15px;
+    margin: 4px 2px 12px;
 
-    margin:
-        3px 2px 9px;
+    font-size: 14px;
+
+    font-weight: 800;
+
+    letter-spacing: -0.4px;
+
+    color: #f1f4f7;
 }
 
 
 section {
 
-    margin:
-        8px 0 12px;
-}
-
-
-section > header {
-
-    padding:
-        8px 10px;
-
-    border:
-        2px solid #26313b;
-
-    border-radius:
-        10px;
-
-    background:
-        #10151b;
-
-    margin-bottom:
-        6px;
-}
-
-
-section > header b {
-
-    display:
-        block;
-
-    font-size:
-        11px;
-}
-
-
-section > header small {
-
-    display:
-        block;
-
-    color:
-        #7d8892;
-
-    font-size:
-        7px;
-
-    margin-top:
-        2px;
-}
-
-
-section > header.gold {
-
-    border-color:
-        #c9a83d;
-
-    background:
-        #1d190d;
+    margin-bottom: 12px;
 }
 
 
 /* =====================================================
-   상승 / 하락
+   공통 색상
    ===================================================== */
 
 .up {
-
-    color:
-        #36d66b;
+    color: #38d878;
 }
 
 
 .down {
-
-    color:
-        #ff5c68;
+    color: #ff5966;
 }
 
 
 .zero {
+    color: #68737e;
+}
 
-    color:
-        #66727d;
+
+/* =====================================================
+   섹션 제목
+   ===================================================== */
+
+.section-title {
+
+    min-height: 42px;
+
+    padding: 7px 9px;
+
+    display: flex;
+
+    align-items: center;
+
+    justify-content: space-between;
+
+    border-bottom: 1px solid #26313a;
+
+    margin-bottom: 5px;
+}
+
+
+.section-title > div {
+
+    display: flex;
+
+    align-items: center;
+
+    gap: 7px;
+}
+
+
+.section-title b {
+
+    font-size: 10px;
+
+    font-weight: 800;
+}
+
+
+.section-title small {
+
+    color: #697580;
+
+    font-size: 7px;
+}
+
+
+.section-kicker {
+
+    color: #7d8994;
+
+    font-size: 6px;
+
+    letter-spacing: 1px;
+
+    font-weight: 700;
+}
+
+
+.signal-section-title {
+
+    border-bottom:
+        1px solid #725f28;
+}
+
+
+.signal-section-title .section-kicker {
+
+    color: #c9a83d;
 }
 
 
@@ -2605,667 +2511,596 @@ section > header.gold {
    BTC
    ===================================================== */
 
-.market-card {
+.btc-panel {
+
+    background: #0c1116;
 
     border:
-        2px solid #26313b;
+        1px solid #202a33;
 
-    border-radius:
-        11px;
-
-    overflow:
-        hidden;
-
-    margin-bottom:
-        10px;
+    margin-bottom: 13px;
 }
 
 
-.market-head {
+.btc-panel .section-head {
 
-    padding:
-        8px;
+    height: 38px;
 
-    background:
-        #111820;
+    padding: 0 10px;
 
-    display:
-        flex;
+    display: flex;
 
-    justify-content:
-        space-between;
+    align-items: center;
 
-    gap:
-        8px;
+    justify-content: space-between;
+
+    border-bottom:
+        1px solid #202a33;
 }
 
 
-.market-head span {
+.section-head > div {
 
-    font-size:
-        7px;
+    display: flex;
 
-    color:
-        #74808b;
+    align-items: center;
+
+    gap: 7px;
 }
 
 
-.btc-row {
+.section-head b {
 
-    display:
-        grid;
+    font-size: 10px;
+
+    font-weight: 800;
+}
+
+
+.update-time {
+
+    color: #65717c;
+
+    font-size: 6px;
+}
+
+
+.btc-main {
+
+    min-height: 54px;
+
+    display: grid;
 
     grid-template-columns:
-        1fr 1.3fr 1.2fr 1fr;
+        0.7fr 1.5fr 1fr;
 
-    min-height:
-        48px;
+    align-items: center;
 
-    align-items:
-        center;
-
-    text-align:
-        center;
+    border-bottom:
+        1px solid #202a33;
 }
 
 
-.btc-row > * {
+.btc-main > div {
 
-    padding:
-        5px;
+    text-align: center;
+
+    padding: 5px;
 }
 
 
-.btc-row > * + * {
+.btc-name {
 
-    border-left:
-        1px solid #29323c;
+    color: #c4ccd3;
+
+    font-size: 10px;
+
+    font-weight: 800;
 }
 
 
-.btc-label {
+.btc-price {
 
-    padding:
-        5px 8px;
+    color: #f4f6f8;
 
-    background:
-        #111820;
+    font-size: 16px;
 
-    color:
-        #aab3ba;
+    font-weight: 900;
 
-    font-weight:
-        900;
+    letter-spacing: -0.5px;
+}
 
-    font-size:
-        8px;
+
+.btc-change {
+
+    font-size: 11px;
+
+    font-weight: 800;
+}
+
+
+.market-timeframe {
+
+    border-bottom:
+        1px solid #1e272f;
+}
+
+
+.market-timeframe:last-child {
+
+    border-bottom: 0;
+}
+
+
+.timeframe-head {
+
+    height: 27px;
+
+    padding: 0 9px;
+
+    display: flex;
+
+    align-items: center;
+
+    justify-content: space-between;
+
+    background: #0e151b;
+}
+
+
+.timeframe-head b {
+
+    font-size: 8px;
+
+    color: #dbe1e6;
+}
+
+
+.timeframe-head span {
+
+    color: #626e79;
+
+    font-size: 6px;
 }
 
 
 /* =====================================================
-   공통 GRID
+   기간 GRID
    ===================================================== */
 
 .grid {
 
-    display:
-        grid;
+    display: grid;
 
     grid-template-columns:
         repeat(6, 1fr);
-
-    gap:
-        1px;
-
-    background:
-        #29323c;
 }
 
 
 .tf-cell {
 
-    min-height:
-        47px;
+    min-height: 46px;
 
-    background:
-        #0d1319;
+    padding: 5px 2px;
 
-    padding:
-        4px;
+    text-align: center;
 
-    text-align:
-        center;
+    background: #0b1015;
 
-    font-size:
-        7px;
+    border-right:
+        1px solid #1b242c;
+}
+
+
+.tf-cell:last-child {
+
+    border-right: 0;
 }
 
 
 .tf-cell.current {
 
-    background:
-        #173326;
+    background: #10241a;
+}
+
+
+.tf-date {
+
+    color: #6c7782;
+
+    font-size: 6px;
+
+    white-space: nowrap;
+
+    overflow: hidden;
+
+    text-overflow: ellipsis;
 }
 
 
 .tf-cell strong {
 
-    display:
-        block;
+    display: block;
 
-    font-size:
-        8px;
+    margin-top: 4px;
 
-    margin-top:
-        2px;
+    font-size: 8px;
 }
 
 
 .tf-cell small {
 
-    display:
-        block;
+    display: block;
 
-    color:
-        #e0bd6d;
+    margin-top: 3px;
 
-    font-size:
-        5px;
+    color: #c5a44b;
 
-    white-space:
-        nowrap;
+    font-size: 5px;
 
-    overflow:
-        hidden;
+    white-space: nowrap;
 
-    text-overflow:
-        ellipsis;
+    overflow: hidden;
+
+    text-overflow: ellipsis;
 }
 
 
 /* =====================================================
-   카드
+   동시 SIGNAL
    ===================================================== */
 
-.card {
+.both-card {
+
+    background: #0c1115;
 
     border:
-        2px solid #26313b;
+        1px solid #796329;
 
-    border-radius:
-        10px;
-
-    overflow:
-        hidden;
-
-    margin:
-        6px 0;
-
-    background:
-        #0f141a;
+    margin-bottom: 7px;
 }
 
 
-.card.both-card {
+.both-head {
 
-    border-color:
-        #d2ae42;
-}
+    min-height: 39px;
 
+    padding: 0 9px;
 
-.card-head {
+    display: flex;
 
-    min-height:
-        38px;
+    align-items: center;
 
-    padding:
-        6px 8px;
-
-    background:
-        #121820;
-
-    display:
-        flex;
-
-    align-items:
-        center;
-
-    gap:
-        7px;
-}
-
-
-.card-head > span {
-
-    color:
-        #d8b85c;
-
-    font-weight:
-        900;
-}
-
-
-.card-head b {
-
-    flex:
-        1;
-
-    font-size:
-        10px;
-}
-
-
-.card-head em {
-
-    font-style:
-        normal;
-
-    color:
-        #7e8994;
-
-    font-size:
-        7px;
-}
-
-
-/* =====================================================
-   동시 SIGNAL 배지
-   ===================================================== */
-
-.both {
-
-    padding:
-        3px 6px;
-
-    border:
-        1px solid #d2ae42;
-
-    border-radius:
-        5px;
-
-    background:
-        #2b230d;
-
-    color:
-        #f0cf67;
-
-    font-size:
-        6px;
-
-    font-weight:
-        900;
-}
-
-
-/* =====================================================
-   TOP10
-   ===================================================== */
-
-.top-card {
-
-    border:
-        1px solid #29333d;
-
-    background:
-        #0d1319;
-
-    margin-bottom:
-        10px;
-}
-
-
-.top-head {
-
-    min-height:
-        38px;
+    justify-content: space-between;
 
     border-bottom:
-        1px solid #29333d;
+        1px solid #39321e;
 }
 
 
-.top-status {
+.both-head > div {
 
-    padding:
-        3px 7px;
+    display: flex;
 
-    border-radius:
-        5px;
+    align-items: center;
 
-    font-size:
-        7px;
-
-    font-weight:
-        900;
+    gap: 7px;
 }
 
 
-.top-status.both {
+.rank {
 
-    color:
-        #f0cf67;
+    color: #c9a83d;
 
-    background:
-        #2b230d;
+    font-size: 8px;
 
-    border:
-        1px solid #8d7527;
+    font-weight: 800;
 }
 
 
-.top-status.none {
+.both-head b {
 
-    color:
-        #66727d;
+    font-size: 10px;
+
+    font-weight: 900;
 }
 
 
-/* =====================================================
-   TOP10
-   시황 제목
-   ===================================================== */
+.both-badge {
 
-.info-section-title {
+    color: #e4c45e;
 
-    height:
-        32px;
+    font-size: 7px;
 
-    display:
-        flex;
-
-    align-items:
-        center;
-
-    padding:
-        0 10px;
-
-    background:
-        #18212a;
-
-    color:
-        #e7ebef;
-
-    font-size:
-        9px;
-
-    font-weight:
-        900;
-
-    border-top:
-        2px solid #4b5965;
-
-    border-bottom:
-        2px solid #4b5965;
+    font-weight: 800;
 }
 
 
-/* =====================================================
-   TOP10
-   시황 내용
-   ===================================================== */
+.both-summary {
 
-.top-summary {
-
-    display:
-        grid;
-
-    grid-template-columns:
-        repeat(4, 1fr);
-
-    gap:
-        1px;
-
-    background:
-        #39444f;
-
-    border-bottom:
-        1px solid #39444f;
-}
-
-
-.top-summary-item {
-
-    min-height:
-        50px;
-
-    padding:
-        6px;
-
-    text-align:
-        center;
-
-    background:
-        #0f151b;
-}
-
-
-.top-summary-item span {
-
-    display:
-        block;
-
-    color:
-        #77838e;
-
-    font-size:
-        7px;
-
-    margin-bottom:
-        4px;
-}
-
-
-.top-summary-item strong {
-
-    display:
-        block;
-
-    font-size:
-        9px;
-}
-
-
-/* =====================================================
-   시황 → SIGNAL
-   아주 명확한 구분
-   ===================================================== */
-
-.major-divider {
-
-    height:
-        40px;
-
-    display:
-        flex;
-
-    align-items:
-        center;
-
-    justify-content:
-        center;
-
-    background:
-        #080c11;
-
-    border-top:
-        4px solid #596773;
-
-    border-bottom:
-        4px solid #8d7527;
-
-    margin-top:
-        2px;
-}
-
-
-.major-divider span {
-
-    padding:
-        5px 16px;
-
-    border:
-        1px solid #8d7527;
-
-    border-radius:
-        6px;
-
-    background:
-        #2b230d;
-
-    color:
-        #f0cf67;
-
-    font-size:
-        8px;
-
-    font-weight:
-        900;
-}
-
-
-/* =====================================================
-   SIGNAL 제목
-   ===================================================== */
-
-.signal-title {
-
-    height:
-        31px;
-
-    display:
-        flex;
-
-    align-items:
-        center;
-
-    justify-content:
-        space-between;
-
-    padding:
-        0 10px;
-
-    background:
-        #111920;
-
-    border-bottom:
-        2px solid #394650;
-}
-
-
-.signal-title b {
-
-    color:
-        #e7ebef;
-
-    font-size:
-        8px;
-}
-
-
-.signal-title span {
-
-    color:
-        #7f8b95;
-
-    font-size:
-        6px;
-}
-
-
-/* =====================================================
-   15분 → 일봉
-   강한 구분
-   ===================================================== */
-
-.signal-separator {
-
-    height:
-        10px;
-
-    background:
-        #080c11;
-
-    border-top:
-        3px solid #46525d;
-
-    border-bottom:
-        3px solid #46525d;
-}
-
-
-.daily-signal {
-
-    background:
-        #151b21;
-
-    border-top:
-        1px solid #59636d;
-
-    border-bottom:
-        2px solid #59636d;
-}
-
-
-/* =====================================================
-   동시 SIGNAL 카드 요약
-   ===================================================== */
-
-.signal-summary {
-
-    display:
-        grid;
+    display: grid;
 
     grid-template-columns:
         repeat(3, 1fr);
 
     border-bottom:
-        1px solid #594a25;
+        1px solid #39321e;
 }
 
 
-.signal-summary > div {
+.both-summary > div {
 
-    padding:
-        7px;
+    min-height: 43px;
 
-    text-align:
-        center;
+    padding: 5px;
 
-    background:
-        #151713;
+    text-align: center;
+
+    background: #111611;
 }
 
 
-.signal-summary > div + div {
+.both-summary > div + div {
 
     border-left:
-        1px solid #594a25;
+        1px solid #292c20;
 }
 
 
-.signal-summary span {
+.both-summary span {
 
-    display:
-        block;
+    display: block;
 
-    color:
-        #8b8b7b;
+    color: #747c74;
 
-    font-size:
-        7px;
+    font-size: 6px;
 }
 
 
-.signal-summary strong {
+.both-summary strong {
 
-    display:
-        block;
+    display: block;
 
-    margin-top:
-        3px;
+    margin-top: 4px;
 
-    font-size:
-        9px;
+    font-size: 8px;
+}
+
+
+.both-card .signal-head {
+
+    background: #11150f;
+}
+
+
+/* =====================================================
+   TOP10 종목
+   ===================================================== */
+
+.coin-card {
+
+    background: #0c1116;
+
+    border:
+        1px solid #202a33;
+
+    margin-bottom: 7px;
+}
+
+
+.coin-head {
+
+    min-height: 38px;
+
+    padding: 0 9px;
+
+    display: flex;
+
+    align-items: center;
+
+    justify-content: space-between;
+
+    border-bottom:
+        1px solid #202a33;
+}
+
+
+.coin-title {
+
+    display: flex;
+
+    align-items: center;
+
+    gap: 8px;
+}
+
+
+.coin-title b {
+
+    font-size: 10px;
+
+    font-weight: 900;
+}
+
+
+.signal-badge {
+
+    color: #e4c45e;
+
+    font-size: 7px;
+
+    font-weight: 900;
+}
+
+
+/* =====================================================
+   TOP 시황
+   ===================================================== */
+
+.market-summary {
+
+    display: grid;
+
+    grid-template-columns:
+        repeat(4, 1fr);
+
+    border-bottom:
+        1px solid #202a33;
+}
+
+
+.market-summary > div {
+
+    min-height: 48px;
+
+    padding: 6px 3px;
+
+    text-align: center;
+
+    background: #0d1318;
+}
+
+
+.market-summary > div + div {
+
+    border-left:
+        1px solid #1d262e;
+}
+
+
+.market-summary span {
+
+    display: block;
+
+    color: #65717b;
+
+    font-size: 6px;
+
+    margin-bottom: 5px;
+}
+
+
+.market-summary strong {
+
+    display: block;
+
+    color: #dce2e7;
+
+    font-size: 8px;
+}
+
+
+/* =====================================================
+   SIGNAL BAR
+   ===================================================== */
+
+.signal-bar {
+
+    height: 29px;
+
+    padding: 0 9px;
+
+    display: flex;
+
+    align-items: center;
+
+    gap: 7px;
+
+    border-bottom:
+        1px solid #30322b;
+
+    background: #10140f;
+}
+
+
+.signal-bar span {
+
+    color: #d0ad48;
+
+    font-size: 7px;
+
+    font-weight: 900;
+
+    letter-spacing: 0.7px;
+}
+
+
+.signal-bar i {
+
+    flex: 1;
+
+    height: 1px;
+
+    background: #353a35;
+}
+
+
+.signal-bar small {
+
+    color: #68736d;
+
+    font-size: 6px;
+}
+
+
+/* =====================================================
+   SIGNAL 영역
+   ===================================================== */
+
+.signal-section {
+
+    background: #0b1014;
+}
+
+
+.signal-head {
+
+    height: 28px;
+
+    padding: 0 9px;
+
+    display: flex;
+
+    align-items: center;
+
+    justify-content: space-between;
+
+    background: #0f151a;
+
+    border-bottom:
+        1px solid #202931;
+}
+
+
+.signal-head b {
+
+    color: #d9dfe4;
+
+    font-size: 7px;
+
+    font-weight: 900;
+}
+
+
+.signal-head span {
+
+    color: #626e78;
+
+    font-size: 6px;
+}
+
+
+.signal-gap {
+
+    height: 7px;
+
+    background: #080b0f;
+
+    border-top:
+        1px solid #1d252c;
+
+    border-bottom:
+        1px solid #1d252c;
 }
 
 
@@ -3275,20 +3110,18 @@ section > header.gold {
 
 .empty {
 
-    text-align:
-        center;
+    padding: 25px 10px;
 
-    padding:
-        25px;
+    text-align: center;
+
+    color: #626e79;
+
+    background: #0c1116;
 
     border:
-        1px solid #26313b;
+        1px solid #202a33;
 
-    border-radius:
-        10px;
-
-    color:
-        #65717c;
+    font-size: 8px;
 }
 
 
@@ -3298,44 +3131,38 @@ section > header.gold {
 
 .main {
 
-    display:
-        grid;
+    display: grid;
 
     grid-template-columns:
         repeat(3, 1fr);
 
-    min-height:
-        43px;
+    min-height: 43px;
 }
 
 
 .main > div {
 
-    text-align:
-        center;
+    text-align: center;
 
-    padding:
-        5px;
+    padding: 5px;
 
     border-top:
-        1px solid #29323c;
+        1px solid #202a33;
 }
 
 
 .main > div + div {
 
     border-left:
-        1px solid #29323c;
+        1px solid #202a33;
 }
 
 
 .main strong {
 
-    display:
-        block;
+    display: block;
 
-    margin-top:
-        2px;
+    margin-top: 2px;
 }
 
 
@@ -3347,15 +3174,52 @@ section > header.gold {
 
     body {
 
-        padding:
-            5px;
+        padding: 5px;
     }
 
 
     h1 {
 
-        font-size:
-            12px;
+        margin:
+            3px 2px 9px;
+
+        font-size: 12px;
+    }
+
+
+    .section-head {
+
+        padding: 0 8px;
+    }
+
+
+    .section-head b {
+
+        font-size: 9px;
+    }
+
+
+    .update-time {
+
+        font-size: 5px;
+    }
+
+
+    .btc-main {
+
+        min-height: 48px;
+    }
+
+
+    .btc-price {
+
+        font-size: 13px;
+    }
+
+
+    .btc-change {
+
+        font-size: 9px;
     }
 
 
@@ -3366,167 +3230,103 @@ section > header.gold {
     }
 
 
-    .market-head {
-
-        font-size:
-            9px;
-    }
-
-
-    .market-head span {
-
-        font-size:
-            5px;
-    }
-
-
-    .btc-row {
-
-        min-height:
-            40px;
-
-        font-size:
-            8px;
-    }
-
-
-    .btc-label {
-
-        font-size:
-            6px;
-    }
-
-
     .tf-cell {
 
-        min-height:
-            43px;
+        min-height: 42px;
 
-        font-size:
-            6px;
+        padding:
+            4px 2px;
     }
 
 
     .tf-cell strong {
 
-        font-size:
-            7px;
+        font-size: 7px;
     }
 
 
     .tf-cell small {
 
-        font-size:
-            4px;
+        font-size: 4px;
     }
 
 
-    .card-head {
+    .coin-head,
+    .both-head {
 
-        min-height:
-            33px;
+        min-height: 35px;
 
-        padding:
-            5px 6px;
+        padding: 0 7px;
     }
 
 
-    .card-head b {
+    .coin-title b,
+    .both-head b {
 
-        font-size:
-            8px;
+        font-size: 9px;
     }
 
 
-    .card-head em {
+    .market-summary > div {
 
-        font-size:
-            5px;
-    }
-
-
-    .both {
-
-        font-size:
-            4.5px;
-    }
-
-
-    .top-summary-item {
-
-        min-height:
-            45px;
+        min-height: 44px;
 
         padding:
             5px 2px;
     }
 
 
-    .top-summary-item span {
+    .market-summary span {
 
-        font-size:
-            6px;
+        font-size: 5px;
+
+        margin-bottom: 4px;
     }
 
 
-    .top-summary-item strong {
+    .market-summary strong {
 
-        font-size:
-            7px;
+        font-size: 7px;
     }
 
 
-    .info-section-title {
+    .signal-bar {
 
-        height:
-            29px;
+        height: 27px;
 
-        font-size:
-            8px;
+        padding: 0 7px;
     }
 
 
-    .major-divider {
+    .signal-head {
 
-        height:
-            36px;
+        height: 26px;
 
-        border-top-width:
-            3px;
-
-        border-bottom-width:
-            3px;
+        padding: 0 7px;
     }
 
 
-    .major-divider span {
+    .signal-head b {
 
-        font-size:
-            7px;
-
-        padding:
-            4px 12px;
+        font-size: 6px;
     }
 
 
-    .signal-title {
+    .signal-head span {
 
-        height:
-            27px;
+        font-size: 5px;
     }
 
 
-    .signal-title b {
+    .both-summary > div {
 
-        font-size:
-            7px;
+        min-height: 40px;
     }
 
 
-    .signal-title span {
+    .both-badge {
 
-        font-size:
-            5px;
+        font-size: 6px;
     }
 
 }
@@ -3548,7 +3348,7 @@ def dashboard():
     if USE_UPBIT == "Y":
 
         # -------------------------------------------------
-        # 동시 SIGNAL만 표시
+        # 동시 SIGNAL
         # -------------------------------------------------
 
         s += both_section(
@@ -3567,8 +3367,7 @@ def dashboard():
                     r,
                     "top"
                 )
-                for r
-                in latest_upbit_data
+                for r in latest_upbit_data
             )
 
         else:
@@ -3583,18 +3382,25 @@ def dashboard():
 
         <section>
 
-            <header>
+            <div class="section-title">
 
-                <b>
-                    🏆 업비트 TOP{TOP_N}
-                </b>
+                <div>
+
+                    <span class="section-kicker">
+                        RANKING
+                    </span>
+
+                    <b>
+                        🏆 업비트 TOP{TOP_N}
+                    </b>
+
+                </div>
 
                 <small>
-                    거래대금 순위 ·
-                    시황 + 15분 SIGNAL + 일봉 SIGNAL
+                    거래대금 기준
                 </small>
 
-            </header>
+            </div>
 
             {top_cards}
 
