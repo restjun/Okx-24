@@ -223,10 +223,15 @@ def recent_periods(
             )
 
         out.append({
+
             "start": start,
+
             "end": end,
+
             "active": i == 0,
+
             "label": label
+
         })
 
     return out
@@ -425,6 +430,7 @@ def get_upbit_markets():
                                 "acc_trade_price_24h"
                             ]
                         )
+
                 })
 
             except Exception:
@@ -456,11 +462,16 @@ def get_upbit_candles(
         )
 
         params = {
-            "market": market,
-            "count": min(
-                count,
-                200
-            )
+
+            "market":
+                market,
+
+            "count":
+                min(
+                    count,
+                    200
+                )
+
         }
 
     else:
@@ -470,11 +481,16 @@ def get_upbit_candles(
         )
 
         params = {
-            "market": market,
-            "count": min(
-                count,
-                200
-            )
+
+            "market":
+                market,
+
+            "count":
+                min(
+                    count,
+                    200
+                )
+
         }
 
     r = retry(
@@ -540,6 +556,7 @@ def get_upbit_candles(
                     float(
                         x["trade_price"]
                     )
+
             })
 
         except Exception:
@@ -596,17 +613,23 @@ def candle_parts(c):
 
     return {
 
-        "open": o,
+        "open":
+            o,
 
-        "high": h,
+        "high":
+            h,
 
-        "low": l,
+        "low":
+            l,
 
-        "close": cl,
+        "close":
+            cl,
 
-        "body": body,
+        "body":
+            body,
 
-        "total": total,
+        "total":
+            total,
 
         "upper":
             h - max(
@@ -628,6 +651,7 @@ def candle_parts(c):
 
         "bear":
             cl < o
+
     }
 
 
@@ -666,6 +690,7 @@ def bullish_engulfing(
 
         and p2["body"]
         > p1["body"]
+
     )
 
 
@@ -939,6 +964,7 @@ def build_periods(
                 "change": None,
 
                 "patterns": []
+
             })
 
             continue
@@ -988,17 +1014,24 @@ def build_periods(
 
             **p,
 
-            "open": o,
+            "open":
+                o,
 
-            "high": h,
+            "high":
+                h,
 
-            "low": l,
+            "low":
+                l,
 
-            "close": c,
+            "close":
+                c,
 
-            "change": change,
+            "change":
+                change,
 
-            "patterns": []
+            "patterns":
+                []
+
         })
 
     for i, p in enumerate(out):
@@ -1189,13 +1222,13 @@ def analyze(
         "signal_patterns":
             [
                 x
-                for x
-                in SIGNAL_CANDLE_PATTERNS
+                for x in SIGNAL_CANDLE_PATTERNS
                 if x in target.get(
                     "patterns",
                     []
                 )
             ]
+
     }
 
 
@@ -1295,6 +1328,7 @@ def make_row(
 
         "simultaneous_signal":
             simultaneous
+
     }
 
 
@@ -1358,6 +1392,7 @@ def update_upbit():
                 "signal_change": None,
 
                 "signal_patterns": []
+
             }
 
         try:
@@ -1385,6 +1420,7 @@ def update_upbit():
                 "signal_change": None,
 
                 "signal_patterns": []
+
             }
 
         row = make_row(
@@ -1458,6 +1494,7 @@ def okx_candles(
                         300
                     )
                 )
+
         },
         timeout=15
     )
@@ -1503,6 +1540,7 @@ def okx_candles(
 
                 "close":
                     float(x[4])
+
             })
 
         except Exception:
@@ -1622,6 +1660,7 @@ def update_okx_btc():
             shifted
             .groupby("day_start")
             .agg(
+
                 open=(
                     "open",
                     "first"
@@ -1641,6 +1680,7 @@ def update_okx_btc():
                     "close",
                     "last"
                 )
+
             )
             .reset_index()
             .rename(
@@ -1870,6 +1910,7 @@ def btc_html():
         <div class="section-head">
 
             <div>
+
                 <span class="section-kicker">
                     MARKET
                 </span>
@@ -1877,6 +1918,7 @@ def btc_html():
                 <b>
                     ₿ BTC 시황
                 </b>
+
             </div>
 
             <span class="update-time">
@@ -2186,7 +2228,39 @@ def card(
         </div>
 
 
+        <!-- 동시 SIGNAL 시황 -->
+
         <div class="both-summary">
+
+            <div>
+
+                <span>
+                    24H 거래대금
+                </span>
+
+                <strong>
+                    {fmt_vol(
+                        row["volume_24h"]
+                    )}
+                </strong>
+
+            </div>
+
+
+            <div>
+
+                <span>
+                    현재가
+                </span>
+
+                <strong>
+                    {fmt_price(
+                        row["current_price"]
+                    )}
+                </strong>
+
+            </div>
+
 
             <div>
 
@@ -2221,23 +2295,10 @@ def card(
 
             </div>
 
-
-            <div>
-
-                <span>
-                    현재가
-                </span>
-
-                <strong>
-                    {fmt_price(
-                        row["current_price"]
-                    )}
-                </strong>
-
-            </div>
-
         </div>
 
+
+        <!-- 15분 -->
 
         <div class="signal-section">
 
@@ -2267,6 +2328,8 @@ def card(
 
         <div class="signal-gap"></div>
 
+
+        <!-- 일봉 -->
 
         <div class="signal-section">
 
@@ -2409,15 +2472,15 @@ h1 {
 }
 
 
+/* =====================================================
+   공통
+   ===================================================== */
+
 section {
 
     margin-bottom: 12px;
 }
 
-
-/* =====================================================
-   공통 색상
-   ===================================================== */
 
 .up {
     color: #38d878;
@@ -2450,7 +2513,8 @@ section {
 
     justify-content: space-between;
 
-    border-bottom: 1px solid #26313a;
+    border-bottom:
+        1px solid #26313a;
 
     margin-bottom: 5px;
 }
@@ -2816,12 +2880,17 @@ section {
 }
 
 
+/* =====================================================
+   동시 SIGNAL 요약
+   24H 거래대금 / 현재가 / 15분 / 일봉
+   ===================================================== */
+
 .both-summary {
 
     display: grid;
 
     grid-template-columns:
-        repeat(3, 1fr);
+        repeat(4, 1fr);
 
     border-bottom:
         1px solid #39321e;
@@ -2874,7 +2943,7 @@ section {
 
 
 /* =====================================================
-   TOP10 종목
+   TOP10
    ===================================================== */
 
 .coin-card {
@@ -2934,7 +3003,7 @@ section {
 
 
 /* =====================================================
-   TOP 시황
+   TOP10 시황
    ===================================================== */
 
 .market-summary {
@@ -3321,6 +3390,18 @@ section {
     .both-summary > div {
 
         min-height: 40px;
+    }
+
+
+    .both-summary span {
+
+        font-size: 5px;
+    }
+
+
+    .both-summary strong {
+
+        font-size: 6px;
     }
 
 
