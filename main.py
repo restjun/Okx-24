@@ -98,7 +98,6 @@ latest_upbit_daily_update_time = "-"
 
 latest_upbit_markets = []
 
-
 latest_okx_data = []
 
 latest_okx_update_time = "-"
@@ -144,19 +143,24 @@ def kst():
 def timeframe_delta(tf):
 
     if tf == "15m":
-        return timedelta(minutes=15)
 
-    return timedelta(days=1)
+        return timedelta(
+            minutes=15
+        )
+
+    return timedelta(
+        days=1
+    )
 
 
 def current_tf_start(tf):
 
     now = datetime.now(KST)
 
-    # -----------------------------------------
+    # -----------------------------------------------------
     # 일봉
     # KST 09:00 기준
-    # -----------------------------------------
+    # -----------------------------------------------------
 
     if tf == "1d":
 
@@ -168,13 +172,16 @@ def current_tf_start(tf):
         )
 
         if now < x:
-            return x - timedelta(days=1)
+
+            return x - timedelta(
+                days=1
+            )
 
         return x
 
-    # -----------------------------------------
-    # 15분봉
-    # -----------------------------------------
+    # -----------------------------------------------------
+    # 15분
+    # -----------------------------------------------------
 
     return now.replace(
         minute=(now.minute // 15) * 15,
@@ -183,7 +190,10 @@ def current_tf_start(tf):
     )
 
 
-def recent_periods(tf, count=6):
+def recent_periods(
+    tf,
+    count=6
+):
 
     cur = current_tf_start(tf)
 
@@ -191,7 +201,11 @@ def recent_periods(tf, count=6):
 
     out = []
 
-    for i in range(count - 1, -1, -1):
+    for i in range(
+        count - 1,
+        -1,
+        -1
+    ):
 
         start = cur - delta * i
 
@@ -220,7 +234,7 @@ def recent_periods(tf, count=6):
 
 
 # =========================================================
-# API 요청 제어
+# API 요청
 # =========================================================
 
 def wait_request():
@@ -240,12 +254,20 @@ def wait_request():
                 REQUEST_INTERVAL - gap
             )
 
-        last_request_time = time.monotonic()
+        last_request_time = (
+            time.monotonic()
+        )
 
 
-def retry(func, *args, **kwargs):
+def retry(
+    func,
+    *args,
+    **kwargs
+):
 
-    for n in range(MAX_RETRIES):
+    for n in range(
+        MAX_RETRIES
+    ):
 
         try:
 
@@ -257,16 +279,21 @@ def retry(func, *args, **kwargs):
             )
 
             if (
-                not hasattr(r, "status_code")
+                not hasattr(
+                    r,
+                    "status_code"
+                )
                 or r.status_code == 200
             ):
+
                 return r
 
             if r.status_code == 429:
 
                 time.sleep(
                     min(
-                        RATE_LIMIT_WAIT * (n + 1),
+                        RATE_LIMIT_WAIT
+                        * (n + 1),
                         60
                     )
                 )
@@ -323,6 +350,7 @@ def get_upbit_markets():
     )
 
     if r is None:
+
         return []
 
     try:
@@ -360,6 +388,7 @@ def get_upbit_markets():
         )
 
         if rr is None:
+
             continue
 
         try:
@@ -370,7 +399,11 @@ def get_upbit_markets():
 
             continue
 
-        if not isinstance(data, list):
+        if not isinstance(
+            data,
+            list
+        ):
+
             continue
 
         for x in data:
@@ -378,13 +411,21 @@ def get_upbit_markets():
             try:
 
                 result.append({
-                    "market": x["market"],
-                    "current_price": float(
-                        x["trade_price"]
-                    ),
-                    "volume_24h": float(
-                        x["acc_trade_price_24h"]
-                    )
+
+                    "market":
+                        x["market"],
+
+                    "current_price":
+                        float(
+                            x["trade_price"]
+                        ),
+
+                    "volume_24h":
+                        float(
+                            x[
+                                "acc_trade_price_24h"
+                            ]
+                        )
                 })
 
             except Exception:
@@ -456,7 +497,10 @@ def get_upbit_candles(
 
         return pd.DataFrame()
 
-    if not isinstance(data, list):
+    if not isinstance(
+        data,
+        list
+    ):
 
         return pd.DataFrame()
 
@@ -467,28 +511,36 @@ def get_upbit_candles(
         try:
 
             rows.append({
-                "datetime": datetime.strptime(
-                    x["candle_date_time_kst"],
-                    "%Y-%m-%dT%H:%M:%S"
-                ).replace(
-                    tzinfo=KST
-                ),
 
-                "open": float(
-                    x["opening_price"]
-                ),
+                "datetime":
+                    datetime.strptime(
+                        x[
+                            "candle_date_time_kst"
+                        ],
+                        "%Y-%m-%dT%H:%M:%S"
+                    ).replace(
+                        tzinfo=KST
+                    ),
 
-                "high": float(
-                    x["high_price"]
-                ),
+                "open":
+                    float(
+                        x["opening_price"]
+                    ),
 
-                "low": float(
-                    x["low_price"]
-                ),
+                "high":
+                    float(
+                        x["high_price"]
+                    ),
 
-                "close": float(
-                    x["trade_price"]
-                )
+                "low":
+                    float(
+                        x["low_price"]
+                    ),
+
+                "close":
+                    float(
+                        x["trade_price"]
+                    )
             })
 
         except Exception:
@@ -502,13 +554,17 @@ def get_upbit_candles(
     return (
         pd.DataFrame(rows)
         .sort_values("datetime")
-        .drop_duplicates("datetime")
-        .reset_index(drop=True)
+        .drop_duplicates(
+            "datetime"
+        )
+        .reset_index(
+            drop=True
+        )
     )
 
 
 # =========================================================
-# 캔들 분석
+# 캔들 기본값
 # =========================================================
 
 def candle_parts(c):
@@ -535,20 +591,44 @@ def candle_parts(c):
 
         return None
 
-    body = abs(cl - o)
+    body = abs(
+        cl - o
+    )
 
     return {
+
         "open": o,
+
         "high": h,
+
         "low": l,
+
         "close": cl,
+
         "body": body,
+
         "total": total,
-        "upper": h - max(o, cl),
-        "lower": min(o, cl) - l,
-        "body_ratio": body / total,
-        "bull": cl > o,
-        "bear": cl < o
+
+        "upper":
+            h - max(
+                o,
+                cl
+            ),
+
+        "lower":
+            min(
+                o,
+                cl
+            ) - l,
+
+        "body_ratio":
+            body / total,
+
+        "bull":
+            cl > o,
+
+        "bear":
+            cl < o
     }
 
 
@@ -556,27 +636,35 @@ def candle_parts(c):
 # 상승장악
 # =========================================================
 
-def bullish_engulfing(a, b):
+def bullish_engulfing(
+    a,
+    b
+):
 
     p1 = candle_parts(a)
 
     p2 = candle_parts(b)
 
     if not p1 or not p2:
+
         return False
 
     return bool(
+
         p2["bull"]
+
         and p2["open"]
         <= min(
             p1["open"],
             p1["close"]
         )
+
         and p2["close"]
         >= max(
             p1["open"],
             p1["close"]
         )
+
         and p2["body"]
         > p1["body"]
     )
@@ -601,7 +689,10 @@ def long_bullish(c):
 # 2캔들 패턴
 # =========================================================
 
-def two_patterns(a, b):
+def two_patterns(
+    a,
+    b
+):
 
     p1 = candle_parts(a)
 
@@ -614,7 +705,10 @@ def two_patterns(a, b):
     out = []
 
     # 상승장악
-    if bullish_engulfing(a, b):
+    if bullish_engulfing(
+        a,
+        b
+    ):
 
         out.append(
             "상승장악"
@@ -679,10 +773,14 @@ def two_patterns(a, b):
 
 
 # =========================================================
-# 3캔들 패턴
+# 3캔들
 # =========================================================
 
-def three_patterns(a, b, c):
+def three_patterns(
+    a,
+    b,
+    c
+):
 
     p1 = candle_parts(a)
 
@@ -728,7 +826,10 @@ def three_patterns(a, b, c):
         )
 
     # 3캔들 상승장악
-    if bullish_engulfing(a, c):
+    if bullish_engulfing(
+        a,
+        c
+    ):
 
         out.append(
             "3캔들 상승장악"
@@ -736,7 +837,10 @@ def three_patterns(a, b, c):
 
     # 상승장악 후 양봉
     if (
-        bullish_engulfing(a, b)
+        bullish_engulfing(
+            a,
+            b
+        )
         and p3["bull"]
     ):
 
@@ -746,7 +850,11 @@ def three_patterns(a, b, c):
 
     # 관통형 후 양봉
     if (
-        "관통형" in two_patterns(a, b)
+        "관통형"
+        in two_patterns(
+            a,
+            b
+        )
         and p3["bull"]
     ):
 
@@ -758,14 +866,22 @@ def three_patterns(a, b, c):
 
 
 # =========================================================
-# 4캔들 패턴
+# 4캔들
 # =========================================================
 
-def four_patterns(a, b, c, d):
+def four_patterns(
+    a,
+    b,
+    c,
+    d
+):
 
     p1 = candle_parts(a)
+
     p2 = candle_parts(b)
+
     p3 = candle_parts(c)
+
     p4 = candle_parts(d)
 
     if not all(
@@ -779,7 +895,10 @@ def four_patterns(a, b, c, d):
 
         return []
 
-    if bullish_engulfing(a, d):
+    if bullish_engulfing(
+        a,
+        d
+    ):
 
         return [
             "4캔들 상승장악"
@@ -789,7 +908,7 @@ def four_patterns(a, b, c, d):
 
 
 # =========================================================
-# 기간 데이터 생성
+# 기간 생성
 # =========================================================
 
 def build_periods(
@@ -820,12 +939,19 @@ def build_periods(
         if part.empty:
 
             out.append({
+
                 **p,
+
                 "open": None,
+
                 "high": None,
+
                 "low": None,
+
                 "close": None,
+
                 "change": None,
+
                 "patterns": []
             })
 
@@ -847,7 +973,7 @@ def build_periods(
             part.iloc[-1].close
         )
 
-        # 현재 진행 중인 봉
+        # 현재 진행봉
         if (
             p["active"]
             and current_price is not None
@@ -874,12 +1000,19 @@ def build_periods(
         )
 
         out.append({
+
             **p,
+
             "open": o,
+
             "high": h,
+
             "low": l,
+
             "close": c,
+
             "change": change,
+
             "patterns": []
         })
 
@@ -959,8 +1092,7 @@ def signal_pass(
 
     # -----------------------------------------------------
     # 15분
-    # 현재 진행봉 제외
-    # 직전 완료봉 사용
+    # 직전 완료봉
     # -----------------------------------------------------
 
     if timeframe == "15m":
@@ -973,7 +1105,7 @@ def signal_pass(
 
     # -----------------------------------------------------
     # 일봉
-    # 현재 KST 09:00 기준 진행봉 사용
+    # 현재 KST 09:00 진행봉
     # -----------------------------------------------------
 
     else:
@@ -998,26 +1130,32 @@ def signal_pass(
     )
 
     if change is None:
+
         return False
 
     if open_price is None:
+
         return False
 
     if close_price is None:
+
         return False
 
-    # 양수
+    # 상승
     if change <= 0:
+
         return False
 
     # 양봉
     if close_price <= open_price:
+
         return False
 
-    # 지정 상승 패턴
+    # 지정 패턴
     if not any(
         pattern in patterns
-        for pattern in SIGNAL_CANDLE_PATTERNS
+        for pattern
+        in SIGNAL_CANDLE_PATTERNS
     ):
 
         return False
@@ -1070,31 +1208,34 @@ def analyze(
         else {}
     )
 
-    change = target.get(
-        "change"
-    )
-
-    patterns = target.get(
-        "patterns",
-        []
-    )
-
-    signal_patterns = [
-        x
-        for x in SIGNAL_CANDLE_PATTERNS
-        if x in patterns
-    ]
-
     return {
-        "periods": periods,
-        "signal_pass": signal,
-        "signal_change": change,
-        "signal_patterns": signal_patterns
+
+        "periods":
+            periods,
+
+        "signal_pass":
+            signal,
+
+        "signal_change":
+            target.get(
+                "change"
+            ),
+
+        "signal_patterns":
+            [
+                x
+                for x
+                in SIGNAL_CANDLE_PATTERNS
+                if x in target.get(
+                    "patterns",
+                    []
+                )
+            ]
     }
 
 
 # =========================================================
-# Row 생성
+# Row
 # =========================================================
 
 def make_row(
@@ -1111,11 +1252,15 @@ def make_row(
     )
 
     signal_15m = (
-        analysis_15m["signal_pass"]
+        analysis_15m[
+            "signal_pass"
+        ]
     )
 
     signal_daily = (
-        analysis_daily["signal_pass"]
+        analysis_daily[
+            "signal_pass"
+        ]
     )
 
     simultaneous = (
@@ -1125,57 +1270,78 @@ def make_row(
 
     return {
 
-        "rank": rank,
+        "rank":
+            rank,
 
-        "name": coin,
+        "name":
+            coin,
 
-        "market": market,
+        "market":
+            market,
 
-        "volume_24h": item[
-            "volume_24h"
-        ],
+        "volume_24h":
+            item[
+                "volume_24h"
+            ],
 
-        "current_price": item[
-            "current_price"
-        ],
+        "current_price":
+            item[
+                "current_price"
+            ],
 
-        "volume_rank": rank,
+        "volume_rank":
+            rank,
 
-        # -------------------------
+
+        # =============================================
         # 15분
-        # -------------------------
+        # =============================================
 
         "periods_15m":
-            analysis_15m["periods"],
+            analysis_15m[
+                "periods"
+            ],
 
         "signal_15m":
             signal_15m,
 
         "signal_15m_change":
-            analysis_15m["signal_change"],
+            analysis_15m[
+                "signal_change"
+            ],
 
         "signal_15m_patterns":
-            analysis_15m["signal_patterns"],
+            analysis_15m[
+                "signal_patterns"
+            ],
 
-        # -------------------------
+
+        # =============================================
         # 일봉
-        # -------------------------
+        # =============================================
 
         "periods_daily":
-            analysis_daily["periods"],
+            analysis_daily[
+                "periods"
+            ],
 
         "signal_daily":
             signal_daily,
 
         "signal_daily_change":
-            analysis_daily["signal_change"],
+            analysis_daily[
+                "signal_change"
+            ],
 
         "signal_daily_patterns":
-            analysis_daily["signal_patterns"],
+            analysis_daily[
+                "signal_patterns"
+            ],
 
-        # -------------------------
+
+        # =============================================
         # 동시
-        # -------------------------
+        # =============================================
 
         "simultaneous_signal":
             simultaneous
@@ -1197,7 +1363,8 @@ def update_upbit():
 
     markets = sorted(
         get_upbit_markets(),
-        key=lambda x: x["volume_24h"],
+        key=lambda x:
+            x["volume_24h"],
         reverse=True
     )[:TOP_N]
 
@@ -1208,15 +1375,17 @@ def update_upbit():
         1
     ):
 
-        market = item["market"]
+        market = item[
+            "market"
+        ]
 
         price = item[
             "current_price"
         ]
 
-        # ---------------------------------
+        # -----------------------------------------
         # 15분
-        # ---------------------------------
+        # -----------------------------------------
 
         try:
 
@@ -1235,15 +1404,19 @@ def update_upbit():
             )
 
             analysis_15m = {
+
                 "periods": [],
+
                 "signal_pass": False,
+
                 "signal_change": None,
+
                 "signal_patterns": []
             }
 
-        # ---------------------------------
+        # -----------------------------------------
         # 일봉
-        # ---------------------------------
+        # -----------------------------------------
 
         try:
 
@@ -1262,9 +1435,13 @@ def update_upbit():
             )
 
             analysis_daily = {
+
                 "periods": [],
+
                 "signal_pass": False,
+
                 "signal_change": None,
+
                 "signal_patterns": []
             }
 
@@ -1294,14 +1471,17 @@ def update_upbit():
 
     log.info(
         "UPBIT | 15분=%s | 일봉=%s | 동시=%s",
+
         sum(
             x["signal_15m"]
             for x in rows
         ),
+
         sum(
             x["signal_daily"]
             for x in rows
         ),
+
         sum(
             x["simultaneous_signal"]
             for x in rows
@@ -1310,7 +1490,7 @@ def update_upbit():
 
 
 # =========================================================
-# OKX BTC 캔들
+# OKX
 # =========================================================
 
 def okx_candles(
@@ -1322,6 +1502,7 @@ def okx_candles(
         requests.get,
         "https://www.okx.com/api/v5/market/candles",
         params={
+
             "instId":
                 "BTC-USDT-SWAP",
 
@@ -1393,13 +1574,17 @@ def okx_candles(
     return (
         pd.DataFrame(rows)
         .sort_values("datetime")
-        .drop_duplicates("datetime")
-        .reset_index(drop=True)
+        .drop_duplicates(
+            "datetime"
+        )
+        .reset_index(
+            drop=True
+        )
     )
 
 
 # =========================================================
-# OKX BTC 현재가
+# OKX 가격
 # =========================================================
 
 def okx_price():
@@ -1417,7 +1602,9 @@ def okx_price():
     try:
 
         return float(
-            r.json()["data"][0]["last"]
+            r.json()[
+                "data"
+            ][0]["last"]
         )
 
     except Exception:
@@ -1445,19 +1632,10 @@ def update_okx_btc():
 
         return
 
-    # -----------------------------------------
-    # BTC 15분
-    # -----------------------------------------
-
     d15 = okx_candles(
         "15m",
         200
     )
-
-    # -----------------------------------------
-    # BTC 1시간
-    # 일봉 변환
-    # -----------------------------------------
 
     d1h = okx_candles(
         "1H",
@@ -1502,10 +1680,25 @@ def update_okx_btc():
             shifted
             .groupby("day_start")
             .agg(
-                open=("open", "first"),
-                high=("high", "max"),
-                low=("low", "min"),
-                close=("close", "last")
+                open=(
+                    "open",
+                    "first"
+                ),
+
+                high=(
+                    "high",
+                    "max"
+                ),
+
+                low=(
+                    "low",
+                    "min"
+                ),
+
+                close=(
+                    "close",
+                    "last"
+                )
             )
             .reset_index()
             .rename(
@@ -1550,12 +1743,6 @@ def update_okx_btc():
 
         latest_btc_daily_change = None
 
-    log.info(
-        "OKX BTC | 15분=%s | 일봉=%s",
-        latest_btc_15m_change,
-        latest_btc_daily_change
-    )
-
 
 # =========================================================
 # 전체 업데이트
@@ -1563,7 +1750,9 @@ def update_okx_btc():
 
 def update_dashboard():
 
-    if not update_lock.acquire(False):
+    if not update_lock.acquire(
+        False
+    ):
 
         return
 
@@ -1588,7 +1777,7 @@ def update_dashboard():
 
 
 # =========================================================
-# 표시 함수
+# 표시
 # =========================================================
 
 def fmt_price(v):
@@ -1607,7 +1796,9 @@ def fmt_price(v):
 
     if v >= 100000000:
 
-        return f"{v / 100000000:.2f}억"
+        return (
+            f"{v / 100000000:.2f}억"
+        )
 
     if v >= 10000:
 
@@ -1632,24 +1823,24 @@ def fmt_vol(v):
 
     if v >= 1e12:
 
-        return f"{v / 1e12:.1f}조"
+        return (
+            f"{v / 1e12:.1f}조"
+        )
 
     if v >= 1e8:
 
-        return f"{v / 1e8:.0f}억"
+        return (
+            f"{v / 1e8:.0f}억"
+        )
 
     if v >= 1e4:
 
-        return f"{v / 1e4:.0f}만"
+        return (
+            f"{v / 1e4:.0f}만"
+        )
 
     return f"{v:,.0f}"
 
-
-# =========================================================
-# 상승 = 녹색
-# 하락 = 빨간색
-# 0 = 회색
-# =========================================================
 
 def fmt_change(v):
 
@@ -1672,17 +1863,17 @@ def fmt_change(v):
     if v > 0:
 
         return (
-            f'<span class="up">'
+            '<span class="up">'
             f'▲ +{v:.2f}%'
-            f'</span>'
+            '</span>'
         )
 
     if v < 0:
 
         return (
-            f'<span class="down">'
+            '<span class="down">'
             f'▼ {v:.2f}%'
-            f'</span>'
+            '</span>'
         )
 
     return (
@@ -1693,7 +1884,7 @@ def fmt_change(v):
 
 
 # =========================================================
-# 캔들 셀
+# 캔들 표시
 # =========================================================
 
 def cells(periods):
@@ -1732,13 +1923,18 @@ def cells(periods):
 
                 <div>
                     {html.escape(
-                        p.get("label", "-")
+                        p.get(
+                            "label",
+                            "-"
+                        )
                     )}
                 </div>
 
                 <strong>
                     {fmt_change(
-                        p.get("change")
+                        p.get(
+                            "change"
+                        )
                     )}
                 </strong>
 
@@ -1752,7 +1948,7 @@ def cells(periods):
 
 
 # =========================================================
-# BTC 카드
+# BTC HTML
 # =========================================================
 
 def btc_html():
@@ -1775,7 +1971,9 @@ def btc_html():
 
         <div class="btc-row">
 
-            <b>BTC</b>
+            <b>
+                BTC
+            </b>
 
             <strong>
                 {fmt_price(
@@ -1801,9 +1999,11 @@ def btc_html():
         </div>
 
         <div class="grid">
+
             {cells(
                 latest_btc_15m_periods
             )}
+
         </div>
 
 
@@ -1812,9 +2012,11 @@ def btc_html():
         </div>
 
         <div class="grid">
+
             {cells(
                 latest_btc_daily_periods
             )}
+
         </div>
 
     </div>
@@ -1822,7 +2024,7 @@ def btc_html():
 
 
 # =========================================================
-# TOP10 / 동시 SIGNAL 카드
+# 카드
 # =========================================================
 
 def card(
@@ -1834,6 +2036,7 @@ def card(
         "simultaneous_signal",
         False
     )
+
 
     # =====================================================
     # TOP10
@@ -1857,12 +2060,15 @@ def card(
                 '</span>'
             )
 
+
         return f"""
+
         <div class="card top-card">
 
-            <!-- --------------------------------------- -->
-            <!-- 종목 헤더 -->
-            <!-- --------------------------------------- -->
+
+            <!-- =========================================
+                 종목 헤더
+                 ========================================= -->
 
             <div class="card-head top-head">
 
@@ -1881,11 +2087,19 @@ def card(
             </div>
 
 
-            <!-- --------------------------------------- -->
-            <!-- 기본 시황 -->
-            <!-- --------------------------------------- -->
+            <!-- =========================================
+                 시황
+                 ========================================= -->
+
+            <div class="info-section-title">
+
+                📊 시황
+
+            </div>
+
 
             <div class="top-summary">
+
 
                 <div class="top-summary-item">
 
@@ -1895,7 +2109,9 @@ def card(
 
                     <strong>
                         {fmt_price(
-                            row["current_price"]
+                            row[
+                                "current_price"
+                            ]
                         )}
                     </strong>
 
@@ -1910,7 +2126,9 @@ def card(
 
                     <strong>
                         {fmt_vol(
-                            row["volume_24h"]
+                            row[
+                                "volume_24h"
+                            ]
                         )}
                     </strong>
 
@@ -1920,7 +2138,7 @@ def card(
                 <div class="top-summary-item">
 
                     <span>
-                        15분
+                        15분 변동
                     </span>
 
                     <strong>
@@ -1937,7 +2155,7 @@ def card(
                 <div class="top-summary-item">
 
                     <span>
-                        일봉
+                        일봉 변동
                     </span>
 
                     <strong>
@@ -1950,17 +2168,31 @@ def card(
 
                 </div>
 
+
             </div>
 
 
-            <!-- ======================================= -->
-            <!-- 15분 영역 -->
-            <!-- ======================================= -->
+            <!-- =========================================
+                 시황 / SIGNAL 강한 구분
+                 ========================================= -->
 
-            <div class="tf-title">
+            <div class="major-divider">
+
+                <span>
+                    ⭐ SIGNAL
+                </span>
+
+            </div>
+
+
+            <!-- =========================================
+                 15분 SIGNAL
+                 ========================================= -->
+
+            <div class="signal-title">
 
                 <b>
-                    15분
+                    15분 SIGNAL
                 </b>
 
                 <span>
@@ -1968,6 +2200,7 @@ def card(
                 </span>
 
             </div>
+
 
             <div class="grid">
 
@@ -1981,21 +2214,30 @@ def card(
             </div>
 
 
-            <!-- ======================================= -->
-            <!-- 일봉 영역 -->
-            <!-- ======================================= -->
+            <!-- =========================================
+                 15분 / 일봉 구분
+                 ========================================= -->
 
-            <div class="tf-title daily-title">
+            <div class="signal-separator">
+            </div>
+
+
+            <!-- =========================================
+                 일봉 SIGNAL
+                 ========================================= -->
+
+            <div class="signal-title daily-signal">
 
                 <b>
-                    일봉
+                    일봉 SIGNAL
                 </b>
 
                 <span>
-                    현재봉 · KST 09:00
+                    KST 09:00 기준
                 </span>
 
             </div>
+
 
             <div class="grid">
 
@@ -2008,7 +2250,9 @@ def card(
 
             </div>
 
+
         </div>
+
         """
 
 
@@ -2026,8 +2270,11 @@ def card(
             '</span>'
         )
 
+
     return f"""
+
     <div class="card both-card">
+
 
         <div class="card-head">
 
@@ -2051,6 +2298,7 @@ def card(
 
 
         <div class="signal-summary">
+
 
             <div>
 
@@ -2094,11 +2342,14 @@ def card(
 
                 <strong>
                     {fmt_price(
-                        row["current_price"]
+                        row[
+                            "current_price"
+                        ]
                     )}
                 </strong>
 
             </div>
+
 
         </div>
 
@@ -2115,6 +2366,7 @@ def card(
 
         </div>
 
+
         <div class="grid">
 
             {cells(
@@ -2127,7 +2379,11 @@ def card(
         </div>
 
 
-        <div class="tf-title daily-title">
+        <div class="signal-separator">
+        </div>
+
+
+        <div class="tf-title daily-signal">
 
             <b>
                 일봉
@@ -2138,6 +2394,7 @@ def card(
             </span>
 
         </div>
+
 
         <div class="grid">
 
@@ -2150,12 +2407,14 @@ def card(
 
         </div>
 
+
     </div>
+
     """
 
 
 # =========================================================
-# 동시 SIGNAL 영역
+# 동시 SIGNAL
 # =========================================================
 
 def both_section(data):
@@ -2187,6 +2446,7 @@ def both_section(data):
         )
 
     return f"""
+
     <section>
 
         <header class="gold">
@@ -2205,6 +2465,7 @@ def both_section(data):
         {content}
 
     </section>
+
     """
 
 
@@ -2215,57 +2476,58 @@ def both_section(data):
 CSS = """
 
 * {
-    box-sizing: border-box;
+    box-sizing:
+        border-box;
 }
 
 
 body {
 
-    margin: 0;
+    margin:
+        0;
 
-    background: #080c11;
+    background:
+        #080c11;
 
-    color: #e7ebef;
+    color:
+        #e7ebef;
 
     font-family:
         Arial,
         sans-serif;
 
-    font-size: 11px;
+    font-size:
+        11px;
 
-    padding: 8px;
+    padding:
+        8px;
 }
 
 
 h1 {
 
-    font-size: 15px;
+    font-size:
+        15px;
 
     margin:
-        3px
-        2px
-        9px;
+        3px 2px 9px;
 }
 
 
 section {
 
     margin:
-        8px
-        0
-        12px;
+        8px 0 12px;
 }
 
 
 section > header {
 
     padding:
-        8px
-        10px;
+        8px 10px;
 
     border:
-        2px solid
-        #26313b;
+        2px solid #26313b;
 
     border-radius:
         10px;
@@ -2280,20 +2542,24 @@ section > header {
 
 section > header b {
 
-    display: block;
+    display:
+        block;
 
-    font-size: 11px;
+    font-size:
+        11px;
 }
 
 
 section > header small {
 
-    display: block;
+    display:
+        block;
 
     color:
         #7d8892;
 
-    font-size: 7px;
+    font-size:
+        7px;
 
     margin-top:
         2px;
@@ -2342,8 +2608,7 @@ section > header.gold {
 .market-card {
 
     border:
-        2px solid
-        #26313b;
+        2px solid #26313b;
 
     border-radius:
         11px;
@@ -2391,10 +2656,7 @@ section > header.gold {
         grid;
 
     grid-template-columns:
-        1fr
-        1.3fr
-        1.2fr
-        1fr;
+        1fr 1.3fr 1.2fr 1fr;
 
     min-height:
         48px;
@@ -2417,13 +2679,11 @@ section > header.gold {
 .btc-row > * + * {
 
     border-left:
-        1px solid
-        #29323c;
+        1px solid #29323c;
 }
 
 
-.btc-label,
-.label {
+.btc-label {
 
     padding:
         5px 8px;
@@ -2443,7 +2703,7 @@ section > header.gold {
 
 
 /* =====================================================
-   기간 GRID
+   공통 GRID
    ===================================================== */
 
 .grid {
@@ -2524,14 +2784,13 @@ section > header.gold {
 
 
 /* =====================================================
-   기본 카드
+   카드
    ===================================================== */
 
 .card {
 
     border:
-        2px solid
-        #26313b;
+        2px solid #26313b;
 
     border-radius:
         10px;
@@ -2609,14 +2868,17 @@ section > header.gold {
 }
 
 
+/* =====================================================
+   동시 SIGNAL 배지
+   ===================================================== */
+
 .both {
 
     padding:
         3px 6px;
 
     border:
-        1px solid
-        #d2ae42;
+        1px solid #d2ae42;
 
     border-radius:
         5px;
@@ -2636,20 +2898,19 @@ section > header.gold {
 
 
 /* =====================================================
-   TOP10 카드
+   TOP10
    ===================================================== */
 
 .top-card {
 
     border:
-        1px solid
-        #29333d;
+        1px solid #29333d;
 
     background:
         #0d1319;
 
     margin-bottom:
-        8px;
+        10px;
 }
 
 
@@ -2659,8 +2920,7 @@ section > header.gold {
         38px;
 
     border-bottom:
-        1px solid
-        #29333d;
+        1px solid #29333d;
 }
 
 
@@ -2689,8 +2949,7 @@ section > header.gold {
         #2b230d;
 
     border:
-        1px solid
-        #8d7527;
+        1px solid #8d7527;
 }
 
 
@@ -2702,7 +2961,47 @@ section > header.gold {
 
 
 /* =====================================================
-   TOP10 기본 시황
+   TOP10
+   시황 제목
+   ===================================================== */
+
+.info-section-title {
+
+    height:
+        32px;
+
+    display:
+        flex;
+
+    align-items:
+        center;
+
+    padding:
+        0 10px;
+
+    background:
+        #18212a;
+
+    color:
+        #e7ebef;
+
+    font-size:
+        9px;
+
+    font-weight:
+        900;
+
+    border-top:
+        2px solid #4b5965;
+
+    border-bottom:
+        2px solid #4b5965;
+}
+
+
+/* =====================================================
+   TOP10
+   시황 내용
    ===================================================== */
 
 .top-summary {
@@ -2713,16 +3012,21 @@ section > header.gold {
     grid-template-columns:
         repeat(4, 1fr);
 
-    border-bottom:
-        1px solid
+    gap:
+        1px;
+
+    background:
         #39444f;
+
+    border-bottom:
+        1px solid #39444f;
 }
 
 
 .top-summary-item {
 
     min-height:
-        48px;
+        50px;
 
     padding:
         6px;
@@ -2731,16 +3035,7 @@ section > header.gold {
         center;
 
     background:
-        #111820;
-}
-
-
-.top-summary-item
-+ .top-summary-item {
-
-    border-left:
-        1px solid
-        #39444f;
+        #0f151b;
 }
 
 
@@ -2754,6 +3049,9 @@ section > header.gold {
 
     font-size:
         7px;
+
+    margin-bottom:
+        4px;
 }
 
 
@@ -2762,22 +3060,77 @@ section > header.gold {
     display:
         block;
 
-    margin-top:
-        4px;
-
     font-size:
         9px;
 }
 
 
 /* =====================================================
-   15분 / 일봉 구분선
+   시황 → SIGNAL
+   아주 명확한 구분
    ===================================================== */
 
-.tf-title {
+.major-divider {
 
     height:
-        27px;
+        40px;
+
+    display:
+        flex;
+
+    align-items:
+        center;
+
+    justify-content:
+        center;
+
+    background:
+        #080c11;
+
+    border-top:
+        4px solid #596773;
+
+    border-bottom:
+        4px solid #8d7527;
+
+    margin-top:
+        2px;
+}
+
+
+.major-divider span {
+
+    padding:
+        5px 16px;
+
+    border:
+        1px solid #8d7527;
+
+    border-radius:
+        6px;
+
+    background:
+        #2b230d;
+
+    color:
+        #f0cf67;
+
+    font-size:
+        8px;
+
+    font-weight:
+        900;
+}
+
+
+/* =====================================================
+   SIGNAL 제목
+   ===================================================== */
+
+.signal-title {
+
+    height:
+        31px;
 
     display:
         flex;
@@ -2789,22 +3142,17 @@ section > header.gold {
         space-between;
 
     padding:
-        0 9px;
+        0 10px;
 
     background:
-        #151d25;
-
-    border-top:
-        1px solid
-        #39444f;
+        #111920;
 
     border-bottom:
-        1px solid
-        #39444f;
+        2px solid #394650;
 }
 
 
-.tf-title b {
+.signal-title b {
 
     color:
         #e7ebef;
@@ -2814,29 +3162,52 @@ section > header.gold {
 }
 
 
-.tf-title span {
+.signal-title span {
 
     color:
-        #78848f;
+        #7f8b95;
 
     font-size:
         6px;
 }
 
 
-.daily-title {
+/* =====================================================
+   15분 → 일봉
+   강한 구분
+   ===================================================== */
 
-    margin-top:
-        2px;
+.signal-separator {
+
+    height:
+        10px;
+
+    background:
+        #080c11;
 
     border-top:
-        2px solid
-        #59636d;
+        3px solid #46525d;
+
+    border-bottom:
+        3px solid #46525d;
+}
+
+
+.daily-signal {
+
+    background:
+        #151b21;
+
+    border-top:
+        1px solid #59636d;
+
+    border-bottom:
+        2px solid #59636d;
 }
 
 
 /* =====================================================
-   동시 SIGNAL 요약
+   동시 SIGNAL 카드 요약
    ===================================================== */
 
 .signal-summary {
@@ -2848,8 +3219,7 @@ section > header.gold {
         repeat(3, 1fr);
 
     border-bottom:
-        1px solid
-        #594a25;
+        1px solid #594a25;
 }
 
 
@@ -2866,12 +3236,10 @@ section > header.gold {
 }
 
 
-.signal-summary > div
-+ div {
+.signal-summary > div + div {
 
     border-left:
-        1px solid
-        #594a25;
+        1px solid #594a25;
 }
 
 
@@ -2902,7 +3270,7 @@ section > header.gold {
 
 
 /* =====================================================
-   빈 영역
+   빈 데이터
    ===================================================== */
 
 .empty {
@@ -2914,8 +3282,7 @@ section > header.gold {
         25px;
 
     border:
-        1px solid
-        #26313b;
+        1px solid #26313b;
 
     border-radius:
         10px;
@@ -2926,7 +3293,7 @@ section > header.gold {
 
 
 /* =====================================================
-   메인 정보
+   기존 MAIN
    ===================================================== */
 
 .main {
@@ -2951,16 +3318,14 @@ section > header.gold {
         5px;
 
     border-top:
-        1px solid
-        #29323c;
+        1px solid #29323c;
 }
 
 
 .main > div + div {
 
     border-left:
-        1px solid
-        #29323c;
+        1px solid #29323c;
 }
 
 
@@ -3025,8 +3390,7 @@ section > header.gold {
     }
 
 
-    .btc-label,
-    .label {
+    .btc-label {
 
         font-size:
             6px;
@@ -3088,41 +3452,10 @@ section > header.gold {
     }
 
 
-    .main {
-
-        min-height:
-            37px;
-
-        font-size:
-            6px;
-    }
-
-
-    .main strong {
-
-        font-size:
-            7px;
-    }
-
-
-    section > header b {
-
-        font-size:
-            9px;
-    }
-
-
-    section > header small {
-
-        font-size:
-            5px;
-    }
-
-
     .top-summary-item {
 
         min-height:
-            43px;
+            45px;
 
         padding:
             5px 2px;
@@ -3143,21 +3476,54 @@ section > header.gold {
     }
 
 
-    .tf-title {
+    .info-section-title {
 
         height:
-            25px;
+            29px;
+
+        font-size:
+            8px;
     }
 
 
-    .tf-title b {
+    .major-divider {
+
+        height:
+            36px;
+
+        border-top-width:
+            3px;
+
+        border-bottom-width:
+            3px;
+    }
+
+
+    .major-divider span {
+
+        font-size:
+            7px;
+
+        padding:
+            4px 12px;
+    }
+
+
+    .signal-title {
+
+        height:
+            27px;
+    }
+
+
+    .signal-title b {
 
         font-size:
             7px;
     }
 
 
-    .tf-title span {
+    .signal-title span {
 
         font-size:
             5px;
@@ -3181,19 +3547,18 @@ def dashboard():
 
     if USE_UPBIT == "Y":
 
-        # ---------------------------------------------
+        # -------------------------------------------------
         # 동시 SIGNAL만 표시
-        # ---------------------------------------------
+        # -------------------------------------------------
 
         s += both_section(
             latest_upbit_data
         )
 
 
-        # ---------------------------------------------
+        # -------------------------------------------------
         # TOP10
-        # 15분 + 일봉 모두 표시
-        # ---------------------------------------------
+        # -------------------------------------------------
 
         if latest_upbit_data:
 
@@ -3202,7 +3567,8 @@ def dashboard():
                     r,
                     "top"
                 )
-                for r in latest_upbit_data
+                for r
+                in latest_upbit_data
             )
 
         else:
@@ -3214,6 +3580,7 @@ def dashboard():
             )
 
         s += f"""
+
         <section>
 
             <header>
@@ -3224,7 +3591,7 @@ def dashboard():
 
                 <small>
                     거래대금 순위 ·
-                    15분 + 일봉 데이터
+                    시황 + 15분 SIGNAL + 일봉 SIGNAL
                 </small>
 
             </header>
@@ -3232,9 +3599,11 @@ def dashboard():
             {top_cards}
 
         </section>
+
         """
 
     return f"""
+
     <!doctype html>
 
     <html lang="ko">
@@ -3264,6 +3633,7 @@ def dashboard():
 
     </head>
 
+
     <body>
 
         <h1>
@@ -3275,6 +3645,7 @@ def dashboard():
     </body>
 
     </html>
+
     """
 
 
