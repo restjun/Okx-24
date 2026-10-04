@@ -60,6 +60,45 @@ MAX_RETRIES = 10
 
 
 # =========================================================
+# 타임프레임 설정
+# =========================================================
+
+TIMEFRAME_OPTIONS = {
+
+    "15m": {
+        "label": "15분",
+        "upbit_unit": 15,
+        "okx_bar": "15m"
+    },
+
+    "1h": {
+        "label": "1시간",
+        "upbit_unit": 60,
+        "okx_bar": "1H"
+    },
+
+    "4h": {
+        "label": "4시간",
+        "upbit_unit": 240,
+        "okx_bar": "4H"
+    },
+
+    "1d": {
+        "label": "일봉",
+        "upbit_unit": "day",
+        "okx_bar": "1D"
+    }
+
+}
+
+
+# 기본값 = 일봉
+SELECTED_TIMEFRAME = "1d"
+
+last_updated_timeframe = None
+
+
+# =========================================================
 # 전역
 # =========================================================
 
@@ -98,6 +137,8 @@ latest_btc_current_daily_change = None
 
 latest_btc_current_daily_label = "-"
 
+latest_btc_timeframe = None
+
 
 # =========================================================
 # 현재 KST 문자열
@@ -113,9 +154,50 @@ def kst():
 
 
 # =========================================================
+# 선택 타임프레임
+# =========================================================
+
+def get_selected_timeframe():
+
+    return TIMEFRAME_OPTIONS.get(
+        SELECTED_TIMEFRAME,
+        TIMEFRAME_OPTIONS["1d"]
+    )
+
+
+def get_selected_timeframe_label():
+
+    return get_selected_timeframe()["label"]
+
+
+def get_timeframe_delta():
+
+    if SELECTED_TIMEFRAME == "15m":
+
+        return timedelta(
+            minutes=15
+        )
+
+    if SELECTED_TIMEFRAME == "1h":
+
+        return timedelta(
+            hours=1
+        )
+
+    if SELECTED_TIMEFRAME == "4h":
+
+        return timedelta(
+            hours=4
+        )
+
+    return timedelta(
+        days=1
+    )
+
+
+# =========================================================
 # 현재 일봉 시작시간
 #
-# 업비트 일봉 기준
 # KST 09:00 ~ 다음날 09:00
 # =========================================================
 
@@ -142,7 +224,7 @@ def get_current_daily_start():
 
 
 # =========================================================
-# 일봉 기간 만들기
+# 일봉 기간
 # =========================================================
 
 def make_daily_period(
@@ -246,7 +328,7 @@ def make_daily_period(
 
 
 # =========================================================
-# 최근 6개 일봉
+# 최근 일봉
 # =========================================================
 
 def get_recent_daily_periods(
@@ -318,6 +400,219 @@ def get_previous_daily_period():
         start,
         active=False
     )
+
+
+# =========================================================
+# 일반 타임프레임 시작시간
+# =========================================================
+
+def get_current_timeframe_start():
+
+    now = datetime.now(KST)
+
+
+    # =====================================================
+    # 일봉
+    # =====================================================
+
+    if SELECTED_TIMEFRAME == "1d":
+
+        return get_current_daily_start()
+
+
+    # =====================================================
+    # 15분
+    # =====================================================
+
+    if SELECTED_TIMEFRAME == "15m":
+
+        minute = (
+            now.minute // 15
+        ) * 15
+
+        return now.replace(
+            minute=minute,
+            second=0,
+            microsecond=0
+        )
+
+
+    # =====================================================
+    # 1시간
+    # =====================================================
+
+    if SELECTED_TIMEFRAME == "1h":
+
+        return now.replace(
+            minute=0,
+            second=0,
+            microsecond=0
+        )
+
+
+    # =====================================================
+    # 4시간
+    #
+    # KST 09:00 기준
+    # =====================================================
+
+    if SELECTED_TIMEFRAME == "4h":
+
+        today_0900 = now.replace(
+            hour=9,
+            minute=0,
+            second=0,
+            microsecond=0
+        )
+
+        if now < today_0900:
+
+            today_0900 -= timedelta(
+                days=1
+            )
+
+        elapsed = (
+            now -
+            today_0900
+        ).total_seconds()
+
+        block = int(
+            elapsed //
+            (4 * 60 * 60)
+        )
+
+        return (
+            today_0900
+            +
+            timedelta(
+                hours=block * 4
+            )
+        )
+
+
+    return get_current_daily_start()
+
+
+# =========================================================
+# 일반 타임프레임 기간
+# =========================================================
+
+def make_timeframe_period(
+    start,
+    active=False
+):
+
+    start = start.astimezone(KST)
+
+    end = (
+        start
+        +
+        get_timeframe_delta()
+    )
+
+
+    if SELECTED_TIMEFRAME == "15m":
+
+        label = start.strftime(
+            "%m/%d %H:%M"
+        )
+
+    elif SELECTED_TIMEFRAME == "1h":
+
+        label = start.strftime(
+            "%m/%d %H:00"
+        )
+
+    elif SELECTED_TIMEFRAME == "4h":
+
+        label = start.strftime(
+            "%m/%d %H:00"
+        )
+
+    else:
+
+        label = start.strftime(
+            "%m/%d 09:00"
+        )
+
+
+    return {
+
+        "key":
+            start.strftime(
+                "%Y%m%d%H%M"
+            ),
+
+        "time_key":
+            start.strftime(
+                "%Y%m%d%H%M"
+            ),
+
+        "label":
+            label,
+
+        "display_label":
+            (
+                f"현재 {label}"
+                if active
+                else label
+            ),
+
+        "day_label":
+            "",
+
+        "start":
+            start,
+
+        "end":
+            end,
+
+        "active":
+            active
+
+    }
+
+
+# =========================================================
+# 최근 선택 타임프레임
+# =========================================================
+
+def get_recent_timeframe_periods(
+    count=6
+):
+
+    current_start = (
+        get_current_timeframe_start()
+    )
+
+    delta = (
+        get_timeframe_delta()
+    )
+
+    periods = []
+
+
+    for i in range(
+        count - 1,
+        -1,
+        -1
+    ):
+
+        start = (
+            current_start
+            -
+            delta * i
+        )
+
+        periods.append(
+            make_timeframe_period(
+                start,
+                active=(i == 0)
+            )
+        )
+
+
+    return periods
 
 
 # =========================================================
@@ -435,6 +730,7 @@ def retry(
                     )
                 )
 
+
     return None
 
 
@@ -454,6 +750,7 @@ def get_upbit_markets():
         },
         timeout=15
     )
+
 
     if response is None:
 
@@ -586,6 +883,68 @@ def get_upbit_daily_candles(
         params={
             "market":
                 market,
+
+            "count":
+                count
+        },
+        timeout=15
+    )
+
+
+    if response is None:
+
+        return []
+
+
+    try:
+
+        data = response.json()
+
+    except Exception:
+
+        return []
+
+
+    if not isinstance(
+        data,
+        list
+    ):
+
+        return []
+
+
+    return data
+
+
+# =========================================================
+# 업비트 선택 타임프레임 캔들
+# =========================================================
+
+def get_upbit_timeframe_candles(
+    market,
+    count=200
+):
+
+    tf = get_selected_timeframe()
+
+    unit = tf["upbit_unit"]
+
+
+    if unit == "day":
+
+        return get_upbit_daily_candles(
+            market,
+            count
+        )
+
+
+    response = retry(
+        requests.get,
+        f"https://api.upbit.com/v1/candles/minutes/{unit}",
+        params={
+            "market":
+                market,
+
             "count":
                 count
         },
@@ -626,10 +985,21 @@ def candle_parts(candle):
 
     try:
 
-        o = float(candle["open"])
-        h = float(candle["high"])
-        l = float(candle["low"])
-        c = float(candle["close"])
+        o = float(
+            candle["open"]
+        )
+
+        h = float(
+            candle["high"]
+        )
+
+        l = float(
+            candle["low"]
+        )
+
+        c = float(
+            candle["close"]
+        )
 
     except Exception:
 
@@ -638,12 +1008,15 @@ def candle_parts(candle):
 
     total = h - l
 
+
     if total <= 0:
 
         return None
 
 
-    body = abs(c - o)
+    body = abs(
+        c - o
+    )
 
     upper = (
         h -
@@ -664,30 +1037,32 @@ def candle_parts(candle):
     return {
 
         "open": o,
+
         "high": h,
+
         "low": l,
+
         "close": c,
+
         "body": body,
+
         "total": total,
+
         "upper": upper,
+
         "lower": lower,
+
         "body_ratio": body_ratio,
+
         "bull": c > o,
+
         "bear": c < o
 
     }
 
 
 # =========================================================
-# 상승장악 기준
-#
-# 첫 번째 캔들은 양봉/음봉 관계없이 허용
-#
-# 두 번째 캔들은 반드시 양봉
-#
-# 두 번째 캔들의 몸통이
-# 첫 번째 캔들의 몸통 전체를 장악하고
-# 몸통 크기도 더 커야 함
+# 상승장악
 # =========================================================
 
 def is_bullish_engulfing(
@@ -695,8 +1070,14 @@ def is_bullish_engulfing(
     current
 ):
 
-    p1 = candle_parts(first)
-    p2 = candle_parts(current)
+    p1 = candle_parts(
+        first
+    )
+
+    p2 = candle_parts(
+        current
+    )
+
 
     if (
         p1 is None
@@ -743,16 +1124,16 @@ def is_bullish_engulfing(
 
 # =========================================================
 # 장대양봉
-#
-# 양봉이면서
-# 전체 캔들 길이 대비 몸통 비율 45% 이상
 # =========================================================
 
 def is_long_bullish(
     candle
 ):
 
-    p = candle_parts(candle)
+    p = candle_parts(
+        candle
+    )
+
 
     if p is None:
 
@@ -772,16 +1153,16 @@ def is_long_bullish(
 
 # =========================================================
 # 1개 캔들 패턴
-#
-# 일반 일봉 패턴 표시용
-# SIGNAL에는 사용하지 않음
 # =========================================================
 
 def detect_single_candle_pattern(
     candle
 ):
 
-    p = candle_parts(candle)
+    p = candle_parts(
+        candle
+    )
+
 
     if p is None:
 
@@ -791,9 +1172,13 @@ def detect_single_candle_pattern(
     patterns = []
 
     body = p["body"]
+
     total = p["total"]
+
     upper = p["upper"]
+
     lower = p["lower"]
+
     body_ratio = p["body_ratio"]
 
 
@@ -801,7 +1186,9 @@ def detect_single_candle_pattern(
 
     if body_ratio <= 0.10:
 
-        patterns.append("도지")
+        patterns.append(
+            "도지"
+        )
 
 
     # 망치형
@@ -826,7 +1213,9 @@ def detect_single_candle_pattern(
 
     ):
 
-        patterns.append("망치형")
+        patterns.append(
+            "망치형"
+        )
 
 
     # 역망치형
@@ -851,7 +1240,9 @@ def detect_single_candle_pattern(
 
     ):
 
-        patterns.append("역망치형")
+        patterns.append(
+            "역망치형"
+        )
 
 
     return patterns
@@ -866,8 +1257,14 @@ def detect_two_candle_pattern(
     current
 ):
 
-    p1 = candle_parts(previous)
-    p2 = candle_parts(current)
+    p1 = candle_parts(
+        previous
+    )
+
+    p2 = candle_parts(
+        current
+    )
+
 
     if (
         p1 is None
@@ -881,9 +1278,7 @@ def detect_two_candle_pattern(
     patterns = []
 
 
-    # =====================================================
     # 상승장악
-    # =====================================================
 
     if is_bullish_engulfing(
         previous,
@@ -895,9 +1290,7 @@ def detect_two_candle_pattern(
         )
 
 
-    # =====================================================
     # 장대양봉 후 양봉
-    # =====================================================
 
     if (
 
@@ -916,12 +1309,7 @@ def detect_two_candle_pattern(
         )
 
 
-    # =====================================================
     # 관통형
-    #
-    # 일반 패턴 표시용
-    # SIGNAL에서는 직접 사용하지 않음
-    # =====================================================
 
     midpoint = (
         p1["open"] +
@@ -952,9 +1340,7 @@ def detect_two_candle_pattern(
         )
 
 
-    # =====================================================
     # 하락장악
-    # =====================================================
 
     if (
 
@@ -983,9 +1369,7 @@ def detect_two_candle_pattern(
         )
 
 
-    # =====================================================
     # 먹구름형
-    # =====================================================
 
     if (
 
@@ -1024,8 +1408,11 @@ def detect_three_candle_pattern(
 ):
 
     p1 = candle_parts(c1)
+
     p2 = candle_parts(c2)
+
     p3 = candle_parts(c3)
+
 
     if (
         p1 is None
@@ -1041,9 +1428,7 @@ def detect_three_candle_pattern(
     patterns = []
 
 
-    # =====================================================
     # 모닝스타
-    # =====================================================
 
     if (
 
@@ -1080,9 +1465,7 @@ def detect_three_candle_pattern(
         )
 
 
-    # =====================================================
     # 3연속양봉
-    # =====================================================
 
     if (
 
@@ -1111,9 +1494,7 @@ def detect_three_candle_pattern(
         )
 
 
-    # =====================================================
     # 3캔들 상승장악
-    # =====================================================
 
     if is_bullish_engulfing(
         c1,
@@ -1125,14 +1506,7 @@ def detect_three_candle_pattern(
         )
 
 
-    # =====================================================
     # 상승장악 후 양봉
-    #
-    # c1 = 전전일
-    # c2 = 전일
-    # c1 → c2 = 상승장악 완성
-    # c3 = 당일 양봉
-    # =====================================================
 
     if (
 
@@ -1152,22 +1526,13 @@ def detect_three_candle_pattern(
         )
 
 
-    # =====================================================
     # 관통형 후 양봉
-    #
-    # c1 = 전전일
-    # c2 = 전일
-    # c1 → c2 = 관통형
-    # c3 = 당일 양봉
-    #
-    # 관통형 자체는 SIGNAL이 아님.
-    # 전일 관통형 완성 후
-    # 당일 양봉이 발생했을 때만 SIGNAL 대상.
-    # =====================================================
 
-    previous_patterns = detect_two_candle_pattern(
-        c1,
-        c2
+    previous_patterns = (
+        detect_two_candle_pattern(
+            c1,
+            c2
+        )
     )
 
 
@@ -1186,12 +1551,7 @@ def detect_three_candle_pattern(
         )
 
 
-    # =====================================================
     # 3캔들 관통형
-    #
-    # 일반 패턴 표시용
-    # SIGNAL에서는 제외
-    # =====================================================
 
     first_midpoint = (
         p1["open"] +
@@ -1222,9 +1582,7 @@ def detect_three_candle_pattern(
         )
 
 
-    # =====================================================
     # 3캔들 하락패턴
-    # =====================================================
 
     if (
 
@@ -1317,9 +1675,13 @@ def detect_four_candle_pattern(
 ):
 
     p1 = candle_parts(c1)
+
     p2 = candle_parts(c2)
+
     p3 = candle_parts(c3)
+
     p4 = candle_parts(c4)
+
 
     if (
         p1 is None
@@ -1337,9 +1699,7 @@ def detect_four_candle_pattern(
     patterns = []
 
 
-    # =====================================================
     # 4캔들 상승장악
-    # =====================================================
 
     if is_bullish_engulfing(
         c1,
@@ -1351,12 +1711,7 @@ def detect_four_candle_pattern(
         )
 
 
-    # =====================================================
     # 4캔들 관통형
-    #
-    # 일반 패턴 표시용
-    # SIGNAL에서는 제외
-    # =====================================================
 
     first_midpoint = (
         p1["open"] +
@@ -1406,7 +1761,9 @@ def detect_daily_patterns(
     result = []
 
 
-    for i, period in enumerate(periods):
+    for i, period in enumerate(
+        periods
+    ):
 
         patterns = []
 
@@ -1426,9 +1783,7 @@ def detect_daily_patterns(
             continue
 
 
-        # =================================================
         # 1봉
-        # =================================================
 
         patterns.extend(
             detect_single_candle_pattern(
@@ -1437,13 +1792,13 @@ def detect_daily_patterns(
         )
 
 
-        # =================================================
         # 2봉
-        # =================================================
 
         if i >= 1:
 
-            previous = periods[i - 1]
+            previous = periods[
+                i - 1
+            ]
 
             if all(
                 previous.get(x) is not None
@@ -1463,19 +1818,28 @@ def detect_daily_patterns(
                 )
 
 
-        # =================================================
         # 3봉
-        # =================================================
 
         if i >= 2:
 
-            c1 = periods[i - 2]
-            c2 = periods[i - 1]
+            c1 = periods[
+                i - 2
+            ]
+
+            c2 = periods[
+                i - 1
+            ]
+
             c3 = period
+
 
             if all(
                 x.get(key) is not None
-                for x in [c1, c2, c3]
+                for x in [
+                    c1,
+                    c2,
+                    c3
+                ]
                 for key in [
                     "open",
                     "high",
@@ -1493,20 +1857,33 @@ def detect_daily_patterns(
                 )
 
 
-        # =================================================
         # 4봉
-        # =================================================
 
         if i >= 3:
 
-            c1 = periods[i - 3]
-            c2 = periods[i - 2]
-            c3 = periods[i - 1]
+            c1 = periods[
+                i - 3
+            ]
+
+            c2 = periods[
+                i - 2
+            ]
+
+            c3 = periods[
+                i - 1
+            ]
+
             c4 = period
+
 
             if all(
                 x.get(key) is not None
-                for x in [c1, c2, c3, c4]
+                for x in [
+                    c1,
+                    c2,
+                    c3,
+                    c4
+                ]
                 for key in [
                     "open",
                     "high",
@@ -1520,33 +1897,39 @@ def detect_daily_patterns(
                         c1,
                         c2,
                         c3,
-                        period
+                        c4
                     )
                 )
 
 
         patterns = list(
-            dict.fromkeys(patterns)
+            dict.fromkeys(
+                patterns
+            )
         )
 
-        result.append(patterns)
+        result.append(
+            patterns
+        )
 
 
     return result
 
 
 # =========================================================
-# 업비트 최근 6개 일봉
+# 업비트 선택 타임프레임 구성
 # =========================================================
 
-def build_upbit_daily_candles(
+def build_upbit_timeframe_candles(
     market,
     current_price=None
 ):
 
-    candles = get_upbit_daily_candles(
-        market,
-        10
+    candles = (
+        get_upbit_timeframe_candles(
+            market,
+            200
+        )
     )
 
 
@@ -1617,17 +2000,26 @@ def build_upbit_daily_candles(
         return []
 
 
-    df = pd.DataFrame(rows)
+    df = pd.DataFrame(
+        rows
+    )
 
 
     df = (
         df
         .sort_values("datetime")
-        .drop_duplicates("datetime")
+        .drop_duplicates(
+            "datetime"
+        )
     )
 
 
-    periods = get_recent_daily_periods(6)
+    periods = (
+        get_recent_timeframe_periods(
+            6
+        )
+    )
+
 
     result = []
 
@@ -1757,8 +2149,10 @@ def build_upbit_daily_candles(
         })
 
 
-    pattern_results = detect_daily_patterns(
-        result
+    pattern_results = (
+        detect_daily_patterns(
+            result
+        )
     )
 
 
@@ -1775,42 +2169,67 @@ def build_upbit_daily_candles(
 
 
 # =========================================================
-# 코인의 일봉 분석
+# 선택 타임프레임 분석
 # =========================================================
 
-def analyze_daily(
+def analyze_timeframe(
     market,
     current_price
 ):
 
-    periods = build_upbit_daily_candles(
-        market,
-        current_price
+    periods = (
+        build_upbit_timeframe_candles(
+            market,
+            current_price
+        )
+    )
+
+
+    current_periods = (
+        get_recent_timeframe_periods(
+            1
+        )
     )
 
 
     current_period = (
-        get_current_daily_period()
+        current_periods[0]
+        if current_periods
+        else None
     )
 
-    previous_period = (
-        get_previous_daily_period()
-    )
+
+    previous_period = None
+
+
+    if current_period is not None:
+
+        previous_start = (
+            current_period["start"]
+            -
+            get_timeframe_delta()
+        )
+
+        previous_period = (
+            make_timeframe_period(
+                previous_start,
+                active=False
+            )
+        )
 
 
     current_change = None
+
     previous_change = None
 
 
     for period in periods:
 
-        start = period["start"]
-
-
         if (
             current_period is not None
             and
-            start ==
+            period["start"]
+            ==
             current_period["start"]
         ):
 
@@ -1822,7 +2241,8 @@ def analyze_daily(
         if (
             previous_period is not None
             and
-            start ==
+            period["start"]
+            ==
             previous_period["start"]
         ):
 
@@ -1836,10 +2256,10 @@ def analyze_daily(
         "periods":
             periods,
 
-        "current_daily_change":
+        "current_change":
             current_change,
 
-        "previous_daily_change":
+        "previous_change":
             previous_change
 
     }
@@ -1854,15 +2274,17 @@ def analyze(
     current_price
 ):
 
-    daily = analyze_daily(
-        market,
-        current_price
+    timeframe = (
+        analyze_timeframe(
+            market,
+            current_price
+        )
     )
 
 
-    daily_change = (
-        daily[
-            "current_daily_change"
+    current_change = (
+        timeframe[
+            "current_change"
         ]
     )
 
@@ -1870,21 +2292,19 @@ def analyze(
     return {
 
         "daily_change":
-            daily_change,
+            current_change,
 
         "daily_periods":
-            daily[
+            timeframe[
                 "periods"
             ],
 
         "current_daily_change":
-            daily[
-                "current_daily_change"
-            ],
+            current_change,
 
         "previous_daily_change":
-            daily[
-                "previous_daily_change"
+            timeframe[
+                "previous_change"
             ]
 
     }
@@ -2119,16 +2539,7 @@ def make_row(
 
 
 # =========================================================
-# 일봉 SIGNAL 패턴
-#
-# 1. 상승장악
-# 2. 3캔들 상승장악
-# 3. 4캔들 상승장악
-# 4. 상승장악 후 양봉
-# 5. 장대양봉 후 양봉
-# 6. 관통형 후 양봉
-#
-# 관통형 자체는 SIGNAL 제외
+# SIGNAL 패턴
 # =========================================================
 
 SIGNAL_CANDLE_PATTERNS = [
@@ -2149,18 +2560,14 @@ SIGNAL_CANDLE_PATTERNS = [
 
 
 # =========================================================
-# SIGNAL 조건 계산
-#
-# 1. 당일 변동률 양수
-# 2. 현재 일봉 양봉
-# 3. SIGNAL 패턴
+# SIGNAL 조건
 # =========================================================
 
 def calculate_signal_conditions(
     row
 ):
 
-    daily_change = (
+    current_change = (
         row.get(
             "current_daily_change"
         )
@@ -2169,57 +2576,58 @@ def calculate_signal_conditions(
 
     # =====================================================
     # 조건 1
+    # 현재 타임프레임 변동률 양수
     # =====================================================
 
-    daily_condition = (
+    timeframe_condition = (
 
-        daily_change is not None
+        current_change is not None
 
         and
 
-        daily_change > 0
+        current_change > 0
 
     )
 
 
     # =====================================================
-    # 현재 일봉
+    # 현재 캔들
     # =====================================================
 
-    daily_periods = row.get(
+    periods = row.get(
         "daily_periods",
         []
     )
 
 
-    current_daily_candle = None
+    current_candle = None
 
 
-    if daily_periods:
+    if periods:
 
-        current_daily_candle = (
-            daily_periods[-1]
+        current_candle = (
+            periods[-1]
         )
 
 
     # =====================================================
     # 조건 2
-    # 현재 일봉 양봉
+    # 현재 캔들 양봉
     # =====================================================
 
-    current_daily_bullish = False
+    current_bullish = False
 
 
-    if current_daily_candle is not None:
+    if current_candle is not None:
 
         open_price = (
-            current_daily_candle.get(
+            current_candle.get(
                 "open"
             )
         )
 
         close_price = (
-            current_daily_candle.get(
+            current_candle.get(
                 "close"
             )
         )
@@ -2233,7 +2641,7 @@ def calculate_signal_conditions(
 
             try:
 
-                current_daily_bullish = (
+                current_bullish = (
 
                     float(close_price)
                     >
@@ -2243,7 +2651,7 @@ def calculate_signal_conditions(
 
             except Exception:
 
-                current_daily_bullish = False
+                current_bullish = False
 
 
     # =====================================================
@@ -2254,10 +2662,10 @@ def calculate_signal_conditions(
     current_signal_patterns = []
 
 
-    if current_daily_candle is not None:
+    if current_candle is not None:
 
         current_patterns = (
-            current_daily_candle.get(
+            current_candle.get(
                 "patterns",
                 []
             )
@@ -2287,11 +2695,11 @@ def calculate_signal_conditions(
 
     signal_pass = (
 
-        daily_condition
+        timeframe_condition
 
         and
 
-        current_daily_bullish
+        current_bullish
 
         and
 
@@ -2300,19 +2708,21 @@ def calculate_signal_conditions(
     )
 
 
-    row["signal_pass"] = signal_pass
+    row["signal_pass"] = (
+        signal_pass
+    )
 
 
     row["signal_conditions"] = {
 
         "daily":
-            daily_condition,
+            timeframe_condition,
 
         "current_daily_positive":
-            daily_condition,
+            timeframe_condition,
 
         "current_daily_bullish":
-            current_daily_bullish,
+            current_bullish,
 
         "current_signal_pattern":
             current_signal_pattern,
@@ -2326,23 +2736,21 @@ def calculate_signal_conditions(
     }
 
 
-    # =====================================================
-    # daily_signal도 동일 조건
-    # =====================================================
-
-    row["daily_signal_pass"] = signal_pass
+    row["daily_signal_pass"] = (
+        signal_pass
+    )
 
 
     row["daily_signal_conditions"] = {
 
         "daily":
-            daily_condition,
+            timeframe_condition,
 
         "current_daily_positive":
-            daily_condition,
+            timeframe_condition,
 
         "current_daily_bullish":
-            current_daily_bullish,
+            current_bullish,
 
         "current_signal_pattern":
             current_signal_pattern,
@@ -2393,7 +2801,9 @@ def update_upbit():
     }
 
 
-    top_markets = markets[:TOP_N]
+    top_markets = markets[
+        :TOP_N
+    ]
 
 
     rows = []
@@ -2411,9 +2821,13 @@ def update_upbit():
             ""
         )
 
-        price = item["current_price"]
+        price = item[
+            "current_price"
+        ]
 
-        volume = item["volume_24h"]
+        volume = item[
+            "volume_24h"
+        ]
 
 
         actual_volume_rank = (
@@ -2449,17 +2863,28 @@ def update_upbit():
         )
 
 
-        row = calculate_signal_conditions(
-            row
+        row = (
+            calculate_signal_conditions(
+                row
+            )
         )
 
 
-        rows.append(row)
+        rows.append(
+            row
+        )
 
 
     latest_upbit_data = rows
 
     latest_upbit_update_time = kst()
+
+
+    global last_updated_timeframe
+
+    last_updated_timeframe = (
+        SELECTED_TIMEFRAME
+    )
 
 
     signal_count = sum(
@@ -2476,20 +2901,14 @@ def update_upbit():
     )
 
 
-    current_daily = (
-        get_current_daily_period()
-    )
-
-
     log.info(
 
         f"TOP{TOP_N} 업데이트 | "
 
-        f"일봉="
-        f"{current_daily['display_label'] if current_daily else '-'}"
-        " | "
+        f"타임프레임="
+        f"{get_selected_timeframe_label()} | "
 
-        f"일봉 SIGNAL="
+        f"SIGNAL="
         f"{signal_count}"
 
     )
@@ -2526,7 +2945,9 @@ def get_okx_btc_price():
         return None
 
 
-    if payload.get("code") != "0":
+    if payload.get(
+        "code"
+    ) != "0":
 
         return None
 
@@ -2554,13 +2975,16 @@ def get_okx_btc_price():
 
 
 # =========================================================
-# BTC 1H
+# OKX BTC 선택 타임프레임 캔들
 # =========================================================
 
-def get_okx_btc_1h_candles(
+def get_okx_btc_timeframe_candles(
     limit=200,
     after=None
 ):
+
+    tf = get_selected_timeframe()
+
 
     params = {
 
@@ -2568,7 +2992,7 @@ def get_okx_btc_1h_candles(
             OKX_BTC_INST_ID,
 
         "bar":
-            "1H",
+            tf["okx_bar"],
 
         "limit":
             str(limit)
@@ -2578,7 +3002,9 @@ def get_okx_btc_1h_candles(
 
     if after is not None:
 
-        params["after"] = str(after)
+        params["after"] = str(
+            after
+        )
 
 
     response = retry(
@@ -2603,7 +3029,9 @@ def get_okx_btc_1h_candles(
         return []
 
 
-    if payload.get("code") != "0":
+    if payload.get(
+        "code"
+    ) != "0":
 
         return []
 
@@ -2615,10 +3043,10 @@ def get_okx_btc_1h_candles(
 
 
 # =========================================================
-# BTC 1H history
+# OKX BTC 선택 타임프레임 History
 # =========================================================
 
-def get_okx_btc_1h_history():
+def get_okx_btc_timeframe_history():
 
     rows = []
 
@@ -2629,9 +3057,11 @@ def get_okx_btc_1h_history():
         MAX_HISTORY_CHUNKS
     ):
 
-        data = get_okx_btc_1h_candles(
-            HISTORY_CHUNK,
-            after
+        data = (
+            get_okx_btc_timeframe_candles(
+                HISTORY_CHUNK,
+                after
+            )
         )
 
 
@@ -2640,7 +3070,9 @@ def get_okx_btc_1h_history():
             break
 
 
-        rows.extend(data)
+        rows.extend(
+            data
+        )
 
 
         try:
@@ -2727,13 +3159,17 @@ def get_okx_btc_1h_history():
         return pd.DataFrame()
 
 
-    df = pd.DataFrame(result)
+    df = pd.DataFrame(
+        result
+    )
 
 
-    df["datetime_utc"] = pd.to_datetime(
-        df["timestamp"],
-        unit="ms",
-        utc=True
+    df["datetime_utc"] = (
+        pd.to_datetime(
+            df["timestamp"],
+            unit="ms",
+            utc=True
+        )
     )
 
 
@@ -2748,10 +3184,15 @@ def get_okx_btc_1h_history():
 
 
 # =========================================================
-# BTC KST 일봉
+# OKX BTC 1H → KST 일봉
+#
+# 일봉 선택 시 OKX 1D 원본을 그대로 사용하지 않고
+# KST 09:00 기준으로 구성
 # =========================================================
 
-def aggregate_btc_daily(df):
+def aggregate_btc_daily(
+    df
+):
 
     if df is None or df.empty:
 
@@ -2767,15 +3208,25 @@ def aggregate_btc_daily(df):
 
         -
 
-        pd.Timedelta(hours=9)
+        pd.Timedelta(
+            hours=9
+        )
 
-    ).dt.floor("D") + pd.Timedelta(hours=9)
+    ).dt.floor(
+        "D"
+    ) + pd.Timedelta(
+        hours=9
+    )
 
 
     return (
         temp
-        .sort_values("datetime_kst")
-        .groupby("daily_start")
+        .sort_values(
+            "datetime_kst"
+        )
+        .groupby(
+            "daily_start"
+        )
         .agg(
             open=("open", "first"),
             high=("high", "max"),
@@ -2787,10 +3238,10 @@ def aggregate_btc_daily(df):
 
 
 # =========================================================
-# BTC 일봉 6개
+# OKX BTC 일반 타임프레임 구성
 # =========================================================
 
-def build_btc_daily(
+def build_btc_timeframe(
     price,
     df
 ):
@@ -2806,27 +3257,233 @@ def build_btc_daily(
         return []
 
 
-    daily = aggregate_btc_daily(
-        df
-    )
+    # =====================================================
+    # 일봉
+    # =====================================================
+
+    if SELECTED_TIMEFRAME == "1d":
+
+        daily = aggregate_btc_daily(
+            df
+        )
+
+        if daily.empty:
+
+            return []
 
 
-    if daily.empty:
+        daily["daily_start"] = (
+            daily["daily_start"]
+            .dt.tz_convert(KST)
+        )
+
+
+        periods = (
+            get_recent_timeframe_periods(
+                6
+            )
+        )
+
+
+        result = []
+
+
+        for period in periods:
+
+            start = period["start"]
+
+            end = period["end"]
+
+
+            part = daily[
+                (
+                    daily["daily_start"]
+                    >= start
+                )
+                &
+                (
+                    daily["daily_start"]
+                    < end
+                )
+            ].copy()
+
+
+            if part.empty:
+
+                result.append({
+
+                    **period,
+
+                    "open": None,
+                    "high": None,
+                    "low": None,
+                    "close": None,
+                    "change": None,
+                    "patterns": []
+
+                })
+
+                continue
+
+
+            part = part.sort_values(
+                "daily_start"
+            )
+
+
+            open_price = float(
+                part.iloc[0]["open"]
+            )
+
+            high_price = float(
+                part["high"].max()
+            )
+
+            low_price = float(
+                part["low"].min()
+            )
+
+            close_price = float(
+                part.iloc[-1]["close"]
+            )
+
+
+            if period["active"]:
+
+                close_price = float(
+                    price
+                )
+
+                high_price = max(
+                    high_price,
+                    close_price
+                )
+
+                low_price = min(
+                    low_price,
+                    close_price
+                )
+
+
+            if open_price == 0:
+
+                change = None
+
+            else:
+
+                change = (
+                    (
+                        close_price -
+                        open_price
+                    )
+                    /
+                    open_price
+                    *
+                    100
+                )
+
+
+            result.append({
+
+                **period,
+
+                "open":
+                    open_price,
+
+                "high":
+                    high_price,
+
+                "low":
+                    low_price,
+
+                "close":
+                    close_price,
+
+                "change":
+                    change,
+
+                "patterns":
+                    []
+
+            })
+
+
+        pattern_results = (
+            detect_daily_patterns(
+                result
+            )
+        )
+
+
+        for i, patterns in enumerate(
+            pattern_results
+        ):
+
+            result[i]["patterns"] = (
+                patterns
+            )
+
+
+        return result
+
+
+    # =====================================================
+    # 15분 / 1시간 / 4시간
+    # =====================================================
+
+    rows = []
+
+
+    for _, row in df.iterrows():
+
+        try:
+
+            rows.append({
+
+                "datetime":
+                    row["datetime_kst"],
+
+                "open":
+                    float(
+                        row["open"]
+                    ),
+
+                "high":
+                    float(
+                        row["high"]
+                    ),
+
+                "low":
+                    float(
+                        row["low"]
+                    ),
+
+                "close":
+                    float(
+                        row["close"]
+                    )
+
+            })
+
+        except Exception:
+
+            continue
+
+
+    if not rows:
 
         return []
 
 
-    periods = get_recent_daily_periods(
-        6
+    temp = pd.DataFrame(
+        rows
     )
 
 
-    temp = daily.copy()
-
-
-    temp["daily_start"] = (
-        temp["daily_start"]
-        .dt.tz_convert(KST)
+    periods = (
+        get_recent_timeframe_periods(
+            6
+        )
     )
 
 
@@ -2835,20 +3492,15 @@ def build_btc_daily(
 
     for period in periods:
 
-        start = period["start"]
-
-        end = period["end"]
-
-
         part = temp[
             (
-                temp["daily_start"]
-                >= start
+                temp["datetime"]
+                >= period["start"]
             )
             &
             (
-                temp["daily_start"]
-                < end
+                temp["datetime"]
+                < period["end"]
             )
         ].copy()
 
@@ -2872,7 +3524,7 @@ def build_btc_daily(
 
 
         part = part.sort_values(
-            "daily_start"
+            "datetime"
         )
 
 
@@ -2953,17 +3605,19 @@ def build_btc_daily(
         })
 
 
-    pattern_results = detect_daily_patterns(
-        result
+    pattern_results = (
+        detect_daily_patterns(
+            result
+        )
     )
 
 
-    for i, pattern_list in enumerate(
+    for i, patterns in enumerate(
         pattern_results
     ):
 
         result[i]["patterns"] = (
-            pattern_list
+            patterns
         )
 
 
@@ -2971,91 +3625,62 @@ def build_btc_daily(
 
 
 # =========================================================
-# BTC 당일 변동률
+# BTC 현재 타임프레임 변동률
 # =========================================================
 
-def get_btc_daily_change(
-    price,
-    df
+def get_btc_timeframe_change(
+    periods
 ):
 
-    if price is None:
+    if not periods:
 
         return None
 
 
-    daily = aggregate_btc_daily(
-        df
-    )
+    current = periods[-1]
 
 
-    if daily.empty:
+    if current.get(
+        "open"
+    ) is None:
 
         return None
 
 
-    now = datetime.now(KST)
+    if current.get(
+        "close"
+    ) is None:
+
+        return None
 
 
-    today_0900 = now.replace(
-        hour=9,
-        minute=0,
-        second=0,
-        microsecond=0
-    )
+    try:
 
-
-    if now < today_0900:
-
-        current_start = (
-            today_0900 -
-            timedelta(days=1)
+        open_price = float(
+            current["open"]
         )
 
-    else:
+        close_price = float(
+            current["close"]
+        )
 
-        current_start = today_0900
-
-
-    daily["daily_start"] = (
-        daily["daily_start"]
-        .dt
-        .tz_localize(None)
-    )
-
-
-    target = current_start.replace(
-        tzinfo=None
-    )
-
-
-    previous = daily[
-        daily["daily_start"] < target
-    ]
-
-
-    if previous.empty:
+    except Exception:
 
         return None
 
 
-    previous_close = float(
-        previous.iloc[-1]["close"]
-    )
-
-
-    if previous_close == 0:
+    if open_price == 0:
 
         return None
 
 
     return (
         (
-            price -
-            previous_close
+            close_price -
+            open_price
         )
         /
-        previous_close
+        open_price
         *
         100
     )
@@ -3072,9 +3697,12 @@ def update_btc_market():
     global latest_btc_daily_periods
     global latest_btc_current_daily_change
     global latest_btc_current_daily_label
+    global latest_btc_timeframe
 
 
-    price = get_okx_btc_price()
+    price = (
+        get_okx_btc_price()
+    )
 
 
     if price is None:
@@ -3085,64 +3713,277 @@ def update_btc_market():
     latest_btc_okx_price = price
 
 
-    df = get_okx_btc_1h_history()
+    # =====================================================
+    # 일봉은 KST 09:00 기준이 필요하므로
+    # 1H 데이터를 사용
+    # =====================================================
 
+    if SELECTED_TIMEFRAME == "1d":
 
-    latest_btc_daily_change = (
-        get_btc_daily_change(
-            price,
-            df
+        original_timeframe = (
+            SELECTED_TIMEFRAME
         )
+
+
+        try:
+
+            # 일봉 계산용으로 1H 데이터 직접 요청
+
+            rows = []
+
+            after = None
+
+
+            for _ in range(
+                MAX_HISTORY_CHUNKS
+            ):
+
+                params = {
+
+                    "instId":
+                        OKX_BTC_INST_ID,
+
+                    "bar":
+                        "1H",
+
+                    "limit":
+                        str(HISTORY_CHUNK)
+
+                }
+
+
+                if after is not None:
+
+                    params["after"] = str(
+                        after
+                    )
+
+
+                response = retry(
+                    requests.get,
+                    f"{OKX_BASE_URL}/api/v5/market/candles",
+                    params=params,
+                    timeout=15
+                )
+
+
+                if response is None:
+
+                    break
+
+
+                try:
+
+                    payload = (
+                        response.json()
+                    )
+
+                except Exception:
+
+                    break
+
+
+                if payload.get(
+                    "code"
+                ) != "0":
+
+                    break
+
+
+                data = payload.get(
+                    "data",
+                    []
+                )
+
+
+                if not data:
+
+                    break
+
+
+                rows.extend(
+                    data
+                )
+
+
+                try:
+
+                    oldest = min(
+                        int(row[0])
+                        for row in data
+                    )
+
+                except Exception:
+
+                    break
+
+
+                after = oldest
+
+
+                if len(data) < HISTORY_CHUNK:
+
+                    break
+
+
+            if not rows:
+
+                df = pd.DataFrame()
+
+            else:
+
+                unique = {}
+
+
+                for row in rows:
+
+                    try:
+
+                        unique[
+                            int(row[0])
+                        ] = row
+
+                    except Exception:
+
+                        continue
+
+
+                ordered = sorted(
+                    unique.values(),
+                    key=lambda x:
+                        int(x[0])
+                )
+
+
+                converted = []
+
+
+                for row in ordered:
+
+                    try:
+
+                        converted.append({
+
+                            "timestamp":
+                                int(row[0]),
+
+                            "open":
+                                float(row[1]),
+
+                            "high":
+                                float(row[2]),
+
+                            "low":
+                                float(row[3]),
+
+                            "close":
+                                float(row[4])
+
+                        })
+
+                    except Exception:
+
+                        continue
+
+
+                df = pd.DataFrame(
+                    converted
+                )
+
+
+                if not df.empty:
+
+                    df["datetime_utc"] = (
+                        pd.to_datetime(
+                            df["timestamp"],
+                            unit="ms",
+                            utc=True
+                        )
+                    )
+
+                    df["datetime_kst"] = (
+                        df["datetime_utc"]
+                        .dt
+                        .tz_convert(KST)
+                    )
+
+
+        finally:
+
+            SELECTED_TIMEFRAME = (
+                original_timeframe
+            )
+
+
+    else:
+
+        df = (
+            get_okx_btc_timeframe_history()
+        )
+
+
+    periods = build_btc_timeframe(
+        price,
+        df
     )
 
 
     latest_btc_daily_periods = (
-        build_btc_daily(
-            price,
-            df
+        periods
+    )
+
+
+    latest_btc_daily_change = (
+        get_btc_timeframe_change(
+            periods
         )
     )
 
 
-    current_daily = (
-        get_current_daily_period()
-    )
+    current_period = None
+
+    if periods:
+
+        current_period = periods[-1]
 
 
-    if current_daily is not None:
+    if current_period is not None:
 
         latest_btc_current_daily_label = (
-            current_daily[
-                "display_label"
-            ]
+            current_period.get(
+                "display_label",
+                "-"
+            )
         )
 
+        latest_btc_current_daily_change = (
+            current_period.get(
+                "change"
+            )
+        )
+
+    else:
+
+        latest_btc_current_daily_label = "-"
 
         latest_btc_current_daily_change = None
 
 
-        for period in latest_btc_daily_periods:
-
-            if (
-                period["start"]
-                ==
-                current_daily["start"]
-            ):
-
-                latest_btc_current_daily_change = (
-                    period["change"]
-                )
-
-                break
+    latest_btc_timeframe = (
+        SELECTED_TIMEFRAME
+    )
 
 
 # =========================================================
 # OKX placeholder
 # =========================================================
 
-def update_okx(usdt):
+def update_okx(
+    usdt
+):
 
     global latest_okx_data
+
     global latest_okx_update_time
 
     latest_okx_data = []
@@ -3208,11 +4049,15 @@ def update_dashboard():
 
         if USE_OKX == "Y":
 
-            usdt = get_usdt_krw()
+            usdt = (
+                get_usdt_krw()
+            )
 
             if usdt:
 
-                update_okx(usdt)
+                update_okx(
+                    usdt
+                )
 
 
     except Exception as e:
@@ -3228,10 +4073,73 @@ def update_dashboard():
 
 
 # =========================================================
+# 타임프레임 선택 버튼
+# =========================================================
+
+def timeframe_selector_html():
+
+    buttons = []
+
+
+    for key, info in (
+        TIMEFRAME_OPTIONS.items()
+    ):
+
+        if key == SELECTED_TIMEFRAME:
+
+            active_class = (
+                "tf-button active"
+            )
+
+        else:
+
+            active_class = (
+                "tf-button"
+            )
+
+
+        buttons.append(
+
+            f"""
+            <a
+                class="{active_class}"
+                href="/?tf={key}"
+            >
+                {html.escape(
+                    info["label"]
+                )}
+            </a>
+            """
+
+        )
+
+
+    return f"""
+
+    <div class="timeframe-selector">
+
+        <div class="timeframe-selector-title">
+            TIMEFRAME
+        </div>
+
+        <div class="timeframe-buttons">
+
+            {"".join(buttons)}
+
+        </div>
+
+    </div>
+
+    """
+
+
+# =========================================================
 # 캔들 패턴 HTML
 # =========================================================
 
-def candle_pattern_html(patterns):
+def candle_pattern_html(
+    patterns
+):
 
     if not patterns:
 
@@ -3242,7 +4150,9 @@ def candle_pattern_html(patterns):
         '<div class="candle-pattern">'
         +
         " · ".join(
-            html.escape(str(x))
+            html.escape(
+                str(x)
+            )
             for x in patterns
         )
         +
@@ -3251,10 +4161,12 @@ def candle_pattern_html(patterns):
 
 
 # =========================================================
-# 일봉 셀 HTML
+# 선택 타임프레임 셀 HTML
 # =========================================================
 
-def daily_cells_html(periods):
+def daily_cells_html(
+    periods
+):
 
     if not periods:
 
@@ -3307,7 +4219,9 @@ def daily_cells_html(periods):
 
                     <div class="daily-value">
                         {format_change(
-                            period.get("change")
+                            period.get(
+                                "change"
+                            )
                         )}
                     </div>
 
@@ -3326,7 +4240,9 @@ def daily_cells_html(periods):
         )
 
 
-    return "".join(cells)
+    return "".join(
+        cells
+    )
 
 
 # =========================================================
@@ -3339,7 +4255,13 @@ def market_summary_html():
         latest_btc_okx_price
     )
 
-    daily = format_change(
+
+    timeframe_label = (
+        get_selected_timeframe_label()
+    )
+
+
+    change_html = format_change(
         latest_btc_daily_change
     )
 
@@ -3351,9 +4273,9 @@ def market_summary_html():
         latest_btc_current_daily_change > 0
     ):
 
-        daily_status = "상승"
+        status = "상승"
 
-        daily_status_class = "btc-on"
+        status_class = "btc-on"
 
     elif (
         latest_btc_current_daily_change
@@ -3362,15 +4284,15 @@ def market_summary_html():
         latest_btc_current_daily_change < 0
     ):
 
-        daily_status = "하락"
+        status = "하락"
 
-        daily_status_class = "btc-off"
+        status_class = "btc-off"
 
     else:
 
-        daily_status = "-"
+        status = "-"
 
-        daily_status_class = "btc-off"
+        status_class = "btc-off"
 
 
     return f"""
@@ -3387,7 +4309,14 @@ def market_summary_html():
 
                 <div class="market-title-sub">
                     OKX BTC-USDT
-                    · 일봉 KST 09:00 기준
+                    · {html.escape(
+                        timeframe_label
+                    )}
+                    · {(
+                        "KST 09:00 기준"
+                        if SELECTED_TIMEFRAME == "1d"
+                        else "현재 선택 시간봉 기준"
+                    )}
                     · SIGNAL 필터 제외
                 </div>
 
@@ -3411,7 +4340,7 @@ def market_summary_html():
             </div>
 
             <div class="btc-change">
-                {daily}
+                {change_html}
             </div>
 
 
@@ -3420,11 +4349,13 @@ def market_summary_html():
                 <div class="btc-status-item">
 
                     <div class="btc-info">
-                        일봉
+                        {html.escape(
+                            timeframe_label
+                        )}
                     </div>
 
-                    <div class="{daily_status_class}">
-                        {daily_status}
+                    <div class="{status_class}">
+                        {status}
                     </div>
 
                 </div>
@@ -3435,7 +4366,9 @@ def market_summary_html():
 
 
         <div class="btc-timeframe-title">
-            📅 BTC 일봉
+            📅 BTC {html.escape(
+                timeframe_label
+            )}
         </div>
 
         <div class="btc-daily-grid">
@@ -3455,11 +4388,15 @@ def market_summary_html():
 # 첫 줄 색상 클래스
 # =========================================================
 
-def get_main_row_class(row):
+def get_main_row_class(
+    row
+):
 
-    daily_change = get_change_value(
-        row.get(
-            "daily_change"
+    daily_change = (
+        get_change_value(
+            row.get(
+                "daily_change"
+            )
         )
     )
 
@@ -3468,16 +4405,28 @@ def get_main_row_class(row):
 
         if daily_change > 0:
 
-            return "unified-main-row daily-positive"
+            return (
+                "unified-main-row "
+                "daily-positive"
+            )
 
         if daily_change < 0:
 
-            return "unified-main-row daily-negative"
+            return (
+                "unified-main-row "
+                "daily-negative"
+            )
 
-        return "unified-main-row daily-zero"
+        return (
+            "unified-main-row "
+            "daily-zero"
+        )
 
 
-    return "unified-main-row daily-zero"
+    return (
+        "unified-main-row "
+        "daily-zero"
+    )
 
 
 # =========================================================
@@ -3500,9 +4449,22 @@ def unified_card_html(
     )
 
 
+    timeframe_label = (
+        get_selected_timeframe_label()
+    )
+
+
     if card_type == "SIGNAL_1":
 
-        title = "🚀 일봉 SIGNAL"
+        title = (
+            "🚀 "
+            +
+            html.escape(
+                timeframe_label
+            )
+            +
+            " SIGNAL"
+        )
 
         card_class = (
             "unified-market-card "
@@ -3540,12 +4502,15 @@ def unified_card_html(
         """
 
 
-        signal_patterns = row.get(
-            "signal_conditions",
-            {}
-        ).get(
-            "current_signal_patterns",
-            []
+        signal_patterns = (
+            row.get(
+                "signal_conditions",
+                {}
+            )
+            .get(
+                "current_signal_patterns",
+                []
+            )
         )
 
 
@@ -3569,11 +4534,17 @@ def unified_card_html(
             <div class="unified-condition">
 
                 <div class="condition-label">
-                    일봉 SIGNAL 조건
+                    {html.escape(
+                        timeframe_label
+                    )} SIGNAL 조건
                 </div>
 
                 <div class="condition-period">
-                    당일 양수 + 현재 일봉 양봉
+                    현재 {html.escape(
+                        timeframe_label
+                    )} 양수 + 현재 {html.escape(
+                        timeframe_label
+                    )} 양봉
                 </div>
 
                 <div class="condition-value">
@@ -3614,8 +4585,10 @@ def unified_card_html(
         condition_html = ""
 
 
-    main_row_class = get_main_row_class(
-        row
+    main_row_class = (
+        get_main_row_class(
+            row
+        )
     )
 
 
@@ -3680,7 +4653,9 @@ def unified_card_html(
             <div class="unified-main-item">
 
                 <div class="unified-label">
-                    당일
+                    현재 {html.escape(
+                        timeframe_label
+                    )}
                 </div>
 
                 <div class="unified-daily">
@@ -3696,7 +4671,9 @@ def unified_card_html(
 
 
         <div class="timeframe-card-title">
-            📅 일봉
+            📅 {html.escape(
+                timeframe_label
+            )}
         </div>
 
         <div class="unified-daily-grid">
@@ -3719,15 +4696,15 @@ def unified_card_html(
 
 
 # =========================================================
-# 일봉 SIGNAL Section
+# SIGNAL Section
 # =========================================================
 
 def focus_section(
     data
 ):
 
-    current_period = (
-        get_current_daily_period()
+    timeframe_label = (
+        get_selected_timeframe_label()
     )
 
 
@@ -3760,8 +4737,8 @@ def focus_section(
     if not signal_rows:
 
         message = (
-            "당일 양수 + "
-            "현재 일봉 양봉 + "
+            f"현재 {timeframe_label} 양수 + "
+            f"현재 {timeframe_label} 양봉 + "
             "상승장악 / "
             "3캔들 상승장악 / "
             "4캔들 상승장악 / "
@@ -3769,6 +4746,20 @@ def focus_section(
             "장대양봉 후 양봉 / "
             "관통형 후 양봉 "
             "조건을 만족하는 종목 없음"
+        )
+
+
+        current_periods = (
+            get_recent_timeframe_periods(
+                1
+            )
+        )
+
+
+        current_period = (
+            current_periods[0]
+            if current_periods
+            else None
         )
 
 
@@ -3781,16 +4772,20 @@ def focus_section(
             </div>
 
             <div class="signal-empty-title">
-                일봉 SIGNAL 없음
+                {html.escape(
+                    timeframe_label
+                )} SIGNAL 없음
             </div>
 
             <div class="signal-empty-text">
-                {message}
+                {html.escape(
+                    message
+                )}
             </div>
 
             <div class="signal-empty-sub">
 
-                현재 일봉:
+                현재:
                 {(
                     current_period
                     or {}
@@ -3830,6 +4825,20 @@ def focus_section(
         )
 
 
+    current_periods = (
+        get_recent_timeframe_periods(
+            1
+        )
+    )
+
+
+    current_period = (
+        current_periods[0]
+        if current_periods
+        else None
+    )
+
+
     return f"""
 
     <div class="unified-section">
@@ -3843,13 +4852,19 @@ def focus_section(
             <div class="section-heading">
 
                 <div class="section-heading-main">
-                    일봉 SIGNAL
+                    {html.escape(
+                        timeframe_label
+                    )} SIGNAL
                 </div>
 
                 <div class="section-heading-sub">
 
-                    당일 양수
-                    · 현재 일봉 양봉
+                    {html.escape(
+                        timeframe_label
+                    )} 양수
+                    · 현재 {html.escape(
+                        timeframe_label
+                    )} 양봉
                     · 상승장악
                     · 3캔들 상승장악
                     · 4캔들 상승장악
@@ -3880,7 +4895,9 @@ def focus_section(
         <div class="signal-btc-bar">
 
             <div class="signal-btc-title">
-                일봉 SIGNAL
+                {html.escape(
+                    timeframe_label
+                )} SIGNAL
             </div>
 
             <div class="signal-btc-period">
@@ -3909,7 +4926,9 @@ def focus_section(
 # TOP Section
 # =========================================================
 
-def top_card_html(row):
+def top_card_html(
+    row
+):
 
     return unified_card_html(
         row,
@@ -3926,8 +4945,8 @@ def section(
     update_time
 ):
 
-    current_daily = (
-        get_current_daily_period()
+    timeframe_label = (
+        get_selected_timeframe_label()
     )
 
 
@@ -3949,13 +4968,29 @@ def section(
         for row in data:
 
             top_cards.append(
-                top_card_html(row)
+                top_card_html(
+                    row
+                )
             )
 
 
         cards = "".join(
             top_cards
         )
+
+
+    current_periods = (
+        get_recent_timeframe_periods(
+            1
+        )
+    )
+
+
+    current_period = (
+        current_periods[0]
+        if current_periods
+        else None
+    )
 
 
     return f"""
@@ -3977,8 +5012,12 @@ def section(
                 <div class="section-heading-sub">
 
                     거래대금 순위
-                    · 당일 변동률
-                    · 최근 6개 일봉
+                    · {html.escape(
+                        timeframe_label
+                    )} 변동률
+                    · 최근 6개 {html.escape(
+                        timeframe_label
+                    )}
                     · 캔들 패턴
 
                 </div>
@@ -3987,8 +5026,8 @@ def section(
 
             <div class="current-time-badge">
 
-                ▶ 일봉 {(
-                    current_daily
+                ▶ {(
+                    current_period
                     or {}
                 ).get(
                     "display_label",
@@ -4063,6 +5102,65 @@ h1{
     line-height:18px;
     font-weight:900;
 }
+
+
+/* =========================================================
+   TIMEFRAME SELECTOR
+   ========================================================= */
+
+.timeframe-selector{
+    display:flex;
+    align-items:center;
+    width:100%;
+    margin:0 0 8px;
+    padding:5px 7px;
+    background:#10151b;
+    border:2px solid #252e38;
+    border-radius:10px;
+}
+
+.timeframe-selector-title{
+    flex:none;
+    margin-right:7px;
+    color:#68747e;
+    font-size:7px;
+    font-weight:900;
+}
+
+.timeframe-buttons{
+    display:flex;
+    flex:1;
+    gap:4px;
+}
+
+.tf-button{
+    flex:1;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    min-height:28px;
+    padding:4px 5px;
+    border-radius:6px;
+    background:#151b21;
+    border:1px solid #303944;
+    color:#8b969f;
+    text-decoration:none;
+    font-size:7px;
+    font-weight:900;
+}
+
+.tf-button.active{
+    background:#173326;
+    border-color:#4f9b73;
+    color:#8fe0b2;
+    box-shadow:
+        inset 0 0 0 1px rgba(116,213,157,0.12);
+}
+
+
+/* =========================================================
+   SECTION
+   ========================================================= */
 
 .unified-section{
     width:100%;
@@ -4152,6 +5250,11 @@ h1{
     font-weight:900;
     white-space:nowrap;
 }
+
+
+/* =========================================================
+   BTC
+   ========================================================= */
 
 .market-card{
     width:100%;
@@ -4352,6 +5455,11 @@ h1{
     color:#f0d486;
 }
 
+
+/* =========================================================
+   CARDS
+   ========================================================= */
+
 .top-card-list,
 .signal-card-list{
     display:flex;
@@ -4436,6 +5544,11 @@ h1{
     font-weight:900;
     white-space:nowrap;
 }
+
+
+/* =========================================================
+   MAIN ROW
+   ========================================================= */
 
 .unified-main-row{
     display:grid;
@@ -4573,6 +5686,11 @@ h1{
     font-weight:900;
 }
 
+
+/* =========================================================
+   SIGNAL
+   ========================================================= */
+
 .unified-condition-row{
     width:100%;
     min-height:45px;
@@ -4652,6 +5770,11 @@ h1{
     font-weight:900;
 }
 
+
+/* =========================================================
+   TOP
+   ========================================================= */
+
 .top-update-bar{
     display:flex;
     justify-content:space-between;
@@ -4661,6 +5784,11 @@ h1{
     font-size:6.5px;
     font-weight:800;
 }
+
+
+/* =========================================================
+   EMPTY
+   ========================================================= */
 
 .signal-empty-card{
     display:flex;
@@ -4731,6 +5859,11 @@ h1{
     font-weight:800;
 }
 
+
+/* =========================================================
+   MOBILE
+   ========================================================= */
+
 @media(max-width:600px){
 
     body{
@@ -4741,6 +5874,28 @@ h1{
         margin:3px 3px 8px;
         font-size:12px;
         line-height:15px;
+    }
+
+    .timeframe-selector{
+        min-height:34px;
+        padding:4px 5px;
+        border-radius:8px;
+    }
+
+    .timeframe-selector-title{
+        margin-right:5px;
+        font-size:5px;
+    }
+
+    .timeframe-buttons{
+        gap:3px;
+    }
+
+    .tf-button{
+        min-height:24px;
+        padding:3px 2px;
+        border-radius:5px;
+        font-size:5px;
     }
 
     .unified-section{
@@ -5012,6 +6167,11 @@ h1{
 
 }
 
+
+/* =========================================================
+   VERY SMALL
+   ========================================================= */
+
 @media(max-width:380px){
 
     body{
@@ -5192,18 +6352,6 @@ h1{
 
 }
 
-.signal-market-card{
-    border:2px solid #d4af37;
-    box-shadow:
-        0 0 8px rgba(212,175,55,0.16),
-        inset 0 0 0 1px rgba(212,175,55,0.12);
-}
-
-.signal-header{
-    background:#211d11;
-    border-bottom:1px solid #d4af37;
-}
-
 """
 
 
@@ -5215,7 +6363,50 @@ h1{
     "/",
     response_class=HTMLResponse
 )
-def dashboard():
+def dashboard(
+    tf: str = "1d"
+):
+
+    global SELECTED_TIMEFRAME
+
+
+    # =====================================================
+    # 타임프레임 검증
+    # =====================================================
+
+    if tf in TIMEFRAME_OPTIONS:
+
+        SELECTED_TIMEFRAME = tf
+
+    else:
+
+        SELECTED_TIMEFRAME = "1d"
+
+
+    # =====================================================
+    # 선택한 타임프레임 데이터가 없으면
+    # 즉시 업데이트
+    # =====================================================
+
+    global last_updated_timeframe
+
+
+    if (
+        last_updated_timeframe
+        !=
+        SELECTED_TIMEFRAME
+    ):
+
+        try:
+
+            update_dashboard()
+
+        except Exception as e:
+
+            log.exception(
+                f"타임프레임 변경 업데이트 오류: {e}"
+            )
+
 
     content = ""
 
@@ -5281,9 +6472,15 @@ def dashboard():
             📊 TRADING SIGNAL CENTER
         </h1>
 
+
+        {timeframe_selector_html()}
+
+
         {market_summary_html()}
 
+
         {content}
+
 
     </body>
 
@@ -5338,6 +6535,13 @@ def validate_settings():
         )
 
 
+    if SELECTED_TIMEFRAME not in TIMEFRAME_OPTIONS:
+
+        raise ValueError(
+            "잘못된 타임프레임입니다."
+        )
+
+
 # =========================================================
 # Startup
 # =========================================================
@@ -5361,7 +6565,19 @@ def startup():
     )
 
     log.info(
+        "타임프레임 선택 = 15분 / 1시간 / 4시간 / 일봉"
+    )
+
+    log.info(
+        "기본 타임프레임 = 일봉"
+    )
+
+    log.info(
         "일봉 기준 = KST 09:00 ~ 다음날 09:00"
+    )
+
+    log.info(
+        "4H 기준 = KST 09:00 기준"
     )
 
     log.info(
@@ -5369,59 +6585,63 @@ def startup():
     )
 
     log.info(
-        "4H 기능 = 전체 삭제"
+        "선택 타임프레임 최근 6개 표시"
     )
 
     log.info(
-        "4H 데이터 표시 = 삭제"
+        "OKX BTC = 선택 타임프레임 연동"
     )
 
     log.info(
-        "4H SIGNAL = 삭제"
+        "OKX 15m = 15m"
     )
 
     log.info(
-        "일봉 SIGNAL = 기존 4H SIGNAL을 일봉으로 변경"
+        "OKX 1H = 1H"
     )
 
     log.info(
-        "일봉 SIGNAL 조건 = 당일 양수"
+        "OKX 4H = 4H"
     )
 
     log.info(
-        "일봉 SIGNAL 조건 = 현재 일봉 양봉"
+        "OKX 일봉 = KST 09:00 기준 집계"
     )
 
     log.info(
-        "일봉 SIGNAL 패턴 = 첫 캔들 방향 무관"
+        "일봉 SIGNAL = 선택 타임프레임 SIGNAL"
     )
 
     log.info(
-        "일봉 SIGNAL 패턴 = 다음 캔들 양봉 몸통 장악"
+        "SIGNAL 조건 = 현재 타임프레임 양수"
     )
 
     log.info(
-        "일봉 SIGNAL 패턴 = 상승장악"
+        "SIGNAL 조건 = 현재 타임프레임 양봉"
     )
 
     log.info(
-        "일봉 SIGNAL 패턴 = 3캔들 상승장악"
+        "SIGNAL 패턴 = 상승장악"
     )
 
     log.info(
-        "일봉 SIGNAL 패턴 = 4캔들 상승장악"
+        "SIGNAL 패턴 = 3캔들 상승장악"
     )
 
     log.info(
-        "일봉 SIGNAL 패턴 = 상승장악 후 양봉"
+        "SIGNAL 패턴 = 4캔들 상승장악"
     )
 
     log.info(
-        "일봉 SIGNAL 패턴 = 장대양봉 후 양봉"
+        "SIGNAL 패턴 = 상승장악 후 양봉"
     )
 
     log.info(
-        "일봉 SIGNAL 패턴 = 관통형 후 양봉"
+        "SIGNAL 패턴 = 장대양봉 후 양봉"
+    )
+
+    log.info(
+        "SIGNAL 패턴 = 관통형 후 양봉"
     )
 
     log.info(
@@ -5429,31 +6649,15 @@ def startup():
     )
 
     log.info(
-        "상승장악 후 양봉 = 전일 상승장악 완성 후 당일 양봉"
+        "관통형 자체 = SIGNAL 제외"
     )
 
     log.info(
-        "장대양봉 후 양봉 = 전일 장대양봉 후 당일 양봉"
+        "하락 패턴 = SIGNAL 제외"
     )
 
     log.info(
-        "관통형 후 양봉 = 전일 관통형 완성 후 당일 양봉"
-    )
-
-    log.info(
-        "일봉 SIGNAL 제외 = 도지 단독 / 망치형 단독 / 역망치형 단독"
-    )
-
-    log.info(
-        "일봉 SIGNAL 제외 = 관통형 단독"
-    )
-
-    log.info(
-        "일봉 SIGNAL 제외 = 하락 패턴"
-    )
-
-    log.info(
-        "일봉 일반 패턴 = 1봉 / 2봉 / 3봉 / 4봉 표시"
+        "일반 패턴 = 상승 + 하락 모두 표시"
     )
 
     log.info(
@@ -5465,34 +6669,11 @@ def startup():
     )
 
     log.info(
-        "BTC 시장 시황 = 일봉"
-    )
-
-    log.info(
         "BTC = SIGNAL 필터에서 제외"
     )
 
     log.info(
-        "화면 순서 = BTC → 일봉 SIGNAL → TOP20"
-    )
-
-    log.info(
-        "캔들 패턴 표시 = 상승 + 하락 모두 표시"
-    )
-
-    log.info(
-        "상승 패턴: 도지 / 망치형 / 역망치형 / "
-        "상승장악 / 장대양봉 후 양봉 / 관통형 / "
-        "모닝스타 / 3연속양봉 / "
-        "3캔들 상승장악 / 상승장악 후 양봉 / "
-        "관통형 후 양봉 / "
-        "3캔들 관통형 / "
-        "4캔들 상승장악 / 4캔들 관통형"
-    )
-
-    log.info(
-        "하락 패턴: 하락장악 / 먹구름형 / "
-        "3캔들 하락장악 / 3캔들 먹구름형"
+        "화면 순서 = BTC → SIGNAL → TOP"
     )
 
     log.info(
@@ -5501,38 +6682,6 @@ def startup():
 
     log.info(
         "ROC = 삭제"
-    )
-
-    log.info(
-        "당일 시세 양수 = 현재가/거래대금/당일 전체 초록색"
-    )
-
-    log.info(
-        "당일 시세 음수 = 현재가/거래대금/당일 전체 빨간색"
-    )
-
-    log.info(
-        "당일 시세 0% = 현재가/거래대금/당일 전체 회색"
-    )
-
-    log.info(
-        "글자 크기 = 기존 유지"
-    )
-
-    log.info(
-        "카드 높이 = 세로 여백 및 padding만 축소"
-    )
-
-    log.info(
-        "카드 내용 = 전체 표시 유지"
-    )
-
-    log.info(
-        "시간 + 변동률 = 한 줄 표시"
-    )
-
-    log.info(
-        "시간 형식 = 현재 10/03"
     )
 
     log.info(
