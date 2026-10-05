@@ -140,12 +140,6 @@ def kst():
 
 def timeframe_delta(tf):
 
-    if tf == "1d":
-
-        return timedelta(
-            days=1
-        )
-
     return timedelta(
         days=1
     )
@@ -1122,7 +1116,9 @@ def period_signal(period):
         return False
 
     # -----------------------------------------------------
-    # 양봉
+    # 양봉만 허용
+    #
+    # 음수 / 0% 제외
     # -----------------------------------------------------
 
     if change <= 0:
@@ -1148,14 +1144,14 @@ def period_signal(period):
 
 
 # =========================================================
-# 일봉 SIGNAL 판정
+# SIGNAL 판정
 #
-# 기준:
+# 핵심 조건
 #
-# 1. 당일봉
-# 2. 전일봉
-#
-# 둘 중 하나라도 조건 충족 시 SIGNAL
+# 1. 당일봉이 음수/0%이면 무조건 SIGNAL 없음
+# 2. 당일봉이 양수일 때만 전일봉/당일봉 검사
+# 3. 당일봉 조건 충족 시 당일봉 SIGNAL
+# 4. 당일봉 조건 미충족 시 전일봉 검사
 # =========================================================
 
 def signal_pass(periods):
@@ -1170,12 +1166,33 @@ def signal_pass(periods):
 
     current = periods[-1]
 
+    current_change = current.get(
+        "change"
+    )
+
+    if current_change is None:
+
+        return False
+
+    # -----------------------------------------------------
+    # 당일봉 음수 또는 0이면
+    # 전일봉도 보지 않음
+    # -----------------------------------------------------
+
+    if current_change <= 0:
+
+        return False
+
+    # -----------------------------------------------------
+    # 당일봉 SIGNAL
+    # -----------------------------------------------------
+
     if period_signal(current):
 
         return True
 
     # -----------------------------------------------------
-    # 전일봉
+    # 전일봉 SIGNAL
     # -----------------------------------------------------
 
     if len(periods) >= 2:
@@ -1226,6 +1243,43 @@ def signal_details(periods):
     # -----------------------------------------------------
 
     current = periods[-1]
+
+    current_change = current.get(
+        "change"
+    )
+
+    if current_change is None:
+
+        return empty
+
+    # -----------------------------------------------------
+    # 당일봉 음수/0이면
+    # 전일봉 SIGNAL도 무조건 차단
+    # -----------------------------------------------------
+
+    if current_change <= 0:
+
+        return {
+
+            "signal":
+                False,
+
+            "current_signal":
+                False,
+
+            "previous_signal":
+                False,
+
+            "signal_change":
+                None,
+
+            "signal_patterns":
+                [],
+
+            "signal_period":
+                None
+
+        }
 
     current_signal = period_signal(
         current
@@ -1367,7 +1421,7 @@ def analyze_daily(
     df = df.copy()
 
     # -----------------------------------------------------
-    # 현재 당일봉은 현재가 반영
+    # 현재 당일봉 현재가 반영
     # -----------------------------------------------------
 
     current_start = current_tf_start(
@@ -1618,7 +1672,7 @@ def update_upbit():
     )
 
     log.info(
-        "UPBIT | 일봉=%s",
+        "UPBIT | 일봉 SIGNAL=%s",
 
         sum(
             x["signal_daily"]
@@ -1773,7 +1827,7 @@ def update_okx_btc():
     # =====================================================
     # BTC 1시간 → KST 09:00 일봉
     #
-    # 15분봉 완전 삭제
+    # 15분봉 없음
     # =====================================================
 
     d1h = okx_candles(
@@ -2181,8 +2235,8 @@ def card(
     kind
 ):
 
-    both = row.get(
-        "simultaneous_signal",
+    signal = row.get(
+        "signal_daily",
         False
     )
 
@@ -2194,7 +2248,7 @@ def card(
 
         status = ""
 
-        if both:
+        if signal:
 
             status = (
                 '<span class="signal-badge">'
@@ -2284,7 +2338,11 @@ def card(
                     </span>
 
                     <strong>
-                        {"⭐ 발생" if row.get("signal_daily") else "-"}
+                        {
+                            "⭐ 발생"
+                            if signal
+                            else "-"
+                        }
                     </strong>
 
                 </div>
@@ -2475,7 +2533,7 @@ def both_section(data):
         r
         for r in data
         if r.get(
-            "simultaneous_signal"
+            "signal_daily"
         )
     ]
 
@@ -3480,7 +3538,8 @@ def dashboard():
         # -------------------------------------------------
         # 일봉 SIGNAL
         #
-        # 당일봉 + 전일봉 기준
+        # 당일봉이 음수/0이면 SIGNAL 없음
+        # 당일봉 양수일 때만 당일/전일 검사
         # -------------------------------------------------
 
         s += both_section(
@@ -3621,7 +3680,7 @@ def scheduler():
 def startup():
 
     log.info(
-        "START | BTC 일봉 → SIGNAL → TOP10"
+        "START | BTC 일봉 → 일봉 SIGNAL → TOP10"
     )
 
     threading.Thread(
