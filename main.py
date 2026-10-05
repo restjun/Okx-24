@@ -2977,7 +2977,7 @@ def both_section(data):
                 </span>
 
                 <b>
-                    ⭐ 15분 + 일봉 동시 SIGNAL
+                    ⭐ 15분 + 일봉 
                 </b>
 
             </div>
