@@ -91,15 +91,6 @@ SIGNAL_CANDLE_PATTERNS = [
 
 
 # =========================================================
-# RSI 설정
-# =========================================================
-
-RSI_PERIOD = 14
-
-RSI_SIGNAL_THRESHOLD = 70.0
-
-
-# =========================================================
 # 전역 데이터
 # =========================================================
 
@@ -135,10 +126,6 @@ latest_btc_daily_periods = []
 latest_btc_15m_change = None
 
 latest_btc_daily_change = None
-
-latest_btc_15m_rsi = None
-
-latest_btc_daily_rsi = None
 
 
 # =========================================================
@@ -604,64 +591,6 @@ def get_upbit_candles(
 
 
 # =========================================================
-# RSI(14)
-# =========================================================
-
-def calculate_rsi(
-    df,
-    period=14
-):
-
-    if df is None or df.empty:
-
-        return pd.Series(
-            dtype=float
-        )
-
-    close = pd.to_numeric(
-        df["close"],
-        errors="coerce"
-    )
-
-    delta = close.diff()
-
-    gain = delta.clip(
-        lower=0
-    )
-
-    loss = -delta.clip(
-        upper=0
-    )
-
-    avg_gain = gain.ewm(
-        alpha=1 / period,
-        adjust=False,
-        min_periods=period
-    ).mean()
-
-    avg_loss = loss.ewm(
-        alpha=1 / period,
-        adjust=False,
-        min_periods=period
-    ).mean()
-
-    rs = (
-        avg_gain / avg_loss
-    )
-
-    rsi = 100 - (
-        100 / (1 + rs)
-    )
-
-    rsi = rsi.where(
-        avg_loss != 0,
-        100.0
-    )
-
-    return rsi
-
-
-# =========================================================
 # 캔들 기본값
 # =========================================================
 
@@ -1045,8 +974,6 @@ def build_periods(
 
                 "change": None,
 
-                "rsi": None,
-
                 "patterns": []
 
             })
@@ -1098,32 +1025,6 @@ def build_periods(
             else None
         )
 
-        # -------------------------------------------------
-        # RSI
-        # -------------------------------------------------
-
-        rsi = None
-
-        if "rsi" in part.columns:
-
-            try:
-
-                rsi_value = (
-                    part.iloc[-1]["rsi"]
-                )
-
-                if pd.notna(
-                    rsi_value
-                ):
-
-                    rsi = float(
-                        rsi_value
-                    )
-
-            except Exception:
-
-                rsi = None
-
         out.append({
 
             **p,
@@ -1142,9 +1043,6 @@ def build_periods(
 
             "change":
                 change,
-
-            "rsi":
-                rsi,
 
             "patterns":
                 []
@@ -1268,24 +1166,6 @@ def period_signal(
 
         return False
 
-    # -----------------------------------------------------
-    # 15분봉만 RSI >= 70
-    # -----------------------------------------------------
-
-    if timeframe == "15m":
-
-        rsi = period.get(
-            "rsi"
-        )
-
-        if rsi is None:
-
-            return False
-
-        if rsi < RSI_SIGNAL_THRESHOLD:
-
-            return False
-
     return True
 
 
@@ -1294,11 +1174,9 @@ def period_signal(
 #
 # 15분:
 # 현재봉 + 이전봉
-# + RSI(14) >= 70
 #
 # 일봉:
 # 현재봉 + 전일봉
-# RSI 조건 없음
 # =========================================================
 
 def signal_pass(
@@ -1360,9 +1238,6 @@ def signal_details(
 
         "signal_patterns":
             [],
-
-        "signal_rsi":
-            None,
 
         "signal_period":
             None
@@ -1426,9 +1301,6 @@ def signal_details(
             "signal_patterns":
                 [],
 
-            "signal_rsi":
-                None,
-
             "signal_period":
                 None
 
@@ -1459,11 +1331,6 @@ def signal_details(
                     []
                 )
             ],
-
-        "signal_rsi":
-            target.get(
-                "rsi"
-            ),
 
         "signal_period":
             target.get(
@@ -1518,22 +1385,6 @@ def analyze(
                 price
             )
 
-        df["rsi"] = calculate_rsi(
-            df,
-            RSI_PERIOD
-        )
-
-    else:
-
-        if not df.empty:
-
-            df = df.copy()
-
-            df["rsi"] = calculate_rsi(
-                df,
-                RSI_PERIOD
-            )
-
     periods = build_periods(
         df,
         tf,
@@ -1573,11 +1424,6 @@ def analyze(
         "signal_patterns":
             details[
                 "signal_patterns"
-            ],
-
-        "signal_rsi":
-            details[
-                "signal_rsi"
             ],
 
         "signal_period":
@@ -1674,11 +1520,6 @@ def make_row(
                 "signal_patterns"
             ],
 
-        "signal_15m_rsi":
-            analysis_15m[
-                "signal_rsi"
-            ],
-
         "signal_15m_period":
             analysis_15m[
                 "signal_period"
@@ -1710,11 +1551,6 @@ def make_row(
         "signal_daily_patterns":
             analysis_daily[
                 "signal_patterns"
-            ],
-
-        "signal_daily_rsi":
-            analysis_daily[
-                "signal_rsi"
             ],
 
         "signal_daily_period":
@@ -1793,8 +1629,6 @@ def update_upbit():
 
                 "signal_patterns": [],
 
-                "signal_rsi": None,
-
                 "signal_period": None
 
             }
@@ -1828,8 +1662,6 @@ def update_upbit():
                 "signal_change": None,
 
                 "signal_patterns": [],
-
-                "signal_rsi": None,
 
                 "signal_period": None
 
@@ -2015,8 +1847,6 @@ def update_okx_btc():
     global latest_btc_daily_periods
     global latest_btc_15m_change
     global latest_btc_daily_change
-    global latest_btc_15m_rsi
-    global latest_btc_daily_rsi
 
     price = okx_price()
 
@@ -2060,11 +1890,6 @@ def update_okx_btc():
             ] = float(
                 price
             )
-
-        d15["rsi"] = calculate_rsi(
-            d15,
-            RSI_PERIOD
-        )
 
     latest_btc_15m_periods = (
         build_periods(
@@ -2170,11 +1995,6 @@ def update_okx_btc():
                 price
             )
 
-        daily["rsi"] = calculate_rsi(
-            daily,
-            RSI_PERIOD
-        )
-
     else:
 
         daily = pd.DataFrame()
@@ -2188,7 +2008,7 @@ def update_okx_btc():
     )
 
     # =====================================================
-    # BTC RSI / 변화율
+    # BTC 변화율
     # =====================================================
 
     if latest_btc_15m_periods:
@@ -2198,16 +2018,9 @@ def update_okx_btc():
             .get("change")
         )
 
-        latest_btc_15m_rsi = (
-            latest_btc_15m_periods[-1]
-            .get("rsi")
-        )
-
     else:
 
         latest_btc_15m_change = None
-
-        latest_btc_15m_rsi = None
 
     if latest_btc_daily_periods:
 
@@ -2216,16 +2029,9 @@ def update_okx_btc():
             .get("change")
         )
 
-        latest_btc_daily_rsi = (
-            latest_btc_daily_periods[-1]
-            .get("rsi")
-        )
-
     else:
 
         latest_btc_daily_change = None
-
-        latest_btc_daily_rsi = None
 
 
 # =========================================================
@@ -2339,47 +2145,6 @@ def fmt_change(v):
 
 
 # =========================================================
-# RSI 표시
-# =========================================================
-
-def fmt_rsi(v):
-
-    if v is None:
-
-        return (
-            '<span class="zero">'
-            'RSI -'
-            '</span>'
-        )
-
-    try:
-
-        v = float(v)
-
-    except Exception:
-
-        return (
-            '<span class="zero">'
-            'RSI -'
-            '</span>'
-        )
-
-    if v >= RSI_SIGNAL_THRESHOLD:
-
-        return (
-            '<span class="rsi-high">'
-            f'RSI {v:.1f}'
-            '</span>'
-        )
-
-    return (
-        '<span class="rsi-normal">'
-        f'RSI {v:.1f}'
-        '</span>'
-    )
-
-
-# =========================================================
 # 캔들 표시
 # =========================================================
 
@@ -2413,18 +2178,6 @@ def cells(periods):
                 + "</small>"
             )
 
-        rsi_html = ""
-
-        if p.get("rsi") is not None:
-
-            rsi_html = (
-                "<small class=\"rsi-line\">"
-                + fmt_rsi(
-                    p.get("rsi")
-                )
-                + "</small>"
-            )
-
         result.append(
             f"""
             <div class="tf-cell {active_class}">
@@ -2445,8 +2198,6 @@ def cells(periods):
                         )
                     )}
                 </strong>
-
-                {rsi_html}
 
                 {pattern_html}
 
@@ -2520,13 +2271,6 @@ def btc_html():
                     15분
                 </b>
 
-                <span>
-                    RSI(14)
-                    {fmt_rsi(
-                        latest_btc_15m_rsi
-                    )}
-                </span>
-
             </div>
 
             <div class="grid">
@@ -2551,10 +2295,7 @@ def btc_html():
                 </b>
 
                 <span>
-                    KST 09:00 · RSI(14)
-                    {fmt_rsi(
-                        latest_btc_daily_rsi
-                    )}
+                    KST 09:00
                 </span>
 
             </div>
@@ -2721,7 +2462,7 @@ def card(
                     </b>
 
                     <span>
-                        현재 + 이전 · RSI ≥ 70
+                        현재 + 이전
                     </span>
 
                 </div>
@@ -2881,7 +2622,7 @@ def card(
                 </b>
 
                 <span>
-                    현재 + 이전 · RSI ≥ 70
+                    현재 + 이전
                 </span>
 
             </div>
@@ -2977,13 +2718,13 @@ def both_section(data):
                 </span>
 
                 <b>
-                    ⭐ 15분 + 일봉 
+                    ⭐ 15분 + 일봉
                 </b>
 
             </div>
 
             <small>
-                15분 RSI ≥ 70
+                현재봉 + 이전봉 / 전일봉
             </small>
 
         </div>
@@ -3065,17 +2806,6 @@ section {
 
 
 .zero {
-    color: #68737e;
-}
-
-
-.rsi-high {
-    color: #e4c45e;
-    font-weight: 800;
-}
-
-
-.rsi-normal {
     color: #68737e;
 }
 
@@ -3390,19 +3120,6 @@ section {
     overflow: hidden;
 
     text-overflow: ellipsis;
-}
-
-
-.rsi-line {
-
-    color: #68737e;
-
-}
-
-
-.rsi-line .rsi-high {
-
-    color: #e4c45e;
 }
 
 
