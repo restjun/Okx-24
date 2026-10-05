@@ -78,6 +78,14 @@ SIGNAL_CANDLE_PATTERNS = [
     "관통형 후 양봉"
 ]
 
+# ---------------------------------------------------------
+# 15분 RSI 조건
+# ---------------------------------------------------------
+
+RSI_PERIOD = 14
+
+RSI_SIGNAL_THRESHOLD = 70.0
+
 
 # =========================================================
 # 전역 데이터
@@ -580,6 +588,68 @@ def get_upbit_candles(
 
 
 # =========================================================
+# RSI(14)
+# =========================================================
+
+def calculate_rsi(
+    df,
+    period=14
+):
+
+    if df is None or df.empty:
+
+        return pd.Series(
+            dtype=float
+        )
+
+    close = pd.to_numeric(
+        df["close"],
+        errors="coerce"
+    )
+
+    delta = close.diff()
+
+    gain = delta.clip(
+        lower=0
+    )
+
+    loss = -delta.clip(
+        upper=0
+    )
+
+    avg_gain = gain.ewm(
+        alpha=1 / period,
+        adjust=False,
+        min_periods=period
+    ).mean()
+
+    avg_loss = loss.ewm(
+        alpha=1 / period,
+        adjust=False,
+        min_periods=period
+    ).mean()
+
+    rs = (
+        avg_gain / avg_loss
+    )
+
+    rsi = 100 - (
+        100 / (1 + rs)
+    )
+
+    # -----------------------------------------------------
+    # 평균 손실이 0이면 RSI = 100
+    # -----------------------------------------------------
+
+    rsi = rsi.where(
+        avg_loss != 0,
+        100.0
+    )
+
+    return rsi
+
+
+# =========================================================
 # 캔들 기본값
 # =========================================================
 
@@ -963,6 +1033,8 @@ def build_periods(
 
                 "change": None,
 
+                "rsi": None,
+
                 "patterns": []
 
             })
@@ -984,6 +1056,10 @@ def build_periods(
         c = float(
             part.iloc[-1].close
         )
+
+        # -------------------------------------------------
+        # 현재봉이면 현재가 반영
+        # -------------------------------------------------
 
         if (
             p["active"]
@@ -1010,6 +1086,36 @@ def build_periods(
             else None
         )
 
+        # -------------------------------------------------
+        # 해당 기간의 RSI
+        #
+        # 15분봉은 원본 15분 데이터의 마지막 RSI
+        # 일봉은 RSI 조건을 사용하지 않지만
+        # 표시를 위해 값은 보관
+        # -------------------------------------------------
+
+        rsi = None
+
+        if "rsi" in part.columns:
+
+            try:
+
+                rsi_value = (
+                    part.iloc[-1]["rsi"]
+                )
+
+                if pd.notna(
+                    rsi_value
+                ):
+
+                    rsi = float(
+                        rsi_value
+                    )
+
+            except Exception:
+
+                rsi = None
+
         out.append({
 
             **p,
@@ -1028,6 +1134,9 @@ def build_periods(
 
             "change":
                 change,
+
+            "rsi":
+                rsi,
 
             "patterns":
                 []
@@ -1098,7 +1207,10 @@ def build_periods(
 # SIGNAL 단일 기간 판정
 # =========================================================
 
-def period_signal(period):
+def period_signal(
+    period,
+    timeframe="1d"
+):
 
     if not period:
 
@@ -1148,6 +1260,24 @@ def period_signal(period):
 
         return False
 
+    # -----------------------------------------------------
+    # 15분봉만 RSI >= 70 조건
+    # -----------------------------------------------------
+
+    if timeframe == "15m":
+
+        rsi = period.get(
+            "rsi"
+        )
+
+        if rsi is None:
+
+            return False
+
+        if rsi < RSI_SIGNAL_THRESHOLD:
+
+            return False
+
     return True
 
 
@@ -1156,11 +1286,11 @@ def period_signal(period):
 #
 # 15분:
 #   현재봉 + 이전봉
+#   + RSI(14) >= 70
 #
 # 일봉:
 #   현재봉 + 전일봉
-#
-# 둘 중 하나라도 SIGNAL이면 해당 시간봉 SIGNAL
+#   RSI 조건 없음
 # =========================================================
 
 def signal_pass(
@@ -1186,9 +1316,6 @@ def signal_pass(
 
     # -----------------------------------------------------
     # 이전봉
-    #
-    # 15분 = 직전 15분봉
-    # 일봉 = 전일봉
     # -----------------------------------------------------
 
     if len(periods) >= 2:
@@ -1200,7 +1327,10 @@ def signal_pass(
         )
 
     return any(
-        period_signal(x)
+        period_signal(
+            x,
+            timeframe
+        )
         for x in candidates
     )
 
@@ -1210,7 +1340,8 @@ def signal_pass(
 # =========================================================
 
 def signal_details(
-    periods
+    periods,
+    timeframe
 ):
 
     empty = {
@@ -1230,6 +1361,9 @@ def signal_details(
         "signal_patterns":
             [],
 
+        "signal_rsi":
+            None,
+
         "signal_period":
             None
 
@@ -1248,19 +1382,24 @@ def signal_details(
     )
 
     current_signal = period_signal(
-        current
+        current,
+        timeframe
     )
 
     previous_signal = (
-        period_signal(previous)
+        period_signal(
+            previous,
+            timeframe
+        )
         if previous is not None
         else False
     )
 
     # -----------------------------------------------------
     # 현재봉 우선
-    # 현재봉이 SIGNAL이면 현재봉 정보 사용
-    # 현재봉이 아니면 이전봉 정보 사용
+    #
+    # 현재봉이 SIGNAL이면 현재봉 정보
+    # 아니면 이전봉 정보
     # -----------------------------------------------------
 
     if current_signal:
@@ -1294,6 +1433,9 @@ def signal_details(
             "signal_patterns":
                 [],
 
+            "signal_rsi":
+                None,
+
             "signal_period":
                 None
 
@@ -1325,6 +1467,11 @@ def signal_details(
                 )
             ],
 
+        "signal_rsi":
+            target.get(
+                "rsi"
+            ),
+
         "signal_period":
             target.get(
                 "label"
@@ -1349,6 +1496,65 @@ def analyze(
         200
     )
 
+    if (
+        tf == "15m"
+        and not df.empty
+    ):
+
+        df = df.copy()
+
+        # -------------------------------------------------
+        # 현재 진행 중인 15분봉의 종가를 현재가로 반영
+        # -------------------------------------------------
+
+        current_start = current_tf_start(
+            "15m"
+        )
+
+        active_mask = (
+            df["datetime"]
+            >= current_start
+        )
+
+        if active_mask.any():
+
+            last_idx = df.index[
+                active_mask
+            ][-1]
+
+            df.loc[
+                last_idx,
+                "close"
+            ] = float(
+                price
+            )
+
+        # -------------------------------------------------
+        # RSI(14)
+        # -------------------------------------------------
+
+        df["rsi"] = calculate_rsi(
+            df,
+            RSI_PERIOD
+        )
+
+    else:
+
+        # -------------------------------------------------
+        # 일봉은 RSI 조건을 사용하지 않음
+        # -------------------------------------------------
+
+        if not df.empty:
+
+            df = df.copy()
+
+            df["rsi"] = (
+                calculate_rsi(
+                    df,
+                    RSI_PERIOD
+                )
+            )
+
     periods = build_periods(
         df,
         tf,
@@ -1356,7 +1562,8 @@ def analyze(
     )
 
     details = signal_details(
-        periods
+        periods,
+        tf
     )
 
     return {
@@ -1387,6 +1594,11 @@ def analyze(
         "signal_patterns":
             details[
                 "signal_patterns"
+            ],
+
+        "signal_rsi":
+            details[
+                "signal_rsi"
             ],
 
         "signal_period":
@@ -1483,6 +1695,11 @@ def make_row(
                 "signal_patterns"
             ],
 
+        "signal_15m_rsi":
+            analysis_15m[
+                "signal_rsi"
+            ],
+
         "signal_15m_period":
             analysis_15m[
                 "signal_period"
@@ -1514,6 +1731,11 @@ def make_row(
         "signal_daily_patterns":
             analysis_daily[
                 "signal_patterns"
+            ],
+
+        "signal_daily_rsi":
+            analysis_daily[
+                "signal_rsi"
             ],
 
         "signal_daily_period":
@@ -1592,6 +1814,8 @@ def update_upbit():
 
                 "signal_patterns": [],
 
+                "signal_rsi": None,
+
                 "signal_period": None
 
             }
@@ -1625,6 +1849,8 @@ def update_upbit():
                 "signal_change": None,
 
                 "signal_patterns": [],
+
+                "signal_rsi": None,
 
                 "signal_period": None
 
@@ -2042,6 +2268,39 @@ def fmt_change(v):
 
 
 # =========================================================
+# RSI 표시
+# =========================================================
+
+def fmt_rsi(v):
+
+    if v is None:
+
+        return '<span class="zero">RSI -</span>'
+
+    try:
+
+        v = float(v)
+
+    except Exception:
+
+        return '<span class="zero">RSI -</span>'
+
+    if v >= RSI_SIGNAL_THRESHOLD:
+
+        return (
+            '<span class="rsi-high">'
+            f'RSI {v:.1f}'
+            '</span>'
+        )
+
+    return (
+        '<span class="rsi-normal">'
+        f'RSI {v:.1f}'
+        '</span>'
+    )
+
+
+# =========================================================
 # 캔들 표시
 # =========================================================
 
@@ -2075,6 +2334,18 @@ def cells(periods):
                 + "</small>"
             )
 
+        rsi_html = ""
+
+        if p.get("rsi") is not None:
+
+            rsi_html = (
+                "<small class=\"rsi-line\">"
+                + fmt_rsi(
+                    p.get("rsi")
+                )
+                + "</small>"
+            )
+
         result.append(
             f"""
             <div class="tf-cell {active_class}">
@@ -2095,6 +2366,8 @@ def cells(periods):
                         )
                     )}
                 </strong>
+
+                {rsi_html}
 
                 {pattern_html}
 
@@ -2356,7 +2629,7 @@ def card(
                     </b>
 
                     <span>
-                        현재 + 이전
+                        현재 + 이전 · RSI ≥ 70
                     </span>
 
                 </div>
@@ -2516,7 +2789,7 @@ def card(
                 </b>
 
                 <span>
-                    현재봉 + 이전봉
+                    현재 + 이전 · RSI ≥ 70
                 </span>
 
             </div>
@@ -2547,7 +2820,7 @@ def card(
                 </b>
 
                 <span>
-                    현재봉 + 전일 · KST 09:00
+                    현재 + 전일 · KST 09:00
                 </span>
 
             </div>
@@ -2618,7 +2891,7 @@ def both_section(data):
             </div>
 
             <small>
-                현재봉 + 이전봉 기준
+                15분 RSI ≥ 70
             </small>
 
         </div>
@@ -2700,6 +2973,17 @@ section {
 
 
 .zero {
+    color: #68737e;
+}
+
+
+.rsi-high {
+    color: #e4c45e;
+    font-weight: 800;
+}
+
+
+.rsi-normal {
     color: #68737e;
 }
 
@@ -3014,6 +3298,13 @@ section {
     overflow: hidden;
 
     text-overflow: ellipsis;
+}
+
+
+.rsi-line {
+
+    color: #68737e;
+
 }
 
 
