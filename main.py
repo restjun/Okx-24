@@ -1095,7 +1095,72 @@ def build_periods(
 
 
 # =========================================================
+# SIGNAL 단일 기간 판정
+# =========================================================
+
+def period_signal(period):
+
+    if not period:
+
+        return False
+
+    change = period.get(
+        "change"
+    )
+
+    open_price = period.get(
+        "open"
+    )
+
+    close_price = period.get(
+        "close"
+    )
+
+    patterns = period.get(
+        "patterns",
+        []
+    )
+
+    if change is None:
+
+        return False
+
+    if open_price is None:
+
+        return False
+
+    if close_price is None:
+
+        return False
+
+    if change <= 0:
+
+        return False
+
+    if close_price <= open_price:
+
+        return False
+
+    if not any(
+        pattern in patterns
+        for pattern in SIGNAL_CANDLE_PATTERNS
+    ):
+
+        return False
+
+    return True
+
+
+# =========================================================
 # SIGNAL 판정
+#
+# 15분:
+#   현재봉 + 이전봉
+#
+# 일봉:
+#   현재봉 + 전일봉
+#
+# 둘 중 하나라도 SIGNAL이면 해당 시간봉 SIGNAL
 # =========================================================
 
 def signal_pass(
@@ -1107,58 +1172,165 @@ def signal_pass(
 
         return False
 
-    if timeframe == "15m":
+    candidates = []
 
-        if len(periods) < 2:
+    # -----------------------------------------------------
+    # 현재봉
+    # -----------------------------------------------------
 
-            return False
+    current = periods[-1]
 
-        target = periods[-2]
+    candidates.append(
+        current
+    )
+
+    # -----------------------------------------------------
+    # 이전봉
+    #
+    # 15분 = 직전 15분봉
+    # 일봉 = 전일봉
+    # -----------------------------------------------------
+
+    if len(periods) >= 2:
+
+        previous = periods[-2]
+
+        candidates.append(
+            previous
+        )
+
+    return any(
+        period_signal(x)
+        for x in candidates
+    )
+
+
+# =========================================================
+# SIGNAL 세부정보
+# =========================================================
+
+def signal_details(
+    periods
+):
+
+    empty = {
+
+        "signal":
+            False,
+
+        "current_signal":
+            False,
+
+        "previous_signal":
+            False,
+
+        "signal_change":
+            None,
+
+        "signal_patterns":
+            [],
+
+        "signal_period":
+            None
+
+    }
+
+    if not periods:
+
+        return empty
+
+    current = periods[-1]
+
+    previous = (
+        periods[-2]
+        if len(periods) >= 2
+        else None
+    )
+
+    current_signal = period_signal(
+        current
+    )
+
+    previous_signal = (
+        period_signal(previous)
+        if previous is not None
+        else False
+    )
+
+    # -----------------------------------------------------
+    # 현재봉 우선
+    # 현재봉이 SIGNAL이면 현재봉 정보 사용
+    # 현재봉이 아니면 이전봉 정보 사용
+    # -----------------------------------------------------
+
+    if current_signal:
+
+        target = current
+
+    elif previous_signal:
+
+        target = previous
 
     else:
 
-        target = periods[-1]
+        target = None
 
-    change = target.get(
-        "change"
-    )
+    if target is None:
 
-    open_price = target.get(
-        "open"
-    )
+        return {
 
-    close_price = target.get(
-        "close"
-    )
+            "signal":
+                False,
 
-    patterns = target.get(
-        "patterns",
-        []
-    )
+            "current_signal":
+                current_signal,
 
-    if change is None:
-        return False
+            "previous_signal":
+                previous_signal,
 
-    if open_price is None:
-        return False
+            "signal_change":
+                None,
 
-    if close_price is None:
-        return False
+            "signal_patterns":
+                [],
 
-    if change <= 0:
-        return False
+            "signal_period":
+                None
 
-    if close_price <= open_price:
-        return False
+        }
 
-    if not any(
-        pattern in patterns
-        for pattern in SIGNAL_CANDLE_PATTERNS
-    ):
+    return {
 
-        return False
+        "signal":
+            True,
 
-    return True
+        "current_signal":
+            current_signal,
+
+        "previous_signal":
+            previous_signal,
+
+        "signal_change":
+            target.get(
+                "change"
+            ),
+
+        "signal_patterns":
+            [
+                x
+                for x in SIGNAL_CANDLE_PATTERNS
+                if x in target.get(
+                    "patterns",
+                    []
+                )
+            ],
+
+        "signal_period":
+            target.get(
+                "label"
+            )
+
+    }
 
 
 # =========================================================
@@ -1183,27 +1355,8 @@ def analyze(
         price
     )
 
-    signal = signal_pass(
-        periods,
-        tf
-    )
-
-    if tf == "15m":
-
-        target_index = (
-            -2
-            if len(periods) >= 2
-            else -1
-        )
-
-    else:
-
-        target_index = -1
-
-    target = (
-        periods[target_index]
-        if periods
-        else {}
+    details = signal_details(
+        periods
     )
 
     return {
@@ -1212,21 +1365,33 @@ def analyze(
             periods,
 
         "signal_pass":
-            signal,
+            details[
+                "signal"
+            ],
+
+        "current_signal":
+            details[
+                "current_signal"
+            ],
+
+        "previous_signal":
+            details[
+                "previous_signal"
+            ],
 
         "signal_change":
-            target.get(
-                "change"
-            ),
+            details[
+                "signal_change"
+            ],
 
         "signal_patterns":
-            [
-                x
-                for x in SIGNAL_CANDLE_PATTERNS
-                if x in target.get(
-                    "patterns",
-                    []
-                )
+            details[
+                "signal_patterns"
+            ],
+
+        "signal_period":
+            details[
+                "signal_period"
             ]
 
     }
@@ -1298,6 +1463,16 @@ def make_row(
         "signal_15m":
             signal_15m,
 
+        "signal_15m_current":
+            analysis_15m[
+                "current_signal"
+            ],
+
+        "signal_15m_previous":
+            analysis_15m[
+                "previous_signal"
+            ],
+
         "signal_15m_change":
             analysis_15m[
                 "signal_change"
@@ -1308,6 +1483,11 @@ def make_row(
                 "signal_patterns"
             ],
 
+        "signal_15m_period":
+            analysis_15m[
+                "signal_period"
+            ],
+
         "periods_daily":
             analysis_daily[
                 "periods"
@@ -1315,6 +1495,16 @@ def make_row(
 
         "signal_daily":
             signal_daily,
+
+        "signal_daily_current":
+            analysis_daily[
+                "current_signal"
+            ],
+
+        "signal_daily_previous":
+            analysis_daily[
+                "previous_signal"
+            ],
 
         "signal_daily_change":
             analysis_daily[
@@ -1324,6 +1514,11 @@ def make_row(
         "signal_daily_patterns":
             analysis_daily[
                 "signal_patterns"
+            ],
+
+        "signal_daily_period":
+            analysis_daily[
+                "signal_period"
             ],
 
         "simultaneous_signal":
@@ -1389,9 +1584,15 @@ def update_upbit():
 
                 "signal_pass": False,
 
+                "current_signal": False,
+
+                "previous_signal": False,
+
                 "signal_change": None,
 
-                "signal_patterns": []
+                "signal_patterns": [],
+
+                "signal_period": None
 
             }
 
@@ -1417,9 +1618,15 @@ def update_upbit():
 
                 "signal_pass": False,
 
+                "current_signal": False,
+
+                "previous_signal": False,
+
                 "signal_change": None,
 
-                "signal_patterns": []
+                "signal_patterns": [],
+
+                "signal_period": None
 
             }
 
@@ -2134,7 +2341,7 @@ def card(
                 <i></i>
 
                 <small>
-                    15분 + 일봉
+                    현재봉 + 이전봉
                 </small>
 
             </div>
@@ -2149,7 +2356,7 @@ def card(
                     </b>
 
                     <span>
-                        이전 확정봉
+                        현재 + 이전
                     </span>
 
                 </div>
@@ -2178,7 +2385,7 @@ def card(
                     </b>
 
                     <span>
-                        KST 09:00
+                        현재 + 전일 · KST 09:00
                     </span>
 
                 </div>
@@ -2309,7 +2516,7 @@ def card(
                 </b>
 
                 <span>
-                    이전 확정봉
+                    현재봉 + 이전봉
                 </span>
 
             </div>
@@ -2340,7 +2547,7 @@ def card(
                 </b>
 
                 <span>
-                    현재봉 · KST 09:00
+                    현재봉 + 전일 · KST 09:00
                 </span>
 
             </div>
@@ -2411,7 +2618,7 @@ def both_section(data):
             </div>
 
             <small>
-                두 조건 동시 충족
+                현재봉 + 이전봉 기준
             </small>
 
         </div>
