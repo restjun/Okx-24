@@ -48,7 +48,7 @@ TOP_N = 10
 # Y = 업비트 TOP 리스트 표시
 # N = 업비트 TOP 리스트 숨김
 #
-# 동시 SIGNAL 영역은 이 설정과 관계없이 표시
+# SIGNAL 영역은 이 설정과 관계없이 표시
 # ---------------------------------------------------------
 
 SHOW_TOP_LIST = "N"
@@ -70,13 +70,9 @@ MAX_RETRIES = 10
 # SIGNAL 설정
 # =========================================================
 
-SIGNAL_TIMEFRAMES = (
-    "15m",
-    "1d"
-)
+SIGNAL_TIMEFRAME = "1d"
 
 TIMEFRAME_LABEL = {
-    "15m": "15분",
     "1d": "일봉"
 }
 
@@ -96,13 +92,9 @@ SIGNAL_CANDLE_PATTERNS = [
 
 latest_upbit_data = []
 
-latest_upbit_15m_data = []
-
 latest_upbit_daily_data = []
 
 latest_upbit_update_time = "-"
-
-latest_upbit_15m_update_time = "-"
 
 latest_upbit_daily_update_time = "-"
 
@@ -119,11 +111,7 @@ latest_okx_update_time = "-"
 
 latest_btc_okx_price = None
 
-latest_btc_15m_periods = []
-
 latest_btc_daily_periods = []
-
-latest_btc_15m_change = None
 
 latest_btc_daily_change = None
 
@@ -152,10 +140,10 @@ def kst():
 
 def timeframe_delta(tf):
 
-    if tf == "15m":
+    if tf == "1d":
 
         return timedelta(
-            minutes=15
+            days=1
         )
 
     return timedelta(
@@ -169,35 +157,24 @@ def current_tf_start(tf):
 
     # -----------------------------------------------------
     # 일봉
+    #
     # KST 09:00 기준
     # -----------------------------------------------------
 
-    if tf == "1d":
-
-        x = now.replace(
-            hour=9,
-            minute=0,
-            second=0,
-            microsecond=0
-        )
-
-        if now < x:
-
-            return x - timedelta(
-                days=1
-            )
-
-        return x
-
-    # -----------------------------------------------------
-    # 15분
-    # -----------------------------------------------------
-
-    return now.replace(
-        minute=(now.minute // 15) * 15,
+    x = now.replace(
+        hour=9,
+        minute=0,
         second=0,
         microsecond=0
     )
+
+    if now < x:
+
+        return x - timedelta(
+            days=1
+        )
+
+    return x
 
 
 def recent_periods(
@@ -221,27 +198,23 @@ def recent_periods(
 
         end = start + delta
 
-        if tf == "1d":
-
-            label = start.strftime(
-                "%m/%d 09:00"
-            )
-
-        else:
-
-            label = start.strftime(
-                "%m/%d %H:%M"
-            )
+        label = start.strftime(
+            "%m/%d 09:00"
+        )
 
         out.append({
 
-            "start": start,
+            "start":
+                start,
 
-            "end": end,
+            "end":
+                end,
 
-            "active": i == 0,
+            "active":
+                i == 0,
 
-            "label": label
+            "label":
+                label
 
         })
 
@@ -457,52 +430,30 @@ def get_upbit_markets():
 
 
 # =========================================================
-# 업비트 캔들
+# 업비트 일봉
 # =========================================================
 
-def get_upbit_candles(
+def get_upbit_daily_candles(
     market,
-    tf,
     count=200
 ):
 
-    if tf == "1d":
+    endpoint = (
+        "https://api.upbit.com/v1/candles/days"
+    )
 
-        endpoint = (
-            "https://api.upbit.com/v1/candles/days"
-        )
+    params = {
 
-        params = {
+        "market":
+            market,
 
-            "market":
-                market,
+        "count":
+            min(
+                count,
+                200
+            )
 
-            "count":
-                min(
-                    count,
-                    200
-                )
-
-        }
-
-    else:
-
-        endpoint = (
-            "https://api.upbit.com/v1/candles/minutes/15"
-        )
-
-        params = {
-
-            "market":
-                market,
-
-            "count":
-                min(
-                    count,
-                    200
-                )
-
-        }
+    }
 
     r = retry(
         requests.get,
@@ -964,17 +915,23 @@ def build_periods(
 
                 **p,
 
-                "open": None,
+                "open":
+                    None,
 
-                "high": None,
+                "high":
+                    None,
 
-                "low": None,
+                "low":
+                    None,
 
-                "close": None,
+                "close":
+                    None,
 
-                "change": None,
+                "change":
+                    None,
 
-                "patterns": []
+                "patterns":
+                    []
 
             })
 
@@ -997,7 +954,7 @@ def build_periods(
         )
 
         # -------------------------------------------------
-        # 현재봉이면 현재가 반영
+        # 현재 당일봉이면 현재가 반영
         # -------------------------------------------------
 
         if (
@@ -1049,9 +1006,17 @@ def build_periods(
 
         })
 
+    # =====================================================
+    # 캔들 패턴 계산
+    # =====================================================
+
     for i, p in enumerate(out):
 
         pats = []
+
+        # -------------------------------------------------
+        # 2캔들
+        # -------------------------------------------------
 
         if (
             i >= 1
@@ -1063,6 +1028,10 @@ def build_periods(
                 out[i - 1],
                 p
             )
+
+        # -------------------------------------------------
+        # 3캔들
+        # -------------------------------------------------
 
         if (
             i >= 2
@@ -1081,6 +1050,10 @@ def build_periods(
                 out[i - 1],
                 p
             )
+
+        # -------------------------------------------------
+        # 4캔들
+        # -------------------------------------------------
 
         if (
             i >= 3
@@ -1113,10 +1086,7 @@ def build_periods(
 # SIGNAL 단일 기간 판정
 # =========================================================
 
-def period_signal(
-    period,
-    timeframe="1d"
-):
+def period_signal(period):
 
     if not period:
 
@@ -1151,6 +1121,10 @@ def period_signal(
 
         return False
 
+    # -----------------------------------------------------
+    # 양봉
+    # -----------------------------------------------------
+
     if change <= 0:
 
         return False
@@ -1158,6 +1132,10 @@ def period_signal(
     if close_price <= open_price:
 
         return False
+
+    # -----------------------------------------------------
+    # 지정된 상승 패턴
+    # -----------------------------------------------------
 
     if not any(
         pattern in patterns
@@ -1170,57 +1148,52 @@ def period_signal(
 
 
 # =========================================================
-# SIGNAL 판정
+# 일봉 SIGNAL 판정
 #
-# 15분:
-# 현재봉 + 이전봉
+# 기준:
 #
-# 일봉:
-# 현재봉 + 전일봉
+# 1. 당일봉
+# 2. 전일봉
+#
+# 둘 중 하나라도 조건 충족 시 SIGNAL
 # =========================================================
 
-def signal_pass(
-    periods,
-    timeframe
-):
+def signal_pass(periods):
 
     if not periods:
 
         return False
 
-    candidates = []
+    # -----------------------------------------------------
+    # 당일봉
+    # -----------------------------------------------------
 
     current = periods[-1]
 
-    candidates.append(
-        current
-    )
+    if period_signal(current):
+
+        return True
+
+    # -----------------------------------------------------
+    # 전일봉
+    # -----------------------------------------------------
 
     if len(periods) >= 2:
 
         previous = periods[-2]
 
-        candidates.append(
-            previous
-        )
+        if period_signal(previous):
 
-    return any(
-        period_signal(
-            x,
-            timeframe
-        )
-        for x in candidates
-    )
+            return True
+
+    return False
 
 
 # =========================================================
 # SIGNAL 세부정보
 # =========================================================
 
-def signal_details(
-    periods,
-    timeframe
-):
+def signal_details(periods):
 
     empty = {
 
@@ -1248,7 +1221,19 @@ def signal_details(
 
         return empty
 
+    # -----------------------------------------------------
+    # 당일봉
+    # -----------------------------------------------------
+
     current = periods[-1]
+
+    current_signal = period_signal(
+        current
+    )
+
+    # -----------------------------------------------------
+    # 전일봉
+    # -----------------------------------------------------
 
     previous = (
         periods[-2]
@@ -1256,19 +1241,17 @@ def signal_details(
         else None
     )
 
-    current_signal = period_signal(
-        current,
-        timeframe
-    )
-
     previous_signal = (
         period_signal(
-            previous,
-            timeframe
+            previous
         )
         if previous is not None
         else False
     )
+
+    # -----------------------------------------------------
+    # 당일봉 우선
+    # -----------------------------------------------------
 
     if current_signal:
 
@@ -1341,59 +1324,82 @@ def signal_details(
 
 
 # =========================================================
-# 분석
+# 업비트 분석
 # =========================================================
 
-def analyze(
+def analyze_daily(
     market,
-    price,
-    tf
+    price
 ):
 
-    df = get_upbit_candles(
+    df = get_upbit_daily_candles(
         market,
-        tf,
         200
     )
 
-    if (
-        tf == "15m"
-        and not df.empty
-    ):
+    if df.empty:
 
-        df = df.copy()
+        return {
 
-        current_start = current_tf_start(
-            "15m"
+            "periods":
+                [],
+
+            "signal_pass":
+                False,
+
+            "current_signal":
+                False,
+
+            "previous_signal":
+                False,
+
+            "signal_change":
+                None,
+
+            "signal_patterns":
+                [],
+
+            "signal_period":
+                None
+
+        }
+
+    df = df.copy()
+
+    # -----------------------------------------------------
+    # 현재 당일봉은 현재가 반영
+    # -----------------------------------------------------
+
+    current_start = current_tf_start(
+        "1d"
+    )
+
+    active_mask = (
+        df["datetime"]
+        >= current_start
+    )
+
+    if active_mask.any():
+
+        last_idx = df.index[
+            active_mask
+        ][-1]
+
+        df.loc[
+            last_idx,
+            "close"
+        ] = float(
+            price
         )
-
-        active_mask = (
-            df["datetime"]
-            >= current_start
-        )
-
-        if active_mask.any():
-
-            last_idx = df.index[
-                active_mask
-            ][-1]
-
-            df.loc[
-                last_idx,
-                "close"
-            ] = float(
-                price
-            )
 
     periods = build_periods(
         df,
-        tf,
+        "1d",
         price
     )
 
     details = signal_details(
-        periods,
-        tf
+        periods
     )
 
     return {
@@ -1442,7 +1448,6 @@ def make_row(
     rank,
     market,
     item,
-    analysis_15m,
     analysis_daily
 ):
 
@@ -1451,21 +1456,10 @@ def make_row(
         ""
     )
 
-    signal_15m = (
-        analysis_15m[
-            "signal_pass"
-        ]
-    )
-
     signal_daily = (
         analysis_daily[
             "signal_pass"
         ]
-    )
-
-    simultaneous = (
-        signal_15m
-        and signal_daily
     )
 
     return {
@@ -1491,39 +1485,6 @@ def make_row(
 
         "volume_rank":
             rank,
-
-        "periods_15m":
-            analysis_15m[
-                "periods"
-            ],
-
-        "signal_15m":
-            signal_15m,
-
-        "signal_15m_current":
-            analysis_15m[
-                "current_signal"
-            ],
-
-        "signal_15m_previous":
-            analysis_15m[
-                "previous_signal"
-            ],
-
-        "signal_15m_change":
-            analysis_15m[
-                "signal_change"
-            ],
-
-        "signal_15m_patterns":
-            analysis_15m[
-                "signal_patterns"
-            ],
-
-        "signal_15m_period":
-            analysis_15m[
-                "signal_period"
-            ],
 
         "periods_daily":
             analysis_daily[
@@ -1559,7 +1520,7 @@ def make_row(
             ],
 
         "simultaneous_signal":
-            simultaneous
+            signal_daily
 
     }
 
@@ -1571,10 +1532,8 @@ def make_row(
 def update_upbit():
 
     global latest_upbit_data
-    global latest_upbit_15m_data
     global latest_upbit_daily_data
     global latest_upbit_update_time
-    global latest_upbit_15m_update_time
     global latest_upbit_daily_update_time
 
     markets = sorted(
@@ -1601,44 +1560,9 @@ def update_upbit():
 
         try:
 
-            analysis_15m = analyze(
+            analysis_daily = analyze_daily(
                 market,
-                price,
-                "15m"
-            )
-
-        except Exception as e:
-
-            log.warning(
-                "%s 15분 오류: %s",
-                market,
-                e
-            )
-
-            analysis_15m = {
-
-                "periods": [],
-
-                "signal_pass": False,
-
-                "current_signal": False,
-
-                "previous_signal": False,
-
-                "signal_change": None,
-
-                "signal_patterns": [],
-
-                "signal_period": None
-
-            }
-
-        try:
-
-            analysis_daily = analyze(
-                market,
-                price,
-                "1d"
+                price
             )
 
         except Exception as e:
@@ -1651,19 +1575,26 @@ def update_upbit():
 
             analysis_daily = {
 
-                "periods": [],
+                "periods":
+                    [],
 
-                "signal_pass": False,
+                "signal_pass":
+                    False,
 
-                "current_signal": False,
+                "current_signal":
+                    False,
 
-                "previous_signal": False,
+                "previous_signal":
+                    False,
 
-                "signal_change": None,
+                "signal_change":
+                    None,
 
-                "signal_patterns": [],
+                "signal_patterns":
+                    [],
 
-                "signal_period": None
+                "signal_period":
+                    None
 
             }
 
@@ -1671,7 +1602,6 @@ def update_upbit():
             rank,
             market,
             item,
-            analysis_15m,
             analysis_daily
         )
 
@@ -1679,33 +1609,19 @@ def update_upbit():
 
     latest_upbit_data = rows
 
-    latest_upbit_15m_data = rows
-
     latest_upbit_daily_data = rows
-
-    latest_upbit_15m_update_time = kst()
 
     latest_upbit_daily_update_time = kst()
 
     latest_upbit_update_time = (
-        latest_upbit_15m_update_time
+        latest_upbit_daily_update_time
     )
 
     log.info(
-        "UPBIT | 15분=%s | 일봉=%s | 동시=%s",
-
-        sum(
-            x["signal_15m"]
-            for x in rows
-        ),
+        "UPBIT | 일봉=%s",
 
         sum(
             x["signal_daily"]
-            for x in rows
-        ),
-
-        sum(
-            x["simultaneous_signal"]
             for x in rows
         )
     )
@@ -1843,9 +1759,7 @@ def okx_price():
 def update_okx_btc():
 
     global latest_btc_okx_price
-    global latest_btc_15m_periods
     global latest_btc_daily_periods
-    global latest_btc_15m_change
     global latest_btc_daily_change
 
     price = okx_price()
@@ -1857,50 +1771,9 @@ def update_okx_btc():
         return
 
     # =====================================================
-    # BTC 15분
-    # =====================================================
-
-    d15 = okx_candles(
-        "15m",
-        200
-    )
-
-    if not d15.empty:
-
-        d15 = d15.copy()
-
-        current_start = current_tf_start(
-            "15m"
-        )
-
-        active_mask = (
-            d15["datetime"]
-            >= current_start
-        )
-
-        if active_mask.any():
-
-            last_idx = d15.index[
-                active_mask
-            ][-1]
-
-            d15.loc[
-                last_idx,
-                "close"
-            ] = float(
-                price
-            )
-
-    latest_btc_15m_periods = (
-        build_periods(
-            d15,
-            "15m",
-            price
-        )
-    )
-
-    # =====================================================
-    # BTC 1시간 → KST 09:00 일봉 변환
+    # BTC 1시간 → KST 09:00 일봉
+    #
+    # 15분봉 완전 삭제
     # =====================================================
 
     d1h = okx_candles(
@@ -1970,7 +1843,7 @@ def update_okx_btc():
         )
 
         # -------------------------------------------------
-        # 현재 일봉의 종가를 BTC 현재가로 반영
+        # 현재 당일봉 현재가 반영
         # -------------------------------------------------
 
         current_day_start = current_tf_start(
@@ -2008,19 +1881,8 @@ def update_okx_btc():
     )
 
     # =====================================================
-    # BTC 변화율
+    # BTC 일봉 변화율
     # =====================================================
-
-    if latest_btc_15m_periods:
-
-        latest_btc_15m_change = (
-            latest_btc_15m_periods[-1]
-            .get("change")
-        )
-
-    else:
-
-        latest_btc_15m_change = None
 
     if latest_btc_daily_periods:
 
@@ -2073,20 +1935,27 @@ def update_dashboard():
 def fmt_price(v):
 
     if v is None:
+
         return "-"
 
     try:
+
         v = float(v)
+
     except Exception:
+
         return "-"
 
     if v >= 100000000:
+
         return f"{v / 100000000:.2f}억"
 
     if v >= 10000:
+
         return f"{v:,.0f}"
 
     if v >= 1:
+
         return f"{v:,.2f}"
 
     return f"{v:.6f}"
@@ -2095,17 +1964,23 @@ def fmt_price(v):
 def fmt_vol(v):
 
     try:
+
         v = float(v)
+
     except Exception:
+
         return "-"
 
     if v >= 1e12:
+
         return f"{v / 1e12:.1f}조"
 
     if v >= 1e8:
+
         return f"{v / 1e8:.0f}억"
 
     if v >= 1e4:
+
         return f"{v / 1e4:.0f}만"
 
     return f"{v:,.0f}"
@@ -2114,12 +1989,20 @@ def fmt_vol(v):
 def fmt_change(v):
 
     if v is None:
-        return '<span class="zero">-</span>'
+
+        return (
+            '<span class="zero">-</span>'
+        )
 
     try:
+
         v = float(v)
+
     except Exception:
-        return '<span class="zero">-</span>'
+
+        return (
+            '<span class="zero">-</span>'
+        )
 
     if v > 0:
 
@@ -2252,30 +2135,7 @@ def btc_html():
 
             <div class="btc-change">
                 {fmt_change(
-                    latest_btc_15m_change
-                )}
-            </div>
-
-        </div>
-
-
-        <!-- =================================================
-             BTC 15분
-             ================================================= -->
-
-        <div class="market-timeframe">
-
-            <div class="timeframe-head">
-
-                <b>
-                    15분
-                </b>
-
-            </div>
-
-            <div class="grid">
-                {cells(
-                    latest_btc_15m_periods
+                    latest_btc_daily_change
                 )}
             </div>
 
@@ -2295,7 +2155,7 @@ def btc_html():
                 </b>
 
                 <span>
-                    KST 09:00
+                    당일봉 + 전일봉 · KST 09:00
                 </span>
 
             </div>
@@ -2327,7 +2187,7 @@ def card(
     )
 
     # =====================================================
-    # TOP10
+    # TOP
     # =====================================================
 
     if kind == "top":
@@ -2338,7 +2198,7 @@ def card(
 
             status = (
                 '<span class="signal-badge">'
-                '⭐ 동시 SIGNAL'
+                '⭐ SIGNAL'
                 '</span>'
             )
 
@@ -2403,13 +2263,13 @@ def card(
                 <div>
 
                     <span>
-                        15분
+                        당일봉
                     </span>
 
                     <strong>
                         {fmt_change(
                             row.get(
-                                "signal_15m_change"
+                                "signal_daily_change"
                             )
                         )}
                     </strong>
@@ -2420,15 +2280,11 @@ def card(
                 <div>
 
                     <span>
-                        일봉
+                        SIGNAL
                     </span>
 
                     <strong>
-                        {fmt_change(
-                            row.get(
-                                "signal_daily_change"
-                            )
-                        )}
+                        {"⭐ 발생" if row.get("signal_daily") else "-"}
                     </strong>
 
                 </div>
@@ -2447,39 +2303,10 @@ def card(
                 <i></i>
 
                 <small>
-                    현재봉 + 이전봉
+                    당일봉 + 전일봉
                 </small>
 
             </div>
-
-
-            <div class="signal-section">
-
-                <div class="signal-head">
-
-                    <b>
-                        15분 SIGNAL
-                    </b>
-
-                    <span>
-                        현재 + 이전
-                    </span>
-
-                </div>
-
-                <div class="grid">
-                    {cells(
-                        row.get(
-                            "periods_15m",
-                            []
-                        )
-                    )}
-                </div>
-
-            </div>
-
-
-            <div class="signal-gap"></div>
 
 
             <div class="signal-section">
@@ -2491,7 +2318,7 @@ def card(
                     </b>
 
                     <span>
-                        현재 + 전일 · KST 09:00
+                        당일 + 전일 · KST 09:00
                     </span>
 
                 </div>
@@ -2512,7 +2339,7 @@ def card(
 
 
     # =====================================================
-    # 동시 SIGNAL
+    # SIGNAL
     # =====================================================
 
     return f"""
@@ -2535,13 +2362,13 @@ def card(
             </div>
 
             <span class="both-badge">
-                ⭐ 동시 SIGNAL
+                ⭐ 일봉 SIGNAL
             </span>
 
         </div>
 
 
-        <!-- 동시 SIGNAL 시황 -->
+        <!-- SIGNAL 요약 -->
 
         <div class="both-summary">
 
@@ -2578,24 +2405,7 @@ def card(
             <div>
 
                 <span>
-                    15분
-                </span>
-
-                <strong>
-                    {fmt_change(
-                        row.get(
-                            "signal_15m_change"
-                        )
-                    )}
-                </strong>
-
-            </div>
-
-
-            <div>
-
-                <span>
-                    일봉
+                    당일봉
                 </span>
 
                 <strong>
@@ -2608,38 +2418,20 @@ def card(
 
             </div>
 
-        </div>
 
-
-        <!-- 15분 -->
-
-        <div class="signal-section">
-
-            <div class="signal-head">
-
-                <b>
-                    15분
-                </b>
+            <div>
 
                 <span>
-                    현재 + 이전
+                    기준
                 </span>
 
-            </div>
+                <strong>
+                    당일/전일
+                </strong>
 
-            <div class="grid">
-                {cells(
-                    row.get(
-                        "periods_15m",
-                        []
-                    )
-                )}
             </div>
 
         </div>
-
-
-        <div class="signal-gap"></div>
 
 
         <!-- 일봉 -->
@@ -2653,7 +2445,7 @@ def card(
                 </b>
 
                 <span>
-                    현재 + 전일 · KST 09:00
+                    당일봉 + 전일봉 · KST 09:00
                 </span>
 
             </div>
@@ -2674,7 +2466,7 @@ def card(
 
 
 # =========================================================
-# 동시 SIGNAL
+# SIGNAL 영역
 # =========================================================
 
 def both_section(data):
@@ -2701,7 +2493,7 @@ def both_section(data):
 
         content = (
             '<div class="empty">'
-            '현재 동시 SIGNAL 없음'
+            '현재 일봉 SIGNAL 없음'
             '</div>'
         )
 
@@ -2718,13 +2510,13 @@ def both_section(data):
                 </span>
 
                 <b>
-                    ⭐ 15분 + 일봉
+                    ⭐ 일봉 SIGNAL
                 </b>
 
             </div>
 
             <small>
-                현재봉 + 이전봉 / 전일봉
+                당일봉 + 전일봉
             </small>
 
         </div>
@@ -3124,7 +2916,7 @@ section {
 
 
 /* =====================================================
-   동시 SIGNAL
+   SIGNAL
    ===================================================== */
 
 .both-card {
@@ -3194,7 +2986,7 @@ section {
 
 
 /* =====================================================
-   동시 SIGNAL 요약
+   SIGNAL 요약
    ===================================================== */
 
 .both-summary {
@@ -3255,7 +3047,7 @@ section {
 
 
 /* =====================================================
-   TOP10
+   TOP
    ===================================================== */
 
 .coin-card {
@@ -3315,7 +3107,7 @@ section {
 
 
 /* =====================================================
-   TOP10 시황
+   TOP 시황
    ===================================================== */
 
 .market-summary {
@@ -3471,20 +3263,6 @@ section {
 }
 
 
-.signal-gap {
-
-    height: 7px;
-
-    background: #080b0f;
-
-    border-top:
-        1px solid #1d252c;
-
-    border-bottom:
-        1px solid #1d252c;
-}
-
-
 /* =====================================================
    빈 데이터
    ===================================================== */
@@ -3503,47 +3281,6 @@ section {
         1px solid #202a33;
 
     font-size: 8px;
-}
-
-
-/* =====================================================
-   기존 MAIN
-   ===================================================== */
-
-.main {
-
-    display: grid;
-
-    grid-template-columns:
-        repeat(3, 1fr);
-
-    min-height: 43px;
-}
-
-
-.main > div {
-
-    text-align: center;
-
-    padding: 5px;
-
-    border-top:
-        1px solid #202a33;
-}
-
-
-.main > div + div {
-
-    border-left:
-        1px solid #202a33;
-}
-
-
-.main strong {
-
-    display: block;
-
-    margin-top: 2px;
 }
 
 
@@ -3741,9 +3478,9 @@ def dashboard():
     if USE_UPBIT == "Y":
 
         # -------------------------------------------------
-        # 동시 SIGNAL
+        # 일봉 SIGNAL
         #
-        # SHOW_TOP_LIST와 관계없이 표시
+        # 당일봉 + 전일봉 기준
         # -------------------------------------------------
 
         s += both_section(
@@ -3884,7 +3621,7 @@ def scheduler():
 def startup():
 
     log.info(
-        "START | BTC → 동시 SIGNAL → TOP10"
+        "START | BTC 일봉 → SIGNAL → TOP10"
     )
 
     threading.Thread(
