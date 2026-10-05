@@ -51,7 +51,7 @@ TOP_N = 10
 # 동시 SIGNAL 영역은 이 설정과 관계없이 표시
 # ---------------------------------------------------------
 
-SHOW_TOP_LIST = "Y"
+SHOW_TOP_LIST = "N"
 
 UPDATE_MINUTES = 1
 
