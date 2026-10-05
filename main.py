@@ -40,7 +40,18 @@ KST = ZoneInfo("Asia/Seoul")
 # 사용자 설정
 # =========================================================
 
-TOP_N = 20
+TOP_N = 10
+
+# ---------------------------------------------------------
+# TOP 리스트 표시 여부
+#
+# Y = 업비트 TOP 리스트 표시
+# N = 업비트 TOP 리스트 숨김
+#
+# 동시 SIGNAL 영역은 이 설정과 관계없이 표시
+# ---------------------------------------------------------
+
+SHOW_TOP_LIST = "Y"
 
 UPDATE_MINUTES = 1
 
@@ -78,9 +89,10 @@ SIGNAL_CANDLE_PATTERNS = [
     "관통형 후 양봉"
 ]
 
-# ---------------------------------------------------------
-# 15분 RSI 조건
-# ---------------------------------------------------------
+
+# =========================================================
+# RSI 설정
+# =========================================================
 
 RSI_PERIOD = 14
 
@@ -123,6 +135,10 @@ latest_btc_daily_periods = []
 latest_btc_15m_change = None
 
 latest_btc_daily_change = None
+
+latest_btc_15m_rsi = None
+
+latest_btc_daily_rsi = None
 
 
 # =========================================================
@@ -637,10 +653,6 @@ def calculate_rsi(
         100 / (1 + rs)
     )
 
-    # -----------------------------------------------------
-    # 평균 손실이 0이면 RSI = 100
-    # -----------------------------------------------------
-
     rsi = rsi.where(
         avg_loss != 0,
         100.0
@@ -1087,11 +1099,7 @@ def build_periods(
         )
 
         # -------------------------------------------------
-        # 해당 기간의 RSI
-        #
-        # 15분봉은 원본 15분 데이터의 마지막 RSI
-        # 일봉은 RSI 조건을 사용하지 않지만
-        # 표시를 위해 값은 보관
+        # RSI
         # -------------------------------------------------
 
         rsi = None
@@ -1261,7 +1269,7 @@ def period_signal(
         return False
 
     # -----------------------------------------------------
-    # 15분봉만 RSI >= 70 조건
+    # 15분봉만 RSI >= 70
     # -----------------------------------------------------
 
     if timeframe == "15m":
@@ -1285,12 +1293,12 @@ def period_signal(
 # SIGNAL 판정
 #
 # 15분:
-#   현재봉 + 이전봉
-#   + RSI(14) >= 70
+# 현재봉 + 이전봉
+# + RSI(14) >= 70
 #
 # 일봉:
-#   현재봉 + 전일봉
-#   RSI 조건 없음
+# 현재봉 + 전일봉
+# RSI 조건 없음
 # =========================================================
 
 def signal_pass(
@@ -1304,19 +1312,11 @@ def signal_pass(
 
     candidates = []
 
-    # -----------------------------------------------------
-    # 현재봉
-    # -----------------------------------------------------
-
     current = periods[-1]
 
     candidates.append(
         current
     )
-
-    # -----------------------------------------------------
-    # 이전봉
-    # -----------------------------------------------------
 
     if len(periods) >= 2:
 
@@ -1394,13 +1394,6 @@ def signal_details(
         if previous is not None
         else False
     )
-
-    # -----------------------------------------------------
-    # 현재봉 우선
-    #
-    # 현재봉이 SIGNAL이면 현재봉 정보
-    # 아니면 이전봉 정보
-    # -----------------------------------------------------
 
     if current_signal:
 
@@ -1503,10 +1496,6 @@ def analyze(
 
         df = df.copy()
 
-        # -------------------------------------------------
-        # 현재 진행 중인 15분봉의 종가를 현재가로 반영
-        # -------------------------------------------------
-
         current_start = current_tf_start(
             "15m"
         )
@@ -1529,10 +1518,6 @@ def analyze(
                 price
             )
 
-        # -------------------------------------------------
-        # RSI(14)
-        # -------------------------------------------------
-
         df["rsi"] = calculate_rsi(
             df,
             RSI_PERIOD
@@ -1540,19 +1525,13 @@ def analyze(
 
     else:
 
-        # -------------------------------------------------
-        # 일봉은 RSI 조건을 사용하지 않음
-        # -------------------------------------------------
-
         if not df.empty:
 
             df = df.copy()
 
-            df["rsi"] = (
-                calculate_rsi(
-                    df,
-                    RSI_PERIOD
-                )
+            df["rsi"] = calculate_rsi(
+                df,
+                RSI_PERIOD
             )
 
     periods = build_periods(
@@ -2036,6 +2015,8 @@ def update_okx_btc():
     global latest_btc_daily_periods
     global latest_btc_15m_change
     global latest_btc_daily_change
+    global latest_btc_15m_rsi
+    global latest_btc_daily_rsi
 
     price = okx_price()
 
@@ -2045,15 +2026,45 @@ def update_okx_btc():
 
         return
 
+    # =====================================================
+    # BTC 15분
+    # =====================================================
+
     d15 = okx_candles(
         "15m",
         200
     )
 
-    d1h = okx_candles(
-        "1H",
-        200
-    )
+    if not d15.empty:
+
+        d15 = d15.copy()
+
+        current_start = current_tf_start(
+            "15m"
+        )
+
+        active_mask = (
+            d15["datetime"]
+            >= current_start
+        )
+
+        if active_mask.any():
+
+            last_idx = d15.index[
+                active_mask
+            ][-1]
+
+            d15.loc[
+                last_idx,
+                "close"
+            ] = float(
+                price
+            )
+
+        d15["rsi"] = calculate_rsi(
+            d15,
+            RSI_PERIOD
+        )
 
     latest_btc_15m_periods = (
         build_periods(
@@ -2061,6 +2072,15 @@ def update_okx_btc():
             "15m",
             price
         )
+    )
+
+    # =====================================================
+    # BTC 1시간 → KST 09:00 일봉 변환
+    # =====================================================
+
+    d1h = okx_candles(
+        "1H",
+        200
     )
 
     if not d1h.empty:
@@ -2124,6 +2144,37 @@ def update_okx_btc():
             )
         )
 
+        # -------------------------------------------------
+        # 현재 일봉의 종가를 BTC 현재가로 반영
+        # -------------------------------------------------
+
+        current_day_start = current_tf_start(
+            "1d"
+        )
+
+        active_daily = (
+            daily["datetime"]
+            >= current_day_start
+        )
+
+        if active_daily.any():
+
+            last_daily_idx = daily.index[
+                active_daily
+            ][-1]
+
+            daily.loc[
+                last_daily_idx,
+                "close"
+            ] = float(
+                price
+            )
+
+        daily["rsi"] = calculate_rsi(
+            daily,
+            RSI_PERIOD
+        )
+
     else:
 
         daily = pd.DataFrame()
@@ -2136,6 +2187,10 @@ def update_okx_btc():
         )
     )
 
+    # =====================================================
+    # BTC RSI / 변화율
+    # =====================================================
+
     if latest_btc_15m_periods:
 
         latest_btc_15m_change = (
@@ -2143,9 +2198,16 @@ def update_okx_btc():
             .get("change")
         )
 
+        latest_btc_15m_rsi = (
+            latest_btc_15m_periods[-1]
+            .get("rsi")
+        )
+
     else:
 
         latest_btc_15m_change = None
+
+        latest_btc_15m_rsi = None
 
     if latest_btc_daily_periods:
 
@@ -2154,9 +2216,16 @@ def update_okx_btc():
             .get("change")
         )
 
+        latest_btc_daily_rsi = (
+            latest_btc_daily_periods[-1]
+            .get("rsi")
+        )
+
     else:
 
         latest_btc_daily_change = None
+
+        latest_btc_daily_rsi = None
 
 
 # =========================================================
@@ -2247,6 +2316,7 @@ def fmt_change(v):
         return '<span class="zero">-</span>'
 
     if v > 0:
+
         return (
             '<span class="up">'
             f'▲ +{v:.2f}%'
@@ -2254,6 +2324,7 @@ def fmt_change(v):
         )
 
     if v < 0:
+
         return (
             '<span class="down">'
             f'▼ {v:.2f}%'
@@ -2275,7 +2346,11 @@ def fmt_rsi(v):
 
     if v is None:
 
-        return '<span class="zero">RSI -</span>'
+        return (
+            '<span class="zero">'
+            'RSI -'
+            '</span>'
+        )
 
     try:
 
@@ -2283,7 +2358,11 @@ def fmt_rsi(v):
 
     except Exception:
 
-        return '<span class="zero">RSI -</span>'
+        return (
+            '<span class="zero">'
+            'RSI -'
+            '</span>'
+        )
 
     if v >= RSI_SIGNAL_THRESHOLD:
 
@@ -2429,6 +2508,10 @@ def btc_html():
         </div>
 
 
+        <!-- =================================================
+             BTC 15분
+             ================================================= -->
+
         <div class="market-timeframe">
 
             <div class="timeframe-head">
@@ -2438,7 +2521,10 @@ def btc_html():
                 </b>
 
                 <span>
-                    단기 흐름
+                    RSI(14)
+                    {fmt_rsi(
+                        latest_btc_15m_rsi
+                    )}
                 </span>
 
             </div>
@@ -2452,6 +2538,10 @@ def btc_html():
         </div>
 
 
+        <!-- =================================================
+             BTC 일봉
+             ================================================= -->
+
         <div class="market-timeframe">
 
             <div class="timeframe-head">
@@ -2461,7 +2551,10 @@ def btc_html():
                 </b>
 
                 <span>
-                    KST 09:00 기준
+                    KST 09:00 · RSI(14)
+                    {fmt_rsi(
+                        latest_btc_daily_rsi
+                    )}
                 </span>
 
             </div>
@@ -2491,7 +2584,6 @@ def card(
         "simultaneous_signal",
         False
     )
-
 
     # =====================================================
     # TOP10
@@ -3189,9 +3281,9 @@ section {
 
 .timeframe-head {
 
-    height: 27px;
+    min-height: 27px;
 
-    padding: 0 9px;
+    padding: 4px 9px;
 
     display: flex;
 
@@ -3234,7 +3326,7 @@ section {
 
 .tf-cell {
 
-    min-height: 46px;
+    min-height: 54px;
 
     padding: 5px 2px;
 
@@ -3305,6 +3397,12 @@ section {
 
     color: #68737e;
 
+}
+
+
+.rsi-line .rsi-high {
+
+    color: #e4c45e;
 }
 
 
@@ -3380,7 +3478,6 @@ section {
 
 /* =====================================================
    동시 SIGNAL 요약
-   24H 거래대금 / 현재가 / 15분 / 일봉
    ===================================================== */
 
 .both-summary {
@@ -3799,7 +3896,7 @@ section {
 
     .tf-cell {
 
-        min-height: 42px;
+        min-height: 50px;
 
         padding:
             4px 2px;
@@ -3928,6 +4025,8 @@ def dashboard():
 
         # -------------------------------------------------
         # 동시 SIGNAL
+        #
+        # SHOW_TOP_LIST와 관계없이 표시
         # -------------------------------------------------
 
         s += both_section(
@@ -3936,56 +4035,60 @@ def dashboard():
 
 
         # -------------------------------------------------
-        # TOP10
+        # TOP LIST
+        #
+        # SHOW_TOP_LIST = Y일 때만 표시
         # -------------------------------------------------
 
-        if latest_upbit_data:
+        if SHOW_TOP_LIST == "Y":
 
-            top_cards = "".join(
-                card(
-                    r,
-                    "top"
+            if latest_upbit_data:
+
+                top_cards = "".join(
+                    card(
+                        r,
+                        "top"
+                    )
+                    for r in latest_upbit_data
                 )
-                for r in latest_upbit_data
-            )
 
-        else:
+            else:
 
-            top_cards = (
-                '<div class="empty">'
-                '현재 데이터 없음'
-                '</div>'
-            )
+                top_cards = (
+                    '<div class="empty">'
+                    '현재 데이터 없음'
+                    '</div>'
+                )
 
-        s += f"""
+            s += f"""
 
-        <section>
+            <section>
 
-            <div class="section-title">
+                <div class="section-title">
 
-                <div>
+                    <div>
 
-                    <span class="section-kicker">
-                        RANKING
-                    </span>
+                        <span class="section-kicker">
+                            RANKING
+                        </span>
 
-                    <b>
-                        🏆 업비트 TOP{TOP_N}
-                    </b>
+                        <b>
+                            🏆 업비트 TOP{TOP_N}
+                        </b>
+
+                    </div>
+
+                    <small>
+                        거래대금 기준
+                    </small>
 
                 </div>
 
-                <small>
-                    거래대금 기준
-                </small>
+                {top_cards}
 
-            </div>
+            </section>
 
-            {top_cards}
-
-        </section>
-
-        """
+            """
 
     return f"""
 
