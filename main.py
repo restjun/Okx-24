@@ -40,7 +40,7 @@ KST = ZoneInfo("Asia/Seoul")
 # 사용자 설정
 # =========================================================
 
-TOP_N = 20
+TOP_N = 10
 
 SHOW_TOP_LIST = "N"
 
@@ -68,22 +68,22 @@ TIMEFRAME_LABEL = {
 }
 
 SIGNAL_CANDLE_PATTERNS = [
-    "상승장악",
-    "3캔들 상승장악",
-    "4캔들 상승장악",
-    "5캔들 상승장악",
-    "상승 관통형",
+    "하락장악",
+    "3캔들 하락장악",
+    "4캔들 하락장악",
+    "5캔들 하락장악",
+    "역 관통형",
 
-    # 장대 연속 상승
-    "2연속 장대양봉",
-    "3연속 장대양봉",
-    "4연속 장대양봉",
-    "5연속 장대양봉"
+    # 장대 연속 하락
+    "2연속 장대음봉",
+    "3연속 장대음봉",
+    "4연속 장대음봉",
+    "5연속 장대음봉"
 ]
 
-# 장대양봉 기준
+# 장대음봉 기준
 # 몸통 / 전체 고저폭 >= 60%
-LONG_BULL_BODY_RATIO = 0.60
+LONG_BEAR_BODY_RATIO = 0.60
 
 
 # =========================================================
@@ -464,7 +464,9 @@ def get_upbit_daily_candles(
 # =========================================================
 # 업비트 4시간봉
 #
+# 중요:
 # 업비트가 제공하는 실제 240분봉 시간을 그대로 사용
+# 임의로 00/04/08/12... 를 생성하지 않음
 # =========================================================
 
 def get_upbit_4h_candles(
@@ -523,6 +525,7 @@ def get_upbit_4h_candles(
 
             rows.append({
 
+                # 업비트가 내려주는 실제 4시간봉 시작시간
                 "datetime":
                     datetime.strptime(
                         x[
@@ -652,10 +655,10 @@ def candle_parts(c):
 
 
 # =========================================================
-# 상승장악
+# 하락장악
 # =========================================================
 
-def bullish_engulfing(
+def bearish_engulfing(
     a,
     b
 ):
@@ -670,18 +673,18 @@ def bullish_engulfing(
 
     return bool(
 
-        p1["bear"]
+        p1["bull"]
 
-        and p2["bull"]
+        and p2["bear"]
 
         and p2["open"]
-        <= min(
+        >= max(
             p1["open"],
             p1["close"]
         )
 
         and p2["close"]
-        >= max(
+        <= min(
             p1["open"],
             p1["close"]
         )
@@ -693,10 +696,10 @@ def bullish_engulfing(
 
 
 # =========================================================
-# 상승 관통형
+# 역 관통형
 # =========================================================
 
-def bullish_piercing(
+def bearish_piercing(
     a,
     b
 ):
@@ -716,13 +719,13 @@ def bullish_piercing(
 
     return bool(
 
-        p1["bear"]
+        p1["bull"]
 
-        and p2["bull"]
+        and p2["bear"]
 
-        and p2["close"] > mid
+        and p2["close"] < mid
 
-        and p2["close"] < p1["open"]
+        and p2["close"] > p1["open"]
 
     )
 
@@ -746,29 +749,29 @@ def two_patterns(
 
     out = []
 
-    if bullish_engulfing(
+    if bearish_engulfing(
         a,
         b
     ):
 
         out.append(
-            "상승장악"
+            "하락장악"
         )
 
-    if bullish_piercing(
+    if bearish_piercing(
         a,
         b
     ):
 
         out.append(
-            "상승 관통형"
+            "역 관통형"
         )
 
     return out
 
 
 # =========================================================
-# 3캔들 상승장악
+# 3캔들 하락장악
 # =========================================================
 
 def three_patterns(
@@ -790,15 +793,15 @@ def three_patterns(
     out = []
 
     if (
-        p1["bear"]
-        and p3["bull"]
+        p1["bull"]
+        and p3["bear"]
         and p3["open"]
-        <= min(
+        >= max(
             p1["open"],
             p1["close"]
         )
         and p3["close"]
-        >= max(
+        <= min(
             p1["open"],
             p1["close"]
         )
@@ -807,14 +810,14 @@ def three_patterns(
     ):
 
         out.append(
-            "3캔들 상승장악"
+            "3캔들 하락장악"
         )
 
     return out
 
 
 # =========================================================
-# 4캔들 상승장악
+# 4캔들 하락장악
 # =========================================================
 
 def four_patterns(
@@ -846,15 +849,15 @@ def four_patterns(
     out = []
 
     if (
-        p1["bear"]
-        and p4["bull"]
+        p1["bull"]
+        and p4["bear"]
         and p4["open"]
-        <= min(
+        >= max(
             p1["open"],
             p1["close"]
         )
         and p4["close"]
-        >= max(
+        <= min(
             p1["open"],
             p1["close"]
         )
@@ -863,14 +866,14 @@ def four_patterns(
     ):
 
         out.append(
-            "4캔들 상승장악"
+            "4캔들 하락장악"
         )
 
     return out
 
 
 # =========================================================
-# 5캔들 상승장악
+# 5캔들 하락장악
 # =========================================================
 
 def five_patterns(
@@ -906,15 +909,15 @@ def five_patterns(
     out = []
 
     if (
-        p1["bear"]
-        and p5["bull"]
+        p1["bull"]
+        and p5["bear"]
         and p5["open"]
-        <= min(
+        >= max(
             p1["open"],
             p1["close"]
         )
         and p5["close"]
-        >= max(
+        <= min(
             p1["open"],
             p1["close"]
         )
@@ -923,20 +926,20 @@ def five_patterns(
     ):
 
         out.append(
-            "5캔들 상승장악"
+            "5캔들 하락장악"
         )
 
     return out
 
 
 # =========================================================
-# 장대양봉
+# 장대음봉
 #
 # 몸통 / 전체 고저폭 >= 60%
-# 반드시 양봉
+# 반드시 음봉
 # =========================================================
 
-def is_long_bullish(c):
+def is_long_bearish(c):
 
     p = candle_parts(c)
 
@@ -946,45 +949,58 @@ def is_long_bullish(c):
 
     return bool(
 
-        p["bull"]
+        p["bear"]
 
         and p["body_ratio"]
-        >= LONG_BULL_BODY_RATIO
+        >= LONG_BEAR_BODY_RATIO
 
     )
 
 
 # =========================================================
-# 장대 연속 상승
+# 장대 연속 하락
+#
+# 2연속
+# 3연속
+# 4연속
+# 5연속
 # =========================================================
 
-def consecutive_long_bullish(
+def consecutive_long_bearish(
     periods,
     index
 ):
 
     out = []
 
+    # -----------------------------------------------------
+    # 2연속 장대음봉
+    # -----------------------------------------------------
+
     if index >= 1:
 
         if (
-            is_long_bullish(
+            is_long_bearish(
                 periods[index - 1]
             )
             and
-            is_long_bullish(
+            is_long_bearish(
                 periods[index]
             )
         ):
 
             out.append(
-                "2연속 장대양봉"
+                "2연속 장대음봉"
             )
+
+    # -----------------------------------------------------
+    # 3연속 장대음봉
+    # -----------------------------------------------------
 
     if index >= 2:
 
         if all(
-            is_long_bullish(
+            is_long_bearish(
                 periods[j]
             )
             for j in (
@@ -995,13 +1011,17 @@ def consecutive_long_bullish(
         ):
 
             out.append(
-                "3연속 장대양봉"
+                "3연속 장대음봉"
             )
+
+    # -----------------------------------------------------
+    # 4연속 장대음봉
+    # -----------------------------------------------------
 
     if index >= 3:
 
         if all(
-            is_long_bullish(
+            is_long_bearish(
                 periods[j]
             )
             for j in (
@@ -1013,13 +1033,17 @@ def consecutive_long_bullish(
         ):
 
             out.append(
-                "4연속 장대양봉"
+                "4연속 장대음봉"
             )
+
+    # -----------------------------------------------------
+    # 5연속 장대음봉
+    # -----------------------------------------------------
 
     if index >= 4:
 
         if all(
-            is_long_bullish(
+            is_long_bearish(
                 periods[j]
             )
             for j in (
@@ -1032,7 +1056,7 @@ def consecutive_long_bullish(
         ):
 
             out.append(
-                "5연속 장대양봉"
+                "5연속 장대음봉"
             )
 
     return out
@@ -1214,6 +1238,9 @@ def build_daily_periods(
 
 # =========================================================
 # 업비트 실제 4시간봉 기간 생성
+#
+# 핵심:
+# API가 반환한 실제 candle_date_time_kst를 그대로 사용
 # =========================================================
 
 def build_upbit_4h_periods(
@@ -1237,6 +1264,10 @@ def build_upbit_4h_periods(
         )
     )
 
+    # -----------------------------------------------------
+    # 가장 최근 업비트 4시간봉부터 6개
+    # -----------------------------------------------------
+
     part_df = df.tail(
         6
     ).copy()
@@ -1255,6 +1286,10 @@ def build_upbit_4h_periods(
 
         dt = row["datetime"]
 
+        # -------------------------------------------------
+        # 실제 업비트 봉의 시작시간
+        # -------------------------------------------------
+
         if idx < last_index:
 
             next_dt = part_df.iloc[
@@ -1263,6 +1298,8 @@ def build_upbit_4h_periods(
 
         else:
 
+            # 마지막 봉은 실제 업비트 240분봉 시작시간을
+            # 그대로 사용하고 종료시간은 +4시간으로 표시
             next_dt = (
                 dt
                 + timedelta(hours=4)
@@ -1283,6 +1320,10 @@ def build_upbit_4h_periods(
         c = float(
             row["close"]
         )
+
+        # -------------------------------------------------
+        # 가장 최근 실제 업비트 4시간봉에 현재가 반영
+        # -------------------------------------------------
 
         active = (
             idx == last_index
@@ -1443,10 +1484,10 @@ def build_upbit_4h_periods(
                 )
 
         # -------------------------------------------------
-        # 장대 연속 상승
+        # 장대 연속 하락
         # -------------------------------------------------
 
-        pats += consecutive_long_bullish(
+        pats += consecutive_long_bearish(
             out,
             i
         )
@@ -1500,19 +1541,19 @@ def period_signal(period):
         return False
 
     # -----------------------------------------------------
-    # 양수 봉만 SIGNAL
+    # 음수 봉만 SIGNAL
     # -----------------------------------------------------
 
-    if change <= 0:
+    if change >= 0:
 
         return False
 
-    if close_price <= open_price:
+    if close_price >= open_price:
 
         return False
 
     # -----------------------------------------------------
-    # 상승 패턴
+    # 기존 패턴 + 장대 연속 패턴
     # -----------------------------------------------------
 
     if not any(
@@ -1528,7 +1569,7 @@ def period_signal(period):
 # =========================================================
 # SIGNAL 판정
 #
-# 현재 4시간봉이 양수일 때만
+# 현재 4시간봉이 음수일 때만
 # 현재봉 + 이전봉 검사
 # =========================================================
 
@@ -1548,9 +1589,9 @@ def signal_pass(periods):
 
         return False
 
-    # 현재 4시간봉이 음수 또는 0이면
+    # 현재 4시간봉이 + 또는 0이면
     # 이전봉 SIGNAL도 차단
-    if current_change <= 0:
+    if current_change >= 0:
 
         return False
 
@@ -1612,11 +1653,11 @@ def signal_details(periods):
         return empty
 
     # -----------------------------------------------------
-    # 현재 4시간봉이 음수/0이면
+    # 현재 4시간봉이 양수/0이면
     # 이전봉 SIGNAL도 차단
     # -----------------------------------------------------
 
-    if current_change <= 0:
+    if current_change >= 0:
 
         return empty
 
@@ -1766,6 +1807,8 @@ def analyze_daily_change(
 
 # =========================================================
 # 4시간봉 분석
+#
+# 업비트 실제 240분봉 사용
 # =========================================================
 
 def analyze_4h(
@@ -1998,12 +2041,6 @@ def update_upbit():
                 "change"
             ]
 
-            # =================================================
-            # 중요:
-            # 당일 KST 09:00 기준 변동률이 음수인 종목만
-            # 그대로 선별
-            # =================================================
-
             if (
                 daily_change is not None
                 and daily_change < 0
@@ -2029,7 +2066,7 @@ def update_upbit():
 
     # =====================================================
     # 2.
-    # 마이너스 종목 중 거래대금 TOP20
+    # 마이너스 종목 중 거래대금 TOP10
     # =====================================================
 
     candidates.sort(
@@ -2046,7 +2083,7 @@ def update_upbit():
 
     # =====================================================
     # 3.
-    # TOP20의 실제 업비트 4시간봉 분석
+    # TOP10의 실제 업비트 4시간봉 분석
     # =====================================================
 
     for rank, candidate in enumerate(
@@ -2131,7 +2168,7 @@ def update_upbit():
     )
 
     log.info(
-        "UPBIT | 일봉 음수 TOP%s | 실제 업비트 4H 상승 SIGNAL=%s",
+        "UPBIT | 일봉 음수 TOP%s | 실제 업비트 4H SIGNAL=%s",
 
         TOP_N,
 
@@ -2821,7 +2858,7 @@ def card(
                     </b>
 
                     <span>
-                        상승장악 · 3/4/5캔들 · 상승 관통형 · 장대 2/3/4/5연속
+                        하락장악 · 3/4/5캔들 · 역 관통형 · 장대 2/3/4/5연속
                     </span>
 
                 </div>
@@ -2941,7 +2978,7 @@ def card(
                 </b>
 
                 <span>
-                    상승장악 · 3/4/5캔들 · 상승 관통형 · 장대 2/3/4/5연속
+                    하락장악 · 3/4/5캔들 · 역 관통형 · 장대 2/3/4/5연속
                 </span>
 
             </div>
@@ -4064,7 +4101,7 @@ def scheduler():
 def startup():
 
     log.info(
-        "START | 업비트 09시 음수 종목 → 실제 업비트 4H 상승 SIGNAL → TOP20"
+        "START | 업비트 09시 음수 종목 → 실제 업비트 4H 하락 SIGNAL → TOP10"
     )
 
     threading.Thread(
