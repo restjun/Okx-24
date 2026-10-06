@@ -613,29 +613,6 @@ def calculate_roc(
 
 
 # =========================================================
-# ROC 0선 상향 돌파
-# =========================================================
-
-def roc_cross_up(
-    previous_roc,
-    current_roc
-):
-
-    if (
-        previous_roc is None
-        or current_roc is None
-    ):
-
-        return False
-
-    return bool(
-        previous_roc < ROC_SIGNAL_LEVEL
-        and
-        current_roc >= ROC_SIGNAL_LEVEL
-    )
-
-
-# =========================================================
 # 일봉 기간 생성
 #
 # KST 09:00 기준
@@ -806,17 +783,143 @@ def build_daily_periods(
 
 
 # =========================================================
+# 상승장악형
+#
+# 이전 캔들:
+#   음봉
+#
+# 현재 캔들:
+#   양봉
+#
+# 현재 캔들이 이전 캔들의 실체를 감싸는 형태
+# =========================================================
+
+def is_bullish_engulfing(
+    previous,
+    current
+):
+
+    try:
+
+        prev_open = float(
+            previous["open"]
+        )
+
+        prev_close = float(
+            previous["close"]
+        )
+
+        curr_open = float(
+            current["open"]
+        )
+
+        curr_close = float(
+            current["close"]
+        )
+
+    except Exception:
+
+        return False
+
+    # 이전 캔들 음봉
+    if prev_close >= prev_open:
+
+        return False
+
+    # 현재 캔들 양봉
+    if curr_close <= curr_open:
+
+        return False
+
+    # 현재 양봉 실체가 이전 음봉 실체를 감싸야 함
+    return bool(
+        curr_open <= prev_close
+        and
+        curr_close >= prev_open
+    )
+
+
+# =========================================================
+# 관통형
+#
+# 이전 캔들:
+#   음봉
+#
+# 현재 캔들:
+#   양봉
+#
+# 현재 종가가 이전 음봉 실체의 중간값 위로
+# 올라오지만 이전 시가 아래에서 마감
+# =========================================================
+
+def is_piercing_line(
+    previous,
+    current
+):
+
+    try:
+
+        prev_open = float(
+            previous["open"]
+        )
+
+        prev_close = float(
+            previous["close"]
+        )
+
+        curr_open = float(
+            current["open"]
+        )
+
+        curr_close = float(
+            current["close"]
+        )
+
+    except Exception:
+
+        return False
+
+    # 이전 캔들 음봉
+    if prev_close >= prev_open:
+
+        return False
+
+    # 현재 캔들 양봉
+    if curr_close <= curr_open:
+
+        return False
+
+    midpoint = (
+        prev_open
+        + prev_close
+    ) / 2
+
+    # 관통형:
+    # 현재 종가가 이전 음봉 몸통 중간값 위
+    # 이전 시가 아래
+    return bool(
+        curr_close > midpoint
+        and
+        curr_close < prev_open
+    )
+
+
+# =========================================================
 # 업비트 실제 4시간봉 기간 생성
+#
+# SIGNAL 조건:
+#
+# 1. ROC(20) > 0
+# 2. ROC(50) > 0
+# 3. 상승장악형 또는 관통형 발생
 #
 # SIGNAL:
 #
-# 1. ROC(50) > 0
-# 2. ROC(20)이 0선 아래 → 0선 이상 상향 돌파
-# 3. 돌파봉
-# 4. 돌파봉 완성 후 첫 번째 캔들
-# 5. 돌파봉 완성 후 두 번째 캔들
+# 패턴봉
+# +
+# 패턴봉 다음 캔들
 #
-# 그 이후 계속 0 이상이어도 SIGNAL 아님
+# 총 2개 캔들만 SIGNAL
 # =========================================================
 
 def build_upbit_4h_periods(
@@ -869,6 +972,10 @@ def build_upbit_4h_periods(
         active = (
             idx == len(df) - 1
         )
+
+        # -------------------------------------------------
+        # 현재 진행 중인 캔들에 현재가 반영
+        # -------------------------------------------------
 
         if (
             active
@@ -955,12 +1062,15 @@ def build_upbit_4h_periods(
                 False,
 
             "signal_reason":
+                None,
+
+            "pattern":
                 None
 
         })
 
     # =====================================================
-    # ROC(50) 계산
+    # ROC(50)
     # =====================================================
 
     for i in range(
@@ -974,7 +1084,7 @@ def build_upbit_4h_periods(
         )
 
     # =====================================================
-    # ROC(20) 계산
+    # ROC(20)
     # =====================================================
 
     for i in range(
@@ -987,18 +1097,18 @@ def build_upbit_4h_periods(
             ROC_SIGNAL_PERIOD
         )
 
-        # 기존 코드 호환을 위해
-        # roc에는 ROC(50)을 유지
-        periods[i]["roc"] = periods[i]["roc50"]
+        # 기존 구조 호환
+        periods[i]["roc"] = periods[i]["roc20"]
 
     # =====================================================
-    # SIGNAL
+    # 캔들 패턴 SIGNAL
     #
-    # ROC(50) > 0 상태에서
-    # ROC(20)이 0선 상향 돌파
+    # ROC20 > 0
+    # ROC50 > 0
     #
-    # 돌파봉 + 이후 2개 캔들
-    # 총 3개 캔들 SIGNAL
+    # 상승장악형 또는 관통형
+    #
+    # 패턴봉 + 다음봉
     # =====================================================
 
     for i in range(
@@ -1006,85 +1116,108 @@ def build_upbit_4h_periods(
         len(periods)
     ):
 
-        previous_roc20 = periods[
+        previous = periods[
             i - 1
-        ].get(
+        ]
+
+        current = periods[
+            i
+        ]
+
+        roc20 = current.get(
             "roc20"
         )
 
-        current_roc20 = periods[
-            i
-        ].get(
-            "roc20"
-        )
-
-        current_roc50 = periods[
-            i
-        ].get(
+        roc50 = current.get(
             "roc50"
         )
 
-        crossed = roc_cross_up(
-            previous_roc20,
-            current_roc20
-        )
-
         # -------------------------------------------------
-        # ROC(50) > 0 필터
-        # + ROC(20) 0선 상향 돌파
+        # ROC 두 개 모두 0선 위
         # -------------------------------------------------
 
         if (
-            crossed
-            and
-            current_roc50 is not None
-            and
-            current_roc50 > ROC_SIGNAL_LEVEL
+            roc20 is None
+            or roc50 is None
+            or roc20 <= ROC_SIGNAL_LEVEL
+            or roc50 <= ROC_SIGNAL_LEVEL
         ):
 
-            # -------------------------------------------------
-            # 돌파봉
-            # -------------------------------------------------
+            continue
 
-            periods[i][
-                "roc_cross_up"
-            ] = True
+        # -------------------------------------------------
+        # 상승장악형
+        # -------------------------------------------------
 
-            periods[i][
+        bullish_engulfing = (
+            is_bullish_engulfing(
+                previous,
+                current
+            )
+        )
+
+        # -------------------------------------------------
+        # 관통형
+        # -------------------------------------------------
+
+        piercing_line = (
+            is_piercing_line(
+                previous,
+                current
+            )
+        )
+
+        pattern = None
+
+        if bullish_engulfing:
+
+            pattern = "상승장악형"
+
+        elif piercing_line:
+
+            pattern = "관통형"
+
+        # -------------------------------------------------
+        # 패턴이 없으면 SIGNAL 없음
+        # -------------------------------------------------
+
+        if pattern is None:
+
+            continue
+
+        # -------------------------------------------------
+        # 패턴봉
+        # -------------------------------------------------
+
+        periods[i][
+            "roc_signal"
+        ] = True
+
+        periods[i][
+            "pattern"
+        ] = pattern
+
+        periods[i][
+            "signal_reason"
+        ] = pattern
+
+        # -------------------------------------------------
+        # 패턴봉 다음 캔들
+        # -------------------------------------------------
+
+        if i + 1 < len(periods):
+
+            periods[i + 1][
                 "roc_signal"
             ] = True
 
-            periods[i][
+            periods[i + 1][
+                "pattern"
+            ] = pattern
+
+            periods[i + 1][
                 "signal_reason"
-            ] = "ROC20 0선 상향 돌파"
-
-            # -------------------------------------------------
-            # 돌파 후 첫 번째 캔들
-            # -------------------------------------------------
-
-            if i + 1 < len(periods):
-
-                periods[i + 1][
-                    "roc_signal"
-                ] = True
-
-                periods[i + 1][
-                    "signal_reason"
-                ] = "돌파 후 1번째 캔들"
-
-            # -------------------------------------------------
-            # 돌파 후 두 번째 캔들
-            # -------------------------------------------------
-
-            if i + 2 < len(periods):
-
-                periods[i + 2][
-                    "roc_signal"
-                ] = True
-
-                periods[i + 2][
-                    "signal_reason"
-                ] = "돌파 후 2번째 캔들"
+            ] = "패턴 후 다음 캔들"
 
     # =====================================================
     # 최근 6개만 표시
@@ -1693,7 +1826,7 @@ def update_upbit():
     )
 
     log.info(
-        "UPBIT | 일봉 양수 TOP%s | 4H ROC(50) > 0 + ROC(20) 0선 상향 SIGNAL=%s",
+        "UPBIT | 일봉 양수 TOP%s | 4H ROC20·ROC50 0선 위 + 상승장악/관통형 SIGNAL=%s",
         TOP_N,
         sum(
             x["signal_4h"]
@@ -2199,27 +2332,27 @@ def signal_reason_html(
     reason
 ):
 
-    if reason == "ROC20 0선 상향 돌파":
+    if reason == "상승장악형":
 
         return (
             '<span class="roc-cross">'
-            '▲ ROC20 0선 돌파'
+            '▲ 상승장악형'
             '</span>'
         )
 
-    if reason == "돌파 후 1번째 캔들":
+    if reason == "관통형":
 
         return (
-            '<span class="roc-next">'
-            '→ 돌파 후 1번째봉'
+            '<span class="roc-cross">'
+            '▲ 관통형'
             '</span>'
         )
 
-    if reason == "돌파 후 2번째 캔들":
+    if reason == "패턴 후 다음 캔들":
 
         return (
             '<span class="roc-next">'
-            '→ 돌파 후 2번째봉'
+            '→ 패턴 후 다음봉'
             '</span>'
         )
 
@@ -2469,7 +2602,7 @@ def card(
 
             status = (
                 '<span class="signal-badge">'
-                '⭐ ROC20 0선 SIGNAL'
+                '⭐ 상승장악/관통 SIGNAL'
                 '</span>'
             )
 
@@ -2568,13 +2701,13 @@ def card(
             <div class="signal-bar">
 
                 <span>
-                    4H ROC20
+                    4H PATTERN
                 </span>
 
                 <i></i>
 
                 <small>
-                    ROC50 0선 위 + ROC20 0선 돌파
+                    ROC20·ROC50 0선 위
                 </small>
 
             </div>
@@ -2585,11 +2718,11 @@ def card(
                 <div class="signal-head">
 
                     <b>
-                        4시간봉 ROC(20)
+                        4시간봉 상승장악 / 관통형
                     </b>
 
                     <span>
-                        돌파봉 + 1·2번째봉 SIGNAL
+                        패턴봉 + 다음봉 SIGNAL
                     </span>
 
                 </div>
@@ -2628,7 +2761,7 @@ def card(
             </div>
 
             <span class="both-badge">
-                ⭐ ROC20 0선 SIGNAL
+                ⭐ PATTERN SIGNAL
             </span>
 
         </div>
@@ -2709,11 +2842,11 @@ def card(
             <div class="signal-head">
 
                 <b>
-                    4시간봉 ROC(20)
+                    4시간봉 상승장악 / 관통형
                 </b>
 
                 <span>
-                    돌파봉 + 1·2번째봉 SIGNAL
+                    패턴봉 + 다음봉 SIGNAL
                 </span>
 
             </div>
@@ -2761,7 +2894,7 @@ def both_section(data):
 
         content = (
             '<div class="empty">'
-            '현재 ROC50 0선 위 + ROC20 0선 상향 SIGNAL 없음'
+            '현재 ROC20·ROC50 0선 위 상승장악형 또는 관통형 SIGNAL 없음'
             '</div>'
         )
 
@@ -2784,7 +2917,7 @@ def both_section(data):
             </div>
 
             <small>
-                돌파봉 + 1·2번째봉
+                패턴봉 + 다음봉
             </small>
 
         </div>
@@ -3760,8 +3893,8 @@ def dashboard():
     if USE_UPBIT == "Y":
 
         # -------------------------------------------------
-        # 4시간봉 ROC50 0선 위
-        # + ROC20 0선 상향 SIGNAL
+        # ROC20·ROC50 0선 위
+        # + 상승장악형 / 관통형 SIGNAL
         # -------------------------------------------------
 
         s += both_section(
@@ -3899,7 +4032,7 @@ def scheduler():
 def startup():
 
     log.info(
-        "START | OKX BTC 1D ROC(50) + 업비트 09시 양수 TOP20 + 4H ROC50 > 0 + ROC20 0선 상향 돌파 SIGNAL"
+        "START | OKX BTC 1D ROC(50) + 업비트 09시 양수 TOP20 + 4H ROC20·ROC50 0선 위 + 상승장악/관통형 SIGNAL"
     )
 
     threading.Thread(
