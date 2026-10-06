@@ -67,13 +67,14 @@ TIMEFRAME_LABEL = {
     "4h": "4시간봉"
 }
 
+
 # ---------------------------------------------------------
 # ROC 설정
 # ---------------------------------------------------------
 
 ROC_PERIOD = 50
 
-# ROC가 0 이상이면 SIGNAL
+# ROC 상향 돌파 기준
 ROC_SIGNAL_LEVEL = 0.0
 
 
@@ -614,197 +615,40 @@ def calculate_roc(
 
 
 # =========================================================
-# ROC SIGNAL
+# ROC 0선 상향 돌파
 #
-# ROC(50) >= 0
+# 이전 ROC < 0
+# 현재 ROC >= 0
 # =========================================================
 
-def roc_signal(
-    roc
+def roc_cross_up(
+    previous_roc,
+    current_roc
 ):
 
-    if roc is None:
+    if (
+        previous_roc is None
+        or current_roc is None
+    ):
 
         return False
 
     return bool(
-        roc >= ROC_SIGNAL_LEVEL
+        previous_roc < ROC_SIGNAL_LEVEL
+        and
+        current_roc >= ROC_SIGNAL_LEVEL
     )
-
-
-# =========================================================
-# 일봉 기간 생성
-#
-# KST 09:00 기준
-# =========================================================
-
-def build_daily_periods(
-    df,
-    current_price=None
-):
-
-    if df is None or df.empty:
-
-        return []
-
-    now = datetime.now(KST)
-
-    current_start = now.replace(
-        hour=9,
-        minute=0,
-        second=0,
-        microsecond=0
-    )
-
-    if now < current_start:
-
-        current_start -= timedelta(
-            days=1
-        )
-
-    periods = []
-
-    for i in range(
-        5,
-        -1,
-        -1
-    ):
-
-        start = (
-            current_start
-            - timedelta(days=i)
-        )
-
-        end = (
-            start
-            + timedelta(days=1)
-        )
-
-        part = df[
-            (df["datetime"] >= start)
-            &
-            (df["datetime"] < end)
-        ]
-
-        if part.empty:
-
-            periods.append({
-
-                "start":
-                    start,
-
-                "end":
-                    end,
-
-                "active":
-                    i == 0,
-
-                "label":
-                    start.strftime(
-                        "%m/%d 09:00"
-                    ),
-
-                "open":
-                    None,
-
-                "high":
-                    None,
-
-                "low":
-                    None,
-
-                "close":
-                    None,
-
-                "change":
-                    None
-
-            })
-
-            continue
-
-        o = float(
-            part.iloc[0]["open"]
-        )
-
-        h = float(
-            part["high"].max()
-        )
-
-        l = float(
-            part["low"].min()
-        )
-
-        c = float(
-            part.iloc[-1]["close"]
-        )
-
-        if (
-            i == 0
-            and current_price is not None
-        ):
-
-            c = float(
-                current_price
-            )
-
-            h = max(
-                h,
-                c
-            )
-
-            l = min(
-                l,
-                c
-            )
-
-        change = (
-            (c - o) / o * 100
-            if o
-            else None
-        )
-
-        periods.append({
-
-            "start":
-                start,
-
-            "end":
-                end,
-
-            "active":
-                i == 0,
-
-            "label":
-                start.strftime(
-                    "%m/%d 09:00"
-                ),
-
-            "open":
-                o,
-
-            "high":
-                h,
-
-            "low":
-                l,
-
-            "close":
-                c,
-
-            "change":
-                change
-
-        })
-
-    return periods
 
 
 # =========================================================
 # 업비트 실제 4시간봉 기간 생성
 #
-# 핵심:
-# API가 반환한 실제 candle_date_time_kst를 그대로 사용
+# 핵심 SIGNAL:
+#
+# 1. ROC가 음수에서 0 이상으로 올라온 "돌파봉"
+# 2. 돌파봉이 완성된 후 바로 다음 캔들
+#
+# 그 이후 ROC가 계속 0 이상이어도 SIGNAL 아님
 # =========================================================
 
 def build_upbit_4h_periods(
@@ -829,7 +673,7 @@ def build_upbit_4h_periods(
     )
 
     # -----------------------------------------------------
-    # ROC(50) 계산을 위해 충분한 전체 데이터 사용
+    # 전체 4시간봉 생성
     # -----------------------------------------------------
 
     periods = []
@@ -855,7 +699,7 @@ def build_upbit_4h_periods(
         )
 
         # -------------------------------------------------
-        # 실제 업비트 마지막 4시간봉에 현재가 반영
+        # 마지막 봉 = 현재 진행 중인 4시간봉
         # -------------------------------------------------
 
         active = (
@@ -932,6 +776,15 @@ def build_upbit_4h_periods(
                 change,
 
             "roc":
+                None,
+
+            "roc_signal":
+                False,
+
+            "roc_cross_up":
+                False,
+
+            "signal_reason":
                 None
 
         })
@@ -950,12 +803,66 @@ def build_upbit_4h_periods(
             ROC_PERIOD
         )
 
-        periods[i]["roc_signal"] = roc_signal(
-            periods[i]["roc"]
+    # =====================================================
+    # 0선 상향 돌파 찾기
+    # =====================================================
+
+    for i in range(
+        1,
+        len(periods)
+    ):
+
+        previous_roc = periods[
+            i - 1
+        ].get(
+            "roc"
         )
 
+        current_roc = periods[
+            i
+        ].get(
+            "roc"
+        )
+
+        crossed = roc_cross_up(
+            previous_roc,
+            current_roc
+        )
+
+        if crossed:
+
+            # -------------------------------------------------
+            # 돌파봉
+            # -------------------------------------------------
+
+            periods[i][
+                "roc_cross_up"
+            ] = True
+
+            periods[i][
+                "roc_signal"
+            ] = True
+
+            periods[i][
+                "signal_reason"
+            ] = "0선 상향 돌파"
+
+            # -------------------------------------------------
+            # 돌파봉 다음 캔들
+            # -------------------------------------------------
+
+            if i + 1 < len(periods):
+
+                periods[i + 1][
+                    "roc_signal"
+                ] = True
+
+                periods[i + 1][
+                    "signal_reason"
+                ] = "돌파 후 다음 캔들"
+
     # =====================================================
-    # 화면에는 최근 6개 4시간봉만 표시
+    # 화면에는 최근 6개만 표시
     # =====================================================
 
     return periods[-6:]
@@ -964,7 +871,7 @@ def build_upbit_4h_periods(
 # =========================================================
 # SIGNAL 판정
 #
-# 현재 4시간봉 ROC(50) >= 0
+# 최근 6개 중 SIGNAL 캔들이 있는지
 # =========================================================
 
 def signal_pass(
@@ -975,14 +882,12 @@ def signal_pass(
 
         return False
 
-    current = periods[-1]
-
-    roc = current.get(
-        "roc"
-    )
-
-    return roc_signal(
-        roc
+    return any(
+        p.get(
+            "roc_signal",
+            False
+        )
+        for p in periods
     )
 
 
@@ -1015,6 +920,9 @@ def signal_details(
             None,
 
         "signal_period":
+            None,
+
+        "signal_reason":
             None
 
     }
@@ -1025,12 +933,13 @@ def signal_details(
 
     current = periods[-1]
 
-    current_roc = current.get(
-        "roc"
+    current_signal = current.get(
+        "roc_signal",
+        False
     )
 
-    current_signal = roc_signal(
-        current_roc
+    current_roc = current.get(
+        "roc"
     )
 
     previous = (
@@ -1039,18 +948,25 @@ def signal_details(
         else None
     )
 
+    previous_signal = (
+        previous.get(
+            "roc_signal",
+            False
+        )
+        if previous is not None
+        else False
+    )
+
     previous_roc = (
-        previous.get("roc")
+        previous.get(
+            "roc"
+        )
         if previous is not None
         else None
     )
 
-    previous_signal = roc_signal(
-        previous_roc
-    )
-
     # -----------------------------------------------------
-    # SIGNAL은 현재 캔들의 ROC(50)가 0 이상인지 판단
+    # 현재 진행봉이 SIGNAL인 경우
     # -----------------------------------------------------
 
     if current_signal:
@@ -1080,9 +996,18 @@ def signal_details(
             "signal_period":
                 current.get(
                     "label"
+                ),
+
+            "signal_reason":
+                current.get(
+                    "signal_reason"
                 )
 
         }
+
+    # -----------------------------------------------------
+    # 현재봉이 SIGNAL이 아니면
+    # -----------------------------------------------------
 
     return {
 
@@ -1105,6 +1030,9 @@ def signal_details(
             previous_roc,
 
         "signal_period":
+            None,
+
+        "signal_reason":
             None
 
     }
@@ -1169,8 +1097,11 @@ def analyze_daily_change(
 # =========================================================
 # 4시간봉 분석
 #
-# 업비트 실제 240분봉 사용
+# 업비트 실제 240분봉
 # ROC(50)
+#
+# SIGNAL:
+# 0선 상향 돌파봉 + 바로 다음 캔들
 # =========================================================
 
 def analyze_4h(
@@ -1209,6 +1140,9 @@ def analyze_4h(
                 None,
 
             "signal_period":
+                None,
+
+            "signal_reason":
                 None
 
         }
@@ -1260,6 +1194,11 @@ def analyze_4h(
         "signal_period":
             details[
                 "signal_period"
+            ],
+
+        "signal_reason":
+            details[
+                "signal_reason"
             ]
 
     }
@@ -1366,6 +1305,11 @@ def make_row(
         "signal_4h_period":
             analysis_4h[
                 "signal_period"
+            ],
+
+        "signal_4h_reason":
+            analysis_4h[
+                "signal_reason"
             ],
 
         "simultaneous_signal":
@@ -1521,6 +1465,9 @@ def update_upbit():
                     None,
 
                 "signal_period":
+                    None,
+
+                "signal_reason":
                     None
 
             }
@@ -1546,7 +1493,7 @@ def update_upbit():
     )
 
     log.info(
-        "UPBIT | 일봉 음수 TOP%s | ROC(50) >= 0 SIGNAL=%s",
+        "UPBIT | 일봉 음수 TOP%s | 4H ROC(50) 0선 상향 SIGNAL=%s",
 
         TOP_N,
 
@@ -1991,6 +1938,33 @@ def fmt_roc(v):
 
 
 # =========================================================
+# SIGNAL 이유 표시
+# =========================================================
+
+def signal_reason_html(
+    reason
+):
+
+    if reason == "0선 상향 돌파":
+
+        return (
+            '<span class="roc-cross">'
+            '▲ 0선 돌파'
+            '</span>'
+        )
+
+    if reason == "돌파 후 다음 캔들":
+
+        return (
+            '<span class="roc-next">'
+            '→ 돌파 후 다음봉'
+            '</span>'
+        )
+
+    return ""
+
+
+# =========================================================
 # 캔들 표시
 # =========================================================
 
@@ -2027,6 +2001,12 @@ def cells(periods):
 
             roc_badge = ""
 
+        reason_badge = signal_reason_html(
+            p.get(
+                "signal_reason"
+            )
+        )
+
         result.append(
             f"""
             <div class="tf-cell {active_class}">
@@ -2053,6 +2033,8 @@ def cells(periods):
                 </div>
 
                 {roc_badge}
+
+                {reason_badge}
 
             </div>
             """
@@ -2160,7 +2142,7 @@ def card(
 
             status = (
                 '<span class="signal-badge">'
-                '⭐ ROC SIGNAL'
+                '⭐ ROC 0선 SIGNAL'
                 '</span>'
             )
 
@@ -2265,7 +2247,7 @@ def card(
                 <i></i>
 
                 <small>
-                    0선 이상 = SIGNAL
+                    0선 상향 돌파봉 + 다음봉
                 </small>
 
             </div>
@@ -2280,7 +2262,7 @@ def card(
                     </b>
 
                     <span>
-                        0선 이상 SIGNAL
+                        돌파봉 + 다음봉만 SIGNAL
                     </span>
 
                 </div>
@@ -2319,7 +2301,7 @@ def card(
             </div>
 
             <span class="both-badge">
-                ⭐ ROC(50) SIGNAL
+                ⭐ ROC 0선 SIGNAL
             </span>
 
         </div>
@@ -2404,7 +2386,7 @@ def card(
                 </b>
 
                 <span>
-                    0선 이상 = SIGNAL
+                    돌파봉 + 다음봉만 SIGNAL
                 </span>
 
             </div>
@@ -2452,7 +2434,7 @@ def both_section(data):
 
         content = (
             '<div class="empty">'
-            '현재 4시간봉 ROC(50) 0선 이상 SIGNAL 없음'
+            '현재 0선 상향 돌파봉 또는 돌파 후 다음봉 SIGNAL 없음'
             '</div>'
         )
 
@@ -2469,13 +2451,13 @@ def both_section(data):
                 </span>
 
                 <b>
-                    ⭐ 4시간봉 ROC(50) SIGNAL
+                    ⭐ 4시간봉 ROC(50) 0선 상향 SIGNAL
                 </b>
 
             </div>
 
             <small>
-                ROC(50) ≥ 0
+                돌파봉 + 바로 다음봉
             </small>
 
         </div>
@@ -2568,6 +2550,34 @@ section {
 
 
 .roc-signal {
+
+    display: block;
+
+    margin-top: 2px;
+
+    color: #e4c45e;
+
+    font-size: 5px;
+
+    font-weight: 900;
+}
+
+
+.roc-cross {
+
+    display: block;
+
+    margin-top: 2px;
+
+    color: #5ed6ff;
+
+    font-size: 5px;
+
+    font-weight: 900;
+}
+
+
+.roc-next {
 
     display: block;
 
@@ -3302,6 +3312,18 @@ section {
     }
 
 
+    .roc-cross {
+
+        font-size: 4px;
+    }
+
+
+    .roc-next {
+
+        font-size: 4px;
+    }
+
+
     .coin-head,
     .both-head {
 
@@ -3411,7 +3433,7 @@ def dashboard():
     if USE_UPBIT == "Y":
 
         # -------------------------------------------------
-        # 4시간봉 ROC SIGNAL
+        # 4시간봉 ROC 0선 상향 SIGNAL
         # -------------------------------------------------
 
         s += both_section(
@@ -3549,7 +3571,7 @@ def scheduler():
 def startup():
 
     log.info(
-        "START | 업비트 09시 음수 종목 → 실제 업비트 4H ROC(50) 0선 이상 SIGNAL → TOP20"
+        "START | 업비트 09시 음수 종목 → 실제 업비트 4H ROC(50) 0선 상향 돌파봉 + 다음봉 SIGNAL → TOP20"
     )
 
     threading.Thread(
