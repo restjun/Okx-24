@@ -40,7 +40,7 @@ KST = ZoneInfo("Asia/Seoul")
 # 사용자 설정
 # =========================================================
 
-TOP_N = 10
+TOP_N = 20
 
 SHOW_TOP_LIST = "N"
 
@@ -66,10 +66,6 @@ SIGNAL_TIMEFRAME = "4h"
 TIMEFRAME_LABEL = {
     "4h": "4시간봉"
 }
-
-# =========================================================
-# 4시간봉 SIGNAL 패턴
-# =========================================================
 
 SIGNAL_CANDLE_PATTERNS = [
     "하락장악",
@@ -130,121 +126,6 @@ def kst():
     return datetime.now(KST).strftime(
         "%Y-%m-%d %H:%M:%S"
     )
-
-
-def timeframe_delta(tf):
-
-    if tf == "4h":
-
-        return timedelta(
-            hours=4
-        )
-
-    return timedelta(
-        days=1
-    )
-
-
-def current_tf_start(tf):
-
-    now = datetime.now(KST)
-
-    # -----------------------------------------------------
-    # 4시간봉
-    #
-    # 00:00
-    # 04:00
-    # 08:00
-    # 12:00
-    # 16:00
-    # 20:00
-    # -----------------------------------------------------
-
-    if tf == "4h":
-
-        hour = (
-            now.hour // 4
-        ) * 4
-
-        return now.replace(
-            hour=hour,
-            minute=0,
-            second=0,
-            microsecond=0
-        )
-
-    # -----------------------------------------------------
-    # 일봉
-    #
-    # KST 09:00
-    # -----------------------------------------------------
-
-    x = now.replace(
-        hour=9,
-        minute=0,
-        second=0,
-        microsecond=0
-    )
-
-    if now < x:
-
-        return x - timedelta(
-            days=1
-        )
-
-    return x
-
-
-def recent_periods(
-    tf,
-    count=6
-):
-
-    cur = current_tf_start(tf)
-
-    delta = timeframe_delta(tf)
-
-    out = []
-
-    for i in range(
-        count - 1,
-        -1,
-        -1
-    ):
-
-        start = cur - delta * i
-
-        end = start + delta
-
-        if tf == "4h":
-
-            label = start.strftime(
-                "%m/%d %H:%M"
-            )
-
-        else:
-
-            label = start.strftime(
-                "%m/%d 09:00"
-            )
-
-        out.append({
-
-            "start":
-                start,
-
-            "end":
-                end,
-
-            "active":
-                i == 0,
-
-            "label":
-                label
-
-        })
-
-    return out
 
 
 # =========================================================
@@ -458,8 +339,8 @@ def get_upbit_markets():
 # =========================================================
 # 업비트 일봉
 #
-# 변동률 기준
-# KST 09:00
+# 변동률 전용
+# KST 09:00 기준
 # =========================================================
 
 def get_upbit_daily_candles(
@@ -572,6 +453,10 @@ def get_upbit_daily_candles(
 
 # =========================================================
 # 업비트 4시간봉
+#
+# 중요:
+# 업비트가 제공하는 실제 240분봉 시간을 그대로 사용
+# 임의로 00/04/08/12... 를 생성하지 않음
 # =========================================================
 
 def get_upbit_4h_candles(
@@ -630,6 +515,7 @@ def get_upbit_4h_candles(
 
             rows.append({
 
+                # 업비트가 내려주는 실제 4시간봉 시작시간
                 "datetime":
                     datetime.strptime(
                         x[
@@ -853,10 +739,6 @@ def two_patterns(
 
     out = []
 
-    # -----------------------------------------------------
-    # 하락장악
-    # -----------------------------------------------------
-
     if bearish_engulfing(
         a,
         b
@@ -865,10 +747,6 @@ def two_patterns(
         out.append(
             "하락장악"
         )
-
-    # -----------------------------------------------------
-    # 역 관통형
-    # -----------------------------------------------------
 
     if bearish_piercing(
         a,
@@ -903,13 +781,6 @@ def three_patterns(
         return []
 
     out = []
-
-    # -----------------------------------------------------
-    # 첫 번째 양봉
-    # 두 번째 완충/중간 캔들
-    # 세 번째 음봉
-    # 첫 번째 몸통을 세 번째 음봉이 완전히 장악
-    # -----------------------------------------------------
 
     if (
         p1["bull"]
@@ -1052,12 +923,13 @@ def five_patterns(
 
 
 # =========================================================
-# 기간 생성
+# 일봉 기간 생성
+#
+# KST 09:00 기준
 # =========================================================
 
-def build_periods(
+def build_daily_periods(
     df,
-    tf,
     current_price=None
 ):
 
@@ -1065,26 +937,62 @@ def build_periods(
 
         return []
 
-    periods = recent_periods(
-        tf,
-        6
+    now = datetime.now(KST)
+
+    current_start = now.replace(
+        hour=9,
+        minute=0,
+        second=0,
+        microsecond=0
     )
 
-    out = []
+    if now < current_start:
 
-    for p in periods:
+        current_start -= timedelta(
+            days=1
+        )
+
+    periods = []
+
+    for i in range(
+        5,
+        -1,
+        -1
+    ):
+
+        start = (
+            current_start
+            - timedelta(days=i)
+        )
+
+        end = (
+            start
+            + timedelta(days=1)
+        )
 
         part = df[
-            (df.datetime >= p["start"])
+            (df["datetime"] >= start)
             &
-            (df.datetime < p["end"])
+            (df["datetime"] < end)
         ]
 
         if part.empty:
 
-            out.append({
+            periods.append({
 
-                **p,
+                "start":
+                    start,
+
+                "end":
+                    end,
+
+                "active":
+                    i == 0,
+
+                "label":
+                    start.strftime(
+                        "%m/%d 09:00"
+                    ),
 
                 "open":
                     None,
@@ -1109,27 +1017,180 @@ def build_periods(
             continue
 
         o = float(
-            part.iloc[0].open
+            part.iloc[0]["open"]
         )
 
         h = float(
-            part.high.max()
+            part["high"].max()
         )
 
         l = float(
-            part.low.min()
+            part["low"].min()
         )
 
         c = float(
-            part.iloc[-1].close
+            part.iloc[-1]["close"]
+        )
+
+        if (
+            i == 0
+            and current_price is not None
+        ):
+
+            c = float(
+                current_price
+            )
+
+            h = max(
+                h,
+                c
+            )
+
+            l = min(
+                l,
+                c
+            )
+
+        change = (
+            (c - o) / o * 100
+            if o
+            else None
+        )
+
+        periods.append({
+
+            "start":
+                start,
+
+            "end":
+                end,
+
+            "active":
+                i == 0,
+
+            "label":
+                start.strftime(
+                    "%m/%d 09:00"
+                ),
+
+            "open":
+                o,
+
+            "high":
+                h,
+
+            "low":
+                l,
+
+            "close":
+                c,
+
+            "change":
+                change,
+
+            "patterns":
+                []
+
+        })
+
+    return periods
+
+
+# =========================================================
+# 업비트 실제 4시간봉 기간 생성
+#
+# 핵심:
+# API가 반환한 실제 candle_date_time_kst를 그대로 사용
+# =========================================================
+
+def build_upbit_4h_periods(
+    df,
+    current_price=None
+):
+
+    if df is None or df.empty:
+
+        return []
+
+    df = (
+        df.sort_values(
+            "datetime"
+        )
+        .drop_duplicates(
+            "datetime"
+        )
+        .reset_index(
+            drop=True
+        )
+    )
+
+    # -----------------------------------------------------
+    # 가장 최근 업비트 4시간봉부터 6개
+    # -----------------------------------------------------
+
+    part_df = df.tail(
+        6
+    ).copy()
+
+    if part_df.empty:
+
+        return []
+
+    out = []
+
+    last_index = (
+        len(part_df) - 1
+    )
+
+    for idx, row in part_df.iterrows():
+
+        dt = row["datetime"]
+
+        # -------------------------------------------------
+        # 실제 업비트 봉의 시작시간
+        # -------------------------------------------------
+
+        if idx < last_index:
+
+            next_dt = part_df.iloc[
+                idx + 1
+            ]["datetime"]
+
+        else:
+
+            # 마지막 봉은 실제 업비트 240분봉 시작시간을
+            # 그대로 사용하고 종료시간은 +4시간으로 표시
+            next_dt = (
+                dt
+                + timedelta(hours=4)
+            )
+
+        o = float(
+            row["open"]
+        )
+
+        h = float(
+            row["high"]
+        )
+
+        l = float(
+            row["low"]
+        )
+
+        c = float(
+            row["close"]
         )
 
         # -------------------------------------------------
-        # 현재 활성봉 현재가 반영
+        # 가장 최근 실제 업비트 4시간봉에 현재가 반영
         # -------------------------------------------------
 
+        active = (
+            idx == last_index
+        )
+
         if (
-            p["active"]
+            active
             and current_price is not None
         ):
 
@@ -1155,7 +1216,19 @@ def build_periods(
 
         out.append({
 
-            **p,
+            "start":
+                dt,
+
+            "end":
+                next_dt,
+
+            "active":
+                active,
+
+            "label":
+                dt.strftime(
+                    "%m/%d %H:%M"
+                ),
 
             "open":
                 o,
@@ -1178,7 +1251,7 @@ def build_periods(
         })
 
     # =====================================================
-    # 패턴 계산
+    # 실제 업비트 4시간봉 순서대로 패턴 계산
     # =====================================================
 
     for i, p in enumerate(out):
@@ -1189,46 +1262,46 @@ def build_periods(
         # 2캔들
         # -------------------------------------------------
 
-        if (
-            i >= 1
-            and p["open"] is not None
-            and out[i - 1]["open"] is not None
-        ):
+        if i >= 1:
 
-            pats += two_patterns(
-                out[i - 1],
-                p
-            )
+            if (
+                out[i - 1]["open"] is not None
+                and p["open"] is not None
+            ):
+
+                pats += two_patterns(
+                    out[i - 1],
+                    p
+                )
 
         # -------------------------------------------------
         # 3캔들
         # -------------------------------------------------
 
-        if (
-            i >= 2
-            and all(
+        if i >= 2:
+
+            if all(
                 out[j]["open"] is not None
                 for j in (
                     i - 2,
                     i - 1,
                     i
                 )
-            )
-        ):
+            ):
 
-            pats += three_patterns(
-                out[i - 2],
-                out[i - 1],
-                p
-            )
+                pats += three_patterns(
+                    out[i - 2],
+                    out[i - 1],
+                    p
+                )
 
         # -------------------------------------------------
         # 4캔들
         # -------------------------------------------------
 
-        if (
-            i >= 3
-            and all(
+        if i >= 3:
+
+            if all(
                 out[j]["open"] is not None
                 for j in (
                     i - 3,
@@ -1236,23 +1309,22 @@ def build_periods(
                     i - 1,
                     i
                 )
-            )
-        ):
+            ):
 
-            pats += four_patterns(
-                out[i - 3],
-                out[i - 2],
-                out[i - 1],
-                p
-            )
+                pats += four_patterns(
+                    out[i - 3],
+                    out[i - 2],
+                    out[i - 1],
+                    p
+                )
 
         # -------------------------------------------------
         # 5캔들
         # -------------------------------------------------
 
-        if (
-            i >= 4
-            and all(
+        if i >= 4:
+
+            if all(
                 out[j]["open"] is not None
                 for j in (
                     i - 4,
@@ -1261,16 +1333,15 @@ def build_periods(
                     i - 1,
                     i
                 )
-            )
-        ):
+            ):
 
-            pats += five_patterns(
-                out[i - 4],
-                out[i - 3],
-                out[i - 2],
-                out[i - 1],
-                p
-            )
+                pats += five_patterns(
+                    out[i - 4],
+                    out[i - 3],
+                    out[i - 2],
+                    out[i - 1],
+                    p
+                )
 
         p["patterns"] = list(
             dict.fromkeys(
@@ -1282,7 +1353,7 @@ def build_periods(
 
 
 # =========================================================
-# SIGNAL 단일 기간 판정
+# SIGNAL 단일 기간
 # =========================================================
 
 def period_signal(period):
@@ -1321,7 +1392,7 @@ def period_signal(period):
         return False
 
     # -----------------------------------------------------
-    # 반드시 음수 봉
+    # 음수 봉만 SIGNAL
     # -----------------------------------------------------
 
     if change >= 0:
@@ -1333,7 +1404,7 @@ def period_signal(period):
         return False
 
     # -----------------------------------------------------
-    # 지정 SIGNAL 패턴
+    # 5개 패턴 중 하나
     # -----------------------------------------------------
 
     if not any(
@@ -1369,26 +1440,15 @@ def signal_pass(periods):
 
         return False
 
-    # -----------------------------------------------------
-    # 현재봉 + / 0이면
+    # 현재 4시간봉이 + 또는 0이면
     # 이전봉 SIGNAL도 차단
-    # -----------------------------------------------------
-
     if current_change >= 0:
 
         return False
 
-    # -----------------------------------------------------
-    # 현재봉
-    # -----------------------------------------------------
-
     if period_signal(current):
 
         return True
-
-    # -----------------------------------------------------
-    # 이전봉
-    # -----------------------------------------------------
 
     if len(periods) >= 2:
 
@@ -1444,33 +1504,13 @@ def signal_details(periods):
         return empty
 
     # -----------------------------------------------------
-    # 현재 4시간봉이 + 또는 0이면
-    # 이전봉도 SIGNAL 차단
+    # 현재 4시간봉이 양수/0이면
+    # 이전봉 SIGNAL도 차단
     # -----------------------------------------------------
 
     if current_change >= 0:
 
-        return {
-
-            "signal":
-                False,
-
-            "current_signal":
-                False,
-
-            "previous_signal":
-                False,
-
-            "signal_change":
-                None,
-
-            "signal_patterns":
-                [],
-
-            "signal_period":
-                None
-
-        }
+        return empty
 
     current_signal = period_signal(
         current
@@ -1489,10 +1529,6 @@ def signal_details(periods):
         if previous is not None
         else False
     )
-
-    # -----------------------------------------------------
-    # 현재봉 우선
-    # -----------------------------------------------------
 
     if current_signal:
 
@@ -1566,8 +1602,6 @@ def signal_details(periods):
 
 # =========================================================
 # 일봉 변동률 분석
-#
-# 업비트 KST 09:00 기준
 # =========================================================
 
 def analyze_daily_change(
@@ -1592,9 +1626,8 @@ def analyze_daily_change(
 
         }
 
-    periods = build_periods(
+    periods = build_daily_periods(
         df,
-        "1d",
         price
     )
 
@@ -1610,12 +1643,10 @@ def analyze_daily_change(
 
         }
 
-    current = periods[-1]
-
     return {
 
         "change":
-            current.get(
+            periods[-1].get(
                 "change"
             ),
 
@@ -1627,6 +1658,8 @@ def analyze_daily_change(
 
 # =========================================================
 # 4시간봉 분석
+#
+# 업비트 실제 240분봉 사용
 # =========================================================
 
 def analyze_4h(
@@ -1666,33 +1699,8 @@ def analyze_4h(
 
         }
 
-    df = df.copy()
-
-    current_start = current_tf_start(
-        "4h"
-    )
-
-    active_mask = (
-        df["datetime"]
-        >= current_start
-    )
-
-    if active_mask.any():
-
-        last_idx = df.index[
-            active_mask
-        ][-1]
-
-        df.loc[
-            last_idx,
-            "close"
-        ] = float(
-            price
-        )
-
-    periods = build_periods(
+    periods = build_upbit_4h_periods(
         df,
-        "4h",
         price
     )
 
@@ -1800,7 +1808,7 @@ def make_row(
             ],
 
         # -------------------------------------------------
-        # 4시간봉
+        # 실제 업비트 4시간봉
         # -------------------------------------------------
 
         "periods_4h":
@@ -1856,11 +1864,9 @@ def update_upbit():
     all_markets = get_upbit_markets()
 
     # =====================================================
-    # 1단계
-    #
+    # 1.
     # 업비트 09:00 일봉 변동률 계산
-    #
-    # 마이너스 종목만 통과
+    # 마이너스만 통과
     # =====================================================
 
     candidates = []
@@ -1904,14 +1910,13 @@ def update_upbit():
         except Exception as e:
 
             log.warning(
-                "%s 일봉 변동률 오류: %s",
+                "%s 일봉 오류: %s",
                 market,
                 e
             )
 
     # =====================================================
-    # 2단계
-    #
+    # 2.
     # 마이너스 종목 중 거래대금 TOP20
     # =====================================================
 
@@ -1928,9 +1933,8 @@ def update_upbit():
     rows = []
 
     # =====================================================
-    # 3단계
-    #
-    # TOP20 종목의 4시간봉 분석
+    # 3.
+    # TOP20의 실제 업비트 4시간봉 분석
     # =====================================================
 
     for rank, candidate in enumerate(
@@ -1994,15 +1998,15 @@ def update_upbit():
 
             }
 
-        row = make_row(
-            rank,
-            market,
-            item,
-            analysis_daily,
-            analysis_4h
+        rows.append(
+            make_row(
+                rank,
+                market,
+                item,
+                analysis_daily,
+                analysis_4h
+            )
         )
-
-        rows.append(row)
 
     latest_upbit_data = rows
 
@@ -2015,7 +2019,7 @@ def update_upbit():
     )
 
     log.info(
-        "UPBIT | 일봉 음수 TOP%s | 4H SIGNAL=%s",
+        "UPBIT | 일봉 음수 TOP%s | 실제 업비트 4H SIGNAL=%s",
 
         TOP_N,
 
@@ -2169,11 +2173,6 @@ def update_okx_btc():
 
         return
 
-    # =====================================================
-    # BTC 1시간 → KST 09:00 일봉
-    # 기존 유지
-    # =====================================================
-
     d1h = okx_candles(
         "1H",
         200
@@ -2240,9 +2239,20 @@ def update_okx_btc():
             )
         )
 
-        current_day_start = current_tf_start(
-            "1d"
+        now = datetime.now(KST)
+
+        current_day_start = now.replace(
+            hour=9,
+            minute=0,
+            second=0,
+            microsecond=0
         )
+
+        if now < current_day_start:
+
+            current_day_start -= timedelta(
+                days=1
+            )
 
         active_daily = (
             daily["datetime"]
@@ -2267,9 +2277,8 @@ def update_okx_btc():
         daily = pd.DataFrame()
 
     latest_btc_daily_periods = (
-        build_periods(
+        build_daily_periods(
             daily,
-            "1d",
             price
         )
     )
@@ -2572,10 +2581,6 @@ def card(
         False
     )
 
-    # =====================================================
-    # TOP
-    # =====================================================
-
     if kind == "top":
 
         status = ""
@@ -2722,11 +2727,6 @@ def card(
 
         </article>
         """
-
-
-    # =====================================================
-    # SIGNAL
-    # =====================================================
 
     return f"""
     <article class="both-card">
@@ -2900,7 +2900,7 @@ def both_section(data):
             </div>
 
             <small>
-                현재봉 + 이전봉
+                실제 업비트 240분봉
             </small>
 
         </div>
@@ -3823,8 +3823,6 @@ def dashboard():
 
         # -------------------------------------------------
         # TOP LIST
-        #
-        # SHOW_TOP_LIST = Y일 때만 표시
         # -------------------------------------------------
 
         if SHOW_TOP_LIST == "Y":
@@ -3954,7 +3952,7 @@ def scheduler():
 def startup():
 
     log.info(
-        "START | 업비트 일봉 음수 종목 → 4시간봉 하락장악/3/4/5/역관통 → TOP20"
+        "START | 업비트 09시 음수 종목 → 실제 업비트 4H 하락 SIGNAL → TOP20"
     )
 
     threading.Thread(
