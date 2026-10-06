@@ -74,6 +74,8 @@ TIMEFRAME_LABEL = {
 
 ROC_PERIOD = 50
 
+ROC_SIGNAL_PERIOD = 20
+
 ROC_SIGNAL_LEVEL = 0.0
 
 
@@ -569,7 +571,7 @@ def get_upbit_4h_candles(
 
 
 # =========================================================
-# ROC(50)
+# ROC
 # =========================================================
 
 def calculate_roc(
@@ -808,8 +810,11 @@ def build_daily_periods(
 #
 # SIGNAL:
 #
-# 1. ROC 음수 → 0 이상 상향 돌파봉
-# 2. 돌파봉 다음 캔들
+# 1. ROC(50) > 0
+# 2. ROC(20)이 0선 아래 → 0선 이상 상향 돌파
+# 3. 돌파봉
+# 4. 돌파봉 완성 후 첫 번째 캔들
+# 5. 돌파봉 완성 후 두 번째 캔들
 #
 # 그 이후 계속 0 이상이어도 SIGNAL 아님
 # =========================================================
@@ -937,6 +942,12 @@ def build_upbit_4h_periods(
             "roc":
                 None,
 
+            "roc20":
+                None,
+
+            "roc50":
+                None,
+
             "roc_signal":
                 False,
 
@@ -949,21 +960,45 @@ def build_upbit_4h_periods(
         })
 
     # =====================================================
-    # ROC 계산
+    # ROC(50) 계산
     # =====================================================
 
     for i in range(
         len(periods)
     ):
 
-        periods[i]["roc"] = calculate_roc(
+        periods[i]["roc50"] = calculate_roc(
             periods,
             i,
             ROC_PERIOD
         )
 
     # =====================================================
-    # 0선 상향 돌파
+    # ROC(20) 계산
+    # =====================================================
+
+    for i in range(
+        len(periods)
+    ):
+
+        periods[i]["roc20"] = calculate_roc(
+            periods,
+            i,
+            ROC_SIGNAL_PERIOD
+        )
+
+        # 기존 코드 호환을 위해
+        # roc에는 ROC(50)을 유지
+        periods[i]["roc"] = periods[i]["roc50"]
+
+    # =====================================================
+    # SIGNAL
+    #
+    # ROC(50) > 0 상태에서
+    # ROC(20)이 0선 상향 돌파
+    #
+    # 돌파봉 + 이후 2개 캔들
+    # 총 3개 캔들 SIGNAL
     # =====================================================
 
     for i in range(
@@ -971,24 +1006,41 @@ def build_upbit_4h_periods(
         len(periods)
     ):
 
-        previous_roc = periods[
+        previous_roc20 = periods[
             i - 1
         ].get(
-            "roc"
+            "roc20"
         )
 
-        current_roc = periods[
+        current_roc20 = periods[
             i
         ].get(
-            "roc"
+            "roc20"
+        )
+
+        current_roc50 = periods[
+            i
+        ].get(
+            "roc50"
         )
 
         crossed = roc_cross_up(
-            previous_roc,
-            current_roc
+            previous_roc20,
+            current_roc20
         )
 
-        if crossed:
+        # -------------------------------------------------
+        # ROC(50) > 0 필터
+        # + ROC(20) 0선 상향 돌파
+        # -------------------------------------------------
+
+        if (
+            crossed
+            and
+            current_roc50 is not None
+            and
+            current_roc50 > ROC_SIGNAL_LEVEL
+        ):
 
             # -------------------------------------------------
             # 돌파봉
@@ -1004,10 +1056,10 @@ def build_upbit_4h_periods(
 
             periods[i][
                 "signal_reason"
-            ] = "0선 상향 돌파"
+            ] = "ROC20 0선 상향 돌파"
 
             # -------------------------------------------------
-            # 돌파봉 다음 캔들
+            # 돌파 후 첫 번째 캔들
             # -------------------------------------------------
 
             if i + 1 < len(periods):
@@ -1018,7 +1070,21 @@ def build_upbit_4h_periods(
 
                 periods[i + 1][
                     "signal_reason"
-                ] = "돌파 후 다음 캔들"
+                ] = "돌파 후 1번째 캔들"
+
+            # -------------------------------------------------
+            # 돌파 후 두 번째 캔들
+            # -------------------------------------------------
+
+            if i + 2 < len(periods):
+
+                periods[i + 2][
+                    "roc_signal"
+                ] = True
+
+                periods[i + 2][
+                    "signal_reason"
+                ] = "돌파 후 2번째 캔들"
 
     # =====================================================
     # 최근 6개만 표시
@@ -1096,7 +1162,7 @@ def signal_details(
     )
 
     current_roc = current.get(
-        "roc"
+        "roc20"
     )
 
     previous = (
@@ -1116,7 +1182,7 @@ def signal_details(
 
     previous_roc = (
         previous.get(
-            "roc"
+            "roc20"
         )
         if previous is not None
         else None
@@ -1627,7 +1693,7 @@ def update_upbit():
     )
 
     log.info(
-        "UPBIT | 일봉 양수 TOP%s | 4H ROC(50) 0선 상향 SIGNAL=%s",
+        "UPBIT | 일봉 양수 TOP%s | 4H ROC(50) > 0 + ROC(20) 0선 상향 SIGNAL=%s",
         TOP_N,
         sum(
             x["signal_4h"]
@@ -2133,19 +2199,27 @@ def signal_reason_html(
     reason
 ):
 
-    if reason == "0선 상향 돌파":
+    if reason == "ROC20 0선 상향 돌파":
 
         return (
             '<span class="roc-cross">'
-            '▲ 0선 돌파'
+            '▲ ROC20 0선 돌파'
             '</span>'
         )
 
-    if reason == "돌파 후 다음 캔들":
+    if reason == "돌파 후 1번째 캔들":
 
         return (
             '<span class="roc-next">'
-            '→ 돌파 후 다음봉'
+            '→ 돌파 후 1번째봉'
+            '</span>'
+        )
+
+    if reason == "돌파 후 2번째 캔들":
+
+        return (
+            '<span class="roc-next">'
+            '→ 돌파 후 2번째봉'
             '</span>'
         )
 
@@ -2168,8 +2242,12 @@ def cells(periods):
             else ""
         )
 
-        roc = p.get(
-            "roc"
+        roc20 = p.get(
+            "roc20"
+        )
+
+        roc50 = p.get(
+            "roc50"
         )
 
         roc_signal_state = p.get(
@@ -2217,7 +2295,11 @@ def cells(periods):
                 </strong>
 
                 <div class="roc-value">
-                    {fmt_roc(roc)}
+                    ROC20 {fmt_roc(roc20)}
+                </div>
+
+                <div class="roc-value">
+                    ROC50 {fmt_roc(roc50)}
                 </div>
 
                 {roc_badge}
@@ -2387,7 +2469,7 @@ def card(
 
             status = (
                 '<span class="signal-badge">'
-                '⭐ ROC 0선 SIGNAL'
+                '⭐ ROC20 0선 SIGNAL'
                 '</span>'
             )
 
@@ -2467,7 +2549,7 @@ def card(
                 <div>
 
                     <span>
-                        4H ROC(50)
+                        4H ROC(20)
                     </span>
 
                     <strong>
@@ -2486,13 +2568,13 @@ def card(
             <div class="signal-bar">
 
                 <span>
-                    4H ROC(50)
+                    4H ROC20
                 </span>
 
                 <i></i>
 
                 <small>
-                    0선 상향 돌파봉 + 다음봉
+                    ROC50 0선 위 + ROC20 0선 돌파
                 </small>
 
             </div>
@@ -2503,11 +2585,11 @@ def card(
                 <div class="signal-head">
 
                     <b>
-                        4시간봉 ROC(50)
+                        4시간봉 ROC(20)
                     </b>
 
                     <span>
-                        돌파봉 + 다음봉만 SIGNAL
+                        돌파봉 + 1·2번째봉 SIGNAL
                     </span>
 
                 </div>
@@ -2546,7 +2628,7 @@ def card(
             </div>
 
             <span class="both-badge">
-                ⭐ ROC 0선 SIGNAL
+                ⭐ ROC20 0선 SIGNAL
             </span>
 
         </div>
@@ -2589,7 +2671,7 @@ def card(
             <div>
 
                 <span>
-                    현재 4H ROC
+                    현재 4H ROC20
                 </span>
 
                 <strong>
@@ -2606,7 +2688,7 @@ def card(
             <div>
 
                 <span>
-                    이전 4H ROC
+                    이전 4H ROC20
                 </span>
 
                 <strong>
@@ -2627,11 +2709,11 @@ def card(
             <div class="signal-head">
 
                 <b>
-                    4시간봉 ROC(50)
+                    4시간봉 ROC(20)
                 </b>
 
                 <span>
-                    돌파봉 + 다음봉만 SIGNAL
+                    돌파봉 + 1·2번째봉 SIGNAL
                 </span>
 
             </div>
@@ -2679,7 +2761,7 @@ def both_section(data):
 
         content = (
             '<div class="empty">'
-            '현재 0선 상향 돌파봉 또는 돌파 후 다음봉 SIGNAL 없음'
+            '현재 ROC50 0선 위 + ROC20 0선 상향 SIGNAL 없음'
             '</div>'
         )
 
@@ -2696,13 +2778,13 @@ def both_section(data):
                 </span>
 
                 <b>
-                    ⭐ 4시간봉 ROC(50) 0선 상향 SIGNAL
+                    ⭐ Upbit Signal
                 </b>
 
             </div>
 
             <small>
-                돌파봉 + 바로 다음봉
+                돌파봉 + 1·2번째봉
             </small>
 
         </div>
@@ -3678,7 +3760,8 @@ def dashboard():
     if USE_UPBIT == "Y":
 
         # -------------------------------------------------
-        # 4시간봉 ROC 0선 상향 SIGNAL
+        # 4시간봉 ROC50 0선 위
+        # + ROC20 0선 상향 SIGNAL
         # -------------------------------------------------
 
         s += both_section(
@@ -3816,7 +3899,7 @@ def scheduler():
 def startup():
 
     log.info(
-        "START | OKX BTC 1D ROC(50) + 업비트 09시 양수 TOP20 + 4H ROC 0선 상향 돌파 SIGNAL"
+        "START | OKX BTC 1D ROC(50) + 업비트 09시 양수 TOP20 + 4H ROC50 > 0 + ROC20 0선 상향 돌파 SIGNAL"
     )
 
     threading.Thread(
