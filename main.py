@@ -61,17 +61,18 @@ MAX_RETRIES = 10
 # SIGNAL 설정
 # =========================================================
 
-SIGNAL_TIMEFRAME = "1d"
+SIGNAL_TIMEFRAME = "4h"
 
 TIMEFRAME_LABEL = {
-    "1d": "일봉"
+    "4h": "4시간봉"
 }
+
+# ---------------------------------------------------------
+# SIGNAL은 4시간봉에서 아래 두 가지만 사용
+# ---------------------------------------------------------
 
 SIGNAL_CANDLE_PATTERNS = [
     "하락장악",
-    "3캔들 하락장악",
-    "4캔들 하락장악",
-    "5캔들 하락장악",
     "역 관통형"
 ]
 
@@ -130,6 +131,12 @@ def kst():
 
 def timeframe_delta(tf):
 
+    if tf == "4h":
+
+        return timedelta(
+            hours=4
+        )
+
     return timedelta(
         days=1
     )
@@ -138,6 +145,29 @@ def timeframe_delta(tf):
 def current_tf_start(tf):
 
     now = datetime.now(KST)
+
+    # -----------------------------------------------------
+    # 4시간봉
+    # 00:00 / 04:00 / 08:00 / 12:00 / 16:00 / 20:00
+    # -----------------------------------------------------
+
+    if tf == "4h":
+
+        hour = (
+            now.hour // 4
+        ) * 4
+
+        return now.replace(
+            hour=hour,
+            minute=0,
+            second=0,
+            microsecond=0
+        )
+
+    # -----------------------------------------------------
+    # 일봉
+    # KST 09:00 기준
+    # -----------------------------------------------------
 
     x = now.replace(
         hour=9,
@@ -176,9 +206,17 @@ def recent_periods(
 
         end = start + delta
 
-        label = start.strftime(
-            "%m/%d 09:00"
-        )
+        if tf == "4h":
+
+            label = start.strftime(
+                "%m/%d %H:%M"
+            )
+
+        else:
+
+            label = start.strftime(
+                "%m/%d 09:00"
+            )
 
         out.append({
 
@@ -409,6 +447,9 @@ def get_upbit_markets():
 
 # =========================================================
 # 업비트 일봉
+#
+# 변동률 계산용
+# KST 09:00 기준
 # =========================================================
 
 def get_upbit_daily_candles(
@@ -418,6 +459,118 @@ def get_upbit_daily_candles(
 
     endpoint = (
         "https://api.upbit.com/v1/candles/days"
+    )
+
+    params = {
+
+        "market":
+            market,
+
+        "count":
+            min(
+                count,
+                200
+            )
+
+    }
+
+    r = retry(
+        requests.get,
+        endpoint,
+        params=params,
+        timeout=15
+    )
+
+    if r is None:
+
+        return pd.DataFrame()
+
+    try:
+
+        data = r.json()
+
+    except Exception:
+
+        return pd.DataFrame()
+
+    if not isinstance(
+        data,
+        list
+    ):
+
+        return pd.DataFrame()
+
+    rows = []
+
+    for x in data:
+
+        try:
+
+            rows.append({
+
+                "datetime":
+                    datetime.strptime(
+                        x[
+                            "candle_date_time_kst"
+                        ],
+                        "%Y-%m-%dT%H:%M:%S"
+                    ).replace(
+                        tzinfo=KST
+                    ),
+
+                "open":
+                    float(
+                        x["opening_price"]
+                    ),
+
+                "high":
+                    float(
+                        x["high_price"]
+                    ),
+
+                "low":
+                    float(
+                        x["low_price"]
+                    ),
+
+                "close":
+                    float(
+                        x["trade_price"]
+                    )
+
+            })
+
+        except Exception:
+
+            pass
+
+    if not rows:
+
+        return pd.DataFrame()
+
+    return (
+        pd.DataFrame(rows)
+        .sort_values("datetime")
+        .drop_duplicates(
+            "datetime"
+        )
+        .reset_index(
+            drop=True
+        )
+    )
+
+
+# =========================================================
+# 업비트 4시간봉
+# =========================================================
+
+def get_upbit_4h_candles(
+    market,
+    count=200
+):
+
+    endpoint = (
+        "https://api.upbit.com/v1/candles/minutes/240"
     )
 
     params = {
@@ -637,22 +790,44 @@ def bearish_engulfing(
 
 
 # =========================================================
-# 장대음봉
+# 역 관통형
 # =========================================================
 
-def long_bearish(c):
+def bearish_piercing(
+    a,
+    b
+):
 
-    p = candle_parts(c)
+    p1 = candle_parts(a)
+
+    p2 = candle_parts(b)
+
+    if not p1 or not p2:
+
+        return False
+
+    mid = (
+        p1["open"]
+        + p1["close"]
+    ) / 2
 
     return bool(
-        p
-        and p["bear"]
-        and p["body_ratio"] >= 0.45
+
+        p1["bull"]
+
+        and p2["bear"]
+
+        and p2["close"] < mid
+
+        and p2["close"] > p1["open"]
+
     )
 
 
 # =========================================================
 # 2캔들 패턴
+#
+# SIGNAL은 하락장악 / 역 관통형만 사용
 # =========================================================
 
 def two_patterns(
@@ -684,209 +859,19 @@ def two_patterns(
         )
 
     # -----------------------------------------------------
-    # 장대음봉 후 음봉
-    # -----------------------------------------------------
-
-    if (
-        long_bearish(a)
-        and p2["bear"]
-    ):
-
-        out.append(
-            "장대음봉 후 음봉"
-        )
-
-    # -----------------------------------------------------
     # 역 관통형
-    #
-    # 첫 캔들 = 양봉
-    # 두 번째 캔들 = 음봉
-    # 두 번째 종가가 첫 번째 몸통 중간값 아래
-    # 두 번째 종가가 첫 번째 시가 위
     # -----------------------------------------------------
 
-    mid = (
-        p1["open"]
-        + p1["close"]
-    ) / 2
-
-    if (
-        p1["bull"]
-        and p2["bear"]
-        and p2["close"] < mid
-        and p2["close"] > p1["open"]
+    if bearish_piercing(
+        a,
+        b
     ):
 
         out.append(
             "역 관통형"
         )
 
-    # -----------------------------------------------------
-    # 하락장악과 반대 방향 패턴
-    # 기존 코드 구조 유지
-    # -----------------------------------------------------
-
-    if (
-        p1["bear"]
-        and p2["bull"]
-        and p2["open"]
-        <= p1["close"]
-        and p2["close"]
-        >= p1["open"]
-        and p2["body"]
-        > p1["body"]
-    ):
-
-        out.append(
-            "상승장악"
-        )
-
     return out
-
-
-# =========================================================
-# 3캔들
-# =========================================================
-
-def three_patterns(
-    a,
-    b,
-    c
-):
-
-    p1 = candle_parts(a)
-
-    p2 = candle_parts(b)
-
-    p3 = candle_parts(c)
-
-    if not p1 or not p2 or not p3:
-
-        return []
-
-    out = []
-
-    # -----------------------------------------------------
-    # 이 코드는 기존 3캔들 패턴 구조를 유지하되
-    # SIGNAL 대상은 하락장악 계열만 사용
-    # -----------------------------------------------------
-
-    if bearish_engulfing(
-        a,
-        c
-    ):
-
-        out.append(
-            "3캔들 하락장악"
-        )
-
-    if (
-        bearish_engulfing(
-            a,
-            b
-        )
-        and p3["bear"]
-    ):
-
-        out.append(
-            "하락장악 후 음봉"
-        )
-
-    if (
-        "역 관통형"
-        in two_patterns(
-            a,
-            b
-        )
-        and p3["bear"]
-    ):
-
-        out.append(
-            "역 관통형 후 음봉"
-        )
-
-    return out
-
-
-# =========================================================
-# 4캔들
-# =========================================================
-
-def four_patterns(
-    a,
-    b,
-    c,
-    d
-):
-
-    p1 = candle_parts(a)
-    p2 = candle_parts(b)
-    p3 = candle_parts(c)
-    p4 = candle_parts(d)
-
-    if not all(
-        (
-            p1,
-            p2,
-            p3,
-            p4
-        )
-    ):
-
-        return []
-
-    if bearish_engulfing(
-        a,
-        d
-    ):
-
-        return [
-            "4캔들 하락장악"
-        ]
-
-    return []
-
-
-# =========================================================
-# 5캔들
-# =========================================================
-
-def five_patterns(
-    a,
-    b,
-    c,
-    d,
-    e
-):
-
-    p1 = candle_parts(a)
-    p2 = candle_parts(b)
-    p3 = candle_parts(c)
-    p4 = candle_parts(d)
-    p5 = candle_parts(e)
-
-    if not all(
-        (
-            p1,
-            p2,
-            p3,
-            p4,
-            p5
-        )
-    ):
-
-        return []
-
-    if bearish_engulfing(
-        a,
-        e
-    ):
-
-        return [
-            "5캔들 하락장악"
-        ]
-
-    return []
 
 
 # =========================================================
@@ -963,7 +948,7 @@ def build_periods(
         )
 
         # -------------------------------------------------
-        # 현재 당일봉이면 현재가 반영
+        # 현재 활성 봉 현재가 반영
         # -------------------------------------------------
 
         if (
@@ -1024,7 +1009,7 @@ def build_periods(
         pats = []
 
         # -------------------------------------------------
-        # 2캔들
+        # 직전 + 현재 2캔들
         # -------------------------------------------------
 
         if (
@@ -1038,80 +1023,10 @@ def build_periods(
                 p
             )
 
-        # -------------------------------------------------
-        # 3캔들
-        # -------------------------------------------------
-
-        if (
-            i >= 2
-            and all(
-                out[j]["open"] is not None
-                for j in (
-                    i - 2,
-                    i - 1,
-                    i
-                )
-            )
-        ):
-
-            pats += three_patterns(
-                out[i - 2],
-                out[i - 1],
-                p
-            )
-
-        # -------------------------------------------------
-        # 4캔들
-        # -------------------------------------------------
-
-        if (
-            i >= 3
-            and all(
-                out[j]["open"] is not None
-                for j in (
-                    i - 3,
-                    i - 2,
-                    i - 1,
-                    i
-                )
-            )
-        ):
-
-            pats += four_patterns(
-                out[i - 3],
-                out[i - 2],
-                out[i - 1],
-                p
-            )
-
-        # -------------------------------------------------
-        # 5캔들
-        # -------------------------------------------------
-
-        if (
-            i >= 4
-            and all(
-                out[j]["open"] is not None
-                for j in (
-                    i - 4,
-                    i - 3,
-                    i - 2,
-                    i - 1,
-                    i
-                )
-            )
-        ):
-
-            pats += five_patterns(
-                out[i - 4],
-                out[i - 3],
-                out[i - 2],
-                out[i - 1],
-                p
-            )
-
         p["patterns"] = list(
-            dict.fromkeys(pats)
+            dict.fromkeys(
+                pats
+            )
         )
 
     return out
@@ -1157,9 +1072,7 @@ def period_signal(period):
         return False
 
     # -----------------------------------------------------
-    # 음봉만 허용
-    #
-    # 음수 / 0 제외
+    # 반드시 음수 4시간봉
     # -----------------------------------------------------
 
     if change >= 0:
@@ -1171,7 +1084,7 @@ def period_signal(period):
         return False
 
     # -----------------------------------------------------
-    # 지정된 하락 패턴
+    # 하락장악 / 역 관통형만
     # -----------------------------------------------------
 
     if not any(
@@ -1187,12 +1100,8 @@ def period_signal(period):
 # =========================================================
 # SIGNAL 판정
 #
-# 핵심 조건
-#
-# 1. 당일봉이 양수/0이면 SIGNAL 없음
-# 2. 당일봉이 음수일 때만 전일봉/당일봉 검사
-# 3. 당일봉 조건 충족 시 당일봉 SIGNAL
-# 4. 당일봉 조건 미충족 시 전일봉 검사
+# 현재 4시간봉이 음수일 때만
+# 현재봉 + 이전봉 검사
 # =========================================================
 
 def signal_pass(periods):
@@ -1200,10 +1109,6 @@ def signal_pass(periods):
     if not periods:
 
         return False
-
-    # -----------------------------------------------------
-    # 당일봉
-    # -----------------------------------------------------
 
     current = periods[-1]
 
@@ -1216,8 +1121,7 @@ def signal_pass(periods):
         return False
 
     # -----------------------------------------------------
-    # 당일봉 양수 또는 0이면
-    # 전일봉도 보지 않음
+    # 현재 4시간봉이 양수/0이면 SIGNAL 없음
     # -----------------------------------------------------
 
     if current_change >= 0:
@@ -1225,7 +1129,7 @@ def signal_pass(periods):
         return False
 
     # -----------------------------------------------------
-    # 당일봉 SIGNAL
+    # 현재 4시간봉 SIGNAL
     # -----------------------------------------------------
 
     if period_signal(current):
@@ -1233,7 +1137,7 @@ def signal_pass(periods):
         return True
 
     # -----------------------------------------------------
-    # 전일봉 SIGNAL
+    # 이전 4시간봉 SIGNAL
     # -----------------------------------------------------
 
     if len(periods) >= 2:
@@ -1279,10 +1183,6 @@ def signal_details(periods):
 
         return empty
 
-    # -----------------------------------------------------
-    # 당일봉
-    # -----------------------------------------------------
-
     current = periods[-1]
 
     current_change = current.get(
@@ -1294,8 +1194,8 @@ def signal_details(periods):
         return empty
 
     # -----------------------------------------------------
-    # 당일봉 양수/0이면
-    # 전일봉 SIGNAL도 무조건 차단
+    # 현재 4시간봉이 양수/0이면
+    # 이전 4시간봉도 무조건 차단
     # -----------------------------------------------------
 
     if current_change >= 0:
@@ -1326,10 +1226,6 @@ def signal_details(periods):
         current
     )
 
-    # -----------------------------------------------------
-    # 전일봉
-    # -----------------------------------------------------
-
     previous = (
         periods[-2]
         if len(periods) >= 2
@@ -1345,7 +1241,7 @@ def signal_details(periods):
     )
 
     # -----------------------------------------------------
-    # 당일봉 우선
+    # 현재봉 우선
     # -----------------------------------------------------
 
     if current_signal:
@@ -1419,15 +1315,78 @@ def signal_details(periods):
 
 
 # =========================================================
-# 업비트 분석
+# 일봉 변동률
+#
+# 업비트 KST 09:00 기준
 # =========================================================
 
-def analyze_daily(
+def analyze_daily_change(
     market,
     price
 ):
 
     df = get_upbit_daily_candles(
+        market,
+        10
+    )
+
+    if df.empty:
+
+        return {
+
+            "change":
+                None,
+
+            "periods":
+                []
+
+        }
+
+    periods = build_periods(
+        df,
+        "1d",
+        price
+    )
+
+    if not periods:
+
+        return {
+
+            "change":
+                None,
+
+            "periods":
+                []
+
+        }
+
+    current = periods[-1]
+
+    return {
+
+        "change":
+            current.get(
+                "change"
+            ),
+
+        "periods":
+            periods
+
+    }
+
+
+# =========================================================
+# 4시간봉 분석
+#
+# SIGNAL / 시황카드 / TOP카드 기준
+# =========================================================
+
+def analyze_4h(
+    market,
+    price
+):
+
+    df = get_upbit_4h_candles(
         market,
         200
     )
@@ -1461,12 +1420,8 @@ def analyze_daily(
 
     df = df.copy()
 
-    # -----------------------------------------------------
-    # 현재 당일봉 현재가 반영
-    # -----------------------------------------------------
-
     current_start = current_tf_start(
-        "1d"
+        "4h"
     )
 
     active_mask = (
@@ -1489,7 +1444,7 @@ def analyze_daily(
 
     periods = build_periods(
         df,
-        "1d",
+        "4h",
         price
     )
 
@@ -1543,7 +1498,8 @@ def make_row(
     rank,
     market,
     item,
-    analysis_daily
+    analysis_daily,
+    analysis_4h
 ):
 
     coin = market.replace(
@@ -1551,8 +1507,8 @@ def make_row(
         ""
     )
 
-    signal_daily = (
-        analysis_daily[
+    signal_4h = (
+        analysis_4h[
             "signal_pass"
         ]
     )
@@ -1581,41 +1537,59 @@ def make_row(
         "volume_rank":
             rank,
 
+        # -------------------------------------------------
+        # 일봉
+        # -------------------------------------------------
+
+        "daily_change":
+            analysis_daily[
+                "change"
+            ],
+
         "periods_daily":
             analysis_daily[
                 "periods"
             ],
 
-        "signal_daily":
-            signal_daily,
+        # -------------------------------------------------
+        # 4시간봉
+        # -------------------------------------------------
 
-        "signal_daily_current":
-            analysis_daily[
+        "periods_4h":
+            analysis_4h[
+                "periods"
+            ],
+
+        "signal_4h":
+            signal_4h,
+
+        "signal_4h_current":
+            analysis_4h[
                 "current_signal"
             ],
 
-        "signal_daily_previous":
-            analysis_daily[
+        "signal_4h_previous":
+            analysis_4h[
                 "previous_signal"
             ],
 
-        "signal_daily_change":
-            analysis_daily[
+        "signal_4h_change":
+            analysis_4h[
                 "signal_change"
             ],
 
-        "signal_daily_patterns":
-            analysis_daily[
+        "signal_4h_patterns":
+            analysis_4h[
                 "signal_patterns"
             ],
 
-        "signal_daily_period":
-            analysis_daily[
+        "signal_4h_period":
+            analysis_4h[
                 "signal_period"
             ],
 
         "simultaneous_signal":
-            signal_daily
+            signal_4h
 
     }
 
@@ -1631,19 +1605,17 @@ def update_upbit():
     global latest_upbit_update_time
     global latest_upbit_daily_update_time
 
-    markets = sorted(
-        get_upbit_markets(),
-        key=lambda x:
-            x["volume_24h"],
-        reverse=True
-    )[:TOP_N]
+    all_markets = get_upbit_markets()
 
-    rows = []
+    # =====================================================
+    # 일봉 변동률 계산
+    #
+    # 반드시 마이너스 종목만 통과
+    # =====================================================
 
-    for rank, item in enumerate(
-        markets,
-        1
-    ):
+    candidates = []
+
+    for item in all_markets:
 
         market = item[
             "market"
@@ -1655,7 +1627,78 @@ def update_upbit():
 
         try:
 
-            analysis_daily = analyze_daily(
+            analysis_daily = analyze_daily_change(
+                market,
+                price
+            )
+
+            daily_change = analysis_daily[
+                "change"
+            ]
+
+            if (
+                daily_change is not None
+                and daily_change < 0
+            ):
+
+                candidates.append({
+
+                    "item":
+                        item,
+
+                    "analysis_daily":
+                        analysis_daily
+
+                })
+
+        except Exception as e:
+
+            log.warning(
+                "%s 일봉 변동률 오류: %s",
+                market,
+                e
+            )
+
+    # =====================================================
+    # 마이너스 종목 중 거래대금 TOP20
+    # =====================================================
+
+    candidates.sort(
+        key=lambda x:
+            x["item"]["volume_24h"],
+        reverse=True
+    )
+
+    candidates = candidates[
+        :TOP_N
+    ]
+
+    rows = []
+
+    for rank, candidate in enumerate(
+        candidates,
+        1
+    ):
+
+        item = candidate[
+            "item"
+        ]
+
+        analysis_daily = candidate[
+            "analysis_daily"
+        ]
+
+        market = item[
+            "market"
+        ]
+
+        price = item[
+            "current_price"
+        ]
+
+        try:
+
+            analysis_4h = analyze_4h(
                 market,
                 price
             )
@@ -1663,12 +1706,12 @@ def update_upbit():
         except Exception as e:
 
             log.warning(
-                "%s 일봉 오류: %s",
+                "%s 4시간봉 오류: %s",
                 market,
                 e
             )
 
-            analysis_daily = {
+            analysis_4h = {
 
                 "periods":
                     [],
@@ -1697,7 +1740,8 @@ def update_upbit():
             rank,
             market,
             item,
-            analysis_daily
+            analysis_daily,
+            analysis_4h
         )
 
         rows.append(row)
@@ -1713,10 +1757,12 @@ def update_upbit():
     )
 
     log.info(
-        "UPBIT | 일봉 SIGNAL=%s",
+        "UPBIT | 일봉 음수 종목 TOP%s | 4H SIGNAL=%s",
+
+        TOP_N,
 
         sum(
-            x["signal_daily"]
+            x["signal_4h"]
             for x in rows
         )
     )
@@ -1867,8 +1913,7 @@ def update_okx_btc():
 
     # =====================================================
     # BTC 1시간 → KST 09:00 일봉
-    #
-    # 15분봉 없음
+    # 기존 유지
     # =====================================================
 
     d1h = okx_candles(
@@ -1937,10 +1982,6 @@ def update_okx_btc():
             )
         )
 
-        # -------------------------------------------------
-        # 현재 당일봉 현재가 반영
-        # -------------------------------------------------
-
         current_day_start = current_tf_start(
             "1d"
         )
@@ -1974,10 +2015,6 @@ def update_okx_btc():
             price
         )
     )
-
-    # =====================================================
-    # BTC 일봉 변화율
-    # =====================================================
 
     if latest_btc_daily_periods:
 
@@ -2273,7 +2310,7 @@ def card(
 ):
 
     signal = row.get(
-        "signal_daily",
+        "signal_4h",
         False
     )
 
@@ -2352,13 +2389,13 @@ def card(
                 <div>
 
                     <span>
-                        당일봉
+                        일봉 변동률
                     </span>
 
                     <strong>
                         {fmt_change(
                             row.get(
-                                "signal_daily_change"
+                                "daily_change"
                             )
                         )}
                     </strong>
@@ -2369,15 +2406,15 @@ def card(
                 <div>
 
                     <span>
-                        SIGNAL
+                        4시간봉
                     </span>
 
                     <strong>
-                        {
-                            "⭐ 발생"
-                            if signal
-                            else "-"
-                        }
+                        {fmt_change(
+                            row.get(
+                                "signal_4h_change"
+                            )
+                        )}
                     </strong>
 
                 </div>
@@ -2388,13 +2425,13 @@ def card(
             <div class="signal-bar">
 
                 <span>
-                    SIGNAL
+                    4H SIGNAL
                 </span>
 
                 <i></i>
 
                 <small>
-                    당일봉 + 전일봉
+                    현재봉 + 이전봉
                 </small>
 
             </div>
@@ -2405,11 +2442,11 @@ def card(
                 <div class="signal-head">
 
                     <b>
-                        일봉 SIGNAL
+                        4시간봉 SIGNAL
                     </b>
 
                     <span>
-                        당일 + 전일 · KST 09:00
+                        하락장악 · 역 관통형
                     </span>
 
                 </div>
@@ -2417,7 +2454,7 @@ def card(
                 <div class="grid">
                     {cells(
                         row.get(
-                            "periods_daily",
+                            "periods_4h",
                             []
                         )
                     )}
@@ -2453,13 +2490,30 @@ def card(
             </div>
 
             <span class="both-badge">
-                ⭐ 일봉 SIGNAL
+                ⭐ 4시간봉 SIGNAL
             </span>
 
         </div>
 
 
         <div class="both-summary">
+
+            <div>
+
+                <span>
+                    일봉 변동률
+                </span>
+
+                <strong>
+                    {fmt_change(
+                        row.get(
+                            "daily_change"
+                        )
+                    )}
+                </strong>
+
+            </div>
+
 
             <div>
 
@@ -2479,28 +2533,13 @@ def card(
             <div>
 
                 <span>
-                    현재가
-                </span>
-
-                <strong>
-                    {fmt_price(
-                        row["current_price"]
-                    )}
-                </strong>
-
-            </div>
-
-
-            <div>
-
-                <span>
-                    당일봉
+                    4시간봉
                 </span>
 
                 <strong>
                     {fmt_change(
                         row.get(
-                            "signal_daily_change"
+                            "signal_4h_change"
                         )
                     )}
                 </strong>
@@ -2515,7 +2554,7 @@ def card(
                 </span>
 
                 <strong>
-                    당일/전일
+                    현재/이전
                 </strong>
 
             </div>
@@ -2528,11 +2567,11 @@ def card(
             <div class="signal-head">
 
                 <b>
-                    일봉
+                    4시간봉
                 </b>
 
                 <span>
-                    당일봉 + 전일봉 · KST 09:00
+                    하락장악 · 역 관통형
                 </span>
 
             </div>
@@ -2540,7 +2579,7 @@ def card(
             <div class="grid">
                 {cells(
                     row.get(
-                        "periods_daily",
+                        "periods_4h",
                         []
                     )
                 )}
@@ -2562,7 +2601,7 @@ def both_section(data):
         r
         for r in data
         if r.get(
-            "signal_daily"
+            "signal_4h"
         )
     ]
 
@@ -2580,7 +2619,7 @@ def both_section(data):
 
         content = (
             '<div class="empty">'
-            '현재 일봉 SIGNAL 없음'
+            '현재 4시간봉 SIGNAL 없음'
             '</div>'
         )
 
@@ -2597,13 +2636,13 @@ def both_section(data):
                 </span>
 
                 <b>
-                    ⭐ 일봉 SIGNAL
+                    ⭐ 4시간봉 SIGNAL
                 </b>
 
             </div>
 
             <small>
-                당일봉 + 전일봉
+                현재봉 + 이전봉
             </small>
 
         </div>
@@ -3517,16 +3556,12 @@ def dashboard():
     if USE_UPBIT == "Y":
 
         # -------------------------------------------------
-        # 일봉 SIGNAL
-        #
-        # 당일봉이 양수/0이면 SIGNAL 없음
-        # 당일봉 음수일 때만 당일/전일 검사
+        # 4시간봉 SIGNAL
         # -------------------------------------------------
 
         s += both_section(
             latest_upbit_data
         )
-
 
         # -------------------------------------------------
         # TOP LIST
@@ -3550,7 +3585,7 @@ def dashboard():
 
                 top_cards = (
                     '<div class="empty">'
-                    '현재 데이터 없음'
+                    '현재 마이너스 종목 데이터 없음'
                     '</div>'
                 )
 
@@ -3573,7 +3608,7 @@ def dashboard():
                     </div>
 
                     <small>
-                        거래대금 기준
+                        일봉 음수 종목 · 거래대금 기준
                     </small>
 
                 </div>
@@ -3661,7 +3696,7 @@ def scheduler():
 def startup():
 
     log.info(
-        "START | BTC 일봉 → 하락 SIGNAL → TOP20"
+        "START | 업비트 일봉 음수 종목 → 4시간봉 하락 SIGNAL → TOP20"
     )
 
     threading.Thread(
