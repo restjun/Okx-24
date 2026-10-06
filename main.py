@@ -67,23 +67,14 @@ TIMEFRAME_LABEL = {
     "4h": "4시간봉"
 }
 
-SIGNAL_CANDLE_PATTERNS = [
-    "하락장악",
-    "3캔들 하락장악",
-    "4캔들 하락장악",
-    "5캔들 하락장악",
-    "역 관통형",
+# ---------------------------------------------------------
+# ROC 설정
+# ---------------------------------------------------------
 
-    # 장대 연속 하락
-    "2연속 장대음봉",
-    "3연속 장대음봉",
-    "4연속 장대음봉",
-    "5연속 장대음봉"
-]
+ROC_PERIOD = 50
 
-# 장대음봉 기준
-# 몸통 / 전체 고저폭 >= 60%
-LONG_BEAR_BODY_RATIO = 0.60
+# ROC가 0 이상이면 SIGNAL
+ROC_SIGNAL_LEVEL = 0.0
 
 
 # =========================================================
@@ -464,9 +455,7 @@ def get_upbit_daily_candles(
 # =========================================================
 # 업비트 4시간봉
 #
-# 중요:
 # 업비트가 제공하는 실제 240분봉 시간을 그대로 사용
-# 임의로 00/04/08/12... 를 생성하지 않음
 # =========================================================
 
 def get_upbit_4h_candles(
@@ -525,7 +514,6 @@ def get_upbit_4h_candles(
 
             rows.append({
 
-                # 업비트가 내려주는 실제 4시간봉 시작시간
                 "datetime":
                     datetime.strptime(
                         x[
@@ -579,487 +567,69 @@ def get_upbit_4h_candles(
 
 
 # =========================================================
-# 캔들 기본값
+# ROC(50)
+#
+# ROC = (현재 종가 - 50봉 전 종가)
+#       / 50봉 전 종가 * 100
+#
+# 4시간봉 기준
 # =========================================================
 
-def candle_parts(c):
+def calculate_roc(
+    periods,
+    index,
+    period=ROC_PERIOD
+):
+
+    if index < period:
+
+        return None
 
     try:
 
-        o, h, l, cl = map(
-            float,
-            (
-                c["open"],
-                c["high"],
-                c["low"],
-                c["close"]
-            )
+        current_close = float(
+            periods[index]["close"]
+        )
+
+        previous_close = float(
+            periods[index - period]["close"]
         )
 
     except Exception:
 
         return None
 
-    total = h - l
-
-    if total <= 0:
+    if previous_close == 0:
 
         return None
 
-    body = abs(
-        cl - o
-    )
-
-    return {
-
-        "open":
-            o,
-
-        "high":
-            h,
-
-        "low":
-            l,
-
-        "close":
-            cl,
-
-        "body":
-            body,
-
-        "total":
-            total,
-
-        "upper":
-            h - max(
-                o,
-                cl
-            ),
-
-        "lower":
-            min(
-                o,
-                cl
-            ) - l,
-
-        "body_ratio":
-            body / total,
-
-        "bull":
-            cl > o,
-
-        "bear":
-            cl < o
-
-    }
-
-
-# =========================================================
-# 하락장악
-# =========================================================
-
-def bearish_engulfing(
-    a,
-    b
-):
-
-    p1 = candle_parts(a)
-
-    p2 = candle_parts(b)
-
-    if not p1 or not p2:
-
-        return False
-
-    return bool(
-
-        p1["bull"]
-
-        and p2["bear"]
-
-        and p2["open"]
-        >= max(
-            p1["open"],
-            p1["close"]
-        )
-
-        and p2["close"]
-        <= min(
-            p1["open"],
-            p1["close"]
-        )
-
-        and p2["body"]
-        > p1["body"]
-
-    )
-
-
-# =========================================================
-# 역 관통형
-# =========================================================
-
-def bearish_piercing(
-    a,
-    b
-):
-
-    p1 = candle_parts(a)
-
-    p2 = candle_parts(b)
-
-    if not p1 or not p2:
-
-        return False
-
-    mid = (
-        p1["open"]
-        + p1["close"]
-    ) / 2
-
-    return bool(
-
-        p1["bull"]
-
-        and p2["bear"]
-
-        and p2["close"] < mid
-
-        and p2["close"] > p1["open"]
-
-    )
-
-
-# =========================================================
-# 2캔들
-# =========================================================
-
-def two_patterns(
-    a,
-    b
-):
-
-    p1 = candle_parts(a)
-
-    p2 = candle_parts(b)
-
-    if not p1 or not p2:
-
-        return []
-
-    out = []
-
-    if bearish_engulfing(
-        a,
-        b
-    ):
-
-        out.append(
-            "하락장악"
-        )
-
-    if bearish_piercing(
-        a,
-        b
-    ):
-
-        out.append(
-            "역 관통형"
-        )
-
-    return out
-
-
-# =========================================================
-# 3캔들 하락장악
-# =========================================================
-
-def three_patterns(
-    a,
-    b,
-    c
-):
-
-    p1 = candle_parts(a)
-
-    p2 = candle_parts(b)
-
-    p3 = candle_parts(c)
-
-    if not p1 or not p2 or not p3:
-
-        return []
-
-    out = []
-
-    if (
-        p1["bull"]
-        and p3["bear"]
-        and p3["open"]
-        >= max(
-            p1["open"],
-            p1["close"]
-        )
-        and p3["close"]
-        <= min(
-            p1["open"],
-            p1["close"]
-        )
-        and p3["body"]
-        > p1["body"]
-    ):
-
-        out.append(
-            "3캔들 하락장악"
-        )
-
-    return out
-
-
-# =========================================================
-# 4캔들 하락장악
-# =========================================================
-
-def four_patterns(
-    a,
-    b,
-    c,
-    d
-):
-
-    p1 = candle_parts(a)
-
-    p2 = candle_parts(b)
-
-    p3 = candle_parts(c)
-
-    p4 = candle_parts(d)
-
-    if not all(
+    return (
         (
-            p1,
-            p2,
-            p3,
-            p4
+            current_close
+            - previous_close
         )
-    ):
-
-        return []
-
-    out = []
-
-    if (
-        p1["bull"]
-        and p4["bear"]
-        and p4["open"]
-        >= max(
-            p1["open"],
-            p1["close"]
-        )
-        and p4["close"]
-        <= min(
-            p1["open"],
-            p1["close"]
-        )
-        and p4["body"]
-        > p1["body"]
-    ):
-
-        out.append(
-            "4캔들 하락장악"
-        )
-
-    return out
-
-
-# =========================================================
-# 5캔들 하락장악
-# =========================================================
-
-def five_patterns(
-    a,
-    b,
-    c,
-    d,
-    e
-):
-
-    p1 = candle_parts(a)
-
-    p2 = candle_parts(b)
-
-    p3 = candle_parts(c)
-
-    p4 = candle_parts(d)
-
-    p5 = candle_parts(e)
-
-    if not all(
-        (
-            p1,
-            p2,
-            p3,
-            p4,
-            p5
-        )
-    ):
-
-        return []
-
-    out = []
-
-    if (
-        p1["bull"]
-        and p5["bear"]
-        and p5["open"]
-        >= max(
-            p1["open"],
-            p1["close"]
-        )
-        and p5["close"]
-        <= min(
-            p1["open"],
-            p1["close"]
-        )
-        and p5["body"]
-        > p1["body"]
-    ):
-
-        out.append(
-            "5캔들 하락장악"
-        )
-
-    return out
-
-
-# =========================================================
-# 장대음봉
-#
-# 몸통 / 전체 고저폭 >= 60%
-# 반드시 음봉
-# =========================================================
-
-def is_long_bearish(c):
-
-    p = candle_parts(c)
-
-    if not p:
-
-        return False
-
-    return bool(
-
-        p["bear"]
-
-        and p["body_ratio"]
-        >= LONG_BEAR_BODY_RATIO
-
+        / previous_close
+        * 100
     )
 
 
 # =========================================================
-# 장대 연속 하락
+# ROC SIGNAL
 #
-# 2연속
-# 3연속
-# 4연속
-# 5연속
+# ROC(50) >= 0
 # =========================================================
 
-def consecutive_long_bearish(
-    periods,
-    index
+def roc_signal(
+    roc
 ):
 
-    out = []
+    if roc is None:
 
-    # -----------------------------------------------------
-    # 2연속 장대음봉
-    # -----------------------------------------------------
+        return False
 
-    if index >= 1:
-
-        if (
-            is_long_bearish(
-                periods[index - 1]
-            )
-            and
-            is_long_bearish(
-                periods[index]
-            )
-        ):
-
-            out.append(
-                "2연속 장대음봉"
-            )
-
-    # -----------------------------------------------------
-    # 3연속 장대음봉
-    # -----------------------------------------------------
-
-    if index >= 2:
-
-        if all(
-            is_long_bearish(
-                periods[j]
-            )
-            for j in (
-                index - 2,
-                index - 1,
-                index
-            )
-        ):
-
-            out.append(
-                "3연속 장대음봉"
-            )
-
-    # -----------------------------------------------------
-    # 4연속 장대음봉
-    # -----------------------------------------------------
-
-    if index >= 3:
-
-        if all(
-            is_long_bearish(
-                periods[j]
-            )
-            for j in (
-                index - 3,
-                index - 2,
-                index - 1,
-                index
-            )
-        ):
-
-            out.append(
-                "4연속 장대음봉"
-            )
-
-    # -----------------------------------------------------
-    # 5연속 장대음봉
-    # -----------------------------------------------------
-
-    if index >= 4:
-
-        if all(
-            is_long_bearish(
-                periods[j]
-            )
-            for j in (
-                index - 4,
-                index - 3,
-                index - 2,
-                index - 1,
-                index
-            )
-        ):
-
-            out.append(
-                "5연속 장대음봉"
-            )
-
-    return out
+    return bool(
+        roc >= ROC_SIGNAL_LEVEL
+    )
 
 
 # =========================================================
@@ -1147,10 +717,7 @@ def build_daily_periods(
                     None,
 
                 "change":
-                    None,
-
-                "patterns":
-                    []
+                    None
 
             })
 
@@ -1226,10 +793,7 @@ def build_daily_periods(
                 c,
 
             "change":
-                change,
-
-            "patterns":
-                []
+                change
 
         })
 
@@ -1265,45 +829,14 @@ def build_upbit_4h_periods(
     )
 
     # -----------------------------------------------------
-    # 가장 최근 업비트 4시간봉부터 6개
+    # ROC(50) 계산을 위해 충분한 전체 데이터 사용
     # -----------------------------------------------------
 
-    part_df = df.tail(
-        6
-    ).copy()
+    periods = []
 
-    if part_df.empty:
-
-        return []
-
-    out = []
-
-    last_index = (
-        len(part_df) - 1
-    )
-
-    for idx, row in part_df.iterrows():
+    for idx, row in df.iterrows():
 
         dt = row["datetime"]
-
-        # -------------------------------------------------
-        # 실제 업비트 봉의 시작시간
-        # -------------------------------------------------
-
-        if idx < last_index:
-
-            next_dt = part_df.iloc[
-                idx + 1
-            ]["datetime"]
-
-        else:
-
-            # 마지막 봉은 실제 업비트 240분봉 시작시간을
-            # 그대로 사용하고 종료시간은 +4시간으로 표시
-            next_dt = (
-                dt
-                + timedelta(hours=4)
-            )
 
         o = float(
             row["open"]
@@ -1322,11 +855,11 @@ def build_upbit_4h_periods(
         )
 
         # -------------------------------------------------
-        # 가장 최근 실제 업비트 4시간봉에 현재가 반영
+        # 실제 업비트 마지막 4시간봉에 현재가 반영
         # -------------------------------------------------
 
         active = (
-            idx == last_index
+            idx == len(df) - 1
         )
 
         if (
@@ -1348,13 +881,26 @@ def build_upbit_4h_periods(
                 c
             )
 
+        if idx < len(df) - 1:
+
+            next_dt = df.iloc[
+                idx + 1
+            ]["datetime"]
+
+        else:
+
+            next_dt = (
+                dt
+                + timedelta(hours=4)
+            )
+
         change = (
             (c - o) / o * 100
             if o
             else None
         )
 
-        out.append({
+        periods.append({
 
             "start":
                 dt,
@@ -1385,195 +931,45 @@ def build_upbit_4h_periods(
             "change":
                 change,
 
-            "patterns":
-                []
+            "roc":
+                None
 
         })
 
     # =====================================================
-    # 실제 업비트 4시간봉 순서대로 패턴 계산
+    # ROC(50) 계산
     # =====================================================
 
-    for i, p in enumerate(out):
-
-        pats = []
-
-        # -------------------------------------------------
-        # 2캔들
-        # -------------------------------------------------
-
-        if i >= 1:
-
-            if (
-                out[i - 1]["open"] is not None
-                and p["open"] is not None
-            ):
-
-                pats += two_patterns(
-                    out[i - 1],
-                    p
-                )
-
-        # -------------------------------------------------
-        # 3캔들
-        # -------------------------------------------------
-
-        if i >= 2:
-
-            if all(
-                out[j]["open"] is not None
-                for j in (
-                    i - 2,
-                    i - 1,
-                    i
-                )
-            ):
-
-                pats += three_patterns(
-                    out[i - 2],
-                    out[i - 1],
-                    p
-                )
-
-        # -------------------------------------------------
-        # 4캔들
-        # -------------------------------------------------
-
-        if i >= 3:
-
-            if all(
-                out[j]["open"] is not None
-                for j in (
-                    i - 3,
-                    i - 2,
-                    i - 1,
-                    i
-                )
-            ):
-
-                pats += four_patterns(
-                    out[i - 3],
-                    out[i - 2],
-                    out[i - 1],
-                    p
-                )
-
-        # -------------------------------------------------
-        # 5캔들
-        # -------------------------------------------------
-
-        if i >= 4:
-
-            if all(
-                out[j]["open"] is not None
-                for j in (
-                    i - 4,
-                    i - 3,
-                    i - 2,
-                    i - 1,
-                    i
-                )
-            ):
-
-                pats += five_patterns(
-                    out[i - 4],
-                    out[i - 3],
-                    out[i - 2],
-                    out[i - 1],
-                    p
-                )
-
-        # -------------------------------------------------
-        # 장대 연속 하락
-        # -------------------------------------------------
-
-        pats += consecutive_long_bearish(
-            out,
-            i
-        )
-
-        p["patterns"] = list(
-            dict.fromkeys(
-                pats
-            )
-        )
-
-    return out
-
-
-# =========================================================
-# SIGNAL 단일 기간
-# =========================================================
-
-def period_signal(period):
-
-    if not period:
-
-        return False
-
-    change = period.get(
-        "change"
-    )
-
-    open_price = period.get(
-        "open"
-    )
-
-    close_price = period.get(
-        "close"
-    )
-
-    patterns = period.get(
-        "patterns",
-        []
-    )
-
-    if change is None:
-
-        return False
-
-    if open_price is None:
-
-        return False
-
-    if close_price is None:
-
-        return False
-
-    # -----------------------------------------------------
-    # 음수 봉만 SIGNAL
-    # -----------------------------------------------------
-
-    if change >= 0:
-
-        return False
-
-    if close_price >= open_price:
-
-        return False
-
-    # -----------------------------------------------------
-    # 기존 패턴 + 장대 연속 패턴
-    # -----------------------------------------------------
-
-    if not any(
-        pattern in patterns
-        for pattern in SIGNAL_CANDLE_PATTERNS
+    for i in range(
+        len(periods)
     ):
 
-        return False
+        periods[i]["roc"] = calculate_roc(
+            periods,
+            i,
+            ROC_PERIOD
+        )
 
-    return True
+        periods[i]["roc_signal"] = roc_signal(
+            periods[i]["roc"]
+        )
+
+    # =====================================================
+    # 화면에는 최근 6개 4시간봉만 표시
+    # =====================================================
+
+    return periods[-6:]
 
 
 # =========================================================
 # SIGNAL 판정
 #
-# 현재 4시간봉이 음수일 때만
-# 현재봉 + 이전봉 검사
+# 현재 4시간봉 ROC(50) >= 0
 # =========================================================
 
-def signal_pass(periods):
+def signal_pass(
+    periods
+):
 
     if not periods:
 
@@ -1581,40 +977,22 @@ def signal_pass(periods):
 
     current = periods[-1]
 
-    current_change = current.get(
-        "change"
+    roc = current.get(
+        "roc"
     )
 
-    if current_change is None:
-
-        return False
-
-    # 현재 4시간봉이 + 또는 0이면
-    # 이전봉 SIGNAL도 차단
-    if current_change >= 0:
-
-        return False
-
-    if period_signal(current):
-
-        return True
-
-    if len(periods) >= 2:
-
-        previous = periods[-2]
-
-        if period_signal(previous):
-
-            return True
-
-    return False
+    return roc_signal(
+        roc
+    )
 
 
 # =========================================================
 # SIGNAL 세부정보
 # =========================================================
 
-def signal_details(periods):
+def signal_details(
+    periods
+):
 
     empty = {
 
@@ -1630,8 +1008,11 @@ def signal_details(periods):
         "signal_change":
             None,
 
-        "signal_patterns":
-            [],
+        "signal_roc":
+            None,
+
+        "previous_roc":
+            None,
 
         "signal_period":
             None
@@ -1644,25 +1025,12 @@ def signal_details(periods):
 
     current = periods[-1]
 
-    current_change = current.get(
-        "change"
+    current_roc = current.get(
+        "roc"
     )
 
-    if current_change is None:
-
-        return empty
-
-    # -----------------------------------------------------
-    # 현재 4시간봉이 양수/0이면
-    # 이전봉 SIGNAL도 차단
-    # -----------------------------------------------------
-
-    if current_change >= 0:
-
-        return empty
-
-    current_signal = period_signal(
-        current
+    current_signal = roc_signal(
+        current_roc
     )
 
     previous = (
@@ -1671,80 +1039,73 @@ def signal_details(periods):
         else None
     )
 
-    previous_signal = (
-        period_signal(
-            previous
-        )
+    previous_roc = (
+        previous.get("roc")
         if previous is not None
-        else False
+        else None
     )
 
+    previous_signal = roc_signal(
+        previous_roc
+    )
+
+    # -----------------------------------------------------
+    # SIGNAL은 현재 캔들의 ROC(50)가 0 이상인지 판단
+    # -----------------------------------------------------
+
     if current_signal:
-
-        target = current
-
-    elif previous_signal:
-
-        target = previous
-
-    else:
-
-        target = None
-
-    if target is None:
 
         return {
 
             "signal":
-                False,
+                True,
 
             "current_signal":
-                current_signal,
+                True,
 
             "previous_signal":
                 previous_signal,
 
             "signal_change":
-                None,
+                current.get(
+                    "change"
+                ),
 
-            "signal_patterns":
-                [],
+            "signal_roc":
+                current_roc,
+
+            "previous_roc":
+                previous_roc,
 
             "signal_period":
-                None
+                current.get(
+                    "label"
+                )
 
         }
 
     return {
 
         "signal":
-            True,
+            False,
 
         "current_signal":
-            current_signal,
+            False,
 
         "previous_signal":
             previous_signal,
 
         "signal_change":
-            target.get(
-                "change"
-            ),
+            None,
 
-        "signal_patterns":
-            [
-                x
-                for x in SIGNAL_CANDLE_PATTERNS
-                if x in target.get(
-                    "patterns",
-                    []
-                )
-            ],
+        "signal_roc":
+            current_roc,
+
+        "previous_roc":
+            previous_roc,
 
         "signal_period":
-            target.get(
-                "label"
-            )
+            None
 
     }
 
@@ -1809,6 +1170,7 @@ def analyze_daily_change(
 # 4시간봉 분석
 #
 # 업비트 실제 240분봉 사용
+# ROC(50)
 # =========================================================
 
 def analyze_4h(
@@ -1840,8 +1202,11 @@ def analyze_4h(
             "signal_change":
                 None,
 
-            "signal_patterns":
-                [],
+            "signal_roc":
+                None,
+
+            "previous_roc":
+                None,
 
             "signal_period":
                 None
@@ -1882,9 +1247,14 @@ def analyze_4h(
                 "signal_change"
             ],
 
-        "signal_patterns":
+        "signal_roc":
             details[
-                "signal_patterns"
+                "signal_roc"
+            ],
+
+        "previous_roc":
+            details[
+                "previous_roc"
             ],
 
         "signal_period":
@@ -1983,9 +1353,14 @@ def make_row(
                 "signal_change"
             ],
 
-        "signal_4h_patterns":
+        "signal_4h_roc":
             analysis_4h[
-                "signal_patterns"
+                "signal_roc"
+            ],
+
+        "signal_4h_previous_roc":
+            analysis_4h[
+                "previous_roc"
             ],
 
         "signal_4h_period":
@@ -2066,7 +1441,7 @@ def update_upbit():
 
     # =====================================================
     # 2.
-    # 마이너스 종목 중 거래대금 TOP10
+    # 마이너스 종목 중 거래대금 TOP20
     # =====================================================
 
     candidates.sort(
@@ -2083,7 +1458,7 @@ def update_upbit():
 
     # =====================================================
     # 3.
-    # TOP10의 실제 업비트 4시간봉 분석
+    # TOP20의 실제 업비트 4시간봉 분석
     # =====================================================
 
     for rank, candidate in enumerate(
@@ -2139,8 +1514,11 @@ def update_upbit():
                 "signal_change":
                     None,
 
-                "signal_patterns":
-                    [],
+                "signal_roc":
+                    None,
+
+                "previous_roc":
+                    None,
 
                 "signal_period":
                     None
@@ -2168,7 +1546,7 @@ def update_upbit():
     )
 
     log.info(
-        "UPBIT | 일봉 음수 TOP%s | 실제 업비트 4H SIGNAL=%s",
+        "UPBIT | 일봉 음수 TOP%s | ROC(50) >= 0 SIGNAL=%s",
 
         TOP_N,
 
@@ -2576,6 +1954,43 @@ def fmt_change(v):
 
 
 # =========================================================
+# ROC 표시
+# =========================================================
+
+def fmt_roc(v):
+
+    if v is None:
+
+        return (
+            '<span class="zero">ROC -</span>'
+        )
+
+    try:
+
+        v = float(v)
+
+    except Exception:
+
+        return (
+            '<span class="zero">ROC -</span>'
+        )
+
+    if v >= 0:
+
+        return (
+            '<span class="roc-up">'
+            f'ROC +{v:.2f}%'
+            '</span>'
+        )
+
+    return (
+        '<span class="roc-down">'
+        f'ROC {v:.2f}%'
+        '</span>'
+    )
+
+
+# =========================================================
 # 캔들 표시
 # =========================================================
 
@@ -2591,23 +2006,26 @@ def cells(periods):
             else ""
         )
 
-        patterns = p.get(
-            "patterns",
-            []
+        roc = p.get(
+            "roc"
         )
 
-        pattern_html = ""
+        roc_signal_state = p.get(
+            "roc_signal",
+            False
+        )
 
-        if patterns:
+        if roc_signal_state:
 
-            pattern_html = (
-                "<small>"
-                + " · ".join(
-                    html.escape(x)
-                    for x in patterns
-                )
-                + "</small>"
+            roc_badge = (
+                '<span class="roc-signal">'
+                '⭐ SIGNAL'
+                '</span>'
             )
+
+        else:
+
+            roc_badge = ""
 
         result.append(
             f"""
@@ -2630,7 +2048,11 @@ def cells(periods):
                     )}
                 </strong>
 
-                {pattern_html}
+                <div class="roc-value">
+                    {fmt_roc(roc)}
+                </div>
+
+                {roc_badge}
 
             </div>
             """
@@ -2738,7 +2160,7 @@ def card(
 
             status = (
                 '<span class="signal-badge">'
-                '⭐ SIGNAL'
+                '⭐ ROC SIGNAL'
                 '</span>'
             )
 
@@ -2818,13 +2240,13 @@ def card(
                 <div>
 
                     <span>
-                        4시간봉
+                        4H ROC(50)
                     </span>
 
                     <strong>
-                        {fmt_change(
+                        {fmt_roc(
                             row.get(
-                                "signal_4h_change"
+                                "signal_4h_roc"
                             )
                         )}
                     </strong>
@@ -2837,13 +2259,13 @@ def card(
             <div class="signal-bar">
 
                 <span>
-                    4H SIGNAL
+                    4H ROC(50)
                 </span>
 
                 <i></i>
 
                 <small>
-                    현재봉 + 이전봉
+                    0선 이상 = SIGNAL
                 </small>
 
             </div>
@@ -2854,11 +2276,11 @@ def card(
                 <div class="signal-head">
 
                     <b>
-                        4시간봉 SIGNAL
+                        4시간봉 ROC(50)
                     </b>
 
                     <span>
-                        하락장악 · 3/4/5캔들 · 역 관통형 · 장대 2/3/4/5연속
+                        0선 이상 SIGNAL
                     </span>
 
                 </div>
@@ -2897,7 +2319,7 @@ def card(
             </div>
 
             <span class="both-badge">
-                ⭐ 4시간봉 SIGNAL
+                ⭐ ROC(50) SIGNAL
             </span>
 
         </div>
@@ -2940,13 +2362,13 @@ def card(
             <div>
 
                 <span>
-                    4시간봉
+                    현재 4H ROC
                 </span>
 
                 <strong>
-                    {fmt_change(
+                    {fmt_roc(
                         row.get(
-                            "signal_4h_change"
+                            "signal_4h_roc"
                         )
                     )}
                 </strong>
@@ -2957,11 +2379,15 @@ def card(
             <div>
 
                 <span>
-                    기준
+                    이전 4H ROC
                 </span>
 
                 <strong>
-                    현재/이전
+                    {fmt_roc(
+                        row.get(
+                            "signal_4h_previous_roc"
+                        )
+                    )}
                 </strong>
 
             </div>
@@ -2974,11 +2400,11 @@ def card(
             <div class="signal-head">
 
                 <b>
-                    4시간봉
+                    4시간봉 ROC(50)
                 </b>
 
                 <span>
-                    하락장악 · 3/4/5캔들 · 역 관통형 · 장대 2/3/4/5연속
+                    0선 이상 = SIGNAL
                 </span>
 
             </div>
@@ -3026,7 +2452,7 @@ def both_section(data):
 
         content = (
             '<div class="empty">'
-            '현재 4시간봉 SIGNAL 없음'
+            '현재 4시간봉 ROC(50) 0선 이상 SIGNAL 없음'
             '</div>'
         )
 
@@ -3043,13 +2469,13 @@ def both_section(data):
                 </span>
 
                 <b>
-                    ⭐ 4시간봉 SIGNAL
+                    ⭐ 4시간봉 ROC(50) SIGNAL
                 </b>
 
             </div>
 
             <small>
-                실제 업비트 240분봉
+                ROC(50) ≥ 0
             </small>
 
         </div>
@@ -3128,6 +2554,40 @@ section {
 
 .zero {
     color: #68737e;
+}
+
+
+.roc-up {
+    color: #38d878;
+}
+
+
+.roc-down {
+    color: #ff5966;
+}
+
+
+.roc-signal {
+
+    display: block;
+
+    margin-top: 2px;
+
+    color: #e4c45e;
+
+    font-size: 5px;
+
+    font-weight: 900;
+}
+
+
+.roc-value {
+
+    margin-top: 3px;
+
+    font-size: 6px;
+
+    font-weight: 800;
 }
 
 
@@ -3365,7 +2825,7 @@ section {
 
 .tf-cell {
 
-    min-height: 54px;
+    min-height: 59px;
 
     padding: 5px 2px;
 
@@ -3411,24 +2871,6 @@ section {
     margin-top: 4px;
 
     font-size: 8px;
-}
-
-
-.tf-cell small {
-
-    display: block;
-
-    margin-top: 3px;
-
-    color: #c5a44b;
-
-    font-size: 5px;
-
-    white-space: nowrap;
-
-    overflow: hidden;
-
-    text-overflow: ellipsis;
 }
 
 
@@ -3835,7 +3277,7 @@ section {
 
     .tf-cell {
 
-        min-height: 50px;
+        min-height: 56px;
 
         padding:
             4px 2px;
@@ -3848,7 +3290,13 @@ section {
     }
 
 
-    .tf-cell small {
+    .roc-value {
+
+        font-size: 5px;
+    }
+
+
+    .roc-signal {
 
         font-size: 4px;
     }
@@ -3963,7 +3411,7 @@ def dashboard():
     if USE_UPBIT == "Y":
 
         # -------------------------------------------------
-        # 4시간봉 SIGNAL
+        # 4시간봉 ROC SIGNAL
         # -------------------------------------------------
 
         s += both_section(
@@ -4101,7 +3549,7 @@ def scheduler():
 def startup():
 
     log.info(
-        "START | 업비트 09시 음수 종목 → 실제 업비트 4H 하락 SIGNAL → TOP10"
+        "START | 업비트 09시 음수 종목 → 실제 업비트 4H ROC(50) 0선 이상 SIGNAL → TOP20"
     )
 
     threading.Thread(
