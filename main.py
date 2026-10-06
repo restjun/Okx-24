@@ -42,7 +42,7 @@ KST = ZoneInfo("Asia/Seoul")
 
 TOP_N = 20
 
-SHOW_TOP_LIST = "N"
+SHOW_TOP_LIST = "Y"
 
 UPDATE_MINUTES = 1
 
