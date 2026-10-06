@@ -68,13 +68,12 @@ TIMEFRAME_LABEL = {
 }
 
 
-# ---------------------------------------------------------
+# =========================================================
 # ROC 설정
-# ---------------------------------------------------------
+# =========================================================
 
 ROC_PERIOD = 50
 
-# ROC 상향 돌파 기준
 ROC_SIGNAL_LEVEL = 0.0
 
 
@@ -106,6 +105,8 @@ latest_btc_okx_price = None
 latest_btc_daily_periods = []
 
 latest_btc_daily_change = None
+
+latest_btc_daily_roc = None
 
 
 # =========================================================
@@ -456,7 +457,7 @@ def get_upbit_daily_candles(
 # =========================================================
 # 업비트 4시간봉
 #
-# 업비트가 제공하는 실제 240분봉 시간을 그대로 사용
+# 업비트 실제 240분봉
 # =========================================================
 
 def get_upbit_4h_candles(
@@ -569,11 +570,6 @@ def get_upbit_4h_candles(
 
 # =========================================================
 # ROC(50)
-#
-# ROC = (현재 종가 - 50봉 전 종가)
-#       / 50봉 전 종가 * 100
-#
-# 4시간봉 기준
 # =========================================================
 
 def calculate_roc(
@@ -616,9 +612,6 @@ def calculate_roc(
 
 # =========================================================
 # ROC 0선 상향 돌파
-#
-# 이전 ROC < 0
-# 현재 ROC >= 0
 # =========================================================
 
 def roc_cross_up(
@@ -641,14 +634,184 @@ def roc_cross_up(
 
 
 # =========================================================
+# 일봉 기간 생성
+#
+# KST 09:00 기준
+#
+# 전체 기간에서 ROC 계산 후
+# 최근 6개만 반환
+# =========================================================
+
+def build_daily_periods(
+    df,
+    current_price=None
+):
+
+    if df is None or df.empty:
+
+        return []
+
+    df = (
+        df.sort_values(
+            "datetime"
+        )
+        .drop_duplicates(
+            "datetime"
+        )
+        .reset_index(
+            drop=True
+        )
+    )
+
+    now = datetime.now(KST)
+
+    current_start = now.replace(
+        hour=9,
+        minute=0,
+        second=0,
+        microsecond=0
+    )
+
+    if now < current_start:
+
+        current_start -= timedelta(
+            days=1
+        )
+
+    periods = []
+
+    # =====================================================
+    # 전체 일봉 기간 생성
+    # =====================================================
+
+    for i, row in df.iterrows():
+
+        dt = row["datetime"]
+
+        start = dt
+
+        end = (
+            start
+            + timedelta(days=1)
+        )
+
+        o = float(
+            row["open"]
+        )
+
+        h = float(
+            row["high"]
+        )
+
+        l = float(
+            row["low"]
+        )
+
+        c = float(
+            row["close"]
+        )
+
+        active = (
+            start == current_start
+        )
+
+        # -------------------------------------------------
+        # 현재 진행 일봉에 현재가 반영
+        # -------------------------------------------------
+
+        if (
+            active
+            and current_price is not None
+        ):
+
+            c = float(
+                current_price
+            )
+
+            h = max(
+                h,
+                c
+            )
+
+            l = min(
+                l,
+                c
+            )
+
+        change = (
+            (c - o) / o * 100
+            if o
+            else None
+        )
+
+        periods.append({
+
+            "start":
+                start,
+
+            "end":
+                end,
+
+            "active":
+                active,
+
+            "label":
+                start.strftime(
+                    "%m/%d 09:00"
+                ),
+
+            "open":
+                o,
+
+            "high":
+                h,
+
+            "low":
+                l,
+
+            "close":
+                c,
+
+            "change":
+                change,
+
+            "roc":
+                None
+
+        })
+
+    # =====================================================
+    # 일봉 ROC(50)
+    #
+    # 전체 데이터 기준으로 계산
+    # =====================================================
+
+    for i in range(
+        len(periods)
+    ):
+
+        periods[i]["roc"] = calculate_roc(
+            periods,
+            i,
+            ROC_PERIOD
+        )
+
+    # =====================================================
+    # 최근 6개만 화면 표시
+    # =====================================================
+
+    return periods[-6:]
+
+
+# =========================================================
 # 업비트 실제 4시간봉 기간 생성
 #
-# 핵심 SIGNAL:
+# SIGNAL:
 #
-# 1. ROC가 음수에서 0 이상으로 올라온 "돌파봉"
-# 2. 돌파봉이 완성된 후 바로 다음 캔들
+# 1. ROC 음수 → 0 이상 상향 돌파봉
+# 2. 돌파봉 다음 캔들
 #
-# 그 이후 ROC가 계속 0 이상이어도 SIGNAL 아님
+# 그 이후 계속 0 이상이어도 SIGNAL 아님
 # =========================================================
 
 def build_upbit_4h_periods(
@@ -672,11 +835,11 @@ def build_upbit_4h_periods(
         )
     )
 
-    # -----------------------------------------------------
-    # 전체 4시간봉 생성
-    # -----------------------------------------------------
-
     periods = []
+
+    # =====================================================
+    # 전체 4시간봉 생성
+    # =====================================================
 
     for idx, row in df.iterrows():
 
@@ -697,10 +860,6 @@ def build_upbit_4h_periods(
         c = float(
             row["close"]
         )
-
-        # -------------------------------------------------
-        # 마지막 봉 = 현재 진행 중인 4시간봉
-        # -------------------------------------------------
 
         active = (
             idx == len(df) - 1
@@ -790,7 +949,7 @@ def build_upbit_4h_periods(
         })
 
     # =====================================================
-    # ROC(50) 계산
+    # ROC 계산
     # =====================================================
 
     for i in range(
@@ -804,7 +963,7 @@ def build_upbit_4h_periods(
         )
 
     # =====================================================
-    # 0선 상향 돌파 찾기
+    # 0선 상향 돌파
     # =====================================================
 
     for i in range(
@@ -862,7 +1021,7 @@ def build_upbit_4h_periods(
                 ] = "돌파 후 다음 캔들"
 
     # =====================================================
-    # 화면에는 최근 6개만 표시
+    # 최근 6개만 표시
     # =====================================================
 
     return periods[-6:]
@@ -870,8 +1029,6 @@ def build_upbit_4h_periods(
 
 # =========================================================
 # SIGNAL 판정
-#
-# 최근 6개 중 SIGNAL 캔들이 있는지
 # =========================================================
 
 def signal_pass(
@@ -965,10 +1122,6 @@ def signal_details(
         else None
     )
 
-    # -----------------------------------------------------
-    # 현재 진행봉이 SIGNAL인 경우
-    # -----------------------------------------------------
-
     if current_signal:
 
         return {
@@ -1004,10 +1157,6 @@ def signal_details(
                 )
 
         }
-
-    # -----------------------------------------------------
-    # 현재봉이 SIGNAL이 아니면
-    # -----------------------------------------------------
 
     return {
 
@@ -1096,12 +1245,6 @@ def analyze_daily_change(
 
 # =========================================================
 # 4시간봉 분석
-#
-# 업비트 실제 240분봉
-# ROC(50)
-#
-# SIGNAL:
-# 0선 상향 돌파봉 + 바로 다음 캔들
 # =========================================================
 
 def analyze_4h(
@@ -1251,10 +1394,6 @@ def make_row(
         "volume_rank":
             rank,
 
-        # -------------------------------------------------
-        # 일봉
-        # -------------------------------------------------
-
         "daily_change":
             analysis_daily[
                 "change"
@@ -1264,10 +1403,6 @@ def make_row(
             analysis_daily[
                 "periods"
             ],
-
-        # -------------------------------------------------
-        # 실제 업비트 4시간봉
-        # -------------------------------------------------
 
         "periods_4h":
             analysis_4h[
@@ -1333,8 +1468,7 @@ def update_upbit():
 
     # =====================================================
     # 1.
-    # 업비트 09:00 일봉 변동률 계산
-    # 마이너스만 통과
+    # KST 09:00 기준 일봉 음수 종목
     # =====================================================
 
     candidates = []
@@ -1385,7 +1519,7 @@ def update_upbit():
 
     # =====================================================
     # 2.
-    # 마이너스 종목 중 거래대금 TOP20
+    # 음수 종목 중 거래대금 TOP20
     # =====================================================
 
     candidates.sort(
@@ -1402,7 +1536,7 @@ def update_upbit():
 
     # =====================================================
     # 3.
-    # TOP20의 실제 업비트 4시간봉 분석
+    # TOP20 4시간봉 분석
     # =====================================================
 
     for rank, candidate in enumerate(
@@ -1494,9 +1628,7 @@ def update_upbit():
 
     log.info(
         "UPBIT | 일봉 음수 TOP%s | 4H ROC(50) 0선 상향 SIGNAL=%s",
-
         TOP_N,
-
         sum(
             x["signal_4h"]
             for x in rows
@@ -1505,7 +1637,13 @@ def update_upbit():
 
 
 # =========================================================
-# OKX
+# OKX 캔들
+#
+# BTC-USDT-SWAP
+#
+# bar 예:
+# 1H
+# 1D
 # =========================================================
 
 def okx_candles(
@@ -1616,6 +1754,10 @@ def okx_price():
         timeout=15
     )
 
+    if r is None:
+
+        return None
+
     try:
 
         return float(
@@ -1631,6 +1773,14 @@ def okx_price():
 
 # =========================================================
 # BTC 업데이트
+#
+# 핵심:
+# OKX BTC-USDT-SWAP 1D 캔들 직접 요청
+#
+# OKX 1D 캔들 UTC 00:00
+# → KST 09:00
+#
+# 일봉 ROC(50) 계산
 # =========================================================
 
 def update_okx_btc():
@@ -1638,6 +1788,11 @@ def update_okx_btc():
     global latest_btc_okx_price
     global latest_btc_daily_periods
     global latest_btc_daily_change
+    global latest_btc_daily_roc
+
+    # =====================================================
+    # 현재 BTC 가격
+    # =====================================================
 
     price = okx_price()
 
@@ -1647,126 +1802,159 @@ def update_okx_btc():
 
         return
 
-    d1h = okx_candles(
-        "1H",
-        200
+    # =====================================================
+    # OKX 1D 캔들 직접 요청
+    #
+    # ROC(50) 계산을 위해 100개 요청
+    # =====================================================
+
+    d1d = okx_candles(
+        "1D",
+        100
     )
 
-    if not d1h.empty:
+    if d1d.empty:
 
-        d1h = d1h.copy()
+        latest_btc_daily_periods = []
 
-        d1h["datetime"] = (
-            d1h["datetime"]
-            .dt
-            .tz_convert(KST)
+        latest_btc_daily_change = None
+
+        latest_btc_daily_roc = None
+
+        log.warning(
+            "OKX BTC 1D 캔들 데이터 없음"
         )
 
-        shifted = d1h.copy()
+        return
 
-        shifted["day_start"] = (
-            (
-                shifted["datetime"]
-                - pd.Timedelta(
-                    hours=9
-                )
-            )
-            .dt
-            .floor("D")
-            + pd.Timedelta(
-                hours=9
-            )
+    # =====================================================
+    # OKX 1D 캔들 사용
+    #
+    # UTC 00:00
+    # =
+    # KST 09:00
+    #
+    # 따라서 KST 09:00 일봉과 일치
+    # =====================================================
+
+    d1d = (
+        d1d
+        .sort_values(
+            "datetime"
+        )
+        .drop_duplicates(
+            "datetime"
+        )
+        .reset_index(
+            drop=True
+        )
+    )
+
+    # =====================================================
+    # 현재 진행 중인 OKX 일봉에 현재가 반영
+    # =====================================================
+
+    now = datetime.now(KST)
+
+    current_day_start = now.replace(
+        hour=9,
+        minute=0,
+        second=0,
+        microsecond=0
+    )
+
+    if now < current_day_start:
+
+        current_day_start -= timedelta(
+            days=1
         )
 
-        daily = (
-            shifted
-            .groupby("day_start")
-            .agg(
+    active_rows = (
+        d1d["datetime"]
+        == current_day_start
+    )
 
-                open=(
-                    "open",
-                    "first"
-                ),
+    if active_rows.any():
 
-                high=(
-                    "high",
-                    "max"
-                ),
+        last_idx = d1d.index[
+            active_rows
+        ][-1]
 
-                low=(
-                    "low",
-                    "min"
-                ),
-
-                close=(
-                    "close",
-                    "last"
-                )
-
-            )
-            .reset_index()
-            .rename(
-                columns={
-                    "day_start":
-                        "datetime"
-                }
-            )
+        d1d.loc[
+            last_idx,
+            "close"
+        ] = float(
+            price
         )
 
-        now = datetime.now(KST)
-
-        current_day_start = now.replace(
-            hour=9,
-            minute=0,
-            second=0,
-            microsecond=0
+        d1d.loc[
+            last_idx,
+            "high"
+        ] = max(
+            float(
+                d1d.loc[
+                    last_idx,
+                    "high"
+                ]
+            ),
+            float(price)
         )
 
-        if now < current_day_start:
-
-            current_day_start -= timedelta(
-                days=1
-            )
-
-        active_daily = (
-            daily["datetime"]
-            >= current_day_start
+        d1d.loc[
+            last_idx,
+            "low"
+        ] = min(
+            float(
+                d1d.loc[
+                    last_idx,
+                    "low"
+                ]
+            ),
+            float(price)
         )
 
-        if active_daily.any():
-
-            last_daily_idx = daily.index[
-                active_daily
-            ][-1]
-
-            daily.loc[
-                last_daily_idx,
-                "close"
-            ] = float(
-                price
-            )
-
-    else:
-
-        daily = pd.DataFrame()
+    # =====================================================
+    # KST 09:00 기준 일봉 + ROC(50)
+    # =====================================================
 
     latest_btc_daily_periods = (
         build_daily_periods(
-            daily,
+            d1d,
             price
         )
     )
+
+    # =====================================================
+    # 현재 일봉 변동률
+    # =====================================================
 
     if latest_btc_daily_periods:
 
         latest_btc_daily_change = (
             latest_btc_daily_periods[-1]
-            .get("change")
+            .get(
+                "change"
+            )
+        )
+
+        latest_btc_daily_roc = (
+            latest_btc_daily_periods[-1]
+            .get(
+                "roc"
+            )
         )
 
     else:
 
         latest_btc_daily_change = None
+
+        latest_btc_daily_roc = None
+
+    log.info(
+        "OKX BTC | 1D | 현재 변동률=%s | ROC(50)=%s",
+        latest_btc_daily_change,
+        latest_btc_daily_roc
+    )
 
 
 # =========================================================
@@ -1938,7 +2126,7 @@ def fmt_roc(v):
 
 
 # =========================================================
-# SIGNAL 이유 표시
+# SIGNAL 이유
 # =========================================================
 
 def signal_reason_html(
@@ -2044,6 +2232,63 @@ def cells(periods):
 
 
 # =========================================================
+# BTC 일봉 전용 표시
+#
+# ROC 포함
+# SIGNAL은 적용하지 않음
+# =========================================================
+
+def btc_daily_cells(
+    periods
+):
+
+    result = []
+
+    for p in periods:
+
+        active_class = (
+            "current"
+            if p.get("active")
+            else ""
+        )
+
+        result.append(
+            f"""
+            <div class="tf-cell {active_class}">
+
+                <div class="tf-date">
+                    {html.escape(
+                        p.get(
+                            "label",
+                            "-"
+                        )
+                    )}
+                </div>
+
+                <strong>
+                    {fmt_change(
+                        p.get(
+                            "change"
+                        )
+                    )}
+                </strong>
+
+                <div class="roc-value">
+                    {fmt_roc(
+                        p.get(
+                            "roc"
+                        )
+                    )}
+                </div>
+
+            </div>
+            """
+        )
+
+    return "".join(result)
+
+
+# =========================================================
 # BTC HTML
 # =========================================================
 
@@ -2103,13 +2348,13 @@ def btc_html():
                 </b>
 
                 <span>
-                    당일봉 + 전일봉 · KST 09:00
+                    OKX 1D · KST 09:00 · ROC(50)
                 </span>
 
             </div>
 
             <div class="grid">
-                {cells(
+                {btc_daily_cells(
                     latest_btc_daily_periods
                 )}
             </div>
@@ -3571,7 +3816,7 @@ def scheduler():
 def startup():
 
     log.info(
-        "START | 업비트 09시 음수 종목 → 실제 업비트 4H ROC(50) 0선 상향 돌파봉 + 다음봉 SIGNAL → TOP20"
+        "START | OKX BTC 1D ROC(50) + 업비트 09시 음수 TOP20 + 4H ROC 0선 상향 돌파 SIGNAL"
     )
 
     threading.Thread(
