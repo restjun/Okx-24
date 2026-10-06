@@ -1,4 +1,4 @@
-lfrom fastapi import FastAPI
+from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
 import requests
