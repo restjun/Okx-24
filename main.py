@@ -1228,6 +1228,105 @@ def get_current_pattern(
 
 
 # =========================================================
+# 최근 2·3·4번째 캔들 상승장악형
+#
+# periods[-1] = 현재 캔들
+# periods[-2] = 최근 2번째
+# periods[-3] = 최근 3번째
+# periods[-4] = 최근 4번째
+#
+# 현재 캔들은 제외하고
+# 최근 2·3·4번째 캔들에서
+# 상승장악형이 하나라도 있으면 True
+# =========================================================
+
+def bullish_engulfing_234(
+    periods
+):
+
+    if not periods:
+
+        return False
+
+    for idx in (
+        -2,
+        -3,
+        -4
+    ):
+
+        if abs(idx) > len(periods):
+
+            continue
+
+        current = periods[idx]
+
+        previous_idx = idx - 1
+
+        if abs(previous_idx) > len(periods):
+
+            continue
+
+        previous = periods[
+            previous_idx
+        ]
+
+        if is_bullish_engulfing(
+            previous,
+            current
+        ):
+
+            return True
+
+    return False
+
+
+# =========================================================
+# 최근 2·3·4번째 캔들 상승장악형 위치
+#
+# SIGNAL 화면에서 조건 확인용
+# =========================================================
+
+def bullish_engulfing_234_label(
+    periods
+):
+
+    if not periods:
+
+        return None
+
+    for idx, label in (
+        (-2, "2번째"),
+        (-3, "3번째"),
+        (-4, "4번째")
+    ):
+
+        if abs(idx) > len(periods):
+
+            continue
+
+        current = periods[idx]
+
+        previous_idx = idx - 1
+
+        if abs(previous_idx) > len(periods):
+
+            continue
+
+        previous = periods[
+            previous_idx
+        ]
+
+        if is_bullish_engulfing(
+            previous,
+            current
+        ):
+
+            return label
+
+    return None
+
+
+# =========================================================
 # 업비트 4시간봉 기간 생성
 # =========================================================
 
@@ -1654,6 +1753,12 @@ def analyze_4h(
                 None,
 
             "current_pattern":
+                None,
+
+            "bullish_engulfing_234":
+                False,
+
+            "bullish_engulfing_234_label":
                 None
 
         }
@@ -1669,6 +1774,16 @@ def analyze_4h(
 
     current_pattern = get_current_pattern(
         periods
+    )
+
+    bullish_234 = bullish_engulfing_234(
+        periods
+    )
+
+    bullish_234_label = (
+        bullish_engulfing_234_label(
+            periods
+        )
     )
 
     return {
@@ -1707,7 +1822,13 @@ def analyze_4h(
             ],
 
         "current_pattern":
-            current_pattern
+            current_pattern,
+
+        "bullish_engulfing_234":
+            bullish_234,
+
+        "bullish_engulfing_234_label":
+            bullish_234_label
 
     }
 
@@ -1802,6 +1923,16 @@ def make_row(
         "current_pattern":
             analysis_4h[
                 "current_pattern"
+            ],
+
+        "bullish_engulfing_234":
+            analysis_4h[
+                "bullish_engulfing_234"
+            ],
+
+        "bullish_engulfing_234_label":
+            analysis_4h[
+                "bullish_engulfing_234_label"
             ],
 
         "ema20":
@@ -1955,6 +2086,12 @@ def update_upbit():
                     None,
 
                 "current_pattern":
+                    None,
+
+                "bullish_engulfing_234":
+                    False,
+
+                "bullish_engulfing_234_label":
                     None
 
             }
@@ -2012,19 +2149,35 @@ def update_upbit():
     )
 
     # =====================================================
-    # EMA20 < EMA60 역배열 SIGNAL
+    # SIGNAL 조건
+    #
+    # 1. EMA20 < EMA60 역배열
+    # OR
+    # 2. 최근 2번째 4시간봉 상승장악형
+    # OR
+    # 3. 최근 3번째 4시간봉 상승장악형
+    # OR
+    # 4. 최근 4번째 4시간봉 상승장악형
     # =====================================================
 
     latest_signal_data = [
         row
         for row in rows
-        if row.get(
-            "ema_reverse",
-            False
+        if (
+            row.get(
+                "ema_reverse",
+                False
+            )
+            or
+            row.get(
+                "bullish_engulfing_234",
+                False
+            )
         )
     ]
 
     # SIGNAL도 거래대금순으로 정렬
+
     latest_signal_data.sort(
         key=lambda x:
             x.get(
@@ -2035,6 +2188,7 @@ def update_upbit():
     )
 
     # SIGNAL 전용 번호
+
     for signal_rank, row in enumerate(
         latest_signal_data,
         1
@@ -2043,7 +2197,7 @@ def update_upbit():
         row["signal_rank"] = signal_rank
 
     log.info(
-        "UPBIT | 거래대금 TOP%s | EMA20<EMA60 역배열=%s",
+        "UPBIT | 거래대금 TOP%s | SIGNAL=%s",
         TOP_N,
         len(
             latest_signal_data
@@ -2787,8 +2941,8 @@ def signal_section():
 
         <div class="signal-empty">
 
-            현재 EMA20 &lt; EMA60
-            역배열 종목 없음
+            현재 SIGNAL 조건에
+            해당하는 종목 없음
 
         </div>
 
@@ -2814,7 +2968,7 @@ def signal_section():
                 </span>
 
                 <b>
-                    🔴 EMA20 / EMA60 역배열
+                    🔴 EMA 역배열 / 상승장악 SIGNAL
                 </b>
 
             </div>
@@ -2834,6 +2988,8 @@ def signal_section():
 
             <b>
                 EMA20 &lt; EMA60
+                OR
+                최근 2·3·4번째 상승장악
             </b>
 
             <small>
@@ -2889,9 +3045,21 @@ def card(
     kind
 ):
 
-    signal = row.get(
-        "signal_4h",
-        False
+    signal = (
+        row.get(
+            "signal_4h",
+            False
+        )
+        or
+        row.get(
+            "bullish_engulfing_234",
+            False
+        )
+        or
+        row.get(
+            "ema_reverse",
+            False
+        )
     )
 
     current_pattern = row.get(
@@ -2906,7 +3074,7 @@ def card(
 
             status = (
                 '<span class="signal-badge">'
-                '⭐ 상승장악/상승관통 SIGNAL'
+                '⭐ SIGNAL'
                 '</span>'
             )
 
@@ -3973,7 +4141,7 @@ def scheduler():
 def startup():
 
     log.info(
-        "START | BTC 시황 + EMA20/60 역배열 SIGNAL + TOP10"
+        "START | BTC 시황 + EMA20/60 역배열 + 2·3·4번째 상승장악 SIGNAL + TOP10"
     )
 
     threading.Thread(
