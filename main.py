@@ -61,10 +61,10 @@ MAX_RETRIES = 10
 # SIGNAL 설정
 # =========================================================
 
-SIGNAL_TIMEFRAME = "1h"
+SIGNAL_TIMEFRAME = "4h"
 
 TIMEFRAME_LABEL = {
-    "1h": "1시간봉"
+    "4h": "4시간봉"
 }
 
 
@@ -72,8 +72,8 @@ TIMEFRAME_LABEL = {
 # EMA 설정
 # =========================================================
 
-EMA_FAST = 20
-EMA_SLOW = 60
+EMA_FAST = 5
+EMA_SLOW = 15
 
 
 # =========================================================
@@ -459,6 +459,8 @@ def get_upbit_daily_candles(
 
 # =========================================================
 # 업비트 1시간봉
+#
+# 4시간봉 구성용 원본 데이터
 # =========================================================
 
 def get_upbit_4h_candles(
@@ -570,6 +572,262 @@ def get_upbit_4h_candles(
 
 
 # =========================================================
+# 업비트 09:00 기준 4시간봉 생성
+#
+# 기준:
+# 09:00 ~ 13:00
+# 13:00 ~ 17:00
+# 17:00 ~ 21:00
+# 21:00 ~ 01:00
+# 01:00 ~ 05:00
+# 05:00 ~ 09:00
+#
+# 즉 KST 09:00 기준으로 4시간씩 진행
+# =========================================================
+
+def build_upbit_4h_candles(
+    df,
+    current_price=None
+):
+
+    if df is None or df.empty:
+
+        return pd.DataFrame()
+
+    df = (
+        df.sort_values(
+            "datetime"
+        )
+        .drop_duplicates(
+            "datetime"
+        )
+        .reset_index(
+            drop=True
+        )
+    )
+
+    now = datetime.now(KST)
+
+    # -----------------------------------------------------
+    # 현재 4시간봉 시작 시간 계산
+    #
+    # 09시를 기준으로 4시간 단위
+    # -----------------------------------------------------
+
+    day_start = now.replace(
+        hour=9,
+        minute=0,
+        second=0,
+        microsecond=0
+    )
+
+    if now < day_start:
+
+        day_start -= timedelta(
+            days=1
+        )
+
+    elapsed_hours = int(
+        (
+            now - day_start
+        ).total_seconds()
+        // 3600
+    )
+
+    current_start = (
+        day_start
+        + timedelta(
+            hours=(
+                elapsed_hours // 4
+            ) * 4
+        )
+    )
+
+    rows = []
+
+    # -----------------------------------------------------
+    # 각 1시간봉을 4시간봉 그룹으로 분류
+    # -----------------------------------------------------
+
+    for _, row in df.iterrows():
+
+        dt = row["datetime"]
+
+        # 09시 기준 상대 시간
+        relative_seconds = (
+            dt - day_start
+        ).total_seconds()
+
+        group_index = int(
+            relative_seconds
+            // (4 * 3600)
+        )
+
+        period_start = (
+            day_start
+            + timedelta(
+                hours=group_index * 4
+            )
+        )
+
+        period_end = (
+            period_start
+            + timedelta(
+                hours=4
+            )
+        )
+
+        rows.append({
+
+            "period_start":
+                period_start,
+
+            "period_end":
+                period_end,
+
+            "open":
+                float(
+                    row["open"]
+                ),
+
+            "high":
+                float(
+                    row["high"]
+                ),
+
+            "low":
+                float(
+                    row["low"]
+                ),
+
+            "close":
+                float(
+                    row["close"]
+                )
+
+        })
+
+    if not rows:
+
+        return pd.DataFrame()
+
+    raw = pd.DataFrame(rows)
+
+    grouped = []
+
+    for period_start, group in raw.groupby(
+        "period_start",
+        sort=True
+    ):
+
+        group = group.sort_index()
+
+        o = float(
+            group.iloc[0]["open"]
+        )
+
+        h = float(
+            group["high"].max()
+        )
+
+        l = float(
+            group["low"].min()
+        )
+
+        c = float(
+            group.iloc[-1]["close"]
+        )
+
+        active = (
+            period_start
+            == current_start
+        )
+
+        # -------------------------------------------------
+        # 현재 진행 중인 4시간봉은 현재가 반영
+        # -------------------------------------------------
+
+        if (
+            active
+            and current_price is not None
+        ):
+
+            c = float(
+                current_price
+            )
+
+            h = max(
+                h,
+                c
+            )
+
+            l = min(
+                l,
+                c
+            )
+
+        change = (
+            (c - o) / o * 100
+            if o
+            else None
+        )
+
+        grouped.append({
+
+            "datetime":
+                period_start,
+
+            "start":
+                period_start,
+
+            "end":
+                period_start
+                + timedelta(
+                    hours=4
+                ),
+
+            "active":
+                active,
+
+            "label":
+                period_start.strftime(
+                    "%m/%d %H:%M"
+                ),
+
+            "open":
+                o,
+
+            "high":
+                h,
+
+            "low":
+                l,
+
+            "close":
+                c,
+
+            "change":
+                change
+
+        })
+
+    result = (
+        pd.DataFrame(grouped)
+        .sort_values(
+            "datetime"
+        )
+        .drop_duplicates(
+            "datetime"
+        )
+        .reset_index(
+            drop=True
+        )
+    )
+
+    return result
+
+
+# =========================================================
 # EMA 계산
 # =========================================================
 
@@ -614,9 +872,11 @@ def calculate_ema(
 
 
 # =========================================================
-# 1시간봉 EMA 분석
+# 4시간봉 EMA 분석
 #
-# EMA20 < EMA60
+# 업비트 KST 09:00 기준 4시간봉
+#
+# EMA5 < EMA15
 # = 역배열
 # =========================================================
 
@@ -625,19 +885,42 @@ def analyze_ema_4h(
     price=None
 ):
 
-    df = get_upbit_4h_candles(
+    df_1h = get_upbit_4h_candles(
         market,
         200
+    )
+
+    if df_1h.empty:
+
+        return {
+
+            "ema5":
+                None,
+
+            "ema15":
+                None,
+
+            "reverse":
+                False,
+
+            "alignment":
+                None
+
+        }
+
+    df = build_upbit_4h_candles(
+        df_1h,
+        price
     )
 
     if df.empty:
 
         return {
 
-            "ema20":
+            "ema5":
                 None,
 
-            "ema60":
+            "ema15":
                 None,
 
             "reverse":
@@ -648,50 +931,29 @@ def analyze_ema_4h(
 
         }
 
-    df = (
-        df.sort_values(
-            "datetime"
-        )
-        .drop_duplicates(
-            "datetime"
-        )
-        .reset_index(
-            drop=True
-        )
-    )
-
-    if price is not None and len(df) > 0:
-
-        df.loc[
-            df.index[-1],
-            "close"
-        ] = float(
-            price
-        )
-
-    ema20 = calculate_ema(
+    ema5 = calculate_ema(
         df,
         EMA_FAST
     )
 
-    ema60 = calculate_ema(
+    ema15 = calculate_ema(
         df,
         EMA_SLOW
     )
 
     if (
-        ema20 is None
+        ema5 is None
         or
-        ema60 is None
+        ema15 is None
     ):
 
         return {
 
-            "ema20":
-                ema20,
+            "ema5":
+                ema5,
 
-            "ema60":
-                ema60,
+            "ema15":
+                ema15,
 
             "reverse":
                 False,
@@ -701,13 +963,13 @@ def analyze_ema_4h(
 
         }
 
-    if ema20 < ema60:
+    if ema5 < ema15:
 
         alignment = "역배열"
 
         reverse = True
 
-    elif ema20 > ema60:
+    elif ema5 > ema15:
 
         alignment = "정배열"
 
@@ -721,11 +983,11 @@ def analyze_ema_4h(
 
     return {
 
-        "ema20":
-            ema20,
+        "ema5":
+            ema5,
 
-        "ema60":
-            ema60,
+        "ema15":
+            ema15,
 
         "reverse":
             reverse,
@@ -1206,10 +1468,10 @@ def get_candle_pattern(
 
 
 # =========================================================
-# 이전 / 현재 1시간봉 패턴 분석
+# 이전 / 현재 4시간봉 패턴 분석
 #
-# periods[-2] = 이전 완료 캔들
-# periods[-1] = 현재 진행 캔들
+# periods[-2] = 이전 완료 4시간봉
+# periods[-1] = 현재 진행 4시간봉
 #
 # SIGNAL:
 # 이전 캔들 또는 현재 캔들 중
@@ -1252,7 +1514,7 @@ def analyze_previous_current_pattern(
     )
 
     # -----------------------------------------------------
-    # 현재 캔들의 패턴
+    # 현재 4시간봉 패턴
     # -----------------------------------------------------
 
     result[
@@ -1263,7 +1525,7 @@ def analyze_previous_current_pattern(
     )
 
     # -----------------------------------------------------
-    # 현재 캔들이 상승장악인지
+    # 현재 4시간봉 상승장악
     # -----------------------------------------------------
 
     if previous is not None:
@@ -1276,10 +1538,7 @@ def analyze_previous_current_pattern(
         )
 
     # -----------------------------------------------------
-    # 이전 캔들의 패턴
-    #
-    # 이전 캔들의 패턴을 판단하려면
-    # 이전 캔들 바로 앞의 캔들이 필요
+    # 이전 4시간봉 패턴
     # -----------------------------------------------------
 
     if len(periods) >= 3:
@@ -1320,7 +1579,9 @@ def analyze_previous_current_pattern(
 
 
 # =========================================================
-# 업비트 1시간봉 기간 생성
+# 업비트 4시간봉 기간 생성
+#
+# KST 09:00 기준
 # =========================================================
 
 def build_upbit_4h_periods(
@@ -1344,100 +1605,57 @@ def build_upbit_4h_periods(
         )
     )
 
+    periods_df = build_upbit_4h_candles(
+        df,
+        current_price
+    )
+
+    if periods_df.empty:
+
+        return []
+
     periods = []
 
-    for idx, row in df.iterrows():
-
-        dt = row["datetime"]
-
-        o = float(
-            row["open"]
-        )
-
-        h = float(
-            row["high"]
-        )
-
-        l = float(
-            row["low"]
-        )
-
-        c = float(
-            row["close"]
-        )
-
-        active = (
-            idx == len(df) - 1
-        )
-
-        if (
-            active
-            and current_price is not None
-        ):
-
-            c = float(
-                current_price
-            )
-
-            h = max(
-                h,
-                c
-            )
-
-            l = min(
-                l,
-                c
-            )
-
-        if idx < len(df) - 1:
-
-            next_dt = df.iloc[
-                idx + 1
-            ]["datetime"]
-
-        else:
-
-            next_dt = (
-                dt
-                + timedelta(hours=1)
-            )
-
-        change = (
-            (c - o) / o * 100
-            if o
-            else None
-        )
+    for _, row in periods_df.iterrows():
 
         periods.append({
 
             "start":
-                dt,
+                row["start"],
 
             "end":
-                next_dt,
+                row["end"],
 
             "active":
-                active,
-
-            "label":
-                dt.strftime(
-                    "%m/%d %H:%M"
+                bool(
+                    row["active"]
                 ),
 
+            "label":
+                row["label"],
+
             "open":
-                o,
+                float(
+                    row["open"]
+                ),
 
             "high":
-                h,
+                float(
+                    row["high"]
+                ),
 
             "low":
-                l,
+                float(
+                    row["low"]
+                ),
 
             "close":
-                c,
+                float(
+                    row["close"]
+                ),
 
             "change":
-                change,
+                row["change"],
 
             "signal":
                 False,
@@ -1456,11 +1674,11 @@ def build_upbit_4h_periods(
 # =========================================================
 # SIGNAL 판정
 #
-# 1시간봉 EMA20 < EMA60
+# 4시간봉 EMA5 < EMA15
 # OR
-# 이전 1시간봉 상승장악
+# 이전 4시간봉 상승장악
 # OR
-# 현재 1시간봉 상승장악
+# 현재 4시간봉 상승장악
 #
 # 하락장악 / 하락관통 제외
 # =========================================================
@@ -1516,7 +1734,7 @@ def signal_details(
 
     if ema_reverse:
 
-        reason = "EMA20 < EMA60"
+        reason = "EMA5 < EMA15"
 
     elif current_signal:
 
@@ -1640,7 +1858,7 @@ def analyze_daily_change(
 
 
 # =========================================================
-# 1시간봉 분석
+# 4시간봉 분석
 # =========================================================
 
 def analyze_4h(
@@ -1680,7 +1898,7 @@ def analyze_4h(
 
             "signal_reason":
                 (
-                    "EMA20 < EMA60"
+                    "EMA5 < EMA15"
                     if ema_reverse
                     else None
                 ),
@@ -1880,14 +2098,14 @@ def make_row(
                 "current_bullish_engulfing"
             ],
 
-        "ema20":
+        "ema5":
             ema_analysis[
-                "ema20"
+                "ema5"
             ],
 
-        "ema60":
+        "ema15":
             ema_analysis[
-                "ema60"
+                "ema15"
             ],
 
         "ema_alignment":
@@ -1995,7 +2213,7 @@ def update_upbit():
         try:
 
             # -------------------------------------------------
-            # 먼저 1시간봉 EMA를 계산
+            # 업비트 4시간봉 EMA5 / EMA15
             # -------------------------------------------------
 
             ema_analysis = analyze_ema_4h(
@@ -2013,10 +2231,10 @@ def update_upbit():
 
             ema_analysis = {
 
-                "ema20":
+                "ema5":
                     None,
 
-                "ema60":
+                "ema15":
                     None,
 
                 "reverse":
@@ -2030,7 +2248,7 @@ def update_upbit():
         try:
 
             # -------------------------------------------------
-            # 1시간봉 패턴 분석
+            # 업비트 4시간봉 패턴 분석
             # -------------------------------------------------
 
             analysis_4h = analyze_4h(
@@ -2045,7 +2263,7 @@ def update_upbit():
         except Exception as e:
 
             log.warning(
-                "%s 1시간봉 오류: %s",
+                "%s 4시간봉 오류: %s",
                 market,
                 e
             )
@@ -2075,7 +2293,7 @@ def update_upbit():
 
                 "signal_reason":
                     (
-                        "EMA20 < EMA60"
+                        "EMA5 < EMA15"
                         if ema_analysis.get(
                             "reverse",
                             False
@@ -2121,15 +2339,15 @@ def update_upbit():
     # =====================================================
     # SIGNAL 조건
     #
-    # 1. 1시간봉 EMA20 < EMA60
+    # 1. 업비트 4시간봉 EMA5 < EMA15
     #
     # OR
     #
-    # 2. 이전 1시간봉 상승장악형
+    # 2. 이전 4시간봉 상승장악형
     #
     # OR
     #
-    # 3. 현재 1시간봉 상승장악형
+    # 3. 현재 4시간봉 상승장악형
     #
     # 하락장악 / 하락관통 제외
     # =====================================================
@@ -2176,7 +2394,7 @@ def update_upbit():
         row["signal_rank"] = signal_rank
 
     log.info(
-        "UPBIT | 거래대금 TOP%s | 1시간봉 SIGNAL=%s",
+        "UPBIT | 거래대금 TOP%s | 4시간봉 SIGNAL=%s",
         TOP_N,
         len(
             latest_signal_data
@@ -2866,7 +3084,7 @@ def signal_card(
         <div class="signal-pattern">
 
             <span>
-                이전 1시간봉
+                이전 4시간봉
             </span>
 
             <strong>
@@ -2883,7 +3101,7 @@ def signal_card(
         <div class="signal-pattern">
 
             <span>
-                현재 1시간봉
+                현재 4시간봉
             </span>
 
             <strong>
@@ -2946,7 +3164,7 @@ def signal_section():
             </div>
 
             <span class="update-time">
-                1시간봉 · {kst()}
+                4시간봉 · {kst()}
             </span>
 
         </div>
@@ -2959,13 +3177,13 @@ def signal_section():
             </span>
 
             <b>
-                EMA20 &lt; EMA60
+                EMA5 &lt; EMA15
                 OR
                 이전 / 현재 상승장악
             </b>
 
             <small>
-                1시간봉 기준
+                업비트 KST 09:00 기준 4시간봉
             </small>
 
         </div>
@@ -2986,11 +3204,11 @@ def signal_section():
             </div>
 
             <div>
-                이전 1시간봉
+                이전 4시간봉
             </div>
 
             <div>
-                현재 1시간봉
+                현재 4시간봉
             </div>
 
         </div>
@@ -3012,7 +3230,7 @@ def signal_section():
 #
 # 표시:
 # 종목 / 현재가 / 거래대금 / 변동률 /
-# 이전 1시간봉 패턴 / 현재 1시간봉 패턴
+# 이전 4시간봉 패턴 / 현재 4시간봉 패턴
 # =========================================================
 
 def card(
@@ -3141,7 +3359,7 @@ def card(
                 <div>
 
                     <span>
-                        이전 1시간봉
+                        이전 4시간봉
                     </span>
 
                     <strong>
@@ -3158,7 +3376,7 @@ def card(
                 <div>
 
                     <span>
-                        현재 1시간봉
+                        현재 4시간봉
                     </span>
 
                     <strong>
@@ -4144,7 +4362,7 @@ def scheduler():
 def startup():
 
     log.info(
-        "START | BTC 시황 + 1시간봉 EMA20/60 역배열 + 이전/현재 상승장악 SIGNAL + TOP10"
+        "START | BTC 시황 + 업비트 09:00 기준 4시간봉 EMA5/15 역배열 + 이전/현재 상승장악 SIGNAL + TOP10"
     )
 
     threading.Thread(
