@@ -69,6 +69,14 @@ TIMEFRAME_LABEL = {
 
 
 # =========================================================
+# EMA 설정
+# =========================================================
+
+EMA_FAST = 20
+EMA_SLOW = 60
+
+
+# =========================================================
 # 전역 데이터
 # =========================================================
 
@@ -85,6 +93,13 @@ latest_upbit_markets = []
 latest_okx_data = []
 
 latest_okx_update_time = "-"
+
+
+# =========================================================
+# SIGNAL 데이터
+# =========================================================
+
+latest_signal_data = []
 
 
 # =========================================================
@@ -555,6 +570,177 @@ def get_upbit_4h_candles(
 
 
 # =========================================================
+# EMA 계산
+# =========================================================
+
+def calculate_ema(
+    df,
+    period
+):
+
+    if df is None or df.empty:
+
+        return None
+
+    if "close" not in df.columns:
+
+        return None
+
+    closes = pd.to_numeric(
+        df["close"],
+        errors="coerce"
+    ).dropna()
+
+    if len(closes) < period:
+
+        return None
+
+    ema = (
+        closes
+        .ewm(
+            span=period,
+            adjust=False
+        )
+        .mean()
+    )
+
+    if ema.empty:
+
+        return None
+
+    return float(
+        ema.iloc[-1]
+    )
+
+
+# =========================================================
+# 4시간봉 EMA 분석
+#
+# EMA20 < EMA60
+# = 역배열
+# =========================================================
+
+def analyze_ema_4h(
+    market,
+    price=None
+):
+
+    df = get_upbit_4h_candles(
+        market,
+        200
+    )
+
+    if df.empty:
+
+        return {
+
+            "ema20":
+                None,
+
+            "ema60":
+                None,
+
+            "reverse":
+                False,
+
+            "alignment":
+                None
+
+        }
+
+    df = (
+        df.sort_values(
+            "datetime"
+        )
+        .drop_duplicates(
+            "datetime"
+        )
+        .reset_index(
+            drop=True
+        )
+    )
+
+    # -----------------------------------------------------
+    # 현재가를 현재 진행 캔들의 종가로 반영
+    # -----------------------------------------------------
+
+    if price is not None and len(df) > 0:
+
+        df.loc[
+            df.index[-1],
+            "close"
+        ] = float(
+            price
+        )
+
+    ema20 = calculate_ema(
+        df,
+        EMA_FAST
+    )
+
+    ema60 = calculate_ema(
+        df,
+        EMA_SLOW
+    )
+
+    if (
+        ema20 is None
+        or
+        ema60 is None
+    ):
+
+        return {
+
+            "ema20":
+                ema20,
+
+            "ema60":
+                ema60,
+
+            "reverse":
+                False,
+
+            "alignment":
+                None
+
+        }
+
+    if ema20 < ema60:
+
+        alignment = "역배열"
+
+        reverse = True
+
+    elif ema20 > ema60:
+
+        alignment = "정배열"
+
+        reverse = False
+
+    else:
+
+        alignment = "동일"
+
+        reverse = False
+
+    return {
+
+        "ema20":
+            ema20,
+
+        "ema60":
+            ema60,
+
+        "reverse":
+            reverse,
+
+        "alignment":
+            alignment
+
+    }
+
+
+# =========================================================
 # 일봉 기간 생성
 #
 # KST 09:00 기준
@@ -784,9 +970,6 @@ def is_bearish_engulfing(
 
 # =========================================================
 # 양수도지
-#
-# 몸통이 전체 고저폭의 10% 이하
-# 종가 >= 시가
 # =========================================================
 
 def is_positive_doji(
@@ -834,9 +1017,6 @@ def is_positive_doji(
 
 # =========================================================
 # 음수도지
-#
-# 몸통이 전체 고저폭의 10% 이하
-# 종가 < 시가
 # =========================================================
 
 def is_negative_doji(
@@ -884,10 +1064,6 @@ def is_negative_doji(
 
 # =========================================================
 # 상승관통형
-#
-# 이전 음봉
-# 현재 양봉
-# 현재 종가가 이전 음봉 몸통 중간 이상
 # =========================================================
 
 def is_bullish_piercing(
@@ -939,10 +1115,6 @@ def is_bullish_piercing(
 
 # =========================================================
 # 하락관통형
-#
-# 이전 양봉
-# 현재 음봉
-# 현재 종가가 이전 양봉 몸통 중간 이하
 # =========================================================
 
 def is_bearish_piercing(
@@ -994,15 +1166,6 @@ def is_bearish_piercing(
 
 # =========================================================
 # 현재 4시간봉 패턴
-#
-# 우선순위
-#
-# 1. 상승장악형
-# 2. 하락장악형
-# 3. 양수도지
-# 4. 음수도지
-# 5. 상승관통형
-# 6. 하락관통형
 # =========================================================
 
 def get_current_pattern(
@@ -1071,7 +1234,7 @@ def get_current_pattern(
 # =========================================================
 # 업비트 4시간봉 기간 생성
 #
-# 기존 SIGNAL:
+# 기존 SIGNAL 조건
 # 상승장악형
 # 상승관통형
 #
@@ -1206,7 +1369,7 @@ def build_upbit_4h_periods(
         })
 
     # =====================================================
-    # 기존 SIGNAL 로직
+    # 기존 SIGNAL
     #
     # 상승장악형
     # 상승관통형
@@ -1575,7 +1738,8 @@ def make_row(
     market,
     item,
     analysis_daily,
-    analysis_4h
+    analysis_4h,
+    ema_analysis
 ):
 
     coin = market.replace(
@@ -1661,6 +1825,30 @@ def make_row(
                 "current_pattern"
             ],
 
+        # -------------------------------------------------
+        # EMA
+        # -------------------------------------------------
+
+        "ema20":
+            ema_analysis[
+                "ema20"
+            ],
+
+        "ema60":
+            ema_analysis[
+                "ema60"
+            ],
+
+        "ema_alignment":
+            ema_analysis[
+                "alignment"
+            ],
+
+        "ema_reverse":
+            ema_analysis[
+                "reverse"
+            ],
+
         "simultaneous_signal":
             signal_4h
 
@@ -1677,6 +1865,7 @@ def update_upbit():
     global latest_upbit_daily_data
     global latest_upbit_update_time
     global latest_upbit_daily_update_time
+    global latest_signal_data
 
     all_markets = get_upbit_markets()
 
@@ -1797,13 +1986,49 @@ def update_upbit():
 
             }
 
+        # -------------------------------------------------
+        # EMA20 / EMA60
+        # -------------------------------------------------
+
+        try:
+
+            ema_analysis = analyze_ema_4h(
+                market,
+                price
+            )
+
+        except Exception as e:
+
+            log.warning(
+                "%s EMA 오류: %s",
+                market,
+                e
+            )
+
+            ema_analysis = {
+
+                "ema20":
+                    None,
+
+                "ema60":
+                    None,
+
+                "reverse":
+                    False,
+
+                "alignment":
+                    None
+
+            }
+
         rows.append(
             make_row(
                 rank,
                 market,
                 item,
                 analysis_daily,
-                analysis_4h
+                analysis_4h,
+                ema_analysis
             )
         )
 
@@ -1817,12 +2042,24 @@ def update_upbit():
         latest_upbit_daily_update_time
     )
 
+    # =====================================================
+    # EMA20 < EMA60 역배열 SIGNAL
+    # =====================================================
+
+    latest_signal_data = [
+        row
+        for row in rows
+        if row.get(
+            "ema_reverse",
+            False
+        )
+    ]
+
     log.info(
-        "UPBIT | 거래대금 TOP%s | 4H 상승장악/상승관통 SIGNAL=%s",
+        "UPBIT | 거래대금 TOP%s | EMA20<EMA60 역배열=%s",
         TOP_N,
-        sum(
-            x["signal_4h"]
-            for x in rows
+        len(
+            latest_signal_data
         )
     )
 
@@ -2212,6 +2449,54 @@ def fmt_change(v):
 
 
 # =========================================================
+# EMA 표시
+# =========================================================
+
+def fmt_ema(v):
+
+    if v is None:
+
+        return "-"
+
+    try:
+
+        v = float(v)
+
+    except Exception:
+
+        return "-"
+
+    return fmt_price(v)
+
+
+def ema_alignment_html(
+    alignment
+):
+
+    if alignment == "역배열":
+
+        return (
+            '<span class="ema-reverse">'
+            '▼ 역배열'
+            '</span>'
+        )
+
+    if alignment == "정배열":
+
+        return (
+            '<span class="ema-normal">'
+            '▲ 정배열'
+            '</span>'
+        )
+
+    return (
+        '<span class="zero">'
+        '-'
+        '</span>'
+    )
+
+
+# =========================================================
 # 현재 패턴 HTML
 # =========================================================
 
@@ -2485,7 +2770,196 @@ def btc_html():
 
 
 # =========================================================
-# 카드
+# SIGNAL 카드
+# =========================================================
+
+def signal_card(
+    row
+):
+
+    return f"""
+
+    <div class="signal-card">
+
+        <div class="signal-coin">
+
+            <span class="signal-rank">
+                #{row["rank"]}
+            </span>
+
+            <b>
+                {html.escape(
+                    row["name"]
+                )}
+            </b>
+
+        </div>
+
+
+        <div class="signal-price">
+
+            <span>
+                현재가
+            </span>
+
+            <strong>
+                {fmt_price(
+                    row["current_price"]
+                )}
+            </strong>
+
+        </div>
+
+
+        <div class="signal-ema">
+
+            <span>
+                EMA20
+            </span>
+
+            <strong>
+                {fmt_ema(
+                    row.get(
+                        "ema20"
+                    )
+                )}
+            </strong>
+
+        </div>
+
+
+        <div class="signal-ema">
+
+            <span>
+                EMA60
+            </span>
+
+            <strong>
+                {fmt_ema(
+                    row.get(
+                        "ema60"
+                    )
+                )}
+            </strong>
+
+        </div>
+
+
+        <div class="signal-change">
+
+            <span>
+                당일
+            </span>
+
+            <strong>
+                {fmt_change(
+                    row.get(
+                        "daily_change"
+                    )
+                )}
+            </strong>
+
+        </div>
+
+
+        <div class="signal-state">
+
+            {ema_alignment_html(
+                row.get(
+                    "ema_alignment"
+                )
+            )}
+
+        </div>
+
+    </div>
+
+    """
+
+
+# =========================================================
+# SIGNAL 영역
+#
+# BTC 시황과 TOP10 사이
+# =========================================================
+
+def signal_section():
+
+    if not latest_signal_data:
+
+        body = """
+
+        <div class="signal-empty">
+
+            현재 EMA20 < EMA60
+            역배열 종목 없음
+
+        </div>
+
+        """
+
+    else:
+
+        body = "".join(
+            signal_card(row)
+            for row in latest_signal_data
+        )
+
+    return f"""
+
+    <section class="signal-panel">
+
+        <div class="section-head signal-panel-head">
+
+            <div>
+
+                <span class="section-kicker">
+                    SIGNAL
+                </span>
+
+                <b>
+                    🔴 EMA20 / EMA60 역배열
+                </b>
+
+            </div>
+
+            <span class="update-time">
+                4시간봉 · {kst()}
+            </span>
+
+        </div>
+
+
+        <div class="signal-condition">
+
+            <span>
+                SIGNAL 조건
+            </span>
+
+            <b>
+                EMA20 &lt; EMA60
+            </b>
+
+            <small>
+                4시간봉 기준
+            </small>
+
+        </div>
+
+
+        <div class="signal-list">
+
+            {body}
+
+        </div>
+
+    </section>
+
+    """
+
+
+# =========================================================
+# TOP 카드
 # =========================================================
 
 def card(
@@ -2515,6 +2989,7 @@ def card(
             )
 
         return f"""
+
         <article class="coin-card">
 
             <div class="coin-head">
@@ -2577,11 +3052,13 @@ def card(
                     </span>
 
                     <strong class="daily-change-value">
+
                         {fmt_change(
                             row.get(
                                 "daily_change"
                             )
                         )}
+
                     </strong>
 
                 </div>
@@ -2594,9 +3071,11 @@ def card(
                     </span>
 
                     <strong>
+
                         {current_pattern_html(
                             current_pattern
                         )}
+
                     </strong>
 
                 </div>
@@ -2634,142 +3113,23 @@ def card(
                 </div>
 
                 <div class="grid">
+
                     {cells(
                         row.get(
                             "periods_4h",
                             []
                         )
                     )}
+
                 </div>
 
             </div>
 
         </article>
+
         """
 
-    return f"""
-    <article class="both-card">
-
-        <div class="both-head">
-
-            <div>
-
-                <span class="rank">
-                    #{row["rank"]}
-                </span>
-
-                <b>
-                    {html.escape(
-                        row["name"]
-                    )}
-                </b>
-
-            </div>
-
-            <span class="both-badge">
-                ⭐ PATTERN
-            </span>
-
-        </div>
-
-
-        <div class="both-summary">
-
-            <div>
-
-                <span>
-                    당일 변동률
-                </span>
-
-                <strong class="daily-change-value">
-                    {fmt_change(
-                        row.get(
-                            "daily_change"
-                        )
-                    )}
-                </strong>
-
-            </div>
-
-
-            <div>
-
-                <span>
-                    24H 거래대금
-                </span>
-
-                <strong>
-                    {fmt_vol(
-                        row["volume_24h"]
-                    )}
-                </strong>
-
-            </div>
-
-
-            <div>
-
-                <span>
-                    현재 4H
-                </span>
-
-                <strong>
-                    {(
-                        "PATTERN"
-                        if row.get(
-                            "signal_4h_current"
-                        )
-                        else "-"
-                    )}
-                </strong>
-
-            </div>
-
-
-            <div>
-
-                <span>
-                    현재 캔들 패턴
-                </span>
-
-                <strong>
-                    {current_pattern_html(
-                        current_pattern
-                    )}
-                </strong>
-
-            </div>
-
-        </div>
-
-
-        <div class="signal-section">
-
-            <div class="signal-head">
-
-                <b>
-                    4시간봉 캔들 패턴
-                </b>
-
-                <span>
-                    패턴봉 + 다음봉
-                </span>
-
-            </div>
-
-            <div class="grid">
-                {cells(
-                    row.get(
-                        "periods_4h",
-                        []
-                    )
-                )}
-            </div>
-
-        </div>
-
-    </article>
-    """
+    return ""
 
 
 # =========================================================
@@ -2904,33 +3264,234 @@ section {
 }
 
 
-.pattern-cross {
+/* =======================================================
+   SIGNAL
+   ======================================================= */
 
-    display: block;
+.signal-panel {
 
-    margin-top: 4px;
+    background: #0c1116;
 
-    color: #38d878;
+    border:
+        1px solid #48272c;
 
-    font-size: 5px;
+    margin-bottom: 13px;
+}
+
+
+.signal-panel-head {
+
+    border-bottom:
+        1px solid #392126;
+}
+
+
+.signal-condition {
+
+    min-height: 32px;
+
+    padding: 0 9px;
+
+    display: flex;
+
+    align-items: center;
+
+    gap: 8px;
+
+    background: #120e10;
+
+    border-bottom:
+        1px solid #302024;
+}
+
+
+.signal-condition span {
+
+    color: #7d6b70;
+
+    font-size: 6px;
+}
+
+
+.signal-condition b {
+
+    color: #ff5966;
+
+    font-size: 8px;
 
     font-weight: 900;
 }
 
 
-.pattern-next {
+.signal-condition small {
 
-    display: block;
+    color: #626e78;
 
-    margin-top: 4px;
+    font-size: 6px;
 
-    color: #e4c45e;
+    margin-left: auto;
+}
 
-    font-size: 5px;
+
+.signal-list {
+
+    width: 100%;
+}
+
+
+.signal-card {
+
+    min-height: 48px;
+
+    display: grid;
+
+    grid-template-columns:
+        1.1fr
+        1.2fr
+        1fr
+        1fr
+        0.9fr
+        0.9fr;
+
+    align-items: center;
+
+    background: #0d1217;
+
+    border-bottom:
+        1px solid #20282f;
+}
+
+
+.signal-card:last-child {
+
+    border-bottom: 0;
+}
+
+
+.signal-card > div {
+
+    min-height: 48px;
+
+    padding: 5px 3px;
+
+    display: flex;
+
+    flex-direction: column;
+
+    align-items: center;
+
+    justify-content: center;
+
+    text-align: center;
+}
+
+
+.signal-card > div + div {
+
+    border-left:
+        1px solid #1c252c;
+}
+
+
+.signal-coin {
+
+    flex-direction: row !important;
+
+    gap: 6px;
+
+    justify-content: flex-start !important;
+
+    padding-left: 9px !important;
+}
+
+
+.signal-rank {
+
+    color: #b84d58;
+
+    font-size: 7px;
 
     font-weight: 900;
 }
 
+
+.signal-coin b {
+
+    color: #e5e9ed;
+
+    font-size: 9px;
+
+    font-weight: 900;
+}
+
+
+.signal-card span {
+
+    color: #69747e;
+
+    font-size: 6px;
+}
+
+
+.signal-card strong {
+
+    margin-top: 3px;
+
+    color: #dce2e7;
+
+    font-size: 8px;
+}
+
+
+.signal-state {
+
+    color: #ff5966;
+
+    font-size: 7px;
+
+    font-weight: 900;
+}
+
+
+.ema-reverse {
+
+    color: #ff5966 !important;
+
+    font-size: 7px !important;
+
+    font-weight: 900;
+}
+
+
+.ema-normal {
+
+    color: #38d878 !important;
+
+    font-size: 7px !important;
+
+    font-weight: 900;
+}
+
+
+.signal-empty {
+
+    min-height: 46px;
+
+    display: flex;
+
+    align-items: center;
+
+    justify-content: center;
+
+    color: #626e78;
+
+    font-size: 7px;
+}
+
+
+/* =======================================================
+   BTC
+   ======================================================= */
 
 .btc-panel {
 
@@ -3157,122 +3718,9 @@ section {
 }
 
 
-.both-card {
-
-    background: #0c1115;
-
-    border:
-        1px solid #796329;
-
-    margin-bottom: 7px;
-}
-
-
-.both-head {
-
-    min-height: 39px;
-
-    padding: 0 9px;
-
-    display: flex;
-
-    align-items: center;
-
-    justify-content: space-between;
-
-    border-bottom:
-        1px solid #39321e;
-}
-
-
-.both-head > div {
-
-    display: flex;
-
-    align-items: center;
-
-    gap: 7px;
-}
-
-
-.rank {
-
-    color: #c9a83d;
-
-    font-size: 8px;
-
-    font-weight: 800;
-}
-
-
-.both-head b {
-
-    font-size: 10px;
-
-    font-weight: 900;
-}
-
-
-.both-badge {
-
-    color: #e4c45e;
-
-    font-size: 7px;
-
-    font-weight: 800;
-}
-
-
-.both-summary {
-
-    display: grid;
-
-    grid-template-columns:
-        repeat(4, 1fr);
-
-    border-bottom:
-        1px solid #39321e;
-}
-
-
-.both-summary > div {
-
-    min-height: 43px;
-
-    padding: 5px;
-
-    text-align: center;
-
-    background: #111611;
-}
-
-
-.both-summary > div + div {
-
-    border-left:
-        1px solid #292c20;
-}
-
-
-.both-summary span {
-
-    display: block;
-
-    color: #747c74;
-
-    font-size: 6px;
-}
-
-
-.both-summary strong {
-
-    display: block;
-
-    margin-top: 4px;
-
-    font-size: 8px;
-}
-
+/* =======================================================
+   TOP10
+   ======================================================= */
 
 .coin-card {
 
@@ -3317,6 +3765,16 @@ section {
     font-size: 10px;
 
     font-weight: 900;
+}
+
+
+.rank {
+
+    color: #c9a83d;
+
+    font-size: 8px;
+
+    font-weight: 800;
 }
 
 
@@ -3493,6 +3951,34 @@ section {
 }
 
 
+.pattern-cross {
+
+    display: block;
+
+    margin-top: 4px;
+
+    color: #38d878;
+
+    font-size: 5px;
+
+    font-weight: 900;
+}
+
+
+.pattern-next {
+
+    display: block;
+
+    margin-top: 4px;
+
+    color: #e4c45e;
+
+    font-size: 5px;
+
+    font-weight: 900;
+}
+
+
 @media (max-width: 600px) {
 
     body {
@@ -3568,18 +4054,6 @@ section {
     }
 
 
-    .pattern-cross {
-
-        font-size: 4px;
-    }
-
-
-    .pattern-next {
-
-        font-size: 4px;
-    }
-
-
     .current-pattern {
 
         font-size: 6px;
@@ -3593,8 +4067,7 @@ section {
     }
 
 
-    .coin-head,
-    .both-head {
+    .coin-head {
 
         min-height: 35px;
 
@@ -3602,8 +4075,7 @@ section {
     }
 
 
-    .coin-title b,
-    .both-head b {
+    .coin-title b {
 
         font-size: 9px;
     }
@@ -3660,27 +4132,82 @@ section {
     }
 
 
-    .both-summary > div {
+    .signal-condition {
 
-        min-height: 40px;
+        min-height: 29px;
+
+        padding: 0 7px;
     }
 
 
-    .both-summary span {
+    .signal-condition b {
+
+        font-size: 7px;
+    }
+
+
+    .signal-condition small {
 
         font-size: 5px;
     }
 
 
-    .both-summary strong {
+    .signal-card {
+
+        grid-template-columns:
+            1.1fr
+            1.1fr
+            1fr
+            1fr
+            0.8fr
+            0.9fr;
+    }
+
+
+    .signal-card > div {
+
+        min-height: 44px;
+
+        padding: 4px 2px;
+    }
+
+
+    .signal-coin {
+
+        gap: 4px;
+
+        padding-left: 6px !important;
+    }
+
+
+    .signal-coin b {
+
+        font-size: 7px;
+    }
+
+
+    .signal-rank {
+
+        font-size: 5px;
+    }
+
+
+    .signal-card span {
+
+        font-size: 5px;
+    }
+
+
+    .signal-card strong {
 
         font-size: 6px;
     }
 
 
-    .both-badge {
+    .ema-reverse,
+    .ema-normal {
 
-        font-size: 6px;
+        font-size: 6px !important;
     }
 
 }
@@ -3699,7 +4226,25 @@ def dashboard():
 
     s = btc_html()
 
+    # =====================================================
+    # BTC 시황
+    # ↓
+    # SIGNAL
+    # ↓
+    # TOP10
+    # =====================================================
+
     if USE_UPBIT == "Y":
+
+        # -------------------------------------------------
+        # SIGNAL
+        # -------------------------------------------------
+
+        s += signal_section()
+
+        # -------------------------------------------------
+        # TOP10
+        # -------------------------------------------------
 
         if SHOW_TOP_LIST == "Y":
 
@@ -3716,7 +4261,7 @@ def dashboard():
             else:
 
                 top_cards = (
-                    '<div class="empty">'
+                    '<div class="signal-empty">'
                     '현재 거래대금 TOP10 데이터 없음'
                     '</div>'
                 )
@@ -3725,7 +4270,7 @@ def dashboard():
 
             <section>
 
-                <div class="section-title">
+                <div class="section-head">
 
                     <div>
 
@@ -3739,9 +4284,9 @@ def dashboard():
 
                     </div>
 
-                    <small>
+                    <span class="update-time">
                         거래대금 기준
-                    </small>
+                    </span>
 
                 </div>
 
@@ -3828,7 +4373,7 @@ def scheduler():
 def startup():
 
     log.info(
-        "START | OKX BTC 1D + 업비트 거래대금 TOP10 + 4H 6종 패턴"
+        "START | BTC 시황 + EMA20/60 역배열 SIGNAL + TOP10"
     )
 
     threading.Thread(
