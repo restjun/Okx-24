@@ -344,7 +344,7 @@ def get_upbit_markets():
 # =========================================================
 # 업비트 일봉
 #
-# 변동률 전용
+# 변동률 표시 전용
 # KST 09:00 기준
 # =========================================================
 
@@ -909,7 +909,7 @@ def is_piercing_line(
 #
 # SIGNAL 조건:
 #
-# 1. ROC(20) > 0
+# 1. ROC(20) < 0
 # 2. ROC(50) > 0
 # 3. 상승장악형 또는 관통형 발생
 #
@@ -1103,7 +1103,7 @@ def build_upbit_4h_periods(
     # =====================================================
     # 캔들 패턴 SIGNAL
     #
-    # ROC20 > 0
+    # ROC20 < 0
     # ROC50 > 0
     #
     # 상승장악형 또는 관통형
@@ -1133,13 +1133,16 @@ def build_upbit_4h_periods(
         )
 
         # -------------------------------------------------
-        # ROC 두 개 모두 0선 위
+        # ROC 조건
+        #
+        # ROC20은 0선 아래
+        # ROC50은 0선 위
         # -------------------------------------------------
 
         if (
             roc20 is None
             or roc50 is None
-            or roc20 <= ROC_SIGNAL_LEVEL
+            or roc20 >= ROC_SIGNAL_LEVEL
             or roc50 <= ROC_SIGNAL_LEVEL
         ):
 
@@ -1667,7 +1670,9 @@ def update_upbit():
 
     # =====================================================
     # 1.
-    # KST 09:00 기준 일봉 양수 종목
+    # 전체 KRW 종목 대상
+    #
+    # 당일 양수 조건 없음
     # =====================================================
 
     candidates = []
@@ -1689,24 +1694,15 @@ def update_upbit():
                 price
             )
 
-            daily_change = analysis_daily[
-                "change"
-            ]
+            candidates.append({
 
-            if (
-                daily_change is not None
-                and daily_change > 0
-            ):
+                "item":
+                    item,
 
-                candidates.append({
+                "analysis_daily":
+                    analysis_daily
 
-                    "item":
-                        item,
-
-                    "analysis_daily":
-                        analysis_daily
-
-                })
+            })
 
         except Exception as e:
 
@@ -1718,7 +1714,7 @@ def update_upbit():
 
     # =====================================================
     # 2.
-    # 양수 종목 중 거래대금 TOP20
+    # 전체 종목 중 거래대금 TOP10
     # =====================================================
 
     candidates.sort(
@@ -1735,7 +1731,7 @@ def update_upbit():
 
     # =====================================================
     # 3.
-    # TOP20 4시간봉 분석
+    # TOP10 4시간봉 분석
     # =====================================================
 
     for rank, candidate in enumerate(
@@ -1826,7 +1822,7 @@ def update_upbit():
     )
 
     log.info(
-        "UPBIT | 일봉 양수 TOP%s | 4H ROC20·ROC50 0선 위 + 상승장악/관통형 SIGNAL=%s",
+        "UPBIT | 거래대금 TOP%s | 4H ROC20 < 0 + ROC50 > 0 + 상승장악/관통형 SIGNAL=%s",
         TOP_N,
         sum(
             x["signal_4h"]
@@ -2707,7 +2703,7 @@ def card(
                 <i></i>
 
                 <small>
-                    ROC20·ROC50 0선 위
+                    ROC20 0선 아래 · ROC50 0선 위
                 </small>
 
             </div>
@@ -2894,7 +2890,7 @@ def both_section(data):
 
         content = (
             '<div class="empty">'
-            '현재 ROC20·ROC50 0선 위 상승장악형 또는 관통형 SIGNAL 없음'
+            '현재 ROC20 0선 아래 · ROC50 0선 위 상승장악형 또는 관통형 SIGNAL 없음'
             '</div>'
         )
 
@@ -2917,7 +2913,7 @@ def both_section(data):
             </div>
 
             <small>
-                패턴봉 + 다음봉
+                ROC20↓ / ROC50↑ · 패턴봉 + 다음봉
             </small>
 
         </div>
@@ -3893,7 +3889,8 @@ def dashboard():
     if USE_UPBIT == "Y":
 
         # -------------------------------------------------
-        # ROC20·ROC50 0선 위
+        # ROC20 0선 아래
+        # ROC50 0선 위
         # + 상승장악형 / 관통형 SIGNAL
         # -------------------------------------------------
 
@@ -3921,7 +3918,7 @@ def dashboard():
 
                 top_cards = (
                     '<div class="empty">'
-                    '현재 양수 종목 데이터 없음'
+                    '현재 거래대금 TOP10 데이터 없음'
                     '</div>'
                 )
 
@@ -3938,7 +3935,7 @@ def dashboard():
                         </span>
 
                         <b>
-                            TOP20 · 거래대금 순
+                            TOP10 · 거래대금 순
                         </b>
 
                     </div>
@@ -4032,7 +4029,7 @@ def scheduler():
 def startup():
 
     log.info(
-        "START | OKX BTC 1D ROC(50) + 업비트 09시 양수 TOP20 + 4H ROC20·ROC50 0선 위 + 상승장악/관통형 SIGNAL"
+        "START | OKX BTC 1D ROC(50) + 업비트 거래대금 TOP10 + 4H ROC20 < 0 + ROC50 > 0 + 상승장악/관통형 SIGNAL"
     )
 
     threading.Thread(
