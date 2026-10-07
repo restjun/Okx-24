@@ -2024,6 +2024,24 @@ def update_upbit():
         )
     ]
 
+    # SIGNAL도 거래대금순으로 정렬
+    latest_signal_data.sort(
+        key=lambda x:
+            x.get(
+                "volume_24h",
+                0
+            ),
+        reverse=True
+    )
+
+    # SIGNAL 전용 번호
+    for signal_rank, row in enumerate(
+        latest_signal_data,
+        1
+    ):
+
+        row["signal_rank"] = signal_rank
+
     log.info(
         "UPBIT | 거래대금 TOP%s | EMA20<EMA60 역배열=%s",
         TOP_N,
@@ -2616,53 +2634,10 @@ def cells(periods):
 
 
 # =========================================================
-# BTC 일봉 표시
-# =========================================================
-
-def btc_daily_cells(
-    periods
-):
-
-    result = []
-
-    for p in periods:
-
-        active_class = (
-            "current"
-            if p.get("active")
-            else ""
-        )
-
-        result.append(
-            f"""
-            <div class="tf-cell {active_class}">
-
-                <div class="tf-date">
-                    {html.escape(
-                        p.get(
-                            "label",
-                            "-"
-                        )
-                    )}
-                </div>
-
-                <strong>
-                    {fmt_change(
-                        p.get(
-                            "change"
-                        )
-                    )}
-                </strong>
-
-            </div>
-            """
-        )
-
-    return "".join(result)
-
-
-# =========================================================
 # BTC HTML
+#
+# BTC 현재가 + 당일 변동률만 표시
+# BTC 일봉 영역 삭제
 # =========================================================
 
 def btc_html():
@@ -2711,29 +2686,6 @@ def btc_html():
 
         </div>
 
-
-        <div class="market-timeframe">
-
-            <div class="timeframe-head">
-
-                <b>
-                    일봉
-                </b>
-
-                <span>
-                    OKX 1D · KST 09:00
-                </span>
-
-            </div>
-
-            <div class="grid">
-                {btc_daily_cells(
-                    latest_btc_daily_periods
-                )}
-            </div>
-
-        </div>
-
     </section>
     """
 
@@ -2758,7 +2710,7 @@ def signal_card(
         <div class="signal-coin">
 
             <span class="signal-rank">
-                #{row["rank"]}
+                #{row.get("signal_rank", "-")}
             </span>
 
             <b>
@@ -2925,6 +2877,11 @@ def signal_section():
 
 # =========================================================
 # TOP 카드
+#
+# 표시:
+# 종목 / 현재가 / 거래대금 / 변동률 / 현재 캔들패턴
+#
+# 4시간봉 패턴 이력 표시 삭제
 # =========================================================
 
 def card(
@@ -3032,7 +2989,7 @@ def card(
                 <div>
 
                     <span>
-                        현재 4H 패턴
+                        현재 캔들패턴
                     </span>
 
                     <strong>
@@ -3042,49 +2999,6 @@ def card(
                         )}
 
                     </strong>
-
-                </div>
-
-            </div>
-
-
-            <div class="signal-bar">
-
-                <span>
-                    4H PATTERN
-                </span>
-
-                <i></i>
-
-                <small>
-                    상승장악 / 하락장악 / 도지 / 관통
-                </small>
-
-            </div>
-
-
-            <div class="signal-section">
-
-                <div class="signal-head">
-
-                    <b>
-                        4시간봉 캔들 패턴
-                    </b>
-
-                    <span>
-                        패턴봉 + 다음봉
-                    </span>
-
-                </div>
-
-                <div class="grid">
-
-                    {cells(
-                        row.get(
-                            "periods_4h",
-                            []
-                        )
-                    )}
 
                 </div>
 
@@ -3535,9 +3449,6 @@ section {
         0.7fr 1.5fr 1fr;
 
     align-items: center;
-
-    border-bottom:
-        1px solid #202a33;
 }
 
 
@@ -3576,111 +3487,6 @@ section {
     font-size: 11px;
 
     font-weight: 900;
-}
-
-
-.market-timeframe {
-
-    border-bottom:
-        1px solid #1e272f;
-}
-
-
-.market-timeframe:last-child {
-
-    border-bottom: 0;
-}
-
-
-.timeframe-head {
-
-    min-height: 27px;
-
-    padding: 4px 9px;
-
-    display: flex;
-
-    align-items: center;
-
-    justify-content: space-between;
-
-    background: #0e151b;
-}
-
-
-.timeframe-head b {
-
-    font-size: 8px;
-
-    color: #dbe1e6;
-}
-
-
-.timeframe-head span {
-
-    color: #626e79;
-
-    font-size: 6px;
-}
-
-
-.grid {
-
-    display: grid;
-
-    grid-template-columns:
-        repeat(6, 1fr);
-}
-
-
-.tf-cell {
-
-    min-height: 59px;
-
-    padding: 5px 2px;
-
-    text-align: center;
-
-    background: #0b1015;
-
-    border-right:
-        1px solid #1b242c;
-}
-
-
-.tf-cell:last-child {
-
-    border-right: 0;
-}
-
-
-.tf-cell.current {
-
-    background: #10241a;
-}
-
-
-.tf-date {
-
-    color: #6c7782;
-
-    font-size: 6px;
-
-    white-space: nowrap;
-
-    overflow: hidden;
-
-    text-overflow: ellipsis;
-}
-
-
-.tf-cell strong {
-
-    display: block;
-
-    margin-top: 4px;
-
-    font-size: 8px;
 }
 
 
@@ -3825,126 +3631,6 @@ section {
 }
 
 
-.signal-bar {
-
-    height: 29px;
-
-    padding: 0 9px;
-
-    display: flex;
-
-    align-items: center;
-
-    gap: 7px;
-
-    border-bottom:
-        1px solid #30322b;
-
-    background: #10140f;
-}
-
-
-.signal-bar span {
-
-    color: #d0ad48;
-
-    font-size: 7px;
-
-    font-weight: 900;
-
-    letter-spacing: 0.7px;
-}
-
-
-.signal-bar i {
-
-    flex: 1;
-
-    height: 1px;
-
-    background: #353a35;
-}
-
-
-.signal-bar small {
-
-    color: #68736d;
-
-    font-size: 6px;
-}
-
-
-.signal-section {
-
-    background: #0b1014;
-}
-
-
-.signal-head {
-
-    height: 28px;
-
-    padding: 0 9px;
-
-    display: flex;
-
-    align-items: center;
-
-    justify-content: space-between;
-
-    background: #0f151a;
-
-    border-bottom:
-        1px solid #202931;
-}
-
-
-.signal-head b {
-
-    color: #d9dfe4;
-
-    font-size: 7px;
-
-    font-weight: 900;
-}
-
-
-.signal-head span {
-
-    color: #626e78;
-
-    font-size: 6px;
-}
-
-
-.pattern-cross {
-
-    display: block;
-
-    margin-top: 4px;
-
-    color: #38d878;
-
-    font-size: 5px;
-
-    font-weight: 900;
-}
-
-
-.pattern-next {
-
-    display: block;
-
-    margin-top: 4px;
-
-    color: #e4c45e;
-
-    font-size: 5px;
-
-    font-weight: 900;
-}
-
-
 @media (max-width: 600px) {
 
     body {
@@ -3998,28 +3684,6 @@ section {
     }
 
 
-    .grid {
-
-        grid-template-columns:
-            repeat(3, 1fr);
-    }
-
-
-    .tf-cell {
-
-        min-height: 56px;
-
-        padding:
-            4px 2px;
-    }
-
-
-    .tf-cell strong {
-
-        font-size: 7px;
-    }
-
-
     .current-pattern {
 
         font-size: 6px;
@@ -4067,34 +3731,6 @@ section {
     .market-summary strong {
 
         font-size: 7px;
-    }
-
-
-    .signal-bar {
-
-        height: 27px;
-
-        padding: 0 7px;
-    }
-
-
-    .signal-head {
-
-        height: 26px;
-
-        padding: 0 7px;
-    }
-
-
-    .signal-head b {
-
-        font-size: 6px;
-    }
-
-
-    .signal-head span {
-
-        font-size: 5px;
     }
 
 
