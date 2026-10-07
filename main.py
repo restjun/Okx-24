@@ -709,14 +709,6 @@ def build_daily_periods(
 
 # =========================================================
 # 상승장악형
-#
-# 이전 캔들:
-#   음봉
-#
-# 현재 캔들:
-#   양봉
-#
-# 현재 캔들이 이전 캔들의 실체를 감싸는 형태
 # =========================================================
 
 def is_bullish_engulfing(
@@ -766,15 +758,6 @@ def is_bullish_engulfing(
 
 # =========================================================
 # 관통형
-#
-# 이전 캔들:
-#   음봉
-#
-# 현재 캔들:
-#   양봉
-#
-# 현재 종가가 이전 음봉 실체의 중간값 위로
-# 올라오지만 이전 시가 아래에서 마감
 # =========================================================
 
 def is_piercing_line(
@@ -819,7 +802,6 @@ def is_piercing_line(
         + prev_close
     ) / 2
 
-    # 관통형
     return bool(
         curr_close > midpoint
         and
@@ -836,13 +818,7 @@ def is_piercing_line(
 # 또는
 # 2. 관통형
 #
-# SIGNAL:
-#
-# 패턴봉
-# +
-# 패턴봉 다음 캔들
-#
-# 총 2개 캔들만 SIGNAL
+# 패턴봉 + 다음 캔들
 # =========================================================
 
 def build_upbit_4h_periods(
@@ -1001,20 +977,12 @@ def build_upbit_4h_periods(
             i
         ]
 
-        # -------------------------------------------------
-        # 상승장악형
-        # -------------------------------------------------
-
         bullish_engulfing = (
             is_bullish_engulfing(
                 previous,
                 current
             )
         )
-
-        # -------------------------------------------------
-        # 관통형
-        # -------------------------------------------------
 
         piercing_line = (
             is_piercing_line(
@@ -1032,10 +1000,6 @@ def build_upbit_4h_periods(
         elif piercing_line:
 
             pattern = "관통형"
-
-        # -------------------------------------------------
-        # 패턴이 없으면 SIGNAL 없음
-        # -------------------------------------------------
 
         if pattern is None:
 
@@ -1624,12 +1588,6 @@ def update_upbit():
 
 # =========================================================
 # OKX 캔들
-#
-# BTC-USDT-SWAP
-#
-# bar 예:
-# 1H
-# 1D
 # =========================================================
 
 def okx_candles(
@@ -1760,10 +1718,8 @@ def okx_price():
 # =========================================================
 # BTC 업데이트
 #
-# OKX BTC-USDT-SWAP 1D 캔들 직접 요청
-#
-# OKX 1D 캔들 UTC 00:00
-# → KST 09:00
+# OKX BTC-USDT-SWAP 1D 캔들
+# UTC 00:00 → KST 09:00
 # =========================================================
 
 def update_okx_btc():
@@ -1785,7 +1741,7 @@ def update_okx_btc():
         return
 
     # =====================================================
-    # OKX 1D 캔들 직접 요청
+    # OKX 1D 캔들
     # =====================================================
 
     d1d = okx_candles(
@@ -1811,8 +1767,6 @@ def update_okx_btc():
     # UTC 00:00
     # =
     # KST 09:00
-    #
-    # 따라서 KST 09:00 일봉과 일치
     # =====================================================
 
     d1d = (
@@ -1901,10 +1855,6 @@ def update_okx_btc():
             price
         )
     )
-
-    # =====================================================
-    # 현재 일봉 변동률
-    # =====================================================
 
     if latest_btc_daily_periods:
 
@@ -2144,9 +2094,7 @@ def cells(periods):
 
 
 # =========================================================
-# BTC 일봉 전용 표시
-#
-# SIGNAL 적용하지 않음
+# BTC 일봉 표시
 # =========================================================
 
 def btc_daily_cells(
@@ -2406,7 +2354,7 @@ def card(
                     </b>
 
                     <span>
-                        패턴봉 + 다음봉 SIGNAL
+                        패턴봉 + 다음봉
                     </span>
 
                 </div>
@@ -2445,7 +2393,7 @@ def card(
             </div>
 
             <span class="both-badge">
-                ⭐ PATTERN SIGNAL
+                ⭐ PATTERN
             </span>
 
         </div>
@@ -2493,7 +2441,7 @@ def card(
 
                 <strong>
                     {(
-                        "SIGNAL"
+                        "PATTERN"
                         if row.get(
                             "signal_4h_current"
                         )
@@ -2512,7 +2460,7 @@ def card(
 
                 <strong>
                     {(
-                        "SIGNAL"
+                        "PATTERN"
                         if row.get(
                             "signal_4h_previous"
                         )
@@ -2534,7 +2482,7 @@ def card(
                 </b>
 
                 <span>
-                    패턴봉 + 다음봉 SIGNAL
+                    패턴봉 + 다음봉
                 </span>
 
             </div>
@@ -2551,69 +2499,6 @@ def card(
         </div>
 
     </article>
-    """
-
-
-# =========================================================
-# SIGNAL 영역
-# =========================================================
-
-def both_section(data):
-
-    rows = [
-        r
-        for r in data
-        if r.get(
-            "signal_4h"
-        )
-    ]
-
-    if rows:
-
-        content = "".join(
-            card(
-                r,
-                "both"
-            )
-            for r in rows
-        )
-
-    else:
-
-        content = (
-            '<div class="empty">'
-            '현재 상승장악형 또는 관통형 SIGNAL 없음'
-            '</div>'
-        )
-
-    return f"""
-
-    <section>
-
-        <div class="section-title signal-section-title">
-
-            <div>
-
-                <span class="section-kicker">
-                    SIGNAL
-                </span>
-
-                <b>
-                    ⭐ Upbit Signal
-                </b>
-
-            </div>
-
-            <small>
-                패턴봉 + 다음봉
-            </small>
-
-        </div>
-
-        {content}
-
-    </section>
-
     """
 
 
@@ -2715,76 +2600,6 @@ section {
 }
 
 
-.section-title {
-
-    min-height: 42px;
-
-    padding: 7px 9px;
-
-    display: flex;
-
-    align-items: center;
-
-    justify-content: space-between;
-
-    border-bottom:
-        1px solid #26313a;
-
-    margin-bottom: 5px;
-}
-
-
-.section-title > div {
-
-    display: flex;
-
-    align-items: center;
-
-    gap: 7px;
-}
-
-
-.section-title b {
-
-    font-size: 10px;
-
-    font-weight: 800;
-}
-
-
-.section-title small {
-
-    color: #697580;
-
-    font-size: 7px;
-}
-
-
-.section-kicker {
-
-    color: #7d8994;
-
-    font-size: 6px;
-
-    letter-spacing: 1px;
-
-    font-weight: 700;
-}
-
-
-.signal-section-title {
-
-    border-bottom:
-        1px solid #725f28;
-}
-
-
-.signal-section-title .section-kicker {
-
-    color: #c9a83d;
-}
-
-
 .btc-panel {
 
     background: #0c1116;
@@ -2828,6 +2643,18 @@ section {
     font-size: 10px;
 
     font-weight: 800;
+}
+
+
+.section-kicker {
+
+    color: #7d8994;
+
+    font-size: 6px;
+
+    letter-spacing: 1px;
+
+    font-weight: 700;
 }
 
 
@@ -3322,23 +3149,6 @@ section {
 }
 
 
-.empty {
-
-    padding: 25px 10px;
-
-    text-align: center;
-
-    color: #626e79;
-
-    background: #0c1116;
-
-    border:
-        1px solid #202a33;
-
-    font-size: 8px;
-}
-
-
 @media (max-width: 600px) {
 
     body {
@@ -3535,15 +3345,6 @@ def dashboard():
     if USE_UPBIT == "Y":
 
         # -------------------------------------------------
-        # 상승장악형 / 관통형 SIGNAL
-        # 패턴봉 + 다음봉
-        # -------------------------------------------------
-
-        s += both_section(
-            latest_upbit_data
-        )
-
-        # -------------------------------------------------
         # TOP LIST
         # -------------------------------------------------
 
@@ -3674,7 +3475,7 @@ def scheduler():
 def startup():
 
     log.info(
-        "START | OKX BTC 1D + 업비트 거래대금 TOP10 + 4H 상승장악/관통형 SIGNAL"
+        "START | OKX BTC 1D + 업비트 거래대금 TOP10 + 4H 상승장악/관통형"
     )
 
     threading.Thread(
