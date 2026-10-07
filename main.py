@@ -40,7 +40,7 @@ KST = ZoneInfo("Asia/Seoul")
 # 사용자 설정
 # =========================================================
 
-TOP_N = 20
+TOP_N = 10
 
 SHOW_TOP_LIST = "Y"
 
@@ -61,10 +61,10 @@ MAX_RETRIES = 10
 # SIGNAL 설정
 # =========================================================
 
-SIGNAL_TIMEFRAME = "4h"
+SIGNAL_TIMEFRAME = "1h"
 
 TIMEFRAME_LABEL = {
-    "4h": "4시간봉"
+    "1h": "1시간봉"
 }
 
 
@@ -458,7 +458,7 @@ def get_upbit_daily_candles(
 
 
 # =========================================================
-# 업비트 4시간봉
+# 업비트 1시간봉
 # =========================================================
 
 def get_upbit_4h_candles(
@@ -467,7 +467,7 @@ def get_upbit_4h_candles(
 ):
 
     endpoint = (
-        "https://api.upbit.com/v1/candles/minutes/240"
+        "https://api.upbit.com/v1/candles/minutes/60"
     )
 
     params = {
@@ -614,7 +614,7 @@ def calculate_ema(
 
 
 # =========================================================
-# 4시간봉 EMA 분석
+# 1시간봉 EMA 분석
 #
 # EMA20 < EMA60
 # = 역배열
@@ -920,6 +920,8 @@ def is_bullish_engulfing(
 
 # =========================================================
 # 하락장악형
+#
+# SIGNAL / TOP 표시에서는 사용하지 않음
 # =========================================================
 
 def is_bearish_engulfing(
@@ -1111,6 +1113,8 @@ def is_bullish_piercing(
 
 # =========================================================
 # 하락관통형
+#
+# 표시에서는 사용하지 않음
 # =========================================================
 
 def is_bearish_piercing(
@@ -1161,7 +1165,9 @@ def is_bearish_piercing(
 
 
 # =========================================================
-# 현재 4시간봉 패턴
+# 현재 1시간봉 패턴
+#
+# 하락장악 / 하락관통은 표시하지 않음
 # =========================================================
 
 def get_current_pattern(
@@ -1189,24 +1195,11 @@ def get_current_pattern(
 
             return "상승장악형"
 
-        if is_bearish_engulfing(
-            previous,
-            current
-        ):
-
-            return "하락장악형"
-
     if is_positive_doji(
         current
     ):
 
         return "양수도지"
-
-    if is_negative_doji(
-        current
-    ):
-
-        return "음수도지"
 
     if previous is not None:
 
@@ -1217,18 +1210,11 @@ def get_current_pattern(
 
             return "상승관통형"
 
-        if is_bearish_piercing(
-            previous,
-            current
-        ):
-
-            return "하락관통형"
-
     return None
 
 
 # =========================================================
-# 최근 2·3·4번째 캔들 상승장악형
+# 최근 2·3·4번째 1시간봉 상승장악형
 #
 # periods[-1] = 현재 캔들
 # periods[-2] = 최근 2번째
@@ -1282,8 +1268,6 @@ def bullish_engulfing_234(
 
 # =========================================================
 # 최근 2·3·4번째 캔들 상승장악형 위치
-#
-# SIGNAL 화면에서 조건 확인용
 # =========================================================
 
 def bullish_engulfing_234_label(
@@ -1327,7 +1311,7 @@ def bullish_engulfing_234_label(
 
 
 # =========================================================
-# 업비트 4시간봉 기간 생성
+# 업비트 1시간봉 기간 생성
 # =========================================================
 
 def build_upbit_4h_periods(
@@ -1406,7 +1390,7 @@ def build_upbit_4h_periods(
 
             next_dt = (
                 dt
-                + timedelta(hours=4)
+                + timedelta(hours=1)
             )
 
         change = (
@@ -1714,7 +1698,7 @@ def analyze_daily_change(
 
 
 # =========================================================
-# 4시간봉 분석
+# 1시간봉 분석
 # =========================================================
 
 def analyze_4h(
@@ -2057,7 +2041,7 @@ def update_upbit():
         except Exception as e:
 
             log.warning(
-                "%s 4시간봉 오류: %s",
+                "%s 1시간봉 오류: %s",
                 market,
                 e
             )
@@ -2151,13 +2135,15 @@ def update_upbit():
     # =====================================================
     # SIGNAL 조건
     #
-    # 1. EMA20 < EMA60 역배열
+    # 1. 1시간봉 EMA20 < EMA60 역배열
     # OR
-    # 2. 최근 2번째 4시간봉 상승장악형
+    # 2. 최근 2번째 1시간봉 상승장악형
     # OR
-    # 3. 최근 3번째 4시간봉 상승장악형
+    # 3. 최근 3번째 1시간봉 상승장악형
     # OR
-    # 4. 최근 4번째 4시간봉 상승장악형
+    # 4. 최근 4번째 1시간봉 상승장악형
+    #
+    # 하락장악 / 하락관통은 SIGNAL에서 제외
     # =====================================================
 
     latest_signal_data = [
@@ -2197,7 +2183,7 @@ def update_upbit():
         row["signal_rank"] = signal_rank
 
     log.info(
-        "UPBIT | 거래대금 TOP%s | SIGNAL=%s",
+        "UPBIT | 거래대금 TOP%s | 1시간봉 SIGNAL=%s",
         TOP_N,
         len(
             latest_signal_data
@@ -2639,6 +2625,8 @@ def ema_alignment_html(
 
 # =========================================================
 # 현재 패턴 HTML
+#
+# 하락장악 / 하락관통은 표시하지 않음
 # =========================================================
 
 def current_pattern_html(
@@ -2653,14 +2641,6 @@ def current_pattern_html(
             '</span>'
         )
 
-    if pattern == "하락장악형":
-
-        return (
-            '<span class="current-pattern bearish">'
-            '▼ 하락장악형'
-            '</span>'
-        )
-
     if pattern == "양수도지":
 
         return (
@@ -2669,27 +2649,11 @@ def current_pattern_html(
             '</span>'
         )
 
-    if pattern == "음수도지":
-
-        return (
-            '<span class="current-pattern bearish">'
-            '● 음수도지'
-            '</span>'
-        )
-
     if pattern == "상승관통형":
 
         return (
             '<span class="current-pattern bullish">'
             '▲ 상승관통형'
-            '</span>'
-        )
-
-    if pattern == "하락관통형":
-
-        return (
-            '<span class="current-pattern bearish">'
-            '▼ 하락관통형'
             '</span>'
         )
 
@@ -2974,7 +2938,7 @@ def signal_section():
             </div>
 
             <span class="update-time">
-                4시간봉 · {kst()}
+                1시간봉 · {kst()}
             </span>
 
         </div>
@@ -2993,7 +2957,7 @@ def signal_section():
             </b>
 
             <small>
-                4시간봉 기준
+                1시간봉 기준
             </small>
 
         </div>
@@ -3035,9 +2999,9 @@ def signal_section():
 # TOP 카드
 #
 # 표시:
-# 종목 / 현재가 / 거래대금 / 변동률 / 현재 캔들패턴
+# 종목 / 현재가 / 거래대금 / 변동률 / 현재 1시간봉 패턴
 #
-# 4시간봉 패턴 이력 표시 삭제
+# 하락장악 / 하락관통은 표시하지 않음
 # =========================================================
 
 def card(
@@ -3157,7 +3121,7 @@ def card(
                 <div>
 
                     <span>
-                        현재 캔들패턴
+                        현재 1시간봉 패턴
                     </span>
 
                     <strong>
@@ -3293,13 +3257,6 @@ section {
 .current-pattern.bullish {
 
     color: #38d878;
-
-}
-
-
-.current-pattern.bearish {
-
-    color: #ff5966;
 
 }
 
@@ -4141,7 +4098,7 @@ def scheduler():
 def startup():
 
     log.info(
-        "START | BTC 시황 + EMA20/60 역배열 + 2·3·4번째 상승장악 SIGNAL + TOP10"
+        "START | BTC 시황 + 1시간봉 EMA20/60 역배열 + 2·3·4번째 상승장악 SIGNAL + TOP10"
     )
 
     threading.Thread(
