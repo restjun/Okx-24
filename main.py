@@ -331,7 +331,6 @@ def get_upbit_markets():
 # =========================================================
 # 업비트 일봉
 #
-# 변동률 표시 전용
 # KST 09:00 기준
 # =========================================================
 
@@ -445,8 +444,6 @@ def get_upbit_daily_candles(
 
 # =========================================================
 # 업비트 4시간봉
-#
-# 업비트 실제 240분봉
 # =========================================================
 
 def get_upbit_4h_candles(
@@ -561,8 +558,6 @@ def get_upbit_4h_candles(
 # 일봉 기간 생성
 #
 # KST 09:00 기준
-#
-# 최근 6개 반환
 # =========================================================
 
 def build_daily_periods(
@@ -603,10 +598,6 @@ def build_daily_periods(
 
     periods = []
 
-    # =====================================================
-    # 전체 일봉 기간 생성
-    # =====================================================
-
     for i, row in df.iterrows():
 
         dt = row["datetime"]
@@ -637,10 +628,6 @@ def build_daily_periods(
         active = (
             start == current_start
         )
-
-        # -------------------------------------------------
-        # 현재 진행 일봉에 현재가 반영
-        # -------------------------------------------------
 
         if (
             active
@@ -700,10 +687,6 @@ def build_daily_periods(
 
         })
 
-    # =====================================================
-    # 최근 6개만 화면 표시
-    # =====================================================
-
     return periods[-6:]
 
 
@@ -738,17 +721,14 @@ def is_bullish_engulfing(
 
         return False
 
-    # 이전 캔들 음봉
     if prev_close >= prev_open:
 
         return False
 
-    # 현재 캔들 양봉
     if curr_close <= curr_open:
 
         return False
 
-    # 현재 양봉 실체가 이전 음봉 실체를 감싸야 함
     return bool(
         curr_open <= prev_close
         and
@@ -758,17 +738,6 @@ def is_bullish_engulfing(
 
 # =========================================================
 # 하락장악형
-#
-# 이전 캔들:
-#   양봉
-#
-# 현재 캔들:
-#   음봉
-#
-# 현재 음봉 실체가 이전 양봉 실체를 감싸는 형태
-#
-# 표시용
-# SIGNAL 조건에는 사용하지 않음
 # =========================================================
 
 def is_bearish_engulfing(
@@ -798,17 +767,14 @@ def is_bearish_engulfing(
 
         return False
 
-    # 이전 캔들 양봉
     if prev_close <= prev_open:
 
         return False
 
-    # 현재 캔들 음봉
     if curr_close >= curr_open:
 
         return False
 
-    # 현재 음봉 실체가 이전 양봉 실체를 감싸야 함
     return bool(
         curr_open >= prev_close
         and
@@ -817,10 +783,114 @@ def is_bearish_engulfing(
 
 
 # =========================================================
-# 관통형
+# 양수도지
+#
+# 몸통이 전체 고저폭의 10% 이하
+# 종가 >= 시가
 # =========================================================
 
-def is_piercing_line(
+def is_positive_doji(
+    current
+):
+
+    try:
+
+        o = float(
+            current["open"]
+        )
+
+        h = float(
+            current["high"]
+        )
+
+        l = float(
+            current["low"]
+        )
+
+        c = float(
+            current["close"]
+        )
+
+    except Exception:
+
+        return False
+
+    total_range = h - l
+
+    if total_range <= 0:
+
+        return False
+
+    body = abs(
+        c - o
+    )
+
+    return bool(
+        body / total_range <= 0.10
+        and
+        c >= o
+    )
+
+
+# =========================================================
+# 음수도지
+#
+# 몸통이 전체 고저폭의 10% 이하
+# 종가 < 시가
+# =========================================================
+
+def is_negative_doji(
+    current
+):
+
+    try:
+
+        o = float(
+            current["open"]
+        )
+
+        h = float(
+            current["high"]
+        )
+
+        l = float(
+            current["low"]
+        )
+
+        c = float(
+            current["close"]
+        )
+
+    except Exception:
+
+        return False
+
+    total_range = h - l
+
+    if total_range <= 0:
+
+        return False
+
+    body = abs(
+        c - o
+    )
+
+    return bool(
+        body / total_range <= 0.10
+        and
+        c < o
+    )
+
+
+# =========================================================
+# 상승관통형
+#
+# 이전 음봉
+# 현재 양봉
+# 현재 종가가 이전 음봉 몸통 중간 이상
+# =========================================================
+
+def is_bullish_piercing(
     previous,
     current
 ):
@@ -847,12 +917,10 @@ def is_piercing_line(
 
         return False
 
-    # 이전 캔들 음봉
     if prev_close >= prev_open:
 
         return False
 
-    # 현재 캔들 양봉
     if curr_close <= curr_open:
 
         return False
@@ -870,14 +938,71 @@ def is_piercing_line(
 
 
 # =========================================================
-# 현재 캔들 패턴 판정
+# 하락관통형
 #
-# 현재 캔들 기준으로 표시
+# 이전 양봉
+# 현재 음봉
+# 현재 종가가 이전 양봉 몸통 중간 이하
+# =========================================================
+
+def is_bearish_piercing(
+    previous,
+    current
+):
+
+    try:
+
+        prev_open = float(
+            previous["open"]
+        )
+
+        prev_close = float(
+            previous["close"]
+        )
+
+        curr_open = float(
+            current["open"]
+        )
+
+        curr_close = float(
+            current["close"]
+        )
+
+    except Exception:
+
+        return False
+
+    if prev_close <= prev_open:
+
+        return False
+
+    if curr_close >= curr_open:
+
+        return False
+
+    midpoint = (
+        prev_open
+        + prev_close
+    ) / 2
+
+    return bool(
+        curr_close < midpoint
+        and
+        curr_close > prev_open
+    )
+
+
+# =========================================================
+# 현재 4시간봉 패턴
 #
-# 상승장악형
-# 관통형
-# 하락장악형
-# 없음
+# 우선순위
+#
+# 1. 상승장악형
+# 2. 하락장악형
+# 3. 양수도지
+# 4. 음수도지
+# 5. 상승관통형
+# 6. 하락관통형
 # =========================================================
 
 def get_current_pattern(
@@ -888,64 +1013,69 @@ def get_current_pattern(
 
         return None
 
-    if len(periods) < 2:
-
-        return None
-
-    previous = periods[-2]
-
     current = periods[-1]
 
-    # -----------------------------------------------------
-    # 상승장악형
-    # -----------------------------------------------------
+    previous = (
+        periods[-2]
+        if len(periods) >= 2
+        else None
+    )
 
-    if is_bullish_engulfing(
-        previous,
+    if previous is not None:
+
+        if is_bullish_engulfing(
+            previous,
+            current
+        ):
+
+            return "상승장악형"
+
+        if is_bearish_engulfing(
+            previous,
+            current
+        ):
+
+            return "하락장악형"
+
+    if is_positive_doji(
         current
     ):
 
-        return "상승장악형"
+        return "양수도지"
 
-    # -----------------------------------------------------
-    # 관통형
-    # -----------------------------------------------------
-
-    if is_piercing_line(
-        previous,
+    if is_negative_doji(
         current
     ):
 
-        return "관통형"
+        return "음수도지"
 
-    # -----------------------------------------------------
-    # 하락장악형
-    # -----------------------------------------------------
+    if previous is not None:
 
-    if is_bearish_engulfing(
-        previous,
-        current
-    ):
+        if is_bullish_piercing(
+            previous,
+            current
+        ):
 
-        return "하락장악형"
+            return "상승관통형"
+
+        if is_bearish_piercing(
+            previous,
+            current
+        ):
+
+            return "하락관통형"
 
     return None
 
 
 # =========================================================
-# 업비트 실제 4시간봉 기간 생성
+# 업비트 4시간봉 기간 생성
 #
-# SIGNAL 조건:
+# 기존 SIGNAL:
+# 상승장악형
+# 상승관통형
 #
-# 1. 상승장악형
-# 또는
-# 2. 관통형
-#
-# 패턴봉 + 다음 캔들
-#
-# 하락장악형:
-# 표시만 함
-# SIGNAL에는 사용하지 않음
+# 패턴봉 + 다음봉
 # =========================================================
 
 def build_upbit_4h_periods(
@@ -971,10 +1101,6 @@ def build_upbit_4h_periods(
 
     periods = []
 
-    # =====================================================
-    # 전체 4시간봉 생성
-    # =====================================================
-
     for idx, row in df.iterrows():
 
         dt = row["datetime"]
@@ -998,10 +1124,6 @@ def build_upbit_4h_periods(
         active = (
             idx == len(df) - 1
         )
-
-        # -------------------------------------------------
-        # 현재 진행 중인 캔들에 현재가 반영
-        # -------------------------------------------------
 
         if (
             active
@@ -1084,11 +1206,10 @@ def build_upbit_4h_periods(
         })
 
     # =====================================================
-    # 캔들 패턴 SIGNAL
+    # 기존 SIGNAL 로직
     #
-    # 상승장악형 또는 관통형만 SIGNAL
-    #
-    # 패턴봉 + 다음봉
+    # 상승장악형
+    # 상승관통형
     # =====================================================
 
     for i in range(
@@ -1104,10 +1225,6 @@ def build_upbit_4h_periods(
             i
         ]
 
-        # -------------------------------------------------
-        # 상승장악형
-        # -------------------------------------------------
-
         bullish_engulfing = (
             is_bullish_engulfing(
                 previous,
@@ -1115,12 +1232,8 @@ def build_upbit_4h_periods(
             )
         )
 
-        # -------------------------------------------------
-        # 관통형
-        # -------------------------------------------------
-
-        piercing_line = (
-            is_piercing_line(
+        bullish_piercing = (
+            is_bullish_piercing(
                 previous,
                 current
             )
@@ -1132,21 +1245,13 @@ def build_upbit_4h_periods(
 
             pattern = "상승장악형"
 
-        elif piercing_line:
+        elif bullish_piercing:
 
-            pattern = "관통형"
-
-        # -------------------------------------------------
-        # 패턴이 없으면 SIGNAL 없음
-        # -------------------------------------------------
+            pattern = "상승관통형"
 
         if pattern is None:
 
             continue
-
-        # -------------------------------------------------
-        # 패턴봉
-        # -------------------------------------------------
 
         periods[i][
             "signal"
@@ -1159,10 +1264,6 @@ def build_upbit_4h_periods(
         periods[i][
             "signal_reason"
         ] = pattern
-
-        # -------------------------------------------------
-        # 패턴봉 다음 캔들
-        # -------------------------------------------------
 
         if i + 1 < len(periods):
 
@@ -1177,10 +1278,6 @@ def build_upbit_4h_periods(
             periods[i + 1][
                 "signal_reason"
             ] = "패턴 후 다음 캔들"
-
-    # =====================================================
-    # 최근 6개만 표시
-    # =====================================================
 
     return periods[-6:]
 
@@ -1583,13 +1680,6 @@ def update_upbit():
 
     all_markets = get_upbit_markets()
 
-    # =====================================================
-    # 1.
-    # 전체 KRW 종목 대상
-    #
-    # 당일 양수 조건 없음
-    # =====================================================
-
     candidates = []
 
     for item in all_markets:
@@ -1628,8 +1718,7 @@ def update_upbit():
             )
 
     # =====================================================
-    # 2.
-    # 전체 종목 중 거래대금 TOP10
+    # 거래대금 TOP10
     # =====================================================
 
     candidates.sort(
@@ -1643,11 +1732,6 @@ def update_upbit():
     ]
 
     rows = []
-
-    # =====================================================
-    # 3.
-    # TOP10 4시간봉 분석
-    # =====================================================
 
     for rank, candidate in enumerate(
         candidates,
@@ -1734,7 +1818,7 @@ def update_upbit():
     )
 
     log.info(
-        "UPBIT | 거래대금 TOP%s | 4H 상승장악/관통형 SIGNAL=%s",
+        "UPBIT | 거래대금 TOP%s | 4H 상승장악/상승관통 SIGNAL=%s",
         TOP_N,
         sum(
             x["signal_4h"]
@@ -1874,9 +1958,6 @@ def okx_price():
 
 # =========================================================
 # BTC 업데이트
-#
-# OKX BTC-USDT-SWAP 1D 캔들
-# UTC 00:00 → KST 09:00
 # =========================================================
 
 def update_okx_btc():
@@ -1903,10 +1984,6 @@ def update_okx_btc():
         latest_btc_daily_periods = []
 
         latest_btc_daily_change = None
-
-        log.warning(
-            "OKX BTC 1D 캔들 데이터 없음"
-        )
 
         return
 
@@ -2001,11 +2078,6 @@ def update_okx_btc():
     else:
 
         latest_btc_daily_change = None
-
-    log.info(
-        "OKX BTC | 1D | 현재 변동률=%s",
-        latest_btc_daily_change
-    )
 
 
 # =========================================================
@@ -2140,7 +2212,7 @@ def fmt_change(v):
 
 
 # =========================================================
-# 현재 패턴 표시
+# 현재 패턴 HTML
 # =========================================================
 
 def current_pattern_html(
@@ -2155,19 +2227,43 @@ def current_pattern_html(
             '</span>'
         )
 
-    if pattern == "관통형":
-
-        return (
-            '<span class="current-pattern bullish">'
-            '▲ 관통형'
-            '</span>'
-        )
-
     if pattern == "하락장악형":
 
         return (
             '<span class="current-pattern bearish">'
             '▼ 하락장악형'
+            '</span>'
+        )
+
+    if pattern == "양수도지":
+
+        return (
+            '<span class="current-pattern bullish">'
+            '● 양수도지'
+            '</span>'
+        )
+
+    if pattern == "음수도지":
+
+        return (
+            '<span class="current-pattern bearish">'
+            '● 음수도지'
+            '</span>'
+        )
+
+    if pattern == "상승관통형":
+
+        return (
+            '<span class="current-pattern bullish">'
+            '▲ 상승관통형'
+            '</span>'
+        )
+
+    if pattern == "하락관통형":
+
+        return (
+            '<span class="current-pattern bearish">'
+            '▼ 하락관통형'
             '</span>'
         )
 
@@ -2194,11 +2290,11 @@ def signal_reason_html(
             '</span>'
         )
 
-    if reason == "관통형":
+    if reason == "상승관통형":
 
         return (
             '<span class="pattern-cross">'
-            '▲ 관통형'
+            '▲ 상승관통형'
             '</span>'
         )
 
@@ -2414,7 +2510,7 @@ def card(
 
             status = (
                 '<span class="signal-badge">'
-                '⭐ 상승장악/관통 SIGNAL'
+                '⭐ 상승장악/상승관통 SIGNAL'
                 '</span>'
             )
 
@@ -2517,7 +2613,7 @@ def card(
                 <i></i>
 
                 <small>
-                    상승장악형 / 관통형 / 하락장악형
+                    상승장악 / 하락장악 / 도지 / 관통
                 </small>
 
             </div>
@@ -3178,12 +3274,6 @@ section {
 }
 
 
-.both-card .signal-head {
-
-    background: #11150f;
-}
-
-
 .coin-card {
 
     background: #0c1116;
@@ -3290,6 +3380,24 @@ section {
     color: #dce2e7;
 
     font-size: 8px;
+}
+
+
+.market-summary .daily-change-value .up {
+
+    color: #38d878 !important;
+}
+
+
+.market-summary .daily-change-value .down {
+
+    color: #ff5966 !important;
+}
+
+
+.market-summary .daily-change-value .zero {
+
+    color: #68737e !important;
 }
 
 
@@ -3593,10 +3701,6 @@ def dashboard():
 
     if USE_UPBIT == "Y":
 
-        # -------------------------------------------------
-        # TOP LIST
-        # -------------------------------------------------
-
         if SHOW_TOP_LIST == "Y":
 
             if latest_upbit_data:
@@ -3724,7 +3828,7 @@ def scheduler():
 def startup():
 
     log.info(
-        "START | OKX BTC 1D + 업비트 거래대금 TOP10 + 4H 캔들패턴"
+        "START | OKX BTC 1D + 업비트 거래대금 TOP10 + 4H 6종 패턴"
     )
 
     threading.Thread(
