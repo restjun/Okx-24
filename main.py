@@ -1165,18 +1165,83 @@ def is_bearish_piercing(
 
 
 # =========================================================
-# 현재 1시간봉 패턴
+# 패턴 이름
 #
-# 하락장악 / 하락관통은 표시하지 않음
+# 상승 패턴만 표시
 # =========================================================
 
-def get_current_pattern(
+def get_candle_pattern(
+    previous,
+    current
+):
+
+    if (
+        previous is None
+        or current is None
+    ):
+
+        return None
+
+    if is_bullish_engulfing(
+        previous,
+        current
+    ):
+
+        return "상승장악형"
+
+    if is_positive_doji(
+        current
+    ):
+
+        return "양수도지"
+
+    if is_bullish_piercing(
+        previous,
+        current
+    ):
+
+        return "상승관통형"
+
+    return None
+
+
+# =========================================================
+# 이전 / 현재 1시간봉 패턴 분석
+#
+# periods[-2] = 이전 완료 캔들
+# periods[-1] = 현재 진행 캔들
+#
+# SIGNAL:
+# 이전 캔들 또는 현재 캔들 중
+# 하나라도 상승장악형이면 SIGNAL
+# =========================================================
+
+def analyze_previous_current_pattern(
     periods
 ):
 
+    result = {
+
+        "previous_pattern":
+            None,
+
+        "current_pattern":
+            None,
+
+        "previous_bullish_engulfing":
+            False,
+
+        "current_bullish_engulfing":
+            False,
+
+        "bullish_engulfing_signal":
+            False
+
+    }
+
     if not periods:
 
-        return None
+        return result
 
     current = periods[-1]
 
@@ -1186,128 +1251,72 @@ def get_current_pattern(
         else None
     )
 
-    if previous is not None:
+    # -----------------------------------------------------
+    # 현재 캔들의 패턴
+    # -----------------------------------------------------
 
-        if is_bullish_engulfing(
-            previous,
-            current
-        ):
-
-            return "상승장악형"
-
-    if is_positive_doji(
+    result[
+        "current_pattern"
+    ] = get_candle_pattern(
+        previous,
         current
-    ):
+    )
 
-        return "양수도지"
+    # -----------------------------------------------------
+    # 현재 캔들이 상승장악인지
+    # -----------------------------------------------------
 
     if previous is not None:
 
-        if is_bullish_piercing(
+        result[
+            "current_bullish_engulfing"
+        ] = is_bullish_engulfing(
             previous,
             current
-        ):
+        )
 
-            return "상승관통형"
+    # -----------------------------------------------------
+    # 이전 캔들의 패턴
+    #
+    # 이전 캔들의 패턴을 판단하려면
+    # 이전 캔들 바로 앞의 캔들이 필요
+    # -----------------------------------------------------
 
-    return None
+    if len(periods) >= 3:
 
+        previous_previous = periods[-3]
 
-# =========================================================
-# 최근 2·3·4번째 1시간봉 상승장악형
-#
-# periods[-1] = 현재 캔들
-# periods[-2] = 최근 2번째
-# periods[-3] = 최근 3번째
-# periods[-4] = 최근 4번째
-#
-# 현재 캔들은 제외하고
-# 최근 2·3·4번째 캔들에서
-# 상승장악형이 하나라도 있으면 True
-# =========================================================
+        result[
+            "previous_pattern"
+        ] = get_candle_pattern(
+            previous_previous,
+            previous
+        )
 
-def bullish_engulfing_234(
-    periods
-):
+        result[
+            "previous_bullish_engulfing"
+        ] = is_bullish_engulfing(
+            previous_previous,
+            previous
+        )
 
-    if not periods:
+    # -----------------------------------------------------
+    # 이전 또는 현재 상승장악
+    # -----------------------------------------------------
 
-        return False
-
-    for idx in (
-        -2,
-        -3,
-        -4
-    ):
-
-        if abs(idx) > len(periods):
-
-            continue
-
-        current = periods[idx]
-
-        previous_idx = idx - 1
-
-        if abs(previous_idx) > len(periods):
-
-            continue
-
-        previous = periods[
-            previous_idx
+    result[
+        "bullish_engulfing_signal"
+    ] = bool(
+        result[
+            "previous_bullish_engulfing"
         ]
-
-        if is_bullish_engulfing(
-            previous,
-            current
-        ):
-
-            return True
-
-    return False
-
-
-# =========================================================
-# 최근 2·3·4번째 캔들 상승장악형 위치
-# =========================================================
-
-def bullish_engulfing_234_label(
-    periods
-):
-
-    if not periods:
-
-        return None
-
-    for idx, label in (
-        (-2, "2번째"),
-        (-3, "3번째"),
-        (-4, "4번째")
-    ):
-
-        if abs(idx) > len(periods):
-
-            continue
-
-        current = periods[idx]
-
-        previous_idx = idx - 1
-
-        if abs(previous_idx) > len(periods):
-
-            continue
-
-        previous = periods[
-            previous_idx
+        or
+        result[
+            "current_bullish_engulfing"
         ]
+    )
 
-        if is_bullish_engulfing(
-            previous,
-            current
-        ):
-
-            return label
-
-    return None
+    return result
 
 
 # =========================================================
@@ -1441,94 +1450,40 @@ def build_upbit_4h_periods(
 
         })
 
-    for i in range(
-        1,
-        len(periods)
-    ):
-
-        previous = periods[
-            i - 1
-        ]
-
-        current = periods[
-            i
-        ]
-
-        bullish_engulfing = (
-            is_bullish_engulfing(
-                previous,
-                current
-            )
-        )
-
-        bullish_piercing = (
-            is_bullish_piercing(
-                previous,
-                current
-            )
-        )
-
-        pattern = None
-
-        if bullish_engulfing:
-
-            pattern = "상승장악형"
-
-        elif bullish_piercing:
-
-            pattern = "상승관통형"
-
-        if pattern is None:
-
-            continue
-
-        periods[i][
-            "signal"
-        ] = True
-
-        periods[i][
-            "pattern"
-        ] = pattern
-
-        periods[i][
-            "signal_reason"
-        ] = pattern
-
-        if i + 1 < len(periods):
-
-            periods[i + 1][
-                "signal"
-            ] = True
-
-            periods[i + 1][
-                "pattern"
-            ] = pattern
-
-            periods[i + 1][
-                "signal_reason"
-            ] = "패턴 후 다음 캔들"
-
     return periods[-6:]
 
 
 # =========================================================
 # SIGNAL 판정
+#
+# 1시간봉 EMA20 < EMA60
+# OR
+# 이전 1시간봉 상승장악
+# OR
+# 현재 1시간봉 상승장악
+#
+# 하락장악 / 하락관통 제외
 # =========================================================
 
 def signal_pass(
-    periods
+    periods,
+    ema_reverse=False
 ):
 
-    if not periods:
+    if ema_reverse:
 
-        return False
+        return True
 
-    return any(
-        p.get(
-            "signal",
-            False
+    pattern_info = (
+        analyze_previous_current_pattern(
+            periods
         )
-        for p in periods
+    )
+
+    return bool(
+        pattern_info[
+            "bullish_engulfing_signal"
+        ]
     )
 
 
@@ -1537,106 +1492,93 @@ def signal_pass(
 # =========================================================
 
 def signal_details(
-    periods
+    periods,
+    ema_reverse=False
 ):
 
-    empty = {
-
-        "signal":
-            False,
-
-        "current_signal":
-            False,
-
-        "previous_signal":
-            False,
-
-        "signal_change":
-            None,
-
-        "signal_period":
-            None,
-
-        "signal_reason":
-            None
-
-    }
-
-    if not periods:
-
-        return empty
-
-    current = periods[-1]
-
-    current_signal = current.get(
-        "signal",
-        False
-    )
-
-    previous = (
-        periods[-2]
-        if len(periods) >= 2
-        else None
-    )
-
-    previous_signal = (
-        previous.get(
-            "signal",
-            False
+    pattern_info = (
+        analyze_previous_current_pattern(
+            periods
         )
-        if previous is not None
-        else False
     )
 
-    if current_signal:
+    current_signal = bool(
+        pattern_info[
+            "current_bullish_engulfing"
+        ]
+    )
 
-        return {
+    previous_signal = bool(
+        pattern_info[
+            "previous_bullish_engulfing"
+        ]
+    )
 
-            "signal":
-                True,
+    if ema_reverse:
 
-            "current_signal":
-                True,
+        reason = "EMA20 < EMA60"
 
-            "previous_signal":
-                previous_signal,
+    elif current_signal:
 
-            "signal_change":
-                current.get(
-                    "change"
-                ),
+        reason = "현재 상승장악형"
 
-            "signal_period":
-                current.get(
-                    "label"
-                ),
+    elif previous_signal:
 
-            "signal_reason":
-                current.get(
-                    "signal_reason"
-                )
+        reason = "이전 상승장악형"
 
-        }
+    else:
+
+        reason = None
+
+    signal = bool(
+        ema_reverse
+        or
+        current_signal
+        or
+        previous_signal
+    )
+
+    current_change = None
+
+    current_period = None
+
+    if periods:
+
+        current_period = periods[-1]
+
+        current_change = current_period.get(
+            "change"
+        )
 
     return {
 
         "signal":
-            False,
+            signal,
 
         "current_signal":
-            False,
+            current_signal,
 
         "previous_signal":
             previous_signal,
 
         "signal_change":
-            None,
+            current_change
+            if signal
+            else None,
 
         "signal_period":
-            None,
+            current_period.get(
+                "label"
+            )
+            if (
+                signal
+                and
+                current_period is not None
+            )
+            else None,
 
         "signal_reason":
-            None
+            reason
 
     }
 
@@ -1703,7 +1645,8 @@ def analyze_daily_change(
 
 def analyze_4h(
     market,
-    price
+    price,
+    ema_reverse=False
 ):
 
     df = get_upbit_4h_candles(
@@ -1719,7 +1662,9 @@ def analyze_4h(
                 [],
 
             "signal_pass":
-                False,
+                bool(
+                    ema_reverse
+                ),
 
             "current_signal":
                 False,
@@ -1734,16 +1679,23 @@ def analyze_4h(
                 None,
 
             "signal_reason":
+                (
+                    "EMA20 < EMA60"
+                    if ema_reverse
+                    else None
+                ),
+
+            "previous_pattern":
                 None,
 
             "current_pattern":
                 None,
 
-            "bullish_engulfing_234":
+            "previous_bullish_engulfing":
                 False,
 
-            "bullish_engulfing_234_label":
-                None
+            "current_bullish_engulfing":
+                False
 
         }
 
@@ -1752,22 +1704,15 @@ def analyze_4h(
         price
     )
 
-    details = signal_details(
-        periods
-    )
-
-    current_pattern = get_current_pattern(
-        periods
-    )
-
-    bullish_234 = bullish_engulfing_234(
-        periods
-    )
-
-    bullish_234_label = (
-        bullish_engulfing_234_label(
+    pattern_info = (
+        analyze_previous_current_pattern(
             periods
         )
+    )
+
+    details = signal_details(
+        periods,
+        ema_reverse
     )
 
     return {
@@ -1805,14 +1750,25 @@ def analyze_4h(
                 "signal_reason"
             ],
 
+        "previous_pattern":
+            pattern_info[
+                "previous_pattern"
+            ],
+
         "current_pattern":
-            current_pattern,
+            pattern_info[
+                "current_pattern"
+            ],
 
-        "bullish_engulfing_234":
-            bullish_234,
+        "previous_bullish_engulfing":
+            pattern_info[
+                "previous_bullish_engulfing"
+            ],
 
-        "bullish_engulfing_234_label":
-            bullish_234_label
+        "current_bullish_engulfing":
+            pattern_info[
+                "current_bullish_engulfing"
+            ]
 
     }
 
@@ -1904,19 +1860,24 @@ def make_row(
                 "signal_reason"
             ],
 
+        "previous_pattern":
+            analysis_4h[
+                "previous_pattern"
+            ],
+
         "current_pattern":
             analysis_4h[
                 "current_pattern"
             ],
 
-        "bullish_engulfing_234":
+        "previous_bullish_engulfing":
             analysis_4h[
-                "bullish_engulfing_234"
+                "previous_bullish_engulfing"
             ],
 
-        "bullish_engulfing_234_label":
+        "current_bullish_engulfing":
             analysis_4h[
-                "bullish_engulfing_234_label"
+                "current_bullish_engulfing"
             ],
 
         "ema20":
@@ -2033,54 +1994,9 @@ def update_upbit():
 
         try:
 
-            analysis_4h = analyze_4h(
-                market,
-                price
-            )
-
-        except Exception as e:
-
-            log.warning(
-                "%s 1시간봉 오류: %s",
-                market,
-                e
-            )
-
-            analysis_4h = {
-
-                "periods":
-                    [],
-
-                "signal_pass":
-                    False,
-
-                "current_signal":
-                    False,
-
-                "previous_signal":
-                    False,
-
-                "signal_change":
-                    None,
-
-                "signal_period":
-                    None,
-
-                "signal_reason":
-                    None,
-
-                "current_pattern":
-                    None,
-
-                "bullish_engulfing_234":
-                    False,
-
-                "bullish_engulfing_234_label":
-                    None
-
-            }
-
-        try:
+            # -------------------------------------------------
+            # 먼저 1시간봉 EMA를 계산
+            # -------------------------------------------------
 
             ema_analysis = analyze_ema_4h(
                 market,
@@ -2111,6 +2027,76 @@ def update_upbit():
 
             }
 
+        try:
+
+            # -------------------------------------------------
+            # 1시간봉 패턴 분석
+            # -------------------------------------------------
+
+            analysis_4h = analyze_4h(
+                market,
+                price,
+                ema_analysis.get(
+                    "reverse",
+                    False
+                )
+            )
+
+        except Exception as e:
+
+            log.warning(
+                "%s 1시간봉 오류: %s",
+                market,
+                e
+            )
+
+            analysis_4h = {
+
+                "periods":
+                    [],
+
+                "signal_pass":
+                    ema_analysis.get(
+                        "reverse",
+                        False
+                    ),
+
+                "current_signal":
+                    False,
+
+                "previous_signal":
+                    False,
+
+                "signal_change":
+                    None,
+
+                "signal_period":
+                    None,
+
+                "signal_reason":
+                    (
+                        "EMA20 < EMA60"
+                        if ema_analysis.get(
+                            "reverse",
+                            False
+                        )
+                        else None
+                    ),
+
+                "previous_pattern":
+                    None,
+
+                "current_pattern":
+                    None,
+
+                "previous_bullish_engulfing":
+                    False,
+
+                "current_bullish_engulfing":
+                    False
+
+            }
+
         rows.append(
             make_row(
                 rank,
@@ -2135,15 +2121,17 @@ def update_upbit():
     # =====================================================
     # SIGNAL 조건
     #
-    # 1. 1시간봉 EMA20 < EMA60 역배열
-    # OR
-    # 2. 최근 2번째 1시간봉 상승장악형
-    # OR
-    # 3. 최근 3번째 1시간봉 상승장악형
-    # OR
-    # 4. 최근 4번째 1시간봉 상승장악형
+    # 1. 1시간봉 EMA20 < EMA60
     #
-    # 하락장악 / 하락관통은 SIGNAL에서 제외
+    # OR
+    #
+    # 2. 이전 1시간봉 상승장악형
+    #
+    # OR
+    #
+    # 3. 현재 1시간봉 상승장악형
+    #
+    # 하락장악 / 하락관통 제외
     # =====================================================
 
     latest_signal_data = [
@@ -2156,7 +2144,12 @@ def update_upbit():
             )
             or
             row.get(
-                "bullish_engulfing_234",
+                "previous_bullish_engulfing",
+                False
+            )
+            or
+            row.get(
+                "current_bullish_engulfing",
                 False
             )
         )
@@ -2624,7 +2617,7 @@ def ema_alignment_html(
 
 
 # =========================================================
-# 현재 패턴 HTML
+# 현재/이전 패턴 HTML
 #
 # 하락장악 / 하락관통은 표시하지 않음
 # =========================================================
@@ -2812,9 +2805,7 @@ def btc_html():
 # SIGNAL 카드
 #
 # 표시:
-# 종목 / 거래대금 / 변동률 / 캔들패턴
-#
-# 현재가 / EMA20 / EMA60 / 역배열 표시 삭제
+# 종목 / 거래대금 / 변동률 / 이전패턴 / 현재패턴
 # =========================================================
 
 def signal_card(
@@ -2875,7 +2866,24 @@ def signal_card(
         <div class="signal-pattern">
 
             <span>
-                캔들패턴
+                이전 1시간봉
+            </span>
+
+            <strong>
+                {current_pattern_html(
+                    row.get(
+                        "previous_pattern"
+                    )
+                )}
+            </strong>
+
+        </div>
+
+
+        <div class="signal-pattern">
+
+            <span>
+                현재 1시간봉
             </span>
 
             <strong>
@@ -2953,7 +2961,7 @@ def signal_section():
             <b>
                 EMA20 &lt; EMA60
                 OR
-                최근 2·3·4번째 상승장악
+                이전 / 현재 상승장악
             </b>
 
             <small>
@@ -2978,7 +2986,11 @@ def signal_section():
             </div>
 
             <div>
-                캔들패턴
+                이전 1시간봉
+            </div>
+
+            <div>
+                현재 1시간봉
             </div>
 
         </div>
@@ -2999,9 +3011,8 @@ def signal_section():
 # TOP 카드
 #
 # 표시:
-# 종목 / 현재가 / 거래대금 / 변동률 / 현재 1시간봉 패턴
-#
-# 하락장악 / 하락관통은 표시하지 않음
+# 종목 / 현재가 / 거래대금 / 변동률 /
+# 이전 1시간봉 패턴 / 현재 1시간봉 패턴
 # =========================================================
 
 def card(
@@ -3016,7 +3027,12 @@ def card(
         )
         or
         row.get(
-            "bullish_engulfing_234",
+            "previous_bullish_engulfing",
+            False
+        )
+        or
+        row.get(
+            "current_bullish_engulfing",
             False
         )
         or
@@ -3024,6 +3040,10 @@ def card(
             "ema_reverse",
             False
         )
+    )
+
+    previous_pattern = row.get(
+        "previous_pattern"
     )
 
     current_pattern = row.get(
@@ -3121,7 +3141,24 @@ def card(
                 <div>
 
                     <span>
-                        현재 1시간봉 패턴
+                        이전 1시간봉
+                    </span>
+
+                    <strong>
+
+                        {current_pattern_html(
+                            previous_pattern
+                        )}
+
+                    </strong>
+
+                </div>
+
+
+                <div>
+
+                    <span>
+                        현재 1시간봉
                     </span>
 
                     <strong>
@@ -3345,10 +3382,11 @@ section {
     display: grid;
 
     grid-template-columns:
-        1.2fr
-        1fr
+        1.1fr
         0.9fr
-        1.5fr;
+        0.8fr
+        1.2fr
+        1.2fr;
 
     align-items: center;
 }
@@ -3473,7 +3511,7 @@ section {
 
 .signal-pattern .current-pattern {
 
-    font-size: 7px;
+    font-size: 6px;
 
 }
 
@@ -3690,7 +3728,7 @@ section {
     display: grid;
 
     grid-template-columns:
-        repeat(4, 1fr);
+        repeat(5, 1fr);
 
     border-bottom:
         1px solid #202a33;
@@ -3734,7 +3772,7 @@ section {
 
     color: #dce2e7;
 
-    font-size: 8px;
+    font-size: 7px;
 }
 
 
@@ -3836,6 +3874,13 @@ section {
     }
 
 
+    .market-summary {
+
+        grid-template-columns:
+            repeat(5, 1fr);
+    }
+
+
     .market-summary > div {
 
         min-height: 44px;
@@ -3855,7 +3900,7 @@ section {
 
     .market-summary strong {
 
-        font-size: 7px;
+        font-size: 6px;
     }
 
 
@@ -3883,10 +3928,11 @@ section {
     .signal-card {
 
         grid-template-columns:
-            1.2fr
-            1fr
+            1.1fr
             0.9fr
-            1.5fr;
+            0.8fr
+            1.2fr
+            1.2fr;
     }
 
 
@@ -3926,13 +3972,13 @@ section {
 
     .signal-card strong {
 
-        font-size: 6px;
+        font-size: 5px;
     }
 
 
     .signal-pattern .current-pattern {
 
-        font-size: 6px;
+        font-size: 5px;
     }
 
 }
@@ -4098,7 +4144,7 @@ def scheduler():
 def startup():
 
     log.info(
-        "START | BTC 시황 + 1시간봉 EMA20/60 역배열 + 2·3·4번째 상승장악 SIGNAL + TOP10"
+        "START | BTC 시황 + 1시간봉 EMA20/60 역배열 + 이전/현재 상승장악 SIGNAL + TOP10"
     )
 
     threading.Thread(
