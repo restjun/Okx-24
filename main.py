@@ -757,6 +757,66 @@ def is_bullish_engulfing(
 
 
 # =========================================================
+# 하락장악형
+#
+# 이전 캔들:
+#   양봉
+#
+# 현재 캔들:
+#   음봉
+#
+# 현재 음봉 실체가 이전 양봉 실체를 감싸는 형태
+#
+# 표시용
+# SIGNAL 조건에는 사용하지 않음
+# =========================================================
+
+def is_bearish_engulfing(
+    previous,
+    current
+):
+
+    try:
+
+        prev_open = float(
+            previous["open"]
+        )
+
+        prev_close = float(
+            previous["close"]
+        )
+
+        curr_open = float(
+            current["open"]
+        )
+
+        curr_close = float(
+            current["close"]
+        )
+
+    except Exception:
+
+        return False
+
+    # 이전 캔들 양봉
+    if prev_close <= prev_open:
+
+        return False
+
+    # 현재 캔들 음봉
+    if curr_close >= curr_open:
+
+        return False
+
+    # 현재 음봉 실체가 이전 양봉 실체를 감싸야 함
+    return bool(
+        curr_open >= prev_close
+        and
+        curr_close <= prev_open
+    )
+
+
+# =========================================================
 # 관통형
 # =========================================================
 
@@ -810,6 +870,69 @@ def is_piercing_line(
 
 
 # =========================================================
+# 현재 캔들 패턴 판정
+#
+# 현재 캔들 기준으로 표시
+#
+# 상승장악형
+# 관통형
+# 하락장악형
+# 없음
+# =========================================================
+
+def get_current_pattern(
+    periods
+):
+
+    if not periods:
+
+        return None
+
+    if len(periods) < 2:
+
+        return None
+
+    previous = periods[-2]
+
+    current = periods[-1]
+
+    # -----------------------------------------------------
+    # 상승장악형
+    # -----------------------------------------------------
+
+    if is_bullish_engulfing(
+        previous,
+        current
+    ):
+
+        return "상승장악형"
+
+    # -----------------------------------------------------
+    # 관통형
+    # -----------------------------------------------------
+
+    if is_piercing_line(
+        previous,
+        current
+    ):
+
+        return "관통형"
+
+    # -----------------------------------------------------
+    # 하락장악형
+    # -----------------------------------------------------
+
+    if is_bearish_engulfing(
+        previous,
+        current
+    ):
+
+        return "하락장악형"
+
+    return None
+
+
+# =========================================================
 # 업비트 실제 4시간봉 기간 생성
 #
 # SIGNAL 조건:
@@ -819,6 +942,10 @@ def is_piercing_line(
 # 2. 관통형
 #
 # 패턴봉 + 다음 캔들
+#
+# 하락장악형:
+# 표시만 함
+# SIGNAL에는 사용하지 않음
 # =========================================================
 
 def build_upbit_4h_periods(
@@ -959,7 +1086,7 @@ def build_upbit_4h_periods(
     # =====================================================
     # 캔들 패턴 SIGNAL
     #
-    # 상승장악형 또는 관통형
+    # 상승장악형 또는 관통형만 SIGNAL
     #
     # 패턴봉 + 다음봉
     # =====================================================
@@ -977,12 +1104,20 @@ def build_upbit_4h_periods(
             i
         ]
 
+        # -------------------------------------------------
+        # 상승장악형
+        # -------------------------------------------------
+
         bullish_engulfing = (
             is_bullish_engulfing(
                 previous,
                 current
             )
         )
+
+        # -------------------------------------------------
+        # 관통형
+        # -------------------------------------------------
 
         piercing_line = (
             is_piercing_line(
@@ -1000,6 +1135,10 @@ def build_upbit_4h_periods(
         elif piercing_line:
 
             pattern = "관통형"
+
+        # -------------------------------------------------
+        # 패턴이 없으면 SIGNAL 없음
+        # -------------------------------------------------
 
         if pattern is None:
 
@@ -1269,6 +1408,9 @@ def analyze_4h(
                 None,
 
             "signal_reason":
+                None,
+
+            "current_pattern":
                 None
 
         }
@@ -1279,6 +1421,10 @@ def analyze_4h(
     )
 
     details = signal_details(
+        periods
+    )
+
+    current_pattern = get_current_pattern(
         periods
     )
 
@@ -1315,7 +1461,10 @@ def analyze_4h(
         "signal_reason":
             details[
                 "signal_reason"
-            ]
+            ],
+
+        "current_pattern":
+            current_pattern
 
     }
 
@@ -1408,6 +1557,11 @@ def make_row(
         "signal_4h_reason":
             analysis_4h[
                 "signal_reason"
+            ],
+
+        "current_pattern":
+            analysis_4h[
+                "current_pattern"
             ],
 
         "simultaneous_signal":
@@ -1552,6 +1706,9 @@ def update_upbit():
                     None,
 
                 "signal_reason":
+                    None,
+
+                "current_pattern":
                     None
 
             }
@@ -1728,10 +1885,6 @@ def update_okx_btc():
     global latest_btc_daily_periods
     global latest_btc_daily_change
 
-    # =====================================================
-    # 현재 BTC 가격
-    # =====================================================
-
     price = okx_price()
 
     latest_btc_okx_price = price
@@ -1739,10 +1892,6 @@ def update_okx_btc():
     if price is None:
 
         return
-
-    # =====================================================
-    # OKX 1D 캔들
-    # =====================================================
 
     d1d = okx_candles(
         "1D",
@@ -1761,14 +1910,6 @@ def update_okx_btc():
 
         return
 
-    # =====================================================
-    # OKX 1D 캔들 사용
-    #
-    # UTC 00:00
-    # =
-    # KST 09:00
-    # =====================================================
-
     d1d = (
         d1d
         .sort_values(
@@ -1781,10 +1922,6 @@ def update_okx_btc():
             drop=True
         )
     )
-
-    # =====================================================
-    # 현재 진행 중인 OKX 일봉에 현재가 반영
-    # =====================================================
 
     now = datetime.now(KST)
 
@@ -1844,10 +1981,6 @@ def update_okx_btc():
             ),
             float(price)
         )
-
-    # =====================================================
-    # KST 09:00 기준 일봉
-    # =====================================================
 
     latest_btc_daily_periods = (
         build_daily_periods(
@@ -2002,6 +2135,45 @@ def fmt_change(v):
     return (
         '<span class="zero">'
         '0.00%'
+        '</span>'
+    )
+
+
+# =========================================================
+# 현재 패턴 표시
+# =========================================================
+
+def current_pattern_html(
+    pattern
+):
+
+    if pattern == "상승장악형":
+
+        return (
+            '<span class="current-pattern bullish">'
+            '▲ 상승장악형'
+            '</span>'
+        )
+
+    if pattern == "관통형":
+
+        return (
+            '<span class="current-pattern bullish">'
+            '▲ 관통형'
+            '</span>'
+        )
+
+    if pattern == "하락장악형":
+
+        return (
+            '<span class="current-pattern bearish">'
+            '▼ 하락장악형'
+            '</span>'
+        )
+
+    return (
+        '<span class="current-pattern none">'
+        '-'
         '</span>'
     )
 
@@ -2230,6 +2402,10 @@ def card(
         False
     )
 
+    current_pattern = row.get(
+        "current_pattern"
+    )
+
     if kind == "top":
 
         status = ""
@@ -2301,10 +2477,10 @@ def card(
                 <div>
 
                     <span>
-                        일봉 변동률
+                        당일 변동률
                     </span>
 
-                    <strong>
+                    <strong class="daily-change-value">
                         {fmt_change(
                             row.get(
                                 "daily_change"
@@ -2318,11 +2494,13 @@ def card(
                 <div>
 
                     <span>
-                        4H PATTERN
+                        현재 4H 패턴
                     </span>
 
                     <strong>
-                        상승장악 / 관통
+                        {current_pattern_html(
+                            current_pattern
+                        )}
                     </strong>
 
                 </div>
@@ -2339,7 +2517,7 @@ def card(
                 <i></i>
 
                 <small>
-                    상승장악형 / 관통형
+                    상승장악형 / 관통형 / 하락장악형
                 </small>
 
             </div>
@@ -2350,7 +2528,7 @@ def card(
                 <div class="signal-head">
 
                     <b>
-                        4시간봉 상승장악 / 관통형
+                        4시간봉 캔들 패턴
                     </b>
 
                     <span>
@@ -2404,10 +2582,10 @@ def card(
             <div>
 
                 <span>
-                    일봉 변동률
+                    당일 변동률
                 </span>
 
-                <strong>
+                <strong class="daily-change-value">
                     {fmt_change(
                         row.get(
                             "daily_change"
@@ -2455,16 +2633,12 @@ def card(
             <div>
 
                 <span>
-                    이전 4H
+                    현재 캔들 패턴
                 </span>
 
                 <strong>
-                    {(
-                        "PATTERN"
-                        if row.get(
-                            "signal_4h_previous"
-                        )
-                        else "-"
+                    {current_pattern_html(
+                        current_pattern
                     )}
                 </strong>
 
@@ -2478,7 +2652,7 @@ def card(
             <div class="signal-head">
 
                 <b>
-                    4시간봉 상승장악 / 관통형
+                    4시간봉 캔들 패턴
                 </b>
 
                 <span>
@@ -2558,17 +2732,79 @@ section {
 
 
 .up {
-    color: #38d878;
+
+    color: #38d878 !important;
+
+    font-weight: 900;
 }
 
 
 .down {
-    color: #ff5966;
+
+    color: #ff5966 !important;
+
+    font-weight: 900;
 }
 
 
 .zero {
+
     color: #68737e;
+
+    font-weight: 800;
+}
+
+
+.daily-change-value .up {
+
+    color: #38d878 !important;
+
+    font-weight: 900;
+
+    font-size: 9px;
+}
+
+
+.daily-change-value .down {
+
+    color: #ff5966 !important;
+
+    font-weight: 900;
+
+    font-size: 9px;
+}
+
+
+.current-pattern {
+
+    display: inline-block;
+
+    font-size: 7px;
+
+    font-weight: 900;
+
+    white-space: nowrap;
+}
+
+
+.current-pattern.bullish {
+
+    color: #38d878;
+
+}
+
+
+.current-pattern.bearish {
+
+    color: #ff5966;
+
+}
+
+
+.current-pattern.none {
+
+    color: #68737e;
+
 }
 
 
@@ -2578,7 +2814,7 @@ section {
 
     margin-top: 4px;
 
-    color: #5ed6ff;
+    color: #38d878;
 
     font-size: 5px;
 
@@ -2716,7 +2952,7 @@ section {
 
     font-size: 11px;
 
-    font-weight: 800;
+    font-weight: 900;
 }
 
 
@@ -3236,6 +3472,19 @@ section {
     }
 
 
+    .current-pattern {
+
+        font-size: 6px;
+    }
+
+
+    .daily-change-value .up,
+    .daily-change-value .down {
+
+        font-size: 8px;
+    }
+
+
     .coin-head,
     .both-head {
 
@@ -3381,7 +3630,7 @@ def dashboard():
                         </span>
 
                         <b>
-                            TOP10 
+                            TOP10 · 거래대금 순
                         </b>
 
                     </div>
@@ -3475,7 +3724,7 @@ def scheduler():
 def startup():
 
     log.info(
-        "START | OKX BTC 1D + 업비트 거래대금 TOP10 + 4H 상승장악/관통형"
+        "START | OKX BTC 1D + 업비트 거래대금 TOP10 + 4H 캔들패턴"
     )
 
     threading.Thread(
