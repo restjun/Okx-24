@@ -705,6 +705,44 @@ def calculate_ema(
 
 
 # =========================================================
+# EMA 시계열
+# =========================================================
+
+def calculate_ema_series(
+    df,
+    period
+):
+
+    if df is None or df.empty:
+        return None
+
+    if "close" not in df.columns:
+        return None
+
+    closes = pd.to_numeric(
+        df["close"],
+        errors="coerce"
+    )
+
+    if closes.isna().all():
+        return None
+
+    closes = closes.ffill()
+
+    if len(closes) < period:
+        return None
+
+    return (
+        closes
+        .ewm(
+            span=period,
+            adjust=False
+        )
+        .mean()
+    )
+
+
+# =========================================================
 # 4시간봉 EMA 분석
 # =========================================================
 
@@ -724,7 +762,11 @@ def analyze_ema_4h(
             "ema5": None,
             "ema15": None,
             "reverse": False,
-            "alignment": None
+            "alignment": None,
+
+            "cross_previous": False,
+            "cross_current": False,
+            "cross_signal": False
         }
 
     df = build_upbit_4h_candles(
@@ -738,30 +780,84 @@ def analyze_ema_4h(
             "ema5": None,
             "ema15": None,
             "reverse": False,
-            "alignment": None
+            "alignment": None,
+
+            "cross_previous": False,
+            "cross_current": False,
+            "cross_signal": False
         }
 
-    ema5 = calculate_ema(
+    ema5_series = calculate_ema_series(
         df,
         EMA_FAST
     )
 
-    ema15 = calculate_ema(
+    ema15_series = calculate_ema_series(
         df,
         EMA_SLOW
     )
 
     if (
-        ema5 is None
-        or ema15 is None
+        ema5_series is None
+        or ema15_series is None
     ):
 
         return {
-            "ema5": ema5,
-            "ema15": ema15,
+            "ema5": None,
+            "ema15": None,
             "reverse": False,
-            "alignment": None
+            "alignment": None,
+
+            "cross_previous": False,
+            "cross_current": False,
+            "cross_signal": False
         }
+
+    if (
+        len(ema5_series) < 3
+        or
+        len(ema15_series) < 3
+    ):
+
+        return {
+
+            "ema5":
+                float(
+                    ema5_series.iloc[-1]
+                ),
+
+            "ema15":
+                float(
+                    ema15_series.iloc[-1]
+                ),
+
+            "reverse":
+                False,
+
+            "alignment":
+                None,
+
+            "cross_previous":
+                False,
+
+            "cross_current":
+                False,
+
+            "cross_signal":
+                False
+        }
+
+    ema5 = float(
+        ema5_series.iloc[-1]
+    )
+
+    ema15 = float(
+        ema15_series.iloc[-1]
+    )
+
+    # =====================================================
+    # 현재 정배열 / 역배열
+    # =====================================================
 
     if ema5 < ema15:
 
@@ -778,11 +874,75 @@ def analyze_ema_4h(
         alignment = "동일"
         reverse = False
 
+    # =====================================================
+    # EMA 역배열 → 정배열 전환
+    #
+    # 이전봉 전환:
+    # -3봉 역배열
+    # -2봉 정배열
+    #
+    # 현재봉 전환:
+    # -2봉 역배열
+    # -1봉 정배열
+    # =====================================================
+
+    cross_previous = bool(
+
+        ema5_series.iloc[-3]
+        <
+        ema15_series.iloc[-3]
+
+        and
+
+        ema5_series.iloc[-2]
+        >
+        ema15_series.iloc[-2]
+
+    )
+
+    cross_current = bool(
+
+        ema5_series.iloc[-2]
+        <
+        ema15_series.iloc[-2]
+
+        and
+
+        ema5_series.iloc[-1]
+        >
+        ema15_series.iloc[-1]
+
+    )
+
+    cross_signal = bool(
+        cross_previous
+        or
+        cross_current
+    )
+
     return {
-        "ema5": ema5,
-        "ema15": ema15,
-        "reverse": reverse,
-        "alignment": alignment
+
+        "ema5":
+            ema5,
+
+        "ema15":
+            ema15,
+
+        "reverse":
+            reverse,
+
+        "alignment":
+            alignment,
+
+        "cross_previous":
+            cross_previous,
+
+        "cross_current":
+            cross_current,
+
+        "cross_signal":
+            cross_signal
+
     }
 
 
@@ -1688,6 +1848,7 @@ def make_row(
         "periods_4h":
             analysis_4h["periods"],
 
+        # 기존 SIGNAL
         "signal_4h":
             analysis_4h["signal_pass"],
 
@@ -1734,6 +1895,30 @@ def make_row(
         "ema_reverse":
             ema_analysis["reverse"],
 
+        # =================================================
+        # 추가 SIGNAL
+        # EMA 역배열 → 정배열 전환
+        # =================================================
+
+        "ema_cross_previous":
+            ema_analysis.get(
+                "cross_previous",
+                False
+            ),
+
+        "ema_cross_current":
+            ema_analysis.get(
+                "cross_current",
+                False
+            ),
+
+        "ema_cross_signal":
+            ema_analysis.get(
+                "cross_signal",
+                False
+            ),
+
+        # 기존 의미 유지
         "simultaneous_signal":
             analysis_4h["signal_pass"]
 
@@ -1855,7 +2040,16 @@ def update_upbit():
                 "ema5": None,
                 "ema15": None,
                 "reverse": False,
-                "alignment": None
+                "alignment": None,
+
+                "cross_previous":
+                    False,
+
+                "cross_current":
+                    False,
+
+                "cross_signal":
+                    False
 
             }
 
@@ -1944,14 +2138,25 @@ def update_upbit():
 
     # =====================================================
     # SIGNAL
+    #
+    # 기존 SIGNAL
+    # OR
+    # EMA 역배열 → 정배열 전환 SIGNAL
     # =====================================================
 
     latest_signal_data = [
         row
         for row in rows
-        if row.get(
-            "signal_4h",
-            False
+        if (
+            row.get(
+                "signal_4h",
+                False
+            )
+            or
+            row.get(
+                "ema_cross_signal",
+                False
+            )
         )
     ]
 
@@ -2204,8 +2409,6 @@ def build_okx_kst_daily_periods(
             == current_day_start
         )
 
-        # 현재 업비트 기준 일봉은
-        # OKX 실시간 BTC 가격으로 갱신
         if (
             active
             and current_price is not None
@@ -2287,10 +2490,8 @@ def update_okx_btc():
         return
 
     # =====================================================
-    # 중요:
-    # OKX 1D를 사용하지 않고
-    # 1H 캔들을 가져와 업비트와 동일하게
-    # KST 09:00 ~ 다음날 09:00으로 재구성
+    # OKX 1D 사용하지 않음
+    # 1H → KST 09:00 기준 일봉 재구성
     # =====================================================
 
     d1h = okx_candles(
@@ -2735,10 +2936,73 @@ def btc_html():
 
 
 # =========================================================
+# EMA 전환 표시
+# =========================================================
+
+def ema_cross_html(row):
+
+    parts = []
+
+    if row.get(
+        "ema_cross_previous",
+        False
+    ):
+
+        parts.append(
+            '<span class="ema-cross-badge">'
+            '🔄 이전봉 전환'
+            '</span>'
+        )
+
+    if row.get(
+        "ema_cross_current",
+        False
+    ):
+
+        parts.append(
+            '<span class="ema-cross-badge">'
+            '🔄 현재봉 전환'
+            '</span>'
+        )
+
+    return "".join(parts)
+
+
+# =========================================================
 # SIGNAL 카드
 # =========================================================
 
 def signal_card(row):
+
+    old_signal = row.get(
+        "signal_4h",
+        False
+    )
+
+    cross_signal = row.get(
+        "ema_cross_signal",
+        False
+    )
+
+    badges = []
+
+    if old_signal:
+
+        badges.append(
+            '<span class="signal-type-badge">'
+            '⭐ 기존 SIGNAL'
+            '</span>'
+        )
+
+    if cross_signal:
+
+        badges.append(
+            ema_cross_html(row)
+        )
+
+    badge_html = "".join(
+        badges
+    )
 
     return f"""
 
@@ -2755,6 +3019,10 @@ def signal_card(row):
                     row["name"]
                 )}
             </b>
+
+            <div class="signal-type-list">
+                {badge_html}
+            </div>
 
         </div>
 
@@ -2868,7 +3136,7 @@ def signal_section():
                 </span>
 
                 <b>
-                    🔴 EMA 역배열 / 상승패턴 SIGNAL
+                    🔴 4시간봉 SIGNAL
                 </b>
 
             </div>
@@ -2886,13 +3154,13 @@ def signal_section():
             </span>
 
             <b>
-                EMA5 &lt; EMA15
-                AND
-                장대양봉 / 상승관통형 / 상승장악형
+                EMA 역배열 + 상승패턴
+                OR
+                EMA 역배열 → 정배열 전환
             </b>
 
             <small>
-                이전 또는 현재 4시간봉 · 업비트 KST 09:00 기준
+                이전봉 / 현재봉 · 업비트 KST 09:00 기준
             </small>
 
         </div>
@@ -2943,6 +3211,11 @@ def card(row, kind):
         False
     )
 
+    ema_cross_signal = row.get(
+        "ema_cross_signal",
+        False
+    )
+
     previous_pattern = row.get(
         "previous_pattern"
     )
@@ -2953,15 +3226,41 @@ def card(row, kind):
 
     if kind == "top":
 
-        status = ""
+        status_parts = []
 
         if signal:
 
-            status = (
+            status_parts.append(
                 '<span class="signal-badge">'
                 '⭐ SIGNAL'
                 '</span>'
             )
+
+        if row.get(
+            "ema_cross_previous",
+            False
+        ):
+
+            status_parts.append(
+                '<span class="cross-badge">'
+                '🔄 이전봉 전환'
+                '</span>'
+            )
+
+        if row.get(
+            "ema_cross_current",
+            False
+        ):
+
+            status_parts.append(
+                '<span class="cross-badge">'
+                '🔄 현재봉 전환'
+                '</span>'
+            )
+
+        status = "".join(
+            status_parts
+        )
 
         return f"""
 
@@ -3350,6 +3649,7 @@ section {
 
 .signal-coin {
     flex-direction: row !important;
+    flex-wrap: wrap;
     gap: 6px;
     justify-content: flex-start !important;
     padding-left: 9px !important;
@@ -3364,6 +3664,28 @@ section {
 .signal-coin b {
     color: #e5e9ed;
     font-size: 9px;
+    font-weight: 900;
+}
+
+.signal-type-list {
+    width: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 2px;
+    margin-top: 1px;
+}
+
+.signal-type-badge {
+    color: #e4c45e !important;
+    font-size: 5px !important;
+    font-weight: 900;
+}
+
+.ema-cross-badge {
+    color: #38d878 !important;
+    font-size: 5px !important;
     font-weight: 900;
 }
 
@@ -3505,6 +3827,13 @@ section {
     color: #e4c45e;
     font-size: 7px;
     font-weight: 900;
+}
+
+.cross-badge {
+    color: #38d878;
+    font-size: 7px;
+    font-weight: 900;
+    margin-left: 4px;
 }
 
 .market-summary {
@@ -3690,6 +4019,21 @@ section {
         font-size: 5px;
     }
 
+    .signal-type-list {
+        gap: 1px;
+        margin-top: 1px;
+    }
+
+    .signal-type-badge,
+    .ema-cross-badge {
+        font-size: 4px !important;
+    }
+
+    .cross-badge {
+        font-size: 5px;
+        margin-left: 2px;
+    }
+
     .signal-pattern .pattern-box {
         min-width: 40px;
     }
@@ -3851,7 +4195,8 @@ def startup():
         "START | BTC KST 09:00 일봉 재구성 + "
         "업비트 TOP%s + "
         "4시간봉 EMA5/15 역배열 + "
-        "장대양봉/상승관통형/상승장악형 SIGNAL",
+        "장대양봉/상승관통형/상승장악형 SIGNAL + "
+        "EMA 역배열→정배열 전환 SIGNAL",
         TOP_N
     )
 
