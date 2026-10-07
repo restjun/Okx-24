@@ -3381,7 +3381,7 @@ def dashboard():
                         </span>
 
                         <b>
-                            TOP10 · 거래대금 순
+                            TOP10 
                         </b>
 
                     </div>
