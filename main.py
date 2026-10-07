@@ -81,35 +81,20 @@ EMA_SLOW = 15
 # =========================================================
 
 latest_upbit_data = []
-
 latest_upbit_daily_data = []
 
 latest_upbit_update_time = "-"
-
 latest_upbit_daily_update_time = "-"
 
 latest_upbit_markets = []
 
 latest_okx_data = []
-
 latest_okx_update_time = "-"
-
-
-# =========================================================
-# SIGNAL 데이터
-# =========================================================
 
 latest_signal_data = []
 
-
-# =========================================================
-# BTC
-# =========================================================
-
 latest_btc_okx_price = None
-
 latest_btc_daily_periods = []
-
 latest_btc_daily_change = None
 
 
@@ -118,7 +103,6 @@ latest_btc_daily_change = None
 # =========================================================
 
 request_lock = threading.Lock()
-
 update_lock = threading.Lock()
 
 last_request_time = 0
@@ -156,9 +140,7 @@ def wait_request():
                 REQUEST_INTERVAL - gap
             )
 
-        last_request_time = (
-            time.monotonic()
-        )
+        last_request_time = time.monotonic()
 
 
 def retry(
@@ -167,9 +149,7 @@ def retry(
     **kwargs
 ):
 
-    for n in range(
-        MAX_RETRIES
-    ):
+    for n in range(MAX_RETRIES):
 
         try:
 
@@ -194,8 +174,7 @@ def retry(
 
                 time.sleep(
                     min(
-                        RATE_LIMIT_WAIT
-                        * (n + 1),
+                        RATE_LIMIT_WAIT * (n + 1),
                         60
                     )
                 )
@@ -345,7 +324,6 @@ def get_upbit_markets():
 
 # =========================================================
 # 업비트 일봉
-#
 # KST 09:00 기준
 # =========================================================
 
@@ -358,23 +336,19 @@ def get_upbit_daily_candles(
         "https://api.upbit.com/v1/candles/days"
     )
 
-    params = {
-
-        "market":
-            market,
-
-        "count":
-            min(
-                count,
-                200
-            )
-
-    }
-
     r = retry(
         requests.get,
         endpoint,
-        params=params,
+        params={
+            "market":
+                market,
+
+            "count":
+                min(
+                    count,
+                    200
+                )
+        },
         timeout=15
     )
 
@@ -459,8 +433,7 @@ def get_upbit_daily_candles(
 
 # =========================================================
 # 업비트 1시간봉
-#
-# 4시간봉 구성용 원본 데이터
+# 4시간봉 구성용
 # =========================================================
 
 def get_upbit_4h_candles(
@@ -472,23 +445,19 @@ def get_upbit_4h_candles(
         "https://api.upbit.com/v1/candles/minutes/60"
     )
 
-    params = {
-
-        "market":
-            market,
-
-        "count":
-            min(
-                count,
-                200
-            )
-
-    }
-
     r = retry(
         requests.get,
         endpoint,
-        params=params,
+        params={
+            "market":
+                market,
+
+            "count":
+                min(
+                    count,
+                    200
+                )
+        },
         timeout=15
     )
 
@@ -793,7 +762,7 @@ def build_upbit_4h_candles(
 
         })
 
-    result = (
+    return (
         pd.DataFrame(grouped)
         .sort_values(
             "datetime"
@@ -806,11 +775,9 @@ def build_upbit_4h_candles(
         )
     )
 
-    return result
-
 
 # =========================================================
-# EMA 계산
+# EMA
 # =========================================================
 
 def calculate_ema(
@@ -855,11 +822,6 @@ def calculate_ema(
 
 # =========================================================
 # 4시간봉 EMA 분석
-#
-# 업비트 KST 09:00 기준
-#
-# EMA5 < EMA15
-# = 역배열
 # =========================================================
 
 def analyze_ema_4h(
@@ -876,17 +838,10 @@ def analyze_ema_4h(
 
         return {
 
-            "ema5":
-                None,
-
-            "ema15":
-                None,
-
-            "reverse":
-                False,
-
-            "alignment":
-                None
+            "ema5": None,
+            "ema15": None,
+            "reverse": False,
+            "alignment": None
 
         }
 
@@ -899,17 +854,10 @@ def analyze_ema_4h(
 
         return {
 
-            "ema5":
-                None,
-
-            "ema15":
-                None,
-
-            "reverse":
-                False,
-
-            "alignment":
-                None
+            "ema5": None,
+            "ema15": None,
+            "reverse": False,
+            "alignment": None
 
         }
 
@@ -981,9 +929,7 @@ def analyze_ema_4h(
 
 
 # =========================================================
-# 일봉 기간 생성
-#
-# KST 09:00 기준
+# 일봉 기간
 # =========================================================
 
 def build_daily_periods(
@@ -1024,11 +970,9 @@ def build_daily_periods(
 
     periods = []
 
-    for i, row in df.iterrows():
+    for _, row in df.iterrows():
 
-        dt = row["datetime"]
-
-        start = dt
+        start = row["datetime"]
 
         end = (
             start
@@ -1164,8 +1108,6 @@ def is_bullish_engulfing(
 
 # =========================================================
 # 하락장악형
-#
-# SIGNAL / TOP 표시에서는 사용하지 않음
 # =========================================================
 
 def is_bearish_engulfing(
@@ -1357,8 +1299,6 @@ def is_bullish_piercing(
 
 # =========================================================
 # 하락관통형
-#
-# 표시에서는 사용하지 않음
 # =========================================================
 
 def is_bearish_piercing(
@@ -1409,9 +1349,7 @@ def is_bearish_piercing(
 
 
 # =========================================================
-# 패턴 이름
-#
-# 상승 패턴만 표시
+# 캔들 패턴
 # =========================================================
 
 def get_candle_pattern(
@@ -1421,7 +1359,8 @@ def get_candle_pattern(
 
     if (
         previous is None
-        or current is None
+        or
+        current is None
     ):
 
         return None
@@ -1450,7 +1389,7 @@ def get_candle_pattern(
 
 
 # =========================================================
-# 이전 / 현재 4시간봉 패턴 분석
+# 이전 / 현재 패턴
 # =========================================================
 
 def analyze_previous_current_pattern(
@@ -1538,9 +1477,7 @@ def analyze_previous_current_pattern(
 
 
 # =========================================================
-# 업비트 4시간봉 기간 생성
-#
-# KST 09:00 기준
+# 4시간봉 기간
 # =========================================================
 
 def build_upbit_4h_periods(
@@ -1551,18 +1488,6 @@ def build_upbit_4h_periods(
     if df is None or df.empty:
 
         return []
-
-    df = (
-        df.sort_values(
-            "datetime"
-        )
-        .drop_duplicates(
-            "datetime"
-        )
-        .reset_index(
-            drop=True
-        )
-    )
 
     periods_df = build_upbit_4h_candles(
         df,
@@ -1631,13 +1556,7 @@ def build_upbit_4h_periods(
 
 
 # =========================================================
-# SIGNAL 판정
-#
-# 4시간봉 EMA5 < EMA15
-# OR
-# 이전 4시간봉 상승장악
-# OR
-# 현재 4시간봉 상승장악
+# SIGNAL
 # =========================================================
 
 def signal_pass(
@@ -1663,7 +1582,7 @@ def signal_pass(
 
 
 # =========================================================
-# SIGNAL 세부정보
+# SIGNAL 상세
 # =========================================================
 
 def signal_details(
@@ -1713,17 +1632,11 @@ def signal_details(
         previous_signal
     )
 
-    current_change = None
-
-    current_period = None
-
-    if periods:
-
-        current_period = periods[-1]
-
-        current_change = current_period.get(
-            "change"
-        )
+    current_period = (
+        periods[-1]
+        if periods
+        else None
+    )
 
     return {
 
@@ -1737,20 +1650,30 @@ def signal_details(
             previous_signal,
 
         "signal_change":
-            current_change
-            if signal
-            else None,
+            (
+                current_period.get(
+                    "change"
+                )
+                if (
+                    signal
+                    and
+                    current_period is not None
+                )
+                else None
+            ),
 
         "signal_period":
-            current_period.get(
-                "label"
-            )
-            if (
-                signal
-                and
-                current_period is not None
-            )
-            else None,
+            (
+                current_period.get(
+                    "label"
+                )
+                if (
+                    signal
+                    and
+                    current_period is not None
+                )
+                else None
+            ),
 
         "signal_reason":
             reason
@@ -1759,7 +1682,7 @@ def signal_details(
 
 
 # =========================================================
-# 일봉 변동률 분석
+# 일봉 변동률
 # =========================================================
 
 def analyze_daily_change(
@@ -1776,11 +1699,8 @@ def analyze_daily_change(
 
         return {
 
-            "change":
-                None,
-
-            "periods":
-                []
+            "change": None,
+            "periods": []
 
         }
 
@@ -1793,11 +1713,8 @@ def analyze_daily_change(
 
         return {
 
-            "change":
-                None,
-
-            "periods":
-                []
+            "change": None,
+            "periods": []
 
         }
 
@@ -1833,25 +1750,20 @@ def analyze_4h(
 
         return {
 
-            "periods":
-                [],
+            "periods": [],
 
             "signal_pass":
                 bool(
                     ema_reverse
                 ),
 
-            "current_signal":
-                False,
+            "current_signal": False,
 
-            "previous_signal":
-                False,
+            "previous_signal": False,
 
-            "signal_change":
-                None,
+            "signal_change": None,
 
-            "signal_period":
-                None,
+            "signal_period": None,
 
             "signal_reason":
                 (
@@ -1860,11 +1772,9 @@ def analyze_4h(
                     else None
                 ),
 
-            "previous_pattern":
-                None,
+            "previous_pattern": None,
 
-            "current_pattern":
-                None,
+            "current_pattern": None,
 
             "previous_bullish_engulfing":
                 False,
@@ -2169,10 +2079,6 @@ def update_upbit():
 
         try:
 
-            # -------------------------------------------------
-            # 업비트 4시간봉 EMA5 / EMA15
-            # -------------------------------------------------
-
             ema_analysis = analyze_ema_4h(
                 market,
                 price
@@ -2188,25 +2094,14 @@ def update_upbit():
 
             ema_analysis = {
 
-                "ema5":
-                    None,
-
-                "ema15":
-                    None,
-
-                "reverse":
-                    False,
-
-                "alignment":
-                    None
+                "ema5": None,
+                "ema15": None,
+                "reverse": False,
+                "alignment": None
 
             }
 
         try:
-
-            # -------------------------------------------------
-            # 업비트 4시간봉 패턴 분석
-            # -------------------------------------------------
 
             analysis_4h = analyze_4h(
                 market,
@@ -2227,8 +2122,7 @@ def update_upbit():
 
             analysis_4h = {
 
-                "periods":
-                    [],
+                "periods": [],
 
                 "signal_pass":
                     ema_analysis.get(
@@ -2236,17 +2130,13 @@ def update_upbit():
                         False
                     ),
 
-                "current_signal":
-                    False,
+                "current_signal": False,
 
-                "previous_signal":
-                    False,
+                "previous_signal": False,
 
-                "signal_change":
-                    None,
+                "signal_change": None,
 
-                "signal_period":
-                    None,
+                "signal_period": None,
 
                 "signal_reason":
                     (
@@ -2258,11 +2148,9 @@ def update_upbit():
                         else None
                     ),
 
-                "previous_pattern":
-                    None,
+                "previous_pattern": None,
 
-                "current_pattern":
-                    None,
+                "current_pattern": None,
 
                 "previous_bullish_engulfing":
                     False,
@@ -2292,20 +2180,6 @@ def update_upbit():
     latest_upbit_update_time = (
         latest_upbit_daily_update_time
     )
-
-    # =====================================================
-    # SIGNAL 조건
-    #
-    # 1. 업비트 4시간봉 EMA5 < EMA15
-    #
-    # OR
-    #
-    # 2. 이전 4시간봉 상승장악형
-    #
-    # OR
-    #
-    # 3. 현재 4시간봉 상승장악형
-    # =====================================================
 
     latest_signal_data = [
         row
@@ -2354,7 +2228,7 @@ def update_upbit():
 
 
 # =========================================================
-# OKX 캔들
+# OKX
 # =========================================================
 
 def okx_candles(
@@ -2450,7 +2324,7 @@ def okx_candles(
 
 
 # =========================================================
-# OKX 가격
+# OKX BTC 가격
 # =========================================================
 
 def okx_price():
@@ -2508,7 +2382,6 @@ def update_okx_btc():
     if d1d.empty:
 
         latest_btc_daily_periods = []
-
         latest_btc_daily_change = None
 
         return
@@ -2555,9 +2428,7 @@ def update_okx_btc():
         d1d.loc[
             last_idx,
             "close"
-        ] = float(
-            price
-        )
+        ] = float(price)
 
         d1d.loc[
             last_idx,
@@ -2787,8 +2658,7 @@ def ema_alignment_html(
 
 # =========================================================
 # 캔들 그림
-#
-# 작은 SVG 형태로 실제 패턴 모양을 표현
+# 설명 없음
 # =========================================================
 
 def candle_icon_html(
@@ -2852,48 +2722,9 @@ def candle_icon_html(
 
 
 # =========================================================
-# 캔들 패턴 설명
-# =========================================================
-
-def candle_pattern_description(
-    pattern
-):
-
-    if pattern == "상승장악형":
-
-        return """
-        <span class="pattern-description">
-            이전 음봉을 현재 양봉이 완전히 감싸는 형태
-        </span>
-        """
-
-    if pattern == "양수도지":
-
-        return """
-        <span class="pattern-description">
-            몸통이 매우 작고 종가가 시가 이상인 형태
-        </span>
-        """
-
-    if pattern == "상승관통형":
-
-        return """
-        <span class="pattern-description">
-            현재 양봉이 전 음봉 몸통의 중간 이상 회복하는 형태
-        </span>
-        """
-
-    return """
-    <span class="pattern-description">
-        해당 패턴 없음
-    </span>
-    """
-
-
-# =========================================================
-# 현재/이전 패턴 HTML
+# 캔들 패턴 HTML
 #
-# 패턴 그림 + 이름 + 설명
+# 그림 + 이름만 표시
 # =========================================================
 
 def current_pattern_html(
@@ -2908,8 +2739,7 @@ def current_pattern_html(
             + '<span class="pattern-name">'
             '▲ 상승장악형'
             '</span>'
-            + candle_pattern_description(pattern)
-            + '</div>'
+            '</div>'
         )
 
     if pattern == "양수도지":
@@ -2920,8 +2750,7 @@ def current_pattern_html(
             + '<span class="pattern-name">'
             '● 양수도지'
             '</span>'
-            + candle_pattern_description(pattern)
-            + '</div>'
+            '</div>'
         )
 
     if pattern == "상승관통형":
@@ -2932,8 +2761,7 @@ def current_pattern_html(
             + '<span class="pattern-name">'
             '▲ 상승관통형'
             '</span>'
-            + candle_pattern_description(pattern)
-            + '</div>'
+            '</div>'
         )
 
     return (
@@ -2942,8 +2770,7 @@ def current_pattern_html(
         + '<span class="pattern-name">'
         '-'
         '</span>'
-        + candle_pattern_description(None)
-        + '</div>'
+        '</div>'
     )
 
 
@@ -2983,64 +2810,13 @@ def signal_reason_html(
 
 
 # =========================================================
-# 캔들 표시
-# =========================================================
-
-def cells(periods):
-
-    result = []
-
-    for p in periods:
-
-        active_class = (
-            "current"
-            if p.get("active")
-            else ""
-        )
-
-        reason_badge = signal_reason_html(
-            p.get(
-                "signal_reason"
-            )
-        )
-
-        result.append(
-            f"""
-            <div class="tf-cell {active_class}">
-
-                <div class="tf-date">
-                    {html.escape(
-                        p.get(
-                            "label",
-                            "-"
-                        )
-                    )}
-                </div>
-
-                <strong>
-                    {fmt_change(
-                        p.get(
-                            "change"
-                        )
-                    )}
-                </strong>
-
-                {reason_badge}
-
-            </div>
-            """
-        )
-
-    return "".join(result)
-
-
-# =========================================================
 # BTC HTML
 # =========================================================
 
 def btc_html():
 
     return f"""
+
     <section class="btc-panel">
 
         <div class="section-head">
@@ -3085,14 +2861,12 @@ def btc_html():
         </div>
 
     </section>
+
     """
 
 
 # =========================================================
 # SIGNAL 카드
-#
-# 종목 / 거래대금 / 변동률 /
-# 이전 4시간봉 패턴 / 현재 4시간봉 패턴
 # =========================================================
 
 def signal_card(
@@ -3258,78 +3032,6 @@ def signal_section():
             <small>
                 업비트 KST 09:00 기준 4시간봉
             </small>
-
-        </div>
-
-
-        <div class="pattern-guide">
-
-            <div class="guide-title">
-                4시간봉 캔들 패턴
-            </div>
-
-            <div class="guide-list">
-
-                <div class="guide-item">
-
-                    {candle_icon_html("상승장악형")}
-
-                    <div>
-
-                        <b>
-                            상승장악형
-                        </b>
-
-                        <span>
-                            이전 음봉을 현재 양봉이
-                            완전히 감싸는 형태
-                        </span>
-
-                    </div>
-
-                </div>
-
-
-                <div class="guide-item">
-
-                    {candle_icon_html("양수도지")}
-
-                    <div>
-
-                        <b>
-                            양수도지
-                        </b>
-
-                        <span>
-                            몸통이 매우 작고
-                            종가가 시가 이상인 형태
-                        </span>
-
-                    </div>
-
-                </div>
-
-
-                <div class="guide-item">
-
-                    {candle_icon_html("상승관통형")}
-
-                    <div>
-
-                        <b>
-                            상승관통형
-                        </b>
-
-                        <span>
-                            현재 양봉이 전 음봉
-                            몸통의 중간 이상 회복
-                        </span>
-
-                    </div>
-
-                </div>
-
-            </div>
 
         </div>
 
@@ -3589,7 +3291,6 @@ h1 {
 
 
 section {
-
     margin-bottom: 12px;
 }
 
@@ -3639,7 +3340,7 @@ section {
 
 
 /* =======================================================
-   캔들 패턴 기본
+   캔들 패턴
    ======================================================= */
 
 .pattern-box {
@@ -3652,21 +3353,9 @@ section {
 
     justify-content: center;
 
-    min-width: 72px;
+    min-width: 55px;
 
-    line-height: 1.1;
-
-}
-
-
-.pattern-display {
-
-    display: flex !important;
-
-    align-items: center;
-
-    justify-content: center;
-
+    line-height: 1;
 }
 
 
@@ -3674,36 +3363,15 @@ section {
 
     display: block;
 
-    margin-top: 3px;
+    margin-top: 2px;
 
     color: #38d878;
 
-    font-size: 6px;
+    font-size: 5px;
 
     font-weight: 900;
 
     white-space: nowrap;
-}
-
-
-.pattern-description {
-
-    display: block;
-
-    margin-top: 3px;
-
-    color: #69747e;
-
-    font-size: 5px;
-
-    line-height: 1.25;
-
-    font-weight: 500;
-
-    white-space: normal;
-
-    max-width: 105px;
-
 }
 
 
@@ -3713,21 +3381,15 @@ section {
 }
 
 
-.pattern-none .pattern-description {
-
-    color: #4e5963;
-}
-
-
 /* =======================================================
    캔들 그림
    ======================================================= */
 
 .candle-pattern-visual {
 
-    height: 30px;
+    height: 23px;
 
-    min-width: 42px;
+    min-width: 35px;
 
     display: flex;
 
@@ -3735,7 +3397,7 @@ section {
 
     justify-content: center;
 
-    gap: 5px;
+    gap: 4px;
 
     position: relative;
 }
@@ -3743,9 +3405,9 @@ section {
 
 .mini-candle {
 
-    width: 9px;
+    width: 7px;
 
-    height: 27px;
+    height: 22px;
 
     position: relative;
 
@@ -3763,7 +3425,7 @@ section {
 
     width: 1px;
 
-    height: 27px;
+    height: 22px;
 
     left: 50%;
 
@@ -3782,9 +3444,9 @@ section {
 
     z-index: 2;
 
-    width: 9px;
+    width: 7px;
 
-    height: 12px;
+    height: 10px;
 
     border-radius: 1px;
 }
@@ -3794,7 +3456,7 @@ section {
 
     background: #ff5966;
 
-    height: 15px;
+    height: 12px;
 }
 
 
@@ -3802,15 +3464,15 @@ section {
 
     background: #38d878;
 
-    height: 20px;
+    height: 17px;
 }
 
 
 .mini-candle.bullish.large .body {
 
-    height: 24px;
+    height: 20px;
 
-    width: 11px;
+    width: 9px;
 }
 
 
@@ -3818,9 +3480,9 @@ section {
 
     background: #38d878;
 
-    height: 3px;
+    height: 2px;
 
-    width: 12px;
+    width: 10px;
 }
 
 
@@ -3828,7 +3490,7 @@ section {
 
     background: #38d878;
 
-    height: 18px;
+    height: 15px;
 }
 
 
@@ -3836,98 +3498,9 @@ section {
 
     color: #68737e;
 
-    font-size: 12px;
+    font-size: 9px;
 
-    height: 30px;
-}
-
-
-/* =======================================================
-   패턴 설명 영역
-   ======================================================= */
-
-.pattern-guide {
-
-    padding: 8px 9px;
-
-    background: #0a0f14;
-
-    border-bottom:
-        1px solid #20282f;
-}
-
-
-.guide-title {
-
-    margin-bottom: 7px;
-
-    color: #7d8994;
-
-    font-size: 6px;
-
-    font-weight: 900;
-
-    letter-spacing: .3px;
-}
-
-
-.guide-list {
-
-    display: grid;
-
-    grid-template-columns:
-        repeat(3, 1fr);
-
-    gap: 5px;
-}
-
-
-.guide-item {
-
-    min-height: 46px;
-
-    display: flex;
-
-    align-items: center;
-
-    gap: 7px;
-
-    padding: 5px;
-
-    background: #0d1318;
-
-    border:
-        1px solid #1e282f;
-}
-
-
-.guide-item > div:last-child {
-
-    display: flex;
-
-    flex-direction: column;
-
-    gap: 3px;
-}
-
-
-.guide-item b {
-
-    color: #38d878;
-
-    font-size: 6px;
-
-    font-weight: 900;
-}
-
-
-.guide-item span {
-
-    color: #69747e;
-
-    font-size: 5px;
-
-    line-height: 1.25;
+    height: 23px;
 }
 
 
@@ -4000,7 +3573,9 @@ section {
 }
 
 
-/* SIGNAL 헤더 */
+/* =======================================================
+   SIGNAL HEADER
+   ======================================================= */
 
 .signal-header,
 .signal-card {
@@ -4045,7 +3620,7 @@ section {
 
 .signal-card {
 
-    min-height: 68px;
+    min-height: 58px;
 
     background: #0d1217;
 
@@ -4062,9 +3637,9 @@ section {
 
 .signal-card > div {
 
-    min-height: 68px;
+    min-height: 58px;
 
-    padding: 5px 3px;
+    padding: 3px;
 
     display: flex;
 
@@ -4127,7 +3702,7 @@ section {
 
 .signal-card strong {
 
-    margin-top: 3px;
+    margin-top: 2px;
 
     color: #dce2e7;
 
@@ -4137,15 +3712,7 @@ section {
 
 .signal-pattern .pattern-box {
 
-    min-width: 65px;
-}
-
-
-.signal-pattern .pattern-description {
-
-    max-width: 90px;
-
-    font-size: 4px;
+    min-width: 50px;
 }
 
 
@@ -4157,12 +3724,12 @@ section {
 
 .signal-pattern .candle-pattern-visual {
 
-    height: 25px;
+    height: 22px;
 
-    min-width: 35px;
+    min-width: 32px;
 
     transform:
-        scale(.82);
+        scale(.80);
 }
 
 
@@ -4387,9 +3954,9 @@ section {
 
 .market-summary > div {
 
-    min-height: 70px;
+    min-height: 58px;
 
-    padding: 6px 3px;
+    padding: 4px 2px;
 
     text-align: center;
 
@@ -4420,7 +3987,7 @@ section {
 
     font-size: 6px;
 
-    margin-bottom: 5px;
+    margin-bottom: 3px;
 }
 
 
@@ -4454,30 +4021,22 @@ section {
 
 .market-summary .pattern-box {
 
-    min-width: 65px;
+    min-width: 48px;
 }
 
 
 .market-summary .pattern-name {
 
-    font-size: 5px;
-}
-
-
-.market-summary .pattern-description {
-
-    font-size: 4px;
-
-    max-width: 88px;
+    font-size: 4.5px;
 }
 
 
 .market-summary .candle-pattern-visual {
 
-    height: 25px;
+    height: 21px;
 
     transform:
-        scale(.82);
+        scale(.72);
 }
 
 
@@ -4557,10 +4116,10 @@ section {
 
     .market-summary > div {
 
-        min-height: 62px;
+        min-height: 53px;
 
         padding:
-            5px 2px;
+            3px 1px;
     }
 
 
@@ -4568,7 +4127,7 @@ section {
 
         font-size: 5px;
 
-        margin-bottom: 4px;
+        margin-bottom: 2px;
     }
 
 
@@ -4580,7 +4139,7 @@ section {
 
     .market-summary .pattern-box {
 
-        min-width: 48px;
+        min-width: 40px;
     }
 
 
@@ -4590,61 +4149,12 @@ section {
     }
 
 
-    .market-summary .pattern-description {
-
-        font-size: 3.5px;
-
-        max-width: 62px;
-    }
-
-
     .market-summary .candle-pattern-visual {
 
-        height: 22px;
+        height: 19px;
 
         transform:
-            scale(.68);
-    }
-
-
-    .pattern-guide {
-
-        padding: 6px;
-    }
-
-
-    .guide-list {
-
-        gap: 3px;
-    }
-
-
-    .guide-item {
-
-        min-height: 44px;
-
-        padding: 3px;
-
-        gap: 4px;
-    }
-
-
-    .guide-item b {
-
-        font-size: 5px;
-    }
-
-
-    .guide-item span {
-
-        font-size: 4px;
-    }
-
-
-    .guide-item .candle-pattern-visual {
-
-        transform:
-            scale(.65);
+            scale(.62);
     }
 
 
@@ -4682,9 +4192,9 @@ section {
 
     .signal-card > div {
 
-        min-height: 65px;
+        min-height: 53px;
 
-        padding: 4px 2px;
+        padding: 2px 1px;
     }
 
 
@@ -4722,7 +4232,7 @@ section {
 
     .signal-pattern .pattern-box {
 
-        min-width: 48px;
+        min-width: 40px;
     }
 
 
@@ -4732,20 +4242,12 @@ section {
     }
 
 
-    .signal-pattern .pattern-description {
-
-        font-size: 3.5px;
-
-        max-width: 60px;
-    }
-
-
     .signal-pattern .candle-pattern-visual {
 
-        height: 22px;
+        height: 19px;
 
         transform:
-            scale(.65);
+            scale(.60);
     }
 
 }
@@ -4764,25 +4266,9 @@ def dashboard():
 
     s = btc_html()
 
-    # =====================================================
-    # BTC 시황
-    # ↓
-    # SIGNAL
-    # ↓
-    # TOP10
-    # =====================================================
-
     if USE_UPBIT == "Y":
 
-        # -------------------------------------------------
-        # SIGNAL
-        # -------------------------------------------------
-
         s += signal_section()
-
-        # -------------------------------------------------
-        # TOP10
-        # -------------------------------------------------
 
         if SHOW_TOP_LIST == "Y":
 
@@ -4911,7 +4397,7 @@ def scheduler():
 def startup():
 
     log.info(
-        "START | BTC 시황 + 업비트 09:00 기준 4시간봉 EMA5/15 역배열 + 이전/현재 상승장악 SIGNAL + TOP10"
+        "START | BTC 시황 + 업비트 09:00 기준 4시간봉 EMA5/15 역배열 + 상승장악 SIGNAL + TOP10"
     )
 
     threading.Thread(
