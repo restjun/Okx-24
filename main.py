@@ -574,15 +574,12 @@ def get_upbit_4h_candles(
 # =========================================================
 # 업비트 09:00 기준 4시간봉 생성
 #
-# 기준:
 # 09:00 ~ 13:00
 # 13:00 ~ 17:00
 # 17:00 ~ 21:00
 # 21:00 ~ 01:00
 # 01:00 ~ 05:00
 # 05:00 ~ 09:00
-#
-# 즉 KST 09:00 기준으로 4시간씩 진행
 # =========================================================
 
 def build_upbit_4h_candles(
@@ -607,12 +604,6 @@ def build_upbit_4h_candles(
     )
 
     now = datetime.now(KST)
-
-    # -----------------------------------------------------
-    # 현재 4시간봉 시작 시간 계산
-    #
-    # 09시를 기준으로 4시간 단위
-    # -----------------------------------------------------
 
     day_start = now.replace(
         hour=9,
@@ -645,15 +636,10 @@ def build_upbit_4h_candles(
 
     rows = []
 
-    # -----------------------------------------------------
-    # 각 1시간봉을 4시간봉 그룹으로 분류
-    # -----------------------------------------------------
-
     for _, row in df.iterrows():
 
         dt = row["datetime"]
 
-        # 09시 기준 상대 시간
         relative_seconds = (
             dt - day_start
         ).total_seconds()
@@ -742,10 +728,6 @@ def build_upbit_4h_candles(
             period_start
             == current_start
         )
-
-        # -------------------------------------------------
-        # 현재 진행 중인 4시간봉은 현재가 반영
-        # -------------------------------------------------
 
         if (
             active
@@ -874,7 +856,7 @@ def calculate_ema(
 # =========================================================
 # 4시간봉 EMA 분석
 #
-# 업비트 KST 09:00 기준 4시간봉
+# 업비트 KST 09:00 기준
 #
 # EMA5 < EMA15
 # = 역배열
@@ -1469,13 +1451,6 @@ def get_candle_pattern(
 
 # =========================================================
 # 이전 / 현재 4시간봉 패턴 분석
-#
-# periods[-2] = 이전 완료 4시간봉
-# periods[-1] = 현재 진행 4시간봉
-#
-# SIGNAL:
-# 이전 캔들 또는 현재 캔들 중
-# 하나라도 상승장악형이면 SIGNAL
 # =========================================================
 
 def analyze_previous_current_pattern(
@@ -1513,20 +1488,12 @@ def analyze_previous_current_pattern(
         else None
     )
 
-    # -----------------------------------------------------
-    # 현재 4시간봉 패턴
-    # -----------------------------------------------------
-
     result[
         "current_pattern"
     ] = get_candle_pattern(
         previous,
         current
     )
-
-    # -----------------------------------------------------
-    # 현재 4시간봉 상승장악
-    # -----------------------------------------------------
 
     if previous is not None:
 
@@ -1536,10 +1503,6 @@ def analyze_previous_current_pattern(
             previous,
             current
         )
-
-    # -----------------------------------------------------
-    # 이전 4시간봉 패턴
-    # -----------------------------------------------------
 
     if len(periods) >= 3:
 
@@ -1558,10 +1521,6 @@ def analyze_previous_current_pattern(
             previous_previous,
             previous
         )
-
-    # -----------------------------------------------------
-    # 이전 또는 현재 상승장악
-    # -----------------------------------------------------
 
     result[
         "bullish_engulfing_signal"
@@ -1679,8 +1638,6 @@ def build_upbit_4h_periods(
 # 이전 4시간봉 상승장악
 # OR
 # 현재 4시간봉 상승장악
-#
-# 하락장악 / 하락관통 제외
 # =========================================================
 
 def signal_pass(
@@ -2348,8 +2305,6 @@ def update_upbit():
     # OR
     #
     # 3. 현재 4시간봉 상승장악형
-    #
-    # 하락장악 / 하락관통 제외
     # =====================================================
 
     latest_signal_data = [
@@ -2373,8 +2328,6 @@ def update_upbit():
         )
     ]
 
-    # SIGNAL도 거래대금순으로 정렬
-
     latest_signal_data.sort(
         key=lambda x:
             x.get(
@@ -2383,8 +2336,6 @@ def update_upbit():
             ),
         reverse=True
     )
-
-    # SIGNAL 전용 번호
 
     for signal_rank, row in enumerate(
         latest_signal_data,
@@ -2835,9 +2786,114 @@ def ema_alignment_html(
 
 
 # =========================================================
+# 캔들 그림
+#
+# 작은 SVG 형태로 실제 패턴 모양을 표현
+# =========================================================
+
+def candle_icon_html(
+    pattern
+):
+
+    if pattern == "상승장악형":
+
+        return """
+        <div class="candle-pattern-visual engulfing">
+
+            <div class="mini-candle bearish">
+                <span class="wick"></span>
+                <span class="body"></span>
+            </div>
+
+            <div class="mini-candle bullish large">
+                <span class="wick"></span>
+                <span class="body"></span>
+            </div>
+
+        </div>
+        """
+
+    if pattern == "양수도지":
+
+        return """
+        <div class="candle-pattern-visual doji">
+
+            <div class="mini-candle bullish-doji">
+                <span class="wick"></span>
+                <span class="body"></span>
+            </div>
+
+        </div>
+        """
+
+    if pattern == "상승관통형":
+
+        return """
+        <div class="candle-pattern-visual piercing">
+
+            <div class="mini-candle bearish">
+                <span class="wick"></span>
+                <span class="body"></span>
+            </div>
+
+            <div class="mini-candle bullish piercing-candle">
+                <span class="wick"></span>
+                <span class="body"></span>
+            </div>
+
+        </div>
+        """
+
+    return """
+    <div class="candle-pattern-visual empty">
+        <span>—</span>
+    </div>
+    """
+
+
+# =========================================================
+# 캔들 패턴 설명
+# =========================================================
+
+def candle_pattern_description(
+    pattern
+):
+
+    if pattern == "상승장악형":
+
+        return """
+        <span class="pattern-description">
+            이전 음봉을 현재 양봉이 완전히 감싸는 형태
+        </span>
+        """
+
+    if pattern == "양수도지":
+
+        return """
+        <span class="pattern-description">
+            몸통이 매우 작고 종가가 시가 이상인 형태
+        </span>
+        """
+
+    if pattern == "상승관통형":
+
+        return """
+        <span class="pattern-description">
+            현재 양봉이 전 음봉 몸통의 중간 이상 회복하는 형태
+        </span>
+        """
+
+    return """
+    <span class="pattern-description">
+        해당 패턴 없음
+    </span>
+    """
+
+
+# =========================================================
 # 현재/이전 패턴 HTML
 #
-# 하락장악 / 하락관통은 표시하지 않음
+# 패턴 그림 + 이름 + 설명
 # =========================================================
 
 def current_pattern_html(
@@ -2847,31 +2903,47 @@ def current_pattern_html(
     if pattern == "상승장악형":
 
         return (
-            '<span class="current-pattern bullish">'
+            '<div class="pattern-box bullish-pattern">'
+            + candle_icon_html(pattern)
+            + '<span class="pattern-name">'
             '▲ 상승장악형'
             '</span>'
+            + candle_pattern_description(pattern)
+            + '</div>'
         )
 
     if pattern == "양수도지":
 
         return (
-            '<span class="current-pattern bullish">'
+            '<div class="pattern-box bullish-pattern">'
+            + candle_icon_html(pattern)
+            + '<span class="pattern-name">'
             '● 양수도지'
             '</span>'
+            + candle_pattern_description(pattern)
+            + '</div>'
         )
 
     if pattern == "상승관통형":
 
         return (
-            '<span class="current-pattern bullish">'
+            '<div class="pattern-box bullish-pattern">'
+            + candle_icon_html(pattern)
+            + '<span class="pattern-name">'
             '▲ 상승관통형'
             '</span>'
+            + candle_pattern_description(pattern)
+            + '</div>'
         )
 
     return (
-        '<span class="current-pattern none">'
+        '<div class="pattern-box pattern-none">'
+        + candle_icon_html(None)
+        + '<span class="pattern-name">'
         '-'
         '</span>'
+        + candle_pattern_description(None)
+        + '</div>'
     )
 
 
@@ -2964,9 +3036,6 @@ def cells(periods):
 
 # =========================================================
 # BTC HTML
-#
-# BTC 현재가 + 당일 변동률만 표시
-# BTC 일봉 영역 삭제
 # =========================================================
 
 def btc_html():
@@ -3022,8 +3091,8 @@ def btc_html():
 # =========================================================
 # SIGNAL 카드
 #
-# 표시:
-# 종목 / 거래대금 / 변동률 / 이전패턴 / 현재패턴
+# 종목 / 거래대금 / 변동률 /
+# 이전 4시간봉 패턴 / 현재 4시간봉 패턴
 # =========================================================
 
 def signal_card(
@@ -3087,12 +3156,14 @@ def signal_card(
                 이전 4시간봉
             </span>
 
-            <strong>
+            <strong class="pattern-display">
+
                 {current_pattern_html(
                     row.get(
                         "previous_pattern"
                     )
                 )}
+
             </strong>
 
         </div>
@@ -3104,12 +3175,14 @@ def signal_card(
                 현재 4시간봉
             </span>
 
-            <strong>
+            <strong class="pattern-display">
+
                 {current_pattern_html(
                     row.get(
                         "current_pattern"
                     )
                 )}
+
             </strong>
 
         </div>
@@ -3189,6 +3262,78 @@ def signal_section():
         </div>
 
 
+        <div class="pattern-guide">
+
+            <div class="guide-title">
+                4시간봉 캔들 패턴
+            </div>
+
+            <div class="guide-list">
+
+                <div class="guide-item">
+
+                    {candle_icon_html("상승장악형")}
+
+                    <div>
+
+                        <b>
+                            상승장악형
+                        </b>
+
+                        <span>
+                            이전 음봉을 현재 양봉이
+                            완전히 감싸는 형태
+                        </span>
+
+                    </div>
+
+                </div>
+
+
+                <div class="guide-item">
+
+                    {candle_icon_html("양수도지")}
+
+                    <div>
+
+                        <b>
+                            양수도지
+                        </b>
+
+                        <span>
+                            몸통이 매우 작고
+                            종가가 시가 이상인 형태
+                        </span>
+
+                    </div>
+
+                </div>
+
+
+                <div class="guide-item">
+
+                    {candle_icon_html("상승관통형")}
+
+                    <div>
+
+                        <b>
+                            상승관통형
+                        </b>
+
+                        <span>
+                            현재 양봉이 전 음봉
+                            몸통의 중간 이상 회복
+                        </span>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+        </div>
+
+
         <div class="signal-header">
 
             <div>
@@ -3227,10 +3372,6 @@ def signal_section():
 
 # =========================================================
 # TOP 카드
-#
-# 표시:
-# 종목 / 현재가 / 거래대금 / 변동률 /
-# 이전 4시간봉 패턴 / 현재 4시간봉 패턴
 # =========================================================
 
 def card(
@@ -3362,7 +3503,7 @@ def card(
                         이전 4시간봉
                     </span>
 
-                    <strong>
+                    <strong class="pattern-display">
 
                         {current_pattern_html(
                             previous_pattern
@@ -3379,7 +3520,7 @@ def card(
                         현재 4시간봉
                     </span>
 
-                    <strong>
+                    <strong class="pattern-display">
 
                         {current_pattern_html(
                             current_pattern
@@ -3497,11 +3638,47 @@ section {
 }
 
 
-.current-pattern {
+/* =======================================================
+   캔들 패턴 기본
+   ======================================================= */
 
-    display: inline-block;
+.pattern-box {
 
-    font-size: 7px;
+    display: flex;
+
+    flex-direction: column;
+
+    align-items: center;
+
+    justify-content: center;
+
+    min-width: 72px;
+
+    line-height: 1.1;
+
+}
+
+
+.pattern-display {
+
+    display: flex !important;
+
+    align-items: center;
+
+    justify-content: center;
+
+}
+
+
+.pattern-name {
+
+    display: block;
+
+    margin-top: 3px;
+
+    color: #38d878;
+
+    font-size: 6px;
 
     font-weight: 900;
 
@@ -3509,17 +3686,248 @@ section {
 }
 
 
-.current-pattern.bullish {
+.pattern-description {
 
-    color: #38d878;
+    display: block;
+
+    margin-top: 3px;
+
+    color: #69747e;
+
+    font-size: 5px;
+
+    line-height: 1.25;
+
+    font-weight: 500;
+
+    white-space: normal;
+
+    max-width: 105px;
 
 }
 
 
-.current-pattern.none {
+.pattern-none .pattern-name {
+
+    color: #68737e;
+}
+
+
+.pattern-none .pattern-description {
+
+    color: #4e5963;
+}
+
+
+/* =======================================================
+   캔들 그림
+   ======================================================= */
+
+.candle-pattern-visual {
+
+    height: 30px;
+
+    min-width: 42px;
+
+    display: flex;
+
+    align-items: center;
+
+    justify-content: center;
+
+    gap: 5px;
+
+    position: relative;
+}
+
+
+.mini-candle {
+
+    width: 9px;
+
+    height: 27px;
+
+    position: relative;
+
+    display: flex;
+
+    justify-content: center;
+
+    align-items: center;
+}
+
+
+.mini-candle .wick {
+
+    position: absolute;
+
+    width: 1px;
+
+    height: 27px;
+
+    left: 50%;
+
+    top: 0;
+
+    transform:
+        translateX(-50%);
+
+    background: #79848e;
+}
+
+
+.mini-candle .body {
+
+    position: relative;
+
+    z-index: 2;
+
+    width: 9px;
+
+    height: 12px;
+
+    border-radius: 1px;
+}
+
+
+.mini-candle.bearish .body {
+
+    background: #ff5966;
+
+    height: 15px;
+}
+
+
+.mini-candle.bullish .body {
+
+    background: #38d878;
+
+    height: 20px;
+}
+
+
+.mini-candle.bullish.large .body {
+
+    height: 24px;
+
+    width: 11px;
+}
+
+
+.mini-candle.bullish-doji .body {
+
+    background: #38d878;
+
+    height: 3px;
+
+    width: 12px;
+}
+
+
+.mini-candle.piercing-candle .body {
+
+    background: #38d878;
+
+    height: 18px;
+}
+
+
+.candle-pattern-visual.empty {
 
     color: #68737e;
 
+    font-size: 12px;
+
+    height: 30px;
+}
+
+
+/* =======================================================
+   패턴 설명 영역
+   ======================================================= */
+
+.pattern-guide {
+
+    padding: 8px 9px;
+
+    background: #0a0f14;
+
+    border-bottom:
+        1px solid #20282f;
+}
+
+
+.guide-title {
+
+    margin-bottom: 7px;
+
+    color: #7d8994;
+
+    font-size: 6px;
+
+    font-weight: 900;
+
+    letter-spacing: .3px;
+}
+
+
+.guide-list {
+
+    display: grid;
+
+    grid-template-columns:
+        repeat(3, 1fr);
+
+    gap: 5px;
+}
+
+
+.guide-item {
+
+    min-height: 46px;
+
+    display: flex;
+
+    align-items: center;
+
+    gap: 7px;
+
+    padding: 5px;
+
+    background: #0d1318;
+
+    border:
+        1px solid #1e282f;
+}
+
+
+.guide-item > div:last-child {
+
+    display: flex;
+
+    flex-direction: column;
+
+    gap: 3px;
+}
+
+
+.guide-item b {
+
+    color: #38d878;
+
+    font-size: 6px;
+
+    font-weight: 900;
+}
+
+
+.guide-item span {
+
+    color: #69747e;
+
+    font-size: 5px;
+
+    line-height: 1.25;
 }
 
 
@@ -3637,7 +4045,7 @@ section {
 
 .signal-card {
 
-    min-height: 48px;
+    min-height: 68px;
 
     background: #0d1217;
 
@@ -3654,7 +4062,7 @@ section {
 
 .signal-card > div {
 
-    min-height: 48px;
+    min-height: 68px;
 
     padding: 5px 3px;
 
@@ -3727,10 +4135,34 @@ section {
 }
 
 
-.signal-pattern .current-pattern {
+.signal-pattern .pattern-box {
 
-    font-size: 6px;
+    min-width: 65px;
+}
 
+
+.signal-pattern .pattern-description {
+
+    max-width: 90px;
+
+    font-size: 4px;
+}
+
+
+.signal-pattern .pattern-name {
+
+    font-size: 5px;
+}
+
+
+.signal-pattern .candle-pattern-visual {
+
+    height: 25px;
+
+    min-width: 35px;
+
+    transform:
+        scale(.82);
 }
 
 
@@ -3955,13 +4387,21 @@ section {
 
 .market-summary > div {
 
-    min-height: 48px;
+    min-height: 70px;
 
     padding: 6px 3px;
 
     text-align: center;
 
     background: #0d1318;
+
+    display: flex;
+
+    flex-direction: column;
+
+    align-items: center;
+
+    justify-content: center;
 }
 
 
@@ -4009,6 +4449,35 @@ section {
 .market-summary .daily-change-value .zero {
 
     color: #68737e !important;
+}
+
+
+.market-summary .pattern-box {
+
+    min-width: 65px;
+}
+
+
+.market-summary .pattern-name {
+
+    font-size: 5px;
+}
+
+
+.market-summary .pattern-description {
+
+    font-size: 4px;
+
+    max-width: 88px;
+}
+
+
+.market-summary .candle-pattern-visual {
+
+    height: 25px;
+
+    transform:
+        scale(.82);
 }
 
 
@@ -4065,19 +4534,6 @@ section {
     }
 
 
-    .current-pattern {
-
-        font-size: 6px;
-    }
-
-
-    .daily-change-value .up,
-    .daily-change-value .down {
-
-        font-size: 8px;
-    }
-
-
     .coin-head {
 
         min-height: 35px;
@@ -4101,7 +4557,7 @@ section {
 
     .market-summary > div {
 
-        min-height: 44px;
+        min-height: 62px;
 
         padding:
             5px 2px;
@@ -4119,6 +4575,76 @@ section {
     .market-summary strong {
 
         font-size: 6px;
+    }
+
+
+    .market-summary .pattern-box {
+
+        min-width: 48px;
+    }
+
+
+    .market-summary .pattern-name {
+
+        font-size: 4px;
+    }
+
+
+    .market-summary .pattern-description {
+
+        font-size: 3.5px;
+
+        max-width: 62px;
+    }
+
+
+    .market-summary .candle-pattern-visual {
+
+        height: 22px;
+
+        transform:
+            scale(.68);
+    }
+
+
+    .pattern-guide {
+
+        padding: 6px;
+    }
+
+
+    .guide-list {
+
+        gap: 3px;
+    }
+
+
+    .guide-item {
+
+        min-height: 44px;
+
+        padding: 3px;
+
+        gap: 4px;
+    }
+
+
+    .guide-item b {
+
+        font-size: 5px;
+    }
+
+
+    .guide-item span {
+
+        font-size: 4px;
+    }
+
+
+    .guide-item .candle-pattern-visual {
+
+        transform:
+            scale(.65);
     }
 
 
@@ -4156,7 +4682,7 @@ section {
 
     .signal-card > div {
 
-        min-height: 44px;
+        min-height: 65px;
 
         padding: 4px 2px;
     }
@@ -4194,9 +4720,32 @@ section {
     }
 
 
-    .signal-pattern .current-pattern {
+    .signal-pattern .pattern-box {
 
-        font-size: 5px;
+        min-width: 48px;
+    }
+
+
+    .signal-pattern .pattern-name {
+
+        font-size: 4px;
+    }
+
+
+    .signal-pattern .pattern-description {
+
+        font-size: 3.5px;
+
+        max-width: 60px;
+    }
+
+
+    .signal-pattern .candle-pattern-visual {
+
+        height: 22px;
+
+        transform:
+            scale(.65);
     }
 
 }
