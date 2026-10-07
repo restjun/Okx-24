@@ -1349,6 +1349,104 @@ def is_bearish_piercing(
 
 
 # =========================================================
+# 장대양봉
+# =========================================================
+
+def is_long_bullish(
+    current
+):
+
+    try:
+
+        o = float(
+            current["open"]
+        )
+
+        h = float(
+            current["high"]
+        )
+
+        l = float(
+            current["low"]
+        )
+
+        c = float(
+            current["close"]
+        )
+
+    except Exception:
+
+        return False
+
+    total_range = h - l
+
+    if total_range <= 0:
+
+        return False
+
+    body = abs(
+        c - o
+    )
+
+    if c <= o:
+
+        return False
+
+    return bool(
+        body / total_range >= 0.70
+    )
+
+
+# =========================================================
+# 장대음봉
+# =========================================================
+
+def is_long_bearish(
+    current
+):
+
+    try:
+
+        o = float(
+            current["open"]
+        )
+
+        h = float(
+            current["high"]
+        )
+
+        l = float(
+            current["low"]
+        )
+
+        c = float(
+            current["close"]
+        )
+
+    except Exception:
+
+        return False
+
+    total_range = h - l
+
+    if total_range <= 0:
+
+        return False
+
+    body = abs(
+        c - o
+    )
+
+    if c >= o:
+
+        return False
+
+    return bool(
+        body / total_range >= 0.70
+    )
+
+
+# =========================================================
 # 캔들 패턴
 # =========================================================
 
@@ -1357,20 +1455,65 @@ def get_candle_pattern(
     current
 ):
 
-    if (
-        previous is None
-        or
-        current is None
-    ):
+    if current is None:
 
         return None
 
-    if is_bullish_engulfing(
-        previous,
-        current
+    if (
+        previous is not None
+        and
+        is_bullish_engulfing(
+            previous,
+            current
+        )
     ):
 
         return "상승장악형"
+
+    if (
+        previous is not None
+        and
+        is_bearish_engulfing(
+            previous,
+            current
+        )
+    ):
+
+        return "하락장악형"
+
+    if (
+        previous is not None
+        and
+        is_bullish_piercing(
+            previous,
+            current
+        )
+    ):
+
+        return "상승관통형"
+
+    if (
+        previous is not None
+        and
+        is_bearish_piercing(
+            previous,
+            current
+        )
+    ):
+
+        return "하락관통형"
+
+    if is_long_bullish(
+        current
+    ):
+
+        return "장대양봉"
+
+    if is_long_bearish(
+        current
+    ):
+
+        return "장대음봉"
 
     if is_positive_doji(
         current
@@ -1378,12 +1521,11 @@ def get_candle_pattern(
 
         return "양수도지"
 
-    if is_bullish_piercing(
-        previous,
+    if is_negative_doji(
         current
     ):
 
-        return "상승관통형"
+        return "음수도지"
 
     return None
 
@@ -2658,7 +2800,6 @@ def ema_alignment_html(
 
 # =========================================================
 # 캔들 그림
-# 설명 없음
 # =========================================================
 
 def candle_icon_html(
@@ -2683,12 +2824,43 @@ def candle_icon_html(
         </div>
         """
 
+    if pattern == "하락장악형":
+
+        return """
+        <div class="candle-pattern-visual engulfing">
+
+            <div class="mini-candle bullish">
+                <span class="wick"></span>
+                <span class="body"></span>
+            </div>
+
+            <div class="mini-candle bearish large">
+                <span class="wick"></span>
+                <span class="body"></span>
+            </div>
+
+        </div>
+        """
+
     if pattern == "양수도지":
 
         return """
         <div class="candle-pattern-visual doji">
 
             <div class="mini-candle bullish-doji">
+                <span class="wick"></span>
+                <span class="body"></span>
+            </div>
+
+        </div>
+        """
+
+    if pattern == "음수도지":
+
+        return """
+        <div class="candle-pattern-visual doji">
+
+            <div class="mini-candle bearish-doji">
                 <span class="wick"></span>
                 <span class="body"></span>
             </div>
@@ -2714,6 +2886,50 @@ def candle_icon_html(
         </div>
         """
 
+    if pattern == "하락관통형":
+
+        return """
+        <div class="candle-pattern-visual piercing">
+
+            <div class="mini-candle bullish">
+                <span class="wick"></span>
+                <span class="body"></span>
+            </div>
+
+            <div class="mini-candle bearish piercing-bearish">
+                <span class="wick"></span>
+                <span class="body"></span>
+            </div>
+
+        </div>
+        """
+
+    if pattern == "장대양봉":
+
+        return """
+        <div class="candle-pattern-visual single-candle">
+
+            <div class="mini-candle bullish very-large">
+                <span class="wick"></span>
+                <span class="body"></span>
+            </div>
+
+        </div>
+        """
+
+    if pattern == "장대음봉":
+
+        return """
+        <div class="candle-pattern-visual single-candle">
+
+            <div class="mini-candle bearish very-large">
+                <span class="wick"></span>
+                <span class="body"></span>
+            </div>
+
+        </div>
+        """
+
     return """
     <div class="candle-pattern-visual empty">
         <span>—</span>
@@ -2731,35 +2947,38 @@ def current_pattern_html(
     pattern
 ):
 
-    if pattern == "상승장악형":
+    bullish_patterns = [
+        "상승장악형",
+        "양수도지",
+        "상승관통형",
+        "장대양봉"
+    ]
+
+    bearish_patterns = [
+        "하락장악형",
+        "음수도지",
+        "하락관통형",
+        "장대음봉"
+    ]
+
+    if pattern in bullish_patterns:
 
         return (
             '<div class="pattern-box bullish-pattern">'
             + candle_icon_html(pattern)
             + '<span class="pattern-name">'
-            '▲ 상승장악형'
+            f'{pattern}'
             '</span>'
             '</div>'
         )
 
-    if pattern == "양수도지":
+    if pattern in bearish_patterns:
 
         return (
-            '<div class="pattern-box bullish-pattern">'
+            '<div class="pattern-box bearish-pattern">'
             + candle_icon_html(pattern)
             + '<span class="pattern-name">'
-            '● 양수도지'
-            '</span>'
-            '</div>'
-        )
-
-    if pattern == "상승관통형":
-
-        return (
-            '<div class="pattern-box bullish-pattern">'
-            + candle_icon_html(pattern)
-            + '<span class="pattern-name">'
-            '▲ 상승관통형'
+            f'{pattern}'
             '</span>'
             '</div>'
         )
@@ -3375,6 +3594,12 @@ section {
 }
 
 
+.bearish-pattern .pattern-name {
+
+    color: #ff5966;
+}
+
+
 .pattern-none .pattern-name {
 
     color: #68737e;
@@ -3476,9 +3701,27 @@ section {
 }
 
 
+.mini-candle.bearish.large .body {
+
+    height: 20px;
+
+    width: 9px;
+}
+
+
 .mini-candle.bullish-doji .body {
 
     background: #38d878;
+
+    height: 2px;
+
+    width: 10px;
+}
+
+
+.mini-candle.bearish-doji .body {
+
+    background: #ff5966;
 
     height: 2px;
 
@@ -3491,6 +3734,34 @@ section {
     background: #38d878;
 
     height: 15px;
+}
+
+
+.mini-candle.piercing-bearish .body {
+
+    background: #ff5966;
+
+    height: 15px;
+}
+
+
+.mini-candle.bullish.very-large .body {
+
+    background: #38d878;
+
+    height: 20px;
+
+    width: 9px;
+}
+
+
+.mini-candle.bearish.very-large .body {
+
+    background: #ff5966;
+
+    height: 20px;
+
+    width: 9px;
 }
 
 
