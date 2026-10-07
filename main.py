@@ -69,17 +69,6 @@ TIMEFRAME_LABEL = {
 
 
 # =========================================================
-# ROC 설정
-# =========================================================
-
-ROC_PERIOD = 50
-
-ROC_SIGNAL_PERIOD = 20
-
-ROC_SIGNAL_LEVEL = 0.0
-
-
-# =========================================================
 # 전역 데이터
 # =========================================================
 
@@ -107,8 +96,6 @@ latest_btc_okx_price = None
 latest_btc_daily_periods = []
 
 latest_btc_daily_change = None
-
-latest_btc_daily_roc = None
 
 
 # =========================================================
@@ -571,54 +558,11 @@ def get_upbit_4h_candles(
 
 
 # =========================================================
-# ROC
-# =========================================================
-
-def calculate_roc(
-    periods,
-    index,
-    period=ROC_PERIOD
-):
-
-    if index < period:
-
-        return None
-
-    try:
-
-        current_close = float(
-            periods[index]["close"]
-        )
-
-        previous_close = float(
-            periods[index - period]["close"]
-        )
-
-    except Exception:
-
-        return None
-
-    if previous_close == 0:
-
-        return None
-
-    return (
-        (
-            current_close
-            - previous_close
-        )
-        / previous_close
-        * 100
-    )
-
-
-# =========================================================
 # 일봉 기간 생성
 #
 # KST 09:00 기준
 #
-# 전체 기간에서 ROC 계산 후
-# 최근 6개만 반환
+# 최근 6개 반환
 # =========================================================
 
 def build_daily_periods(
@@ -752,28 +696,9 @@ def build_daily_periods(
                 c,
 
             "change":
-                change,
-
-            "roc":
-                None
+                change
 
         })
-
-    # =====================================================
-    # 일봉 ROC(50)
-    #
-    # 전체 데이터 기준으로 계산
-    # =====================================================
-
-    for i in range(
-        len(periods)
-    ):
-
-        periods[i]["roc"] = calculate_roc(
-            periods,
-            i,
-            ROC_PERIOD
-        )
 
     # =====================================================
     # 최근 6개만 화면 표시
@@ -894,9 +819,7 @@ def is_piercing_line(
         + prev_close
     ) / 2
 
-    # 관통형:
-    # 현재 종가가 이전 음봉 몸통 중간값 위
-    # 이전 시가 아래
+    # 관통형
     return bool(
         curr_close > midpoint
         and
@@ -909,9 +832,9 @@ def is_piercing_line(
 #
 # SIGNAL 조건:
 #
-# 1. ROC(20) < 0
-# 2. ROC(50) > 0
-# 3. 상승장악형 또는 관통형 발생
+# 1. 상승장악형
+# 또는
+# 2. 관통형
 #
 # SIGNAL:
 #
@@ -1046,19 +969,7 @@ def build_upbit_4h_periods(
             "change":
                 change,
 
-            "roc":
-                None,
-
-            "roc20":
-                None,
-
-            "roc50":
-                None,
-
-            "roc_signal":
-                False,
-
-            "roc_cross_up":
+            "signal":
                 False,
 
             "signal_reason":
@@ -1070,41 +981,7 @@ def build_upbit_4h_periods(
         })
 
     # =====================================================
-    # ROC(50)
-    # =====================================================
-
-    for i in range(
-        len(periods)
-    ):
-
-        periods[i]["roc50"] = calculate_roc(
-            periods,
-            i,
-            ROC_PERIOD
-        )
-
-    # =====================================================
-    # ROC(20)
-    # =====================================================
-
-    for i in range(
-        len(periods)
-    ):
-
-        periods[i]["roc20"] = calculate_roc(
-            periods,
-            i,
-            ROC_SIGNAL_PERIOD
-        )
-
-        # 기존 구조 호환
-        periods[i]["roc"] = periods[i]["roc20"]
-
-    # =====================================================
     # 캔들 패턴 SIGNAL
-    #
-    # ROC20 < 0
-    # ROC50 > 0
     #
     # 상승장악형 또는 관통형
     #
@@ -1123,30 +1000,6 @@ def build_upbit_4h_periods(
         current = periods[
             i
         ]
-
-        roc20 = current.get(
-            "roc20"
-        )
-
-        roc50 = current.get(
-            "roc50"
-        )
-
-        # -------------------------------------------------
-        # ROC 조건
-        #
-        # ROC20은 0선 아래
-        # ROC50은 0선 위
-        # -------------------------------------------------
-
-        if (
-            roc20 is None
-            or roc50 is None
-            or roc20 >= ROC_SIGNAL_LEVEL
-            or roc50 <= ROC_SIGNAL_LEVEL
-        ):
-
-            continue
 
         # -------------------------------------------------
         # 상승장악형
@@ -1193,7 +1046,7 @@ def build_upbit_4h_periods(
         # -------------------------------------------------
 
         periods[i][
-            "roc_signal"
+            "signal"
         ] = True
 
         periods[i][
@@ -1211,7 +1064,7 @@ def build_upbit_4h_periods(
         if i + 1 < len(periods):
 
             periods[i + 1][
-                "roc_signal"
+                "signal"
             ] = True
 
             periods[i + 1][
@@ -1243,7 +1096,7 @@ def signal_pass(
 
     return any(
         p.get(
-            "roc_signal",
+            "signal",
             False
         )
         for p in periods
@@ -1272,12 +1125,6 @@ def signal_details(
         "signal_change":
             None,
 
-        "signal_roc":
-            None,
-
-        "previous_roc":
-            None,
-
         "signal_period":
             None,
 
@@ -1293,12 +1140,8 @@ def signal_details(
     current = periods[-1]
 
     current_signal = current.get(
-        "roc_signal",
+        "signal",
         False
-    )
-
-    current_roc = current.get(
-        "roc20"
     )
 
     previous = (
@@ -1309,19 +1152,11 @@ def signal_details(
 
     previous_signal = (
         previous.get(
-            "roc_signal",
+            "signal",
             False
         )
         if previous is not None
         else False
-    )
-
-    previous_roc = (
-        previous.get(
-            "roc20"
-        )
-        if previous is not None
-        else None
     )
 
     if current_signal:
@@ -1341,12 +1176,6 @@ def signal_details(
                 current.get(
                     "change"
                 ),
-
-            "signal_roc":
-                current_roc,
-
-            "previous_roc":
-                previous_roc,
 
             "signal_period":
                 current.get(
@@ -1373,12 +1202,6 @@ def signal_details(
 
         "signal_change":
             None,
-
-        "signal_roc":
-            current_roc,
-
-        "previous_roc":
-            previous_roc,
 
         "signal_period":
             None,
@@ -1478,12 +1301,6 @@ def analyze_4h(
             "signal_change":
                 None,
 
-            "signal_roc":
-                None,
-
-            "previous_roc":
-                None,
-
             "signal_period":
                 None,
 
@@ -1524,16 +1341,6 @@ def analyze_4h(
         "signal_change":
             details[
                 "signal_change"
-            ],
-
-        "signal_roc":
-            details[
-                "signal_roc"
-            ],
-
-        "previous_roc":
-            details[
-                "previous_roc"
             ],
 
         "signal_period":
@@ -1627,16 +1434,6 @@ def make_row(
         "signal_4h_change":
             analysis_4h[
                 "signal_change"
-            ],
-
-        "signal_4h_roc":
-            analysis_4h[
-                "signal_roc"
-            ],
-
-        "signal_4h_previous_roc":
-            analysis_4h[
-                "previous_roc"
             ],
 
         "signal_4h_period":
@@ -1787,12 +1584,6 @@ def update_upbit():
                 "signal_change":
                     None,
 
-                "signal_roc":
-                    None,
-
-                "previous_roc":
-                    None,
-
                 "signal_period":
                     None,
 
@@ -1822,7 +1613,7 @@ def update_upbit():
     )
 
     log.info(
-        "UPBIT | 거래대금 TOP%s | 4H ROC20 < 0 + ROC50 > 0 + 상승장악/관통형 SIGNAL=%s",
+        "UPBIT | 거래대금 TOP%s | 4H 상승장악/관통형 SIGNAL=%s",
         TOP_N,
         sum(
             x["signal_4h"]
@@ -1969,13 +1760,10 @@ def okx_price():
 # =========================================================
 # BTC 업데이트
 #
-# 핵심:
 # OKX BTC-USDT-SWAP 1D 캔들 직접 요청
 #
 # OKX 1D 캔들 UTC 00:00
 # → KST 09:00
-#
-# 일봉 ROC(50) 계산
 # =========================================================
 
 def update_okx_btc():
@@ -1983,7 +1771,6 @@ def update_okx_btc():
     global latest_btc_okx_price
     global latest_btc_daily_periods
     global latest_btc_daily_change
-    global latest_btc_daily_roc
 
     # =====================================================
     # 현재 BTC 가격
@@ -1999,8 +1786,6 @@ def update_okx_btc():
 
     # =====================================================
     # OKX 1D 캔들 직접 요청
-    #
-    # ROC(50) 계산을 위해 100개 요청
     # =====================================================
 
     d1d = okx_candles(
@@ -2013,8 +1798,6 @@ def update_okx_btc():
         latest_btc_daily_periods = []
 
         latest_btc_daily_change = None
-
-        latest_btc_daily_roc = None
 
         log.warning(
             "OKX BTC 1D 캔들 데이터 없음"
@@ -2109,7 +1892,7 @@ def update_okx_btc():
         )
 
     # =====================================================
-    # KST 09:00 기준 일봉 + ROC(50)
+    # KST 09:00 기준 일봉
     # =====================================================
 
     latest_btc_daily_periods = (
@@ -2132,23 +1915,13 @@ def update_okx_btc():
             )
         )
 
-        latest_btc_daily_roc = (
-            latest_btc_daily_periods[-1]
-            .get(
-                "roc"
-            )
-        )
-
     else:
 
         latest_btc_daily_change = None
 
-        latest_btc_daily_roc = None
-
     log.info(
-        "OKX BTC | 1D | 현재 변동률=%s | ROC(50)=%s",
-        latest_btc_daily_change,
-        latest_btc_daily_roc
+        "OKX BTC | 1D | 현재 변동률=%s",
+        latest_btc_daily_change
     )
 
 
@@ -2284,43 +2057,6 @@ def fmt_change(v):
 
 
 # =========================================================
-# ROC 표시
-# =========================================================
-
-def fmt_roc(v):
-
-    if v is None:
-
-        return (
-            '<span class="zero">ROC -</span>'
-        )
-
-    try:
-
-        v = float(v)
-
-    except Exception:
-
-        return (
-            '<span class="zero">ROC -</span>'
-        )
-
-    if v >= 0:
-
-        return (
-            '<span class="roc-up">'
-            f'ROC +{v:.2f}%'
-            '</span>'
-        )
-
-    return (
-        '<span class="roc-down">'
-        f'ROC {v:.2f}%'
-        '</span>'
-    )
-
-
-# =========================================================
 # SIGNAL 이유
 # =========================================================
 
@@ -2331,7 +2067,7 @@ def signal_reason_html(
     if reason == "상승장악형":
 
         return (
-            '<span class="roc-cross">'
+            '<span class="pattern-cross">'
             '▲ 상승장악형'
             '</span>'
         )
@@ -2339,7 +2075,7 @@ def signal_reason_html(
     if reason == "관통형":
 
         return (
-            '<span class="roc-cross">'
+            '<span class="pattern-cross">'
             '▲ 관통형'
             '</span>'
         )
@@ -2347,7 +2083,7 @@ def signal_reason_html(
     if reason == "패턴 후 다음 캔들":
 
         return (
-            '<span class="roc-next">'
+            '<span class="pattern-next">'
             '→ 패턴 후 다음봉'
             '</span>'
         )
@@ -2370,31 +2106,6 @@ def cells(periods):
             if p.get("active")
             else ""
         )
-
-        roc20 = p.get(
-            "roc20"
-        )
-
-        roc50 = p.get(
-            "roc50"
-        )
-
-        roc_signal_state = p.get(
-            "roc_signal",
-            False
-        )
-
-        if roc_signal_state:
-
-            roc_badge = (
-                '<span class="roc-signal">'
-                '⭐ SIGNAL'
-                '</span>'
-            )
-
-        else:
-
-            roc_badge = ""
 
         reason_badge = signal_reason_html(
             p.get(
@@ -2423,16 +2134,6 @@ def cells(periods):
                     )}
                 </strong>
 
-                <div class="roc-value">
-                    ROC20 {fmt_roc(roc20)}
-                </div>
-
-                <div class="roc-value">
-                    ROC50 {fmt_roc(roc50)}
-                </div>
-
-                {roc_badge}
-
                 {reason_badge}
 
             </div>
@@ -2445,8 +2146,7 @@ def cells(periods):
 # =========================================================
 # BTC 일봉 전용 표시
 #
-# ROC 포함
-# SIGNAL은 적용하지 않음
+# SIGNAL 적용하지 않음
 # =========================================================
 
 def btc_daily_cells(
@@ -2483,14 +2183,6 @@ def btc_daily_cells(
                         )
                     )}
                 </strong>
-
-                <div class="roc-value">
-                    {fmt_roc(
-                        p.get(
-                            "roc"
-                        )
-                    )}
-                </div>
 
             </div>
             """
@@ -2559,7 +2251,7 @@ def btc_html():
                 </b>
 
                 <span>
-                    OKX 1D · KST 09:00 · ROC(50)
+                    OKX 1D · KST 09:00
                 </span>
 
             </div>
@@ -2678,15 +2370,11 @@ def card(
                 <div>
 
                     <span>
-                        4H ROC(20)
+                        4H PATTERN
                     </span>
 
                     <strong>
-                        {fmt_roc(
-                            row.get(
-                                "signal_4h_roc"
-                            )
-                        )}
+                        상승장악 / 관통
                     </strong>
 
                 </div>
@@ -2703,7 +2391,7 @@ def card(
                 <i></i>
 
                 <small>
-                    ROC20 0선 아래 · ROC50 0선 위
+                    상승장악형 / 관통형
                 </small>
 
             </div>
@@ -2800,14 +2488,16 @@ def card(
             <div>
 
                 <span>
-                    현재 4H ROC20
+                    현재 4H
                 </span>
 
                 <strong>
-                    {fmt_roc(
-                        row.get(
-                            "signal_4h_roc"
+                    {(
+                        "SIGNAL"
+                        if row.get(
+                            "signal_4h_current"
                         )
+                        else "-"
                     )}
                 </strong>
 
@@ -2817,14 +2507,16 @@ def card(
             <div>
 
                 <span>
-                    이전 4H ROC20
+                    이전 4H
                 </span>
 
                 <strong>
-                    {fmt_roc(
-                        row.get(
-                            "signal_4h_previous_roc"
+                    {(
+                        "SIGNAL"
+                        if row.get(
+                            "signal_4h_previous"
                         )
+                        else "-"
                     )}
                 </strong>
 
@@ -2890,7 +2582,7 @@ def both_section(data):
 
         content = (
             '<div class="empty">'
-            '현재 ROC20 0선 아래 · ROC50 0선 위 상승장악형 또는 관통형 SIGNAL 없음'
+            '현재 상승장악형 또는 관통형 SIGNAL 없음'
             '</div>'
         )
 
@@ -2913,7 +2605,7 @@ def both_section(data):
             </div>
 
             <small>
-                ROC20↓ / ROC50↑ · 패턴봉 + 다음봉
+                패턴봉 + 다음봉
             </small>
 
         </div>
@@ -2995,35 +2687,11 @@ section {
 }
 
 
-.roc-up {
-    color: #38d878;
-}
-
-
-.roc-down {
-    color: #ff5966;
-}
-
-
-.roc-signal {
+.pattern-cross {
 
     display: block;
 
-    margin-top: 2px;
-
-    color: #e4c45e;
-
-    font-size: 5px;
-
-    font-weight: 900;
-}
-
-
-.roc-cross {
-
-    display: block;
-
-    margin-top: 2px;
+    margin-top: 4px;
 
     color: #5ed6ff;
 
@@ -3033,27 +2701,17 @@ section {
 }
 
 
-.roc-next {
+.pattern-next {
 
     display: block;
 
-    margin-top: 2px;
+    margin-top: 4px;
 
     color: #e4c45e;
 
     font-size: 5px;
 
     font-weight: 900;
-}
-
-
-.roc-value {
-
-    margin-top: 3px;
-
-    font-size: 6px;
-
-    font-weight: 800;
 }
 
 
@@ -3756,25 +3414,13 @@ section {
     }
 
 
-    .roc-value {
-
-        font-size: 5px;
-    }
-
-
-    .roc-signal {
+    .pattern-cross {
 
         font-size: 4px;
     }
 
 
-    .roc-cross {
-
-        font-size: 4px;
-    }
-
-
-    .roc-next {
+    .pattern-next {
 
         font-size: 4px;
     }
@@ -3889,9 +3535,8 @@ def dashboard():
     if USE_UPBIT == "Y":
 
         # -------------------------------------------------
-        # ROC20 0선 아래
-        # ROC50 0선 위
-        # + 상승장악형 / 관통형 SIGNAL
+        # 상승장악형 / 관통형 SIGNAL
+        # 패턴봉 + 다음봉
         # -------------------------------------------------
 
         s += both_section(
@@ -4029,7 +3674,7 @@ def scheduler():
 def startup():
 
     log.info(
-        "START | OKX BTC 1D ROC(50) + 업비트 거래대금 TOP10 + 4H ROC20 < 0 + ROC50 > 0 + 상승장악/관통형 SIGNAL"
+        "START | OKX BTC 1D + 업비트 거래대금 TOP10 + 4H 상승장악/관통형 SIGNAL"
     )
 
     threading.Thread(
