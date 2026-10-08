@@ -2950,7 +2950,7 @@ def ema_cross_html(row):
 
         parts.append(
             '<span class="ema-cross-badge">'
-            '🔄 이전봉 전환'
+            '🔄 이전봉 정배열'
             '</span>'
         )
 
@@ -2961,7 +2961,7 @@ def ema_cross_html(row):
 
         parts.append(
             '<span class="ema-cross-badge">'
-            '🔄 현재봉 전환'
+            '🔄 현재봉 정배열'
             '</span>'
         )
 
