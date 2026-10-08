@@ -2899,7 +2899,7 @@ def btc_html():
                 </span>
 
                 <b>
-                    ₿ BTC 시황
+                    BTCUSDT
                 </b>
 
             </div>
