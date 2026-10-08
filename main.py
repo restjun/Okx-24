@@ -2142,21 +2142,34 @@ def update_upbit():
     # 기존 SIGNAL
     # OR
     # EMA 역배열 → 정배열 전환 SIGNAL
+    #
+    # 추가 조건:
+    # 당일 변동률 > 0%
     # =====================================================
 
     latest_signal_data = [
         row
         for row in rows
         if (
-            row.get(
-                "signal_4h",
-                False
+            (
+                row.get(
+                    "signal_4h",
+                    False
+                )
+                or
+                row.get(
+                    "ema_cross_signal",
+                    False
+                )
             )
-            or
+            and
             row.get(
-                "ema_cross_signal",
-                False
-            )
+                "daily_change"
+            ) is not None
+            and
+            row.get(
+                "daily_change"
+            ) > 0
         )
     ]
 
@@ -2177,7 +2190,7 @@ def update_upbit():
         row["signal_rank"] = signal_rank
 
     log.info(
-        "UPBIT | 거래대금 TOP%s | SIGNAL=%s",
+        "UPBIT | 거래대금 TOP%s | SIGNAL=%s | 당일 양수 조건 적용",
         TOP_N,
         len(latest_signal_data)
     )
@@ -3157,6 +3170,7 @@ def signal_section():
                 EMA 역배열 + 상승패턴
                 OR
                 EMA 역배열 → 정배열 전환
+                AND 당일 양수
             </b>
 
             <small>
@@ -4196,7 +4210,8 @@ def startup():
         "업비트 TOP%s + "
         "4시간봉 EMA5/15 역배열 + "
         "장대양봉/상승관통형/상승장악형 SIGNAL + "
-        "EMA 역배열→정배열 전환 SIGNAL",
+        "EMA 역배열→정배열 전환 SIGNAL + "
+        "당일 양수 조건",
         TOP_N
     )
 
