@@ -32,6 +32,7 @@ logging.basicConfig(
 log = logging.getLogger("trading")
 
 KST = ZoneInfo("Asia/Seoul")
+UTC = ZoneInfo("UTC")
 
 
 # =========================================================
@@ -47,7 +48,7 @@ UPDATE_MINUTES = 1
 HISTORY_CHUNK = 200
 MAX_HISTORY_CHUNKS = 10
 
-# EMA 계산용 과거 1시간봉 수
+# EMA 계산용 과거 캔들 수
 EMA_HISTORY_CANDLES = 1000
 
 USE_UPBIT = "Y"
@@ -62,9 +63,11 @@ MAX_RETRIES = 10
 # SIGNAL 설정
 # =========================================================
 
+# 선택 가능: "15m", "1h", "4h", "1d"
 SIGNAL_TIMEFRAME = "1h"
 
 TIMEFRAME_LABEL = {
+    "15m": "15분봉",
     "1h": "1시간봉",
     "4h": "4시간봉",
     "1d": "일봉"
@@ -260,6 +263,147 @@ def get_upbit_markets():
 
 
 # =========================================================
+# 업비트 공통 분봉 조회
+# 15분봉 / 1시간봉 지원
+# =========================================================
+
+def get_upbit_minute_candles(market, unit, count=200):
+
+    endpoint = (
+        f"https://api.upbit.com/v1/candles/minutes/{unit}"
+    )
+
+    target_count = min(
+        max(int(count), 1),
+        HISTORY_CHUNK * MAX_HISTORY_CHUNKS
+    )
+
+    rows = []
+    to_value = None
+
+    while len(rows) < target_count:
+
+        request_count = min(
+            HISTORY_CHUNK,
+            target_count - len(rows)
+        )
+
+        params = {
+            "market": market,
+            "count": request_count
+        }
+
+        if to_value is not None:
+            params["to"] = to_value
+
+        r = retry(
+            requests.get,
+            endpoint,
+            params=params,
+            timeout=15
+        )
+
+        if r is None:
+            break
+
+        try:
+            data = r.json()
+
+        except Exception:
+            break
+
+        if not isinstance(data, list) or not data:
+            break
+
+        batch_rows = []
+
+        for x in data:
+
+            try:
+                dt_utc = datetime.strptime(
+                    x["candle_date_time_utc"],
+                    "%Y-%m-%dT%H:%M:%S"
+                ).replace(tzinfo=UTC)
+
+                dt_kst = datetime.strptime(
+                    x["candle_date_time_kst"],
+                    "%Y-%m-%dT%H:%M:%S"
+                ).replace(tzinfo=KST)
+
+                batch_rows.append({
+                    "datetime": dt_kst,
+                    "datetime_utc": dt_utc,
+                    "open": float(x["opening_price"]),
+                    "high": float(x["high_price"]),
+                    "low": float(x["low_price"]),
+                    "close": float(x["trade_price"])
+                })
+
+            except Exception:
+                pass
+
+        if not batch_rows:
+            break
+
+        rows.extend(batch_rows)
+
+        oldest = min(
+            batch_rows,
+            key=lambda x: x["datetime_utc"]
+        )
+
+        next_to = oldest["datetime_utc"].isoformat()
+
+        if next_to == to_value:
+            break
+
+        to_value = next_to
+
+        if len(data) < request_count:
+            break
+
+    if not rows:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(rows)
+
+    df = (
+        df.sort_values("datetime")
+        .drop_duplicates("datetime")
+        .reset_index(drop=True)
+    )
+
+    return df.tail(target_count).reset_index(drop=True)
+
+
+# =========================================================
+# 업비트 15분봉
+# =========================================================
+
+def get_upbit_15m_candles(market, count=200):
+
+    return get_upbit_minute_candles(
+        market,
+        15,
+        count
+    )
+
+
+# =========================================================
+# 업비트 1시간봉
+# 기존 함수명 유지
+# =========================================================
+
+def get_upbit_4h_candles(market, count=200):
+
+    return get_upbit_minute_candles(
+        market,
+        60,
+        count
+    )
+
+
+# =========================================================
 # 업비트 일봉
 # KST 09:00 기준
 # =========================================================
@@ -319,122 +463,6 @@ def get_upbit_daily_candles(market, count=200):
         .drop_duplicates("datetime")
         .reset_index(drop=True)
     )
-
-
-# =========================================================
-# 업비트 1시간봉
-# 최대 1,000개 과거 캔들 조회 가능
-# 기존 함수명 유지
-# =========================================================
-
-def get_upbit_4h_candles(market, count=200):
-
-    endpoint = "https://api.upbit.com/v1/candles/minutes/60"
-
-    target_count = min(
-        max(int(count), 1),
-        HISTORY_CHUNK * MAX_HISTORY_CHUNKS
-    )
-
-    rows = []
-    to_value = None
-
-    while len(rows) < target_count:
-
-        request_count = min(
-            HISTORY_CHUNK,
-            target_count - len(rows)
-        )
-
-        params = {
-            "market": market,
-            "count": request_count
-        }
-
-        if to_value is not None:
-            params["to"] = to_value
-
-        r = retry(
-            requests.get,
-            endpoint,
-            params=params,
-            timeout=15
-        )
-
-        if r is None:
-            break
-
-        try:
-            data = r.json()
-
-        except Exception:
-            break
-
-        if not isinstance(data, list) or not data:
-            break
-
-        batch_rows = []
-
-        for x in data:
-
-            try:
-                dt_utc = datetime.strptime(
-                    x["candle_date_time_utc"],
-                    "%Y-%m-%dT%H:%M:%S"
-                ).replace(tzinfo=ZoneInfo("UTC"))
-
-                dt_kst = datetime.strptime(
-                    x["candle_date_time_kst"],
-                    "%Y-%m-%dT%H:%M:%S"
-                ).replace(tzinfo=KST)
-
-                batch_rows.append({
-                    "datetime": dt_kst,
-                    "datetime_utc": dt_utc,
-                    "open": float(x["opening_price"]),
-                    "high": float(x["high_price"]),
-                    "low": float(x["low_price"]),
-                    "close": float(x["trade_price"])
-                })
-
-            except Exception:
-                pass
-
-        if not batch_rows:
-            break
-
-        rows.extend(batch_rows)
-
-        oldest = min(
-            batch_rows,
-            key=lambda x: x["datetime_utc"]
-        )
-
-        # 다음 요청은 가장 오래된 캔들 이전부터 조회
-        next_to = oldest["datetime_utc"].isoformat()
-
-        if next_to == to_value:
-            break
-
-        to_value = next_to
-
-        if len(data) < request_count:
-            break
-
-    if not rows:
-        return pd.DataFrame()
-
-    df = pd.DataFrame(rows)
-
-    df = (
-        df.sort_values("datetime")
-        .drop_duplicates("datetime")
-        .reset_index(drop=True)
-    )
-
-    df = df.tail(target_count).reset_index(drop=True)
-
-    return df
 
 
 # =========================================================
@@ -600,7 +628,7 @@ def calculate_ema_series(df, period):
     result = np.full(len(values), np.nan)
 
     if len(values) < period:
-        # 데이터가 부족해도 계산은 가능하도록 처리
+
         result[0] = values[0]
         alpha = 2.0 / (period + 1.0)
 
@@ -611,14 +639,13 @@ def calculate_ema_series(df, period):
             )
 
     else:
+
         alpha = 2.0 / (period + 1.0)
 
-        # 첫 period개 종가의 SMA를 초기 EMA로 사용
         result[period - 1] = float(
             np.mean(values[:period])
         )
 
-        # 이후는 EMA 재귀 공식으로 계산
         for i in range(period, len(values)):
             result[i] = (
                 alpha * values[i]
@@ -633,8 +660,38 @@ def calculate_ema_series(df, period):
 
 
 # =========================================================
+# 현재 캔들 가격 반영
+# =========================================================
+
+def update_current_candle(df, current_start, price):
+
+    if df is None or df.empty or price is None:
+        return df
+
+    if df.iloc[-1]["datetime"] != current_start:
+        return df
+
+    idx = df.index[-1]
+    price = float(price)
+
+    df.loc[idx, "close"] = price
+
+    df.loc[idx, "high"] = max(
+        float(df.loc[idx, "high"]),
+        price
+    )
+
+    df.loc[idx, "low"] = min(
+        float(df.loc[idx, "low"]),
+        price
+    )
+
+    return df
+
+
+# =========================================================
 # EMA 분석
-# 선택 시간봉: 1시간봉 / 4시간봉 / 일봉
+# 선택 시간봉: 15분봉 / 1시간봉 / 4시간봉 / 일봉
 # =========================================================
 
 def analyze_ema_4h(market, price=None):
@@ -652,10 +709,38 @@ def analyze_ema_4h(market, price=None):
     timeframe = SIGNAL_TIMEFRAME
 
     # =====================================================
+    # 15분봉 EMA
+    # =====================================================
+
+    if timeframe == "15m":
+
+        df = get_upbit_15m_candles(
+            market,
+            EMA_HISTORY_CANDLES
+        )
+
+        if df.empty:
+            return empty_result
+
+        now = datetime.now(KST)
+
+        current_start = now.replace(
+            minute=(now.minute // 15) * 15,
+            second=0,
+            microsecond=0
+        )
+
+        df = update_current_candle(
+            df,
+            current_start,
+            price
+        )
+
+    # =====================================================
     # 1시간봉 EMA
     # =====================================================
 
-    if timeframe == "1h":
+    elif timeframe == "1h":
 
         df = get_upbit_4h_candles(
             market,
@@ -667,30 +752,17 @@ def analyze_ema_4h(market, price=None):
 
         now = datetime.now(KST)
 
-        current_hour = now.replace(
+        current_start = now.replace(
             minute=0,
             second=0,
             microsecond=0
         )
 
-        if (
-            price is not None
-            and df.iloc[-1]["datetime"] == current_hour
-        ):
-
-            idx = df.index[-1]
-
-            df.loc[idx, "close"] = float(price)
-
-            df.loc[idx, "high"] = max(
-                float(df.loc[idx, "high"]),
-                float(price)
-            )
-
-            df.loc[idx, "low"] = min(
-                float(df.loc[idx, "low"]),
-                float(price)
-            )
+        df = update_current_candle(
+            df,
+            current_start,
+            price
+        )
 
     # =====================================================
     # 4시간봉 EMA
@@ -740,24 +812,11 @@ def analyze_ema_4h(market, price=None):
         if now < current_day_start:
             current_day_start -= timedelta(days=1)
 
-        if (
-            price is not None
-            and df.iloc[-1]["datetime"] == current_day_start
-        ):
-
-            idx = df.index[-1]
-
-            df.loc[idx, "close"] = float(price)
-
-            df.loc[idx, "high"] = max(
-                float(df.loc[idx, "high"]),
-                float(price)
-            )
-
-            df.loc[idx, "low"] = min(
-                float(df.loc[idx, "low"]),
-                float(price)
-            )
+        df = update_current_candle(
+            df,
+            current_day_start,
+            price
+        )
 
     else:
 
@@ -1392,7 +1451,73 @@ def analyze_signal_candles(market, price, ema_reverse=False):
 
     timeframe = SIGNAL_TIMEFRAME
 
-    if timeframe == "1h":
+    # =====================================================
+    # 15분봉
+    # =====================================================
+
+    if timeframe == "15m":
+
+        df = get_upbit_15m_candles(
+            market,
+            200
+        )
+
+        if df.empty:
+            return empty_result
+
+        now = datetime.now(KST)
+
+        current_start = now.replace(
+            minute=(now.minute // 15) * 15,
+            second=0,
+            microsecond=0
+        )
+
+        df = update_current_candle(
+            df,
+            current_start,
+            price
+        )
+
+        periods = []
+
+        for _, row in df.iterrows():
+
+            start = row["datetime"]
+
+            o = float(row["open"])
+            h = float(row["high"])
+            l = float(row["low"])
+            c = float(row["close"])
+
+            change = (
+                (c - o) / o * 100
+                if o
+                else None
+            )
+
+            periods.append({
+                "start": start,
+                "end": start + timedelta(minutes=15),
+                "active": start == current_start,
+                "label": start.strftime("%m/%d %H:%M"),
+                "open": o,
+                "high": h,
+                "low": l,
+                "close": c,
+                "change": change,
+                "signal": False,
+                "signal_reason": None,
+                "pattern": None
+            })
+
+        periods = periods[-6:]
+
+    # =====================================================
+    # 1시간봉
+    # =====================================================
+
+    elif timeframe == "1h":
 
         df = get_upbit_4h_candles(market, 200)
 
@@ -1407,24 +1532,11 @@ def analyze_signal_candles(market, price, ema_reverse=False):
             microsecond=0
         )
 
-        if (
-            price is not None
-            and df.iloc[-1]["datetime"] == current_start
-        ):
-
-            idx = df.index[-1]
-
-            df.loc[idx, "close"] = float(price)
-
-            df.loc[idx, "high"] = max(
-                float(df.loc[idx, "high"]),
-                float(price)
-            )
-
-            df.loc[idx, "low"] = min(
-                float(df.loc[idx, "low"]),
-                float(price)
-            )
+        df = update_current_candle(
+            df,
+            current_start,
+            price
+        )
 
         periods = []
 
@@ -1460,6 +1572,10 @@ def analyze_signal_candles(market, price, ema_reverse=False):
 
         periods = periods[-6:]
 
+    # =====================================================
+    # 4시간봉
+    # =====================================================
+
     elif timeframe == "4h":
 
         df = get_upbit_4h_candles(market, 200)
@@ -1468,6 +1584,10 @@ def analyze_signal_candles(market, price, ema_reverse=False):
             return empty_result
 
         periods = build_upbit_4h_periods(df, price)
+
+    # =====================================================
+    # 일봉
+    # =====================================================
 
     elif timeframe == "1d":
 
