@@ -115,6 +115,7 @@ last_request_time = 0
 # =========================================================
 
 def kst():
+
     return datetime.now(KST).strftime(
         "%Y-%m-%d %H:%M:%S"
     )
@@ -136,6 +137,7 @@ def wait_request():
         )
 
         if gap < REQUEST_INTERVAL:
+
             time.sleep(
                 REQUEST_INTERVAL - gap
             )
@@ -160,6 +162,7 @@ def retry(func, *args, **kwargs):
                 not hasattr(r, "status_code")
                 or r.status_code == 200
             ):
+
                 return r
 
             if r.status_code == 429:
@@ -181,6 +184,7 @@ def retry(func, *args, **kwargs):
                 )
 
             else:
+
                 return r
 
         except Exception as e:
@@ -262,8 +266,11 @@ def get_upbit_markets():
             continue
 
         try:
+
             data = rr.json()
+
         except Exception:
+
             continue
 
         if not isinstance(data, list):
@@ -291,6 +298,7 @@ def get_upbit_markets():
                 })
 
             except Exception:
+
                 pass
 
     latest_upbit_markets = [
@@ -329,8 +337,11 @@ def get_upbit_daily_candles(
         return pd.DataFrame()
 
     try:
+
         data = r.json()
+
     except Exception:
+
         return pd.DataFrame()
 
     if not isinstance(data, list):
@@ -346,9 +357,7 @@ def get_upbit_daily_candles(
 
                 "datetime":
                     datetime.strptime(
-                        x[
-                            "candle_date_time_kst"
-                        ],
+                        x["candle_date_time_kst"],
                         "%Y-%m-%dT%H:%M:%S"
                     ).replace(
                         tzinfo=KST
@@ -377,6 +386,7 @@ def get_upbit_daily_candles(
             })
 
         except Exception:
+
             pass
 
     if not rows:
@@ -418,8 +428,11 @@ def get_upbit_4h_candles(
         return pd.DataFrame()
 
     try:
+
         data = r.json()
+
     except Exception:
+
         return pd.DataFrame()
 
     if not isinstance(data, list):
@@ -435,9 +448,7 @@ def get_upbit_4h_candles(
 
                 "datetime":
                     datetime.strptime(
-                        x[
-                            "candle_date_time_kst"
-                        ],
+                        x["candle_date_time_kst"],
                         "%Y-%m-%dT%H:%M:%S"
                     ).replace(
                         tzinfo=KST
@@ -466,6 +477,7 @@ def get_upbit_4h_candles(
             })
 
         except Exception:
+
             pass
 
     if not rows:
@@ -671,7 +683,7 @@ def build_upbit_4h_candles(
 
 # =========================================================
 # EMA
-# EMA 기간보다 캔들이 적어도 확보된 데이터로 계산
+# 캔들 수가 EMA 기간보다 적어도 계산
 # =========================================================
 
 def calculate_ema(
@@ -712,7 +724,7 @@ def calculate_ema(
 
 # =========================================================
 # EMA 시계열
-# EMA 기간보다 캔들이 적어도 계산
+# 캔들 수가 EMA 기간보다 적어도 계산
 # =========================================================
 
 def calculate_ema_series(
@@ -752,7 +764,6 @@ def calculate_ema_series(
 # =========================================================
 # EMA 분석
 # 선택 시간봉: 1시간봉 / 4시간봉 / 일봉
-# 함수 이름은 기존 코드와의 호환성을 위해 유지
 # =========================================================
 
 def analyze_ema_4h(
@@ -790,7 +801,6 @@ def analyze_ema_4h(
         if df.empty:
             return empty_result
 
-        # 현재 진행 중인 1시간봉 종가를 현재가로 갱신
         now = datetime.now(KST)
 
         current_hour = now.replace(
@@ -857,7 +867,6 @@ def analyze_ema_4h(
         if df.empty:
             return empty_result
 
-        # 현재 진행 중인 일봉 종가를 현재가로 갱신
         now = datetime.now(KST)
 
         current_day_start = now.replace(
@@ -868,6 +877,7 @@ def analyze_ema_4h(
         )
 
         if now < current_day_start:
+
             current_day_start -= timedelta(days=1)
 
         if (
@@ -930,7 +940,7 @@ def analyze_ema_4h(
         ema_slow_series.iloc[-1]
     )
 
-    # 기존 코드와 호환되도록 ema5 / ema15 키 유지
+    # 기존 코드와 호환되도록 키 이름 유지
     result = {
 
         "ema5": ema_fast,
@@ -966,14 +976,7 @@ def analyze_ema_4h(
 
     # =====================================================
     # EMA 역배열 → 정배열 전환
-    #
-    # 이전봉 전환:
-    # -3봉 역배열
-    # -2봉 정배열
-    #
-    # 현재봉 전환:
-    # -2봉 역배열
-    # -1봉 정배열
+    # 최소 3개 봉이 있어야 전환 확인
     # =====================================================
 
     if (
@@ -1013,9 +1016,7 @@ def analyze_ema_4h(
         result["cross_current"] = cross_current
 
         result["cross_signal"] = bool(
-            cross_previous
-            or
-            cross_current
+            cross_previous or cross_current
         )
 
     return result
@@ -1391,6 +1392,7 @@ def get_candle_pattern(
             current
         )
     ):
+
         return "상승장악형"
 
     if (
@@ -1401,6 +1403,7 @@ def get_candle_pattern(
             current
         )
     ):
+
         return "하락장악형"
 
     if (
@@ -1411,6 +1414,7 @@ def get_candle_pattern(
             current
         )
     ):
+
         return "상승관통형"
 
     if (
@@ -1421,6 +1425,7 @@ def get_candle_pattern(
             current
         )
     ):
+
         return "하락관통형"
 
     if is_long_bullish(current):
@@ -1910,7 +1915,6 @@ def make_row(
         "current_price":
             item["current_price"],
 
-        # 실제 전체 업비트 거래대금 순위
         "volume_rank":
             volume_rank,
 
@@ -1923,7 +1927,6 @@ def make_row(
         "periods_4h":
             analysis_4h["periods"],
 
-        # 기존 SIGNAL
         "signal_4h":
             analysis_4h["signal_pass"],
 
@@ -1958,8 +1961,7 @@ def make_row(
                 "current_bullish_engulfing"
             ],
 
-        # 실제 값은 설정한 EMA_FAST / EMA_SLOW
-        # 기존 키 이름은 호환성을 위해 유지
+        # EMA 값: 선택된 EMA_FAST / EMA_SLOW
         "ema5":
             ema_analysis["ema5"],
 
@@ -1981,7 +1983,6 @@ def make_row(
         "ema_slow_period":
             EMA_SLOW,
 
-        # EMA 역배열 → 정배열 전환
         "ema_cross_previous":
             ema_analysis.get(
                 "cross_previous",
@@ -2000,7 +2001,6 @@ def make_row(
                 False
             ),
 
-        # 기존 의미 유지
         "simultaneous_signal":
             analysis_4h["signal_pass"]
 
@@ -2220,13 +2220,8 @@ def update_upbit():
 
     # =====================================================
     # SIGNAL
-    #
-    # 기존 SIGNAL
-    # OR
-    # EMA 역배열 → 정배열 전환 SIGNAL
-    #
-    # 추가 조건:
-    # 업비트 KST 09:00 기준 당일 변동률 > 0%
+    # 기존 SIGNAL OR EMA 역배열 → 정배열 전환
+    # AND 당일 변동률 > 0%
     # =====================================================
 
     latest_signal_data = [
@@ -2255,7 +2250,6 @@ def update_upbit():
         )
     ]
 
-    # SIGNAL도 실제 거래대금 순위 순서
     latest_signal_data.sort(
         key=lambda x:
             x.get(
@@ -2360,6 +2354,7 @@ def okx_candles(
             })
 
         except Exception:
+
             pass
 
     if not rows:
@@ -2587,13 +2582,7 @@ def update_okx_btc():
     latest_btc_okx_price = price
 
     if price is None:
-
         return
-
-    # =====================================================
-    # OKX 1D 사용하지 않음
-    # 1H → KST 09:00 기준 일봉 재구성
-    # =====================================================
 
     d1h = okx_candles(
         "1H",
@@ -2711,6 +2700,7 @@ def fmt_change(v):
         return '<span class="zero">-</span>'
 
     if v > 0:
+
         return (
             '<span class="up">'
             f'▲ +{v:.2f}%'
@@ -2718,6 +2708,7 @@ def fmt_change(v):
         )
 
     if v < 0:
+
         return (
             '<span class="down">'
             f'▼ {v:.2f}%'
@@ -2766,9 +2757,17 @@ def ema_alignment_html(alignment):
             '</span>'
         )
 
+    if alignment == "동일":
+
+        return (
+            '<span class="ema-same">'
+            '— 동일'
+            '</span>'
+        )
+
     return (
-        '<span class="zero">'
-        '-'
+        '<span class="ema-same">'
+        '—'
         '</span>'
     )
 
@@ -3309,17 +3308,13 @@ def signal_section():
 
 # =========================================================
 # TOP 카드
+# 코인명 오른쪽에 EMA 정배열 / 역배열 표시
 # =========================================================
 
 def card(row, kind):
 
     signal = row.get(
         "signal_4h",
-        False
-    )
-
-    ema_cross_signal = row.get(
-        "ema_cross_signal",
         False
     )
 
@@ -3369,6 +3364,46 @@ def card(row, kind):
             status_parts
         )
 
+        # =================================================
+        # EMA 배열 상태
+        # =================================================
+
+        alignment = row.get(
+            "ema_alignment"
+        )
+
+        if alignment == "정배열":
+
+            alignment_html = (
+                '<span class="ema-normal">'
+                '▲ 정배열'
+                '</span>'
+            )
+
+        elif alignment == "역배열":
+
+            alignment_html = (
+                '<span class="ema-reverse">'
+                '▼ 역배열'
+                '</span>'
+            )
+
+        elif alignment == "동일":
+
+            alignment_html = (
+                '<span class="ema-same">'
+                '— 동일'
+                '</span>'
+            )
+
+        else:
+
+            alignment_html = (
+                '<span class="ema-same">'
+                '—'
+                '</span>'
+            )
+
         return f"""
 
         <article class="coin-card">
@@ -3386,6 +3421,8 @@ def card(row, kind):
                             row["name"]
                         )}
                     </b>
+
+                    {alignment_html}
 
                 </div>
 
@@ -3542,6 +3579,29 @@ section {
     color: #ff5966 !important;
     font-weight: 900;
     font-size: 9px;
+}
+
+/* EMA 배열 표시 */
+
+.ema-normal {
+    color: #38d878;
+    font-size: 7px;
+    font-weight: 900;
+    white-space: nowrap;
+}
+
+.ema-reverse {
+    color: #ff5966;
+    font-size: 7px;
+    font-weight: 900;
+    white-space: nowrap;
+}
+
+.ema-same {
+    color: #68737e;
+    font-size: 7px;
+    font-weight: 900;
+    white-space: nowrap;
 }
 
 .pattern-box {
@@ -3917,6 +3977,7 @@ section {
     display: flex;
     align-items: center;
     gap: 8px;
+    flex-wrap: wrap;
 }
 
 .coin-title b {
@@ -4042,8 +4103,18 @@ section {
         padding: 0 7px;
     }
 
+    .coin-title {
+        gap: 6px;
+    }
+
     .coin-title b {
         font-size: 9px;
+    }
+
+    .ema-normal,
+    .ema-reverse,
+    .ema-same {
+        font-size: 6px;
     }
 
     .market-summary {
