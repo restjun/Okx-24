@@ -58,10 +58,15 @@ MAX_RETRIES = 10
 # SIGNAL 설정
 # =========================================================
 
-SIGNAL_TIMEFRAME = "4h"
+# "1h" = 1시간봉
+# "4h" = 4시간봉
+# "1d" = 일봉
+SIGNAL_TIMEFRAME = "1h"
 
 TIMEFRAME_LABEL = {
-    "4h": "4시간봉"
+    "1h": "1시간봉",
+    "4h": "4시간봉",
+    "1d": "일봉"
 }
 
 
@@ -69,8 +74,8 @@ TIMEFRAME_LABEL = {
 # EMA 설정
 # =========================================================
 
-EMA_FAST = 5
-EMA_SLOW = 15
+EMA_FAST = 20
+EMA_SLOW = 60
 
 
 # =========================================================
@@ -387,7 +392,7 @@ def get_upbit_daily_candles(
 
 # =========================================================
 # 업비트 1시간봉
-# 4시간봉 구성용
+# 4시간봉 구성 및 1시간봉 EMA 분석용
 # =========================================================
 
 def get_upbit_4h_candles(
@@ -666,6 +671,7 @@ def build_upbit_4h_candles(
 
 # =========================================================
 # EMA
+# EMA 기간보다 캔들이 적어도 확보된 데이터로 계산
 # =========================================================
 
 def calculate_ema(
@@ -684,7 +690,7 @@ def calculate_ema(
         errors="coerce"
     ).dropna()
 
-    if len(closes) < period:
+    if closes.empty:
         return None
 
     ema = (
@@ -706,6 +712,7 @@ def calculate_ema(
 
 # =========================================================
 # EMA 시계열
+# EMA 기간보다 캔들이 적어도 계산
 # =========================================================
 
 def calculate_ema_series(
@@ -727,9 +734,9 @@ def calculate_ema_series(
     if closes.isna().all():
         return None
 
-    closes = closes.ffill()
+    closes = closes.ffill().bfill().dropna()
 
-    if len(closes) < period:
+    if closes.empty:
         return None
 
     return (
@@ -743,7 +750,9 @@ def calculate_ema_series(
 
 
 # =========================================================
-# 4시간봉 EMA 분석
+# EMA 분석
+# 선택 시간봉: 1시간봉 / 4시간봉 / 일봉
+# 함수 이름은 기존 코드와의 호환성을 위해 유지
 # =========================================================
 
 def analyze_ema_4h(
@@ -751,128 +760,209 @@ def analyze_ema_4h(
     price=None
 ):
 
-    df_1h = get_upbit_4h_candles(
-        market,
-        200
-    )
+    empty_result = {
 
-    if df_1h.empty:
+        "ema5": None,
+        "ema15": None,
 
-        return {
-            "ema5": None,
-            "ema15": None,
-            "reverse": False,
-            "alignment": None,
+        "reverse": False,
+        "alignment": None,
 
-            "cross_previous": False,
-            "cross_current": False,
-            "cross_signal": False
-        }
+        "cross_previous": False,
+        "cross_current": False,
+        "cross_signal": False
 
-    df = build_upbit_4h_candles(
-        df_1h,
-        price
-    )
+    }
 
-    if df.empty:
+    timeframe = SIGNAL_TIMEFRAME
 
-        return {
-            "ema5": None,
-            "ema15": None,
-            "reverse": False,
-            "alignment": None,
+    # =====================================================
+    # 1시간봉 EMA
+    # =====================================================
 
-            "cross_previous": False,
-            "cross_current": False,
-            "cross_signal": False
-        }
+    if timeframe == "1h":
 
-    ema5_series = calculate_ema_series(
+        df = get_upbit_4h_candles(
+            market,
+            200
+        )
+
+        if df.empty:
+            return empty_result
+
+        # 현재 진행 중인 1시간봉 종가를 현재가로 갱신
+        now = datetime.now(KST)
+
+        current_hour = now.replace(
+            minute=0,
+            second=0,
+            microsecond=0
+        )
+
+        if (
+            price is not None
+            and not df.empty
+            and df.iloc[-1]["datetime"] == current_hour
+        ):
+
+            idx = df.index[-1]
+
+            df.loc[idx, "close"] = float(price)
+
+            df.loc[idx, "high"] = max(
+                float(df.loc[idx, "high"]),
+                float(price)
+            )
+
+            df.loc[idx, "low"] = min(
+                float(df.loc[idx, "low"]),
+                float(price)
+            )
+
+    # =====================================================
+    # 4시간봉 EMA
+    # 업비트 1시간봉을 4시간봉으로 재구성
+    # =====================================================
+
+    elif timeframe == "4h":
+
+        df_1h = get_upbit_4h_candles(
+            market,
+            200
+        )
+
+        if df_1h.empty:
+            return empty_result
+
+        df = build_upbit_4h_candles(
+            df_1h,
+            price
+        )
+
+        if df.empty:
+            return empty_result
+
+    # =====================================================
+    # 일봉 EMA
+    # 업비트 KST 09:00 기준
+    # =====================================================
+
+    elif timeframe == "1d":
+
+        df = get_upbit_daily_candles(
+            market,
+            200
+        )
+
+        if df.empty:
+            return empty_result
+
+        # 현재 진행 중인 일봉 종가를 현재가로 갱신
+        now = datetime.now(KST)
+
+        current_day_start = now.replace(
+            hour=9,
+            minute=0,
+            second=0,
+            microsecond=0
+        )
+
+        if now < current_day_start:
+            current_day_start -= timedelta(days=1)
+
+        if (
+            price is not None
+            and not df.empty
+            and df.iloc[-1]["datetime"] == current_day_start
+        ):
+
+            idx = df.index[-1]
+
+            df.loc[idx, "close"] = float(price)
+
+            df.loc[idx, "high"] = max(
+                float(df.loc[idx, "high"]),
+                float(price)
+            )
+
+            df.loc[idx, "low"] = min(
+                float(df.loc[idx, "low"]),
+                float(price)
+            )
+
+    else:
+
+        log.warning(
+            "지원하지 않는 SIGNAL_TIMEFRAME: %s",
+            timeframe
+        )
+
+        return empty_result
+
+    # =====================================================
+    # EMA 계산
+    # =====================================================
+
+    ema_fast_series = calculate_ema_series(
         df,
         EMA_FAST
     )
 
-    ema15_series = calculate_ema_series(
+    ema_slow_series = calculate_ema_series(
         df,
         EMA_SLOW
     )
 
     if (
-        ema5_series is None
-        or ema15_series is None
+        ema_fast_series is None
+        or ema_slow_series is None
+        or len(ema_fast_series) == 0
+        or len(ema_slow_series) == 0
     ):
 
-        return {
-            "ema5": None,
-            "ema15": None,
-            "reverse": False,
-            "alignment": None,
+        return empty_result
 
-            "cross_previous": False,
-            "cross_current": False,
-            "cross_signal": False
-        }
-
-    if (
-        len(ema5_series) < 3
-        or
-        len(ema15_series) < 3
-    ):
-
-        return {
-
-            "ema5":
-                float(
-                    ema5_series.iloc[-1]
-                ),
-
-            "ema15":
-                float(
-                    ema15_series.iloc[-1]
-                ),
-
-            "reverse":
-                False,
-
-            "alignment":
-                None,
-
-            "cross_previous":
-                False,
-
-            "cross_current":
-                False,
-
-            "cross_signal":
-                False
-        }
-
-    ema5 = float(
-        ema5_series.iloc[-1]
+    ema_fast = float(
+        ema_fast_series.iloc[-1]
     )
 
-    ema15 = float(
-        ema15_series.iloc[-1]
+    ema_slow = float(
+        ema_slow_series.iloc[-1]
     )
+
+    # 기존 코드와 호환되도록 ema5 / ema15 키 유지
+    result = {
+
+        "ema5": ema_fast,
+        "ema15": ema_slow,
+
+        "reverse": False,
+        "alignment": None,
+
+        "cross_previous": False,
+        "cross_current": False,
+        "cross_signal": False
+
+    }
 
     # =====================================================
     # 현재 정배열 / 역배열
     # =====================================================
 
-    if ema5 < ema15:
+    if ema_fast < ema_slow:
 
-        alignment = "역배열"
-        reverse = True
+        result["alignment"] = "역배열"
+        result["reverse"] = True
 
-    elif ema5 > ema15:
+    elif ema_fast > ema_slow:
 
-        alignment = "정배열"
-        reverse = False
+        result["alignment"] = "정배열"
+        result["reverse"] = False
 
     else:
 
-        alignment = "동일"
-        reverse = False
+        result["alignment"] = "동일"
+        result["reverse"] = False
 
     # =====================================================
     # EMA 역배열 → 정배열 전환
@@ -886,64 +976,49 @@ def analyze_ema_4h(
     # -1봉 정배열
     # =====================================================
 
-    cross_previous = bool(
+    if (
+        len(ema_fast_series) >= 3
+        and len(ema_slow_series) >= 3
+    ):
 
-        ema5_series.iloc[-3]
-        <
-        ema15_series.iloc[-3]
+        cross_previous = bool(
 
-        and
+            ema_fast_series.iloc[-3]
+            <
+            ema_slow_series.iloc[-3]
 
-        ema5_series.iloc[-2]
-        >
-        ema15_series.iloc[-2]
+            and
 
-    )
+            ema_fast_series.iloc[-2]
+            >
+            ema_slow_series.iloc[-2]
 
-    cross_current = bool(
+        )
 
-        ema5_series.iloc[-2]
-        <
-        ema15_series.iloc[-2]
+        cross_current = bool(
 
-        and
+            ema_fast_series.iloc[-2]
+            <
+            ema_slow_series.iloc[-2]
 
-        ema5_series.iloc[-1]
-        >
-        ema15_series.iloc[-1]
+            and
 
-    )
+            ema_fast_series.iloc[-1]
+            >
+            ema_slow_series.iloc[-1]
 
-    cross_signal = bool(
-        cross_previous
-        or
-        cross_current
-    )
+        )
 
-    return {
+        result["cross_previous"] = cross_previous
+        result["cross_current"] = cross_current
 
-        "ema5":
-            ema5,
+        result["cross_signal"] = bool(
+            cross_previous
+            or
+            cross_current
+        )
 
-        "ema15":
-            ema15,
-
-        "reverse":
-            reverse,
-
-        "alignment":
-            alignment,
-
-        "cross_previous":
-            cross_previous,
-
-        "cross_current":
-            cross_current,
-
-        "cross_signal":
-            cross_signal
-
-    }
+    return result
 
 
 # =========================================================
@@ -1705,7 +1780,7 @@ def analyze_daily_change(
 
 
 # =========================================================
-# 4시간봉 분석
+# 4시간봉 캔들 패턴 분석
 # =========================================================
 
 def analyze_4h(
@@ -1883,6 +1958,8 @@ def make_row(
                 "current_bullish_engulfing"
             ],
 
+        # 실제 값은 설정한 EMA_FAST / EMA_SLOW
+        # 기존 키 이름은 호환성을 위해 유지
         "ema5":
             ema_analysis["ema5"],
 
@@ -1895,11 +1972,16 @@ def make_row(
         "ema_reverse":
             ema_analysis["reverse"],
 
-        # =================================================
-        # 추가 SIGNAL
-        # EMA 역배열 → 정배열 전환
-        # =================================================
+        "ema_timeframe":
+            SIGNAL_TIMEFRAME,
 
+        "ema_fast_period":
+            EMA_FAST,
+
+        "ema_slow_period":
+            EMA_SLOW,
+
+        # EMA 역배열 → 정배열 전환
         "ema_cross_previous":
             ema_analysis.get(
                 "cross_previous",
@@ -2144,7 +2226,7 @@ def update_upbit():
     # EMA 역배열 → 정배열 전환 SIGNAL
     #
     # 추가 조건:
-    # 당일 변동률 > 0%
+    # 업비트 KST 09:00 기준 당일 변동률 > 0%
     # =====================================================
 
     latest_signal_data = [
@@ -2190,8 +2272,14 @@ def update_upbit():
         row["signal_rank"] = signal_rank
 
     log.info(
-        "UPBIT | 거래대금 TOP%s | SIGNAL=%s | 당일 양수 조건 적용",
+        "UPBIT | 거래대금 TOP%s | EMA=%s/%s | EMA 시간봉=%s | SIGNAL=%s | 당일 양수 조건 적용",
         TOP_N,
+        EMA_FAST,
+        EMA_SLOW,
+        TIMEFRAME_LABEL.get(
+            SIGNAL_TIMEFRAME,
+            SIGNAL_TIMEFRAME
+        ),
         len(latest_signal_data)
     )
 
@@ -3136,6 +3224,11 @@ def signal_section():
             for row in latest_signal_data
         )
 
+    timeframe_label = TIMEFRAME_LABEL.get(
+        SIGNAL_TIMEFRAME,
+        SIGNAL_TIMEFRAME
+    )
+
     return f"""
 
     <section class="signal-panel">
@@ -3149,13 +3242,13 @@ def signal_section():
                 </span>
 
                 <b>
-                    🔴 4시간봉 SIGNAL
+                    🔴 EMA {EMA_FAST}/{EMA_SLOW} · {timeframe_label} SIGNAL
                 </b>
 
             </div>
 
             <span class="update-time">
-                4시간봉 · {kst()}
+                EMA {timeframe_label} · 캔들패턴 4시간봉 · {kst()}
             </span>
 
         </div>
@@ -3174,7 +3267,7 @@ def signal_section():
             </b>
 
             <small>
-                이전봉 / 현재봉 · 업비트 KST 09:00 기준
+                EMA {timeframe_label} · 캔들패턴 4시간봉 · 업비트 KST 09:00 기준
             </small>
 
         </div>
@@ -4208,11 +4301,17 @@ def startup():
     log.info(
         "START | BTC KST 09:00 일봉 재구성 + "
         "업비트 TOP%s + "
-        "4시간봉 EMA5/15 역배열 + "
-        "장대양봉/상승관통형/상승장악형 SIGNAL + "
+        "EMA%s/%s %s 역배열 + "
+        "4시간봉 캔들 패턴 SIGNAL + "
         "EMA 역배열→정배열 전환 SIGNAL + "
         "당일 양수 조건",
-        TOP_N
+        TOP_N,
+        EMA_FAST,
+        EMA_SLOW,
+        TIMEFRAME_LABEL.get(
+            SIGNAL_TIMEFRAME,
+            SIGNAL_TIMEFRAME
+        )
     )
 
     threading.Thread(
