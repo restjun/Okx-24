@@ -64,7 +64,7 @@ MAX_RETRIES = 10
 # =========================================================
 
 # 선택 가능: "15m", "1h", "4h", "1d"
-SIGNAL_TIMEFRAME = "15m"
+SIGNAL_TIMEFRAME = "1h"
 
 TIMEFRAME_LABEL = {
     "15m": "15분봉",
@@ -134,9 +134,11 @@ def get_timeframe_label():
 # =========================================================
 
 def wait_request():
+
     global last_request_time
 
     with request_lock:
+
         gap = time.monotonic() - last_request_time
 
         if gap < REQUEST_INTERVAL:
@@ -150,6 +152,7 @@ def retry(func, *args, **kwargs):
     for n in range(MAX_RETRIES):
 
         try:
+
             wait_request()
 
             r = func(*args, **kwargs)
@@ -161,11 +164,13 @@ def retry(func, *args, **kwargs):
                 return r
 
             if r.status_code == 429:
+
                 time.sleep(
                     min(RATE_LIMIT_WAIT * (n + 1), 60)
                 )
 
             elif r.status_code >= 500:
+
                 time.sleep(
                     min(2 * (n + 1), 30)
                 )
@@ -183,6 +188,7 @@ def retry(func, *args, **kwargs):
             )
 
             if n < MAX_RETRIES - 1:
+
                 time.sleep(
                     min(2 * (n + 1), 20)
                 )
@@ -209,6 +215,7 @@ def get_upbit_markets():
         return []
 
     try:
+
         markets = [
             x["market"]
             for x in r.json()
@@ -246,6 +253,7 @@ def get_upbit_markets():
         for x in data:
 
             try:
+
                 result.append({
                     "market": x["market"],
                     "current_price": float(x["trade_price"]),
@@ -320,6 +328,7 @@ def get_upbit_minute_candles(market, unit, count=200):
         for x in data:
 
             try:
+
                 dt_utc = datetime.strptime(
                     x["candle_date_time_utc"],
                     "%Y-%m-%dT%H:%M:%S"
@@ -439,6 +448,7 @@ def get_upbit_daily_candles(market, count=200):
     for x in data:
 
         try:
+
             rows.append({
                 "datetime": datetime.strptime(
                     x["candle_date_time_kst"],
@@ -548,6 +558,7 @@ def build_upbit_4h_candles(df, current_price=None):
         active = period_start == current_start
 
         if active and current_price is not None:
+
             c = float(current_price)
             h = max(h, c)
             l = min(l, c)
@@ -633,6 +644,7 @@ def calculate_ema_series(df, period):
         alpha = 2.0 / (period + 1.0)
 
         for i in range(1, len(values)):
+
             result[i] = (
                 alpha * values[i]
                 + (1.0 - alpha) * result[i - 1]
@@ -647,6 +659,7 @@ def calculate_ema_series(df, period):
         )
 
         for i in range(period, len(values)):
+
             result[i] = (
                 alpha * values[i]
                 + (1.0 - alpha) * result[i - 1]
@@ -887,41 +900,8 @@ def analyze_ema_4h(market, price=None):
         result["alignment"] = "동일"
         result["reverse"] = False
 
-    # =====================================================
-    # 역배열 → 정배열 전환
-    # =====================================================
-
-    aligned = pd.concat(
-        [
-            ema_fast_series.rename("fast"),
-            ema_slow_series.rename("slow")
-        ],
-        axis=1
-    ).dropna()
-
-    if len(aligned) >= 3:
-
-        fast_values = aligned["fast"]
-        slow_values = aligned["slow"]
-
-        cross_previous = bool(
-            fast_values.iloc[-3] < slow_values.iloc[-3]
-            and
-            fast_values.iloc[-2] > slow_values.iloc[-2]
-        )
-
-        cross_current = bool(
-            fast_values.iloc[-2] < slow_values.iloc[-2]
-            and
-            fast_values.iloc[-1] > slow_values.iloc[-1]
-        )
-
-        result["cross_previous"] = cross_previous
-        result["cross_current"] = cross_current
-
-        result["cross_signal"] = bool(
-            cross_previous or cross_current
-        )
+    # EMA 교차 신호는 사용하지 않음.
+    # 기존 데이터 키 호환을 위해 교차 계산 결과는 모두 False 유지.
 
     return result
 
@@ -968,6 +948,7 @@ def build_daily_periods(df, current_price=None):
         active = start == current_start
 
         if active and current_price is not None:
+
             c = float(current_price)
             h = max(h, c)
             l = min(l, c)
@@ -1000,6 +981,7 @@ def build_daily_periods(df, current_price=None):
 def is_bullish_engulfing(previous, current):
 
     try:
+
         prev_open = float(previous["open"])
         prev_close = float(previous["close"])
         curr_open = float(current["open"])
@@ -1027,6 +1009,7 @@ def is_bullish_engulfing(previous, current):
 def is_bearish_engulfing(previous, current):
 
     try:
+
         prev_open = float(previous["open"])
         prev_close = float(previous["close"])
         curr_open = float(current["open"])
@@ -1054,6 +1037,7 @@ def is_bearish_engulfing(previous, current):
 def is_positive_doji(current):
 
     try:
+
         o = float(current["open"])
         h = float(current["high"])
         l = float(current["low"])
@@ -1082,6 +1066,7 @@ def is_positive_doji(current):
 def is_negative_doji(current):
 
     try:
+
         o = float(current["open"])
         h = float(current["high"])
         l = float(current["low"])
@@ -1109,6 +1094,7 @@ def is_negative_doji(current):
 def is_bullish_piercing(previous, current):
 
     try:
+
         prev_open = float(previous["open"])
         prev_close = float(previous["close"])
         curr_open = float(current["open"])
@@ -1138,6 +1124,7 @@ def is_bullish_piercing(previous, current):
 def is_bearish_piercing(previous, current):
 
     try:
+
         prev_open = float(previous["open"])
         prev_close = float(previous["close"])
         curr_open = float(current["open"])
@@ -1167,6 +1154,7 @@ def is_bearish_piercing(previous, current):
 def is_long_bullish(current):
 
     try:
+
         o = float(current["open"])
         h = float(current["high"])
         l = float(current["low"])
@@ -1190,6 +1178,7 @@ def is_long_bullish(current):
 def is_long_bearish(current):
 
     try:
+
         o = float(current["open"])
         h = float(current["high"])
         l = float(current["low"])
@@ -1741,18 +1730,12 @@ def make_row(
         "ema_timeframe": SIGNAL_TIMEFRAME,
         "ema_fast_period": EMA_FAST,
         "ema_slow_period": EMA_SLOW,
-        "ema_cross_previous": ema_analysis.get(
-            "cross_previous",
-            False
-        ),
-        "ema_cross_current": ema_analysis.get(
-            "cross_current",
-            False
-        ),
-        "ema_cross_signal": ema_analysis.get(
-            "cross_signal",
-            False
-        ),
+
+        # 기존 데이터 구조 호환. 교차 신호는 사용하지 않음.
+        "ema_cross_previous": False,
+        "ema_cross_current": False,
+        "ema_cross_signal": False,
+
         "simultaneous_signal": analysis_4h["signal_pass"]
     }
 
@@ -1897,17 +1880,17 @@ def update_upbit():
     latest_upbit_daily_update_time = kst()
     latest_upbit_update_time = latest_upbit_daily_update_time
 
+    # =====================================================
+    # SIGNAL 필터
+    # 당일 변동률 양수/음수 제한 없음
+    # EMA 교차 신호 제외
+    # EMA 역배열 + 상승패턴만 사용
+    # =====================================================
+
     latest_signal_data = [
         row
         for row in rows
-        if (
-            (
-                row.get("signal_4h", False)
-                or row.get("ema_cross_signal", False)
-            )
-            and row.get("daily_change") is not None
-            and row.get("daily_change") > 0
-        )
+        if row.get("signal_4h", False)
     ]
 
     latest_signal_data.sort(
@@ -1919,7 +1902,8 @@ def update_upbit():
 
     log.info(
         "UPBIT | 거래대금 TOP%s | EMA=%s/%s | 시간봉=%s | "
-        "캔들패턴=%s | SIGNAL=%s | 당일 양수 조건 적용",
+        "캔들패턴=%s | SIGNAL=%s | 당일 변동률 제한 없음 | "
+        "EMA 교차 신호 제외",
         TOP_N,
         EMA_FAST,
         EMA_SLOW,
@@ -2079,6 +2063,7 @@ def build_okx_kst_daily_periods(df, current_price=None):
         active = day_start == current_day_start
 
         if active and current_price is not None:
+
             c = float(current_price)
             h = max(h, c)
             l = min(l, c)
@@ -2124,8 +2109,10 @@ def update_okx_btc():
     d1h = okx_candles("1H", 200)
 
     if d1h.empty:
+
         latest_btc_daily_periods = []
         latest_btc_daily_change = None
+
         return
 
     latest_btc_daily_periods = build_okx_kst_daily_periods(
@@ -2134,10 +2121,13 @@ def update_okx_btc():
     )
 
     if latest_btc_daily_periods:
+
         latest_btc_daily_change = (
             latest_btc_daily_periods[-1].get("change")
         )
+
     else:
+
         latest_btc_daily_change = None
 
 
@@ -2179,6 +2169,7 @@ def fmt_price(v):
 
     try:
         v = float(v)
+
     except Exception:
         return "-"
 
@@ -2198,6 +2189,7 @@ def fmt_vol(v):
 
     try:
         v = float(v)
+
     except Exception:
         return "-"
 
@@ -2220,6 +2212,7 @@ def fmt_change(v):
 
     try:
         v = float(v)
+
     except Exception:
         return '<span class="zero">-</span>'
 
@@ -2243,6 +2236,7 @@ def fmt_ema(v):
 
     try:
         v = float(v)
+
     except Exception:
         return "-"
 
@@ -2270,6 +2264,7 @@ def ema_alignment_html(alignment):
 def candle_icon_html(pattern):
 
     if pattern == "상승장악형":
+
         return """
         <div class="candle-pattern-visual engulfing">
             <div class="mini-candle bearish">
@@ -2282,6 +2277,7 @@ def candle_icon_html(pattern):
         """
 
     if pattern == "하락장악형":
+
         return """
         <div class="candle-pattern-visual engulfing">
             <div class="mini-candle bullish">
@@ -2294,6 +2290,7 @@ def candle_icon_html(pattern):
         """
 
     if pattern == "양수도지":
+
         return """
         <div class="candle-pattern-visual doji">
             <div class="mini-candle bullish-doji">
@@ -2303,6 +2300,7 @@ def candle_icon_html(pattern):
         """
 
     if pattern == "음수도지":
+
         return """
         <div class="candle-pattern-visual doji">
             <div class="mini-candle bearish-doji">
@@ -2312,6 +2310,7 @@ def candle_icon_html(pattern):
         """
 
     if pattern == "상승관통형":
+
         return """
         <div class="candle-pattern-visual piercing">
             <div class="mini-candle bearish">
@@ -2324,6 +2323,7 @@ def candle_icon_html(pattern):
         """
 
     if pattern == "하락관통형":
+
         return """
         <div class="candle-pattern-visual piercing">
             <div class="mini-candle bullish">
@@ -2336,6 +2336,7 @@ def candle_icon_html(pattern):
         """
 
     if pattern == "장대양봉":
+
         return """
         <div class="candle-pattern-visual single-candle">
             <div class="mini-candle bullish very-large">
@@ -2345,6 +2346,7 @@ def candle_icon_html(pattern):
         """
 
     if pattern == "장대음봉":
+
         return """
         <div class="candle-pattern-visual single-candle">
             <div class="mini-candle bearish very-large">
@@ -2379,6 +2381,7 @@ def current_pattern_html(pattern):
     ]
 
     if pattern in bullish_patterns:
+
         return (
             '<div class="pattern-box bullish-pattern">'
             + candle_icon_html(pattern)
@@ -2388,6 +2391,7 @@ def current_pattern_html(pattern):
         )
 
     if pattern in bearish_patterns:
+
         return (
             '<div class="pattern-box bearish-pattern">'
             + candle_icon_html(pattern)
@@ -2452,28 +2456,8 @@ def btc_html():
 
 
 # =========================================================
-# EMA 전환 표시
-# =========================================================
-
-def ema_cross_html(row):
-
-    parts = []
-
-    if row.get("ema_cross_previous", False):
-        parts.append(
-            '<span class="ema-cross-badge">🔄 이전봉 정배열</span>'
-        )
-
-    if row.get("ema_cross_current", False):
-        parts.append(
-            '<span class="ema-cross-badge">🔄 현재봉 정배열</span>'
-        )
-
-    return "".join(parts)
-
-
-# =========================================================
 # SIGNAL 카드
+# EMA 교차 표시 제거
 # =========================================================
 
 def signal_card(row):
@@ -2481,17 +2465,14 @@ def signal_card(row):
     timeframe_label = get_timeframe_label()
 
     old_signal = row.get("signal_4h", False)
-    cross_signal = row.get("ema_cross_signal", False)
 
     badges = []
 
     if old_signal:
-        badges.append(
-            '<span class="signal-type-badge">⭐ 기존 SIGNAL</span>'
-        )
 
-    if cross_signal:
-        badges.append(ema_cross_html(row))
+        badges.append(
+            '<span class="signal-type-badge">⭐ SIGNAL</span>'
+        )
 
     badge_html = "".join(badges)
 
@@ -2570,7 +2551,7 @@ def signal_section():
         <div class="signal-condition">
             <span>SIGNAL 조건</span>
             <b>
-                EMA 역배열 + 상승패턴 OR EMA 역배열 → 정배열 전환 AND 당일 양수
+                EMA 역배열 + 상승패턴
             </b>
             <small>
                 EMA {timeframe_label} · 캔들패턴 {timeframe_label} · 업비트 KST 09:00 기준
@@ -2592,6 +2573,7 @@ def signal_section():
 
 # =========================================================
 # TOP 카드
+# EMA 교차 표시 제거
 # =========================================================
 
 def card(row, kind):
@@ -2608,18 +2590,9 @@ def card(row, kind):
         status_parts = []
 
         if signal:
+
             status_parts.append(
                 '<span class="signal-badge">⭐ SIGNAL</span>'
-            )
-
-        if row.get("ema_cross_previous", False):
-            status_parts.append(
-                '<span class="cross-badge">🔄 이전봉 전환</span>'
-            )
-
-        if row.get("ema_cross_current", False):
-            status_parts.append(
-                '<span class="cross-badge">🔄 현재봉 전환</span>'
             )
 
         status = "".join(status_parts)
@@ -2899,7 +2872,6 @@ section { margin-bottom: 12px; }
 }
 
 .signal-type-badge { color: #e4c45e !important; font-size: 5px !important; font-weight: 900; }
-.ema-cross-badge { color: #38d878 !important; font-size: 5px !important; font-weight: 900; }
 
 .signal-card span { color: #69747e; font-size: 6px; }
 .signal-card strong { margin-top: 2px; color: #dce2e7; font-size: 8px; }
@@ -2959,7 +2931,6 @@ section { margin-bottom: 12px; }
 .coin-title b { font-size: 10px; font-weight: 900; }
 .rank { color: #c9a83d; font-size: 8px; font-weight: 800; }
 .signal-badge { color: #e4c45e; font-size: 7px; font-weight: 900; }
-.cross-badge { color: #38d878; font-size: 7px; font-weight: 900; margin-left: 4px; }
 
 .market-summary {
     display: grid;
@@ -3021,8 +2992,7 @@ section { margin-bottom: 12px; }
     .signal-card span { font-size: 5px; }
     .signal-card strong { font-size: 5px; }
     .signal-type-list { gap: 1px; margin-top: 1px; }
-    .signal-type-badge, .ema-cross-badge { font-size: 4px !important; }
-    .cross-badge { font-size: 5px; margin-left: 2px; }
+    .signal-type-badge { font-size: 4px !important; }
     .signal-pattern .pattern-box { min-width: 40px; }
     .signal-pattern .pattern-name { font-size: 4px; }
     .signal-pattern .candle-pattern-visual { height: 19px; transform: scale(.60); }
@@ -3118,8 +3088,9 @@ def startup():
     log.info(
         "START | BTC KST 09:00 일봉 재구성 + "
         "업비트 TOP%s + EMA%s/%s %s + "
-        "캔들 패턴 %s + EMA 역배열→정배열 전환 SIGNAL + "
-        "당일 양수 조건 + EMA 과거 캔들 %s개",
+        "캔들 패턴 %s + EMA 역배열 + 상승패턴 SIGNAL + "
+        "당일 변동률 제한 없음 + EMA 교차 신호 제외 + "
+        "EMA 과거 캔들 %s개",
         TOP_N,
         EMA_FAST,
         EMA_SLOW,
