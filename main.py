@@ -58,9 +58,12 @@ MAX_RETRIES = 10
 # SIGNAL 설정
 # =========================================================
 
+# EMA와 캔들 패턴이 동일한 시간봉을 사용
+#
 # "1h" = 1시간봉
 # "4h" = 4시간봉
 # "1d" = 일봉
+
 SIGNAL_TIMEFRAME = "1h"
 
 TIMEFRAME_LABEL = {
@@ -118,6 +121,14 @@ def kst():
 
     return datetime.now(KST).strftime(
         "%Y-%m-%d %H:%M:%S"
+    )
+
+
+def get_timeframe_label():
+
+    return TIMEFRAME_LABEL.get(
+        SIGNAL_TIMEFRAME,
+        SIGNAL_TIMEFRAME
     )
 
 
@@ -402,7 +413,7 @@ def get_upbit_daily_candles(
 
 # =========================================================
 # 업비트 1시간봉
-# 4시간봉 구성 및 1시간봉 EMA 분석용
+# 1시간봉 EMA / 캔들 패턴 분석용
 # =========================================================
 
 def get_upbit_4h_candles(
@@ -724,7 +735,6 @@ def calculate_ema(
 
 # =========================================================
 # EMA 시계열
-# 캔들 수가 EMA 기간보다 적어도 계산
 # =========================================================
 
 def calculate_ema_series(
@@ -831,7 +841,6 @@ def analyze_ema_4h(
 
     # =====================================================
     # 4시간봉 EMA
-    # 업비트 1시간봉을 4시간봉으로 재구성
     # =====================================================
 
     elif timeframe == "4h":
@@ -854,7 +863,6 @@ def analyze_ema_4h(
 
     # =====================================================
     # 일봉 EMA
-    # 업비트 KST 09:00 기준
     # =====================================================
 
     elif timeframe == "1d":
@@ -940,7 +948,6 @@ def analyze_ema_4h(
         ema_slow_series.iloc[-1]
     )
 
-    # 기존 코드와 호환되도록 키 이름 유지
     result = {
 
         "ema5": ema_fast,
@@ -975,8 +982,7 @@ def analyze_ema_4h(
         result["reverse"] = False
 
     # =====================================================
-    # EMA 역배열 → 정배열 전환
-    # 최소 3개 봉이 있어야 전환 확인
+    # 역배열 → 정배열 전환
     # =====================================================
 
     if (
@@ -1739,6 +1745,262 @@ def signal_details(
 
 
 # =========================================================
+# 선택 시간봉 캔들 패턴 분석
+# EMA 시간봉과 자동 연동
+# =========================================================
+
+def analyze_signal_candles(
+    market,
+    price,
+    ema_reverse=False
+):
+
+    empty_result = {
+
+        "periods": [],
+        "signal_pass": False,
+
+        "current_signal": False,
+        "previous_signal": False,
+
+        "signal_change": None,
+        "signal_period": None,
+        "signal_reason": None,
+
+        "previous_pattern": None,
+        "current_pattern": None,
+
+        "previous_bullish_engulfing": False,
+        "current_bullish_engulfing": False
+
+    }
+
+    timeframe = SIGNAL_TIMEFRAME
+
+    # =====================================================
+    # 1시간봉 캔들 패턴
+    # =====================================================
+
+    if timeframe == "1h":
+
+        df = get_upbit_4h_candles(
+            market,
+            200
+        )
+
+        if df.empty:
+            return empty_result
+
+        now = datetime.now(KST)
+
+        current_start = now.replace(
+            minute=0,
+            second=0,
+            microsecond=0
+        )
+
+        # 현재 진행 중인 1시간봉 가격 반영
+        if (
+            price is not None
+            and df.iloc[-1]["datetime"] == current_start
+        ):
+
+            idx = df.index[-1]
+
+            df.loc[idx, "close"] = float(price)
+
+            df.loc[idx, "high"] = max(
+                float(df.loc[idx, "high"]),
+                float(price)
+            )
+
+            df.loc[idx, "low"] = min(
+                float(df.loc[idx, "low"]),
+                float(price)
+            )
+
+        periods = []
+
+        for _, row in df.iterrows():
+
+            start = row["datetime"]
+
+            o = float(row["open"])
+            h = float(row["high"])
+            l = float(row["low"])
+            c = float(row["close"])
+
+            change = (
+                (c - o) / o * 100
+                if o
+                else None
+            )
+
+            periods.append({
+
+                "start": start,
+                "end": start + timedelta(hours=1),
+                "active": start == current_start,
+
+                "label": start.strftime(
+                    "%m/%d %H:%M"
+                ),
+
+                "open": o,
+                "high": h,
+                "low": l,
+                "close": c,
+                "change": change,
+
+                "signal": False,
+                "signal_reason": None,
+                "pattern": None
+
+            })
+
+        # 최근 6개 1시간봉
+        periods = periods[-6:]
+
+    # =====================================================
+    # 4시간봉 캔들 패턴
+    # =====================================================
+
+    elif timeframe == "4h":
+
+        df = get_upbit_4h_candles(
+            market,
+            200
+        )
+
+        if df.empty:
+            return empty_result
+
+        periods = build_upbit_4h_periods(
+            df,
+            price
+        )
+
+    # =====================================================
+    # 일봉 캔들 패턴
+    # 업비트 KST 09:00 기준
+    # =====================================================
+
+    elif timeframe == "1d":
+
+        df = get_upbit_daily_candles(
+            market,
+            200
+        )
+
+        if df.empty:
+            return empty_result
+
+        periods = build_daily_periods(
+            df,
+            price
+        )
+
+        periods = [
+            {
+                "start": p["start"],
+                "end": p["end"],
+                "active": p["active"],
+                "label": p["label"],
+                "open": p["open"],
+                "high": p["high"],
+                "low": p["low"],
+                "close": p["close"],
+                "change": p["change"],
+                "signal": False,
+                "signal_reason": None,
+                "pattern": None
+            }
+            for p in periods
+        ]
+
+    else:
+
+        log.warning(
+            "지원하지 않는 캔들 시간봉: %s",
+            timeframe
+        )
+
+        return empty_result
+
+    # =====================================================
+    # 선택된 시간봉으로 캔들 패턴 분석
+    # =====================================================
+
+    pattern_info = (
+        analyze_previous_current_pattern(
+            periods
+        )
+    )
+
+    details = signal_details(
+        periods,
+        ema_reverse
+    )
+
+    return {
+
+        "periods": periods,
+
+        "signal_pass":
+            details["signal"],
+
+        "current_signal":
+            details["current_signal"],
+
+        "previous_signal":
+            details["previous_signal"],
+
+        "signal_change":
+            details["signal_change"],
+
+        "signal_period":
+            details["signal_period"],
+
+        "signal_reason":
+            details["signal_reason"],
+
+        "previous_pattern":
+            pattern_info["previous_pattern"],
+
+        "current_pattern":
+            pattern_info["current_pattern"],
+
+        "previous_bullish_engulfing":
+            pattern_info[
+                "previous_bullish_engulfing"
+            ],
+
+        "current_bullish_engulfing":
+            pattern_info[
+                "current_bullish_engulfing"
+            ]
+
+    }
+
+
+# =========================================================
+# 기존 함수명 호환
+# =========================================================
+
+def analyze_4h(
+    market,
+    price,
+    ema_reverse=False
+):
+
+    return analyze_signal_candles(
+        market,
+        price,
+        ema_reverse
+    )
+
+
+# =========================================================
 # 일봉 변동률
 # =========================================================
 
@@ -1780,104 +2042,6 @@ def analyze_daily_change(
 
         "periods":
             periods
-
-    }
-
-
-# =========================================================
-# 4시간봉 캔들 패턴 분석
-# =========================================================
-
-def analyze_4h(
-    market,
-    price,
-    ema_reverse=False
-):
-
-    df = get_upbit_4h_candles(
-        market,
-        200
-    )
-
-    if df.empty:
-
-        return {
-
-            "periods": [],
-            "signal_pass": False,
-
-            "current_signal": False,
-            "previous_signal": False,
-
-            "signal_change": None,
-            "signal_period": None,
-            "signal_reason": None,
-
-            "previous_pattern": None,
-            "current_pattern": None,
-
-            "previous_bullish_engulfing":
-                False,
-
-            "current_bullish_engulfing":
-                False
-
-        }
-
-    periods = build_upbit_4h_periods(
-        df,
-        price
-    )
-
-    pattern_info = (
-        analyze_previous_current_pattern(
-            periods
-        )
-    )
-
-    details = signal_details(
-        periods,
-        ema_reverse
-    )
-
-    return {
-
-        "periods":
-            periods,
-
-        "signal_pass":
-            details["signal"],
-
-        "current_signal":
-            details["current_signal"],
-
-        "previous_signal":
-            details["previous_signal"],
-
-        "signal_change":
-            details["signal_change"],
-
-        "signal_period":
-            details["signal_period"],
-
-        "signal_reason":
-            details["signal_reason"],
-
-        "previous_pattern":
-            pattern_info["previous_pattern"],
-
-        "current_pattern":
-            pattern_info["current_pattern"],
-
-        "previous_bullish_engulfing":
-            pattern_info[
-                "previous_bullish_engulfing"
-            ],
-
-        "current_bullish_engulfing":
-            pattern_info[
-                "current_bullish_engulfing"
-            ]
 
     }
 
@@ -1961,7 +2125,7 @@ def make_row(
                 "current_bullish_engulfing"
             ],
 
-        # EMA 값: 선택된 EMA_FAST / EMA_SLOW
+        # 기존 키 이름 유지
         "ema5":
             ema_analysis["ema5"],
 
@@ -2137,7 +2301,8 @@ def update_upbit():
 
         try:
 
-            analysis_4h = analyze_4h(
+            # EMA와 동일한 시간봉으로 캔들 패턴 분석
+            analysis_4h = analyze_signal_candles(
                 market,
                 price,
                 ema_analysis.get(
@@ -2149,7 +2314,7 @@ def update_upbit():
         except Exception as e:
 
             log.warning(
-                "%s 4시간봉 오류: %s",
+                "%s 캔들 패턴 오류: %s",
                 market,
                 e
             )
@@ -2266,14 +2431,12 @@ def update_upbit():
         row["signal_rank"] = signal_rank
 
     log.info(
-        "UPBIT | 거래대금 TOP%s | EMA=%s/%s | EMA 시간봉=%s | SIGNAL=%s | 당일 양수 조건 적용",
+        "UPBIT | 거래대금 TOP%s | EMA=%s/%s | 시간봉=%s | 캔들패턴=%s | SIGNAL=%s | 당일 양수 조건 적용",
         TOP_N,
         EMA_FAST,
         EMA_SLOW,
-        TIMEFRAME_LABEL.get(
-            SIGNAL_TIMEFRAME,
-            SIGNAL_TIMEFRAME
-        ),
+        get_timeframe_label(),
+        get_timeframe_label(),
         len(latest_signal_data)
     )
 
@@ -2400,7 +2563,7 @@ def okx_price():
 
 # =========================================================
 # OKX BTC
-# 업비트와 동일한 KST 09:00 기준 일봉 재구성
+# KST 09:00 기준 일봉 재구성
 # =========================================================
 
 def build_okx_kst_daily_periods(
@@ -3074,6 +3237,8 @@ def ema_cross_html(row):
 
 def signal_card(row):
 
+    timeframe_label = get_timeframe_label()
+
     old_signal = row.get(
         "signal_4h",
         False
@@ -3159,7 +3324,7 @@ def signal_card(row):
         <div class="signal-pattern">
 
             <span>
-                이전 4시간봉
+                이전 {timeframe_label}
             </span>
 
             <strong class="pattern-display">
@@ -3177,7 +3342,7 @@ def signal_card(row):
         <div class="signal-pattern">
 
             <span>
-                현재 4시간봉
+                현재 {timeframe_label}
             </span>
 
             <strong class="pattern-display">
@@ -3203,6 +3368,8 @@ def signal_card(row):
 
 def signal_section():
 
+    timeframe_label = get_timeframe_label()
+
     if not latest_signal_data:
 
         body = """
@@ -3223,11 +3390,6 @@ def signal_section():
             for row in latest_signal_data
         )
 
-    timeframe_label = TIMEFRAME_LABEL.get(
-        SIGNAL_TIMEFRAME,
-        SIGNAL_TIMEFRAME
-    )
-
     return f"""
 
     <section class="signal-panel">
@@ -3247,7 +3409,7 @@ def signal_section():
             </div>
 
             <span class="update-time">
-                EMA {timeframe_label} · 캔들패턴 4시간봉 · {kst()}
+                EMA {timeframe_label} · 캔들패턴 {timeframe_label} · {kst()}
             </span>
 
         </div>
@@ -3266,7 +3428,7 @@ def signal_section():
             </b>
 
             <small>
-                EMA {timeframe_label} · 캔들패턴 4시간봉 · 업비트 KST 09:00 기준
+                EMA {timeframe_label} · 캔들패턴 {timeframe_label} · 업비트 KST 09:00 기준
             </small>
 
         </div>
@@ -3286,11 +3448,11 @@ def signal_section():
             </div>
 
             <div>
-                이전 4시간봉
+                이전 {timeframe_label}
             </div>
 
             <div>
-                현재 4시간봉
+                현재 {timeframe_label}
             </div>
 
         </div>
@@ -3312,6 +3474,8 @@ def signal_section():
 # =========================================================
 
 def card(row, kind):
+
+    timeframe_label = get_timeframe_label()
 
     signal = row.get(
         "signal_4h",
@@ -3364,45 +3528,9 @@ def card(row, kind):
             status_parts
         )
 
-        # =================================================
-        # EMA 배열 상태
-        # =================================================
-
-        alignment = row.get(
-            "ema_alignment"
+        alignment_html = ema_alignment_html(
+            row.get("ema_alignment")
         )
-
-        if alignment == "정배열":
-
-            alignment_html = (
-                '<span class="ema-normal">'
-                '▲ 정배열'
-                '</span>'
-            )
-
-        elif alignment == "역배열":
-
-            alignment_html = (
-                '<span class="ema-reverse">'
-                '▼ 역배열'
-                '</span>'
-            )
-
-        elif alignment == "동일":
-
-            alignment_html = (
-                '<span class="ema-same">'
-                '— 동일'
-                '</span>'
-            )
-
-        else:
-
-            alignment_html = (
-                '<span class="ema-same">'
-                '—'
-                '</span>'
-            )
 
         return f"""
 
@@ -3481,7 +3609,7 @@ def card(row, kind):
                 <div>
 
                     <span>
-                        이전 4시간봉
+                        이전 {timeframe_label}
                     </span>
 
                     <strong class="pattern-display">
@@ -3497,7 +3625,7 @@ def card(row, kind):
                 <div>
 
                     <span>
-                        현재 4시간봉
+                        현재 {timeframe_label}
                     </span>
 
                     <strong class="pattern-display">
@@ -4372,17 +4500,15 @@ def startup():
     log.info(
         "START | BTC KST 09:00 일봉 재구성 + "
         "업비트 TOP%s + "
-        "EMA%s/%s %s 역배열 + "
-        "4시간봉 캔들 패턴 SIGNAL + "
+        "EMA%s/%s %s + "
+        "캔들 패턴 %s + "
         "EMA 역배열→정배열 전환 SIGNAL + "
         "당일 양수 조건",
         TOP_N,
         EMA_FAST,
         EMA_SLOW,
-        TIMEFRAME_LABEL.get(
-            SIGNAL_TIMEFRAME,
-            SIGNAL_TIMEFRAME
-        )
+        get_timeframe_label(),
+        get_timeframe_label()
     )
 
     threading.Thread(
