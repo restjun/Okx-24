@@ -1882,15 +1882,19 @@ def update_upbit():
 
     # =====================================================
     # SIGNAL 필터
-    # 당일 변동률 양수/음수 제한 없음
+    # 당일 변동률 양수 조건
     # EMA 교차 신호 제외
-    # EMA 역배열 + 상승패턴만 사용
+    # EMA 역배열 + 상승패턴 + 당일 변동률 양수
     # =====================================================
 
     latest_signal_data = [
         row
         for row in rows
-        if row.get("signal_4h", False)
+        if (
+            row.get("signal_4h", False)
+            and row.get("daily_change") is not None
+            and row.get("daily_change") > 0
+        )
     ]
 
     latest_signal_data.sort(
@@ -1902,7 +1906,7 @@ def update_upbit():
 
     log.info(
         "UPBIT | 거래대금 TOP%s | EMA=%s/%s | 시간봉=%s | "
-        "캔들패턴=%s | SIGNAL=%s | 당일 변동률 제한 없음 | "
+        "캔들패턴=%s | SIGNAL=%s | 당일 변동률 양수 조건 | "
         "EMA 교차 신호 제외",
         TOP_N,
         EMA_FAST,
@@ -2551,7 +2555,7 @@ def signal_section():
         <div class="signal-condition">
             <span>SIGNAL 조건</span>
             <b>
-                EMA 역배열 + 상승패턴
+                EMA 역배열 + 상승패턴 + 당일 변동률 양수
             </b>
             <small>
                 EMA {timeframe_label} · 캔들패턴 {timeframe_label} · 업비트 KST 09:00 기준
@@ -3089,7 +3093,7 @@ def startup():
         "START | BTC KST 09:00 일봉 재구성 + "
         "업비트 TOP%s + EMA%s/%s %s + "
         "캔들 패턴 %s + EMA 역배열 + 상승패턴 SIGNAL + "
-        "당일 변동률 제한 없음 + EMA 교차 신호 제외 + "
+        "당일 변동률 양수 조건 + EMA 교차 신호 제외 + "
         "EMA 과거 캔들 %s개",
         TOP_N,
         EMA_FAST,
