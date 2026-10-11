@@ -40,15 +40,12 @@ UTC = ZoneInfo("UTC")
 # =========================================================
 
 TOP_N = 20
-
 SHOW_TOP_LIST = "Y"
-
 UPDATE_MINUTES = 1
 
 HISTORY_CHUNK = 200
 MAX_HISTORY_CHUNKS = 10
 
-# EMA 계산용 과거 캔들 수
 EMA_HISTORY_CANDLES = 1000
 
 USE_UPBIT = "Y"
@@ -80,6 +77,16 @@ TIMEFRAME_LABEL = {
 
 EMA_FAST = 20
 EMA_SLOW = 60
+
+# 참고용 EMA 상태 표시 시간봉
+EMA_REFERENCE_TIMEFRAMES = ["15m", "1h", "4h", "1d"]
+
+EMA_REFERENCE_LABELS = {
+    "15m": "15m",
+    "1h": "1h",
+    "4h": "4h",
+    "1d": "1D"
+}
 
 
 # =========================================================
@@ -272,7 +279,6 @@ def get_upbit_markets():
 
 # =========================================================
 # 업비트 공통 분봉 조회
-# 15분봉 / 1시간봉 지원
 # =========================================================
 
 def get_upbit_minute_candles(market, unit, count=200):
@@ -376,13 +382,13 @@ def get_upbit_minute_candles(market, unit, count=200):
 
     df = pd.DataFrame(rows)
 
-    df = (
+    return (
         df.sort_values("datetime")
         .drop_duplicates("datetime")
         .reset_index(drop=True)
+        .tail(target_count)
+        .reset_index(drop=True)
     )
-
-    return df.tail(target_count).reset_index(drop=True)
 
 
 # =========================================================
@@ -592,26 +598,6 @@ def build_upbit_4h_candles(df, current_price=None):
 
 # =========================================================
 # EMA 계산
-# 트레이딩뷰 ta.ema()에 맞춘 SMA 초기값 방식
-# =========================================================
-
-def calculate_ema(df, period):
-
-    series = calculate_ema_series(df, period)
-
-    if series is None or series.empty:
-        return None
-
-    valid = series.dropna()
-
-    if valid.empty:
-        return None
-
-    return float(valid.iloc[-1])
-
-
-# =========================================================
-# EMA 시계열
 # SMA 초기값 + EMA 재귀 계산
 # =========================================================
 
@@ -629,7 +615,6 @@ def calculate_ema_series(df, period):
     )
 
     valid_mask = closes.notna()
-
     closes = closes.loc[valid_mask]
 
     if closes.empty:
@@ -672,6 +657,21 @@ def calculate_ema_series(df, period):
     )
 
 
+def calculate_ema(df, period):
+
+    series = calculate_ema_series(df, period)
+
+    if series is None or series.empty:
+        return None
+
+    valid = series.dropna()
+
+    if valid.empty:
+        return None
+
+    return float(valid.iloc[-1])
+
+
 # =========================================================
 # 현재 캔들 가격 반영
 # =========================================================
@@ -703,8 +703,8 @@ def update_current_candle(df, current_start, price):
 
 
 # =========================================================
-# EMA 분석
-# 선택 시간봉: 15분봉 / 1시간봉 / 4시간봉 / 일봉
+# 선택 시간봉 EMA 분석
+# 기존 SIGNAL 판정용
 # =========================================================
 
 def analyze_ema_4h(market, price=None):
@@ -720,10 +720,6 @@ def analyze_ema_4h(market, price=None):
     }
 
     timeframe = SIGNAL_TIMEFRAME
-
-    # =====================================================
-    # 15분봉 EMA
-    # =====================================================
 
     if timeframe == "15m":
 
@@ -749,10 +745,6 @@ def analyze_ema_4h(market, price=None):
             price
         )
 
-    # =====================================================
-    # 1시간봉 EMA
-    # =====================================================
-
     elif timeframe == "1h":
 
         df = get_upbit_4h_candles(
@@ -777,10 +769,6 @@ def analyze_ema_4h(market, price=None):
             price
         )
 
-    # =====================================================
-    # 4시간봉 EMA
-    # =====================================================
-
     elif timeframe == "4h":
 
         df_1h = get_upbit_4h_candles(
@@ -798,10 +786,6 @@ def analyze_ema_4h(market, price=None):
 
         if df.empty:
             return empty_result
-
-    # =====================================================
-    # 일봉 EMA
-    # =====================================================
 
     elif timeframe == "1d":
 
@@ -840,10 +824,6 @@ def analyze_ema_4h(market, price=None):
 
         return empty_result
 
-    # =====================================================
-    # EMA 계산
-    # =====================================================
-
     ema_fast_series = calculate_ema_series(
         df,
         EMA_FAST
@@ -881,14 +861,9 @@ def analyze_ema_4h(market, price=None):
         "cross_signal": False
     }
 
-    # =====================================================
-    # 현재 정배열 / 역배열
-    # =====================================================
-
     if ema_fast > ema_slow:
 
         result["alignment"] = "정배열"
-        result["reverse"] = False
 
     elif ema_fast < ema_slow:
 
@@ -898,12 +873,210 @@ def analyze_ema_4h(market, price=None):
     else:
 
         result["alignment"] = "동일"
-        result["reverse"] = False
-
-    # EMA 교차 신호는 사용하지 않음.
-    # 기존 데이터 키 호환을 위해 교차 계산 결과는 모두 False 유지.
 
     return result
+
+
+# =========================================================
+# 참고용 EMA 상태 분석
+# 15분봉 / 1시간봉 / 4시간봉 / 일봉
+# SIGNAL 필터에는 사용하지 않음
+# =========================================================
+
+def get_ema_alignment_state(df):
+
+    if df is None or df.empty:
+        return None
+
+    fast = calculate_ema(df, EMA_FAST)
+    slow = calculate_ema(df, EMA_SLOW)
+
+    if fast is None or slow is None:
+        return None
+
+    if fast > slow:
+        return "정배열"
+
+    if fast < slow:
+        return "역배열"
+
+    return "동일"
+
+
+def analyze_reference_ema_timeframes(market, price=None):
+
+    states = {
+        tf: None
+        for tf in EMA_REFERENCE_TIMEFRAMES
+    }
+
+    # -----------------------------------------------------
+    # 15분봉
+    # -----------------------------------------------------
+
+    try:
+
+        df_15m = get_upbit_15m_candles(
+            market,
+            200
+        )
+
+        if not df_15m.empty:
+
+            now = datetime.now(KST)
+
+            current_start = now.replace(
+                minute=(now.minute // 15) * 15,
+                second=0,
+                microsecond=0
+            )
+
+            df_15m = update_current_candle(
+                df_15m,
+                current_start,
+                price
+            )
+
+            states["15m"] = get_ema_alignment_state(
+                df_15m
+            )
+
+    except Exception as e:
+
+        log.warning(
+            "%s 15분봉 참고 EMA 오류: %s",
+            market,
+            e
+        )
+
+    # -----------------------------------------------------
+    # 1시간봉
+    # -----------------------------------------------------
+
+    try:
+
+        df_1h = get_upbit_4h_candles(
+            market,
+            200
+        )
+
+        if not df_1h.empty:
+
+            now = datetime.now(KST)
+
+            current_start = now.replace(
+                minute=0,
+                second=0,
+                microsecond=0
+            )
+
+            df_1h = update_current_candle(
+                df_1h,
+                current_start,
+                price
+            )
+
+            states["1h"] = get_ema_alignment_state(
+                df_1h
+            )
+
+    except Exception as e:
+
+        log.warning(
+            "%s 1시간봉 참고 EMA 오류: %s",
+            market,
+            e
+        )
+
+    # -----------------------------------------------------
+    # 4시간봉
+    # 업비트 240분봉 API 사용
+    # -----------------------------------------------------
+
+    try:
+
+        df_4h = get_upbit_minute_candles(
+            market,
+            240,
+            200
+        )
+
+        if not df_4h.empty:
+
+            idx = df_4h.index[-1]
+
+            if price is not None:
+
+                current_price = float(price)
+
+                df_4h.loc[idx, "close"] = current_price
+
+                df_4h.loc[idx, "high"] = max(
+                    float(df_4h.loc[idx, "high"]),
+                    current_price
+                )
+
+                df_4h.loc[idx, "low"] = min(
+                    float(df_4h.loc[idx, "low"]),
+                    current_price
+                )
+
+            states["4h"] = get_ema_alignment_state(
+                df_4h
+            )
+
+    except Exception as e:
+
+        log.warning(
+            "%s 4시간봉 참고 EMA 오류: %s",
+            market,
+            e
+        )
+
+    # -----------------------------------------------------
+    # 일봉
+    # -----------------------------------------------------
+
+    try:
+
+        df_1d = get_upbit_daily_candles(
+            market,
+            200
+        )
+
+        if not df_1d.empty:
+
+            now = datetime.now(KST)
+
+            current_start = now.replace(
+                hour=9,
+                minute=0,
+                second=0,
+                microsecond=0
+            )
+
+            if now < current_start:
+                current_start -= timedelta(days=1)
+
+            df_1d = update_current_candle(
+                df_1d,
+                current_start,
+                price
+            )
+
+            states["1d"] = get_ema_alignment_state(
+                df_1d
+            )
+
+    except Exception as e:
+
+        log.warning(
+            "%s 일봉 참고 EMA 오류: %s",
+            market,
+            e
+        )
+
+    return states
 
 
 # =========================================================
@@ -1168,7 +1341,9 @@ def is_long_bullish(current):
     if total_range <= 0 or c <= o:
         return False
 
-    return bool(abs(c - o) / total_range >= 0.70)
+    return bool(
+        abs(c - o) / total_range >= 0.70
+    )
 
 
 # =========================================================
@@ -1192,7 +1367,9 @@ def is_long_bearish(current):
     if total_range <= 0 or c >= o:
         return False
 
-    return bool(abs(c - o) / total_range >= 0.70)
+    return bool(
+        abs(c - o) / total_range >= 0.70
+    )
 
 
 # =========================================================
@@ -1440,9 +1617,9 @@ def analyze_signal_candles(market, price, ema_reverse=False):
 
     timeframe = SIGNAL_TIMEFRAME
 
-    # =====================================================
+    # -----------------------------------------------------
     # 15분봉
-    # =====================================================
+    # -----------------------------------------------------
 
     if timeframe == "15m":
 
@@ -1502,13 +1679,16 @@ def analyze_signal_candles(market, price, ema_reverse=False):
 
         periods = periods[-6:]
 
-    # =====================================================
+    # -----------------------------------------------------
     # 1시간봉
-    # =====================================================
+    # -----------------------------------------------------
 
     elif timeframe == "1h":
 
-        df = get_upbit_4h_candles(market, 200)
+        df = get_upbit_4h_candles(
+            market,
+            200
+        )
 
         if df.empty:
             return empty_result
@@ -1561,31 +1741,43 @@ def analyze_signal_candles(market, price, ema_reverse=False):
 
         periods = periods[-6:]
 
-    # =====================================================
+    # -----------------------------------------------------
     # 4시간봉
-    # =====================================================
+    # -----------------------------------------------------
 
     elif timeframe == "4h":
 
-        df = get_upbit_4h_candles(market, 200)
+        df = get_upbit_4h_candles(
+            market,
+            200
+        )
 
         if df.empty:
             return empty_result
 
-        periods = build_upbit_4h_periods(df, price)
+        periods = build_upbit_4h_periods(
+            df,
+            price
+        )
 
-    # =====================================================
+    # -----------------------------------------------------
     # 일봉
-    # =====================================================
+    # -----------------------------------------------------
 
     elif timeframe == "1d":
 
-        df = get_upbit_daily_candles(market, 200)
+        df = get_upbit_daily_candles(
+            market,
+            200
+        )
 
         if df.empty:
             return empty_result
 
-        periods = build_daily_periods(df, price)
+        periods = build_daily_periods(
+            df,
+            price
+        )
 
         periods = [
             {
@@ -1659,7 +1851,10 @@ def analyze_4h(market, price, ema_reverse=False):
 
 def analyze_daily_change(market, price):
 
-    df = get_upbit_daily_candles(market, 10)
+    df = get_upbit_daily_candles(
+        market,
+        10
+    )
 
     if df.empty:
         return {
@@ -1667,7 +1862,10 @@ def analyze_daily_change(market, price):
             "periods": []
         }
 
-    periods = build_daily_periods(df, price)
+    periods = build_daily_periods(
+        df,
+        price
+    )
 
     if not periods:
         return {
@@ -1692,7 +1890,8 @@ def make_row(
     analysis_daily,
     analysis_4h,
     ema_analysis,
-    volume_rank
+    volume_rank,
+    reference_ema_states
 ):
 
     coin = market.replace("KRW-", "")
@@ -1731,10 +1930,13 @@ def make_row(
         "ema_fast_period": EMA_FAST,
         "ema_slow_period": EMA_SLOW,
 
-        # 기존 데이터 구조 호환. 교차 신호는 사용하지 않음.
+        # 기존 데이터 구조 호환
         "ema_cross_previous": False,
         "ema_cross_current": False,
         "ema_cross_signal": False,
+
+        # 참고용 4개 시간봉 상태
+        "ema_reference_states": reference_ema_states,
 
         "simultaneous_signal": analysis_4h["signal_pass"]
     }
@@ -1862,6 +2064,27 @@ def update_upbit():
                 "current_bullish_engulfing": False
             }
 
+        # 참고용 EMA 상태는 SIGNAL 조건과 별도로 계산
+        try:
+
+            reference_ema_states = analyze_reference_ema_timeframes(
+                market,
+                price
+            )
+
+        except Exception as e:
+
+            log.warning(
+                "%s 참고 EMA 상태 오류: %s",
+                market,
+                e
+            )
+
+            reference_ema_states = {
+                tf: None
+                for tf in EMA_REFERENCE_TIMEFRAMES
+            }
+
         rows.append(
             make_row(
                 rank,
@@ -1870,7 +2093,8 @@ def update_upbit():
                 analysis_daily,
                 analysis_4h,
                 ema_analysis,
-                volume_rank_map.get(market)
+                volume_rank_map.get(market),
+                reference_ema_states
             )
         )
 
@@ -1882,9 +2106,10 @@ def update_upbit():
 
     # =====================================================
     # SIGNAL 필터
-    # 당일 변동률 양수 조건
-    # EMA 교차 신호 제외
+    # 기존 조건 유지
     # EMA 역배열 + 상승패턴 + 당일 변동률 양수
+    #
+    # 참고용 4개 시간봉 EMA 상태는 SIGNAL 판정에 미포함
     # =====================================================
 
     latest_signal_data = [
@@ -1906,12 +2131,11 @@ def update_upbit():
 
     log.info(
         "UPBIT | 거래대금 TOP%s | EMA=%s/%s | 시간봉=%s | "
-        "캔들패턴=%s | SIGNAL=%s | 당일 변동률 양수 조건 | "
-        "EMA 교차 신호 제외",
+        "참고 EMA 15m/1h/4h/1d | SIGNAL=%s | "
+        "당일 변동률 양수 조건",
         TOP_N,
         EMA_FAST,
         EMA_SLOW,
-        get_timeframe_label(),
         get_timeframe_label(),
         len(latest_signal_data)
     )
@@ -2262,6 +2486,51 @@ def ema_alignment_html(alignment):
 
 
 # =========================================================
+# 참고용 EMA 상태 HTML
+# 15m / 1h / 4h / 1D
+# =========================================================
+
+def reference_ema_states_html(row):
+
+    states = row.get("ema_reference_states") or {}
+
+    pieces = []
+
+    for timeframe in EMA_REFERENCE_TIMEFRAMES:
+
+        label = EMA_REFERENCE_LABELS[timeframe]
+        state = states.get(timeframe)
+
+        if state == "정배열":
+            cls = "ema-normal"
+            symbol = "▲"
+
+        elif state == "역배열":
+            cls = "ema-reverse"
+            symbol = "▼"
+
+        elif state == "동일":
+            cls = "ema-same"
+            symbol = "—"
+
+        else:
+            cls = "ema-same"
+            symbol = "—"
+
+        pieces.append(
+            f'<span class="ema-ref-item {cls}">'
+            f'<span class="ema-ref-label">{label}</span>{symbol}</span>'
+        )
+
+    return (
+        '<div class="ema-ref-row" '
+        'title="참고용 EMA 20/60 상태">'
+        + "".join(pieces)
+        + '</div>'
+    )
+
+
+# =========================================================
 # 캔들 그림
 # =========================================================
 
@@ -2461,7 +2730,7 @@ def btc_html():
 
 # =========================================================
 # SIGNAL 카드
-# EMA 교차 표시 제거
+# 참고용 EMA 상태 표시
 # =========================================================
 
 def signal_card(row):
@@ -2486,8 +2755,12 @@ def signal_card(row):
             <span class="signal-rank">
                 거래대금 #{row.get("volume_rank", "-")}
             </span>
+
             <b>{html.escape(row["name"])}</b>
+
             <div class="signal-type-list">{badge_html}</div>
+
+            {reference_ema_states_html(row)}
         </div>
 
         <div class="signal-volume">
@@ -2547,6 +2820,7 @@ def signal_section():
                 <span class="section-kicker">SIGNAL</span>
                 <b>🔴 EMA {EMA_FAST}/{EMA_SLOW} · {timeframe_label} SIGNAL</b>
             </div>
+
             <span class="update-time">
                 EMA {timeframe_label} · 캔들패턴 {timeframe_label} · {kst()}
             </span>
@@ -2554,16 +2828,18 @@ def signal_section():
 
         <div class="signal-condition">
             <span>SIGNAL 조건</span>
+
             <b>
                 EMA 역배열 + 상승패턴 + 당일 변동률 양수
             </b>
+
             <small>
-                EMA {timeframe_label} · 캔들패턴 {timeframe_label} · 업비트 KST 09:00 기준
+                참고용 EMA 상태는 SIGNAL 판정에 미포함 · 업비트 KST 09:00 기준
             </small>
         </div>
 
         <div class="signal-header">
-            <div>종목</div>
+            <div>종목 / EMA 참고</div>
             <div>거래대금</div>
             <div>변동률</div>
             <div>이전 {timeframe_label}</div>
@@ -2577,7 +2853,7 @@ def signal_section():
 
 # =========================================================
 # TOP 카드
-# EMA 교차 표시 제거
+# 참고용 EMA 상태 표시
 # =========================================================
 
 def card(row, kind):
@@ -2591,15 +2867,11 @@ def card(row, kind):
 
     if kind == "top":
 
-        status_parts = []
-
-        if signal:
-
-            status_parts.append(
-                '<span class="signal-badge">⭐ SIGNAL</span>'
-            )
-
-        status = "".join(status_parts)
+        status = (
+            '<span class="signal-badge">⭐ SIGNAL</span>'
+            if signal
+            else ""
+        )
 
         alignment_html = ema_alignment_html(
             row.get("ema_alignment")
@@ -2613,7 +2885,16 @@ def card(row, kind):
                     <b>{html.escape(row["name"])}</b>
                     {alignment_html}
                 </div>
+
                 {status}
+            </div>
+
+            <div class="ema-ref-topline">
+                <span class="ema-ref-title">
+                    EMA {EMA_FAST}/{EMA_SLOW}
+                </span>
+
+                {reference_ema_states_html(row)}
             </div>
 
             <div class="market-summary">
@@ -2719,6 +3000,49 @@ section { margin-bottom: 12px; }
     white-space: nowrap;
 }
 
+/* 참고용 EMA 상태: 한 줄로 압축 */
+.ema-ref-row {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    flex-wrap: nowrap;
+    white-space: nowrap;
+    min-width: 0;
+}
+
+.ema-ref-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 1px;
+    font-size: 7px;
+    font-weight: 900;
+    line-height: 1.2;
+}
+
+.ema-ref-label {
+    color: #83909b;
+    font-size: 6px;
+    font-weight: 700;
+}
+
+.ema-ref-topline {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 7px;
+    min-height: 23px;
+    padding: 2px 9px;
+    background: #0a1015;
+    border-bottom: 1px solid #202a33;
+}
+
+.ema-ref-title {
+    color: #65717c;
+    font-size: 6px;
+    white-space: nowrap;
+}
+
 .pattern-box {
     display: flex;
     flex-direction: column;
@@ -2777,16 +3101,55 @@ section { margin-bottom: 12px; }
     border-radius: 1px;
 }
 
-.mini-candle.bearish .body { background: #ff5966; height: 12px; }
-.mini-candle.bullish .body { background: #38d878; height: 17px; }
-.mini-candle.bullish.large .body { height: 20px; width: 9px; }
-.mini-candle.bearish.large .body { height: 20px; width: 9px; }
-.mini-candle.bullish-doji .body { background: #38d878; height: 2px; width: 10px; }
-.mini-candle.bearish-doji .body { background: #ff5966; height: 2px; width: 10px; }
-.mini-candle.piercing-candle .body { background: #38d878; height: 15px; }
-.mini-candle.piercing-bearish .body { background: #ff5966; height: 15px; }
-.mini-candle.bullish.very-large .body { background: #38d878; height: 20px; width: 9px; }
-.mini-candle.bearish.very-large .body { background: #ff5966; height: 20px; width: 9px; }
+.mini-candle.bearish .body {
+    background: #ff5966;
+    height: 12px;
+}
+
+.mini-candle.bullish .body {
+    background: #38d878;
+    height: 17px;
+}
+
+.mini-candle.bullish.large .body,
+.mini-candle.bearish.large .body {
+    height: 20px;
+    width: 9px;
+}
+
+.mini-candle.bullish-doji .body {
+    background: #38d878;
+    height: 2px;
+    width: 10px;
+}
+
+.mini-candle.bearish-doji .body {
+    background: #ff5966;
+    height: 2px;
+    width: 10px;
+}
+
+.mini-candle.piercing-candle .body {
+    background: #38d878;
+    height: 15px;
+}
+
+.mini-candle.piercing-bearish .body {
+    background: #ff5966;
+    height: 15px;
+}
+
+.mini-candle.bullish.very-large .body {
+    background: #38d878;
+    height: 20px;
+    width: 9px;
+}
+
+.mini-candle.bearish.very-large .body {
+    background: #ff5966;
+    height: 20px;
+    width: 9px;
+}
 
 .candle-pattern-visual.empty {
     color: #68737e;
@@ -2812,11 +3175,25 @@ section { margin-bottom: 12px; }
     border-bottom: 1px solid #302024;
 }
 
-.signal-condition span { color: #7d6b70; font-size: 6px; }
-.signal-condition b { color: #ff5966; font-size: 8px; font-weight: 900; }
-.signal-condition small { color: #626e78; font-size: 6px; margin-left: auto; }
+.signal-condition span {
+    color: #7d6b70;
+    font-size: 6px;
+}
 
-.signal-header, .signal-card {
+.signal-condition b {
+    color: #ff5966;
+    font-size: 8px;
+    font-weight: 900;
+}
+
+.signal-condition small {
+    color: #626e78;
+    font-size: 6px;
+    margin-left: auto;
+}
+
+.signal-header,
+.signal-card {
     display: grid;
     grid-template-columns: 1.1fr 0.9fr 0.8fr 1.2fr 1.2fr;
     align-items: center;
@@ -2852,18 +3229,29 @@ section { margin-bottom: 12px; }
     text-align: center;
 }
 
-.signal-card > div + div { border-left: 1px solid #1c252c; }
+.signal-card > div + div {
+    border-left: 1px solid #1c252c;
+}
 
 .signal-coin {
     flex-direction: row !important;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: 5px;
     justify-content: flex-start !important;
-    padding-left: 9px !important;
+    padding-left: 7px !important;
 }
 
-.signal-rank { color: #b84d58; font-size: 7px; font-weight: 900; }
-.signal-coin b { color: #e5e9ed; font-size: 9px; font-weight: 900; }
+.signal-rank {
+    color: #b84d58;
+    font-size: 7px;
+    font-weight: 900;
+}
+
+.signal-coin b {
+    color: #e5e9ed;
+    font-size: 9px;
+    font-weight: 900;
+}
 
 .signal-type-list {
     width: 100%;
@@ -2875,13 +3263,40 @@ section { margin-bottom: 12px; }
     margin-top: 1px;
 }
 
-.signal-type-badge { color: #e4c45e !important; font-size: 5px !important; font-weight: 900; }
+.signal-type-badge {
+    color: #e4c45e !important;
+    font-size: 5px !important;
+    font-weight: 900;
+}
 
-.signal-card span { color: #69747e; font-size: 6px; }
-.signal-card strong { margin-top: 2px; color: #dce2e7; font-size: 8px; }
+.signal-card span {
+    color: #69747e;
+    font-size: 6px;
+}
+
+.signal-card strong {
+    margin-top: 2px;
+    color: #dce2e7;
+    font-size: 8px;
+}
+
+.signal-card .ema-ref-row {
+    width: 100%;
+    justify-content: flex-start;
+    gap: 4px;
+}
+
+.signal-card .ema-ref-item { font-size: 7px; }
+.signal-card .ema-ref-label { font-size: 6px; }
+
 .signal-pattern .pattern-box { min-width: 50px; }
 .signal-pattern .pattern-name { font-size: 5px; }
-.signal-pattern .candle-pattern-visual { height: 22px; min-width: 32px; transform: scale(.80); }
+
+.signal-pattern .candle-pattern-visual {
+    height: 22px;
+    min-width: 32px;
+    transform: scale(.80);
+}
 
 .signal-empty {
     min-height: 46px;
@@ -2892,7 +3307,11 @@ section { margin-bottom: 12px; }
     font-size: 7px;
 }
 
-.btc-panel { background: #0c1116; border: 1px solid #202a33; margin-bottom: 13px; }
+.btc-panel {
+    background: #0c1116;
+    border: 1px solid #202a33;
+    margin-bottom: 13px;
+}
 
 .btc-panel .section-head {
     height: 38px;
@@ -2903,10 +3322,28 @@ section { margin-bottom: 12px; }
     border-bottom: 1px solid #202a33;
 }
 
-.section-head > div { display: flex; align-items: center; gap: 7px; }
-.section-head b { font-size: 10px; font-weight: 800; }
-.section-kicker { color: #7d8994; font-size: 6px; letter-spacing: 1px; font-weight: 700; }
-.update-time { color: #65717c; font-size: 6px; }
+.section-head > div {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+}
+
+.section-head b {
+    font-size: 10px;
+    font-weight: 800;
+}
+
+.section-kicker {
+    color: #7d8994;
+    font-size: 6px;
+    letter-spacing: 1px;
+    font-weight: 700;
+}
+
+.update-time {
+    color: #65717c;
+    font-size: 6px;
+}
 
 .btc-main {
     min-height: 54px;
@@ -2915,12 +3352,34 @@ section { margin-bottom: 12px; }
     align-items: center;
 }
 
-.btc-main > div { text-align: center; padding: 5px; }
-.btc-name { color: #c4ccd3; font-size: 10px; font-weight: 800; }
-.btc-price { color: #f4f6f8; font-size: 16px; font-weight: 900; letter-spacing: -0.5px; }
-.btc-change { font-size: 11px; font-weight: 900; }
+.btc-main > div {
+    text-align: center;
+    padding: 5px;
+}
 
-.coin-card { background: #0c1116; border: 1px solid #202a33; margin-bottom: 7px; }
+.btc-name {
+    color: #c4ccd3;
+    font-size: 10px;
+    font-weight: 800;
+}
+
+.btc-price {
+    color: #f4f6f8;
+    font-size: 16px;
+    font-weight: 900;
+    letter-spacing: -0.5px;
+}
+
+.btc-change {
+    font-size: 11px;
+    font-weight: 900;
+}
+
+.coin-card {
+    background: #0c1116;
+    border: 1px solid #202a33;
+    margin-bottom: 7px;
+}
 
 .coin-head {
     min-height: 38px;
@@ -2931,10 +3390,29 @@ section { margin-bottom: 12px; }
     border-bottom: 1px solid #202a33;
 }
 
-.coin-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.coin-title b { font-size: 10px; font-weight: 900; }
-.rank { color: #c9a83d; font-size: 8px; font-weight: 800; }
-.signal-badge { color: #e4c45e; font-size: 7px; font-weight: 900; }
+.coin-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.coin-title b {
+    font-size: 10px;
+    font-weight: 900;
+}
+
+.rank {
+    color: #c9a83d;
+    font-size: 8px;
+    font-weight: 800;
+}
+
+.signal-badge {
+    color: #e4c45e;
+    font-size: 7px;
+    font-weight: 900;
+}
 
 .market-summary {
     display: grid;
@@ -2953,53 +3431,152 @@ section { margin-bottom: 12px; }
     justify-content: center;
 }
 
-.market-summary > div + div { border-left: 1px solid #1d262e; }
-.market-summary span { display: block; color: #65717b; font-size: 6px; margin-bottom: 3px; }
-.market-summary strong { display: block; color: #dce2e7; font-size: 7px; }
-.market-summary .daily-change-value .up { color: #38d878 !important; }
-.market-summary .daily-change-value .down { color: #ff5966 !important; }
-.market-summary .daily-change-value .zero { color: #68737e !important; }
+.market-summary > div + div {
+    border-left: 1px solid #1d262e;
+}
+
+.market-summary span {
+    display: block;
+    color: #65717b;
+    font-size: 6px;
+    margin-bottom: 3px;
+}
+
+.market-summary strong {
+    display: block;
+    color: #dce2e7;
+    font-size: 7px;
+}
+
+.market-summary .daily-change-value .up {
+    color: #38d878 !important;
+}
+
+.market-summary .daily-change-value .down {
+    color: #ff5966 !important;
+}
+
+.market-summary .daily-change-value .zero {
+    color: #68737e !important;
+}
+
 .market-summary .pattern-box { min-width: 48px; }
 .market-summary .pattern-name { font-size: 4.5px; }
-.market-summary .candle-pattern-visual { height: 21px; transform: scale(.72); }
+
+.market-summary .candle-pattern-visual {
+    height: 21px;
+    transform: scale(.72);
+}
 
 @media (max-width: 600px) {
+
     body { padding: 5px; }
-    h1 { margin: 3px 2px 9px; font-size: 12px; }
+
+    h1 {
+        margin: 3px 2px 9px;
+        font-size: 12px;
+    }
+
     .section-head { padding: 0 8px; }
     .section-head b { font-size: 9px; }
     .update-time { font-size: 5px; }
+
     .btc-main { min-height: 48px; }
     .btc-price { font-size: 13px; }
     .btc-change { font-size: 9px; }
-    .coin-head { min-height: 35px; padding: 0 7px; }
+
+    .coin-head {
+        min-height: 35px;
+        padding: 0 7px;
+    }
+
     .coin-title { gap: 6px; }
     .coin-title b { font-size: 9px; }
-    .ema-normal, .ema-reverse, .ema-same { font-size: 6px; }
-    .market-summary { grid-template-columns: repeat(5, 1fr); }
-    .market-summary > div { min-height: 53px; padding: 3px 1px; }
-    .market-summary span { font-size: 5px; margin-bottom: 2px; }
+
+    .ema-normal,
+    .ema-reverse,
+    .ema-same {
+        font-size: 6px;
+    }
+
+    .ema-ref-row { gap: 3px; }
+    .ema-ref-item { font-size: 6px; }
+    .ema-ref-label { font-size: 5px; }
+
+    .ema-ref-topline {
+        min-height: 21px;
+        padding: 2px 7px;
+        gap: 5px;
+    }
+
+    .market-summary {
+        grid-template-columns: repeat(5, 1fr);
+    }
+
+    .market-summary > div {
+        min-height: 53px;
+        padding: 3px 1px;
+    }
+
+    .market-summary span {
+        font-size: 5px;
+        margin-bottom: 2px;
+    }
+
     .market-summary strong { font-size: 6px; }
     .market-summary .pattern-box { min-width: 40px; }
     .market-summary .pattern-name { font-size: 4px; }
-    .market-summary .candle-pattern-visual { height: 19px; transform: scale(.62); }
-    .signal-condition { min-height: 29px; padding: 0 7px; }
+
+    .market-summary .candle-pattern-visual {
+        height: 19px;
+        transform: scale(.62);
+    }
+
+    .signal-condition {
+        min-height: 29px;
+        padding: 0 7px;
+    }
+
     .signal-condition b { font-size: 7px; }
     .signal-condition small { font-size: 5px; }
-    .signal-header, .signal-card {
+
+    .signal-header,
+    .signal-card {
         grid-template-columns: 1.1fr 0.9fr 0.8fr 1.2fr 1.2fr;
     }
-    .signal-card > div { min-height: 53px; padding: 2px 1px; }
-    .signal-coin { gap: 4px; padding-left: 6px !important; }
+
+    .signal-card > div {
+        min-height: 53px;
+        padding: 2px 1px;
+    }
+
+    .signal-coin {
+        gap: 4px;
+        padding-left: 5px !important;
+    }
+
     .signal-coin b { font-size: 7px; }
     .signal-rank { font-size: 5px; }
     .signal-card span { font-size: 5px; }
     .signal-card strong { font-size: 5px; }
-    .signal-type-list { gap: 1px; margin-top: 1px; }
+
+    .signal-type-list {
+        gap: 1px;
+        margin-top: 1px;
+    }
+
     .signal-type-badge { font-size: 4px !important; }
     .signal-pattern .pattern-box { min-width: 40px; }
     .signal-pattern .pattern-name { font-size: 4px; }
-    .signal-pattern .candle-pattern-visual { height: 19px; transform: scale(.60); }
+
+    .signal-pattern .candle-pattern-visual {
+        height: 19px;
+        transform: scale(.60);
+    }
+
+    .signal-card .ema-ref-row { gap: 2px; }
+    .signal-card .ema-ref-item { font-size: 5px; }
+    .signal-card .ema-ref-label { font-size: 4px; }
 }
 """
 
@@ -3041,8 +3618,11 @@ def dashboard():
                         <span class="section-kicker">RANKING</span>
                         <b>TOP{TOP_N} · 거래대금 순</b>
                     </div>
-                    <span class="update-time">실제 업비트 거래대금 기준</span>
+                    <span class="update-time">
+                        실제 업비트 거래대금 기준
+                    </span>
                 </div>
+
                 {top_cards}
             </section>
             """
@@ -3093,14 +3673,13 @@ def startup():
         "START | BTC KST 09:00 일봉 재구성 + "
         "업비트 TOP%s + EMA%s/%s %s + "
         "캔들 패턴 %s + EMA 역배열 + 상승패턴 SIGNAL + "
-        "당일 변동률 양수 조건 + EMA 교차 신호 제외 + "
-        "EMA 과거 캔들 %s개",
+        "당일 변동률 양수 조건 + "
+        "참고용 EMA 15m/1h/4h/1d 표시",
         TOP_N,
         EMA_FAST,
         EMA_SLOW,
         get_timeframe_label(),
-        get_timeframe_label(),
-        EMA_HISTORY_CANDLES
+        get_timeframe_label()
     )
 
     threading.Thread(
