@@ -3274,6 +3274,24 @@ section { margin-bottom: 12px; }
     font-size: 6px;
 }
 
+/* =====================================================
+   수정: SIGNAL 카드 EMA 상태 색상 우선 적용
+   정배열=초록 / 역배열=빨강 / 동일·미확인=회색
+   기존 SIGNAL의 다른 글자 색상과 레이아웃은 유지
+   ===================================================== */
+
+.signal-card .ema-ref-item.ema-normal {
+    color: #38d878 !important;
+}
+
+.signal-card .ema-ref-item.ema-reverse {
+    color: #ff5966 !important;
+}
+
+.signal-card .ema-ref-item.ema-same {
+    color: #68737e !important;
+}
+
 .signal-card strong {
     margin-top: 2px;
     color: #dce2e7;
