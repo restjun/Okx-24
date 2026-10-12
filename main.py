@@ -910,10 +910,7 @@ def analyze_reference_ema_timeframes(market, price=None):
         for tf in EMA_REFERENCE_TIMEFRAMES
     }
 
-    # -----------------------------------------------------
     # 15분봉
-    # -----------------------------------------------------
-
     try:
 
         df_15m = get_upbit_15m_candles(
@@ -949,10 +946,7 @@ def analyze_reference_ema_timeframes(market, price=None):
             e
         )
 
-    # -----------------------------------------------------
     # 1시간봉
-    # -----------------------------------------------------
-
     try:
 
         df_1h = get_upbit_4h_candles(
@@ -988,11 +982,7 @@ def analyze_reference_ema_timeframes(market, price=None):
             e
         )
 
-    # -----------------------------------------------------
     # 4시간봉
-    # 업비트 240분봉 API 사용
-    # -----------------------------------------------------
-
     try:
 
         df_4h = get_upbit_minute_candles(
@@ -1033,10 +1023,7 @@ def analyze_reference_ema_timeframes(market, price=None):
             e
         )
 
-    # -----------------------------------------------------
     # 일봉
-    # -----------------------------------------------------
-
     try:
 
         df_1d = get_upbit_daily_candles(
@@ -1409,17 +1396,22 @@ def get_candle_pattern(previous, current):
 
 
 # =========================================================
-# 이전 / 현재 패턴
+# 이전 이전봉 / 이전봉 / 현재봉 패턴
 # =========================================================
 
 def analyze_previous_current_pattern(periods):
 
     result = {
+        "previous_previous_pattern": None,
         "previous_pattern": None,
         "current_pattern": None,
+
+        "previous_previous_bullish_engulfing": False,
         "previous_bullish_engulfing": False,
         "current_bullish_engulfing": False,
         "bullish_engulfing_signal": False,
+
+        "previous_previous_bullish_pattern": False,
         "previous_bullish_pattern": False,
         "current_bullish_pattern": False,
         "bullish_pattern_signal": False
@@ -1428,10 +1420,13 @@ def analyze_previous_current_pattern(periods):
     if not periods:
         return result
 
+    # 현재봉
     current = periods[-1]
 
+    # 이전봉
     previous = periods[-2] if len(periods) >= 2 else None
 
+    # 현재봉 패턴
     result["current_pattern"] = get_candle_pattern(
         previous,
         current
@@ -1449,6 +1444,7 @@ def analyze_previous_current_pattern(periods):
         in ["장대양봉", "상승관통형", "상승장악형"]
     )
 
+    # 이전봉 패턴
     if len(periods) >= 3:
 
         previous_previous = periods[-3]
@@ -1468,13 +1464,41 @@ def analyze_previous_current_pattern(periods):
             in ["장대양봉", "상승관통형", "상승장악형"]
         )
 
+    # 이전 이전봉 패턴
+    # 패턴 판정에는 해당 봉과 그 직전 봉이 필요함
+    if len(periods) >= 4:
+
+        two_ago_previous = periods[-4]
+        two_ago_current = periods[-3]
+
+        result["previous_previous_pattern"] = get_candle_pattern(
+            two_ago_previous,
+            two_ago_current
+        )
+
+        result["previous_previous_bullish_engulfing"] = (
+            is_bullish_engulfing(
+                two_ago_previous,
+                two_ago_current
+            )
+        )
+
+        result["previous_previous_bullish_pattern"] = (
+            result["previous_previous_pattern"]
+            in ["장대양봉", "상승관통형", "상승장악형"]
+        )
+
+    # 세 봉의 상승장악형 여부
     result["bullish_engulfing_signal"] = bool(
-        result["previous_bullish_engulfing"]
+        result["previous_previous_bullish_engulfing"]
+        or result["previous_bullish_engulfing"]
         or result["current_bullish_engulfing"]
     )
 
+    # 세 봉 중 하나라도 상승패턴이면 패턴 조건 충족
     result["bullish_pattern_signal"] = bool(
-        result["previous_bullish_pattern"]
+        result["previous_previous_bullish_pattern"]
+        or result["previous_bullish_pattern"]
         or result["current_bullish_pattern"]
     )
 
@@ -1522,6 +1546,7 @@ def build_upbit_4h_periods(df, current_price=None):
 
 # =========================================================
 # SIGNAL
+# EMA 역배열 + 최근 3개 봉 중 상승패턴
 # =========================================================
 
 def signal_pass(periods, ema_reverse=False):
@@ -1554,8 +1579,14 @@ def signal_details(periods, ema_reverse=False):
         pattern_info["previous_bullish_pattern"]
     )
 
+    previous_previous_signal = bool(
+        pattern_info["previous_previous_bullish_pattern"]
+    )
+
     pattern_signal = bool(
-        current_signal or previous_signal
+        current_signal
+        or previous_signal
+        or previous_previous_signal
     )
 
     signal = bool(
@@ -1572,12 +1603,16 @@ def signal_details(periods, ema_reverse=False):
         elif previous_signal:
             reason = pattern_info["previous_pattern"]
 
+        elif previous_previous_signal:
+            reason = pattern_info["previous_previous_pattern"]
+
     current_period = periods[-1] if periods else None
 
     return {
         "signal": signal,
         "current_signal": current_signal,
         "previous_signal": previous_signal,
+        "previous_previous_signal": previous_previous_signal,
 
         "signal_change": (
             current_period.get("change")
@@ -1606,21 +1641,21 @@ def analyze_signal_candles(market, price, ema_reverse=False):
         "signal_pass": False,
         "current_signal": False,
         "previous_signal": False,
+        "previous_previous_signal": False,
         "signal_change": None,
         "signal_period": None,
         "signal_reason": None,
+        "previous_previous_pattern": None,
         "previous_pattern": None,
         "current_pattern": None,
+        "previous_previous_bullish_engulfing": False,
         "previous_bullish_engulfing": False,
         "current_bullish_engulfing": False
     }
 
     timeframe = SIGNAL_TIMEFRAME
 
-    # -----------------------------------------------------
     # 15분봉
-    # -----------------------------------------------------
-
     if timeframe == "15m":
 
         df = get_upbit_15m_candles(
@@ -1679,10 +1714,7 @@ def analyze_signal_candles(market, price, ema_reverse=False):
 
         periods = periods[-6:]
 
-    # -----------------------------------------------------
     # 1시간봉
-    # -----------------------------------------------------
-
     elif timeframe == "1h":
 
         df = get_upbit_4h_candles(
@@ -1741,10 +1773,7 @@ def analyze_signal_candles(market, price, ema_reverse=False):
 
         periods = periods[-6:]
 
-    # -----------------------------------------------------
     # 4시간봉
-    # -----------------------------------------------------
-
     elif timeframe == "4h":
 
         df = get_upbit_4h_candles(
@@ -1760,10 +1789,7 @@ def analyze_signal_candles(market, price, ema_reverse=False):
             price
         )
 
-    # -----------------------------------------------------
     # 일봉
-    # -----------------------------------------------------
-
     elif timeframe == "1d":
 
         df = get_upbit_daily_candles(
@@ -1818,11 +1844,22 @@ def analyze_signal_candles(market, price, ema_reverse=False):
         "signal_pass": details["signal"],
         "current_signal": details["current_signal"],
         "previous_signal": details["previous_signal"],
+        "previous_previous_signal": details[
+            "previous_previous_signal"
+        ],
         "signal_change": details["signal_change"],
         "signal_period": details["signal_period"],
         "signal_reason": details["signal_reason"],
+
+        "previous_previous_pattern": pattern_info[
+            "previous_previous_pattern"
+        ],
         "previous_pattern": pattern_info["previous_pattern"],
         "current_pattern": pattern_info["current_pattern"],
+
+        "previous_previous_bullish_engulfing": pattern_info[
+            "previous_previous_bullish_engulfing"
+        ],
         "previous_bullish_engulfing": pattern_info[
             "previous_bullish_engulfing"
         ],
@@ -1909,11 +1946,22 @@ def make_row(
         "signal_4h": analysis_4h["signal_pass"],
         "signal_4h_current": analysis_4h["current_signal"],
         "signal_4h_previous": analysis_4h["previous_signal"],
+        "signal_4h_previous_previous": analysis_4h[
+            "previous_previous_signal"
+        ],
         "signal_4h_change": analysis_4h["signal_change"],
         "signal_4h_period": analysis_4h["signal_period"],
         "signal_4h_reason": analysis_4h["signal_reason"],
+
+        "previous_previous_pattern": analysis_4h[
+            "previous_previous_pattern"
+        ],
         "previous_pattern": analysis_4h["previous_pattern"],
         "current_pattern": analysis_4h["current_pattern"],
+
+        "previous_previous_bullish_engulfing": analysis_4h[
+            "previous_previous_bullish_engulfing"
+        ],
         "previous_bullish_engulfing": analysis_4h[
             "previous_bullish_engulfing"
         ],
@@ -2055,11 +2103,14 @@ def update_upbit():
                 "signal_pass": False,
                 "current_signal": False,
                 "previous_signal": False,
+                "previous_previous_signal": False,
                 "signal_change": None,
                 "signal_period": None,
                 "signal_reason": None,
+                "previous_previous_pattern": None,
                 "previous_pattern": None,
                 "current_pattern": None,
+                "previous_previous_bullish_engulfing": False,
                 "previous_bullish_engulfing": False,
                 "current_bullish_engulfing": False
             }
@@ -2104,13 +2155,9 @@ def update_upbit():
     latest_upbit_daily_update_time = kst()
     latest_upbit_update_time = latest_upbit_daily_update_time
 
-    # =====================================================
     # SIGNAL 필터
-    # 기존 조건 유지
-    # EMA 역배열 + 상승패턴 + 당일 변동률 양수
-    #
+    # EMA 역배열 + 최근 3개 봉 중 상승패턴 + 당일 변동률 양수
     # 참고용 4개 시간봉 EMA 상태는 SIGNAL 판정에 미포함
-    # =====================================================
 
     latest_signal_data = [
         row
@@ -2132,7 +2179,7 @@ def update_upbit():
     log.info(
         "UPBIT | 거래대금 TOP%s | EMA=%s/%s | 시간봉=%s | "
         "참고 EMA 15m/1h/4h/1d | SIGNAL=%s | "
-        "당일 변동률 양수 조건",
+        "최근 3개 봉 상승패턴 + 당일 변동률 양수 조건",
         TOP_N,
         EMA_FAST,
         EMA_SLOW,
@@ -2730,7 +2777,7 @@ def btc_html():
 
 # =========================================================
 # SIGNAL 카드
-# 참고용 EMA 상태 표시
+# 3개 봉 패턴 표시
 # =========================================================
 
 def signal_card(row):
@@ -2774,14 +2821,21 @@ def signal_card(row):
         </div>
 
         <div class="signal-pattern">
-            <span>이전 {timeframe_label}</span>
+            <span>이전 이전봉 {timeframe_label}</span>
+            <strong class="pattern-display">
+                {current_pattern_html(row.get("previous_previous_pattern"))}
+            </strong>
+        </div>
+
+        <div class="signal-pattern">
+            <span>이전봉 {timeframe_label}</span>
             <strong class="pattern-display">
                 {current_pattern_html(row.get("previous_pattern"))}
             </strong>
         </div>
 
         <div class="signal-pattern">
-            <span>현재 {timeframe_label}</span>
+            <span>현재봉 {timeframe_label}</span>
             <strong class="pattern-display">
                 {current_pattern_html(row.get("current_pattern"))}
             </strong>
@@ -2822,7 +2876,7 @@ def signal_section():
             </div>
 
             <span class="update-time">
-                EMA {timeframe_label} · 캔들패턴 {timeframe_label} · {kst()}
+                EMA {timeframe_label} · 캔들패턴 3개 봉 · {kst()}
             </span>
         </div>
 
@@ -2830,7 +2884,7 @@ def signal_section():
             <span>SIGNAL 조건</span>
 
             <b>
-                EMA 역배열 + 상승패턴 + 당일 변동률 양수
+                EMA 역배열 + 최근 3개 봉 중 상승패턴 + 당일 변동률 양수
             </b>
 
             <small>
@@ -2842,8 +2896,9 @@ def signal_section():
             <div>종목 / EMA 참고</div>
             <div>거래대금</div>
             <div>변동률</div>
-            <div>이전 {timeframe_label}</div>
-            <div>현재 {timeframe_label}</div>
+            <div>이전 이전봉</div>
+            <div>이전봉</div>
+            <div>현재봉</div>
         </div>
 
         <div class="signal-list">{body}</div>
@@ -2853,7 +2908,7 @@ def signal_section():
 
 # =========================================================
 # TOP 카드
-# 참고용 EMA 상태 표시
+# 3개 봉 패턴 표시
 # =========================================================
 
 def card(row, kind):
@@ -2861,6 +2916,10 @@ def card(row, kind):
     timeframe_label = get_timeframe_label()
 
     signal = row.get("signal_4h", False)
+
+    previous_previous_pattern = row.get(
+        "previous_previous_pattern"
+    )
 
     previous_pattern = row.get("previous_pattern")
     current_pattern = row.get("current_pattern")
@@ -2916,14 +2975,21 @@ def card(row, kind):
                 </div>
 
                 <div>
-                    <span>이전 {timeframe_label}</span>
+                    <span>이전 이전봉 {timeframe_label}</span>
+                    <strong class="pattern-display">
+                        {current_pattern_html(previous_previous_pattern)}
+                    </strong>
+                </div>
+
+                <div>
+                    <span>이전봉 {timeframe_label}</span>
                     <strong class="pattern-display">
                         {current_pattern_html(previous_pattern)}
                     </strong>
                 </div>
 
                 <div>
-                    <span>현재 {timeframe_label}</span>
+                    <span>현재봉 {timeframe_label}</span>
                     <strong class="pattern-display">
                         {current_pattern_html(current_pattern)}
                     </strong>
@@ -3195,7 +3261,7 @@ section { margin-bottom: 12px; }
 .signal-header,
 .signal-card {
     display: grid;
-    grid-template-columns: 1.1fr 0.9fr 0.8fr 1.2fr 1.2fr;
+    grid-template-columns: 1.1fr 0.9fr 0.8fr 1.1fr 1.1fr 1.1fr;
     align-items: center;
 }
 
@@ -3274,12 +3340,7 @@ section { margin-bottom: 12px; }
     font-size: 6px;
 }
 
-/* =====================================================
-   수정: SIGNAL 카드 EMA 상태 색상 우선 적용
-   정배열=초록 / 역배열=빨강 / 동일·미확인=회색
-   기존 SIGNAL의 다른 글자 색상과 레이아웃은 유지
-   ===================================================== */
-
+/* SIGNAL 카드 EMA 상태 색상 */
 .signal-card .ema-ref-item.ema-normal {
     color: #38d878 !important;
 }
@@ -3307,7 +3368,7 @@ section { margin-bottom: 12px; }
 .signal-card .ema-ref-item { font-size: 7px; }
 .signal-card .ema-ref-label { font-size: 6px; }
 
-.signal-pattern .pattern-box { min-width: 50px; }
+.signal-pattern .pattern-box { min-width: 42px; }
 .signal-pattern .pattern-name { font-size: 5px; }
 
 .signal-pattern .candle-pattern-visual {
@@ -3434,13 +3495,14 @@ section { margin-bottom: 12px; }
 
 .market-summary {
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(6, minmax(0, 1fr));
     border-bottom: 1px solid #202a33;
 }
 
 .market-summary > div {
+    min-width: 0;
     min-height: 58px;
-    padding: 4px 2px;
+    padding: 4px 1px;
     text-align: center;
     background: #0d1318;
     display: flex;
@@ -3478,12 +3540,12 @@ section { margin-bottom: 12px; }
     color: #68737e !important;
 }
 
-.market-summary .pattern-box { min-width: 48px; }
+.market-summary .pattern-box { min-width: 35px; }
 .market-summary .pattern-name { font-size: 4.5px; }
 
 .market-summary .candle-pattern-visual {
     height: 21px;
-    transform: scale(.72);
+    transform: scale(.68);
 }
 
 @media (max-width: 600px) {
@@ -3528,7 +3590,7 @@ section { margin-bottom: 12px; }
     }
 
     .market-summary {
-        grid-template-columns: repeat(5, 1fr);
+        grid-template-columns: repeat(6, minmax(0, 1fr));
     }
 
     .market-summary > div {
@@ -3541,13 +3603,13 @@ section { margin-bottom: 12px; }
         margin-bottom: 2px;
     }
 
-    .market-summary strong { font-size: 6px; }
-    .market-summary .pattern-box { min-width: 40px; }
-    .market-summary .pattern-name { font-size: 4px; }
+    .market-summary strong { font-size: 5px; }
+    .market-summary .pattern-box { min-width: 30px; }
+    .market-summary .pattern-name { font-size: 3.8px; }
 
     .market-summary .candle-pattern-visual {
         height: 19px;
-        transform: scale(.62);
+        transform: scale(.56);
     }
 
     .signal-condition {
@@ -3560,7 +3622,12 @@ section { margin-bottom: 12px; }
 
     .signal-header,
     .signal-card {
-        grid-template-columns: 1.1fr 0.9fr 0.8fr 1.2fr 1.2fr;
+        grid-template-columns: 1.1fr 0.9fr 0.8fr 1.1fr 1.1fr 1.1fr;
+    }
+
+    .signal-header {
+        padding: 0 3px;
+        font-size: 5px;
     }
 
     .signal-card > div {
@@ -3584,12 +3651,12 @@ section { margin-bottom: 12px; }
     }
 
     .signal-type-badge { font-size: 4px !important; }
-    .signal-pattern .pattern-box { min-width: 40px; }
-    .signal-pattern .pattern-name { font-size: 4px; }
+    .signal-pattern .pattern-box { min-width: 30px; }
+    .signal-pattern .pattern-name { font-size: 3.8px; }
 
     .signal-pattern .candle-pattern-visual {
         height: 19px;
-        transform: scale(.60);
+        transform: scale(.55);
     }
 
     .signal-card .ema-ref-row { gap: 2px; }
@@ -3690,13 +3757,13 @@ def startup():
     log.info(
         "START | BTC KST 09:00 일봉 재구성 + "
         "업비트 TOP%s + EMA%s/%s %s + "
-        "캔들 패턴 %s + EMA 역배열 + 상승패턴 SIGNAL + "
+        "최근 3개 봉 캔들 패턴 + EMA 역배열 + "
+        "3개 봉 중 상승패턴 SIGNAL + "
         "당일 변동률 양수 조건 + "
         "참고용 EMA 15m/1h/4h/1d 표시",
         TOP_N,
         EMA_FAST,
         EMA_SLOW,
-        get_timeframe_label(),
         get_timeframe_label()
     )
 
