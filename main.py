@@ -783,19 +783,16 @@ def analyze_ema_4h(market, price=None):
         )
         return empty_result
 
-    # EMA5
     ema5_series = calculate_ema_series(
         df,
         EMA_PULLBACK
     )
 
-    # EMA20
     ema20_series = calculate_ema_series(
         df,
         EMA_FAST
     )
 
-    # EMA60
     ema60_series = calculate_ema_series(
         df,
         EMA_SLOW
@@ -823,16 +820,13 @@ def analyze_ema_4h(market, price=None):
     ema20 = float(ema20_valid.iloc[-1])
     ema60 = float(ema60_valid.iloc[-1])
 
-    # 기존 EMA20/60 역배열 조건
     reverse = ema20 < ema60
 
-    # 신규 EMA20/60 정배열 + EMA5/20 역배열 조건
     bullish_pullback = (
         ema20 > ema60
         and ema5 < ema20
     )
 
-    # 기존 조건 또는 신규 조건 중 하나면 EMA 조건 통과
     signal_condition = (
         reverse
         or bullish_pullback
@@ -846,11 +840,9 @@ def analyze_ema_4h(market, price=None):
         alignment = "동일"
 
     return {
-        # 기존 화면 및 데이터 구조 호환
         "ema5": ema20,
         "ema15": ema60,
 
-        # 실제 EMA 값
         "ema5_short": ema5,
         "ema20": ema20,
         "ema60": ema60,
@@ -860,7 +852,6 @@ def analyze_ema_4h(market, price=None):
         "signal_condition": signal_condition,
         "alignment": alignment,
 
-        # 기존 교차 데이터 구조 유지
         "cross_previous": False,
         "cross_current": False,
         "cross_signal": False
@@ -923,14 +914,12 @@ def analyze_reference_ema_timeframes(market, price=None):
                 price
             )
 
-            # 1시간봉 EMA5/20 상태
             states["1h_5_20"] = get_ema_alignment_state(
                 df_1h,
                 EMA_PULLBACK,
                 EMA_FAST
             )
 
-            # 1시간봉 EMA20/60 상태
             states["1h"] = get_ema_alignment_state(
                 df_1h,
                 EMA_FAST,
@@ -1250,6 +1239,10 @@ def get_candle_pattern(previous, current):
 
 # =========================================================
 # 이전 이전봉 / 이전봉 / 현재봉 패턴
+#
+# SIGNAL 상승패턴 조건:
+# 최근 3개 패턴 중 상승패턴이 2개 이상
+# 상승패턴 = 장대양봉, 상승관통형, 상승장악형
 # =========================================================
 
 def analyze_previous_current_pattern(periods):
@@ -1266,6 +1259,8 @@ def analyze_previous_current_pattern(periods):
         "previous_previous_bullish_pattern": False,
         "previous_bullish_pattern": False,
         "current_bullish_pattern": False,
+
+        "bullish_pattern_count": 0,
         "bullish_pattern_signal": False
     }
 
@@ -1336,10 +1331,18 @@ def analyze_previous_current_pattern(periods):
         or result["current_bullish_engulfing"]
     )
 
-    result["bullish_pattern_signal"] = bool(
-        result["previous_previous_bullish_pattern"]
-        or result["previous_bullish_pattern"]
-        or result["current_bullish_pattern"]
+    # 최근 3개 패턴 중 상승패턴 개수 계산
+    bullish_pattern_count = sum([
+        result["previous_previous_bullish_pattern"],
+        result["previous_bullish_pattern"],
+        result["current_bullish_pattern"]
+    ])
+
+    result["bullish_pattern_count"] = bullish_pattern_count
+
+    # 상승패턴이 2개 이상이어야 통과
+    result["bullish_pattern_signal"] = (
+        bullish_pattern_count >= 2
     )
 
     return result
@@ -1384,7 +1387,7 @@ def build_upbit_4h_periods(df, current_price=None):
 
 # =========================================================
 # SIGNAL
-# EMA 조건 통과 + 최근 3개 봉 중 상승패턴
+# EMA 조건 통과 + 최근 3개 패턴 중 상승패턴 2개 이상
 # =========================================================
 
 def signal_pass(periods, ema_reverse=False):
@@ -1419,11 +1422,14 @@ def signal_details(periods, ema_reverse=False):
         pattern_info["previous_previous_bullish_pattern"]
     )
 
-    pattern_signal = bool(
+    pattern_count = sum([
+        previous_previous_signal,
+        previous_signal,
         current_signal
-        or previous_signal
-        or previous_previous_signal
-    )
+    ])
+
+    # 기존 OR 조건에서 2개 이상 조건으로 변경
+    pattern_signal = pattern_count >= 2
 
     signal = bool(
         ema_reverse and pattern_signal
@@ -1432,14 +1438,27 @@ def signal_details(periods, ema_reverse=False):
     reason = None
 
     if signal:
+        matched_patterns = []
+
+        if previous_previous_signal:
+            matched_patterns.append(
+                pattern_info["previous_previous_pattern"]
+            )
+
+        if previous_signal:
+            matched_patterns.append(
+                pattern_info["previous_pattern"]
+            )
+
         if current_signal:
-            reason = pattern_info["current_pattern"]
+            matched_patterns.append(
+                pattern_info["current_pattern"]
+            )
 
-        elif previous_signal:
-            reason = pattern_info["previous_pattern"]
-
-        elif previous_previous_signal:
-            reason = pattern_info["previous_previous_pattern"]
+        reason = " + ".join(
+            pattern for pattern in matched_patterns
+            if pattern
+        )
 
     current_period = periods[-1] if periods else None
 
@@ -1448,6 +1467,8 @@ def signal_details(periods, ema_reverse=False):
         "current_signal": current_signal,
         "previous_signal": previous_signal,
         "previous_previous_signal": previous_previous_signal,
+
+        "bullish_pattern_count": pattern_count,
 
         "signal_change": (
             current_period.get("change")
@@ -1476,6 +1497,7 @@ def analyze_signal_candles(market, price, ema_reverse=False):
         "current_signal": False,
         "previous_signal": False,
         "previous_previous_signal": False,
+        "bullish_pattern_count": 0,
         "signal_change": None,
         "signal_period": None,
         "signal_reason": None,
@@ -1673,6 +1695,9 @@ def analyze_signal_candles(market, price, ema_reverse=False):
         "previous_previous_signal": details[
             "previous_previous_signal"
         ],
+        "bullish_pattern_count": details[
+            "bullish_pattern_count"
+        ],
         "signal_change": details["signal_change"],
         "signal_period": details["signal_period"],
         "signal_reason": details["signal_reason"],
@@ -1775,6 +1800,10 @@ def make_row(
         "signal_4h_change": analysis_4h["signal_change"],
         "signal_4h_period": analysis_4h["signal_period"],
         "signal_4h_reason": analysis_4h["signal_reason"],
+        "bullish_pattern_count": analysis_4h.get(
+            "bullish_pattern_count",
+            0
+        ),
 
         "previous_previous_pattern": analysis_4h[
             "previous_previous_pattern"
@@ -1945,6 +1974,7 @@ def update_upbit():
                 "current_signal": False,
                 "previous_signal": False,
                 "previous_previous_signal": False,
+                "bullish_pattern_count": 0,
                 "signal_change": None,
                 "signal_period": None,
                 "signal_reason": None,
@@ -1996,7 +2026,7 @@ def update_upbit():
 
     # SIGNAL 필터:
     # 1. EMA20/60 역배열 또는 EMA20/60 정배열 + EMA5/20 역배열
-    # 2. 최근 3개 봉 중 상승패턴
+    # 2. 최근 3개 패턴 중 상승패턴 2개 이상
     # 3. 당일 변동률 양수
     # 4. 참고용 1시간봉 EMA 상태는 별도 표시만 함
 
@@ -2005,6 +2035,7 @@ def update_upbit():
         for row in rows
         if (
             row.get("signal_4h", False)
+            and row.get("bullish_pattern_count", 0) >= 2
             and row.get("daily_change") is not None
             and row.get("daily_change") > 0
         )
@@ -2021,7 +2052,7 @@ def update_upbit():
         "UPBIT | 거래대금 TOP%s | EMA5/20/60 | 시간봉=%s | "
         "참고 EMA 1h 5/20 및 20/60 | SIGNAL=%s | "
         "EMA20/60 역배열 또는 EMA20/60 정배열+EMA5/20 역배열 | "
-        "최근 3개 봉 상승패턴 + 당일 변동률 양수",
+        "최근 3개 패턴 중 상승패턴 2개 이상 + 당일 변동률 양수",
         TOP_N,
         get_timeframe_label(),
         len(latest_signal_data)
@@ -2352,7 +2383,6 @@ def reference_ema_states_html(row):
     states = row.get("ema_reference_states") or {}
     pieces = []
 
-    # EMA5/20 상태
     state_5_20 = states.get("1h_5_20")
 
     if state_5_20 == "정배열":
@@ -2378,7 +2408,6 @@ def reference_ema_states_html(row):
         f'</span>'
     )
 
-    # EMA20/60 상태
     state_20_60 = states.get("1h")
 
     if state_20_60 == "정배열":
@@ -2690,7 +2719,7 @@ def signal_section():
             </div>
 
             <span class="update-time">
-                EMA {timeframe_label} · 캔들패턴 3개 봉 · {kst()}
+                EMA {timeframe_label} · 상승패턴 2개 이상 · {kst()}
             </span>
         </div>
 
@@ -2699,11 +2728,13 @@ def signal_section():
 
             <b>
                 EMA20/60 역배열 또는 EMA20/60 정배열 + EMA5/20 역배열
-                + 최근 3개 봉 중 상승패턴 + 당일 변동률 양수
+                + 최근 3개 패턴 중 상승패턴 2개 이상
+                + 당일 변동률 양수
             </b>
 
             <small>
-                참고용 EMA 5/20 및 20/60 상태는 1시간봉만 표시 · 업비트 KST 09:00 기준
+                상승패턴 = 장대양봉·상승관통형·상승장악형 ·
+                참고용 EMA 5/20 및 20/60 상태는 1시간봉만 표시
             </small>
         </div>
 
@@ -3558,7 +3589,7 @@ def startup():
         "업비트 TOP%s + EMA5/20/60 %s + "
         "최근 3개 봉 캔들 패턴 + "
         "EMA20/60 역배열 또는 EMA20/60 정배열+EMA5/20 역배열 + "
-        "3개 봉 중 상승패턴 SIGNAL + "
+        "최근 3개 패턴 중 상승패턴 2개 이상 SIGNAL + "
         "당일 변동률 양수 조건 + 참고용 EMA 1h 5/20 및 20/60 표시",
         TOP_N,
         get_timeframe_label()
