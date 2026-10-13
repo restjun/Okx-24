@@ -39,7 +39,7 @@ UTC = ZoneInfo("UTC")
 # 사용자 설정
 # =========================================================
 
-TOP_N = 20
+TOP_N = 30
 SHOW_TOP_LIST = "N"
 UPDATE_MINUTES = 1
 
@@ -2641,12 +2641,11 @@ def signal_section():
             <span>SIGNAL 조건</span>
 
             <b>
-                EMA20/60 역배열 또는 EMA20/60 정배열 + EMA5/20 역배열
-                + 이전봉 또는 현재봉 상승패턴 + 당일 변동률 양수
+                EMA20/60  +  상승패턴 + 당일 변동률 양수
             </b>
 
             <small>
-                참고용 EMA 5/20 및 20/60 상태는 1시간봉만 표시 · 업비트 KST 09:00 기준
+                업비트 KST 09:00 기준
             </small>
         </div>
 
