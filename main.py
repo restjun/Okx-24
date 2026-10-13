@@ -39,7 +39,7 @@ UTC = ZoneInfo("UTC")
 # 사용자 설정
 # =========================================================
 
-TOP_N = 10
+TOP_N = 20
 SHOW_TOP_LIST = "N"
 UPDATE_MINUTES = 1
 
@@ -61,7 +61,7 @@ MAX_RETRIES = 10
 # =========================================================
 
 # 선택 가능: "15m", "1h", "4h", "1d"
-SIGNAL_TIMEFRAME = "15m"
+SIGNAL_TIMEFRAME = "1h"
 
 TIMEFRAME_LABEL = {
     "15m": "15분봉",
