@@ -2641,11 +2641,11 @@ def signal_section():
             <span>SIGNAL 조건</span>
 
             <b>
-                EMA20/60  +  상승패턴 + 당일 변동률 양수
+                EMA20/60  +  상승패턴 + 당일상승
             </b>
 
             <small>
-                업비트 KST 09:00 기준
+                업비트 KST 09:00 
             </small>
         </div>
 
