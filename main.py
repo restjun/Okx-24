@@ -1998,7 +1998,7 @@ def update_upbit():
     # 1. EMA20/60 역배열 또는 EMA20/60 정배열 + EMA5/20 역배열
     # 2. 최근 3개 봉 중 상승패턴
     # 3. 당일 변동률 양수
-    # 4. 참고용 1시간봉 EMA 상태는 별도 표시만 함
+    # 4. 참고용 1시간봉 EMA5/20 정배열 + EMA20/60 역배열 종목은 제외
 
     latest_signal_data = [
         row
@@ -2007,6 +2007,15 @@ def update_upbit():
             row.get("signal_4h", False)
             and row.get("daily_change") is not None
             and row.get("daily_change") > 0
+
+            # 제외 조건:
+            # 1시간봉 EMA5/20 정배열 + EMA20/60 역배열
+            and not (
+                row.get("ema_reference_states", {}).get("1h_5_20")
+                == "정배열"
+                and row.get("ema_reference_states", {}).get("1h")
+                == "역배열"
+            )
         )
     ]
 
@@ -2021,7 +2030,8 @@ def update_upbit():
         "UPBIT | 거래대금 TOP%s | EMA5/20/60 | 시간봉=%s | "
         "참고 EMA 1h 5/20 및 20/60 | SIGNAL=%s | "
         "EMA20/60 역배열 또는 EMA20/60 정배열+EMA5/20 역배열 | "
-        "최근 3개 봉 상승패턴 + 당일 변동률 양수",
+        "최근 3개 봉 상승패턴 + 당일 변동률 양수 | "
+        "1h EMA5/20 정배열 + EMA20/60 역배열 제외",
         TOP_N,
         get_timeframe_label(),
         len(latest_signal_data)
@@ -3559,7 +3569,8 @@ def startup():
         "최근 3개 봉 캔들 패턴 + "
         "EMA20/60 역배열 또는 EMA20/60 정배열+EMA5/20 역배열 + "
         "3개 봉 중 상승패턴 SIGNAL + "
-        "당일 변동률 양수 조건 + 참고용 EMA 1h 5/20 및 20/60 표시",
+        "당일 변동률 양수 조건 + 참고용 EMA 1h 5/20 및 20/60 표시 + "
+        "1h EMA5/20 정배열 + EMA20/60 역배열 SIGNAL 제외",
         TOP_N,
         get_timeframe_label()
     )
