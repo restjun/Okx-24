@@ -61,7 +61,7 @@ MAX_RETRIES = 10
 # =========================================================
 
 # 선택 가능: "15m", "1h", "4h", "1d"
-SIGNAL_TIMEFRAME = "4h"
+SIGNAL_TIMEFRAME = "15m"
 
 TIMEFRAME_LABEL = {
     "15m": "15분봉",
