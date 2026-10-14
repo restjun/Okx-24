@@ -1202,6 +1202,152 @@ def is_long_bearish(current):
 
 
 # =========================================================
+# 망치형 공통 판정
+# 아래꼬리 또는 위꼬리가 몸통의 2배 이상
+# 반대쪽 꼬리는 몸통 이하
+# =========================================================
+
+def get_hammer_parts(current):
+    try:
+        o = float(current["open"])
+        h = float(current["high"])
+        l = float(current["low"])
+        c = float(current["close"])
+    except Exception:
+        return None
+
+    if h < max(o, c) or l > min(o, c) or h < l:
+        return None
+
+    body = abs(c - o)
+    candle_range = h - l
+
+    if candle_range <= 0:
+        return None
+
+    # 몸통이 매우 작은 경우 0으로 나누는 문제 방지
+    effective_body = max(
+        body,
+        candle_range * 0.01
+    )
+
+    upper_wick = h - max(o, c)
+    lower_wick = min(o, c) - l
+
+    return {
+        "body": effective_body,
+        "upper_wick": upper_wick,
+        "lower_wick": lower_wick,
+        "open": o,
+        "close": c
+    }
+
+
+# =========================================================
+# 상승망치형
+# 직전 봉 하락 + 긴 아래꼬리
+# =========================================================
+
+def is_bullish_hammer(previous, current):
+    if previous is None:
+        return False
+
+    try:
+        if float(previous["close"]) >= float(previous["open"]):
+            return False
+    except Exception:
+        return False
+
+    parts = get_hammer_parts(current)
+
+    if parts is None:
+        return False
+
+    return bool(
+        parts["lower_wick"] >= parts["body"] * 2
+        and parts["upper_wick"] <= parts["body"]
+    )
+
+
+# =========================================================
+# 상승역망치형
+# 직전 봉 하락 + 긴 위꼬리
+# =========================================================
+
+def is_bullish_inverted_hammer(previous, current):
+    if previous is None:
+        return False
+
+    try:
+        if float(previous["close"]) >= float(previous["open"]):
+            return False
+    except Exception:
+        return False
+
+    parts = get_hammer_parts(current)
+
+    if parts is None:
+        return False
+
+    return bool(
+        parts["upper_wick"] >= parts["body"] * 2
+        and parts["lower_wick"] <= parts["body"]
+    )
+
+
+# =========================================================
+# 하락망치형
+# 직전 봉 상승 + 긴 아래꼬리
+# =========================================================
+
+def is_bearish_hammer(previous, current):
+    if previous is None:
+        return False
+
+    try:
+        if float(previous["close"]) <= float(previous["open"]):
+            return False
+    except Exception:
+        return False
+
+    parts = get_hammer_parts(current)
+
+    if parts is None:
+        return False
+
+    return bool(
+        parts["lower_wick"] >= parts["body"] * 2
+        and parts["upper_wick"] <= parts["body"]
+    )
+
+
+# =========================================================
+# 하락역망치형
+# 직전 봉 상승 + 긴 위꼬리
+# =========================================================
+
+def is_bearish_inverted_hammer(previous, current):
+    if previous is None:
+        return False
+
+    try:
+        if float(previous["close"]) <= float(previous["open"]):
+            return False
+    except Exception:
+        return False
+
+    parts = get_hammer_parts(current)
+
+    if parts is None:
+        return False
+
+    return bool(
+        parts["upper_wick"] >= parts["body"] * 2
+        and parts["lower_wick"] <= parts["body"]
+    )
+
+
+# =========================================================
 # 캔들 패턴 전체 판정
 # 한 봉에서 여러 패턴이 감지되면 모두 반환
 # =========================================================
@@ -1225,6 +1371,18 @@ def get_candle_patterns(previous, current):
 
         if is_bearish_piercing(previous, current):
             patterns.append("하락관통형")
+
+        if is_bullish_hammer(previous, current):
+            patterns.append("상승망치형")
+
+        if is_bullish_inverted_hammer(previous, current):
+            patterns.append("상승역망치형")
+
+        if is_bearish_hammer(previous, current):
+            patterns.append("하락망치형")
+
+        if is_bearish_inverted_hammer(previous, current):
+            patterns.append("하락역망치형")
 
     # 현재 봉 단독 패턴
     if is_long_bullish(current):
@@ -1257,7 +1415,9 @@ def get_candle_pattern(previous, current):
 BULLISH_HIGHLIGHT_PATTERNS = [
     "상승장악형",
     "상승관통형",
-    "장대양봉"
+    "장대양봉",
+    "상승망치형",
+    "상승역망치형"
 ]
 
 
@@ -1381,7 +1541,7 @@ def signal_pass(periods, ema_reverse=False):
 # =========================================================
 # SIGNAL 상세
 # EMA 조건 충족 시 표시
-# 상승장악형·상승관통형·장대양봉은 강조용
+# 상승패턴은 강조용이며 SIGNAL 조건에는 포함하지 않음
 # =========================================================
 
 def signal_details(periods, ema_reverse=False):
@@ -1984,7 +2144,8 @@ def update_upbit():
         "UPBIT | 거래대금 TOP%s | EMA%s | 시간봉=%s | "
         "참고 EMA 1h %s 및 %s | SIGNAL=%s | "
         "EMA 조건 + 당일 변동률 양수 | "
-        "캔들패턴 8종 표시, 상승장악형/상승관통형/장대양봉 강조",
+        "캔들패턴 12종 표시, 상승장악형/상승관통형/장대양봉/"
+        "상승망치형/상승역망치형 강조",
         TOP_N,
         get_ema_full_label(),
         get_timeframe_label(),
@@ -2460,6 +2621,36 @@ def candle_icon_html(pattern):
         </div>
         """
 
+    if pattern in ("상승망치형", "하락망치형"):
+        candle_class = (
+            "bullish hammer"
+            if pattern == "상승망치형"
+            else "bearish hammer"
+        )
+
+        return f"""
+        <div class="candle-pattern-visual single-candle">
+            <div class="mini-candle {candle_class}">
+                <span class="wick"></span><span class="body"></span>
+            </div>
+        </div>
+        """
+
+    if pattern in ("상승역망치형", "하락역망치형"):
+        candle_class = (
+            "bullish inverted-hammer"
+            if pattern == "상승역망치형"
+            else "bearish inverted-hammer"
+        )
+
+        return f"""
+        <div class="candle-pattern-visual single-candle">
+            <div class="mini-candle {candle_class}">
+                <span class="wick"></span><span class="body"></span>
+            </div>
+        </div>
+        """
+
     return """
     <div class="candle-pattern-visual empty"><span>—</span></div>
     """
@@ -2468,7 +2659,6 @@ def candle_icon_html(pattern):
 # =========================================================
 # 캔들 패턴 HTML
 # 전체 패턴 표시
-# 강조 대상은 상승장악형·상승관통형·장대양봉만
 # =========================================================
 
 def current_pattern_html(pattern):
@@ -2493,13 +2683,17 @@ def current_pattern_html(pattern):
 
         if item in BULLISH_HIGHLIGHT_PATTERNS:
             css_class = "bullish-pattern"
+
         elif item in [
             "하락장악형",
             "하락관통형",
             "장대음봉",
-            "음수도지"
+            "음수도지",
+            "하락망치형",
+            "하락역망치형"
         ]:
             css_class = "bearish-pattern"
+
         else:
             css_class = "neutral-pattern"
 
@@ -2531,6 +2725,12 @@ def signal_reason_html(reason):
 
     if reason == "장대양봉":
         return '<span class="pattern-cross">▲ 장대양봉</span>'
+
+    if reason == "상승망치형":
+        return '<span class="pattern-cross">▲ 상승망치형</span>'
+
+    if reason == "상승역망치형":
+        return '<span class="pattern-cross">▲ 상승역망치형</span>'
 
     return ""
 
@@ -2996,6 +3196,48 @@ section { margin-bottom: 12px; }
     background: #ff5966;
     height: 20px;
     width: 9px;
+}
+
+/* 망치형: 긴 아래꼬리 */
+.mini-candle.hammer .wick {
+    height: 22px;
+    top: 0;
+}
+
+.mini-candle.hammer .body {
+    position: absolute;
+    top: 1px;
+    height: 6px;
+    width: 8px;
+}
+
+.mini-candle.bullish.hammer .body {
+    background: #38d878;
+}
+
+.mini-candle.bearish.hammer .body {
+    background: #ff5966;
+}
+
+/* 역망치형: 긴 위꼬리 */
+.mini-candle.inverted-hammer .wick {
+    height: 22px;
+    top: 0;
+}
+
+.mini-candle.inverted-hammer .body {
+    position: absolute;
+    bottom: 1px;
+    height: 6px;
+    width: 8px;
+}
+
+.mini-candle.bullish.inverted-hammer .body {
+    background: #38d878;
+}
+
+.mini-candle.bearish.inverted-hammer .body {
+    background: #ff5966;
 }
 
 .candle-pattern-visual.empty {
@@ -3561,10 +3803,10 @@ def startup():
     log.info(
         "START | BTC KST 09:00 일봉 재구성 + "
         "업비트 TOP%s + EMA%s %s + "
-        "이전봉/현재봉 캔들 패턴 8종 표시 + "
+        "이전봉/현재봉 캔들 패턴 12종 표시 + "
         "EMA 조건 충족 SIGNAL + "
         "당일 변동률 양수 조건 + 참고용 EMA 1h %s 및 %s 표시 + "
-        "상승장악형/상승관통형/장대양봉은 강조용",
+        "상승장악형/상승관통형/장대양봉/상승망치형/상승역망치형 강조",
         TOP_N,
         get_ema_full_label(),
         get_timeframe_label(),
