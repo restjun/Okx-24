@@ -78,7 +78,6 @@ EMA_PULLBACK = 5
 EMA_FAST = 20
 EMA_SLOW = 60
 
-
 EMA_REFERENCE_TIMEFRAMES = [SIGNAL_TIMEFRAME]
 
 EMA_REFERENCE_LABELS = {
@@ -895,7 +894,7 @@ def get_ema_alignment_state(
 
 # =========================================================
 # 참고용 EMA 상태 분석
-# 수정: SIGNAL_TIMEFRAME 기준으로 계산
+# SIGNAL_TIMEFRAME 기준으로 계산
 # =========================================================
 
 def analyze_reference_ema_timeframes(market, price=None):
@@ -2208,7 +2207,7 @@ def update_upbit():
         "UPBIT | 거래대금 TOP%s | EMA%s | 시간봉=%s | "
         "참고 EMA 시그널 시간봉 %s 및 %s | SIGNAL=%s | "
         "EMA 5-20 역배열 + 당일 변동률 양수 | "
-        "캔들패턴 12종 표시, 상승장악형/상승관통형/"
+        "캔들패턴 12종 표시, 상승장악형/관통형/"
         "장대양봉/상승망치형/상승역망치형 강조",
         TOP_N,
         get_ema_full_label(),
@@ -2536,7 +2535,7 @@ def ema_alignment_html(alignment):
 
 # =========================================================
 # 참고용 EMA 상태 HTML
-# 수정: 시그널 시간봉 라벨 및 상태 표시
+# 수정: 두 줄 표시
 # =========================================================
 
 def reference_ema_states_html(row):
@@ -2578,13 +2577,13 @@ def reference_ema_states_html(row):
             symbol = "—"
 
         pieces.append(
-            f'<span class="ema-ref-item {cls}">'
+            f'<div class="ema-ref-item {cls}">'
             f'<span class="ema-ref-label">'
             f'{html.escape(timeframe_label)} '
             f'{html.escape(pair_label)}'
             f'</span> {symbol} '
             f'{html.escape(state) if state else "-"}'
-            f'</span>'
+            f'</div>'
         )
 
     return (
@@ -2592,8 +2591,10 @@ def reference_ema_states_html(row):
         f'title="{html.escape(timeframe_label)} 기준 EMA 상태">'
         + "".join(pieces)
         + '</div>'
-                    )
-    # =========================================================
+    )
+
+
+# =========================================================
 # 캔들 그림
 # =========================================================
 
@@ -3099,29 +3100,33 @@ section { margin-bottom: 12px; }
     white-space: nowrap;
 }
 
+/* 수정: EMA 상태를 두 줄로 표시 */
 .ema-ref-row {
-    display: inline-flex;
-    align-items: center;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
     justify-content: center;
-    gap: 4px;
+    gap: 3px;
     flex-wrap: nowrap;
     white-space: nowrap;
     min-width: 0;
 }
 
 .ema-ref-item {
-    display: inline-flex;
+    display: flex;
     align-items: center;
-    gap: 1px;
+    gap: 2px;
     font-size: 7px;
     font-weight: 900;
-    line-height: 1.2;
+    line-height: 1.3;
+    white-space: nowrap;
 }
 
 .ema-ref-label {
     color: #83909b;
     font-size: 6px;
     font-weight: 700;
+    white-space: nowrap;
 }
 
 .ema-ref-topline {
@@ -3135,10 +3140,8 @@ section { margin-bottom: 12px; }
     border-bottom: 1px solid #202a33;
 }
 
-.ema-ref-title {
-    color: #65717c;
-    font-size: 6px;
-    white-space: nowrap;
+.ema-ref-topline .ema-ref-row {
+    padding: 3px 0;
 }
 
 .pattern-box {
@@ -3457,8 +3460,9 @@ section { margin-bottom: 12px; }
 
 .signal-card .ema-ref-row {
     width: 100%;
-    justify-content: flex-start;
-    gap: 4px;
+    justify-content: center;
+    align-items: flex-start;
+    gap: 3px;
 }
 
 .signal-card .ema-ref-item { font-size: 7px; }
@@ -3905,4 +3909,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-)
+    )
