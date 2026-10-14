@@ -1,3 +1,4 @@
+
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
@@ -835,9 +836,7 @@ def analyze_ema_4h(market, price=None):
         and ema5 < ema20
     )
 
-    # 수정된 SIGNAL 조건:
-    # EMA 5 < EMA 15 또는 EMA 15 < EMA 50
-    # 둘 중 하나라도 역배열이면 SIGNAL EMA 조건 충족
+    # EMA 5/15 또는 EMA 15/50 중 하나라도 역배열이면 통과
     signal_condition = (
         ema5 < ema20
         or ema20 < ema60
@@ -1870,7 +1869,6 @@ def update_upbit():
                 "cross_signal": False
             }
 
-        # 수정된 SIGNAL EMA 조건을 사용
         # EMA 5/15 또는 EMA 15/50 중 하나라도 역배열이면 통과
         ema_signal_condition = ema_analysis.get(
             "signal_condition",
@@ -1946,6 +1944,8 @@ def update_upbit():
     latest_upbit_daily_update_time = kst()
     latest_upbit_update_time = latest_upbit_daily_update_time
 
+    # 수정: 참고용 1시간봉 EMA 배열 조합에 따른 제외 조건 삭제
+    # signal_4h 조건과 당일 변동률 양수 조건만 유지
     latest_signal_data = [
         row
         for row in rows
@@ -1953,15 +1953,6 @@ def update_upbit():
             row.get("signal_4h", False)
             and row.get("daily_change") is not None
             and row.get("daily_change") > 0
-
-            # 참고용 1시간봉 EMA 첫 쌍 정배열
-            # + 두 번째 쌍 역배열인 종목 제외
-            and not (
-                row.get("ema_reference_states", {}).get("1h_5_20")
-                == "정배열"
-                and row.get("ema_reference_states", {}).get("1h")
-                == "역배열"
-            )
         )
     ]
 
@@ -1978,16 +1969,13 @@ def update_upbit():
         "UPBIT | 거래대금 TOP%s | EMA%s | 시간봉=%s | "
         "참고 EMA 1h %s 및 %s | SIGNAL=%s | "
         "EMA 5/15 또는 EMA 15/50 역배열 조건 + 당일 변동률 양수 | "
-        "상승패턴은 강조용 | "
-        "1h EMA %s 정배열 + EMA %s 역배열 제외",
+        "상승패턴은 강조용",
         TOP_N,
         get_ema_full_label(),
         get_timeframe_label(),
         pair_1,
         pair_2,
-        len(latest_signal_data),
-        pair_1,
-        pair_2
+        len(latest_signal_data)
     )
 
 
@@ -3525,13 +3513,10 @@ def startup():
         "EMA 5/15 또는 EMA 15/50 역배열 + "
         "EMA 조건 충족 SIGNAL + "
         "당일 변동률 양수 조건 + 참고용 EMA 1h %s 및 %s 표시 + "
-        "상승패턴은 강조용 + "
-        "1h EMA %s 정배열 + EMA %s 역배열 SIGNAL 제외",
+        "상승패턴은 강조용",
         TOP_N,
         get_ema_full_label(),
         get_timeframe_label(),
-        pair_1,
-        pair_2,
         pair_1,
         pair_2
     )
