@@ -39,7 +39,7 @@ UTC = ZoneInfo("UTC")
 # 사용자 설정
 # =========================================================
 
-TOP_N = 20
+TOP_N = 10
 SHOW_TOP_LIST = "N"
 UPDATE_MINUTES = 1
 
@@ -73,6 +73,7 @@ TIMEFRAME_LABEL = {
 
 # =========================================================
 # EMA 설정
+# 기간은 아래 세 값만 수정하면 계산과 화면 표시가 연동됨
 # =========================================================
 
 EMA_PULLBACK = 5
@@ -132,6 +133,17 @@ def get_timeframe_label():
         SIGNAL_TIMEFRAME,
         SIGNAL_TIMEFRAME
     )
+
+
+def get_ema_pair_labels():
+    return (
+        f"{EMA_PULLBACK}/{EMA_FAST}",
+        f"{EMA_FAST}/{EMA_SLOW}"
+    )
+
+
+def get_ema_full_label():
+    return f"{EMA_PULLBACK}/{EMA_FAST}/{EMA_SLOW}"
 
 
 # =========================================================
@@ -1266,7 +1278,6 @@ def analyze_previous_current_pattern(periods):
     current = periods[-1]
     previous = periods[-2] if len(periods) >= 2 else None
 
-    # 현재봉은 이전봉과 비교해 패턴 판정
     result["current_pattern"] = get_candle_pattern(
         previous,
         current
@@ -1277,7 +1288,6 @@ def analyze_previous_current_pattern(periods):
             is_bullish_engulfing(previous, current)
         )
 
-        # 기존 방식 유지: 이전봉은 단일 캔들 패턴으로 판정
         result["previous_pattern"] = get_candle_pattern(
             None,
             previous
@@ -1371,14 +1381,10 @@ def signal_details(periods, ema_reverse=False):
         pattern_info["previous_bullish_pattern"]
     )
 
-    # 상승패턴 유무는 강조 여부로만 사용
     pattern_signal = bool(
         current_signal or previous_signal
     )
 
-    # 핵심 수정:
-    # 기존에는 EMA 조건과 상승패턴이 모두 있어야 signal=True
-    # 수정 후에는 EMA 조건만 충족해도 시그널에 표시
     signal = bool(ema_reverse)
 
     reason = None
@@ -1393,8 +1399,6 @@ def signal_details(periods, ema_reverse=False):
 
     return {
         "signal": signal,
-
-        # 패턴 유무는 표시 강조용 별도 값
         "pattern_signal": pattern_signal,
 
         "current_signal": current_signal,
@@ -1442,7 +1446,6 @@ def analyze_signal_candles(market, price, ema_reverse=False):
 
     timeframe = SIGNAL_TIMEFRAME
 
-    # 15분봉
     if timeframe == "15m":
         df = get_upbit_15m_candles(
             market,
@@ -1499,7 +1502,6 @@ def analyze_signal_candles(market, price, ema_reverse=False):
 
         periods = periods[-6:]
 
-    # 1시간봉
     elif timeframe == "1h":
         df = get_upbit_4h_candles(
             market,
@@ -1556,7 +1558,6 @@ def analyze_signal_candles(market, price, ema_reverse=False):
 
         periods = periods[-6:]
 
-    # 4시간봉
     elif timeframe == "4h":
         df = get_upbit_4h_candles(
             market,
@@ -1571,7 +1572,6 @@ def analyze_signal_candles(market, price, ema_reverse=False):
             price
         )
 
-    # 일봉
     elif timeframe == "1d":
         df = get_upbit_daily_candles(
             market,
@@ -1620,11 +1620,7 @@ def analyze_signal_candles(market, price, ema_reverse=False):
 
     return {
         "periods": periods,
-
-        # EMA 조건을 충족하면 패턴 없이도 표시
         "signal_pass": details["signal"],
-
-        # 상승패턴 유무는 강조용
         "pattern_signal": details["pattern_signal"],
 
         "current_signal": details["current_signal"],
@@ -1720,10 +1716,7 @@ def make_row(
         "periods_daily": analysis_daily["periods"],
         "periods_4h": analysis_4h["periods"],
 
-        # EMA 및 일봉 조건을 충족하면 표시
         "signal_4h": analysis_4h["signal_pass"],
-
-        # 상승패턴 유무는 별도 저장하여 강조에만 사용
         "signal_4h_pattern": analysis_4h.get(
             "pattern_signal",
             False
@@ -1748,7 +1741,7 @@ def make_row(
             "current_bullish_engulfing"
         ],
 
-        # 기존 키 이름 유지: ema5는 기존 EMA20 값
+        # 기존 내부 키 이름은 호환성을 위해 유지
         "ema5": ema_analysis["ema5"],
         "ema15": ema_analysis["ema15"],
 
@@ -1757,7 +1750,6 @@ def make_row(
         "ema20": ema_analysis.get("ema20"),
         "ema60": ema_analysis.get("ema60"),
 
-        # EMA 시그널 상태
         "ema_alignment": ema_analysis["alignment"],
         "ema_reverse": ema_analysis["reverse"],
         "ema_bullish_pullback": ema_analysis.get(
@@ -1773,12 +1765,10 @@ def make_row(
         "ema_fast_period": EMA_FAST,
         "ema_slow_period": EMA_SLOW,
 
-        # 기존 데이터 구조 호환
         "ema_cross_previous": False,
         "ema_cross_current": False,
         "ema_cross_signal": False,
 
-        # 참고용 1시간봉 EMA5/20 및 EMA20/60 상태
         "ema_reference_states": reference_ema_states,
 
         "simultaneous_signal": analysis_4h["signal_pass"]
@@ -1875,7 +1865,6 @@ def update_upbit():
                 "cross_signal": False
             }
 
-        # 기존 EMA 조건 유지
         ema_signal_condition = (
             ema_analysis.get("reverse", False)
             or ema_analysis.get("bullish_pullback", False)
@@ -1913,7 +1902,6 @@ def update_upbit():
                 "current_bullish_engulfing": False
             }
 
-        # 참고용 EMA 상태는 1시간봉 EMA5/20 및 EMA20/60 표시
         try:
             reference_ema_states = analyze_reference_ema_timeframes(
                 market,
@@ -1951,14 +1939,6 @@ def update_upbit():
     latest_upbit_daily_update_time = kst()
     latest_upbit_update_time = latest_upbit_daily_update_time
 
-    # SIGNAL 필터:
-    # 1. EMA20/60 역배열 또는 EMA20/60 정배열 + EMA5/20 역배열
-    # 2. 당일 변동률 양수
-    # 3. 참고용 1시간봉 EMA5/20 정배열 + EMA20/60 역배열 종목 제외
-    #
-    # 상승패턴은 표시 필수 조건이 아님.
-    # 상승패턴이 있으면 카드에서 강조하고, 없어도 조건 충족 시 표시.
-
     latest_signal_data = [
         row
         for row in rows
@@ -1967,8 +1947,8 @@ def update_upbit():
             and row.get("daily_change") is not None
             and row.get("daily_change") > 0
 
-            # 제외 조건:
-            # 1시간봉 EMA5/20 정배열 + EMA20/60 역배열
+            # 참고용 1시간봉 EMA 첫 쌍 정배열
+            # + 두 번째 쌍 역배열인 종목 제외
             and not (
                 row.get("ema_reference_states", {}).get("1h_5_20")
                 == "정배열"
@@ -1985,15 +1965,22 @@ def update_upbit():
     for signal_rank, row in enumerate(latest_signal_data, 1):
         row["signal_rank"] = signal_rank
 
+    pair_1, pair_2 = get_ema_pair_labels()
+
     log.info(
-        "UPBIT | 거래대금 TOP%s | EMA5/20/60 | 시간봉=%s | "
-        "참고 EMA 1h 5/20 및 20/60 | SIGNAL=%s | "
+        "UPBIT | 거래대금 TOP%s | EMA%s | 시간봉=%s | "
+        "참고 EMA 1h %s 및 %s | SIGNAL=%s | "
         "EMA 조건 충족 + 당일 변동률 양수 | "
         "상승패턴은 강조용 | "
-        "1h EMA5/20 정배열 + EMA20/60 역배열 제외",
+        "1h EMA %s 정배열 + EMA %s 역배열 제외",
         TOP_N,
+        get_ema_full_label(),
         get_timeframe_label(),
-        len(latest_signal_data)
+        pair_1,
+        pair_2,
+        len(latest_signal_data),
+        pair_1,
+        pair_2
     )
 
 
@@ -2314,12 +2301,14 @@ def ema_alignment_html(alignment):
 
 # =========================================================
 # 참고용 EMA 상태 HTML
-# 1시간봉 EMA5/20 및 EMA20/60
+# 기간 표시는 EMA 설정값과 자동 연동
 # =========================================================
 
 def reference_ema_states_html(row):
     states = row.get("ema_reference_states") or {}
     pieces = []
+
+    pair_1, pair_2 = get_ema_pair_labels()
 
     state_5_20 = states.get("1h_5_20")
 
@@ -2341,7 +2330,7 @@ def reference_ema_states_html(row):
 
     pieces.append(
         f'<span class="ema-ref-item {cls}">'
-        f'<span class="ema-ref-label">5/20</span>{symbol} '
+        f'<span class="ema-ref-label">{pair_1}</span>{symbol} '
         f'{state_5_20 if state_5_20 else "-"}'
         f'</span>'
     )
@@ -2366,14 +2355,14 @@ def reference_ema_states_html(row):
 
     pieces.append(
         f'<span class="ema-ref-item {cls}">'
-        f'<span class="ema-ref-label">20/60</span>{symbol} '
+        f'<span class="ema-ref-label">{pair_2}</span>{symbol} '
         f'{state_20_60 if state_20_60 else "-"}'
         f'</span>'
     )
 
     return (
         '<div class="ema-ref-row" '
-        'title="참고용 1시간봉 EMA 5/20 및 20/60 상태">'
+        f'title="참고용 1시간봉 EMA {pair_1} 및 {pair_2} 상태">'
         + "".join(pieces)
         + '</div>'
     )
@@ -2576,7 +2565,6 @@ def signal_card(row):
         False
     )
 
-    # 상승패턴이 있을 때만 강조 배지 표시
     if has_bullish_pattern:
         badge_html = (
             '<span class="signal-type-badge">'
@@ -2635,6 +2623,7 @@ def signal_card(row):
 
 def signal_section():
     timeframe_label = get_timeframe_label()
+    ema_full_label = get_ema_full_label()
 
     if not latest_signal_data:
         body = """
@@ -2653,7 +2642,7 @@ def signal_section():
         <div class="section-head signal-panel-head">
             <div>
                 <span class="section-kicker">SIGNAL</span>
-                <b>🔴 EMA5/20/60 · {timeframe_label} SIGNAL</b>
+                <b>🔴 EMA{ema_full_label} · {timeframe_label} SIGNAL</b>
             </div>
 
             <span class="update-time">
@@ -2692,8 +2681,8 @@ def signal_section():
 
 def card(row, kind):
     timeframe_label = get_timeframe_label()
+    pair_1, pair_2 = get_ema_pair_labels()
 
-    # TOP 카드의 강조 표시도 상승패턴이 있는 경우만
     has_bullish_pattern = row.get(
         "signal_4h_pattern",
         False
@@ -2727,7 +2716,7 @@ def card(row, kind):
 
             <div class="ema-ref-topline">
                 <span class="ema-ref-title">
-                    EMA 5/20 · 20/60
+                    EMA {pair_1} · {pair_2}
                 </span>
 
                 {reference_ema_states_html(row)}
@@ -3052,7 +3041,6 @@ section { margin-bottom: 12px; }
     border-bottom: 1px solid #20282f;
 }
 
-/* 상승패턴이 있는 SIGNAL 카드만 강조 */
 .signal-card.has-bullish-pattern {
     background: #171316;
     box-shadow: inset 3px 0 0 #e4c45e;
@@ -3521,17 +3509,27 @@ def scheduler():
 
 @app.on_event("startup")
 def startup():
+    pair_1, pair_2 = get_ema_pair_labels()
+
     log.info(
         "START | BTC KST 09:00 일봉 재구성 + "
-        "업비트 TOP%s + EMA5/20/60 %s + "
+        "업비트 TOP%s + EMA%s %s + "
         "이전봉/현재봉 캔들 패턴 + "
-        "EMA20/60 역배열 또는 EMA20/60 정배열+EMA5/20 역배열 + "
+        "EMA%s 역배열 또는 EMA%s 정배열+EMA%s 역배열 + "
         "EMA 조건 충족 SIGNAL + "
-        "당일 변동률 양수 조건 + 참고용 EMA 1h 5/20 및 20/60 표시 + "
+        "당일 변동률 양수 조건 + 참고용 EMA 1h %s 및 %s 표시 + "
         "상승패턴은 강조용 + "
-        "1h EMA5/20 정배열 + EMA20/60 역배열 SIGNAL 제외",
+        "1h EMA %s 정배열 + EMA %s 역배열 SIGNAL 제외",
         TOP_N,
-        get_timeframe_label()
+        get_ema_full_label(),
+        get_timeframe_label(),
+        f"{EMA_FAST}/{EMA_SLOW}",
+        f"{EMA_FAST}/{EMA_SLOW}",
+        pair_1,
+        pair_1,
+        pair_2,
+        pair_1,
+        pair_2
     )
 
     threading.Thread(
