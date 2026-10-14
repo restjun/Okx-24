@@ -75,8 +75,8 @@ TIMEFRAME_LABEL = {
 # =========================================================
 
 EMA_PULLBACK = 5
-EMA_FAST = 15
-EMA_SLOW = 50
+EMA_FAST = 20
+EMA_SLOW = 60
 
 EMA_REFERENCE_TIMEFRAMES = ["1h"]
 
