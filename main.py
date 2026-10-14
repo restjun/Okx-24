@@ -39,7 +39,7 @@ UTC = ZoneInfo("UTC")
 # 사용자 설정
 # =========================================================
 
-TOP_N = 10
+TOP_N = 20
 SHOW_TOP_LIST = "N"
 UPDATE_MINUTES = 1
 
@@ -76,8 +76,8 @@ TIMEFRAME_LABEL = {
 # =========================================================
 
 EMA_PULLBACK = 5
-EMA_FAST = 20
-EMA_SLOW = 60
+EMA_FAST = 15
+EMA_SLOW = 50
 
 # 참고용 EMA 상태는 1시간봉만 표시
 EMA_REFERENCE_TIMEFRAMES = ["1h"]
