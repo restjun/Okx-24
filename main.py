@@ -61,7 +61,7 @@ MAX_RETRIES = 10
 # SIGNAL 설정
 # =========================================================
 
-SIGNAL_TIMEFRAME = "1h"
+SIGNAL_TIMEFRAME = "15m"
 
 TIMEFRAME_LABEL = {
     "15m": "15분봉",
