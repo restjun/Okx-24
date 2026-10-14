@@ -1541,6 +1541,7 @@ def signal_details(periods, ema_reverse=False):
         current_signal or previous_signal
     )
 
+    # SIGNAL 통과 여부는 EMA 5 < EMA 20만 사용
     signal = bool(ema_reverse)
 
     reason = None
