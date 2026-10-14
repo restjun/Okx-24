@@ -255,7 +255,9 @@ def get_upbit_markets():
                 result.append({
                     "market": x["market"],
                     "current_price": float(x["trade_price"]),
-                    "volume_24h": float(x["acc_trade_price_24h"])
+                    "volume_24h": float(
+                        x["acc_trade_price_24h"]
+                    )
                 })
             except Exception:
                 pass
@@ -824,7 +826,7 @@ def analyze_ema_4h(market, price=None):
     ema60 = float(ema60_valid.iloc[-1])
 
     # EMA 5-20 역배열만 시그널 조건
-    # EMA 20-60은 화면 표시용
+    # EMA 20-60은 표시 전용
     reverse = ema5 < ema20
 
     bullish_pullback = (
@@ -836,7 +838,7 @@ def analyze_ema_4h(market, price=None):
         ema5 < ema20
     )
 
-    # 정배열/역배열 표시는 EMA 20-60 기준으로 유지
+    # 정배열/역배열 표시는 EMA 20-60 기준
     if ema20 > ema60:
         alignment = "정배열"
     elif ema20 < ema60:
@@ -861,7 +863,7 @@ def analyze_ema_4h(market, price=None):
 
 
 # =========================================================
-# 참고용 EMA 상태 분석
+# 참고용 EMA 상태 판정
 # =========================================================
 
 def get_ema_alignment_state(
@@ -887,19 +889,56 @@ def get_ema_alignment_state(
     return "동일"
 
 
+# =========================================================
+# 참고용 EMA 상태 분석
+# 수정: SIGNAL_TIMEFRAME 기준으로 계산
+# =========================================================
+
 def analyze_reference_ema_timeframes(market, price=None):
     states = {
+        "signal_5_20": None,
+        "signal_20_60": None,
+
+        # 기존 키 호환 유지
         "1h_5_20": None,
         "1h": None
     }
 
-    try:
-        df_1h = get_upbit_4h_candles(
-            market,
-            200
-        )
+    timeframe = SIGNAL_TIMEFRAME
 
-        if not df_1h.empty:
+    try:
+        if timeframe == "15m":
+            df = get_upbit_15m_candles(
+                market,
+                EMA_HISTORY_CANDLES
+            )
+
+            if df.empty:
+                return states
+
+            now = datetime.now(KST)
+
+            current_start = now.replace(
+                minute=(now.minute // 15) * 15,
+                second=0,
+                microsecond=0
+            )
+
+            df = update_current_candle(
+                df,
+                current_start,
+                price
+            )
+
+        elif timeframe == "1h":
+            df = get_upbit_4h_candles(
+                market,
+                EMA_HISTORY_CANDLES
+            )
+
+            if df.empty:
+                return states
+
             now = datetime.now(KST)
 
             current_start = now.replace(
@@ -908,27 +947,83 @@ def analyze_reference_ema_timeframes(market, price=None):
                 microsecond=0
             )
 
-            df_1h = update_current_candle(
-                df_1h,
+            df = update_current_candle(
+                df,
                 current_start,
                 price
             )
 
-            states["1h_5_20"] = get_ema_alignment_state(
-                df_1h,
-                EMA_PULLBACK,
-                EMA_FAST
+        elif timeframe == "4h":
+            df_1h = get_upbit_4h_candles(
+                market,
+                EMA_HISTORY_CANDLES
             )
 
-            states["1h"] = get_ema_alignment_state(
+            if df_1h.empty:
+                return states
+
+            df = build_upbit_4h_candles(
                 df_1h,
-                EMA_FAST,
-                EMA_SLOW
+                price
             )
+
+            if df.empty:
+                return states
+
+        elif timeframe == "1d":
+            df = get_upbit_daily_candles(
+                market,
+                200
+            )
+
+            if df.empty:
+                return states
+
+            now = datetime.now(KST)
+
+            current_start = now.replace(
+                hour=9,
+                minute=0,
+                second=0,
+                microsecond=0
+            )
+
+            if now < current_start:
+                current_start -= timedelta(days=1)
+
+            df = update_current_candle(
+                df,
+                current_start,
+                price
+            )
+
+        else:
+            log.warning(
+                "지원하지 않는 참고 EMA 시간봉: %s",
+                timeframe
+            )
+            return states
+
+        # 두 쌍 모두 시그널 시간봉의 동일한 데이터로 계산
+        states["signal_5_20"] = get_ema_alignment_state(
+            df,
+            EMA_PULLBACK,
+            EMA_FAST
+        )
+
+        states["signal_20_60"] = get_ema_alignment_state(
+            df,
+            EMA_FAST,
+            EMA_SLOW
+        )
+
+        # 기존 표시 키도 유지하되 값은 시그널 시간봉 기준
+        states["1h_5_20"] = states["signal_5_20"]
+        states["1h"] = states["signal_20_60"]
 
     except Exception as e:
         log.warning(
-            "%s 1시간봉 참고 EMA 오류: %s",
+            "%s 시그널 시간봉 참고 EMA 오류: %s",
             market,
             e
         )
@@ -2060,6 +2155,8 @@ def update_upbit():
             )
 
             reference_ema_states = {
+                "signal_5_20": None,
+                "signal_20_60": None,
                 "1h_5_20": None,
                 "1h": None
             }
@@ -2105,10 +2202,10 @@ def update_upbit():
 
     log.info(
         "UPBIT | 거래대금 TOP%s | EMA%s | 시간봉=%s | "
-        "참고 EMA 1h %s 및 %s | SIGNAL=%s | "
+        "참고 EMA 시그널 시간봉 %s 및 %s | SIGNAL=%s | "
         "EMA 5-20 역배열 + 당일 변동률 양수 | "
-        "캔들패턴 12종 표시, 상승장악형/상승관통형/장대양봉/"
-        "상승망치형/상승역망치형 강조",
+        "캔들패턴 12종 표시, 상승장악형/상승관통형/"
+        "장대양봉/상승망치형/상승역망치형 강조",
         TOP_N,
         get_ema_full_label(),
         get_timeframe_label(),
@@ -2435,67 +2532,64 @@ def ema_alignment_html(alignment):
 
 # =========================================================
 # 참고용 EMA 상태 HTML
+# 수정: 시그널 시간봉 라벨 및 상태 표시
 # =========================================================
 
 def reference_ema_states_html(row):
     states = row.get("ema_reference_states") or {}
     pieces = []
 
+    timeframe_label = get_timeframe_label()
     pair_1, pair_2 = get_ema_pair_labels()
 
-    state_5_20 = states.get("1h_5_20")
+    display_items = [
+        (
+            pair_1,
+            states.get(
+                "signal_5_20",
+                states.get("1h_5_20")
+            )
+        ),
+        (
+            pair_2,
+            states.get(
+                "signal_20_60",
+                states.get("1h")
+            )
+        )
+    ]
 
-    if state_5_20 == "정배열":
-        cls = "ema-normal"
-        symbol = "▲"
-    elif state_5_20 == "역배열":
-        cls = "ema-reverse"
-        symbol = "▼"
-    elif state_5_20 == "동일":
-        cls = "ema-same"
-        symbol = "—"
-    else:
-        cls = "ema-same"
-        symbol = "—"
+    for pair_label, state in display_items:
+        if state == "정배열":
+            cls = "ema-normal"
+            symbol = "▲"
+        elif state == "역배열":
+            cls = "ema-reverse"
+            symbol = "▼"
+        elif state == "동일":
+            cls = "ema-same"
+            symbol = "—"
+        else:
+            cls = "ema-same"
+            symbol = "—"
 
-    pieces.append(
-        f'<span class="ema-ref-item {cls}">'
-        f'<span class="ema-ref-label">{pair_1}</span>{symbol} '
-        f'{state_5_20 if state_5_20 else "-"}'
-        f'</span>'
-    )
-
-    state_20_60 = states.get("1h")
-
-    if state_20_60 == "정배열":
-        cls = "ema-normal"
-        symbol = "▲"
-    elif state_20_60 == "역배열":
-        cls = "ema-reverse"
-        symbol = "▼"
-    elif state_20_60 == "동일":
-        cls = "ema-same"
-        symbol = "—"
-    else:
-        cls = "ema-same"
-        symbol = "—"
-
-    pieces.append(
-        f'<span class="ema-ref-item {cls}">'
-        f'<span class="ema-ref-label">{pair_2}</span>{symbol} '
-        f'{state_20_60 if state_20_60 else "-"}'
-        f'</span>'
-    )
+        pieces.append(
+            f'<span class="ema-ref-item {cls}">'
+            f'<span class="ema-ref-label">'
+            f'{html.escape(timeframe_label)} '
+            f'{html.escape(pair_label)}'
+            f'</span> {symbol} '
+            f'{html.escape(state) if state else "-"}'
+            f'</span>'
+        )
 
     return (
         '<div class="ema-ref-row" '
-        f'title="참고용 1시간봉 EMA {pair_1} 및 {pair_2} 상태">'
+        f'title="{html.escape(timeframe_label)} 기준 EMA 상태">'
         + "".join(pieces)
         + '</div>'
-    )
-
-
-# =========================================================
+                    )
+    # =========================================================
 # 캔들 그림
 # =========================================================
 
@@ -2615,7 +2709,9 @@ def candle_icon_html(pattern):
         """
 
     return """
-    <div class="candle-pattern-visual empty"><span>—</span></div>
+    <div class="candle-pattern-visual empty">
+        <span>—</span>
+    </div>
     """
 
 
@@ -2716,8 +2812,12 @@ def btc_html():
 
         <div class="btc-main">
             <div class="btc-name">BTC</div>
-            <div class="btc-price">{fmt_price(latest_btc_okx_price)}</div>
-            <div class="btc-change">{fmt_change(latest_btc_daily_change)}</div>
+            <div class="btc-price">
+                {fmt_price(latest_btc_okx_price)}
+            </div>
+            <div class="btc-change">
+                {fmt_change(latest_btc_daily_change)}
+            </div>
         </div>
     </section>
     """
@@ -3766,8 +3866,10 @@ def startup():
         "업비트 TOP%s + EMA%s %s + "
         "이전봉/현재봉 캔들 패턴 12종 표시 + "
         "EMA 5-20 역배열 SIGNAL + "
-        "당일 변동률 양수 조건 + 참고용 EMA 1h %s 및 %s 표시 + "
-        "상승장악형/상승관통형/장대양봉/상승망치형/상승역망치형 강조",
+        "당일 변동률 양수 조건 + "
+        "참고용 EMA 시그널 시간봉 %s 및 %s 표시 + "
+        "상승장악형/상승관통형/장대양봉/"
+        "상승망치형/상승역망치형 강조",
         TOP_N,
         get_ema_full_label(),
         get_timeframe_label(),
@@ -3799,4 +3901,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
-    )
+)
