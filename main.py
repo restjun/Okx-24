@@ -2929,11 +2929,11 @@ def signal_section():
             <span>SIGNAL 조건</span>
 
             <b>
-                EMA 5-20 역배열
+                EMA 5-20 
             </b>
 
             <small>
-                당일 변동률 양수 · EMA 20-60 표시 전용 · 상승패턴 강조
+                당일 변동률 양수 · 상승패턴 강조
             </small>
         </div>
 
