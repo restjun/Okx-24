@@ -39,7 +39,7 @@ UTC = ZoneInfo("UTC")
 # 사용자 설정
 # =========================================================
 
-TOP_N = 30
+TOP_N = 10
 SHOW_TOP_LIST = "N"
 UPDATE_MINUTES = 1
 
@@ -826,16 +826,21 @@ def analyze_ema_4h(market, price=None):
     ema20 = float(ema20_valid.iloc[-1])
     ema60 = float(ema60_valid.iloc[-1])
 
+    # 기존 표시용 역배열 기준 유지: EMA 15 < EMA 50
     reverse = ema20 < ema60
 
+    # 기존 눌림 조건 유지
     bullish_pullback = (
         ema20 > ema60
         and ema5 < ema20
     )
 
+    # 수정된 SIGNAL 조건:
+    # EMA 5 < EMA 15 또는 EMA 15 < EMA 50
+    # 둘 중 하나라도 역배열이면 SIGNAL EMA 조건 충족
     signal_condition = (
-        reverse
-        or bullish_pullback
+        ema5 < ema20
+        or ema20 < ema60
     )
 
     if ema20 > ema60:
@@ -1865,9 +1870,11 @@ def update_upbit():
                 "cross_signal": False
             }
 
-        ema_signal_condition = (
-            ema_analysis.get("reverse", False)
-            or ema_analysis.get("bullish_pullback", False)
+        # 수정된 SIGNAL EMA 조건을 사용
+        # EMA 5/15 또는 EMA 15/50 중 하나라도 역배열이면 통과
+        ema_signal_condition = ema_analysis.get(
+            "signal_condition",
+            False
         )
 
         try:
@@ -1970,7 +1977,7 @@ def update_upbit():
     log.info(
         "UPBIT | 거래대금 TOP%s | EMA%s | 시간봉=%s | "
         "참고 EMA 1h %s 및 %s | SIGNAL=%s | "
-        "EMA 조건 충족 + 당일 변동률 양수 | "
+        "EMA 5/15 또는 EMA 15/50 역배열 조건 + 당일 변동률 양수 | "
         "상승패턴은 강조용 | "
         "1h EMA %s 정배열 + EMA %s 역배열 제외",
         TOP_N,
@@ -3515,7 +3522,7 @@ def startup():
         "START | BTC KST 09:00 일봉 재구성 + "
         "업비트 TOP%s + EMA%s %s + "
         "이전봉/현재봉 캔들 패턴 + "
-        "EMA%s 역배열 또는 EMA%s 정배열+EMA%s 역배열 + "
+        "EMA 5/15 또는 EMA 15/50 역배열 + "
         "EMA 조건 충족 SIGNAL + "
         "당일 변동률 양수 조건 + 참고용 EMA 1h %s 및 %s 표시 + "
         "상승패턴은 강조용 + "
@@ -3523,9 +3530,6 @@ def startup():
         TOP_N,
         get_ema_full_label(),
         get_timeframe_label(),
-        f"{EMA_FAST}/{EMA_SLOW}",
-        f"{EMA_FAST}/{EMA_SLOW}",
-        pair_1,
         pair_1,
         pair_2,
         pair_1,
