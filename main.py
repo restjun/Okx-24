@@ -1,4 +1,3 @@
-
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
@@ -824,7 +823,9 @@ def analyze_ema_4h(market, price=None):
     ema20 = float(ema20_valid.iloc[-1])
     ema60 = float(ema60_valid.iloc[-1])
 
-    reverse = ema20 < ema60
+    # EMA 5-20 역배열만 시그널 조건
+    # EMA 20-60은 화면 표시용
+    reverse = ema5 < ema20
 
     bullish_pullback = (
         ema20 > ema60
@@ -833,9 +834,9 @@ def analyze_ema_4h(market, price=None):
 
     signal_condition = (
         ema5 < ema20
-        or ema20 < ema60
     )
 
+    # 정배열/역배열 표시는 EMA 20-60 기준으로 유지
     if ema20 > ema60:
         alignment = "정배열"
     elif ema20 < ema60:
@@ -1998,9 +1999,9 @@ def update_upbit():
             }
 
         # =================================================
-        # 수정: EMA 5-20 역배열일 때만 SIGNAL 조건 통과
-        # EMA5 < EMA20이면 통과 가능
-        # EMA5 >= EMA20이거나 값이 없으면 제외
+        # SIGNAL 조건
+        # EMA 5-20 역배열만 사용
+        # EMA 20-60은 표시 전용
         # =================================================
 
         ema5_value = ema_analysis.get("ema5_short")
@@ -2822,11 +2823,11 @@ def signal_section():
             <span>SIGNAL 조건</span>
 
             <b>
-                EMA 조건 충족
+                EMA 5-20 역배열
             </b>
 
             <small>
-                당일 변동률 양수 · 상승패턴은 강조용
+                당일 변동률 양수 · EMA 20-60 표시 전용 · 상승패턴 강조
             </small>
         </div>
 
