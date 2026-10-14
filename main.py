@@ -1277,8 +1277,7 @@ def analyze_previous_current_pattern(periods):
             is_bullish_engulfing(previous, current)
         )
 
-        # 이전봉은 이전 이전봉을 사용하지 않고
-        # 해당 봉 자체의 단일 캔들 패턴만 판정
+        # 기존 방식 유지: 이전봉은 단일 캔들 패턴으로 판정
         result["previous_pattern"] = get_candle_pattern(
             None,
             previous
@@ -1347,24 +1346,18 @@ def build_upbit_4h_periods(df, current_price=None):
 
 # =========================================================
 # SIGNAL
-# EMA 조건 통과 + 이전봉 또는 현재봉 상승패턴
+# 기존 EMA 조건만으로 통과 여부 판정
+# 상승패턴은 표시 및 강조에만 사용
 # =========================================================
 
 def signal_pass(periods, ema_reverse=False):
-    pattern_info = analyze_previous_current_pattern(periods)
-
-    bullish_pattern = bool(
-        pattern_info["bullish_pattern_signal"]
-    )
-
-    return bool(
-        ema_reverse
-        and bullish_pattern
-    )
+    return bool(ema_reverse)
 
 
 # =========================================================
 # SIGNAL 상세
+# EMA 조건 충족 시 표시
+# 상승패턴이 있으면 강조
 # =========================================================
 
 def signal_details(periods, ema_reverse=False):
@@ -1378,17 +1371,19 @@ def signal_details(periods, ema_reverse=False):
         pattern_info["previous_bullish_pattern"]
     )
 
+    # 상승패턴 유무는 강조 여부로만 사용
     pattern_signal = bool(
         current_signal or previous_signal
     )
 
-    signal = bool(
-        ema_reverse and pattern_signal
-    )
+    # 핵심 수정:
+    # 기존에는 EMA 조건과 상승패턴이 모두 있어야 signal=True
+    # 수정 후에는 EMA 조건만 충족해도 시그널에 표시
+    signal = bool(ema_reverse)
 
     reason = None
 
-    if signal:
+    if pattern_signal:
         if current_signal:
             reason = pattern_info["current_pattern"]
         elif previous_signal:
@@ -1398,6 +1393,10 @@ def signal_details(periods, ema_reverse=False):
 
     return {
         "signal": signal,
+
+        # 패턴 유무는 표시 강조용 별도 값
+        "pattern_signal": pattern_signal,
+
         "current_signal": current_signal,
         "previous_signal": previous_signal,
         "previous_previous_signal": False,
@@ -1426,6 +1425,7 @@ def analyze_signal_candles(market, price, ema_reverse=False):
     empty_result = {
         "periods": [],
         "signal_pass": False,
+        "pattern_signal": False,
         "current_signal": False,
         "previous_signal": False,
         "previous_previous_signal": False,
@@ -1620,7 +1620,13 @@ def analyze_signal_candles(market, price, ema_reverse=False):
 
     return {
         "periods": periods,
+
+        # EMA 조건을 충족하면 패턴 없이도 표시
         "signal_pass": details["signal"],
+
+        # 상승패턴 유무는 강조용
+        "pattern_signal": details["pattern_signal"],
+
         "current_signal": details["current_signal"],
         "previous_signal": details["previous_signal"],
         "previous_previous_signal": False,
@@ -1713,7 +1719,16 @@ def make_row(
         "daily_change": analysis_daily["change"],
         "periods_daily": analysis_daily["periods"],
         "periods_4h": analysis_4h["periods"],
+
+        # EMA 및 일봉 조건을 충족하면 표시
         "signal_4h": analysis_4h["signal_pass"],
+
+        # 상승패턴 유무는 별도 저장하여 강조에만 사용
+        "signal_4h_pattern": analysis_4h.get(
+            "pattern_signal",
+            False
+        ),
+
         "signal_4h_current": analysis_4h["current_signal"],
         "signal_4h_previous": analysis_4h["previous_signal"],
         "signal_4h_previous_previous": False,
@@ -1860,7 +1875,7 @@ def update_upbit():
                 "cross_signal": False
             }
 
-        # 두 EMA 조건 중 하나라도 만족하면 캔들 패턴 필터 검사
+        # 기존 EMA 조건 유지
         ema_signal_condition = (
             ema_analysis.get("reverse", False)
             or ema_analysis.get("bullish_pullback", False)
@@ -1883,6 +1898,7 @@ def update_upbit():
             analysis_4h = {
                 "periods": [],
                 "signal_pass": False,
+                "pattern_signal": False,
                 "current_signal": False,
                 "previous_signal": False,
                 "previous_previous_signal": False,
@@ -1937,9 +1953,11 @@ def update_upbit():
 
     # SIGNAL 필터:
     # 1. EMA20/60 역배열 또는 EMA20/60 정배열 + EMA5/20 역배열
-    # 2. 이전봉 또는 현재봉 상승패턴
-    # 3. 당일 변동률 양수
-    # 4. 참고용 1시간봉 EMA5/20 정배열 + EMA20/60 역배열 종목은 제외
+    # 2. 당일 변동률 양수
+    # 3. 참고용 1시간봉 EMA5/20 정배열 + EMA20/60 역배열 종목 제외
+    #
+    # 상승패턴은 표시 필수 조건이 아님.
+    # 상승패턴이 있으면 카드에서 강조하고, 없어도 조건 충족 시 표시.
 
     latest_signal_data = [
         row
@@ -1970,8 +1988,8 @@ def update_upbit():
     log.info(
         "UPBIT | 거래대금 TOP%s | EMA5/20/60 | 시간봉=%s | "
         "참고 EMA 1h 5/20 및 20/60 | SIGNAL=%s | "
-        "EMA20/60 역배열 또는 EMA20/60 정배열+EMA5/20 역배열 | "
-        "이전봉/현재봉 상승패턴 + 당일 변동률 양수 | "
+        "EMA 조건 충족 + 당일 변동률 양수 | "
+        "상승패턴은 강조용 | "
         "1h EMA5/20 정배열 + EMA20/60 역배열 제외",
         TOP_N,
         get_timeframe_label(),
@@ -2547,25 +2565,31 @@ def btc_html():
 
 # =========================================================
 # SIGNAL 카드
-# 이전봉 / 현재봉만 표시
+# 상승패턴이 있는 경우에만 강조 표시
 # =========================================================
 
 def signal_card(row):
     timeframe_label = get_timeframe_label()
 
-    old_signal = row.get("signal_4h", False)
+    has_bullish_pattern = row.get(
+        "signal_4h_pattern",
+        False
+    )
 
-    badges = []
-
-    if old_signal:
-        badges.append(
-            '<span class="signal-type-badge">⭐ SIGNAL</span>'
+    # 상승패턴이 있을 때만 강조 배지 표시
+    if has_bullish_pattern:
+        badge_html = (
+            '<span class="signal-type-badge">'
+            '⭐ 상승패턴'
+            '</span>'
         )
-
-    badge_html = "".join(badges)
+        card_class = "signal-card has-bullish-pattern"
+    else:
+        badge_html = ""
+        card_class = "signal-card"
 
     return f"""
-    <div class="signal-card">
+    <div class="{card_class}">
         <div class="signal-coin">
             <span class="signal-rank">
                 거래대금 #{row.get("volume_rank", "-")}
@@ -2641,11 +2665,11 @@ def signal_section():
             <span>SIGNAL 조건</span>
 
             <b>
-                EMA20/60  +  상승패턴 
+                EMA 조건 충족
             </b>
 
             <small>
-                업비트 당일 양봉
+                당일 변동률 양수 · 상승패턴은 강조용
             </small>
         </div>
 
@@ -2669,15 +2693,19 @@ def signal_section():
 def card(row, kind):
     timeframe_label = get_timeframe_label()
 
-    signal = row.get("signal_4h", False)
+    # TOP 카드의 강조 표시도 상승패턴이 있는 경우만
+    has_bullish_pattern = row.get(
+        "signal_4h_pattern",
+        False
+    )
 
     previous_pattern = row.get("previous_pattern")
     current_pattern = row.get("current_pattern")
 
     if kind == "top":
         status = (
-            '<span class="signal-badge">⭐ SIGNAL</span>'
-            if signal
+            '<span class="signal-badge">⭐ 상승패턴</span>'
+            if has_bullish_pattern
             else ""
         )
 
@@ -3022,6 +3050,16 @@ section { margin-bottom: 12px; }
     min-height: 58px;
     background: #0d1217;
     border-bottom: 1px solid #20282f;
+}
+
+/* 상승패턴이 있는 SIGNAL 카드만 강조 */
+.signal-card.has-bullish-pattern {
+    background: #171316;
+    box-shadow: inset 3px 0 0 #e4c45e;
+}
+
+.signal-card.has-bullish-pattern .signal-coin b {
+    color: #e4c45e;
 }
 
 .signal-card:last-child { border-bottom: 0; }
@@ -3488,8 +3526,9 @@ def startup():
         "업비트 TOP%s + EMA5/20/60 %s + "
         "이전봉/현재봉 캔들 패턴 + "
         "EMA20/60 역배열 또는 EMA20/60 정배열+EMA5/20 역배열 + "
-        "2개 봉 중 상승패턴 SIGNAL + "
+        "EMA 조건 충족 SIGNAL + "
         "당일 변동률 양수 조건 + 참고용 EMA 1h 5/20 및 20/60 표시 + "
+        "상승패턴은 강조용 + "
         "1h EMA5/20 정배열 + EMA20/60 역배열 SIGNAL 제외",
         TOP_N,
         get_timeframe_label()
