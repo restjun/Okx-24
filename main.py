@@ -1641,9 +1641,11 @@ def signal_details(periods, ema_reverse=False):
         current_signal or previous_signal
     )
 
-    # SIGNAL 통과 여부는 전달받은 EMA 조건으로 판정
-    # EMA 5 < EMA 20 및 EMA 20 > EMA 60
-    signal = bool(ema_reverse)
+    # EMA 조건과 상승패턴 조건을 모두 만족해야 SIGNAL
+    signal = bool(
+        ema_reverse
+        and pattern_signal
+    )
 
     reason = None
 
@@ -2188,13 +2190,20 @@ def update_upbit():
     latest_upbit_daily_update_time = kst()
     latest_upbit_update_time = latest_upbit_daily_update_time
 
-    # EMA 5-20 역배열 + EMA 20-60 정배열 시그널
-    # 당일 변동률 양수 조건 유지
+    # =====================================================
+    # SIGNAL 최종 필터
+    # 1. EMA 5 < EMA 20
+    # 2. EMA 20 > EMA 60
+    # 3. 당일 변동률 양수
+    # 4. 이전봉 또는 현재봉에 상승패턴 존재
+    # =====================================================
+
     latest_signal_data = [
         row
         for row in rows
         if (
             row.get("signal_4h", False)
+            and row.get("signal_4h_pattern", False)
             and row.get("daily_change") is not None
             and row.get("daily_change") > 0
         )
@@ -2213,7 +2222,7 @@ def update_upbit():
         "UPBIT | 거래대금 TOP%s | EMA%s | 시간봉=%s | "
         "참고 EMA 시그널 시간봉 %s 및 %s | SIGNAL=%s | "
         "EMA 5-20 역배열 + EMA 20-60 정배열 + "
-        "당일 변동률 양수 | "
+        "당일 변동률 양수 + 상승패턴 필수 | "
         "캔들패턴 12종 표시, 상승장악형/관통형/"
         "장대양봉/상승망치형/상승역망치형 강조",
         TOP_N,
@@ -2940,7 +2949,7 @@ def signal_section():
             </b>
 
             <small>
-                당일 변동률 양수 · 상승패턴 강조
+                당일 변동률 양수 · 상승패턴 필수
             </small>
         </div>
 
@@ -3881,7 +3890,7 @@ def startup():
         "업비트 TOP%s + EMA%s %s + "
         "이전봉/현재봉 캔들 패턴 12종 표시 + "
         "EMA 5-20 역배열 + EMA 20-60 정배열 SIGNAL + "
-        "당일 변동률 양수 조건 + "
+        "당일 변동률 양수 조건 + 상승패턴 필수 + "
         "참고용 EMA 시그널 시간봉 %s 및 %s 표시 + "
         "상승장악형/상승관통형/장대양봉/"
         "상승망치형/상승역망치형 강조",
