@@ -828,17 +828,19 @@ def analyze_ema_4h(market, price=None):
     ema20 = float(ema20_valid.iloc[-1])
     ema60 = float(ema60_valid.iloc[-1])
 
-    # EMA 5-20 역배열만 시그널 조건
-    # EMA 20-60은 표시 전용
+    # EMA 5-20 역배열
     reverse = ema5 < ema20
 
+    # EMA 5-20 역배열 + EMA 20-60 정배열
     bullish_pullback = (
         ema20 > ema60
         and ema5 < ema20
     )
 
+    # 최종 SIGNAL 조건
     signal_condition = (
         ema5 < ema20
+        and ema20 > ema60
     )
 
     # 정배열/역배열 표시는 EMA 20-60 기준
@@ -1639,7 +1641,8 @@ def signal_details(periods, ema_reverse=False):
         current_signal or previous_signal
     )
 
-    # SIGNAL 통과 여부는 EMA 5 < EMA 20만 사용
+    # SIGNAL 통과 여부는 전달받은 EMA 조건으로 판정
+    # EMA 5 < EMA 20 및 EMA 20 > EMA 60
     signal = bool(ema_reverse)
 
     reason = None
@@ -2099,17 +2102,19 @@ def update_upbit():
 
         # =================================================
         # SIGNAL 조건
-        # EMA 5-20 역배열만 사용
-        # EMA 20-60은 표시 전용
+        # EMA 5-20 역배열 + EMA 20-60 정배열 필수
         # =================================================
 
         ema5_value = ema_analysis.get("ema5_short")
         ema20_value = ema_analysis.get("ema20")
+        ema60_value = ema_analysis.get("ema60")
 
         ema_signal_condition = (
             ema5_value is not None
             and ema20_value is not None
+            and ema60_value is not None
             and ema5_value < ema20_value
+            and ema20_value > ema60_value
         )
 
         try:
@@ -2183,7 +2188,8 @@ def update_upbit():
     latest_upbit_daily_update_time = kst()
     latest_upbit_update_time = latest_upbit_daily_update_time
 
-    # EMA 5-20 역배열 시그널 + 당일 변동률 양수 조건
+    # EMA 5-20 역배열 + EMA 20-60 정배열 시그널
+    # 당일 변동률 양수 조건 유지
     latest_signal_data = [
         row
         for row in rows
@@ -2206,7 +2212,8 @@ def update_upbit():
     log.info(
         "UPBIT | 거래대금 TOP%s | EMA%s | 시간봉=%s | "
         "참고 EMA 시그널 시간봉 %s 및 %s | SIGNAL=%s | "
-        "EMA 5-20 역배열 + 당일 변동률 양수 | "
+        "EMA 5-20 역배열 + EMA 20-60 정배열 + "
+        "당일 변동률 양수 | "
         "캔들패턴 12종 표시, 상승장악형/관통형/"
         "장대양봉/상승망치형/상승역망치형 강조",
         TOP_N,
@@ -2929,7 +2936,7 @@ def signal_section():
             <span>SIGNAL 조건</span>
 
             <b>
-                EMA 5-20 
+                EMA 5-20 역배열 + 20-60 정배열
             </b>
 
             <small>
@@ -3873,7 +3880,7 @@ def startup():
         "START | BTC KST 09:00 일봉 재구성 + "
         "업비트 TOP%s + EMA%s %s + "
         "이전봉/현재봉 캔들 패턴 12종 표시 + "
-        "EMA 5-20 역배열 SIGNAL + "
+        "EMA 5-20 역배열 + EMA 20-60 정배열 SIGNAL + "
         "당일 변동률 양수 조건 + "
         "참고용 EMA 시그널 시간봉 %s 및 %s 표시 + "
         "상승장악형/상승관통형/장대양봉/"
