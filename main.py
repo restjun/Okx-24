@@ -40,7 +40,7 @@ UTC = ZoneInfo("UTC")
 # =========================================================
 
 TOP_N = 20
-SHOW_TOP_LIST = "Y"
+SHOW_TOP_LIST = "N"
 UPDATE_MINUTES = 1
 
 HISTORY_CHUNK = 200
@@ -60,7 +60,7 @@ MAX_RETRIES = 10
 # SIGNAL 설정
 # =========================================================
 
-SIGNAL_TIMEFRAME = "4h"
+SIGNAL_TIMEFRAME = "15m"
 
 TIMEFRAME_LABEL = {
     "15m": "15분봉",
