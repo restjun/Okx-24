@@ -78,6 +78,10 @@ EMA_PULLBACK = 5
 EMA_FAST = 20
 EMA_SLOW = 60
 
+# Y = 정배열 / N = 역배열
+SIGNAL_5_20 = "N"
+SIGNAL_20_60 = "Y"
+
 EMA_REFERENCE_TIMEFRAMES = [SIGNAL_TIMEFRAME]
 
 EMA_REFERENCE_LABELS = {
@@ -144,6 +148,29 @@ def get_ema_pair_labels():
 
 def get_ema_full_label():
     return f"{EMA_PULLBACK}/{EMA_FAST}/{EMA_SLOW}"
+
+
+# =========================================================
+# SIGNAL EMA 배열 설정 표시
+# =========================================================
+
+def get_ema_signal_description():
+    state_5_20 = (
+        "정배열"
+        if SIGNAL_5_20 == "Y"
+        else "역배열"
+    )
+
+    state_20_60 = (
+        "정배열"
+        if SIGNAL_20_60 == "Y"
+        else "역배열"
+    )
+
+    return (
+        f"EMA {EMA_PULLBACK}-{EMA_FAST} {state_5_20} "
+        f"+ EMA {EMA_FAST}-{EMA_SLOW} {state_20_60}"
+    )
 
 
 # =========================================================
@@ -644,6 +671,51 @@ def calculate_ema(df, period):
 
 
 # =========================================================
+# SIGNAL EMA 배열 조건
+# Y = 정배열 / N = 역배열
+# =========================================================
+
+def check_ema_signal_condition(
+    ema5,
+    ema20,
+    ema60
+):
+    if ema5 is None or ema20 is None or ema60 is None:
+        return False
+
+    try:
+        ema5 = float(ema5)
+        ema20 = float(ema20)
+        ema60 = float(ema60)
+    except (TypeError, ValueError):
+        return False
+
+    if not all(
+        np.isfinite(value)
+        for value in (ema5, ema20, ema60)
+    ):
+        return False
+
+    # EMA 5-20 배열 조건
+    if SIGNAL_5_20 == "Y":
+        condition_5_20 = ema5 > ema20
+    else:
+        condition_5_20 = ema5 < ema20
+
+    # EMA 20-60 배열 조건
+    if SIGNAL_20_60 == "Y":
+        condition_20_60 = ema20 > ema60
+    else:
+        condition_20_60 = ema20 < ema60
+
+    # 두 조건을 모두 만족해야 통과
+    return bool(
+        condition_5_20
+        and condition_20_60
+    )
+
+
+# =========================================================
 # 현재 캔들 가격 반영
 # =========================================================
 
@@ -828,22 +900,23 @@ def analyze_ema_4h(market, price=None):
     ema20 = float(ema20_valid.iloc[-1])
     ema60 = float(ema60_valid.iloc[-1])
 
-    # EMA 5-20 역배열
+    # 기존 표시용 EMA 5-20 역배열 상태
     reverse = ema5 < ema20
 
-    # EMA 5-20 역배열 + EMA 20-60 정배열
+    # 기존 의미 유지: EMA 5-20 역배열 + EMA 20-60 정배열
     bullish_pullback = (
         ema20 > ema60
         and ema5 < ema20
     )
 
-    # 최종 EMA SIGNAL 조건
-    signal_condition = (
-        ema5 < ema20
-        and ema20 > ema60
+    # 설정값에 따라 최종 EMA SIGNAL 조건 판정
+    signal_condition = check_ema_signal_condition(
+        ema5,
+        ema20,
+        ema60
     )
 
-    # 정배열/역배열 표시는 EMA 20-60 기준
+    # 정배열/역배열 표시는 EMA 20-60 기준으로 유지
     if ema20 > ema60:
         alignment = "정배열"
     elif ema20 < ema60:
@@ -852,6 +925,7 @@ def analyze_ema_4h(market, price=None):
         alignment = "동일"
 
     return {
+        # 기존 화면 호환 유지
         "ema5": ema20,
         "ema15": ema60,
         "ema5_short": ema5,
@@ -2105,20 +2179,21 @@ def update_upbit():
 
         # =================================================
         # SIGNAL EMA 조건
-        # EMA 5-20 역배열 + EMA 20-60 정배열 필수
+        # 사용자 설정값에 따라 배열 판정
         # =================================================
 
         ema5_value = ema_analysis.get("ema5_short")
         ema20_value = ema_analysis.get("ema20")
         ema60_value = ema_analysis.get("ema60")
 
-        ema_signal_condition = (
-            ema5_value is not None
-            and ema20_value is not None
-            and ema60_value is not None
-            and ema5_value < ema20_value
-            and ema20_value > ema60_value
+        ema_signal_condition = check_ema_signal_condition(
+            ema5_value,
+            ema20_value,
+            ema60_value
         )
+
+        # make_row()에서 사용하는 EMA 조건도 동일하게 반영
+        ema_analysis["signal_condition"] = ema_signal_condition
 
         try:
             analysis_4h = analyze_signal_candles(
@@ -2193,8 +2268,8 @@ def update_upbit():
 
     # =====================================================
     # SIGNAL 최종 필터
-    # 1. EMA 5 < EMA 20
-    # 2. EMA 20 > EMA 60
+    # 1. 사용자 설정에 맞는 EMA 5-20 배열
+    # 2. 사용자 설정에 맞는 EMA 20-60 배열
     # 3. 당일 변동률 양수
     # 4. 상승패턴은 필수 조건이 아니라 강조 조건
     # =====================================================
@@ -2221,9 +2296,8 @@ def update_upbit():
     log.info(
         "UPBIT | 거래대금 TOP%s | EMA%s | 시간봉=%s | "
         "참고 EMA 시그널 시간봉 %s 및 %s | SIGNAL=%s | "
-        "EMA 5-20 역배열 + EMA 20-60 정배열 + "
-        "당일 변동률 양수 | 상승패턴은 선택 조건이며 "
-        "패턴이 있는 종목만 강조 | "
+        "%s + 당일 변동률 양수 | "
+        "상승패턴은 선택 조건이며 패턴이 있는 종목만 강조 | "
         "캔들패턴 12종 표시, 상승장악형/관통형/"
         "장대양봉/상승망치형/상승역망치형 강조",
         TOP_N,
@@ -2231,7 +2305,8 @@ def update_upbit():
         get_timeframe_label(),
         pair_1,
         pair_2,
-        len(latest_signal_data)
+        len(latest_signal_data),
+        get_ema_signal_description()
     )
 
 
@@ -2917,6 +2992,9 @@ def signal_card(row):
 def signal_section():
     timeframe_label = get_timeframe_label()
     ema_full_label = get_ema_full_label()
+    signal_description = html.escape(
+        get_ema_signal_description()
+    )
 
     if not latest_signal_data:
         body = """
@@ -2946,9 +3024,7 @@ def signal_section():
         <div class="signal-condition">
             <span>SIGNAL 조건</span>
 
-            <b>
-                EMA 5-20 역배열 + 20-60 정배열
-            </b>
+            <b>{signal_description}</b>
 
             <small>
                 당일 변동률 양수 · 상승패턴은 강조 조건
@@ -3118,7 +3194,7 @@ section { margin-bottom: 12px; }
     white-space: nowrap;
 }
 
-/* 수정: EMA 상태를 두 줄로 표시 */
+/* EMA 상태를 두 줄로 표시 */
 .ema-ref-row {
     display: flex;
     flex-direction: column;
@@ -3891,7 +3967,7 @@ def startup():
         "START | BTC KST 09:00 일봉 재구성 + "
         "업비트 TOP%s + EMA%s %s + "
         "이전봉/현재봉 캔들 패턴 12종 표시 + "
-        "EMA 5-20 역배열 + EMA 20-60 정배열 SIGNAL + "
+        "%s SIGNAL + "
         "당일 변동률 양수 조건 + 상승패턴은 강조 조건 + "
         "참고용 EMA 시그널 시간봉 %s 및 %s 표시 + "
         "상승장악형/상승관통형/장대양봉/"
@@ -3899,6 +3975,7 @@ def startup():
         TOP_N,
         get_ema_full_label(),
         get_timeframe_label(),
+        get_ema_signal_description(),
         pair_1,
         pair_2
     )
