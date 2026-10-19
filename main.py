@@ -60,7 +60,6 @@ MAX_RETRIES = 10
 # SIGNAL 설정
 # =========================================================
 
-# 시그널 계산 시간
 SIGNAL_TIMEFRAME = "1h"
 
 TIMEFRAME_LABEL = {
@@ -86,7 +85,6 @@ SIGNAL_20_60 = "Y"
 
 # =========================================================
 # 참고용 EMA 시간 설정
-# SIGNAL_TIMEFRAME과 별도로 설정
 # =========================================================
 
 EMA_REFERENCE_TIMEFRAME = "15m"
@@ -988,13 +986,10 @@ def analyze_reference_ema_timeframes(market, price=None):
     states = {
         "signal_5_20": None,
         "signal_20_60": None,
-
-        # 기존 키 호환 유지
         "1h_5_20": None,
         "1h": None
     }
 
-    # SIGNAL_TIMEFRAME이 아닌 별도 참고 시간 설정 사용
     timeframe = EMA_REFERENCE_TIMEFRAME
 
     try:
@@ -1107,7 +1102,6 @@ def analyze_reference_ema_timeframes(market, price=None):
             EMA_SLOW
         )
 
-        # 기존 표시 키도 유지
         states["1h_5_20"] = states["signal_5_20"]
         states["1h"] = states["signal_20_60"]
 
@@ -1390,8 +1384,6 @@ def is_long_bearish(current):
 
 # =========================================================
 # 망치형 공통 판정
-# 아래꼬리 또는 위꼬리가 몸통의 2배 이상
-# 반대쪽 꼬리는 몸통 이하
 # =========================================================
 
 def get_hammer_parts(current):
@@ -2188,7 +2180,7 @@ def update_upbit():
 
         # =================================================
         # SIGNAL EMA 조건
-        # 사용자 설정값에 따라 배열 판정
+        # 기존 사용자 설정값에 따라 배열 판정
         # =================================================
 
         ema5_value = ema_analysis.get("ema5_short")
@@ -2276,10 +2268,7 @@ def update_upbit():
 
     # =====================================================
     # SIGNAL 최종 필터
-    # 1. 사용자 설정에 맞는 EMA 5-20 배열
-    # 2. 사용자 설정에 맞는 EMA 20-60 배열
-    # 3. 당일 변동률 양수
-    # 4. 상승패턴은 필수 조건이 아니라 강조 조건
+    # 기존 조건 그대로 유지
     # =====================================================
 
     latest_signal_data = [
@@ -2635,7 +2624,6 @@ def ema_alignment_html(alignment):
 # =========================================================
 # 참고용 EMA 상태 HTML
 # 두 줄 표시
-# EMA_REFERENCE_TIMEFRAME 기준으로 시간 표시
 # =========================================================
 
 def reference_ema_states_html(row):
@@ -2930,7 +2918,8 @@ def btc_html():
 
 # =========================================================
 # SIGNAL 카드
-# 상승패턴이 있는 종목만 기존 강조 유지
+# 참고용 EMA 중 하나라도 역배열이면 카드 강조
+# 실제 SIGNAL 조건과는 별개
 # =========================================================
 
 def signal_card(row):
@@ -2941,15 +2930,36 @@ def signal_card(row):
         False
     )
 
+    reference_states = row.get("ema_reference_states") or {}
+
+    reference_5_20 = reference_states.get(
+        "signal_5_20",
+        reference_states.get("1h_5_20")
+    )
+
+    reference_20_60 = reference_states.get(
+        "signal_20_60",
+        reference_states.get("1h")
+    )
+
+    # 참고용 EMA 두 쌍 중 하나라도 역배열이면 카드 강조
+    has_reference_reverse = (
+        reference_5_20 == "역배열"
+        or reference_20_60 == "역배열"
+    )
+
     if has_bullish_pattern:
         badge_html = (
             '<span class="signal-type-badge">'
             '⭐ 상승패턴'
             '</span>'
         )
-        card_class = "signal-card has-bullish-pattern"
     else:
         badge_html = ""
+
+    if has_reference_reverse:
+        card_class = "signal-card has-reference-reverse"
+    else:
         card_class = "signal-card"
 
     return f"""
@@ -3476,13 +3486,14 @@ section { margin-bottom: 12px; }
     border-bottom: 1px solid #20282f;
 }
 
-.signal-card.has-bullish-pattern {
+/* 수정: 참고용 EMA 중 하나라도 역배열이면 카드 강조 */
+.signal-card.has-reference-reverse {
     background: #171316;
-    box-shadow: inset 3px 0 0 #e4c45e;
+    box-shadow: inset 3px 0 0 #ff5966;
 }
 
-.signal-card.has-bullish-pattern .signal-coin b {
-    color: #e4c45e;
+.signal-card.has-reference-reverse .signal-coin b {
+    color: #ff5966;
 }
 
 .signal-card:last-child { border-bottom: 0; }
