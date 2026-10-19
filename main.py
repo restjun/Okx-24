@@ -39,7 +39,7 @@ UTC = ZoneInfo("UTC")
 # 사용자 설정
 # =========================================================
 
-TOP_N = 30
+TOP_N = 20
 SHOW_TOP_LIST = "N"
 UPDATE_MINUTES = 1
 
@@ -60,7 +60,7 @@ MAX_RETRIES = 10
 # SIGNAL 설정
 # =========================================================
 
-SIGNAL_TIMEFRAME = "1h"
+SIGNAL_TIMEFRAME = "15h"
 
 TIMEFRAME_LABEL = {
     "15m": "15분봉",
@@ -79,8 +79,8 @@ EMA_FAST = 20
 EMA_SLOW = 60
 
 # Y = 정배열 / N = 역배열
-SIGNAL_5_20 = "Y"
-SIGNAL_20_60 = "Y"
+SIGNAL_5_20 = "N"
+SIGNAL_20_60 = "N"
 
 EMA_REFERENCE_TIMEFRAMES = [SIGNAL_TIMEFRAME]
 
