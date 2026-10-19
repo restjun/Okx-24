@@ -60,6 +60,7 @@ MAX_RETRIES = 10
 # SIGNAL 설정
 # =========================================================
 
+# 시그널 계산 시간
 SIGNAL_TIMEFRAME = "1h"
 
 TIMEFRAME_LABEL = {
@@ -82,12 +83,22 @@ EMA_SLOW = 60
 SIGNAL_5_20 = "Y"
 SIGNAL_20_60 = "Y"
 
-EMA_REFERENCE_TIMEFRAMES = [SIGNAL_TIMEFRAME]
+
+# =========================================================
+# 참고용 EMA 시간 설정
+# SIGNAL_TIMEFRAME과 별도로 설정
+# =========================================================
+
+EMA_REFERENCE_TIMEFRAME = "15m"
+
+EMA_REFERENCE_TIMEFRAMES = [
+    EMA_REFERENCE_TIMEFRAME
+]
 
 EMA_REFERENCE_LABELS = {
-    SIGNAL_TIMEFRAME: TIMEFRAME_LABEL.get(
-        SIGNAL_TIMEFRAME,
-        SIGNAL_TIMEFRAME
+    EMA_REFERENCE_TIMEFRAME: TIMEFRAME_LABEL.get(
+        EMA_REFERENCE_TIMEFRAME,
+        EMA_REFERENCE_TIMEFRAME
     )
 }
 
@@ -136,6 +147,13 @@ def get_timeframe_label():
     return TIMEFRAME_LABEL.get(
         SIGNAL_TIMEFRAME,
         SIGNAL_TIMEFRAME
+    )
+
+
+def get_reference_timeframe_label():
+    return TIMEFRAME_LABEL.get(
+        EMA_REFERENCE_TIMEFRAME,
+        EMA_REFERENCE_TIMEFRAME
     )
 
 
@@ -696,19 +714,16 @@ def check_ema_signal_condition(
     ):
         return False
 
-    # EMA 5-20 배열 조건
     if SIGNAL_5_20 == "Y":
         condition_5_20 = ema5 > ema20
     else:
         condition_5_20 = ema5 < ema20
 
-    # EMA 20-60 배열 조건
     if SIGNAL_20_60 == "Y":
         condition_20_60 = ema20 > ema60
     else:
         condition_20_60 = ema20 < ema60
 
-    # 두 조건을 모두 만족해야 통과
     return bool(
         condition_5_20
         and condition_20_60
@@ -746,6 +761,7 @@ def update_current_candle(df, current_start, price):
 
 # =========================================================
 # 선택 시간봉 EMA 분석
+# SIGNAL_TIMEFRAME 기준
 # =========================================================
 
 def analyze_ema_4h(market, price=None):
@@ -900,23 +916,19 @@ def analyze_ema_4h(market, price=None):
     ema20 = float(ema20_valid.iloc[-1])
     ema60 = float(ema60_valid.iloc[-1])
 
-    # 기존 표시용 EMA 5-20 역배열 상태
     reverse = ema5 < ema20
 
-    # 기존 의미 유지: EMA 5-20 역배열 + EMA 20-60 정배열
     bullish_pullback = (
         ema20 > ema60
         and ema5 < ema20
     )
 
-    # 설정값에 따라 최종 EMA SIGNAL 조건 판정
     signal_condition = check_ema_signal_condition(
         ema5,
         ema20,
         ema60
     )
 
-    # 정배열/역배열 표시는 EMA 20-60 기준으로 유지
     if ema20 > ema60:
         alignment = "정배열"
     elif ema20 < ema60:
@@ -925,7 +937,6 @@ def analyze_ema_4h(market, price=None):
         alignment = "동일"
 
     return {
-        # 기존 화면 호환 유지
         "ema5": ema20,
         "ema15": ema60,
         "ema5_short": ema5,
@@ -970,7 +981,7 @@ def get_ema_alignment_state(
 
 # =========================================================
 # 참고용 EMA 상태 분석
-# SIGNAL_TIMEFRAME 기준으로 계산
+# EMA_REFERENCE_TIMEFRAME 기준으로 별도 계산
 # =========================================================
 
 def analyze_reference_ema_timeframes(market, price=None):
@@ -983,7 +994,8 @@ def analyze_reference_ema_timeframes(market, price=None):
         "1h": None
     }
 
-    timeframe = SIGNAL_TIMEFRAME
+    # SIGNAL_TIMEFRAME이 아닌 별도 참고 시간 설정 사용
+    timeframe = EMA_REFERENCE_TIMEFRAME
 
     try:
         if timeframe == "15m":
@@ -1083,7 +1095,6 @@ def analyze_reference_ema_timeframes(market, price=None):
             )
             return states
 
-        # 두 쌍 모두 시그널 시간봉의 동일한 데이터로 계산
         states["signal_5_20"] = get_ema_alignment_state(
             df,
             EMA_PULLBACK,
@@ -1096,13 +1107,13 @@ def analyze_reference_ema_timeframes(market, price=None):
             EMA_SLOW
         )
 
-        # 기존 표시 키도 유지하되 값은 시그널 시간봉 기준
+        # 기존 표시 키도 유지
         states["1h_5_20"] = states["signal_5_20"]
         states["1h"] = states["signal_20_60"]
 
     except Exception as e:
         log.warning(
-            "%s 시그널 시간봉 참고 EMA 오류: %s",
+            "%s 참고 EMA 시간봉 오류: %s",
             market,
             e
         )
@@ -1715,8 +1726,6 @@ def signal_details(periods, ema_reverse=False):
         current_signal or previous_signal
     )
 
-    # 기존 signal_pass 값은 EMA 조건과 상승패턴 조건을 모두 만족할 때 True
-    # SIGNAL 목록의 표시 여부는 update_upbit()에서 별도로 결정
     signal = bool(
         ema_reverse
         and pattern_signal
@@ -2192,7 +2201,6 @@ def update_upbit():
             ema60_value
         )
 
-        # make_row()에서 사용하는 EMA 조건도 동일하게 반영
         ema_analysis["signal_condition"] = ema_signal_condition
 
         try:
@@ -2295,7 +2303,7 @@ def update_upbit():
 
     log.info(
         "UPBIT | 거래대금 TOP%s | EMA%s | 시간봉=%s | "
-        "참고 EMA 시그널 시간봉 %s 및 %s | SIGNAL=%s | "
+        "참고 EMA 시간봉=%s | SIGNAL=%s | "
         "%s + 당일 변동률 양수 | "
         "상승패턴은 선택 조건이며 패턴이 있는 종목만 강조 | "
         "캔들패턴 12종 표시, 상승장악형/관통형/"
@@ -2303,8 +2311,7 @@ def update_upbit():
         TOP_N,
         get_ema_full_label(),
         get_timeframe_label(),
-        pair_1,
-        pair_2,
+        get_reference_timeframe_label(),
         len(latest_signal_data),
         get_ema_signal_description()
     )
@@ -2627,14 +2634,15 @@ def ema_alignment_html(alignment):
 
 # =========================================================
 # 참고용 EMA 상태 HTML
-# 수정: 두 줄 표시
+# 두 줄 표시
+# EMA_REFERENCE_TIMEFRAME 기준으로 시간 표시
 # =========================================================
 
 def reference_ema_states_html(row):
     states = row.get("ema_reference_states") or {}
     pieces = []
 
-    timeframe_label = get_timeframe_label()
+    timeframe_label = get_reference_timeframe_label()
     pair_1, pair_2 = get_ema_pair_labels()
 
     display_items = [
@@ -3969,15 +3977,18 @@ def startup():
         "이전봉/현재봉 캔들 패턴 12종 표시 + "
         "%s SIGNAL + "
         "당일 변동률 양수 조건 + 상승패턴은 강조 조건 + "
-        "참고용 EMA 시그널 시간봉 %s 및 %s 표시 + "
-        "상승장악형/상승관통형/장대양봉/"
-        "상승망치형/상승역망치형 강조",
+        "참고용 EMA 시간봉 %s 및 %s 표시",
         TOP_N,
         get_ema_full_label(),
         get_timeframe_label(),
         get_ema_signal_description(),
         pair_1,
         pair_2
+    )
+
+    log.info(
+        "참고 EMA 시간 설정: %s",
+        get_reference_timeframe_label()
     )
 
     threading.Thread(
