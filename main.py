@@ -60,7 +60,7 @@ MAX_RETRIES = 10
 # SIGNAL 설정
 # =========================================================
 
-SIGNAL_TIMEFRAME = "15m"
+SIGNAL_TIMEFRAME = "1h"
 
 TIMEFRAME_LABEL = {
     "15m": "15분봉",
@@ -79,7 +79,7 @@ EMA_FAST = 20
 EMA_SLOW = 60
 
 # Y = 정배열 / N = 역배열
-SIGNAL_5_20 = "N"
+SIGNAL_5_20 = "Y"
 SIGNAL_20_60 = "Y"
 
 EMA_REFERENCE_TIMEFRAMES = [SIGNAL_TIMEFRAME]
