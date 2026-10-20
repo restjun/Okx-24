@@ -78,9 +78,9 @@ EMA_PULLBACK = 10
 EMA_FAST = 20
 EMA_SLOW = 60
 
-# Y = 정배열 / N = 역배열
-SIGNAL_5_20 = "Y"
-SIGNAL_20_60 = "Y"
+# Y = 정배열 / N = 역배열 / ANY = 배열 조건 미적용
+SIGNAL_5_20 = "ANY"
+SIGNAL_20_60 = "ANY"
 
 
 # =========================================================
@@ -168,20 +168,23 @@ def get_ema_full_label():
 
 # =========================================================
 # SIGNAL EMA 배열 설정 표시
+# Y = 정배열 / N = 역배열 / ANY = 배열 조건 미적용
 # =========================================================
 
 def get_ema_signal_description():
-    state_5_20 = (
-        "정배열"
-        if SIGNAL_5_20 == "Y"
-        else "역배열"
-    )
+    if SIGNAL_5_20 == "Y":
+        state_5_20 = "정배열"
+    elif SIGNAL_5_20 == "N":
+        state_5_20 = "역배열"
+    else:
+        state_5_20 = "ANY"
 
-    state_20_60 = (
-        "정배열"
-        if SIGNAL_20_60 == "Y"
-        else "역배열"
-    )
+    if SIGNAL_20_60 == "Y":
+        state_20_60 = "정배열"
+    elif SIGNAL_20_60 == "N":
+        state_20_60 = "역배열"
+    else:
+        state_20_60 = "ANY"
 
     return (
         f"EMA {EMA_PULLBACK}-{EMA_FAST} {state_5_20} "
@@ -688,7 +691,7 @@ def calculate_ema(df, period):
 
 # =========================================================
 # SIGNAL EMA 배열 조건
-# Y = 정배열 / N = 역배열
+# Y = 정배열 / N = 역배열 / ANY = 배열 조건 미적용
 # =========================================================
 
 def check_ema_signal_condition(
@@ -712,15 +715,25 @@ def check_ema_signal_condition(
     ):
         return False
 
+    # EMA 10/20 조건
     if SIGNAL_5_20 == "Y":
         condition_5_20 = ema5 > ema20
-    else:
+    elif SIGNAL_5_20 == "N":
         condition_5_20 = ema5 < ema20
+    elif SIGNAL_5_20 == "ANY":
+        condition_5_20 = True
+    else:
+        condition_5_20 = True
 
+    # EMA 20/60 조건
     if SIGNAL_20_60 == "Y":
         condition_20_60 = ema20 > ema60
-    else:
+    elif SIGNAL_20_60 == "N":
         condition_20_60 = ema20 < ema60
+    elif SIGNAL_20_60 == "ANY":
+        condition_20_60 = True
+    else:
+        condition_20_60 = True
 
     return bool(
         condition_5_20
@@ -2180,7 +2193,7 @@ def update_upbit():
 
         # =================================================
         # SIGNAL EMA 조건
-        # 기존 사용자 설정값에 따라 배열 판정
+        # Y = 정배열 / N = 역배열 / ANY = 배열 조건 미적용
         # =================================================
 
         ema5_value = ema_analysis.get("ema5_short")
@@ -3486,7 +3499,7 @@ section { margin-bottom: 12px; }
     border-bottom: 1px solid #20282f;
 }
 
-/* 수정: 참고용 EMA 중 하나라도 역배열이면 카드 강조 */
+/* 참고용 EMA 중 하나라도 역배열이면 카드 강조 */
 .signal-card.has-reference-reverse {
     background: #171316;
     box-shadow: inset 3px 0 0 #ff5966;
