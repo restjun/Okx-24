@@ -79,8 +79,8 @@ EMA_FAST = 20
 EMA_SLOW = 60
 
 # Y = 정배열 / N = 역배열
-SIGNAL_5_20 = "Y"
-SIGNAL_20_60 = "Y"
+SIGNAL_5_20 = "N"
+SIGNAL_20_60 = "N"
 
 
 # =========================================================
@@ -173,13 +173,13 @@ def get_ema_full_label():
 def get_ema_signal_description():
     state_5_20 = (
         "정배열"
-        if SIGNAL_5_20 == "Y"
+        if SIGNAL_5_20 == "N"
         else "역배열"
     )
 
     state_20_60 = (
         "정배열"
-        if SIGNAL_20_60 == "Y"
+        if SIGNAL_20_60 == "N"
         else "역배열"
     )
 
