@@ -173,13 +173,13 @@ def get_ema_full_label():
 def get_ema_signal_description():
     state_5_20 = (
         "정배열"
-        if SIGNAL_5_20 == "N"
+        if SIGNAL_5_20 == "Y"
         else "역배열"
     )
 
     state_20_60 = (
         "정배열"
-        if SIGNAL_20_60 == "N"
+        if SIGNAL_20_60 == "Y"
         else "역배열"
     )
 
