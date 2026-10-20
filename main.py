@@ -2281,7 +2281,8 @@ def update_upbit():
 
     # =====================================================
     # SIGNAL 최종 필터
-    # 기존 조건 그대로 유지
+    # 기존 EMA 조건 + 당일 변동률 양수 +
+    # 참고용 EMA 두 쌍 중 하나라도 역배열
     # =====================================================
 
     latest_signal_data = [
@@ -2291,6 +2292,15 @@ def update_upbit():
             row.get("ema_signal_condition", False)
             and row.get("daily_change") is not None
             and row.get("daily_change") > 0
+            and (
+                row.get("ema_reference_states", {}).get(
+                    "signal_5_20"
+                ) == "역배열"
+                or
+                row.get("ema_reference_states", {}).get(
+                    "signal_20_60"
+                ) == "역배열"
+            )
         )
     ]
 
