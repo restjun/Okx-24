@@ -81,7 +81,7 @@ EMA_FAST = 20
 EMA_SLOW = 60
 
 # Y = 정배열 / N = 역배열 / ANY = 배열 조건 미적용
-SIGNAL_5_20 = "ANY"
+SIGNAL_5_20 = "Y"
 SIGNAL_20_60 = "Y"
 
 
