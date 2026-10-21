@@ -61,7 +61,7 @@ MAX_RETRIES = 10
 # =========================================================
 
 # 시그널용 시간봉은 기존 1시간봉 유지
-SIGNAL_TIMEFRAME = "1h"
+SIGNAL_TIMEFRAME = "1m"
 
 TIMEFRAME_LABEL = {
     "5m": "5분봉",
