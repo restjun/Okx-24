@@ -61,7 +61,7 @@ MAX_RETRIES = 10
 # =========================================================
 
 # 시그널용 시간봉은 기존 1시간봉 유지
-SIGNAL_TIMEFRAME = "15m"
+SIGNAL_TIMEFRAME = "1h"
 
 TIMEFRAME_LABEL = {
     "5m": "5분봉",
@@ -90,7 +90,7 @@ SIGNAL_20_60 = "Y"
 # 5m / 15m / 1h / 4h / 1d 중 선택
 # =========================================================
 
-EMA_REFERENCE_TIMEFRAME = "5m"
+EMA_REFERENCE_TIMEFRAME = "15m"
 
 EMA_REFERENCE_TIMEFRAMES = [
     EMA_REFERENCE_TIMEFRAME
