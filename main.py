@@ -2281,8 +2281,9 @@ def update_upbit():
 
     # =====================================================
     # SIGNAL 최종 필터
-    # 기존 EMA 조건 + 당일 변동률 양수 +
+    # 기존 EMA 조건 +
     # 참고용 EMA 두 쌍 중 하나라도 역배열
+    # 당일 변동률 조건 삭제
     # =====================================================
 
     latest_signal_data = [
@@ -2290,8 +2291,6 @@ def update_upbit():
         for row in rows
         if (
             row.get("ema_signal_condition", False)
-            and row.get("daily_change") is not None
-            and row.get("daily_change") > 0
             and (
                 row.get("ema_reference_states", {}).get(
                     "signal_5_20"
@@ -2316,7 +2315,7 @@ def update_upbit():
     log.info(
         "UPBIT | 거래대금 TOP%s | EMA%s | 시간봉=%s | "
         "참고 EMA 시간봉=%s | SIGNAL=%s | "
-        "%s + 당일 변동률 양수 | "
+        "%s | 당일 변동률 조건 미적용 | "
         "상승패턴은 선택 조건이며 패턴이 있는 종목만 강조 | "
         "캔들패턴 12종 표시, 상승장악형/관통형/"
         "장대양봉/상승망치형/상승역망치형 강조",
@@ -3068,7 +3067,7 @@ def signal_section():
             <b>{signal_description}</b>
 
             <small>
-                당일 변동률 양수 · 상승패턴은 강조 조건
+                당일 변동률 조건 미적용 · 상승패턴은 강조 조건
             </small>
         </div>
 
@@ -4010,7 +4009,7 @@ def startup():
         "업비트 TOP%s + EMA%s %s + "
         "이전봉/현재봉 캔들 패턴 12종 표시 + "
         "%s SIGNAL + "
-        "당일 변동률 양수 조건 + 상승패턴은 강조 조건 + "
+        "당일 변동률 조건 미적용 + 상승패턴은 강조 조건 + "
         "참고용 EMA 시간봉 %s 및 %s 표시",
         TOP_N,
         get_ema_full_label(),
