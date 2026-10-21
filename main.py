@@ -60,6 +60,7 @@ MAX_RETRIES = 10
 # SIGNAL 설정
 # =========================================================
 
+# 시그널용 시간봉은 기존 1시간봉 유지
 SIGNAL_TIMEFRAME = "1h"
 
 TIMEFRAME_LABEL = {
@@ -86,9 +87,10 @@ SIGNAL_20_60 = "Y"
 
 # =========================================================
 # 참고용 EMA 시간 설정
+# 5m / 15m / 1h / 4h / 1d 중 선택
 # =========================================================
 
-EMA_REFERENCE_TIMEFRAME = "15m"
+EMA_REFERENCE_TIMEFRAME = "5m"
 
 EMA_REFERENCE_TIMEFRAMES = [
     EMA_REFERENCE_TIMEFRAME
@@ -429,6 +431,18 @@ def get_upbit_minute_candles(market, unit, count=200):
 
 
 # =========================================================
+# 업비트 5분봉
+# =========================================================
+
+def get_upbit_5m_candles(market, count=200):
+    return get_upbit_minute_candles(
+        market,
+        5,
+        count
+    )
+
+
+# =========================================================
 # 업비트 15분봉
 # =========================================================
 
@@ -716,7 +730,7 @@ def check_ema_signal_condition(
     ):
         return False
 
-    # EMA 10/20 조건
+    # EMA 15/20 조건
     if SIGNAL_5_20 == "Y":
         condition_5_20 = ema5 > ema20
     elif SIGNAL_5_20 == "N":
@@ -994,6 +1008,7 @@ def get_ema_alignment_state(
 # =========================================================
 # 참고용 EMA 상태 분석
 # EMA_REFERENCE_TIMEFRAME 기준으로 별도 계산
+# 지원: 5m / 15m / 1h / 4h / 1d
 # =========================================================
 
 def analyze_reference_ema_timeframes(market, price=None):
@@ -1007,7 +1022,36 @@ def analyze_reference_ema_timeframes(market, price=None):
     timeframe = EMA_REFERENCE_TIMEFRAME
 
     try:
-        if timeframe == "15m":
+        # -------------------------------------------------
+        # 참고용 5분봉
+        # -------------------------------------------------
+        if timeframe == "5m":
+            df = get_upbit_5m_candles(
+                market,
+                EMA_HISTORY_CANDLES
+            )
+
+            if df.empty:
+                return states
+
+            now = datetime.now(KST)
+
+            current_start = now.replace(
+                minute=(now.minute // 5) * 5,
+                second=0,
+                microsecond=0
+            )
+
+            df = update_current_candle(
+                df,
+                current_start,
+                price
+            )
+
+        # -------------------------------------------------
+        # 참고용 15분봉
+        # -------------------------------------------------
+        elif timeframe == "15m":
             df = get_upbit_15m_candles(
                 market,
                 EMA_HISTORY_CANDLES
@@ -1030,6 +1074,9 @@ def analyze_reference_ema_timeframes(market, price=None):
                 price
             )
 
+        # -------------------------------------------------
+        # 참고용 1시간봉
+        # -------------------------------------------------
         elif timeframe == "1h":
             df = get_upbit_4h_candles(
                 market,
@@ -1053,6 +1100,9 @@ def analyze_reference_ema_timeframes(market, price=None):
                 price
             )
 
+        # -------------------------------------------------
+        # 참고용 4시간봉
+        # -------------------------------------------------
         elif timeframe == "4h":
             df_1h = get_upbit_4h_candles(
                 market,
@@ -1070,6 +1120,9 @@ def analyze_reference_ema_timeframes(market, price=None):
             if df.empty:
                 return states
 
+        # -------------------------------------------------
+        # 참고용 일봉
+        # -------------------------------------------------
         elif timeframe == "1d":
             df = get_upbit_daily_candles(
                 market,
@@ -1104,6 +1157,9 @@ def analyze_reference_ema_timeframes(market, price=None):
             )
             return states
 
+        # -------------------------------------------------
+        # EMA 두 쌍 상태 계산
+        # -------------------------------------------------
         states["signal_5_20"] = get_ema_alignment_state(
             df,
             EMA_PULLBACK,
@@ -1116,6 +1172,7 @@ def analyze_reference_ema_timeframes(market, price=None):
             EMA_SLOW
         )
 
+        # 기존 키 호환 유지
         states["1h_5_20"] = states["signal_5_20"]
         states["1h"] = states["signal_20_60"]
 
