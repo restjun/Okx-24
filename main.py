@@ -60,7 +60,6 @@ MAX_RETRIES = 10
 # SIGNAL 설정
 # =========================================================
 
-# 시그널용 시간봉은 기존 1시간봉 유지
 SIGNAL_TIMEFRAME = "1h"
 
 TIMEFRAME_LABEL = {
@@ -80,14 +79,12 @@ EMA_PULLBACK = 15
 EMA_FAST = 20
 EMA_SLOW = 60
 
-# Y = 정배열 / N = 역배열 / ANY = 배열 조건 미적용
 SIGNAL_5_20 = "Y"
 SIGNAL_20_60 = "Y"
 
 
 # =========================================================
 # 참고용 EMA 시간 설정
-# 5m / 15m / 1h / 4h / 1d 중 선택
 # =========================================================
 
 EMA_REFERENCE_TIMEFRAME = "15m"
@@ -102,6 +99,14 @@ EMA_REFERENCE_LABELS = {
         EMA_REFERENCE_TIMEFRAME
     )
 }
+
+
+# =========================================================
+# 참고용 정배열 표시 기간
+# 정배열 시작 캔들부터 10번째 캔들까지
+# =========================================================
+
+REFERENCE_ALIGNMENT_MAX_CANDLES = 10
 
 
 # =========================================================
@@ -171,7 +176,6 @@ def get_ema_full_label():
 
 # =========================================================
 # SIGNAL EMA 배열 설정 표시
-# Y = 정배열 / N = 역배열 / ANY = 배열 조건 미적용
 # =========================================================
 
 def get_ema_signal_description():
@@ -706,7 +710,6 @@ def calculate_ema(df, period):
 
 # =========================================================
 # SIGNAL EMA 배열 조건
-# Y = 정배열 / N = 역배열 / ANY = 배열 조건 미적용
 # =========================================================
 
 def check_ema_signal_condition(
@@ -730,7 +733,6 @@ def check_ema_signal_condition(
     ):
         return False
 
-    # EMA 15/20 조건
     if SIGNAL_5_20 == "Y":
         condition_5_20 = ema5 > ema20
     elif SIGNAL_5_20 == "N":
@@ -740,7 +742,6 @@ def check_ema_signal_condition(
     else:
         condition_5_20 = True
 
-    # EMA 20/60 조건
     if SIGNAL_20_60 == "Y":
         condition_20_60 = ema20 > ema60
     elif SIGNAL_20_60 == "N":
@@ -1006,9 +1007,78 @@ def get_ema_alignment_state(
 
 
 # =========================================================
+# 참고용 완전 정배열 연속 캔들 수 계산
+#
+# EMA15 > EMA20 > EMA60 상태가 이어진 캔들 수
+# 최초 정배열 캔들 = 1번째
+# 10번째 캔들까지 SIGNAL 허용
+# 11번째부터 제외
+# =========================================================
+
+def get_reference_full_alignment_age(df):
+    if df is None or df.empty:
+        return 0
+
+    ema15_series = calculate_ema_series(
+        df,
+        EMA_PULLBACK
+    )
+
+    ema20_series = calculate_ema_series(
+        df,
+        EMA_FAST
+    )
+
+    ema60_series = calculate_ema_series(
+        df,
+        EMA_SLOW
+    )
+
+    if (
+        ema15_series is None
+        or ema20_series is None
+        or ema60_series is None
+    ):
+        return 0
+
+    combined = pd.concat(
+        [
+            ema15_series.rename("ema15"),
+            ema20_series.rename("ema20"),
+            ema60_series.rename("ema60")
+        ],
+        axis=1
+    )
+
+    combined = combined.dropna()
+
+    if combined.empty:
+        return 0
+
+    full_alignment = (
+        (combined["ema15"] > combined["ema20"])
+        & (combined["ema20"] > combined["ema60"])
+    )
+
+    # 최신 캔들이 완전 정배열이 아니면 대상 아님
+    if not bool(full_alignment.iloc[-1]):
+        return 0
+
+    # 최신 캔들부터 거꾸로 연속 정배열 개수 계산
+    age = 0
+
+    for is_aligned in reversed(full_alignment.tolist()):
+        if not is_aligned:
+            break
+
+        age += 1
+
+    return age
+
+
+# =========================================================
 # 참고용 EMA 상태 분석
 # EMA_REFERENCE_TIMEFRAME 기준으로 별도 계산
-# 지원: 5m / 15m / 1h / 4h / 1d
 # =========================================================
 
 def analyze_reference_ema_timeframes(market, price=None):
@@ -1016,7 +1086,9 @@ def analyze_reference_ema_timeframes(market, price=None):
         "signal_5_20": None,
         "signal_20_60": None,
         "1h_5_20": None,
-        "1h": None
+        "1h": None,
+        "full_alignment_age": 0,
+        "full_alignment_active": False
     }
 
     timeframe = EMA_REFERENCE_TIMEFRAME
@@ -1175,6 +1247,18 @@ def analyze_reference_ema_timeframes(market, price=None):
         # 기존 키 호환 유지
         states["1h_5_20"] = states["signal_5_20"]
         states["1h"] = states["signal_20_60"]
+
+        # -------------------------------------------------
+        # 완전 정배열 연속 캔들 수
+        # EMA15 > EMA20 > EMA60
+        # -------------------------------------------------
+        alignment_age = get_reference_full_alignment_age(df)
+
+        states["full_alignment_age"] = alignment_age
+
+        states["full_alignment_active"] = bool(
+            1 <= alignment_age <= REFERENCE_ALIGNMENT_MAX_CANDLES
+        )
 
     except Exception as e:
         log.warning(
@@ -2251,7 +2335,6 @@ def update_upbit():
 
         # =================================================
         # SIGNAL EMA 조건
-        # Y = 정배열 / N = 역배열 / ANY = 배열 조건 미적용
         # =================================================
 
         ema5_value = ema_analysis.get("ema5_short")
@@ -2315,7 +2398,9 @@ def update_upbit():
                 "signal_5_20": None,
                 "signal_20_60": None,
                 "1h_5_20": None,
-                "1h": None
+                "1h": None,
+                "full_alignment_age": 0,
+                "full_alignment_active": False
             }
 
         rows.append(
@@ -2339,8 +2424,12 @@ def update_upbit():
 
     # =====================================================
     # SIGNAL 최종 필터
-    # 기존 EMA 조건 + 당일 변동률 양수 +
-    # 참고용 EMA 두 쌍 중 하나라도 역배열
+    #
+    # 1. 기존 1시간봉 EMA 조건 통과
+    # 2. 당일 변동률 양수
+    # 3. 참고용 15분봉 EMA15 > EMA20 > EMA60
+    # 4. 정배열 시작부터 10번째 캔들까지만 표시
+    # 5. 11번째 캔들부터 표시 제외
     # =====================================================
 
     latest_signal_data = [
@@ -2348,17 +2437,18 @@ def update_upbit():
         for row in rows
         if (
             row.get("ema_signal_condition", False)
+
             and row.get("daily_change") is not None
             and row.get("daily_change") > 0
-            and (
-                row.get("ema_reference_states", {}).get(
-                    "signal_5_20"
-                ) == "역배열"
-                or
-                row.get("ema_reference_states", {}).get(
-                    "signal_20_60"
-                ) == "역배열"
-            )
+
+            and row.get(
+                "ema_reference_states", {}
+            ).get("full_alignment_active", False)
+
+            and 1 <= row.get(
+                "ema_reference_states", {}
+            ).get("full_alignment_age", 0)
+            <= REFERENCE_ALIGNMENT_MAX_CANDLES
         )
     ]
 
@@ -2374,16 +2464,13 @@ def update_upbit():
     log.info(
         "UPBIT | 거래대금 TOP%s | EMA%s | 시간봉=%s | "
         "참고 EMA 시간봉=%s | SIGNAL=%s | "
-        "%s + 당일 변동률 양수 | "
-        "상승패턴은 선택 조건이며 패턴이 있는 종목만 강조 | "
-        "캔들패턴 12종 표시, 상승장악형/관통형/"
-        "장대양봉/상승망치형/상승역망치형 강조",
+        "당일 변동률 양수 | 참고 EMA 완전 정배열 시작부터 %s개 캔들까지",
         TOP_N,
         get_ema_full_label(),
         get_timeframe_label(),
         get_reference_timeframe_label(),
         len(latest_signal_data),
-        get_ema_signal_description()
+        REFERENCE_ALIGNMENT_MAX_CANDLES
     )
 
 
@@ -2999,8 +3086,6 @@ def btc_html():
 
 # =========================================================
 # SIGNAL 카드
-# 참고용 EMA 중 하나라도 역배열이면 카드 강조
-# 실제 SIGNAL 조건과는 별개
 # =========================================================
 
 def signal_card(row):
@@ -3023,7 +3108,6 @@ def signal_card(row):
         reference_states.get("1h")
     )
 
-    # 참고용 EMA 두 쌍 중 하나라도 역배열이면 카드 강조
     has_reference_reverse = (
         reference_5_20 == "역배열"
         or reference_20_60 == "역배열"
@@ -3043,6 +3127,11 @@ def signal_card(row):
     else:
         card_class = "signal-card"
 
+    alignment_age = reference_states.get(
+        "full_alignment_age",
+        0
+    )
+
     return f"""
     <div class="{card_class}">
         <div class="signal-coin">
@@ -3055,6 +3144,10 @@ def signal_card(row):
             <div class="signal-type-list">{badge_html}</div>
 
             {reference_ema_states_html(row)}
+
+            <span class="alignment-age">
+                정배열 {alignment_age}/{REFERENCE_ALIGNMENT_MAX_CANDLES}
+            </span>
         </div>
 
         <div class="signal-volume">
@@ -3126,7 +3219,7 @@ def signal_section():
             <b>{signal_description}</b>
 
             <small>
-                당일 변동률 양수 · 상승패턴은 강조 조건
+                당일 변동률 양수 · 참고 15분봉 완전 정배열 시작부터 10개 캔들까지
             </small>
         </div>
 
@@ -3293,7 +3386,6 @@ section { margin-bottom: 12px; }
     white-space: nowrap;
 }
 
-/* EMA 상태를 두 줄로 표시 */
 .ema-ref-row {
     display: flex;
     flex-direction: column;
@@ -3459,7 +3551,6 @@ section { margin-bottom: 12px; }
     width: 9px;
 }
 
-/* 망치형: 긴 아래꼬리 */
 .mini-candle.hammer .wick {
     height: 22px;
     top: 0;
@@ -3480,7 +3571,6 @@ section { margin-bottom: 12px; }
     background: #ff5966;
 }
 
-/* 역망치형: 긴 위꼬리 */
 .mini-candle.inverted-hammer .wick {
     height: 22px;
     top: 0;
@@ -3567,7 +3657,6 @@ section { margin-bottom: 12px; }
     border-bottom: 1px solid #20282f;
 }
 
-/* 참고용 EMA 중 하나라도 역배열이면 카드 강조 */
 .signal-card.has-reference-reverse {
     background: #171316;
     box-shadow: inset 3px 0 0 #ff5966;
@@ -3677,6 +3766,14 @@ section { margin-bottom: 12px; }
 
 .signal-pattern .pattern-multi .pattern-box {
     min-width: 29px;
+}
+
+.alignment-age {
+    width: 100%;
+    color: #e4c45e !important;
+    font-size: 6px !important;
+    font-weight: 800;
+    margin-top: 2px;
 }
 
 .signal-empty {
@@ -3979,6 +4076,10 @@ section { margin-bottom: 12px; }
     .signal-card .ema-ref-row { gap: 2px; }
     .signal-card .ema-ref-item { font-size: 5px; }
     .signal-card .ema-ref-label { font-size: 4px; }
+
+    .alignment-age {
+        font-size: 5px !important;
+    }
 }
 """
 
@@ -4069,13 +4170,15 @@ def startup():
         "이전봉/현재봉 캔들 패턴 12종 표시 + "
         "%s SIGNAL + "
         "당일 변동률 양수 조건 + 상승패턴은 강조 조건 + "
-        "참고용 EMA 시간봉 %s 및 %s 표시",
+        "참고용 EMA 시간봉 %s 및 %s 표시 + "
+        "참고 EMA 완전 정배열 시작부터 %s개 캔들까지",
         TOP_N,
         get_ema_full_label(),
         get_timeframe_label(),
         get_ema_signal_description(),
         pair_1,
-        pair_2
+        pair_2,
+        REFERENCE_ALIGNMENT_MAX_CANDLES
     )
 
     log.info(
