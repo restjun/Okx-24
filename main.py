@@ -106,7 +106,7 @@ EMA_REFERENCE_LABELS = {
 # 정배열 시작 캔들부터 10번째 캔들까지
 # =========================================================
 
-REFERENCE_ALIGNMENT_MAX_CANDLES = 10
+REFERENCE_ALIGNMENT_MAX_CANDLES = 20
 
 
 # =========================================================
