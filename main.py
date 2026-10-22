@@ -1075,8 +1075,7 @@ def get_reference_full_alignment_age(df):
         age += 1
 
     return age
-
-# =========================================================
+    # =========================================================
 # 참고용 EMA 상태 분석
 # EMA_REFERENCE_TIMEFRAME 기준으로 별도 계산
 # =========================================================
@@ -2472,6 +2471,851 @@ def update_upbit():
         len(latest_signal_data),
         REFERENCE_ALIGNMENT_MAX_CANDLES
     )
+    # =========================================================
+# OKX
+# =========================================================
+
+def okx_candles(bar, limit=200):
+    r = retry(
+        requests.get,
+        "https://www.okx.com/api/v5/market/candles",
+        params={
+            "instId": "BTC-USDT-SWAP",
+            "bar": bar,
+            "limit": str(min(limit, 300))
+        },
+        timeout=15
+    )
+
+    if r is None:
+        return pd.DataFrame()
+
+    try:
+        data = r.json().get("data", [])
+    except Exception:
+        return pd.DataFrame()
+
+    rows = []
+
+    for x in data:
+        try:
+            rows.append({
+                "datetime": pd.to_datetime(
+                    int(x[0]),
+                    unit="ms",
+                    utc=True
+                ).tz_convert(KST),
+                "open": float(x[1]),
+                "high": float(x[2]),
+                "low": float(x[3]),
+                "close": float(x[4])
+            })
+        except Exception:
+            pass
+
+    if not rows:
+        return pd.DataFrame()
+
+    return (
+        pd.DataFrame(rows)
+        .sort_values("datetime")
+        .drop_duplicates("datetime")
+        .reset_index(drop=True)
+    )
+
+
+# =========================================================
+# OKX BTC 가격
+# =========================================================
+
+def okx_price():
+    r = retry(
+        requests.get,
+        "https://www.okx.com/api/v5/market/ticker",
+        params={"instId": "BTC-USDT-SWAP"},
+        timeout=15
+    )
+
+    if r is None:
+        return None
+
+    try:
+        return float(r.json()["data"][0]["last"])
+    except Exception:
+        return None
+
+
+# =========================================================
+# OKX BTC
+# KST 09:00 기준 일봉 재구성
+# =========================================================
+
+def build_okx_kst_daily_periods(df, current_price=None):
+    if df is None or df.empty:
+        return []
+
+    df = (
+        df.sort_values("datetime")
+        .drop_duplicates("datetime")
+        .reset_index(drop=True)
+    )
+
+    now = datetime.now(KST)
+
+    current_day_start = now.replace(
+        hour=9,
+        minute=0,
+        second=0,
+        microsecond=0
+    )
+
+    if now < current_day_start:
+        current_day_start -= timedelta(days=1)
+
+    rows = []
+
+    for _, row in df.iterrows():
+        dt = row["datetime"]
+
+        day_start = dt.replace(
+            hour=9,
+            minute=0,
+            second=0,
+            microsecond=0
+        )
+
+        if dt < day_start:
+            day_start -= timedelta(days=1)
+
+        rows.append({
+            "day_start": day_start,
+            "open": float(row["open"]),
+            "high": float(row["high"]),
+            "low": float(row["low"]),
+            "close": float(row["close"])
+        })
+
+    if not rows:
+        return []
+
+    raw = pd.DataFrame(rows)
+    periods = []
+
+    for day_start, group in raw.groupby("day_start", sort=True):
+        o = float(group.iloc[0]["open"])
+        h = float(group["high"].max())
+        l = float(group["low"].min())
+        c = float(group.iloc[-1]["close"])
+
+        active = day_start == current_day_start
+
+        if active and current_price is not None:
+            c = float(current_price)
+            h = max(h, c)
+            l = min(l, c)
+
+        change = (
+            (c - o) / o * 100
+            if o
+            else None
+        )
+
+        periods.append({
+            "start": day_start,
+            "end": day_start + timedelta(days=1),
+            "active": active,
+            "label": day_start.strftime("%m/%d 09:00"),
+            "open": o,
+            "high": h,
+            "low": l,
+            "close": c,
+            "change": change
+        })
+
+    return periods[-6:]
+
+
+# =========================================================
+# BTC 업데이트
+# =========================================================
+
+def update_okx_btc():
+    global latest_btc_okx_price
+    global latest_btc_daily_periods
+    global latest_btc_daily_change
+
+    price = okx_price()
+
+    latest_btc_okx_price = price
+
+    if price is None:
+        return
+
+    d1h = okx_candles("1H", 200)
+
+    if d1h.empty:
+        latest_btc_daily_periods = []
+        latest_btc_daily_change = None
+        return
+
+    latest_btc_daily_periods = build_okx_kst_daily_periods(
+        d1h,
+        price
+    )
+
+    if latest_btc_daily_periods:
+        latest_btc_daily_change = (
+            latest_btc_daily_periods[-1].get("change")
+        )
+    else:
+        latest_btc_daily_change = None
+
+
+# =========================================================
+# 전체 업데이트
+# =========================================================
+
+def update_dashboard():
+    if not update_lock.acquire(False):
+        return
+
+    try:
+        if USE_OKX == "Y":
+            update_okx_btc()
+
+        if USE_UPBIT == "Y":
+            update_upbit()
+
+    except Exception as e:
+        log.exception(
+            "업데이트 오류: %s",
+            e
+        )
+
+    finally:
+        update_lock.release()
+
+
+# =========================================================
+# 표시
+# =========================================================
+
+def fmt_price(v):
+    if v is None:
+        return "-"
+
+    try:
+        v = float(v)
+    except Exception:
+        return "-"
+
+    if v >= 100000000:
+        return f"{v / 100000000:.2f}억"
+
+    if v >= 10000:
+        return f"{v:,.0f}"
+
+    if v >= 1:
+        return f"{v:,.2f}"
+
+    return f"{v:.6f}"
+
+
+def fmt_vol(v):
+    try:
+        v = float(v)
+    except Exception:
+        return "-"
+
+    if v >= 1e12:
+        return f"{v / 1e12:.1f}조"
+
+    if v >= 1e8:
+        return f"{v / 1e8:.0f}억"
+
+    if v >= 1e4:
+        return f"{v / 1e4:.0f}만"
+
+    return f"{v:,.0f}"
+
+
+def fmt_change(v):
+    if v is None:
+        return '<span class="zero">-</span>'
+
+    try:
+        v = float(v)
+    except Exception:
+        return '<span class="zero">-</span>'
+
+    if v > 0:
+        return f'<span class="up">▲ +{v:.2f}%</span>'
+
+    if v < 0:
+        return f'<span class="down">▼ {v:.2f}%</span>'
+
+    return '<span class="zero">0.00%</span>'
+
+
+# =========================================================
+# EMA 표시
+# =========================================================
+
+def fmt_ema(v):
+    if v is None:
+        return "-"
+
+    try:
+        v = float(v)
+    except Exception:
+        return "-"
+
+    return fmt_price(v)
+
+
+def ema_alignment_html(alignment):
+    if alignment == "역배열":
+        return '<span class="ema-reverse">▼ 역배열</span>'
+
+    if alignment == "정배열":
+        return '<span class="ema-normal">▲ 정배열</span>'
+
+    if alignment == "동일":
+        return '<span class="ema-same">— 동일</span>'
+
+    return '<span class="ema-same">—</span>'
+
+
+# =========================================================
+# 참고용 EMA 상태 HTML
+# 두 줄 표시
+# =========================================================
+
+def reference_ema_states_html(row):
+    states = row.get("ema_reference_states") or {}
+    pieces = []
+
+    timeframe_label = get_reference_timeframe_label()
+    pair_1, pair_2 = get_ema_pair_labels()
+
+    display_items = [
+        (
+            pair_1,
+            states.get(
+                "signal_5_20",
+                states.get("1h_5_20")
+            )
+        ),
+        (
+            pair_2,
+            states.get(
+                "signal_20_60",
+                states.get("1h")
+            )
+        )
+    ]
+
+    for pair_label, state in display_items:
+        if state == "정배열":
+            cls = "ema-normal"
+            symbol = "▲"
+        elif state == "역배열":
+            cls = "ema-reverse"
+            symbol = "▼"
+        elif state == "동일":
+            cls = "ema-same"
+            symbol = "—"
+        else:
+            cls = "ema-same"
+            symbol = "—"
+
+        pieces.append(
+            f'<div class="ema-ref-item {cls}">'
+            f'<span class="ema-ref-label">'
+            f'{html.escape(timeframe_label)} '
+            f'{html.escape(pair_label)}'
+            f'</span> {symbol} '
+            f'{html.escape(state) if state else "-"}'
+            f'</div>'
+        )
+
+    return (
+        '<div class="ema-ref-row" '
+        f'title="{html.escape(timeframe_label)} 기준 EMA 상태">'
+        + "".join(pieces)
+        + '</div>'
+    )
+
+
+# =========================================================
+# 캔들 그림
+# =========================================================
+
+def candle_icon_html(pattern):
+    if pattern == "상승장악형":
+        return """
+        <div class="candle-pattern-visual engulfing">
+            <div class="mini-candle bearish">
+                <span class="wick"></span><span class="body"></span>
+            </div>
+            <div class="mini-candle bullish large">
+                <span class="wick"></span><span class="body"></span>
+            </div>
+        </div>
+        """
+
+    if pattern == "하락장악형":
+        return """
+        <div class="candle-pattern-visual engulfing">
+            <div class="mini-candle bullish">
+                <span class="wick"></span><span class="body"></span>
+            </div>
+            <div class="mini-candle bearish large">
+                <span class="wick"></span><span class="body"></span>
+            </div>
+        </div>
+        """
+
+    if pattern == "양수도지":
+        return """
+        <div class="candle-pattern-visual doji">
+            <div class="mini-candle bullish-doji">
+                <span class="wick"></span><span class="body"></span>
+            </div>
+        </div>
+        """
+
+    if pattern == "음수도지":
+        return """
+        <div class="candle-pattern-visual doji">
+            <div class="mini-candle bearish-doji">
+                <span class="wick"></span><span class="body"></span>
+            </div>
+        </div>
+        """
+
+    if pattern == "상승관통형":
+        return """
+        <div class="candle-pattern-visual piercing">
+            <div class="mini-candle bearish">
+                <span class="wick"></span><span class="body"></span>
+            </div>
+            <div class="mini-candle bullish piercing-candle">
+                <span class="wick"></span><span class="body"></span>
+            </div>
+        </div>
+        """
+
+    if pattern == "하락관통형":
+        return """
+        <div class="candle-pattern-visual piercing">
+            <div class="mini-candle bullish">
+                <span class="wick"></span><span class="body"></span>
+            </div>
+            <div class="mini-candle bearish piercing-bearish">
+                <span class="wick"></span><span class="body"></span>
+            </div>
+        </div>
+        """
+
+    if pattern == "장대양봉":
+        return """
+        <div class="candle-pattern-visual single-candle">
+            <div class="mini-candle bullish very-large">
+                <span class="wick"></span><span class="body"></span>
+            </div>
+        </div>
+        """
+
+    if pattern == "장대음봉":
+        return """
+        <div class="candle-pattern-visual single-candle">
+            <div class="mini-candle bearish very-large">
+                <span class="wick"></span><span class="body"></span>
+            </div>
+        </div>
+        """
+
+    if pattern in ("상승망치형", "하락망치형"):
+        candle_class = (
+            "bullish hammer"
+            if pattern == "상승망치형"
+            else "bearish hammer"
+        )
+
+        return f"""
+        <div class="candle-pattern-visual single-candle">
+            <div class="mini-candle {candle_class}">
+                <span class="wick"></span><span class="body"></span>
+            </div>
+        </div>
+        """
+
+    if pattern in ("상승역망치형", "하락역망치형"):
+        candle_class = (
+            "bullish inverted-hammer"
+            if pattern == "상승역망치형"
+            else "bearish inverted-hammer"
+        )
+
+        return f"""
+        <div class="candle-pattern-visual single-candle">
+            <div class="mini-candle {candle_class}">
+                <span class="wick"></span><span class="body"></span>
+            </div>
+        </div>
+        """
+
+    return """
+    <div class="candle-pattern-visual empty">
+        <span>—</span>
+    </div>
+    """
+
+
+# =========================================================
+# 캔들 패턴 HTML
+# =========================================================
+
+def current_pattern_html(pattern):
+    if isinstance(pattern, str):
+        patterns = [pattern] if pattern else []
+    elif isinstance(pattern, (list, tuple, set)):
+        patterns = list(pattern)
+    else:
+        patterns = []
+
+    if not patterns:
+        return (
+            '<div class="pattern-box pattern-none">'
+            + candle_icon_html(None)
+            + '<span class="pattern-name">-</span></div>'
+        )
+
+    boxes = []
+
+    for item in patterns:
+        escaped_pattern = html.escape(str(item))
+
+        if item in BULLISH_HIGHLIGHT_PATTERNS:
+            css_class = "bullish-pattern"
+
+        elif item in [
+            "하락장악형",
+            "하락관통형",
+            "장대음봉",
+            "음수도지",
+            "하락망치형",
+            "하락역망치형"
+        ]:
+            css_class = "bearish-pattern"
+
+        else:
+            css_class = "neutral-pattern"
+
+        boxes.append(
+            f'<div class="pattern-box {css_class}">'
+            + candle_icon_html(item)
+            + '<span class="pattern-name">'
+            + escaped_pattern
+            + '</span></div>'
+        )
+
+    return (
+        '<div class="pattern-multi">'
+        + "".join(boxes)
+        + '</div>'
+    )
+
+
+# =========================================================
+# SIGNAL 이유
+# =========================================================
+
+def signal_reason_html(reason):
+    if reason == "상승장악형":
+        return '<span class="pattern-cross">▲ 상승장악형</span>'
+
+    if reason == "상승관통형":
+        return '<span class="pattern-cross">▲ 상승관통형</span>'
+
+    if reason == "장대양봉":
+        return '<span class="pattern-cross">▲ 장대양봉</span>'
+
+    if reason == "상승망치형":
+        return '<span class="pattern-cross">▲ 상승망치형</span>'
+
+    if reason == "상승역망치형":
+        return '<span class="pattern-cross">▲ 상승역망치형</span>'
+
+    return ""
+
+
+# =========================================================
+# BTC HTML
+# =========================================================
+
+def btc_html():
+    return f"""
+    <section class="btc-panel">
+        <div class="section-head">
+            <div>
+                <span class="section-kicker">MARKET</span>
+                <b>BTCUSDT</b>
+            </div>
+            <span class="update-time">
+                OKX · KST 09:00 기준 · {kst()}
+            </span>
+        </div>
+
+        <div class="btc-main">
+            <div class="btc-name">BTC</div>
+            <div class="btc-price">
+                {fmt_price(latest_btc_okx_price)}
+            </div>
+            <div class="btc-change">
+                {fmt_change(latest_btc_daily_change)}
+            </div>
+        </div>
+    </section>
+    """
+
+
+# =========================================================
+# SIGNAL 카드
+# =========================================================
+
+def signal_card(row):
+    timeframe_label = get_timeframe_label()
+
+    has_bullish_pattern = row.get(
+        "signal_4h_pattern",
+        False
+    )
+
+    reference_states = row.get("ema_reference_states") or {}
+
+    reference_5_20 = reference_states.get(
+        "signal_5_20",
+        reference_states.get("1h_5_20")
+    )
+
+    reference_20_60 = reference_states.get(
+        "signal_20_60",
+        reference_states.get("1h")
+    )
+
+    has_reference_reverse = (
+        reference_5_20 == "역배열"
+        or reference_20_60 == "역배열"
+    )
+
+    if has_bullish_pattern:
+        badge_html = (
+            '<span class="signal-type-badge">'
+            '⭐ 상승패턴'
+            '</span>'
+        )
+    else:
+        badge_html = ""
+
+    if has_reference_reverse:
+        card_class = "signal-card has-reference-reverse"
+    else:
+        card_class = "signal-card"
+
+    alignment_age = reference_states.get(
+        "full_alignment_age",
+        0
+    )
+
+    return f"""
+    <div class="{card_class}">
+        <div class="signal-coin">
+            <span class="signal-rank">
+                거래대금 #{row.get("volume_rank", "-")}
+            </span>
+
+            <b>{html.escape(row["name"])}</b>
+
+            <div class="signal-type-list">{badge_html}</div>
+
+            {reference_ema_states_html(row)}
+
+            <span class="alignment-age">
+                정배열 {alignment_age}/{REFERENCE_ALIGNMENT_MAX_CANDLES}
+            </span>
+        </div>
+
+        <div class="signal-volume">
+            <span>거래대금</span>
+            <strong>{fmt_vol(row["volume_24h"])}</strong>
+        </div>
+
+        <div class="signal-change">
+            <span>변동률</span>
+            <strong>{fmt_change(row.get("daily_change"))}</strong>
+        </div>
+
+        <div class="signal-pattern">
+            <span>이전봉 {timeframe_label}</span>
+            <strong class="pattern-display">
+                {current_pattern_html(row.get("previous_pattern"))}
+            </strong>
+        </div>
+
+        <div class="signal-pattern">
+            <span>현재봉 {timeframe_label}</span>
+            <strong class="pattern-display">
+                {current_pattern_html(row.get("current_pattern"))}
+            </strong>
+        </div>
+    </div>
+    """
+
+
+# =========================================================
+# SIGNAL 영역
+# =========================================================
+
+def signal_section():
+    timeframe_label = get_timeframe_label()
+    ema_full_label = get_ema_full_label()
+    signal_description = html.escape(
+        get_ema_signal_description()
+    )
+
+    if not latest_signal_data:
+        body = """
+        <div class="signal-empty">
+            현재 SIGNAL 조건에 해당하는 종목 없음
+        </div>
+        """
+    else:
+        body = "".join(
+            signal_card(row)
+            for row in latest_signal_data
+        )
+
+    return f"""
+    <section class="signal-panel">
+        <div class="section-head signal-panel-head">
+            <div>
+                <span class="section-kicker">SIGNAL</span>
+                <b>🔴 EMA{ema_full_label} · {timeframe_label} SIGNAL</b>
+            </div>
+
+            <span class="update-time">
+                EMA {timeframe_label} · 캔들패턴 2개 봉 · {kst()}
+            </span>
+        </div>
+
+        <div class="signal-condition">
+            <span>SIGNAL 조건</span>
+
+            <b>{signal_description}</b>
+
+            <small>
+                당일 변동률 양수 · 참고 15분봉 완전 정배열 시작부터 20개 캔들까지
+            </small>
+        </div>
+
+        <div class="signal-header">
+            <div>종목 / EMA 참고</div>
+            <div>거래대금</div>
+            <div>변동률</div>
+            <div>이전봉</div>
+            <div>현재봉</div>
+        </div>
+
+        <div class="signal-list">{body}</div>
+    </section>
+    """
+
+
+# =========================================================
+# TOP 카드
+# =========================================================
+
+def card(row, kind):
+    timeframe_label = get_timeframe_label()
+    pair_1, pair_2 = get_ema_pair_labels()
+
+    has_bullish_pattern = row.get(
+        "signal_4h_pattern",
+        False
+    )
+
+    previous_pattern = row.get("previous_pattern")
+    current_pattern = row.get("current_pattern")
+
+    if kind == "top":
+        status = (
+            '<span class="signal-badge">⭐ 상승패턴</span>'
+            if has_bullish_pattern
+            else ""
+        )
+
+        alignment_html = ema_alignment_html(
+            row.get("ema_alignment")
+        )
+
+        return f"""
+        <article class="coin-card">
+            <div class="coin-head">
+                <div class="coin-title">
+                    <span class="rank">#{row["rank"]}</span>
+                    <b>{html.escape(row["name"])}</b>
+                    {alignment_html}
+                </div>
+
+                {status}
+            </div>
+
+            <div class="ema-ref-topline">
+                <span class="ema-ref-title">
+                    EMA {pair_1} · {pair_2}
+                </span>
+
+                {reference_ema_states_html(row)}
+            </div>
+
+            <div class="market-summary">
+                <div>
+                    <span>현재가</span>
+                    <strong>{fmt_price(row["current_price"])}</strong>
+                </div>
+
+                <div>
+                    <span>24H 거래대금</span>
+                    <strong>{fmt_vol(row["volume_24h"])}</strong>
+                </div>
+
+                <div>
+                    <span>당일 변동률</span>
+                    <strong class="daily-change-value">
+                        {fmt_change(row.get("daily_change"))}
+                    </strong>
+                </div>
+
+                <div>
+                    <span>이전봉 {timeframe_label}</span>
+                    <strong class="pattern-display">
+                        {current_pattern_html(previous_pattern)}
+                    </strong>
+                </div>
+
+                <div>
+                    <span>현재봉 {timeframe_label}</span>
+                    <strong class="pattern-display">
+                        {current_pattern_html(current_pattern)}
+                    </strong>
+                </div>
+            </div>
+        </article>
+        """
+
+    return ""
 
 # =========================================================
 # CSS
@@ -3363,4 +4207,3 @@ if __name__ == "__main__":
         host="0.0.0.0",
         port=8000
     )
-    
