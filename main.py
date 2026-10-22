@@ -75,7 +75,7 @@ TIMEFRAME_LABEL = {
 # EMA 설정
 # =========================================================
 
-EMA_PULLBACK = 15
+EMA_PULLBACK = 5
 EMA_FAST = 20
 EMA_SLOW = 60
 
