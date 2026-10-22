@@ -106,7 +106,7 @@ EMA_REFERENCE_LABELS = {
 # 참고용 정배열 표시 기간
 # =========================================================
 
-REFERENCE_ALIGNMENT_MAX_CANDLES = 20
+REFERENCE_ALIGNMENT_MAX_CANDLES = 10
 
 
 # =========================================================
