@@ -1075,7 +1075,9 @@ def get_reference_full_alignment_age(df):
         age += 1
 
     return age
-    # =========================================================
+
+
+# =========================================================
 # 참고용 EMA 상태 분석
 # EMA_REFERENCE_TIMEFRAME 기준으로 별도 계산
 # =========================================================
@@ -2426,7 +2428,7 @@ def update_upbit():
     #
     # 1. 기존 1시간봉 EMA 조건 통과
     # 2. 당일 변동률 양수
-    # 3. 참고용 15분봉 EMA15 > EMA20 > EMA60
+    # 3. 참고용 5분봉 EMA15 > EMA20 > EMA60
     # 4. 정배열 시작부터 20번째 캔들까지 표시
     # 5. 21번째 캔들부터 표시 제외
     # =====================================================
@@ -2458,20 +2460,21 @@ def update_upbit():
     for signal_rank, row in enumerate(latest_signal_data, 1):
         row["signal_rank"] = signal_rank
 
-    pair_1, pair_2 = get_ema_pair_labels()
-
     log.info(
         "UPBIT | 거래대금 TOP%s | EMA%s | 시간봉=%s | "
         "참고 EMA 시간봉=%s | SIGNAL=%s | "
-        "당일 변동률 양수 | 참고 EMA 완전 정배열 시작부터 %s개 캔들까지",
+        "당일 변동률 양수 | 참고 %s 완전 정배열 시작부터 %s개 캔들까지",
         TOP_N,
         get_ema_full_label(),
         get_timeframe_label(),
         get_reference_timeframe_label(),
         len(latest_signal_data),
+        get_reference_timeframe_label(),
         REFERENCE_ALIGNMENT_MAX_CANDLES
     )
-    # =========================================================
+
+
+# =========================================================
 # OKX
 # =========================================================
 
@@ -3180,7 +3183,9 @@ def signal_card(row):
 
 def signal_section():
     timeframe_label = get_timeframe_label()
+    reference_timeframe_label = get_reference_timeframe_label()
     ema_full_label = get_ema_full_label()
+
     signal_description = html.escape(
         get_ema_signal_description()
     )
@@ -3216,7 +3221,7 @@ def signal_section():
             <b>{signal_description}</b>
 
             <small>
-                당일 변동률 양수 · 참고 15분봉 완전 정배열 시작부터 20개 캔들까지
+                당일 변동률 양수 · 참고 {html.escape(reference_timeframe_label)} 완전 정배열 시작부터 {REFERENCE_ALIGNMENT_MAX_CANDLES}개 캔들까지
             </small>
         </div>
 
@@ -3316,6 +3321,7 @@ def card(row, kind):
         """
 
     return ""
+
 
 # =========================================================
 # CSS
