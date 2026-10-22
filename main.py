@@ -87,7 +87,7 @@ SIGNAL_20_60 = "Y"
 # 참고용 EMA 시간 설정
 # =========================================================
 
-EMA_REFERENCE_TIMEFRAME = "15m"
+EMA_REFERENCE_TIMEFRAME = "5m"
 
 EMA_REFERENCE_TIMEFRAMES = [
     EMA_REFERENCE_TIMEFRAME
