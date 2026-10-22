@@ -1,3 +1,4 @@
+
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
@@ -103,8 +104,6 @@ EMA_REFERENCE_LABELS = {
 
 # =========================================================
 # 참고용 정배열 표시 기간
-# 정배열 시작 캔들부터 20번째 캔들까지
-# 1~20번째 캔들은 SIGNAL 허용, 21번째부터 제외
 # =========================================================
 
 REFERENCE_ALIGNMENT_MAX_CANDLES = 20
@@ -1009,11 +1008,6 @@ def get_ema_alignment_state(
 
 # =========================================================
 # 참고용 완전 정배열 연속 캔들 수 계산
-#
-# EMA15 > EMA20 > EMA60 상태가 이어진 캔들 수
-# 최초 정배열 캔들 = 1번째
-# 20번째 캔들까지 SIGNAL 허용
-# 21번째부터 제외
 # =========================================================
 
 def get_reference_full_alignment_age(df):
@@ -1061,11 +1055,9 @@ def get_reference_full_alignment_age(df):
         & (combined["ema20"] > combined["ema60"])
     )
 
-    # 최신 캔들이 완전 정배열이 아니면 대상 아님
     if not bool(full_alignment.iloc[-1]):
         return 0
 
-    # 최신 캔들부터 거꾸로 연속 정배열 개수 계산
     age = 0
 
     for is_aligned in reversed(full_alignment.tolist()):
@@ -1079,7 +1071,6 @@ def get_reference_full_alignment_age(df):
 
 # =========================================================
 # 참고용 EMA 상태 분석
-# EMA_REFERENCE_TIMEFRAME 기준으로 별도 계산
 # =========================================================
 
 def analyze_reference_ema_timeframes(market, price=None):
@@ -1095,9 +1086,6 @@ def analyze_reference_ema_timeframes(market, price=None):
     timeframe = EMA_REFERENCE_TIMEFRAME
 
     try:
-        # -------------------------------------------------
-        # 참고용 5분봉
-        # -------------------------------------------------
         if timeframe == "5m":
             df = get_upbit_5m_candles(
                 market,
@@ -1121,9 +1109,6 @@ def analyze_reference_ema_timeframes(market, price=None):
                 price
             )
 
-        # -------------------------------------------------
-        # 참고용 15분봉
-        # -------------------------------------------------
         elif timeframe == "15m":
             df = get_upbit_15m_candles(
                 market,
@@ -1147,9 +1132,6 @@ def analyze_reference_ema_timeframes(market, price=None):
                 price
             )
 
-        # -------------------------------------------------
-        # 참고용 1시간봉
-        # -------------------------------------------------
         elif timeframe == "1h":
             df = get_upbit_4h_candles(
                 market,
@@ -1173,9 +1155,6 @@ def analyze_reference_ema_timeframes(market, price=None):
                 price
             )
 
-        # -------------------------------------------------
-        # 참고용 4시간봉
-        # -------------------------------------------------
         elif timeframe == "4h":
             df_1h = get_upbit_4h_candles(
                 market,
@@ -1193,9 +1172,6 @@ def analyze_reference_ema_timeframes(market, price=None):
             if df.empty:
                 return states
 
-        # -------------------------------------------------
-        # 참고용 일봉
-        # -------------------------------------------------
         elif timeframe == "1d":
             df = get_upbit_daily_candles(
                 market,
@@ -1230,9 +1206,6 @@ def analyze_reference_ema_timeframes(market, price=None):
             )
             return states
 
-        # -------------------------------------------------
-        # EMA 두 쌍 상태 계산
-        # -------------------------------------------------
         states["signal_5_20"] = get_ema_alignment_state(
             df,
             EMA_PULLBACK,
@@ -1245,14 +1218,9 @@ def analyze_reference_ema_timeframes(market, price=None):
             EMA_SLOW
         )
 
-        # 기존 키 호환 유지
         states["1h_5_20"] = states["signal_5_20"]
         states["1h"] = states["signal_20_60"]
 
-        # -------------------------------------------------
-        # 완전 정배열 연속 캔들 수
-        # EMA15 > EMA20 > EMA60
-        # -------------------------------------------------
         alignment_age = get_reference_full_alignment_age(df)
 
         states["full_alignment_age"] = alignment_age
@@ -2425,12 +2393,6 @@ def update_upbit():
 
     # =====================================================
     # SIGNAL 최종 필터
-    #
-    # 1. 기존 1시간봉 EMA 조건 통과
-    # 2. 당일 변동률 양수
-    # 3. 참고용 5분봉 EMA15 > EMA20 > EMA60
-    # 4. 정배열 시작부터 20번째 캔들까지 표시
-    # 5. 21번째 캔들부터 표시 제외
     # =====================================================
 
     latest_signal_data = [
@@ -3261,9 +3223,33 @@ def card(row, kind):
             else ""
         )
 
-        alignment_html = ema_alignment_html(
-            row.get("ema_alignment")
-        )
+        # 수정: 탑리스트 코인명 오른쪽에 20-60 상태 표시
+        alignment = row.get("ema_alignment")
+
+        if alignment == "정배열":
+            alignment_html = (
+                '<span class="ema-normal">'
+                '20-60 ▲ 정배열'
+                '</span>'
+            )
+        elif alignment == "역배열":
+            alignment_html = (
+                '<span class="ema-reverse">'
+                '20-60 ▼ 역배열'
+                '</span>'
+            )
+        elif alignment == "동일":
+            alignment_html = (
+                '<span class="ema-same">'
+                '20-60 — 동일'
+                '</span>'
+            )
+        else:
+            alignment_html = (
+                '<span class="ema-same">'
+                '20-60 —'
+                '</span>'
+            )
 
         return f"""
         <article class="coin-card">
