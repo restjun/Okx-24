@@ -40,7 +40,7 @@ UTC = ZoneInfo("UTC")
 # =========================================================
 
 TOP_N = 30
-SHOW_TOP_LIST = "N"
+SHOW_TOP_LIST = "Y"
 UPDATE_MINUTES = 1
 
 HISTORY_CHUNK = 200
