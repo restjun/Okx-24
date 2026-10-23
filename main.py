@@ -43,9 +43,10 @@ TOP_N = 20
 SHOW_TOP_LIST = "Y"
 UPDATE_MINUTES = 1
 
+# 분봉은 최대 200개, 한 번에 요청
 HISTORY_CHUNK = 200
-MAX_HISTORY_CHUNKS = 10
-EMA_HISTORY_CANDLES = 1000
+MAX_HISTORY_CHUNKS = 1
+EMA_HISTORY_CANDLES = 200
 
 USE_UPBIT = "Y"
 USE_OKX = "Y"
@@ -71,8 +72,7 @@ TIMEFRAME_LABEL = {
 
 
 # =========================================================
-# EMA 설정
-# EMA 5-10 / EMA 10-50
+# EMA 설정: EMA 5-10 / EMA 10-50
 # =========================================================
 
 EMA_PULLBACK = 5
@@ -88,7 +88,6 @@ SIGNAL_10_50 = "Y"
 # =========================================================
 
 EMA_REFERENCE_TIMEFRAME = "15m"
-
 EMA_REFERENCE_TIMEFRAMES = [EMA_REFERENCE_TIMEFRAME]
 
 EMA_REFERENCE_LABELS = {
@@ -124,13 +123,54 @@ latest_btc_daily_change = None
 
 
 # =========================================================
-# Lock
+# Lock 및 캐시
 # =========================================================
 
 request_lock = threading.Lock()
 update_lock = threading.Lock()
+candle_cache_lock = threading.Lock()
 
 last_request_time = 0
+
+# 캐시 키: (종목, 시간봉)
+# 한 번의 업비트 업데이트에서 같은 종목·시간봉은 재조회하지 않음
+candle_cache = {}
+
+
+def clear_candle_cache():
+    with candle_cache_lock:
+        candle_cache.clear()
+
+
+def get_cached_dataframe(market, timeframe, loader):
+    """
+    업데이트 한 주기 내에서 같은 종목·시간봉의 캔들 조회를 공유한다.
+    DataFrame 원본이 수정되지 않도록 복사본을 반환한다.
+    """
+    key = (market, timeframe)
+
+    with candle_cache_lock:
+        cached = candle_cache.get(key)
+
+        if cached is not None:
+            return cached.copy(deep=True)
+
+    df = loader()
+
+    if df is None:
+        df = pd.DataFrame()
+
+    with candle_cache_lock:
+        # 데이터가 비어 있지 않을 때만 저장
+        if not df.empty:
+            existing = candle_cache.get(key)
+
+            if existing is not None:
+                return existing.copy(deep=True)
+
+            candle_cache[key] = df.copy(deep=True)
+
+    return df.copy(deep=True)
 
 
 # =========================================================
@@ -297,106 +337,70 @@ def get_upbit_markets():
 
 
 # =========================================================
-# 업비트 분봉 조회
+# 업비트 분봉 조회: 최대 200개, 정상일 때 한 번 요청
 # =========================================================
 
 def get_upbit_minute_candles(market, unit, count=200):
     endpoint = f"https://api.upbit.com/v1/candles/minutes/{unit}"
 
-    target_count = min(
-        max(int(count), 1),
-        HISTORY_CHUNK * MAX_HISTORY_CHUNKS
+    target_count = min(max(int(count), 1), 200)
+
+    params = {
+        "market": market,
+        "count": target_count
+    }
+
+    r = retry(
+        requests.get,
+        endpoint,
+        params=params,
+        timeout=15
     )
 
+    if r is None:
+        return pd.DataFrame()
+
+    try:
+        data = r.json()
+    except Exception:
+        return pd.DataFrame()
+
+    if not isinstance(data, list) or not data:
+        return pd.DataFrame()
+
     rows = []
-    to_value = None
 
-    while len(rows) < target_count:
-        request_count = min(
-            HISTORY_CHUNK,
-            target_count - len(rows)
-        )
-
-        params = {
-            "market": market,
-            "count": request_count
-        }
-
-        if to_value is not None:
-            params["to"] = to_value
-
-        r = retry(
-            requests.get,
-            endpoint,
-            params=params,
-            timeout=15
-        )
-
-        if r is None:
-            break
-
+    for x in data:
         try:
-            data = r.json()
+            dt_utc = datetime.strptime(
+                x["candle_date_time_utc"],
+                "%Y-%m-%dT%H:%M:%S"
+            ).replace(tzinfo=UTC)
+
+            dt_kst = datetime.strptime(
+                x["candle_date_time_kst"],
+                "%Y-%m-%dT%H:%M:%S"
+            ).replace(tzinfo=KST)
+
+            rows.append({
+                "datetime": dt_kst,
+                "datetime_utc": dt_utc,
+                "open": float(x["opening_price"]),
+                "high": float(x["high_price"]),
+                "low": float(x["low_price"]),
+                "close": float(x["trade_price"])
+            })
+
         except Exception:
-            break
-
-        if not isinstance(data, list) or not data:
-            break
-
-        batch_rows = []
-
-        for x in data:
-            try:
-                dt_utc = datetime.strptime(
-                    x["candle_date_time_utc"],
-                    "%Y-%m-%dT%H:%M:%S"
-                ).replace(tzinfo=UTC)
-
-                dt_kst = datetime.strptime(
-                    x["candle_date_time_kst"],
-                    "%Y-%m-%dT%H:%M:%S"
-                ).replace(tzinfo=KST)
-
-                batch_rows.append({
-                    "datetime": dt_kst,
-                    "datetime_utc": dt_utc,
-                    "open": float(x["opening_price"]),
-                    "high": float(x["high_price"]),
-                    "low": float(x["low_price"]),
-                    "close": float(x["trade_price"])
-                })
-            except Exception:
-                pass
-
-        if not batch_rows:
-            break
-
-        rows.extend(batch_rows)
-
-        oldest = min(
-            batch_rows,
-            key=lambda x: x["datetime_utc"]
-        )
-
-        next_to = oldest["datetime_utc"].isoformat()
-
-        if next_to == to_value:
-            break
-
-        to_value = next_to
-
-        if len(data) < request_count:
-            break
+            pass
 
     if not rows:
         return pd.DataFrame()
 
-    df = pd.DataFrame(rows)
-
     return (
-        df.sort_values("datetime")
+        pd.DataFrame(rows)
+        .sort_values("datetime")
         .drop_duplicates("datetime")
-        .reset_index(drop=True)
         .tail(target_count)
         .reset_index(drop=True)
     )
@@ -423,7 +427,7 @@ def get_upbit_daily_candles(market, count=200):
     r = retry(
         requests.get,
         "https://api.upbit.com/v1/candles/days",
-        params={"market": market, "count": min(count, 200)},
+        params={"market": market, "count": min(int(count), 200)},
         timeout=15
     )
 
@@ -602,10 +606,6 @@ def calculate_ema(df, period):
     return float(valid.iloc[-1]) if not valid.empty else None
 
 
-# =========================================================
-# EMA 배열 상태 계산
-# =========================================================
-
 def get_ema_alignment_state(
     df,
     fast_period=EMA_FAST,
@@ -684,19 +684,31 @@ def update_current_candle(df, current_start, price):
 
 
 # =========================================================
-# 지정 시간봉 데이터 조회
+# 지정 시간봉 데이터 조회 - 캐시 공유
 # =========================================================
 
 def get_timeframe_dataframe(market, timeframe, price=None):
     if timeframe == "5m":
-        df = get_upbit_5m_candles(market, EMA_HISTORY_CANDLES)
+        df = get_cached_dataframe(
+            market, "5m",
+            lambda: get_upbit_5m_candles(market, EMA_HISTORY_CANDLES)
+        )
         minutes = 5
+
     elif timeframe == "15m":
-        df = get_upbit_15m_candles(market, EMA_HISTORY_CANDLES)
+        df = get_cached_dataframe(
+            market, "15m",
+            lambda: get_upbit_15m_candles(market, EMA_HISTORY_CANDLES)
+        )
         minutes = 15
+
     elif timeframe == "1h":
-        df = get_upbit_4h_candles(market, EMA_HISTORY_CANDLES)
+        df = get_cached_dataframe(
+            market, "1h",
+            lambda: get_upbit_4h_candles(market, EMA_HISTORY_CANDLES)
+        )
         minutes = 60
+
     else:
         return pd.DataFrame()
 
@@ -712,6 +724,14 @@ def get_timeframe_dataframe(market, timeframe, price=None):
     )
 
     return update_current_candle(df, current_start, price)
+
+
+def get_daily_dataframe(market):
+    return get_cached_dataframe(
+        market,
+        "1d",
+        lambda: get_upbit_daily_candles(market, 200)
+    )
 
 
 # =========================================================
@@ -740,7 +760,7 @@ def analyze_ema_4h(market, price=None):
         df = get_timeframe_dataframe(market, timeframe, price)
 
     elif timeframe == "4h":
-        df_1h = get_upbit_4h_candles(market, EMA_HISTORY_CANDLES)
+        df_1h = get_timeframe_dataframe(market, "1h", price)
 
         if df_1h.empty:
             return empty_result
@@ -748,7 +768,7 @@ def analyze_ema_4h(market, price=None):
         df = build_upbit_4h_candles(df_1h, price)
 
     elif timeframe == "1d":
-        df = get_upbit_daily_candles(market, 200)
+        df = get_daily_dataframe(market)
 
         if df.empty:
             return empty_result
@@ -770,7 +790,6 @@ def analyze_ema_4h(market, price=None):
     if df is None or df.empty:
         return empty_result
 
-    # 실제 EMA 계산은 5 / 10 / 50
     ema5_series = calculate_ema_series(df, EMA_PULLBACK)
     ema10_series = calculate_ema_series(df, EMA_FAST)
     ema50_series = calculate_ema_series(df, EMA_SLOW)
@@ -803,10 +822,6 @@ def analyze_ema_4h(market, price=None):
     else:
         alignment = "동일"
 
-    # 기존 키 이름은 내부 호환을 위해 유지
-    # ema5_short = 실제 EMA 5
-    # ema20 = 실제 EMA 10
-    # ema60 = 실제 EMA 50
     return {
         "ema5": ema10,
         "ema15": ema50,
@@ -847,7 +862,6 @@ def get_reference_full_alignment_age(df):
     if combined.empty:
         return 0
 
-    # 완전 정배열: EMA 5 > EMA 10 > EMA 50
     full_alignment = (
         (combined["ema5"] > combined["ema10"])
         & (combined["ema10"] > combined["ema50"])
@@ -867,7 +881,7 @@ def get_reference_full_alignment_age(df):
 
 
 # =========================================================
-# 참고 EMA 시간봉 분석
+# 참고 EMA 시간봉 분석 - 동일 캐시 사용
 # =========================================================
 
 def analyze_reference_ema_timeframes(market, price=None):
@@ -887,9 +901,7 @@ def analyze_reference_ema_timeframes(market, price=None):
             df = get_timeframe_dataframe(market, timeframe, price)
 
         elif timeframe == "4h":
-            df_1h = get_upbit_4h_candles(
-                market, EMA_HISTORY_CANDLES
-            )
+            df_1h = get_timeframe_dataframe(market, "1h", price)
 
             if df_1h.empty:
                 return states
@@ -897,7 +909,7 @@ def analyze_reference_ema_timeframes(market, price=None):
             df = build_upbit_4h_candles(df_1h, price)
 
         elif timeframe == "1d":
-            df = get_upbit_daily_candles(market, 200)
+            df = get_daily_dataframe(market)
 
             if df.empty:
                 return states
@@ -922,7 +934,6 @@ def analyze_reference_ema_timeframes(market, price=None):
         states["signal_5_10"] = get_ema_pair_state(
             df, EMA_PULLBACK, EMA_FAST
         )
-
         states["signal_10_50"] = get_ema_pair_state(
             df, EMA_FAST, EMA_SLOW
         )
@@ -1001,7 +1012,7 @@ def build_daily_periods(df, current_price=None):
 
 
 # =========================================================
-# 캔들 패턴
+# 캔들 패턴 함수
 # =========================================================
 
 def is_bullish_engulfing(previous, current):
@@ -1010,7 +1021,6 @@ def is_bullish_engulfing(previous, current):
         co, cc = float(current["open"]), float(current["close"])
     except Exception:
         return False
-
     return bool(pc < po and cc > co and co <= pc and cc >= po)
 
 
@@ -1020,7 +1030,6 @@ def is_bearish_engulfing(previous, current):
         co, cc = float(current["open"]), float(current["close"])
     except Exception:
         return False
-
     return bool(pc > po and cc < co and co >= pc and cc <= po)
 
 
@@ -1032,7 +1041,6 @@ def is_positive_doji(current):
         )
     except Exception:
         return False
-
     candle_range = h - l
     return bool(
         candle_range > 0
@@ -1049,7 +1057,6 @@ def is_negative_doji(current):
         )
     except Exception:
         return False
-
     candle_range = h - l
     return bool(
         candle_range > 0
@@ -1064,10 +1071,8 @@ def is_bullish_piercing(previous, current):
         co, cc = float(current["open"]), float(current["close"])
     except Exception:
         return False
-
     if pc >= po or cc <= co:
         return False
-
     midpoint = (po + pc) / 2
     return bool(cc > midpoint and cc < po)
 
@@ -1078,10 +1083,8 @@ def is_bearish_piercing(previous, current):
         co, cc = float(current["open"]), float(current["close"])
     except Exception:
         return False
-
     if pc <= po or cc >= co:
         return False
-
     midpoint = (po + pc) / 2
     return bool(cc < midpoint and cc > po)
 
@@ -1094,11 +1097,9 @@ def is_long_bullish(current):
         )
     except Exception:
         return False
-
     candle_range = h - l
     return bool(
-        candle_range > 0
-        and c > o
+        candle_range > 0 and c > o
         and abs(c - o) / candle_range >= 0.70
     )
 
@@ -1111,11 +1112,9 @@ def is_long_bearish(current):
         )
     except Exception:
         return False
-
     candle_range = h - l
     return bool(
-        candle_range > 0
-        and c < o
+        candle_range > 0 and c < o
         and abs(c - o) / candle_range >= 0.70
     )
 
@@ -1152,15 +1151,12 @@ def get_hammer_parts(current):
 def is_bullish_hammer(previous, current):
     if previous is None:
         return False
-
     try:
         if float(previous["close"]) >= float(previous["open"]):
             return False
     except Exception:
         return False
-
     parts = get_hammer_parts(current)
-
     return bool(
         parts is not None
         and parts["lower_wick"] >= parts["body"] * 2
@@ -1171,15 +1167,12 @@ def is_bullish_hammer(previous, current):
 def is_bullish_inverted_hammer(previous, current):
     if previous is None:
         return False
-
     try:
         if float(previous["close"]) >= float(previous["open"]):
             return False
     except Exception:
         return False
-
     parts = get_hammer_parts(current)
-
     return bool(
         parts is not None
         and parts["upper_wick"] >= parts["body"] * 2
@@ -1190,15 +1183,12 @@ def is_bullish_inverted_hammer(previous, current):
 def is_bearish_hammer(previous, current):
     if previous is None:
         return False
-
     try:
         if float(previous["close"]) <= float(previous["open"]):
             return False
     except Exception:
         return False
-
     parts = get_hammer_parts(current)
-
     return bool(
         parts is not None
         and parts["lower_wick"] >= parts["body"] * 2
@@ -1209,15 +1199,12 @@ def is_bearish_hammer(previous, current):
 def is_bearish_inverted_hammer(previous, current):
     if previous is None:
         return False
-
     try:
         if float(previous["close"]) <= float(previous["open"]):
             return False
     except Exception:
         return False
-
     parts = get_hammer_parts(current)
-
     return bool(
         parts is not None
         and parts["upper_wick"] >= parts["body"] * 2
@@ -1234,37 +1221,27 @@ def get_candle_patterns(previous, current):
     if previous is not None:
         if is_bullish_engulfing(previous, current):
             patterns.append("상승장악형")
-
         if is_bearish_engulfing(previous, current):
             patterns.append("하락장악형")
-
         if is_bullish_piercing(previous, current):
             patterns.append("상승관통형")
-
         if is_bearish_piercing(previous, current):
             patterns.append("하락관통형")
-
         if is_bullish_hammer(previous, current):
             patterns.append("상승망치형")
-
         if is_bullish_inverted_hammer(previous, current):
             patterns.append("상승역망치형")
-
         if is_bearish_hammer(previous, current):
             patterns.append("하락망치형")
-
         if is_bearish_inverted_hammer(previous, current):
             patterns.append("하락역망치형")
 
     if is_long_bullish(current):
         patterns.append("장대양봉")
-
     if is_long_bearish(current):
         patterns.append("장대음봉")
-
     if is_positive_doji(current):
         patterns.append("양수도지")
-
     if is_negative_doji(current):
         patterns.append("음수도지")
 
@@ -1318,7 +1295,6 @@ def analyze_previous_current_pattern(periods):
     result["current_bullish_engulfing"] = (
         "상승장악형" in result["current_pattern"]
     )
-
     result["previous_bullish_engulfing"] = (
         "상승장악형" in result["previous_pattern"]
     )
@@ -1327,7 +1303,6 @@ def analyze_previous_current_pattern(periods):
         p in BULLISH_HIGHLIGHT_PATTERNS
         for p in result["previous_pattern"]
     )
-
     result["current_bullish_pattern"] = any(
         p in BULLISH_HIGHLIGHT_PATTERNS
         for p in result["current_pattern"]
@@ -1337,7 +1312,6 @@ def analyze_previous_current_pattern(periods):
         result["previous_bullish_pattern"]
         or result["current_bullish_pattern"]
     )
-
     result["bullish_engulfing_signal"] = bool(
         result["current_bullish_engulfing"]
     )
@@ -1433,7 +1407,7 @@ def signal_details(periods, ema_reverse=False):
 
 
 # =========================================================
-# 선택 시간봉 캔들 패턴 분석
+# 선택 시간봉 캔들 패턴 분석 - 캐시 공유
 # =========================================================
 
 def analyze_signal_candles(market, price, ema_reverse=False):
@@ -1458,6 +1432,7 @@ def analyze_signal_candles(market, price, ema_reverse=False):
     timeframe = SIGNAL_TIMEFRAME
 
     if timeframe in ("5m", "15m", "1h"):
+        # EMA 분석과 동일한 캐시 데이터를 사용
         df = get_timeframe_dataframe(market, timeframe, price)
 
         if df.empty:
@@ -1493,15 +1468,15 @@ def analyze_signal_candles(market, price, ema_reverse=False):
         periods = periods[-6:]
 
     elif timeframe == "4h":
-        df = get_upbit_4h_candles(market, 200)
+        df_1h = get_timeframe_dataframe(market, "1h", price)
 
-        if df.empty:
+        if df_1h.empty:
             return empty_result
 
-        periods = build_upbit_4h_periods(df, price)
+        periods = build_upbit_4h_periods(df_1h, price)
 
     elif timeframe == "1d":
-        df = get_upbit_daily_candles(market, 200)
+        df = get_daily_dataframe(market)
 
         if df.empty:
             return empty_result
@@ -1561,11 +1536,11 @@ def analyze_4h(market, price, ema_reverse=False):
 
 
 # =========================================================
-# 일봉 변동률
+# 일봉 변동률 - 캐시 공유
 # =========================================================
 
 def analyze_daily_change(market, price):
-    df = get_upbit_daily_candles(market, 10)
+    df = get_daily_dataframe(market)
 
     if df.empty:
         return {"change": None, "periods": []}
@@ -1597,27 +1572,19 @@ def make_row(
 ):
     coin = market.replace("KRW-", "")
 
-    # EMA 5-10 상태
-    ema_1h_5_10 = (
-        "정배열"
-        if ema_analysis.get("ema5_short") is not None
-        and ema_analysis.get("ema20") is not None
-        and ema_analysis["ema5_short"] > ema_analysis["ema20"]
-        else (
-            "역배열"
-            if ema_analysis.get("ema5_short") is not None
-            and ema_analysis.get("ema20") is not None
-            and ema_analysis["ema5_short"] < ema_analysis["ema20"]
-            else (
-                "동일"
-                if ema_analysis.get("ema5_short") is not None
-                and ema_analysis.get("ema20") is not None
-                else None
-            )
-        )
-    )
+    fast_short = ema_analysis.get("ema5_short")
+    fast_long = ema_analysis.get("ema20")
 
-    # EMA 10-50 상태
+    if fast_short is not None and fast_long is not None:
+        if fast_short > fast_long:
+            ema_1h_5_10 = "정배열"
+        elif fast_short < fast_long:
+            ema_1h_5_10 = "역배열"
+        else:
+            ema_1h_5_10 = "동일"
+    else:
+        ema_1h_5_10 = None
+
     ema_1h_10_50 = ema_analysis.get("alignment")
 
     return {
@@ -1667,7 +1634,6 @@ def make_row(
             "signal_condition", False
         ),
 
-        # 탑리스트 표시용 EMA 상태
         "ema_1h_5_10": ema_1h_5_10,
         "ema_1h_10_50": ema_1h_10_50,
 
@@ -1679,14 +1645,13 @@ def make_row(
         "ema_cross_current": False,
         "ema_cross_signal": False,
 
-        # 참고 EMA 상태는 기존 설정인 15분봉
         "ema_reference_states": reference_ema_states,
         "simultaneous_signal": analysis_4h["signal_pass"]
     }
 
 
 # =========================================================
-# 업비트 업데이트
+# 업비트 업데이트 - TOP_N 선정 후 해당 종목만 분석
 # =========================================================
 
 def update_upbit():
@@ -1695,6 +1660,9 @@ def update_upbit():
     global latest_upbit_update_time
     global latest_upbit_daily_update_time
     global latest_signal_data
+
+    # 새 업데이트 주기에서 캐시 초기화
+    clear_candle_cache()
 
     all_markets = get_upbit_markets()
 
@@ -1712,39 +1680,26 @@ def update_upbit():
         for rank, item in enumerate(all_markets_sorted, 1)
     }
 
-    candidates = []
+    # 먼저 거래대금 TOP_N을 선정한다.
+    # 나머지 종목의 일봉/EMA API 조회는 하지 않는다.
+    selected_markets = all_markets_sorted[:TOP_N]
 
-    for item in all_markets_sorted:
+    rows = []
+
+    for rank, item in enumerate(selected_markets, 1):
         market = item["market"]
         price = item["current_price"]
 
         try:
             analysis_daily = analyze_daily_change(market, price)
-
-            candidates.append({
-                "item": item,
-                "analysis_daily": analysis_daily
-            })
-
         except Exception as e:
             log.warning("%s 일봉 오류: %s", market, e)
-
-    candidates = candidates[:TOP_N]
-    rows = []
-
-    for rank, candidate in enumerate(candidates, 1):
-        item = candidate["item"]
-        analysis_daily = candidate["analysis_daily"]
-
-        market = item["market"]
-        price = item["current_price"]
+            analysis_daily = {"change": None, "periods": []}
 
         try:
             ema_analysis = analyze_ema_4h(market, price)
-
         except Exception as e:
             log.warning("%s EMA 오류: %s", market, e)
-
             ema_analysis = {
                 "ema5": None,
                 "ema15": None,
@@ -1772,10 +1727,8 @@ def update_upbit():
             analysis_4h = analyze_signal_candles(
                 market, price, ema_signal_condition
             )
-
         except Exception as e:
             log.warning("%s 캔들 패턴 오류: %s", market, e)
-
             analysis_4h = {
                 "periods": [],
                 "signal_pass": False,
@@ -1798,10 +1751,8 @@ def update_upbit():
             reference_ema_states = analyze_reference_ema_timeframes(
                 market, price
             )
-
         except Exception as e:
             log.warning("%s 참고 EMA 상태 오류: %s", market, e)
-
             reference_ema_states = {
                 "signal_5_10": None,
                 "signal_10_50": None,
@@ -1855,15 +1806,12 @@ def update_upbit():
 
     log.info(
         "UPBIT | 거래대금 TOP%s | EMA%s | 시간봉=%s | "
-        "참고 EMA 시간봉=%s | SIGNAL=%s | "
-        "당일 변동률 양수 | 참고 %s 완전 정배열 시작부터 %s개 캔들까지",
+        "참고 EMA 시간봉=%s | SIGNAL=%s | 캔들 최대 200개",
         TOP_N,
         get_ema_full_label(),
         get_timeframe_label(),
         get_reference_timeframe_label(),
-        len(latest_signal_data),
-        get_reference_timeframe_label(),
-        REFERENCE_ALIGNMENT_MAX_CANDLES
+        len(latest_signal_data)
     )
 
 
@@ -2088,10 +2036,8 @@ def fmt_price(v):
 
     if v >= 100000000:
         return f"{v / 100000000:.2f}억"
-
     if v >= 10000:
         return f"{v:,.0f}"
-
     if v >= 1:
         return f"{v:,.2f}"
 
@@ -2106,10 +2052,8 @@ def fmt_vol(v):
 
     if v >= 1e12:
         return f"{v / 1e12:.1f}조"
-
     if v >= 1e8:
         return f"{v / 1e8:.0f}억"
-
     if v >= 1e4:
         return f"{v / 1e4:.0f}만"
 
@@ -2127,7 +2071,6 @@ def fmt_change(v):
 
     if v > 0:
         return f'<span class="up">▲ +{v:.2f}%</span>'
-
     if v < 0:
         return f'<span class="down">▼ {v:.2f}%</span>'
 
@@ -2137,22 +2080,18 @@ def fmt_change(v):
 def fmt_ema(v):
     if v is None:
         return "-"
-
     try:
         v = float(v)
     except Exception:
         return "-"
-
     return fmt_price(v)
 
 
 def ema_alignment_html(alignment):
     if alignment == "역배열":
         return '<span class="ema-reverse">▼ 역배열</span>'
-
     if alignment == "정배열":
         return '<span class="ema-normal">▲ 정배열</span>'
-
     if alignment == "동일":
         return '<span class="ema-same">— 동일</span>'
 
@@ -2166,10 +2105,8 @@ def ema_alignment_html(alignment):
 def ema_symbol(state):
     if state == "정배열":
         return '<span class="ema-normal">▲</span>'
-
     if state == "역배열":
         return '<span class="ema-reverse">▼</span>'
-
     if state == "동일":
         return '<span class="ema-same">—</span>'
 
@@ -2179,11 +2116,9 @@ def ema_symbol(state):
 def top_ema_status_html(row):
     reference_states = row.get("ema_reference_states") or {}
 
-    # 시그널 시간봉: 현재 설정은 1시간봉
     state_1h_5_10 = row.get("ema_1h_5_10")
     state_1h_10_50 = row.get("ema_1h_10_50")
 
-    # 참고 EMA 시간봉: 현재 설정은 15분봉
     state_ref_5_10 = reference_states.get("signal_5_10")
     state_ref_10_50 = reference_states.get("signal_10_50")
 
@@ -2209,7 +2144,7 @@ def top_ema_status_html(row):
 
 
 # =========================================================
-# 참고 EMA 상태 HTML - SIGNAL 카드에서 사용
+# 참고 EMA 상태 HTML
 # =========================================================
 
 def reference_ema_states_html(row):
@@ -2219,14 +2154,8 @@ def reference_ema_states_html(row):
     pair_1, pair_2 = get_ema_pair_labels()
 
     display_items = [
-        (
-            pair_1,
-            states.get("signal_5_10")
-        ),
-        (
-            pair_2,
-            states.get("signal_10_50")
-        )
+        (pair_1, states.get("signal_5_10")),
+        (pair_2, states.get("signal_10_50"))
     ]
 
     pieces = []
@@ -2354,7 +2283,6 @@ def candle_icon_html(pattern):
             if pattern == "상승망치형"
             else "bearish hammer"
         )
-
         return f"""
         <div class="candle-pattern-visual single-candle">
             <div class="mini-candle {candle_class}">
@@ -2369,7 +2297,6 @@ def candle_icon_html(pattern):
             if pattern == "상승역망치형"
             else "bearish inverted-hammer"
         )
-
         return f"""
         <div class="candle-pattern-visual single-candle">
             <div class="mini-candle {candle_class}">
@@ -2379,9 +2306,7 @@ def candle_icon_html(pattern):
         """
 
     return """
-    <div class="candle-pattern-visual empty">
-        <span>—</span>
-    </div>
+    <div class="candle-pattern-visual empty"><span>—</span></div>
     """
 
 
@@ -2412,12 +2337,8 @@ def current_pattern_html(pattern):
         if item in BULLISH_HIGHLIGHT_PATTERNS:
             css_class = "bullish-pattern"
         elif item in [
-            "하락장악형",
-            "하락관통형",
-            "장대음봉",
-            "음수도지",
-            "하락망치형",
-            "하락역망치형"
+            "하락장악형", "하락관통형", "장대음봉",
+            "음수도지", "하락망치형", "하락역망치형"
         ]:
             css_class = "bearish-pattern"
         else:
@@ -2435,21 +2356,8 @@ def current_pattern_html(pattern):
 
 
 def signal_reason_html(reason):
-    if reason == "상승장악형":
-        return '<span class="pattern-cross">▲ 상승장악형</span>'
-
-    if reason == "상승관통형":
-        return '<span class="pattern-cross">▲ 상승관통형</span>'
-
-    if reason == "장대양봉":
-        return '<span class="pattern-cross">▲ 장대양봉</span>'
-
-    if reason == "상승망치형":
-        return '<span class="pattern-cross">▲ 상승망치형</span>'
-
-    if reason == "상승역망치형":
-        return '<span class="pattern-cross">▲ 상승역망치형</span>'
-
+    if reason in BULLISH_HIGHLIGHT_PATTERNS:
+        return f'<span class="pattern-cross">▲ {html.escape(reason)}</span>'
     return ""
 
 
@@ -2469,7 +2377,6 @@ def btc_html():
                 OKX · KST 09:00 기준 · {kst()}
             </span>
         </div>
-
         <div class="btc-main">
             <div class="btc-name">BTC</div>
             <div class="btc-price">{fmt_price(latest_btc_okx_price)}</div>
@@ -2499,14 +2406,12 @@ def signal_card(row):
 
     badge_html = (
         '<span class="signal-type-badge">⭐ 상승패턴</span>'
-        if has_bullish_pattern
-        else ""
+        if has_bullish_pattern else ""
     )
 
     card_class = (
         "signal-card has-reference-reverse"
-        if has_reference_reverse
-        else "signal-card"
+        if has_reference_reverse else "signal-card"
     )
 
     alignment_age = reference_states.get("full_alignment_age", 0)
@@ -2517,35 +2422,27 @@ def signal_card(row):
             <span class="signal-rank">
                 거래대금 #{row.get("volume_rank", "-")}
             </span>
-
             <b>{html.escape(row["name"])}</b>
-
             <div class="signal-type-list">{badge_html}</div>
-
             {reference_ema_states_html(row)}
-
             <span class="alignment-age">
                 정배열 {alignment_age}/{REFERENCE_ALIGNMENT_MAX_CANDLES}
             </span>
         </div>
-
         <div class="signal-volume">
             <span>거래대금</span>
             <strong>{fmt_vol(row["volume_24h"])}</strong>
         </div>
-
         <div class="signal-change">
             <span>변동률</span>
             <strong>{fmt_change(row.get("daily_change"))}</strong>
         </div>
-
         <div class="signal-pattern">
             <span>이전봉 {timeframe_label}</span>
             <strong class="pattern-display">
                 {current_pattern_html(row.get("previous_pattern"))}
             </strong>
         </div>
-
         <div class="signal-pattern">
             <span>현재봉 {timeframe_label}</span>
             <strong class="pattern-display">
@@ -2564,7 +2461,6 @@ def signal_section():
     timeframe_label = get_timeframe_label()
     reference_timeframe_label = get_reference_timeframe_label()
     ema_full_label = get_ema_full_label()
-
     signal_description = html.escape(get_ema_signal_description())
 
     if not latest_signal_data:
@@ -2583,12 +2479,10 @@ def signal_section():
                 <span class="section-kicker">SIGNAL</span>
                 <b>🔴 EMA{ema_full_label} · {timeframe_label} SIGNAL</b>
             </div>
-
             <span class="update-time">
                 EMA {timeframe_label} · 캔들패턴 2개 봉 · {kst()}
             </span>
         </div>
-
         <div class="signal-condition">
             <span>SIGNAL 조건</span>
             <b>{signal_description}</b>
@@ -2597,7 +2491,6 @@ def signal_section():
                 완전 정배열 시작부터 {REFERENCE_ALIGNMENT_MAX_CANDLES}개 캔들까지
             </small>
         </div>
-
         <div class="signal-header">
             <div>종목 / EMA 참고</div>
             <div>거래대금</div>
@@ -2605,7 +2498,6 @@ def signal_section():
             <div>이전봉</div>
             <div>현재봉</div>
         </div>
-
         <div class="signal-list">{body}</div>
     </section>
     """
@@ -2618,68 +2510,58 @@ def signal_section():
 def card(row, kind):
     timeframe_label = get_timeframe_label()
 
+    if kind != "top":
+        return ""
+
     has_bullish_pattern = row.get("signal_4h_pattern", False)
-    previous_pattern = row.get("previous_pattern")
-    current_pattern = row.get("current_pattern")
 
-    if kind == "top":
-        status = (
-            '<span class="signal-badge">⭐ 상승패턴</span>'
-            if has_bullish_pattern
-            else ""
-        )
+    status = (
+        '<span class="signal-badge">⭐ 상승패턴</span>'
+        if has_bullish_pattern else ""
+    )
 
-        top_ema_html = top_ema_status_html(row)
+    top_ema_html = top_ema_status_html(row)
 
-        return f"""
-        <article class="coin-card">
-            <div class="coin-head">
-                <div class="coin-title">
-                    <span class="rank">#{row["rank"]}</span>
-                    <b>{html.escape(row["name"])}</b>
-                </div>
-
-                {status}
+    return f"""
+    <article class="coin-card">
+        <div class="coin-head">
+            <div class="coin-title">
+                <span class="rank">#{row["rank"]}</span>
+                <b>{html.escape(row["name"])}</b>
             </div>
-
-            {top_ema_html}
-
-            <div class="market-summary">
-                <div>
-                    <span>현재가</span>
-                    <strong>{fmt_price(row["current_price"])}</strong>
-                </div>
-
-                <div>
-                    <span>24H 거래대금</span>
-                    <strong>{fmt_vol(row["volume_24h"])}</strong>
-                </div>
-
-                <div>
-                    <span>당일 변동률</span>
-                    <strong class="daily-change-value">
-                        {fmt_change(row.get("daily_change"))}
-                    </strong>
-                </div>
-
-                <div>
-                    <span>이전봉 {timeframe_label}</span>
-                    <strong class="pattern-display">
-                        {current_pattern_html(previous_pattern)}
-                    </strong>
-                </div>
-
-                <div>
-                    <span>현재봉 {timeframe_label}</span>
-                    <strong class="pattern-display">
-                        {current_pattern_html(current_pattern)}
-                    </strong>
-                </div>
+            {status}
+        </div>
+        {top_ema_html}
+        <div class="market-summary">
+            <div>
+                <span>현재가</span>
+                <strong>{fmt_price(row["current_price"])}</strong>
             </div>
-        </article>
-        """
-
-    return ""
+            <div>
+                <span>24H 거래대금</span>
+                <strong>{fmt_vol(row["volume_24h"])}</strong>
+            </div>
+            <div>
+                <span>당일 변동률</span>
+                <strong class="daily-change-value">
+                    {fmt_change(row.get("daily_change"))}
+                </strong>
+            </div>
+            <div>
+                <span>이전봉 {timeframe_label}</span>
+                <strong class="pattern-display">
+                    {current_pattern_html(row.get("previous_pattern"))}
+                </strong>
+            </div>
+            <div>
+                <span>현재봉 {timeframe_label}</span>
+                <strong class="pattern-display">
+                    {current_pattern_html(row.get("current_pattern"))}
+                </strong>
+            </div>
+        </div>
+    </article>
+    """
 
 
 # =========================================================
@@ -2688,733 +2570,180 @@ def card(row, kind):
 
 CSS = """
 * { box-sizing: border-box; }
-
 html { background: #080b0f; }
-
 body {
-    margin: 0;
-    padding: 8px;
-    background: #080b0f;
-    color: #e8edf2;
-    font-family: Arial, "Noto Sans KR", sans-serif;
-    font-size: 11px;
+    margin: 0; padding: 8px; background: #080b0f; color: #e8edf2;
+    font-family: Arial, "Noto Sans KR", sans-serif; font-size: 11px;
 }
-
 h1 {
-    margin: 4px 2px 12px;
-    font-size: 14px;
-    font-weight: 800;
-    letter-spacing: -0.4px;
-    color: #f1f4f7;
+    margin: 4px 2px 12px; font-size: 14px; font-weight: 800;
+    letter-spacing: -0.4px; color: #f1f4f7;
 }
-
 section { margin-bottom: 12px; }
-
 .up { color: #38d878 !important; font-weight: 900; }
 .down { color: #ff5966 !important; font-weight: 900; }
 .zero { color: #68737e; font-weight: 800; }
-
-.daily-change-value .up {
-    color: #38d878 !important;
-    font-weight: 900;
-    font-size: 9px;
-}
-
-.daily-change-value .down {
-    color: #ff5966 !important;
-    font-weight: 900;
-    font-size: 9px;
-}
-
-.ema-normal {
-    color: #38d878;
-    font-size: 7px;
-    font-weight: 900;
-    white-space: nowrap;
-}
-
-.ema-reverse {
-    color: #ff5966;
-    font-size: 7px;
-    font-weight: 900;
-    white-space: nowrap;
-}
-
-.ema-same {
-    color: #68737e;
-    font-size: 7px;
-    font-weight: 900;
-    white-space: nowrap;
-}
-
-/* 탑리스트 EMA 표시: 시그널 시간봉 / 참고 시간봉 */
+.daily-change-value .up { color: #38d878 !important; font-weight: 900; font-size: 9px; }
+.daily-change-value .down { color: #ff5966 !important; font-weight: 900; font-size: 9px; }
+.ema-normal { color: #38d878; font-size: 7px; font-weight: 900; white-space: nowrap; }
+.ema-reverse { color: #ff5966; font-size: 7px; font-weight: 900; white-space: nowrap; }
+.ema-same { color: #68737e; font-size: 7px; font-weight: 900; white-space: nowrap; }
 .top-ema-status {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    justify-content: center;
-    gap: 4px;
-    padding: 6px 9px;
-    background: #0a1015;
-    border-bottom: 1px solid #202a33;
+    display: flex; flex-direction: column; align-items: flex-start;
+    justify-content: center; gap: 4px; padding: 6px 9px;
+    background: #0a1015; border-bottom: 1px solid #202a33;
 }
-
 .top-ema-line {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    font-size: 8px;
-    font-weight: 900;
-    white-space: nowrap;
-    line-height: 1.4;
+    display: flex; align-items: center; gap: 12px; font-size: 8px;
+    font-weight: 900; white-space: nowrap; line-height: 1.4;
 }
-
-.top-ema-time {
-    width: 38px;
-    color: #83909b;
-    font-size: 8px;
-    font-weight: 800;
-}
-
-.top-ema-line > span:not(.top-ema-time) {
-    display: inline-flex;
-    align-items: center;
-    gap: 3px;
-}
-
+.top-ema-time { width: 38px; color: #83909b; font-size: 8px; font-weight: 800; }
+.top-ema-line > span:not(.top-ema-time) { display: inline-flex; align-items: center; gap: 3px; }
 .ema-ref-row {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    justify-content: center;
-    gap: 3px;
-    flex-wrap: nowrap;
-    white-space: nowrap;
-    min-width: 0;
+    display: flex; flex-direction: column; align-items: flex-start;
+    justify-content: center; gap: 3px; flex-wrap: nowrap;
+    white-space: nowrap; min-width: 0;
 }
-
-.ema-ref-item {
-    display: flex;
-    align-items: center;
-    gap: 2px;
-    font-size: 7px;
-    font-weight: 900;
-    line-height: 1.3;
-    white-space: nowrap;
-}
-
-.ema-ref-label {
-    color: #83909b;
-    font-size: 6px;
-    font-weight: 700;
-    white-space: nowrap;
-}
-
-.pattern-box {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    min-width: 55px;
-    line-height: 1;
-}
-
-.pattern-name {
-    display: block;
-    margin-top: 2px;
-    color: #38d878;
-    font-size: 5px;
-    font-weight: 900;
-    white-space: nowrap;
-}
-
+.ema-ref-item { display: flex; align-items: center; gap: 2px; font-size: 7px; font-weight: 900; line-height: 1.3; white-space: nowrap; }
+.ema-ref-label { color: #83909b; font-size: 6px; font-weight: 700; white-space: nowrap; }
+.pattern-box { display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 55px; line-height: 1; }
+.pattern-name { display: block; margin-top: 2px; color: #38d878; font-size: 5px; font-weight: 900; white-space: nowrap; }
 .bearish-pattern .pattern-name { color: #ff5966; }
 .neutral-pattern .pattern-name { color: #e4c45e; }
 .pattern-none .pattern-name { color: #68737e; }
-
-.pattern-multi {
-    display: flex;
-    align-items: flex-start;
-    justify-content: center;
-    flex-wrap: wrap;
-    gap: 3px;
-    width: 100%;
-}
-
+.pattern-multi { display: flex; align-items: flex-start; justify-content: center; flex-wrap: wrap; gap: 3px; width: 100%; }
 .pattern-multi .pattern-box { min-width: 36px; }
-
-.candle-pattern-visual {
-    height: 23px;
-    min-width: 35px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 4px;
-    position: relative;
-}
-
-.mini-candle {
-    width: 7px;
-    height: 22px;
-    position: relative;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-}
-
-.mini-candle .wick {
-    position: absolute;
-    width: 1px;
-    height: 22px;
-    left: 50%;
-    top: 0;
-    transform: translateX(-50%);
-    background: #79848e;
-}
-
-.mini-candle .body {
-    position: relative;
-    z-index: 2;
-    width: 7px;
-    height: 10px;
-    border-radius: 1px;
-}
-
-.mini-candle.bearish .body {
-    background: #ff5966;
-    height: 12px;
-}
-
-.mini-candle.bullish .body {
-    background: #38d878;
-    height: 17px;
-}
-
-.mini-candle.bullish.large .body,
-.mini-candle.bearish.large .body {
-    height: 20px;
-    width: 9px;
-}
-
-.mini-candle.bullish-doji .body {
-    background: #38d878;
-    height: 2px;
-    width: 10px;
-}
-
-.mini-candle.bearish-doji .body {
-    background: #ff5966;
-    height: 2px;
-    width: 10px;
-}
-
-.mini-candle.piercing-candle .body {
-    background: #38d878;
-    height: 15px;
-}
-
-.mini-candle.piercing-bearish .body {
-    background: #ff5966;
-    height: 15px;
-}
-
-.mini-candle.bullish.very-large .body {
-    background: #38d878;
-    height: 20px;
-    width: 9px;
-}
-
-.mini-candle.bearish.very-large .body {
-    background: #ff5966;
-    height: 20px;
-    width: 9px;
-}
-
-.mini-candle.hammer .wick {
-    height: 22px;
-    top: 0;
-}
-
-.mini-candle.hammer .body {
-    position: absolute;
-    top: 1px;
-    height: 6px;
-    width: 8px;
-}
-
-.mini-candle.bullish.hammer .body { background: #38d878; }
-.mini-candle.bearish.hammer .body { background: #ff5966; }
-
-.mini-candle.inverted-hammer .wick {
-    height: 22px;
-    top: 0;
-}
-
-.mini-candle.inverted-hammer .body {
-    position: absolute;
-    bottom: 1px;
-    height: 6px;
-    width: 8px;
-}
-
-.mini-candle.bullish.inverted-hammer .body { background: #38d878; }
-.mini-candle.bearish.inverted-hammer .body { background: #ff5966; }
-
-.candle-pattern-visual.empty {
-    color: #68737e;
-    font-size: 9px;
-    height: 23px;
-}
-
-.signal-panel {
-    background: #0c1116;
-    border: 1px solid #48272c;
-    margin-bottom: 13px;
-}
-
+.candle-pattern-visual { height: 23px; min-width: 35px; display: flex; align-items: center; justify-content: center; gap: 4px; position: relative; }
+.mini-candle { width: 7px; height: 22px; position: relative; display: flex; justify-content: center; align-items: center; }
+.mini-candle .wick { position: absolute; width: 1px; height: 22px; left: 50%; top: 0; transform: translateX(-50%); background: #79848e; }
+.mini-candle .body { position: relative; z-index: 2; width: 7px; height: 10px; border-radius: 1px; }
+.mini-candle.bearish .body { background: #ff5966; height: 12px; }
+.mini-candle.bullish .body { background: #38d878; height: 17px; }
+.mini-candle.bullish.large .body, .mini-candle.bearish.large .body { height: 20px; width: 9px; }
+.mini-candle.bullish-doji .body { background: #38d878; height: 2px; width: 10px; }
+.mini-candle.bearish-doji .body { background: #ff5966; height: 2px; width: 10px; }
+.mini-candle.piercing-candle .body { background: #38d878; height: 15px; }
+.mini-candle.piercing-bearish .body { background: #ff5966; height: 15px; }
+.mini-candle.bullish.very-large .body { background: #38d878; height: 20px; width: 9px; }
+.mini-candle.bearish.very-large .body { background: #ff5966; height: 20px; width: 9px; }
+.mini-candle.hammer .wick, .mini-candle.inverted-hammer .wick { height: 22px; top: 0; }
+.mini-candle.hammer .body { position: absolute; top: 1px; height: 6px; width: 8px; }
+.mini-candle.bullish.hammer .body, .mini-candle.bullish.inverted-hammer .body { background: #38d878; }
+.mini-candle.bearish.hammer .body, .mini-candle.bearish.inverted-hammer .body { background: #ff5966; }
+.mini-candle.inverted-hammer .body { position: absolute; bottom: 1px; height: 6px; width: 8px; }
+.candle-pattern-visual.empty { color: #68737e; font-size: 9px; height: 23px; }
+.signal-panel { background: #0c1116; border: 1px solid #48272c; margin-bottom: 13px; }
 .signal-panel-head { border-bottom: 1px solid #392126; }
-
-.signal-condition {
-    min-height: 32px;
-    padding: 0 9px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    background: #120e10;
-    border-bottom: 1px solid #302024;
-}
-
-.signal-condition span {
-    color: #7d6b70;
-    font-size: 6px;
-}
-
-.signal-condition b {
-    color: #ff5966;
-    font-size: 8px;
-    font-weight: 900;
-}
-
-.signal-condition small {
-    color: #626e78;
-    font-size: 6px;
-    margin-left: auto;
-}
-
-.signal-header,
-.signal-card {
-    display: grid;
-    grid-template-columns: 1.1fr 0.9fr 0.8fr 1.1fr 1.1fr;
-    align-items: center;
-}
-
-.signal-header {
-    min-height: 27px;
-    padding: 0 9px;
-    color: #69747e;
-    font-size: 6px;
-    font-weight: 800;
-    background: #0b1015;
-    border-bottom: 1px solid #20282f;
-}
-
+.signal-condition { min-height: 32px; padding: 0 9px; display: flex; align-items: center; gap: 8px; background: #120e10; border-bottom: 1px solid #302024; }
+.signal-condition span { color: #7d6b70; font-size: 6px; }
+.signal-condition b { color: #ff5966; font-size: 8px; font-weight: 900; }
+.signal-condition small { color: #626e78; font-size: 6px; margin-left: auto; }
+.signal-header, .signal-card { display: grid; grid-template-columns: 1.1fr 0.9fr 0.8fr 1.1fr 1.1fr; align-items: center; }
+.signal-header { min-height: 27px; padding: 0 9px; color: #69747e; font-size: 6px; font-weight: 800; background: #0b1015; border-bottom: 1px solid #20282f; }
 .signal-header > div { text-align: center; }
-
-.signal-card {
-    min-height: 58px;
-    background: #0d1217;
-    border-bottom: 1px solid #20282f;
-}
-
-.signal-card.has-reference-reverse {
-    background: #171316;
-    box-shadow: inset 3px 0 0 #ff5966;
-}
-
+.signal-card { min-height: 58px; background: #0d1217; border-bottom: 1px solid #20282f; }
+.signal-card.has-reference-reverse { background: #171316; box-shadow: inset 3px 0 0 #ff5966; }
 .signal-card.has-reference-reverse .signal-coin b { color: #ff5966; }
 .signal-card:last-child { border-bottom: 0; }
-
-.signal-card > div {
-    min-height: 58px;
-    padding: 3px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-}
-
+.signal-card > div { min-height: 58px; padding: 3px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
 .signal-card > div + div { border-left: 1px solid #1c252c; }
-
-.signal-coin {
-    flex-direction: row !important;
-    flex-wrap: wrap;
-    gap: 5px;
-    justify-content: flex-start !important;
-    padding-left: 7px !important;
-}
-
-.signal-rank {
-    color: #b84d58;
-    font-size: 7px;
-    font-weight: 900;
-}
-
-.signal-coin b {
-    color: #e5e9ed;
-    font-size: 9px;
-    font-weight: 900;
-}
-
-.signal-type-list {
-    width: 100%;
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: flex-start;
-    gap: 2px;
-    margin-top: 1px;
-}
-
-.signal-type-badge {
-    color: #e4c45e !important;
-    font-size: 5px !important;
-    font-weight: 900;
-}
-
-.signal-card span {
-    color: #69747e;
-    font-size: 6px;
-}
-
+.signal-coin { flex-direction: row !important; flex-wrap: wrap; gap: 5px; justify-content: flex-start !important; padding-left: 7px !important; }
+.signal-rank { color: #b84d58; font-size: 7px; font-weight: 900; }
+.signal-coin b { color: #e5e9ed; font-size: 9px; font-weight: 900; }
+.signal-type-list { width: 100%; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-start; gap: 2px; margin-top: 1px; }
+.signal-type-badge { color: #e4c45e !important; font-size: 5px !important; font-weight: 900; }
+.signal-card span { color: #69747e; font-size: 6px; }
 .signal-card .ema-ref-item.ema-normal { color: #38d878 !important; }
 .signal-card .ema-ref-item.ema-reverse { color: #ff5966 !important; }
 .signal-card .ema-ref-item.ema-same { color: #68737e !important; }
-
-.signal-card strong {
-    margin-top: 2px;
-    color: #dce2e7;
-    font-size: 8px;
-}
-
-.signal-card .ema-ref-row {
-    width: 100%;
-    justify-content: center;
-    align-items: flex-start;
-    gap: 3px;
-}
-
+.signal-card strong { margin-top: 2px; color: #dce2e7; font-size: 8px; }
+.signal-card .ema-ref-row { width: 100%; justify-content: center; align-items: flex-start; gap: 3px; }
 .signal-card .ema-ref-item { font-size: 7px; }
 .signal-card .ema-ref-label { font-size: 6px; }
-
 .signal-pattern .pattern-box { min-width: 42px; }
 .signal-pattern .pattern-name { font-size: 5px; }
-
-.signal-pattern .candle-pattern-visual {
-    height: 22px;
-    min-width: 32px;
-    transform: scale(.80);
-}
-
+.signal-pattern .candle-pattern-visual { height: 22px; min-width: 32px; transform: scale(.80); }
 .signal-pattern .pattern-multi { gap: 1px; }
 .signal-pattern .pattern-multi .pattern-box { min-width: 29px; }
-
-.alignment-age {
-    width: 100%;
-    color: #e4c45e !important;
-    font-size: 6px !important;
-    font-weight: 800;
-    margin-top: 2px;
-}
-
-.signal-empty {
-    min-height: 46px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #626e78;
-    font-size: 7px;
-}
-
-.btc-panel {
-    background: #0c1116;
-    border: 1px solid #202a33;
-    margin-bottom: 13px;
-}
-
-.btc-panel .section-head {
-    height: 38px;
-    padding: 0 10px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    border-bottom: 1px solid #202a33;
-}
-
-.section-head > div {
-    display: flex;
-    align-items: center;
-    gap: 7px;
-}
-
-.section-head b {
-    font-size: 10px;
-    font-weight: 800;
-}
-
-.section-kicker {
-    color: #7d8994;
-    font-size: 6px;
-    letter-spacing: 1px;
-    font-weight: 700;
-}
-
-.update-time {
-    color: #65717c;
-    font-size: 6px;
-}
-
-.btc-main {
-    min-height: 54px;
-    display: grid;
-    grid-template-columns: 0.7fr 1.5fr 1fr;
-    align-items: center;
-}
-
-.btc-main > div {
-    text-align: center;
-    padding: 5px;
-}
-
-.btc-name {
-    color: #c4ccd3;
-    font-size: 10px;
-    font-weight: 800;
-}
-
-.btc-price {
-    color: #f4f6f8;
-    font-size: 16px;
-    font-weight: 900;
-    letter-spacing: -0.5px;
-}
-
-.btc-change {
-    font-size: 11px;
-    font-weight: 900;
-}
-
-.coin-card {
-    background: #0c1116;
-    border: 1px solid #202a33;
-    margin-bottom: 7px;
-}
-
-.coin-head {
-    min-height: 38px;
-    padding: 0 9px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    border-bottom: 1px solid #202a33;
-}
-
-.coin-title {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
-}
-
-.coin-title b {
-    font-size: 10px;
-    font-weight: 900;
-}
-
-.rank {
-    color: #c9a83d;
-    font-size: 8px;
-    font-weight: 800;
-}
-
-.signal-badge {
-    color: #e4c45e;
-    font-size: 7px;
-    font-weight: 900;
-}
-
-.market-summary {
-    display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-    border-bottom: 1px solid #202a33;
-}
-
-.market-summary > div {
-    min-width: 0;
-    min-height: 58px;
-    padding: 4px 1px;
-    text-align: center;
-    background: #0d1318;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-}
-
+.alignment-age { width: 100%; color: #e4c45e !important; font-size: 6px !important; font-weight: 800; margin-top: 2px; }
+.signal-empty { min-height: 46px; display: flex; align-items: center; justify-content: center; color: #626e78; font-size: 7px; }
+.btc-panel { background: #0c1116; border: 1px solid #202a33; margin-bottom: 13px; }
+.btc-panel .section-head { height: 38px; padding: 0 10px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #202a33; }
+.section-head > div { display: flex; align-items: center; gap: 7px; }
+.section-head b { font-size: 10px; font-weight: 800; }
+.section-kicker { color: #7d8994; font-size: 6px; letter-spacing: 1px; font-weight: 700; }
+.update-time { color: #65717c; font-size: 6px; }
+.btc-main { min-height: 54px; display: grid; grid-template-columns: 0.7fr 1.5fr 1fr; align-items: center; }
+.btc-main > div { text-align: center; padding: 5px; }
+.btc-name { color: #c4ccd3; font-size: 10px; font-weight: 800; }
+.btc-price { color: #f4f6f8; font-size: 16px; font-weight: 900; letter-spacing: -0.5px; }
+.btc-change { font-size: 11px; font-weight: 900; }
+.coin-card { background: #0c1116; border: 1px solid #202a33; margin-bottom: 7px; }
+.coin-head { min-height: 38px; padding: 0 9px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #202a33; }
+.coin-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.coin-title b { font-size: 10px; font-weight: 900; }
+.rank { color: #c9a83d; font-size: 8px; font-weight: 800; }
+.signal-badge { color: #e4c45e; font-size: 7px; font-weight: 900; }
+.market-summary { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border-bottom: 1px solid #202a33; }
+.market-summary > div { min-width: 0; min-height: 58px; padding: 4px 1px; text-align: center; background: #0d1318; display: flex; flex-direction: column; align-items: center; justify-content: center; }
 .market-summary > div + div { border-left: 1px solid #1d262e; }
-
-.market-summary span {
-    display: block;
-    color: #65717b;
-    font-size: 6px;
-    margin-bottom: 3px;
-}
-
-.market-summary strong {
-    display: block;
-    color: #dce2e7;
-    font-size: 7px;
-}
-
+.market-summary span { display: block; color: #65717b; font-size: 6px; margin-bottom: 3px; }
+.market-summary strong { display: block; color: #dce2e7; font-size: 7px; }
 .market-summary .daily-change-value .up { color: #38d878 !important; }
 .market-summary .daily-change-value .down { color: #ff5966 !important; }
 .market-summary .daily-change-value .zero { color: #68737e !important; }
-
 .market-summary .pattern-box { min-width: 35px; }
 .market-summary .pattern-name { font-size: 4.5px; }
-
-.market-summary .candle-pattern-visual {
-    height: 21px;
-    transform: scale(.68);
-}
-
+.market-summary .candle-pattern-visual { height: 21px; transform: scale(.68); }
 .market-summary .pattern-multi { gap: 0; }
 .market-summary .pattern-multi .pattern-box { min-width: 24px; }
 .market-summary .pattern-multi .pattern-name { font-size: 3.8px; }
-
 @media (max-width: 600px) {
     body { padding: 5px; }
-
-    h1 {
-        margin: 3px 2px 9px;
-        font-size: 12px;
-    }
-
+    h1 { margin: 3px 2px 9px; font-size: 12px; }
     .section-head { padding: 0 8px; }
     .section-head b { font-size: 9px; }
     .update-time { font-size: 5px; }
-
     .btc-main { min-height: 48px; }
     .btc-price { font-size: 13px; }
     .btc-change { font-size: 9px; }
-
-    .coin-head {
-        min-height: 35px;
-        padding: 0 7px;
-    }
-
+    .coin-head { min-height: 35px; padding: 0 7px; }
     .coin-title { gap: 6px; }
     .coin-title b { font-size: 9px; }
-
-    .ema-normal,
-    .ema-reverse,
-    .ema-same { font-size: 6px; }
-
-    .top-ema-status {
-        padding: 5px 7px;
-        gap: 4px;
-    }
-
-    .top-ema-line {
-        gap: 10px;
-        font-size: 7px;
-    }
-
-    .top-ema-time {
-        width: 38px;
-        font-size: 7px;
-    }
-
+    .ema-normal, .ema-reverse, .ema-same { font-size: 6px; }
+    .top-ema-status { padding: 5px 7px; gap: 4px; }
+    .top-ema-line { gap: 10px; font-size: 7px; }
+    .top-ema-time { width: 38px; font-size: 7px; }
     .ema-ref-row { gap: 3px; }
     .ema-ref-item { font-size: 6px; }
     .ema-ref-label { font-size: 5px; }
-
-    .market-summary {
-        grid-template-columns: repeat(5, minmax(0, 1fr));
-    }
-
-    .market-summary > div {
-        min-height: 53px;
-        padding: 3px 1px;
-    }
-
-    .market-summary span {
-        font-size: 5px;
-        margin-bottom: 2px;
-    }
-
+    .market-summary { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+    .market-summary > div { min-height: 53px; padding: 3px 1px; }
+    .market-summary span { font-size: 5px; margin-bottom: 2px; }
     .market-summary strong { font-size: 5px; }
     .market-summary .pattern-box { min-width: 24px; }
     .market-summary .pattern-name { font-size: 3.5px; }
-
-    .market-summary .candle-pattern-visual {
-        height: 19px;
-        transform: scale(.56);
-    }
-
-    .signal-condition {
-        min-height: 29px;
-        padding: 0 7px;
-    }
-
+    .market-summary .candle-pattern-visual { height: 19px; transform: scale(.56); }
+    .signal-condition { min-height: 29px; padding: 0 7px; }
     .signal-condition b { font-size: 7px; }
     .signal-condition small { font-size: 5px; }
-
-    .signal-header,
-    .signal-card {
-        grid-template-columns: 1.1fr 0.9fr 0.8fr 1.1fr 1.1fr;
-    }
-
-    .signal-header {
-        padding: 0 3px;
-        font-size: 5px;
-    }
-
-    .signal-card > div {
-        min-height: 53px;
-        padding: 2px 1px;
-    }
-
-    .signal-coin {
-        gap: 4px;
-        padding-left: 5px !important;
-    }
-
+    .signal-header, .signal-card { grid-template-columns: 1.1fr 0.9fr 0.8fr 1.1fr 1.1fr; }
+    .signal-header { padding: 0 3px; font-size: 5px; }
+    .signal-card > div { min-height: 53px; padding: 2px 1px; }
+    .signal-coin { gap: 4px; padding-left: 5px !important; }
     .signal-coin b { font-size: 7px; }
     .signal-rank { font-size: 5px; }
     .signal-card span { font-size: 5px; }
     .signal-card strong { font-size: 5px; }
-
-    .signal-type-list {
-        gap: 1px;
-        margin-top: 1px;
-    }
-
+    .signal-type-list { gap: 1px; margin-top: 1px; }
     .signal-type-badge { font-size: 4px !important; }
     .signal-pattern .pattern-box { min-width: 24px; }
     .signal-pattern .pattern-name { font-size: 3.5px; }
-
-    .signal-pattern .candle-pattern-visual {
-        height: 19px;
-        transform: scale(.55);
-    }
-
+    .signal-pattern .candle-pattern-visual { height: 19px; transform: scale(.55); }
     .signal-pattern .pattern-multi .pattern-box { min-width: 22px; }
-
     .signal-card .ema-ref-row { gap: 2px; }
     .signal-card .ema-ref-item { font-size: 5px; }
     .signal-card .ema-ref-label { font-size: 4px; }
-
     .alignment-age { font-size: 5px !important; }
 }
 """
@@ -3450,11 +2779,8 @@ def dashboard():
                         <span class="section-kicker">RANKING</span>
                         <b>TOP{TOP_N} · 거래대금 순</b>
                     </div>
-                    <span class="update-time">
-                        실제 업비트 거래대금 기준
-                    </span>
+                    <span class="update-time">실제 업비트 거래대금 기준</span>
                 </div>
-
                 {top_cards}
             </section>
             """
@@ -3503,9 +2829,8 @@ def startup():
         "START | BTC KST 09:00 일봉 재구성 + "
         "업비트 TOP%s + EMA%s %s + "
         "이전봉/현재봉 캔들 패턴 12종 표시 + "
-        "%s SIGNAL + "
-        "당일 변동률 양수 조건 + 상승패턴은 강조 조건 + "
-        "참고용 EMA 시간봉 %s 및 %s 표시 + "
+        "%s SIGNAL + 당일 변동률 양수 조건 + "
+        "상승패턴 강조 + 참고 EMA 시간봉 %s 및 %s 표시 + "
         "참고 EMA 완전 정배열 시작부터 %s개 캔들까지",
         TOP_N,
         get_ema_full_label(),
@@ -3516,9 +2841,11 @@ def startup():
         REFERENCE_ALIGNMENT_MAX_CANDLES
     )
 
+    log.info("참고 EMA 시간 설정: %s", get_reference_timeframe_label())
     log.info(
-        "참고 EMA 시간 설정: %s",
-        get_reference_timeframe_label()
+        "캔들 설정: 최대 %s개 / 분봉 요청 청크 %s개 / 캐시 공유 활성화",
+        EMA_HISTORY_CANDLES,
+        HISTORY_CHUNK
     )
 
     threading.Thread(
