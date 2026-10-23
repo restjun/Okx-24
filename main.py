@@ -41,7 +41,7 @@ UTC = ZoneInfo("UTC")
 # =========================================================
 
 TOP_N = 10
-SHOW_TOP_LIST = "Y"
+SHOW_TOP_LIST = "N"
 UPDATE_MINUTES = 1
 
 HISTORY_CHUNK = 200
@@ -98,7 +98,7 @@ EMA_REFERENCE_LABELS = {
     )
 }
 
-REFERENCE_ALIGNMENT_MAX_CANDLES = 20
+REFERENCE_ALIGNMENT_MAX_CANDLES = 5
 
 
 # =========================================================
