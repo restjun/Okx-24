@@ -1,4 +1,3 @@
-
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
@@ -73,14 +72,15 @@ TIMEFRAME_LABEL = {
 
 # =========================================================
 # EMA 설정
+# EMA 5-10 / EMA 10-50
 # =========================================================
 
 EMA_PULLBACK = 5
 EMA_FAST = 10
 EMA_SLOW = 50
 
-SIGNAL_5_20 = "Y"
-SIGNAL_20_60 = "Y"
+SIGNAL_5_10 = "Y"
+SIGNAL_10_50 = "Y"
 
 
 # =========================================================
@@ -154,13 +154,13 @@ def get_reference_timeframe_label():
 
 def get_ema_pair_labels():
     return (
-        f"{EMA_PULLBACK}/{EMA_FAST}",
-        f"{EMA_FAST}/{EMA_SLOW}"
+        f"{EMA_PULLBACK}-{EMA_FAST}",
+        f"{EMA_FAST}-{EMA_SLOW}"
     )
 
 
 def get_ema_full_label():
-    return f"{EMA_PULLBACK}/{EMA_FAST}/{EMA_SLOW}"
+    return f"{EMA_PULLBACK}-{EMA_FAST}-{EMA_SLOW}"
 
 
 # =========================================================
@@ -168,23 +168,23 @@ def get_ema_full_label():
 # =========================================================
 
 def get_ema_signal_description():
-    if SIGNAL_5_20 == "Y":
-        state_5_20 = "정배열"
-    elif SIGNAL_5_20 == "N":
-        state_5_20 = "역배열"
+    if SIGNAL_5_10 == "Y":
+        state_5_10 = "정배열"
+    elif SIGNAL_5_10 == "N":
+        state_5_10 = "역배열"
     else:
-        state_5_20 = "ANY"
+        state_5_10 = "ANY"
 
-    if SIGNAL_20_60 == "Y":
-        state_20_60 = "정배열"
-    elif SIGNAL_20_60 == "N":
-        state_20_60 = "역배열"
+    if SIGNAL_10_50 == "Y":
+        state_10_50 = "정배열"
+    elif SIGNAL_10_50 == "N":
+        state_10_50 = "역배열"
     else:
-        state_20_60 = "ANY"
+        state_10_50 = "ANY"
 
     return (
-        f"EMA {EMA_PULLBACK}-{EMA_FAST} {state_5_20} "
-        f"+ EMA {EMA_FAST}-{EMA_SLOW} {state_20_60}"
+        f"EMA {EMA_PULLBACK}-{EMA_FAST} {state_5_10} "
+        f"+ EMA {EMA_FAST}-{EMA_SLOW} {state_10_50}"
     )
 
 
@@ -633,33 +633,33 @@ def get_ema_pair_state(df, fast_period, slow_period):
     return get_ema_alignment_state(df, fast_period, slow_period)
 
 
-def check_ema_signal_condition(ema5, ema20, ema60):
-    if ema5 is None or ema20 is None or ema60 is None:
+def check_ema_signal_condition(ema5, ema10, ema50):
+    if ema5 is None or ema10 is None or ema50 is None:
         return False
 
     try:
-        ema5, ema20, ema60 = map(float, (ema5, ema20, ema60))
+        ema5, ema10, ema50 = map(float, (ema5, ema10, ema50))
     except (TypeError, ValueError):
         return False
 
-    if not all(np.isfinite(v) for v in (ema5, ema20, ema60)):
+    if not all(np.isfinite(v) for v in (ema5, ema10, ema50)):
         return False
 
-    if SIGNAL_5_20 == "Y":
-        condition_5_20 = ema5 > ema20
-    elif SIGNAL_5_20 == "N":
-        condition_5_20 = ema5 < ema20
+    if SIGNAL_5_10 == "Y":
+        condition_5_10 = ema5 > ema10
+    elif SIGNAL_5_10 == "N":
+        condition_5_10 = ema5 < ema10
     else:
-        condition_5_20 = True
+        condition_5_10 = True
 
-    if SIGNAL_20_60 == "Y":
-        condition_20_60 = ema20 > ema60
-    elif SIGNAL_20_60 == "N":
-        condition_20_60 = ema20 < ema60
+    if SIGNAL_10_50 == "Y":
+        condition_10_50 = ema10 > ema50
+    elif SIGNAL_10_50 == "N":
+        condition_10_50 = ema10 < ema50
     else:
-        condition_20_60 = True
+        condition_10_50 = True
 
-    return bool(condition_5_20 and condition_20_60)
+    return bool(condition_5_10 and condition_10_50)
 
 
 # =========================================================
@@ -770,44 +770,49 @@ def analyze_ema_4h(market, price=None):
     if df is None or df.empty:
         return empty_result
 
+    # 실제 EMA 계산은 5 / 10 / 50
     ema5_series = calculate_ema_series(df, EMA_PULLBACK)
-    ema20_series = calculate_ema_series(df, EMA_FAST)
-    ema60_series = calculate_ema_series(df, EMA_SLOW)
+    ema10_series = calculate_ema_series(df, EMA_FAST)
+    ema50_series = calculate_ema_series(df, EMA_SLOW)
 
-    if any(x is None for x in (ema5_series, ema20_series, ema60_series)):
+    if any(x is None for x in (ema5_series, ema10_series, ema50_series)):
         return empty_result
 
     ema5_valid = ema5_series.dropna()
-    ema20_valid = ema20_series.dropna()
-    ema60_valid = ema60_series.dropna()
+    ema10_valid = ema10_series.dropna()
+    ema50_valid = ema50_series.dropna()
 
-    if any(x.empty for x in (ema5_valid, ema20_valid, ema60_valid)):
+    if any(x.empty for x in (ema5_valid, ema10_valid, ema50_valid)):
         return empty_result
 
     ema5 = float(ema5_valid.iloc[-1])
-    ema20 = float(ema20_valid.iloc[-1])
-    ema60 = float(ema60_valid.iloc[-1])
+    ema10 = float(ema10_valid.iloc[-1])
+    ema50 = float(ema50_valid.iloc[-1])
 
-    reverse = ema5 < ema20
-    bullish_pullback = ema20 > ema60 and ema5 < ema20
+    reverse = ema5 < ema10
+    bullish_pullback = ema10 > ema50 and ema5 < ema10
 
     signal_condition = check_ema_signal_condition(
-        ema5, ema20, ema60
+        ema5, ema10, ema50
     )
 
-    if ema20 > ema60:
+    if ema10 > ema50:
         alignment = "정배열"
-    elif ema20 < ema60:
+    elif ema10 < ema50:
         alignment = "역배열"
     else:
         alignment = "동일"
 
+    # 기존 키 이름은 내부 호환을 위해 유지
+    # ema5_short = 실제 EMA 5
+    # ema20 = 실제 EMA 10
+    # ema60 = 실제 EMA 50
     return {
-        "ema5": ema20,
-        "ema15": ema60,
+        "ema5": ema10,
+        "ema15": ema50,
         "ema5_short": ema5,
-        "ema20": ema20,
-        "ema60": ema60,
+        "ema20": ema10,
+        "ema60": ema50,
         "reverse": reverse,
         "bullish_pullback": bullish_pullback,
         "signal_condition": signal_condition,
@@ -827,24 +832,25 @@ def get_reference_full_alignment_age(df):
         return 0
 
     ema5_series = calculate_ema_series(df, EMA_PULLBACK)
-    ema20_series = calculate_ema_series(df, EMA_FAST)
-    ema60_series = calculate_ema_series(df, EMA_SLOW)
+    ema10_series = calculate_ema_series(df, EMA_FAST)
+    ema50_series = calculate_ema_series(df, EMA_SLOW)
 
-    if any(x is None for x in (ema5_series, ema20_series, ema60_series)):
+    if any(x is None for x in (ema5_series, ema10_series, ema50_series)):
         return 0
 
     combined = pd.concat([
         ema5_series.rename("ema5"),
-        ema20_series.rename("ema20"),
-        ema60_series.rename("ema60")
+        ema10_series.rename("ema10"),
+        ema50_series.rename("ema50")
     ], axis=1).dropna()
 
     if combined.empty:
         return 0
 
+    # 완전 정배열: EMA 5 > EMA 10 > EMA 50
     full_alignment = (
-        (combined["ema5"] > combined["ema20"])
-        & (combined["ema20"] > combined["ema60"])
+        (combined["ema5"] > combined["ema10"])
+        & (combined["ema10"] > combined["ema50"])
     )
 
     if not bool(full_alignment.iloc[-1]):
@@ -866,10 +872,10 @@ def get_reference_full_alignment_age(df):
 
 def analyze_reference_ema_timeframes(market, price=None):
     states = {
-        "signal_5_20": None,
-        "signal_20_60": None,
-        "1h_5_20": None,
-        "1h": None,
+        "signal_5_10": None,
+        "signal_10_50": None,
+        "1h_5_10": None,
+        "1h_10_50": None,
         "full_alignment_age": 0,
         "full_alignment_active": False
     }
@@ -913,16 +919,16 @@ def analyze_reference_ema_timeframes(market, price=None):
         if df is None or df.empty:
             return states
 
-        states["signal_5_20"] = get_ema_pair_state(
+        states["signal_5_10"] = get_ema_pair_state(
             df, EMA_PULLBACK, EMA_FAST
         )
 
-        states["signal_20_60"] = get_ema_pair_state(
+        states["signal_10_50"] = get_ema_pair_state(
             df, EMA_FAST, EMA_SLOW
         )
 
-        states["1h_5_20"] = states["signal_5_20"]
-        states["1h"] = states["signal_20_60"]
+        states["1h_5_10"] = states["signal_5_10"]
+        states["1h_10_50"] = states["signal_10_50"]
 
         alignment_age = get_reference_full_alignment_age(df)
 
@@ -1591,8 +1597,8 @@ def make_row(
 ):
     coin = market.replace("KRW-", "")
 
-    # 1시간봉 EMA 상태
-    ema_1h_5_20 = (
+    # EMA 5-10 상태
+    ema_1h_5_10 = (
         "정배열"
         if ema_analysis.get("ema5_short") is not None
         and ema_analysis.get("ema20") is not None
@@ -1611,7 +1617,8 @@ def make_row(
         )
     )
 
-    ema_1h_20_60 = ema_analysis.get("alignment")
+    # EMA 10-50 상태
+    ema_1h_10_50 = ema_analysis.get("alignment")
 
     return {
         "rank": rank,
@@ -1660,9 +1667,9 @@ def make_row(
             "signal_condition", False
         ),
 
-        # 탑리스트 표시용 1시간봉 EMA 상태
-        "ema_1h_5_20": ema_1h_5_20,
-        "ema_1h_20_60": ema_1h_20_60,
+        # 탑리스트 표시용 EMA 상태
+        "ema_1h_5_10": ema_1h_5_10,
+        "ema_1h_10_50": ema_1h_10_50,
 
         "ema_timeframe": SIGNAL_TIMEFRAME,
         "ema_fast_period": EMA_FAST,
@@ -1796,10 +1803,10 @@ def update_upbit():
             log.warning("%s 참고 EMA 상태 오류: %s", market, e)
 
             reference_ema_states = {
-                "signal_5_20": None,
-                "signal_20_60": None,
-                "1h_5_20": None,
-                "1h": None,
+                "signal_5_10": None,
+                "signal_10_50": None,
+                "1h_5_10": None,
+                "1h_10_50": None,
                 "full_alignment_age": 0,
                 "full_alignment_active": False
             }
@@ -2172,25 +2179,30 @@ def ema_symbol(state):
 def top_ema_status_html(row):
     reference_states = row.get("ema_reference_states") or {}
 
-    # 1시간봉: SIGNAL_TIMEFRAME이 1h일 때 계산된 EMA 상태
-    state_1h_5_20 = row.get("ema_1h_5_20")
-    state_1h_20_60 = row.get("ema_1h_20_60")
+    # 시그널 시간봉: 현재 설정은 1시간봉
+    state_1h_5_10 = row.get("ema_1h_5_10")
+    state_1h_10_50 = row.get("ema_1h_10_50")
 
-    # 15분봉: 참고 EMA 시간봉 분석 결과
-    state_15m_5_20 = reference_states.get("signal_5_20")
-    state_15m_20_60 = reference_states.get("signal_20_60")
+    # 참고 EMA 시간봉: 현재 설정은 15분봉
+    state_ref_5_10 = reference_states.get("signal_5_10")
+    state_ref_10_50 = reference_states.get("signal_10_50")
+
+    signal_label = get_timeframe_label()
+    reference_label = get_reference_timeframe_label()
+
+    pair_1, pair_2 = get_ema_pair_labels()
 
     return f"""
     <div class="top-ema-status">
         <div class="top-ema-line">
-            <span class="top-ema-time">1시간</span>
-            <span>5-20 {ema_symbol(state_1h_5_20)}</span>
-            <span>20-60 {ema_symbol(state_1h_20_60)}</span>
+            <span class="top-ema-time">{html.escape(signal_label)}</span>
+            <span>{html.escape(pair_1)} {ema_symbol(state_1h_5_10)}</span>
+            <span>{html.escape(pair_2)} {ema_symbol(state_1h_10_50)}</span>
         </div>
         <div class="top-ema-line">
-            <span class="top-ema-time">15분</span>
-            <span>5-20 {ema_symbol(state_15m_5_20)}</span>
-            <span>20-60 {ema_symbol(state_15m_20_60)}</span>
+            <span class="top-ema-time">{html.escape(reference_label)}</span>
+            <span>{html.escape(pair_1)} {ema_symbol(state_ref_5_10)}</span>
+            <span>{html.escape(pair_2)} {ema_symbol(state_ref_10_50)}</span>
         </div>
     </div>
     """
@@ -2209,11 +2221,11 @@ def reference_ema_states_html(row):
     display_items = [
         (
             pair_1,
-            states.get("signal_5_20", states.get("1h_5_20"))
+            states.get("signal_5_10")
         ),
         (
             pair_2,
-            states.get("signal_20_60", states.get("1h"))
+            states.get("signal_10_50")
         )
     ]
 
@@ -2477,17 +2489,12 @@ def signal_card(row):
     has_bullish_pattern = row.get("signal_4h_pattern", False)
     reference_states = row.get("ema_reference_states") or {}
 
-    reference_5_20 = reference_states.get(
-        "signal_5_20", reference_states.get("1h_5_20")
-    )
-
-    reference_20_60 = reference_states.get(
-        "signal_20_60", reference_states.get("1h")
-    )
+    reference_5_10 = reference_states.get("signal_5_10")
+    reference_10_50 = reference_states.get("signal_10_50")
 
     has_reference_reverse = (
-        reference_5_20 == "역배열"
-        or reference_20_60 == "역배열"
+        reference_5_10 == "역배열"
+        or reference_10_50 == "역배열"
     )
 
     badge_html = (
@@ -2622,7 +2629,6 @@ def card(row, kind):
             else ""
         )
 
-        # 요청한 1시간봉 / 15분봉 EMA 상태 두 줄
         top_ema_html = top_ema_status_html(row)
 
         return f"""
@@ -2741,7 +2747,7 @@ section { margin-bottom: 12px; }
     white-space: nowrap;
 }
 
-/* 탑리스트 EMA 표시: 1시간 / 15분 두 줄 */
+/* 탑리스트 EMA 표시: 시그널 시간봉 / 참고 시간봉 */
 .top-ema-status {
     display: flex;
     flex-direction: column;
@@ -2764,7 +2770,7 @@ section { margin-bottom: 12px; }
 }
 
 .top-ema-time {
-    width: 30px;
+    width: 38px;
     color: #83909b;
     font-size: 8px;
     font-weight: 800;
@@ -3325,7 +3331,7 @@ section { margin-bottom: 12px; }
     }
 
     .top-ema-time {
-        width: 27px;
+        width: 38px;
         font-size: 7px;
     }
 
