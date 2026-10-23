@@ -76,8 +76,8 @@ TIMEFRAME_LABEL = {
 # =========================================================
 
 EMA_PULLBACK = 5
-EMA_FAST = 20
-EMA_SLOW = 60
+EMA_FAST = 10
+EMA_SLOW = 50
 
 SIGNAL_5_20 = "Y"
 SIGNAL_20_60 = "Y"
