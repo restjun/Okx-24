@@ -41,7 +41,7 @@ UTC = ZoneInfo("UTC")
 # =========================================================
 
 TOP_N = 20
-SHOW_TOP_LIST = "Y"
+SHOW_TOP_LIST = "N"
 UPDATE_MINUTES = 1
 
 HISTORY_CHUNK = 200
@@ -78,9 +78,9 @@ TIMEFRAME_LABEL = {
 EMA_PULLBACK = 5
 EMA_FAST = 10
 EMA_SLOW = 50
-EMA_LONG = 100
+EMA_LONG = 200
 
-SIGNAL_5_10 = "ANY"
+SIGNAL_5_10 = "Y"
 SIGNAL_10_50 = "Y"
 SIGNAL_50_100 = "Y"
 
@@ -90,7 +90,7 @@ SIGNAL_50_100 = "Y"
 # 참고 EMA는 화면 표시용이며 SIGNAL 선정 조건에 사용하지 않음
 # =========================================================
 
-EMA_REFERENCE_TIMEFRAME = "15m"
+EMA_REFERENCE_TIMEFRAME = "1h"
 EMA_REFERENCE_TIMEFRAMES = [EMA_REFERENCE_TIMEFRAME]
 
 EMA_REFERENCE_LABELS = {
