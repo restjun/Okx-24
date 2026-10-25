@@ -60,7 +60,7 @@ MAX_RETRIES = 10
 # SIGNAL 설정
 # =========================================================
 
-SIGNAL_TIMEFRAME = "1d"
+SIGNAL_TIMEFRAME = "1h"
 
 TIMEFRAME_LABEL = {
     "5m": "5분봉",
@@ -80,14 +80,14 @@ EMA_FAST = 10
 EMA_SLOW = 20
 
 SIGNAL_5_10 = "Y"
-SIGNAL_10_50 = "ANY"
+SIGNAL_10_50 = "Y"
 
 
 # =========================================================
 # 참고용 EMA 설정
 # =========================================================
 
-EMA_REFERENCE_TIMEFRAME = "1h"
+EMA_REFERENCE_TIMEFRAME = "15m"
 EMA_REFERENCE_TIMEFRAMES = [EMA_REFERENCE_TIMEFRAME]
 
 EMA_REFERENCE_LABELS = {
@@ -97,7 +97,7 @@ EMA_REFERENCE_LABELS = {
     )
 }
 
-REFERENCE_ALIGNMENT_MAX_CANDLES = 3
+REFERENCE_ALIGNMENT_MAX_CANDLES = 5
 
 
 # =========================================================
