@@ -1,3 +1,4 @@
+
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
@@ -43,7 +44,6 @@ TOP_N = 20
 SHOW_TOP_LIST = "Y"
 UPDATE_MINUTES = 1
 
-# 분봉은 최대 200개, 한 번에 요청
 HISTORY_CHUNK = 200
 MAX_HISTORY_CHUNKS = 1
 EMA_HISTORY_CANDLES = 200
@@ -121,6 +121,20 @@ latest_btc_okx_price = None
 latest_btc_daily_periods = []
 latest_btc_daily_change = None
 
+# BTC OKX EMA 상태
+latest_btc_okx_ema_states = {
+    "signal_5_10": None,
+    "signal_10_50": None,
+    "reference_5_10": None,
+    "reference_10_50": None
+}
+
+# BTC OKX 이전봉 / 현재봉 캔들 패턴
+latest_btc_okx_patterns = {
+    "previous_pattern": [],
+    "current_pattern": []
+}
+
 
 # =========================================================
 # Lock 및 캐시
@@ -133,7 +147,6 @@ candle_cache_lock = threading.Lock()
 last_request_time = 0
 
 # 캐시 키: (종목, 시간봉)
-# 한 번의 업비트 업데이트에서 같은 종목·시간봉은 재조회하지 않음
 candle_cache = {}
 
 
@@ -161,7 +174,6 @@ def get_cached_dataframe(market, timeframe, loader):
         df = pd.DataFrame()
 
     with candle_cache_lock:
-        # 데이터가 비어 있지 않을 때만 저장
         if not df.empty:
             existing = candle_cache.get(key)
 
@@ -337,7 +349,7 @@ def get_upbit_markets():
 
 
 # =========================================================
-# 업비트 분봉 조회: 최대 200개, 정상일 때 한 번 요청
+# 업비트 분봉 조회
 # =========================================================
 
 def get_upbit_minute_candles(market, unit, count=200):
@@ -1432,7 +1444,6 @@ def analyze_signal_candles(market, price, ema_reverse=False):
     timeframe = SIGNAL_TIMEFRAME
 
     if timeframe in ("5m", "15m", "1h"):
-        # EMA 분석과 동일한 캐시 데이터를 사용
         df = get_timeframe_dataframe(market, timeframe, price)
 
         if df.empty:
@@ -1661,7 +1672,6 @@ def update_upbit():
     global latest_upbit_daily_update_time
     global latest_signal_data
 
-    # 새 업데이트 주기에서 캐시 초기화
     clear_candle_cache()
 
     all_markets = get_upbit_markets()
@@ -1680,8 +1690,6 @@ def update_upbit():
         for rank, item in enumerate(all_markets_sorted, 1)
     }
 
-    # 먼저 거래대금 TOP_N을 선정한다.
-    # 나머지 종목의 일봉/EMA API 조회는 하지 않는다.
     selected_markets = all_markets_sorted[:TOP_N]
 
     rows = []
@@ -1835,7 +1843,8 @@ def okx_candles(bar, limit=200):
         return pd.DataFrame()
 
     try:
-        data = r.json().get("data", [])
+        response = r.json()
+        data = response.get("data", [])
     except Exception:
         return pd.DataFrame()
 
@@ -1885,6 +1894,58 @@ def okx_price():
         return float(r.json()["data"][0]["last"])
     except Exception:
         return None
+
+
+# =========================================================
+# OKX 시간봉 조회
+# =========================================================
+
+def get_okx_timeframe_candles(timeframe, d1h=None):
+    """
+    BTC 시황용 OKX EMA/패턴 데이터.
+    시간봉 설정에 맞는 OKX 캔들을 조회한다.
+    """
+    if timeframe == "5m":
+        return okx_candles("5m", EMA_HISTORY_CANDLES)
+
+    if timeframe == "15m":
+        return okx_candles("15m", EMA_HISTORY_CANDLES)
+
+    if timeframe == "1h":
+        if d1h is not None and not d1h.empty:
+            return d1h.copy(deep=True)
+        return okx_candles("1H", EMA_HISTORY_CANDLES)
+
+    if timeframe == "4h":
+        return okx_candles("4H", EMA_HISTORY_CANDLES)
+
+    if timeframe == "1d":
+        return okx_candles("1D", EMA_HISTORY_CANDLES)
+
+    return pd.DataFrame()
+
+
+def update_okx_current_candle(df, price):
+    """
+    OKX 최신 캔들의 종가/고가/저가에 현재 BTC 가격을 반영한다.
+    원본 DataFrame은 변경하지 않는다.
+    """
+    if df is None or df.empty or price is None:
+        return df
+
+    result = df.copy(deep=True)
+    idx = result.index[-1]
+    price = float(price)
+
+    result.loc[idx, "close"] = price
+    result.loc[idx, "high"] = max(
+        float(result.loc[idx, "high"]), price
+    )
+    result.loc[idx, "low"] = min(
+        float(result.loc[idx, "low"]), price
+    )
+
+    return result
 
 
 # =========================================================
@@ -1966,6 +2027,70 @@ def build_okx_kst_daily_periods(df, current_price=None):
 
 
 # =========================================================
+# BTC OKX EMA 및 캔들 패턴 분석
+# =========================================================
+
+def analyze_okx_btc_ema(df, price):
+    """
+    기존 EMA 설정값을 그대로 사용해 OKX BTC의 EMA 배열 상태를 계산한다.
+    """
+    result = {
+        "5_10": None,
+        "10_50": None
+    }
+
+    if df is None or df.empty:
+        return result
+
+    df = update_okx_current_candle(df, price)
+
+    result["5_10"] = get_ema_pair_state(
+        df, EMA_PULLBACK, EMA_FAST
+    )
+    result["10_50"] = get_ema_pair_state(
+        df, EMA_FAST, EMA_SLOW
+    )
+
+    return result
+
+
+def analyze_okx_btc_patterns(df, price):
+    """
+    탑리스트와 같은 패턴 판정 함수를 이용한다.
+    이전봉과 현재봉은 가장 최근 3개 캔들을 기준으로 계산한다.
+    """
+    result = {
+        "previous_pattern": [],
+        "current_pattern": []
+    }
+
+    if df is None or df.empty:
+        return result
+
+    df = update_okx_current_candle(df, price)
+
+    if df.empty:
+        return result
+
+    periods = []
+
+    for _, row in df.tail(3).iterrows():
+        periods.append({
+            "open": float(row["open"]),
+            "high": float(row["high"]),
+            "low": float(row["low"]),
+            "close": float(row["close"])
+        })
+
+    pattern_info = analyze_previous_current_pattern(periods)
+
+    result["previous_pattern"] = pattern_info["previous_pattern"]
+    result["current_pattern"] = pattern_info["current_pattern"]
+
+    return result
+
+
+# =========================================================
 # BTC 업데이트
 # =========================================================
 
@@ -1973,6 +2098,8 @@ def update_okx_btc():
     global latest_btc_okx_price
     global latest_btc_daily_periods
     global latest_btc_daily_change
+    global latest_btc_okx_ema_states
+    global latest_btc_okx_patterns
 
     price = okx_price()
     latest_btc_okx_price = price
@@ -1980,23 +2107,55 @@ def update_okx_btc():
     if price is None:
         return
 
+    # 기존 BTC 당일 변동률 계산에 사용하는 1시간봉
     d1h = okx_candles("1H", 200)
 
     if d1h.empty:
         latest_btc_daily_periods = []
         latest_btc_daily_change = None
-        return
+    else:
+        latest_btc_daily_periods = build_okx_kst_daily_periods(
+            d1h, price
+        )
 
-    latest_btc_daily_periods = build_okx_kst_daily_periods(
-        d1h, price
+        if latest_btc_daily_periods:
+            latest_btc_daily_change = latest_btc_daily_periods[-1].get(
+                "change"
+            )
+        else:
+            latest_btc_daily_change = None
+
+    # 현재 설정한 시그널 시간봉 데이터
+    signal_df = get_okx_timeframe_candles(
+        SIGNAL_TIMEFRAME,
+        d1h=d1h
     )
 
-    if latest_btc_daily_periods:
-        latest_btc_daily_change = latest_btc_daily_periods[-1].get(
-            "change"
-        )
+    signal_states = analyze_okx_btc_ema(signal_df, price)
+
+    # 참고 EMA 시간봉 데이터
+    if EMA_REFERENCE_TIMEFRAME == SIGNAL_TIMEFRAME:
+        reference_states = signal_states.copy()
     else:
-        latest_btc_daily_change = None
+        reference_df = get_okx_timeframe_candles(
+            EMA_REFERENCE_TIMEFRAME,
+            d1h=d1h
+        )
+        reference_states = analyze_okx_btc_ema(
+            reference_df, price
+        )
+
+    latest_btc_okx_ema_states = {
+        "signal_5_10": signal_states.get("5_10"),
+        "signal_10_50": signal_states.get("10_50"),
+        "reference_5_10": reference_states.get("5_10"),
+        "reference_10_50": reference_states.get("10_50")
+    }
+
+    # 캔들 패턴은 시그널 시간봉을 기준으로 표시
+    latest_btc_okx_patterns = analyze_okx_btc_patterns(
+        signal_df, price
+    )
 
 
 # =========================================================
@@ -2189,6 +2348,57 @@ def reference_ema_states_html(row):
 
 
 # =========================================================
+# BTC 시황 EMA 상태 HTML
+# =========================================================
+
+def btc_okx_ema_details_html():
+    states = latest_btc_okx_ema_states or {}
+
+    signal_label = get_timeframe_label()
+    reference_label = get_reference_timeframe_label()
+
+    pair_1, pair_2 = get_ema_pair_labels()
+
+    signal_5_10 = states.get("signal_5_10")
+    signal_10_50 = states.get("signal_10_50")
+
+    reference_5_10 = states.get("reference_5_10")
+    reference_10_50 = states.get("reference_10_50")
+
+    return f"""
+    <div class="btc-ema-area">
+        <div class="btc-subtitle">OKX EMA 상태</div>
+
+        <div class="top-ema-status">
+            <div class="top-ema-line">
+                <span class="top-ema-time">
+                    {html.escape(signal_label)}
+                </span>
+                <span>
+                    {html.escape(pair_1)} {ema_symbol(signal_5_10)}
+                </span>
+                <span>
+                    {html.escape(pair_2)} {ema_symbol(signal_10_50)}
+                </span>
+            </div>
+
+            <div class="top-ema-line">
+                <span class="top-ema-time">
+                    {html.escape(reference_label)}
+                </span>
+                <span>
+                    {html.escape(pair_1)} {ema_symbol(reference_5_10)}
+                </span>
+                <span>
+                    {html.escape(pair_2)} {ema_symbol(reference_10_50)}
+                </span>
+            </div>
+        </div>
+    </div>
+    """
+
+
+# =========================================================
 # 캔들 그림
 # =========================================================
 
@@ -2362,10 +2572,17 @@ def signal_reason_html(reason):
 
 
 # =========================================================
-# BTC HTML
+# BTC HTML - EMA 및 캔들 패턴 추가
 # =========================================================
 
 def btc_html():
+    patterns = latest_btc_okx_patterns or {}
+
+    previous_pattern = patterns.get("previous_pattern", [])
+    current_pattern = patterns.get("current_pattern", [])
+
+    signal_label = get_timeframe_label()
+
     return f"""
     <section class="btc-panel">
         <div class="section-head">
@@ -2377,10 +2594,35 @@ def btc_html():
                 OKX · KST 09:00 기준 · {kst()}
             </span>
         </div>
+
         <div class="btc-main">
             <div class="btc-name">BTC</div>
-            <div class="btc-price">{fmt_price(latest_btc_okx_price)}</div>
-            <div class="btc-change">{fmt_change(latest_btc_daily_change)}</div>
+            <div class="btc-price">
+                {fmt_price(latest_btc_okx_price)}
+            </div>
+            <div class="btc-change">
+                {fmt_change(latest_btc_daily_change)}
+            </div>
+        </div>
+
+        {btc_okx_ema_details_html()}
+
+        <div class="btc-pattern-area">
+            <div class="btc-subtitle">
+                OKX 캔들 패턴 · {html.escape(signal_label)}
+            </div>
+
+            <div class="btc-pattern-grid">
+                <div class="btc-pattern-cell">
+                    <span>이전봉</span>
+                    {current_pattern_html(previous_pattern)}
+                </div>
+
+                <div class="btc-pattern-cell">
+                    <span>현재봉</span>
+                    {current_pattern_html(current_pattern)}
+                </div>
+            </div>
         </div>
     </section>
     """
@@ -2631,7 +2873,6 @@ section { margin-bottom: 12px; }
 .mini-candle.bullish.hammer .body, .mini-candle.bullish.inverted-hammer .body { background: #38d878; }
 .mini-candle.bearish.hammer .body, .mini-candle.bearish.inverted-hammer .body { background: #ff5966; }
 .mini-candle.inverted-hammer .body { position: absolute; bottom: 1px; height: 6px; width: 8px; }
-.candle-pattern-visual.empty { color: #68737e; font-size: 9px; height: 23px; }
 .signal-panel { background: #0c1116; border: 1px solid #48272c; margin-bottom: 13px; }
 .signal-panel-head { border-bottom: 1px solid #392126; }
 .signal-condition { min-height: 32px; padding: 0 9px; display: flex; align-items: center; gap: 8px; background: #120e10; border-bottom: 1px solid #302024; }
@@ -2667,6 +2908,7 @@ section { margin-bottom: 12px; }
 .signal-pattern .pattern-multi .pattern-box { min-width: 29px; }
 .alignment-age { width: 100%; color: #e4c45e !important; font-size: 6px !important; font-weight: 800; margin-top: 2px; }
 .signal-empty { min-height: 46px; display: flex; align-items: center; justify-content: center; color: #626e78; font-size: 7px; }
+
 .btc-panel { background: #0c1116; border: 1px solid #202a33; margin-bottom: 13px; }
 .btc-panel .section-head { height: 38px; padding: 0 10px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #202a33; }
 .section-head > div { display: flex; align-items: center; gap: 7px; }
@@ -2678,6 +2920,17 @@ section { margin-bottom: 12px; }
 .btc-name { color: #c4ccd3; font-size: 10px; font-weight: 800; }
 .btc-price { color: #f4f6f8; font-size: 16px; font-weight: 900; letter-spacing: -0.5px; }
 .btc-change { font-size: 11px; font-weight: 900; }
+
+.btc-ema-area { border-top: 1px solid #202a33; background: #0a1015; }
+.btc-subtitle { padding: 7px 9px 3px; color: #83909b; font-size: 7px; font-weight: 900; }
+.btc-ema-area .top-ema-status { border-bottom: 1px solid #202a33; }
+.btc-pattern-area { border-top: 1px solid #202a33; background: #0a1015; }
+.btc-pattern-grid { display: grid; grid-template-columns: 1fr 1fr; }
+.btc-pattern-cell { min-width: 0; min-height: 48px; padding: 6px 3px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; text-align: center; }
+.btc-pattern-cell + .btc-pattern-cell { border-left: 1px solid #202a33; }
+.btc-pattern-cell > span { color: #83909b; font-size: 7px; font-weight: 800; }
+.btc-pattern-cell .pattern-name { font-size: 5px; }
+
 .coin-card { background: #0c1116; border: 1px solid #202a33; margin-bottom: 7px; }
 .coin-head { min-height: 38px; padding: 0 9px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #202a33; }
 .coin-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -2698,6 +2951,7 @@ section { margin-bottom: 12px; }
 .market-summary .pattern-multi { gap: 0; }
 .market-summary .pattern-multi .pattern-box { min-width: 24px; }
 .market-summary .pattern-multi .pattern-name { font-size: 3.8px; }
+
 @media (max-width: 600px) {
     body { padding: 5px; }
     h1 { margin: 3px 2px 9px; font-size: 12px; }
@@ -2707,6 +2961,14 @@ section { margin-bottom: 12px; }
     .btc-main { min-height: 48px; }
     .btc-price { font-size: 13px; }
     .btc-change { font-size: 9px; }
+    .btc-ema-area .top-ema-status { padding: 5px 7px; gap: 4px; }
+    .btc-ema-area .top-ema-line { gap: 10px; font-size: 7px; }
+    .btc-ema-area .top-ema-time { width: 38px; font-size: 7px; }
+    .btc-pattern-cell { min-height: 44px; padding: 5px 2px; }
+    .btc-pattern-cell > span { font-size: 6px; }
+    .btc-pattern-cell .pattern-box { min-width: 25px; }
+    .btc-pattern-cell .pattern-name { font-size: 4px; }
+    .btc-pattern-cell .candle-pattern-visual { transform: scale(.7); }
     .coin-head { min-height: 35px; padding: 0 7px; }
     .coin-title { gap: 6px; }
     .coin-title b { font-size: 9px; }
