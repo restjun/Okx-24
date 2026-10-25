@@ -40,7 +40,7 @@ UTC = ZoneInfo("UTC")
 # =========================================================
 
 TOP_N = 20
-SHOW_TOP_LIST = "Y"
+SHOW_TOP_LIST = "N"
 UPDATE_MINUTES = 1
 
 # 분봉은 최대 200개, 한 번에 요청
