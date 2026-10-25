@@ -1,3 +1,4 @@
+
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
@@ -81,13 +82,12 @@ EMA_LONG = 100
 
 SIGNAL_5_10 = "ANY"
 SIGNAL_10_50 = "Y"
-
-# 신규 조건: EMA 50 > EMA 100 정배열
 SIGNAL_50_100 = "Y"
 
 
 # =========================================================
 # 참고용 EMA 설정
+# 참고 EMA는 화면 표시용이며 SIGNAL 선정 조건에 사용하지 않음
 # =========================================================
 
 EMA_REFERENCE_TIMEFRAME = "15m"
@@ -124,7 +124,6 @@ latest_btc_okx_price = None
 latest_btc_daily_periods = []
 latest_btc_daily_change = None
 
-# BTC OKX EMA 상태
 latest_btc_okx_ema_states = {
     "signal_5_10": None,
     "signal_10_50": None,
@@ -134,7 +133,6 @@ latest_btc_okx_ema_states = {
     "reference_50_100": None
 }
 
-# BTC OKX 이전봉 / 현재봉 캔들 패턴
 latest_btc_okx_patterns = {
     "previous_pattern": [],
     "current_pattern": []
@@ -663,8 +661,8 @@ def check_ema_signal_condition(
     ema100
 ):
     """
-    EMA 5-10, 10-50, 50-100의 설정 조건을 모두 검사한다.
-    기본 설정은 5-10 ANY, 10-50 정배열, 50-100 정배열이다.
+    시그널용 EMA 설정 조건만 검사한다.
+    참고용 EMA 상태는 이 함수에 포함하지 않는다.
     """
     if any(
         value is None
@@ -921,7 +919,7 @@ def analyze_ema_4h(market, price=None):
         "ema20": ema10,
         "ema60": ema50,
 
-        # 신규 EMA 100
+        # EMA 100
         "ema100": ema100,
 
         "reverse": reverse,
@@ -937,7 +935,7 @@ def analyze_ema_4h(market, price=None):
 
 # =========================================================
 # 참고 EMA 완전 정배열 연속 캔들 수
-# EMA 5 > 10 > 50 > 100
+# 표시 전용: EMA 5 > 10 > 50 > 100
 # =========================================================
 
 def get_reference_full_alignment_age(df):
@@ -991,6 +989,7 @@ def get_reference_full_alignment_age(df):
 
 # =========================================================
 # 참고 EMA 시간봉 분석 - 동일 캐시 사용
+# 참고 EMA는 표시용이며 SIGNAL 선정에 사용하지 않음
 # =========================================================
 
 def analyze_reference_ema_timeframes(market, price=None):
@@ -1909,24 +1908,21 @@ def update_upbit():
     latest_upbit_daily_update_time = kst()
     latest_upbit_update_time = latest_upbit_daily_update_time
 
-    # SIGNAL 선정 조건:
-    # 1. EMA 설정 조건 충족
+    # =====================================================
+    # SIGNAL 선정 조건
+    # 1. 시그널용 EMA 설정 조건 충족
     # 2. 당일 변동률 양수
-    # 3. 참고 시간봉 EMA 5 > 10 > 50 > 100
-    # 4. 참고 완전 정배열 시작 후 최대 3개 캔들
+    #
+    # 참고용 EMA 정배열/역배열 및 연속 캔들 수는
+    # SIGNAL 선정 조건에 포함하지 않는다.
+    # =====================================================
+
     latest_signal_data = [
         row for row in rows
         if (
             row.get("ema_signal_condition", False)
             and row.get("daily_change") is not None
             and row.get("daily_change") > 0
-            and row.get("ema_reference_states", {}).get(
-                "full_alignment_active", False
-            )
-            and 1 <= row.get(
-                "ema_reference_states", {}
-            ).get("full_alignment_age", 0)
-            <= REFERENCE_ALIGNMENT_MAX_CANDLES
         )
     ]
 
@@ -1939,7 +1935,7 @@ def update_upbit():
 
     log.info(
         "UPBIT | 거래대금 TOP%s | EMA%s | 시간봉=%s | "
-        "참고 EMA 시간봉=%s | SIGNAL=%s",
+        "참고 EMA 시간봉=%s(표시 전용) | SIGNAL=%s",
         TOP_N,
         get_ema_full_label(),
         get_timeframe_label(),
@@ -2786,6 +2782,8 @@ def signal_card(row):
     reference_10_50 = reference_states.get("signal_10_50")
     reference_50_100 = reference_states.get("signal_50_100")
 
+    # 참고 EMA 역배열은 카드 강조 표시용일 뿐,
+    # SIGNAL 종목 선정에는 영향을 주지 않는다.
     has_reference_reverse = (
         reference_5_10 == "역배열"
         or reference_10_50 == "역배열"
@@ -2814,7 +2812,7 @@ def signal_card(row):
             <div class="signal-type-list">{badge_html}</div>
             {reference_ema_states_html(row)}
             <span class="alignment-age">
-                완전 정배열 {alignment_age}/{REFERENCE_ALIGNMENT_MAX_CANDLES}
+                참고 완전 정배열 {alignment_age}
             </span>
         </div>
         <div class="signal-volume">
@@ -2876,8 +2874,7 @@ def signal_section():
             <b>{signal_description}</b>
             <small>
                 당일 변동률 양수 · 참고 {html.escape(reference_timeframe_label)}
-                EMA 5-10-50-100 완전 정배열 시작부터
-                {REFERENCE_ALIGNMENT_MAX_CANDLES}개 캔들까지
+                EMA는 표시 전용
             </small>
         </div>
         <div class="signal-header">
@@ -3240,18 +3237,20 @@ def startup():
         "이전봉/현재봉 캔들 패턴 12종 표시 + "
         "%s SIGNAL + 당일 변동률 양수 조건 + "
         "상승패턴 강조 + 참고 EMA 시간봉 %s, %s, %s 표시 + "
-        "참고 EMA 완전 정배열 시작부터 %s개 캔들까지",
+        "참고 EMA는 SIGNAL 선정 조건에서 제외",
         TOP_N,
         get_ema_full_label(),
         get_timeframe_label(),
         get_ema_signal_description(),
         pair_1,
         pair_2,
-        pair_3,
-        REFERENCE_ALIGNMENT_MAX_CANDLES
+        pair_3
     )
 
-    log.info("참고 EMA 시간 설정: %s", get_reference_timeframe_label())
+    log.info(
+        "참고 EMA 시간 설정: %s (표시 전용)",
+        get_reference_timeframe_label()
+    )
     log.info(
         "캔들 설정: 최대 %s개 / 분봉 요청 청크 %s개 / 캐시 공유 활성화",
         EMA_HISTORY_CANDLES,
