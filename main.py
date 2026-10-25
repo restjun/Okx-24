@@ -1,3 +1,4 @@
+
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
@@ -43,7 +44,6 @@ TOP_N = 20
 SHOW_TOP_LIST = "N"
 UPDATE_MINUTES = 1
 
-# 분봉은 최대 200개, 한 번에 요청
 HISTORY_CHUNK = 200
 MAX_HISTORY_CHUNKS = 1
 EMA_HISTORY_CANDLES = 200
@@ -72,7 +72,7 @@ TIMEFRAME_LABEL = {
 
 
 # =========================================================
-# EMA 설정: EMA 5-10 / EMA 10-50
+# EMA 설정
 # =========================================================
 
 EMA_PULLBACK = 5
@@ -121,6 +121,18 @@ latest_btc_okx_price = None
 latest_btc_daily_periods = []
 latest_btc_daily_change = None
 
+# BTC 시그널 EMA 상태
+latest_btc_signal_ema_states = {
+    "5_10": None,
+    "10_20": None
+}
+
+# BTC 참고 EMA 상태
+latest_btc_reference_ema_states = {
+    "5_10": None,
+    "10_20": None
+}
+
 
 # =========================================================
 # Lock 및 캐시
@@ -132,8 +144,6 @@ candle_cache_lock = threading.Lock()
 
 last_request_time = 0
 
-# 캐시 키: (종목, 시간봉)
-# 한 번의 업비트 업데이트에서 같은 종목·시간봉은 재조회하지 않음
 candle_cache = {}
 
 
@@ -143,10 +153,6 @@ def clear_candle_cache():
 
 
 def get_cached_dataframe(market, timeframe, loader):
-    """
-    업데이트 한 주기 내에서 같은 종목·시간봉의 캔들 조회를 공유한다.
-    DataFrame 원본이 수정되지 않도록 복사본을 반환한다.
-    """
     key = (market, timeframe)
 
     with candle_cache_lock:
@@ -161,7 +167,6 @@ def get_cached_dataframe(market, timeframe, loader):
         df = pd.DataFrame()
 
     with candle_cache_lock:
-        # 데이터가 비어 있지 않을 때만 저장
         if not df.empty:
             existing = candle_cache.get(key)
 
@@ -182,7 +187,10 @@ def kst():
 
 
 def get_timeframe_label():
-    return TIMEFRAME_LABEL.get(SIGNAL_TIMEFRAME, SIGNAL_TIMEFRAME)
+    return TIMEFRAME_LABEL.get(
+        SIGNAL_TIMEFRAME,
+        SIGNAL_TIMEFRAME
+    )
 
 
 def get_reference_timeframe_label():
@@ -331,13 +339,15 @@ def get_upbit_markets():
             except Exception:
                 pass
 
-    latest_upbit_markets = [x["market"] for x in result]
+    latest_upbit_markets = [
+        x["market"] for x in result
+    ]
 
     return result
 
 
 # =========================================================
-# 업비트 분봉 조회: 최대 200개, 정상일 때 한 번 요청
+# 업비트 분봉 조회
 # =========================================================
 
 def get_upbit_minute_candles(market, unit, count=200):
@@ -427,7 +437,10 @@ def get_upbit_daily_candles(market, count=200):
     r = retry(
         requests.get,
         "https://api.upbit.com/v1/candles/days",
-        params={"market": market, "count": min(int(count), 200)},
+        params={
+            "market": market,
+            "count": min(int(count), 200)
+        },
         timeout=15
     )
 
@@ -493,7 +506,9 @@ def build_upbit_4h_candles(df, current_price=None):
     if now < day_start:
         day_start -= timedelta(days=1)
 
-    elapsed_hours = int((now - day_start).total_seconds() // 3600)
+    elapsed_hours = int(
+        (now - day_start).total_seconds() // 3600
+    )
 
     current_start = day_start + timedelta(
         hours=(elapsed_hours // 4) * 4
@@ -503,9 +518,17 @@ def build_upbit_4h_candles(df, current_price=None):
 
     for _, row in df.iterrows():
         dt = row["datetime"]
-        relative_seconds = (dt - day_start).total_seconds()
-        group_index = int(relative_seconds // (4 * 3600))
-        period_start = day_start + timedelta(hours=group_index * 4)
+        relative_seconds = (
+            dt - day_start
+        ).total_seconds()
+
+        group_index = int(
+            relative_seconds // (4 * 3600)
+        )
+
+        period_start = day_start + timedelta(
+            hours=group_index * 4
+        )
 
         rows.append({
             "period_start": period_start,
@@ -521,7 +544,9 @@ def build_upbit_4h_candles(df, current_price=None):
     raw = pd.DataFrame(rows)
     grouped = []
 
-    for period_start, group in raw.groupby("period_start", sort=True):
+    for period_start, group in raw.groupby(
+        "period_start", sort=True
+    ):
         o = float(group.iloc[0]["open"])
         h = float(group["high"].max())
         l = float(group["low"].min())
@@ -565,7 +590,10 @@ def calculate_ema_series(df, period):
     if df is None or df.empty or "close" not in df.columns:
         return None
 
-    closes = pd.to_numeric(df["close"], errors="coerce")
+    closes = pd.to_numeric(
+        df["close"], errors="coerce"
+    )
+
     closes = closes.loc[closes.notna()]
 
     if closes.empty:
@@ -573,6 +601,7 @@ def calculate_ema_series(df, period):
 
     values = closes.to_numpy(dtype=float)
     result = np.full(len(values), np.nan)
+
     alpha = 2.0 / (period + 1.0)
 
     if len(values) < period:
@@ -584,7 +613,9 @@ def calculate_ema_series(df, period):
                 + (1.0 - alpha) * result[i - 1]
             )
     else:
-        result[period - 1] = float(np.mean(values[:period]))
+        result[period - 1] = float(
+            np.mean(values[:period])
+        )
 
         for i in range(period, len(values)):
             result[i] = (
@@ -592,7 +623,11 @@ def calculate_ema_series(df, period):
                 + (1.0 - alpha) * result[i - 1]
             )
 
-    return pd.Series(result, index=closes.index, dtype=float)
+    return pd.Series(
+        result,
+        index=closes.index,
+        dtype=float
+    )
 
 
 def calculate_ema(df, period):
@@ -603,7 +638,11 @@ def calculate_ema(df, period):
 
     valid = series.dropna()
 
-    return float(valid.iloc[-1]) if not valid.empty else None
+    return (
+        float(valid.iloc[-1])
+        if not valid.empty
+        else None
+    )
 
 
 def get_ema_alignment_state(
@@ -630,7 +669,9 @@ def get_ema_alignment_state(
 
 
 def get_ema_pair_state(df, fast_period, slow_period):
-    return get_ema_alignment_state(df, fast_period, slow_period)
+    return get_ema_alignment_state(
+        df, fast_period, slow_period
+    )
 
 
 def check_ema_signal_condition(ema5, ema10, ema50):
@@ -638,11 +679,15 @@ def check_ema_signal_condition(ema5, ema10, ema50):
         return False
 
     try:
-        ema5, ema10, ema50 = map(float, (ema5, ema10, ema50))
+        ema5, ema10, ema50 = map(
+            float, (ema5, ema10, ema50)
+        )
     except (TypeError, ValueError):
         return False
 
-    if not all(np.isfinite(v) for v in (ema5, ema10, ema50)):
+    if not all(
+        np.isfinite(v) for v in (ema5, ema10, ema50)
+    ):
         return False
 
     if SIGNAL_5_10 == "Y":
@@ -659,7 +704,9 @@ def check_ema_signal_condition(ema5, ema10, ema50):
     else:
         condition_10_50 = True
 
-    return bool(condition_5_10 and condition_10_50)
+    return bool(
+        condition_5_10 and condition_10_50
+    )
 
 
 # =========================================================
@@ -677,8 +724,12 @@ def update_current_candle(df, current_start, price):
     price = float(price)
 
     df.loc[idx, "close"] = price
-    df.loc[idx, "high"] = max(float(df.loc[idx, "high"]), price)
-    df.loc[idx, "low"] = min(float(df.loc[idx, "low"]), price)
+    df.loc[idx, "high"] = max(
+        float(df.loc[idx, "high"]), price
+    )
+    df.loc[idx, "low"] = min(
+        float(df.loc[idx, "low"]), price
+    )
 
     return df
 
@@ -690,22 +741,31 @@ def update_current_candle(df, current_start, price):
 def get_timeframe_dataframe(market, timeframe, price=None):
     if timeframe == "5m":
         df = get_cached_dataframe(
-            market, "5m",
-            lambda: get_upbit_5m_candles(market, EMA_HISTORY_CANDLES)
+            market,
+            "5m",
+            lambda: get_upbit_5m_candles(
+                market, EMA_HISTORY_CANDLES
+            )
         )
         minutes = 5
 
     elif timeframe == "15m":
         df = get_cached_dataframe(
-            market, "15m",
-            lambda: get_upbit_15m_candles(market, EMA_HISTORY_CANDLES)
+            market,
+            "15m",
+            lambda: get_upbit_15m_candles(
+                market, EMA_HISTORY_CANDLES
+            )
         )
         minutes = 15
 
     elif timeframe == "1h":
         df = get_cached_dataframe(
-            market, "1h",
-            lambda: get_upbit_4h_candles(market, EMA_HISTORY_CANDLES)
+            market,
+            "1h",
+            lambda: get_upbit_4h_candles(
+                market, EMA_HISTORY_CANDLES
+            )
         )
         minutes = 60
 
@@ -723,7 +783,9 @@ def get_timeframe_dataframe(market, timeframe, price=None):
         microsecond=0
     )
 
-    return update_current_candle(df, current_start, price)
+    return update_current_candle(
+        df, current_start, price
+    )
 
 
 def get_daily_dataframe(market):
@@ -757,10 +819,14 @@ def analyze_ema_4h(market, price=None):
     timeframe = SIGNAL_TIMEFRAME
 
     if timeframe in ("5m", "15m", "1h"):
-        df = get_timeframe_dataframe(market, timeframe, price)
+        df = get_timeframe_dataframe(
+            market, timeframe, price
+        )
 
     elif timeframe == "4h":
-        df_1h = get_timeframe_dataframe(market, "1h", price)
+        df_1h = get_timeframe_dataframe(
+            market, "1h", price
+        )
 
         if df_1h.empty:
             return empty_result
@@ -774,6 +840,7 @@ def analyze_ema_4h(market, price=None):
             return empty_result
 
         now = datetime.now(KST)
+
         current_start = now.replace(
             hour=9, minute=0, second=0, microsecond=0
         )
@@ -781,27 +848,44 @@ def analyze_ema_4h(market, price=None):
         if now < current_start:
             current_start -= timedelta(days=1)
 
-        df = update_current_candle(df, current_start, price)
+        df = update_current_candle(
+            df, current_start, price
+        )
 
     else:
-        log.warning("지원하지 않는 SIGNAL_TIMEFRAME: %s", timeframe)
+        log.warning(
+            "지원하지 않는 SIGNAL_TIMEFRAME: %s",
+            timeframe
+        )
         return empty_result
 
     if df is None or df.empty:
         return empty_result
 
-    ema5_series = calculate_ema_series(df, EMA_PULLBACK)
-    ema10_series = calculate_ema_series(df, EMA_FAST)
-    ema50_series = calculate_ema_series(df, EMA_SLOW)
+    ema5_series = calculate_ema_series(
+        df, EMA_PULLBACK
+    )
+    ema10_series = calculate_ema_series(
+        df, EMA_FAST
+    )
+    ema50_series = calculate_ema_series(
+        df, EMA_SLOW
+    )
 
-    if any(x is None for x in (ema5_series, ema10_series, ema50_series)):
+    if any(
+        x is None
+        for x in (ema5_series, ema10_series, ema50_series)
+    ):
         return empty_result
 
     ema5_valid = ema5_series.dropna()
     ema10_valid = ema10_series.dropna()
     ema50_valid = ema50_series.dropna()
 
-    if any(x.empty for x in (ema5_valid, ema10_valid, ema50_valid)):
+    if any(
+        x.empty
+        for x in (ema5_valid, ema10_valid, ema50_valid)
+    ):
         return empty_result
 
     ema5 = float(ema5_valid.iloc[-1])
@@ -809,7 +893,9 @@ def analyze_ema_4h(market, price=None):
     ema50 = float(ema50_valid.iloc[-1])
 
     reverse = ema5 < ema10
-    bullish_pullback = ema10 > ema50 and ema5 < ema10
+    bullish_pullback = (
+        ema10 > ema50 and ema5 < ema10
+    )
 
     signal_condition = check_ema_signal_condition(
         ema5, ema10, ema50
@@ -846,11 +932,20 @@ def get_reference_full_alignment_age(df):
     if df is None or df.empty:
         return 0
 
-    ema5_series = calculate_ema_series(df, EMA_PULLBACK)
-    ema10_series = calculate_ema_series(df, EMA_FAST)
-    ema50_series = calculate_ema_series(df, EMA_SLOW)
+    ema5_series = calculate_ema_series(
+        df, EMA_PULLBACK
+    )
+    ema10_series = calculate_ema_series(
+        df, EMA_FAST
+    )
+    ema50_series = calculate_ema_series(
+        df, EMA_SLOW
+    )
 
-    if any(x is None for x in (ema5_series, ema10_series, ema50_series)):
+    if any(
+        x is None
+        for x in (ema5_series, ema10_series, ema50_series)
+    ):
         return 0
 
     combined = pd.concat([
@@ -898,15 +993,21 @@ def analyze_reference_ema_timeframes(market, price=None):
 
     try:
         if timeframe in ("5m", "15m", "1h"):
-            df = get_timeframe_dataframe(market, timeframe, price)
+            df = get_timeframe_dataframe(
+                market, timeframe, price
+            )
 
         elif timeframe == "4h":
-            df_1h = get_timeframe_dataframe(market, "1h", price)
+            df_1h = get_timeframe_dataframe(
+                market, "1h", price
+            )
 
             if df_1h.empty:
                 return states
 
-            df = build_upbit_4h_candles(df_1h, price)
+            df = build_upbit_4h_candles(
+                df_1h, price
+            )
 
         elif timeframe == "1d":
             df = get_daily_dataframe(market)
@@ -915,6 +1016,7 @@ def analyze_reference_ema_timeframes(market, price=None):
                 return states
 
             now = datetime.now(KST)
+
             current_start = now.replace(
                 hour=9, minute=0, second=0, microsecond=0
             )
@@ -922,10 +1024,15 @@ def analyze_reference_ema_timeframes(market, price=None):
             if now < current_start:
                 current_start -= timedelta(days=1)
 
-            df = update_current_candle(df, current_start, price)
+            df = update_current_candle(
+                df, current_start, price
+            )
 
         else:
-            log.warning("지원하지 않는 참고 EMA 시간봉: %s", timeframe)
+            log.warning(
+                "지원하지 않는 참고 EMA 시간봉: %s",
+                timeframe
+            )
             return states
 
         if df is None or df.empty:
@@ -934,6 +1041,7 @@ def analyze_reference_ema_timeframes(market, price=None):
         states["signal_5_10"] = get_ema_pair_state(
             df, EMA_PULLBACK, EMA_FAST
         )
+
         states["signal_10_50"] = get_ema_pair_state(
             df, EMA_FAST, EMA_SLOW
         )
@@ -945,11 +1053,15 @@ def analyze_reference_ema_timeframes(market, price=None):
 
         states["full_alignment_age"] = alignment_age
         states["full_alignment_active"] = bool(
-            1 <= alignment_age <= REFERENCE_ALIGNMENT_MAX_CANDLES
+            1 <= alignment_age
+            <= REFERENCE_ALIGNMENT_MAX_CANDLES
         )
 
     except Exception as e:
-        log.warning("%s 참고 EMA 시간봉 오류: %s", market, e)
+        log.warning(
+            "%s 참고 EMA 시간봉 오류: %s",
+            market, e
+        )
 
     return states
 
@@ -969,6 +1081,7 @@ def build_daily_periods(df, current_price=None):
     )
 
     now = datetime.now(KST)
+
     current_start = now.replace(
         hour=9, minute=0, second=0, microsecond=0
     )
@@ -1021,7 +1134,11 @@ def is_bullish_engulfing(previous, current):
         co, cc = float(current["open"]), float(current["close"])
     except Exception:
         return False
-    return bool(pc < po and cc > co and co <= pc and cc >= po)
+
+    return bool(
+        pc < po and cc > co
+        and co <= pc and cc >= po
+    )
 
 
 def is_bearish_engulfing(previous, current):
@@ -1030,7 +1147,11 @@ def is_bearish_engulfing(previous, current):
         co, cc = float(current["open"]), float(current["close"])
     except Exception:
         return False
-    return bool(pc > po and cc < co and co >= pc and cc <= po)
+
+    return bool(
+        pc > po and cc < co
+        and co >= pc and cc <= po
+    )
 
 
 def is_positive_doji(current):
@@ -1041,7 +1162,9 @@ def is_positive_doji(current):
         )
     except Exception:
         return False
+
     candle_range = h - l
+
     return bool(
         candle_range > 0
         and abs(c - o) / candle_range <= 0.10
@@ -1057,7 +1180,9 @@ def is_negative_doji(current):
         )
     except Exception:
         return False
+
     candle_range = h - l
+
     return bool(
         candle_range > 0
         and abs(c - o) / candle_range <= 0.10
@@ -1071,9 +1196,12 @@ def is_bullish_piercing(previous, current):
         co, cc = float(current["open"]), float(current["close"])
     except Exception:
         return False
+
     if pc >= po or cc <= co:
         return False
+
     midpoint = (po + pc) / 2
+
     return bool(cc > midpoint and cc < po)
 
 
@@ -1083,9 +1211,12 @@ def is_bearish_piercing(previous, current):
         co, cc = float(current["open"]), float(current["close"])
     except Exception:
         return False
+
     if pc <= po or cc >= co:
         return False
+
     midpoint = (po + pc) / 2
+
     return bool(cc < midpoint and cc > po)
 
 
@@ -1097,7 +1228,9 @@ def is_long_bullish(current):
         )
     except Exception:
         return False
+
     candle_range = h - l
+
     return bool(
         candle_range > 0 and c > o
         and abs(c - o) / candle_range >= 0.70
@@ -1112,7 +1245,9 @@ def is_long_bearish(current):
         )
     except Exception:
         return False
+
     candle_range = h - l
+
     return bool(
         candle_range > 0 and c < o
         and abs(c - o) / candle_range >= 0.70
@@ -1137,7 +1272,9 @@ def get_hammer_parts(current):
     if candle_range <= 0:
         return None
 
-    effective_body = max(body, candle_range * 0.01)
+    effective_body = max(
+        body, candle_range * 0.01
+    )
 
     return {
         "body": effective_body,
@@ -1151,12 +1288,15 @@ def get_hammer_parts(current):
 def is_bullish_hammer(previous, current):
     if previous is None:
         return False
+
     try:
         if float(previous["close"]) >= float(previous["open"]):
             return False
     except Exception:
         return False
+
     parts = get_hammer_parts(current)
+
     return bool(
         parts is not None
         and parts["lower_wick"] >= parts["body"] * 2
@@ -1167,12 +1307,15 @@ def is_bullish_hammer(previous, current):
 def is_bullish_inverted_hammer(previous, current):
     if previous is None:
         return False
+
     try:
         if float(previous["close"]) >= float(previous["open"]):
             return False
     except Exception:
         return False
+
     parts = get_hammer_parts(current)
+
     return bool(
         parts is not None
         and parts["upper_wick"] >= parts["body"] * 2
@@ -1183,12 +1326,15 @@ def is_bullish_inverted_hammer(previous, current):
 def is_bearish_hammer(previous, current):
     if previous is None:
         return False
+
     try:
         if float(previous["close"]) <= float(previous["open"]):
             return False
     except Exception:
         return False
+
     parts = get_hammer_parts(current)
+
     return bool(
         parts is not None
         and parts["lower_wick"] >= parts["body"] * 2
@@ -1199,12 +1345,15 @@ def is_bearish_hammer(previous, current):
 def is_bearish_inverted_hammer(previous, current):
     if previous is None:
         return False
+
     try:
         if float(previous["close"]) <= float(previous["open"]):
             return False
     except Exception:
         return False
+
     parts = get_hammer_parts(current)
+
     return bool(
         parts is not None
         and parts["upper_wick"] >= parts["body"] * 2
@@ -1221,27 +1370,37 @@ def get_candle_patterns(previous, current):
     if previous is not None:
         if is_bullish_engulfing(previous, current):
             patterns.append("상승장악형")
+
         if is_bearish_engulfing(previous, current):
             patterns.append("하락장악형")
+
         if is_bullish_piercing(previous, current):
             patterns.append("상승관통형")
+
         if is_bearish_piercing(previous, current):
             patterns.append("하락관통형")
+
         if is_bullish_hammer(previous, current):
             patterns.append("상승망치형")
+
         if is_bullish_inverted_hammer(previous, current):
             patterns.append("상승역망치형")
+
         if is_bearish_hammer(previous, current):
             patterns.append("하락망치형")
+
         if is_bearish_inverted_hammer(previous, current):
             patterns.append("하락역망치형")
 
     if is_long_bullish(current):
         patterns.append("장대양봉")
+
     if is_long_bearish(current):
         patterns.append("장대음봉")
+
     if is_positive_doji(current):
         patterns.append("양수도지")
+
     if is_negative_doji(current):
         patterns.append("음수도지")
 
@@ -1285,7 +1444,9 @@ def analyze_previous_current_pattern(periods):
     previous = periods[-2] if len(periods) >= 2 else None
     previous_previous = periods[-3] if len(periods) >= 3 else None
 
-    result["current_pattern"] = get_candle_patterns(previous, current)
+    result["current_pattern"] = get_candle_patterns(
+        previous, current
+    )
 
     if previous is not None:
         result["previous_pattern"] = get_candle_patterns(
@@ -1295,6 +1456,7 @@ def analyze_previous_current_pattern(periods):
     result["current_bullish_engulfing"] = (
         "상승장악형" in result["current_pattern"]
     )
+
     result["previous_bullish_engulfing"] = (
         "상승장악형" in result["previous_pattern"]
     )
@@ -1303,6 +1465,7 @@ def analyze_previous_current_pattern(periods):
         p in BULLISH_HIGHLIGHT_PATTERNS
         for p in result["previous_pattern"]
     )
+
     result["current_bullish_pattern"] = any(
         p in BULLISH_HIGHLIGHT_PATTERNS
         for p in result["current_pattern"]
@@ -1312,6 +1475,7 @@ def analyze_previous_current_pattern(periods):
         result["previous_bullish_pattern"]
         or result["current_bullish_pattern"]
     )
+
     result["bullish_engulfing_signal"] = bool(
         result["current_bullish_engulfing"]
     )
@@ -1327,7 +1491,9 @@ def build_upbit_4h_periods(df, current_price=None):
     if df is None or df.empty:
         return []
 
-    periods_df = build_upbit_4h_candles(df, current_price)
+    periods_df = build_upbit_4h_candles(
+        df, current_price
+    )
 
     if periods_df.empty:
         return []
@@ -1364,11 +1530,21 @@ def signal_pass(periods, ema_reverse=False):
 def signal_details(periods, ema_reverse=False):
     pattern_info = analyze_previous_current_pattern(periods)
 
-    current_signal = bool(pattern_info["current_bullish_pattern"])
-    previous_signal = bool(pattern_info["previous_bullish_pattern"])
+    current_signal = bool(
+        pattern_info["current_bullish_pattern"]
+    )
 
-    pattern_signal = bool(current_signal or previous_signal)
-    signal = bool(ema_reverse and pattern_signal)
+    previous_signal = bool(
+        pattern_info["previous_bullish_pattern"]
+    )
+
+    pattern_signal = bool(
+        current_signal or previous_signal
+    )
+
+    signal = bool(
+        ema_reverse and pattern_signal
+    )
 
     reason = None
 
@@ -1407,7 +1583,7 @@ def signal_details(periods, ema_reverse=False):
 
 
 # =========================================================
-# 선택 시간봉 캔들 패턴 분석 - 캐시 공유
+# 선택 시간봉 캔들 패턴 분석
 # =========================================================
 
 def analyze_signal_candles(market, price, ema_reverse=False):
@@ -1432,17 +1608,24 @@ def analyze_signal_candles(market, price, ema_reverse=False):
     timeframe = SIGNAL_TIMEFRAME
 
     if timeframe in ("5m", "15m", "1h"):
-        # EMA 분석과 동일한 캐시 데이터를 사용
-        df = get_timeframe_dataframe(market, timeframe, price)
+        df = get_timeframe_dataframe(
+            market, timeframe, price
+        )
 
         if df.empty:
             return empty_result
 
-        minutes = {"5m": 5, "15m": 15, "1h": 60}[timeframe]
+        minutes = {
+            "5m": 5,
+            "15m": 15,
+            "1h": 60
+        }[timeframe]
+
         periods = []
 
         for _, row in df.iterrows():
             start = row["datetime"]
+
             o = float(row["open"])
             h = float(row["high"])
             l = float(row["low"])
@@ -1468,12 +1651,16 @@ def analyze_signal_candles(market, price, ema_reverse=False):
         periods = periods[-6:]
 
     elif timeframe == "4h":
-        df_1h = get_timeframe_dataframe(market, "1h", price)
+        df_1h = get_timeframe_dataframe(
+            market, "1h", price
+        )
 
         if df_1h.empty:
             return empty_result
 
-        periods = build_upbit_4h_periods(df_1h, price)
+        periods = build_upbit_4h_periods(
+            df_1h, price
+        )
 
     elif timeframe == "1d":
         df = get_daily_dataframe(market)
@@ -1502,11 +1689,19 @@ def analyze_signal_candles(market, price, ema_reverse=False):
         ]
 
     else:
-        log.warning("지원하지 않는 캔들 시간봉: %s", timeframe)
+        log.warning(
+            "지원하지 않는 캔들 시간봉: %s",
+            timeframe
+        )
         return empty_result
 
-    pattern_info = analyze_previous_current_pattern(periods)
-    details = signal_details(periods, ema_reverse)
+    pattern_info = analyze_previous_current_pattern(
+        periods
+    )
+
+    details = signal_details(
+        periods, ema_reverse
+    )
 
     return {
         "periods": periods,
@@ -1532,11 +1727,13 @@ def analyze_signal_candles(market, price, ema_reverse=False):
 
 
 def analyze_4h(market, price, ema_reverse=False):
-    return analyze_signal_candles(market, price, ema_reverse)
+    return analyze_signal_candles(
+        market, price, ema_reverse
+    )
 
 
 # =========================================================
-# 일봉 변동률 - 캐시 공유
+# 일봉 변동률
 # =========================================================
 
 def analyze_daily_change(market, price):
@@ -1599,7 +1796,9 @@ def make_row(
         "periods_4h": analysis_4h["periods"],
 
         "signal_4h": analysis_4h["signal_pass"],
-        "signal_4h_pattern": analysis_4h.get("pattern_signal", False),
+        "signal_4h_pattern": analysis_4h.get(
+            "pattern_signal", False
+        ),
         "signal_4h_current": analysis_4h["current_signal"],
         "signal_4h_previous": analysis_4h["previous_signal"],
         "signal_4h_previous_previous": False,
@@ -1651,7 +1850,7 @@ def make_row(
 
 
 # =========================================================
-# 업비트 업데이트 - TOP_N 선정 후 해당 종목만 분석
+# 업비트 업데이트
 # =========================================================
 
 def update_upbit():
@@ -1661,7 +1860,6 @@ def update_upbit():
     global latest_upbit_daily_update_time
     global latest_signal_data
 
-    # 새 업데이트 주기에서 캐시 초기화
     clear_candle_cache()
 
     all_markets = get_upbit_markets()
@@ -1677,11 +1875,11 @@ def update_upbit():
 
     volume_rank_map = {
         item["market"]: rank
-        for rank, item in enumerate(all_markets_sorted, 1)
+        for rank, item in enumerate(
+            all_markets_sorted, 1
+        )
     }
 
-    # 먼저 거래대금 TOP_N을 선정한다.
-    # 나머지 종목의 일봉/EMA API 조회는 하지 않는다.
     selected_markets = all_markets_sorted[:TOP_N]
 
     rows = []
@@ -1691,15 +1889,23 @@ def update_upbit():
         price = item["current_price"]
 
         try:
-            analysis_daily = analyze_daily_change(market, price)
+            analysis_daily = analyze_daily_change(
+                market, price
+            )
         except Exception as e:
             log.warning("%s 일봉 오류: %s", market, e)
-            analysis_daily = {"change": None, "periods": []}
+            analysis_daily = {
+                "change": None,
+                "periods": []
+            }
 
         try:
-            ema_analysis = analyze_ema_4h(market, price)
+            ema_analysis = analyze_ema_4h(
+                market, price
+            )
         except Exception as e:
             log.warning("%s EMA 오류: %s", market, e)
+
             ema_analysis = {
                 "ema5": None,
                 "ema15": None,
@@ -1721,14 +1927,20 @@ def update_upbit():
             ema_analysis.get("ema60")
         )
 
-        ema_analysis["signal_condition"] = ema_signal_condition
+        ema_analysis["signal_condition"] = (
+            ema_signal_condition
+        )
 
         try:
             analysis_4h = analyze_signal_candles(
                 market, price, ema_signal_condition
             )
         except Exception as e:
-            log.warning("%s 캔들 패턴 오류: %s", market, e)
+            log.warning(
+                "%s 캔들 패턴 오류: %s",
+                market, e
+            )
+
             analysis_4h = {
                 "periods": [],
                 "signal_pass": False,
@@ -1752,7 +1964,11 @@ def update_upbit():
                 market, price
             )
         except Exception as e:
-            log.warning("%s 참고 EMA 상태 오류: %s", market, e)
+            log.warning(
+                "%s 참고 EMA 상태 오류: %s",
+                market, e
+            )
+
             reference_ema_states = {
                 "signal_5_10": None,
                 "signal_10_50": None,
@@ -1787,9 +2003,9 @@ def update_upbit():
             row.get("ema_signal_condition", False)
             and row.get("daily_change") is not None
             and row.get("daily_change") > 0
-            and row.get("ema_reference_states", {}).get(
-                "full_alignment_active", False
-            )
+            and row.get(
+                "ema_reference_states", {}
+            ).get("full_alignment_active", False)
             and 1 <= row.get(
                 "ema_reference_states", {}
             ).get("full_alignment_age", 0)
@@ -1801,7 +2017,9 @@ def update_upbit():
         key=lambda x: x.get("volume_rank", 999999)
     )
 
-    for signal_rank, row in enumerate(latest_signal_data, 1):
+    for signal_rank, row in enumerate(
+        latest_signal_data, 1
+    ):
         row["signal_rank"] = signal_rank
 
     log.info(
@@ -1835,7 +2053,16 @@ def okx_candles(bar, limit=200):
         return pd.DataFrame()
 
     try:
-        data = r.json().get("data", [])
+        response_data = r.json()
+        data = response_data.get("data", [])
+
+        if response_data.get("code") != "0":
+            log.warning(
+                "OKX 캔들 API 오류: %s",
+                response_data.get("msg", "unknown")
+            )
+            return pd.DataFrame()
+
     except Exception:
         return pd.DataFrame()
 
@@ -1882,9 +2109,137 @@ def okx_price():
         return None
 
     try:
-        return float(r.json()["data"][0]["last"])
+        response_data = r.json()
+
+        if response_data.get("code") != "0":
+            return None
+
+        return float(response_data["data"][0]["last"])
+
     except Exception:
         return None
+
+
+# =========================================================
+# BTC EMA 상태 계산
+# =========================================================
+
+def analyze_btc_ema_states(timeframe):
+    states = {
+        "5_10": None,
+        "10_20": None
+    }
+
+    timeframe_bars = {
+        "5m": "5m",
+        "15m": "15m",
+        "1h": "1H",
+        "4h": "4H",
+        "1d": "1D"
+    }
+
+    bar = timeframe_bars.get(timeframe)
+
+    if bar is None:
+        log.warning(
+            "지원하지 않는 BTC EMA 시간봉: %s",
+            timeframe
+        )
+        return states
+
+    df = okx_candles(bar, 200)
+
+    if df is None or df.empty:
+        return states
+
+    # 진행 중인 캔들에 현재 BTC 가격을 반영한다.
+    price = latest_btc_okx_price
+
+    if price is not None:
+        now = datetime.now(KST)
+
+        if timeframe == "5m":
+            current_start = now.replace(
+                minute=(now.minute // 5) * 5,
+                second=0,
+                microsecond=0
+            )
+        elif timeframe == "15m":
+            current_start = now.replace(
+                minute=(now.minute // 15) * 15,
+                second=0,
+                microsecond=0
+            )
+        elif timeframe == "1h":
+            current_start = now.replace(
+                minute=0,
+                second=0,
+                microsecond=0
+            )
+        elif timeframe == "4h":
+            day_start = now.replace(
+                hour=9,
+                minute=0,
+                second=0,
+                microsecond=0
+            )
+
+            if now < day_start:
+                day_start -= timedelta(days=1)
+
+            elapsed_hours = int(
+                (now - day_start).total_seconds() // 3600
+            )
+
+            current_start = day_start + timedelta(
+                hours=(elapsed_hours // 4) * 4
+            )
+        else:
+            current_start = now.replace(
+                hour=9,
+                minute=0,
+                second=0,
+                microsecond=0
+            )
+
+            if now < current_start:
+                current_start -= timedelta(days=1)
+
+        df = update_current_candle(
+            df, current_start, price
+        )
+
+    ema_pullback = calculate_ema(
+        df, EMA_PULLBACK
+    )
+    ema_fast = calculate_ema(
+        df, EMA_FAST
+    )
+    ema_slow = calculate_ema(
+        df, EMA_SLOW
+    )
+
+    if any(
+        x is None
+        for x in (ema_pullback, ema_fast, ema_slow)
+    ):
+        return states
+
+    if ema_pullback > ema_fast:
+        states["5_10"] = "정배열"
+    elif ema_pullback < ema_fast:
+        states["5_10"] = "역배열"
+    else:
+        states["5_10"] = "동일"
+
+    if ema_fast > ema_slow:
+        states["10_20"] = "정배열"
+    elif ema_fast < ema_slow:
+        states["10_20"] = "역배열"
+    else:
+        states["10_20"] = "동일"
+
+    return states
 
 
 # =========================================================
@@ -1902,8 +2257,12 @@ def build_okx_kst_daily_periods(df, current_price=None):
     )
 
     now = datetime.now(KST)
+
     current_day_start = now.replace(
-        hour=9, minute=0, second=0, microsecond=0
+        hour=9,
+        minute=0,
+        second=0,
+        microsecond=0
     )
 
     if now < current_day_start:
@@ -1915,7 +2274,10 @@ def build_okx_kst_daily_periods(df, current_price=None):
         dt = row["datetime"]
 
         day_start = dt.replace(
-            hour=9, minute=0, second=0, microsecond=0
+            hour=9,
+            minute=0,
+            second=0,
+            microsecond=0
         )
 
         if dt < day_start:
@@ -1935,7 +2297,9 @@ def build_okx_kst_daily_periods(df, current_price=None):
     raw = pd.DataFrame(rows)
     periods = []
 
-    for day_start, group in raw.groupby("day_start", sort=True):
+    for day_start, group in raw.groupby(
+        "day_start", sort=True
+    ):
         o = float(group.iloc[0]["open"])
         h = float(group["high"].max())
         l = float(group["low"].min())
@@ -1973,6 +2337,8 @@ def update_okx_btc():
     global latest_btc_okx_price
     global latest_btc_daily_periods
     global latest_btc_daily_change
+    global latest_btc_signal_ema_states
+    global latest_btc_reference_ema_states
 
     price = okx_price()
     latest_btc_okx_price = price
@@ -1985,18 +2351,27 @@ def update_okx_btc():
     if d1h.empty:
         latest_btc_daily_periods = []
         latest_btc_daily_change = None
-        return
+    else:
+        latest_btc_daily_periods = (
+            build_okx_kst_daily_periods(d1h, price)
+        )
 
-    latest_btc_daily_periods = build_okx_kst_daily_periods(
-        d1h, price
+        if latest_btc_daily_periods:
+            latest_btc_daily_change = (
+                latest_btc_daily_periods[-1].get("change")
+            )
+        else:
+            latest_btc_daily_change = None
+
+    # 시그널 EMA는 SIGNAL_TIMEFRAME 설정을 사용한다.
+    latest_btc_signal_ema_states = (
+        analyze_btc_ema_states(SIGNAL_TIMEFRAME)
     )
 
-    if latest_btc_daily_periods:
-        latest_btc_daily_change = latest_btc_daily_periods[-1].get(
-            "change"
-        )
-    else:
-        latest_btc_daily_change = None
+    # 참고 EMA는 EMA_REFERENCE_TIMEFRAME 설정을 사용한다.
+    latest_btc_reference_ema_states = (
+        analyze_btc_ema_states(EMA_REFERENCE_TIMEFRAME)
+    )
 
 
 # =========================================================
@@ -2036,8 +2411,10 @@ def fmt_price(v):
 
     if v >= 100000000:
         return f"{v / 100000000:.2f}억"
+
     if v >= 10000:
         return f"{v:,.0f}"
+
     if v >= 1:
         return f"{v:,.2f}"
 
@@ -2052,8 +2429,10 @@ def fmt_vol(v):
 
     if v >= 1e12:
         return f"{v / 1e12:.1f}조"
+
     if v >= 1e8:
         return f"{v / 1e8:.0f}억"
+
     if v >= 1e4:
         return f"{v / 1e4:.0f}만"
 
@@ -2071,6 +2450,7 @@ def fmt_change(v):
 
     if v > 0:
         return f'<span class="up">▲ +{v:.2f}%</span>'
+
     if v < 0:
         return f'<span class="down">▼ {v:.2f}%</span>'
 
@@ -2080,20 +2460,41 @@ def fmt_change(v):
 def fmt_ema(v):
     if v is None:
         return "-"
+
     try:
         v = float(v)
     except Exception:
         return "-"
+
     return fmt_price(v)
 
 
 def ema_alignment_html(alignment):
     if alignment == "역배열":
         return '<span class="ema-reverse">▼ 역배열</span>'
+
     if alignment == "정배열":
         return '<span class="ema-normal">▲ 정배열</span>'
+
     if alignment == "동일":
         return '<span class="ema-same">— 동일</span>'
+
+    return '<span class="ema-same">—</span>'
+
+
+# =========================================================
+# EMA 배열 기호
+# =========================================================
+
+def ema_symbol(state):
+    if state == "정배열":
+        return '<span class="ema-normal">▲</span>'
+
+    if state == "역배열":
+        return '<span class="ema-reverse">▼</span>'
+
+    if state == "동일":
+        return '<span class="ema-same">—</span>'
 
     return '<span class="ema-same">—</span>'
 
@@ -2102,19 +2503,10 @@ def ema_alignment_html(alignment):
 # 탑리스트 EMA 두 줄 표시
 # =========================================================
 
-def ema_symbol(state):
-    if state == "정배열":
-        return '<span class="ema-normal">▲</span>'
-    if state == "역배열":
-        return '<span class="ema-reverse">▼</span>'
-    if state == "동일":
-        return '<span class="ema-same">—</span>'
-
-    return '<span class="ema-same">—</span>'
-
-
 def top_ema_status_html(row):
-    reference_states = row.get("ema_reference_states") or {}
+    reference_states = (
+        row.get("ema_reference_states") or {}
+    )
 
     state_1h_5_10 = row.get("ema_1h_5_10")
     state_1h_10_50 = row.get("ema_1h_10_50")
@@ -2130,14 +2522,26 @@ def top_ema_status_html(row):
     return f"""
     <div class="top-ema-status">
         <div class="top-ema-line">
-            <span class="top-ema-time">{html.escape(signal_label)}</span>
-            <span>{html.escape(pair_1)} {ema_symbol(state_1h_5_10)}</span>
-            <span>{html.escape(pair_2)} {ema_symbol(state_1h_10_50)}</span>
+            <span class="top-ema-time">
+                {html.escape(signal_label)}
+            </span>
+            <span>
+                {html.escape(pair_1)} {ema_symbol(state_1h_5_10)}
+            </span>
+            <span>
+                {html.escape(pair_2)} {ema_symbol(state_1h_10_50)}
+            </span>
         </div>
         <div class="top-ema-line">
-            <span class="top-ema-time">{html.escape(reference_label)}</span>
-            <span>{html.escape(pair_1)} {ema_symbol(state_ref_5_10)}</span>
-            <span>{html.escape(pair_2)} {ema_symbol(state_ref_10_50)}</span>
+            <span class="top-ema-time">
+                {html.escape(reference_label)}
+            </span>
+            <span>
+                {html.escape(pair_1)} {ema_symbol(state_ref_5_10)}
+            </span>
+            <span>
+                {html.escape(pair_2)} {ema_symbol(state_ref_10_50)}
+            </span>
         </div>
     </div>
     """
@@ -2283,6 +2687,7 @@ def candle_icon_html(pattern):
             if pattern == "상승망치형"
             else "bearish hammer"
         )
+
         return f"""
         <div class="candle-pattern-visual single-candle">
             <div class="mini-candle {candle_class}">
@@ -2297,6 +2702,7 @@ def candle_icon_html(pattern):
             if pattern == "상승역망치형"
             else "bearish inverted-hammer"
         )
+
         return f"""
         <div class="candle-pattern-visual single-candle">
             <div class="mini-candle {candle_class}">
@@ -2352,20 +2758,41 @@ def current_pattern_html(pattern):
             + '</span></div>'
         )
 
-    return '<div class="pattern-multi">' + "".join(boxes) + '</div>'
+    return (
+        '<div class="pattern-multi">'
+        + "".join(boxes)
+        + '</div>'
+    )
 
 
 def signal_reason_html(reason):
     if reason in BULLISH_HIGHLIGHT_PATTERNS:
-        return f'<span class="pattern-cross">▲ {html.escape(reason)}</span>'
+        return (
+            f'<span class="pattern-cross">'
+            f'▲ {html.escape(reason)}</span>'
+        )
+
     return ""
 
 
 # =========================================================
-# BTC HTML
+# BTC HTML - 시그널 EMA / 참고 EMA 표시
 # =========================================================
 
 def btc_html():
+    signal_states = (
+        latest_btc_signal_ema_states or {}
+    )
+
+    reference_states = (
+        latest_btc_reference_ema_states or {}
+    )
+
+    pair_1, pair_2 = get_ema_pair_labels()
+
+    signal_label = get_timeframe_label()
+    reference_label = get_reference_timeframe_label()
+
     return f"""
     <section class="btc-panel">
         <div class="section-head">
@@ -2377,10 +2804,45 @@ def btc_html():
                 OKX · KST 09:00 기준 · {kst()}
             </span>
         </div>
+
         <div class="btc-main">
             <div class="btc-name">BTC</div>
-            <div class="btc-price">{fmt_price(latest_btc_okx_price)}</div>
-            <div class="btc-change">{fmt_change(latest_btc_daily_change)}</div>
+            <div class="btc-price">
+                {fmt_price(latest_btc_okx_price)}
+            </div>
+            <div class="btc-change">
+                {fmt_change(latest_btc_daily_change)}
+            </div>
+        </div>
+
+        <div class="btc-ema-status">
+            <div class="btc-ema-line">
+                <span class="btc-ema-time">
+                    시그널 {html.escape(signal_label)}
+                </span>
+                <span>
+                    EMA {html.escape(pair_1)}
+                    {ema_symbol(signal_states.get("5_10"))}
+                </span>
+                <span>
+                    EMA {html.escape(pair_2)}
+                    {ema_symbol(signal_states.get("10_20"))}
+                </span>
+            </div>
+
+            <div class="btc-ema-line">
+                <span class="btc-ema-time">
+                    참고 {html.escape(reference_label)}
+                </span>
+                <span>
+                    EMA {html.escape(pair_1)}
+                    {ema_symbol(reference_states.get("5_10"))}
+                </span>
+                <span>
+                    EMA {html.escape(pair_2)}
+                    {ema_symbol(reference_states.get("10_20"))}
+                </span>
+            </div>
         </div>
     </section>
     """
@@ -2393,8 +2855,13 @@ def btc_html():
 def signal_card(row):
     timeframe_label = get_timeframe_label()
 
-    has_bullish_pattern = row.get("signal_4h_pattern", False)
-    reference_states = row.get("ema_reference_states") or {}
+    has_bullish_pattern = row.get(
+        "signal_4h_pattern", False
+    )
+
+    reference_states = (
+        row.get("ema_reference_states") or {}
+    )
 
     reference_5_10 = reference_states.get("signal_5_10")
     reference_10_50 = reference_states.get("signal_10_50")
@@ -2411,10 +2878,13 @@ def signal_card(row):
 
     card_class = (
         "signal-card has-reference-reverse"
-        if has_reference_reverse else "signal-card"
+        if has_reference_reverse
+        else "signal-card"
     )
 
-    alignment_age = reference_states.get("full_alignment_age", 0)
+    alignment_age = reference_states.get(
+        "full_alignment_age", 0
+    )
 
     return f"""
     <div class="{card_class}">
@@ -2461,7 +2931,10 @@ def signal_section():
     timeframe_label = get_timeframe_label()
     reference_timeframe_label = get_reference_timeframe_label()
     ema_full_label = get_ema_full_label()
-    signal_description = html.escape(get_ema_signal_description())
+
+    signal_description = html.escape(
+        get_ema_signal_description()
+    )
 
     if not latest_signal_data:
         body = """
@@ -2470,7 +2943,10 @@ def signal_section():
         </div>
         """
     else:
-        body = "".join(signal_card(row) for row in latest_signal_data)
+        body = "".join(
+            signal_card(row)
+            for row in latest_signal_data
+        )
 
     return f"""
     <section class="signal-panel">
@@ -2487,8 +2963,10 @@ def signal_section():
             <span>SIGNAL 조건</span>
             <b>{signal_description}</b>
             <small>
-                당일 변동률 양수 · 참고 {html.escape(reference_timeframe_label)}
-                완전 정배열 시작부터 {REFERENCE_ALIGNMENT_MAX_CANDLES}개 캔들까지
+                당일 변동률 양수 · 참고
+                {html.escape(reference_timeframe_label)}
+                완전 정배열 시작부터
+                {REFERENCE_ALIGNMENT_MAX_CANDLES}개 캔들까지
             </small>
         </div>
         <div class="signal-header">
@@ -2513,7 +2991,9 @@ def card(row, kind):
     if kind != "top":
         return ""
 
-    has_bullish_pattern = row.get("signal_4h_pattern", False)
+    has_bullish_pattern = row.get(
+        "signal_4h_pattern", False
+    )
 
     status = (
         '<span class="signal-badge">⭐ 상승패턴</span>'
@@ -2588,6 +3068,7 @@ section { margin-bottom: 12px; }
 .ema-normal { color: #38d878; font-size: 7px; font-weight: 900; white-space: nowrap; }
 .ema-reverse { color: #ff5966; font-size: 7px; font-weight: 900; white-space: nowrap; }
 .ema-same { color: #68737e; font-size: 7px; font-weight: 900; white-space: nowrap; }
+
 .top-ema-status {
     display: flex; flex-direction: column; align-items: flex-start;
     justify-content: center; gap: 4px; padding: 6px 9px;
@@ -2599,6 +3080,7 @@ section { margin-bottom: 12px; }
 }
 .top-ema-time { width: 38px; color: #83909b; font-size: 8px; font-weight: 800; }
 .top-ema-line > span:not(.top-ema-time) { display: inline-flex; align-items: center; gap: 3px; }
+
 .ema-ref-row {
     display: flex; flex-direction: column; align-items: flex-start;
     justify-content: center; gap: 3px; flex-wrap: nowrap;
@@ -2606,6 +3088,7 @@ section { margin-bottom: 12px; }
 }
 .ema-ref-item { display: flex; align-items: center; gap: 2px; font-size: 7px; font-weight: 900; line-height: 1.3; white-space: nowrap; }
 .ema-ref-label { color: #83909b; font-size: 6px; font-weight: 700; white-space: nowrap; }
+
 .pattern-box { display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 55px; line-height: 1; }
 .pattern-name { display: block; margin-top: 2px; color: #38d878; font-size: 5px; font-weight: 900; white-space: nowrap; }
 .bearish-pattern .pattern-name { color: #ff5966; }
@@ -2613,6 +3096,7 @@ section { margin-bottom: 12px; }
 .pattern-none .pattern-name { color: #68737e; }
 .pattern-multi { display: flex; align-items: flex-start; justify-content: center; flex-wrap: wrap; gap: 3px; width: 100%; }
 .pattern-multi .pattern-box { min-width: 36px; }
+
 .candle-pattern-visual { height: 23px; min-width: 35px; display: flex; align-items: center; justify-content: center; gap: 4px; position: relative; }
 .mini-candle { width: 7px; height: 22px; position: relative; display: flex; justify-content: center; align-items: center; }
 .mini-candle .wick { position: absolute; width: 1px; height: 22px; left: 50%; top: 0; transform: translateX(-50%); background: #79848e; }
@@ -2631,13 +3115,16 @@ section { margin-bottom: 12px; }
 .mini-candle.bullish.hammer .body, .mini-candle.bullish.inverted-hammer .body { background: #38d878; }
 .mini-candle.bearish.hammer .body, .mini-candle.bearish.inverted-hammer .body { background: #ff5966; }
 .mini-candle.inverted-hammer .body { position: absolute; bottom: 1px; height: 6px; width: 8px; }
+
 .candle-pattern-visual.empty { color: #68737e; font-size: 9px; height: 23px; }
+
 .signal-panel { background: #0c1116; border: 1px solid #48272c; margin-bottom: 13px; }
 .signal-panel-head { border-bottom: 1px solid #392126; }
 .signal-condition { min-height: 32px; padding: 0 9px; display: flex; align-items: center; gap: 8px; background: #120e10; border-bottom: 1px solid #302024; }
 .signal-condition span { color: #7d6b70; font-size: 6px; }
 .signal-condition b { color: #ff5966; font-size: 8px; font-weight: 900; }
 .signal-condition small { color: #626e78; font-size: 6px; margin-left: auto; }
+
 .signal-header, .signal-card { display: grid; grid-template-columns: 1.1fr 0.9fr 0.8fr 1.1fr 1.1fr; align-items: center; }
 .signal-header { min-height: 27px; padding: 0 9px; color: #69747e; font-size: 6px; font-weight: 800; background: #0b1015; border-bottom: 1px solid #20282f; }
 .signal-header > div { text-align: center; }
@@ -2667,6 +3154,7 @@ section { margin-bottom: 12px; }
 .signal-pattern .pattern-multi .pattern-box { min-width: 29px; }
 .alignment-age { width: 100%; color: #e4c45e !important; font-size: 6px !important; font-weight: 800; margin-top: 2px; }
 .signal-empty { min-height: 46px; display: flex; align-items: center; justify-content: center; color: #626e78; font-size: 7px; }
+
 .btc-panel { background: #0c1116; border: 1px solid #202a33; margin-bottom: 13px; }
 .btc-panel .section-head { height: 38px; padding: 0 10px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #202a33; }
 .section-head > div { display: flex; align-items: center; gap: 7px; }
@@ -2678,12 +3166,41 @@ section { margin-bottom: 12px; }
 .btc-name { color: #c4ccd3; font-size: 10px; font-weight: 800; }
 .btc-price { color: #f4f6f8; font-size: 16px; font-weight: 900; letter-spacing: -0.5px; }
 .btc-change { font-size: 11px; font-weight: 900; }
+
+/* 추가: BTC 시그널 EMA 및 참고 EMA */
+.btc-ema-status {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding: 7px 9px;
+    background: #0a1015;
+    border-top: 1px solid #202a33;
+}
+
+.btc-ema-line {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    min-height: 14px;
+    font-size: 8px;
+    font-weight: 900;
+}
+
+.btc-ema-time {
+    min-width: 75px;
+    color: #83909b;
+    font-size: 7px;
+    font-weight: 800;
+}
+
 .coin-card { background: #0c1116; border: 1px solid #202a33; margin-bottom: 7px; }
 .coin-head { min-height: 38px; padding: 0 9px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #202a33; }
 .coin-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .coin-title b { font-size: 10px; font-weight: 900; }
 .rank { color: #c9a83d; font-size: 8px; font-weight: 800; }
 .signal-badge { color: #e4c45e; font-size: 7px; font-weight: 900; }
+
 .market-summary { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border-bottom: 1px solid #202a33; }
 .market-summary > div { min-width: 0; min-height: 58px; padding: 4px 1px; text-align: center; background: #0d1318; display: flex; flex-direction: column; align-items: center; justify-content: center; }
 .market-summary > div + div { border-left: 1px solid #1d262e; }
@@ -2698,6 +3215,7 @@ section { margin-bottom: 12px; }
 .market-summary .pattern-multi { gap: 0; }
 .market-summary .pattern-multi .pattern-box { min-width: 24px; }
 .market-summary .pattern-multi .pattern-name { font-size: 3.8px; }
+
 @media (max-width: 600px) {
     body { padding: 5px; }
     h1 { margin: 3px 2px 9px; font-size: 12px; }
@@ -2707,6 +3225,10 @@ section { margin-bottom: 12px; }
     .btc-main { min-height: 48px; }
     .btc-price { font-size: 13px; }
     .btc-change { font-size: 9px; }
+    .btc-ema-status { padding: 6px 7px; gap: 4px; }
+    .btc-ema-line { gap: 9px; font-size: 7px; }
+    .btc-ema-time { min-width: 68px; font-size: 6px; }
+
     .coin-head { min-height: 35px; padding: 0 7px; }
     .coin-title { gap: 6px; }
     .coin-title b { font-size: 9px; }
@@ -2717,6 +3239,7 @@ section { margin-bottom: 12px; }
     .ema-ref-row { gap: 3px; }
     .ema-ref-item { font-size: 6px; }
     .ema-ref-label { font-size: 5px; }
+
     .market-summary { grid-template-columns: repeat(5, minmax(0, 1fr)); }
     .market-summary > div { min-height: 53px; padding: 3px 1px; }
     .market-summary span { font-size: 5px; margin-bottom: 2px; }
@@ -2724,6 +3247,7 @@ section { margin-bottom: 12px; }
     .market-summary .pattern-box { min-width: 24px; }
     .market-summary .pattern-name { font-size: 3.5px; }
     .market-summary .candle-pattern-visual { height: 19px; transform: scale(.56); }
+
     .signal-condition { min-height: 29px; padding: 0 7px; }
     .signal-condition b { font-size: 7px; }
     .signal-condition small { font-size: 5px; }
@@ -2763,7 +3287,8 @@ def dashboard():
         if SHOW_TOP_LIST == "Y":
             if latest_upbit_data:
                 top_cards = "".join(
-                    card(r, "top") for r in latest_upbit_data
+                    card(r, "top")
+                    for r in latest_upbit_data
                 )
             else:
                 top_cards = (
@@ -2779,7 +3304,9 @@ def dashboard():
                         <span class="section-kicker">RANKING</span>
                         <b>TOP{TOP_N} · 거래대금 순</b>
                     </div>
-                    <span class="update-time">실제 업비트 거래대금 기준</span>
+                    <span class="update-time">
+                        실제 업비트 거래대금 기준
+                    </span>
                 </div>
                 {top_cards}
             </section>
@@ -2827,8 +3354,9 @@ def startup():
 
     log.info(
         "START | BTC KST 09:00 일봉 재구성 + "
+        "BTC 시그널 EMA 및 참고 EMA 표시 + "
         "업비트 TOP%s + EMA%s %s + "
-        "이전봉/현재봉 캔들 패턴 12종 표시 + "
+        "이전봉/현재봉 캔들 패턴 표시 + "
         "%s SIGNAL + 당일 변동률 양수 조건 + "
         "상승패턴 강조 + 참고 EMA 시간봉 %s 및 %s 표시 + "
         "참고 EMA 완전 정배열 시작부터 %s개 캔들까지",
@@ -2841,7 +3369,11 @@ def startup():
         REFERENCE_ALIGNMENT_MAX_CANDLES
     )
 
-    log.info("참고 EMA 시간 설정: %s", get_reference_timeframe_label())
+    log.info(
+        "참고 EMA 시간 설정: %s",
+        get_reference_timeframe_label()
+    )
+
     log.info(
         "캔들 설정: 최대 %s개 / 분봉 요청 청크 %s개 / 캐시 공유 활성화",
         EMA_HISTORY_CANDLES,
@@ -2853,7 +3385,9 @@ def startup():
         daemon=True
     ).start()
 
-    schedule.every(UPDATE_MINUTES).minutes.do(update_dashboard)
+    schedule.every(UPDATE_MINUTES).minutes.do(
+        update_dashboard
+    )
 
     threading.Thread(
         target=scheduler,
