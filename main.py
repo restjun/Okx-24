@@ -87,7 +87,7 @@ SIGNAL_10_50 = "Y"
 # 참고용 EMA 설정
 # =========================================================
 
-EMA_REFERENCE_TIMEFRAME = "15m"
+EMA_REFERENCE_TIMEFRAME = "5m"
 EMA_REFERENCE_TIMEFRAMES = [EMA_REFERENCE_TIMEFRAME]
 
 EMA_REFERENCE_LABELS = {
