@@ -97,7 +97,7 @@ EMA_REFERENCE_LABELS = {
     )
 }
 
-REFERENCE_ALIGNMENT_MAX_CANDLES = 5
+REFERENCE_ALIGNMENT_MAX_CANDLES = 20
 
 
 # =========================================================
