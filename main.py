@@ -93,7 +93,7 @@ EMA_REFERENCE_TIMEFRAMES = [EMA_REFERENCE_TIMEFRAME]
 # Y   = 정배열
 # N   = 역배열
 # ANY = 배열 방향 무관
-REFERENCE_SIGNAL_5_10 = "Y"
+REFERENCE_SIGNAL_5_10 = "ANY"
 REFERENCE_SIGNAL_10_20 = "Y"
 
 # Y = 참고 EMA 설정 조건을 연속으로 만족한 캔들 수 제한 사용
