@@ -1,4 +1,3 @@
-
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
@@ -97,8 +96,8 @@ EMA_REFERENCE_TIMEFRAMES = [EMA_REFERENCE_TIMEFRAME]
 REFERENCE_SIGNAL_5_10 = "N"
 REFERENCE_SIGNAL_10_20 = "ANY"
 
-# Y = EMA 5 > EMA 10 > EMA 20 완전 정배열 조건 사용
-# N = 완전 정배열 조건 사용 안 함
+# Y = 참고 EMA 설정 조건을 연속으로 만족한 캔들 수 제한 사용
+# N = 카운팅 제한 조건 사용 안 함
 REQUIRE_REFERENCE_FULL_ALIGNMENT = "N"
 
 EMA_REFERENCE_LABELS = {
@@ -266,16 +265,16 @@ def get_reference_ema_condition_description():
     else:
         state_10_20 = "ANY"
 
-    full_alignment = (
-        "사용"
+    count_limit = (
+        f"조건 충족 연속 {REFERENCE_ALIGNMENT_MAX_CANDLES}개 캔들 이내"
         if REQUIRE_REFERENCE_FULL_ALIGNMENT == "Y"
-        else "미사용"
+        else "조건 충족 캔들 수 제한 미사용"
     )
 
     return (
         f"참고 EMA {EMA_PULLBACK}-{EMA_FAST} {state_5_10} "
         f"+ EMA {EMA_FAST}-{EMA_SLOW} {state_10_20} "
-        f"+ 완전 정배열 {full_alignment}"
+        f"+ {count_limit}"
     )
 
 
@@ -997,51 +996,105 @@ def analyze_ema_4h(market, price=None):
 
 
 # =========================================================
-# 참고 EMA 완전 정배열 연속 캔들 수
+# 참고 EMA 조건 충족 연속 캔들 수
 # =========================================================
 
 def get_reference_full_alignment_age(df):
+    """
+    기존에는 EMA_PULLBACK > EMA_FAST > EMA_SLOW인
+    완전 정배열 캔들만 카운팅했다.
+
+    수정 후에는 각 캔들마다 다음 설정을 적용한다.
+
+    REFERENCE_SIGNAL_5_10:
+        Y   = EMA_PULLBACK > EMA_FAST
+        N   = EMA_PULLBACK < EMA_FAST
+        ANY = 방향 무관
+
+    REFERENCE_SIGNAL_10_20:
+        Y   = EMA_FAST > EMA_SLOW
+        N   = EMA_FAST < EMA_SLOW
+        ANY = 방향 무관
+
+    마지막 캔들부터 설정 조건을 연속으로 만족한
+    캔들 수를 반환한다.
+    """
+
     if df is None or df.empty:
         return 0
 
-    ema5_series = calculate_ema_series(
+    ema_pullback_series = calculate_ema_series(
         df, EMA_PULLBACK
     )
-    ema10_series = calculate_ema_series(
+    ema_fast_series = calculate_ema_series(
         df, EMA_FAST
     )
-    ema50_series = calculate_ema_series(
+    ema_slow_series = calculate_ema_series(
         df, EMA_SLOW
     )
 
     if any(
-        x is None
-        for x in (ema5_series, ema10_series, ema50_series)
+        series is None
+        for series in (
+            ema_pullback_series,
+            ema_fast_series,
+            ema_slow_series
+        )
     ):
         return 0
 
     combined = pd.concat([
-        ema5_series.rename("ema5"),
-        ema10_series.rename("ema10"),
-        ema50_series.rename("ema50")
+        ema_pullback_series.rename("ema_pullback"),
+        ema_fast_series.rename("ema_fast"),
+        ema_slow_series.rename("ema_slow")
     ], axis=1).dropna()
 
     if combined.empty:
         return 0
 
-    full_alignment = (
-        (combined["ema5"] > combined["ema10"])
-        & (combined["ema10"] > combined["ema50"])
-    )
+    # 각 캔들에서 두 EMA 쌍의 상태를 계산한다.
+    condition_results = []
 
-    if not bool(full_alignment.iloc[-1]):
+    for _, row in combined.iterrows():
+        ema_pullback = float(row["ema_pullback"])
+        ema_fast = float(row["ema_fast"])
+        ema_slow = float(row["ema_slow"])
+
+        if ema_pullback > ema_fast:
+            state_5_10 = "정배열"
+        elif ema_pullback < ema_fast:
+            state_5_10 = "역배열"
+        else:
+            state_5_10 = "동일"
+
+        if ema_fast > ema_slow:
+            state_10_20 = "정배열"
+        elif ema_fast < ema_slow:
+            state_10_20 = "역배열"
+        else:
+            state_10_20 = "동일"
+
+        condition_met = check_reference_ema_condition(
+            state_5_10,
+            state_10_20
+        )
+
+        condition_results.append(bool(condition_met))
+
+    if not condition_results:
         return 0
 
+    # 최신 캔들이 조건을 만족하지 않으면 카운트는 0이다.
+    if not condition_results[-1]:
+        return 0
+
+    # 마지막 캔들부터 조건을 연속으로 만족하는 수만 센다.
     age = 0
 
-    for is_aligned in reversed(full_alignment.tolist()):
-        if not is_aligned:
+    for condition_met in reversed(condition_results):
+        if not condition_met:
             break
+
         age += 1
 
     return age
@@ -1121,12 +1174,13 @@ def analyze_reference_ema_timeframes(market, price=None):
         states["1h_5_10"] = states["signal_5_10"]
         states["1h_10_50"] = states["signal_10_50"]
 
-        alignment_age = get_reference_full_alignment_age(df)
+        # 수정: 설정된 참고 EMA 조건을 연속으로 만족하는 캔들 수
+        condition_age = get_reference_full_alignment_age(df)
 
-        states["full_alignment_age"] = alignment_age
+        states["full_alignment_age"] = condition_age
+
         states["full_alignment_active"] = bool(
-            1 <= alignment_age
-            <= REFERENCE_ALIGNMENT_MAX_CANDLES
+            1 <= condition_age <= REFERENCE_ALIGNMENT_MAX_CANDLES
         )
 
     except Exception as e:
@@ -2069,8 +2123,6 @@ def update_upbit():
     latest_upbit_daily_update_time = kst()
     latest_upbit_update_time = latest_upbit_daily_update_time
 
-    # 참고 EMA 조건은 설정에 따라 별도로 판정한다.
-    # 완전 정배열 조건은 REQUIRE_REFERENCE_FULL_ALIGNMENT로 제어한다.
     latest_signal_data = [
         row for row in rows
         if (
@@ -2973,7 +3025,7 @@ def signal_card(row):
         else "signal-card"
     )
 
-    alignment_age = reference_states.get(
+    condition_age = reference_states.get(
         "full_alignment_age", 0
     )
 
@@ -2987,7 +3039,7 @@ def signal_card(row):
             <div class="signal-type-list">{badge_html}</div>
             {reference_ema_states_html(row)}
             <span class="alignment-age">
-                정배열 {alignment_age}/{REFERENCE_ALIGNMENT_MAX_CANDLES}
+                조건 충족 {condition_age}/{REFERENCE_ALIGNMENT_MAX_CANDLES}
             </span>
         </div>
         <div class="signal-volume">
@@ -3067,7 +3119,7 @@ def signal_section():
             <span>참고 EMA</span>
             <b>{reference_description}</b>
             <small>
-                완전 정배열 최대 {REFERENCE_ALIGNMENT_MAX_CANDLES}개 캔들
+                조건 충족 연속 최대 {REFERENCE_ALIGNMENT_MAX_CANDLES}개 캔들
             </small>
         </div>
         <div class="signal-header">
@@ -3459,7 +3511,7 @@ def startup():
         "이전봉/현재봉 캔들 패턴 표시 + "
         "%s SIGNAL + 당일 변동률 양수 조건 + "
         "상승패턴 강조 + 참고 EMA 시간봉 %s 및 %s 표시 + "
-        "참고 EMA 완전 정배열 최대 %s개 캔들",
+        "참고 EMA 조건 충족 연속 최대 %s개 캔들",
         TOP_N,
         get_ema_full_label(),
         get_timeframe_label(),
