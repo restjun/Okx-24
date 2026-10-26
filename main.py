@@ -59,7 +59,7 @@ MAX_RETRIES = 10
 # SIGNAL 설정
 # =========================================================
 
-SIGNAL_TIMEFRAME = "5m"
+SIGNAL_TIMEFRAME = "1d"
 
 TIMEFRAME_LABEL = {
     "5m": "5분봉",
@@ -75,8 +75,8 @@ TIMEFRAME_LABEL = {
 # =========================================================
 
 EMA_PULLBACK = 5
-EMA_FAST = 20
-EMA_SLOW = 50
+EMA_FAST = 10
+EMA_SLOW = 20
 
 SIGNAL_5_10 = "Y"
 SIGNAL_10_50 = "Y"
