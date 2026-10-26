@@ -90,6 +90,17 @@ SIGNAL_10_50 = "ANY"
 EMA_REFERENCE_TIMEFRAME = "1h"
 EMA_REFERENCE_TIMEFRAMES = [EMA_REFERENCE_TIMEFRAME]
 
+# 참고용 EMA 배열 조건
+# Y   = 정배열
+# N   = 역배열
+# ANY = 배열 방향 무관
+REFERENCE_SIGNAL_5_10 = "ANY"
+REFERENCE_SIGNAL_10_20 = "ANY"
+
+# Y = EMA 5 > EMA 10 > EMA 20 완전 정배열 조건 사용
+# N = 완전 정배열 조건 사용 안 함
+REQUIRE_REFERENCE_FULL_ALIGNMENT = "N"
+
 EMA_REFERENCE_LABELS = {
     EMA_REFERENCE_TIMEFRAME: TIMEFRAME_LABEL.get(
         EMA_REFERENCE_TIMEFRAME,
@@ -234,6 +245,102 @@ def get_ema_signal_description():
         f"EMA {EMA_PULLBACK}-{EMA_FAST} {state_5_10} "
         f"+ EMA {EMA_FAST}-{EMA_SLOW} {state_10_50}"
     )
+
+
+# =========================================================
+# 참고용 EMA 조건 설명
+# =========================================================
+
+def get_reference_ema_condition_description():
+    if REFERENCE_SIGNAL_5_10 == "Y":
+        state_5_10 = "정배열"
+    elif REFERENCE_SIGNAL_5_10 == "N":
+        state_5_10 = "역배열"
+    else:
+        state_5_10 = "ANY"
+
+    if REFERENCE_SIGNAL_10_20 == "Y":
+        state_10_20 = "정배열"
+    elif REFERENCE_SIGNAL_10_20 == "N":
+        state_10_20 = "역배열"
+    else:
+        state_10_20 = "ANY"
+
+    full_alignment = (
+        "사용"
+        if REQUIRE_REFERENCE_FULL_ALIGNMENT == "Y"
+        else "미사용"
+    )
+
+    return (
+        f"참고 EMA {EMA_PULLBACK}-{EMA_FAST} {state_5_10} "
+        f"+ EMA {EMA_FAST}-{EMA_SLOW} {state_10_20} "
+        f"+ 완전 정배열 {full_alignment}"
+    )
+
+
+# =========================================================
+# SIGNAL EMA 조건 판정
+# =========================================================
+
+def check_ema_signal_condition(ema5, ema10, ema50):
+    if ema5 is None or ema10 is None or ema50 is None:
+        return False
+
+    try:
+        ema5, ema10, ema50 = map(
+            float, (ema5, ema10, ema50)
+        )
+    except (TypeError, ValueError):
+        return False
+
+    if not all(
+        np.isfinite(v) for v in (ema5, ema10, ema50)
+    ):
+        return False
+
+    if SIGNAL_5_10 == "Y":
+        condition_5_10 = ema5 > ema10
+    elif SIGNAL_5_10 == "N":
+        condition_5_10 = ema5 < ema10
+    else:
+        condition_5_10 = True
+
+    if SIGNAL_10_50 == "Y":
+        condition_10_50 = ema10 > ema50
+    elif SIGNAL_10_50 == "N":
+        condition_10_50 = ema10 < ema50
+    else:
+        condition_10_50 = True
+
+    return bool(
+        condition_5_10 and condition_10_50
+    )
+
+
+# =========================================================
+# 참고용 EMA 조건 판정
+# =========================================================
+
+def check_reference_ema_condition(
+    state_5_10,
+    state_10_20
+):
+    if REFERENCE_SIGNAL_5_10 == "Y":
+        condition_5_10 = state_5_10 == "정배열"
+    elif REFERENCE_SIGNAL_5_10 == "N":
+        condition_5_10 = state_5_10 == "역배열"
+    else:
+        condition_5_10 = True
+
+    if REFERENCE_SIGNAL_10_20 == "Y":
+        condition_10_20 = state_10_20 == "정배열"
+    elif REFERENCE_SIGNAL_10_20 == "N":
+        condition_10_20 = state_10_20 == "역배열"
+    else:
+        condition_10_20 = True
+
+    return bool(condition_5_10 and condition_10_20)
 
 
 # =========================================================
@@ -671,41 +778,6 @@ def get_ema_alignment_state(
 def get_ema_pair_state(df, fast_period, slow_period):
     return get_ema_alignment_state(
         df, fast_period, slow_period
-    )
-
-
-def check_ema_signal_condition(ema5, ema10, ema50):
-    if ema5 is None or ema10 is None or ema50 is None:
-        return False
-
-    try:
-        ema5, ema10, ema50 = map(
-            float, (ema5, ema10, ema50)
-        )
-    except (TypeError, ValueError):
-        return False
-
-    if not all(
-        np.isfinite(v) for v in (ema5, ema10, ema50)
-    ):
-        return False
-
-    if SIGNAL_5_10 == "Y":
-        condition_5_10 = ema5 > ema10
-    elif SIGNAL_5_10 == "N":
-        condition_5_10 = ema5 < ema10
-    else:
-        condition_5_10 = True
-
-    if SIGNAL_10_50 == "Y":
-        condition_10_50 = ema10 > ema50
-    elif SIGNAL_10_50 == "N":
-        condition_10_50 = ema10 < ema50
-    else:
-        condition_10_50 = True
-
-    return bool(
-        condition_5_10 and condition_10_50
     )
 
 
@@ -1997,19 +2069,37 @@ def update_upbit():
     latest_upbit_daily_update_time = kst()
     latest_upbit_update_time = latest_upbit_daily_update_time
 
+    # 참고 EMA 조건은 설정에 따라 별도로 판정한다.
+    # 완전 정배열 조건은 REQUIRE_REFERENCE_FULL_ALIGNMENT로 제어한다.
     latest_signal_data = [
         row for row in rows
         if (
             row.get("ema_signal_condition", False)
             and row.get("daily_change") is not None
             and row.get("daily_change") > 0
-            and row.get(
-                "ema_reference_states", {}
-            ).get("full_alignment_active", False)
-            and 1 <= row.get(
-                "ema_reference_states", {}
-            ).get("full_alignment_age", 0)
-            <= REFERENCE_ALIGNMENT_MAX_CANDLES
+
+            and check_reference_ema_condition(
+                (row.get("ema_reference_states") or {}).get(
+                    "signal_5_10"
+                ),
+                (row.get("ema_reference_states") or {}).get(
+                    "signal_10_50"
+                )
+            )
+
+            and (
+                REQUIRE_REFERENCE_FULL_ALIGNMENT != "Y"
+                or (
+                    (row.get("ema_reference_states") or {}).get(
+                        "full_alignment_active", False
+                    )
+                    and 1 <= (
+                        (row.get("ema_reference_states") or {}).get(
+                            "full_alignment_age", 0
+                        )
+                    ) <= REFERENCE_ALIGNMENT_MAX_CANDLES
+                )
+            )
         )
     ]
 
@@ -2024,11 +2114,12 @@ def update_upbit():
 
     log.info(
         "UPBIT | 거래대금 TOP%s | EMA%s | 시간봉=%s | "
-        "참고 EMA 시간봉=%s | SIGNAL=%s | 캔들 최대 200개",
+        "참고 EMA 시간봉=%s | 참고 조건=%s | SIGNAL=%s",
         TOP_N,
         get_ema_full_label(),
         get_timeframe_label(),
         get_reference_timeframe_label(),
+        get_reference_ema_condition_description(),
         len(latest_signal_data)
     )
 
@@ -2936,6 +3027,10 @@ def signal_section():
         get_ema_signal_description()
     )
 
+    reference_description = html.escape(
+        get_reference_ema_condition_description()
+    )
+
     if not latest_signal_data:
         body = """
         <div class="signal-empty">
@@ -2965,8 +3060,14 @@ def signal_section():
             <small>
                 당일 변동률 양수 · 참고
                 {html.escape(reference_timeframe_label)}
-                완전 정배열 시작부터
-                {REFERENCE_ALIGNMENT_MAX_CANDLES}개 캔들까지
+                조건 적용
+            </small>
+        </div>
+        <div class="signal-condition">
+            <span>참고 EMA</span>
+            <b>{reference_description}</b>
+            <small>
+                완전 정배열 최대 {REFERENCE_ALIGNMENT_MAX_CANDLES}개 캔들
             </small>
         </div>
         <div class="signal-header">
@@ -3167,7 +3268,6 @@ section { margin-bottom: 12px; }
 .btc-price { color: #f4f6f8; font-size: 16px; font-weight: 900; letter-spacing: -0.5px; }
 .btc-change { font-size: 11px; font-weight: 900; }
 
-/* 추가: BTC 시그널 EMA 및 참고 EMA */
 .btc-ema-status {
     display: flex;
     flex-direction: column;
@@ -3359,7 +3459,7 @@ def startup():
         "이전봉/현재봉 캔들 패턴 표시 + "
         "%s SIGNAL + 당일 변동률 양수 조건 + "
         "상승패턴 강조 + 참고 EMA 시간봉 %s 및 %s 표시 + "
-        "참고 EMA 완전 정배열 시작부터 %s개 캔들까지",
+        "참고 EMA 완전 정배열 최대 %s개 캔들",
         TOP_N,
         get_ema_full_label(),
         get_timeframe_label(),
@@ -3372,6 +3472,11 @@ def startup():
     log.info(
         "참고 EMA 시간 설정: %s",
         get_reference_timeframe_label()
+    )
+
+    log.info(
+        "참고 EMA 조건: %s",
+        get_reference_ema_condition_description()
     )
 
     log.info(
