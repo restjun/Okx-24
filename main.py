@@ -60,7 +60,7 @@ MAX_RETRIES = 10
 # SIGNAL 설정
 # =========================================================
 
-SIGNAL_TIMEFRAME = "1d"
+SIGNAL_TIMEFRAME = "1h"
 
 TIMEFRAME_LABEL = {
     "5m": "5분봉",
@@ -75,19 +75,19 @@ TIMEFRAME_LABEL = {
 # EMA 설정
 # =========================================================
 
-EMA_PULLBACK = 5
-EMA_FAST = 10
-EMA_SLOW = 20
+EMA_PULLBACK = 10
+EMA_FAST = 20
+EMA_SLOW = 50
 
-SIGNAL_5_10 = "ANY"
-SIGNAL_10_50 = "ANY"
+SIGNAL_5_10 = "Y"
+SIGNAL_10_50 = "Y"
 
 
 # =========================================================
 # 참고용 EMA 설정
 # =========================================================
 
-EMA_REFERENCE_TIMEFRAME = "1h"
+EMA_REFERENCE_TIMEFRAME = "5m"
 EMA_REFERENCE_TIMEFRAMES = [EMA_REFERENCE_TIMEFRAME]
 
 # 참고용 EMA 배열 조건
@@ -95,7 +95,7 @@ EMA_REFERENCE_TIMEFRAMES = [EMA_REFERENCE_TIMEFRAME]
 # N   = 역배열
 # ANY = 배열 방향 무관
 REFERENCE_SIGNAL_5_10 = "ANY"
-REFERENCE_SIGNAL_10_20 = "ANY"
+REFERENCE_SIGNAL_10_20 = "N"
 
 # Y = EMA 5 > EMA 10 > EMA 20 완전 정배열 조건 사용
 # N = 완전 정배열 조건 사용 안 함
