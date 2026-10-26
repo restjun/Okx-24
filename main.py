@@ -94,8 +94,8 @@ EMA_REFERENCE_TIMEFRAMES = [EMA_REFERENCE_TIMEFRAME]
 # Y   = 정배열
 # N   = 역배열
 # ANY = 배열 방향 무관
-REFERENCE_SIGNAL_5_10 = "ANY"
-REFERENCE_SIGNAL_10_20 = "N"
+REFERENCE_SIGNAL_5_10 = "N"
+REFERENCE_SIGNAL_10_20 = "ANY"
 
 # Y = EMA 5 > EMA 10 > EMA 20 완전 정배열 조건 사용
 # N = 완전 정배열 조건 사용 안 함
