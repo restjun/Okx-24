@@ -98,7 +98,7 @@ REFERENCE_SIGNAL_10_20 = "Y"
 
 # Y = 참고 EMA 설정 조건을 연속으로 만족한 캔들 수 제한 사용
 # N = 카운팅 제한 조건 사용 안 함
-REQUIRE_REFERENCE_FULL_ALIGNMENT = "N"
+REQUIRE_REFERENCE_FULL_ALIGNMENT = "Y"
 
 EMA_REFERENCE_LABELS = {
     EMA_REFERENCE_TIMEFRAME: TIMEFRAME_LABEL.get(
@@ -107,7 +107,7 @@ EMA_REFERENCE_LABELS = {
     )
 }
 
-REFERENCE_ALIGNMENT_MAX_CANDLES = 30
+REFERENCE_ALIGNMENT_MAX_CANDLES = 100
 
 
 # =========================================================
