@@ -39,7 +39,7 @@ UTC = ZoneInfo("UTC")
 # 사용자 설정
 # =========================================================
 
-TOP_N = 10
+TOP_N = 30
 SHOW_TOP_LIST = "N"
 UPDATE_MINUTES = 1
 
@@ -74,12 +74,12 @@ TIMEFRAME_LABEL = {
 # EMA 설정
 # =========================================================
 
-EMA_PULLBACK = 10
-EMA_FAST = 20
-EMA_SLOW = 50
+EMA_PULLBACK = 1
+EMA_FAST = 200
+EMA_SLOW = 5
 
 SIGNAL_5_10 = "Y"
-SIGNAL_10_50 = "Y"
+SIGNAL_10_50 = "N"
 
 
 # =========================================================
@@ -107,7 +107,7 @@ EMA_REFERENCE_LABELS = {
     )
 }
 
-REFERENCE_ALIGNMENT_MAX_CANDLES = 100
+REFERENCE_ALIGNMENT_MAX_CANDLES = 10
 
 
 # =========================================================
