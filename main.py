@@ -94,7 +94,7 @@ EMA_REFERENCE_TIMEFRAMES = [EMA_REFERENCE_TIMEFRAME]
 # N   = 역배열
 # ANY = 배열 방향 무관
 REFERENCE_SIGNAL_5_10 = "Y"
-REFERENCE_SIGNAL_10_20 = "Y"
+REFERENCE_SIGNAL_10_20 = "N"
 
 # Y = 참고 EMA 설정 조건을 연속으로 만족한 캔들 수 제한 사용
 # N = 카운팅 제한 조건 사용 안 함
@@ -107,7 +107,7 @@ EMA_REFERENCE_LABELS = {
     )
 }
 
-REFERENCE_ALIGNMENT_MAX_CANDLES = 10
+REFERENCE_ALIGNMENT_MAX_CANDLES = 200
 
 
 # =========================================================
