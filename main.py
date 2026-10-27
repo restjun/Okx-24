@@ -74,9 +74,9 @@ TIMEFRAME_LABEL = {
 # EMA 설정
 # =========================================================
 
-EMA_PULLBACK = 5
-EMA_FAST = 10
-EMA_SLOW = 20
+EMA_PULLBACK = 10
+EMA_FAST = 20
+EMA_SLOW = 50
 
 SIGNAL_5_10 = "Y"
 SIGNAL_10_50 = "Y"
@@ -107,7 +107,7 @@ EMA_REFERENCE_LABELS = {
     )
 }
 
-REFERENCE_ALIGNMENT_MAX_CANDLES = 5
+REFERENCE_ALIGNMENT_MAX_CANDLES = 100
 
 
 # =========================================================
