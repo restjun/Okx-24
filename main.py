@@ -2128,7 +2128,7 @@ def update_upbit():
         if (
             row.get("ema_signal_condition", False)
             and row.get("daily_change") is not None
-            and row.get("daily_change") > 0
+            and row.get("daily_change") > -100
 
             and check_reference_ema_condition(
                 (row.get("ema_reference_states") or {}).get(
