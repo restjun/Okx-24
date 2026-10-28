@@ -59,7 +59,7 @@ MAX_RETRIES = 10
 # SIGNAL 설정
 # =========================================================
 
-SIGNAL_TIMEFRAME = "15m"
+SIGNAL_TIMEFRAME = "1d"
 
 TIMEFRAME_LABEL = {
     "5m": "5분봉",
@@ -76,10 +76,10 @@ TIMEFRAME_LABEL = {
 
 EMA_PULLBACK = 10
 EMA_FAST = 20
-EMA_SLOW = 100
+EMA_SLOW = 50
 
 SIGNAL_5_10 = "ANY"
-SIGNAL_10_50 = "Y"
+SIGNAL_10_50 = "ANY"
 
 
 # =========================================================
@@ -94,11 +94,11 @@ EMA_REFERENCE_TIMEFRAMES = [EMA_REFERENCE_TIMEFRAME]
 # N   = 역배열
 # ANY = 배열 방향 무관
 REFERENCE_SIGNAL_5_10 = "ANY"
-REFERENCE_SIGNAL_10_20 = "Y"
+REFERENCE_SIGNAL_10_20 = "ANY"
 
 # Y = 참고 EMA 설정 조건을 연속으로 만족한 캔들 수 제한 사용
 # N = 카운팅 제한 조건 사용 안 함
-REQUIRE_REFERENCE_FULL_ALIGNMENT = "Y"
+REQUIRE_REFERENCE_FULL_ALIGNMENT = "N"
 
 EMA_REFERENCE_LABELS = {
     EMA_REFERENCE_TIMEFRAME: TIMEFRAME_LABEL.get(
@@ -107,7 +107,7 @@ EMA_REFERENCE_LABELS = {
     )
 }
 
-REFERENCE_ALIGNMENT_MAX_CANDLES = 200
+REFERENCE_ALIGNMENT_MAX_CANDLES = 10
 
 
 # =========================================================
