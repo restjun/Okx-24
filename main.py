@@ -78,8 +78,8 @@ EMA_PULLBACK = 10
 EMA_FAST = 20
 EMA_SLOW = 100
 
-SIGNAL_5_10 = "Y"
-SIGNAL_10_50 = "Y"
+SIGNAL_5_10 = "ANY"
+SIGNAL_10_50 = "ANY"
 
 
 # =========================================================
