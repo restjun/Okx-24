@@ -40,7 +40,7 @@ UTC = ZoneInfo("UTC")
 # =========================================================
 
 TOP_N = 10
-SHOW_TOP_LIST = "N"
+SHOW_TOP_LIST = "Y"
 UPDATE_MINUTES = 1
 
 HISTORY_CHUNK = 200
@@ -78,8 +78,8 @@ EMA_PULLBACK = 10
 EMA_FAST = 20
 EMA_SLOW = 100
 
-SIGNAL_5_10 = "ANY"
-SIGNAL_10_50 = "ANY"
+SIGNAL_5_10 = "Y"
+SIGNAL_10_50 = "Y"
 
 
 # =========================================================
