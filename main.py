@@ -2694,41 +2694,45 @@ def top_ema_status_html(row):
 # =========================================================
 
 def signal_ema_status_html(row):
-    """
-    SIGNAL에 실제 사용하는 EMA 상태를 표시한다.
-
-    ema_1h_5_10:
-        EMA_PULLBACK - EMA_FAST 상태
-
-    ema_1h_10_50:
-        EMA_FAST - EMA_SLOW 상태
-
-    계산값은 기존 make_row()에서 생성한 값을 사용한다.
-    """
-
     state_5_10 = row.get("ema_1h_5_10")
     state_10_50 = row.get("ema_1h_10_50")
 
     timeframe_label = get_timeframe_label()
     pair_1, pair_2 = get_ema_pair_labels()
 
-    return f"""
-    <div class="signal-ema-status">
-        <div class="signal-ema-line">
-            <span class="signal-ema-time">
-                시그널 {html.escape(timeframe_label)}
-            </span>
-            <span>
-                EMA {html.escape(pair_1)}
-                {ema_symbol(state_5_10)}
-            </span>
-            <span>
-                EMA {html.escape(pair_2)}
-                {ema_symbol(state_10_50)}
-            </span>
-        </div>
-    </div>
-    """
+    display_items = [
+        (pair_1, state_5_10),
+        (pair_2, state_10_50)
+    ]
+
+    pieces = []
+
+    for pair_label, state in display_items:
+        if state == "정배열":
+            cls, symbol = "ema-normal", "▲"
+        elif state == "역배열":
+            cls, symbol = "ema-reverse", "▼"
+        elif state == "동일":
+            cls, symbol = "ema-same", "—"
+        else:
+            cls, symbol = "ema-same", "—"
+
+        pieces.append(
+            f'<div class="ema-ref-item {cls}">'
+            f'<span class="ema-ref-label">'
+            f'{html.escape(timeframe_label)} '
+            f'{html.escape(pair_label)}'
+            f'</span> {symbol} '
+            f'{html.escape(state) if state else "-"}'
+            f'</div>'
+        )
+
+    return (
+        '<div class="ema-ref-row" '
+        f'title="{html.escape(timeframe_label)} 기준 EMA 상태">'
+        + "".join(pieces)
+        + '</div>'
+    )
 
 
 # =========================================================
@@ -3002,7 +3006,7 @@ def btc_html():
         <div class="btc-ema-status">
             <div class="btc-ema-line">
                 <span class="btc-ema-time">
-                    시그널 {html.escape(signal_label)}
+                    {html.escape(signal_label)}
                 </span>
                 <span>
                     EMA {html.escape(pair_1)}
@@ -3016,7 +3020,7 @@ def btc_html():
 
             <div class="btc-ema-line">
                 <span class="btc-ema-time">
-                    참고 {html.escape(reference_label)}
+                    {html.escape(reference_label)}
                 </span>
                 <span>
                     EMA {html.escape(pair_1)}
