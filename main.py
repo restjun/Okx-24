@@ -3085,7 +3085,7 @@ def signal_card(row):
 
     badge_html = pattern_badges_html(row)
 
-    # 상승패턴 강조와 기존 역배열 강조를 동시에 유지
+    # 상승패턴 강조와 기존 역배열 강조 유지
     card_classes = ["signal-card"]
 
     if has_reference_reverse:
@@ -3102,12 +3102,21 @@ def signal_card(row):
 
     return f"""
     <div class="{card_class}">
-        <div class="signal-coin">
+
+        <!-- 카드 상단 전체 너비 한 줄 -->
+        <div class="signal-card-top">
+
             <span class="signal-rank">
                 거래대금 #{row.get("volume_rank", "-")}
             </span>
-            <b>{html.escape(row["name"])}</b>
-            <div class="signal-type-list">{badge_html}</div>
+
+            <b class="signal-coin-name">
+                {html.escape(row["name"])}
+            </b>
+
+            <div class="signal-type-list">
+                {badge_html}
+            </div>
 
             {signal_ema_status_html(row)}
 
@@ -3116,26 +3125,41 @@ def signal_card(row):
             <span class="alignment-age">
                 조건 충족 {condition_age}/{REFERENCE_ALIGNMENT_MAX_CANDLES}
             </span>
+
         </div>
-        <div class="signal-volume">
-            <span>거래대금</span>
-            <strong>{fmt_vol(row["volume_24h"])}</strong>
-        </div>
-        <div class="signal-change">
-            <span>변동률</span>
-            <strong>{fmt_change(row.get("daily_change"))}</strong>
-        </div>
-        <div class="signal-pattern">
-            <span>이전봉 {timeframe_label}</span>
-            <strong class="pattern-display">
-                {current_pattern_html(row.get("previous_pattern"))}
-            </strong>
-        </div>
-        <div class="signal-pattern">
-            <span>현재봉 {timeframe_label}</span>
-            <strong class="pattern-display">
-                {current_pattern_html(row.get("current_pattern"))}
-            </strong>
+
+        <!-- 하단 데이터 5개 영역 -->
+        <div class="signal-data-grid">
+
+            <div class="signal-price">
+                <span>현재가격</span>
+                <strong>{fmt_price(row.get("current_price"))}</strong>
+            </div>
+
+            <div class="signal-volume">
+                <span>거래대금</span>
+                <strong>{fmt_vol(row["volume_24h"])}</strong>
+            </div>
+
+            <div class="signal-change">
+                <span>변동률</span>
+                <strong>{fmt_change(row.get("daily_change"))}</strong>
+            </div>
+
+            <div class="signal-pattern">
+                <span>이전봉 {timeframe_label}</span>
+                <strong class="pattern-display">
+                    {current_pattern_html(row.get("previous_pattern"))}
+                </strong>
+            </div>
+
+            <div class="signal-pattern">
+                <span>현재봉 {timeframe_label}</span>
+                <strong class="pattern-display">
+                    {current_pattern_html(row.get("current_pattern"))}
+                </strong>
+            </div>
+
         </div>
     </div>
     """
@@ -3173,15 +3197,18 @@ def signal_section():
 
     return f"""
     <section class="signal-panel">
+
         <div class="section-head signal-panel-head">
             <div>
                 <span class="section-kicker">SIGNAL</span>
                 <b>🔴 EMA{ema_full_label} · {timeframe_label} SIGNAL</b>
             </div>
+
             <span class="update-time">
                 EMA {timeframe_label} · 캔들패턴 {pattern_timeframe_label} · {kst()}
             </span>
         </div>
+
         <div class="signal-condition">
             <span>SIGNAL 조건</span>
             <b>{signal_description}</b>
@@ -3191,6 +3218,7 @@ def signal_section():
                 조건 적용
             </small>
         </div>
+
         <div class="signal-condition">
             <span>참고 EMA</span>
             <b>{reference_description}</b>
@@ -3198,14 +3226,17 @@ def signal_section():
                 조건 충족 연속 최대 {REFERENCE_ALIGNMENT_MAX_CANDLES}개 캔들
             </small>
         </div>
+
         <div class="signal-header">
-            <div>종목 / EMA 참고</div>
+            <div>현재가격</div>
             <div>거래대금</div>
             <div>변동률</div>
             <div>이전봉 {html.escape(pattern_timeframe_label)}</div>
             <div>현재봉 {html.escape(pattern_timeframe_label)}</div>
         </div>
+
         <div class="signal-list">{body}</div>
+
     </section>
     """
 
@@ -3274,151 +3305,721 @@ def card(row, kind):
 
 CSS = """
 * { box-sizing: border-box; }
+
 html { background: #080b0f; }
+
 body {
-    margin: 0; padding: 8px; background: #080b0f; color: #e8edf2;
-    font-family: Arial, "Noto Sans KR", sans-serif; font-size: 11px;
+    margin: 0;
+    padding: 8px;
+    background: #080b0f;
+    color: #e8edf2;
+    font-family: Arial, "Noto Sans KR", sans-serif;
+    font-size: 11px;
 }
+
 h1 {
-    margin: 4px 2px 12px; font-size: 14px; font-weight: 800;
-    letter-spacing: -0.4px; color: #f1f4f7;
+    margin: 4px 2px 12px;
+    font-size: 14px;
+    font-weight: 800;
+    letter-spacing: -0.4px;
+    color: #f1f4f7;
 }
+
 section { margin-bottom: 12px; }
-.up { color: #38d878 !important; font-weight: 900; }
-.down { color: #ff5966 !important; font-weight: 900; }
-.zero { color: #68737e; font-weight: 800; }
-.daily-change-value .up { color: #38d878 !important; font-weight: 900; font-size: 9px; }
-.daily-change-value .down { color: #ff5966 !important; font-weight: 900; font-size: 9px; }
-.ema-normal { color: #38d878; font-size: 7px; font-weight: 900; white-space: nowrap; }
-.ema-reverse { color: #ff5966; font-size: 7px; font-weight: 900; white-space: nowrap; }
-.ema-same { color: #68737e; font-size: 7px; font-weight: 900; white-space: nowrap; }
 
-.top-ema-status {
-    display: flex; flex-direction: column; align-items: flex-start;
-    justify-content: center; gap: 4px; padding: 6px 9px;
-    background: #0a1015; border-bottom: 1px solid #202a33;
-}
-.top-ema-line {
-    display: flex; align-items: center; gap: 12px; font-size: 8px;
-    font-weight: 900; white-space: nowrap; line-height: 1.4;
-}
-.top-ema-time { width: 38px; color: #83909b; font-size: 8px; font-weight: 800; }
-.top-ema-line > span:not(.top-ema-time) { display: inline-flex; align-items: center; gap: 3px; }
-
-.ema-ref-row {
-    display: flex; flex-direction: column; align-items: flex-start;
-    justify-content: center; gap: 3px; flex-wrap: nowrap;
-    white-space: nowrap; min-width: 0;
-}
-.ema-ref-item { display: flex; align-items: center; gap: 2px; font-size: 7px; font-weight: 900; line-height: 1.3; white-space: nowrap; }
-.ema-ref-label { color: #83909b; font-size: 6px; font-weight: 700; white-space: nowrap; }
-
-.pattern-box { display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 55px; line-height: 1; }
-.pattern-name { display: block; margin-top: 2px; color: #38d878; font-size: 5px; font-weight: 900; white-space: nowrap; }
-.bearish-pattern .pattern-name { color: #ff5966; }
-.neutral-pattern .pattern-name { color: #e4c45e; }
-.pattern-none .pattern-name { color: #68737e; }
-.pattern-multi { display: flex; align-items: flex-start; justify-content: center; flex-wrap: wrap; gap: 3px; width: 100%; }
-.pattern-multi .pattern-box { min-width: 36px; }
-
-.candle-pattern-visual { height: 23px; min-width: 35px; display: flex; align-items: center; justify-content: center; gap: 4px; position: relative; }
-.mini-candle { width: 7px; height: 22px; position: relative; display: flex; justify-content: center; align-items: center; }
-.mini-candle .wick { position: absolute; width: 1px; height: 22px; left: 50%; top: 0; transform: translateX(-50%); background: #79848e; }
-.mini-candle .body { position: relative; z-index: 2; width: 7px; height: 10px; border-radius: 1px; }
-.mini-candle.bearish .body { background: #ff5966; height: 12px; }
-.mini-candle.bullish .body { background: #38d878; height: 17px; }
-.mini-candle.bullish.large .body, .mini-candle.bearish.large .body { height: 20px; width: 9px; }
-.mini-candle.bullish-doji .body { background: #38d878; height: 2px; width: 10px; }
-.mini-candle.bearish-doji .body { background: #ff5966; height: 2px; width: 10px; }
-.mini-candle.piercing-candle .body { background: #38d878; height: 15px; }
-.mini-candle.piercing-bearish .body { background: #ff5966; height: 15px; }
-.mini-candle.bullish.very-large .body { background: #38d878; height: 20px; width: 9px; }
-.mini-candle.bearish.very-large .body { background: #ff5966; height: 20px; width: 9px; }
-.mini-candle.hammer .wick, .mini-candle.inverted-hammer .wick { height: 22px; top: 0; }
-.mini-candle.hammer .body { position: absolute; top: 1px; height: 6px; width: 8px; }
-.mini-candle.bullish.hammer .body, .mini-candle.bullish.inverted-hammer .body { background: #38d878; }
-.mini-candle.bearish.hammer .body, .mini-candle.bearish.inverted-hammer .body { background: #ff5966; }
-.mini-candle.inverted-hammer .body { position: absolute; bottom: 1px; height: 6px; width: 8px; }
-
-.candle-pattern-visual.empty { color: #68737e; font-size: 9px; height: 23px; }
-
-.signal-panel { background: #0c1116; border: 1px solid #48272c; margin-bottom: 13px; }
-.signal-panel-head { border-bottom: 1px solid #392126; }
-.signal-condition { min-height: 32px; padding: 0 9px; display: flex; align-items: center; gap: 8px; background: #120e10; border-bottom: 1px solid #302024; }
-.signal-condition span { color: #7d6b70; font-size: 6px; }
-.signal-condition b { color: #ff5966; font-size: 8px; font-weight: 900; }
-.signal-condition small { color: #626e78; font-size: 6px; margin-left: auto; }
-
-.signal-header, .signal-card { display: grid; grid-template-columns: 1.1fr 0.9fr 0.8fr 1.1fr 1.1fr; align-items: center; }
-.signal-header { min-height: 27px; padding: 0 9px; color: #69747e; font-size: 6px; font-weight: 800; background: #0b1015; border-bottom: 1px solid #20282f; }
-.signal-header > div { text-align: center; }
-.signal-card { min-height: 58px; background: #0d1217; border-bottom: 1px solid #20282f; }
-.signal-card.has-reference-reverse { background: #171316; box-shadow: inset 3px 0 0 #ff5966; }
-.signal-card.has-reference-reverse .signal-coin b { color: #ff5966; }
-.signal-card:last-child { border-bottom: 0; }
-.signal-card > div { min-height: 58px; padding: 3px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
-.signal-card > div + div { border-left: 1px solid #1c252c; }
-.signal-coin { flex-direction: row !important; flex-wrap: wrap; gap: 5px; justify-content: flex-start !important; padding-left: 7px !important; }
-.signal-rank { color: #b84d58; font-size: 7px; font-weight: 900; }
-.signal-coin b { color: #e5e9ed; font-size: 9px; font-weight: 900; }
-.signal-type-list { width: 100%; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-start; gap: 2px; margin-top: 1px; }
-.signal-type-badge { color: #e4c45e !important; font-size: 5px !important; font-weight: 900; }
-.bearish-type-badge { color: #ff5966 !important; font-size: 5px !important; font-weight: 900; }
-.pattern-badge-list { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 5px; }
-.signal-card span { color: #69747e; font-size: 6px; }
-.signal-card .ema-ref-item.ema-normal { color: #38d878 !important; }
-.signal-card .ema-ref-item.ema-reverse { color: #ff5966 !important; }
-.signal-card .ema-ref-item.ema-same { color: #68737e !important; }
-.signal-card strong { margin-top: 2px; color: #dce2e7; font-size: 8px; }
-.signal-card .ema-ref-row { width: 100%; justify-content: center; align-items: flex-start; gap: 3px; }
-.signal-card .ema-ref-item { font-size: 7px; }
-.signal-card .ema-ref-label { font-size: 6px; }
-.signal-pattern .pattern-box { min-width: 42px; }
-.signal-pattern .pattern-name { font-size: 5px; }
-.signal-pattern .candle-pattern-visual { height: 22px; min-width: 32px; transform: scale(.80); }
-.signal-pattern .pattern-multi { gap: 1px; }
-.signal-pattern .pattern-multi .pattern-box { min-width: 29px; }
-.alignment-age { width: 100%; color: #e4c45e !important; font-size: 6px !important; font-weight: 800; margin-top: 2px; }
-
-.signal-ema-status {
-    width: 100%;
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-    margin-top: 3px;
-}
-
-.signal-ema-line {
-    width: 100%;
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 5px;
-    white-space: nowrap;
-    font-size: 7px;
+.up {
+    color: #38d878 !important;
     font-weight: 900;
-    line-height: 1.3;
 }
 
-.signal-ema-time {
-    color: #83909b !important;
-    font-size: 6px !important;
+.down {
+    color: #ff5966 !important;
+    font-weight: 900;
+}
+
+.zero {
+    color: #68737e;
     font-weight: 800;
 }
 
-.signal-empty { min-height: 46px; display: flex; align-items: center; justify-content: center; color: #626e78; font-size: 7px; }
+.daily-change-value .up {
+    color: #38d878 !important;
+    font-weight: 900;
+    font-size: 9px;
+}
 
-.btc-panel { background: #0c1116; border: 1px solid #202a33; margin-bottom: 13px; }
-.btc-panel .section-head { height: 38px; padding: 0 10px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #202a33; }
-.section-head > div { display: flex; align-items: center; gap: 7px; }
-.section-head b { font-size: 10px; font-weight: 800; }
-.section-kicker { color: #7d8994; font-size: 6px; letter-spacing: 1px; font-weight: 700; }
-.update-time { color: #65717c; font-size: 6px; }
-.btc-main { min-height: 54px; display: grid; grid-template-columns: 0.7fr 1.5fr 1fr; align-items: center; }
-.btc-main > div { text-align: center; padding: 5px; }
-.btc-name { color: #c4ccd3; font-size: 10px; font-weight: 800; }
-.btc-price { color: #f4f6f8; font-size: 16px; font-weight: 900; letter-spacing: -0.5px; }
-.btc-change { font-size: 11px; font-weight: 900; }
+.daily-change-value .down {
+    color: #ff5966 !important;
+    font-weight: 900;
+    font-size: 9px;
+}
+
+.ema-normal {
+    color: #38d878;
+    font-size: 7px;
+    font-weight: 900;
+    white-space: nowrap;
+}
+
+.ema-reverse {
+    color: #ff5966;
+    font-size: 7px;
+    font-weight: 900;
+    white-space: nowrap;
+}
+
+.ema-same {
+    color: #68737e;
+    font-size: 7px;
+    font-weight: 900;
+    white-space: nowrap;
+}
+
+
+.top-ema-status {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 4px;
+    padding: 6px 9px;
+    background: #0a1015;
+    border-bottom: 1px solid #202a33;
+}
+
+.top-ema-line {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 8px;
+    font-weight: 900;
+    white-space: nowrap;
+    line-height: 1.4;
+}
+
+.top-ema-time {
+    width: 38px;
+    color: #83909b;
+    font-size: 8px;
+    font-weight: 800;
+}
+
+.top-ema-line > span:not(.top-ema-time) {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+}
+
+
+.ema-ref-row {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 3px;
+    flex-wrap: nowrap;
+    white-space: nowrap;
+    min-width: 0;
+}
+
+.ema-ref-item {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    font-size: 7px;
+    font-weight: 900;
+    line-height: 1.3;
+    white-space: nowrap;
+}
+
+.ema-ref-label {
+    color: #83909b;
+    font-size: 6px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+
+.pattern-box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-width: 55px;
+    line-height: 1;
+}
+
+.pattern-name {
+    display: block;
+    margin-top: 2px;
+    color: #38d878;
+    font-size: 5px;
+    font-weight: 900;
+    white-space: nowrap;
+}
+
+.bearish-pattern .pattern-name {
+    color: #ff5966;
+}
+
+.neutral-pattern .pattern-name {
+    color: #e4c45e;
+}
+
+.pattern-none .pattern-name {
+    color: #68737e;
+}
+
+.pattern-multi {
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 3px;
+    width: 100%;
+}
+
+.pattern-multi .pattern-box {
+    min-width: 36px;
+}
+
+
+.candle-pattern-visual {
+    height: 23px;
+    min-width: 35px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    position: relative;
+}
+
+.mini-candle {
+    width: 7px;
+    height: 22px;
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.mini-candle .wick {
+    position: absolute;
+    width: 1px;
+    height: 22px;
+    left: 50%;
+    top: 0;
+    transform: translateX(-50%);
+    background: #79848e;
+}
+
+.mini-candle .body {
+    position: relative;
+    z-index: 2;
+    width: 7px;
+    height: 10px;
+    border-radius: 1px;
+}
+
+.mini-candle.bearish .body {
+    background: #ff5966;
+    height: 12px;
+}
+
+.mini-candle.bullish .body {
+    background: #38d878;
+    height: 17px;
+}
+
+.mini-candle.bullish.large .body,
+.mini-candle.bearish.large .body {
+    height: 20px;
+    width: 9px;
+}
+
+.mini-candle.bullish-doji .body {
+    background: #38d878;
+    height: 2px;
+    width: 10px;
+}
+
+.mini-candle.bearish-doji .body {
+    background: #ff5966;
+    height: 2px;
+    width: 10px;
+}
+
+.mini-candle.piercing-candle .body {
+    background: #38d878;
+    height: 15px;
+}
+
+.mini-candle.piercing-bearish .body {
+    background: #ff5966;
+    height: 15px;
+}
+
+.mini-candle.bullish.very-large .body {
+    background: #38d878;
+    height: 20px;
+    width: 9px;
+}
+
+.mini-candle.bearish.very-large .body {
+    background: #ff5966;
+    height: 20px;
+    width: 9px;
+}
+
+.mini-candle.hammer .wick,
+.mini-candle.inverted-hammer .wick {
+    height: 22px;
+    top: 0;
+}
+
+.mini-candle.hammer .body {
+    position: absolute;
+    top: 1px;
+    height: 6px;
+    width: 8px;
+}
+
+.mini-candle.bullish.hammer .body,
+.mini-candle.bullish.inverted-hammer .body {
+    background: #38d878;
+}
+
+.mini-candle.bearish.hammer .body,
+.mini-candle.bearish.inverted-hammer .body {
+    background: #ff5966;
+}
+
+.mini-candle.inverted-hammer .body {
+    position: absolute;
+    bottom: 1px;
+    height: 6px;
+    width: 8px;
+}
+
+.candle-pattern-visual.empty {
+    color: #68737e;
+    font-size: 9px;
+    height: 23px;
+}
+
+
+/* =========================================================
+   SIGNAL 패널
+   ========================================================= */
+
+.signal-panel {
+    background: #0c1116;
+    border: 1px solid #48272c;
+    margin-bottom: 13px;
+}
+
+.signal-panel-head {
+    border-bottom: 1px solid #392126;
+}
+
+.signal-condition {
+    min-height: 32px;
+    padding: 0 9px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #120e10;
+    border-bottom: 1px solid #302024;
+}
+
+.signal-condition span {
+    color: #7d6b70;
+    font-size: 6px;
+}
+
+.signal-condition b {
+    color: #ff5966;
+    font-size: 8px;
+    font-weight: 900;
+}
+
+.signal-condition small {
+    color: #626e78;
+    font-size: 6px;
+    margin-left: auto;
+}
+
+
+/* =========================================================
+   SIGNAL 헤더 및 카드 데이터 5열
+   ========================================================= */
+
+.signal-header,
+.signal-data-grid {
+    display: grid;
+    grid-template-columns: 1.1fr 0.9fr 0.8fr 1.1fr 1.1fr;
+    align-items: center;
+}
+
+.signal-header {
+    min-height: 27px;
+    padding: 0 9px;
+    color: #69747e;
+    font-size: 6px;
+    font-weight: 800;
+    background: #0b1015;
+    border-bottom: 1px solid #20282f;
+}
+
+.signal-header > div {
+    text-align: center;
+}
+
+
+/* =========================================================
+   SIGNAL 카드 전체
+   ========================================================= */
+
+.signal-card {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    background: #0d1217;
+    border-bottom: 1px solid #20282f;
+}
+
+.signal-card.has-reference-reverse {
+    background: #171316;
+    box-shadow: inset 3px 0 0 #ff5966;
+}
+
+.signal-card.has-reference-reverse .signal-coin-name {
+    color: #ff5966;
+}
+
+.signal-card:last-child {
+    border-bottom: 0;
+}
+
+
+/* =========================================================
+   SIGNAL 카드 상단 전체 너비 한 줄
+   ========================================================= */
+
+.signal-card-top {
+    width: 100%;
+    min-height: 37px;
+    padding: 5px 8px;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    border-bottom: 1px solid #263039;
+    background: rgba(255,255,255,0.015);
+}
+
+.signal-rank {
+    color: #b84d58;
+    font-size: 7px;
+    font-weight: 900;
+    white-space: nowrap;
+}
+
+.signal-coin-name {
+    color: #e5e9ed;
+    font-size: 9px;
+    font-weight: 900;
+    white-space: nowrap;
+}
+
+.signal-type-list {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px;
+}
+
+.signal-type-badge {
+    color: #e4c45e !important;
+    font-size: 5px !important;
+    font-weight: 900;
+    white-space: nowrap;
+}
+
+.bearish-type-badge {
+    color: #ff5966 !important;
+    font-size: 5px !important;
+    font-weight: 900;
+    white-space: nowrap;
+}
+
+
+/* =========================================================
+   SIGNAL 상단 EMA 상태
+   ========================================================= */
+
+.signal-card-top .ema-ref-row {
+    width: auto;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+
+.signal-card-top .ema-ref-item {
+    font-size: 7px;
+    white-space: nowrap;
+}
+
+.signal-card-top .ema-ref-label {
+    font-size: 6px;
+}
+
+.signal-card-top .ema-ref-item.ema-normal {
+    color: #38d878 !important;
+}
+
+.signal-card-top .ema-ref-item.ema-reverse {
+    color: #ff5966 !important;
+}
+
+.signal-card-top .ema-ref-item.ema-same {
+    color: #68737e !important;
+}
+
+.signal-card-top .alignment-age {
+    width: auto;
+    margin-top: 0;
+    color: #e4c45e !important;
+    font-size: 6px !important;
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+
+/* =========================================================
+   SIGNAL 하단 데이터 5개 영역
+   ========================================================= */
+
+.signal-data-grid {
+    width: 100%;
+    min-height: 58px;
+}
+
+.signal-data-grid > div {
+    min-width: 0;
+    min-height: 58px;
+    padding: 3px 2px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+}
+
+.signal-data-grid > div + div {
+    border-left: 1px solid #1c252c;
+}
+
+.signal-data-grid span {
+    color: #69747e;
+    font-size: 6px;
+}
+
+.signal-data-grid strong {
+    margin-top: 2px;
+    color: #dce2e7;
+    font-size: 8px;
+}
+
+
+/* =========================================================
+   SIGNAL 현재가격
+   ========================================================= */
+
+.signal-data-grid .signal-price strong {
+    color: #f1f4f7;
+    font-size: 8px;
+    font-weight: 900;
+    white-space: nowrap;
+}
+
+
+/* =========================================================
+   SIGNAL 거래대금 / 변동률
+   ========================================================= */
+
+.signal-data-grid .signal-volume strong,
+.signal-data-grid .signal-change strong {
+    font-size: 8px;
+}
+
+
+/* =========================================================
+   SIGNAL 패턴
+   ========================================================= */
+
+.signal-pattern .pattern-box {
+    min-width: 42px;
+}
+
+.signal-pattern .pattern-name {
+    font-size: 5px;
+}
+
+.signal-pattern .candle-pattern-visual {
+    height: 22px;
+    min-width: 32px;
+    transform: scale(.80);
+}
+
+.signal-pattern .pattern-multi {
+    gap: 1px;
+}
+
+.signal-pattern .pattern-multi .pattern-box {
+    min-width: 29px;
+}
+
+
+/* =========================================================
+   상승 캔들패턴 SIGNAL 카드 전체 컬러 강조
+   ========================================================= */
+
+.signal-card.has-bullish-pattern {
+    background: #10251d;
+    box-shadow:
+        inset 4px 0 0 #38d878,
+        inset 0 0 0 1px #286b48;
+}
+
+.signal-card.has-bullish-pattern .signal-card-top {
+    background: rgba(56, 216, 120, 0.07);
+}
+
+.signal-card.has-bullish-pattern .signal-data-grid > div {
+    background: rgba(56, 216, 120, 0.07);
+}
+
+.signal-card.has-bullish-pattern .signal-coin-name {
+    color: #38d878;
+}
+
+.signal-card.has-bullish-pattern .signal-rank {
+    color: #e4c45e;
+}
+
+.signal-card.has-bullish-pattern .signal-pattern {
+    background: rgba(56, 216, 120, 0.12);
+}
+
+.signal-card.has-bullish-pattern .ema-ref-row {
+    background: transparent;
+}
+
+.signal-card.has-bullish-pattern .signal-type-list {
+    background: transparent;
+}
+
+
+/* =========================================================
+   상승패턴과 참고 EMA 역배열 동시 발생 시
+   ========================================================= */
+
+.signal-card.has-bullish-pattern.has-reference-reverse {
+    box-shadow:
+        inset 4px 0 0 #38d878,
+        inset 0 0 0 1px #286b48;
+}
+
+
+/* =========================================================
+   SIGNAL 빈 화면
+   ========================================================= */
+
+.signal-empty {
+    min-height: 46px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #626e78;
+    font-size: 7px;
+}
+
+
+/* =========================================================
+   BTC 패널
+   ========================================================= */
+
+.btc-panel {
+    background: #0c1116;
+    border: 1px solid #202a33;
+    margin-bottom: 13px;
+}
+
+.btc-panel .section-head {
+    height: 38px;
+    padding: 0 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid #202a33;
+}
+
+.section-head > div {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+}
+
+.section-head b {
+    font-size: 10px;
+    font-weight: 800;
+}
+
+.section-kicker {
+    color: #7d8994;
+    font-size: 6px;
+    letter-spacing: 1px;
+    font-weight: 700;
+}
+
+.update-time {
+    color: #65717c;
+    font-size: 6px;
+}
+
+.btc-main {
+    min-height: 54px;
+    display: grid;
+    grid-template-columns: 0.7fr 1.5fr 1fr;
+    align-items: center;
+}
+
+.btc-main > div {
+    text-align: center;
+    padding: 5px;
+}
+
+.btc-name {
+    color: #c4ccd3;
+    font-size: 10px;
+    font-weight: 800;
+}
+
+.btc-price {
+    color: #f4f6f8;
+    font-size: 16px;
+    font-weight: 900;
+    letter-spacing: -0.5px;
+}
+
+.btc-change {
+    font-size: 11px;
+    font-weight: 900;
+}
 
 .btc-ema-status {
     display: flex;
@@ -3446,134 +4047,384 @@ section { margin-bottom: 12px; }
     font-weight: 800;
 }
 
-.coin-card { background: #0c1116; border: 1px solid #202a33; margin-bottom: 7px; }
-.coin-head { min-height: 38px; padding: 0 9px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #202a33; }
-.coin-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.coin-title b { font-size: 10px; font-weight: 900; }
-.rank { color: #c9a83d; font-size: 8px; font-weight: 800; }
-.signal-badge { color: #e4c45e; font-size: 7px; font-weight: 900; }
 
-.market-summary { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border-bottom: 1px solid #202a33; }
-.market-summary > div { min-width: 0; min-height: 58px; padding: 4px 1px; text-align: center; background: #0d1318; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-.market-summary > div + div { border-left: 1px solid #1d262e; }
-.market-summary span { display: block; color: #65717b; font-size: 6px; margin-bottom: 3px; }
-.market-summary strong { display: block; color: #dce2e7; font-size: 7px; }
-.market-summary .daily-change-value .up { color: #38d878 !important; }
-.market-summary .daily-change-value .down { color: #ff5966 !important; }
-.market-summary .daily-change-value .zero { color: #68737e !important; }
-.market-summary .pattern-box { min-width: 35px; }
-.market-summary .pattern-name { font-size: 4.5px; }
-.market-summary .candle-pattern-visual { height: 21px; transform: scale(.68); }
-.market-summary .pattern-multi { gap: 0; }
-.market-summary .pattern-multi .pattern-box { min-width: 24px; }
-.market-summary .pattern-multi .pattern-name { font-size: 3.8px; }
+/* =========================================================
+   TOP 카드
+   ========================================================= */
+
+.coin-card {
+    background: #0c1116;
+    border: 1px solid #202a33;
+    margin-bottom: 7px;
+}
+
+.coin-head {
+    min-height: 38px;
+    padding: 0 9px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid #202a33;
+}
+
+.coin-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.coin-title b {
+    font-size: 10px;
+    font-weight: 900;
+}
+
+.rank {
+    color: #c9a83d;
+    font-size: 8px;
+    font-weight: 800;
+}
+
+.signal-badge {
+    color: #e4c45e;
+    font-size: 7px;
+    font-weight: 900;
+}
+
+.pattern-badge-list {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+
+.market-summary {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    border-bottom: 1px solid #202a33;
+}
+
+.market-summary > div {
+    min-width: 0;
+    min-height: 58px;
+    padding: 4px 1px;
+    text-align: center;
+    background: #0d1318;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.market-summary > div + div {
+    border-left: 1px solid #1d262e;
+}
+
+.market-summary span {
+    display: block;
+    color: #65717b;
+    font-size: 6px;
+    margin-bottom: 3px;
+}
+
+.market-summary strong {
+    display: block;
+    color: #dce2e7;
+    font-size: 7px;
+}
+
+.market-summary .daily-change-value .up {
+    color: #38d878 !important;
+}
+
+.market-summary .daily-change-value .down {
+    color: #ff5966 !important;
+}
+
+.market-summary .daily-change-value .zero {
+    color: #68737e !important;
+}
+
+.market-summary .pattern-box {
+    min-width: 35px;
+}
+
+.market-summary .pattern-name {
+    font-size: 4.5px;
+}
+
+.market-summary .candle-pattern-visual {
+    height: 21px;
+    transform: scale(.68);
+}
+
+.market-summary .pattern-multi {
+    gap: 0;
+}
+
+.market-summary .pattern-multi .pattern-box {
+    min-width: 24px;
+}
+
+.market-summary .pattern-multi .pattern-name {
+    font-size: 3.8px;
+}
 
 
 /* =========================================================
-   상승 캔들패턴 SIGNAL 카드 전체 컬러 강조
+   모바일 반응형
    ========================================================= */
 
-.signal-card.has-bullish-pattern {
-    background: #10251d;
-    box-shadow:
-        inset 4px 0 0 #38d878,
-        inset 0 0 0 1px #286b48;
-}
-
-.signal-card.has-bullish-pattern > div {
-    background: rgba(56, 216, 120, 0.07);
-}
-
-.signal-card.has-bullish-pattern .signal-coin b {
-    color: #38d878;
-}
-
-.signal-card.has-bullish-pattern .signal-rank {
-    color: #e4c45e;
-}
-
-.signal-card.has-bullish-pattern .signal-pattern {
-    background: rgba(56, 216, 120, 0.12);
-}
-
-.signal-card.has-bullish-pattern .ema-ref-row {
-    background: transparent;
-}
-
-.signal-card.has-bullish-pattern .signal-type-list {
-    background: transparent;
-}
-
-
 @media (max-width: 600px) {
-    body { padding: 5px; }
-    h1 { margin: 3px 2px 9px; font-size: 12px; }
-    .section-head { padding: 0 8px; }
-    .section-head b { font-size: 9px; }
-    .update-time { font-size: 5px; }
-    .btc-main { min-height: 48px; }
-    .btc-price { font-size: 13px; }
-    .btc-change { font-size: 9px; }
-    .btc-ema-status { padding: 6px 7px; gap: 4px; }
-    .btc-ema-line { gap: 9px; font-size: 7px; }
-    .btc-ema-time { min-width: 68px; font-size: 6px; }
 
-    .coin-head { min-height: 35px; padding: 0 7px; }
-    .coin-title { gap: 6px; }
-    .coin-title b { font-size: 9px; }
-    .ema-normal, .ema-reverse, .ema-same { font-size: 6px; }
-    .top-ema-status { padding: 5px 7px; gap: 4px; }
-    .top-ema-line { gap: 10px; font-size: 7px; }
-    .top-ema-time { width: 38px; font-size: 7px; }
-    .ema-ref-row { gap: 3px; }
-    .ema-ref-item { font-size: 6px; }
-    .ema-ref-label { font-size: 5px; }
-
-    .market-summary { grid-template-columns: repeat(5, minmax(0, 1fr)); }
-    .market-summary > div { min-height: 53px; padding: 3px 1px; }
-    .market-summary span { font-size: 5px; margin-bottom: 2px; }
-    .market-summary strong { font-size: 5px; }
-    .market-summary .pattern-box { min-width: 24px; }
-    .market-summary .pattern-name { font-size: 3.5px; }
-    .market-summary .candle-pattern-visual { height: 19px; transform: scale(.56); }
-
-    .signal-condition { min-height: 29px; padding: 0 7px; }
-    .signal-condition b { font-size: 7px; }
-    .signal-condition small { font-size: 5px; }
-    .signal-header, .signal-card { grid-template-columns: 1.1fr 0.9fr 0.8fr 1.1fr 1.1fr; }
-    .signal-header { padding: 0 3px; font-size: 5px; }
-    .signal-card > div { min-height: 53px; padding: 2px 1px; }
-    .signal-coin { gap: 4px; padding-left: 5px !important; }
-    .signal-coin b { font-size: 7px; }
-    .signal-rank { font-size: 5px; }
-    .signal-card span { font-size: 5px; }
-    .signal-card strong { font-size: 5px; }
-    .signal-type-list { gap: 1px; margin-top: 1px; }
-    .signal-type-badge { font-size: 4px !important; }
-    .bearish-type-badge { font-size: 4px !important; }
-    .pattern-badge-list { gap: 3px; }
-    .signal-pattern .pattern-box { min-width: 24px; }
-    .signal-pattern .pattern-name { font-size: 3.5px; }
-    .signal-pattern .candle-pattern-visual { height: 19px; transform: scale(.55); }
-    .signal-pattern .pattern-multi .pattern-box { min-width: 22px; }
-    .signal-card .ema-ref-row { gap: 2px; }
-    .signal-card .ema-ref-item { font-size: 5px; }
-    .signal-card .ema-ref-label { font-size: 4px; }
-    .alignment-age { font-size: 5px !important; }
-
-    .signal-ema-status {
-        gap: 2px;
-        margin-top: 2px;
+    body {
+        padding: 5px;
     }
 
-    .signal-ema-line {
-        gap: 4px;
+    h1 {
+        margin: 3px 2px 9px;
+        font-size: 12px;
+    }
+
+    .section-head {
+        padding: 0 8px;
+    }
+
+    .section-head b {
+        font-size: 9px;
+    }
+
+    .update-time {
         font-size: 5px;
-        flex-wrap: wrap;
     }
 
-    .signal-ema-time {
+
+    /* BTC */
+
+    .btc-main {
+        min-height: 48px;
+    }
+
+    .btc-price {
+        font-size: 13px;
+    }
+
+    .btc-change {
+        font-size: 9px;
+    }
+
+    .btc-ema-status {
+        padding: 6px 7px;
+        gap: 4px;
+    }
+
+    .btc-ema-line {
+        gap: 9px;
+        font-size: 7px;
+    }
+
+    .btc-ema-time {
+        min-width: 68px;
+        font-size: 6px;
+    }
+
+
+    /* TOP 카드 */
+
+    .coin-head {
+        min-height: 35px;
+        padding: 0 7px;
+    }
+
+    .coin-title {
+        gap: 6px;
+    }
+
+    .coin-title b {
+        font-size: 9px;
+    }
+
+    .ema-normal,
+    .ema-reverse,
+    .ema-same {
+        font-size: 6px;
+    }
+
+    .top-ema-status {
+        padding: 5px 7px;
+        gap: 4px;
+    }
+
+    .top-ema-line {
+        gap: 10px;
+        font-size: 7px;
+    }
+
+    .top-ema-time {
+        width: 38px;
+        font-size: 7px;
+    }
+
+    .ema-ref-row {
+        gap: 3px;
+    }
+
+    .ema-ref-item {
+        font-size: 6px;
+    }
+
+    .ema-ref-label {
+        font-size: 5px;
+    }
+
+    .market-summary {
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+    }
+
+    .market-summary > div {
+        min-height: 53px;
+        padding: 3px 1px;
+    }
+
+    .market-summary span {
+        font-size: 5px;
+        margin-bottom: 2px;
+    }
+
+    .market-summary strong {
+        font-size: 5px;
+    }
+
+    .market-summary .pattern-box {
+        min-width: 24px;
+    }
+
+    .market-summary .pattern-name {
+        font-size: 3.5px;
+    }
+
+    .market-summary .candle-pattern-visual {
+        height: 19px;
+        transform: scale(.56);
+    }
+
+
+    /* SIGNAL 조건 */
+
+    .signal-condition {
+        min-height: 29px;
+        padding: 0 7px;
+    }
+
+    .signal-condition b {
+        font-size: 7px;
+    }
+
+    .signal-condition small {
+        font-size: 5px;
+    }
+
+
+    /* SIGNAL 헤더 */
+
+    .signal-header,
+    .signal-data-grid {
+        grid-template-columns: 1.1fr 0.9fr 0.8fr 1.1fr 1.1fr;
+    }
+
+    .signal-header {
+        padding: 0 3px;
+        font-size: 5px;
+    }
+
+
+    /* SIGNAL 상단 */
+
+    .signal-card-top {
+        min-height: 32px;
+        padding: 4px 5px;
+        gap: 4px;
+    }
+
+    .signal-rank {
+        font-size: 5px;
+    }
+
+    .signal-coin-name {
+        font-size: 7px;
+    }
+
+    .signal-type-list {
+        gap: 1px;
+    }
+
+    .signal-type-badge {
         font-size: 4px !important;
+    }
+
+    .bearish-type-badge {
+        font-size: 4px !important;
+    }
+
+    .signal-card-top .ema-ref-row {
+        gap: 3px;
+    }
+
+    .signal-card-top .ema-ref-item {
+        font-size: 5px;
+    }
+
+    .signal-card-top .ema-ref-label {
+        font-size: 4px;
+    }
+
+    .signal-card-top .alignment-age {
+        font-size: 5px !important;
+    }
+
+
+    /* SIGNAL 하단 데이터 */
+
+    .signal-data-grid {
+        min-height: 53px;
+    }
+
+    .signal-data-grid > div {
+        min-height: 53px;
+        padding: 2px 1px;
+    }
+
+    .signal-data-grid span {
+        font-size: 5px;
+    }
+
+    .signal-data-grid strong {
+        font-size: 5px;
+    }
+
+    .signal-data-grid .signal-price strong {
+        font-size: 6px;
+    }
+
+
+    /* SIGNAL 패턴 */
+
+    .signal-pattern .pattern-box {
+        min-width: 24px;
+    }
+
+    .signal-pattern .pattern-name {
+        font-size: 3.5px;
+    }
+
+    .signal-pattern .candle-pattern-visual {
+        height: 19px;
+        transform: scale(.55);
+    }
+
+    .signal-pattern .pattern-multi .pattern-box {
+        min-width: 22px;
     }
 }
 """
