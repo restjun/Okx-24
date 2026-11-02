@@ -59,7 +59,12 @@ MAX_RETRIES = 10
 # SIGNAL 설정
 # =========================================================
 
+# EMA 분석 시간봉
 SIGNAL_TIMEFRAME = "1d"
+
+# 캔들 패턴 분석 시간봉
+# EMA 시간봉과 독립적으로 설정
+CANDLE_PATTERN_TIMEFRAME = "1h"
 
 TIMEFRAME_LABEL = {
     "5m": "5분봉",
@@ -202,6 +207,13 @@ def get_timeframe_label():
     return TIMEFRAME_LABEL.get(
         SIGNAL_TIMEFRAME,
         SIGNAL_TIMEFRAME
+    )
+
+
+def get_candle_pattern_timeframe_label():
+    return TIMEFRAME_LABEL.get(
+        CANDLE_PATTERN_TIMEFRAME,
+        CANDLE_PATTERN_TIMEFRAME
     )
 
 
@@ -1002,26 +1014,6 @@ def analyze_ema_4h(market, price=None):
 # =========================================================
 
 def get_reference_full_alignment_age(df):
-    """
-    기존에는 EMA_PULLBACK > EMA_FAST > EMA_SLOW인
-    완전 정배열 캔들만 카운팅했다.
-
-    수정 후에는 각 캔들마다 다음 설정을 적용한다.
-
-    REFERENCE_SIGNAL_5_10:
-        Y   = EMA_PULLBACK > EMA_FAST
-        N   = EMA_PULLBACK < EMA_FAST
-        ANY = 방향 무관
-
-    REFERENCE_SIGNAL_10_20:
-        Y   = EMA_FAST > EMA_SLOW
-        N   = EMA_FAST < EMA_SLOW
-        ANY = 방향 무관
-
-    마지막 캔들부터 설정 조건을 연속으로 만족한
-    캔들 수를 반환한다.
-    """
-
     if df is None or df.empty:
         return 0
 
@@ -1708,6 +1700,7 @@ def signal_details(periods, ema_reverse=False):
 
 # =========================================================
 # 선택 시간봉 캔들 패턴 분석
+# EMA 시간봉과 독립적으로 설정
 # =========================================================
 
 def analyze_signal_candles(market, price, ema_reverse=False):
@@ -1729,7 +1722,9 @@ def analyze_signal_candles(market, price, ema_reverse=False):
         "current_bullish_engulfing": False
     }
 
-    timeframe = SIGNAL_TIMEFRAME
+    # 여기서는 SIGNAL_TIMEFRAME을 사용하지 않음
+    # 별도 설정한 CANDLE_PATTERN_TIMEFRAME 사용
+    timeframe = CANDLE_PATTERN_TIMEFRAME
 
     if timeframe in ("5m", "15m", "1h"):
         df = get_timeframe_dataframe(
@@ -1814,7 +1809,7 @@ def analyze_signal_candles(market, price, ema_reverse=False):
 
     else:
         log.warning(
-            "지원하지 않는 캔들 시간봉: %s",
+            "지원하지 않는 캔들 패턴 시간봉: %s",
             timeframe
         )
         return empty_result
@@ -2056,6 +2051,8 @@ def update_upbit():
         )
 
         try:
+            # EMA 조건은 EMA 시간봉
+            # 캔들 패턴은 CANDLE_PATTERN_TIMEFRAME
             analysis_4h = analyze_signal_candles(
                 market, price, ema_signal_condition
             )
@@ -2163,11 +2160,13 @@ def update_upbit():
         row["signal_rank"] = signal_rank
 
     log.info(
-        "UPBIT | 거래대금 TOP%s | EMA%s | 시간봉=%s | "
-        "참고 EMA 시간봉=%s | 참고 조건=%s | SIGNAL=%s",
+        "UPBIT | 거래대금 TOP%s | EMA%s | EMA시간봉=%s | "
+        "캔들패턴 시간봉=%s | 참고 EMA 시간봉=%s | "
+        "참고 조건=%s | SIGNAL=%s",
         TOP_N,
         get_ema_full_label(),
         get_timeframe_label(),
+        get_candle_pattern_timeframe_label(),
         get_reference_timeframe_label(),
         get_reference_ema_condition_description(),
         len(latest_signal_data)
@@ -3041,7 +3040,8 @@ def btc_html():
 # =========================================================
 
 def signal_card(row):
-    timeframe_label = get_timeframe_label()
+    # 캔들 패턴은 별도 설정 시간봉으로 표시
+    timeframe_label = get_candle_pattern_timeframe_label()
 
     has_bullish_pattern = row.get(
         "signal_4h_pattern", False
@@ -3121,6 +3121,7 @@ def signal_card(row):
 
 def signal_section():
     timeframe_label = get_timeframe_label()
+    pattern_timeframe_label = get_candle_pattern_timeframe_label()
     reference_timeframe_label = get_reference_timeframe_label()
     ema_full_label = get_ema_full_label()
 
@@ -3152,7 +3153,7 @@ def signal_section():
                 <b>🔴 EMA{ema_full_label} · {timeframe_label} SIGNAL</b>
             </div>
             <span class="update-time">
-                EMA {timeframe_label} · 캔들패턴 2개 봉 · {kst()}
+                EMA {timeframe_label} · 캔들패턴 {pattern_timeframe_label} · {kst()}
             </span>
         </div>
         <div class="signal-condition">
@@ -3175,8 +3176,8 @@ def signal_section():
             <div>종목 / EMA 참고</div>
             <div>거래대금</div>
             <div>변동률</div>
-            <div>이전봉</div>
-            <div>현재봉</div>
+            <div>이전봉 {html.escape(pattern_timeframe_label)}</div>
+            <div>현재봉 {html.escape(pattern_timeframe_label)}</div>
         </div>
         <div class="signal-list">{body}</div>
     </section>
@@ -3188,7 +3189,8 @@ def signal_section():
 # =========================================================
 
 def card(row, kind):
-    timeframe_label = get_timeframe_label()
+    # TOP 카드 패턴 시간봉도 별도 설정 적용
+    timeframe_label = get_candle_pattern_timeframe_label()
 
     if kind != "top":
         return ""
@@ -3599,6 +3601,7 @@ def startup():
         "START | BTC KST 09:00 일봉 재구성 + "
         "BTC 시그널 EMA 및 참고 EMA 표시 + "
         "업비트 TOP%s + EMA%s %s + "
+        "캔들패턴 시간봉=%s + "
         "이전봉/현재봉 캔들 패턴 표시 + "
         "%s SIGNAL + 당일 변동률 양수 조건 + "
         "상승패턴 강조 + 참고 EMA 시간봉 %s 및 %s 표시 + "
@@ -3606,6 +3609,7 @@ def startup():
         TOP_N,
         get_ema_full_label(),
         get_timeframe_label(),
+        get_candle_pattern_timeframe_label(),
         get_ema_signal_description(),
         pair_1,
         pair_2,
