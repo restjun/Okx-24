@@ -1054,7 +1054,6 @@ def get_reference_full_alignment_age(df):
     if combined.empty:
         return 0
 
-    # 각 캔들에서 두 EMA 쌍의 상태를 계산한다.
     condition_results = []
 
     for _, row in combined.iterrows():
@@ -1086,11 +1085,9 @@ def get_reference_full_alignment_age(df):
     if not condition_results:
         return 0
 
-    # 최신 캔들이 조건을 만족하지 않으면 카운트는 0이다.
     if not condition_results[-1]:
         return 0
 
-    # 마지막 캔들부터 조건을 연속으로 만족하는 수만 센다.
     age = 0
 
     for condition_met in reversed(condition_results):
@@ -1176,7 +1173,6 @@ def analyze_reference_ema_timeframes(market, price=None):
         states["1h_5_10"] = states["signal_5_10"]
         states["1h_10_50"] = states["signal_10_50"]
 
-        # 설정된 참고 EMA 조건을 연속으로 만족하는 캔들 수
         condition_age = get_reference_full_alignment_age(df)
 
         states["full_alignment_age"] = condition_age
@@ -2297,7 +2293,6 @@ def analyze_btc_ema_states(timeframe):
     if df is None or df.empty:
         return states
 
-    # 진행 중인 캔들에 현재 BTC 가격을 반영한다.
     price = latest_btc_okx_price
 
     if price is not None:
@@ -2512,12 +2507,10 @@ def update_okx_btc():
         else:
             latest_btc_daily_change = None
 
-    # 시그널 EMA는 SIGNAL_TIMEFRAME 설정을 사용한다.
     latest_btc_signal_ema_states = (
         analyze_btc_ema_states(SIGNAL_TIMEFRAME)
     )
 
-    # 참고 EMA는 EMA_REFERENCE_TIMEFRAME 설정을 사용한다.
     latest_btc_reference_ema_states = (
         analyze_btc_ema_states(EMA_REFERENCE_TIMEFRAME)
     )
@@ -2690,6 +2683,48 @@ def top_ema_status_html(row):
             </span>
             <span>
                 {html.escape(pair_2)} {ema_symbol(state_ref_10_50)}
+            </span>
+        </div>
+    </div>
+    """
+
+
+# =========================================================
+# SIGNAL EMA 상태 HTML
+# =========================================================
+
+def signal_ema_status_html(row):
+    """
+    SIGNAL에 실제 사용하는 EMA 상태를 표시한다.
+
+    ema_1h_5_10:
+        EMA_PULLBACK - EMA_FAST 상태
+
+    ema_1h_10_50:
+        EMA_FAST - EMA_SLOW 상태
+
+    계산값은 기존 make_row()에서 생성한 값을 사용한다.
+    """
+
+    state_5_10 = row.get("ema_1h_5_10")
+    state_10_50 = row.get("ema_1h_10_50")
+
+    timeframe_label = get_timeframe_label()
+    pair_1, pair_2 = get_ema_pair_labels()
+
+    return f"""
+    <div class="signal-ema-status">
+        <div class="signal-ema-line">
+            <span class="signal-ema-time">
+                시그널 {html.escape(timeframe_label)}
+            </span>
+            <span>
+                EMA {html.escape(pair_1)}
+                {ema_symbol(state_5_10)}
+            </span>
+            <span>
+                EMA {html.escape(pair_2)}
+                {ema_symbol(state_10_50)}
             </span>
         </div>
     </div>
@@ -3043,7 +3078,11 @@ def signal_card(row):
             </span>
             <b>{html.escape(row["name"])}</b>
             <div class="signal-type-list">{badge_html}</div>
+
+            {signal_ema_status_html(row)}
+
             {reference_ema_states_html(row)}
+
             <span class="alignment-age">
                 조건 충족 {condition_age}/{REFERENCE_ALIGNMENT_MAX_CANDLES}
             </span>
@@ -3312,6 +3351,33 @@ section { margin-bottom: 12px; }
 .signal-pattern .pattern-multi { gap: 1px; }
 .signal-pattern .pattern-multi .pattern-box { min-width: 29px; }
 .alignment-age { width: 100%; color: #e4c45e !important; font-size: 6px !important; font-weight: 800; margin-top: 2px; }
+
+.signal-ema-status {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    margin-top: 3px;
+}
+
+.signal-ema-line {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 5px;
+    white-space: nowrap;
+    font-size: 7px;
+    font-weight: 900;
+    line-height: 1.3;
+}
+
+.signal-ema-time {
+    color: #83909b !important;
+    font-size: 6px !important;
+    font-weight: 800;
+}
+
 .signal-empty { min-height: 46px; display: flex; align-items: center; justify-content: center; color: #626e78; font-size: 7px; }
 
 .btc-panel { background: #0c1116; border: 1px solid #202a33; margin-bottom: 13px; }
@@ -3427,6 +3493,21 @@ section { margin-bottom: 12px; }
     .signal-card .ema-ref-item { font-size: 5px; }
     .signal-card .ema-ref-label { font-size: 4px; }
     .alignment-age { font-size: 5px !important; }
+
+    .signal-ema-status {
+        gap: 2px;
+        margin-top: 2px;
+    }
+
+    .signal-ema-line {
+        gap: 4px;
+        font-size: 5px;
+        flex-wrap: wrap;
+    }
+
+    .signal-ema-time {
+        font-size: 4px !important;
+    }
 }
 """
 
