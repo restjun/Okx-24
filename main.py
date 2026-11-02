@@ -59,11 +59,8 @@ MAX_RETRIES = 10
 # SIGNAL 설정
 # =========================================================
 
-# EMA 분석 시간봉
 SIGNAL_TIMEFRAME = "1d"
 
-# 캔들 패턴 분석 시간봉
-# EMA 시간봉과 독립적으로 설정
 CANDLE_PATTERN_TIMEFRAME = "1h"
 
 TIMEFRAME_LABEL = {
@@ -94,16 +91,8 @@ SIGNAL_10_50 = "ANY"
 EMA_REFERENCE_TIMEFRAME = "1h"
 EMA_REFERENCE_TIMEFRAMES = [EMA_REFERENCE_TIMEFRAME]
 
-# 참고용 EMA 배열 조건
-# Y   = 정배열
-# N   = 역배열
-# ANY = 배열 방향 무관
-
 REFERENCE_SIGNAL_5_10 = "Y"
 REFERENCE_SIGNAL_10_20 = "Y"
-
-# Y = 참고 EMA 설정 조건을 연속으로 만족한 캔들 수 제한 사용
-# N = 카운팅 제한 조건 사용 안 함
 
 REQUIRE_REFERENCE_FULL_ALIGNMENT = "Y"
 
@@ -138,13 +127,11 @@ latest_btc_okx_price = None
 latest_btc_daily_periods = []
 latest_btc_daily_change = None
 
-# BTC 시그널 EMA 상태
 latest_btc_signal_ema_states = {
     "5_10": None,
     "10_20": None
 }
 
-# BTC 참고 EMA 상태
 latest_btc_reference_ema_states = {
     "5_10": None,
     "10_20": None
@@ -544,7 +531,6 @@ def get_upbit_15m_candles(market, count=200):
     return get_upbit_minute_candles(market, 15, count)
 
 
-# 기존 함수명 유지: 실제 조회는 1시간봉
 def get_upbit_4h_candles(market, count=200):
     return get_upbit_minute_candles(market, 60, count)
 
@@ -1737,8 +1723,6 @@ def analyze_signal_candles(market, price, ema_reverse=False):
         "current_bullish_engulfing": False
     }
 
-    # 여기서는 SIGNAL_TIMEFRAME을 사용하지 않음
-    # 별도 설정한 CANDLE_PATTERN_TIMEFRAME 사용
     timeframe = CANDLE_PATTERN_TIMEFRAME
 
     if timeframe in ("5m", "15m", "1h"):
@@ -2066,8 +2050,6 @@ def update_upbit():
         )
 
         try:
-            # EMA 조건은 EMA 시간봉
-            # 캔들 패턴은 CANDLE_PATTERN_TIMEFRAME
             analysis_4h = analyze_signal_candles(
                 market, price, ema_signal_condition
             )
@@ -2966,7 +2948,6 @@ def current_pattern_html(pattern):
 
 # =========================================================
 # 상승 / 하락 패턴 배지 표시
-# 표시 전용이며 SIGNAL 선정 조건에는 영향 없음
 # =========================================================
 
 def pattern_badges_html(row):
@@ -3084,7 +3065,6 @@ def btc_html():
 # =========================================================
 
 def signal_card(row):
-    # 캔들 패턴은 별도 설정 시간봉으로 표시
     timeframe_label = get_candle_pattern_timeframe_label()
 
     has_bullish_pattern = row.get(
@@ -3103,14 +3083,18 @@ def signal_card(row):
         or reference_10_50 == "역배열"
     )
 
-    # 상승패턴 / 하락패턴 표시만 추가
     badge_html = pattern_badges_html(row)
 
-    card_class = (
-        "signal-card has-reference-reverse"
-        if has_reference_reverse
-        else "signal-card"
-    )
+    # 상승패턴 강조와 기존 역배열 강조를 동시에 유지
+    card_classes = ["signal-card"]
+
+    if has_reference_reverse:
+        card_classes.append("has-reference-reverse")
+
+    if has_bullish_pattern:
+        card_classes.append("has-bullish-pattern")
+
+    card_class = " ".join(card_classes)
 
     condition_age = reference_states.get(
         "full_alignment_age", 0
@@ -3231,13 +3215,11 @@ def signal_section():
 # =========================================================
 
 def card(row, kind):
-    # TOP 카드 패턴 시간봉도 별도 설정 적용
     timeframe_label = get_candle_pattern_timeframe_label()
 
     if kind != "top":
         return ""
 
-    # 상승패턴 / 하락패턴 표시만 추가
     status = pattern_badges_html(row)
 
     top_ema_html = top_ema_status_html(row)
@@ -3485,6 +3467,43 @@ section { margin-bottom: 12px; }
 .market-summary .pattern-multi { gap: 0; }
 .market-summary .pattern-multi .pattern-box { min-width: 24px; }
 .market-summary .pattern-multi .pattern-name { font-size: 3.8px; }
+
+
+/* =========================================================
+   상승 캔들패턴 SIGNAL 카드 전체 컬러 강조
+   ========================================================= */
+
+.signal-card.has-bullish-pattern {
+    background: #10251d;
+    box-shadow:
+        inset 4px 0 0 #38d878,
+        inset 0 0 0 1px #286b48;
+}
+
+.signal-card.has-bullish-pattern > div {
+    background: rgba(56, 216, 120, 0.07);
+}
+
+.signal-card.has-bullish-pattern .signal-coin b {
+    color: #38d878;
+}
+
+.signal-card.has-bullish-pattern .signal-rank {
+    color: #e4c45e;
+}
+
+.signal-card.has-bullish-pattern .signal-pattern {
+    background: rgba(56, 216, 120, 0.12);
+}
+
+.signal-card.has-bullish-pattern .ema-ref-row {
+    background: transparent;
+}
+
+.signal-card.has-bullish-pattern .signal-type-list {
+    background: transparent;
+}
+
 
 @media (max-width: 600px) {
     body { padding: 5px; }
