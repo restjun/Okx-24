@@ -1538,6 +1538,21 @@ BULLISH_HIGHLIGHT_PATTERNS = [
 
 
 # =========================================================
+# 하락패턴 표시 목록
+# 표시 전용이며 SIGNAL 조건에는 사용하지 않음
+# =========================================================
+
+BEARISH_HIGHLIGHT_PATTERNS = [
+    "하락장악형",
+    "하락관통형",
+    "장대음봉",
+    "음수도지",
+    "하락망치형",
+    "하락역망치형"
+]
+
+
+# =========================================================
 # 이전봉 / 현재봉 패턴 분석
 # =========================================================
 
@@ -2929,10 +2944,7 @@ def current_pattern_html(pattern):
 
         if item in BULLISH_HIGHLIGHT_PATTERNS:
             css_class = "bullish-pattern"
-        elif item in [
-            "하락장악형", "하락관통형", "장대음봉",
-            "음수도지", "하락망치형", "하락역망치형"
-        ]:
+        elif item in BEARISH_HIGHLIGHT_PATTERNS:
             css_class = "bearish-pattern"
         else:
             css_class = "neutral-pattern"
@@ -2950,6 +2962,38 @@ def current_pattern_html(pattern):
         + "".join(boxes)
         + '</div>'
     )
+
+
+# =========================================================
+# 상승 / 하락 패턴 배지 표시
+# 표시 전용이며 SIGNAL 선정 조건에는 영향 없음
+# =========================================================
+
+def pattern_badges_html(row):
+    previous_patterns = row.get("previous_pattern") or []
+    current_patterns = row.get("current_pattern") or []
+
+    all_patterns = previous_patterns + current_patterns
+
+    badges = []
+
+    if any(
+        pattern in BULLISH_HIGHLIGHT_PATTERNS
+        for pattern in all_patterns
+    ):
+        badges.append(
+            '<span class="signal-type-badge">⭐ 상승패턴</span>'
+        )
+
+    if any(
+        pattern in BEARISH_HIGHLIGHT_PATTERNS
+        for pattern in all_patterns
+    ):
+        badges.append(
+            '<span class="bearish-type-badge">🔻 하락패턴</span>'
+        )
+
+    return "".join(badges)
 
 
 def signal_reason_html(reason):
@@ -3059,10 +3103,8 @@ def signal_card(row):
         or reference_10_50 == "역배열"
     )
 
-    badge_html = (
-        '<span class="signal-type-badge">⭐ 상승패턴</span>'
-        if has_bullish_pattern else ""
-    )
+    # 상승패턴 / 하락패턴 표시만 추가
+    badge_html = pattern_badges_html(row)
 
     card_class = (
         "signal-card has-reference-reverse"
@@ -3195,14 +3237,8 @@ def card(row, kind):
     if kind != "top":
         return ""
 
-    has_bullish_pattern = row.get(
-        "signal_4h_pattern", False
-    )
-
-    status = (
-        '<span class="signal-badge">⭐ 상승패턴</span>'
-        if has_bullish_pattern else ""
-    )
+    # 상승패턴 / 하락패턴 표시만 추가
+    status = pattern_badges_html(row)
 
     top_ema_html = top_ema_status_html(row)
 
@@ -3213,7 +3249,9 @@ def card(row, kind):
                 <span class="rank">#{row["rank"]}</span>
                 <b>{html.escape(row["name"])}</b>
             </div>
-            {status}
+            <div class="pattern-badge-list">
+                {status}
+            </div>
         </div>
         {top_ema_html}
         <div class="market-summary">
@@ -3343,6 +3381,8 @@ section { margin-bottom: 12px; }
 .signal-coin b { color: #e5e9ed; font-size: 9px; font-weight: 900; }
 .signal-type-list { width: 100%; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-start; gap: 2px; margin-top: 1px; }
 .signal-type-badge { color: #e4c45e !important; font-size: 5px !important; font-weight: 900; }
+.bearish-type-badge { color: #ff5966 !important; font-size: 5px !important; font-weight: 900; }
+.pattern-badge-list { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 5px; }
 .signal-card span { color: #69747e; font-size: 6px; }
 .signal-card .ema-ref-item.ema-normal { color: #38d878 !important; }
 .signal-card .ema-ref-item.ema-reverse { color: #ff5966 !important; }
@@ -3491,6 +3531,8 @@ section { margin-bottom: 12px; }
     .signal-card strong { font-size: 5px; }
     .signal-type-list { gap: 1px; margin-top: 1px; }
     .signal-type-badge { font-size: 4px !important; }
+    .bearish-type-badge { font-size: 4px !important; }
+    .pattern-badge-list { gap: 3px; }
     .signal-pattern .pattern-box { min-width: 24px; }
     .signal-pattern .pattern-name { font-size: 3.5px; }
     .signal-pattern .candle-pattern-visual { height: 19px; transform: scale(.55); }
@@ -3604,7 +3646,8 @@ def startup():
         "캔들패턴 시간봉=%s + "
         "이전봉/현재봉 캔들 패턴 표시 + "
         "%s SIGNAL + 당일 변동률 양수 조건 + "
-        "상승패턴 강조 + 참고 EMA 시간봉 %s 및 %s 표시 + "
+        "상승패턴 강조 + 하락패턴 표시 + "
+        "참고 EMA 시간봉 %s 및 %s 표시 + "
         "참고 EMA 조건 충족 연속 최대 %s개 캔들",
         TOP_N,
         get_ema_full_label(),
