@@ -39,7 +39,7 @@ UTC = ZoneInfo("UTC")
 # 사용자 설정
 # =========================================================
 
-TOP_N = 100
+TOP_N = 30
 SHOW_TOP_LIST = "N"
 UPDATE_MINUTES = 1
 
@@ -86,7 +86,7 @@ SIGNAL_10_50 = "Y"
 # 참고용 EMA 설정
 # =========================================================
 
-EMA_REFERENCE_TIMEFRAME = "15m"
+EMA_REFERENCE_TIMEFRAME = "1h"
 EMA_REFERENCE_TIMEFRAMES = [EMA_REFERENCE_TIMEFRAME]
 
 # 참고용 EMA 배열 조건
