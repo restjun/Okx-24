@@ -39,7 +39,7 @@ UTC = ZoneInfo("UTC")
 # 사용자 설정
 # =========================================================
 
-TOP_N = 10
+TOP_N = 100
 SHOW_TOP_LIST = "N"
 UPDATE_MINUTES = 1
 
@@ -107,7 +107,7 @@ EMA_REFERENCE_LABELS = {
     )
 }
 
-REFERENCE_ALIGNMENT_MAX_CANDLES = 200
+REFERENCE_ALIGNMENT_MAX_CANDLES = 20
 
 
 # =========================================================
