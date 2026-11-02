@@ -59,7 +59,7 @@ MAX_RETRIES = 10
 # SIGNAL 설정
 # =========================================================
 
-SIGNAL_TIMEFRAME = "15m"
+SIGNAL_TIMEFRAME = "1d"
 
 CANDLE_PATTERN_TIMEFRAME = "1h"
 
@@ -81,7 +81,7 @@ EMA_FAST = 20
 EMA_SLOW = 100
 
 SIGNAL_5_10 = "Y"
-SIGNAL_10_50 = "Y"
+SIGNAL_10_50 = "ANY"
 
 
 # =========================================================
