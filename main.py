@@ -3166,22 +3166,14 @@ def signal_card(row):
 
 
 # =========================================================
-# SIGNAL 영역
-# 제목 제거 / 업데이트 시간 유지
+# SIGNAL 영역 - 조건 표시 간소화
 # =========================================================
 
 def signal_section():
     timeframe_label = get_timeframe_label()
     pattern_timeframe_label = get_candle_pattern_timeframe_label()
     reference_timeframe_label = get_reference_timeframe_label()
-
-    signal_description = html.escape(
-        get_ema_signal_description()
-    )
-
-    reference_description = html.escape(
-        get_reference_ema_condition_description()
-    )
+    ema_full_label = get_ema_full_label()
 
     if not latest_signal_data:
         body = """
@@ -3198,30 +3190,27 @@ def signal_section():
     return f"""
     <section class="signal-panel">
 
-        <div class="signal-time-row">
+        <div class="section-head signal-panel-head">
+            <div>
+                <span class="section-kicker">SIGNAL</span>
+                <b>🔴 EMA{ema_full_label} · {timeframe_label} SIGNAL</b>
+            </div>
+
             <span class="update-time">
-                EMA {html.escape(timeframe_label)}
-                · 캔들패턴 {html.escape(pattern_timeframe_label)}
-                · {kst()}
+                EMA {timeframe_label} · 캔들패턴 {pattern_timeframe_label} · {kst()}
             </span>
         </div>
 
         <div class="signal-condition">
-            <span>SIGNAL 조건</span>
-            <b>{signal_description}</b>
-            <small>
-                당일 변동률 양수 · 참고
-                {html.escape(reference_timeframe_label)}
-                조건 적용
-            </small>
+            <span>SIGNAL</span>
+            <b>{timeframe_label} EMA {ema_full_label} 정배열</b>
+            <small>당일 변동률 양수</small>
         </div>
 
         <div class="signal-condition">
             <span>참고 EMA</span>
-            <b>{reference_description}</b>
-            <small>
-                조건 충족 연속 최대 {REFERENCE_ALIGNMENT_MAX_CANDLES}개 캔들
-            </small>
+            <b>{reference_timeframe_label} EMA {ema_full_label} 정배열</b>
+            <small>연속 {REFERENCE_ALIGNMENT_MAX_CANDLES}봉 이내</small>
         </div>
 
         <div class="signal-header">
@@ -3619,26 +3608,11 @@ section { margin-bottom: 12px; }
     border-bottom: 1px solid #392126;
 }
 
-/* SIGNAL 제목은 제거하고 업데이트 시간만 우측 표시 */
-.signal-time-row {
-    min-height: 27px;
-    padding: 5px 9px;
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    background: #0c1116;
-    border-bottom: 1px solid #392126;
-}
-
-.signal-time-row .update-time {
-    color: #65717c;
-    font-size: 6px;
-    white-space: nowrap;
-}
+/* SIGNAL 조건 표시 - 간소화 */
 
 .signal-condition {
-    min-height: 32px;
-    padding: 0 9px;
+    min-height: 30px;
+    padding: 4px 9px;
     display: flex;
     align-items: center;
     gap: 8px;
@@ -3648,7 +3622,9 @@ section { margin-bottom: 12px; }
 
 .signal-condition span {
     color: #7d6b70;
-    font-size: 6px;
+    font-size: 7px;
+    min-width: 48px;
+    white-space: nowrap;
 }
 
 .signal-condition b {
@@ -3661,6 +3637,7 @@ section { margin-bottom: 12px; }
     color: #626e78;
     font-size: 6px;
     margin-left: auto;
+    white-space: nowrap;
 }
 
 
@@ -4326,22 +4303,19 @@ section { margin-bottom: 12px; }
 
     /* SIGNAL 조건 */
 
-    .signal-time-row {
-        min-height: 24px;
-        padding: 4px 7px;
-    }
-
-    .signal-time-row .update-time {
-        font-size: 5px;
-    }
-
     .signal-condition {
-        min-height: 29px;
-        padding: 0 7px;
+        min-height: 27px;
+        padding: 3px 6px;
+        gap: 5px;
+    }
+
+    .signal-condition span {
+        min-width: 43px;
+        font-size: 6px;
     }
 
     .signal-condition b {
-        font-size: 7px;
+        font-size: 6px;
     }
 
     .signal-condition small {
