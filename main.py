@@ -3193,7 +3193,7 @@ def signal_section():
         <div class="section-head signal-panel-head">
             <div>
                 <span class="section-kicker">SIGNAL</span>
-                <b>🔴 EMA{ema_full_label} · {timeframe_label}</b>
+                <b>🔴 {timeframe_label}</b>
             </div>
 
             <span class="update-time">
