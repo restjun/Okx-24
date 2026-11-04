@@ -3067,8 +3067,9 @@ def btc_html():
 def signal_card(row):
     timeframe_label = get_candle_pattern_timeframe_label()
 
+    # 현재 캔들 상승패턴만 전체 녹색 강조
     has_bullish_pattern = row.get(
-        "signal_4h_pattern", False
+        "signal_4h_current", False
     )
 
     reference_states = (
