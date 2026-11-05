@@ -1,8376 +1,4711 @@
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
 import requests
-import uuid
-import jwt
-import hashlib
-import logging
-import sqlite3
 import threading
 import time
-import json
-import os
+import logging
+import schedule
+import uvicorn
+import pandas as pd
+import warnings
+import html
+import numpy as np
 
-from datetime import datetime
-from urllib.parse import urlencode
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
-
-
-# =========================================================
-# FastAPI
-# =========================================================
-
-app = FastAPI()
-
-
-# =========================================================
-# 로그
-# =========================================================
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(message)s"
-)
-
-logger = logging.getLogger(__name__)
 
 
 # =========================================================
 # 기본 설정
 # =========================================================
 
-SERVER_URL = "https://api.upbit.com"
-REQUEST_TIMEOUT = 5
+warnings.filterwarnings("ignore", category=FutureWarning)
 
-ORDER_WAIT_TIMEOUT = 15
-ORDER_WAIT_INTERVAL = 0.5
+app = FastAPI()
 
-MIN_ORDER_KRW = 5000
-MIN_DASHBOARD_VALUE_KRW = 1.0
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s:%(name)s:%(message)s"
+)
+
+log = logging.getLogger("trading")
 
 KST = ZoneInfo("Asia/Seoul")
-DB_FILE = "trading.db"
+UTC = ZoneInfo("UTC")
 
 
 # =========================================================
-# API KEY
-# =========================================================
-# 업비트에서 새로 발급한 키를 환경변수로 설정하세요.
-# 기존에 대화에 노출된 키는 폐기해야 합니다.
+# 사용자 설정
 # =========================================================
 
-UPBIT_ACCESS_KEY = os.getenv(
-    "UPBIT_ACCESS_KEY",
-    ""
-)
+TOP_N = 10
+SHOW_TOP_LIST = "N"
+UPDATE_MINUTES = 1
 
-UPBIT_SECRET_KEY = os.getenv(
-    "UPBIT_SECRET_KEY",
-    ""
-)
+HISTORY_CHUNK = 200
+MAX_HISTORY_CHUNKS = 1
+EMA_HISTORY_CANDLES = 200
 
+USE_UPBIT = "Y"
+USE_OKX = "Y"
 
-# =========================================================
-# 자동 익절
-# 자동손절은 전체 시드 손실기준으로 자동 계산
-# =========================================================
-
-DEFAULT_AUTO_TAKE_PROFIT_STAGE = 5
-
-DEFAULT_TRAILING_DROP_STAGE = 5
-DEFAULT_TRAILING_SELL_STAGE = 10
+REQUEST_INTERVAL = 0.08
+RATE_LIMIT_WAIT = 3
+MAX_RETRIES = 10
 
 
 # =========================================================
-# 모니터
+# SIGNAL 설정
 # =========================================================
 
-AUTO_CHECK_INTERVAL = 2
-UPBIT_ASSET_REFRESH_INTERVAL = 5
+SIGNAL_TIMEFRAME = "15m"
 
+CANDLE_PATTERN_TIMEFRAME = "1h"
 
-# =========================================================
-# 현재가 캐시
-# =========================================================
-
-TICKER_CACHE_SECONDS = 5
-
-ticker_cache_lock = threading.Lock()
-ticker_refresh_lock = threading.Lock()
-
-ticker_price_cache = {}
-ticker_cache_updated_at = 0.0
+TIMEFRAME_LABEL = {
+    "5m": "5분봉",
+    "15m": "15분봉",
+    "1h": "1시간봉",
+    "4h": "4시간봉",
+    "1d": "일봉"
+}
 
 
 # =========================================================
-# 리스크
+# EMA 설정
 # =========================================================
 
-DEFAULT_MONTH_START_AMOUNT = 1_000_000.0
-DEFAULT_MAX_LOSS_RATE = 0.01
+EMA_PULLBACK = 10
+EMA_FAST = 20
+EMA_SLOW = 100
 
-# 당일 손실이 월 시작금액의 2%에 도달하면 매수 중단
-BUY_LOCK_LOSS_RATE = 0.02
-
-
-# =========================================================
-# Lock
-# =========================================================
-
-db_lock = threading.Lock()
-order_execution_lock = threading.Lock()
-
-auto_exit_lock = threading.Lock()
-auto_exit_in_progress = set()
-
-manual_sell_all_lock = threading.Lock()
-manual_sell_all_in_progress = False
-
-asset_cache_lock = threading.Lock()
+SIGNAL_5_10 = "Y"
+SIGNAL_10_50 = "Y"
 
 
 # =========================================================
-# 업비트 캐시
+# 참고용 EMA 설정
 # =========================================================
 
-latest_upbit_assets = []
-latest_real_upbit_positions = []
+EMA_REFERENCE_TIMEFRAME = "1h"
+EMA_REFERENCE_TIMEFRAMES = [EMA_REFERENCE_TIMEFRAME]
 
-latest_upbit_total_krw = 0.0
-latest_upbit_available_krw = 0.0
+REFERENCE_SIGNAL_5_10 = "Y"
+REFERENCE_SIGNAL_10_20 = "Y"
 
-latest_upbit_update = "업비트 조회 대기"
-latest_order_info = "주문 없음"
+REQUIRE_REFERENCE_FULL_ALIGNMENT = "Y"
 
-latest_bid_fee_rate = 0.0
+EMA_REFERENCE_LABELS = {
+    EMA_REFERENCE_TIMEFRAME: TIMEFRAME_LABEL.get(
+        EMA_REFERENCE_TIMEFRAME,
+        EMA_REFERENCE_TIMEFRAME
+    )
+}
+
+REFERENCE_ALIGNMENT_MAX_CANDLES = 100
 
 
 # =========================================================
-# 공통
+# 전역 데이터
 # =========================================================
 
-def safe_float(value, default=0.0):
-    if value is None or value == "":
-        return default
+latest_upbit_data = []
+latest_upbit_daily_data = []
+
+latest_upbit_update_time = "-"
+latest_upbit_daily_update_time = "-"
+
+latest_upbit_markets = []
+
+latest_okx_data = []
+latest_okx_update_time = "-"
+
+latest_signal_data = []
+
+latest_btc_okx_price = None
+latest_btc_daily_periods = []
+latest_btc_daily_change = None
+
+latest_btc_signal_ema_states = {
+    "5_10": None,
+    "10_20": None
+}
+
+latest_btc_reference_ema_states = {
+    "5_10": None,
+    "10_20": None
+}
+
+
+# =========================================================
+# Lock 및 캐시
+# =========================================================
+
+request_lock = threading.Lock()
+update_lock = threading.Lock()
+candle_cache_lock = threading.Lock()
+
+last_request_time = 0
+
+candle_cache = {}
+
+
+def clear_candle_cache():
+    with candle_cache_lock:
+        candle_cache.clear()
+
+
+def get_cached_dataframe(market, timeframe, loader):
+    key = (market, timeframe)
+
+    with candle_cache_lock:
+        cached = candle_cache.get(key)
+
+        if cached is not None:
+            return cached.copy(deep=True)
+
+    df = loader()
+
+    if df is None:
+        df = pd.DataFrame()
+
+    with candle_cache_lock:
+        if not df.empty:
+            existing = candle_cache.get(key)
+
+            if existing is not None:
+                return existing.copy(deep=True)
+
+            candle_cache[key] = df.copy(deep=True)
+
+    return df.copy(deep=True)
+
+
+# =========================================================
+# 시간 및 라벨
+# =========================================================
+
+def kst():
+    return datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def get_timeframe_label():
+    return TIMEFRAME_LABEL.get(
+        SIGNAL_TIMEFRAME,
+        SIGNAL_TIMEFRAME
+    )
+
+
+def get_candle_pattern_timeframe_label():
+    return TIMEFRAME_LABEL.get(
+        CANDLE_PATTERN_TIMEFRAME,
+        CANDLE_PATTERN_TIMEFRAME
+    )
+
+
+def get_reference_timeframe_label():
+    return TIMEFRAME_LABEL.get(
+        EMA_REFERENCE_TIMEFRAME,
+        EMA_REFERENCE_TIMEFRAME
+    )
+
+
+def get_ema_pair_labels():
+    return (
+        f"{EMA_PULLBACK}-{EMA_FAST}",
+        f"{EMA_FAST}-{EMA_SLOW}"
+    )
+
+
+def get_ema_full_label():
+    return f"{EMA_PULLBACK}-{EMA_FAST}-{EMA_SLOW}"
+
+
+# =========================================================
+# SIGNAL EMA 조건 설명
+# =========================================================
+
+def get_ema_signal_description():
+    if SIGNAL_5_10 == "Y":
+        state_5_10 = "정배열"
+    elif SIGNAL_5_10 == "N":
+        state_5_10 = "역배열"
+    else:
+        state_5_10 = "ANY"
+
+    if SIGNAL_10_50 == "Y":
+        state_10_50 = "정배열"
+    elif SIGNAL_10_50 == "N":
+        state_10_50 = "역배열"
+    else:
+        state_10_50 = "ANY"
+
+    return (
+        f"EMA {EMA_PULLBACK}-{EMA_FAST} {state_5_10} "
+        f"+ EMA {EMA_FAST}-{EMA_SLOW} {state_10_50}"
+    )
+
+
+# =========================================================
+# 참고용 EMA 조건 설명
+# =========================================================
+
+def get_reference_ema_condition_description():
+    if REFERENCE_SIGNAL_5_10 == "Y":
+        state_5_10 = "정배열"
+    elif REFERENCE_SIGNAL_5_10 == "N":
+        state_5_10 = "역배열"
+    else:
+        state_5_10 = "ANY"
+
+    if REFERENCE_SIGNAL_10_20 == "Y":
+        state_10_20 = "정배열"
+    elif REFERENCE_SIGNAL_10_20 == "N":
+        state_10_20 = "역배열"
+    else:
+        state_10_20 = "ANY"
+
+    count_limit = (
+        f"조건 충족 연속 {REFERENCE_ALIGNMENT_MAX_CANDLES}개 캔들 이내"
+        if REQUIRE_REFERENCE_FULL_ALIGNMENT == "Y"
+        else "조건 충족 캔들 수 제한 미사용"
+    )
+
+    return (
+        f"참고 EMA {EMA_PULLBACK}-{EMA_FAST} {state_5_10} "
+        f"+ EMA {EMA_FAST}-{EMA_SLOW} {state_10_20} "
+        f"+ {count_limit}"
+    )
+
+
+# =========================================================
+# SIGNAL EMA 조건 판정
+# =========================================================
+
+def check_ema_signal_condition(ema5, ema10, ema50):
+    if ema5 is None or ema10 is None or ema50 is None:
+        return False
 
     try:
-        return float(value)
-    except Exception:
-        return default
-
-
-def safe_string(value, default=""):
-    if value is None:
-        return default
-
-    try:
-        return str(value).strip()
-    except Exception:
-        return default
-
-
-def get_payload_value(data, names, default=None):
-    for name in names:
-        if name in data:
-            return data[name]
-
-    return default
-
-
-def now_string():
-    return datetime.now(KST).strftime(
-        "%Y-%m-%d %H:%M:%S"
-    )
-
-
-def clean_coin_name(coin):
-    return (
-        safe_string(coin)
-        .upper()
-        .replace("USDT.P", "")
-        .replace("USDT", "")
-        .replace("KRW-", "")
-        .replace("KRW", "")
-        .strip()
-    )
-
-
-def build_query_string(data):
-    return urlencode(data, doseq=True)
-
-
-def truncate_krw(amount):
-    return float(
-        int(
-            max(safe_float(amount), 0)
+        ema5, ema10, ema50 = map(
+            float, (ema5, ema10, ema50)
         )
-    )
-
-
-def truncate_volume(volume, decimals=8):
-    factor = 10 ** decimals
-
-    return (
-        int(
-            max(safe_float(volume), 0) * factor
-        ) / factor
-    )
-
-
-# =========================================================
-# JWT
-# =========================================================
-
-def create_jwt(
-    api_key,
-    secret_key,
-    query_string=""
-):
-    payload = {
-        "access_key": api_key,
-        "nonce": str(uuid.uuid4())
-    }
-
-    if query_string:
-        payload["query_hash"] = hashlib.sha512(
-            query_string.encode()
-        ).hexdigest()
-
-        payload["query_hash_alg"] = "SHA512"
-
-    token = jwt.encode(
-        payload,
-        secret_key,
-        algorithm="HS512"
-    )
-
-    return (
-        token.decode()
-        if isinstance(token, bytes)
-        else token
-    )
-
-
-def create_auth_headers(
-    api_key,
-    secret_key,
-    query_string=""
-):
-    return {
-        "Authorization":
-            f"Bearer {create_jwt(api_key, secret_key, query_string)}",
-        "Accept":
-            "application/json",
-        "Content-Type":
-            "application/json"
-    }
-
-
-def get_error_detail(response):
-    try:
-        return response.json()
-    except Exception:
-        return {
-            "status_code": response.status_code,
-            "text": response.text
-        }
-
-
-# =========================================================
-# DB
-# =========================================================
-
-def get_db():
-    conn = sqlite3.connect(
-        DB_FILE,
-        timeout=30
-    )
-
-    conn.row_factory = sqlite3.Row
-
-    return conn
-
-
-def init_db():
-
-    with db_lock:
-
-        conn = get_db()
-        c = conn.cursor()
-
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS trades(
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                uuid TEXT UNIQUE,
-                coin TEXT NOT NULL,
-                side TEXT NOT NULL,
-                order_amount REAL DEFAULT 0,
-                executed_funds REAL DEFAULT 0,
-                executed_volume REAL DEFAULT 0,
-                avg_price REAL DEFAULT 0,
-                fee REAL DEFAULT 0,
-                requested_ratio REAL DEFAULT 0,
-                created_at TEXT,
-                completed_at TEXT,
-                state TEXT,
-                realized_cost REAL DEFAULT 0,
-                realized_profit REAL DEFAULT 0,
-                realized_return REAL DEFAULT 0
-            )
-        """)
-
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS buy_lots(
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                trade_id INTEGER NOT NULL,
-                coin TEXT NOT NULL,
-                original_volume REAL NOT NULL,
-                remaining_volume REAL NOT NULL,
-                cost_per_unit REAL NOT NULL,
-                total_cost REAL NOT NULL,
-                fee REAL DEFAULT 0,
-                created_at TEXT,
-                FOREIGN KEY(trade_id)
-                    REFERENCES trades(id)
-            )
-        """)
-
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS sell_allocations(
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                sell_trade_id INTEGER NOT NULL,
-                buy_lot_id INTEGER NOT NULL,
-                volume REAL NOT NULL,
-                cost REAL NOT NULL,
-                FOREIGN KEY(sell_trade_id)
-                    REFERENCES trades(id),
-                FOREIGN KEY(buy_lot_id)
-                    REFERENCES buy_lots(id)
-            )
-        """)
-
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS settings(
-                key TEXT PRIMARY KEY,
-                value TEXT NOT NULL
-            )
-        """)
-
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS trailing_exit_state(
-                coin TEXT PRIMARY KEY,
-                highest_stage INTEGER DEFAULT 0,
-                highest_profit REAL DEFAULT 0,
-                updated_at TEXT
-            )
-        """)
-
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS coin_target_exit(
-                coin TEXT PRIMARY KEY,
-                enabled INTEGER DEFAULT 0,
-                target_stage INTEGER DEFAULT 0,
-                target_profit REAL DEFAULT 0,
-                updated_at TEXT
-            )
-        """)
-
-        defaults = {
-            "month_start_amount":
-                DEFAULT_MONTH_START_AMOUNT,
-
-            "max_loss_rate":
-                DEFAULT_MAX_LOSS_RATE,
-
-            "trailing_drop_stage":
-                DEFAULT_TRAILING_DROP_STAGE,
-
-            "trailing_sell_stage":
-                DEFAULT_TRAILING_SELL_STAGE,
-
-            # 오늘 시작금액은 대시보드에서 직접 입력
-            "today_start_amount":
-                0,
-
-            # BUY LOCK 상태
-            "buy_lock":
-                0,
-
-            "buy_lock_reason":
-                "",
-
-            "buy_lock_triggered_at":
-                ""
-        }
-
-        for key, value in defaults.items():
-
-            c.execute(
-                """
-                INSERT OR IGNORE INTO settings(
-                    key,
-                    value
-                )
-                VALUES(?,?)
-                """,
-                (
-                    key,
-                    str(value)
-                )
-            )
-
-        conn.commit()
-        conn.close()
-
-
-# =========================================================
-# 설정
-# =========================================================
-
-def get_settings(keys):
-
-    if not keys:
-        return {}
-
-    with db_lock:
-
-        conn = get_db()
-
-        placeholders = ",".join(
-            "?" * len(keys)
-        )
-
-        rows = conn.execute(
-            f"""
-            SELECT key,value
-            FROM settings
-            WHERE key IN ({placeholders})
-            """,
-            keys
-        ).fetchall()
-
-        conn.close()
-
-    return {
-        r["key"]: r["value"]
-        for r in rows
-    }
-
-
-def get_risk_settings():
-
-    v = get_settings([
-        "month_start_amount",
-        "max_loss_rate"
-    ])
-
-    month = safe_float(
-        v.get("month_start_amount"),
-        DEFAULT_MONTH_START_AMOUNT
-    )
-
-    rate = safe_float(
-        v.get("max_loss_rate"),
-        DEFAULT_MAX_LOSS_RATE
-    )
-
-    if month <= 0:
-        month = DEFAULT_MONTH_START_AMOUNT
-
-    if rate <= 0:
-        rate = DEFAULT_MAX_LOSS_RATE
-
-    return month, rate
-
-
-def get_month_start_amount():
-    return get_risk_settings()[0]
-
-
-def get_max_loss_rate():
-    return get_risk_settings()[1]
-
-
-def get_risk_unit():
-
-    month, rate = get_risk_settings()
-
-    return max(
-        month * rate,
-        0
-    )
-
-
-def save_risk_settings(
-    month,
-    rate
-):
-
-    month = truncate_krw(month)
-
-    with db_lock:
-
-        conn = get_db()
-
-        conn.execute(
-            """
-            INSERT OR REPLACE INTO settings(
-                key,value
-            )
-            VALUES(?,?)
-            """,
-            (
-                "month_start_amount",
-                str(month)
-            )
-        )
-
-        conn.execute(
-            """
-            INSERT OR REPLACE INTO settings(
-                key,value
-            )
-            VALUES(?,?)
-            """,
-            (
-                "max_loss_rate",
-                str(rate)
-            )
-        )
-
-        conn.commit()
-        conn.close()
-
-
-# =========================================================
-# 당일 BUY LOCK
-#
-# 당일 수익금 = 현재 총자산 - 오늘 시작금액
-#
-# 매수 중단 기준 =
-# 월 시작금액 × 3%
-#
-# 당일 수익금이 매수 중단 기준 이하이면 BUY LOCK
-#
-# 오늘 시작금액을 대시보드에서 직접 수정하고
-# 서버에 저장하면 BUY LOCK 해제
-#
-# SELL 및 자동매도는 차단하지 않음
-# =========================================================
-
-def get_buy_lock_settings():
-
-    values = get_settings([
-        "today_start_amount",
-        "buy_lock",
-        "buy_lock_reason",
-        "buy_lock_triggered_at"
-    ])
-
-    return {
-        "today_start_amount":
-            safe_float(
-                values.get("today_start_amount"),
-                0
-            ),
-
-        "buy_lock":
-            bool(
-                int(
-                    safe_float(
-                        values.get("buy_lock"),
-                        0
-                    )
-                )
-            ),
-
-        "buy_lock_reason":
-            safe_string(
-                values.get("buy_lock_reason")
-            ),
-
-        "buy_lock_triggered_at":
-            safe_string(
-                values.get("buy_lock_triggered_at")
-            )
-    }
-
-
-def get_buy_lock_status():
-
-    lock_settings = get_buy_lock_settings()
-
-    month_start = get_month_start_amount()
-
-    today_start = lock_settings[
-        "today_start_amount"
-    ]
-
-    with asset_cache_lock:
-
-        total = safe_float(
-            latest_upbit_total_krw
-        )
-
-    daily_profit = (
-        total - today_start
-        if today_start > 0
-        else 0
-    )
-
-    loss_limit = (
-        month_start * BUY_LOCK_LOSS_RATE
-    )
-
-    return {
-        "buy_lock":
-            lock_settings["buy_lock"],
-
-        "today_start_amount":
-            today_start,
-
-        "today_profit":
-            daily_profit,
-
-        "buy_lock_loss_limit":
-            loss_limit,
-
-        "buy_lock_loss_rate":
-            BUY_LOCK_LOSS_RATE,
-
-        "buy_lock_reason":
-            lock_settings["buy_lock_reason"],
-
-        "buy_lock_triggered_at":
-            lock_settings["buy_lock_triggered_at"]
-    }
-
-
-def is_buy_locked():
-
-    status = get_buy_lock_status()
+    except (TypeError, ValueError):
+        return False
+
+    if not all(
+        np.isfinite(v) for v in (ema5, ema10, ema50)
+    ):
+        return False
+
+    if SIGNAL_5_10 == "Y":
+        condition_5_10 = ema5 > ema10
+    elif SIGNAL_5_10 == "N":
+        condition_5_10 = ema5 < ema10
+    else:
+        condition_5_10 = True
+
+    if SIGNAL_10_50 == "Y":
+        condition_10_50 = ema10 > ema50
+    elif SIGNAL_10_50 == "N":
+        condition_10_50 = ema10 < ema50
+    else:
+        condition_10_50 = True
 
     return bool(
-        status["buy_lock"]
+        condition_5_10 and condition_10_50
     )
 
 
-def activate_buy_lock(
-    daily_profit,
-    loss_limit
+# =========================================================
+# 참고용 EMA 조건 판정
+# =========================================================
+
+def check_reference_ema_condition(
+    state_5_10,
+    state_10_20
 ):
-
-    with db_lock:
-
-        conn = get_db()
-
-        current = conn.execute(
-            """
-            SELECT value
-            FROM settings
-            WHERE key='buy_lock'
-            """
-        ).fetchone()
-
-        already_locked = (
-            bool(
-                int(
-                    safe_float(
-                        current["value"]
-                        if current
-                        else 0
-                    )
-                )
-            )
-        )
-
-        if not already_locked:
-
-            reason = (
-                f"당일 손익 {daily_profit:,.0f}원 "
-                f"및 매수중단 기준 -{loss_limit:,.0f}원 도달"
-            )
-
-            conn.execute(
-                """
-                INSERT OR REPLACE INTO settings(
-                    key,value
-                )
-                VALUES(?,?)
-                """,
-                (
-                    "buy_lock",
-                    "1"
-                )
-            )
-
-            conn.execute(
-                """
-                INSERT OR REPLACE INTO settings(
-                    key,value
-                )
-                VALUES(?,?)
-                """,
-                (
-                    "buy_lock_reason",
-                    reason
-                )
-            )
-
-            conn.execute(
-                """
-                INSERT OR REPLACE INTO settings(
-                    key,value
-                )
-                VALUES(?,?)
-                """,
-                (
-                    "buy_lock_triggered_at",
-                    now_string()
-                )
-            )
-
-            conn.commit()
-
-            logger.warning(
-                f"BUY LOCK ACTIVATED | "
-                f"당일손익={daily_profit:,.0f}원 | "
-                f"기준=-{loss_limit:,.0f}원"
-            )
-
-        conn.close()
-
-
-def update_buy_lock_by_total(total):
-
-    lock_settings = get_buy_lock_settings()
-
-    # 이미 잠겼으면 자동으로 해제하지 않음
-    if lock_settings["buy_lock"]:
-        return
-
-    today_start = (
-        lock_settings["today_start_amount"]
-    )
-
-    # 오늘 시작금액을 아직 입력하지 않았다면 판정하지 않음
-    if today_start <= 0:
-        return
-
-    month_start = get_month_start_amount()
-
-    loss_limit = (
-        month_start * BUY_LOCK_LOSS_RATE
-    )
-
-    daily_profit = (
-        safe_float(total) - today_start
-    )
-
-    if daily_profit <= -loss_limit:
-
-        activate_buy_lock(
-            daily_profit,
-            loss_limit
-        )
-
-
-def save_today_start_amount(amount):
-
-    amount = truncate_krw(amount)
-
-    if amount < MIN_ORDER_KRW:
-
-        raise ValueError(
-            f"오늘 시작금액은 {MIN_ORDER_KRW:,}원 이상이어야 합니다."
-        )
-
-    with db_lock:
-
-        conn = get_db()
-
-        conn.execute(
-            """
-            INSERT OR REPLACE INTO settings(
-                key,value
-            )
-            VALUES(?,?)
-            """,
-            (
-                "today_start_amount",
-                str(amount)
-            )
-        )
-
-        # 오늘 시작금액을 직접 변경했으므로 BUY LOCK 해제
-        conn.execute(
-            """
-            INSERT OR REPLACE INTO settings(
-                key,value
-            )
-            VALUES(?,?)
-            """,
-            (
-                "buy_lock",
-                "0"
-            )
-        )
-
-        conn.execute(
-            """
-            INSERT OR REPLACE INTO settings(
-                key,value
-            )
-            VALUES(?,?)
-            """,
-            (
-                "buy_lock_reason",
-                ""
-            )
-        )
-
-        conn.execute(
-            """
-            INSERT OR REPLACE INTO settings(
-                key,value
-            )
-            VALUES(?,?)
-            """,
-            (
-                "buy_lock_triggered_at",
-                ""
-            )
-        )
-
-        conn.commit()
-        conn.close()
-
-    logger.info(
-        f"BUY LOCK RESET | "
-        f"오늘 시작금액 변경={amount:,.0f}원"
-    )
-
-    # 변경된 시작금액을 기준으로 즉시 다시 판정
-    with asset_cache_lock:
-
-        total = safe_float(
-            latest_upbit_total_krw
-        )
-
-    update_buy_lock_by_total(total)
-
-    return get_buy_lock_status()
-
-
-def check_buy_lock_or_raise():
-
-    status = get_buy_lock_status()
-
-    if status["buy_lock"]:
-
-        raise HTTPException(
-            status_code=403,
-            detail={
-                "message":
-                    "BUY LOCK 상태입니다. 매수가 차단되었습니다.",
-
-                "today_profit":
-                    status["today_profit"],
-
-                "loss_limit":
-                    status["buy_lock_loss_limit"],
-
-                "reason":
-                    status["buy_lock_reason"],
-
-                "triggered_at":
-                    status["buy_lock_triggered_at"]
-            }
-        )
-
-    return status
-
-
-# =========================================================
-# 자동 손절 / 고정 익절
-#
-# 자동손절:
-# 월 시작금액 × 전체 시드 손실기준 %
-#
-# 별도 저장/입력하지 않음
-# =========================================================
-
-def get_auto_exit_settings():
-
-    stop = get_risk_unit()
-
-    v = get_settings([
-        "auto_take_profit_krw"
-    ])
-
-    default_take = (
-        get_risk_unit()
-        * DEFAULT_AUTO_TAKE_PROFIT_STAGE
-    )
-
-    take = max(
-        safe_float(
-            v.get("auto_take_profit_krw"),
-            default_take
-        ),
-        0
-    )
-
-    return stop, take
-
-
-def save_auto_exit_settings(
-    take
-):
-
-    take = truncate_krw(take)
-
-    with db_lock:
-
-        conn = get_db()
-
-        conn.execute(
-            """
-            INSERT OR REPLACE INTO settings(
-                key,value
-            )
-            VALUES(?,?)
-            """,
-            (
-                "auto_take_profit_krw",
-                str(take)
-            )
-        )
-
-        conn.commit()
-        conn.close()
-
-
-# =========================================================
-# 트레일링 설정
-# =========================================================
-
-def get_trailing_drop_stage():
-
-    v = get_settings([
-        "trailing_drop_stage"
-    ])
-
-    stage = int(
-        safe_float(
-            v.get("trailing_drop_stage"),
-            DEFAULT_TRAILING_DROP_STAGE
-        )
-    )
-
-    return max(
-        min(stage, 10),
-        1
-    )
-
-
-def save_trailing_drop_stage(stage):
-
-    try:
-        stage = int(stage)
-    except Exception:
-        stage = DEFAULT_TRAILING_DROP_STAGE
-
-    stage = max(
-        min(stage, 10),
-        1
-    )
-
-    with db_lock:
-
-        conn = get_db()
-
-        conn.execute(
-            """
-            INSERT OR REPLACE INTO settings(
-                key,value
-            )
-            VALUES(?,?)
-            """,
-            (
-                "trailing_drop_stage",
-                str(stage)
-            )
-        )
-
-        conn.commit()
-        conn.close()
-
-    return stage
-
-
-def get_trailing_sell_stage():
-
-    v = get_settings([
-        "trailing_sell_stage"
-    ])
-
-    stage = int(
-        safe_float(
-            v.get("trailing_sell_stage"),
-            DEFAULT_TRAILING_SELL_STAGE
-        )
-    )
-
-    return max(
-        min(stage, 10),
-        0
-    )
-
-
-def save_trailing_sell_stage(stage):
-
-    try:
-        stage = int(stage)
-    except Exception:
-        stage = DEFAULT_TRAILING_SELL_STAGE
-
-    stage = max(
-        min(stage, 10),
-        0
-    )
-
-    with db_lock:
-
-        conn = get_db()
-
-        conn.execute(
-            """
-            INSERT OR REPLACE INTO settings(
-                key,value
-            )
-            VALUES(?,?)
-            """,
-            (
-                "trailing_sell_stage",
-                str(stage)
-            )
-        )
-
-        conn.commit()
-        conn.close()
-
-    return stage
-
-
-# =========================================================
-# 리스크 단계
-# =========================================================
-
-def calculate_risk_stage(profit_amount):
-
-    risk = get_risk_unit()
-
-    if risk <= 0 or profit_amount <= 0:
-        return 0
-
-    return max(
-        int(
-            profit_amount / risk
-        ),
-        0
-    )
-
-
-# =========================================================
-# 트레일링 상태
-# =========================================================
-
-def get_trailing_state(coin):
-
-    coin = clean_coin_name(coin)
-
-    with db_lock:
-
-        conn = get_db()
-
-        row = conn.execute(
-            """
-            SELECT
-                highest_stage,
-                highest_profit,
-                updated_at
-            FROM trailing_exit_state
-            WHERE coin=?
-            """,
-            (coin,)
-        ).fetchone()
-
-        conn.close()
-
-    if row is None:
-
-        return {
-            "highest_stage": 0,
-            "highest_profit": 0.0,
-            "updated_at": ""
-        }
-
-    return {
-        "highest_stage":
-            int(
-                safe_float(
-                    row["highest_stage"]
-                )
-            ),
-
-        "highest_profit":
-            safe_float(
-                row["highest_profit"]
-            ),
-
-        "updated_at":
-            safe_string(
-                row["updated_at"]
-            )
-    }
-
-
-def get_all_trailing_states():
-
-    with db_lock:
-
-        conn = get_db()
-
-        rows = conn.execute(
-            """
-            SELECT
-                coin,
-                highest_stage,
-                highest_profit,
-                updated_at
-            FROM trailing_exit_state
-            """
-        ).fetchall()
-
-        conn.close()
-
-    result = {}
-
-    for row in rows:
-
-        coin = clean_coin_name(
-            row["coin"]
-        )
-
-        result[coin] = {
-            "highest_stage":
-                int(
-                    safe_float(
-                        row["highest_stage"]
-                    )
-                ),
-
-            "highest_profit":
-                safe_float(
-                    row["highest_profit"]
-                ),
-
-            "updated_at":
-                safe_string(
-                    row["updated_at"]
-                )
-        }
-
-    return result
-
-
-def save_trailing_state(
-    coin,
-    stage,
-    profit
-):
-
-    coin = clean_coin_name(coin)
-
-    with db_lock:
-
-        conn = get_db()
-
-        conn.execute(
-            """
-            INSERT OR REPLACE INTO trailing_exit_state(
-                coin,
-                highest_stage,
-                highest_profit,
-                updated_at
-            )
-            VALUES(?,?,?,?)
-            """,
-            (
-                coin,
-                int(stage),
-                float(profit),
-                now_string()
-            )
-        )
-
-        conn.commit()
-        conn.close()
-
-
-def delete_trailing_state(coin):
-
-    with db_lock:
-
-        conn = get_db()
-
-        conn.execute(
-            """
-            DELETE FROM trailing_exit_state
-            WHERE coin=?
-            """,
-            (
-                clean_coin_name(coin),
-            )
-        )
-
-        conn.commit()
-        conn.close()
-
-
-# =========================================================
-# 코인 목표
-# =========================================================
-
-def get_coin_target(coin):
-
-    coin = clean_coin_name(coin)
-
-    with db_lock:
-
-        conn = get_db()
-
-        row = conn.execute(
-            """
-            SELECT
-                coin,
-                enabled,
-                target_stage,
-                target_profit,
-                updated_at
-            FROM coin_target_exit
-            WHERE coin=?
-            """,
-            (coin,)
-        ).fetchone()
-
-        conn.close()
-
-    if row is None:
-
-        return {
-            "coin": coin,
-            "enabled": False,
-            "target_stage": 0,
-            "target_profit": 0.0,
-            "updated_at": ""
-        }
-
-    return {
-        "coin": coin,
-
-        "enabled":
-            bool(row["enabled"]),
-
-        "target_stage":
-            int(
-                safe_float(
-                    row["target_stage"]
-                )
-            ),
-
-        "target_profit":
-            safe_float(
-                row["target_profit"]
-            ),
-
-        "updated_at":
-            safe_string(
-                row["updated_at"]
-            )
-    }
-
-
-def get_all_coin_targets():
-
-    with db_lock:
-
-        conn = get_db()
-
-        rows = conn.execute(
-            """
-            SELECT
-                coin,
-                enabled,
-                target_stage,
-                target_profit,
-                updated_at
-            FROM coin_target_exit
-            """
-        ).fetchall()
-
-        conn.close()
-
-    result = {}
-
-    for row in rows:
-
-        coin = clean_coin_name(
-            row["coin"]
-        )
-
-        result[coin] = {
-            "coin": coin,
-
-            "enabled":
-                bool(row["enabled"]),
-
-            "target_stage":
-                int(
-                    safe_float(
-                        row["target_stage"]
-                    )
-                ),
-
-            "target_profit":
-                safe_float(
-                    row["target_profit"]
-                ),
-
-            "updated_at":
-                safe_string(
-                    row["updated_at"]
-                )
-        }
-
-    return result
-
-
-def save_coin_target(
-    coin,
-    enabled,
-    target_stage
-):
-
-    coin = clean_coin_name(coin)
-
-    target_stage = int(
-        max(
-            min(
-                target_stage,
-                10
-            ),
-            0
-        )
-    )
-
-    risk = get_risk_unit()
-
-    target_profit = (
-        risk * target_stage
-        if enabled and target_stage > 0
-        else 0
-    )
-
-    with db_lock:
-
-        conn = get_db()
-
-        conn.execute(
-            """
-            INSERT OR REPLACE INTO coin_target_exit(
-                coin,
-                enabled,
-                target_stage,
-                target_profit,
-                updated_at
-            )
-            VALUES(?,?,?,?,?)
-            """,
-            (
-                coin,
-                1 if enabled else 0,
-                target_stage,
-                target_profit,
-                now_string()
-            )
-        )
-
-        conn.commit()
-        conn.close()
-
-    return get_coin_target(coin)
-
-
-def delete_coin_target(coin):
-
-    with db_lock:
-
-        conn = get_db()
-
-        conn.execute(
-            """
-            DELETE FROM coin_target_exit
-            WHERE coin=?
-            """,
-            (
-                clean_coin_name(coin),
-            )
-        )
-
-        conn.commit()
-        conn.close()
-
-
-# =========================================================
-# 트레일링 단계 계산
-# =========================================================
-
-def update_trailing_stage(
-    coin,
-    current_profit
-):
-
-    coin = clean_coin_name(coin)
-
-    current_profit = safe_float(
-        current_profit
-    )
-
-    risk = get_risk_unit()
-
-    current_stage = calculate_risk_stage(
-        current_profit
-    )
-
-    state = get_trailing_state(
-        coin
-    )
-
-    highest_stage = state["highest_stage"]
-    highest_profit = state["highest_profit"]
-
-    if current_stage > highest_stage:
-
-        highest_stage = current_stage
-        highest_profit = current_profit
-
-        save_trailing_state(
-            coin,
-            highest_stage,
-            highest_profit
-        )
-
-        logger.info(
-            f"TRAILING NEW HIGH | "
-            f"{coin} | "
-            f"최고 1:{highest_stage} | "
-            f"{highest_profit:+,.0f}원"
-        )
-
-    elif current_profit > highest_profit:
-
-        highest_profit = current_profit
-
-        save_trailing_state(
-            coin,
-            highest_stage,
-            highest_profit
-        )
-
-    drop_stage = get_trailing_drop_stage()
-
-    coin_target = get_coin_target(coin)
-
-    if (
-        coin_target["enabled"]
-        and
-        int(
-            coin_target["target_stage"]
-        ) > 0
-    ):
-
-        sell_stage = int(
-            coin_target["target_stage"]
-        )
-
-        target_source = "COIN"
-
+    if REFERENCE_SIGNAL_5_10 == "Y":
+        condition_5_10 = state_5_10 == "정배열"
+    elif REFERENCE_SIGNAL_5_10 == "N":
+        condition_5_10 = state_5_10 == "역배열"
     else:
+        condition_5_10 = True
 
-        sell_stage = get_trailing_sell_stage()
-
-        target_source = "GLOBAL"
-
-    target_profit = (
-        risk * sell_stage
-        if risk > 0
-        else 0
-    )
-
-    trigger = False
-    trigger_stage = 0
-    trigger_profit = 0.0
-    trigger_type = "NONE"
-
-    if risk > 0:
-
-        if (
-            sell_stage > 0
-            and
-            current_stage >= sell_stage
-        ):
-
-            trigger = True
-            trigger_stage = sell_stage
-
-            trigger_profit = (
-                sell_stage * risk
-            )
-
-            trigger_type = "TARGET"
-
-        elif (
-            sell_stage > 0
-            and
-            highest_stage > 0
-        ):
-
-            trigger_stage = max(
-                highest_stage - drop_stage,
-                0
-            )
-
-            trigger_profit = (
-                trigger_stage * risk
-            )
-
-            if current_profit <= trigger_profit:
-
-                trigger = True
-                trigger_type = "TRAILING_STOP"
-
+    if REFERENCE_SIGNAL_10_20 == "Y":
+        condition_10_20 = state_10_20 == "정배열"
+    elif REFERENCE_SIGNAL_10_20 == "N":
+        condition_10_20 = state_10_20 == "역배열"
     else:
+        condition_10_20 = True
 
-        if highest_stage > 0:
+    return bool(condition_5_10 and condition_10_20)
 
-            trigger_stage = max(
-                highest_stage - drop_stage,
-                0
+
+# =========================================================
+# API 요청
+# =========================================================
+
+def wait_request():
+    global last_request_time
+
+    with request_lock:
+        gap = time.monotonic() - last_request_time
+
+        if gap < REQUEST_INTERVAL:
+            time.sleep(REQUEST_INTERVAL - gap)
+
+        last_request_time = time.monotonic()
+
+
+def retry(func, *args, **kwargs):
+    for n in range(MAX_RETRIES):
+        try:
+            wait_request()
+            r = func(*args, **kwargs)
+
+            if not hasattr(r, "status_code") or r.status_code == 200:
+                return r
+
+            if r.status_code == 429:
+                time.sleep(min(RATE_LIMIT_WAIT * (n + 1), 60))
+            elif r.status_code >= 500:
+                time.sleep(min(2 * (n + 1), 30))
+            else:
+                return r
+
+        except Exception as e:
+            log.warning(
+                "API 오류 %s/%s: %s",
+                n + 1,
+                MAX_RETRIES,
+                e
             )
 
-            trigger_profit = (
-                trigger_stage * risk
-            )
+            if n < MAX_RETRIES - 1:
+                time.sleep(min(2 * (n + 1), 20))
 
-            if current_profit <= trigger_profit:
-
-                trigger = True
-                trigger_type = "TRAILING_STOP"
-
-    return {
-        "trigger": trigger,
-        "trigger_type": trigger_type,
-
-        "target_source": target_source,
-
-        "current_stage": current_stage,
-
-        "highest_stage": highest_stage,
-        "highest_profit": highest_profit,
-
-        "current_profit": current_profit,
-
-        "risk_unit": risk,
-
-        "trailing_drop_stage":
-            drop_stage,
-
-        "trailing_sell_stage":
-            sell_stage,
-
-        "global_trailing_sell_stage":
-            get_trailing_sell_stage(),
-
-        "coin_target_enabled":
-            bool(
-                coin_target["enabled"]
-            ),
-
-        "coin_target_stage":
-            int(
-                coin_target["target_stage"]
-            ),
-
-        "target_profit":
-            target_profit,
-
-        "trigger_stage":
-            trigger_stage,
-
-        "sell_trigger_profit":
-            trigger_profit
-    }
+    return None
 
 
 # =========================================================
-# 고정 손절
+# 업비트 마켓 조회
 # =========================================================
 
-def is_fixed_stop_loss_hit(profit):
+def get_upbit_markets():
+    global latest_upbit_markets
 
-    stop, _ = get_auto_exit_settings()
-
-    if stop <= 0:
-        return False
-
-    return safe_float(profit) <= -stop
-
-
-# =========================================================
-# KRW 전체 현재가 조회
-# =========================================================
-
-def refresh_ticker_cache():
-
-    global ticker_price_cache
-    global ticker_cache_updated_at
-
-    try:
-
-        r = requests.get(
-            SERVER_URL + "/v1/ticker/all",
-            params={
-                "quote_currencies": "KRW"
-            },
-            timeout=REQUEST_TIMEOUT
-        )
-
-    except requests.RequestException as e:
-
-        logger.error(
-            f"TICKER ALL REQUEST FAILED | {e}"
-        )
-
-        return False
-
-    if r.status_code != 200:
-
-        logger.error(
-            f"TICKER ALL ERROR | "
-            f"{r.status_code} | "
-            f"{r.text[:300]}"
-        )
-
-        return False
-
-    try:
-        data = r.json()
-    except Exception as e:
-
-        logger.error(
-            f"TICKER ALL JSON ERROR | {e}"
-        )
-
-        return False
-
-    new_cache = {}
-
-    if isinstance(data, list):
-
-        for item in data:
-
-            if not isinstance(item, dict):
-                continue
-
-            market = safe_string(
-                item.get("market")
-            ).upper()
-
-            price = safe_float(
-                item.get("trade_price")
-            )
-
-            if market and price > 0:
-                new_cache[market] = price
-
-    if not new_cache:
-
-        logger.error(
-            "TICKER ALL EMPTY"
-        )
-
-        return False
-
-    with ticker_cache_lock:
-
-        ticker_price_cache = new_cache
-        ticker_cache_updated_at = time.time()
-
-    return True
-
-
-def get_ticker_prices(markets):
-
-    if not markets:
-        return {}
-
-    wanted = set()
-
-    for market in markets:
-
-        market = safe_string(
-            market
-        ).upper()
-
-        if market:
-            wanted.add(market)
-
-    if not wanted:
-        return {}
-
-    now = time.time()
-
-    with ticker_cache_lock:
-
-        cache_age = (
-            now -
-            ticker_cache_updated_at
-        )
-
-        if (
-            ticker_price_cache
-            and
-            cache_age < TICKER_CACHE_SECONDS
-        ):
-
-            return {
-                market:
-                    ticker_price_cache[market]
-                for market in wanted
-                if market in ticker_price_cache
-            }
-
-    with ticker_refresh_lock:
-
-        now = time.time()
-
-        with ticker_cache_lock:
-
-            cache_age = (
-                now -
-                ticker_cache_updated_at
-            )
-
-            if (
-                ticker_price_cache
-                and
-                cache_age < TICKER_CACHE_SECONDS
-            ):
-
-                return {
-                    market:
-                        ticker_price_cache[market]
-                    for market in wanted
-                    if market in ticker_price_cache
-                }
-
-        if not refresh_ticker_cache():
-
-            with ticker_cache_lock:
-
-                return {
-                    market:
-                        ticker_price_cache[market]
-                    for market in wanted
-                    if market in ticker_price_cache
-                }
-
-        with ticker_cache_lock:
-
-            return {
-                market:
-                    ticker_price_cache[market]
-                for market in wanted
-                if market in ticker_price_cache
-            }
-
-
-def get_ticker_price(market):
-
-    market = safe_string(
-        market
-    ).upper()
-
-    if not market:
-        return 0.0
-
-    prices = get_ticker_prices([
-        market
-    ])
-
-    return safe_float(
-        prices.get(market)
+    r = retry(
+        requests.get,
+        "https://api.upbit.com/v1/market/all",
+        params={"isDetails": "false"},
+        timeout=15
     )
 
-
-# =========================================================
-# 주문 가능 정보
-# =========================================================
-
-def get_order_chance(
-    market,
-    api_key,
-    secret_key
-):
-
-    global latest_bid_fee_rate
-
-    query = {
-        "market": market
-    }
-
-    qs = build_query_string(query)
-
-    try:
-
-        r = requests.get(
-            SERVER_URL + "/v1/orders/chance",
-            params=query,
-            headers=create_auth_headers(
-                api_key,
-                secret_key,
-                qs
-            ),
-            timeout=REQUEST_TIMEOUT
-        )
-
-    except requests.RequestException as e:
-
-        logger.error(
-            f"ORDER CHANCE FAILED | "
-            f"{market} | {e}"
-        )
-
-        return {
-            "bid_fee": 0.0,
-            "min_total": MIN_ORDER_KRW
-        }
-
-    if r.status_code != 200:
-
-        logger.error(
-            f"ORDER CHANCE ERROR | "
-            f"{market} | "
-            f"{r.status_code}"
-        )
-
-        return {
-            "bid_fee": 0.0,
-            "min_total": MIN_ORDER_KRW
-        }
-
-    try:
-        data = r.json()
-    except Exception:
-        return {
-            "bid_fee": 0.0,
-            "min_total": MIN_ORDER_KRW
-        }
-
-    fee = safe_float(
-        data.get("bid_fee")
-    )
-
-    minimum = safe_float(
-        data.get("market", {})
-        .get("bid", {})
-        .get("min_total"),
-        MIN_ORDER_KRW
-    )
-
-    if minimum <= 0:
-        minimum = MIN_ORDER_KRW
-
-    latest_bid_fee_rate = fee
-
-    return {
-        "bid_fee": fee,
-        "min_total": minimum,
-        "data": data
-    }
-
-
-def calculate_fee_safe_buy_amount(
-    available,
-    fee
-):
-
-    if available <= 0:
-        return 0.0
-
-    fee = max(
-        fee,
-        0
-    )
-
-    amount = truncate_krw(
-        available /
-        (1 + fee)
-    )
-
-    if amount > 1:
-        amount -= 1
-
-    return max(
-        amount,
-        0
-    )
-
-
-# =========================================================
-# 계좌 조회
-# =========================================================
-
-def fetch_upbit_accounts():
-
-    if (
-        not UPBIT_ACCESS_KEY
-        or
-        not UPBIT_SECRET_KEY
-    ):
-        return None
-
-    try:
-
-        r = requests.get(
-            SERVER_URL + "/v1/accounts",
-            headers=create_auth_headers(
-                UPBIT_ACCESS_KEY,
-                UPBIT_SECRET_KEY
-            ),
-            timeout=REQUEST_TIMEOUT
-        )
-
-    except requests.RequestException as e:
-
-        logger.error(
-            f"ACCOUNT REQUEST FAILED | {e}"
-        )
-
-        return None
-
-    if r.status_code != 200:
-
-        logger.error(
-            f"ACCOUNT ERROR | "
-            f"{r.status_code} | "
-            f"{r.text[:300]}"
-        )
-
-        return None
-
-    try:
-        return r.json()
-    except Exception as e:
-
-        logger.error(
-            f"ACCOUNT JSON ERROR | {e}"
-        )
-
-        return None
-
-
-# =========================================================
-# 계좌 + 현재가 통합
-# =========================================================
-
-def build_positions_from_accounts(
-    accounts,
-    prices
-):
-
-    if not accounts:
-        return [], 0.0, 0.0
-
-    positions = []
-
-    total = 0.0
-    available = 0.0
-
-    for a in accounts:
-
-        currency = safe_string(
-            a.get("currency")
-        ).upper()
-
-        balance = safe_float(
-            a.get("balance")
-        )
-
-        locked = safe_float(
-            a.get("locked")
-        )
-
-        if currency == "KRW":
-
-            available = max(
-                balance,
-                0
-            )
-
-            total += (
-                balance +
-                locked
-            )
-
-            continue
-
-        if balance <= 0:
-            continue
-
-        market = f"KRW-{currency}"
-
-        current = safe_float(
-            prices.get(market)
-        )
-
-        if current <= 0:
-            continue
-
-        avg = safe_float(
-            a.get("avg_buy_price")
-        )
-
-        buy_amount = (
-            balance *
-            avg
-        )
-
-        evaluation = (
-            balance *
-            current
-        )
-
-        profit = (
-            evaluation -
-            buy_amount
-        )
-
-        rate = (
-            profit /
-            buy_amount *
-            100
-            if buy_amount > 0
-            else 0
-        )
-
-        total += evaluation
-
-        positions.append({
-            "currency":
-                currency,
-
-            "market":
-                market,
-
-            "balance":
-                balance,
-
-            "locked":
-                locked,
-
-            "avg_buy_price":
-                avg,
-
-            "buy_amount_krw":
-                buy_amount,
-
-            "current_price":
-                current,
-
-            "evaluation_krw":
-                evaluation,
-
-            "profit_amount":
-                profit,
-
-            "profit_rate":
-                rate
-        })
-
-    positions.sort(
-        key=lambda x:
-            -x["evaluation_krw"]
-    )
-
-    return (
-        positions,
-        total,
-        available
-    )
-
-
-# =========================================================
-# 실제 포지션 캐시
-# =========================================================
-
-def get_cached_real_positions():
-
-    with asset_cache_lock:
-
-        return [
-            dict(p)
-            for p in latest_real_upbit_positions
-        ]
-
-
-def get_real_upbit_positions():
-
-    positions = get_cached_real_positions()
-
-    if positions:
-        return positions
-
-    accounts = fetch_upbit_accounts()
-
-    if not accounts:
+    if r is None:
         return []
 
-    markets = []
-
-    for a in accounts:
-
-        currency = safe_string(
-            a.get("currency")
-        ).upper()
-
-        if (
-            currency
-            and
-            currency != "KRW"
-            and
-            safe_float(
-                a.get("balance")
-            ) > 0
-        ):
-
-            markets.append(
-                f"KRW-{currency}"
-            )
-
-    prices = get_ticker_prices(
-        markets
-    )
-
-    positions, _, _ = (
-        build_positions_from_accounts(
-            accounts,
-            prices
-        )
-    )
-
-    return positions
-
-
-# =========================================================
-# 업비트 자산 백그라운드 갱신
-# =========================================================
-
-def fetch_upbit_assets(
-    api_key,
-    secret_key
-):
-
-    global latest_upbit_assets
-    global latest_real_upbit_positions
-    global latest_upbit_total_krw
-    global latest_upbit_available_krw
-    global latest_upbit_update
-
-    if (
-        not api_key
-        or
-        not secret_key
-    ):
-        return -1
-
     try:
-
-        r = requests.get(
-            SERVER_URL + "/v1/accounts",
-            headers=create_auth_headers(
-                api_key,
-                secret_key
-            ),
-            timeout=REQUEST_TIMEOUT
-        )
-
-    except requests.RequestException as e:
-
-        logger.error(
-            f"ACCOUNT REQUEST FAILED | {e}"
-        )
-
-        return -1
-
-    if r.status_code != 200:
-
-        logger.error(
-            f"ACCOUNT ERROR | "
-            f"{r.status_code} | "
-            f"{r.text[:300]}"
-        )
-
-        return -1
-
-    try:
-        accounts = r.json()
-    except Exception:
-        return -1
-
-    markets = []
-
-    for a in accounts:
-
-        currency = safe_string(
-            a.get("currency")
-        ).upper()
-
-        balance = safe_float(
-            a.get("balance")
-        )
-
-        if (
-            currency
-            and
-            currency != "KRW"
-            and
-            balance > 0
-        ):
-
-            markets.append(
-                f"KRW-{currency}"
-            )
-
-    prices = get_ticker_prices(
-        markets
-    )
-
-    positions, total, available = (
-        build_positions_from_accounts(
-            accounts,
-            prices
-        )
-    )
-
-    real_positions = [
-        dict(p)
-        for p in positions
-    ]
-
-    dashboard_assets = [
-        dict(p)
-        for p in positions
-        if p["evaluation_krw"]
-        >= MIN_DASHBOARD_VALUE_KRW
-    ]
-
-    with asset_cache_lock:
-
-        latest_real_upbit_positions = (
-            real_positions
-        )
-
-        latest_upbit_assets = (
-            dashboard_assets
-        )
-
-        latest_upbit_total_krw = total
-        latest_upbit_available_krw = available
-
-        latest_upbit_update = now_string()
-
-    # 자산 갱신 때마다 당일 손익 확인
-    # 손실 한도 도달 시 BUY LOCK 자동 발동
-    update_buy_lock_by_total(total)
-
-    return total
-
-
-# =========================================================
-# 실제 코인 잔고
-# =========================================================
-
-def get_coin_balance(
-    coin,
-    api_key,
-    secret_key
-):
-
-    coin = clean_coin_name(coin)
-
-    r = requests.get(
-        SERVER_URL + "/v1/accounts",
-        headers=create_auth_headers(
-            api_key,
-            secret_key
-        ),
-        timeout=REQUEST_TIMEOUT
-    )
-
-    if r.status_code != 200:
-
-        raise HTTPException(
-            status_code=r.status_code,
-            detail=get_error_detail(r)
-        )
-
-    for a in r.json():
-
-        if (
-            safe_string(
-                a.get("currency")
-            ).upper()
-            == coin
-        ):
-
-            return max(
-                safe_float(
-                    a.get("balance")
-                ),
-                0
-            )
-
-    return 0.0
-
-
-# =========================================================
-# 주문
-# =========================================================
-
-def place_bid_order(
-    coin,
-    amount,
-    api_key,
-    secret_key
-):
-
-    # 주문 직전 서버 BUY LOCK 재확인
-    check_buy_lock_or_raise()
-
-    coin = clean_coin_name(coin)
-    amount = truncate_krw(amount)
-
-    if amount < MIN_ORDER_KRW:
-
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"매수금액 {amount:,.0f}원 < "
-                f"최소 {MIN_ORDER_KRW:,}원"
-            )
-        )
-
-    query = {
-        "market": f"KRW-{coin}",
-        "side": "bid",
-        "price": str(int(amount)),
-        "ord_type": "price"
-    }
-
-    qs = build_query_string(query)
-
-    r = requests.post(
-        SERVER_URL + "/v1/orders",
-        json=query,
-        headers=create_auth_headers(
-            api_key,
-            secret_key,
-            qs
-        ),
-        timeout=REQUEST_TIMEOUT
-    )
-
-    if r.status_code not in (200, 201):
-
-        raise HTTPException(
-            status_code=r.status_code,
-            detail=get_error_detail(r)
-        )
-
-    return r.json()
-
-
-def place_ask_order(
-    coin,
-    volume,
-    api_key,
-    secret_key
-):
-
-    coin = clean_coin_name(coin)
-
-    volume = truncate_volume(
-        volume,
-        8
-    )
-
-    if volume <= 0:
-
-        raise HTTPException(
-            status_code=400,
-            detail="매도수량이 0입니다."
-        )
-
-    query = {
-        "market": f"KRW-{coin}",
-        "side": "ask",
-        "volume": f"{volume:.8f}",
-        "ord_type": "market"
-    }
-
-    qs = build_query_string(query)
-
-    r = requests.post(
-        SERVER_URL + "/v1/orders",
-        json=query,
-        headers=create_auth_headers(
-            api_key,
-            secret_key,
-            qs
-        ),
-        timeout=REQUEST_TIMEOUT
-    )
-
-    if r.status_code not in (200, 201):
-
-        raise HTTPException(
-            status_code=r.status_code,
-            detail=get_error_detail(r)
-        )
-
-    return r.json()
-
-
-def wait_for_order_complete(
-    order_uuid,
-    api_key,
-    secret_key
-):
-
-    start = time.time()
-
-    while True:
-
-        query = {
-            "uuid": order_uuid
-        }
-
-        qs = build_query_string(query)
-
-        try:
-
-            r = requests.get(
-                SERVER_URL + "/v1/order",
-                params=query,
-                headers=create_auth_headers(
-                    api_key,
-                    secret_key,
-                    qs
-                ),
-                timeout=REQUEST_TIMEOUT
-            )
-
-        except requests.RequestException:
-
-            r = None
-
-        if (
-            r is not None
-            and
-            r.status_code == 200
-        ):
-
-            order = r.json()
-
-            state = order.get(
-                "state",
-                ""
-            )
-
-            if state in (
-                "done",
-                "cancel"
-            ):
-                return order
-
-            if (
-                time.time() - start
-                >= ORDER_WAIT_TIMEOUT
-            ):
-                return order
-
-        elif (
-            time.time() - start
-            >= ORDER_WAIT_TIMEOUT
-        ):
-
-            return {
-                "uuid":
-                    order_uuid,
-                "state":
-                    "timeout"
-            }
-
-        time.sleep(
-            ORDER_WAIT_INTERVAL
-        )
-
-
-def parse_order_result(order):
-
-    volume = safe_float(
-        order.get(
-            "executed_volume"
-        )
-    )
-
-    funds = safe_float(
-        order.get(
-            "executed_funds"
-        )
-    )
-
-    fee = safe_float(
-        order.get(
-            "paid_fee"
-        )
-    )
-
-    return {
-        "uuid":
-            order.get("uuid"),
-
-        "market":
-            order.get("market"),
-
-        "side":
-            order.get("side"),
-
-        "state":
-            order.get("state"),
-
-        "executed_volume":
-            volume,
-
-        "executed_funds":
-            funds,
-
-        "paid_fee":
-            fee,
-
-        "avg_price":
-            (
-                funds / volume
-                if volume > 0
-                else 0
-            ),
-
-        "created_at":
-            order.get("created_at"),
-
-        "trades":
-            order.get(
-                "trades",
-                []
-            )
-    }
-
-
-# =========================================================
-# 거래 DB
-# =========================================================
-
-def save_buy_trade(
-    result,
-    requested_amount,
-    stop_loss
-):
-
-    coin = result["market"].replace(
-        "KRW-",
-        ""
-    )
-
-    created = (
-        result["created_at"]
-        or
-        now_string()
-    )
-
-    completed = now_string()
-
-    with db_lock:
-
-        conn = get_db()
-        c = conn.cursor()
-
-        c.execute(
-            """
-            INSERT INTO trades(
-                uuid,
-                coin,
-                side,
-                order_amount,
-                executed_funds,
-                executed_volume,
-                avg_price,
-                fee,
-                requested_ratio,
-                created_at,
-                completed_at,
-                state
-            )
-            VALUES(
-                ?,?,?,?,?,?,?,?,?,?,?,?
-            )
-            """,
-            (
-                result["uuid"],
-                coin,
-                "buy",
-                requested_amount,
-                result["executed_funds"],
-                result["executed_volume"],
-                result["avg_price"],
-                result["paid_fee"],
-                stop_loss,
-                created,
-                completed,
-                result["state"]
-            )
-        )
-
-        trade_id = c.lastrowid
-
-        total_cost = (
-            result["executed_funds"]
-            +
-            result["paid_fee"]
-        )
-
-        cpu = (
-            total_cost /
-            result["executed_volume"]
-            if result["executed_volume"] > 0
-            else 0
-        )
-
-        c.execute(
-            """
-            INSERT INTO buy_lots(
-                trade_id,
-                coin,
-                original_volume,
-                remaining_volume,
-                cost_per_unit,
-                total_cost,
-                fee,
-                created_at
-            )
-            VALUES(
-                ?,?,?,?,?,?,?,?
-            )
-            """,
-            (
-                trade_id,
-                coin,
-                result["executed_volume"],
-                result["executed_volume"],
-                cpu,
-                total_cost,
-                result["paid_fee"],
-                completed
-            )
-        )
-
-        conn.commit()
-        conn.close()
-
-
-def calculate_fifo_cost(
-    coin,
-    sell_volume,
-    sell_trade_id
-):
-
-    remain = sell_volume
-    total_cost = 0
-    allocations = []
-
-    with db_lock:
-
-        conn = get_db()
-        c = conn.cursor()
-
-        lots = c.execute(
-            """
-            SELECT *
-            FROM buy_lots
-            WHERE coin=?
-              AND remaining_volume>0
-            ORDER BY id ASC
-            """,
-            (coin,)
-        ).fetchall()
-
-        for lot in lots:
-
-            if remain <= 0:
-                break
-
-            available = safe_float(
-                lot["remaining_volume"]
-            )
-
-            use = min(
-                remain,
-                available
-            )
-
-            cost = (
-                use *
-                safe_float(
-                    lot["cost_per_unit"]
-                )
-            )
-
-            total_cost += cost
-
-            allocations.append(
-                (
-                    lot["id"],
-                    use,
-                    cost
-                )
-            )
-
-            c.execute(
-                """
-                UPDATE buy_lots
-                SET remaining_volume=?
-                WHERE id=?
-                """,
-                (
-                    max(
-                        available - use,
-                        0
-                    ),
-                    lot["id"]
-                )
-            )
-
-            remain -= use
-
-        for (
-            lot_id,
-            volume,
-            cost
-        ) in allocations:
-
-            c.execute(
-                """
-                INSERT INTO sell_allocations(
-                    sell_trade_id,
-                    buy_lot_id,
-                    volume,
-                    cost
-                )
-                VALUES(?,?,?,?)
-                """,
-                (
-                    sell_trade_id,
-                    lot_id,
-                    volume,
-                    cost
-                )
-            )
-
-        conn.commit()
-        conn.close()
-
-    return total_cost
-
-
-def save_sell_trade(
-    result,
-    ratio
-):
-
-    coin = result["market"].replace(
-        "KRW-",
-        ""
-    )
-
-    created = (
-        result["created_at"]
-        or
-        now_string()
-    )
-
-    completed = now_string()
-
-    with db_lock:
-
-        conn = get_db()
-        c = conn.cursor()
-
-        c.execute(
-            """
-            INSERT INTO trades(
-                uuid,
-                coin,
-                side,
-                order_amount,
-                executed_funds,
-                executed_volume,
-                avg_price,
-                fee,
-                requested_ratio,
-                created_at,
-                completed_at,
-                state
-            )
-            VALUES(
-                ?,?,?,?,?,?,?,?,?,?,?,?
-            )
-            """,
-            (
-                result["uuid"],
-                coin,
-                "sell",
-                result["executed_funds"],
-                result["executed_funds"],
-                result["executed_volume"],
-                result["avg_price"],
-                result["paid_fee"],
-                ratio,
-                created,
-                completed,
-                result["state"]
-            )
-        )
-
-        trade_id = c.lastrowid
-
-        conn.commit()
-        conn.close()
-
-    cost = calculate_fifo_cost(
-        coin,
-        result["executed_volume"],
-        trade_id
-    )
-
-    net_sell = (
-        result["executed_funds"]
-        -
-        result["paid_fee"]
-    )
-
-    profit = (
-        net_sell -
-        cost
-    )
-
-    ret = (
-        profit /
-        cost *
-        100
-        if cost > 0
-        else 0
-    )
-
-    with db_lock:
-
-        conn = get_db()
-
-        conn.execute(
-            """
-            UPDATE trades
-            SET
-                realized_cost=?,
-                realized_profit=?,
-                realized_return=?
-            WHERE id=?
-            """,
-            (
-                cost,
-                profit,
-                ret,
-                trade_id
-            )
-        )
-
-        conn.commit()
-        conn.close()
-
-    return {
-        "trade_id":
-            trade_id,
-
-        "coin":
-            coin,
-
-        "sell_volume":
-            result["executed_volume"],
-
-        "gross_sell":
-            result["executed_funds"],
-
-        "fee":
-            result["paid_fee"],
-
-        "net_sell":
-            net_sell,
-
-        "cost":
-            cost,
-
-        "profit":
-            profit,
-
-        "return":
-            ret,
-
-        "avg_price":
-            result["avg_price"]
-    }
-
-
-# =========================================================
-# 자산 갱신
-# =========================================================
-
-def refresh_before_order(
-    api_key,
-    secret_key,
-    action
-):
-
-    return (
-        fetch_upbit_assets(
-            api_key,
-            secret_key
-        ) >= 0
-    )
-
-
-def refresh_after_order(
-    api_key,
-    secret_key,
-    action
-):
-
-    return (
-        fetch_upbit_assets(
-            api_key,
-            secret_key
-        ) >= 0
-    )
-
-
-# =========================================================
-# 수동 매도
-# =========================================================
-
-def execute_manual_market_sell(
-    position,
-    reason="MANUAL SELL"
-):
-
-    global latest_order_info
-
-    coin = clean_coin_name(
-        position["currency"]
-    )
-
-    balance = safe_float(
-        position.get("balance")
-    )
-
-    if balance <= 0:
-
-        return {
-            "success": False,
-            "coin": coin,
-            "message": "보유수량 없음"
-        }
-
-    real_balance = get_coin_balance(
-        coin,
-        UPBIT_ACCESS_KEY,
-        UPBIT_SECRET_KEY
-    )
-
-    if real_balance <= 0:
-
-        delete_trailing_state(coin)
-        delete_coin_target(coin)
-
-        return {
-            "success": False,
-            "coin": coin,
-            "message": "실제 보유수량 없음"
-        }
-
-    volume = truncate_volume(
-        real_balance,
-        8
-    )
-
-    if volume <= 0:
-
-        return {
-            "success": False,
-            "coin": coin,
-            "message": "매도수량 0"
-        }
-
-    current = get_ticker_price(
-        f"KRW-{coin}"
-    )
-
-    if current <= 0:
-
-        return {
-            "success": False,
-            "coin": coin,
-            "message": "현재가 조회 실패"
-        }
-
-    evaluation = (
-        real_balance *
-        current
-    )
-
-    if evaluation < MIN_ORDER_KRW:
-
-        return {
-            "success": False,
-            "coin": coin,
-            "message":
-                f"최소 주문금액 미달 ({evaluation:,.0f}원)"
-        }
-
-    order = place_ask_order(
-        coin,
-        volume,
-        UPBIT_ACCESS_KEY,
-        UPBIT_SECRET_KEY
-    )
-
-    completed = wait_for_order_complete(
-        order["uuid"],
-        UPBIT_ACCESS_KEY,
-        UPBIT_SECRET_KEY
-    )
-
-    result = parse_order_result(
-        completed
-    )
-
-    if (
-        result["state"] != "done"
-        or
-        result["executed_volume"] <= 0
-    ):
-
-        return {
-            "success": False,
-            "coin": coin,
-            "message": "주문 체결 실패",
-            "order": completed
-        }
-
-    try:
-
-        sell_result = save_sell_trade(
-            result,
-            1.0
-        )
-
-        realized_profit = safe_float(
-            sell_result["profit"]
-        )
-
-    except Exception as e:
-
-        logger.exception(
-            f"MANUAL SELL DB ERROR | "
-            f"{coin} | {e}"
-        )
-
-        realized_profit = 0.0
-
-    delete_trailing_state(coin)
-    delete_coin_target(coin)
-
-    latest_order_info = (
-        f"🔴 {reason} {coin} | "
-        f"{result['executed_funds']:,.0f}원 | "
-        f"{realized_profit:+,.0f}원"
-    )
-
-    refresh_after_order(
-        UPBIT_ACCESS_KEY,
-        UPBIT_SECRET_KEY,
-        reason
-    )
-
-    return {
-        "success": True,
-        "coin": coin,
-        "executed_volume":
-            result["executed_volume"],
-        "executed_funds":
-            result["executed_funds"],
-        "fee":
-            result["paid_fee"],
-        "profit":
-            realized_profit,
-        "uuid":
-            result["uuid"]
-    }
-
-
-# =========================================================
-# 개별 수동매도
-# =========================================================
-
-def execute_manual_sell_coin(coin):
-
-    coin = clean_coin_name(coin)
-
-    if not coin:
-
-        return {
-            "success": False,
-            "message": "코인이 없습니다."
-        }
-
-    with auto_exit_lock:
-
-        if coin in auto_exit_in_progress:
-
-            return {
-                "success": False,
-                "coin": coin,
-                "message":
-                    "현재 자동매도가 진행 중입니다."
-            }
-
-        auto_exit_in_progress.add(coin)
-
-    try:
-
-        with order_execution_lock:
-
-            positions = get_real_upbit_positions()
-
-            position = next(
-                (
-                    p
-                    for p in positions
-                    if clean_coin_name(
-                        p["currency"]
-                    ) == coin
-                ),
-                None
-            )
-
-            if position is None:
-
-                balance = get_coin_balance(
-                    coin,
-                    UPBIT_ACCESS_KEY,
-                    UPBIT_SECRET_KEY
-                )
-
-                if balance <= 0:
-
-                    delete_trailing_state(coin)
-                    delete_coin_target(coin)
-
-                    return {
-                        "success": False,
-                        "coin": coin,
-                        "message":
-                            "현재 보유 중인 코인이 없습니다."
-                    }
-
-                position = {
-                    "currency": coin,
-                    "balance": balance
-                }
-
-            return execute_manual_market_sell(
-                position,
-                "MANUAL COIN SELL"
-            )
-
-    finally:
-
-        with auto_exit_lock:
-
-            auto_exit_in_progress.discard(
-                coin
-            )
-
-
-# =========================================================
-# 전체매도
-# =========================================================
-
-def execute_manual_sell_all():
-
-    global latest_order_info
-    global manual_sell_all_in_progress
-
-    with manual_sell_all_lock:
-
-        if manual_sell_all_in_progress:
-
-            return {
-                "success": False,
-                "message":
-                    "이미 전체매도가 진행 중입니다."
-            }
-
-        manual_sell_all_in_progress = True
-
-    try:
-
-        with order_execution_lock:
-
-            accounts = fetch_upbit_accounts()
-
-            if not accounts:
-
-                return {
-                    "success": False,
-                    "message":
-                        "업비트 계좌 조회 실패",
-                    "sold": [],
-                    "failed": []
-                }
-
-            coins = []
-
-            for a in accounts:
-
-                currency = clean_coin_name(
-                    a.get("currency")
-                )
-
-                balance = safe_float(
-                    a.get("balance")
-                )
-
-                if (
-                    currency
-                    and
-                    currency != "KRW"
-                    and
-                    balance > 0
-                ):
-
-                    coins.append({
-                        "currency":
-                            currency,
-                        "balance":
-                            balance
-                    })
-
-            if not coins:
-
-                latest_order_info = (
-                    "🟡 전체매도 요청 | "
-                    "보유 코인 없음"
-                )
-
-                return {
-                    "success": True,
-                    "message":
-                        "현재 보유 코인이 없습니다.",
-                    "sold": [],
-                    "failed": []
-                }
-
-            sold = []
-            failed = []
-
-            for position in coins:
-
-                coin = position["currency"]
-
-                with auto_exit_lock:
-
-                    if coin in auto_exit_in_progress:
-
-                        failed.append({
-                            "coin": coin,
-                            "message":
-                                "자동매도 진행 중"
-                        })
-
-                        continue
-
-                    auto_exit_in_progress.add(
-                        coin
-                    )
-
-                try:
-
-                    result = (
-                        execute_manual_market_sell(
-                            position,
-                            "MANUAL SELL ALL"
-                        )
-                    )
-
-                    if result["success"]:
-                        sold.append(result)
-                    else:
-                        failed.append({
-                            "coin": coin,
-                            "message":
-                                result.get(
-                                    "message",
-                                    "매도 실패"
-                                )
-                        })
-
-                except Exception as e:
-
-                    logger.exception(
-                        f"MANUAL SELL ALL ERROR | "
-                        f"{coin} | {e}"
-                    )
-
-                    failed.append({
-                        "coin": coin,
-                        "message": str(e)
-                    })
-
-                finally:
-
-                    with auto_exit_lock:
-
-                        auto_exit_in_progress.discard(
-                            coin
-                        )
-
-            latest_order_info = (
-                f"🚨 전체매도 완료 | "
-                f"성공 {len(sold)}개 | "
-                f"실패 {len(failed)}개"
-            )
-
-            return {
-                "success":
-                    len(failed) == 0,
-
-                "message":
-                    (
-                        "전체매도 완료"
-                        if not failed
-                        else
-                        "전체매도 중 일부 실패"
-                    ),
-
-                "sold":
-                    sold,
-
-                "failed":
-                    failed
-            }
-
-    finally:
-
-        with manual_sell_all_lock:
-
-            manual_sell_all_in_progress = False
-
-
-# =========================================================
-# 고정 손절 실행
-# =========================================================
-
-def execute_real_upbit_fixed_stop_loss(
-    position,
-    detected_profit
-):
-
-    global latest_order_info
-
-    coin = clean_coin_name(
-        position["currency"]
-    )
-
-    with auto_exit_lock:
-
-        if coin in auto_exit_in_progress:
-            return False
-
-        auto_exit_in_progress.add(coin)
-
-    try:
-
-        with order_execution_lock:
-
-            stop, _ = get_auto_exit_settings()
-
-            if stop <= 0:
-                return False
-
-            accounts = fetch_upbit_accounts()
-
-            if not accounts:
-                return False
-
-            balance = 0.0
-            avg = 0.0
-
-            for a in accounts:
-
-                if (
-                    clean_coin_name(
-                        a.get("currency")
-                    ) == coin
-                ):
-
-                    balance = safe_float(
-                        a.get("balance")
-                    )
-
-                    avg = safe_float(
-                        a.get("avg_buy_price")
-                    )
-
-                    break
-
-            if balance <= 0:
-                return False
-
-            current = get_ticker_price(
-                f"KRW-{coin}"
-            )
-
-            if current <= 0:
-                return False
-
-            current_profit = (
-                balance * current -
-                balance * avg
-            )
-
-            evaluation = (
-                balance * current
-            )
-
-            if evaluation < MIN_ORDER_KRW:
-                return False
-
-            volume = truncate_volume(
-                balance,
-                8
-            )
-
-            if volume <= 0:
-                return False
-
-            order = place_ask_order(
-                coin,
-                volume,
-                UPBIT_ACCESS_KEY,
-                UPBIT_SECRET_KEY
-            )
-
-            completed = wait_for_order_complete(
-                order["uuid"],
-                UPBIT_ACCESS_KEY,
-                UPBIT_SECRET_KEY
-            )
-
-            result = parse_order_result(
-                completed
-            )
-
-            if (
-                result["state"] != "done"
-                or
-                result["executed_volume"] <= 0
-            ):
-                return False
-
-            try:
-
-                sell_result = save_sell_trade(
-                    result,
-                    1.0
-                )
-
-                realized_profit = (
-                    sell_result["profit"]
-                )
-
-            except Exception:
-
-                realized_profit = current_profit
-
-            latest_order_info = (
-                f"🛑 AUTO 손절 {coin} | "
-                f"기준 -{stop:,.0f}원 | "
-                f"감지 {detected_profit:+,.0f}원 | "
-                f"실제 {realized_profit:+,.0f}원"
-            )
-
-            delete_trailing_state(coin)
-            delete_coin_target(coin)
-
-            refresh_after_order(
-                UPBIT_ACCESS_KEY,
-                UPBIT_SECRET_KEY,
-                "STOP LOSS"
-            )
-
-            return True
-
-    except Exception as e:
-
-        logger.exception(
-            f"STOP LOSS EXIT ERROR | "
-            f"{coin} | {e}"
-        )
-
-        return False
-
-    finally:
-
-        with auto_exit_lock:
-
-            auto_exit_in_progress.discard(
-                coin
-            )
-
-
-# =========================================================
-# 고정 익절 실행
-# =========================================================
-
-def execute_real_upbit_fixed_take_profit(
-    position
-):
-
-    global latest_order_info
-
-    coin = clean_coin_name(
-        position["currency"]
-    )
-
-    with auto_exit_lock:
-
-        if coin in auto_exit_in_progress:
-            return False
-
-        auto_exit_in_progress.add(coin)
-
-    try:
-
-        with order_execution_lock:
-
-            _, take = get_auto_exit_settings()
-
-            if take <= 0:
-                return False
-
-            accounts = fetch_upbit_accounts()
-
-            if not accounts:
-                return False
-
-            balance = 0.0
-            avg = 0.0
-
-            for a in accounts:
-
-                if (
-                    clean_coin_name(
-                        a.get("currency")
-                    ) == coin
-                ):
-
-                    balance = safe_float(
-                        a.get("balance")
-                    )
-
-                    avg = safe_float(
-                        a.get("avg_buy_price")
-                    )
-
-                    break
-
-            if (
-                balance <= 0
-                or
-                avg <= 0
-            ):
-                return False
-
-            current = get_ticker_price(
-                f"KRW-{coin}"
-            )
-
-            if current <= 0:
-                return False
-
-            buy_amount = (
-                balance * avg
-            )
-
-            current_value = (
-                balance * current
-            )
-
-            profit = (
-                current_value -
-                buy_amount
-            )
-
-            if profit < take:
-                return False
-
-            if current_value < MIN_ORDER_KRW:
-                return False
-
-            volume = truncate_volume(
-                balance,
-                8
-            )
-
-            if volume <= 0:
-                return False
-
-            order = place_ask_order(
-                coin,
-                volume,
-                UPBIT_ACCESS_KEY,
-                UPBIT_SECRET_KEY
-            )
-
-            completed = wait_for_order_complete(
-                order["uuid"],
-                UPBIT_ACCESS_KEY,
-                UPBIT_SECRET_KEY
-            )
-
-            result = parse_order_result(
-                completed
-            )
-
-            if (
-                result["state"] != "done"
-                or
-                result["executed_volume"] <= 0
-            ):
-                return False
-
-            try:
-
-                sell_result = save_sell_trade(
-                    result,
-                    1.0
-                )
-
-                realized_profit = (
-                    sell_result["profit"]
-                )
-
-            except Exception:
-
-                realized_profit = profit
-
-            latest_order_info = (
-                f"🎯 AUTO 고정익절 {coin} | "
-                f"기준 +{take:,.0f}원 | "
-                f"실제 {realized_profit:+,.0f}원"
-            )
-
-            delete_trailing_state(coin)
-            delete_coin_target(coin)
-
-            refresh_after_order(
-                UPBIT_ACCESS_KEY,
-                UPBIT_SECRET_KEY,
-                "AUTO TAKE"
-            )
-
-            return True
-
-    except Exception as e:
-
-        logger.exception(
-            f"FIXED TAKE EXIT ERROR | "
-            f"{coin} | {e}"
-        )
-
-        return False
-
-    finally:
-
-        with auto_exit_lock:
-
-            auto_exit_in_progress.discard(
-                coin
-            )
-
-
-# =========================================================
-# 고정 손절 / 익절 모니터
-# =========================================================
-
-def real_upbit_auto_exit_monitor():
-
-    logger.info(
-        "REAL UPBIT AUTO EXIT MONITOR START"
-    )
-
-    while True:
-
-        try:
-
-            if (
-                not UPBIT_ACCESS_KEY
-                or
-                not UPBIT_SECRET_KEY
-            ):
-
-                time.sleep(
-                    AUTO_CHECK_INTERVAL
-                )
-
-                continue
-
-            with manual_sell_all_lock:
-
-                selling_all = (
-                    manual_sell_all_in_progress
-                )
-
-            if selling_all:
-
-                time.sleep(
-                    AUTO_CHECK_INTERVAL
-                )
-
-                continue
-
-            stop, take = get_auto_exit_settings()
-
-            if (
-                stop <= 0
-                and
-                take <= 0
-            ):
-
-                time.sleep(
-                    AUTO_CHECK_INTERVAL
-                )
-
-                continue
-
-            positions = get_cached_real_positions()
-
-            for position in positions:
-
-                coin = clean_coin_name(
-                    position["currency"]
-                )
-
-                profit = safe_float(
-                    position["profit_amount"]
-                )
-
-                if (
-                    stop > 0
-                    and
-                    profit <= -stop
-                ):
-
-                    execute_real_upbit_fixed_stop_loss(
-                        position,
-                        profit
-                    )
-
-                    continue
-
-                if (
-                    take > 0
-                    and
-                    profit >= take
-                ):
-
-                    execute_real_upbit_fixed_take_profit(
-                        position
-                    )
-
-        except Exception as e:
-
-            logger.exception(
-                f"FIXED AUTO MONITOR ERROR | {e}"
-            )
-
-        time.sleep(
-            AUTO_CHECK_INTERVAL
-        )
-
-
-# =========================================================
-# 트레일링 자동매도
-# =========================================================
-
-def execute_real_upbit_trailing_exit(
-    position
-):
-
-    global latest_order_info
-
-    coin = clean_coin_name(
-        position["currency"]
-    )
-
-    with auto_exit_lock:
-
-        if coin in auto_exit_in_progress:
-            return False
-
-        auto_exit_in_progress.add(coin)
-
-    try:
-
-        with order_execution_lock:
-
-            accounts = fetch_upbit_accounts()
-
-            if not accounts:
-                return False
-
-            balance = 0.0
-            avg = 0.0
-
-            for a in accounts:
-
-                if (
-                    clean_coin_name(
-                        a.get("currency")
-                    ) == coin
-                ):
-
-                    balance = safe_float(
-                        a.get("balance")
-                    )
-
-                    avg = safe_float(
-                        a.get("avg_buy_price")
-                    )
-
-                    break
-
-            if (
-                balance <= 0
-                or
-                avg <= 0
-            ):
-                return False
-
-            current = get_ticker_price(
-                f"KRW-{coin}"
-            )
-
-            if current <= 0:
-                return False
-
-            buy_amount = (
-                balance * avg
-            )
-
-            current_value = (
-                balance * current
-            )
-
-            profit = (
-                current_value -
-                buy_amount
-            )
-
-            if is_fixed_stop_loss_hit(profit):
-                return False
-
-            _, fixed_take = (
-                get_auto_exit_settings()
-            )
-
-            if fixed_take > 0:
-
-                return False
-
-            trailing = update_trailing_stage(
-                coin,
-                profit
-            )
-
-            if not trailing["trigger"]:
-                return False
-
-            if current_value < MIN_ORDER_KRW:
-                return False
-
-            volume = truncate_volume(
-                balance,
-                8
-            )
-
-            if volume <= 0:
-                return False
-
-            order = place_ask_order(
-                coin,
-                volume,
-                UPBIT_ACCESS_KEY,
-                UPBIT_SECRET_KEY
-            )
-
-            completed = wait_for_order_complete(
-                order["uuid"],
-                UPBIT_ACCESS_KEY,
-                UPBIT_SECRET_KEY
-            )
-
-            result = parse_order_result(
-                completed
-            )
-
-            if (
-                result["state"] != "done"
-                or
-                result["executed_volume"] <= 0
-            ):
-                return False
-
-            try:
-
-                sell_result = save_sell_trade(
-                    result,
-                    1.0
-                )
-
-                realized_profit = (
-                    sell_result["profit"]
-                )
-
-            except Exception:
-
-                realized_profit = profit
-
-            if trailing["trigger_type"] == "TARGET":
-
-                if trailing["target_source"] == "COIN":
-
-                    reason_text = (
-                        f"개별목표 1:"
-                        f"{trailing['coin_target_stage']}"
-                    )
-
-                else:
-
-                    reason_text = (
-                        f"최초매도 1:"
-                        f"{trailing['trailing_sell_stage']}"
-                    )
-
-            else:
-
-                reason_text = (
-                    f"최고 1:"
-                    f"{trailing['highest_stage']} "
-                    f"→ 하락 "
-                    f"{trailing['trailing_drop_stage']}단계"
-                )
-
-            latest_order_info = (
-                f"🔥 TRAILING {coin} | "
-                f"{reason_text} | "
-                f"현재 1:{trailing['current_stage']} | "
-                f"매도기준 1:{trailing['trigger_stage']} | "
-                f"실제 {realized_profit:+,.0f}원"
-            )
-
-            delete_trailing_state(coin)
-            delete_coin_target(coin)
-
-            refresh_after_order(
-                UPBIT_ACCESS_KEY,
-                UPBIT_SECRET_KEY,
-                "RISK TRAILING"
-            )
-
-            return True
-
-    except Exception as e:
-
-        logger.exception(
-            f"TRAILING EXIT ERROR | "
-            f"{coin} | {e}"
-        )
-
-        return False
-
-    finally:
-
-        with auto_exit_lock:
-
-            auto_exit_in_progress.discard(
-                coin
-            )
-
-
-# =========================================================
-# 트레일링 모니터
-# =========================================================
-
-def real_upbit_trailing_monitor():
-
-    logger.info(
-        "REAL UPBIT RISK TRAILING MONITOR START"
-    )
-
-    while True:
-
-        try:
-
-            if (
-                not UPBIT_ACCESS_KEY
-                or
-                not UPBIT_SECRET_KEY
-            ):
-
-                time.sleep(
-                    AUTO_CHECK_INTERVAL
-                )
-
-                continue
-
-            with manual_sell_all_lock:
-
-                selling_all = (
-                    manual_sell_all_in_progress
-                )
-
-            if selling_all:
-
-                time.sleep(
-                    AUTO_CHECK_INTERVAL
-                )
-
-                continue
-
-            positions = get_cached_real_positions()
-
-            for position in positions:
-
-                coin = clean_coin_name(
-                    position["currency"]
-                )
-
-                profit = safe_float(
-                    position["profit_amount"]
-                )
-
-                if is_fixed_stop_loss_hit(profit):
-
-                    execute_real_upbit_fixed_stop_loss(
-                        position,
-                        profit
-                    )
-
-                    continue
-
-                _, fixed_take = (
-                    get_auto_exit_settings()
-                )
-
-                if fixed_take > 0:
-
-                    if profit >= fixed_take:
-
-                        execute_real_upbit_fixed_take_profit(
-                            position
-                        )
-
-                    continue
-
-                trailing = update_trailing_stage(
-                    coin,
-                    profit
-                )
-
-                logger.info(
-                    f"TRAILING STATUS | "
-                    f"{coin} | "
-                    f"현재=1:{trailing['current_stage']} | "
-                    f"최고=1:{trailing['highest_stage']} | "
-                    f"수익={profit:+,.0f}원 | "
-                    f"최초매도=1:{trailing['trailing_sell_stage']} | "
-                    f"하락={trailing['trailing_drop_stage']}단계 | "
-                    f"매도기준=1:{trailing['trigger_stage']} | "
-                    f"기준금액="
-                    f"{trailing['sell_trigger_profit']:+,.0f}원"
-                )
-
-                if trailing["trigger"]:
-
-                    execute_real_upbit_trailing_exit(
-                        position
-                    )
-
-        except Exception as e:
-
-            logger.exception(
-                f"TRAILING MONITOR ERROR | {e}"
-            )
-
-        time.sleep(
-            AUTO_CHECK_INTERVAL
-        )
-
-
-# =========================================================
-# 코인 목표 자동매도
-# =========================================================
-
-def execute_real_upbit_coin_target_exit(
-    position
-):
-
-    global latest_order_info
-
-    coin = clean_coin_name(
-        position["currency"]
-    )
-
-    with auto_exit_lock:
-
-        if coin in auto_exit_in_progress:
-            return False
-
-        auto_exit_in_progress.add(coin)
-
-    try:
-
-        with order_execution_lock:
-
-            target = get_coin_target(coin)
-
-            if not target["enabled"]:
-                return False
-
-            target_stage = int(
-                target["target_stage"]
-            )
-
-            if target_stage <= 0:
-                return False
-
-            risk = get_risk_unit()
-
-            if risk <= 0:
-                return False
-
-            target_profit = (
-                risk *
-                target_stage
-            )
-
-            accounts = fetch_upbit_accounts()
-
-            if not accounts:
-                return False
-
-            balance = 0.0
-            avg = 0.0
-
-            for a in accounts:
-
-                if (
-                    clean_coin_name(
-                        a.get("currency")
-                    ) == coin
-                ):
-
-                    balance = safe_float(
-                        a.get("balance")
-                    )
-
-                    avg = safe_float(
-                        a.get("avg_buy_price")
-                    )
-
-                    break
-
-            if (
-                balance <= 0
-                or
-                avg <= 0
-            ):
-                return False
-
-            current = get_ticker_price(
-                f"KRW-{coin}"
-            )
-
-            if current <= 0:
-                return False
-
-            buy_amount = (
-                balance * avg
-            )
-
-            current_value = (
-                balance * current
-            )
-
-            profit = (
-                current_value -
-                buy_amount
-            )
-
-            if is_fixed_stop_loss_hit(profit):
-                return False
-
-            _, fixed_take = (
-                get_auto_exit_settings()
-            )
-
-            if (
-                fixed_take > 0
-                and
-                profit >= fixed_take
-            ):
-                return False
-
-            if profit < target_profit:
-                return False
-
-            if current_value < MIN_ORDER_KRW:
-                return False
-
-            volume = truncate_volume(
-                balance,
-                8
-            )
-
-            if volume <= 0:
-                return False
-
-            order = place_ask_order(
-                coin,
-                volume,
-                UPBIT_ACCESS_KEY,
-                UPBIT_SECRET_KEY
-            )
-
-            completed = wait_for_order_complete(
-                order["uuid"],
-                UPBIT_ACCESS_KEY,
-                UPBIT_SECRET_KEY
-            )
-
-            result = parse_order_result(
-                completed
-            )
-
-            if (
-                result["state"] != "done"
-                or
-                result["executed_volume"] <= 0
-            ):
-                return False
-
-            try:
-
-                sell_result = save_sell_trade(
-                    result,
-                    1.0
-                )
-
-                realized_profit = (
-                    sell_result["profit"]
-                )
-
-            except Exception:
-
-                realized_profit = profit
-
-            latest_order_info = (
-                f"🎯 개별목표 익절 {coin} | "
-                f"1:{target_stage} | "
-                f"목표 +{target_profit:,.0f}원 | "
-                f"실제 {realized_profit:+,.0f}원"
-            )
-
-            delete_trailing_state(coin)
-            delete_coin_target(coin)
-
-            refresh_after_order(
-                UPBIT_ACCESS_KEY,
-                UPBIT_SECRET_KEY,
-                "COIN TARGET"
-            )
-
-            return True
-
-    except Exception as e:
-
-        logger.exception(
-            f"COIN TARGET EXIT ERROR | "
-            f"{coin} | {e}"
-        )
-
-        return False
-
-    finally:
-
-        with auto_exit_lock:
-
-            auto_exit_in_progress.discard(
-                coin
-            )
-
-
-# =========================================================
-# 코인 목표 모니터
-# =========================================================
-
-def real_upbit_coin_target_monitor():
-
-    logger.info(
-        "REAL UPBIT COIN TARGET MONITOR START"
-    )
-
-    while True:
-
-        try:
-
-            if (
-                not UPBIT_ACCESS_KEY
-                or
-                not UPBIT_SECRET_KEY
-            ):
-
-                time.sleep(
-                    AUTO_CHECK_INTERVAL
-                )
-
-                continue
-
-            with manual_sell_all_lock:
-
-                selling_all = (
-                    manual_sell_all_in_progress
-                )
-
-            if selling_all:
-
-                time.sleep(
-                    AUTO_CHECK_INTERVAL
-                )
-
-                continue
-
-            positions = get_cached_real_positions()
-
-            targets = get_all_coin_targets()
-
-            risk = get_risk_unit()
-
-            if risk <= 0:
-
-                time.sleep(
-                    AUTO_CHECK_INTERVAL
-                )
-
-                continue
-
-            _, fixed_take = (
-                get_auto_exit_settings()
-            )
-
-            for position in positions:
-
-                coin = clean_coin_name(
-                    position["currency"]
-                )
-
-                profit = safe_float(
-                    position["profit_amount"]
-                )
-
-                if is_fixed_stop_loss_hit(profit):
-
-                    execute_real_upbit_fixed_stop_loss(
-                        position,
-                        profit
-                    )
-
-                    continue
-
-                if (
-                    fixed_take > 0
-                    and
-                    profit >= fixed_take
-                ):
-
-                    execute_real_upbit_fixed_take_profit(
-                        position
-                    )
-
-                    continue
-
-                target = targets.get(coin)
-
-                if not target:
-                    continue
-
-                if not target["enabled"]:
-                    continue
-
-                target_stage = int(
-                    target["target_stage"]
-                )
-
-                if target_stage <= 0:
-                    continue
-
-                target_profit = (
-                    risk *
-                    target_stage
-                )
-
-                if profit >= target_profit:
-
-                    execute_real_upbit_coin_target_exit(
-                        position
-                    )
-
-        except Exception as e:
-
-            logger.exception(
-                f"COIN TARGET MONITOR ERROR | {e}"
-            )
-
-        time.sleep(
-            AUTO_CHECK_INTERVAL
-        )
-
-
-# =========================================================
-# 백그라운드 자산 갱신
-# =========================================================
-
-def upbit_asset_refresh_monitor():
-
-    logger.info(
-        "UPBIT ASSET REFRESH MONITOR START"
-    )
-
-    while True:
-
-        try:
-
-            if (
-                UPBIT_ACCESS_KEY
-                and
-                UPBIT_SECRET_KEY
-            ):
-
-                fetch_upbit_assets(
-                    UPBIT_ACCESS_KEY,
-                    UPBIT_SECRET_KEY
-                )
-
-        except Exception as e:
-
-            logger.exception(
-                f"ASSET REFRESH ERROR | {e}"
-            )
-
-        time.sleep(
-            UPBIT_ASSET_REFRESH_INTERVAL
-        )
-
-
-# =========================================================
-# TradingView Webhook
-# =========================================================
-
-@app.post("/tradingview_webhook")
-async def tradingview_webhook(
-    request: Request
-):
-
-    global latest_order_info
-
-    try:
-
-        payload = json.loads(
-            (
-                await request.body()
-            ).decode("utf-8")
-        )
-
-    except Exception:
-
-        raise HTTPException(
-            status_code=400,
-            detail="올바른 JSON 형식이 아닙니다."
-        )
-
-    if not isinstance(payload, dict):
-
-        raise HTTPException(
-            status_code=400,
-            detail="JSON 객체가 필요합니다."
-        )
-
-    action = safe_string(
-        get_payload_value(
-            payload,
-            [
-                "Action",
-                "action",
-                "ACTION"
-            ],
-            ""
-        )
-    ).lower()
-
-    coin = clean_coin_name(
-        get_payload_value(
-            payload,
-            [
-                "coin",
-                "Coin",
-                "COIN",
-                "ticker",
-                "Ticker",
-                "symbol",
-                "Symbol"
-            ],
-            ""
-        )
-    )
-
-    volume = safe_float(
-        get_payload_value(
-            payload,
-            [
-                "volume",
-                "Volume",
-                "VOLUME"
-            ],
-            0
-        )
-    )
-
-    stop_loss = safe_float(
-        get_payload_value(
-            payload,
-            [
-                "stop_loss",
-                "StopLoss",
-                "stopLoss",
-                "STOP_LOSS"
-            ],
-            0
-        )
-    )
-
-    api_key = UPBIT_ACCESS_KEY
-    secret_key = UPBIT_SECRET_KEY
-
-    if action not in (
-        "buy",
-        "sell"
-    ):
-
-        raise HTTPException(
-            status_code=400,
-            detail="Action은 Buy 또는 Sell입니다."
-        )
-
-    if (
-        not api_key
-        or
-        not secret_key
-    ):
-
-        raise HTTPException(
-            status_code=500,
-            detail=(
-                "UPBIT_ACCESS_KEY / "
-                "UPBIT_SECRET_KEY "
-                "환경변수가 설정되지 않았습니다."
-            )
-        )
-
-    # =====================================================
-    # BUY
-    # =====================================================
-
-    if action == "buy":
-
-        if not coin:
-
-            raise HTTPException(
-                status_code=400,
-                detail="BUY 코인이 없습니다."
-            )
-
-        refresh_before_order(
-            api_key,
-            secret_key,
-            "BUY"
-        )
-
-        # BUY 테스트 신호까지 포함해 BUY LOCK 상태에서는 차단
-        check_buy_lock_or_raise()
-
-        if stop_loss <= 0:
-
-            latest_order_info = (
-                f"🟡 BUY 조회 테스트 | "
-                f"{coin} | 주문하지 않음"
-            )
-
-            return {
-                "status":
-                    "test",
-
-                "Action":
-                    "Buy",
-
-                "Coin":
-                    coin,
-
-                "StopLoss":
-                    stop_loss,
-
-                "Total KRW":
-                    latest_upbit_total_krw,
-
-                "Available KRW":
-                    latest_upbit_available_krw,
-
-                "Order Executed":
-                    False
-            }
-
-        month, max_loss_rate = (
-            get_risk_settings()
-        )
-
-        loss_limit = (
-            month *
-            max_loss_rate
-        )
-
-        target_buy = truncate_krw(
-            loss_limit /
-            (stop_loss / 100)
-        )
-
-        available = (
-            latest_upbit_available_krw
-        )
-
-        if available <= 0:
-
-            raise HTTPException(
-                status_code=400,
-                detail="매수 가능한 KRW가 없습니다."
-            )
-
-        chance = get_order_chance(
-            f"KRW-{coin}",
-            api_key,
-            secret_key
-        )
-
-        fee = safe_float(
-            chance.get("bid_fee")
-        )
-
-        minimum = safe_float(
-            chance.get(
-                "min_total"
-            ),
-            MIN_ORDER_KRW
-        )
-
-        safe_available = (
-            calculate_fee_safe_buy_amount(
-                available,
-                fee
-            )
-        )
-
-        amount = truncate_krw(
-            min(
-                target_buy,
-                safe_available
-            )
-        )
-
-        if amount < minimum:
-
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f"주문가능금액 "
-                    f"{amount:,.0f}원 < "
-                    f"최소주문 "
-                    f"{minimum:,.0f}원"
-                )
-            )
-
-        try:
-
-            with order_execution_lock:
-
-                # 주문 실행 직전 다시 확인
-                check_buy_lock_or_raise()
-
-                order = place_bid_order(
-                    coin,
-                    amount,
-                    api_key,
-                    secret_key
-                )
-
-                completed = wait_for_order_complete(
-                    order["uuid"],
-                    api_key,
-                    secret_key
-                )
-
-                result = parse_order_result(
-                    completed
-                )
-
-                if result["state"] != "done":
-
-                    raise HTTPException(
-                        status_code=400,
-                        detail=completed
-                    )
-
-                save_buy_trade(
-                    result,
-                    amount,
-                    stop_loss
-                )
-
-                latest_order_info = (
-                    f"🟢 BUY {coin} | "
-                    f"손절 {stop_loss:.2f}% | "
-                    f"{amount:,.0f}원"
-                )
-
-            return {
-
-                "status":
-                    "success",
-
-                "Action":
-                    "Buy",
-
-                "Coin":
-                    coin,
-
-                "Stop Loss Percent":
-                    stop_loss,
-
-                "Target Buy KRW":
-                    target_buy,
-
-                "Actual Order KRW":
-                    amount,
-
-                "Executed Volume":
-                    result["executed_volume"],
-
-                "Average Price":
-                    result["avg_price"],
-
-                "Fee":
-                    result["paid_fee"],
-
-                "Order UUID":
-                    result["uuid"],
-
-                "Order Executed":
-                    True
-            }
-
-        finally:
-
-            refresh_after_order(
-                api_key,
-                secret_key,
-                "BUY"
-            )
-
-    # =====================================================
-    # SELL
-    # =====================================================
-
-    if action == "sell":
-
-        if not coin:
-
-            raise HTTPException(
-                status_code=400,
-                detail="SELL 코인이 없습니다."
-            )
-
-        refresh_before_order(
-            api_key,
-            secret_key,
-            "SELL"
-        )
-
-        if volume <= 0:
-
-            latest_order_info = (
-                f"🟡 SELL 조회 테스트 | "
-                f"{coin} | 주문하지 않음"
-            )
-
-            return {
-
-                "status":
-                    "test",
-
-                "Action":
-                    "Sell",
-
-                "Coin":
-                    coin,
-
-                "Volume":
-                    volume,
-
-                "Order Executed":
-                    False
-            }
-
-        if volume > 1:
-
-            raise HTTPException(
-                status_code=400,
-                detail="SELL volume은 0~1입니다."
-            )
-
-        balance = get_coin_balance(
-            coin,
-            api_key,
-            secret_key
-        )
-
-        if balance <= 0:
-
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f"{coin} "
-                    f"보유수량이 없습니다."
-                )
-            )
-
-        sell_volume = (
-            balance
-            if volume >= 1
-            else balance * volume
-        )
-
-        sell_volume = truncate_volume(
-            sell_volume,
-            8
-        )
-
-        if sell_volume <= 0:
-
-            raise HTTPException(
-                status_code=400,
-                detail="매도수량이 0입니다."
-            )
-
-        try:
-
-            with order_execution_lock:
-
-                order = place_ask_order(
-                    coin,
-                    sell_volume,
-                    api_key,
-                    secret_key
-                )
-
-                completed = wait_for_order_complete(
-                    order["uuid"],
-                    api_key,
-                    secret_key
-                )
-
-                result = parse_order_result(
-                    completed
-                )
-
-                if result["state"] != "done":
-
-                    raise HTTPException(
-                        status_code=400,
-                        detail=completed
-                    )
-
-                sell_result = save_sell_trade(
-                    result,
-                    volume
-                )
-
-                latest_order_info = (
-                    f"🔴 SELL {coin} | "
-                    f"{volume * 100:.0f}% | "
-                    f"{sell_result['profit']:+,.0f}원"
-                )
-
-            if volume >= 1:
-
-                delete_trailing_state(coin)
-                delete_coin_target(coin)
-
-            return {
-
-                "status":
-                    "success",
-
-                "Action":
-                    "Sell",
-
-                "Coin":
-                    coin,
-
-                "Sell Ratio":
-                    volume,
-
-                "Executed Volume":
-                    sell_result["sell_volume"],
-
-                "Gross Sell Amount":
-                    sell_result["gross_sell"],
-
-                "Fee":
-                    sell_result["fee"],
-
-                "Net Sell Amount":
-                    sell_result["net_sell"],
-
-                "Realized Profit":
-                    sell_result["profit"],
-
-                "Return Percent":
-                    sell_result["return"],
-
-                "Order UUID":
-                    result["uuid"],
-
-                "Order Executed":
-                    True
-            }
-
-        finally:
-
-            refresh_after_order(
-                api_key,
-                secret_key,
-                "SELL"
-            )
-
-
-# =========================================================
-# 개별 전량매도 API
-# =========================================================
-
-@app.post("/api/manual-sell-coin")
-async def api_manual_sell_coin(
-    request: Request
-):
-
-    if (
-        not UPBIT_ACCESS_KEY
-        or
-        not UPBIT_SECRET_KEY
-    ):
-
-        raise HTTPException(
-            status_code=500,
-            detail=(
-                "UPBIT_ACCESS_KEY / "
-                "UPBIT_SECRET_KEY "
-                "환경변수가 설정되지 않았습니다."
-            )
-        )
-
-    try:
-        data = await request.json()
-    except Exception:
-
-        raise HTTPException(
-            status_code=400,
-            detail="JSON 오류"
-        )
-
-    coin = clean_coin_name(
-        data.get("coin", "")
-    )
-
-    if not coin:
-
-        raise HTTPException(
-            status_code=400,
-            detail="코인이 없습니다."
-        )
-
-    try:
-
-        result = execute_manual_sell_coin(
-            coin
-        )
-
-    except HTTPException:
-        raise
-
-    except Exception as e:
-
-        logger.exception(
-            f"MANUAL COIN SELL API ERROR | "
-            f"{coin} | {e}"
-        )
-
-        raise HTTPException(
-            status_code=500,
-            detail=str(e)
-        )
-
-    if not result.get("success"):
-
-        raise HTTPException(
-            status_code=400,
-            detail=result.get(
-                "message",
-                "개별 매도 실패"
-            )
-        )
-
-    return {
-        "status": "success",
-        **result
-    }
-
-
-# =========================================================
-# 전체매도 API
-# =========================================================
-
-@app.post("/api/manual-sell-all")
-async def api_manual_sell_all():
-
-    if (
-        not UPBIT_ACCESS_KEY
-        or
-        not UPBIT_SECRET_KEY
-    ):
-
-        raise HTTPException(
-            status_code=500,
-            detail=(
-                "UPBIT_ACCESS_KEY / "
-                "UPBIT_SECRET_KEY "
-                "환경변수가 설정되지 않았습니다."
-            )
-        )
-
-    try:
-
-        result = execute_manual_sell_all()
-
-    except Exception as e:
-
-        logger.exception(
-            f"MANUAL SELL ALL API ERROR | {e}"
-        )
-
-        raise HTTPException(
-            status_code=500,
-            detail=str(e)
-        )
-
-    return {
-        "status":
-            "success"
-            if result.get("success")
-            else "partial",
-
-        **result
-    }
-
-
-# =========================================================
-# 대시보드 API
-# =========================================================
-
-@app.get("/api/upbit-assets")
-async def api_upbit_assets():
-
-    month, rate = get_risk_settings()
-
-    stop, take = get_auto_exit_settings()
-
-    risk_unit = (
-        month * rate
-    )
-
-    trailing_drop_stage = (
-        get_trailing_drop_stage()
-    )
-
-    trailing_sell_stage = (
-        get_trailing_sell_stage()
-    )
-
-    trailing = get_all_trailing_states()
-    coin_targets = get_all_coin_targets()
-
-    with asset_cache_lock:
-
-        assets = [
-            dict(a)
-            for a in latest_upbit_assets
+        markets = [
+            x["market"]
+            for x in r.json()
+            if x.get("market", "").startswith("KRW-")
         ]
+    except Exception:
+        return []
 
-        total = latest_upbit_total_krw
-        available = latest_upbit_available_krw
-        updated = latest_upbit_update
+    result = []
 
-    buy_lock_status = get_buy_lock_status()
+    for i in range(0, len(markets), 100):
+        rr = retry(
+            requests.get,
+            "https://api.upbit.com/v1/ticker",
+            params={"markets": ",".join(markets[i:i + 100])},
+            timeout=15
+        )
 
-    return {
+        if rr is None:
+            continue
 
-        "month_start_amount":
-            month,
+        try:
+            data = rr.json()
+        except Exception:
+            continue
 
-        "max_loss_rate":
-            rate,
+        if not isinstance(data, list):
+            continue
 
-        "max_loss_rate_percent":
-            rate * 100,
+        for x in data:
+            try:
+                result.append({
+                    "market": x["market"],
+                    "current_price": float(x["trade_price"]),
+                    "volume_24h": float(x["acc_trade_price_24h"])
+                })
+            except Exception:
+                pass
 
-        "max_loss_amount":
-            month * rate,
+    latest_upbit_markets = [
+        x["market"] for x in result
+    ]
 
-        "auto_stop_loss_krw":
-            stop,
+    return result
 
-        "auto_take_profit_krw":
-            take,
 
-        "auto_take_profit_enabled":
-            take > 0,
+# =========================================================
+# 업비트 분봉 조회
+# =========================================================
 
-        "risk_unit":
-            risk_unit,
+def get_upbit_minute_candles(market, unit, count=200):
+    endpoint = f"https://api.upbit.com/v1/candles/minutes/{unit}"
 
-        "trailing_drop_stage":
-            trailing_drop_stage,
+    target_count = min(max(int(count), 1), 200)
 
-        "trailing_sell_stage":
-            trailing_sell_stage,
-
-        "total_krw":
-            total,
-
-        "available_krw":
-            available,
-
-        "updated_at":
-            updated,
-
-        "bid_fee_rate":
-            latest_bid_fee_rate,
-
-        "assets":
-            assets,
-
-        "trailing_states":
-            trailing,
-
-        "coin_targets":
-            coin_targets,
-
-        "latest_order":
-            latest_order_info,
-
-        "manual_sell_all_in_progress":
-            manual_sell_all_in_progress,
-
-        "dashboard_min_value_krw":
-            MIN_DASHBOARD_VALUE_KRW,
-
-        # BUY LOCK 상태
-        "today_start_amount":
-            buy_lock_status["today_start_amount"],
-
-        "today_profit":
-            buy_lock_status["today_profit"],
-
-        "buy_lock":
-            buy_lock_status["buy_lock"],
-
-        "buy_lock_loss_rate":
-            BUY_LOCK_LOSS_RATE,
-
-        "buy_lock_loss_limit":
-            buy_lock_status["buy_lock_loss_limit"],
-
-        "buy_lock_reason":
-            buy_lock_status["buy_lock_reason"],
-
-        "buy_lock_triggered_at":
-            buy_lock_status["buy_lock_triggered_at"]
+    params = {
+        "market": market,
+        "count": target_count
     }
 
+    r = retry(
+        requests.get,
+        endpoint,
+        params=params,
+        timeout=15
+    )
 
-# =========================================================
-# 오늘 시작금액 설정 API
-#
-# 대시보드에서 금액을 직접 변경하고 저장하면
-# BUY LOCK을 해제함
-# =========================================================
-
-@app.post("/api/today-start-amount")
-async def update_today_start_amount(
-    request: Request
-):
+    if r is None:
+        return pd.DataFrame()
 
     try:
-        data = await request.json()
+        data = r.json()
     except Exception:
+        return pd.DataFrame()
 
-        raise HTTPException(
-            status_code=400,
-            detail="JSON 오류"
-        )
+    if not isinstance(data, list) or not data:
+        return pd.DataFrame()
 
-    amount = safe_float(
-        data.get("today_start_amount")
+    rows = []
+
+    for x in data:
+        try:
+            dt_utc = datetime.strptime(
+                x["candle_date_time_utc"],
+                "%Y-%m-%dT%H:%M:%S"
+            ).replace(tzinfo=UTC)
+
+            dt_kst = datetime.strptime(
+                x["candle_date_time_kst"],
+                "%Y-%m-%dT%H:%M:%S"
+            ).replace(tzinfo=KST)
+
+            rows.append({
+                "datetime": dt_kst,
+                "datetime_utc": dt_utc,
+                "open": float(x["opening_price"]),
+                "high": float(x["high_price"]),
+                "low": float(x["low_price"]),
+                "close": float(x["trade_price"])
+            })
+
+        except Exception:
+            pass
+
+    if not rows:
+        return pd.DataFrame()
+
+    return (
+        pd.DataFrame(rows)
+        .sort_values("datetime")
+        .drop_duplicates("datetime")
+        .tail(target_count)
+        .reset_index(drop=True)
     )
 
-    if amount < MIN_ORDER_KRW:
 
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"오늘 시작금액은 "
-                f"{MIN_ORDER_KRW:,}원 이상이어야 합니다."
-            )
-        )
+def get_upbit_5m_candles(market, count=200):
+    return get_upbit_minute_candles(market, 5, count)
 
-    try:
 
-        status = save_today_start_amount(
-            amount
-        )
+def get_upbit_15m_candles(market, count=200):
+    return get_upbit_minute_candles(market, 15, count)
 
-    except Exception as e:
 
-        raise HTTPException(
-            status_code=400,
-            detail=str(e)
-        )
-
-    return {
-        "status": "success",
-        **status
-    }
+def get_upbit_4h_candles(market, count=200):
+    return get_upbit_minute_candles(market, 60, count)
 
 
 # =========================================================
-# 리스크 설정 API
+# 업비트 일봉 조회
 # =========================================================
 
-@app.post("/api/risk-settings")
-async def update_risk_settings(
-    request: Request
-):
+def get_upbit_daily_candles(market, count=200):
+    r = retry(
+        requests.get,
+        "https://api.upbit.com/v1/candles/days",
+        params={
+            "market": market,
+            "count": min(int(count), 200)
+        },
+        timeout=15
+    )
+
+    if r is None:
+        return pd.DataFrame()
 
     try:
-        data = await request.json()
+        data = r.json()
     except Exception:
+        return pd.DataFrame()
 
-        raise HTTPException(
-            status_code=400,
-            detail="JSON 오류"
-        )
+    if not isinstance(data, list):
+        return pd.DataFrame()
 
-    month = safe_float(
-        data.get(
-            "month_start_amount"
-        )
+    rows = []
+
+    for x in data:
+        try:
+            rows.append({
+                "datetime": datetime.strptime(
+                    x["candle_date_time_kst"],
+                    "%Y-%m-%dT%H:%M:%S"
+                ).replace(tzinfo=KST),
+                "open": float(x["opening_price"]),
+                "high": float(x["high_price"]),
+                "low": float(x["low_price"]),
+                "close": float(x["trade_price"])
+            })
+        except Exception:
+            pass
+
+    if not rows:
+        return pd.DataFrame()
+
+    return (
+        pd.DataFrame(rows)
+        .sort_values("datetime")
+        .drop_duplicates("datetime")
+        .reset_index(drop=True)
     )
 
-    rate_percent = safe_float(
-        data.get(
-            "max_loss_rate"
-        )
+
+# =========================================================
+# 업비트 4시간봉 생성 - KST 09:00 기준
+# =========================================================
+
+def build_upbit_4h_candles(df, current_price=None):
+    if df is None or df.empty:
+        return pd.DataFrame()
+
+    df = (
+        df.sort_values("datetime")
+        .drop_duplicates("datetime")
+        .reset_index(drop=True)
     )
 
-    if month < MIN_ORDER_KRW:
+    now = datetime.now(KST)
 
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"월 시작금액은 "
-                f"{MIN_ORDER_KRW:,}원 이상"
-            )
+    day_start = now.replace(
+        hour=9, minute=0, second=0, microsecond=0
+    )
+
+    if now < day_start:
+        day_start -= timedelta(days=1)
+
+    elapsed_hours = int(
+        (now - day_start).total_seconds() // 3600
+    )
+
+    current_start = day_start + timedelta(
+        hours=(elapsed_hours // 4) * 4
+    )
+
+    rows = []
+
+    for _, row in df.iterrows():
+        dt = row["datetime"]
+        relative_seconds = (
+            dt - day_start
+        ).total_seconds()
+
+        group_index = int(
+            relative_seconds // (4 * 3600)
         )
 
-    if (
-        rate_percent <= 0
-        or
-        rate_percent > 100
+        period_start = day_start + timedelta(
+            hours=group_index * 4
+        )
+
+        rows.append({
+            "period_start": period_start,
+            "open": float(row["open"]),
+            "high": float(row["high"]),
+            "low": float(row["low"]),
+            "close": float(row["close"])
+        })
+
+    if not rows:
+        return pd.DataFrame()
+
+    raw = pd.DataFrame(rows)
+    grouped = []
+
+    for period_start, group in raw.groupby(
+        "period_start", sort=True
     ):
+        o = float(group.iloc[0]["open"])
+        h = float(group["high"].max())
+        l = float(group["low"].min())
+        c = float(group.iloc[-1]["close"])
 
-        raise HTTPException(
-            status_code=400,
-            detail="손실기준은 0~100%"
+        active = period_start == current_start
+
+        if active and current_price is not None:
+            c = float(current_price)
+            h = max(h, c)
+            l = min(l, c)
+
+        change = (c - o) / o * 100 if o else None
+
+        grouped.append({
+            "datetime": period_start,
+            "start": period_start,
+            "end": period_start + timedelta(hours=4),
+            "active": active,
+            "label": period_start.strftime("%m/%d %H:%M"),
+            "open": o,
+            "high": h,
+            "low": l,
+            "close": c,
+            "change": change
+        })
+
+    return (
+        pd.DataFrame(grouped)
+        .sort_values("datetime")
+        .drop_duplicates("datetime")
+        .reset_index(drop=True)
+    )
+
+
+# =========================================================
+# EMA 계산
+# =========================================================
+
+def calculate_ema_series(df, period):
+    if df is None or df.empty or "close" not in df.columns:
+        return None
+
+    closes = pd.to_numeric(
+        df["close"], errors="coerce"
+    )
+
+    closes = closes.loc[closes.notna()]
+
+    if closes.empty:
+        return None
+
+    values = closes.to_numpy(dtype=float)
+    result = np.full(len(values), np.nan)
+
+    alpha = 2.0 / (period + 1.0)
+
+    if len(values) < period:
+        result[0] = values[0]
+
+        for i in range(1, len(values)):
+            result[i] = (
+                alpha * values[i]
+                + (1.0 - alpha) * result[i - 1]
+            )
+    else:
+        result[period - 1] = float(
+            np.mean(values[:period])
         )
 
-    rate = (
-        rate_percent /
-        100
+        for i in range(period, len(values)):
+            result[i] = (
+                alpha * values[i]
+                + (1.0 - alpha) * result[i - 1]
+            )
+
+    return pd.Series(
+        result,
+        index=closes.index,
+        dtype=float
     )
 
-    save_risk_settings(
-        month,
-        rate
+
+def calculate_ema(df, period):
+    series = calculate_ema_series(df, period)
+
+    if series is None or series.empty:
+        return None
+
+    valid = series.dropna()
+
+    return (
+        float(valid.iloc[-1])
+        if not valid.empty
+        else None
     )
 
-    return {
 
-        "status":
-            "success",
+# =========================================================
+# EMA 10선 터치 후 반등 판정
+# =========================================================
 
-        "month_start_amount":
-            truncate_krw(month),
+def check_ema10_rebound(df):
+    """
+    가장 빠른 EMA 10선을 기준으로 판단한다.
 
-        "max_loss_rate":
-            rate,
+    조건:
+    1. 현재 캔들의 저가 <= EMA 10
+    2. 현재 캔들의 종가 > EMA 10
 
-        "max_loss_rate_percent":
-            rate_percent,
+    즉 EMA 10선을 터치하거나 아래로 내려갔다가
+    현재 가격이 EMA 10선 위로 회복한 경우 True.
+    """
 
-        "max_loss_amount":
-            month * rate,
+    if df is None or df.empty:
+        return False
 
-        "auto_stop_loss_krw":
-            month * rate
+    required_columns = {
+        "low",
+        "close"
     }
 
+    if not required_columns.issubset(df.columns):
+        return False
 
-# =========================================================
-# 자동 익절 API
-#
-# 자동손절은 이 API에서 설정하지 않음
-# 자동손절 = 월 시작금액 × 전체 시드 손실기준 %
-# =========================================================
+    ema10_series = calculate_ema_series(
+        df, EMA_PULLBACK
+    )
 
-@app.post("/api/auto-exit-settings")
-async def update_auto_exit_settings(
-    request: Request
-):
+    if ema10_series is None or ema10_series.empty:
+        return False
+
+    ema10_valid = ema10_series.dropna()
+
+    if ema10_valid.empty:
+        return False
 
     try:
-        data = await request.json()
-    except Exception:
+        ema10 = float(ema10_valid.iloc[-1])
 
-        raise HTTPException(
-            status_code=400,
-            detail="JSON 오류"
+        current_index = ema10_valid.index[-1]
+
+        current_low = float(
+            df.loc[current_index, "low"]
         )
 
-    take = safe_float(
-        data.get(
-            "auto_take_profit_krw"
-        )
-    )
-
-    if take < 0:
-
-        raise HTTPException(
-            status_code=400,
-            detail="금액은 0 이상이어야 합니다."
+        current_close = float(
+            df.loc[current_index, "close"]
         )
 
-    save_auto_exit_settings(
-        take
+    except (TypeError, ValueError, KeyError, IndexError):
+        return False
+
+    if not all(
+        np.isfinite(v)
+        for v in (ema10, current_low, current_close)
+    ):
+        return False
+
+    return bool(
+        current_low <= ema10
+        and current_close > ema10
     )
 
-    stop, current_take = (
-        get_auto_exit_settings()
+
+def get_ema_alignment_state(
+    df,
+    fast_period=EMA_FAST,
+    slow_period=EMA_SLOW
+):
+    if df is None or df.empty:
+        return None
+
+    fast = calculate_ema(df, fast_period)
+    slow = calculate_ema(df, slow_period)
+
+    if fast is None or slow is None:
+        return None
+
+    if fast > slow:
+        return "정배열"
+
+    if fast < slow:
+        return "역배열"
+
+    return "동일"
+
+
+def get_ema_pair_state(df, fast_period, slow_period):
+    return get_ema_alignment_state(
+        df, fast_period, slow_period
     )
 
-    return {
 
-        "status":
-            "success",
+# =========================================================
+# 현재 캔들 가격 반영
+# =========================================================
 
-        "auto_stop_loss_krw":
-            stop,
+def update_current_candle(df, current_start, price):
+    if df is None or df.empty or price is None:
+        return df
 
-        "auto_take_profit_krw":
-            current_take,
+    if df.iloc[-1]["datetime"] != current_start:
+        return df
 
-        "auto_take_profit_enabled":
-            current_take > 0
+    idx = df.index[-1]
+    price = float(price)
+
+    df.loc[idx, "close"] = price
+    df.loc[idx, "high"] = max(
+        float(df.loc[idx, "high"]), price
+    )
+    df.loc[idx, "low"] = min(
+        float(df.loc[idx, "low"]), price
+    )
+
+    return df
+
+
+# =========================================================
+# 지정 시간봉 데이터 조회 - 캐시 공유
+# =========================================================
+
+def get_timeframe_dataframe(market, timeframe, price=None):
+    if timeframe == "5m":
+        df = get_cached_dataframe(
+            market,
+            "5m",
+            lambda: get_upbit_5m_candles(
+                market, EMA_HISTORY_CANDLES
+            )
+        )
+        minutes = 5
+
+    elif timeframe == "15m":
+        df = get_cached_dataframe(
+            market,
+            "15m",
+            lambda: get_upbit_15m_candles(
+                market, EMA_HISTORY_CANDLES
+            )
+        )
+        minutes = 15
+
+    elif timeframe == "1h":
+        df = get_cached_dataframe(
+            market,
+            "1h",
+            lambda: get_upbit_4h_candles(
+                market, EMA_HISTORY_CANDLES
+            )
+        )
+        minutes = 60
+
+    else:
+        return pd.DataFrame()
+
+    if df.empty:
+        return df
+
+    now = datetime.now(KST)
+
+    current_start = now.replace(
+        minute=(now.minute // minutes) * minutes,
+        second=0,
+        microsecond=0
+    )
+
+    return update_current_candle(
+        df, current_start, price
+    )
+
+
+def get_daily_dataframe(market):
+    return get_cached_dataframe(
+        market,
+        "1d",
+        lambda: get_upbit_daily_candles(market, 200)
+    )
+
+
+# =========================================================
+# 선택 시간봉 EMA 분석
+# =========================================================
+
+def analyze_ema_4h(market, price=None):
+    empty_result = {
+        "ema5": None,
+        "ema15": None,
+        "ema5_short": None,
+        "ema20": None,
+        "ema60": None,
+        "reverse": False,
+        "bullish_pullback": False,
+        "signal_condition": False,
+        "alignment": None,
+        "cross_previous": False,
+        "cross_current": False,
+        "cross_signal": False
     }
 
+    timeframe = SIGNAL_TIMEFRAME
 
-# =========================================================
-# 트레일링 설정 API
-# =========================================================
-
-@app.post("/api/trailing-settings")
-async def update_trailing_settings(
-    request: Request
-):
-
-    try:
-        data = await request.json()
-    except Exception:
-
-        raise HTTPException(
-            status_code=400,
-            detail="JSON 오류"
+    if timeframe in ("5m", "15m", "1h"):
+        df = get_timeframe_dataframe(
+            market, timeframe, price
         )
 
-    drop_stage = int(
-        safe_float(
-            data.get(
-                "trailing_drop_stage",
-                DEFAULT_TRAILING_DROP_STAGE
-            )
-        )
-    )
-
-    sell_stage = int(
-        safe_float(
-            data.get(
-                "trailing_sell_stage",
-                DEFAULT_TRAILING_SELL_STAGE
-            )
-        )
-    )
-
-    if (
-        drop_stage < 1
-        or
-        drop_stage > 10
-    ):
-
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "트레일링 손절 하락 단계는 "
-                "1~10단계입니다."
-            )
+    elif timeframe == "4h":
+        df_1h = get_timeframe_dataframe(
+            market, "1h", price
         )
 
-    if (
-        sell_stage < 0
-        or
-        sell_stage > 10
-    ):
+        if df_1h.empty:
+            return empty_result
 
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "트레일링 최초 매도단계는 "
-                "0~10단계입니다."
-            )
+        df = build_upbit_4h_candles(df_1h, price)
+
+    elif timeframe == "1d":
+        df = get_daily_dataframe(market)
+
+        if df.empty:
+            return empty_result
+
+        now = datetime.now(KST)
+
+        current_start = now.replace(
+            hour=9, minute=0, second=0, microsecond=0
         )
 
-    drop_stage = save_trailing_drop_stage(
-        drop_stage
-    )
+        if now < current_start:
+            current_start -= timedelta(days=1)
 
-    sell_stage = save_trailing_sell_stage(
-        sell_stage
-    )
-
-    return {
-
-        "status":
-            "success",
-
-        "trailing_drop_stage":
-            drop_stage,
-
-        "trailing_sell_stage":
-            sell_stage
-    }
-
-
-# =========================================================
-# 코인별 목표 API
-# =========================================================
-
-@app.post("/api/coin-target")
-async def update_coin_target(
-    request: Request
-):
-
-    try:
-        data = await request.json()
-    except Exception:
-
-        raise HTTPException(
-            status_code=400,
-            detail="JSON 오류"
-        )
-
-    coin = clean_coin_name(
-        data.get(
-            "coin",
-            ""
-        )
-    )
-
-    enabled_value = data.get(
-        "enabled",
-        False
-    )
-
-    if isinstance(
-        enabled_value,
-        str
-    ):
-
-        enabled = (
-            enabled_value.lower()
-            in (
-                "true",
-                "1",
-                "yes",
-                "on"
-            )
+        df = update_current_candle(
+            df, current_start, price
         )
 
     else:
-
-        enabled = bool(
-            enabled_value
+        log.warning(
+            "지원하지 않는 SIGNAL_TIMEFRAME: %s",
+            timeframe
         )
+        return empty_result
 
-    target_stage = int(
-        safe_float(
-            data.get(
-                "target_stage",
-                0
-            )
-        )
+    if df is None or df.empty:
+        return empty_result
+
+    ema5_series = calculate_ema_series(
+        df, EMA_PULLBACK
+    )
+    ema10_series = calculate_ema_series(
+        df, EMA_FAST
+    )
+    ema50_series = calculate_ema_series(
+        df, EMA_SLOW
     )
 
-    if not coin:
+    if any(
+        x is None
+        for x in (ema5_series, ema10_series, ema50_series)
+    ):
+        return empty_result
 
-        raise HTTPException(
-            status_code=400,
-            detail="코인이 없습니다."
+    ema5_valid = ema5_series.dropna()
+    ema10_valid = ema10_series.dropna()
+    ema50_valid = ema50_series.dropna()
+
+    if any(
+        x.empty
+        for x in (ema5_valid, ema10_valid, ema50_valid)
+    ):
+        return empty_result
+
+    ema5 = float(ema5_valid.iloc[-1])
+    ema10 = float(ema10_valid.iloc[-1])
+    ema50 = float(ema50_valid.iloc[-1])
+
+    reverse = ema5 < ema10
+    bullish_pullback = (
+        ema10 > ema50 and ema5 < ema10
+    )
+
+    signal_condition = check_ema_signal_condition(
+        ema5, ema10, ema50
+    )
+
+    if ema10 > ema50:
+        alignment = "정배열"
+    elif ema10 < ema50:
+        alignment = "역배열"
+    else:
+        alignment = "동일"
+
+    return {
+        "ema5": ema10,
+        "ema15": ema50,
+        "ema5_short": ema5,
+        "ema20": ema10,
+        "ema60": ema50,
+        "reverse": reverse,
+        "bullish_pullback": bullish_pullback,
+        "signal_condition": signal_condition,
+        "alignment": alignment,
+        "cross_previous": False,
+        "cross_current": False,
+        "cross_signal": False
+    }
+
+
+# =========================================================
+# 참고 EMA 조건 충족 연속 캔들 수
+# =========================================================
+
+def get_reference_full_alignment_age(df):
+    if df is None or df.empty:
+        return 0
+
+    ema_pullback_series = calculate_ema_series(
+        df, EMA_PULLBACK
+    )
+    ema_fast_series = calculate_ema_series(
+        df, EMA_FAST
+    )
+    ema_slow_series = calculate_ema_series(
+        df, EMA_SLOW
+    )
+
+    if any(
+        series is None
+        for series in (
+            ema_pullback_series,
+            ema_fast_series,
+            ema_slow_series
+        )
+    ):
+        return 0
+
+    combined = pd.concat([
+        ema_pullback_series.rename("ema_pullback"),
+        ema_fast_series.rename("ema_fast"),
+        ema_slow_series.rename("ema_slow")
+    ], axis=1).dropna()
+
+    if combined.empty:
+        return 0
+
+    condition_results = []
+
+    for _, row in combined.iterrows():
+        ema_pullback = float(row["ema_pullback"])
+        ema_fast = float(row["ema_fast"])
+        ema_slow = float(row["ema_slow"])
+
+        if ema_pullback > ema_fast:
+            state_5_10 = "정배열"
+        elif ema_pullback < ema_fast:
+            state_5_10 = "역배열"
+        else:
+            state_5_10 = "동일"
+
+        if ema_fast > ema_slow:
+            state_10_20 = "정배열"
+        elif ema_fast < ema_slow:
+            state_10_20 = "역배열"
+        else:
+            state_10_20 = "동일"
+
+        condition_met = check_reference_ema_condition(
+            state_5_10,
+            state_10_20
         )
 
-    if (
-        target_stage < 0
-        or
-        target_stage > 10
-    ):
+        condition_results.append(bool(condition_met))
 
-        raise HTTPException(
-            status_code=400,
-            detail="목표 단계는 0~10입니다."
-        )
+    if not condition_results:
+        return 0
 
-    if (
-        enabled
-        and
-        target_stage <= 0
-    ):
+    if not condition_results[-1]:
+        return 0
 
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "목표 사용 시 "
-                "1:1~1:10 중 하나를 선택하세요."
+    age = 0
+
+    for condition_met in reversed(condition_results):
+        if not condition_met:
+            break
+
+        age += 1
+
+    return age
+
+
+# =========================================================
+# 참고 EMA 시간봉 분석 - 동일 캐시 사용
+# =========================================================
+
+def analyze_reference_ema_timeframes(market, price=None):
+    states = {
+        "signal_5_10": None,
+        "signal_10_50": None,
+        "1h_5_10": None,
+        "1h_10_50": None,
+        "full_alignment_age": 0,
+        "full_alignment_active": False
+    }
+
+    timeframe = EMA_REFERENCE_TIMEFRAME
+
+    try:
+        if timeframe in ("5m", "15m", "1h"):
+            df = get_timeframe_dataframe(
+                market, timeframe, price
             )
+
+        elif timeframe == "4h":
+            df_1h = get_timeframe_dataframe(
+                market, "1h", price
+            )
+
+            if df_1h.empty:
+                return states
+
+            df = build_upbit_4h_candles(
+                df_1h, price
+            )
+
+        elif timeframe == "1d":
+            df = get_daily_dataframe(market)
+
+            if df.empty:
+                return states
+
+            now = datetime.now(KST)
+
+            current_start = now.replace(
+                hour=9, minute=0, second=0, microsecond=0
+            )
+
+            if now < current_start:
+                current_start -= timedelta(days=1)
+
+            df = update_current_candle(
+                df, current_start, price
+            )
+
+        else:
+            log.warning(
+                "지원하지 않는 참고 EMA 시간봉: %s",
+                timeframe
+            )
+            return states
+
+        if df is None or df.empty:
+            return states
+
+        states["signal_5_10"] = get_ema_pair_state(
+            df, EMA_PULLBACK, EMA_FAST
         )
 
-    result = save_coin_target(
-        coin,
-        enabled,
-        target_stage
+        states["signal_10_50"] = get_ema_pair_state(
+            df, EMA_FAST, EMA_SLOW
+        )
+
+        states["1h_5_10"] = states["signal_5_10"]
+        states["1h_10_50"] = states["signal_10_50"]
+
+        condition_age = get_reference_full_alignment_age(df)
+
+        states["full_alignment_age"] = condition_age
+
+        states["full_alignment_active"] = bool(
+            1 <= condition_age <= REFERENCE_ALIGNMENT_MAX_CANDLES
+        )
+
+    except Exception as e:
+        log.warning(
+            "%s 참고 EMA 시간봉 오류: %s",
+            market, e
+        )
+
+    return states
+
+
+# =========================================================
+# 일봉 기간 생성
+# =========================================================
+
+def build_daily_periods(df, current_price=None):
+    if df is None or df.empty:
+        return []
+
+    df = (
+        df.sort_values("datetime")
+        .drop_duplicates("datetime")
+        .reset_index(drop=True)
+    )
+
+    now = datetime.now(KST)
+
+    current_start = now.replace(
+        hour=9, minute=0, second=0, microsecond=0
+    )
+
+    if now < current_start:
+        current_start -= timedelta(days=1)
+
+    periods = []
+
+    for _, row in df.iterrows():
+        start = row["datetime"]
+        end = start + timedelta(days=1)
+
+        o = float(row["open"])
+        h = float(row["high"])
+        l = float(row["low"])
+        c = float(row["close"])
+
+        active = start == current_start
+
+        if active and current_price is not None:
+            c = float(current_price)
+            h = max(h, c)
+            l = min(l, c)
+
+        change = (c - o) / o * 100 if o else None
+
+        periods.append({
+            "start": start,
+            "end": end,
+            "active": active,
+            "label": start.strftime("%m/%d 09:00"),
+            "open": o,
+            "high": h,
+            "low": l,
+            "close": c,
+            "change": change
+        })
+
+    return periods[-6:]
+
+
+# =========================================================
+# 캔들 패턴 함수
+# =========================================================
+
+def is_bullish_engulfing(previous, current):
+    try:
+        po, pc = float(previous["open"]), float(previous["close"])
+        co, cc = float(current["open"]), float(current["close"])
+    except Exception:
+        return False
+
+    return bool(
+        pc < po and cc > co
+        and co <= pc and cc >= po
+    )
+
+
+def is_bearish_engulfing(previous, current):
+    try:
+        po, pc = float(previous["open"]), float(previous["close"])
+        co, cc = float(current["open"]), float(current["close"])
+    except Exception:
+        return False
+
+    return bool(
+        pc > po and cc < co
+        and co >= pc and cc <= po
+    )
+
+
+def is_positive_doji(current):
+    try:
+        o, h, l, c = (
+            float(current["open"]), float(current["high"]),
+            float(current["low"]), float(current["close"])
+        )
+    except Exception:
+        return False
+
+    candle_range = h - l
+
+    return bool(
+        candle_range > 0
+        and abs(c - o) / candle_range <= 0.10
+        and c >= o
+    )
+
+
+def is_negative_doji(current):
+    try:
+        o, h, l, c = (
+            float(current["open"]), float(current["high"]),
+            float(current["low"]), float(current["close"])
+        )
+    except Exception:
+        return False
+
+    candle_range = h - l
+
+    return bool(
+        candle_range > 0
+        and abs(c - o) / candle_range <= 0.10
+        and c < o
+    )
+
+
+def is_bullish_piercing(previous, current):
+    try:
+        po, pc = float(previous["open"]), float(previous["close"])
+        co, cc = float(current["open"]), float(current["close"])
+    except Exception:
+        return False
+
+    if pc >= po or cc <= co:
+        return False
+
+    midpoint = (po + pc) / 2
+
+    return bool(cc > midpoint and cc < po)
+
+
+def is_bearish_piercing(previous, current):
+    try:
+        po, pc = float(previous["open"]), float(previous["close"])
+        co, cc = float(current["open"]), float(current["close"])
+    except Exception:
+        return False
+
+    if pc <= po or cc >= co:
+        return False
+
+    midpoint = (po + pc) / 2
+
+    return bool(cc < midpoint and cc > po)
+
+
+def is_long_bullish(current):
+    try:
+        o, h, l, c = (
+            float(current["open"]), float(current["high"]),
+            float(current["low"]), float(current["close"])
+        )
+    except Exception:
+        return False
+
+    candle_range = h - l
+
+    return bool(
+        candle_range > 0 and c > o
+        and abs(c - o) / candle_range >= 0.70
+    )
+
+
+def is_long_bearish(current):
+    try:
+        o, h, l, c = (
+            float(current["open"]), float(current["high"]),
+            float(current["low"]), float(current["close"])
+        )
+    except Exception:
+        return False
+
+    candle_range = h - l
+
+    return bool(
+        candle_range > 0 and c < o
+        and abs(c - o) / candle_range >= 0.70
+    )
+
+
+def get_hammer_parts(current):
+    try:
+        o, h, l, c = (
+            float(current["open"]), float(current["high"]),
+            float(current["low"]), float(current["close"])
+        )
+    except Exception:
+        return None
+
+    if h < max(o, c) or l > min(o, c) or h < l:
+        return None
+
+    body = abs(c - o)
+    candle_range = h - l
+
+    if candle_range <= 0:
+        return None
+
+    effective_body = max(
+        body, candle_range * 0.01
     )
 
     return {
-        "status":
-            "success",
-        **result
+        "body": effective_body,
+        "upper_wick": h - max(o, c),
+        "lower_wick": min(o, c) - l,
+        "open": o,
+        "close": c
     }
+
+
+def is_bullish_hammer(previous, current):
+    if previous is None:
+        return False
+
+    try:
+        if float(previous["close"]) >= float(previous["open"]):
+            return False
+    except Exception:
+        return False
+
+    parts = get_hammer_parts(current)
+
+    return bool(
+        parts is not None
+        and parts["lower_wick"] >= parts["body"] * 2
+        and parts["upper_wick"] <= parts["body"]
+    )
+
+
+def is_bullish_inverted_hammer(previous, current):
+    if previous is None:
+        return False
+
+    try:
+        if float(previous["close"]) >= float(previous["open"]):
+            return False
+    except Exception:
+        return False
+
+    parts = get_hammer_parts(current)
+
+    return bool(
+        parts is not None
+        and parts["upper_wick"] >= parts["body"] * 2
+        and parts["lower_wick"] <= parts["body"]
+    )
+
+
+def is_bearish_hammer(previous, current):
+    if previous is None:
+        return False
+
+    try:
+        if float(previous["close"]) <= float(previous["open"]):
+            return False
+    except Exception:
+        return False
+
+    parts = get_hammer_parts(current)
+
+    return bool(
+        parts is not None
+        and parts["lower_wick"] >= parts["body"] * 2
+        and parts["upper_wick"] <= parts["body"]
+    )
+
+
+def is_bearish_inverted_hammer(previous, current):
+    if previous is None:
+        return False
+
+    try:
+        if float(previous["close"]) <= float(previous["open"]):
+            return False
+    except Exception:
+        return False
+
+    parts = get_hammer_parts(current)
+
+    return bool(
+        parts is not None
+        and parts["upper_wick"] >= parts["body"] * 2
+        and parts["lower_wick"] <= parts["body"]
+    )
+
+
+def get_candle_patterns(previous, current):
+    if current is None:
+        return []
+
+    patterns = []
+
+    if previous is not None:
+        if is_bullish_engulfing(previous, current):
+            patterns.append("상승장악형")
+
+        if is_bearish_engulfing(previous, current):
+            patterns.append("하락장악형")
+
+        if is_bullish_piercing(previous, current):
+            patterns.append("상승관통형")
+
+        if is_bearish_piercing(previous, current):
+            patterns.append("하락관통형")
+
+        if is_bullish_hammer(previous, current):
+            patterns.append("상승망치형")
+
+        if is_bullish_inverted_hammer(previous, current):
+            patterns.append("상승역망치형")
+
+        if is_bearish_hammer(previous, current):
+            patterns.append("하락망치형")
+
+        if is_bearish_inverted_hammer(previous, current):
+            patterns.append("하락역망치형")
+
+    if is_long_bullish(current):
+        patterns.append("장대양봉")
+
+    if is_long_bearish(current):
+        patterns.append("장대음봉")
+
+    if is_positive_doji(current):
+        patterns.append("양수도지")
+
+    if is_negative_doji(current):
+        patterns.append("음수도지")
+
+    return patterns
+
+
+def get_candle_pattern(previous, current):
+    patterns = get_candle_patterns(previous, current)
+    return patterns[0] if patterns else None
+
+
+BULLISH_HIGHLIGHT_PATTERNS = [
+    "상승장악형",
+    "상승관통형",
+    "장대양봉",
+    "상승망치형",
+    "상승역망치형"
+]
 
 
 # =========================================================
-# 대시보드
+# 하락패턴 표시 목록
+# 표시 전용이며 SIGNAL 조건에는 사용하지 않음
 # =========================================================
 
-@app.get(
-    "/",
-    response_class=HTMLResponse
-)
-async def dashboard():
-
-    return HTMLResponse(
-r"""
-<!DOCTYPE html>
-<html lang="ko">
-
-<head>
-
-<meta charset="UTF-8">
-
-<meta
-    name="viewport"
-    content="width=device-width,initial-scale=1"
->
-
-<title>TRADING CONTROL CENTER</title>
-
-<style>
-
-*{
-    box-sizing:border-box
-}
-
-body{
-    margin:0;
-    padding:10px;
-    background:#111827;
-    color:#f3f4f6;
-    font-family:Arial,"Noto Sans KR",sans-serif;
-    font-size:13px
-}
-
-.container{
-    max-width:900px;
-    margin:auto
-}
-
-h1{
-    margin:0 0 3px;
-    font-size:20px
-}
-
-.subtitle{
-    color:#9ca3af;
-    font-size:10px;
-    margin-bottom:10px
-}
-
-.grid{
-    display:grid;
-    grid-template-columns:repeat(2,1fr);
-    gap:6px
-}
-
-.card,
-.section,
-.today-box{
-    background:#1f2937;
-    border:1px solid #374151;
-    border-radius:8px;
-    padding:9px
-}
-
-.title,
-.today-title{
-    color:#9ca3af;
-    font-size:10px;
-    margin-bottom:4px
-}
-
-.value{
-    font-size:16px;
-    font-weight:bold
-}
-
-.green{
-    color:#22c55e
-}
-
-.red{
-    color:#ef4444
-}
-
-.today-card{
-    grid-column:span 2;
-    display:grid;
-    grid-template-columns:repeat(2,1fr);
-    gap:6px
-}
-
-.today-input{
-    width:100%;
-    padding:7px;
-    border-radius:6px;
-    border:1px solid #4b5563;
-    background:#111827;
-    color:#fff;
-    font-size:13px;
-    font-weight:bold
-}
-
-.input-row{
-    display:flex;
-    gap:4px
-}
-
-.input-row input{
-    flex:1;
-    min-width:0
-}
-
-.off-button{
-    padding:6px 8px;
-    border:1px solid #4b5563;
-    border-radius:6px;
-    background:#374151;
-    color:#d1d5db;
-    font-size:10px;
-    font-weight:bold;
-    cursor:pointer
-}
-
-.off-button.active{
-    background:#ef4444;
-    border-color:#ef4444;
-    color:#fff
-}
-
-.manual-sell-all-button{
-    padding:6px 9px;
-    border:1px solid #ef4444;
-    border-radius:6px;
-    background:#374151;
-    color:#ef4444;
-    font-size:10px;
-    font-weight:900;
-    cursor:pointer;
-    white-space:nowrap
-}
-
-.manual-sell-all-button:hover{
-    background:#ef4444;
-    color:#fff
-}
-
-.manual-sell-all-button.active{
-    background:#ef4444;
-    color:#fff;
-    animation:pulse 1s infinite
-}
-
-.manual-sell-all-button:disabled{
-    opacity:.5;
-    cursor:not-allowed;
-    animation:none
-}
-
-@keyframes pulse{
-    0%{opacity:1}
-    50%{opacity:.55}
-    100%{opacity:1}
-}
-
-.asset-header-row{
-    display:flex;
-    justify-content:space-between;
-    align-items:center;
-    gap:6px;
-    margin-bottom:5px
-}
-
-.manual-sell-button{
-    padding:5px 8px;
-    border:1px solid #ef4444;
-    border-radius:6px;
-    background:#374151;
-    color:#ef4444;
-    font-size:9px;
-    font-weight:900;
-    cursor:pointer;
-    white-space:nowrap
-}
-
-.manual-sell-button:hover{
-    background:#ef4444;
-    color:#fff
-}
-
-.manual-sell-button:disabled{
-    opacity:.5;
-    cursor:not-allowed
-}
-
-.section{
-    margin-top:7px
-}
-
-.section-header{
-    display:flex;
-    justify-content:space-between;
-    align-items:center;
-    margin-bottom:6px;
-    font-weight:bold
-}
-
-.section-coin{
-    color:#60a5fa;
-    font-size:11px
-}
-
-.asset{
-    border-bottom:1px solid #374151;
-    padding:8px 0
-}
-
-.asset:last-child{
-    border-bottom:0
-}
-
-.asset-name{
-    font-size:15px;
-    font-weight:bold
-}
-
-.asset-grid{
-    display:grid;
-    grid-template-columns:repeat(2,1fr);
-    gap:4px;
-    font-size:10px
-}
-
-.asset-row{
-    color:#d1d5db
-}
-
-.asset-row span{
-    color:#9ca3af
-}
-
-.asset-profit{
-    font-size:14px;
-    font-weight:900
-}
-
-.asset-risk{
-    font-size:12px;
-    font-weight:900
-}
-
-.asset-risk-targets{
-    margin-top:7px;
-    padding-top:7px;
-    border-top:1px solid #374151
-}
-
-.asset-risk-title{
-    color:#9ca3af;
-    font-size:9px;
-    margin-bottom:4px
-}
-
-.asset-target-grid{
-    display:grid;
-    grid-template-columns:repeat(5,1fr);
-    gap:3px
-}
-
-.asset-target-item{
-    background:#111827;
-    border-radius:5px;
-    padding:5px 1px;
-    text-align:center;
-    border:1px solid #374151;
-    min-height:51px
-}
-
-.asset-target-item.reached{
-    border-color:#22c55e
-}
-
-.asset-target-item.current{
-    border-color:#facc15
-}
-
-.asset-target-item.selected{
-    border-color:#22c55e;
-    box-shadow:0 0 0 1px #22c55e inset
-}
-
-.asset-target-label{
-    color:#9ca3af;
-    font-size:8px
-}
-
-.asset-target-value{
-    font-size:9px;
-    font-weight:bold
-}
-
-.asset-target-status{
-    margin-top:2px;
-    font-size:7px;
-    font-weight:bold
-}
-
-.target-checkbox{
-    width:12px;
-    height:12px;
-    margin:0;
-    vertical-align:middle;
-    accent-color:#22c55e
-}
-
-.compact-risk{
-    display:flex;
-    align-items:center;
-    gap:6px;
-    overflow-x:auto;
-    white-space:nowrap
-}
-
-.risk-item{
-    background:#111827;
-    border:1px solid #374151;
-    border-radius:5px;
-    padding:5px 7px;
-    text-align:center
-}
-
-.risk-stop{
-    color:#9ca3af;
-    font-size:8px
-}
-
-.risk-entry{
-    font-size:9px;
-    font-weight:bold
-}
-
-.notes{
-    margin-top:7px;
-    color:#6b7280;
-    font-size:9px;
-    line-height:1.45
-}
-
-.empty{
-    color:#9ca3af;
-    text-align:center;
-    padding:12px
-}
-
-/* BUY LOCK 표시 */
-
-.buy-lock-box{
-    grid-column:span 2;
-    border:1px solid #22c55e;
-    background:#10251d;
-    border-radius:8px;
-    padding:9px;
-}
-
-.buy-lock-box.locked{
-    border-color:#ef4444;
-    background:#351719;
-}
-
-.buy-lock-title{
-    font-size:11px;
-    font-weight:900;
-    margin-bottom:5px;
-}
-
-.buy-lock-status{
-    font-size:15px;
-    font-weight:900;
-}
-
-.buy-lock-detail{
-    color:#9ca3af;
-    font-size:9px;
-    margin-top:4px;
-    line-height:1.5;
-}
-
-.buy-lock-box.locked .buy-lock-title,
-.buy-lock-box.locked .buy-lock-status{
-    color:#ef4444;
-}
-
-.buy-lock-box:not(.locked) .buy-lock-title,
-.buy-lock-box:not(.locked) .buy-lock-status{
-    color:#22c55e;
-}
-
-.today-save-button{
-    padding:7px 10px;
-    border:1px solid #2563eb;
-    border-radius:6px;
-    background:#1d4ed8;
-    color:#fff;
-    font-size:10px;
-    font-weight:900;
-    cursor:pointer;
-    white-space:nowrap;
-}
-
-.today-save-button:disabled{
-    opacity:.5;
-    cursor:not-allowed;
-}
-
-@media(max-width:600px){
-
-    body{
-        padding:6px
+BEARISH_HIGHLIGHT_PATTERNS = [
+    "하락장악형",
+    "하락관통형",
+    "장대음봉",
+    "음수도지",
+    "하락망치형",
+    "하락역망치형"
+]
+
+
+# =========================================================
+# 이전봉 / 현재봉 패턴 분석
+# =========================================================
+
+def analyze_previous_current_pattern(periods):
+    result = {
+        "previous_pattern": [],
+        "current_pattern": [],
+        "previous_bullish_engulfing": False,
+        "current_bullish_engulfing": False,
+        "bullish_engulfing_signal": False,
+        "previous_bullish_pattern": False,
+        "current_bullish_pattern": False,
+        "bullish_pattern_signal": False
     }
 
-    h1{
-        font-size:17px
-    }
-
-    .card,
-    .section,
-    .today-box{
-        padding:7px
-    }
-
-    .value{
-        font-size:14px
-    }
-
-    .asset-grid{
-        font-size:9px
-    }
-
-    .asset-target-label{
-        font-size:7px
-    }
-
-    .asset-target-value{
-        font-size:8px
-    }
-
-    .asset-target-status{
-        font-size:6px
-    }
-
-    .risk-item{
-        padding:4px 6px
-    }
-
-    .notes{
-        font-size:8px
-    }
-
-    .manual-sell-all-button{
-        font-size:9px;
-        padding:6px 7px
-    }
-
-    .manual-sell-button{
-        font-size:8px;
-        padding:5px 6px
-    }
-}
-
-</style>
-
-</head>
-
-<body>
-
-<div class="container">
-
-<h1>
-TRADING CONTROL CENTER
-</h1>
-
-<div class="subtitle">
-TradingView BUY / SELL · 업비트 실시간 보유자산
-</div>
-
-
-<div class="grid">
-
-
-<div class="card">
-
-<div class="title">
-월 시작금액
-</div>
-
-<input
-id="month-start"
-class="today-input"
-type="number"
-min="5000"
-step="1000"
->
-
-</div>
-
-
-<div class="card">
-
-<div class="title">
-현재 총자산
-</div>
-
-<div id="total" class="value">
--
-</div>
-
-</div>
-
-
-<div class="card">
-
-<div class="title">
-월 수익금
-</div>
-
-<div id="month-profit" class="value">
--
-</div>
-
-</div>
-
-
-<div class="card">
-
-<div class="title">
-월 수익률
-</div>
-
-<div id="month-return" class="value">
--
-</div>
-
-</div>
-
-
-<div class="today-card">
-
-
-<div class="today-box">
-
-<div class="today-title">
-오늘 시작금액
-</div>
-
-<div class="input-row">
-
-<input
-id="today-start"
-class="today-input"
-type="number"
-min="5000"
-step="1000"
->
-
-<button
-id="today-start-save"
-class="today-save-button"
-type="button"
->
-저장
-</button>
-
-</div>
-
-<div style="
-margin-top:4px;
-color:#6b7280;
-font-size:8px;
-line-height:1.4;
-">
-금액 변경 후 저장하면 BUY LOCK이 해제됩니다.
-</div>
-
-</div>
-
-
-<div class="today-box">
-
-<div class="today-title">
-매수 가능금액
-</div>
-
-<div id="available" class="value">
--
-</div>
-
-</div>
-
-
-<div class="today-box">
-
-<div class="today-title">
-당일 수익률
-</div>
-
-<div id="today-return" class="value">
--
-</div>
-
-</div>
-
-
-<div class="today-box">
-
-<div class="today-title">
-당일 수익금
-</div>
-
-<div id="today-profit" class="value">
--
-</div>
-
-</div>
-
-
-<div class="buy-lock-box" id="buy-lock-box">
-
-<div class="buy-lock-title">
-당일 손실 매수 차단
-</div>
-
-<div
-id="buy-lock-status"
-class="buy-lock-status"
->
-BUY 가능
-</div>
-
-<div
-id="buy-lock-detail"
-class="buy-lock-detail"
->
-월 시작금액의 3% 손실 시 BUY LOCK
-</div>
-
-</div>
-
-
-<div class="today-box">
-
-<div class="today-title">
-전체 시드 손실기준 %
-</div>
-
-<input
-id="max-loss-rate"
-class="today-input"
-type="number"
-min="0.01"
-max="100"
-step="0.01"
->
-
-</div>
-
-
-<div class="today-box">
-
-<div class="today-title">
-자동 손절 · 전체 시드 기준
-</div>
-
-<div
-id="auto-stop-loss-display"
-class="value red"
->
--
-</div>
-
-<div style="
-margin-top:4px;
-color:#6b7280;
-font-size:8px;
-line-height:1.4;
-">
-자동손절 = 월 시작금액 × 전체 시드 손실기준 %
-</div>
-
-</div>
-
-
-<div class="today-box">
-
-<div class="today-title">
-자동 손절 · 전체매도
-</div>
-
-<div class="input-row">
-
-<div style="
-display:flex;
-align-items:center;
-flex:1;
-min-width:0;
-">
-
-<div
-id="auto-stop-loss-krw"
-class="today-input"
-style="
-color:#ef4444;
-"
->
--
-</div>
-
-</div>
-
-<button
-id="manual-sell-all"
-class="manual-sell-all-button"
-type="button"
->
-전체매도 OFF
-</button>
-
-</div>
-
-</div>
-
-
-<div class="today-box">
-
-<div class="today-title">
-고정금액 자동 익절
-</div>
-
-<div class="input-row">
-
-<input
-id="auto-take-profit-krw"
-class="today-input"
-type="number"
-min="0"
-step="1000"
->
-
-<button
-id="auto-take-profit-off"
-class="off-button"
->
-OFF
-</button>
-
-</div>
-
-<div style="
-margin-top:4px;
-color:#6b7280;
-font-size:8px;
-line-height:1.4;
-">
-기본 1R × 3 · 직접 금액 수정 가능 · 0원 = OFF
-</div>
-
-</div>
-
-
-<div class="today-box">
-
-<div class="today-title">
-트레일링 손절 하락 단계
-</div>
-
-<div class="input-row">
-
-<input
-id="trailing-drop-stage"
-class="today-input"
-type="number"
-min="1"
-max="10"
-step="1"
->
-
-<span style="
-display:flex;
-align-items:center;
-padding:0 5px;
-color:#9ca3af;
-font-size:11px;
-">
-단계
-</span>
-
-</div>
-
-<div style="
-margin-top:4px;
-color:#6b7280;
-font-size:8px;
-line-height:1.4;
-">
-최고 단계에서 설정한 단계만큼 하락하면 자동매도
-</div>
-
-</div>
-
-
-<div class="today-box">
-
-<div class="today-title">
-트레일링 최초 매도단계
-</div>
-
-<div class="input-row">
-
-<input
-id="trailing-sell-stage"
-class="today-input"
-type="number"
-min="0"
-max="10"
-step="1"
->
-
-<span style="
-display:flex;
-align-items:center;
-padding:0 5px;
-color:#9ca3af;
-font-size:11px;
-">
-단계
-</span>
-
-</div>
-
-<div style="
-margin-top:4px;
-color:#6b7280;
-font-size:8px;
-line-height:1.4;
-">
-보유자산별 목표가를 선택하지 않은 코인의 기본 자동익절 목표
-</div>
-
-</div>
-
-
-</div>
-
-</div>
-
-
-<div class="section">
-
-<div class="section-header">
-
-<span>
-보유자산
-</span>
-
-<span
-id="asset-coin"
-class="section-coin"
->
-보유 없음
-</span>
-
-</div>
-
-<div id="assets">
-
-<div class="empty">
-보유자산 없음
-</div>
-
-</div>
-
-</div>
-
-
-<div class="section">
-
-<div class="section-header">
-
-<span>
-손절폭 / 진입금액
-</span>
-
-<span
-id="risk-unit-mini"
-class="section-coin"
->
-1R -
-</span>
-
-</div>
-
-<div
-id="risk-table"
-class="compact-risk"
-></div>
-
-</div>
-
-
-<div class="notes">
-
-월 시작금액
-<strong id="month-start-note">-</strong>
-
-· 손실기준
-<strong id="max-loss-rate-note">-</strong>
-
-· 1R
-<strong id="risk-unit-note">-</strong>
-
-· 자동손절
-<strong id="auto-stop-note">-</strong>
-
-· 고정익절
-<strong id="auto-take-note">OFF</strong>
-
-· 트레일링
-<strong id="trailing-drop-note">-</strong>
-
-· 최초매도
-<strong id="trailing-sell-note">-</strong>
-
-· 조회
-<strong id="updated">-</strong>
-
-<br>
-
-<span id="latest-order">
-주문 없음
-</span>
-
-<br>
-
-※ 평가금액 1원 미만 코인은 대시보드에서 표시하지 않음
-
-<br>
-
-※ 전체매도 버튼은 항상 표시
-
-<br>
-
-※ 전체매도 OFF → 확인 → 현재 보유 코인 전량 시장가 매도
-
-<br>
-
-※ 각 코인의 전량매도 버튼은 해당 코인만 시장가 전량매도
-
-<br>
-
-※ 자동손절은 월 시작금액 × 전체 시드 손실기준 %로 자동 계산
-
-<br>
-
-※ 자동매도 우선순위: 고정 손절 → 고정 익절 → 개별목표 → 트레일링
-
-<br>
-
-※ 고정금액 익절은 기본 1R × 3이며 금액을 직접 수정할 수 있음
-
-<br>
-
-※ 고정금액 익절을 0원으로 설정하면 OFF
-
-<br>
-
-※ 고정 익절에 도달하면 개별목표와 트레일링보다 먼저 전량매도
-
-<br>
-
-※ 고정 익절이 0원이 아니면 트레일링은 작동하지 않음
-
-<br>
-
-※ 보유자산에서 개별 목표를 선택하면 최초매도단계를 무시하고 선택한 목표가 자동익절 기준
-
-<br>
-
-※ 개별 목표에 도달하기 전에는 최고 도달단계에서 하락단계를 적용
-
-<br>
-
-※ 개별 목표 미설정 코인은 최초매도단계가 자동익절 목표
-
-<br>
-
-※ 목표 도달 시 해당 목표에서 즉시 자동익절
-
-<br>
-
-※ 목표 도달 전에 최고단계에서 하락단계만큼 내려오면 자동매도
-
-<br>
-
-※ 하락 매도기준은 최소 0단계
-
-<br>
-
-※ 보유자산별 1:1~1:10 목표 설정 가능
-
-<br>
-
-※ 당일 손익이 월 시작금액의 -3%에 도달하면 BUY 신호 차단
-
-<br>
-
-※ BUY LOCK 중에도 SELL 및 자동매도는 정상 작동
-
-<br>
-
-※ 오늘 시작금액을 변경하고 저장하면 BUY LOCK 해제
-
-</div>
-
-</div>
-
-
-<script>
-
-
-const TODAY_START_KEY =
-    "upbit_today_start_amount";
-
-
-const $ =
-    id => document.getElementById(id);
-
-
-function money(v){
-
-    return (
-        Math.round(
-            Number(v || 0)
-        ).toLocaleString("ko-KR")
-        +
-        "원"
-    );
-}
-
-
-function profitMoney(v){
-
-    const n =
-        Number(v || 0);
-
-    return (
-        n >= 0 ? "+" : ""
+    if not periods:
+        return result
+
+    current = periods[-1]
+    previous = periods[-2] if len(periods) >= 2 else None
+    previous_previous = periods[-3] if len(periods) >= 3 else None
+
+    result["current_pattern"] = get_candle_patterns(
+        previous, current
     )
-    +
-    Math.round(n)
-        .toLocaleString("ko-KR")
-    +
-    "원";
-}
 
-
-function profitRate(v){
-
-    const n =
-        Number(v || 0);
-
-    return (
-        n >= 0 ? "+" : ""
-    )
-    +
-    n.toFixed(2)
-    +
-    "%";
-}
-
-
-function num(v){
-
-    return Number(v || 0)
-        .toLocaleString(
-            "ko-KR",
-            {
-                maximumFractionDigits:8
-            }
-        );
-}
-
-
-function price(v){
-
-    return Number(v || 0)
-        .toLocaleString(
-            "ko-KR",
-            {
-                maximumFractionDigits:8
-            }
+    if previous is not None:
+        result["previous_pattern"] = get_candle_patterns(
+            previous_previous, previous
         )
-        +
-        "원";
-}
+
+    result["current_bullish_engulfing"] = (
+        "상승장악형" in result["current_pattern"]
+    )
+
+    result["previous_bullish_engulfing"] = (
+        "상승장악형" in result["previous_pattern"]
+    )
+
+    result["previous_bullish_pattern"] = any(
+        p in BULLISH_HIGHLIGHT_PATTERNS
+        for p in result["previous_pattern"]
+    )
+
+    result["current_bullish_pattern"] = any(
+        p in BULLISH_HIGHLIGHT_PATTERNS
+        for p in result["current_pattern"]
+    )
+
+    result["bullish_pattern_signal"] = bool(
+        result["previous_bullish_pattern"]
+        or result["current_bullish_pattern"]
+    )
+
+    result["bullish_engulfing_signal"] = bool(
+        result["current_bullish_engulfing"]
+    )
+
+    return result
 
 
-function loadLocalSettings(){
+# =========================================================
+# 4시간봉 기간
+# =========================================================
 
-    const a =
-        localStorage.getItem(
-            TODAY_START_KEY
-        );
+def build_upbit_4h_periods(df, current_price=None):
+    if df is None or df.empty:
+        return []
 
-    if(a !== null)
-        $("today-start").value = a;
-}
+    periods_df = build_upbit_4h_candles(
+        df, current_price
+    )
+
+    if periods_df.empty:
+        return []
+
+    periods = []
+
+    for _, row in periods_df.iterrows():
+        periods.append({
+            "start": row["start"],
+            "end": row["end"],
+            "active": bool(row["active"]),
+            "label": row["label"],
+            "open": float(row["open"]),
+            "high": float(row["high"]),
+            "low": float(row["low"]),
+            "close": float(row["close"]),
+            "change": row["change"],
+            "signal": False,
+            "signal_reason": None,
+            "pattern": None
+        })
+
+    return periods[-6:]
 
 
-/* ========================================================
-   오늘 시작금액 저장
-   서버에 저장 성공한 경우에만 BUY LOCK 해제
-   ======================================================== */
+# =========================================================
+# SIGNAL 상세
+# =========================================================
 
-async function saveTodayStartAmount(){
+def signal_pass(periods, ema_reverse=False):
+    return bool(ema_reverse)
 
-    const amount =
-        Number(
-            $("today-start").value || 0
-        );
 
-    if(
-        !Number.isFinite(amount) ||
-        amount < 5000
-    ){
+def signal_details(periods, ema_reverse=False):
+    pattern_info = analyze_previous_current_pattern(periods)
 
-        alert(
-            "오늘 시작금액은 5,000원 이상 입력하세요."
-        );
+    current_signal = bool(
+        pattern_info["current_bullish_pattern"]
+    )
 
-        await loadData();
+    previous_signal = bool(
+        pattern_info["previous_bullish_pattern"]
+    )
 
-        return;
+    pattern_signal = bool(
+        current_signal or previous_signal
+    )
+
+    signal = bool(
+        ema_reverse and pattern_signal
+    )
+
+    reason = None
+
+    if current_signal:
+        for pattern in pattern_info["current_pattern"]:
+            if pattern in BULLISH_HIGHLIGHT_PATTERNS:
+                reason = pattern
+                break
+
+    if reason is None and previous_signal:
+        for pattern in pattern_info["previous_pattern"]:
+            if pattern in BULLISH_HIGHLIGHT_PATTERNS:
+                reason = pattern
+                break
+
+    current_period = periods[-1] if periods else None
+
+    return {
+        "signal": signal,
+        "pattern_signal": pattern_signal,
+        "current_signal": current_signal,
+        "previous_signal": previous_signal,
+        "previous_previous_signal": False,
+        "signal_change": (
+            current_period.get("change")
+            if signal and current_period is not None
+            else None
+        ),
+        "signal_period": (
+            current_period.get("label")
+            if signal and current_period is not None
+            else None
+        ),
+        "signal_reason": reason
     }
 
-    const button =
-        $("today-start-save");
 
-    button.disabled = true;
-    button.textContent = "저장중...";
+# =========================================================
+# 선택 시간봉 캔들 패턴 분석
+# EMA 시간봉과 독립적으로 설정
+# =========================================================
 
-    try{
+def analyze_signal_candles(market, price, ema_reverse=False):
+    empty_result = {
+        "periods": [],
+        "signal_pass": False,
+        "pattern_signal": False,
+        "current_signal": False,
+        "previous_signal": False,
+        "previous_previous_signal": False,
+        "signal_change": None,
+        "signal_period": None,
+        "signal_reason": None,
+        "previous_previous_pattern": [],
+        "previous_pattern": [],
+        "current_pattern": [],
+        "previous_previous_bullish_engulfing": False,
+        "previous_bullish_engulfing": False,
+        "current_bullish_engulfing": False,
 
-        const r =
-            await fetch(
-                "/api/today-start-amount",
-                {
-                    method:"POST",
-                    headers:{
-                        "Content-Type":
-                            "application/json"
-                    },
-                    body:
-                        JSON.stringify({
-                            today_start_amount:
-                                amount
-                        })
-                }
-            );
-
-        const d =
-            await r.json();
-
-        if(!r.ok)
-            throw new Error(
-                d.detail ||
-                "오늘 시작금액 저장 실패"
-            );
-
-        localStorage.setItem(
-            TODAY_START_KEY,
-            String(amount)
-        );
-
-        alert(
-            "오늘 시작금액 저장 완료\n\n" +
-            "BUY LOCK이 해제되었습니다."
-        );
-
-        await loadData();
-
-    }catch(e){
-
-        alert(e.message);
-
-        await loadData();
-
-    }finally{
-
-        button.disabled = false;
-        button.textContent = "저장";
-    }
-}
-
-
-$("today-start-save")
-.addEventListener(
-    "click",
-    saveTodayStartAmount
-);
-
-
-$("today-start")
-.addEventListener(
-    "input",
-    function(){
-
-        updateTodayProfit(
-            window.currentTotal || 0
-        );
-    }
-);
-
-
-/* ========================================================
-   당일 수익금 + 당일 수익률
-   당일 수익금 = 현재 총자산 - 오늘 시작금액
-   당일 수익률 = 당일 수익금 / 오늘 시작금액 × 100
-   ======================================================== */
-
-function updateTodayProfit(total){
-
-    const start =
-        Number(
-            $("today-start").value || 0
-        );
-
-    if(start <= 0){
-
-        $("today-profit").textContent = "-";
-
-        $("today-return").textContent = "-";
-
-        $("today-profit").className =
-            "value";
-
-        $("today-return").className =
-            "value";
-
-        return;
+        # EMA 10선 반등 여부
+        "ema10_rebound": False
     }
 
-    const p =
-        Number(total || 0) -
-        start;
-
-    const r =
-        p /
-        start *
-        100;
-
-    const cls =
-        p > 0
-            ? "green"
-            : p < 0
-            ? "red"
-            : "";
-
-    $("today-profit").textContent =
-        profitMoney(p);
-
-    $("today-profit").className =
-        "value " + cls;
-
-    $("today-return").textContent =
-        profitRate(r);
-
-    $("today-return").className =
-        "value " + cls;
-}
-
-
-/* ========================================================
-   BUY LOCK 표시
-   ======================================================== */
-
-function renderBuyLock(d){
-
-    const box =
-        $("buy-lock-box");
-
-    const status =
-        $("buy-lock-status");
-
-    const detail =
-        $("buy-lock-detail");
-
-    const locked =
-        Boolean(d.buy_lock);
-
-    const todayProfit =
-        Number(d.today_profit || 0);
-
-    const lossLimit =
-        Number(d.buy_lock_loss_limit || 0);
-
-    const todayStart =
-        Number(d.today_start_amount || 0);
-
-    box.classList.toggle(
-        "locked",
-        locked
-    );
-
-    if(locked){
-
-        status.textContent =
-            "🔒 BUY LOCK · 매수 중단";
-
-        detail.textContent =
-            "당일 손익 " +
-            profitMoney(todayProfit) +
-            " · 중단 기준 -" +
-            money(lossLimit) +
-            " · 오늘 시작금액 변경 후 저장하면 해제";
-
-    }else{
-
-        status.textContent =
-            "🟢 BUY 가능";
-
-        if(todayStart <= 0){
-
-            detail.textContent =
-                "오늘 시작금액을 입력하고 저장하세요.";
-
-        }else{
-
-            detail.textContent =
-                "당일 손익 " +
-                profitMoney(todayProfit) +
-                " · 매수 중단 기준 -" +
-                money(lossLimit);
-        }
-    }
-}
-
-
-$("auto-take-profit-off")
-.addEventListener(
-    "click",
-    async function(){
-
-        $("auto-take-profit-krw").value = 0;
-
-        await saveAutoExitSettings();
-    }
-);
-
-
-async function saveAutoExitSettings(){
-
-    const take =
-        Number(
-            $("auto-take-profit-krw").value || 0
-        );
-
-    if(take < 0){
-
-        alert(
-            "금액은 0원 이상이어야 합니다."
-        );
-
-        return loadData();
-    }
-
-    try{
-
-        const r =
-            await fetch(
-                "/api/auto-exit-settings",
-                {
-                    method:"POST",
-                    headers:{
-                        "Content-Type":
-                            "application/json"
-                    },
-                    body:
-                        JSON.stringify({
-                            auto_take_profit_krw:
-                                take
-                        })
-                }
-            );
-
-        const d =
-            await r.json();
-
-        if(!r.ok)
-            throw new Error(
-                d.detail ||
-                "저장 실패"
-            );
-
-        await loadData();
-
-    }catch(e){
-
-        alert(e.message);
-
-        await loadData();
-    }
-}
-
-
-$("auto-take-profit-krw")
-.addEventListener(
-    "change",
-    saveAutoExitSettings
-);
-
-
-async function saveTrailingSettings(){
-
-    const dropStage =
-        Number(
-            $("trailing-drop-stage").value || 1
-        );
-
-    const sellStage =
-        Number(
-            $("trailing-sell-stage").value || 3
-        );
-
-    if(
-        !Number.isInteger(dropStage) ||
-        dropStage < 1 ||
-        dropStage > 10
-    ){
-
-        alert(
-            "트레일링 손절 하락 단계는 1~10단계입니다."
-        );
-
-        return loadData();
-    }
-
-    if(
-        !Number.isInteger(sellStage) ||
-        sellStage < 0 ||
-        sellStage > 10
-    ){
-
-        alert(
-            "트레일링 최초 매도단계는 0~10단계입니다."
-        );
-
-        return loadData();
-    }
-
-    try{
-
-        const r =
-            await fetch(
-                "/api/trailing-settings",
-                {
-                    method:"POST",
-                    headers:{
-                        "Content-Type":
-                            "application/json"
-                    },
-                    body:
-                        JSON.stringify({
-
-                            trailing_drop_stage:
-                                dropStage,
-
-                            trailing_sell_stage:
-                                sellStage
-
-                        })
-                }
-            );
-
-        const d =
-            await r.json();
-
-        if(!r.ok)
-            throw new Error(
-                d.detail ||
-                "저장 실패"
-            );
-
-        await loadData();
-
-    }catch(e){
-
-        alert(e.message);
-
-        await loadData();
-    }
-}
-
-
-$("trailing-drop-stage")
-.addEventListener(
-    "change",
-    saveTrailingSettings
-);
-
-
-$("trailing-sell-stage")
-.addEventListener(
-    "change",
-    saveTrailingSettings
-);
-
-
-async function saveRiskSettings(){
-
-    const month =
-        Number(
-            $("month-start").value || 0
-        );
-
-    const rate =
-        Number(
-            $("max-loss-rate").value || 0
-        );
-
-    if(
-        month < 5000 ||
-        rate <= 0 ||
-        rate > 100
-    ){
-
-        alert(
-            "월 시작금액 5,000원 이상 / 손실기준 0~100%"
-        );
-
-        return loadData();
-    }
-
-    try{
-
-        const r =
-            await fetch(
-                "/api/risk-settings",
-                {
-                    method:"POST",
-                    headers:{
-                        "Content-Type":
-                            "application/json"
-                    },
-                    body:
-                        JSON.stringify({
-                            month_start_amount:
-                                month,
-                            max_loss_rate:
-                                rate
-                        })
-                }
-            );
-
-        const d =
-            await r.json();
-
-        if(!r.ok)
-            throw new Error(
-                d.detail ||
-                "저장 실패"
-            );
-
-        await loadData();
-
-    }catch(e){
-
-        alert(e.message);
-
-        await loadData();
-    }
-}
-
-
-$("month-start")
-.addEventListener(
-    "change",
-    saveRiskSettings
-);
-
-
-$("max-loss-rate")
-.addEventListener(
-    "change",
-    saveRiskSettings
-);
-
-
-async function setCoinTarget(
-    coin,
-    stage,
-    enabled
-){
-
-    try{
-
-        const r =
-            await fetch(
-                "/api/coin-target",
-                {
-                    method:"POST",
-                    headers:{
-                        "Content-Type":
-                            "application/json"
-                    },
-                    body:
-                        JSON.stringify({
-                            coin:coin,
-                            enabled:enabled,
-                            target_stage:
-                                enabled
-                                    ? stage
-                                    : 0
-                        })
-                }
-            );
-
-        const d =
-            await r.json();
-
-        if(!r.ok)
-            throw new Error(
-                d.detail ||
-                "목표 설정 실패"
-            );
-
-        await loadData();
-
-    }catch(e){
-
-        alert(e.message);
-
-        await loadData();
-    }
-}
-
-
-async function manualSellCoin(coin){
-
-    const ok =
-        confirm(
-            `⚠️ ${coin} 전체 보유수량을 시장가로 매도합니다.\n\n계속하시겠습니까?`
-        );
-
-    if(!ok)
-        return;
-
-    const button =
-        document.querySelector(
-            `[data-sell-coin="${coin}"]`
-        );
-
-    if(button){
-
-        button.disabled = true;
-        button.textContent = "매도중...";
-    }
-
-    try{
-
-        const r =
-            await fetch(
-                "/api/manual-sell-coin",
-                {
-                    method:"POST",
-                    headers:{
-                        "Content-Type":
-                            "application/json"
-                    },
-                    body:
-                        JSON.stringify({
-                            coin:coin
-                        })
-                }
-            );
-
-        const d =
-            await r.json();
-
-        if(!r.ok)
-            throw new Error(
-                d.detail ||
-                "개별 전량매도 실패"
-            );
-
-        alert(
-            `🔴 ${coin} 전량매도 완료\n\n` +
-            `매도금액: ${money(d.executed_funds)}\n` +
-            `실현손익: ${profitMoney(d.profit)}`
-        );
-
-        await loadData();
-
-    }catch(e){
-
-        alert(
-            "개별 전량매도 실패\n\n" +
-            e.message
-        );
-
-        await loadData();
-    }
-}
-
-
-$("manual-sell-all")
-.addEventListener(
-    "click",
-    async function(){
-
-        const button = this;
-
-        if(!confirm(
-            "🚨 전체매도\n\n" +
-            "현재 보유 중인 모든 코인을 시장가로 전량 매도합니다.\n\n" +
-            "정말 전체매도 하시겠습니까?"
-        ))
-            return;
-
-        if(!confirm(
-            "⚠️ 최종 확인\n\n" +
-            "모든 보유 코인을 시장가로 매도합니다.\n" +
-            "이 작업은 되돌릴 수 없습니다.\n\n" +
-            "확인을 누르면 즉시 주문합니다."
-        ))
-            return;
-
-        button.disabled = true;
-
-        button.classList.add(
-            "active"
-        );
-
-        button.textContent =
-            "전체매도중...";
-
-        try{
-
-            const r =
-                await fetch(
-                    "/api/manual-sell-all",
-                    {
-                        method:"POST"
-                    }
-                );
-
-            const d =
-                await r.json();
-
-            if(!r.ok)
-                throw new Error(
-                    d.detail ||
-                    "전체매도 실패"
-                );
-
-            let message =
-                "🚨 전체매도 결과\n\n";
-
-            message +=
-                "성공: " +
-                (d.sold || []).length +
-                "개\n";
-
-            message +=
-                "실패: " +
-                (d.failed || []).length +
-                "개\n";
-
-            if(
-                d.sold &&
-                d.sold.length
-            ){
-
-                message +=
-                    "\n[매도 완료]\n";
-
-                d.sold.forEach(
-                    x => {
-
-                        message +=
-                            `${x.coin} ` +
-                            `${money(x.executed_funds)} ` +
-                            `${profitMoney(x.profit)}\n`;
-                    }
-                );
+    timeframe = CANDLE_PATTERN_TIMEFRAME
+
+    # EMA 10선 반등 판정에 사용할 전체 캔들 데이터
+    pattern_df = pd.DataFrame()
+
+    if timeframe in ("5m", "15m", "1h"):
+        df = get_timeframe_dataframe(
+            market, timeframe, price
+        )
+
+        if df.empty:
+            return empty_result
+
+        pattern_df = df.copy(deep=True)
+
+        minutes = {
+            "5m": 5,
+            "15m": 15,
+            "1h": 60
+        }[timeframe]
+
+        periods = []
+
+        for _, row in df.iterrows():
+            start = row["datetime"]
+
+            o = float(row["open"])
+            h = float(row["high"])
+            l = float(row["low"])
+            c = float(row["close"])
+
+            change = (c - o) / o * 100 if o else None
+
+            periods.append({
+                "start": start,
+                "end": start + timedelta(minutes=minutes),
+                "active": True,
+                "label": start.strftime("%m/%d %H:%M"),
+                "open": o,
+                "high": h,
+                "low": l,
+                "close": c,
+                "change": change,
+                "signal": False,
+                "signal_reason": None,
+                "pattern": None
+            })
+
+        periods = periods[-6:]
+
+    elif timeframe == "4h":
+        df_1h = get_timeframe_dataframe(
+            market, "1h", price
+        )
+
+        if df_1h.empty:
+            return empty_result
+
+        # EMA 10선도 4시간봉 기준으로 계산
+        pattern_df = build_upbit_4h_candles(
+            df_1h, price
+        )
+
+        if pattern_df.empty:
+            return empty_result
+
+        periods = []
+
+        for _, row in pattern_df.iterrows():
+            periods.append({
+                "start": row["start"],
+                "end": row["end"],
+                "active": bool(row["active"]),
+                "label": row["label"],
+                "open": float(row["open"]),
+                "high": float(row["high"]),
+                "low": float(row["low"]),
+                "close": float(row["close"]),
+                "change": row["change"],
+                "signal": False,
+                "signal_reason": None,
+                "pattern": None
+            })
+
+        periods = periods[-6:]
+
+    elif timeframe == "1d":
+        df = get_daily_dataframe(market)
+
+        if df.empty:
+            return empty_result
+
+        pattern_df = df.copy(deep=True)
+
+        now = datetime.now(KST)
+
+        current_start = now.replace(
+            hour=9,
+            minute=0,
+            second=0,
+            microsecond=0
+        )
+
+        if now < current_start:
+            current_start -= timedelta(days=1)
+
+        pattern_df = update_current_candle(
+            pattern_df,
+            current_start,
+            price
+        )
+
+        periods = build_daily_periods(
+            pattern_df,
+            price
+        )
+
+        periods = [
+            {
+                "start": p["start"],
+                "end": p["end"],
+                "active": p["active"],
+                "label": p["label"],
+                "open": p["open"],
+                "high": p["high"],
+                "low": p["low"],
+                "close": p["close"],
+                "change": p["change"],
+                "signal": False,
+                "signal_reason": None,
+                "pattern": None
             }
+            for p in periods
+        ]
 
-            if(
-                d.failed &&
-                d.failed.length
-            ){
+    else:
+        log.warning(
+            "지원하지 않는 캔들 패턴 시간봉: %s",
+            timeframe
+        )
+        return empty_result
 
-                message +=
-                    "\n[매도 실패]\n";
+    # -----------------------------------------------------
+    # EMA 10선 터치 후 반등 여부
+    # -----------------------------------------------------
 
-                d.failed.forEach(
-                    x => {
+    ema10_rebound = check_ema10_rebound(
+        pattern_df
+    )
 
-                        message +=
-                            `${x.coin}: ` +
-                            `${x.message}\n`;
-                    }
-                );
-            }
+    pattern_info = analyze_previous_current_pattern(
+        periods
+    )
 
-            alert(message);
+    details = signal_details(
+        periods, ema_reverse
+    )
 
-            await loadData();
+    return {
+        "periods": periods,
+        "signal_pass": details["signal"],
+        "pattern_signal": details["pattern_signal"],
+        "current_signal": details["current_signal"],
+        "previous_signal": details["previous_signal"],
+        "previous_previous_signal": False,
+        "signal_change": details["signal_change"],
+        "signal_period": details["signal_period"],
+        "signal_reason": details["signal_reason"],
+        "previous_previous_pattern": [],
+        "previous_pattern": pattern_info["previous_pattern"],
+        "current_pattern": pattern_info["current_pattern"],
+        "previous_previous_bullish_engulfing": False,
+        "previous_bullish_engulfing": pattern_info[
+            "previous_bullish_engulfing"
+        ],
+        "current_bullish_engulfing": pattern_info[
+            "current_bullish_engulfing"
+        ],
 
-        }catch(e){
-
-            alert(
-                "전체매도 실패\n\n" +
-                e.message
-            );
-
-            await loadData();
-
-        }finally{
-
-            button.disabled = false;
-
-            button.classList.remove(
-                "active"
-            );
-
-            button.textContent =
-                "전체매도 OFF";
-        }
-    }
-);
-
-
-function renderCoinRiskTargets(
-    coin,
-    risk,
-    current,
-    highest,
-    targetInfo
-){
-
-    if(risk <= 0)
-        return "";
-
-    let html = "";
-
-    const targetEnabled =
-        targetInfo &&
-        targetInfo.enabled;
-
-    const targetStage =
-        Number(
-            targetInfo &&
-            targetInfo.target_stage ||
-            0
-        );
-
-    for(
-        let i = 1;
-        i <= 10;
-        i++
-    ){
-
-        const target =
-            risk * i;
-
-        const reached =
-            current >= target;
-
-        const isHighest =
-            highest === i;
-
-        const isSelected =
-            targetEnabled &&
-            targetStage === i;
-
-        let cls =
-            "asset-target-item";
-
-        if(isSelected)
-            cls += " selected";
-        else if(isHighest)
-            cls += " current";
-        else if(reached)
-            cls += " reached";
-
-        const status =
-            isSelected
-                ? "🎯 목표"
-                : isHighest
-                ? "★ 최고"
-                : reached
-                ? "✓ 도달"
-                : "";
-
-        html += `
-
-        <div class="${cls}">
-
-            <div class="asset-target-label">
-                1:${i}
-            </div>
-
-            <div class="asset-target-value">
-                ${money(target)}
-            </div>
-
-            <div class="asset-target-status">
-
-                <label
-                    style="
-                    display:flex;
-                    align-items:center;
-                    justify-content:center;
-                    gap:2px;
-                    cursor:pointer;
-                    "
-                >
-
-                    <input
-                        class="target-checkbox"
-                        type="checkbox"
-                        ${isSelected ? "checked" : ""}
-                        onchange="
-                        setCoinTarget(
-                            '${coin}',
-                            ${i},
-                            this.checked
-                        )
-                        "
-                    >
-
-                    <span>
-                        ${status}
-                    </span>
-
-                </label>
-
-            </div>
-
-        </div>
-        `;
+        # EMA 10선 반등 결과 전달
+        "ema10_rebound": ema10_rebound
     }
 
-    return html;
-}
 
-
-function renderAssets(
-    assets,
-    risk,
-    states,
-    targets,
-    trailingDropStage,
-    trailingSellStage
-){
-
-    const box =
-        $("assets");
-
-    if(
-        !assets ||
-        !assets.length
-    ){
-
-        box.innerHTML =
-            '<div class="empty">보유자산 없음</div>';
-
-        $("asset-coin")
-            .textContent =
-            "보유 없음";
-
-        return;
-    }
-
-    $("asset-coin")
-        .textContent =
-        assets
-            .map(
-                a => a.currency
-            )
-            .join(" / ");
-
-    let html = "";
-
-    assets.forEach(
-        a => {
-
-            const coin =
-                a.currency;
-
-            const current =
-                Number(
-                    a.profit_amount || 0
-                );
-
-            const currentStage =
-                risk > 0
-                    ? Math.max(
-                        0,
-                        Math.floor(
-                            current / risk
-                        )
-                    )
-                    : 0;
-
-            const state =
-                states[coin] ||
-                {
-                    highest_stage:0,
-                    highest_profit:0
-                };
-
-            const highest =
-                Number(
-                    state.highest_stage || 0
-                );
-
-            const highestProfit =
-                Number(
-                    state.highest_profit || 0
-                );
-
-            const drop =
-                Number(
-                    trailingDropStage || 1
-                );
-
-            const globalSellStage =
-                Number(
-                    trailingSellStage || 0
-                );
-
-            const targetInfo =
-                targets[coin] ||
-                {
-                    enabled:false,
-                    target_stage:0,
-                    target_profit:0
-                };
-
-            const hasCoinTarget =
-                Boolean(
-                    targetInfo.enabled &&
-                    Number(
-                        targetInfo.target_stage || 0
-                    ) > 0
-                );
-
-            const effectiveTargetStage =
-                hasCoinTarget
-                    ? Number(
-                        targetInfo.target_stage
-                    )
-                    : globalSellStage;
-
-            const effectiveTargetProfit =
-                risk *
-                effectiveTargetStage;
-
-            let triggerStage = 0;
-            let trigger = 0;
-            let triggerType = "NONE";
-
-            if(
-                risk > 0 &&
-                effectiveTargetStage > 0
-            ){
-
-                if(
-                    currentStage >=
-                    effectiveTargetStage
-                ){
-
-                    triggerStage =
-                        effectiveTargetStage;
-
-                    trigger =
-                        effectiveTargetProfit;
-
-                    triggerType =
-                        "TARGET";
-
-                }else if(highest > 0){
-
-                    triggerStage =
-                        Math.max(
-                            highest - drop,
-                            0
-                        );
-
-                    trigger =
-                        triggerStage * risk;
-
-                    triggerType =
-                        "TRAILING_STOP";
-                }
-            }
-
-            const targetStage =
-                Number(
-                    targetInfo.target_stage || 0
-                );
-
-            const targetProfit =
-                targetStage > 0
-                    ? risk * targetStage
-                    : 0;
-
-            const cls =
-                current >= 0
-                    ? "green"
-                    : "red";
-
-            html += `
-
-            <div class="asset">
-
-                <div class="asset-header-row">
-
-                    <div class="asset-name">
-                        ${coin}
-                    </div>
-
-                    <button
-                        class="manual-sell-button"
-                        data-sell-coin="${coin}"
-                        onclick="
-                            manualSellCoin('${coin}')
-                        "
-                    >
-                        전량매도
-                    </button>
-
-                </div>
-
-                <div class="asset-grid">
-
-                    <div class="asset-row">
-                        <span>수량</span>
-                        ${num(a.balance)}
-                    </div>
-
-                    <div class="asset-row">
-                        <span>매수단가</span>
-                        ${price(a.avg_buy_price)}
-                    </div>
-
-                    <div class="asset-row">
-                        <span>현재가</span>
-                        ${price(a.current_price)}
-                    </div>
-
-                    <div class="asset-row">
-                        <span>매수금액</span>
-                        ${money(a.buy_amount_krw)}
-                    </div>
-
-                    <div class="asset-row">
-                        <span>평가금액</span>
-                        ${money(a.evaluation_krw)}
-                    </div>
-
-                    <div class="asset-row">
-                        <span>수익률</span>
-                        <strong class="${cls}">
-                            ${profitRate(a.profit_rate)}
-                        </strong>
-                    </div>
-
-                    <div
-                        class="asset-row"
-                        style="grid-column:span 2"
-                    >
-
-                        <span>현재 수익</span>
-
-                        <strong class="${cls} asset-profit">
-                            ${profitMoney(current)}
-                        </strong>
-
-                    </div>
-
-                    <div
-                        class="asset-row"
-                        style="grid-column:span 2"
-                    >
-
-                        <span>리스크</span>
-
-                        <strong class="asset-risk">
-
-                            현재 1:${currentStage}
-                            ·
-                            최고 1:${highest}
-
-                        </strong>
-
-                    </div>
-
-                </div>
-
-                <div class="asset-risk-targets">
-
-                    <div class="asset-risk-title">
-
-                        리스크 목표
-                        ·
-                        1R ${money(risk)}
-
-                        ${
-                            hasCoinTarget
-                                ? `
-                                ·
-                                <strong style="color:#22c55e">
-                                    개별목표 1:${targetStage}
-                                    (${money(targetProfit)})
-                                </strong>
-                                `
-                                : `
-                                ·
-                                <strong style="color:#facc15">
-                                    기본목표 1:${globalSellStage}
-                                    (${money(effectiveTargetProfit)})
-                                </strong>
-                                `
-                        }
-
-                    </div>
-
-                    <div class="asset-target-grid">
-
-                        ${
-                            renderCoinRiskTargets(
-                                coin,
-                                risk,
-                                current,
-                                highest,
-                                targetInfo
-                            )
-                        }
-
-                    </div>
-
-                    ${
-                        highest > 0
-                            ? `
-
-                            <div
-                                style="
-                                margin-top:5px;
-                                color:#9ca3af;
-                                font-size:9px;
-                                line-height:1.5
-                                "
-                            >
-
-                                최고
-                                ${profitMoney(highestProfit)}
-
-                                →
-
-                                ${
-                                    hasCoinTarget
-                                        ? `
-                                        개별목표
-                                        1:${targetStage}
-                                        `
-                                        : `
-                                        최초매도
-                                        1:${globalSellStage}
-                                        `
-                                }
-
-                                →
-
-                                ${
-                                    triggerType === "TARGET"
-                                        ? "🎯 목표 도달"
-                                        : "트레일링 " +
-                                          drop +
-                                          "단계 하락"
-                                }
-
-                                →
-
-                                매도기준
-                                ${profitMoney(trigger)}
-
-                                ${
-                                    triggerStage > 0
-                                        ? `(1:${triggerStage})`
-                                        : `(0)`
-                                }
-
-                            </div>
-
-                            `
-                            : ""
-                    }
-
-                </div>
-
-            </div>
-
-            `;
-        }
-    );
-
-    box.innerHTML =
-        html;
-}
-
-
-function renderRiskTable(
-    month,
-    rate
-){
-
-    const risk =
-        month * rate;
-
-    $("risk-unit-mini")
-        .textContent =
-        "1R " +
-        money(risk);
-
-    let html = "";
-
-    for(
-        let stop = 1;
-        stop <= 10;
-        stop++
-    ){
-
-        const entry =
-            risk /
-            (stop / 100);
-
-        html += `
-
-        <div class="risk-item">
-
-            <div class="risk-stop">
-                ${stop}%
-            </div>
-
-            <div class="risk-entry">
-                ${money(entry)}
-            </div>
-
-        </div>
-
-        `;
-    }
-
-    $("risk-table")
-        .innerHTML =
-        html;
-}
-
-
-let dashboardLoading = false;
-
-
-async function loadData(){
-
-    if(dashboardLoading)
-        return;
-
-    dashboardLoading = true;
-
-    try{
-
-        const r =
-            await fetch(
-                "/api/upbit-assets",
-                {
-                    cache:"no-store"
-                }
-            );
-
-        if(!r.ok)
-            throw new Error(
-                "API error"
-            );
-
-        const d =
-            await r.json();
-
-        const total =
-            Number(
-                d.total_krw || 0
-            );
-
-        const month =
-            Number(
-                d.month_start_amount || 0
-            );
-
-        const rate =
-            Number(
-                d.max_loss_rate || 0
-            );
-
-        const risk =
-            Number(
-                d.risk_unit || 0
-            );
-
-        const stop =
-            Number(
-                d.auto_stop_loss_krw || 0
-            );
-
-        const take =
-            Number(
-                d.auto_take_profit_krw || 0
-            );
-
-        const trailingDropStage =
-            Number(
-                d.trailing_drop_stage || 1
-            );
-
-        const trailingSellStage =
-            Number(
-                d.trailing_sell_stage || 3
-            );
-
-        window.currentTotal =
-            total;
-
-        window.trailingDropStage =
-            trailingDropStage;
-
-        window.trailingSellStage =
-            trailingSellStage;
-
-        $("month-start")
-            .value =
-            month;
-
-        $("max-loss-rate")
-            .value =
-            (
-                rate * 100
-            ).toFixed(2);
-
-        $("auto-stop-loss-krw")
-            .textContent =
-            money(stop);
-
-        $("auto-stop-loss-display")
-            .textContent =
-            money(stop);
-
-        $("auto-take-profit-krw")
-            .value =
-            take;
-
-        $("trailing-drop-stage")
-            .value =
-            trailingDropStage;
-
-        $("trailing-sell-stage")
-            .value =
-            trailingSellStage;
-
-        $("auto-take-profit-off")
-            .classList.toggle(
-                "active",
-                take <= 0
-            );
-
-        const allSelling =
-            Boolean(
-                d.manual_sell_all_in_progress
-            );
-
-        $("manual-sell-all")
-            .disabled =
-            allSelling;
-
-        $("manual-sell-all")
-            .classList.toggle(
-                "active",
-                allSelling
-            );
-
-        $("manual-sell-all")
-            .textContent =
-            allSelling
-                ? "전체매도중..."
-                : "전체매도 OFF";
-
-        const monthProfit =
-            total -
-            month;
-
-        const monthReturn =
-            month > 0
-                ? monthProfit /
-                  month *
-                  100
-                : 0;
-
-        $("total")
-            .textContent =
-            money(total);
-
-        $("month-profit")
-            .textContent =
-            profitMoney(
-                monthProfit
-            );
-
-        $("month-return")
-            .textContent =
-            profitRate(
-                monthReturn
-            );
-
-        $("available")
-            .textContent =
-            money(
-                d.available_krw
-            );
-
-        $("month-start-note")
-            .textContent =
-            money(month);
-
-        $("max-loss-rate-note")
-            .textContent =
-            (
-                rate * 100
-            ).toFixed(2) +
-            "%";
-
-        $("risk-unit-note")
-            .textContent =
-            money(risk);
-
-        $("auto-stop-note")
-            .textContent =
-            money(stop);
-
-        $("auto-take-note")
-            .textContent =
-            take > 0
-                ? money(take)
-                : "OFF";
-
-        $("trailing-drop-note")
-            .textContent =
-            trailingDropStage +
-            "단계";
-
-        $("trailing-sell-note")
-            .textContent =
-            trailingSellStage +
-            "단계";
-
-        $("updated")
-            .textContent =
-            d.updated_at ||
-            "-";
-
-        $("latest-order")
-            .textContent =
-            d.latest_order ||
-            "주문 없음";
-
-        // 서버에 저장된 오늘 시작금액을 사용
-        const serverTodayStart =
-            Number(
-                d.today_start_amount || 0
-            );
-
-        if(
-            document.activeElement !==
-            $("today-start")
-        ){
-
-            $("today-start").value =
-                serverTodayStart > 0
-                    ? serverTodayStart
-                    : "";
-        }
-
-        updateTodayProfit(total);
-
-        renderBuyLock(d);
-
-        renderAssets(
-            d.assets || [],
-            risk,
-            d.trailing_states || {},
-            d.coin_targets || {},
-            trailingDropStage,
-            trailingSellStage
-        );
-
-        renderRiskTable(
-            month,
-            rate
-        );
-
-    }catch(e){
-
-        console.error(
-            "DASHBOARD LOAD ERROR",
-            e
-        );
-
-    }finally{
-
-        dashboardLoading = false;
-    }
-}
-
-
-loadLocalSettings();
-
-loadData();
-
-
-function dashboardRefreshLoop(){
-
-    loadData()
-        .finally(
-            function(){
-
-                setTimeout(
-                    dashboardRefreshLoop,
-                    5000
-                );
-
-            }
-        );
-}
-
-
-dashboardRefreshLoop();
-
-</script>
-
-</body>
-</html>
-"""
+def analyze_4h(market, price, ema_reverse=False):
+    return analyze_signal_candles(
+        market, price, ema_reverse
     )
 
 
 # =========================================================
-# DB 초기화
+# 일봉 변동률
 # =========================================================
 
-init_db()
+def analyze_daily_change(market, price):
+    df = get_daily_dataframe(market)
+
+    if df.empty:
+        return {"change": None, "periods": []}
+
+    periods = build_daily_periods(df, price)
+
+    if not periods:
+        return {"change": None, "periods": []}
+
+    return {
+        "change": periods[-1].get("change"),
+        "periods": periods
+    }
 
 
 # =========================================================
-# 스레드 시작
+# Row 생성
 # =========================================================
 
-threading.Thread(
-    target=real_upbit_auto_exit_monitor,
-    daemon=True
-).start()
+def make_row(
+    rank,
+    market,
+    item,
+    analysis_daily,
+    analysis_4h,
+    ema_analysis,
+    volume_rank,
+    reference_ema_states
+):
+    coin = market.replace("KRW-", "")
+
+    fast_short = ema_analysis.get("ema5_short")
+    fast_long = ema_analysis.get("ema20")
+
+    if fast_short is not None and fast_long is not None:
+        if fast_short > fast_long:
+            ema_1h_5_10 = "정배열"
+        elif fast_short < fast_long:
+            ema_1h_5_10 = "역배열"
+        else:
+            ema_1h_5_10 = "동일"
+    else:
+        ema_1h_5_10 = None
+
+    ema_1h_10_50 = ema_analysis.get("alignment")
+
+    return {
+        "rank": rank,
+        "name": coin,
+        "market": market,
+        "volume_24h": item["volume_24h"],
+        "current_price": item["current_price"],
+        "volume_rank": volume_rank,
+        "daily_change": analysis_daily["change"],
+        "periods_daily": analysis_daily["periods"],
+        "periods_4h": analysis_4h["periods"],
+
+        "signal_4h": analysis_4h["signal_pass"],
+        "signal_4h_pattern": analysis_4h.get(
+            "pattern_signal", False
+        ),
+        "signal_4h_current": analysis_4h["current_signal"],
+        "signal_4h_previous": analysis_4h["previous_signal"],
+        "signal_4h_previous_previous": False,
+        "signal_4h_change": analysis_4h["signal_change"],
+        "signal_4h_period": analysis_4h["signal_period"],
+        "signal_4h_reason": analysis_4h["signal_reason"],
+
+        # EMA 10선 터치 후 반등 여부
+        "ema10_rebound": analysis_4h.get(
+            "ema10_rebound", False
+        ),
+
+        "previous_previous_pattern": [],
+        "previous_pattern": analysis_4h["previous_pattern"],
+        "current_pattern": analysis_4h["current_pattern"],
+
+        "previous_previous_bullish_engulfing": False,
+        "previous_bullish_engulfing": analysis_4h[
+            "previous_bullish_engulfing"
+        ],
+        "current_bullish_engulfing": analysis_4h[
+            "current_bullish_engulfing"
+        ],
+
+        "ema5": ema_analysis["ema5"],
+        "ema15": ema_analysis["ema15"],
+        "ema5_short": ema_analysis.get("ema5_short"),
+        "ema20": ema_analysis.get("ema20"),
+        "ema60": ema_analysis.get("ema60"),
+
+        "ema_alignment": ema_analysis["alignment"],
+        "ema_reverse": ema_analysis["reverse"],
+        "ema_bullish_pullback": ema_analysis.get(
+            "bullish_pullback", False
+        ),
+        "ema_signal_condition": ema_analysis.get(
+            "signal_condition", False
+        ),
+
+        "ema_1h_5_10": ema_1h_5_10,
+        "ema_1h_10_50": ema_1h_10_50,
+
+        "ema_timeframe": SIGNAL_TIMEFRAME,
+        "ema_fast_period": EMA_FAST,
+        "ema_slow_period": EMA_SLOW,
+
+        "ema_cross_previous": False,
+        "ema_cross_current": False,
+        "ema_cross_signal": False,
+
+        "ema_reference_states": reference_ema_states,
+        "simultaneous_signal": analysis_4h["signal_pass"]
+    }
 
 
-threading.Thread(
-    target=real_upbit_trailing_monitor,
-    daemon=True
-).start()
+# =========================================================
+# 업비트 업데이트
+# =========================================================
+
+def update_upbit():
+    global latest_upbit_data
+    global latest_upbit_daily_data
+    global latest_upbit_update_time
+    global latest_upbit_daily_update_time
+    global latest_signal_data
+
+    clear_candle_cache()
+
+    all_markets = get_upbit_markets()
+
+    if not all_markets:
+        return
+
+    all_markets_sorted = sorted(
+        all_markets,
+        key=lambda x: x.get("volume_24h", 0),
+        reverse=True
+    )
+
+    volume_rank_map = {
+        item["market"]: rank
+        for rank, item in enumerate(
+            all_markets_sorted, 1
+        )
+    }
+
+    selected_markets = all_markets_sorted[:TOP_N]
+
+    rows = []
+
+    for rank, item in enumerate(selected_markets, 1):
+        market = item["market"]
+        price = item["current_price"]
+
+        try:
+            analysis_daily = analyze_daily_change(
+                market, price
+            )
+        except Exception as e:
+            log.warning("%s 일봉 오류: %s", market, e)
+            analysis_daily = {
+                "change": None,
+                "periods": []
+            }
+
+        try:
+            ema_analysis = analyze_ema_4h(
+                market, price
+            )
+        except Exception as e:
+            log.warning("%s EMA 오류: %s", market, e)
+
+            ema_analysis = {
+                "ema5": None,
+                "ema15": None,
+                "ema5_short": None,
+                "ema20": None,
+                "ema60": None,
+                "reverse": False,
+                "bullish_pullback": False,
+                "signal_condition": False,
+                "alignment": None,
+                "cross_previous": False,
+                "cross_current": False,
+                "cross_signal": False
+            }
+
+        ema_signal_condition = check_ema_signal_condition(
+            ema_analysis.get("ema5_short"),
+            ema_analysis.get("ema20"),
+            ema_analysis.get("ema60")
+        )
+
+        ema_analysis["signal_condition"] = (
+            ema_signal_condition
+        )
+
+        try:
+            analysis_4h = analyze_signal_candles(
+                market, price, ema_signal_condition
+            )
+        except Exception as e:
+            log.warning(
+                "%s 캔들 패턴 오류: %s",
+                market, e
+            )
+
+            analysis_4h = {
+                "periods": [],
+                "signal_pass": False,
+                "pattern_signal": False,
+                "current_signal": False,
+                "previous_signal": False,
+                "previous_previous_signal": False,
+                "signal_change": None,
+                "signal_period": None,
+                "signal_reason": None,
+                "previous_previous_pattern": [],
+                "previous_pattern": [],
+                "current_pattern": [],
+                "previous_previous_bullish_engulfing": False,
+                "previous_bullish_engulfing": False,
+                "current_bullish_engulfing": False,
+
+                # 오류 시 EMA 10선 반등도 False
+                "ema10_rebound": False
+            }
+
+        try:
+            reference_ema_states = analyze_reference_ema_timeframes(
+                market, price
+            )
+        except Exception as e:
+            log.warning(
+                "%s 참고 EMA 상태 오류: %s",
+                market, e
+            )
+
+            reference_ema_states = {
+                "signal_5_10": None,
+                "signal_10_50": None,
+                "1h_5_10": None,
+                "1h_10_50": None,
+                "full_alignment_age": 0,
+                "full_alignment_active": False
+            }
+
+        rows.append(
+            make_row(
+                rank,
+                market,
+                item,
+                analysis_daily,
+                analysis_4h,
+                ema_analysis,
+                volume_rank_map.get(market),
+                reference_ema_states
+            )
+        )
+
+    latest_upbit_data = rows
+    latest_upbit_daily_data = rows
+
+    latest_upbit_daily_update_time = kst()
+    latest_upbit_update_time = latest_upbit_daily_update_time
+
+    latest_signal_data = [
+        row for row in rows
+        if (
+            row.get("ema_signal_condition", False)
+            and row.get("daily_change") is not None
+            and row.get("daily_change") > 0
+
+            and check_reference_ema_condition(
+                (row.get("ema_reference_states") or {}).get(
+                    "signal_5_10"
+                ),
+                (row.get("ema_reference_states") or {}).get(
+                    "signal_10_50"
+                )
+            )
+
+            and (
+                REQUIRE_REFERENCE_FULL_ALIGNMENT != "Y"
+                or (
+                    (row.get("ema_reference_states") or {}).get(
+                        "full_alignment_active", False
+                    )
+                    and 1 <= (
+                        (row.get("ema_reference_states") or {}).get(
+                            "full_alignment_age", 0
+                        )
+                    ) <= REFERENCE_ALIGNMENT_MAX_CANDLES
+                )
+            )
+        )
+    ]
+
+    latest_signal_data.sort(
+        key=lambda x: x.get("volume_rank", 999999)
+    )
+
+    for signal_rank, row in enumerate(
+        latest_signal_data, 1
+    ):
+        row["signal_rank"] = signal_rank
+
+    log.info(
+        "UPBIT | 거래대금 TOP%s | EMA%s | EMA시간봉=%s | "
+        "캔들패턴 시간봉=%s | 참고 EMA 시간봉=%s | "
+        "참고 조건=%s | SIGNAL=%s",
+        TOP_N,
+        get_ema_full_label(),
+        get_timeframe_label(),
+        get_candle_pattern_timeframe_label(),
+        get_reference_timeframe_label(),
+        get_reference_ema_condition_description(),
+        len(latest_signal_data)
+    )
 
 
-threading.Thread(
-    target=real_upbit_coin_target_monitor,
-    daemon=True
-).start()
+# =========================================================
+# OKX 캔들
+# =========================================================
+
+def okx_candles(bar, limit=200):
+    r = retry(
+        requests.get,
+        "https://www.okx.com/api/v5/market/candles",
+        params={
+            "instId": "BTC-USDT-SWAP",
+            "bar": bar,
+            "limit": str(min(limit, 300))
+        },
+        timeout=15
+    )
+
+    if r is None:
+        return pd.DataFrame()
+
+    try:
+        response_data = r.json()
+        data = response_data.get("data", [])
+
+        if response_data.get("code") != "0":
+            log.warning(
+                "OKX 캔들 API 오류: %s",
+                response_data.get("msg", "unknown")
+            )
+            return pd.DataFrame()
+
+    except Exception:
+        return pd.DataFrame()
+
+    rows = []
+
+    for x in data:
+        try:
+            rows.append({
+                "datetime": pd.to_datetime(
+                    int(x[0]), unit="ms", utc=True
+                ).tz_convert(KST),
+                "open": float(x[1]),
+                "high": float(x[2]),
+                "low": float(x[3]),
+                "close": float(x[4])
+            })
+        except Exception:
+            pass
+
+    if not rows:
+        return pd.DataFrame()
+
+    return (
+        pd.DataFrame(rows)
+        .sort_values("datetime")
+        .drop_duplicates("datetime")
+        .reset_index(drop=True)
+    )
 
 
-threading.Thread(
-    target=upbit_asset_refresh_monitor,
-    daemon=True
-).start()
+# =========================================================
+# OKX BTC 가격
+# =========================================================
+
+def okx_price():
+    r = retry(
+        requests.get,
+        "https://www.okx.com/api/v5/market/ticker",
+        params={"instId": "BTC-USDT-SWAP"},
+        timeout=15
+    )
+
+    if r is None:
+        return None
+
+    try:
+        response_data = r.json()
+
+        if response_data.get("code") != "0":
+            return None
+
+        return float(response_data["data"][0]["last"])
+
+    except Exception:
+        return None
+
+
+# =========================================================
+# BTC EMA 상태 계산
+# =========================================================
+
+def analyze_btc_ema_states(timeframe):
+    states = {
+        "5_10": None,
+        "10_20": None
+    }
+
+    timeframe_bars = {
+        "5m": "5m",
+        "15m": "15m",
+        "1h": "1H",
+        "4h": "4H",
+        "1d": "1D"
+    }
+
+    bar = timeframe_bars.get(timeframe)
+
+    if bar is None:
+        log.warning(
+            "지원하지 않는 BTC EMA 시간봉: %s",
+            timeframe
+        )
+        return states
+
+    df = okx_candles(bar, 200)
+
+    if df is None or df.empty:
+        return states
+
+    price = latest_btc_okx_price
+
+    if price is not None:
+        now = datetime.now(KST)
+
+        if timeframe == "5m":
+            current_start = now.replace(
+                minute=(now.minute // 5) * 5,
+                second=0,
+                microsecond=0
+            )
+
+        elif timeframe == "15m":
+            current_start = now.replace(
+                minute=(now.minute // 15) * 15,
+                second=0,
+                microsecond=0
+            )
+
+        elif timeframe == "1h":
+            current_start = now.replace(
+                minute=0,
+                second=0,
+                microsecond=0
+            )
+
+        elif timeframe == "4h":
+            day_start = now.replace(
+                hour=9,
+                minute=0,
+                second=0,
+                microsecond=0
+            )
+
+            if now < day_start:
+                day_start -= timedelta(days=1)
+
+            elapsed_hours = int(
+                (now - day_start).total_seconds() // 3600
+            )
+
+            current_start = day_start + timedelta(
+                hours=(elapsed_hours // 4) * 4
+            )
+
+        else:
+            current_start = now.replace(
+                hour=9,
+                minute=0,
+                second=0,
+                microsecond=0
+            )
+
+            if now < current_start:
+                current_start -= timedelta(days=1)
+
+        df = update_current_candle(
+            df, current_start, price
+        )
+
+    ema_pullback = calculate_ema(
+        df, EMA_PULLBACK
+    )
+    ema_fast = calculate_ema(
+        df, EMA_FAST
+    )
+    ema_slow = calculate_ema(
+        df, EMA_SLOW
+    )
+
+    if any(
+        x is None
+        for x in (ema_pullback, ema_fast, ema_slow)
+    ):
+        return states
+
+    if ema_pullback > ema_fast:
+        states["5_10"] = "정배열"
+    elif ema_pullback < ema_fast:
+        states["5_10"] = "역배열"
+    else:
+        states["5_10"] = "동일"
+
+    if ema_fast > ema_slow:
+        states["10_20"] = "정배열"
+    elif ema_fast < ema_slow:
+        states["10_20"] = "역배열"
+    else:
+        states["10_20"] = "동일"
+
+    return states
+
+
+# =========================================================
+# OKX BTC KST 09:00 기준 일봉
+# =========================================================
+
+def build_okx_kst_daily_periods(df, current_price=None):
+    if df is None or df.empty:
+        return []
+
+    df = (
+        df.sort_values("datetime")
+        .drop_duplicates("datetime")
+        .reset_index(drop=True)
+    )
+
+    now = datetime.now(KST)
+
+    current_day_start = now.replace(
+        hour=9,
+        minute=0,
+        second=0,
+        microsecond=0
+    )
+
+    if now < current_day_start:
+        current_day_start -= timedelta(days=1)
+
+    rows = []
+
+    for _, row in df.iterrows():
+        dt = row["datetime"]
+
+        day_start = dt.replace(
+            hour=9,
+            minute=0,
+            second=0,
+            microsecond=0
+        )
+
+        if dt < day_start:
+            day_start -= timedelta(days=1)
+
+        rows.append({
+            "day_start": day_start,
+            "open": float(row["open"]),
+            "high": float(row["high"]),
+            "low": float(row["low"]),
+            "close": float(row["close"])
+        })
+
+    if not rows:
+        return []
+
+    raw = pd.DataFrame(rows)
+    periods = []
+
+    for day_start, group in raw.groupby(
+        "day_start", sort=True
+    ):
+        o = float(group.iloc[0]["open"])
+        h = float(group["high"].max())
+        l = float(group["low"].min())
+        c = float(group.iloc[-1]["close"])
+
+        active = day_start == current_day_start
+
+        if active and current_price is not None:
+            c = float(current_price)
+            h = max(h, c)
+            l = min(l, c)
+
+        change = (c - o) / o * 100 if o else None
+
+        periods.append({
+            "start": day_start,
+            "end": day_start + timedelta(days=1),
+            "active": active,
+            "label": day_start.strftime("%m/%d 09:00"),
+            "open": o,
+            "high": h,
+            "low": l,
+            "close": c,
+            "change": change
+        })
+
+    return periods[-6:]
+
+
+# =========================================================
+# BTC 업데이트
+# =========================================================
+
+def update_okx_btc():
+    global latest_btc_okx_price
+    global latest_btc_daily_periods
+    global latest_btc_daily_change
+    global latest_btc_signal_ema_states
+    global latest_btc_reference_ema_states
+
+    price = okx_price()
+    latest_btc_okx_price = price
+
+    if price is None:
+        return
+
+    d1h = okx_candles("1H", 200)
+
+    if d1h.empty:
+        latest_btc_daily_periods = []
+        latest_btc_daily_change = None
+    else:
+        latest_btc_daily_periods = (
+            build_okx_kst_daily_periods(d1h, price)
+        )
+
+        if latest_btc_daily_periods:
+            latest_btc_daily_change = (
+                latest_btc_daily_periods[-1].get("change")
+            )
+        else:
+            latest_btc_daily_change = None
+
+    latest_btc_signal_ema_states = (
+        analyze_btc_ema_states(SIGNAL_TIMEFRAME)
+    )
+
+    latest_btc_reference_ema_states = (
+        analyze_btc_ema_states(EMA_REFERENCE_TIMEFRAME)
+    )
+
+
+# =========================================================
+# 전체 업데이트
+# =========================================================
+
+def update_dashboard():
+    if not update_lock.acquire(False):
+        return
+
+    try:
+        if USE_OKX == "Y":
+            update_okx_btc()
+
+        if USE_UPBIT == "Y":
+            update_upbit()
+
+    except Exception as e:
+        log.exception("업데이트 오류: %s", e)
+
+    finally:
+        update_lock.release()
+
+
+# =========================================================
+# 표시 포맷
+# =========================================================
+
+def fmt_price(v):
+    if v is None:
+        return "-"
+
+    try:
+        v = float(v)
+    except Exception:
+        return "-"
+
+    if v >= 100000000:
+        return f"{v / 100000000:.2f}억"
+
+    if v >= 10000:
+        return f"{v:,.0f}"
+
+    if v >= 1:
+        return f"{v:,.2f}"
+
+    return f"{v:.6f}"
+
+
+def fmt_vol(v):
+    try:
+        v = float(v)
+    except Exception:
+        return "-"
+
+    if v >= 1e12:
+        return f"{v / 1e12:.1f}조"
+
+    if v >= 1e8:
+        return f"{v / 1e8:.0f}억"
+
+    if v >= 1e4:
+        return f"{v / 1e4:.0f}만"
+
+    return f"{v:,.0f}"
+
+
+def fmt_change(v):
+    if v is None:
+        return '<span class="zero">-</span>'
+
+    try:
+        v = float(v)
+    except Exception:
+        return '<span class="zero">-</span>'
+
+    if v > 0:
+        return f'<span class="up">▲ +{v:.2f}%</span>'
+
+    if v < 0:
+        return f'<span class="down">▼ {v:.2f}%</span>'
+
+    return '<span class="zero">0.00%</span>'
+
+
+def fmt_ema(v):
+    if v is None:
+        return "-"
+
+    try:
+        v = float(v)
+    except Exception:
+        return "-"
+
+    return fmt_price(v)
+
+
+def ema_alignment_html(alignment):
+    if alignment == "역배열":
+        return '<span class="ema-reverse">▼ 역배열</span>'
+
+    if alignment == "정배열":
+        return '<span class="ema-normal">▲ 정배열</span>'
+
+    if alignment == "동일":
+        return '<span class="ema-same">— 동일</span>'
+
+    return '<span class="ema-same">—</span>'
+
+
+# =========================================================
+# EMA 배열 기호
+# =========================================================
+
+def ema_symbol(state):
+    if state == "정배열":
+        return '<span class="ema-normal">▲</span>'
+
+    if state == "역배열":
+        return '<span class="ema-reverse">▼</span>'
+
+    if state == "동일":
+        return '<span class="ema-same">—</span>'
+
+    return '<span class="ema-same">—</span>'
+
+
+# =========================================================
+# 탑리스트 EMA 두 줄 표시
+# =========================================================
+
+def top_ema_status_html(row):
+    reference_states = (
+        row.get("ema_reference_states") or {}
+    )
+
+    state_1h_5_10 = row.get("ema_1h_5_10")
+    state_1h_10_50 = row.get("ema_1h_10_50")
+
+    state_ref_5_10 = reference_states.get("signal_5_10")
+    state_ref_10_50 = reference_states.get("signal_10_50")
+
+    signal_label = get_timeframe_label()
+    reference_label = get_reference_timeframe_label()
+
+    pair_1, pair_2 = get_ema_pair_labels()
+
+    return f"""
+    <div class="top-ema-status">
+        <div class="top-ema-line">
+            <span class="top-ema-time">
+                {html.escape(signal_label)}
+            </span>
+            <span>
+                {html.escape(pair_1)} {ema_symbol(state_1h_5_10)}
+            </span>
+            <span>
+                {html.escape(pair_2)} {ema_symbol(state_1h_10_50)}
+            </span>
+        </div>
+        <div class="top-ema-line">
+            <span class="top-ema-time">
+                {html.escape(reference_label)}
+            </span>
+            <span>
+                {html.escape(pair_1)} {ema_symbol(state_ref_5_10)}
+            </span>
+            <span>
+                {html.escape(pair_2)} {ema_symbol(state_ref_10_50)}
+            </span>
+        </div>
+    </div>
+    """
+
+
+# =========================================================
+# SIGNAL EMA 상태 HTML
+# =========================================================
+
+def signal_ema_status_html(row):
+    state_5_10 = row.get("ema_1h_5_10")
+    state_10_50 = row.get("ema_1h_10_50")
+
+    timeframe_label = get_timeframe_label()
+    pair_1, pair_2 = get_ema_pair_labels()
+
+    display_items = [
+        (pair_1, state_5_10),
+        (pair_2, state_10_50)
+    ]
+
+    pieces = []
+
+    for pair_label, state in display_items:
+        if state == "정배열":
+            cls, symbol = "ema-normal", "▲"
+        elif state == "역배열":
+            cls, symbol = "ema-reverse", "▼"
+        elif state == "동일":
+            cls, symbol = "ema-same", "—"
+        else:
+            cls, symbol = "ema-same", "—"
+
+        pieces.append(
+            f'<div class="ema-ref-item {cls}">'
+            f'<span class="ema-ref-label">'
+            f'{html.escape(timeframe_label)} '
+            f'{html.escape(pair_label)}'
+            f'</span> {symbol} '
+            f'{html.escape(state) if state else "-"}'
+            f'</div>'
+        )
+
+    return (
+        '<div class="ema-ref-row" '
+        f'title="{html.escape(timeframe_label)} 기준 EMA 상태">'
+        + "".join(pieces)
+        + '</div>'
+    )
+
+
+# =========================================================
+# 참고 EMA 상태 HTML
+# =========================================================
+
+def reference_ema_states_html(row):
+    states = row.get("ema_reference_states") or {}
+
+    timeframe_label = get_reference_timeframe_label()
+    pair_1, pair_2 = get_ema_pair_labels()
+
+    display_items = [
+        (pair_1, states.get("signal_5_10")),
+        (pair_2, states.get("signal_10_50"))
+    ]
+
+    pieces = []
+
+    for pair_label, state in display_items:
+        if state == "정배열":
+            cls, symbol = "ema-normal", "▲"
+        elif state == "역배열":
+            cls, symbol = "ema-reverse", "▼"
+        elif state == "동일":
+            cls, symbol = "ema-same", "—"
+        else:
+            cls, symbol = "ema-same", "—"
+
+        pieces.append(
+            f'<div class="ema-ref-item {cls}">'
+            f'<span class="ema-ref-label">'
+            f'{html.escape(timeframe_label)} '
+            f'{html.escape(pair_label)}'
+            f'</span> {symbol} '
+            f'{html.escape(state) if state else "-"}'
+            f'</div>'
+        )
+
+    return (
+        '<div class="ema-ref-row" '
+        f'title="{html.escape(timeframe_label)} 기준 EMA 상태">'
+        + "".join(pieces)
+        + '</div>'
+    )
+
+
+# =========================================================
+# 캔들 그림
+# =========================================================
+
+def candle_icon_html(pattern):
+    if pattern == "상승장악형":
+        return """
+        <div class="candle-pattern-visual engulfing">
+            <div class="mini-candle bearish">
+                <span class="wick"></span><span class="body"></span>
+            </div>
+            <div class="mini-candle bullish large">
+                <span class="wick"></span><span class="body"></span>
+            </div>
+        </div>
+        """
+
+    if pattern == "하락장악형":
+        return """
+        <div class="candle-pattern-visual engulfing">
+            <div class="mini-candle bullish">
+                <span class="wick"></span><span class="body"></span>
+            </div>
+            <div class="mini-candle bearish large">
+                <span class="wick"></span><span class="body"></span>
+            </div>
+        </div>
+        """
+
+    if pattern == "양수도지":
+        return """
+        <div class="candle-pattern-visual doji">
+            <div class="mini-candle bullish-doji">
+                <span class="wick"></span><span class="body"></span>
+            </div>
+        </div>
+        """
+
+    if pattern == "음수도지":
+        return """
+        <div class="candle-pattern-visual doji">
+            <div class="mini-candle bearish-doji">
+                <span class="wick"></span><span class="body"></span>
+            </div>
+        </div>
+        """
+
+    if pattern == "상승관통형":
+        return """
+        <div class="candle-pattern-visual piercing">
+            <div class="mini-candle bearish">
+                <span class="wick"></span><span class="body"></span>
+            </div>
+            <div class="mini-candle bullish piercing-candle">
+                <span class="wick"></span><span class="body"></span>
+            </div>
+        </div>
+        """
+
+    if pattern == "하락관통형":
+        return """
+        <div class="candle-pattern-visual piercing">
+            <div class="mini-candle bullish">
+                <span class="wick"></span><span class="body"></span>
+            </div>
+            <div class="mini-candle bearish piercing-bearish">
+                <span class="wick"></span><span class="body"></span>
+            </div>
+        </div>
+        """
+
+    if pattern == "장대양봉":
+        return """
+        <div class="candle-pattern-visual single-candle">
+            <div class="mini-candle bullish very-large">
+                <span class="wick"></span><span class="body"></span>
+            </div>
+        </div>
+        """
+
+    if pattern == "장대음봉":
+        return """
+        <div class="candle-pattern-visual single-candle">
+            <div class="mini-candle bearish very-large">
+                <span class="wick"></span><span class="body"></span>
+            </div>
+        </div>
+        """
+
+    if pattern in ("상승망치형", "하락망치형"):
+        candle_class = (
+            "bullish hammer"
+            if pattern == "상승망치형"
+            else "bearish hammer"
+        )
+
+        return f"""
+        <div class="candle-pattern-visual single-candle">
+            <div class="mini-candle {candle_class}">
+                <span class="wick"></span><span class="body"></span>
+            </div>
+        </div>
+        """
+
+    if pattern in ("상승역망치형", "하락역망치형"):
+        candle_class = (
+            "bullish inverted-hammer"
+            if pattern == "상승역망치형"
+            else "bearish inverted-hammer"
+        )
+
+        return f"""
+        <div class="candle-pattern-visual single-candle">
+            <div class="mini-candle {candle_class}">
+                <span class="wick"></span><span class="body"></span>
+            </div>
+        </div>
+        """
+
+    return """
+    <div class="candle-pattern-visual empty"><span>—</span></div>
+    """
+
+
+# =========================================================
+# 캔들 패턴 HTML
+# =========================================================
+
+def current_pattern_html(pattern):
+    if isinstance(pattern, str):
+        patterns = [pattern] if pattern else []
+    elif isinstance(pattern, (list, tuple, set)):
+        patterns = list(pattern)
+    else:
+        patterns = []
+
+    if not patterns:
+        return (
+            '<div class="pattern-box pattern-none">'
+            + candle_icon_html(None)
+            + '<span class="pattern-name">-</span></div>'
+        )
+
+    boxes = []
+
+    for item in patterns:
+        escaped_pattern = html.escape(str(item))
+
+        if item in BULLISH_HIGHLIGHT_PATTERNS:
+            css_class = "bullish-pattern"
+        elif item in BEARISH_HIGHLIGHT_PATTERNS:
+            css_class = "bearish-pattern"
+        else:
+            css_class = "neutral-pattern"
+
+        boxes.append(
+            f'<div class="pattern-box {css_class}">'
+            + candle_icon_html(item)
+            + '<span class="pattern-name">'
+            + escaped_pattern
+            + '</span></div>'
+        )
+
+    return (
+        '<div class="pattern-multi">'
+        + "".join(boxes)
+        + '</div>'
+    )
+
+
+# =========================================================
+# 상승 / 하락 패턴 배지 표시
+# =========================================================
+
+def pattern_badges_html(row):
+    previous_patterns = row.get("previous_pattern") or []
+    current_patterns = row.get("current_pattern") or []
+
+    all_patterns = previous_patterns + current_patterns
+
+    badges = []
+
+    if any(
+        pattern in BULLISH_HIGHLIGHT_PATTERNS
+        for pattern in all_patterns
+    ):
+        badges.append(
+            '<span class="signal-type-badge">⭐ 상승패턴</span>'
+        )
+
+    if any(
+        pattern in BEARISH_HIGHLIGHT_PATTERNS
+        for pattern in all_patterns
+    ):
+        badges.append(
+            '<span class="bearish-type-badge">🔻 하락패턴</span>'
+        )
+
+    return "".join(badges)
+
+
+def signal_reason_html(reason):
+    if reason in BULLISH_HIGHLIGHT_PATTERNS:
+        return (
+            f'<span class="pattern-cross">'
+            f'▲ {html.escape(reason)}</span>'
+        )
+
+    return ""
+
+
+# =========================================================
+# BTC HTML - 시그널 EMA / 참고 EMA 표시
+# =========================================================
+
+def btc_html():
+    signal_states = (
+        latest_btc_signal_ema_states or {}
+    )
+
+    reference_states = (
+        latest_btc_reference_ema_states or {}
+    )
+
+    pair_1, pair_2 = get_ema_pair_labels()
+
+    signal_label = get_timeframe_label()
+    reference_label = get_reference_timeframe_label()
+
+    return f"""
+    <section class="btc-panel">
+        <div class="section-head">
+            <div>
+                <span class="section-kicker">MARKET</span>
+                <b>BTCUSDT</b>
+            </div>
+            <span class="update-time">
+                OKX · KST 09:00 기준 · {kst()}
+            </span>
+        </div>
+
+        <div class="btc-main">
+            <div class="btc-name">BTC</div>
+            <div class="btc-price">
+                {fmt_price(latest_btc_okx_price)}
+            </div>
+            <div class="btc-change">
+                {fmt_change(latest_btc_daily_change)}
+            </div>
+        </div>
+
+        <div class="btc-ema-status">
+            <div class="btc-ema-line">
+                <span class="btc-ema-time">
+                    {html.escape(signal_label)}
+                </span>
+                <span>
+                    EMA {html.escape(pair_1)}
+                    {ema_symbol(signal_states.get("5_10"))}
+                </span>
+                <span>
+                    EMA {html.escape(pair_2)}
+                    {ema_symbol(signal_states.get("10_20"))}
+                </span>
+            </div>
+
+            <div class="btc-ema-line">
+                <span class="btc-ema-time">
+                    {html.escape(reference_label)}
+                </span>
+                <span>
+                    EMA {html.escape(pair_1)}
+                    {ema_symbol(reference_states.get("5_10"))}
+                </span>
+                <span>
+                    EMA {html.escape(pair_2)}
+                    {ema_symbol(reference_states.get("10_20"))}
+                </span>
+            </div>
+        </div>
+    </section>
+    """
+
+
+# =========================================================
+# SIGNAL 카드
+# =========================================================
+
+def signal_card(row):
+    timeframe_label = get_candle_pattern_timeframe_label()
+
+    # -----------------------------------------------------
+    # 녹색 강조 조건
+    #
+    # 1. 현재 캔들 상승패턴 발생
+    # 2. 현재 캔들 EMA 10선 터치 후 반등
+    #
+    # 두 조건을 모두 만족해야 전체 녹색 강조
+    # -----------------------------------------------------
+
+    has_bullish_pattern = (
+        row.get("signal_4h_current", False)
+        and row.get("ema10_rebound", False)
+    )
+
+    reference_states = (
+        row.get("ema_reference_states") or {}
+    )
+
+    reference_5_10 = reference_states.get("signal_5_10")
+    reference_10_50 = reference_states.get("signal_10_50")
+
+    has_reference_reverse = (
+        reference_5_10 == "역배열"
+        or reference_10_50 == "역배열"
+    )
+
+    badge_html = pattern_badges_html(row)
+
+    card_classes = ["signal-card"]
+
+    if has_reference_reverse:
+        card_classes.append("has-reference-reverse")
+
+    if has_bullish_pattern:
+        card_classes.append("has-bullish-pattern")
+
+    card_class = " ".join(card_classes)
+
+    condition_age = reference_states.get(
+        "full_alignment_age", 0
+    )
+
+    return f"""
+    <div class="{card_class}">
+
+        <!-- 카드 상단 전체 너비 한 줄 -->
+        <div class="signal-card-top">
+
+            <span class="signal-rank">
+                거래대금 #{row.get("volume_rank", "-")}
+            </span>
+
+            <b class="signal-coin-name">
+                {html.escape(row["name"])}
+            </b>
+
+            <div class="signal-type-list">
+                {badge_html}
+            </div>
+
+            {signal_ema_status_html(row)}
+
+            {reference_ema_states_html(row)}
+
+            <span class="alignment-age">
+                조건 충족 {condition_age}/{REFERENCE_ALIGNMENT_MAX_CANDLES}
+            </span>
+
+        </div>
+
+        <!-- 하단 데이터 5개 영역 -->
+        <div class="signal-data-grid">
+
+            <div class="signal-price">
+                <span>현재가격</span>
+                <strong>{fmt_price(row.get("current_price"))}</strong>
+            </div>
+
+            <div class="signal-volume">
+                <span>거래대금</span>
+                <strong>{fmt_vol(row["volume_24h"])}</strong>
+            </div>
+
+            <div class="signal-change">
+                <span>변동률</span>
+                <strong>{fmt_change(row.get("daily_change"))}</strong>
+            </div>
+
+            <div class="signal-pattern">
+                <span>이전봉 {timeframe_label}</span>
+                <strong class="pattern-display">
+                    {current_pattern_html(row.get("previous_pattern"))}
+                </strong>
+            </div>
+
+            <div class="signal-pattern">
+                <span>현재봉 {timeframe_label}</span>
+                <strong class="pattern-display">
+                    {current_pattern_html(row.get("current_pattern"))}
+                </strong>
+            </div>
+
+        </div>
+    </div>
+    """
+
+
+# =========================================================
+# SIGNAL 영역 - 조건 표시 간소화
+# =========================================================
+
+def signal_section():
+    timeframe_label = get_timeframe_label()
+    pattern_timeframe_label = get_candle_pattern_timeframe_label()
+    reference_timeframe_label = get_reference_timeframe_label()
+    ema_full_label = get_ema_full_label()
+
+    if not latest_signal_data:
+        body = """
+        <div class="signal-empty">
+            현재 SIGNAL 조건에 해당하는 종목 없음
+        </div>
+        """
+    else:
+        body = "".join(
+            signal_card(row)
+            for row in latest_signal_data
+        )
+
+    return f"""
+    <section class="signal-panel">
+
+        <div class="section-head signal-panel-head">
+            <div>
+                <span class="section-kicker">SIGNAL</span>
+                <b>🔴 </b>
+            </div>
+
+            <span class="update-time">
+                EMA {timeframe_label} · 캔들패턴 {pattern_timeframe_label} · {kst()}
+            </span>
+        </div>
+
+        <div class="signal-condition">
+            <span>SIGNAL</span>
+            <b>{timeframe_label} EMA {ema_full_label} 정배열</b>
+            <small>당일 변동률 양수</small>
+        </div>
+
+        <div class="signal-condition">
+            <span>참고 EMA</span>
+            <b>{reference_timeframe_label} EMA {ema_full_label} 정배열</b>
+            <small>연속 {REFERENCE_ALIGNMENT_MAX_CANDLES}봉 이내</small>
+        </div>
+
+        <div class="signal-header">
+            <div>현재가격</div>
+            <div>거래대금</div>
+            <div>변동률</div>
+            <div>이전봉 {html.escape(pattern_timeframe_label)}</div>
+            <div>현재봉 {html.escape(pattern_timeframe_label)}</div>
+        </div>
+
+        <div class="signal-list">{body}</div>
+
+    </section>
+    """
+
+
+# =========================================================
+# TOP 카드
+# =========================================================
+
+def card(row, kind):
+    timeframe_label = get_candle_pattern_timeframe_label()
+
+    if kind != "top":
+        return ""
+
+    status = pattern_badges_html(row)
+
+    top_ema_html = top_ema_status_html(row)
+
+    return f"""
+    <article class="coin-card">
+        <div class="coin-head">
+            <div class="coin-title">
+                <span class="rank">#{row["rank"]}</span>
+                <b>{html.escape(row["name"])}</b>
+            </div>
+            <div class="pattern-badge-list">
+                {status}
+            </div>
+        </div>
+        {top_ema_html}
+        <div class="market-summary">
+            <div>
+                <span>현재가</span>
+                <strong>{fmt_price(row["current_price"])}</strong>
+            </div>
+            <div>
+                <span>24H 거래대금</span>
+                <strong>{fmt_vol(row["volume_24h"])}</strong>
+            </div>
+            <div>
+                <span>당일 변동률</span>
+                <strong class="daily-change-value">
+                    {fmt_change(row.get("daily_change"))}
+                </strong>
+            </div>
+            <div>
+                <span>이전봉 {timeframe_label}</span>
+                <strong class="pattern-display">
+                    {current_pattern_html(row.get("previous_pattern"))}
+                </strong>
+            </div>
+            <div>
+                <span>현재봉 {timeframe_label}</span>
+                <strong class="pattern-display">
+                    {current_pattern_html(row.get("current_pattern"))}
+                </strong>
+            </div>
+        </div>
+    </article>
+    """
+
+
+# =========================================================
+# CSS
+# =========================================================
+
+CSS = """
+* { box-sizing: border-box; }
+
+html { background: #080b0f; }
+
+body {
+    margin: 0;
+    padding: 8px;
+    background: #080b0f;
+    color: #e8edf2;
+    font-family: Arial, "Noto Sans KR", sans-serif;
+    font-size: 11px;
+}
+
+h1 {
+    margin: 4px 2px 12px;
+    font-size: 14px;
+    font-weight: 800;
+    letter-spacing: -0.4px;
+    color: #f1f4f7;
+}
+
+section { margin-bottom: 12px; }
+
+.up {
+    color: #38d878 !important;
+    font-weight: 900;
+}
+
+.down {
+    color: #ff5966 !important;
+    font-weight: 900;
+}
+
+.zero {
+    color: #68737e;
+    font-weight: 800;
+}
+
+.daily-change-value .up {
+    color: #38d878 !important;
+    font-weight: 900;
+    font-size: 9px;
+}
+
+.daily-change-value .down {
+    color: #ff5966 !important;
+    font-weight: 900;
+    font-size: 9px;
+}
+
+.ema-normal {
+    color: #38d878;
+    font-size: 7px;
+    font-weight: 900;
+    white-space: nowrap;
+}
+
+.ema-reverse {
+    color: #ff5966;
+    font-size: 7px;
+    font-weight: 900;
+    white-space: nowrap;
+}
+
+.ema-same {
+    color: #68737e;
+    font-size: 7px;
+    font-weight: 900;
+    white-space: nowrap;
+}
+
+
+.top-ema-status {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 4px;
+    padding: 6px 9px;
+    background: #0a1015;
+    border-bottom: 1px solid #202a33;
+}
+
+.top-ema-line {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 8px;
+    font-weight: 900;
+    white-space: nowrap;
+    line-height: 1.4;
+}
+
+.top-ema-time {
+    width: 38px;
+    color: #83909b;
+    font-size: 8px;
+    font-weight: 800;
+}
+
+.top-ema-line > span:not(.top-ema-time) {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+}
+
+
+.ema-ref-row {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 3px;
+    flex-wrap: nowrap;
+    white-space: nowrap;
+    min-width: 0;
+}
+
+.ema-ref-item {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    font-size: 7px;
+    font-weight: 900;
+    line-height: 1.3;
+    white-space: nowrap;
+}
+
+.ema-ref-label {
+    color: #83909b;
+    font-size: 6px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+
+.pattern-box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-width: 55px;
+    line-height: 1;
+}
+
+.pattern-name {
+    display: block;
+    margin-top: 2px;
+    color: #38d878;
+    font-size: 5px;
+    font-weight: 900;
+    white-space: nowrap;
+}
+
+.bearish-pattern .pattern-name {
+    color: #ff5966;
+}
+
+.neutral-pattern .pattern-name {
+    color: #e4c45e;
+}
+
+.pattern-none .pattern-name {
+    color: #68737e;
+}
+
+.pattern-multi {
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 3px;
+    width: 100%;
+}
+
+.pattern-multi .pattern-box {
+    min-width: 36px;
+}
+
+
+.candle-pattern-visual {
+    height: 23px;
+    min-width: 35px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    position: relative;
+}
+
+.mini-candle {
+    width: 7px;
+    height: 22px;
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.mini-candle .wick {
+    position: absolute;
+    width: 1px;
+    height: 22px;
+    left: 50%;
+    top: 0;
+    transform: translateX(-50%);
+    background: #79848e;
+}
+
+.mini-candle .body {
+    position: relative;
+    z-index: 2;
+    width: 7px;
+    height: 10px;
+    border-radius: 1px;
+}
+
+.mini-candle.bearish .body {
+    background: #ff5966;
+    height: 12px;
+}
+
+.mini-candle.bullish .body {
+    background: #38d878;
+    height: 17px;
+}
+
+.mini-candle.bullish.large .body,
+.mini-candle.bearish.large .body {
+    height: 20px;
+    width: 9px;
+}
+
+.mini-candle.bullish-doji .body {
+    background: #38d878;
+    height: 2px;
+    width: 10px;
+}
+
+.mini-candle.bearish-doji .body {
+    background: #ff5966;
+    height: 2px;
+    width: 10px;
+}
+
+.mini-candle.piercing-candle .body {
+    background: #38d878;
+    height: 15px;
+}
+
+.mini-candle.piercing-bearish .body {
+    background: #ff5966;
+    height: 15px;
+}
+
+.mini-candle.bullish.very-large .body {
+    background: #38d878;
+    height: 20px;
+    width: 9px;
+}
+
+.mini-candle.bearish.very-large .body {
+    background: #ff5966;
+    height: 20px;
+    width: 9px;
+}
+
+.mini-candle.hammer .wick,
+.mini-candle.inverted-hammer .wick {
+    height: 22px;
+    top: 0;
+}
+
+.mini-candle.hammer .body {
+    position: absolute;
+    top: 1px;
+    height: 6px;
+    width: 8px;
+}
+
+.mini-candle.bullish.hammer .body,
+.mini-candle.bullish.inverted-hammer .body {
+    background: #38d878;
+}
+
+.mini-candle.bearish.hammer .body,
+.mini-candle.bearish.inverted-hammer .body {
+    background: #ff5966;
+}
+
+.mini-candle.inverted-hammer .body {
+    position: absolute;
+    bottom: 1px;
+    height: 6px;
+    width: 8px;
+}
+
+.candle-pattern-visual.empty {
+    color: #68737e;
+    font-size: 9px;
+    height: 23px;
+}
+
+
+/* =========================================================
+   SIGNAL 패널
+   ========================================================= */
+
+.signal-panel {
+    background: #0c1116;
+    border: 1px solid #48272c;
+    margin-bottom: 13px;
+}
+
+.signal-panel-head {
+    border-bottom: 1px solid #392126;
+}
+
+/* SIGNAL 조건 표시 - 간소화 */
+
+.signal-condition {
+    min-height: 30px;
+    padding: 4px 9px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #120e10;
+    border-bottom: 1px solid #302024;
+}
+
+.signal-condition span {
+    color: #7d6b70;
+    font-size: 7px;
+    min-width: 48px;
+    white-space: nowrap;
+}
+
+.signal-condition b {
+    color: #ff5966;
+    font-size: 8px;
+    font-weight: 900;
+}
+
+.signal-condition small {
+    color: #626e78;
+    font-size: 6px;
+    margin-left: auto;
+    white-space: nowrap;
+}
+
+
+/* =========================================================
+   SIGNAL 헤더 및 카드 데이터 5열
+   ========================================================= */
+
+.signal-header,
+.signal-data-grid {
+    display: grid;
+    grid-template-columns: 1.1fr 0.9fr 0.8fr 1.1fr 1.1fr;
+    align-items: center;
+}
+
+.signal-header {
+    min-height: 27px;
+    padding: 0 9px;
+    color: #69747e;
+    font-size: 6px;
+    font-weight: 800;
+    background: #0b1015;
+    border-bottom: 1px solid #20282f;
+}
+
+.signal-header > div {
+    text-align: center;
+}
+
+
+/* =========================================================
+   SIGNAL 카드 전체
+   ========================================================= */
+
+.signal-card {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    background: #0d1217;
+    border-bottom: 1px solid #20282f;
+}
+
+.signal-card.has-reference-reverse {
+    background: #171316;
+    box-shadow: inset 3px 0 0 #ff5966;
+}
+
+.signal-card.has-reference-reverse .signal-coin-name {
+    color: #ff5966;
+}
+
+.signal-card:last-child {
+    border-bottom: 0;
+}
+
+
+/* =========================================================
+   SIGNAL 카드 상단 전체 너비 한 줄
+   ========================================================= */
+
+.signal-card-top {
+    width: 100%;
+    min-height: 37px;
+    padding: 5px 8px;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    border-bottom: 1px solid #263039;
+    background: rgba(255,255,255,0.015);
+}
+
+.signal-rank {
+    color: #b84d58;
+    font-size: 7px;
+    font-weight: 900;
+    white-space: nowrap;
+}
+
+.signal-coin-name {
+    color: #e5e9ed;
+    font-size: 9px;
+    font-weight: 900;
+    white-space: nowrap;
+}
+
+.signal-type-list {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px;
+}
+
+.signal-type-badge {
+    color: #e4c45e !important;
+    font-size: 5px !important;
+    font-weight: 900;
+    white-space: nowrap;
+}
+
+.bearish-type-badge {
+    color: #ff5966 !important;
+    font-size: 5px !important;
+    font-weight: 900;
+    white-space: nowrap;
+}
+
+
+/* =========================================================
+   SIGNAL 상단 EMA 상태
+   ========================================================= */
+
+.signal-card-top .ema-ref-row {
+    width: auto;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+
+.signal-card-top .ema-ref-item {
+    font-size: 7px;
+    white-space: nowrap;
+}
+
+.signal-card-top .ema-ref-label {
+    font-size: 6px;
+}
+
+.signal-card-top .ema-ref-item.ema-normal {
+    color: #38d878 !important;
+}
+
+.signal-card-top .ema-ref-item.ema-reverse {
+    color: #ff5966 !important;
+}
+
+.signal-card-top .ema-ref-item.ema-same {
+    color: #68737e !important;
+}
+
+.signal-card-top .alignment-age {
+    width: auto;
+    margin-top: 0;
+    color: #e4c45e !important;
+    font-size: 6px !important;
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+
+/* =========================================================
+   SIGNAL 하단 데이터 5개 영역
+   ========================================================= */
+
+.signal-data-grid {
+    width: 100%;
+    min-height: 58px;
+}
+
+.signal-data-grid > div {
+    min-width: 0;
+    min-height: 58px;
+    padding: 3px 2px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+}
+
+.signal-data-grid > div + div {
+    border-left: 1px solid #1c252c;
+}
+
+.signal-data-grid span {
+    color: #69747e;
+    font-size: 6px;
+}
+
+.signal-data-grid strong {
+    margin-top: 2px;
+    color: #dce2e7;
+    font-size: 8px;
+}
+
+
+/* =========================================================
+   SIGNAL 현재가격
+   ========================================================= */
+
+.signal-data-grid .signal-price strong {
+    color: #f1f4f7;
+    font-size: 8px;
+    font-weight: 900;
+    white-space: nowrap;
+}
+
+
+/* =========================================================
+   SIGNAL 거래대금 / 변동률
+   ========================================================= */
+
+.signal-data-grid .signal-volume strong,
+.signal-data-grid .signal-change strong {
+    font-size: 8px;
+}
+
+
+/* =========================================================
+   SIGNAL 패턴
+   ========================================================= */
+
+.signal-pattern .pattern-box {
+    min-width: 42px;
+}
+
+.signal-pattern .pattern-name {
+    font-size: 5px;
+}
+
+.signal-pattern .candle-pattern-visual {
+    height: 22px;
+    min-width: 32px;
+    transform: scale(.80);
+}
+
+.signal-pattern .pattern-multi {
+    gap: 1px;
+}
+
+.signal-pattern .pattern-multi .pattern-box {
+    min-width: 29px;
+}
+
+
+/* =========================================================
+   EMA 10선 터치 후 반등 + 상승패턴 카드 전체 녹색 강조
+   ========================================================= */
+
+.signal-card.has-bullish-pattern {
+    background: #10251d;
+    box-shadow:
+        inset 4px 0 0 #38d878,
+        inset 0 0 0 1px #286b48;
+}
+
+.signal-card.has-bullish-pattern .signal-card-top {
+    background: rgba(56, 216, 120, 0.07);
+}
+
+.signal-card.has-bullish-pattern .signal-data-grid > div {
+    background: rgba(56, 216, 120, 0.07);
+}
+
+.signal-card.has-bullish-pattern .signal-coin-name {
+    color: #38d878;
+}
+
+.signal-card.has-bullish-pattern .signal-rank {
+    color: #e4c45e;
+}
+
+.signal-card.has-bullish-pattern .signal-pattern {
+    background: rgba(56, 216, 120, 0.12);
+}
+
+.signal-card.has-bullish-pattern .ema-ref-row {
+    background: transparent;
+}
+
+.signal-card.has-bullish-pattern .signal-type-list {
+    background: transparent;
+}
+
+
+/* =========================================================
+   상승패턴과 참고 EMA 역배열 동시 발생 시
+   ========================================================= */
+
+.signal-card.has-bullish-pattern.has-reference-reverse {
+    box-shadow:
+        inset 4px 0 0 #38d878,
+        inset 0 0 0 1px #286b48;
+}
+
+
+/* =========================================================
+   SIGNAL 빈 화면
+   ========================================================= */
+
+.signal-empty {
+    min-height: 46px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #626e78;
+    font-size: 7px;
+}
+
+
+/* =========================================================
+   BTC 패널
+   ========================================================= */
+
+.btc-panel {
+    background: #0c1116;
+    border: 1px solid #202a33;
+    margin-bottom: 13px;
+}
+
+.btc-panel .section-head {
+    height: 38px;
+    padding: 0 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid #202a33;
+}
+
+.section-head > div {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+}
+
+.section-head b {
+    font-size: 10px;
+    font-weight: 800;
+}
+
+.section-kicker {
+    color: #7d8994;
+    font-size: 6px;
+    letter-spacing: 1px;
+    font-weight: 700;
+}
+
+.update-time {
+    color: #65717c;
+    font-size: 6px;
+}
+
+.btc-main {
+    min-height: 54px;
+    display: grid;
+    grid-template-columns: 0.7fr 1.5fr 1fr;
+    align-items: center;
+}
+
+.btc-main > div {
+    text-align: center;
+    padding: 5px;
+}
+
+.btc-name {
+    color: #c4ccd3;
+    font-size: 10px;
+    font-weight: 800;
+}
+
+.btc-price {
+    color: #f4f6f8;
+    font-size: 16px;
+    font-weight: 900;
+    letter-spacing: -0.5px;
+}
+
+.btc-change {
+    font-size: 11px;
+    font-weight: 900;
+}
+
+.btc-ema-status {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding: 7px 9px;
+    background: #0a1015;
+    border-top: 1px solid #202a33;
+}
+
+.btc-ema-line {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    min-height: 14px;
+    font-size: 8px;
+    font-weight: 900;
+}
+
+.btc-ema-time {
+    min-width: 75px;
+    color: #83909b;
+    font-size: 7px;
+    font-weight: 800;
+}
+
+
+/* =========================================================
+   TOP 카드
+   ========================================================= */
+
+.coin-card {
+    background: #0c1116;
+    border: 1px solid #202a33;
+    margin-bottom: 7px;
+}
+
+.coin-head {
+    min-height: 38px;
+    padding: 0 9px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid #202a33;
+}
+
+.coin-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.coin-title b {
+    font-size: 10px;
+    font-weight: 900;
+}
+
+.rank {
+    color: #c9a83d;
+    font-size: 8px;
+    font-weight: 800;
+}
+
+.signal-badge {
+    color: #e4c45e;
+    font-size: 7px;
+    font-weight: 900;
+}
+
+.pattern-badge-list {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+
+.market-summary {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    border-bottom: 1px solid #202a33;
+}
+
+.market-summary > div {
+    min-width: 0;
+    min-height: 58px;
+    padding: 4px 1px;
+    text-align: center;
+    background: #0d1318;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.market-summary > div + div {
+    border-left: 1px solid #1d262e;
+}
+
+.market-summary span {
+    display: block;
+    color: #65717b;
+    font-size: 6px;
+    margin-bottom: 3px;
+}
+
+.market-summary strong {
+    display: block;
+    color: #dce2e7;
+    font-size: 7px;
+}
+
+.market-summary .daily-change-value .up {
+    color: #38d878 !important;
+}
+
+.market-summary .daily-change-value .down {
+    color: #ff5966 !important;
+}
+
+.market-summary .daily-change-value .zero {
+    color: #68737e !important;
+}
+
+.market-summary .pattern-box {
+    min-width: 35px;
+}
+
+.market-summary .pattern-name {
+    font-size: 4.5px;
+}
+
+.market-summary .candle-pattern-visual {
+    height: 21px;
+    transform: scale(.68);
+}
+
+.market-summary .pattern-multi {
+    gap: 0;
+}
+
+.market-summary .pattern-multi .pattern-box {
+    min-width: 24px;
+}
+
+.market-summary .pattern-multi .pattern-name {
+    font-size: 3.8px;
+}
+
+
+/* =========================================================
+   모바일 반응형
+   ========================================================= */
+
+@media (max-width: 600px) {
+
+    body {
+        padding: 5px;
+    }
+
+    h1 {
+        margin: 3px 2px 9px;
+        font-size: 12px;
+    }
+
+    .section-head {
+        padding: 0 8px;
+    }
+
+    .section-head b {
+        font-size: 9px;
+    }
+
+    .update-time {
+        font-size: 5px;
+    }
+
+
+    /* BTC */
+
+    .btc-main {
+        min-height: 48px;
+    }
+
+    .btc-price {
+        font-size: 13px;
+    }
+
+    .btc-change {
+        font-size: 9px;
+    }
+
+    .btc-ema-status {
+        padding: 6px 7px;
+        gap: 4px;
+    }
+
+    .btc-ema-line {
+        gap: 9px;
+        font-size: 7px;
+    }
+
+    .btc-ema-time {
+        min-width: 68px;
+        font-size: 6px;
+    }
+
+
+    /* TOP 카드 */
+
+    .coin-head {
+        min-height: 35px;
+        padding: 0 7px;
+    }
+
+    .coin-title {
+        gap: 6px;
+    }
+
+    .coin-title b {
+        font-size: 9px;
+    }
+
+    .ema-normal,
+    .ema-reverse,
+    .ema-same {
+        font-size: 6px;
+    }
+
+    .top-ema-status {
+        padding: 5px 7px;
+        gap: 4px;
+    }
+
+    .top-ema-line {
+        gap: 10px;
+        font-size: 7px;
+    }
+
+    .top-ema-time {
+        width: 38px;
+        font-size: 7px;
+    }
+
+    .ema-ref-row {
+        gap: 3px;
+    }
+
+    .ema-ref-item {
+        font-size: 6px;
+    }
+
+    .ema-ref-label {
+        font-size: 5px;
+    }
+
+    .market-summary {
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+    }
+
+    .market-summary > div {
+        min-height: 53px;
+        padding: 3px 1px;
+    }
+
+    .market-summary span {
+        font-size: 5px;
+        margin-bottom: 2px;
+    }
+
+    .market-summary strong {
+        font-size: 5px;
+    }
+
+    .market-summary .pattern-box {
+        min-width: 24px;
+    }
+
+    .market-summary .pattern-name {
+        font-size: 3.5px;
+    }
+
+    .market-summary .candle-pattern-visual {
+        height: 19px;
+        transform: scale(.56);
+    }
+
+
+    /* SIGNAL 조건 */
+
+    .signal-condition {
+        min-height: 27px;
+        padding: 3px 6px;
+        gap: 5px;
+    }
+
+    .signal-condition span {
+        min-width: 43px;
+        font-size: 6px;
+    }
+
+    .signal-condition b {
+        font-size: 6px;
+    }
+
+    .signal-condition small {
+        font-size: 5px;
+    }
+
+
+    /* SIGNAL 헤더 */
+
+    .signal-header,
+    .signal-data-grid {
+        grid-template-columns: 1.1fr 0.9fr 0.8fr 1.1fr 1.1fr;
+    }
+
+    .signal-header {
+        padding: 0 3px;
+        font-size: 5px;
+    }
+
+
+    /* SIGNAL 상단 */
+
+    .signal-card-top {
+        min-height: 32px;
+        padding: 4px 5px;
+        gap: 4px;
+    }
+
+    .signal-rank {
+        font-size: 5px;
+    }
+
+    .signal-coin-name {
+        font-size: 7px;
+    }
+
+    .signal-type-list {
+        gap: 1px;
+    }
+
+    .signal-type-badge {
+        font-size: 4px !important;
+    }
+
+    .bearish-type-badge {
+        font-size: 4px !important;
+    }
+
+    .signal-card-top .ema-ref-row {
+        gap: 3px;
+    }
+
+    .signal-card-top .ema-ref-item {
+        font-size: 5px;
+    }
+
+    .signal-card-top .ema-ref-label {
+        font-size: 4px;
+    }
+
+    .signal-card-top .alignment-age {
+        font-size: 5px !important;
+    }
+
+
+    /* SIGNAL 하단 데이터 */
+
+    .signal-data-grid {
+        min-height: 53px;
+    }
+
+    .signal-data-grid > div {
+        min-height: 53px;
+        padding: 2px 1px;
+    }
+
+    .signal-data-grid span {
+        font-size: 5px;
+    }
+
+    .signal-data-grid strong {
+        font-size: 5px;
+    }
+
+    .signal-data-grid .signal-price strong {
+        font-size: 6px;
+    }
+
+
+    /* SIGNAL 패턴 */
+
+    .signal-pattern .pattern-box {
+        min-width: 24px;
+    }
+
+    .signal-pattern .pattern-name {
+        font-size: 3.5px;
+    }
+
+    .signal-pattern .candle-pattern-visual {
+        height: 19px;
+        transform: scale(.55);
+    }
+
+    .signal-pattern .pattern-multi .pattern-box {
+        min-width: 22px;
+    }
+}
+"""
+
+
+# =========================================================
+# DASHBOARD
+# =========================================================
+
+@app.get("/", response_class=HTMLResponse)
+def dashboard():
+    s = btc_html()
+
+    if USE_UPBIT == "Y":
+        s += signal_section()
+
+        if SHOW_TOP_LIST == "Y":
+            if latest_upbit_data:
+                top_cards = "".join(
+                    card(r, "top")
+                    for r in latest_upbit_data
+                )
+            else:
+                top_cards = (
+                    '<div class="signal-empty">'
+                    f'현재 거래대금 TOP{TOP_N} 데이터 없음'
+                    '</div>'
+                )
+
+            s += f"""
+            <section>
+                <div class="section-head">
+                    <div>
+                        <span class="section-kicker">RANKING</span>
+                        <b>TOP{TOP_N} · 거래대금 순</b>
+                    </div>
+                    <span class="update-time">
+                        실제 업비트 거래대금 기준
+                    </span>
+                </div>
+                {top_cards}
+            </section>
+            """
+
+    return f"""
+    <!doctype html>
+    <html lang="ko">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta http-equiv="refresh" content="60">
+        <title>TRADING SIGNAL CENTER</title>
+        <style>{CSS}</style>
+    </head>
+    <body>
+        <h1>📊 TRADING SIGNAL CENTER</h1>
+        {s}
+    </body>
+    </html>
+    """
+
+
+# =========================================================
+# 스케줄러
+# =========================================================
+
+def scheduler():
+    while True:
+        try:
+            schedule.run_pending()
+        except Exception as e:
+            log.exception("scheduler: %s", e)
+
+        time.sleep(1)
+
+
+# =========================================================
+# STARTUP
+# =========================================================
+
+@app.on_event("startup")
+def startup():
+    pair_1, pair_2 = get_ema_pair_labels()
+
+    log.info(
+        "START | BTC KST 09:00 일봉 재구성 + "
+        "BTC 시그널 EMA 및 참고 EMA 표시 + "
+        "업비트 TOP%s + EMA%s %s + "
+        "캔들패턴 시간봉=%s + "
+        "이전봉/현재봉 캔들 패턴 표시 + "
+        "%s SIGNAL + 당일 변동률 양수 조건 + "
+        "상승패턴 강조 + 하락패턴 표시 + "
+        "참고 EMA 시간봉 %s 및 %s 표시 + "
+        "참고 EMA 조건 충족 연속 최대 %s개 캔들 + "
+        "EMA 10선 터치 후 반등 상승패턴 녹색 강조",
+        TOP_N,
+        get_ema_full_label(),
+        get_timeframe_label(),
+        get_candle_pattern_timeframe_label(),
+        get_ema_signal_description(),
+        pair_1,
+        pair_2,
+        REFERENCE_ALIGNMENT_MAX_CANDLES
+    )
+
+    log.info(
+        "참고 EMA 시간 설정: %s",
+        get_reference_timeframe_label()
+    )
+
+    log.info(
+        "참고 EMA 조건: %s",
+        get_reference_ema_condition_description()
+    )
+
+    log.info(
+        "캔들 설정: 최대 %s개 / 분봉 요청 청크 %s개 / 캐시 공유 활성화",
+        EMA_HISTORY_CANDLES,
+        HISTORY_CHUNK
+    )
+
+    threading.Thread(
+        target=update_dashboard,
+        daemon=True
+    ).start()
+
+    schedule.every(UPDATE_MINUTES).minutes.do(
+        update_dashboard
+    )
+
+    threading.Thread(
+        target=scheduler,
+        daemon=True
+    ).start()
 
 
 # =========================================================
@@ -8378,9 +4713,6 @@ threading.Thread(
 # =========================================================
 
 if __name__ == "__main__":
-
-    import uvicorn
-
     uvicorn.run(
         app,
         host="0.0.0.0",
