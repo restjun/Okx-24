@@ -3316,14 +3316,27 @@ def signal_card(row):
 
 
 # =========================================================
-# SIGNAL 영역 - 조건 표시 간소화
+# SIGNAL 영역 - 배열 조건 자동 표시
 # =========================================================
 
 def signal_section():
     timeframe_label = get_timeframe_label()
     pattern_timeframe_label = get_candle_pattern_timeframe_label()
     reference_timeframe_label = get_reference_timeframe_label()
-    ema_full_label = get_ema_full_label()
+
+    # 실제 설정값을 기준으로 조건 문구 생성
+    signal_condition = get_ema_signal_description()
+
+    reference_condition = (
+        get_reference_ema_condition_description()
+    )
+
+    # 참고 EMA 문구의 중복 접두어 제거
+    reference_condition = reference_condition.replace(
+        "참고 EMA ",
+        "",
+        1
+    )
 
     if not latest_signal_data:
         body = """
@@ -3347,20 +3360,27 @@ def signal_section():
             </div>
 
             <span class="update-time">
-                EMA {timeframe_label} · 캔들패턴 {pattern_timeframe_label} · {kst()}
+                EMA {html.escape(timeframe_label)}
+                · 캔들패턴 {html.escape(pattern_timeframe_label)}
+                · {kst()}
             </span>
         </div>
 
         <div class="signal-condition">
             <span>SIGNAL</span>
-            <b>{timeframe_label} EMA {ema_full_label} 정배열</b>
+            <b>
+                {html.escape(timeframe_label)}
+                {html.escape(signal_condition)}
+            </b>
             <small>당일 변동률 양수</small>
         </div>
 
         <div class="signal-condition">
             <span>참고 EMA</span>
-            <b>{reference_timeframe_label} EMA {ema_full_label} 정배열</b>
-            <small>연속 {REFERENCE_ALIGNMENT_MAX_CANDLES}봉 이내</small>
+            <b>
+                {html.escape(reference_timeframe_label)}
+                EMA {html.escape(reference_condition)}
+            </b>
         </div>
 
         <div class="signal-header">
