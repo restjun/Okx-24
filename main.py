@@ -110,8 +110,8 @@ ticker_cache_updated_at = 0.0
 DEFAULT_MONTH_START_AMOUNT = 1_000_000.0
 DEFAULT_MAX_LOSS_RATE = 0.01
 
-# 당일 손실이 월 시작금액의 3%에 도달하면 매수 중단
-BUY_LOCK_LOSS_RATE = 0.03
+# 당일 손실이 월 시작금액의 2%에 도달하면 매수 중단
+BUY_LOCK_LOSS_RATE = 0.02
 
 
 # =========================================================
