@@ -1,3 +1,4 @@
+
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
@@ -81,9 +82,9 @@ SIGNAL_TIMEFRAMES = {
 }
 
 SIGNAL_LABELS = {
-    "signal1": "시그널 1",
-    "signal2": "시그널 2",
-    "signal3": "시그널 3"
+    "signal1": "시그널1",
+    "signal2": "시그널2",
+    "signal3": "시그널3"
 }
 
 TIMEFRAME_LABEL = {
@@ -753,7 +754,8 @@ def check_ema10_rebound(df):
         )
 
         current_close = float(
-            df.loc[current_index, "close"]
+            df.loc[current_index, "close"
+            ]
         )
 
     except Exception:
@@ -2250,7 +2252,7 @@ def ema_state_text(state):
 # =========================================================
 # 공통 EMA 상태 표시
 #
-# SIGNAL / BTC / TOP 리스트 공통으로 사용
+# BTC / TOP / SIGNAL 모두 동일한 한 줄 표시
 # =========================================================
 
 def signal_ema_status_html(all_states):
@@ -2275,7 +2277,7 @@ def signal_ema_status_html(all_states):
 
         pieces.append(
             f"""
-            <div class="ema-signal-line">
+            <span class="ema-signal-group">
                 <span class="ema-signal-name">
                     {SIGNAL_LABELS[signal_key]}
                 </span>
@@ -2285,22 +2287,26 @@ def signal_ema_status_html(all_states):
                 </span>
 
                 <span class="ema-signal-item">
-                    EMA {html.escape(pair_1)}
+                    EMA{html.escape(pair_1)}
                     {ema_symbol(state_10_20)}
                 </span>
 
                 <span class="ema-signal-item">
-                    EMA {html.escape(pair_2)}
+                    EMA{html.escape(pair_2)}
                     {ema_symbol(state_100_200)}
                 </span>
-            </div>
+            </span>
             """
         )
 
     return (
         '<div class="ema-signal-status">'
+        '<div class="ema-signal-one-line">'
+        '<div class="ema-signal-content">'
         + "".join(pieces)
         + '</div>'
+        '</div>'
+        '</div>'
     )
 
 
@@ -2874,32 +2880,52 @@ section {
 
 /* =========================================================
    공통 EMA 상태 표시
-   BTC / TOP / SIGNAL 모두 동일
+   BTC / TOP / SIGNAL 모두 동일한 한 줄 표시
    ========================================================= */
 
 .ema-signal-status {
     width: 100%;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
+    display: block;
+    overflow-x: auto;
+    overflow-y: hidden;
+    white-space: nowrap;
     padding: 7px 9px;
     background: #0a1015;
     border-bottom: 1px solid #202a33;
+    scrollbar-width: none;
 }
 
-.ema-signal-line {
-    display: flex;
+.ema-signal-status::-webkit-scrollbar {
+    display: none;
+}
+
+.ema-signal-one-line {
+    display: block;
+    width: max-content;
+    min-width: 100%;
+    white-space: nowrap;
+}
+
+.ema-signal-content {
+    display: inline-flex;
     align-items: center;
-    flex-wrap: wrap;
-    gap: 9px;
-    min-height: 14px;
+    flex-wrap: nowrap;
+    gap: 15px;
+    white-space: nowrap;
+}
+
+.ema-signal-group {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 5px;
+    white-space: nowrap;
     line-height: 1.4;
     font-size: 8px;
     font-weight: 900;
 }
 
 .ema-signal-name {
-    min-width: 48px;
     color: #e4c45e;
     font-size: 7px;
     font-weight: 900;
@@ -2907,7 +2933,6 @@ section {
 }
 
 .ema-signal-time {
-    min-width: 48px;
     color: #83909b;
     font-size: 7px;
     font-weight: 800;
@@ -2917,7 +2942,7 @@ section {
 .ema-signal-item {
     display: inline-flex;
     align-items: center;
-    gap: 3px;
+    gap: 2px;
     color: #cbd3da;
     font-size: 7px;
     white-space: nowrap;
@@ -3216,24 +3241,21 @@ section {
 .signal-card-top .ema-signal-status {
     width: 100%;
     padding: 5px 7px;
-    gap: 3px;
     border: 0;
     background: #0a1015;
 }
 
-.signal-card-top .ema-signal-line {
-    gap: 8px;
-    font-size: 7px;
+.signal-card-top .ema-signal-content {
+    gap: 12px;
 }
 
-.signal-card-top .ema-signal-name {
+.signal-card-top .ema-signal-group {
+    gap: 4px;
     font-size: 6px;
 }
 
-.signal-card-top .ema-signal-time {
-    font-size: 6px;
-}
-
+.signal-card-top .ema-signal-name,
+.signal-card-top .ema-signal-time,
 .signal-card-top .ema-signal-item {
     font-size: 6px;
 }
@@ -3581,24 +3603,19 @@ section {
 
     .ema-signal-status {
         padding: 6px 7px;
+    }
+
+    .ema-signal-content {
+        gap: 10px;
+    }
+
+    .ema-signal-group {
         gap: 4px;
-    }
-
-    .ema-signal-line {
-        gap: 7px;
-        font-size: 7px;
-    }
-
-    .ema-signal-name {
-        min-width: 43px;
         font-size: 6px;
     }
 
-    .ema-signal-time {
-        min-width: 43px;
-        font-size: 6px;
-    }
-
+    .ema-signal-name,
+    .ema-signal-time,
     .ema-signal-item {
         font-size: 6px;
     }
@@ -3700,21 +3717,18 @@ section {
 
     .signal-card-top .ema-signal-status {
         padding: 4px 5px;
+    }
+
+    .signal-card-top .ema-signal-content {
+        gap: 9px;
+    }
+
+    .signal-card-top .ema-signal-group {
         gap: 3px;
     }
 
-    .signal-card-top .ema-signal-line {
-        gap: 6px;
-    }
-
-    .signal-card-top .ema-signal-name {
-        font-size: 5px;
-    }
-
-    .signal-card-top .ema-signal-time {
-        font-size: 5px;
-    }
-
+    .signal-card-top .ema-signal-name,
+    .signal-card-top .ema-signal-time,
     .signal-card-top .ema-signal-item {
         font-size: 5px;
     }
