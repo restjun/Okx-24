@@ -751,6 +751,73 @@ def calculate_ema(df, period):
     )
 
 
+# =========================================================
+# EMA 10선 터치 후 반등 판정
+# =========================================================
+
+def check_ema10_rebound(df):
+    """
+    가장 빠른 EMA 10선을 기준으로 판단한다.
+
+    조건:
+    1. 현재 캔들의 저가 <= EMA 10
+    2. 현재 캔들의 종가 > EMA 10
+
+    즉 EMA 10선을 터치하거나 아래로 내려갔다가
+    현재 가격이 EMA 10선 위로 회복한 경우 True.
+    """
+
+    if df is None or df.empty:
+        return False
+
+    required_columns = {
+        "low",
+        "close"
+    }
+
+    if not required_columns.issubset(df.columns):
+        return False
+
+    ema10_series = calculate_ema_series(
+        df, EMA_PULLBACK
+    )
+
+    if ema10_series is None or ema10_series.empty:
+        return False
+
+    ema10_valid = ema10_series.dropna()
+
+    if ema10_valid.empty:
+        return False
+
+    try:
+        ema10 = float(ema10_valid.iloc[-1])
+
+        current_index = ema10_valid.index[-1]
+
+        current_low = float(
+            df.loc[current_index, "low"]
+        )
+
+        current_close = float(
+            df.loc[current_index, "close"]
+        )
+
+    except (TypeError, ValueError, KeyError, IndexError):
+        return False
+
+    if not all(
+        np.isfinite(v)
+        for v in (ema10, current_low, current_close)
+    ):
+        return False
+
+    return bool(
+        current_low <= ema10
+        and current_close > ema10
+    )
+
+
 def get_ema_alignment_state(
     df,
     fast_period=EMA_FAST,
@@ -1720,10 +1787,16 @@ def analyze_signal_candles(market, price, ema_reverse=False):
         "current_pattern": [],
         "previous_previous_bullish_engulfing": False,
         "previous_bullish_engulfing": False,
-        "current_bullish_engulfing": False
+        "current_bullish_engulfing": False,
+
+        # EMA 10선 반등 여부
+        "ema10_rebound": False
     }
 
     timeframe = CANDLE_PATTERN_TIMEFRAME
+
+    # EMA 10선 반등 판정에 사용할 전체 캔들 데이터
+    pattern_df = pd.DataFrame()
 
     if timeframe in ("5m", "15m", "1h"):
         df = get_timeframe_dataframe(
@@ -1732,6 +1805,8 @@ def analyze_signal_candles(market, price, ema_reverse=False):
 
         if df.empty:
             return empty_result
+
+        pattern_df = df.copy(deep=True)
 
         minutes = {
             "5m": 5,
@@ -1776,9 +1851,33 @@ def analyze_signal_candles(market, price, ema_reverse=False):
         if df_1h.empty:
             return empty_result
 
-        periods = build_upbit_4h_periods(
+        # EMA 10선도 4시간봉 기준으로 계산
+        pattern_df = build_upbit_4h_candles(
             df_1h, price
         )
+
+        if pattern_df.empty:
+            return empty_result
+
+        periods = []
+
+        for _, row in pattern_df.iterrows():
+            periods.append({
+                "start": row["start"],
+                "end": row["end"],
+                "active": bool(row["active"]),
+                "label": row["label"],
+                "open": float(row["open"]),
+                "high": float(row["high"]),
+                "low": float(row["low"]),
+                "close": float(row["close"]),
+                "change": row["change"],
+                "signal": False,
+                "signal_reason": None,
+                "pattern": None
+            })
+
+        periods = periods[-6:]
 
     elif timeframe == "1d":
         df = get_daily_dataframe(market)
@@ -1786,7 +1885,30 @@ def analyze_signal_candles(market, price, ema_reverse=False):
         if df.empty:
             return empty_result
 
-        periods = build_daily_periods(df, price)
+        pattern_df = df.copy(deep=True)
+
+        now = datetime.now(KST)
+
+        current_start = now.replace(
+            hour=9,
+            minute=0,
+            second=0,
+            microsecond=0
+        )
+
+        if now < current_start:
+            current_start -= timedelta(days=1)
+
+        pattern_df = update_current_candle(
+            pattern_df,
+            current_start,
+            price
+        )
+
+        periods = build_daily_periods(
+            pattern_df,
+            price
+        )
 
         periods = [
             {
@@ -1812,6 +1934,14 @@ def analyze_signal_candles(market, price, ema_reverse=False):
             timeframe
         )
         return empty_result
+
+    # -----------------------------------------------------
+    # EMA 10선 터치 후 반등 여부
+    # -----------------------------------------------------
+
+    ema10_rebound = check_ema10_rebound(
+        pattern_df
+    )
 
     pattern_info = analyze_previous_current_pattern(
         periods
@@ -1840,7 +1970,10 @@ def analyze_signal_candles(market, price, ema_reverse=False):
         ],
         "current_bullish_engulfing": pattern_info[
             "current_bullish_engulfing"
-        ]
+        ],
+
+        # EMA 10선 반등 결과 전달
+        "ema10_rebound": ema10_rebound
     }
 
 
@@ -1923,6 +2056,11 @@ def make_row(
         "signal_4h_change": analysis_4h["signal_change"],
         "signal_4h_period": analysis_4h["signal_period"],
         "signal_4h_reason": analysis_4h["signal_reason"],
+
+        # EMA 10선 터치 후 반등 여부
+        "ema10_rebound": analysis_4h.get(
+            "ema10_rebound", False
+        ),
 
         "previous_previous_pattern": [],
         "previous_pattern": analysis_4h["previous_pattern"],
@@ -2074,7 +2212,10 @@ def update_upbit():
                 "current_pattern": [],
                 "previous_previous_bullish_engulfing": False,
                 "previous_bullish_engulfing": False,
-                "current_bullish_engulfing": False
+                "current_bullish_engulfing": False,
+
+                # 오류 시 EMA 10선 반등도 False
+                "ema10_rebound": False
             }
 
         try:
@@ -3067,9 +3208,18 @@ def btc_html():
 def signal_card(row):
     timeframe_label = get_candle_pattern_timeframe_label()
 
-    # 현재 캔들 상승패턴만 전체 녹색 강조
-    has_bullish_pattern = row.get(
-        "signal_4h_current", False
+    # -----------------------------------------------------
+    # 녹색 강조 조건
+    #
+    # 1. 현재 캔들 상승패턴 발생
+    # 2. 현재 캔들 EMA 10선 터치 후 반등
+    #
+    # 두 조건을 모두 만족해야 전체 녹색 강조
+    # -----------------------------------------------------
+
+    has_bullish_pattern = (
+        row.get("signal_4h_current", False)
+        and row.get("ema10_rebound", False)
     )
 
     reference_states = (
@@ -3086,7 +3236,6 @@ def signal_card(row):
 
     badge_html = pattern_badges_html(row)
 
-    # 상승패턴 강조와 기존 역배열 강조 유지
     card_classes = ["signal-card"]
 
     if has_reference_reverse:
@@ -3877,7 +4026,7 @@ section { margin-bottom: 12px; }
 
 
 /* =========================================================
-   상승 캔들패턴 SIGNAL 카드 전체 컬러 강조
+   EMA 10선 터치 후 반등 + 상승패턴 카드 전체 녹색 강조
    ========================================================= */
 
 .signal-card.has-bullish-pattern {
@@ -4516,7 +4665,8 @@ def startup():
         "%s SIGNAL + 당일 변동률 양수 조건 + "
         "상승패턴 강조 + 하락패턴 표시 + "
         "참고 EMA 시간봉 %s 및 %s 표시 + "
-        "참고 EMA 조건 충족 연속 최대 %s개 캔들",
+        "참고 EMA 조건 충족 연속 최대 %s개 캔들 + "
+        "EMA 10선 터치 후 반등 상승패턴 녹색 강조",
         TOP_N,
         get_ema_full_label(),
         get_timeframe_label(),
