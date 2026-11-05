@@ -2676,24 +2676,31 @@ def signal_section():
             for row in latest_signal_data
         )
 
-    condition_html = ""
+    # 시그널 3개 + 공통 조건을 한 줄로 표시
+    condition_html = f"""
+    <div class="signal-condition-one-line">
 
-    for signal_key in (
-        "signal1",
-        "signal2",
-        "signal3"
-    ):
-        timeframe = SIGNAL_TIMEFRAMES[signal_key]
+        <span>
+            시그널1 {get_timeframe_label(SIGNAL1_TIMEFRAME)}
+            · {html.escape(get_signal_condition_description("signal1"))}
+        </span>
 
-        condition_html += f"""
-        <div class="signal-condition">
-            <span>{SIGNAL_LABELS[signal_key]}</span>
-            <b>
-                {get_timeframe_label(timeframe)}
-                · {html.escape(get_signal_condition_description(signal_key))}
-            </b>
-        </div>
-        """
+        <span>
+            시그널2 {get_timeframe_label(SIGNAL2_TIMEFRAME)}
+            · {html.escape(get_signal_condition_description("signal2"))}
+        </span>
+
+        <span>
+            시그널3 {get_timeframe_label(SIGNAL3_TIMEFRAME)}
+            · {html.escape(get_signal_condition_description("signal3"))}
+        </span>
+
+        <span>
+            공통조건 · 당일 변동률 양수
+        </span>
+
+    </div>
+    """
 
     return f"""
     <section class="signal-panel">
@@ -2711,11 +2718,6 @@ def signal_section():
         </div>
 
         {condition_html}
-
-        <div class="signal-condition">
-            <span>공통 조건</span>
-            <b>당일 변동률 양수</b>
-        </div>
 
         <div class="signal-header">
             <div>현재가격</div>
@@ -3132,6 +3134,35 @@ section {
 
 .signal-panel-head {
     border-bottom: 1px solid #392126;
+}
+
+/* SIGNAL 조건 3개 + 공통 조건 한 줄 표시 */
+
+.signal-condition-one-line {
+    display: flex;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 12px;
+    width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    white-space: nowrap;
+    padding: 7px 9px;
+    background: #120e10;
+    border-bottom: 1px solid #302024;
+    scrollbar-width: none;
+}
+
+.signal-condition-one-line::-webkit-scrollbar {
+    display: none;
+}
+
+.signal-condition-one-line span {
+    flex: 0 0 auto;
+    color: #ff5966;
+    font-size: 7px;
+    font-weight: 900;
+    white-space: nowrap;
 }
 
 .signal-condition {
@@ -3676,6 +3707,15 @@ section {
     }
 
     .signal-condition b {
+        font-size: 6px;
+    }
+
+    .signal-condition-one-line {
+        gap: 9px;
+        padding: 6px 7px;
+    }
+
+    .signal-condition-one-line span {
         font-size: 6px;
     }
 
