@@ -59,10 +59,10 @@ MAX_RETRIES = 10
 # EMA 기간 설정
 # =========================================================
 
-EMA_PULLBACK = 10
-EMA_FAST = 20
+EMA_PULLBACK = 1
+EMA_FAST = 10
 
-EMA_SLOW = 1
+EMA_SLOW = 20
 EMA_LONG = 100
 
 
