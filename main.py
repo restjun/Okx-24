@@ -754,7 +754,8 @@ def check_ema10_rebound(df):
         )
 
         current_close = float(
-            df.loc[current_index, "close"]
+            df.loc[current_index, "close"
+            ]
         )
 
     except Exception:
@@ -863,25 +864,21 @@ def get_signal2_100_200_count(market, price=None):
             .reset_index(drop=True)
         )
 
-        # EMA 10 계산
         ema10_series = calculate_ema_series(
             df,
             EMA_PULLBACK
         )
 
-        # EMA 20 계산
         ema20_series = calculate_ema_series(
             df,
             EMA_FAST
         )
 
-        # EMA 1 계산
         ema1_series = calculate_ema_series(
             df,
             EMA_SLOW
         )
 
-        # EMA 100 계산
         ema100_series = calculate_ema_series(
             df,
             EMA_LONG
@@ -910,7 +907,6 @@ def get_signal2_100_200_count(market, price=None):
 
         count = 0
 
-        # 가장 최근 봉부터 과거 방향으로 확인
         for _, row in combined.iloc[::-1].iterrows():
 
             ema10 = float(row["ema10"])
@@ -919,7 +915,6 @@ def get_signal2_100_200_count(market, price=None):
             ema1 = float(row["ema1"])
             ema100 = float(row["ema100"])
 
-            # EMA 10-20 상태
             if ema10 > ema20:
                 state_10_20 = "정배열"
 
@@ -929,7 +924,6 @@ def get_signal2_100_200_count(market, price=None):
             else:
                 state_10_20 = "동일"
 
-            # EMA 1-100 상태
             if ema1 > ema100:
                 state_100_200 = "정배열"
 
@@ -939,19 +933,16 @@ def get_signal2_100_200_count(market, price=None):
             else:
                 state_100_200 = "동일"
 
-            # EMA 10-20 설정 조건 검사
             condition_10_20 = check_one_ema_condition(
                 state_10_20,
                 SIGNAL2_10_20
             )
 
-            # EMA 1-100 설정 조건 검사
             condition_100_200 = check_one_ema_condition(
                 state_100_200,
                 SIGNAL2_100_200
             )
 
-            # 두 조건이 모두 일치할 때만 카운팅
             if condition_10_20 and condition_100_200:
                 count += 1
 
@@ -998,7 +989,6 @@ def analyze_all_signal_emas(market, price=None):
                 "100_200": None
             }
 
-    # 시그널 2에만 실시간 연속 카운팅 적용
     result["signal2"]["count_100_200"] = (
         get_signal2_100_200_count(market, price)
     )
@@ -1049,7 +1039,6 @@ def check_signal_ema_condition(signal_key, states):
     if not base_condition:
         return False
 
-    # 시그널 2만 카운팅 제한 적용
     if signal_key == "signal2":
 
         count = states.get(
@@ -1062,7 +1051,6 @@ def check_signal_ema_condition(signal_key, states):
         except Exception:
             return False
 
-        # 1회 이상 24회 이하만 통과
         if count < 1 or count > SIGNAL2_MAX_COUNT:
             return False
 
@@ -2413,12 +2401,60 @@ def ema_state_text(state):
 
 # =========================================================
 # 공통 EMA 상태 표시
+#
+# 시그널 1, 2, 3의 EMA 상태를 모두 종합
+#
+# 녹색공: 6개 EMA 상태 중 정배열이 하나라도 있음
+# 적색공: 6개 EMA 상태가 모두 역배열
+# 회색공: 그 외 모든 상태
+#
+# 시그널1 왼쪽에 통합 공 하나만 표시
+# BTC / TOP / SIGNAL 공통 적용
 # =========================================================
 
 def signal_ema_status_html(all_states):
     all_states = all_states or {}
 
     pair_1, pair_2 = get_ema_pair_labels()
+
+    # 시그널 1, 2, 3 전체 EMA 상태 수집
+    all_ema_values = []
+
+    for signal_key in (
+        "signal1",
+        "signal2",
+        "signal3"
+    ):
+        states = all_states.get(signal_key) or {}
+
+        all_ema_values.extend([
+            states.get("10_20"),
+            states.get("100_200")
+        ])
+
+    # 통합 상태 판정
+    if any(
+        state == "정배열"
+        for state in all_ema_values
+    ):
+        overall_state = "green"
+
+    elif (
+        len(all_ema_values) == 6
+        and all(
+            state == "역배열"
+            for state in all_ema_values
+        )
+    ):
+        overall_state = "red"
+
+    else:
+        overall_state = "gray"
+
+    # 통합 상태 공 하나만 생성
+    overall_dot = (
+        f'<span class="ema-overall-dot {overall_state}">●</span>'
+    )
 
     pieces = []
 
@@ -2463,6 +2499,7 @@ def signal_ema_status_html(all_states):
         '<div class="ema-signal-status">'
         '<div class="ema-signal-one-line">'
         '<div class="ema-signal-content">'
+        + overall_dot
         + "".join(pieces)
         + '</div>'
         '</div>'
@@ -3078,6 +3115,34 @@ section {
     flex-wrap: nowrap;
     gap: 15px;
     white-space: nowrap;
+}
+
+/* =========================================================
+   전체 시그널 통합 EMA 상태 공
+   ========================================================= */
+
+.ema-overall-dot {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    font-size: 11px;
+    font-weight: 900;
+    margin-right: -5px;
+}
+
+.ema-overall-dot.green {
+    color: #38d878;
+    text-shadow: 0 0 5px rgba(56, 216, 120, 0.55);
+}
+
+.ema-overall-dot.red {
+    color: #ff5966;
+    text-shadow: 0 0 5px rgba(255, 89, 102, 0.55);
+}
+
+.ema-overall-dot.gray {
+    color: #68737e;
 }
 
 .ema-signal-group {
@@ -3831,6 +3896,10 @@ section {
 
     .ema-signal-content {
         gap: 10px;
+    }
+
+    .ema-overall-dot {
+        font-size: 9px;
     }
 
     .ema-signal-group {
