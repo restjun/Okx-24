@@ -70,6 +70,8 @@ EMA_LONG = 100
 # 시그널 1 카운팅 설정
 # =========================================================
 
+# 실제 카운팅이 이 숫자를 초과하면 최종 SIGNAL에서 제외
+# 예: 10이면 1~10회 통과, 11회 이상 제외
 SIGNAL1_MAX_COUNT = 10
 
 
@@ -868,7 +870,10 @@ def check_one_ema_condition(state, setting):
 # 다음 봉도 두 조건이 일치하면 2, 3, 4 순서로 증가
 # 두 조건 중 하나라도 깨지면 카운팅 종료
 # 현재 진행 중인 15분봉 포함
-# 최대 SIGNAL1_MAX_COUNT 제한
+#
+# 중요:
+# 실제 카운팅은 설정값과 관계없이 끝까지 계산
+# SIGNAL1_MAX_COUNT 초과 여부는 최종 시그널 판정에서 처리
 # =========================================================
 
 def get_signal1_count(market, price=None):
@@ -973,18 +978,13 @@ def get_signal1_count(market, price=None):
             if condition_10_20 and condition_100_200:
                 count += 1
 
-                # 최대 카운팅 제한
-                if count >= SIGNAL1_MAX_COUNT:
-                    return SIGNAL1_MAX_COUNT
-
             else:
                 # 하나라도 조건이 깨지면 연속 카운팅 종료
                 break
 
-        return min(
-            max(int(count), 0),
-            SIGNAL1_MAX_COUNT
-        )
+        # 중요: 여기서 SIGNAL1_MAX_COUNT로 자르지 않는다.
+        # 실제 카운팅 횟수를 그대로 반환한다.
+        return max(int(count), 0)
 
     except Exception as e:
         log.warning(
@@ -1075,6 +1075,8 @@ def check_signal_ema_condition(signal_key, states):
         except Exception:
             return False
 
+        # 설정값 이하인 경우에만 통과
+        # 1~10 통과, 11 이상 제외
         if not (1 <= count <= SIGNAL1_MAX_COUNT):
             return False
 
@@ -1086,7 +1088,7 @@ def check_all_signal_conditions(all_states):
     if not all_states:
         return False
 
-    # 시그널1: EMA 조건 + 카운팅 1~10
+    # 시그널1: EMA 조건 + 카운팅 1~설정값 통과
     # 시그널2: 기존 EMA 조건
     # 시그널3: 기존 EMA 조건
     # 세 시그널이 모두 통과해야 최종 통과
@@ -1753,7 +1755,8 @@ def make_row(
     signal2 = all_ema_states.get("signal2", {})
     signal3 = all_ema_states.get("signal3", {})
 
-    # 카운팅 저장값도 최대 10회로 제한
+    # 실제 카운팅 횟수를 그대로 저장
+    # SIGNAL1_MAX_COUNT로 자르지 않는다.
     try:
         signal1_count = int(
             signal1.get("count", 0) or 0
@@ -1761,10 +1764,7 @@ def make_row(
     except Exception:
         signal1_count = 0
 
-    signal1_count = min(
-        max(signal1_count, 0),
-        SIGNAL1_MAX_COUNT
-    )
+    signal1_count = max(signal1_count, 0)
 
     return {
         "rank": rank,
@@ -1918,8 +1918,8 @@ def update_upbit():
                 }
             }
 
-        # 시그널1 EMA + 카운팅, 시그널2 EMA,
-        # 시그널3 EMA를 모두 통과해야 최종 통과
+        # 시그널1 EMA + 카운팅,
+        # 시그널2 EMA, 시그널3 EMA를 모두 통과해야 최종 통과
         all_ema_condition = check_all_signal_conditions(
             all_ema_states
         )
@@ -1974,10 +1974,12 @@ def update_upbit():
 
     # 최종 SIGNAL 조건:
     # 1. 시그널1 EMA 조건 통과
-    # 2. 시그널1 카운팅 1~10 통과
+    # 2. 시그널1 카운팅 1~SIGNAL1_MAX_COUNT 통과
     # 3. 시그널2 EMA 조건 통과
     # 4. 시그널3 EMA 조건 통과
     # 5. 당일 변동률 양수
+    #
+    # 카운팅이 SIGNAL1_MAX_COUNT를 초과하면 제외
     latest_signal_data = [
         row for row in rows
         if (
@@ -1998,11 +2000,13 @@ def update_upbit():
         row["signal_rank"] = signal_rank
 
     log.info(
-        "UPBIT | TOP%s | SIGNAL1=%s | SIGNAL2=%s | SIGNAL3=%s | SIGNAL=%s",
+        "UPBIT | TOP%s | SIGNAL1=%s | SIGNAL2=%s | SIGNAL3=%s | "
+        "카운팅 제한=%s | SIGNAL=%s",
         TOP_N,
         get_signal_condition_description("signal1"),
         get_signal_condition_description("signal2"),
         get_signal_condition_description("signal3"),
+        SIGNAL1_MAX_COUNT,
         len(latest_signal_data)
     )
 
@@ -2821,7 +2825,8 @@ def signal_card(row):
 
     card_class = " ".join(card_classes)
 
-    # 화면 표시값도 최대 10회로 별도 제한
+    # 실제 카운팅 횟수를 그대로 표시
+    # 10회 초과 시에도 11/10, 12/10처럼 표시
     try:
         display_count = int(
             row.get("signal1_count", 0) or 0
@@ -2829,10 +2834,7 @@ def signal_card(row):
     except Exception:
         display_count = 0
 
-    display_count = min(
-        max(display_count, 0),
-        SIGNAL1_MAX_COUNT
-    )
+    display_count = max(display_count, 0)
 
     return f"""
     <div class="{card_class}">
