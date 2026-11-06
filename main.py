@@ -754,8 +754,7 @@ def check_ema10_rebound(df):
         )
 
         current_close = float(
-            df.loc[current_index, "close"
-            ]
+            df.loc[current_index, "close"]
         )
 
     except Exception:
@@ -839,54 +838,36 @@ def analyze_ema_timeframe(market, timeframe, price=None):
 
 
 # =========================================================
-# 시그널 2 EMA 1-100 연속 카운팅
+# 시그널 2 EMA 1-100 실시간 연속 카운팅
+# 현재 진행 중인 1시간봉 포함
 # =========================================================
 
-def get_signal2_100_200_count(market):
+def get_signal2_100_200_count(market, price=None):
     try:
-        df = get_cached_dataframe(
+        # 현재 진행 중인 1시간봉까지 조회
+        df = get_timeframe_dataframe(
             market,
             "1h",
-            lambda: get_upbit_1h_candles(
-                market,
-                EMA_HISTORY_CANDLES
-            )
+            price
         )
 
         if df is None or df.empty:
             return 0
 
-        now = datetime.now(KST)
-
-        current_start = now.replace(
-            minute=0,
-            second=0,
-            microsecond=0
-        )
-
-        # 현재 진행 중인 1시간봉 제외
-        completed_df = df[
-            df["datetime"] < current_start
-        ].copy()
-
-        completed_df = (
-            completed_df
-            .sort_values("datetime")
+        df = (
+            df.sort_values("datetime")
             .drop_duplicates("datetime")
             .reset_index(drop=True)
         )
 
-        if completed_df.empty:
-            return 0
-
-        # 기존 EMA 설정 그대로 사용
+        # 현재 진행 중인 봉을 포함하여 EMA 계산
         fast_series = calculate_ema_series(
-            completed_df,
+            df,
             EMA_SLOW
         )
 
         slow_series = calculate_ema_series(
-            completed_df,
+            df,
             EMA_LONG
         )
 
@@ -903,7 +884,7 @@ def get_signal2_100_200_count(market):
 
         count = 0
 
-        # 가장 최근 완성된 봉부터 과거 방향 확인
+        # 가장 최근 봉부터 과거 방향 확인
         for _, row in combined.iloc[::-1].iterrows():
 
             fast = float(row["fast"])
@@ -931,7 +912,7 @@ def get_signal2_100_200_count(market):
 
     except Exception as e:
         log.warning(
-            "%s 시그널2 카운팅 오류: %s",
+            "%s 시그널2 실시간 카운팅 오류: %s",
             market,
             e
         )
@@ -967,9 +948,9 @@ def analyze_all_signal_emas(market, price=None):
                 "100_200": None
             }
 
-    # 시그널 2에만 연속 카운팅 적용
+    # 시그널 2에만 실시간 연속 카운팅 적용
     result["signal2"]["count_100_200"] = (
-        get_signal2_100_200_count(market)
+        get_signal2_100_200_count(market, price)
     )
 
     return result
@@ -1031,7 +1012,7 @@ def check_signal_ema_condition(signal_key, states):
         except Exception:
             return False
 
-        # 1회 이상 10회 이하만 통과
+        # 1회 이상 3회 이하만 통과
         if count < 1 or count > SIGNAL2_MAX_COUNT:
             return False
 
