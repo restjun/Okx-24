@@ -39,7 +39,7 @@ UTC = ZoneInfo("UTC")
 # 사용자 설정
 # =========================================================
 
-TOP_N = 10
+TOP_N = 20
 SHOW_TOP_LIST = "N"
 UPDATE_MINUTES = 1
 
@@ -79,8 +79,8 @@ SIGNAL1_MAX_COUNT = 100
 # 시그널 시간봉 설정
 # =========================================================
 
-SIGNAL1_TIMEFRAME = "15m"
-SIGNAL2_TIMEFRAME = "1h"
+SIGNAL1_TIMEFRAME = "1h"
+SIGNAL2_TIMEFRAME = "15m"
 SIGNAL3_TIMEFRAME = "1d"
 
 SIGNAL_TIMEFRAMES = {
@@ -111,7 +111,7 @@ TIMEFRAME_LABEL = {
 SIGNAL1_10_20 = "Y"
 SIGNAL1_100_200 = "Y"
 
-SIGNAL2_10_20 = "Y"
+SIGNAL2_10_20 = "ANY"
 SIGNAL2_100_200 = "Y"
 
 SIGNAL3_10_20 = "ANY"
