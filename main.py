@@ -838,13 +838,16 @@ def analyze_ema_timeframe(market, timeframe, price=None):
 
 
 # =========================================================
-# 시그널 2 EMA 1-100 실시간 연속 카운팅
+# 시그널 2 EMA 10-20 + 1-100 실시간 연속 카운팅
+#
+# 두 EMA 조건이 모두 일치하는 돌파봉부터 1 시작
+# 다음 봉도 두 조건이 일치하면 2, 3, 4 순서로 증가
+# 두 조건 중 하나라도 깨지면 카운팅 종료
 # 현재 진행 중인 1시간봉 포함
 # =========================================================
 
 def get_signal2_100_200_count(market, price=None):
     try:
-        # 현재 진행 중인 1시간봉까지 조회
         df = get_timeframe_dataframe(
             market,
             "1h",
@@ -860,23 +863,46 @@ def get_signal2_100_200_count(market, price=None):
             .reset_index(drop=True)
         )
 
-        # 현재 진행 중인 봉을 포함하여 EMA 계산
-        fast_series = calculate_ema_series(
+        # EMA 10 계산
+        ema10_series = calculate_ema_series(
+            df,
+            EMA_PULLBACK
+        )
+
+        # EMA 20 계산
+        ema20_series = calculate_ema_series(
+            df,
+            EMA_FAST
+        )
+
+        # EMA 1 계산
+        ema1_series = calculate_ema_series(
             df,
             EMA_SLOW
         )
 
-        slow_series = calculate_ema_series(
+        # EMA 100 계산
+        ema100_series = calculate_ema_series(
             df,
             EMA_LONG
         )
 
-        if fast_series is None or slow_series is None:
+        if any(
+            series is None
+            for series in (
+                ema10_series,
+                ema20_series,
+                ema1_series,
+                ema100_series
+            )
+        ):
             return 0
 
         combined = pd.DataFrame({
-            "fast": fast_series,
-            "slow": slow_series
+            "ema10": ema10_series,
+            "ema20": ema20_series,
+            "ema1": ema1_series,
+            "ema100": ema100_series
         }).dropna()
 
         if combined.empty:
@@ -884,25 +910,49 @@ def get_signal2_100_200_count(market, price=None):
 
         count = 0
 
-        # 가장 최근 봉부터 과거 방향 확인
+        # 가장 최근 봉부터 과거 방향으로 확인
         for _, row in combined.iloc[::-1].iterrows():
 
-            fast = float(row["fast"])
-            slow = float(row["slow"])
+            ema10 = float(row["ema10"])
+            ema20 = float(row["ema20"])
 
-            if fast > slow:
-                state = "정배열"
+            ema1 = float(row["ema1"])
+            ema100 = float(row["ema100"])
 
-            elif fast < slow:
-                state = "역배열"
+            # EMA 10-20 상태
+            if ema10 > ema20:
+                state_10_20 = "정배열"
+
+            elif ema10 < ema20:
+                state_10_20 = "역배열"
 
             else:
-                state = "동일"
+                state_10_20 = "동일"
 
-            if check_one_ema_condition(
-                state,
+            # EMA 1-100 상태
+            if ema1 > ema100:
+                state_100_200 = "정배열"
+
+            elif ema1 < ema100:
+                state_100_200 = "역배열"
+
+            else:
+                state_100_200 = "동일"
+
+            # EMA 10-20 설정 조건 검사
+            condition_10_20 = check_one_ema_condition(
+                state_10_20,
+                SIGNAL2_10_20
+            )
+
+            # EMA 1-100 설정 조건 검사
+            condition_100_200 = check_one_ema_condition(
+                state_100_200,
                 SIGNAL2_100_200
-            ):
+            )
+
+            # 두 조건이 모두 일치할 때만 카운팅
+            if condition_10_20 and condition_100_200:
                 count += 1
 
             else:
@@ -1012,7 +1062,7 @@ def check_signal_ema_condition(signal_key, states):
         except Exception:
             return False
 
-        # 1회 이상 3회 이하만 통과
+        # 1회 이상 24회 이하만 통과
         if count < 1 or count > SIGNAL2_MAX_COUNT:
             return False
 
