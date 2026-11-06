@@ -1062,7 +1062,7 @@ def check_signal_ema_condition(signal_key, states):
     if not base_condition:
         return False
 
-    # 시그널1에만 카운팅 제한 적용
+    # 시그널1은 EMA 조건과 카운팅 조건을 모두 충족해야 통과
     if signal_key == "signal1":
 
         count = states.get(
@@ -1075,7 +1075,7 @@ def check_signal_ema_condition(signal_key, states):
         except Exception:
             return False
 
-        if count < 1 or count > SIGNAL1_MAX_COUNT:
+        if not (1 <= count <= SIGNAL1_MAX_COUNT):
             return False
 
     # 시그널2와 시그널3은 기존 EMA 조건만 판정
@@ -1086,6 +1086,10 @@ def check_all_signal_conditions(all_states):
     if not all_states:
         return False
 
+    # 시그널1: EMA 조건 + 카운팅 1~10
+    # 시그널2: 기존 EMA 조건
+    # 시그널3: 기존 EMA 조건
+    # 세 시그널이 모두 통과해야 최종 통과
     for signal_key in SIGNAL_TIMEFRAMES:
         states = all_states.get(signal_key)
 
@@ -1914,6 +1918,8 @@ def update_upbit():
                 }
             }
 
+        # 시그널1 EMA + 카운팅, 시그널2 EMA,
+        # 시그널3 EMA를 모두 통과해야 최종 통과
         all_ema_condition = check_all_signal_conditions(
             all_ema_states
         )
@@ -1966,6 +1972,12 @@ def update_upbit():
     latest_upbit_daily_update_time = kst()
     latest_upbit_update_time = latest_upbit_daily_update_time
 
+    # 최종 SIGNAL 조건:
+    # 1. 시그널1 EMA 조건 통과
+    # 2. 시그널1 카운팅 1~10 통과
+    # 3. 시그널2 EMA 조건 통과
+    # 4. 시그널3 EMA 조건 통과
+    # 5. 당일 변동률 양수
     latest_signal_data = [
         row for row in rows
         if (
@@ -2436,16 +2448,6 @@ def ema_state_text(state):
 
 # =========================================================
 # 통합 EMA 상태 표시
-#
-# 시그널1·2·3의 EMA 총 6개 상태를 통합 판정
-#
-# 녹색공: 6개 모두 정배열
-# 빨간공: 6개 모두 역배열
-# 회색공: 나머지 모든 상태
-#
-# 통합 공은 시그널1 왼쪽에 하나만 표시
-# 개별 EMA 상태는 각 시그널별로 표시
-# BTC / TOP / SIGNAL 공통 적용
 # =========================================================
 
 def signal_ema_status_html(all_states):
@@ -2927,7 +2929,7 @@ def signal_section():
         <span>
             시그널1 {get_timeframe_label(SIGNAL1_TIMEFRAME)}
             · {html.escape(get_signal_condition_description("signal1"))}
-            · 카운팅 최대 {SIGNAL1_MAX_COUNT}회
+            · 카운팅 1~{SIGNAL1_MAX_COUNT}회 필수
         </span>
 
         <span>
