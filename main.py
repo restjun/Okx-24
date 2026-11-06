@@ -754,8 +754,7 @@ def check_ema10_rebound(df):
         )
 
         current_close = float(
-            df.loc[current_index, "close"
-            ]
+            df.loc[current_index, "close"]
         )
 
     except Exception:
@@ -836,6 +835,41 @@ def analyze_ema_timeframe(market, timeframe, price=None):
             EMA_LONG
         )
     }
+
+
+# =========================================================
+# 시그널별 EMA 분석
+# =========================================================
+
+def analyze_all_signal_emas(market, price=None):
+    result = {}
+
+    for signal_key, timeframe in SIGNAL_TIMEFRAMES.items():
+        try:
+            result[signal_key] = analyze_ema_timeframe(
+                market,
+                timeframe,
+                price
+            )
+
+        except Exception as e:
+            log.warning(
+                "%s %s EMA 오류: %s",
+                market,
+                signal_key,
+                e
+            )
+
+            result[signal_key] = {
+                "10_20": None,
+                "100_200": None
+            }
+
+    result["signal2"]["count_100_200"] = (
+        get_signal2_100_200_count(market, price)
+    )
+
+    return result
 
 
 # =========================================================
@@ -959,41 +993,6 @@ def get_signal2_100_200_count(market, price=None):
         )
 
         return 0
-
-
-# =========================================================
-# 시그널별 EMA 분석
-# =========================================================
-
-def analyze_all_signal_emas(market, price=None):
-    result = {}
-
-    for signal_key, timeframe in SIGNAL_TIMEFRAMES.items():
-        try:
-            result[signal_key] = analyze_ema_timeframe(
-                market,
-                timeframe,
-                price
-            )
-
-        except Exception as e:
-            log.warning(
-                "%s %s EMA 오류: %s",
-                market,
-                signal_key,
-                e
-            )
-
-            result[signal_key] = {
-                "10_20": None,
-                "100_200": None
-            }
-
-    result["signal2"]["count_100_200"] = (
-        get_signal2_100_200_count(market, price)
-    )
-
-    return result
 
 
 # =========================================================
@@ -2402,13 +2401,21 @@ def ema_state_text(state):
 # =========================================================
 # 공통 EMA 상태 표시
 #
-# 시그널 1, 2, 3의 EMA 상태를 모두 종합
+# 통합 공 판정은 개별 시그널 설정과 완전히 별도
 #
-# 녹색공: 6개 EMA 상태 중 정배열이 하나라도 있음
-# 적색공: 6개 EMA 상태가 모두 역배열
+# 실제 EMA 상태 6개:
+# signal1 10-20
+# signal1 100-200
+# signal2 10-20
+# signal2 100-200
+# signal3 10-20
+# signal3 100-200
+#
+# 녹색공: 6개 중 정배열이 하나라도 있음
+# 적색공: 6개 모두 역배열
 # 회색공: 그 외 모든 상태
 #
-# 시그널1 왼쪽에 통합 공 하나만 표시
+# 통합 공은 시그널1 왼쪽에 하나만 표시
 # BTC / TOP / SIGNAL 공통 적용
 # =========================================================
 
@@ -2417,7 +2424,11 @@ def signal_ema_status_html(all_states):
 
     pair_1, pair_2 = get_ema_pair_labels()
 
-    # 시그널 1, 2, 3 전체 EMA 상태 수집
+    # -----------------------------------------------------
+    # 개별 Y/N/ANY 설정을 사용하지 않고
+    # 실제 EMA 배열 상태 6개만 독립적으로 수집
+    # -----------------------------------------------------
+
     all_ema_values = []
 
     for signal_key in (
@@ -2427,18 +2438,26 @@ def signal_ema_status_html(all_states):
     ):
         states = all_states.get(signal_key) or {}
 
-        all_ema_values.extend([
-            states.get("10_20"),
-            states.get("100_200")
-        ])
+        all_ema_values.append(
+            states.get("10_20")
+        )
 
-    # 통합 상태 판정
+        all_ema_values.append(
+            states.get("100_200")
+        )
+
+    # -----------------------------------------------------
+    # 통합 공 판정
+    # -----------------------------------------------------
+
+    # 6개 중 정배열이 하나라도 있으면 녹색
     if any(
         state == "정배열"
         for state in all_ema_values
     ):
         overall_state = "green"
 
+    # 6개가 모두 역배열일 때만 적색
     elif (
         len(all_ema_values) == 6
         and all(
@@ -2448,6 +2467,7 @@ def signal_ema_status_html(all_states):
     ):
         overall_state = "red"
 
+    # 나머지는 모두 회색
     else:
         overall_state = "gray"
 
@@ -3116,6 +3136,7 @@ section {
     gap: 15px;
     white-space: nowrap;
 }
+
 
 /* =========================================================
    전체 시그널 통합 EMA 상태 공
