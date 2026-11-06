@@ -754,8 +754,8 @@ def check_ema10_rebound(df):
         )
 
         current_close = float(
-            df.loc[current_index, "close"
-        ])
+            df.loc[current_index, "close"]
+        )
 
     except Exception:
         return False
@@ -2399,17 +2399,16 @@ def ema_state_text(state):
 
 
 # =========================================================
-# 시그널별 독립 EMA 상태 표시
+# 통합 EMA 상태 표시
 #
-# 시그널1 공: 15분봉 EMA 2개만 판정
-# 시그널2 공: 1시간봉 EMA 2개만 판정
-# 시그널3 공: 일봉 EMA 2개만 판정
+# 시그널1·2·3의 EMA 총 6개 상태를 통합 판정
 #
-# 녹색공: 해당 시그널 EMA 2개 중 정배열이 하나 이상
-# 적색공: 해당 시그널 EMA 2개 모두 역배열
-# 회색공: 그 외 모든 상태
+# 녹색공: 6개 모두 정배열
+# 빨간공: 6개 모두 역배열
+# 회색공: 나머지 모든 상태
 #
-# Y / N / ANY 조건 설정과 공 색상 판정은 별도
+# 통합 공은 시그널1 왼쪽에 하나만 표시
+# 개별 EMA 상태는 각 시그널별로 표시
 # BTC / TOP / SIGNAL 공통 적용
 # =========================================================
 
@@ -2419,7 +2418,45 @@ def signal_ema_status_html(all_states):
     pair_1, pair_2 = get_ema_pair_labels()
 
     pieces = []
+    all_ema_values = []
 
+    # 전체 시그널의 EMA 상태 6개 수집
+    for signal_key in (
+        "signal1",
+        "signal2",
+        "signal3"
+    ):
+        states = all_states.get(signal_key) or {}
+
+        all_ema_values.extend([
+            states.get("10_20"),
+            states.get("100_200")
+        ])
+
+    # 6개 모두 정배열이면 녹색
+    if all(
+        state == "정배열"
+        for state in all_ema_values
+    ):
+        overall_state = "green"
+
+    # 6개 모두 역배열이면 빨간색
+    elif all(
+        state == "역배열"
+        for state in all_ema_values
+    ):
+        overall_state = "red"
+
+    # 그 외 모든 경우 회색
+    else:
+        overall_state = "gray"
+
+    # 통합 공 하나만 생성
+    overall_dot = (
+        f'<span class="ema-overall-dot {overall_state}">●</span>'
+    )
+
+    # 시그널별 개별 EMA 상태 표시
     for signal_key in (
         "signal1",
         "signal2",
@@ -2433,39 +2470,9 @@ def signal_ema_status_html(all_states):
         state_10_20 = states.get("10_20")
         state_100_200 = states.get("100_200")
 
-        # 해당 시그널의 EMA 2개만 독립 판정
-        signal_ema_values = [
-            state_10_20,
-            state_100_200
-        ]
-
-        # 정배열이 하나라도 있으면 녹색
-        if any(
-            state == "정배열"
-            for state in signal_ema_values
-        ):
-            overall_state = "green"
-
-        # 두 개 모두 역배열이면 빨간색
-        elif all(
-            state == "역배열"
-            for state in signal_ema_values
-        ):
-            overall_state = "red"
-
-        # 나머지는 회색
-        else:
-            overall_state = "gray"
-
-        signal_dot = (
-            f'<span class="ema-overall-dot {overall_state}">●</span>'
-        )
-
         pieces.append(
             f"""
             <span class="ema-signal-group">
-
-                {signal_dot}
 
                 <span class="ema-signal-name">
                     {SIGNAL_LABELS[signal_key]}
@@ -2493,6 +2500,7 @@ def signal_ema_status_html(all_states):
         '<div class="ema-signal-status">'
         '<div class="ema-signal-one-line">'
         '<div class="ema-signal-content">'
+        + overall_dot
         + "".join(pieces)
         + '</div>'
         '</div>'
@@ -3112,7 +3120,7 @@ section {
 
 
 /* =========================================================
-   시그널별 EMA 상태 공
+   통합 EMA 상태 공
    ========================================================= */
 
 .ema-overall-dot {
