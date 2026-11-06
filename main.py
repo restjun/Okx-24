@@ -839,6 +839,23 @@ def analyze_ema_timeframe(market, timeframe, price=None):
 
 
 # =========================================================
+# 시그널별 조건 판정
+# =========================================================
+
+def check_one_ema_condition(state, setting):
+    if setting == "Y":
+        return state == "정배열"
+
+    if setting == "N":
+        return state == "역배열"
+
+    if setting == "ANY":
+        return True
+
+    return False
+
+
+# =========================================================
 # 시그널 1 EMA 10-20 + 1-100 실시간 연속 카운팅
 #
 # 카운팅 시간봉: 시그널1 시간봉 (15분봉)
@@ -964,7 +981,10 @@ def get_signal1_count(market, price=None):
                 # 하나라도 조건이 깨지면 연속 카운팅 종료
                 break
 
-        return count
+        return min(
+            max(int(count), 0),
+            SIGNAL1_MAX_COUNT
+        )
 
     except Exception as e:
         log.warning(
@@ -1015,19 +1035,6 @@ def analyze_all_signal_emas(market, price=None):
 # =========================================================
 # 시그널별 조건 판정
 # =========================================================
-
-def check_one_ema_condition(state, setting):
-    if setting == "Y":
-        return state == "정배열"
-
-    if setting == "N":
-        return state == "역배열"
-
-    if setting == "ANY":
-        return True
-
-    return False
-
 
 def check_signal_ema_condition(signal_key, states):
     if not states:
@@ -1742,6 +1749,19 @@ def make_row(
     signal2 = all_ema_states.get("signal2", {})
     signal3 = all_ema_states.get("signal3", {})
 
+    # 카운팅 저장값도 최대 10회로 제한
+    try:
+        signal1_count = int(
+            signal1.get("count", 0) or 0
+        )
+    except Exception:
+        signal1_count = 0
+
+    signal1_count = min(
+        max(signal1_count, 0),
+        SIGNAL1_MAX_COUNT
+    )
+
     return {
         "rank": rank,
         "name": coin,
@@ -1781,10 +1801,7 @@ def make_row(
         "signal1_10_20": signal1.get("10_20"),
         "signal1_100_200": signal1.get("100_200"),
 
-        "signal1_count": signal1.get(
-            "count",
-            0
-        ),
+        "signal1_count": signal1_count,
 
         "signal2_10_20": signal2.get("10_20"),
         "signal2_100_200": signal2.get("100_200"),
@@ -2802,6 +2819,19 @@ def signal_card(row):
 
     card_class = " ".join(card_classes)
 
+    # 화면 표시값도 최대 10회로 별도 제한
+    try:
+        display_count = int(
+            row.get("signal1_count", 0) or 0
+        )
+    except Exception:
+        display_count = 0
+
+    display_count = min(
+        max(display_count, 0),
+        SIGNAL1_MAX_COUNT
+    )
+
     return f"""
     <div class="{card_class}">
 
@@ -2816,7 +2846,7 @@ def signal_card(row):
             </b>
 
             <span class="signal-rank signal-count">
-                EMA 카운팅 {row.get("signal1_count", 0)}/{SIGNAL1_MAX_COUNT}
+                EMA 카운팅 {display_count}/{SIGNAL1_MAX_COUNT}
             </span>
 
             <div class="signal-type-list">
