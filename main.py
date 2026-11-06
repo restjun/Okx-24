@@ -39,7 +39,7 @@ UTC = ZoneInfo("UTC")
 # 사용자 설정
 # =========================================================
 
-TOP_N = 30
+TOP_N = 20
 SHOW_TOP_LIST = "N"
 UPDATE_MINUTES = 1
 
@@ -70,10 +70,7 @@ EMA_LONG = 100
 # 시그널 2 카운팅 설정
 # =========================================================
 
-# 시그널 2의 두 번째 EMA 조건이
-# 연속으로 유지되는 완성된 1시간봉 개수 제한
-
-SIGNAL2_MAX_COUNT = 200
+SIGNAL2_MAX_COUNT = 10
 
 
 # =========================================================
@@ -107,12 +104,6 @@ TIMEFRAME_LABEL = {
 
 # =========================================================
 # 시그널별 독립 조건 설정
-#
-# Y   = 정배열
-# N   = 역배열
-# ANY = 정배열/역배열 관계없이 통과
-#
-# 각 시그널의 EMA 10-20 / 1-100을 따로 설정 가능
 # =========================================================
 
 SIGNAL1_10_20 = "Y"
@@ -849,11 +840,6 @@ def analyze_ema_timeframe(market, timeframe, price=None):
 
 # =========================================================
 # 시그널 2 EMA 1-100 연속 카운팅
-#
-# 완성된 1시간봉만 사용
-# 조건이 연속 유지된 봉의 개수를 계산
-# 조건이 깨지면 0부터 다시 시작
-# 10회까지 허용
 # =========================================================
 
 def get_signal2_100_200_count(market):
@@ -2396,8 +2382,6 @@ def ema_state_text(state):
 
 # =========================================================
 # 공통 EMA 상태 표시
-#
-# BTC / TOP / SIGNAL 모두 동일한 한 줄 표시
 # =========================================================
 
 def signal_ema_status_html(all_states):
@@ -2749,6 +2733,10 @@ def signal_card(row):
                 {html.escape(row["name"])}
             </b>
 
+            <span class="signal-rank">
+                EMA 카운팅 {row.get("signal2_100_200_count", 0)}/{SIGNAL2_MAX_COUNT}
+            </span>
+
             <div class="signal-type-list">
                 {badge_html}
             </div>
@@ -2821,7 +2809,6 @@ def signal_section():
             for row in latest_signal_data
         )
 
-    # 시그널 3개 + 공통 조건을 한 줄로 표시
     condition_html = f"""
     <div class="signal-condition-one-line">
 
@@ -3281,8 +3268,6 @@ section {
 .signal-panel-head {
     border-bottom: 1px solid #392126;
 }
-
-/* SIGNAL 조건 3개 + 공통 조건 한 줄 표시 */
 
 .signal-condition-one-line {
     display: flex;
