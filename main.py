@@ -754,8 +754,8 @@ def check_ema10_rebound(df):
         )
 
         current_close = float(
-            df.loc[current_index, "close"]
-        )
+            df.loc[current_index, "close"
+        ])
 
     except Exception:
         return False
@@ -2399,23 +2399,17 @@ def ema_state_text(state):
 
 
 # =========================================================
-# 공통 EMA 상태 표시
+# 시그널별 독립 EMA 상태 표시
 #
-# 통합 공 판정은 개별 시그널 설정과 완전히 별도
+# 시그널1 공: 15분봉 EMA 2개만 판정
+# 시그널2 공: 1시간봉 EMA 2개만 판정
+# 시그널3 공: 일봉 EMA 2개만 판정
 #
-# 실제 EMA 상태 6개:
-# signal1 10-20
-# signal1 100-200
-# signal2 10-20
-# signal2 100-200
-# signal3 10-20
-# signal3 100-200
-#
-# 녹색공: 6개 중 정배열이 하나라도 있음
-# 적색공: 6개 모두 역배열
+# 녹색공: 해당 시그널 EMA 2개 중 정배열이 하나 이상
+# 적색공: 해당 시그널 EMA 2개 모두 역배열
 # 회색공: 그 외 모든 상태
 #
-# 통합 공은 시그널1 왼쪽에 하나만 표시
+# Y / N / ANY 조건 설정과 공 색상 판정은 별도
 # BTC / TOP / SIGNAL 공통 적용
 # =========================================================
 
@@ -2423,58 +2417,6 @@ def signal_ema_status_html(all_states):
     all_states = all_states or {}
 
     pair_1, pair_2 = get_ema_pair_labels()
-
-    # -----------------------------------------------------
-    # 개별 Y/N/ANY 설정을 사용하지 않고
-    # 실제 EMA 배열 상태 6개만 독립적으로 수집
-    # -----------------------------------------------------
-
-    all_ema_values = []
-
-    for signal_key in (
-        "signal1",
-        "signal2",
-        "signal3"
-    ):
-        states = all_states.get(signal_key) or {}
-
-        all_ema_values.append(
-            states.get("10_20")
-        )
-
-        all_ema_values.append(
-            states.get("100_200")
-        )
-
-    # -----------------------------------------------------
-    # 통합 공 판정
-    # -----------------------------------------------------
-
-    # 6개 중 정배열이 하나라도 있으면 녹색
-    if any(
-        state == "정배열"
-        for state in all_ema_values
-    ):
-        overall_state = "green"
-
-    # 6개가 모두 역배열일 때만 적색
-    elif (
-        len(all_ema_values) == 6
-        and all(
-            state == "역배열"
-            for state in all_ema_values
-        )
-    ):
-        overall_state = "red"
-
-    # 나머지는 모두 회색
-    else:
-        overall_state = "gray"
-
-    # 통합 상태 공 하나만 생성
-    overall_dot = (
-        f'<span class="ema-overall-dot {overall_state}">●</span>'
-    )
 
     pieces = []
 
@@ -2491,9 +2433,40 @@ def signal_ema_status_html(all_states):
         state_10_20 = states.get("10_20")
         state_100_200 = states.get("100_200")
 
+        # 해당 시그널의 EMA 2개만 독립 판정
+        signal_ema_values = [
+            state_10_20,
+            state_100_200
+        ]
+
+        # 정배열이 하나라도 있으면 녹색
+        if any(
+            state == "정배열"
+            for state in signal_ema_values
+        ):
+            overall_state = "green"
+
+        # 두 개 모두 역배열이면 빨간색
+        elif all(
+            state == "역배열"
+            for state in signal_ema_values
+        ):
+            overall_state = "red"
+
+        # 나머지는 회색
+        else:
+            overall_state = "gray"
+
+        signal_dot = (
+            f'<span class="ema-overall-dot {overall_state}">●</span>'
+        )
+
         pieces.append(
             f"""
             <span class="ema-signal-group">
+
+                {signal_dot}
+
                 <span class="ema-signal-name">
                     {SIGNAL_LABELS[signal_key]}
                 </span>
@@ -2511,6 +2484,7 @@ def signal_ema_status_html(all_states):
                     EMA{html.escape(pair_2)}
                     {ema_symbol(state_100_200)}
                 </span>
+
             </span>
             """
         )
@@ -2519,7 +2493,6 @@ def signal_ema_status_html(all_states):
         '<div class="ema-signal-status">'
         '<div class="ema-signal-one-line">'
         '<div class="ema-signal-content">'
-        + overall_dot
         + "".join(pieces)
         + '</div>'
         '</div>'
@@ -3139,7 +3112,7 @@ section {
 
 
 /* =========================================================
-   전체 시그널 통합 EMA 상태 공
+   시그널별 EMA 상태 공
    ========================================================= */
 
 .ema-overall-dot {
@@ -3149,7 +3122,7 @@ section {
     flex: 0 0 auto;
     font-size: 11px;
     font-weight: 900;
-    margin-right: -5px;
+    margin-right: 0;
 }
 
 .ema-overall-dot.green {
