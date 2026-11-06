@@ -67,10 +67,10 @@ EMA_LONG = 100
 
 
 # =========================================================
-# 시그널 2 카운팅 설정
+# 시그널 1 카운팅 설정
 # =========================================================
 
-SIGNAL2_MAX_COUNT = 24
+SIGNAL1_MAX_COUNT = 24
 
 
 # =========================================================
@@ -754,7 +754,8 @@ def check_ema10_rebound(df):
         )
 
         current_close = float(
-            df.loc[current_index, "close"]
+            df.loc[current_index, "close"
+            ]
         )
 
     except Exception:
@@ -838,54 +839,26 @@ def analyze_ema_timeframe(market, timeframe, price=None):
 
 
 # =========================================================
-# 시그널별 EMA 분석
-# =========================================================
-
-def analyze_all_signal_emas(market, price=None):
-    result = {}
-
-    for signal_key, timeframe in SIGNAL_TIMEFRAMES.items():
-        try:
-            result[signal_key] = analyze_ema_timeframe(
-                market,
-                timeframe,
-                price
-            )
-
-        except Exception as e:
-            log.warning(
-                "%s %s EMA 오류: %s",
-                market,
-                signal_key,
-                e
-            )
-
-            result[signal_key] = {
-                "10_20": None,
-                "100_200": None
-            }
-
-    result["signal2"]["count_100_200"] = (
-        get_signal2_100_200_count(market, price)
-    )
-
-    return result
-
-
-# =========================================================
-# 시그널 2 EMA 10-20 + 1-100 실시간 연속 카운팅
+# 시그널 1 EMA 10-20 + 1-100 실시간 연속 카운팅
 #
-# 두 EMA 조건이 모두 일치하는 돌파봉부터 1 시작
+# 카운팅 시간봉: 시그널1 시간봉 (15분봉)
+#
+# 시그널1 설정값을 그대로 적용:
+# SIGNAL1_10_20
+# SIGNAL1_100_200
+#
+# 두 EMA 조건이 모두 일치하는 최초 봉부터 1 시작
 # 다음 봉도 두 조건이 일치하면 2, 3, 4 순서로 증가
 # 두 조건 중 하나라도 깨지면 카운팅 종료
-# 현재 진행 중인 1시간봉 포함
+# 현재 진행 중인 15분봉 포함
+# 최대 SIGNAL1_MAX_COUNT 제한
 # =========================================================
 
-def get_signal2_100_200_count(market, price=None):
+def get_signal1_count(market, price=None):
     try:
         df = get_timeframe_dataframe(
             market,
-            "1h",
+            SIGNAL1_TIMEFRAME,
             price
         )
 
@@ -941,6 +914,7 @@ def get_signal2_100_200_count(market, price=None):
 
         count = 0
 
+        # 가장 최근 봉부터 과거 방향으로 확인
         for _, row in combined.iloc[::-1].iterrows():
 
             ema10 = float(row["ema10"])
@@ -967,32 +941,75 @@ def get_signal2_100_200_count(market, price=None):
             else:
                 state_100_200 = "동일"
 
+            # 시그널1의 독립 설정값 적용
             condition_10_20 = check_one_ema_condition(
                 state_10_20,
-                SIGNAL2_10_20
+                SIGNAL1_10_20
             )
 
             condition_100_200 = check_one_ema_condition(
                 state_100_200,
-                SIGNAL2_100_200
+                SIGNAL1_100_200
             )
 
+            # 두 조건이 모두 일치해야 카운팅
             if condition_10_20 and condition_100_200:
                 count += 1
 
+                # 최대 카운팅 제한
+                if count >= SIGNAL1_MAX_COUNT:
+                    return SIGNAL1_MAX_COUNT
+
             else:
+                # 하나라도 조건이 깨지면 연속 카운팅 종료
                 break
 
         return count
 
     except Exception as e:
         log.warning(
-            "%s 시그널2 실시간 카운팅 오류: %s",
+            "%s 시그널1 실시간 카운팅 오류: %s",
             market,
             e
         )
 
         return 0
+
+
+# =========================================================
+# 시그널별 EMA 분석
+# =========================================================
+
+def analyze_all_signal_emas(market, price=None):
+    result = {}
+
+    for signal_key, timeframe in SIGNAL_TIMEFRAMES.items():
+        try:
+            result[signal_key] = analyze_ema_timeframe(
+                market,
+                timeframe,
+                price
+            )
+
+        except Exception as e:
+            log.warning(
+                "%s %s EMA 오류: %s",
+                market,
+                signal_key,
+                e
+            )
+
+            result[signal_key] = {
+                "10_20": None,
+                "100_200": None
+            }
+
+    # 시그널1에만 카운팅 적용
+    result["signal1"]["count"] = (
+        get_signal1_count(market, price)
+    )
+
+    return result
 
 
 # =========================================================
@@ -1038,10 +1055,11 @@ def check_signal_ema_condition(signal_key, states):
     if not base_condition:
         return False
 
-    if signal_key == "signal2":
+    # 시그널1에만 카운팅 제한 적용
+    if signal_key == "signal1":
 
         count = states.get(
-            "count_100_200",
+            "count",
             0
         )
 
@@ -1050,9 +1068,10 @@ def check_signal_ema_condition(signal_key, states):
         except Exception:
             return False
 
-        if count < 1 or count > SIGNAL2_MAX_COUNT:
+        if count < 1 or count > SIGNAL1_MAX_COUNT:
             return False
 
+    # 시그널2와 시그널3은 기존 EMA 조건만 판정
     return True
 
 
@@ -1762,13 +1781,13 @@ def make_row(
         "signal1_10_20": signal1.get("10_20"),
         "signal1_100_200": signal1.get("100_200"),
 
-        "signal2_10_20": signal2.get("10_20"),
-        "signal2_100_200": signal2.get("100_200"),
-
-        "signal2_100_200_count": signal2.get(
-            "count_100_200",
+        "signal1_count": signal1.get(
+            "count",
             0
         ),
+
+        "signal2_10_20": signal2.get("10_20"),
+        "signal2_100_200": signal2.get("100_200"),
 
         "signal1_condition": check_signal_ema_condition(
             "signal1",
@@ -1865,12 +1884,12 @@ def update_upbit():
             all_ema_states = {
                 "signal1": {
                     "10_20": None,
-                    "100_200": None
+                    "100_200": None,
+                    "count": 0
                 },
                 "signal2": {
                     "10_20": None,
-                    "100_200": None,
-                    "count_100_200": 0
+                    "100_200": None
                 },
                 "signal3": {
                     "10_20": None,
@@ -2420,7 +2439,6 @@ def signal_ema_status_html(all_states):
     pieces = []
     all_ema_values = []
 
-    # 전체 시그널의 EMA 상태 6개 수집
     for signal_key in (
         "signal1",
         "signal2",
@@ -2433,30 +2451,25 @@ def signal_ema_status_html(all_states):
             states.get("100_200")
         ])
 
-    # 6개 모두 정배열이면 녹색
     if all(
         state == "정배열"
         for state in all_ema_values
     ):
         overall_state = "green"
 
-    # 6개 모두 역배열이면 빨간색
     elif all(
         state == "역배열"
         for state in all_ema_values
     ):
         overall_state = "red"
 
-    # 그 외 모든 경우 회색
     else:
         overall_state = "gray"
 
-    # 통합 공 하나만 생성
     overall_dot = (
         f'<span class="ema-overall-dot {overall_state}">●</span>'
     )
 
-    # 시그널별 개별 EMA 상태 표시
     for signal_key in (
         "signal1",
         "signal2",
@@ -2803,7 +2816,7 @@ def signal_card(row):
             </b>
 
             <span class="signal-rank signal-count">
-                EMA 카운팅 {row.get("signal2_100_200_count", 0)}/{SIGNAL2_MAX_COUNT}
+                EMA 카운팅 {row.get("signal1_count", 0)}/{SIGNAL1_MAX_COUNT}
             </span>
 
             <div class="signal-type-list">
@@ -2884,12 +2897,12 @@ def signal_section():
         <span>
             시그널1 {get_timeframe_label(SIGNAL1_TIMEFRAME)}
             · {html.escape(get_signal_condition_description("signal1"))}
+            · 카운팅 최대 {SIGNAL1_MAX_COUNT}회
         </span>
 
         <span>
             시그널2 {get_timeframe_label(SIGNAL2_TIMEFRAME)}
             · {html.escape(get_signal_condition_description("signal2"))}
-            · 카운팅 최대 {SIGNAL2_MAX_COUNT}회
         </span>
 
         <span>
@@ -4194,8 +4207,8 @@ def startup():
     )
 
     log.info(
-        "시그널 2 카운팅 제한: 최대 %s회",
-        SIGNAL2_MAX_COUNT
+        "시그널 1 카운팅 제한: 최대 %s회",
+        SIGNAL1_MAX_COUNT
     )
 
     log.info(
