@@ -2733,7 +2733,7 @@ def signal_card(row):
                 {html.escape(row["name"])}
             </b>
 
-            <span class="signal-rank">
+            <span class="signal-rank signal-count">
                 EMA 카운팅 {row.get("signal2_100_200_count", 0)}/{SIGNAL2_MAX_COUNT}
             </span>
 
@@ -3372,6 +3372,37 @@ section {
     white-space: nowrap;
 }
 
+/* EMA 카운팅 강조 */
+.signal-card-top .signal-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    color: #ffffff !important;
+    background: #245fba;
+
+    border: 1px solid #579aff;
+    border-radius: 5px;
+
+    padding: 5px 9px;
+
+    font-size: 9px !important;
+    font-weight: 900;
+
+    text-shadow: 0 0 5px rgba(87, 154, 255, 0.7);
+
+    box-shadow:
+        0 0 7px rgba(87, 154, 255, 0.3),
+        inset 0 0 5px rgba(255, 255, 255, 0.08);
+}
+
+/* 상승패턴 카드에서도 카운팅 강조 유지 */
+.signal-card.has-bullish-pattern .signal-count {
+    color: #ffffff !important;
+    background: #245fba;
+    border-color: #579aff;
+}
+
 .signal-coin-name {
     color: #e5e9ed;
     font-size: 9px;
@@ -3868,6 +3899,12 @@ section {
 
     .signal-rank {
         font-size: 5px;
+    }
+
+    /* 모바일 EMA 카운팅 강조 */
+    .signal-card-top .signal-count {
+        padding: 4px 7px;
+        font-size: 8px !important;
     }
 
     .signal-coin-name {
