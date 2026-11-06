@@ -1,4 +1,3 @@
-
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
@@ -68,6 +67,16 @@ EMA_LONG = 100
 
 
 # =========================================================
+# 시그널 2 카운팅 설정
+# =========================================================
+
+# 시그널 2의 두 번째 EMA 조건이
+# 연속으로 유지되는 완성된 1시간봉 개수 제한
+
+SIGNAL2_MAX_COUNT = 10
+
+
+# =========================================================
 # 시그널 시간봉 설정
 # =========================================================
 
@@ -103,7 +112,7 @@ TIMEFRAME_LABEL = {
 # N   = 역배열
 # ANY = 정배열/역배열 관계없이 통과
 #
-# 각 시그널의 EMA 10-20 / 100-200을 따로 설정 가능
+# 각 시그널의 EMA 10-20 / 1-100을 따로 설정 가능
 # =========================================================
 
 SIGNAL1_10_20 = "Y"
@@ -839,6 +848,112 @@ def analyze_ema_timeframe(market, timeframe, price=None):
 
 
 # =========================================================
+# 시그널 2 EMA 1-100 연속 카운팅
+#
+# 완성된 1시간봉만 사용
+# 조건이 연속 유지된 봉의 개수를 계산
+# 조건이 깨지면 0부터 다시 시작
+# 10회까지 허용
+# =========================================================
+
+def get_signal2_100_200_count(market):
+    try:
+        df = get_cached_dataframe(
+            market,
+            "1h",
+            lambda: get_upbit_1h_candles(
+                market,
+                EMA_HISTORY_CANDLES
+            )
+        )
+
+        if df is None or df.empty:
+            return 0
+
+        now = datetime.now(KST)
+
+        current_start = now.replace(
+            minute=0,
+            second=0,
+            microsecond=0
+        )
+
+        # 현재 진행 중인 1시간봉 제외
+        completed_df = df[
+            df["datetime"] < current_start
+        ].copy()
+
+        completed_df = (
+            completed_df
+            .sort_values("datetime")
+            .drop_duplicates("datetime")
+            .reset_index(drop=True)
+        )
+
+        if completed_df.empty:
+            return 0
+
+        # 기존 EMA 설정 그대로 사용
+        fast_series = calculate_ema_series(
+            completed_df,
+            EMA_SLOW
+        )
+
+        slow_series = calculate_ema_series(
+            completed_df,
+            EMA_LONG
+        )
+
+        if fast_series is None or slow_series is None:
+            return 0
+
+        combined = pd.DataFrame({
+            "fast": fast_series,
+            "slow": slow_series
+        }).dropna()
+
+        if combined.empty:
+            return 0
+
+        count = 0
+
+        # 가장 최근 완성된 봉부터 과거 방향 확인
+        for _, row in combined.iloc[::-1].iterrows():
+
+            fast = float(row["fast"])
+            slow = float(row["slow"])
+
+            if fast > slow:
+                state = "정배열"
+
+            elif fast < slow:
+                state = "역배열"
+
+            else:
+                state = "동일"
+
+            if check_one_ema_condition(
+                state,
+                SIGNAL2_100_200
+            ):
+                count += 1
+
+            else:
+                break
+
+        return count
+
+    except Exception as e:
+        log.warning(
+            "%s 시그널2 카운팅 오류: %s",
+            market,
+            e
+        )
+
+        return 0
+
+
+# =========================================================
 # 시그널별 EMA 분석
 # =========================================================
 
@@ -865,6 +980,11 @@ def analyze_all_signal_emas(market, price=None):
                 "10_20": None,
                 "100_200": None
             }
+
+    # 시그널 2에만 연속 카운팅 적용
+    result["signal2"]["count_100_200"] = (
+        get_signal2_100_200_count(market)
+    )
 
     return result
 
@@ -897,7 +1017,7 @@ def check_signal_ema_condition(signal_key, states):
     state_10_20 = states.get("10_20")
     state_100_200 = states.get("100_200")
 
-    return bool(
+    base_condition = bool(
         check_one_ema_condition(
             state_10_20,
             condition_10_20
@@ -908,6 +1028,28 @@ def check_signal_ema_condition(signal_key, states):
             condition_100_200
         )
     )
+
+    if not base_condition:
+        return False
+
+    # 시그널 2만 카운팅 제한 적용
+    if signal_key == "signal2":
+
+        count = states.get(
+            "count_100_200",
+            0
+        )
+
+        try:
+            count = int(count)
+        except Exception:
+            return False
+
+        # 1회 이상 10회 이하만 통과
+        if count < 1 or count > SIGNAL2_MAX_COUNT:
+            return False
+
+    return True
 
 
 def check_all_signal_conditions(all_states):
@@ -1619,8 +1761,10 @@ def make_row(
         "signal2_10_20": signal2.get("10_20"),
         "signal2_100_200": signal2.get("100_200"),
 
-        "signal3_10_20": signal3.get("10_20"),
-        "signal3_100_200": signal3.get("100_200"),
+        "signal2_100_200_count": signal2.get(
+            "count_100_200",
+            0
+        ),
 
         "signal1_condition": check_signal_ema_condition(
             "signal1",
@@ -1721,7 +1865,8 @@ def update_upbit():
                 },
                 "signal2": {
                     "10_20": None,
-                    "100_200": None
+                    "100_200": None,
+                    "count_100_200": 0
                 },
                 "signal3": {
                     "10_20": None,
@@ -2688,6 +2833,7 @@ def signal_section():
         <span>
             시그널2 {get_timeframe_label(SIGNAL2_TIMEFRAME)}
             · {html.escape(get_signal_condition_description("signal2"))}
+            · 카운팅 최대 {SIGNAL2_MAX_COUNT}회
         </span>
 
         <span>
@@ -3921,6 +4067,11 @@ def startup():
         get_signal_condition_description("signal1"),
         get_signal_condition_description("signal2"),
         get_signal_condition_description("signal3")
+    )
+
+    log.info(
+        "시그널 2 카운팅 제한: 최대 %s회",
+        SIGNAL2_MAX_COUNT
     )
 
     log.info(
