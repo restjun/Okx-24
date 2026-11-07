@@ -39,7 +39,7 @@ UTC = ZoneInfo("UTC")
 # 사용자 설정
 # =========================================================
 
-TOP_N = 50
+TOP_N = 20
 SHOW_TOP_LIST = "N"
 UPDATE_MINUTES = 1
 
@@ -52,7 +52,7 @@ USE_OKX = "Y"
 
 REQUEST_INTERVAL = 0.08
 RATE_LIMIT_WAIT = 3
-MAX_RETRIES = 10
+MAX_RETRIES = 20
 
 
 # =========================================================
