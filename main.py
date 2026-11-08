@@ -79,8 +79,8 @@ SIGNAL1_MAX_COUNT = 10
 # 시그널 시간봉 설정
 # =========================================================
 
-SIGNAL1_TIMEFRAME = "15m"
-SIGNAL2_TIMEFRAME = "1h"
+SIGNAL1_TIMEFRAME = "1h"
+SIGNAL2_TIMEFRAME = "15m"
 SIGNAL3_TIMEFRAME = "1d"
 
 SIGNAL_TIMEFRAMES = {
@@ -109,10 +109,10 @@ TIMEFRAME_LABEL = {
 # =========================================================
 
 SIGNAL1_10_20 = "Y"
-SIGNAL1_100_200 = "Y"
+SIGNAL1_100_200 = "N"
 
 SIGNAL2_10_20 = "Y"
-SIGNAL2_100_200 = "N"
+SIGNAL2_100_200 = "Y"
 
 SIGNAL3_10_20 = "ANY"
 SIGNAL3_100_200 = "ANY"
