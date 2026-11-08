@@ -70,8 +70,6 @@ EMA_LONG = 100
 # 시그널 1 카운팅 설정
 # =========================================================
 
-# 실제 카운팅이 이 숫자를 초과하면 최종 SIGNAL에서 제외
-# 예: 10이면 1~10회 통과, 11회 이상 제외
 SIGNAL1_MAX_COUNT = 100
 
 
@@ -756,8 +754,7 @@ def check_ema10_rebound(df):
         )
 
         current_close = float(
-            df.loc[current_index, "close"
-            ]
+            df.loc[current_index, "close"]
         )
 
     except Exception:
@@ -858,22 +855,70 @@ def check_one_ema_condition(state, setting):
 
 
 # =========================================================
-# 시그널 1 EMA 10-20 + 1-100 실시간 연속 카운팅
-#
-# 카운팅 시간봉: 시그널1 시간봉 (15분봉)
-#
-# 시그널1 설정값을 그대로 적용:
-# SIGNAL1_10_20
-# SIGNAL1_100_200
-#
-# 두 EMA 조건이 모두 일치하는 최초 봉부터 1 시작
-# 다음 봉도 두 조건이 일치하면 2, 3, 4 순서로 증가
-# 두 조건 중 하나라도 깨지면 카운팅 종료
-# 현재 진행 중인 15분봉 포함
+# BTC 시황 EMA 조건 검사
 #
 # 중요:
-# 실제 카운팅은 설정값과 관계없이 끝까지 계산
-# SIGNAL1_MAX_COUNT 초과 여부는 최종 시그널 판정에서 처리
+# - BTC 시그널1 카운팅은 검사하지 않음
+# - EMA 10-20 조건만 검사
+# - EMA 20-100 조건만 검사
+# - 각 시그널별 설정값을 그대로 적용
+# - ANY는 정배열/역배열 관계없이 통과
+# - 하나라도 불일치하면 경고
+# =========================================================
+
+def check_btc_signal_ema_conditions():
+    mismatches = []
+
+    for signal_key, timeframe in SIGNAL_TIMEFRAMES.items():
+
+        states = latest_btc_signal_ema_states.get(
+            signal_key,
+            {}
+        )
+
+        condition_10_20, condition_100_200 = (
+            get_signal_conditions(signal_key)
+        )
+
+        state_10_20 = states.get("10_20")
+        state_100_200 = states.get("100_200")
+
+        timeframe_label = get_timeframe_label(timeframe)
+
+        # EMA 10-20 검사
+        if not check_one_ema_condition(
+            state_10_20,
+            condition_10_20
+        ):
+            mismatches.append({
+                "signal": SIGNAL_LABELS[signal_key],
+                "timeframe": timeframe_label,
+                "ema": f"EMA {EMA_PULLBACK}-{EMA_FAST}",
+                "required": get_condition_label(condition_10_20),
+                "actual": ema_state_text(state_10_20)
+            })
+
+        # EMA 20-100 검사
+        if not check_one_ema_condition(
+            state_100_200,
+            condition_100_200
+        ):
+            mismatches.append({
+                "signal": SIGNAL_LABELS[signal_key],
+                "timeframe": timeframe_label,
+                "ema": f"EMA {EMA_SLOW}-{EMA_LONG}",
+                "required": get_condition_label(condition_100_200),
+                "actual": ema_state_text(state_100_200)
+            })
+
+    return {
+        "match": len(mismatches) == 0,
+        "mismatches": mismatches
+    }
+
+
+# =========================================================
+# 시그널 1 EMA 10-20 + 20-100 실시간 연속 카운팅
 # =========================================================
 
 def get_signal1_count(market, price=None):
@@ -936,7 +981,6 @@ def get_signal1_count(market, price=None):
 
         count = 0
 
-        # 가장 최근 봉부터 과거 방향으로 확인
         for _, row in combined.iloc[::-1].iterrows():
 
             ema10 = float(row["ema10"])
@@ -963,7 +1007,6 @@ def get_signal1_count(market, price=None):
             else:
                 state_100_200 = "동일"
 
-            # 시그널1의 독립 설정값 적용
             condition_10_20 = check_one_ema_condition(
                 state_10_20,
                 SIGNAL1_10_20
@@ -974,16 +1017,12 @@ def get_signal1_count(market, price=None):
                 SIGNAL1_100_200
             )
 
-            # 두 조건이 모두 일치해야 카운팅
             if condition_10_20 and condition_100_200:
                 count += 1
 
             else:
-                # 하나라도 조건이 깨지면 연속 카운팅 종료
                 break
 
-        # 중요: 여기서 SIGNAL1_MAX_COUNT로 자르지 않는다.
-        # 실제 카운팅 횟수를 그대로 반환한다.
         return max(int(count), 0)
 
     except Exception as e:
@@ -1024,7 +1063,6 @@ def analyze_all_signal_emas(market, price=None):
                 "100_200": None
             }
 
-    # 시그널1에만 카운팅 적용
     result["signal1"]["count"] = (
         get_signal1_count(market, price)
     )
@@ -1062,7 +1100,6 @@ def check_signal_ema_condition(signal_key, states):
     if not base_condition:
         return False
 
-    # 시그널1은 EMA 조건과 카운팅 조건을 모두 충족해야 통과
     if signal_key == "signal1":
 
         count = states.get(
@@ -1075,12 +1112,9 @@ def check_signal_ema_condition(signal_key, states):
         except Exception:
             return False
 
-        # 설정값 이하인 경우에만 통과
-        # 1~10 통과, 11 이상 제외
         if not (1 <= count <= SIGNAL1_MAX_COUNT):
             return False
 
-    # 시그널2와 시그널3은 기존 EMA 조건만 판정
     return True
 
 
@@ -1088,10 +1122,6 @@ def check_all_signal_conditions(all_states):
     if not all_states:
         return False
 
-    # 시그널1: EMA 조건 + 카운팅 1~설정값 통과
-    # 시그널2: 기존 EMA 조건
-    # 시그널3: 기존 EMA 조건
-    # 세 시그널이 모두 통과해야 최종 통과
     for signal_key in SIGNAL_TIMEFRAMES:
         states = all_states.get(signal_key)
 
@@ -1755,8 +1785,6 @@ def make_row(
     signal2 = all_ema_states.get("signal2", {})
     signal3 = all_ema_states.get("signal3", {})
 
-    # 실제 카운팅 횟수를 그대로 저장
-    # SIGNAL1_MAX_COUNT로 자르지 않는다.
     try:
         signal1_count = int(
             signal1.get("count", 0) or 0
@@ -1918,8 +1946,6 @@ def update_upbit():
                 }
             }
 
-        # 시그널1 EMA + 카운팅,
-        # 시그널2 EMA, 시그널3 EMA를 모두 통과해야 최종 통과
         all_ema_condition = check_all_signal_conditions(
             all_ema_states
         )
@@ -1972,14 +1998,6 @@ def update_upbit():
     latest_upbit_daily_update_time = kst()
     latest_upbit_update_time = latest_upbit_daily_update_time
 
-    # 최종 SIGNAL 조건:
-    # 1. 시그널1 EMA 조건 통과
-    # 2. 시그널1 카운팅 1~SIGNAL1_MAX_COUNT 통과
-    # 3. 시그널2 EMA 조건 통과
-    # 4. 시그널3 EMA 조건 통과
-    # 5. 당일 변동률 양수
-    #
-    # 카운팅이 SIGNAL1_MAX_COUNT를 초과하면 제외
     latest_signal_data = [
         row for row in rows
         if (
@@ -2451,6 +2469,77 @@ def ema_state_text(state):
 
 
 # =========================================================
+# BTC 상단 EMA 불일치 경고 HTML
+# =========================================================
+
+def btc_warning_html():
+
+    # BTC 가격 및 EMA 분석 데이터가 아직 준비되지 않은 경우
+    if latest_btc_okx_price is None:
+        return ""
+
+    result = check_btc_signal_ema_conditions()
+
+    # 모든 EMA 조건이 일치하면 경고 표시하지 않음
+    if result["match"]:
+        return ""
+
+    mismatch_items = []
+
+    for item in result["mismatches"]:
+        mismatch_items.append(
+            f"""
+            <div class="btc-warning-item">
+                <span class="btc-warning-signal">
+                    {html.escape(item["signal"])}
+                </span>
+
+                <span class="btc-warning-time">
+                    {html.escape(item["timeframe"])}
+                </span>
+
+                <span class="btc-warning-ema">
+                    {html.escape(item["ema"])}
+                </span>
+
+                <span class="btc-warning-actual">
+                    현재 {html.escape(item["actual"])}
+                </span>
+
+                <span class="btc-warning-required">
+                    필요 {html.escape(item["required"])}
+                </span>
+            </div>
+            """
+        )
+
+    return f"""
+    <section class="btc-warning-panel">
+
+        <div class="btc-warning-title">
+            <span class="btc-warning-icon">⚠</span>
+
+            <div>
+                <b>BTC 시황 불일치 경고</b>
+                <span>
+                    BTC EMA 배열이 설정된 시그널 조건과 일치하지 않습니다.
+                </span>
+            </div>
+        </div>
+
+        <div class="btc-warning-details">
+            {"".join(mismatch_items)}
+        </div>
+
+        <div class="btc-warning-footer">
+            카운팅 제외 · EMA 배열 조건만 검사
+        </div>
+
+    </section>
+    """
+
+
+# =========================================================
 # 통합 EMA 상태 표시
 # =========================================================
 
@@ -2825,8 +2914,6 @@ def signal_card(row):
 
     card_class = " ".join(card_classes)
 
-    # 실제 카운팅 횟수를 그대로 표시
-    # 10회 초과 시에도 11/10, 12/10처럼 표시
     try:
         display_count = int(
             row.get("signal1_count", 0) or 0
@@ -3130,6 +3217,121 @@ section {
 
 
 /* =========================================================
+   BTC 상단 경고
+   ========================================================= */
+
+.btc-warning-panel {
+    width: 100%;
+    margin-bottom: 12px;
+    padding: 10px;
+    background: linear-gradient(
+        135deg,
+        #321419,
+        #1b1014
+    );
+    border: 1px solid #a83d49;
+    border-left: 4px solid #ff5966;
+    border-radius: 5px;
+    box-shadow: 0 0 9px rgba(255, 89, 102, 0.13);
+}
+
+.btc-warning-title {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #55252d;
+}
+
+.btc-warning-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 25px;
+    height: 25px;
+    flex: 0 0 25px;
+    color: #ffffff;
+    background: #c83949;
+    border-radius: 50%;
+    font-size: 15px;
+    font-weight: 900;
+}
+
+.btc-warning-title > div {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.btc-warning-title b {
+    color: #ff707b;
+    font-size: 11px;
+    font-weight: 900;
+}
+
+.btc-warning-title span {
+    color: #d4a4a9;
+    font-size: 8px;
+    font-weight: 700;
+}
+
+.btc-warning-details {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding-top: 8px;
+}
+
+.btc-warning-item {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 5px 6px;
+    background: rgba(0, 0, 0, 0.22);
+    border: 1px solid rgba(255, 89, 102, 0.15);
+    border-radius: 3px;
+}
+
+.btc-warning-signal {
+    color: #e4c45e;
+    font-size: 8px;
+    font-weight: 900;
+}
+
+.btc-warning-time {
+    color: #a9b5bf;
+    font-size: 8px;
+    font-weight: 800;
+}
+
+.btc-warning-ema {
+    color: #ffffff;
+    font-size: 8px;
+    font-weight: 900;
+}
+
+.btc-warning-actual {
+    color: #ff5966;
+    font-size: 8px;
+    font-weight: 900;
+}
+
+.btc-warning-required {
+    color: #38d878;
+    font-size: 8px;
+    font-weight: 900;
+}
+
+.btc-warning-footer {
+    margin-top: 7px;
+    color: #9b777d;
+    font-size: 7px;
+    font-weight: 700;
+}
+
+
+/* =========================================================
    공통 EMA 상태 표시
    BTC / TOP / SIGNAL 모두 동일한 한 줄 표시
    ========================================================= */
@@ -3164,11 +3366,6 @@ section {
     gap: 15px;
     white-space: nowrap;
 }
-
-
-/* =========================================================
-   통합 EMA 상태 공
-   ========================================================= */
 
 .ema-overall-dot {
     display: inline-flex;
@@ -3517,31 +3714,23 @@ section {
     white-space: nowrap;
 }
 
-/* EMA 카운팅 강조 */
 .signal-card-top .signal-count {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-
     color: #ffffff !important;
     background: #245fba;
-
     border: 1px solid #579aff;
     border-radius: 5px;
-
     padding: 5px 9px;
-
     font-size: 9px !important;
     font-weight: 900;
-
     text-shadow: 0 0 5px rgba(87, 154, 255, 0.7);
-
     box-shadow:
         0 0 7px rgba(87, 154, 255, 0.3),
         inset 0 0 5px rgba(255, 255, 255, 0.08);
 }
 
-/* 상승패턴 카드에서도 카운팅 강조 유지 */
 .signal-card.has-bullish-pattern .signal-count {
     color: #ffffff !important;
     background: #245fba;
@@ -4050,7 +4239,6 @@ section {
         font-size: 5px;
     }
 
-    /* 모바일 EMA 카운팅 강조 */
     .signal-card-top .signal-count {
         padding: 4px 7px;
         font-size: 8px !important;
@@ -4127,6 +4315,35 @@ section {
     .signal-pattern .pattern-multi .pattern-box {
         min-width: 22px;
     }
+
+    .btc-warning-panel {
+        padding: 8px;
+    }
+
+    .btc-warning-title b {
+        font-size: 10px;
+    }
+
+    .btc-warning-title span {
+        font-size: 7px;
+    }
+
+    .btc-warning-item {
+        gap: 5px;
+        padding: 5px;
+    }
+
+    .btc-warning-signal,
+    .btc-warning-time,
+    .btc-warning-ema,
+    .btc-warning-actual,
+    .btc-warning-required {
+        font-size: 7px;
+    }
+
+    .btc-warning-footer {
+        font-size: 6px;
+    }
 }
 """
 
@@ -4137,7 +4354,12 @@ section {
 
 @app.get("/", response_class=HTMLResponse)
 def dashboard():
-    s = btc_html()
+
+    # BTC EMA 조건 불일치 경고
+    # BTC 패널보다 위에 표시
+    warning = btc_warning_html()
+
+    s = warning + btc_html()
 
     if USE_UPBIT == "Y":
         s += signal_section()
