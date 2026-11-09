@@ -2059,19 +2059,14 @@ def current_pattern_html(pattern):
 
 # =========================================================
 # 최근 3개 봉 캔들 패턴 표시 HTML
+# 업비트 실제 캔들 시작 시각 표시
 # =========================================================
 
 def last_three_pattern_html(row):
 
     last_three = row.get("last_three_patterns") or []
 
-    labels = [
-        "2개 전 봉",
-        "이전 봉",
-        "현재 봉"
-    ]
-
-    missing = 3 - len(last_three)
+    missing = max(0, 3 - len(last_three))
 
     items = []
 
@@ -2086,11 +2081,20 @@ def last_three_pattern_html(row):
 
     boxes = []
 
-    for i, item in enumerate(items[-3:]):
+    visible_items = items[-3:]
+
+    for i, item in enumerate(visible_items):
 
         patterns = item.get("patterns", [])
 
-        label = labels[i]
+        # 업비트 API에서 받은 실제 캔들 시작 시각
+        raw_label = item.get("label") or "-"
+
+        # 실제 데이터가 있는 마지막 봉에 진행 중 표시
+        if i == len(visible_items) - 1 and raw_label != "-":
+            label = html.escape(raw_label) + ' <span class="candle-live">진행 중</span>'
+        else:
+            label = html.escape(raw_label)
 
         boxes.append(
             f"""
@@ -2542,15 +2546,15 @@ section {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    min-width: 55px;
+    min-width: 68px;
     line-height: 1;
 }
 
 .pattern-name {
     display: block;
-    margin-top: 2px;
+    margin-top: 5px;
     color: #38d878;
-    font-size: 5px;
+    font-size: 9px;
     font-weight: 900;
     white-space: nowrap;
 }
@@ -2572,27 +2576,27 @@ section {
     align-items: flex-start;
     justify-content: center;
     flex-wrap: wrap;
-    gap: 3px;
+    gap: 8px;
     width: 100%;
 }
 
 .pattern-multi .pattern-box {
-    min-width: 36px;
+    min-width: 55px;
 }
 
 .candle-pattern-visual {
-    height: 23px;
-    min-width: 35px;
+    height: 34px;
+    min-width: 48px;
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 4px;
+    gap: 6px;
     position: relative;
 }
 
 .mini-candle {
-    width: 7px;
-    height: 22px;
+    width: 10px;
+    height: 32px;
     position: relative;
     display: flex;
     justify-content: center;
@@ -2601,8 +2605,8 @@ section {
 
 .mini-candle .wick {
     position: absolute;
-    width: 1px;
-    height: 22px;
+    width: 2px;
+    height: 32px;
     left: 50%;
     top: 0;
     transform: translateX(-50%);
@@ -2612,72 +2616,72 @@ section {
 .mini-candle .body {
     position: relative;
     z-index: 2;
-    width: 7px;
-    height: 10px;
+    width: 10px;
+    height: 14px;
     border-radius: 1px;
 }
 
 .mini-candle.bearish .body {
     background: #ff5966;
-    height: 12px;
+    height: 17px;
 }
 
 .mini-candle.bullish .body {
     background: #38d878;
-    height: 17px;
+    height: 23px;
 }
 
 .mini-candle.bullish.large .body,
 .mini-candle.bearish.large .body {
-    height: 20px;
-    width: 9px;
+    height: 28px;
+    width: 12px;
 }
 
 .mini-candle.bullish-doji .body {
     background: #38d878;
-    height: 2px;
-    width: 10px;
+    height: 3px;
+    width: 13px;
 }
 
 .mini-candle.bearish-doji .body {
     background: #ff5966;
-    height: 2px;
-    width: 10px;
+    height: 3px;
+    width: 13px;
 }
 
 .mini-candle.piercing-candle .body {
     background: #38d878;
-    height: 15px;
+    height: 21px;
 }
 
 .mini-candle.piercing-bearish .body {
     background: #ff5966;
-    height: 15px;
+    height: 21px;
 }
 
 .mini-candle.bullish.very-large .body {
     background: #38d878;
-    height: 20px;
-    width: 9px;
+    height: 29px;
+    width: 12px;
 }
 
 .mini-candle.bearish.very-large .body {
     background: #ff5966;
-    height: 20px;
-    width: 9px;
+    height: 29px;
+    width: 12px;
 }
 
 .mini-candle.hammer .wick,
 .mini-candle.inverted-hammer .wick {
-    height: 22px;
+    height: 32px;
     top: 0;
 }
 
 .mini-candle.hammer .body {
     position: absolute;
     top: 1px;
-    height: 6px;
-    width: 8px;
+    height: 8px;
+    width: 11px;
 }
 
 .mini-candle.bullish.hammer .body,
@@ -2693,14 +2697,14 @@ section {
 .mini-candle.inverted-hammer .body {
     position: absolute;
     bottom: 1px;
-    height: 6px;
-    width: 8px;
+    height: 8px;
+    width: 11px;
 }
 
 .candle-pattern-visual.empty {
     color: #68737e;
-    font-size: 9px;
-    height: 23px;
+    font-size: 13px;
+    height: 34px;
 }
 
 
@@ -2708,44 +2712,52 @@ section {
 
 .three-candle-section,
 .top-three-candle-section {
-    padding: 7px 5px;
+    padding: 10px 7px;
     background: #0b1116;
     border-top: 1px solid #263039;
 }
 
 .three-candle-heading {
-    color: #8996a1;
-    font-size: 7px;
+    color: #aab5be;
+    font-size: 10px;
     font-weight: 900;
     text-align: center;
-    margin-bottom: 7px;
+    margin-bottom: 9px;
 }
 
 .three-candle-list {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     width: 100%;
-    gap: 3px;
+    gap: 6px;
 }
 
 .three-candle-item {
     min-width: 0;
-    min-height: 65px;
+    min-height: 83px;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: flex-start;
-    padding: 5px 2px;
+    padding: 8px 3px;
     background: #101820;
-    border: 1px solid #25323b;
-    border-radius: 3px;
+    border: 1px solid #303e49;
+    border-radius: 5px;
 }
 
 .three-candle-label {
-    color: #83909b;
-    font-size: 7px;
-    font-weight: 800;
-    margin-bottom: 5px;
+    color: #c0cbd4;
+    font-size: 10px;
+    font-weight: 900;
+    margin-bottom: 8px;
+    white-space: nowrap;
+}
+
+.candle-live {
+    display: inline-block;
+    color: #e4c45e;
+    font-size: 8px;
+    font-weight: 900;
 }
 
 .three-candle-pattern {
@@ -2755,23 +2767,23 @@ section {
 }
 
 .three-candle-pattern .pattern-multi {
-    gap: 2px;
+    gap: 5px;
 }
 
 .three-candle-pattern .pattern-box {
-    min-width: 34px;
+    min-width: 45px;
 }
 
 .three-candle-pattern .pattern-name {
-    font-size: 5px;
+    font-size: 8px;
 }
 
 .three-candle-pattern .candle-pattern-visual {
-    transform: scale(.85);
+    transform: scale(1);
 }
 
 .three-candle-pattern .pattern-none {
-    min-height: 25px;
+    min-height: 34px;
 }
 
 
@@ -2779,21 +2791,21 @@ section {
 
 .consecutive-bullish {
     color: #38d878 !important;
-    font-size: 6px !important;
+    font-size: 9px !important;
     font-weight: 900;
     white-space: nowrap;
     background: rgba(56,216,120,.10);
-    padding: 3px 5px;
+    padding: 4px 6px;
     border-radius: 3px;
 }
 
 .consecutive-bearish {
     color: #ff5966 !important;
-    font-size: 6px !important;
+    font-size: 9px !important;
     font-weight: 900;
     white-space: nowrap;
     background: rgba(255,89,102,.10);
-    padding: 3px 5px;
+    padding: 4px 6px;
     border-radius: 3px;
 }
 
@@ -2925,27 +2937,27 @@ section {
 
 .signal-card-top {
     width: 100%;
-    min-height: 37px;
-    padding: 5px 8px;
+    min-height: 48px;
+    padding: 8px 10px;
     display: flex;
     flex-direction: row;
     align-items: center;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: 9px;
     border-bottom: 1px solid #263039;
     background: rgba(255,255,255,0.015);
 }
 
 .signal-rank {
-    color: #b84d58;
-    font-size: 7px;
+    color: #e0a0a7;
+    font-size: 11px;
     font-weight: 900;
     white-space: nowrap;
 }
 
 .signal-coin-name {
-    color: #e5e9ed;
-    font-size: 9px;
+    color: #f1f4f7;
+    font-size: 15px;
     font-weight: 900;
     white-space: nowrap;
 }
@@ -2954,19 +2966,19 @@ section {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 4px;
+    gap: 6px;
 }
 
 .signal-type-badge {
     color: #e4c45e !important;
-    font-size: 6px !important;
+    font-size: 10px !important;
     font-weight: 900;
     white-space: nowrap;
 }
 
 .bearish-type-badge {
     color: #ff5966 !important;
-    font-size: 6px !important;
+    font-size: 10px !important;
     font-weight: 900;
     white-space: nowrap;
 }
@@ -2976,13 +2988,13 @@ section {
     grid-template-columns: 1.1fr 0.9fr 0.8fr;
     align-items: center;
     width: 100%;
-    min-height: 53px;
+    min-height: 59px;
 }
 
 .signal-data-grid > div {
     min-width: 0;
-    min-height: 53px;
-    padding: 3px 2px;
+    min-height: 59px;
+    padding: 5px 3px;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -2995,19 +3007,19 @@ section {
 }
 
 .signal-data-grid span {
-    color: #69747e;
-    font-size: 6px;
+    color: #89949e;
+    font-size: 9px;
 }
 
 .signal-data-grid strong {
-    margin-top: 2px;
+    margin-top: 4px;
     color: #dce2e7;
-    font-size: 8px;
+    font-size: 12px;
 }
 
 .signal-data-grid .signal-price strong {
     color: #f1f4f7;
-    font-size: 8px;
+    font-size: 12px;
     font-weight: 900;
     white-space: nowrap;
 }
@@ -3062,32 +3074,32 @@ section {
 }
 
 .coin-head {
-    min-height: 38px;
-    padding: 5px 9px;
+    min-height: 48px;
+    padding: 8px 10px;
     display: flex;
     align-items: center;
     justify-content: space-between;
     flex-wrap: wrap;
-    gap: 5px;
+    gap: 7px;
     border-bottom: 1px solid #202a33;
 }
 
 .coin-title {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
     flex-wrap: wrap;
 }
 
 .coin-title b {
-    font-size: 10px;
+    font-size: 15px;
     font-weight: 900;
 }
 
 .rank {
-    color: #c9a83d;
-    font-size: 8px;
-    font-weight: 800;
+    color: #e4c45e;
+    font-size: 12px;
+    font-weight: 900;
 }
 
 .pattern-badge-list {
@@ -3095,7 +3107,7 @@ section {
     align-items: center;
     justify-content: flex-end;
     flex-wrap: wrap;
-    gap: 5px;
+    gap: 7px;
 }
 
 .market-summary {
@@ -3122,15 +3134,15 @@ section {
 
 .market-summary span {
     display: block;
-    color: #65717b;
-    font-size: 6px;
-    margin-bottom: 3px;
+    color: #89949e;
+    font-size: 9px;
+    margin-bottom: 4px;
 }
 
 .market-summary strong {
     display: block;
     color: #dce2e7;
-    font-size: 7px;
+    font-size: 11px;
 }
 
 .market-summary .daily-change-value .up {
@@ -3184,16 +3196,20 @@ section {
     }
 
     .coin-head {
-        min-height: 35px;
-        padding: 5px 7px;
+        min-height: 42px;
+        padding: 7px 8px;
     }
 
     .coin-title {
-        gap: 6px;
+        gap: 8px;
     }
 
     .coin-title b {
-        font-size: 9px;
+        font-size: 13px;
+    }
+
+    .rank {
+        font-size: 11px;
     }
 
     .signal-condition-one-line {
@@ -3206,85 +3222,89 @@ section {
     }
 
     .signal-card-top {
-        min-height: 32px;
-        padding: 4px 5px;
-        gap: 4px;
+        min-height: 42px;
+        padding: 7px 7px;
+        gap: 6px;
     }
 
     .signal-rank {
-        font-size: 5px;
+        font-size: 10px;
     }
 
     .signal-coin-name {
-        font-size: 7px;
+        font-size: 14px;
     }
 
     .signal-type-list {
-        gap: 3px;
+        gap: 4px;
     }
 
     .signal-type-badge,
     .bearish-type-badge {
-        font-size: 5px !important;
+        font-size: 9px !important;
     }
 
     .signal-data-grid {
-        min-height: 48px;
+        min-height: 53px;
     }
 
     .signal-data-grid > div {
-        min-height: 48px;
-        padding: 2px 1px;
+        min-height: 53px;
+        padding: 3px 1px;
     }
 
     .signal-data-grid span {
-        font-size: 5px;
+        font-size: 8px;
     }
 
     .signal-data-grid strong {
-        font-size: 6px;
+        font-size: 10px;
     }
 
     .signal-data-grid .signal-price strong {
-        font-size: 6px;
+        font-size: 10px;
     }
 
     .three-candle-section,
     .top-three-candle-section {
-        padding: 6px 3px;
+        padding: 8px 4px;
     }
 
     .three-candle-heading {
-        font-size: 6px;
-        margin-bottom: 5px;
+        font-size: 9px;
+        margin-bottom: 7px;
     }
 
     .three-candle-item {
-        min-height: 60px;
-        padding: 4px 1px;
+        min-height: 75px;
+        padding: 7px 2px;
     }
 
     .three-candle-label {
-        font-size: 6px;
-        margin-bottom: 4px;
+        font-size: 8px;
+        margin-bottom: 7px;
+    }
+
+    .candle-live {
+        font-size: 7px;
     }
 
     .three-candle-pattern .pattern-box {
-        min-width: 25px;
+        min-width: 34px;
     }
 
     .three-candle-pattern .pattern-name {
-        font-size: 4px;
+        font-size: 7px;
     }
 
     .three-candle-pattern .candle-pattern-visual {
-        transform: scale(.65);
+        transform: scale(.85);
     }
 
     .consecutive-bullish,
     .consecutive-bearish {
-        font-size: 5px !important;
-        padding: 2px 3px;
+        font-size: 8px !important;
+        padding: 3px 4px;
     }
 
     .market-summary {
@@ -3296,11 +3316,11 @@ section {
     }
 
     .market-summary span {
-        font-size: 5px;
+        font-size: 7px;
     }
 
     .market-summary strong {
-        font-size: 6px;
+        font-size: 9px;
     }
 }
 """
