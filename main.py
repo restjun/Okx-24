@@ -1,4 +1,3 @@
-
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
@@ -1480,10 +1479,14 @@ def get_candle_patterns(previous, current):
     return patterns
 
 
+# =========================================================
+# 상승 / 하락 패턴 강조 대상
+# =========================================================
+
+# 장대양봉은 표시만 하고 상승패턴 시그널 및 강조에서는 제외
 BULLISH_HIGHLIGHT_PATTERNS = [
     "상승장악형",
     "상승관통형",
-    "장대양봉",
     "상승망치형",
     "상승역망치형"
 ]
@@ -2911,9 +2914,11 @@ def signal_card(row):
         CANDLE_PATTERN_TIMEFRAME
     )
 
-    has_bullish_pattern = (
-        row.get("signal_4h_current", False)
-        and row.get("ema10_rebound", False)
+    # EMA 시그널 조건 + 상승패턴이 모두 충족된 경우 강조
+    # 현재봉 또는 이전봉의 상승패턴을 모두 인정
+    # 장대양봉은 BULLISH_HIGHLIGHT_PATTERNS에서 제외되어 있음
+    has_bullish_pattern = bool(
+        row.get("signal_4h", False)
     )
 
     badge_html = pattern_badges_html(row)
@@ -3864,7 +3869,7 @@ section {
 
 
 /* =========================================================
-   상승패턴 + EMA 10선 반등 강조
+   EMA 조건 + 상승패턴 강조
    ========================================================= */
 
 .signal-card.has-bullish-pattern {
