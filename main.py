@@ -1,4 +1,3 @@
-
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
@@ -76,7 +75,6 @@ SIGNAL1_MAX_COUNT = 100
 
 # =========================================================
 # 시그널 시간봉 설정
-# 시그널3 일봉 완전 삭제
 # =========================================================
 
 SIGNAL1_TIMEFRAME = "15m"
@@ -764,7 +762,6 @@ def check_ema10_rebound(df):
 
 # =========================================================
 # 지정 시간봉 EMA 분석
-# 일봉 EMA 분석 기능 제거
 # =========================================================
 
 def analyze_ema_timeframe(market, timeframe, price=None):
@@ -820,13 +817,6 @@ def check_one_ema_condition(state, setting):
 
 # =========================================================
 # BTC 시황 EMA 조건 검사
-#
-# - BTC 시그널1 카운팅은 검사하지 않음
-# - EMA 10-20 조건만 검사
-# - EMA 20-50 조건만 검사
-# - 시그널1, 시그널2만 검사
-# - ANY는 정배열/역배열 관계없이 통과
-# - 하나라도 불일치하면 경고
 # =========================================================
 
 def check_btc_signal_ema_conditions():
@@ -848,7 +838,6 @@ def check_btc_signal_ema_conditions():
 
         timeframe_label = get_timeframe_label(timeframe)
 
-        # EMA 10-20 검사
         if not check_one_ema_condition(
             state_10_20,
             condition_10_20
@@ -861,7 +850,6 @@ def check_btc_signal_ema_conditions():
                 "actual": ema_state_text(state_10_20)
             })
 
-        # EMA 20-50 검사
         if not check_one_ema_condition(
             state_100_200,
             condition_100_200
@@ -1099,7 +1087,6 @@ def check_all_signal_conditions(all_states):
 
 # =========================================================
 # 일봉 기간 생성
-# 당일 변동률 계산용으로 유지
 # =========================================================
 
 def build_daily_periods(df, current_price=None):
@@ -2078,7 +2065,6 @@ def okx_price():
 
 # =========================================================
 # BTC EMA 상태 계산
-# 시그널1, 시그널2만 분석
 # =========================================================
 
 def analyze_btc_ema_states(timeframe):
@@ -2424,6 +2410,7 @@ def ema_state_text(state):
 
 # =========================================================
 # BTC 상단 EMA 불일치 경고 HTML
+# 간결한 한 줄 형태로 표시
 # =========================================================
 
 def btc_warning_html():
@@ -2442,6 +2429,7 @@ def btc_warning_html():
         mismatch_items.append(
             f"""
             <div class="btc-warning-item">
+
                 <span class="btc-warning-signal">
                     {html.escape(item["signal"])}
                 </span>
@@ -2461,6 +2449,7 @@ def btc_warning_html():
                 <span class="btc-warning-required">
                     필요 {html.escape(item["required"])}
                 </span>
+
             </div>
             """
         )
@@ -2469,22 +2458,19 @@ def btc_warning_html():
     <section class="btc-warning-panel">
 
         <div class="btc-warning-title">
+
             <span class="btc-warning-icon">⚠</span>
 
-            <div>
-                <b>BTC 시황 불일치 경고</b>
-                <span>
-                    BTC EMA 배열이 설정된 시그널 조건과 일치하지 않습니다.
-                </span>
-            </div>
+            <b>BTC 시황 불일치</b>
+
+            <span class="btc-warning-description">
+                시그널 EMA 조건과 일치하지 않습니다.
+            </span>
+
         </div>
 
         <div class="btc-warning-details">
             {"".join(mismatch_items)}
-        </div>
-
-        <div class="btc-warning-footer">
-            카운팅 제외 · EMA 배열 조건만 검사
         </div>
 
     </section>
@@ -2493,7 +2479,6 @@ def btc_warning_html():
 
 # =========================================================
 # 통합 EMA 상태 표시
-# 시그널1, 시그널2만 표시
 # =========================================================
 
 def signal_ema_status_html(all_states):
@@ -3169,117 +3154,92 @@ section {
 
 
 /* =========================================================
-   BTC 상단 경고
+   BTC 상단 경고 - 간결한 디자인
    ========================================================= */
 
 .btc-warning-panel {
     width: 100%;
-    margin-bottom: 12px;
-    padding: 10px;
-    background: linear-gradient(
-        135deg,
-        #321419,
-        #1b1014
-    );
-    border: 1px solid #a83d49;
-    border-left: 4px solid #ff5966;
-    border-radius: 5px;
-    box-shadow: 0 0 9px rgba(255, 89, 102, 0.13);
+    margin-bottom: 8px;
+    padding: 8px 10px;
+    background: #211216;
+    border: 1px solid #71313b;
+    border-left: 3px solid #ff5966;
+    border-radius: 4px;
 }
 
 .btc-warning-title {
     display: flex;
     align-items: center;
-    gap: 9px;
-    padding-bottom: 8px;
-    border-bottom: 1px solid #55252d;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid #48252c;
 }
 
 .btc-warning-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 25px;
-    height: 25px;
-    flex: 0 0 25px;
-    color: #ffffff;
-    background: #c83949;
-    border-radius: 50%;
-    font-size: 15px;
+    color: #ff5966;
+    font-size: 12px;
     font-weight: 900;
-}
-
-.btc-warning-title > div {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
 }
 
 .btc-warning-title b {
     color: #ff707b;
-    font-size: 11px;
+    font-size: 9px;
     font-weight: 900;
 }
 
-.btc-warning-title span {
-    color: #d4a4a9;
-    font-size: 8px;
+.btc-warning-description {
+    color: #a98b90;
+    font-size: 7px;
     font-weight: 700;
 }
 
 .btc-warning-details {
     display: flex;
     flex-direction: column;
-    gap: 5px;
-    padding-top: 8px;
+    gap: 4px;
+    padding-top: 6px;
 }
 
 .btc-warning-item {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: 6px;
-    padding: 5px 6px;
-    background: rgba(0, 0, 0, 0.22);
-    border: 1px solid rgba(255, 89, 102, 0.15);
+    gap: 7px;
+    min-height: 19px;
+    padding: 3px 5px;
+    background: rgba(0, 0, 0, 0.20);
     border-radius: 3px;
 }
 
 .btc-warning-signal {
     color: #e4c45e;
-    font-size: 8px;
+    font-size: 7px;
     font-weight: 900;
 }
 
 .btc-warning-time {
     color: #a9b5bf;
-    font-size: 8px;
+    font-size: 7px;
     font-weight: 800;
 }
 
 .btc-warning-ema {
     color: #ffffff;
-    font-size: 8px;
+    font-size: 7px;
     font-weight: 900;
 }
 
 .btc-warning-actual {
     color: #ff5966;
-    font-size: 8px;
+    font-size: 7px;
     font-weight: 900;
 }
 
 .btc-warning-required {
     color: #38d878;
-    font-size: 8px;
-    font-weight: 900;
-}
-
-.btc-warning-footer {
-    margin-top: 7px;
-    color: #9b777d;
     font-size: 7px;
-    font-weight: 700;
+    font-weight: 900;
 }
 
 
@@ -4268,21 +4228,34 @@ section {
         min-width: 22px;
     }
 
+    /* BTC 경고 모바일 */
+
     .btc-warning-panel {
-        padding: 8px;
+        padding: 7px 8px;
+        margin-bottom: 8px;
+    }
+
+    .btc-warning-title {
+        gap: 5px;
+        padding-bottom: 5px;
     }
 
     .btc-warning-title b {
-        font-size: 10px;
+        font-size: 8px;
     }
 
-    .btc-warning-title span {
-        font-size: 7px;
+    .btc-warning-description {
+        font-size: 6px;
+    }
+
+    .btc-warning-details {
+        gap: 3px;
+        padding-top: 5px;
     }
 
     .btc-warning-item {
         gap: 5px;
-        padding: 5px;
+        padding: 3px 4px;
     }
 
     .btc-warning-signal,
@@ -4290,12 +4263,9 @@ section {
     .btc-warning-ema,
     .btc-warning-actual,
     .btc-warning-required {
-        font-size: 7px;
-    }
-
-    .btc-warning-footer {
         font-size: 6px;
     }
+
 }
 """
 
