@@ -45,6 +45,12 @@ UPDATE_MINUTES = 1
 # SIGNAL 최소 24시간 거래대금 (KRW)
 SIGNAL_MIN_VOLUME = 10_000_000_000
 
+# SIGNAL 당일 변동률 최소 기준 (%)
+# 0.0 = 0% 초과
+# 1.0 = 1% 초과
+# 2.0 = 2% 초과
+DAILY_CHANGE_MIN = 0.0
+
 USE_UPBIT = "Y"
 USE_OKX = "Y"
 
@@ -1385,7 +1391,7 @@ def update_upbit():
     # SIGNAL 조건
     #
     # 1. 현재봉 또는 이전봉 상승패턴
-    # 2. 당일 변동률 양수
+    # 2. 당일 변동률 설정값 초과
     # 3. 24시간 거래대금 100억 이상
     # =====================================================
 
@@ -1394,7 +1400,7 @@ def update_upbit():
         if (
             row.get("signal_4h", False)
             and row.get("daily_change") is not None
-            and row.get("daily_change") > 0
+            and row.get("daily_change") > DAILY_CHANGE_MIN
             and row.get("volume_24h", 0) >= SIGNAL_MIN_VOLUME
         )
     ]
@@ -1411,10 +1417,11 @@ def update_upbit():
 
     log.info(
         "UPBIT | TOP%s | 캔들패턴=%s | "
-        "최소 거래대금=%s원 | SIGNAL=%s",
+        "최소 거래대금=%s원 | 당일 변동률>%s%% | SIGNAL=%s",
         TOP_N,
         get_timeframe_label(CANDLE_PATTERN_TIMEFRAME),
         SIGNAL_MIN_VOLUME,
+        DAILY_CHANGE_MIN,
         len(latest_signal_data)
     )
 
@@ -2145,7 +2152,7 @@ def signal_section():
         </span>
 
         <span>
-            공통조건 · 당일 변동률 양수
+            공통조건 · 당일 변동률 {DAILY_CHANGE_MIN:.2f}% 초과
         </span>
 
         <span>
@@ -3203,6 +3210,11 @@ def startup():
     log.info(
         "SIGNAL 최소 거래대금: %s원",
         SIGNAL_MIN_VOLUME
+    )
+
+    log.info(
+        "SIGNAL 당일 변동률 최소 기준: %s%% 초과",
+        DAILY_CHANGE_MIN
     )
 
     log.info(
