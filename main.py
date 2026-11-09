@@ -1,3 +1,4 @@
+
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
@@ -464,6 +465,14 @@ def get_upbit_1h_candles(market, count=200):
 
 
 # =========================================================
+# 업비트 4시간봉 조회 추가
+# =========================================================
+
+def get_upbit_4h_candles(market, count=200):
+    return get_upbit_minute_candles(market, 240, count)
+
+
+# =========================================================
 # 업비트 일봉 조회
 # 당일 변동률 계산용으로 유지
 # =========================================================
@@ -553,6 +562,7 @@ def update_current_candle(df, current_start, price):
 # =========================================================
 
 def get_timeframe_dataframe(market, timeframe, price=None):
+
     if timeframe == "5m":
         df = get_cached_dataframe(
             market,
@@ -583,6 +593,17 @@ def get_timeframe_dataframe(market, timeframe, price=None):
         )
         minutes = 60
 
+    # 4시간봉 추가
+    elif timeframe == "4h":
+        df = get_cached_dataframe(
+            market,
+            "4h",
+            lambda: get_upbit_4h_candles(
+                market, EMA_HISTORY_CANDLES
+            )
+        )
+        minutes = 240
+
     else:
         return pd.DataFrame()
 
@@ -596,6 +617,14 @@ def get_timeframe_dataframe(market, timeframe, price=None):
         second=0,
         microsecond=0
     )
+
+    if timeframe == "4h":
+        current_start = now.replace(
+            hour=(now.hour // 4) * 4,
+            minute=0,
+            second=0,
+            microsecond=0
+        )
 
     return update_current_candle(
         df,
@@ -741,8 +770,7 @@ def check_ema10_rebound(df):
         )
 
         current_close = float(
-            df.loc[current_index, "close"
-            ]
+            df.loc[current_index, "close"]
         )
 
     except Exception:
@@ -765,7 +793,7 @@ def check_ema10_rebound(df):
 # =========================================================
 
 def analyze_ema_timeframe(market, timeframe, price=None):
-    if timeframe in ("5m", "15m", "1h"):
+    if timeframe in ("5m", "15m", "1h", "4h"):
         df = get_timeframe_dataframe(
             market,
             timeframe,
@@ -1543,7 +1571,8 @@ def analyze_signal_candles(market, price, ema_reverse=False):
 
     timeframe = CANDLE_PATTERN_TIMEFRAME
 
-    if timeframe in ("5m", "15m", "1h"):
+    # 4시간봉 추가
+    if timeframe in ("5m", "15m", "1h", "4h"):
         df = get_timeframe_dataframe(
             market,
             timeframe,
@@ -1556,7 +1585,8 @@ def analyze_signal_candles(market, price, ema_reverse=False):
         minutes = {
             "5m": 5,
             "15m": 15,
-            "1h": 60
+            "1h": 60,
+            "4h": 240
         }[timeframe]
 
         periods = []
@@ -2077,6 +2107,7 @@ def analyze_btc_ema_states(timeframe):
         "5m": "5m",
         "15m": "15m",
         "1h": "1H",
+        "4h": "4H",
         "1d": "1D"
     }
 
@@ -2115,6 +2146,19 @@ def analyze_btc_ema_states(timeframe):
                 second=0,
                 microsecond=0
             )
+
+        elif timeframe == "4h":
+            # OKX 4시간봉은 UTC 기준으로 시작
+            now_utc = datetime.now(UTC)
+
+            current_start_utc = now_utc.replace(
+                hour=(now_utc.hour // 4) * 4,
+                minute=0,
+                second=0,
+                microsecond=0
+            )
+
+            current_start = current_start_utc.astimezone(KST)
 
         else:
             current_start = now.replace(
@@ -2410,7 +2454,6 @@ def ema_state_text(state):
 
 # =========================================================
 # BTC 상단 EMA 불일치 / 조건 충족 HTML
-# 조건 충족 시에도 숨기지 않고 초록색으로 표시
 # =========================================================
 
 def btc_warning_html():
@@ -2420,7 +2463,6 @@ def btc_warning_html():
 
     result = check_btc_signal_ema_conditions()
 
-    # 모든 BTC EMA 조건 충족
     if result["match"]:
         return """
         <section class="btc-warning-panel btc-condition-match">
@@ -2440,7 +2482,6 @@ def btc_warning_html():
         </section>
         """
 
-    # EMA 조건 불일치
     mismatch_items = []
 
     for item in result["mismatches"]:
