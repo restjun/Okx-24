@@ -46,9 +46,6 @@ UPDATE_MINUTES = 1
 SIGNAL_MIN_VOLUME = 10_000_000_000
 
 # SIGNAL 당일 변동률 최소 기준 (%)
-# 0.0 = 0% 초과
-# 1.0 = 1% 초과
-# 2.0 = 2% 초과
 DAILY_CHANGE_MIN = 5.0
 
 USE_UPBIT = "Y"
@@ -60,6 +57,9 @@ MAX_RETRIES = 20
 
 # 캔들 패턴 시간봉
 CANDLE_PATTERN_TIMEFRAME = "4h"
+
+# 연속 장대봉 표시 최소 개수
+CONSECUTIVE_CANDLE_MIN = 3
 
 TIMEFRAME_LABEL = {
     "5m": "5분",
@@ -108,6 +108,7 @@ def clear_candle_cache():
 
 
 def get_cached_dataframe(market, timeframe, loader):
+
     key = (market, timeframe)
 
     with candle_cache_lock:
@@ -123,6 +124,7 @@ def get_cached_dataframe(market, timeframe, loader):
 
     with candle_cache_lock:
         if not df.empty:
+
             existing = candle_cache.get(key)
 
             if existing is not None:
@@ -150,9 +152,11 @@ def get_timeframe_label(timeframe):
 # =========================================================
 
 def wait_request():
+
     global last_request_time
 
     with request_lock:
+
         gap = time.monotonic() - last_request_time
 
         if gap < REQUEST_INTERVAL:
@@ -162,8 +166,11 @@ def wait_request():
 
 
 def retry(func, *args, **kwargs):
+
     for n in range(MAX_RETRIES):
+
         try:
+
             wait_request()
 
             r = func(*args, **kwargs)
@@ -181,6 +188,7 @@ def retry(func, *args, **kwargs):
                 return r
 
         except Exception as e:
+
             log.warning(
                 "API 오류 %s/%s: %s",
                 n + 1,
@@ -199,6 +207,7 @@ def retry(func, *args, **kwargs):
 # =========================================================
 
 def get_upbit_markets():
+
     global latest_upbit_markets
 
     r = retry(
@@ -212,6 +221,7 @@ def get_upbit_markets():
         return []
 
     try:
+
         markets = [
             x["market"]
             for x in r.json()
@@ -247,7 +257,9 @@ def get_upbit_markets():
             continue
 
         for x in data:
+
             try:
+
                 result.append({
                     "market": x["market"],
                     "current_price": float(x["trade_price"]),
@@ -301,7 +313,9 @@ def get_upbit_minute_candles(market, unit, count=200):
     rows = []
 
     for x in data:
+
         try:
+
             dt_utc = datetime.strptime(
                 x["candle_date_time_utc"],
                 "%Y-%m-%dT%H:%M:%S"
@@ -383,7 +397,9 @@ def get_upbit_daily_candles(market, count=200):
     rows = []
 
     for x in data:
+
         try:
+
             rows.append({
                 "datetime": datetime.strptime(
                     x["candle_date_time_kst"],
@@ -888,7 +904,6 @@ def is_bearish_inverted_hammer(previous, current):
 
 # =========================================================
 # 상승 / 하락 패턴 대상
-# 장대양봉 추가
 # =========================================================
 
 BULLISH_HIGHLIGHT_PATTERNS = [
@@ -962,7 +977,7 @@ def get_candle_patterns(previous, current):
 
 
 # =========================================================
-# 캔들 패턴 분석
+# 최근 3개 봉 패턴 분석
 # =========================================================
 
 def analyze_previous_current_pattern(periods):
@@ -970,48 +985,113 @@ def analyze_previous_current_pattern(periods):
     result = {
         "previous_pattern": [],
         "current_pattern": [],
+
+        "last_three_patterns": [],
+
         "previous_bullish_pattern": False,
         "current_bullish_pattern": False,
+
         "previous_bullish_engulfing": False,
-        "current_bullish_engulfing": False
+        "current_bullish_engulfing": False,
+
+        "consecutive_bullish": 0,
+        "consecutive_bearish": 0
     }
 
     if not periods:
         return result
 
-    current = periods[-1]
-    previous = periods[-2] if len(periods) >= 2 else None
-    previous_previous = periods[-3] if len(periods) >= 3 else None
+    # 모든 봉의 패턴 계산
+    pattern_history = []
 
-    result["current_pattern"] = get_candle_patterns(
-        previous,
-        current
-    )
+    for i in range(len(periods)):
 
-    if previous is not None:
+        current = periods[i]
 
-        result["previous_pattern"] = get_candle_patterns(
-            previous_previous,
-            previous
+        previous = (
+            periods[i - 1]
+            if i >= 1
+            else None
         )
 
+        patterns = get_candle_patterns(
+            previous,
+            current
+        )
+
+        pattern_history.append(patterns)
+
+    # 최근 3개 봉 패턴
+    last_three = pattern_history[-3:]
+
+    result["last_three_patterns"] = [
+        {
+            "label": periods[-len(last_three) + i]["label"],
+            "patterns": patterns
+        }
+        for i, patterns in enumerate(last_three)
+    ]
+
+    # 기존 이전봉 / 현재봉 데이터 유지
+    current_patterns = pattern_history[-1]
+
+    previous_patterns = (
+        pattern_history[-2]
+        if len(pattern_history) >= 2
+        else []
+    )
+
+    result["current_pattern"] = current_patterns
+    result["previous_pattern"] = previous_patterns
+
     result["current_bullish_engulfing"] = (
-        "상승장악형" in result["current_pattern"]
+        "상승장악형" in current_patterns
     )
 
     result["previous_bullish_engulfing"] = (
-        "상승장악형" in result["previous_pattern"]
+        "상승장악형" in previous_patterns
     )
 
     result["previous_bullish_pattern"] = any(
         p in BULLISH_HIGHLIGHT_PATTERNS
-        for p in result["previous_pattern"]
+        for p in previous_patterns
     )
 
     result["current_bullish_pattern"] = any(
         p in BULLISH_HIGHLIGHT_PATTERNS
-        for p in result["current_pattern"]
+        for p in current_patterns
     )
+
+    # =====================================================
+    # 연속 장대양봉 계산
+    # =====================================================
+
+    bullish_count = 0
+
+    for patterns in reversed(pattern_history):
+
+        if "장대양봉" in patterns:
+            bullish_count += 1
+
+        else:
+            break
+
+    # =====================================================
+    # 연속 장대음봉 계산
+    # =====================================================
+
+    bearish_count = 0
+
+    for patterns in reversed(pattern_history):
+
+        if "장대음봉" in patterns:
+            bearish_count += 1
+
+        else:
+            break
+
+    result["consecutive_bullish"] = bullish_count
+    result["consecutive_bearish"] = bearish_count
 
     return result
 
@@ -1033,8 +1113,11 @@ def analyze_signal_candles(market, price):
         "signal_reason": None,
         "previous_pattern": [],
         "current_pattern": [],
+        "last_three_patterns": [],
         "previous_bullish_engulfing": False,
-        "current_bullish_engulfing": False
+        "current_bullish_engulfing": False,
+        "consecutive_bullish": 0,
+        "consecutive_bearish": 0
     }
 
     timeframe = CANDLE_PATTERN_TIMEFRAME
@@ -1085,8 +1168,6 @@ def analyze_signal_candles(market, price):
                 "change": change
             })
 
-        periods = periods[-6:]
-
     elif timeframe == "1d":
 
         df = get_daily_dataframe(market)
@@ -1120,6 +1201,9 @@ def analyze_signal_candles(market, price):
     else:
         return empty_result
 
+    if not periods:
+        return empty_result
+
     pattern_info = analyze_previous_current_pattern(
         periods
     )
@@ -1132,7 +1216,7 @@ def analyze_signal_candles(market, price):
         "previous_bullish_pattern"
     ]
 
-    # EMA 조건 없이 상승패턴만으로 시그널 판정
+    # 기존 SIGNAL 조건 유지
     pattern_signal = bool(
         current_signal or previous_signal
     )
@@ -1160,7 +1244,7 @@ def analyze_signal_candles(market, price):
     current_period = periods[-1] if periods else None
 
     return {
-        "periods": periods,
+        "periods": periods[-6:],
 
         "signal_pass": signal,
         "pattern_signal": pattern_signal,
@@ -1185,12 +1269,24 @@ def analyze_signal_candles(market, price):
         "previous_pattern": pattern_info["previous_pattern"],
         "current_pattern": pattern_info["current_pattern"],
 
+        "last_three_patterns": pattern_info[
+            "last_three_patterns"
+        ],
+
         "previous_bullish_engulfing": pattern_info[
             "previous_bullish_engulfing"
         ],
 
         "current_bullish_engulfing": pattern_info[
             "current_bullish_engulfing"
+        ],
+
+        "consecutive_bullish": pattern_info[
+            "consecutive_bullish"
+        ],
+
+        "consecutive_bearish": pattern_info[
+            "consecutive_bearish"
         ]
     }
 
@@ -1267,6 +1363,18 @@ def make_row(
 
         "previous_pattern": analysis_pattern["previous_pattern"],
         "current_pattern": analysis_pattern["current_pattern"],
+
+        "last_three_patterns": analysis_pattern[
+            "last_three_patterns"
+        ],
+
+        "consecutive_bullish": analysis_pattern[
+            "consecutive_bullish"
+        ],
+
+        "consecutive_bearish": analysis_pattern[
+            "consecutive_bearish"
+        ],
 
         "previous_bullish_engulfing": analysis_pattern[
             "previous_bullish_engulfing"
@@ -1366,8 +1474,11 @@ def update_upbit():
                 "signal_reason": None,
                 "previous_pattern": [],
                 "current_pattern": [],
+                "last_three_patterns": [],
                 "previous_bullish_engulfing": False,
-                "current_bullish_engulfing": False
+                "current_bullish_engulfing": False,
+                "consecutive_bullish": 0,
+                "consecutive_bearish": 0
             }
 
         rows.append(
@@ -1388,7 +1499,7 @@ def update_upbit():
     latest_upbit_update_time = latest_upbit_daily_update_time
 
     # =====================================================
-    # SIGNAL 조건
+    # 기존 SIGNAL 조건 유지
     #
     # 1. 현재봉 또는 이전봉 상승패턴
     # 2. 당일 변동률 설정값 초과
@@ -1466,6 +1577,7 @@ def okx_candles(bar, limit=200):
     rows = []
 
     for x in data:
+
         try:
 
             rows.append({
@@ -1950,6 +2062,100 @@ def current_pattern_html(pattern):
 
 
 # =========================================================
+# 최근 3개 봉 캔들 패턴 표시 HTML
+# =========================================================
+
+def last_three_pattern_html(row):
+
+    last_three = row.get("last_three_patterns") or []
+
+    labels = [
+        "2개 전 봉",
+        "이전 봉",
+        "현재 봉"
+    ]
+
+    # 데이터가 3개 미만인 경우에도 위치 유지
+    missing = 3 - len(last_three)
+
+    items = []
+
+    for _ in range(missing):
+
+        items.append({
+            "label": "",
+            "patterns": []
+        })
+
+    items.extend(last_three)
+
+    boxes = []
+
+    for i, item in enumerate(items[-3:]):
+
+        patterns = item.get("patterns", [])
+
+        label = labels[i]
+
+        boxes.append(
+            f"""
+            <div class="three-candle-item">
+
+                <span class="three-candle-label">
+                    {label}
+                </span>
+
+                <div class="three-candle-pattern">
+                    {current_pattern_html(patterns)}
+                </div>
+
+            </div>
+            """
+        )
+
+    return (
+        '<div class="three-candle-list">'
+        + "".join(boxes)
+        + '</div>'
+    )
+
+
+# =========================================================
+# 연속 장대봉 배지
+# =========================================================
+
+def consecutive_candle_badges_html(row):
+
+    bullish_count = int(
+        row.get("consecutive_bullish", 0) or 0
+    )
+
+    bearish_count = int(
+        row.get("consecutive_bearish", 0) or 0
+    )
+
+    badges = []
+
+    if bullish_count >= CONSECUTIVE_CANDLE_MIN:
+
+        badges.append(
+            '<span class="consecutive-bullish">'
+            f'🔥 {bullish_count}연속 장대양봉'
+            '</span>'
+        )
+
+    if bearish_count >= CONSECUTIVE_CANDLE_MIN:
+
+        badges.append(
+            '<span class="consecutive-bearish">'
+            f'🔻 {bearish_count}연속 장대음봉'
+            '</span>'
+        )
+
+    return "".join(badges)
+
+
+# =========================================================
 # 패턴 배지
 # =========================================================
 
@@ -1979,6 +2185,10 @@ def pattern_badges_html(row):
         badges.append(
             '<span class="bearish-type-badge">🔻 하락패턴</span>'
         )
+
+    badges.append(
+        consecutive_candle_badges_html(row)
+    )
 
     return "".join(badges)
 
@@ -2026,7 +2236,7 @@ def btc_html():
 
 # =========================================================
 # SIGNAL 카드
-# EMA 및 카운팅 표시 삭제
+# 최근 3개 봉 표시
 # =========================================================
 
 def signal_card(row):
@@ -2040,6 +2250,8 @@ def signal_card(row):
     )
 
     badge_html = pattern_badges_html(row)
+
+    three_pattern_html = last_three_pattern_html(row)
 
     card_classes = ["signal-card"]
 
@@ -2093,21 +2305,15 @@ def signal_card(row):
                 </strong>
             </div>
 
-            <div class="signal-pattern">
-                <span>이전봉 {timeframe_label}</span>
+        </div>
 
-                <strong class="pattern-display">
-                    {current_pattern_html(row.get("previous_pattern"))}
-                </strong>
+        <div class="three-candle-section">
+
+            <div class="three-candle-heading">
+                최근 3개 봉 캔들패턴 · {timeframe_label}
             </div>
 
-            <div class="signal-pattern">
-                <span>현재봉 {timeframe_label}</span>
-
-                <strong class="pattern-display">
-                    {current_pattern_html(row.get("current_pattern"))}
-                </strong>
-            </div>
+            {three_pattern_html}
 
         </div>
 
@@ -2152,6 +2358,14 @@ def signal_section():
         </span>
 
         <span>
+            최근 3개 봉 패턴 표시
+        </span>
+
+        <span>
+            3연속 이상 장대봉 별도 표시
+        </span>
+
+        <span>
             공통조건 · 당일 변동률 {DAILY_CHANGE_MIN:.2f}% 초과
         </span>
 
@@ -2181,16 +2395,6 @@ def signal_section():
 
         {condition_html}
 
-        <div class="signal-header">
-
-            <div>현재가격</div>
-            <div>거래대금</div>
-            <div>변동률</div>
-            <div>이전봉 {html.escape(pattern_timeframe_label)}</div>
-            <div>현재봉 {html.escape(pattern_timeframe_label)}</div>
-
-        </div>
-
         <div class="signal-list">
             {body}
         </div>
@@ -2213,6 +2417,8 @@ def card(row, kind):
     )
 
     status = pattern_badges_html(row)
+
+    three_pattern_html = last_three_pattern_html(row)
 
     return f"""
     <article class="coin-card">
@@ -2265,25 +2471,15 @@ def card(row, kind):
 
             </div>
 
-            <div>
+        </div>
 
-                <span>이전봉 {timeframe_label}</span>
+        <div class="top-three-candle-section">
 
-                <strong class="pattern-display">
-                    {current_pattern_html(row.get("previous_pattern"))}
-                </strong>
-
+            <div class="three-candle-heading">
+                최근 3개 봉 캔들패턴 · {timeframe_label}
             </div>
 
-            <div>
-
-                <span>현재봉 {timeframe_label}</span>
-
-                <strong class="pattern-display">
-                    {current_pattern_html(row.get("current_pattern"))}
-                </strong>
-
-            </div>
+            {three_pattern_html}
 
         </div>
 
@@ -2510,6 +2706,100 @@ section {
 }
 
 
+/* 최근 3개 봉 */
+
+.three-candle-section,
+.top-three-candle-section {
+    padding: 7px 5px;
+    background: #0b1116;
+    border-top: 1px solid #263039;
+}
+
+.three-candle-heading {
+    color: #8996a1;
+    font-size: 7px;
+    font-weight: 900;
+    text-align: center;
+    margin-bottom: 7px;
+}
+
+.three-candle-list {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
+    gap: 3px;
+}
+
+.three-candle-item {
+    min-width: 0;
+    min-height: 65px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    padding: 5px 2px;
+    background: #101820;
+    border: 1px solid #25323b;
+    border-radius: 3px;
+}
+
+.three-candle-label {
+    color: #83909b;
+    font-size: 7px;
+    font-weight: 800;
+    margin-bottom: 5px;
+}
+
+.three-candle-pattern {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+}
+
+.three-candle-pattern .pattern-multi {
+    gap: 2px;
+}
+
+.three-candle-pattern .pattern-box {
+    min-width: 34px;
+}
+
+.three-candle-pattern .pattern-name {
+    font-size: 5px;
+}
+
+.three-candle-pattern .candle-pattern-visual {
+    transform: scale(.85);
+}
+
+.three-candle-pattern .pattern-none {
+    min-height: 25px;
+}
+
+
+/* 연속 장대봉 */
+
+.consecutive-bullish {
+    color: #38d878 !important;
+    font-size: 6px !important;
+    font-weight: 900;
+    white-space: nowrap;
+    background: rgba(56,216,120,.10);
+    padding: 3px 5px;
+    border-radius: 3px;
+}
+
+.consecutive-bearish {
+    color: #ff5966 !important;
+    font-size: 6px !important;
+    font-weight: 900;
+    white-space: nowrap;
+    background: rgba(255,89,102,.10);
+    padding: 3px 5px;
+    border-radius: 3px;
+}
+
+
 /* 공통 패널 */
 
 .section-head {
@@ -2623,27 +2913,6 @@ section {
     white-space: nowrap;
 }
 
-.signal-header,
-.signal-data-grid {
-    display: grid;
-    grid-template-columns: 1.1fr 0.9fr 0.8fr 1.1fr 1.1fr;
-    align-items: center;
-}
-
-.signal-header {
-    min-height: 27px;
-    padding: 0 9px;
-    color: #69747e;
-    font-size: 6px;
-    font-weight: 800;
-    background: #0b1015;
-    border-bottom: 1px solid #20282f;
-}
-
-.signal-header > div {
-    text-align: center;
-}
-
 .signal-card {
     display: flex;
     flex-direction: column;
@@ -2687,31 +2956,34 @@ section {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 2px;
+    gap: 4px;
 }
 
 .signal-type-badge {
     color: #e4c45e !important;
-    font-size: 5px !important;
+    font-size: 6px !important;
     font-weight: 900;
     white-space: nowrap;
 }
 
 .bearish-type-badge {
     color: #ff5966 !important;
-    font-size: 5px !important;
+    font-size: 6px !important;
     font-weight: 900;
     white-space: nowrap;
 }
 
 .signal-data-grid {
+    display: grid;
+    grid-template-columns: 1.1fr 0.9fr 0.8fr;
+    align-items: center;
     width: 100%;
-    min-height: 58px;
+    min-height: 53px;
 }
 
 .signal-data-grid > div {
     min-width: 0;
-    min-height: 58px;
+    min-height: 53px;
     padding: 3px 2px;
     display: flex;
     flex-direction: column;
@@ -2742,28 +3014,6 @@ section {
     white-space: nowrap;
 }
 
-.signal-pattern .pattern-box {
-    min-width: 42px;
-}
-
-.signal-pattern .pattern-name {
-    font-size: 5px;
-}
-
-.signal-pattern .candle-pattern-visual {
-    height: 22px;
-    min-width: 32px;
-    transform: scale(.80);
-}
-
-.signal-pattern .pattern-multi {
-    gap: 1px;
-}
-
-.signal-pattern .pattern-multi .pattern-box {
-    min-width: 29px;
-}
-
 
 /* 상승패턴 강조 */
 
@@ -2790,8 +3040,9 @@ section {
     color: #e4c45e;
 }
 
-.signal-card.has-bullish-pattern .signal-pattern {
-    background: rgba(56, 216, 120, 0.12);
+.signal-card.has-bullish-pattern .three-candle-item {
+    background: #142b20;
+    border-color: #286b48;
 }
 
 .signal-empty {
@@ -2814,10 +3065,12 @@ section {
 
 .coin-head {
     min-height: 38px;
-    padding: 0 9px;
+    padding: 5px 9px;
     display: flex;
     align-items: center;
     justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 5px;
     border-bottom: 1px solid #202a33;
 }
 
@@ -2849,13 +3102,13 @@ section {
 
 .market-summary {
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     border-bottom: 1px solid #202a33;
 }
 
 .market-summary > div {
     min-width: 0;
-    min-height: 58px;
+    min-height: 53px;
     padding: 4px 1px;
     text-align: center;
     background: #0d1318;
@@ -2892,31 +3145,6 @@ section {
 
 .market-summary .daily-change-value .zero {
     color: #68737e !important;
-}
-
-.market-summary .pattern-box {
-    min-width: 35px;
-}
-
-.market-summary .pattern-name {
-    font-size: 4.5px;
-}
-
-.market-summary .candle-pattern-visual {
-    height: 21px;
-    transform: scale(.68);
-}
-
-.market-summary .pattern-multi {
-    gap: 0;
-}
-
-.market-summary .pattern-multi .pattern-box {
-    min-width: 24px;
-}
-
-.market-summary .pattern-multi .pattern-name {
-    font-size: 3.8px;
 }
 
 
@@ -2959,7 +3187,7 @@ section {
 
     .coin-head {
         min-height: 35px;
-        padding: 0 7px;
+        padding: 5px 7px;
     }
 
     .coin-title {
@@ -2970,37 +3198,6 @@ section {
         font-size: 9px;
     }
 
-    .market-summary {
-        grid-template-columns: repeat(5, minmax(0, 1fr));
-    }
-
-    .market-summary > div {
-        min-height: 53px;
-        padding: 3px 1px;
-    }
-
-    .market-summary span {
-        font-size: 5px;
-        margin-bottom: 2px;
-    }
-
-    .market-summary strong {
-        font-size: 5px;
-    }
-
-    .market-summary .pattern-box {
-        min-width: 24px;
-    }
-
-    .market-summary .pattern-name {
-        font-size: 3.5px;
-    }
-
-    .market-summary .candle-pattern-visual {
-        height: 19px;
-        transform: scale(.56);
-    }
-
     .signal-condition-one-line {
         gap: 9px;
         padding: 6px 7px;
@@ -3008,16 +3205,6 @@ section {
 
     .signal-condition-one-line span {
         font-size: 6px;
-    }
-
-    .signal-header,
-    .signal-data-grid {
-        grid-template-columns: 1.1fr 0.9fr 0.8fr 1.1fr 1.1fr;
-    }
-
-    .signal-header {
-        padding: 0 3px;
-        font-size: 5px;
     }
 
     .signal-card-top {
@@ -3035,23 +3222,20 @@ section {
     }
 
     .signal-type-list {
-        gap: 1px;
+        gap: 3px;
     }
 
-    .signal-type-badge {
-        font-size: 4px !important;
-    }
-
+    .signal-type-badge,
     .bearish-type-badge {
-        font-size: 4px !important;
+        font-size: 5px !important;
     }
 
     .signal-data-grid {
-        min-height: 53px;
+        min-height: 48px;
     }
 
     .signal-data-grid > div {
-        min-height: 53px;
+        min-height: 48px;
         padding: 2px 1px;
     }
 
@@ -3060,28 +3244,65 @@ section {
     }
 
     .signal-data-grid strong {
-        font-size: 5px;
+        font-size: 6px;
     }
 
     .signal-data-grid .signal-price strong {
         font-size: 6px;
     }
 
-    .signal-pattern .pattern-box {
-        min-width: 24px;
+    .three-candle-section,
+    .top-three-candle-section {
+        padding: 6px 3px;
     }
 
-    .signal-pattern .pattern-name {
-        font-size: 3.5px;
+    .three-candle-heading {
+        font-size: 6px;
+        margin-bottom: 5px;
     }
 
-    .signal-pattern .candle-pattern-visual {
-        height: 19px;
-        transform: scale(.55);
+    .three-candle-item {
+        min-height: 60px;
+        padding: 4px 1px;
     }
 
-    .signal-pattern .pattern-multi .pattern-box {
-        min-width: 22px;
+    .three-candle-label {
+        font-size: 6px;
+        margin-bottom: 4px;
+    }
+
+    .three-candle-pattern .pattern-box {
+        min-width: 25px;
+    }
+
+    .three-candle-pattern .pattern-name {
+        font-size: 4px;
+    }
+
+    .three-candle-pattern .candle-pattern-visual {
+        transform: scale(.65);
+    }
+
+    .consecutive-bullish,
+    .consecutive-bearish {
+        font-size: 5px !important;
+        padding: 2px 3px;
+    }
+
+    .market-summary {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .market-summary > div {
+        min-height: 48px;
+    }
+
+    .market-summary span {
+        font-size: 5px;
+    }
+
+    .market-summary strong {
+        font-size: 6px;
     }
 }
 """
@@ -3223,6 +3444,14 @@ def startup():
 
     log.info(
         "장대양봉 상승패턴 시그널 포함"
+    )
+
+    log.info(
+        "최근 3개 봉 캔들패턴 표시"
+    )
+
+    log.info(
+        "3연속 이상 장대양봉 및 장대음봉 표시"
     )
 
     threading.Thread(
