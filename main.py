@@ -839,13 +839,27 @@ def is_bullish_hammer(previous, current):
     )
 
 
+# =========================================================
+# 상승역망치형 수정
+#
+# 이전 봉: 음봉
+# 현재 봉: 양봉
+# 윗꼬리: 몸통 초과, 몸통의 2배 미만
+# 아랫꼬리: 몸통 이하
+# =========================================================
+
 def is_bullish_inverted_hammer(previous, current):
 
     if previous is None:
         return False
 
     try:
+
         if float(previous["close"]) >= float(previous["open"]):
+            return False
+
+        # 현재 봉은 반드시 양봉
+        if float(current["close"]) <= float(current["open"]):
             return False
 
     except Exception:
@@ -855,7 +869,8 @@ def is_bullish_inverted_hammer(previous, current):
 
     return bool(
         parts is not None
-        and parts["upper_wick"] >= parts["body"] * 2
+        and parts["upper_wick"] > parts["body"]
+        and parts["upper_wick"] < parts["body"] * 2
         and parts["lower_wick"] <= parts["body"]
     )
 
@@ -1001,7 +1016,6 @@ def analyze_previous_current_pattern(periods):
     if not periods:
         return result
 
-    # 모든 봉의 패턴 계산
     pattern_history = []
 
     for i in range(len(periods)):
@@ -1021,7 +1035,6 @@ def analyze_previous_current_pattern(periods):
 
         pattern_history.append(patterns)
 
-    # 최근 3개 봉 패턴
     last_three = pattern_history[-3:]
 
     result["last_three_patterns"] = [
@@ -1032,7 +1045,6 @@ def analyze_previous_current_pattern(periods):
         for i, patterns in enumerate(last_three)
     ]
 
-    # 기존 이전봉 / 현재봉 데이터 유지
     current_patterns = pattern_history[-1]
 
     previous_patterns = (
@@ -1062,10 +1074,6 @@ def analyze_previous_current_pattern(periods):
         for p in current_patterns
     )
 
-    # =====================================================
-    # 연속 장대양봉 계산
-    # =====================================================
-
     bullish_count = 0
 
     for patterns in reversed(pattern_history):
@@ -1075,10 +1083,6 @@ def analyze_previous_current_pattern(periods):
 
         else:
             break
-
-    # =====================================================
-    # 연속 장대음봉 계산
-    # =====================================================
 
     bearish_count = 0
 
@@ -1216,7 +1220,6 @@ def analyze_signal_candles(market, price):
         "previous_bullish_pattern"
     ]
 
-    # 기존 SIGNAL 조건 유지
     pattern_signal = bool(
         current_signal or previous_signal
     )
@@ -1497,14 +1500,6 @@ def update_upbit():
 
     latest_upbit_daily_update_time = kst()
     latest_upbit_update_time = latest_upbit_daily_update_time
-
-    # =====================================================
-    # 기존 SIGNAL 조건 유지
-    #
-    # 1. 현재봉 또는 이전봉 상승패턴
-    # 2. 당일 변동률 설정값 초과
-    # 3. 24시간 거래대금 100억 이상
-    # =====================================================
 
     latest_signal_data = [
         row for row in rows
@@ -2075,7 +2070,6 @@ def last_three_pattern_html(row):
         "현재 봉"
     ]
 
-    # 데이터가 3개 미만인 경우에도 위치 유지
     missing = 3 - len(last_three)
 
     items = []
@@ -2195,7 +2189,6 @@ def pattern_badges_html(row):
 
 # =========================================================
 # BTC HTML
-# EMA 표시 및 EMA 경고 완전 삭제
 # =========================================================
 
 def btc_html():
@@ -2236,7 +2229,6 @@ def btc_html():
 
 # =========================================================
 # SIGNAL 카드
-# 최근 3개 봉 표시
 # =========================================================
 
 def signal_card(row):
@@ -3315,7 +3307,6 @@ section {
 @app.get("/", response_class=HTMLResponse)
 def dashboard():
 
-    # BTC EMA 경고 및 EMA 표시 삭제
     s = btc_html()
 
     if USE_UPBIT == "Y":
@@ -3452,6 +3443,10 @@ def startup():
 
     log.info(
         "3연속 이상 장대양봉 및 장대음봉 표시"
+    )
+
+    log.info(
+        "상승역망치형: 양봉 + 윗꼬리 몸통 초과 2배 미만"
     )
 
     threading.Thread(
