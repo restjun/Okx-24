@@ -1,3 +1,4 @@
+
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
@@ -75,22 +76,20 @@ SIGNAL1_MAX_COUNT = 100
 
 # =========================================================
 # 시그널 시간봉 설정
+# 시그널3 일봉 완전 삭제
 # =========================================================
 
 SIGNAL1_TIMEFRAME = "15m"
 SIGNAL2_TIMEFRAME = "1h"
-SIGNAL3_TIMEFRAME = "1d"
 
 SIGNAL_TIMEFRAMES = {
     "signal1": SIGNAL1_TIMEFRAME,
-    "signal2": SIGNAL2_TIMEFRAME,
-    "signal3": SIGNAL3_TIMEFRAME
+    "signal2": SIGNAL2_TIMEFRAME
 }
 
 SIGNAL_LABELS = {
     "signal1": "시그널1",
-    "signal2": "시그널2",
-    "signal3": "시그널3"
+    "signal2": "시그널2"
 }
 
 TIMEFRAME_LABEL = {
@@ -111,9 +110,6 @@ SIGNAL1_100_200 = "Y"
 
 SIGNAL2_10_20 = "Y"
 SIGNAL2_100_200 = "Y"
-
-SIGNAL3_10_20 = "ANY"
-SIGNAL3_100_200 = "ANY"
 
 
 # =========================================================
@@ -150,10 +146,6 @@ latest_btc_signal_ema_states = {
         "100_200": None
     },
     "signal2": {
-        "10_20": None,
-        "100_200": None
-    },
-    "signal3": {
         "10_20": None,
         "100_200": None
     }
@@ -243,10 +235,6 @@ def get_signal_conditions(signal_key):
         "signal2": (
             SIGNAL2_10_20,
             SIGNAL2_100_200
-        ),
-        "signal3": (
-            SIGNAL3_10_20,
-            SIGNAL3_100_200
         )
     }
 
@@ -479,6 +467,7 @@ def get_upbit_1h_candles(market, count=200):
 
 # =========================================================
 # 업비트 일봉 조회
+# 당일 변동률 계산용으로 유지
 # =========================================================
 
 def get_upbit_daily_candles(market, count=200):
@@ -754,7 +743,8 @@ def check_ema10_rebound(df):
         )
 
         current_close = float(
-            df.loc[current_index, "close"]
+            df.loc[current_index, "close"
+            ]
         )
 
     except Exception:
@@ -774,6 +764,7 @@ def check_ema10_rebound(df):
 
 # =========================================================
 # 지정 시간봉 EMA 분석
+# 일봉 EMA 분석 기능 제거
 # =========================================================
 
 def analyze_ema_timeframe(market, timeframe, price=None):
@@ -781,33 +772,6 @@ def analyze_ema_timeframe(market, timeframe, price=None):
         df = get_timeframe_dataframe(
             market,
             timeframe,
-            price
-        )
-
-    elif timeframe == "1d":
-        df = get_daily_dataframe(market)
-
-        if df.empty:
-            return {
-                "10_20": None,
-                "100_200": None
-            }
-
-        now = datetime.now(KST)
-
-        current_start = now.replace(
-            hour=9,
-            minute=0,
-            second=0,
-            microsecond=0
-        )
-
-        if now < current_start:
-            current_start -= timedelta(days=1)
-
-        df = update_current_candle(
-            df,
-            current_start,
             price
         )
 
@@ -857,11 +821,10 @@ def check_one_ema_condition(state, setting):
 # =========================================================
 # BTC 시황 EMA 조건 검사
 #
-# 중요:
 # - BTC 시그널1 카운팅은 검사하지 않음
 # - EMA 10-20 조건만 검사
-# - EMA 20-100 조건만 검사
-# - 각 시그널별 설정값을 그대로 적용
+# - EMA 20-50 조건만 검사
+# - 시그널1, 시그널2만 검사
 # - ANY는 정배열/역배열 관계없이 통과
 # - 하나라도 불일치하면 경고
 # =========================================================
@@ -898,7 +861,7 @@ def check_btc_signal_ema_conditions():
                 "actual": ema_state_text(state_10_20)
             })
 
-        # EMA 20-100 검사
+        # EMA 20-50 검사
         if not check_one_ema_condition(
             state_100_200,
             condition_100_200
@@ -918,7 +881,7 @@ def check_btc_signal_ema_conditions():
 
 
 # =========================================================
-# 시그널 1 EMA 10-20 + 20-100 실시간 연속 카운팅
+# 시그널 1 EMA 10-20 + 20-50 실시간 연속 카운팅
 # =========================================================
 
 def get_signal1_count(market, price=None):
@@ -1136,6 +1099,7 @@ def check_all_signal_conditions(all_states):
 
 # =========================================================
 # 일봉 기간 생성
+# 당일 변동률 계산용으로 유지
 # =========================================================
 
 def build_daily_periods(df, current_price=None):
@@ -1783,7 +1747,6 @@ def make_row(
 
     signal1 = all_ema_states.get("signal1", {})
     signal2 = all_ema_states.get("signal2", {})
-    signal3 = all_ema_states.get("signal3", {})
 
     try:
         signal1_count = int(
@@ -1846,11 +1809,6 @@ def make_row(
         "signal2_condition": check_signal_ema_condition(
             "signal2",
             signal2
-        ),
-
-        "signal3_condition": check_signal_ema_condition(
-            "signal3",
-            signal3
         ),
 
         "all_signal_conditions": check_all_signal_conditions(
@@ -1939,10 +1897,6 @@ def update_upbit():
                 "signal2": {
                     "10_20": None,
                     "100_200": None
-                },
-                "signal3": {
-                    "10_20": None,
-                    "100_200": None
                 }
             }
 
@@ -2018,12 +1972,11 @@ def update_upbit():
         row["signal_rank"] = signal_rank
 
     log.info(
-        "UPBIT | TOP%s | SIGNAL1=%s | SIGNAL2=%s | SIGNAL3=%s | "
+        "UPBIT | TOP%s | SIGNAL1=%s | SIGNAL2=%s | "
         "카운팅 제한=%s | SIGNAL=%s",
         TOP_N,
         get_signal_condition_description("signal1"),
         get_signal_condition_description("signal2"),
-        get_signal_condition_description("signal3"),
         SIGNAL1_MAX_COUNT,
         len(latest_signal_data)
     )
@@ -2125,6 +2078,7 @@ def okx_price():
 
 # =========================================================
 # BTC EMA 상태 계산
+# 시그널1, 시그널2만 분석
 # =========================================================
 
 def analyze_btc_ema_states(timeframe):
@@ -2474,13 +2428,11 @@ def ema_state_text(state):
 
 def btc_warning_html():
 
-    # BTC 가격 및 EMA 분석 데이터가 아직 준비되지 않은 경우
     if latest_btc_okx_price is None:
         return ""
 
     result = check_btc_signal_ema_conditions()
 
-    # 모든 EMA 조건이 일치하면 경고 표시하지 않음
     if result["match"]:
         return ""
 
@@ -2541,6 +2493,7 @@ def btc_warning_html():
 
 # =========================================================
 # 통합 EMA 상태 표시
+# 시그널1, 시그널2만 표시
 # =========================================================
 
 def signal_ema_status_html(all_states):
@@ -2553,8 +2506,7 @@ def signal_ema_status_html(all_states):
 
     for signal_key in (
         "signal1",
-        "signal2",
-        "signal3"
+        "signal2"
     ):
         states = all_states.get(signal_key) or {}
 
@@ -2563,15 +2515,21 @@ def signal_ema_status_html(all_states):
             states.get("100_200")
         ])
 
-    if all(
-        state == "정배열"
-        for state in all_ema_values
+    if (
+        all_ema_values
+        and all(
+            state == "정배열"
+            for state in all_ema_values
+        )
     ):
         overall_state = "green"
 
-    elif all(
-        state == "역배열"
-        for state in all_ema_values
+    elif (
+        all_ema_values
+        and all(
+            state == "역배열"
+            for state in all_ema_values
+        )
     ):
         overall_state = "red"
 
@@ -2584,8 +2542,7 @@ def signal_ema_status_html(all_states):
 
     for signal_key in (
         "signal1",
-        "signal2",
-        "signal3"
+        "signal2"
     ):
         states = all_states.get(signal_key) or {}
 
@@ -3024,11 +2981,6 @@ def signal_section():
         <span>
             시그널2 {get_timeframe_label(SIGNAL2_TIMEFRAME)}
             · {html.escape(get_signal_condition_description("signal2"))}
-        </span>
-
-        <span>
-            시그널3 {get_timeframe_label(SIGNAL3_TIMEFRAME)}
-            · {html.escape(get_signal_condition_description("signal3"))}
         </span>
 
         <span>
@@ -4452,14 +4404,13 @@ def scheduler():
 def startup():
 
     log.info(
-        "START | BTC EMA 3개 시그널 표시 | "
+        "START | BTC EMA 2개 시그널 표시 | "
         "UPBIT TOP%s | EMA %s | "
-        "SIGNAL1=%s | SIGNAL2=%s | SIGNAL3=%s",
+        "SIGNAL1=%s | SIGNAL2=%s",
         TOP_N,
         get_ema_full_label(),
         get_signal_condition_description("signal1"),
-        get_signal_condition_description("signal2"),
-        get_signal_condition_description("signal3")
+        get_signal_condition_description("signal2")
     )
 
     log.info(
@@ -4475,11 +4426,6 @@ def startup():
     log.info(
         "시그널 2 시간봉: %s",
         get_timeframe_label(SIGNAL2_TIMEFRAME)
-    )
-
-    log.info(
-        "시그널 3 시간봉: %s",
-        get_timeframe_label(SIGNAL3_TIMEFRAME)
     )
 
     log.info(
