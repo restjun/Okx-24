@@ -49,7 +49,7 @@ SIGNAL_MIN_VOLUME = 10_000_000_000
 # 0.0 = 0% 초과
 # 1.0 = 1% 초과
 # 2.0 = 2% 초과
-DAILY_CHANGE_MIN = 0.0
+DAILY_CHANGE_MIN = 5.0
 
 USE_UPBIT = "Y"
 USE_OKX = "Y"
