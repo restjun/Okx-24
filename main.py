@@ -77,8 +77,8 @@ SIGNAL1_MAX_COUNT = 100
 # 시그널 시간봉 설정
 # =========================================================
 
-SIGNAL1_TIMEFRAME = "15m"
-SIGNAL2_TIMEFRAME = "1h"
+SIGNAL1_TIMEFRAME = "1h"
+SIGNAL2_TIMEFRAME = "15m"
 
 SIGNAL_TIMEFRAMES = {
     "signal1": SIGNAL1_TIMEFRAME,
