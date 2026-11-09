@@ -2409,8 +2409,8 @@ def ema_state_text(state):
 
 
 # =========================================================
-# BTC 상단 EMA 불일치 경고 HTML
-# 간결한 한 줄 형태로 표시
+# BTC 상단 EMA 불일치 / 조건 충족 HTML
+# 조건 충족 시에도 숨기지 않고 초록색으로 표시
 # =========================================================
 
 def btc_warning_html():
@@ -2420,9 +2420,27 @@ def btc_warning_html():
 
     result = check_btc_signal_ema_conditions()
 
+    # 모든 BTC EMA 조건 충족
     if result["match"]:
-        return ""
+        return """
+        <section class="btc-warning-panel btc-condition-match">
 
+            <div class="btc-warning-title">
+
+                <span class="btc-warning-icon">✓</span>
+
+                <b>BTC 시황 조건 충족</b>
+
+                <span class="btc-warning-description">
+                    모든 시그널 EMA 조건이 일치합니다.
+                </span>
+
+            </div>
+
+        </section>
+        """
+
+    # EMA 조건 불일치
     mismatch_items = []
 
     for item in result["mismatches"]:
@@ -3240,6 +3258,36 @@ section {
     color: #38d878;
     font-size: 7px;
     font-weight: 900;
+}
+
+
+/* =========================================================
+   BTC 조건 충족 - 초록색 표시
+   ========================================================= */
+
+.btc-condition-match {
+    background: #10251d;
+    border: 1px solid #286b48;
+    border-left: 3px solid #38d878;
+}
+
+.btc-condition-match .btc-warning-title {
+    border-bottom: 0;
+    padding-bottom: 0;
+}
+
+.btc-condition-match .btc-warning-icon {
+    color: #38d878;
+    font-size: 13px;
+}
+
+.btc-condition-match .btc-warning-title b {
+    color: #38d878;
+    font-size: 9px;
+}
+
+.btc-condition-match .btc-warning-description {
+    color: #91c9a8;
 }
 
 
@@ -4266,6 +4314,12 @@ section {
         font-size: 6px;
     }
 
+    /* BTC 조건 충족 모바일 */
+
+    .btc-condition-match .btc-warning-title {
+        padding-bottom: 0;
+    }
+
 }
 """
 
@@ -4277,7 +4331,7 @@ section {
 @app.get("/", response_class=HTMLResponse)
 def dashboard():
 
-    # BTC EMA 조건 불일치 경고
+    # BTC EMA 조건 불일치 또는 충족 상태 표시
     # BTC 패널보다 위에 표시
     warning = btc_warning_html()
 
