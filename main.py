@@ -77,8 +77,8 @@ SIGNAL1_MAX_COUNT = 100
 # 시그널 시간봉 설정
 # =========================================================
 
-SIGNAL1_TIMEFRAME = "1h"
-SIGNAL2_TIMEFRAME = "15m"
+SIGNAL1_TIMEFRAME = "4h"
+SIGNAL2_TIMEFRAME = "1h"
 
 SIGNAL_TIMEFRAMES = {
     "signal1": SIGNAL1_TIMEFRAME,
@@ -114,7 +114,7 @@ SIGNAL2_100_200 = "Y"
 # 캔들 패턴 설정
 # =========================================================
 
-CANDLE_PATTERN_TIMEFRAME = "1h"
+CANDLE_PATTERN_TIMEFRAME = "4h"
 
 
 # =========================================================
