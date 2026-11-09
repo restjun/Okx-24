@@ -921,12 +921,12 @@ def is_bearish_inverted_hammer(previous, current):
 # 상승 / 하락 패턴 대상
 # =========================================================
 
+# 녹색 강조 및 상승패턴 SIGNAL 대상
+# 상승장악형과 상승관통형만 적용
+
 BULLISH_HIGHLIGHT_PATTERNS = [
     "상승장악형",
-    "상승관통형",
-    "상승망치형",
-    "상승역망치형",
-    "장대양봉"
+    "상승관통형"
 ]
 
 BEARISH_HIGHLIGHT_PATTERNS = [
