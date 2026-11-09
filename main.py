@@ -921,8 +921,7 @@ def is_bearish_inverted_hammer(previous, current):
 # 상승 / 하락 패턴 대상
 # =========================================================
 
-# 녹색 강조 및 상승패턴 SIGNAL 대상
-# 상승장악형과 상승관통형만 적용
+# 녹색 강조 대상은 상승장악형과 상승관통형만
 
 BULLISH_HIGHLIGHT_PATTERNS = [
     "상승장악형",
@@ -1064,14 +1063,16 @@ def analyze_previous_current_pattern(periods):
         "상승장악형" in previous_patterns
     )
 
-    result["previous_bullish_pattern"] = any(
-        p in BULLISH_HIGHLIGHT_PATTERNS
-        for p in previous_patterns
+    # 현재 봉 또는 이전 봉이 일반 양봉이면 SIGNAL 조건에 포함
+    # 녹색 강조 여부와는 별개로 판정
+
+    result["previous_bullish_pattern"] = bool(
+        len(periods) >= 2
+        and float(periods[-2]["close"]) > float(periods[-2]["open"])
     )
 
-    result["current_bullish_pattern"] = any(
-        p in BULLISH_HIGHLIGHT_PATTERNS
-        for p in current_patterns
+    result["current_bullish_pattern"] = bool(
+        float(periods[-1]["close"]) > float(periods[-1]["open"])
     )
 
     bullish_count = 0
@@ -2237,8 +2238,13 @@ def signal_card(row):
         CANDLE_PATTERN_TIMEFRAME
     )
 
-    has_bullish_pattern = bool(
-        row.get("signal_4h", False)
+    # 녹색 강조는 실제 상승장악형·상승관통형만 적용
+    has_bullish_pattern = any(
+        pattern in BULLISH_HIGHLIGHT_PATTERNS
+        for pattern in (
+            (row.get("previous_pattern") or [])
+            + (row.get("current_pattern") or [])
+        )
     )
 
     badge_html = pattern_badges_html(row)
@@ -2342,11 +2348,11 @@ def signal_section():
     <div class="signal-condition-one-line">
 
         <span>
-            상승패턴 · 현재봉 또는 이전봉
+            양봉 · 현재봉 또는 이전봉
         </span>
 
         <span>
-            장대양봉 포함
+            녹색 강조 · 상승장악형 / 상승관통형
         </span>
 
         <span>
@@ -3434,7 +3440,11 @@ def startup():
     )
 
     log.info(
-        "장대양봉 상승패턴 시그널 포함"
+        "현재봉 또는 이전봉 양봉 시그널 포함"
+    )
+
+    log.info(
+        "녹색 강조: 상승장악형 및 상승관통형만 적용"
     )
 
     log.info(
