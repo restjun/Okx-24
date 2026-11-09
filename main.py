@@ -2317,7 +2317,7 @@ def signal_section():
 
             <div>
                 <span class="section-kicker">SIGNAL</span>
-                <b>🔴 종목 조건</b>
+                <b>🔴</b>
             </div>
 
             <span class="update-time">
