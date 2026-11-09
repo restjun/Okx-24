@@ -44,6 +44,10 @@ TOP_N = 20
 SHOW_TOP_LIST = "N"
 UPDATE_MINUTES = 1
 
+# SIGNAL 최소 24시간 거래대금 (KRW)
+# 100억 원 = 10,000,000,000원
+SIGNAL_MIN_VOLUME = 10_000_000_000
+
 HISTORY_CHUNK = 200
 MAX_HISTORY_CHUNKS = 1
 EMA_HISTORY_CANDLES = 200
@@ -593,7 +597,6 @@ def get_timeframe_dataframe(market, timeframe, price=None):
         )
         minutes = 60
 
-    # 4시간봉 추가
     elif timeframe == "4h":
         df = get_cached_dataframe(
             market,
@@ -1571,7 +1574,6 @@ def analyze_signal_candles(market, price, ema_reverse=False):
 
     timeframe = CANDLE_PATTERN_TIMEFRAME
 
-    # 4시간봉 추가
     if timeframe in ("5m", "15m", "1h", "4h"):
         df = get_timeframe_dataframe(
             market,
@@ -1969,12 +1971,20 @@ def update_upbit():
     latest_upbit_daily_update_time = kst()
     latest_upbit_update_time = latest_upbit_daily_update_time
 
+    # =====================================================
+    # SIGNAL 조건
+    # 1. 기존 EMA 조건 충족
+    # 2. 당일 변동률 양수
+    # 3. 24시간 거래대금 최소 설정 금액 이상
+    # =====================================================
+
     latest_signal_data = [
         row for row in rows
         if (
             row.get("all_signal_conditions", False)
             and row.get("daily_change") is not None
             and row.get("daily_change") > 0
+            and row.get("volume_24h", 0) >= SIGNAL_MIN_VOLUME
         )
     ]
 
@@ -1990,11 +2000,12 @@ def update_upbit():
 
     log.info(
         "UPBIT | TOP%s | SIGNAL1=%s | SIGNAL2=%s | "
-        "카운팅 제한=%s | SIGNAL=%s",
+        "카운팅 제한=%s | 최소 거래대금=%s원 | SIGNAL=%s",
         TOP_N,
         get_signal_condition_description("signal1"),
         get_signal_condition_description("signal2"),
         SIGNAL1_MAX_COUNT,
+        SIGNAL_MIN_VOLUME,
         len(latest_signal_data)
     )
 
@@ -2148,7 +2159,6 @@ def analyze_btc_ema_states(timeframe):
             )
 
         elif timeframe == "4h":
-            # OKX 4시간봉은 UTC 기준으로 시작
             now_utc = datetime.now(UTC)
 
             current_start_utc = now_utc.replace(
@@ -3029,6 +3039,10 @@ def signal_section():
 
         <span>
             공통조건 · 당일 변동률 양수
+        </span>
+
+        <span>
+            최소 거래대금 · {fmt_vol(SIGNAL_MIN_VOLUME)} 이상
         </span>
 
     </div>
@@ -4481,6 +4495,11 @@ def startup():
     log.info(
         "시그널 1 카운팅 제한: 최대 %s회",
         SIGNAL1_MAX_COUNT
+    )
+
+    log.info(
+        "SIGNAL 최소 거래대금: %s원",
+        SIGNAL_MIN_VOLUME
     )
 
     log.info(
