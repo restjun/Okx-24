@@ -3203,13 +3203,13 @@ section {
 @media (max-width: 600px) {
 
     :root {
-        --fs-main: 18px;
-        --fs-section: 14px;
-        --fs-coin: 15px;
-        --fs-value: 13px;
-        --fs-content: 11px;
-        --fs-small: 10px;
-        --fs-tiny: 9px;
+        --fs-main: 15px;
+        --fs-section: 12px;
+        --fs-coin: 13px;
+        --fs-value: 11px;
+        --fs-content: 9px;
+        --fs-small: 8px;
+        --fs-tiny: 7px;
     }
 
     body {
@@ -3400,13 +3400,13 @@ section {
 @media (max-width: 380px) {
 
     :root {
-        --fs-main: 17px;
-        --fs-section: 13px;
-        --fs-coin: 14px;
-        --fs-value: 12px;
-        --fs-content: 10px;
-        --fs-small: 9px;
-        --fs-tiny: 8px;
+        --fs-main: 14px;
+        --fs-section: 11px;
+        --fs-coin: 12px;
+        --fs-value: 10px;
+        --fs-content: 9px;
+        --fs-small: 8px;
+        --fs-tiny: 7px;
     }
 
     body {
