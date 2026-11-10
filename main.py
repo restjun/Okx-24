@@ -1019,10 +1019,18 @@ def analyze_previous_current_pattern(periods):
 
     last_three = pattern_history[-3:]
 
+    # -----------------------------------------------------
+    # 수정: 최근 3개 봉에 시가/고가/저가/종가 데이터 추가
+    # -----------------------------------------------------
+
     result["last_three_patterns"] = [
         {
             "label": periods[-len(last_three) + i]["label"],
-            "patterns": patterns
+            "patterns": patterns,
+            "open": periods[-len(last_three) + i]["open"],
+            "high": periods[-len(last_three) + i]["high"],
+            "low": periods[-len(last_three) + i]["low"],
+            "close": periods[-len(last_three) + i]["close"]
         }
         for i, patterns in enumerate(last_three)
     ]
@@ -1901,6 +1909,36 @@ def candle_icon_html(pattern):
         </div>
         """
 
+    # -----------------------------------------------------
+    # 추가: 일반 양봉
+    # -----------------------------------------------------
+
+    if pattern == "일반양봉":
+
+        return """
+        <div class="candle-pattern-visual single-candle">
+            <div class="mini-candle bullish">
+                <span class="wick"></span>
+                <span class="body"></span>
+            </div>
+        </div>
+        """
+
+    # -----------------------------------------------------
+    # 추가: 일반 음봉
+    # -----------------------------------------------------
+
+    if pattern == "일반음봉":
+
+        return """
+        <div class="candle-pattern-visual single-candle">
+            <div class="mini-candle bearish">
+                <span class="wick"></span>
+                <span class="body"></span>
+            </div>
+        </div>
+        """
+
     if pattern in ("상승망치형", "하락망치형"):
 
         candle_class = (
@@ -1944,7 +1982,7 @@ def candle_icon_html(pattern):
 # 캔들 패턴 HTML
 # =========================================================
 
-def current_pattern_html(pattern):
+def current_pattern_html(pattern, candle=None):
 
     if isinstance(pattern, str):
         patterns = [pattern] if pattern else []
@@ -1955,7 +1993,41 @@ def current_pattern_html(pattern):
     else:
         patterns = []
 
+    # -----------------------------------------------------
+    # 수정: 패턴이 없으면 일반 양봉 / 음봉 표시
+    # -----------------------------------------------------
+
     if not patterns:
+
+        if candle is not None:
+
+            try:
+
+                o = float(candle["open"])
+                c = float(candle["close"])
+
+                if c > o:
+                    ordinary_pattern = "일반양봉"
+                    ordinary_name = "양봉"
+
+                elif c < o:
+                    ordinary_pattern = "일반음봉"
+                    ordinary_name = "음봉"
+
+                else:
+                    ordinary_pattern = "일반양봉"
+                    ordinary_name = "보합"
+
+                return (
+                    '<div class="pattern-box neutral-pattern">'
+                    + candle_icon_html(ordinary_pattern)
+                    + '<span class="pattern-name">'
+                    + ordinary_name
+                    + '</span></div>'
+                )
+
+            except Exception:
+                pass
 
         return (
             '<div class="pattern-box pattern-none">'
@@ -2009,7 +2081,11 @@ def last_three_pattern_html(row):
 
         items.append({
             "label": "",
-            "patterns": []
+            "patterns": [],
+            "open": None,
+            "high": None,
+            "low": None,
+            "close": None
         })
 
     items.extend(last_three)
@@ -2029,6 +2105,15 @@ def last_three_pattern_html(row):
         else:
             label = html.escape(raw_label)
 
+        # -------------------------------------------------
+        # 수정: 현재 봉의 OHLC 정보를 전달
+        # -------------------------------------------------
+
+        candle_html = current_pattern_html(
+            patterns,
+            item
+        )
+
         boxes.append(
             f"""
             <div class="three-candle-item">
@@ -2038,7 +2123,7 @@ def last_three_pattern_html(row):
                 </span>
 
                 <div class="three-candle-pattern">
-                    {current_pattern_html(patterns)}
+                    {candle_html}
                 </div>
 
             </div>
@@ -2399,7 +2484,7 @@ def card(row, kind):
 
                 <span>당일 변동률</span>
 
-                <strong class="daily-change-value">
+                <strong>
                     {fmt_change(row.get("daily_change"))}
                 </strong>
 
