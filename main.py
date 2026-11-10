@@ -1,3 +1,4 @@
+
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
@@ -55,8 +56,6 @@ MAX_RETRIES = 20
 CANDLE_PATTERN_TIMEFRAME = "1h"
 
 CONSECUTIVE_CANDLE_MIN = 3
-
-# 연속 양봉 녹색 강조 최소 개수
 CONSECUTIVE_BULLISH_MIN = 2
 
 TIMEFRAME_LABEL = {
@@ -996,8 +995,6 @@ def analyze_previous_current_pattern(periods):
         "current_bullish_engulfing": False,
         "consecutive_bullish": 0,
         "consecutive_bearish": 0,
-
-        # 추가: 일반 연속 양봉 카운팅
         "consecutive_bullish_candles": 0
     }
 
@@ -1024,10 +1021,6 @@ def analyze_previous_current_pattern(periods):
         pattern_history.append(patterns)
 
     last_three = pattern_history[-3:]
-
-    # -----------------------------------------------------
-    # 최근 3개 봉에 OHLC 데이터 추가
-    # -----------------------------------------------------
 
     result["last_three_patterns"] = [
         {
@@ -1069,10 +1062,7 @@ def analyze_previous_current_pattern(periods):
         float(periods[-1]["close"]) > float(periods[-1]["open"])
     )
 
-    # -----------------------------------------------------
-    # 기존 연속 장대양봉 카운팅
-    # -----------------------------------------------------
-
+    # 연속 장대양봉
     bullish_count = 0
 
     for patterns in reversed(pattern_history):
@@ -1083,10 +1073,7 @@ def analyze_previous_current_pattern(periods):
         else:
             break
 
-    # -----------------------------------------------------
-    # 기존 연속 장대음봉 카운팅
-    # -----------------------------------------------------
-
+    # 연속 장대음봉
     bearish_count = 0
 
     for patterns in reversed(pattern_history):
@@ -1100,12 +1087,7 @@ def analyze_previous_current_pattern(periods):
     result["consecutive_bullish"] = bullish_count
     result["consecutive_bearish"] = bearish_count
 
-    # -----------------------------------------------------
-    # 추가: 일반 연속 양봉 카운팅
-    # 종가 > 시가 기준
-    # 장대양봉 여부와 관계없이 계산
-    # -----------------------------------------------------
-
+    # 일반 연속 양봉
     consecutive_bullish_candles = 0
 
     for period in reversed(periods):
@@ -1302,8 +1284,6 @@ def analyze_signal_candles(market, price):
         "current_bullish_engulfing": pattern_info["current_bullish_engulfing"],
         "consecutive_bullish": pattern_info["consecutive_bullish"],
         "consecutive_bearish": pattern_info["consecutive_bearish"],
-
-        # 추가: 일반 연속 양봉 카운팅 전달
         "consecutive_bullish_candles": pattern_info[
             "consecutive_bullish_candles"
         ]
@@ -1380,8 +1360,6 @@ def make_row(
         "consecutive_bearish": analysis_pattern["consecutive_bearish"],
         "previous_bullish_engulfing": analysis_pattern["previous_bullish_engulfing"],
         "current_bullish_engulfing": analysis_pattern["current_bullish_engulfing"],
-
-        # 추가: 일반 연속 양봉
         "consecutive_bullish_candles": analysis_pattern.get(
             "consecutive_bullish_candles", 0
         )
@@ -1874,7 +1852,7 @@ def candle_icon_html(pattern):
     if pattern == "상승장악형":
 
         return """
-        <div class="candle-pattern-visual engulfing">
+        <div class="candle-pattern-visual">
             <div class="mini-candle bearish">
                 <span class="wick"></span><span class="body"></span>
             </div>
@@ -1887,7 +1865,7 @@ def candle_icon_html(pattern):
     if pattern == "하락장악형":
 
         return """
-        <div class="candle-pattern-visual engulfing">
+        <div class="candle-pattern-visual">
             <div class="mini-candle bullish">
                 <span class="wick"></span><span class="body"></span>
             </div>
@@ -1900,7 +1878,7 @@ def candle_icon_html(pattern):
     if pattern == "양수도지":
 
         return """
-        <div class="candle-pattern-visual doji">
+        <div class="candle-pattern-visual">
             <div class="mini-candle bullish-doji">
                 <span class="wick"></span><span class="body"></span>
             </div>
@@ -1910,7 +1888,7 @@ def candle_icon_html(pattern):
     if pattern == "음수도지":
 
         return """
-        <div class="candle-pattern-visual doji">
+        <div class="candle-pattern-visual">
             <div class="mini-candle bearish-doji">
                 <span class="wick"></span><span class="body"></span>
             </div>
@@ -1920,7 +1898,7 @@ def candle_icon_html(pattern):
     if pattern == "상승관통형":
 
         return """
-        <div class="candle-pattern-visual piercing">
+        <div class="candle-pattern-visual">
             <div class="mini-candle bearish">
                 <span class="wick"></span><span class="body"></span>
             </div>
@@ -1933,7 +1911,7 @@ def candle_icon_html(pattern):
     if pattern == "하락관통형":
 
         return """
-        <div class="candle-pattern-visual piercing">
+        <div class="candle-pattern-visual">
             <div class="mini-candle bullish">
                 <span class="wick"></span><span class="body"></span>
             </div>
@@ -1946,7 +1924,7 @@ def candle_icon_html(pattern):
     if pattern == "장대양봉":
 
         return """
-        <div class="candle-pattern-visual single-candle">
+        <div class="candle-pattern-visual">
             <div class="mini-candle bullish very-large">
                 <span class="wick"></span><span class="body"></span>
             </div>
@@ -1956,7 +1934,7 @@ def candle_icon_html(pattern):
     if pattern == "장대음봉":
 
         return """
-        <div class="candle-pattern-visual single-candle">
+        <div class="candle-pattern-visual">
             <div class="mini-candle bearish very-large">
                 <span class="wick"></span><span class="body"></span>
             </div>
@@ -1966,10 +1944,9 @@ def candle_icon_html(pattern):
     if pattern == "일반양봉":
 
         return """
-        <div class="candle-pattern-visual single-candle">
+        <div class="candle-pattern-visual">
             <div class="mini-candle bullish">
-                <span class="wick"></span>
-                <span class="body"></span>
+                <span class="wick"></span><span class="body"></span>
             </div>
         </div>
         """
@@ -1977,10 +1954,9 @@ def candle_icon_html(pattern):
     if pattern == "일반음봉":
 
         return """
-        <div class="candle-pattern-visual single-candle">
+        <div class="candle-pattern-visual">
             <div class="mini-candle bearish">
-                <span class="wick"></span>
-                <span class="body"></span>
+                <span class="wick"></span><span class="body"></span>
             </div>
         </div>
         """
@@ -1994,7 +1970,7 @@ def candle_icon_html(pattern):
         )
 
         return f"""
-        <div class="candle-pattern-visual single-candle">
+        <div class="candle-pattern-visual">
             <div class="mini-candle {candle_class}">
                 <span class="wick"></span><span class="body"></span>
             </div>
@@ -2010,7 +1986,7 @@ def candle_icon_html(pattern):
         )
 
         return f"""
-        <div class="candle-pattern-visual single-candle">
+        <div class="candle-pattern-visual">
             <div class="mini-candle {candle_class}">
                 <span class="wick"></span><span class="body"></span>
             </div>
@@ -2018,9 +1994,7 @@ def candle_icon_html(pattern):
         """
 
     return """
-    <div class="candle-pattern-visual empty">
-        <span>—</span>
-    </div>
+    <div class="candle-pattern-visual empty">—</div>
     """
 
 
@@ -2083,7 +2057,10 @@ def current_pattern_html(pattern, candle=None):
 
         escaped_pattern = html.escape(str(item))
 
-        if item in BULLISH_HIGHLIGHT_PATTERNS or item == "장대양봉":
+        if (
+            item in BULLISH_HIGHLIGHT_PATTERNS
+            or item == "장대양봉"
+        ):
             css_class = "bullish-pattern"
 
         elif item in BEARISH_HIGHLIGHT_PATTERNS:
@@ -2108,7 +2085,7 @@ def current_pattern_html(pattern, candle=None):
 
 
 # =========================================================
-# 최근 3개 봉 캔들 패턴 표시 HTML
+# 최근 3개 봉 표시
 # =========================================================
 
 def last_three_pattern_html(row):
@@ -2139,11 +2116,13 @@ def last_three_pattern_html(row):
     for i, item in enumerate(visible_items):
 
         patterns = item.get("patterns", [])
-
         raw_label = item.get("label") or "-"
 
         if i == len(visible_items) - 1 and raw_label != "-":
-            label = html.escape(raw_label) + ' <span class="candle-live">진행 중</span>'
+            label = (
+                html.escape(raw_label)
+                + '<span class="candle-live">진행</span>'
+            )
         else:
             label = html.escape(raw_label)
 
@@ -2156,9 +2135,9 @@ def last_three_pattern_html(row):
             f"""
             <div class="three-candle-item">
 
-                <span class="three-candle-label">
+                <div class="three-candle-label">
                     {label}
-                </span>
+                </div>
 
                 <div class="three-candle-pattern">
                     {candle_html}
@@ -2195,7 +2174,7 @@ def consecutive_candle_badges_html(row):
 
         badges.append(
             '<span class="consecutive-bullish">'
-            f'🔥 {bullish_count}연속 장대양봉'
+            f'{bullish_count}연속 장대양봉'
             '</span>'
         )
 
@@ -2203,7 +2182,7 @@ def consecutive_candle_badges_html(row):
 
         badges.append(
             '<span class="consecutive-bearish">'
-            f'🔻 {bearish_count}연속 장대음봉'
+            f'{bearish_count}연속 장대음봉'
             '</span>'
         )
 
@@ -2229,7 +2208,7 @@ def pattern_badges_html(row):
     ):
 
         badges.append(
-            '<span class="signal-type-badge">⭐ 상승패턴</span>'
+            '<span class="signal-type-badge">상승패턴</span>'
         )
 
     if any(
@@ -2238,7 +2217,7 @@ def pattern_badges_html(row):
     ):
 
         badges.append(
-            '<span class="bearish-type-badge">🔻 하락패턴</span>'
+            '<span class="bearish-type-badge">하락패턴</span>'
         )
 
     badges.append(
@@ -2257,22 +2236,19 @@ def btc_html():
     return f"""
     <section class="btc-panel">
 
-        <div class="section-head">
-
-            <div>
-                <span class="section-kicker">MARKET</span>
-                <b>BTCUSDT</b>
+        <div class="btc-top">
+            <div class="btc-label">
+                <span class="status-dot"></span>
+                BTCUSDT
+                <span class="market-tag">OKX</span>
             </div>
 
             <span class="update-time">
-                OKX · KST 09:00 기준 · {kst()}
+                KST 09:00 기준 · {kst()}
             </span>
-
         </div>
 
         <div class="btc-main">
-
-            <div class="btc-name">BTC</div>
 
             <div class="btc-price">
                 {fmt_price(latest_btc_okx_price)}
@@ -2309,10 +2285,7 @@ def signal_card(row):
         for pattern in all_patterns
     )
 
-    # -----------------------------------------------------
-    # 추가 1: 최근 3개 봉 중 장대양봉 존재 여부
-    # -----------------------------------------------------
-
+    # 최근 3개 봉 중 장대양봉
     last_three = row.get("last_three_patterns") or []
 
     has_long_bullish = any(
@@ -2320,10 +2293,7 @@ def signal_card(row):
         for item in last_three
     )
 
-    # -----------------------------------------------------
-    # 추가 2: 일반 연속 양봉 2개 이상 여부
-    # -----------------------------------------------------
-
+    # 일반 연속 양봉
     consecutive_bullish_candles = int(
         row.get("consecutive_bullish_candles", 0) or 0
     )
@@ -2332,10 +2302,7 @@ def signal_card(row):
         consecutive_bullish_candles >= CONSECUTIVE_BULLISH_MIN
     )
 
-    # -----------------------------------------------------
-    # 최종 SIGNAL 녹색 강조
-    # -----------------------------------------------------
-
+    # 녹색 강조 여부
     has_green_highlight = bool(
         has_bullish_pattern
         or has_long_bullish
@@ -2344,12 +2311,11 @@ def signal_card(row):
 
     badge_html = pattern_badges_html(row)
 
-    # SIGNAL 전용 추가 배지
     if has_long_bullish:
 
         badge_html += (
             '<span class="signal-type-badge">'
-            '🔥 장대양봉'
+            '장대양봉'
             '</span>'
         )
 
@@ -2357,31 +2323,34 @@ def signal_card(row):
 
         badge_html += (
             '<span class="signal-type-badge">'
-            f'🟢 {consecutive_bullish_candles}연속 양봉'
+            f'{consecutive_bullish_candles}연속 양봉'
             '</span>'
         )
 
     three_pattern_html = last_three_pattern_html(row)
 
-    card_classes = ["signal-card"]
-
-    if has_green_highlight:
-        card_classes.append("has-bullish-pattern")
-
-    card_class = " ".join(card_classes)
+    card_class = (
+        "signal-card highlight"
+        if has_green_highlight
+        else "signal-card"
+    )
 
     return f"""
     <div class="{card_class}">
 
         <div class="signal-card-top">
 
-            <span class="signal-rank">
-                거래대금 #{row.get("volume_rank", "-")}
-            </span>
+            <div class="signal-identity">
 
-            <b class="signal-coin-name">
-                {html.escape(row["name"])}
-            </b>
+                <span class="signal-rank">
+                    #{row.get("volume_rank", "-")}
+                </span>
+
+                <b class="signal-coin-name">
+                    {html.escape(row["name"])}
+                </b>
+
+            </div>
 
             <div class="signal-type-list">
                 {badge_html}
@@ -2391,25 +2360,22 @@ def signal_card(row):
 
         <div class="signal-data-grid">
 
-            <div class="signal-price">
-                <span>현재가격</span>
-
+            <div>
+                <span>현재가</span>
                 <strong>
                     {fmt_price(row.get("current_price"))}
                 </strong>
             </div>
 
-            <div class="signal-volume">
+            <div>
                 <span>거래대금</span>
-
                 <strong>
                     {fmt_vol(row["volume_24h"])}
                 </strong>
             </div>
 
-            <div class="signal-change">
+            <div>
                 <span>변동률</span>
-
                 <strong>
                     {fmt_change(row.get("daily_change"))}
                 </strong>
@@ -2420,7 +2386,7 @@ def signal_card(row):
         <div class="three-candle-section">
 
             <div class="three-candle-heading">
-                최근 3개 봉 캔들패턴 · {timeframe_label}
+                최근 3개 봉 · {timeframe_label}
             </div>
 
             {three_pattern_html}
@@ -2457,39 +2423,14 @@ def signal_section():
         )
 
     condition_html = f"""
-    <div class="signal-condition-one-line">
+    <div class="signal-condition">
 
-        <span>
-            양봉 · 현재봉 또는 이전봉
-        </span>
-
-        <span>
-            녹색 강조 · 상승장악형 / 상승관통형
-        </span>
-
-        <span>
-            녹색 강조 · 최근 3개 봉 장대양봉
-        </span>
-
-        <span>
-            녹색 강조 · 2연속 이상 일반 양봉
-        </span>
-
-        <span>
-            최근 3개 봉 패턴 표시
-        </span>
-
-        <span>
-            3연속 이상 장대봉 별도 표시
-        </span>
-
-        <span>
-            공통조건 · 당일 변동률 {DAILY_CHANGE_MIN:.2f}% 초과
-        </span>
-
-        <span>
-            최소 거래대금 · {fmt_vol(SIGNAL_MIN_VOLUME)} 이상
-        </span>
+        <span>양봉 · 현재봉 또는 이전봉</span>
+        <span>상승장악형 / 상승관통형</span>
+        <span>장대양봉 녹색 강조</span>
+        <span>2연속 이상 양봉 녹색 강조</span>
+        <span>당일 변동률 {DAILY_CHANGE_MIN:.2f}% 초과</span>
+        <span>거래대금 {fmt_vol(SIGNAL_MIN_VOLUME)} 이상</span>
 
     </div>
     """
@@ -2497,16 +2438,18 @@ def signal_section():
     return f"""
     <section class="signal-panel">
 
-        <div class="section-head signal-panel-head">
+        <div class="panel-heading">
 
-            <div>
-                <span class="section-kicker">SIGNAL</span>
-                <b>🔴</b>
+            <div class="heading-title">
+                <span class="heading-mark signal-mark"></span>
+                SIGNAL
+                <span class="heading-count">
+                    {len(latest_signal_data)}
+                </span>
             </div>
 
             <span class="update-time">
-                캔들패턴 {html.escape(pattern_timeframe_label)}
-                · {kst()}
+                {pattern_timeframe_label} · {kst()}
             </span>
 
         </div>
@@ -2545,7 +2488,9 @@ def card(row, kind):
 
             <div class="coin-title">
 
-                <span class="rank">#{row["rank"]}</span>
+                <span class="rank">
+                    #{row["rank"]}
+                </span>
 
                 <b>{html.escape(row["name"])}</b>
 
@@ -2560,33 +2505,24 @@ def card(row, kind):
         <div class="market-summary">
 
             <div>
-
                 <span>현재가</span>
-
                 <strong>
                     {fmt_price(row["current_price"])}
                 </strong>
-
             </div>
 
             <div>
-
                 <span>24H 거래대금</span>
-
                 <strong>
                     {fmt_vol(row["volume_24h"])}
                 </strong>
-
             </div>
 
             <div>
-
                 <span>당일 변동률</span>
-
                 <strong>
                     {fmt_change(row.get("daily_change"))}
                 </strong>
-
             </div>
 
         </div>
@@ -2594,7 +2530,7 @@ def card(row, kind):
         <div class="top-three-candle-section">
 
             <div class="three-candle-heading">
-                최근 3개 봉 캔들패턴 · {timeframe_label}
+                최근 3개 봉 · {timeframe_label}
             </div>
 
             {three_pattern_html}
@@ -2606,32 +2542,39 @@ def card(row, kind):
 
 
 # =========================================================
-# CSS - 글자 크기 통일 및 모바일 최적화
+# CSS - 컴팩트 트레이딩 터미널
 # =========================================================
 
 CSS = """
 :root {
     color-scheme: dark;
 
-    --bg: #080c11;
-    --panel: #101720;
-    --panel-deep: #0c1219;
-    --panel-soft: #151e28;
-    --line: #263442;
-    --line-soft: #1c2935;
-    --text: #edf2f7;
-    --muted: #91a0ae;
-    --green: #35dc83;
-    --red: #ff5968;
-    --yellow: #e9c66a;
+    --bg: #080d13;
+    --panel: #101820;
+    --panel2: #131e28;
+    --panel3: #0d151d;
+    --line: #263542;
+    --line-soft: #1d2a35;
 
-    --fs-main: 20px;
-    --fs-section: 15px;
-    --fs-coin: 16px;
-    --fs-value: 14px;
-    --fs-content: 12px;
-    --fs-small: 11px;
-    --fs-tiny: 10px;
+    --text: #e5edf4;
+    --muted: #8495a5;
+
+    --green: #38d996;
+    --green-soft: rgba(56,217,150,.10);
+
+    --red: #ff6575;
+    --red-soft: rgba(255,101,117,.10);
+
+    --yellow: #e8c56e;
+
+    /* PC 기본 글자 크기 */
+    --fs-main: 17px;
+    --fs-section: 13px;
+    --fs-coin: 14px;
+    --fs-value: 12px;
+    --fs-content: 11px;
+    --fs-small: 10px;
+    --fs-tiny: 9px;
 }
 
 * {
@@ -2646,12 +2589,13 @@ html {
 
 body {
     width: 100%;
-    max-width: 1100px;
+    max-width: 1000px;
     min-height: 100vh;
     margin: 0 auto;
-    padding: 16px;
+    padding: 12px;
     background: var(--bg);
     color: var(--text);
+
     font-family:
         -apple-system,
         BlinkMacSystemFont,
@@ -2659,38 +2603,41 @@ body {
         "Malgun Gothic",
         Arial,
         sans-serif;
+
     font-size: var(--fs-content);
-    line-height: 1.45;
-    letter-spacing: -0.25px;
+    line-height: 1.4;
+    letter-spacing: -.2px;
 }
 
 h1 {
-    margin: 4px 0 16px;
-    padding: 0 2px 12px;
+    margin: 2px 0 11px;
+    padding: 0 2px 10px;
+
     font-size: var(--fs-main);
     font-weight: 900;
-    letter-spacing: -0.7px;
-    color: #f5f8fb;
+    letter-spacing: -.5px;
+
+    color: #f2f6fa;
     border-bottom: 1px solid var(--line);
 }
 
 section {
-    margin-bottom: 16px;
+    margin-bottom: 11px;
 }
 
 .up {
     color: var(--green) !important;
-    font-weight: 900;
+    font-weight: 800;
 }
 
 .down {
     color: var(--red) !important;
-    font-weight: 900;
+    font-weight: 800;
 }
 
 .zero {
-    color: #82909d;
-    font-weight: 800;
+    color: #8795a2;
+    font-weight: 700;
 }
 
 
@@ -2699,21 +2646,29 @@ section {
 ===================================================== */
 
 .pattern-box {
-    min-width: 65px;
+    min-width: 45px;
+
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    line-height: 1.2;
+
+    line-height: 1.15;
 }
 
 .pattern-name {
     display: block;
-    margin-top: 5px;
-    color: var(--green);
-    font-size: var(--fs-small);
-    font-weight: 900;
+    margin-top: 3px;
+
+    color: var(--yellow);
+    font-size: var(--fs-tiny);
+    font-weight: 800;
+
     white-space: nowrap;
+}
+
+.bullish-pattern .pattern-name {
+    color: var(--green);
 }
 
 .bearish-pattern .pattern-name {
@@ -2725,36 +2680,47 @@ section {
 }
 
 .pattern-none .pattern-name {
-    color: #82909d;
+    color: var(--muted);
 }
 
 .pattern-multi {
     width: 100%;
+
     display: flex;
     align-items: flex-start;
     justify-content: center;
     flex-wrap: wrap;
-    gap: 10px;
+
+    gap: 5px;
 }
 
 .pattern-multi .pattern-box {
-    min-width: 58px;
+    min-width: 43px;
 }
 
+
+/* =====================================================
+   캔들 그림
+===================================================== */
+
 .candle-pattern-visual {
-    height: 38px;
-    min-width: 48px;
+    height: 28px;
+    min-width: 36px;
+
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 6px;
+
+    gap: 4px;
     position: relative;
 }
 
 .mini-candle {
-    width: 10px;
-    height: 34px;
+    width: 8px;
+    height: 27px;
+
     position: relative;
+
     display: flex;
     justify-content: center;
     align-items: center;
@@ -2762,10 +2728,13 @@ section {
 
 .mini-candle .wick {
     position: absolute;
-    width: 2px;
-    height: 34px;
+
+    width: 1px;
+    height: 27px;
+
     left: 50%;
     top: 0;
+
     transform: translateX(-50%);
     background: #82909d;
 }
@@ -2773,72 +2742,74 @@ section {
 .mini-candle .body {
     position: relative;
     z-index: 2;
-    width: 10px;
-    height: 14px;
+
+    width: 8px;
+    height: 12px;
+
     border-radius: 1px;
 }
 
 .mini-candle.bearish .body {
     background: var(--red);
-    height: 17px;
+    height: 15px;
 }
 
 .mini-candle.bullish .body {
     background: var(--green);
-    height: 23px;
+    height: 19px;
 }
 
 .mini-candle.bullish.large .body,
 .mini-candle.bearish.large .body {
-    height: 28px;
-    width: 12px;
+    height: 23px;
+    width: 10px;
 }
 
 .mini-candle.bullish-doji .body {
     background: var(--green);
     height: 3px;
-    width: 13px;
+    width: 10px;
 }
 
 .mini-candle.bearish-doji .body {
     background: var(--red);
     height: 3px;
-    width: 13px;
+    width: 10px;
 }
 
 .mini-candle.piercing-candle .body {
     background: var(--green);
-    height: 21px;
+    height: 18px;
 }
 
 .mini-candle.piercing-bearish .body {
     background: var(--red);
-    height: 21px;
+    height: 18px;
 }
 
 .mini-candle.bullish.very-large .body {
     background: var(--green);
-    height: 29px;
-    width: 12px;
+    height: 24px;
+    width: 10px;
 }
 
 .mini-candle.bearish.very-large .body {
     background: var(--red);
-    height: 29px;
-    width: 12px;
+    height: 24px;
+    width: 10px;
 }
 
 .mini-candle.hammer .wick,
 .mini-candle.inverted-hammer .wick {
-    height: 34px;
+    height: 27px;
     top: 0;
 }
 
 .mini-candle.hammer .body {
     position: absolute;
     top: 1px;
-    height: 8px;
-    width: 11px;
+    height: 7px;
+    width: 9px;
 }
 
 .mini-candle.bullish.hammer .body,
@@ -2854,14 +2825,13 @@ section {
 .mini-candle.inverted-hammer .body {
     position: absolute;
     bottom: 1px;
-    height: 8px;
-    width: 11px;
+    height: 7px;
+    width: 9px;
 }
 
 .candle-pattern-visual.empty {
-    color: #82909d;
+    color: var(--muted);
     font-size: var(--fs-value);
-    height: 38px;
 }
 
 
@@ -2871,138 +2841,194 @@ section {
 
 .three-candle-section,
 .top-three-candle-section {
-    padding: 13px 10px;
-    background: var(--panel-deep);
-    border-top: 1px solid var(--line);
+    padding: 8px 9px;
+    background: var(--panel3);
+    border-top: 1px solid var(--line-soft);
 }
 
 .three-candle-heading {
-    color: #c0ccd7;
-    font-size: var(--fs-content);
-    font-weight: 900;
-    text-align: center;
-    margin-bottom: 10px;
+    color: #9eafbe;
+    font-size: var(--fs-small);
+    font-weight: 800;
+
+    text-align: left;
+    margin-bottom: 7px;
 }
 
 .three-candle-list {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
+
     width: 100%;
-    gap: 8px;
+    gap: 5px;
 }
 
 .three-candle-item {
     min-width: 0;
-    min-height: 94px;
+    min-height: 65px;
+
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: flex-start;
-    padding: 10px 4px;
-    background: #141e28;
-    border: 1px solid #304151;
-    border-radius: 7px;
+
+    padding: 6px 2px;
+
+    background: #121e28;
+    border: 1px solid #263744;
+    border-radius: 5px;
 }
 
 .three-candle-label {
-    color: #d0d9e1;
-    font-size: var(--fs-small);
-    font-weight: 900;
-    margin-bottom: 9px;
+    color: #aab9c6;
+    font-size: var(--fs-tiny);
+    font-weight: 700;
+
+    margin-bottom: 5px;
     white-space: nowrap;
 }
 
 .candle-live {
     display: inline-block;
+    margin-left: 2px;
+
     color: var(--yellow);
-    font-size: var(--fs-tiny);
-    font-weight: 900;
+    font-size: 8px;
+    font-weight: 800;
 }
 
 .three-candle-pattern {
     width: 100%;
+
     display: flex;
     justify-content: center;
 }
 
 .three-candle-pattern .pattern-multi {
-    gap: 5px;
+    gap: 3px;
 }
 
 .three-candle-pattern .pattern-box {
-    min-width: 42px;
+    min-width: 32px;
 }
 
 .three-candle-pattern .pattern-name {
-    font-size: var(--fs-tiny);
+    font-size: 9px;
 }
 
 .three-candle-pattern .pattern-none {
-    min-height: 38px;
+    min-height: 28px;
 }
 
 
 /* =====================================================
-   연속 장대봉
+   공통 배지
 ===================================================== */
 
+.signal-type-list,
+.pattern-badge-list {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+
+.signal-type-badge,
+.bearish-type-badge,
 .consecutive-bullish,
 .consecutive-bearish {
-    font-size: var(--fs-small) !important;
-    font-weight: 900;
+    display: inline-flex;
+    align-items: center;
+
+    padding: 3px 6px;
+    border-radius: 4px;
+
+    font-size: var(--fs-tiny) !important;
+    font-weight: 800;
+
     white-space: nowrap;
-    padding: 4px 7px;
-    border-radius: 5px;
+}
+
+.signal-type-badge {
+    color: var(--green) !important;
+    background: var(--green-soft);
+    border: 1px solid rgba(56,217,150,.2);
+}
+
+.bearish-type-badge {
+    color: var(--red) !important;
+    background: var(--red-soft);
+    border: 1px solid rgba(255,101,117,.2);
 }
 
 .consecutive-bullish {
     color: var(--green) !important;
-    background: rgba(53, 220, 131, .12);
-    border: 1px solid rgba(53, 220, 131, .22);
+    background: var(--green-soft);
+    border: 1px solid rgba(56,217,150,.2);
 }
 
 .consecutive-bearish {
     color: var(--red) !important;
-    background: rgba(255, 89, 104, .12);
-    border: 1px solid rgba(255, 89, 104, .22);
+    background: var(--red-soft);
+    border: 1px solid rgba(255,101,117,.2);
 }
 
 
 /* =====================================================
-   공통 패널 헤더
+   패널 헤더
 ===================================================== */
 
-.section-head {
-    min-height: 48px;
-    padding: 0 14px;
+.panel-heading {
+    min-height: 39px;
+    padding: 0 10px;
+
     display: flex;
     align-items: center;
     justify-content: space-between;
+
     gap: 8px;
+
+    background: #121c26;
     border-bottom: 1px solid var(--line);
 }
 
-.section-head > div {
+.heading-title {
     display: flex;
     align-items: center;
-    gap: 9px;
-}
+    gap: 7px;
 
-.section-head b {
     font-size: var(--fs-section);
     font-weight: 900;
 }
 
-.section-kicker {
-    color: #8493a1;
+.heading-mark {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+.signal-mark {
+    background: var(--green);
+    box-shadow: 0 0 7px rgba(56,217,150,.6);
+}
+
+.heading-count {
+    min-width: 18px;
+    padding: 2px 5px;
+
+    text-align: center;
+
+    color: var(--green);
+    background: var(--green-soft);
+    border-radius: 4px;
+
     font-size: var(--fs-tiny);
-    letter-spacing: 1.2px;
-    font-weight: 900;
 }
 
 .update-time {
-    color: #8493a1;
-    font-size: var(--fs-small);
+    color: var(--muted);
+    font-size: var(--fs-tiny);
     white-space: nowrap;
 }
 
@@ -3013,40 +3039,71 @@ section {
 
 .btc-panel {
     overflow: hidden;
-    background: linear-gradient(135deg, #141e29, #0d141c);
-    border: 1px solid #304151;
-    border-radius: 10px;
-    margin-bottom: 16px;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, .18);
+
+    padding: 10px 12px;
+
+    background: linear-gradient(
+        110deg,
+        #152432,
+        #0d151e
+    );
+
+    border: 1px solid #304252;
+    border-radius: 7px;
 }
 
-.btc-panel .section-head {
-    background: rgba(255, 255, 255, .025);
+.btc-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    gap: 6px;
+    margin-bottom: 7px;
+}
+
+.btc-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+
+    color: #e2eaf1;
+    font-size: var(--fs-section);
+    font-weight: 900;
+}
+
+.status-dot {
+    width: 6px;
+    height: 6px;
+
+    display: inline-block;
+    border-radius: 50%;
+
+    background: var(--green);
+}
+
+.market-tag {
+    padding: 2px 5px;
+
+    color: #9fb0bf;
+    background: #1c2c39;
+
+    border-radius: 3px;
+    font-size: 9px;
 }
 
 .btc-main {
-    min-height: 86px;
-    display: grid;
-    grid-template-columns: .8fr 1.6fr 1fr;
+    display: flex;
     align-items: center;
-}
+    justify-content: space-between;
 
-.btc-main > div {
-    text-align: center;
-    padding: 10px 6px;
-}
-
-.btc-name {
-    color: #d2dbe3;
-    font-size: var(--fs-coin);
-    font-weight: 900;
+    gap: 10px;
 }
 
 .btc-price {
-    color: #f5f8fb;
-    font-size: 24px;
+    color: #f1f5f8;
+    font-size: 21px;
     font-weight: 900;
-    letter-spacing: -.7px;
+    letter-spacing: -.5px;
 }
 
 .btc-change {
@@ -3061,46 +3118,45 @@ section {
 
 .signal-panel {
     overflow: hidden;
+
     background: var(--panel);
-    border: 1px solid #51323a;
-    border-radius: 10px;
-    margin-bottom: 16px;
+    border: 1px solid #293844;
+    border-radius: 7px;
 }
 
-.signal-panel-head {
-    background: #17171d;
-    border-bottom: 1px solid #493039;
-}
-
-.signal-panel-head b {
-    color: #f3dfe2;
-}
-
-.signal-condition-one-line {
+.signal-condition {
     display: flex;
     align-items: center;
-    flex-wrap: nowrap;
-    gap: 15px;
-    width: 100%;
+
+    gap: 6px;
+    padding: 7px 9px;
+
     overflow-x: auto;
-    overflow-y: hidden;
     white-space: nowrap;
-    padding: 10px 13px;
-    background: #171217;
-    border-bottom: 1px solid #38272d;
+
+    background: #111922;
+    border-bottom: 1px solid var(--line-soft);
+
     scrollbar-width: none;
 }
 
-.signal-condition-one-line::-webkit-scrollbar {
+.signal-condition::-webkit-scrollbar {
     display: none;
 }
 
-.signal-condition-one-line span {
+.signal-condition span {
     flex: 0 0 auto;
-    color: #f28c98;
-    font-size: var(--fs-small);
-    font-weight: 900;
-    white-space: nowrap;
+
+    color: #aab8c4;
+    font-size: var(--fs-tiny);
+    font-weight: 700;
+
+    padding-right: 7px;
+    border-right: 1px solid #35434e;
+}
+
+.signal-condition span:last-child {
+    border-right: 0;
 }
 
 .signal-list {
@@ -3110,80 +3166,74 @@ section {
 .signal-card {
     display: flex;
     flex-direction: column;
+
     min-height: 0;
+
     background: #101820;
-    border-bottom: 1px solid #2a3742;
+    border-bottom: 1px solid #26343f;
 }
 
 .signal-card:last-child {
     border-bottom: 0;
 }
 
+
+/* SIGNAL 상단 */
+
 .signal-card-top {
-    width: 100%;
-    min-height: 56px;
-    padding: 10px 13px;
+    min-height: 39px;
+    padding: 6px 9px;
+
     display: flex;
-    flex-direction: row;
     align-items: center;
+    justify-content: space-between;
     flex-wrap: wrap;
-    gap: 10px;
-    border-bottom: 1px solid #2a3742;
-    background: rgba(255, 255, 255, .02);
+
+    gap: 5px;
+
+    background: #121c25;
+    border-bottom: 1px solid #273541;
+}
+
+.signal-identity {
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
 
 .signal-rank {
-    color: #e4bdc2;
-    font-size: var(--fs-content);
-    font-weight: 900;
-    white-space: nowrap;
+    color: var(--yellow);
+    font-size: var(--fs-small);
+    font-weight: 800;
 }
 
 .signal-coin-name {
-    color: #f2f5f8;
+    color: #e9f0f5;
     font-size: var(--fs-coin);
     font-weight: 900;
-    white-space: nowrap;
 }
 
-.signal-type-list {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 7px;
-}
 
-.signal-type-badge,
-.bearish-type-badge {
-    font-size: var(--fs-small) !important;
-    font-weight: 900;
-    white-space: nowrap;
-}
-
-.signal-type-badge {
-    color: var(--yellow) !important;
-}
-
-.bearish-type-badge {
-    color: var(--red) !important;
-}
+/* SIGNAL 데이터 */
 
 .signal-data-grid {
     display: grid;
-    grid-template-columns: 1.1fr .9fr .9fr;
-    align-items: stretch;
+    grid-template-columns: 1.1fr 1fr .9fr;
+
     width: 100%;
-    min-height: 72px;
 }
 
 .signal-data-grid > div {
     min-width: 0;
-    min-height: 72px;
-    padding: 9px 4px;
+    min-height: 48px;
+
+    padding: 6px 3px;
+
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
+
     text-align: center;
 }
 
@@ -3192,195 +3242,187 @@ section {
 }
 
 .signal-data-grid span {
-    color: #9ba9b5;
-    font-size: var(--fs-content);
+    color: #8798a7;
+    font-size: var(--fs-tiny);
 }
 
 .signal-data-grid strong {
-    margin-top: 6px;
+    margin-top: 4px;
+
     color: #e7edf2;
     font-size: var(--fs-value);
-    font-weight: 900;
-}
-
-.signal-data-grid .signal-price strong {
-    color: #f4f7fa;
-    font-size: var(--fs-value);
-    font-weight: 900;
+    font-weight: 800;
     white-space: nowrap;
 }
 
 
-/* 상승패턴 / 장대양봉 / 연속 양봉 강조 */
+/* SIGNAL 녹색 강조 */
 
-.signal-card.has-bullish-pattern {
-    background: #10271e;
+.signal-card.highlight {
+    background: #10241c;
+
     box-shadow:
-        inset 4px 0 0 var(--green),
-        inset 0 0 0 1px #286b48;
+        inset 3px 0 0 var(--green),
+        inset 0 0 0 1px rgba(56,217,150,.2);
 }
 
-.signal-card.has-bullish-pattern .signal-card-top {
-    background: rgba(53, 220, 131, .08);
+.signal-card.highlight .signal-card-top {
+    background: #142c22;
+    border-bottom-color: #28533e;
 }
 
-.signal-card.has-bullish-pattern .signal-data-grid > div {
-    background: rgba(53, 220, 131, .055);
-}
-
-.signal-card.has-bullish-pattern .signal-coin-name {
+.signal-card.highlight .signal-coin-name {
     color: var(--green);
 }
 
-.signal-card.has-bullish-pattern .signal-rank {
+.signal-card.highlight .signal-rank {
     color: var(--yellow);
 }
 
-.signal-card.has-bullish-pattern .three-candle-item {
-    background: #173124;
-    border-color: #286b48;
+.signal-card.highlight .signal-data-grid > div {
+    background: rgba(56,217,150,.035);
 }
 
+.signal-card.highlight .three-candle-item {
+    background: #173126;
+    border-color: #315844;
+}
+
+
+/* SIGNAL 없음 */
+
 .signal-empty {
-    min-height: 75px;
+    min-height: 65px;
+
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #9ba8b3;
+
+    color: #8c9ba8;
     font-size: var(--fs-content);
     font-weight: 700;
 }
 
 
 /* =====================================================
-   거래대금 TOP 리스트
+   TOP 리스트
 ===================================================== */
 
 .coin-card {
     overflow: hidden;
+
     background: var(--panel);
-    border: 1px solid #2b3946;
-    border-radius: 9px;
-    margin-bottom: 10px;
+    border: 1px solid #293844;
+    border-radius: 7px;
+
+    margin-top: 8px;
 }
 
 .coin-head {
-    min-height: 56px;
-    padding: 10px 13px;
+    min-height: 39px;
+    padding: 6px 9px;
+
     display: flex;
     align-items: center;
     justify-content: space-between;
     flex-wrap: wrap;
-    gap: 8px;
+
+    gap: 5px;
+
+    background: #121c25;
     border-bottom: 1px solid var(--line);
-    background: #131d27;
 }
 
 .coin-title {
     display: flex;
     align-items: center;
-    gap: 11px;
-    flex-wrap: wrap;
+    gap: 8px;
 }
 
 .coin-title b {
+    color: #e9f0f5;
     font-size: var(--fs-coin);
     font-weight: 900;
 }
 
 .rank {
     color: var(--yellow);
-    font-size: var(--fs-content);
-    font-weight: 900;
-}
-
-.pattern-badge-list {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    flex-wrap: wrap;
-    gap: 7px;
+    font-size: var(--fs-small);
+    font-weight: 800;
 }
 
 .market-summary {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    border-bottom: 1px solid var(--line);
 }
 
 .market-summary > div {
     min-width: 0;
-    min-height: 68px;
-    padding: 8px 3px;
-    text-align: center;
-    background: #101820;
+    min-height: 49px;
+
+    padding: 6px 3px;
+
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
+
+    text-align: center;
+    background: #101820;
 }
 
 .market-summary > div + div {
-    border-left: 1px solid #26333e;
+    border-left: 1px solid #26343f;
 }
 
 .market-summary span {
-    display: block;
-    color: #9ba9b5;
-    font-size: var(--fs-content);
-    margin-bottom: 6px;
+    color: #8798a7;
+    font-size: var(--fs-tiny);
+    margin-bottom: 4px;
 }
 
 .market-summary strong {
-    display: block;
     color: #e6edf2;
     font-size: var(--fs-value);
-    font-weight: 900;
-}
-
-.market-summary .daily-change-value .up {
-    color: var(--green) !important;
-}
-
-.market-summary .daily-change-value .down {
-    color: var(--red) !important;
-}
-
-.market-summary .daily-change-value .zero {
-    color: #82909d !important;
+    font-weight: 800;
+    white-space: nowrap;
 }
 
 
 /* =====================================================
-   PC 화면
+   PC
 ===================================================== */
 
 @media (min-width: 900px) {
 
     body {
-        padding: 22px;
+        padding: 16px;
+    }
+
+    .btc-price {
+        font-size: 23px;
     }
 
     .three-candle-item {
-        min-height: 100px;
+        min-height: 70px;
     }
 }
 
 
 /* =====================================================
-   태블릿 화면
+   태블릿
 ===================================================== */
 
 @media (max-width: 899px) {
 
     body {
-        padding: 12px;
+        padding: 9px;
     }
 }
 
 
 /* =====================================================
-   모바일 화면
+   모바일
 ===================================================== */
 
 @media (max-width: 600px) {
@@ -3390,194 +3432,132 @@ section {
         --fs-section: 12px;
         --fs-coin: 13px;
         --fs-value: 11px;
-        --fs-content: 9px;
-        --fs-small: 8px;
-        --fs-tiny: 7px;
+        --fs-content: 10px;
+        --fs-small: 9px;
+        --fs-tiny: 8px;
     }
 
     body {
-        padding: 7px;
+        padding: 6px;
     }
 
     h1 {
-        margin: 3px 2px 12px;
-        padding-bottom: 10px;
-        letter-spacing: -.5px;
+        margin: 2px 1px 9px;
+        padding-bottom: 8px;
     }
 
     section {
-        margin-bottom: 11px;
+        margin-bottom: 8px;
     }
-
-    .section-head {
-        min-height: 43px;
-        padding: 0 9px;
-        gap: 5px;
-    }
-
-    .section-head > div {
-        gap: 6px;
-    }
-
-    .update-time {
-        font-size: 9px;
-    }
-
-
-    /* BTC */
 
     .btc-panel {
-        border-radius: 8px;
-        margin-bottom: 11px;
-    }
-
-    .btc-main {
-        min-height: 67px;
-        grid-template-columns: .65fr 1.5fr 1fr;
-    }
-
-    .btc-main > div {
-        padding: 7px 3px;
+        padding: 9px 10px;
+        border-radius: 6px;
     }
 
     .btc-price {
         font-size: 19px;
     }
 
-
-    /* SIGNAL */
-
-    .signal-panel {
-        border-radius: 8px;
-        margin-bottom: 11px;
+    .panel-heading {
+        min-height: 36px;
+        padding: 0 8px;
     }
 
-    .signal-condition-one-line {
-        gap: 10px;
-        padding: 8px 9px;
-    }
-
-    .signal-card-top {
-        min-height: 48px;
-        padding: 8px 9px;
-        gap: 7px;
-    }
-
-    .signal-data-grid {
-        min-height: 60px;
-    }
-
-    .signal-data-grid > div {
-        min-height: 60px;
-        padding: 6px 2px;
-    }
-
-    .signal-data-grid strong {
-        margin-top: 5px;
-    }
-
-
-    /* 최근 3개 봉 */
-
-    .three-candle-section,
-    .top-three-candle-section {
-        padding: 9px 5px;
-    }
-
-    .three-candle-heading {
-        margin-bottom: 8px;
-    }
-
-    .three-candle-list {
+    .signal-condition {
+        padding: 6px 7px;
         gap: 5px;
     }
 
-    .three-candle-item {
-        min-height: 80px;
-        padding: 7px 2px;
-        border-radius: 5px;
+    .signal-card-top {
+        min-height: 36px;
+        padding: 5px 7px;
     }
 
-    .three-candle-label {
-        margin-bottom: 7px;
+    .signal-data-grid > div {
+        min-height: 43px;
+        padding: 5px 2px;
     }
 
-    .three-candle-pattern .pattern-box {
-        min-width: 31px;
+    .three-candle-section,
+    .top-three-candle-section {
+        padding: 7px 6px;
     }
 
-    .three-candle-pattern .pattern-name {
-        font-size: 9px;
-    }
-
-    .three-candle-pattern .candle-pattern-visual {
-        transform: scale(.83);
-    }
-
-    .pattern-box {
-        min-width: 52px;
-    }
-
-    .pattern-multi {
-        gap: 6px;
-    }
-
-    .pattern-multi .pattern-box {
-        min-width: 44px;
-    }
-
-    .candle-pattern-visual {
-        height: 34px;
-    }
-
-    .mini-candle,
-    .mini-candle .wick {
-        height: 32px;
-    }
-
-
-    /* 연속 장대봉 */
-
-    .consecutive-bullish,
-    .consecutive-bearish {
-        padding: 3px 5px;
-    }
-
-
-    /* 거래대금 순위 */
-
-    .coin-card {
-        border-radius: 7px;
-        margin-bottom: 8px;
-    }
-
-    .coin-head {
-        min-height: 46px;
-        padding: 7px 9px;
-        gap: 6px;
-    }
-
-    .coin-title {
-        gap: 8px;
-    }
-
-    .market-summary > div {
-        min-height: 56px;
-        padding: 6px 2px;
-    }
-
-    .market-summary span {
+    .three-candle-heading {
         margin-bottom: 5px;
     }
 
+    .three-candle-list {
+        gap: 4px;
+    }
+
+    .three-candle-item {
+        min-height: 61px;
+        padding: 5px 1px;
+        border-radius: 4px;
+    }
+
+    .three-candle-label {
+        margin-bottom: 4px;
+        font-size: 8px;
+    }
+
+    .three-candle-pattern .pattern-box {
+        min-width: 29px;
+    }
+
+    .three-candle-pattern .pattern-name {
+        font-size: 8px;
+    }
+
+    .candle-pattern-visual {
+        transform: scale(.85);
+    }
+
+    .pattern-multi {
+        gap: 3px;
+    }
+
+    .pattern-multi .pattern-box {
+        min-width: 34px;
+    }
+
+    .coin-card {
+        margin-top: 6px;
+        border-radius: 6px;
+    }
+
+    .coin-head {
+        min-height: 36px;
+        padding: 5px 7px;
+    }
+
+    .market-summary > div {
+        min-height: 44px;
+        padding: 5px 2px;
+    }
+
     .signal-empty {
-        min-height: 60px;
+        min-height: 55px;
+    }
+
+    .signal-type-list,
+    .pattern-badge-list {
+        gap: 3px;
+    }
+
+    .signal-type-badge,
+    .bearish-type-badge,
+    .consecutive-bullish,
+    .consecutive-bearish {
+        padding: 2px 4px;
     }
 }
 
 
 /* =====================================================
-   작은 휴대폰 화면
+   작은 휴대폰
 ===================================================== */
 
 @media (max-width: 380px) {
@@ -3596,32 +3576,28 @@ section {
         padding: 5px;
     }
 
-    .section-head {
-        padding: 0 7px;
+    .btc-price {
+        font-size: 17px;
     }
 
     .update-time {
-        font-size: 8px;
-    }
-
-    .btc-main {
-        grid-template-columns: .6fr 1.4fr 1fr;
-    }
-
-    .btc-price {
-        font-size: 16px;
+        font-size: 7px;
     }
 
     .three-candle-label {
-        font-size: 9px;
+        font-size: 7px;
     }
 
     .three-candle-pattern .pattern-box {
-        min-width: 27px;
+        min-width: 25px;
     }
 
     .three-candle-pattern .pattern-name {
-        font-size: 8px;
+        font-size: 7px;
+    }
+
+    .signal-card-top {
+        gap: 4px;
     }
 }
 """
@@ -3658,17 +3634,19 @@ def dashboard():
                 )
 
             s += f"""
-            <section>
+            <section class="ranking-panel">
 
-                <div class="section-head">
+                <div class="panel-heading">
 
-                    <div>
-                        <span class="section-kicker">RANKING</span>
-                        <b>TOP{TOP_N} · 거래대금 순</b>
+                    <div class="heading-title">
+                        <span class="heading-mark"
+                              style="background:#e8c56e"></span>
+                        RANKING
+                        <span>TOP{TOP_N}</span>
                     </div>
 
                     <span class="update-time">
-                        실제 업비트 거래대금 기준
+                        업비트 거래대금 순
                     </span>
 
                 </div>
@@ -3701,7 +3679,7 @@ def dashboard():
 
     <body>
 
-        <h1>📊 TRADING SIGNAL CENTER</h1>
+        <h1>TRADING SIGNAL CENTER</h1>
 
         {s}
 
@@ -3769,11 +3747,11 @@ def startup():
     )
 
     log.info(
-        "추가 녹색 강조: 최근 3개 봉 중 장대양봉"
+        "녹색 강조: 최근 3개 봉 중 장대양봉"
     )
 
     log.info(
-        "추가 녹색 강조: %s개 이상 연속 일반 양봉",
+        "녹색 강조: %s개 이상 연속 일반 양봉",
         CONSECUTIVE_BULLISH_MIN
     )
 
@@ -3786,7 +3764,7 @@ def startup():
     )
 
     log.info(
-        "상승역망치형: 양봉 + 윗꼬리 몸통 초과 2배 미만"
+        "컴팩트 트레이딩 터미널 디자인 적용"
     )
 
     threading.Thread(
