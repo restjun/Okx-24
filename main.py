@@ -56,6 +56,9 @@ CANDLE_PATTERN_TIMEFRAME = "1h"
 
 CONSECUTIVE_CANDLE_MIN = 3
 
+# 연속 양봉 녹색 강조 최소 개수
+CONSECUTIVE_BULLISH_MIN = 2
+
 TIMEFRAME_LABEL = {
     "5m": "5분",
     "15m": "15분",
@@ -992,7 +995,10 @@ def analyze_previous_current_pattern(periods):
         "previous_bullish_engulfing": False,
         "current_bullish_engulfing": False,
         "consecutive_bullish": 0,
-        "consecutive_bearish": 0
+        "consecutive_bearish": 0,
+
+        # 추가: 일반 연속 양봉 카운팅
+        "consecutive_bullish_candles": 0
     }
 
     if not periods:
@@ -1020,7 +1026,7 @@ def analyze_previous_current_pattern(periods):
     last_three = pattern_history[-3:]
 
     # -----------------------------------------------------
-    # 수정: 최근 3개 봉에 시가/고가/저가/종가 데이터 추가
+    # 최근 3개 봉에 OHLC 데이터 추가
     # -----------------------------------------------------
 
     result["last_three_patterns"] = [
@@ -1063,6 +1069,10 @@ def analyze_previous_current_pattern(periods):
         float(periods[-1]["close"]) > float(periods[-1]["open"])
     )
 
+    # -----------------------------------------------------
+    # 기존 연속 장대양봉 카운팅
+    # -----------------------------------------------------
+
     bullish_count = 0
 
     for patterns in reversed(pattern_history):
@@ -1072,6 +1082,10 @@ def analyze_previous_current_pattern(periods):
 
         else:
             break
+
+    # -----------------------------------------------------
+    # 기존 연속 장대음봉 카운팅
+    # -----------------------------------------------------
 
     bearish_count = 0
 
@@ -1085,6 +1099,34 @@ def analyze_previous_current_pattern(periods):
 
     result["consecutive_bullish"] = bullish_count
     result["consecutive_bearish"] = bearish_count
+
+    # -----------------------------------------------------
+    # 추가: 일반 연속 양봉 카운팅
+    # 종가 > 시가 기준
+    # 장대양봉 여부와 관계없이 계산
+    # -----------------------------------------------------
+
+    consecutive_bullish_candles = 0
+
+    for period in reversed(periods):
+
+        try:
+
+            o = float(period["open"])
+            c = float(period["close"])
+
+        except Exception:
+            break
+
+        if c > o:
+            consecutive_bullish_candles += 1
+
+        else:
+            break
+
+    result["consecutive_bullish_candles"] = (
+        consecutive_bullish_candles
+    )
 
     return result
 
@@ -1110,7 +1152,8 @@ def analyze_signal_candles(market, price):
         "previous_bullish_engulfing": False,
         "current_bullish_engulfing": False,
         "consecutive_bullish": 0,
-        "consecutive_bearish": 0
+        "consecutive_bearish": 0,
+        "consecutive_bullish_candles": 0
     }
 
     timeframe = CANDLE_PATTERN_TIMEFRAME
@@ -1258,7 +1301,12 @@ def analyze_signal_candles(market, price):
         "previous_bullish_engulfing": pattern_info["previous_bullish_engulfing"],
         "current_bullish_engulfing": pattern_info["current_bullish_engulfing"],
         "consecutive_bullish": pattern_info["consecutive_bullish"],
-        "consecutive_bearish": pattern_info["consecutive_bearish"]
+        "consecutive_bearish": pattern_info["consecutive_bearish"],
+
+        # 추가: 일반 연속 양봉 카운팅 전달
+        "consecutive_bullish_candles": pattern_info[
+            "consecutive_bullish_candles"
+        ]
     }
 
 
@@ -1331,7 +1379,12 @@ def make_row(
         "consecutive_bullish": analysis_pattern["consecutive_bullish"],
         "consecutive_bearish": analysis_pattern["consecutive_bearish"],
         "previous_bullish_engulfing": analysis_pattern["previous_bullish_engulfing"],
-        "current_bullish_engulfing": analysis_pattern["current_bullish_engulfing"]
+        "current_bullish_engulfing": analysis_pattern["current_bullish_engulfing"],
+
+        # 추가: 일반 연속 양봉
+        "consecutive_bullish_candles": analysis_pattern.get(
+            "consecutive_bullish_candles", 0
+        )
     }
 
 
@@ -1427,7 +1480,8 @@ def update_upbit():
                 "previous_bullish_engulfing": False,
                 "current_bullish_engulfing": False,
                 "consecutive_bullish": 0,
-                "consecutive_bearish": 0
+                "consecutive_bearish": 0,
+                "consecutive_bullish_candles": 0
             }
 
         rows.append(
@@ -1909,10 +1963,6 @@ def candle_icon_html(pattern):
         </div>
         """
 
-    # -----------------------------------------------------
-    # 추가: 일반 양봉
-    # -----------------------------------------------------
-
     if pattern == "일반양봉":
 
         return """
@@ -1923,10 +1973,6 @@ def candle_icon_html(pattern):
             </div>
         </div>
         """
-
-    # -----------------------------------------------------
-    # 추가: 일반 음봉
-    # -----------------------------------------------------
 
     if pattern == "일반음봉":
 
@@ -1993,10 +2039,6 @@ def current_pattern_html(pattern, candle=None):
     else:
         patterns = []
 
-    # -----------------------------------------------------
-    # 수정: 패턴이 없으면 일반 양봉 / 음봉 표시
-    # -----------------------------------------------------
-
     if not patterns:
 
         if candle is not None:
@@ -2041,7 +2083,7 @@ def current_pattern_html(pattern, candle=None):
 
         escaped_pattern = html.escape(str(item))
 
-        if item in BULLISH_HIGHLIGHT_PATTERNS:
+        if item in BULLISH_HIGHLIGHT_PATTERNS or item == "장대양봉":
             css_class = "bullish-pattern"
 
         elif item in BEARISH_HIGHLIGHT_PATTERNS:
@@ -2104,10 +2146,6 @@ def last_three_pattern_html(row):
             label = html.escape(raw_label) + ' <span class="candle-live">진행 중</span>'
         else:
             label = html.escape(raw_label)
-
-        # -------------------------------------------------
-        # 수정: 현재 봉의 OHLC 정보를 전달
-        # -------------------------------------------------
 
         candle_html = current_pattern_html(
             patterns,
@@ -2260,21 +2298,74 @@ def signal_card(row):
         CANDLE_PATTERN_TIMEFRAME
     )
 
+    previous_patterns = row.get("previous_pattern") or []
+    current_patterns = row.get("current_pattern") or []
+
+    all_patterns = previous_patterns + current_patterns
+
+    # 기존 상승장악형 / 상승관통형
     has_bullish_pattern = any(
         pattern in BULLISH_HIGHLIGHT_PATTERNS
-        for pattern in (
-            (row.get("previous_pattern") or [])
-            + (row.get("current_pattern") or [])
-        )
+        for pattern in all_patterns
+    )
+
+    # -----------------------------------------------------
+    # 추가 1: 최근 3개 봉 중 장대양봉 존재 여부
+    # -----------------------------------------------------
+
+    last_three = row.get("last_three_patterns") or []
+
+    has_long_bullish = any(
+        "장대양봉" in (item.get("patterns") or [])
+        for item in last_three
+    )
+
+    # -----------------------------------------------------
+    # 추가 2: 일반 연속 양봉 2개 이상 여부
+    # -----------------------------------------------------
+
+    consecutive_bullish_candles = int(
+        row.get("consecutive_bullish_candles", 0) or 0
+    )
+
+    has_consecutive_bullish = (
+        consecutive_bullish_candles >= CONSECUTIVE_BULLISH_MIN
+    )
+
+    # -----------------------------------------------------
+    # 최종 SIGNAL 녹색 강조
+    # -----------------------------------------------------
+
+    has_green_highlight = bool(
+        has_bullish_pattern
+        or has_long_bullish
+        or has_consecutive_bullish
     )
 
     badge_html = pattern_badges_html(row)
+
+    # SIGNAL 전용 추가 배지
+    if has_long_bullish:
+
+        badge_html += (
+            '<span class="signal-type-badge">'
+            '🔥 장대양봉'
+            '</span>'
+        )
+
+    if has_consecutive_bullish:
+
+        badge_html += (
+            '<span class="signal-type-badge">'
+            f'🟢 {consecutive_bullish_candles}연속 양봉'
+            '</span>'
+        )
 
     three_pattern_html = last_three_pattern_html(row)
 
     card_classes = ["signal-card"]
 
-    if has_bullish_pattern:
+    if has_green_highlight:
         card_classes.append("has-bullish-pattern")
 
     card_class = " ".join(card_classes)
@@ -2374,6 +2465,14 @@ def signal_section():
 
         <span>
             녹색 강조 · 상승장악형 / 상승관통형
+        </span>
+
+        <span>
+            녹색 강조 · 최근 3개 봉 장대양봉
+        </span>
+
+        <span>
+            녹색 강조 · 2연속 이상 일반 양봉
         </span>
 
         <span>
@@ -2526,7 +2625,6 @@ CSS = """
     --red: #ff5968;
     --yellow: #e9c66a;
 
-    /* PC 기본 글자 크기 */
     --fs-main: 20px;
     --fs-section: 15px;
     --fs-coin: 16px;
@@ -3113,7 +3211,7 @@ section {
 }
 
 
-/* 상승패턴 강조 */
+/* 상승패턴 / 장대양봉 / 연속 양봉 강조 */
 
 .signal-card.has-bullish-pattern {
     background: #10271e;
@@ -3667,7 +3765,16 @@ def startup():
     )
 
     log.info(
-        "녹색 강조: 상승장악형 및 상승관통형만 적용"
+        "녹색 강조: 상승장악형 및 상승관통형"
+    )
+
+    log.info(
+        "추가 녹색 강조: 최근 3개 봉 중 장대양봉"
+    )
+
+    log.info(
+        "추가 녹색 강조: %s개 이상 연속 일반 양봉",
+        CONSECUTIVE_BULLISH_MIN
     )
 
     log.info(
