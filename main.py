@@ -43,7 +43,6 @@ TOP_N = 30
 SHOW_TOP_LIST = "N"
 UPDATE_MINUTES = 1
 
-SIGNAL_MIN_VOLUME = 10_000_000_000
 DAILY_CHANGE_MIN = 5.0
 
 USE_UPBIT = "Y"
@@ -1479,18 +1478,29 @@ def update_upbit():
     latest_upbit_daily_update_time = kst()
     latest_upbit_update_time = latest_upbit_daily_update_time
 
+    # =====================================================
+    # SIGNAL 조건
+    # 거래대금 조건 삭제
+    # 당일 변동률 5% 초과 유지
+    # =====================================================
+
     latest_signal_data = [
         row for row in rows
         if (
             row.get("signal_4h", False)
             and row.get("daily_change") is not None
             and row.get("daily_change") > DAILY_CHANGE_MIN
-            and row.get("volume_24h", 0) >= SIGNAL_MIN_VOLUME
         )
     ]
 
+    # 당일 상승률 높은 순으로 정렬
     latest_signal_data.sort(
-        key=lambda x: x.get("volume_rank", 999999)
+        key=lambda x: (
+            x.get("daily_change")
+            if x.get("daily_change") is not None
+            else float("-inf")
+        ),
+        reverse=True
     )
 
     for signal_rank, row in enumerate(
@@ -1501,10 +1511,9 @@ def update_upbit():
 
     log.info(
         "UPBIT | TOP%s | 캔들패턴=%s | "
-        "최소 거래대금=%s원 | 당일 변동률>%s%% | SIGNAL=%s",
+        "당일 변동률>%s%% | 상승률 높은 순 | SIGNAL=%s",
         TOP_N,
         get_timeframe_label(CANDLE_PATTERN_TIMEFRAME),
-        SIGNAL_MIN_VOLUME,
         DAILY_CHANGE_MIN,
         len(latest_signal_data)
     )
@@ -2430,7 +2439,6 @@ def signal_section():
         <span>장대양봉 녹색 강조</span>
         <span>2연속 이상 양봉 녹색 강조</span>
         <span>당일 변동률 {DAILY_CHANGE_MIN:.2f}% 초과</span>
-        <span>거래대금 {fmt_vol(SIGNAL_MIN_VOLUME)} 이상</span>
 
     </div>
     """
@@ -3725,13 +3733,16 @@ def startup():
     )
 
     log.info(
-        "SIGNAL 최소 거래대금: %s원",
-        SIGNAL_MIN_VOLUME
+        "SIGNAL 거래대금 최소 조건 사용 안 함"
     )
 
     log.info(
         "SIGNAL 당일 변동률 최소 기준: %s%% 초과",
         DAILY_CHANGE_MIN
+    )
+
+    log.info(
+        "SIGNAL 정렬 기준: 당일 상승률 높은 순"
     )
 
     log.info(
