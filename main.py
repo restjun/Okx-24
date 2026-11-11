@@ -1,4 +1,3 @@
-
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
@@ -39,7 +38,7 @@ UTC = ZoneInfo("UTC")
 # 사용자 설정
 # =========================================================
 
-TOP_N = 10
+TOP_N = 20
 SHOW_TOP_LIST = "N"
 UPDATE_MINUTES = 1
 
@@ -62,7 +61,7 @@ CANDLE_PATTERN_TIMEFRAME = "4h"
 
 # RSI 설정
 RSI_PERIOD = 14
-RSI_THRESHOLD = 30
+RSI_THRESHOLD = 70
 RSI_CHECK_CANDLES = 3
 
 CONSECUTIVE_CANDLE_MIN = 3
@@ -1362,10 +1361,10 @@ def analyze_signal_candles(market, price):
         value
         for value in rsi_values
         if value is not None
-        and value <= RSI_THRESHOLD
+        and value >= RSI_THRESHOLD
     ]
 
-    # 최근 3개 중 하나라도 RSI 30 이하
+    # 최근 3개 중 하나라도 RSI 70 이상
     rsi_signal = bool(rsi_low_periods)
 
     # =====================================================
@@ -1692,7 +1691,7 @@ def update_upbit():
     # SIGNAL 조건
     #
     # 1. 당일 변동률 > DAILY_CHANGE_MIN
-    # 2. 최근 3개 캔들 중 RSI 30 이하가 하나 이상
+    # 2. 최근 3개 캔들 중 RSI 70 이상이 하나 이상
     # 3. BTC 거래대금 비교 조건 삭제
     # 4. 거래대금 별도 최소 금액 없음
     # 5. 캔들 패턴 조건 사용 안 함
@@ -1725,7 +1724,7 @@ def update_upbit():
 
     log.info(
         "UPBIT | TOP%s | "
-        "SIGNAL 조건=당일 변동률>%s%% AND 최근 %s개 봉 RSI(%s)<=%s | "
+        "SIGNAL 조건=당일 변동률>%s%% AND 최근 %s개 봉 RSI(%s)>=%s | "
         "BTC 거래대금 비교=사용 안 함 | SIGNAL=%s",
         TOP_N,
         DAILY_CHANGE_MIN,
@@ -2215,11 +2214,11 @@ def rsi_html(value):
             '</div>'
         )
 
-    if value <= RSI_THRESHOLD:
+    if value >= RSI_THRESHOLD:
 
         return (
             '<div class="rsi-value rsi-low">'
-            f'RSI {value:.1f} ≤ {RSI_THRESHOLD}'
+            f'RSI {value:.1f} ≥ {RSI_THRESHOLD}'
             '</div>'
         )
 
@@ -2524,7 +2523,7 @@ def last_three_pattern_html(row):
         try:
             is_rsi_low = (
                 rsi_value is not None
-                and float(rsi_value) <= RSI_THRESHOLD
+                and float(rsi_value) >= RSI_THRESHOLD
             )
         except Exception:
             is_rsi_low = False
@@ -2685,7 +2684,7 @@ def btc_html():
             <div class="btc-candle-heading">
                 BTC 최근 3개 봉 · 4시간 · RSI({RSI_PERIOD})
                 <span class="rsi-condition-label">
-                    RSI {RSI_THRESHOLD} 이하 강조
+                    RSI {RSI_THRESHOLD} 이상 강조
                 </span>
             </div>
 
@@ -2764,7 +2763,7 @@ def signal_card(row):
             <div class="three-candle-heading">
                 최근 3개 봉 · {timeframe_label} · RSI({RSI_PERIOD})
                 <span class="rsi-condition-label">
-                    {RSI_THRESHOLD} 이하 강조
+                    {RSI_THRESHOLD} 이상 강조
                 </span>
             </div>
 
@@ -2807,7 +2806,7 @@ def signal_section():
 
         <span>선정 기준: 당일 변동률</span>
         <span>당일 변동률 {DAILY_CHANGE_MIN:.2f}% 초과</span>
-        <span>최근 {RSI_CHECK_CANDLES}개 봉 중 RSI({RSI_PERIOD}) {RSI_THRESHOLD} 이하</span>
+        <span>최근 {RSI_CHECK_CANDLES}개 봉 중 RSI({RSI_PERIOD}) {RSI_THRESHOLD} 이상</span>
         <span>RSI 시간봉: {pattern_timeframe_label}</span>
         <span>BTC 거래대금 비교 없음</span>
         <span>상승률 높은 순 정렬</span>
@@ -2912,7 +2911,7 @@ def card(row, kind):
             <div class="three-candle-heading">
                 최근 3개 봉 · {timeframe_label} · RSI({RSI_PERIOD})
                 <span class="rsi-condition-label">
-                    {RSI_THRESHOLD} 이하 강조
+                    {RSI_THRESHOLD} 이상 강조
                 </span>
             </div>
 
@@ -3262,7 +3261,7 @@ section {
     border-color: #26343f;
 }
 
-/* RSI 30 이하인 캔들 강조 */
+/* RSI 70 이상인 캔들 강조 */
 .three-candle-item.rsi-highlight-candle {
     background: rgba(232,197,110,.08);
     border: 1px solid #c99e3d;
@@ -4176,7 +4175,7 @@ def startup():
     )
 
     log.info(
-        "SIGNAL RSI 조건: 최근 %s개 봉 중 RSI(%s) <= %s",
+        "SIGNAL RSI 조건: 최근 %s개 봉 중 RSI(%s) >= %s",
         RSI_CHECK_CANDLES,
         RSI_PERIOD,
         RSI_THRESHOLD
@@ -4208,7 +4207,7 @@ def startup():
     )
 
     log.info(
-        "RSI 30 이하인 최근 3개 캔들 개별 강조"
+        "RSI 70 이상인 최근 3개 캔들 개별 강조"
     )
 
     log.info(
@@ -4238,7 +4237,7 @@ def startup():
     )
 
     log.info(
-        "BTC RSI %s 이하인 캔들 노란색 강조",
+        "BTC RSI %s 이상인 캔들 노란색 강조",
         RSI_THRESHOLD
     )
 
