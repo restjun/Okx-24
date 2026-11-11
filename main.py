@@ -39,12 +39,12 @@ UTC = ZoneInfo("UTC")
 # 사용자 설정
 # =========================================================
 
-TOP_N = 20
+TOP_N = 10
 SHOW_TOP_LIST = "N"
 UPDATE_MINUTES = 1
 
 # SIGNAL 당일 변동률 기준
-DAILY_CHANGE_MIN = 10.0
+DAILY_CHANGE_MIN = 1.0
 
 USE_UPBIT = "Y"
 USE_OKX = "Y"
