@@ -55,6 +55,7 @@ REQUEST_INTERVAL = 0.08
 RATE_LIMIT_WAIT = 3
 MAX_RETRIES = 20
 
+# SIGNAL 캔들 기준
 CANDLE_PATTERN_TIMEFRAME = "4h"
 
 CONSECUTIVE_CANDLE_MIN = 3
@@ -1777,6 +1778,7 @@ def build_okx_kst_daily_periods(df, current_price=None):
 
 # =========================================================
 # OKX BTC 최근 3개 캔들 패턴 분석
+# SIGNAL과 동일한 4시간봉 기준
 # =========================================================
 
 def analyze_okx_btc_candles(df, current_price=None):
@@ -1792,14 +1794,15 @@ def analyze_okx_btc_candles(df, current_price=None):
 
     now = datetime.now(KST)
 
-    # OKX 1시간봉 시작 시각
+    # OKX 4시간봉 시작 시각
     current_start = now.replace(
+        hour=(now.hour // 4) * 4,
         minute=0,
         second=0,
         microsecond=0
     )
 
-    # 현재 진행 중인 캔들에 최신 가격 반영
+    # 현재 진행 중인 4시간봉에 최신 가격 반영
     df = update_current_candle(
         df,
         current_start,
@@ -1824,7 +1827,7 @@ def analyze_okx_btc_candles(df, current_price=None):
 
         periods.append({
             "start": start,
-            "end": start + timedelta(hours=1),
+            "end": start + timedelta(hours=4),
             "active": start == current_start,
             "label": start.strftime("%m/%d %H:%M"),
             "open": o,
@@ -1837,7 +1840,7 @@ def analyze_okx_btc_candles(df, current_price=None):
     if not periods:
         return []
 
-    # 기존 업비트와 동일한 패턴 분석 함수 사용
+    # 기존 SIGNAL과 동일한 패턴 분석 함수 사용
     pattern_info = analyze_previous_current_pattern(
         periods
     )
@@ -1863,10 +1866,10 @@ def update_okx_btc():
     if price is None:
         return
 
-    # OKX BTC 1시간봉 조회
-    d1h = okx_candles("1H", 200)
+    # OKX BTC 4시간봉 조회
+    d4h = okx_candles("4H", 200)
 
-    if d1h.empty:
+    if d4h.empty:
 
         latest_btc_daily_periods = []
         latest_btc_daily_change = None
@@ -1879,7 +1882,7 @@ def update_okx_btc():
     # =====================================================
 
     latest_btc_daily_periods = (
-        build_okx_kst_daily_periods(d1h, price)
+        build_okx_kst_daily_periods(d4h, price)
     )
 
     if latest_btc_daily_periods:
@@ -1893,18 +1896,19 @@ def update_okx_btc():
         latest_btc_daily_change = None
 
     # =====================================================
-    # 최근 3개 BTC 캔들 패턴 분석
+    # 최근 3개 BTC 4시간봉 패턴 분석
     # =====================================================
 
     latest_btc_last_three_patterns = (
         analyze_okx_btc_candles(
-            d1h,
+            d4h,
             price
         )
     )
 
     log.info(
-        "BTC OKX | 가격=%s | 일일변동률=%s | 최근 3개 캔들 분석 완료",
+        "BTC OKX | 가격=%s | 일일변동률=%s | "
+        "최근 3개 4시간봉 캔들 분석 완료",
         price,
         latest_btc_daily_change
     )
@@ -2439,7 +2443,7 @@ def btc_html():
         <div class="btc-candle-section">
 
             <div class="btc-candle-heading">
-                BTC 최근 3개 봉 · 1시간
+                BTC 최근 3개 봉 · 4시간
             </div>
 
             {three_pattern_html}
@@ -3235,11 +3239,6 @@ section {
     letter-spacing: -.5px;
 }
 
-.btc-change {
-    font-size: var(--fs-value);
-    font-weight: 900;
-}
-
 
 /* =====================================================
    BTC 최근 3개 캔들
@@ -3843,7 +3842,7 @@ def scheduler():
 def startup():
 
     log.info(
-        "START | BTC 가격 및 최근 3개 캔들 표시 | "
+        "START | BTC 가격 및 최근 3개 4시간봉 표시 | "
         "UPBIT TOP%s | 캔들패턴=%s",
         TOP_N,
         get_timeframe_label(CANDLE_PATTERN_TIMEFRAME)
@@ -3900,7 +3899,7 @@ def startup():
     )
 
     log.info(
-        "BTC OKX 1시간봉 최근 3개 캔들 패턴 표시"
+        "BTC OKX 4시간봉 최근 3개 캔들 패턴 표시"
     )
 
     log.info(
