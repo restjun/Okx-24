@@ -39,7 +39,7 @@ UTC = ZoneInfo("UTC")
 # =========================================================
 
 TOP_N = 20
-SHOW_TOP_LIST = "Y"
+SHOW_TOP_LIST = "N"
 UPDATE_MINUTES = 1
 
 # SIGNAL 당일 변동률 기준
