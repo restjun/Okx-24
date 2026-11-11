@@ -85,6 +85,9 @@ latest_btc_okx_price = None
 latest_btc_daily_periods = []
 latest_btc_daily_change = None
 
+# BTC 최근 3개 캔들 패턴
+latest_btc_last_three_patterns = []
+
 
 # =========================================================
 # Lock 및 캐시
@@ -1484,7 +1487,7 @@ def update_upbit():
     # SIGNAL 조건
     # 캔들 패턴 조건 완전 제거
     # 거래대금 조건 없음
-    # 당일 변동률 10% 초과만 적용
+    # 당일 변동률 기준만 적용
     # =====================================================
 
     latest_signal_data = [
@@ -1721,6 +1724,76 @@ def build_okx_kst_daily_periods(df, current_price=None):
 
 
 # =========================================================
+# OKX BTC 최근 3개 캔들 패턴 분석
+# =========================================================
+
+def analyze_okx_btc_candles(df, current_price=None):
+
+    if df is None or df.empty:
+        return []
+
+    df = (
+        df.sort_values("datetime")
+        .drop_duplicates("datetime")
+        .reset_index(drop=True)
+    )
+
+    now = datetime.now(KST)
+
+    # OKX 1시간봉 시작 시각
+    current_start = now.replace(
+        minute=0,
+        second=0,
+        microsecond=0
+    )
+
+    # 현재 진행 중인 캔들에 최신 가격 반영
+    df = update_current_candle(
+        df,
+        current_start,
+        current_price
+    )
+
+    periods = []
+
+    for _, row in df.iterrows():
+
+        start = row["datetime"]
+
+        o = float(row["open"])
+        h = float(row["high"])
+        l = float(row["low"])
+        c = float(row["close"])
+
+        change = (
+            (c - o) / o * 100
+            if o else None
+        )
+
+        periods.append({
+            "start": start,
+            "end": start + timedelta(hours=1),
+            "active": start == current_start,
+            "label": start.strftime("%m/%d %H:%M"),
+            "open": o,
+            "high": h,
+            "low": l,
+            "close": c,
+            "change": change
+        })
+
+    if not periods:
+        return []
+
+    # 기존 업비트와 동일한 패턴 분석 함수 사용
+    pattern_info = analyze_previous_current_pattern(
+        periods
+    )
+
+    return pattern_info["last_three_patterns"]
+
+
+# =========================================================
 # BTC 업데이트
 # =========================================================
 
@@ -1729,6 +1802,7 @@ def update_okx_btc():
     global latest_btc_okx_price
     global latest_btc_daily_periods
     global latest_btc_daily_change
+    global latest_btc_last_three_patterns
 
     price = okx_price()
 
@@ -1737,27 +1811,51 @@ def update_okx_btc():
     if price is None:
         return
 
+    # OKX BTC 1시간봉 조회
     d1h = okx_candles("1H", 200)
 
     if d1h.empty:
 
         latest_btc_daily_periods = []
         latest_btc_daily_change = None
+        latest_btc_last_three_patterns = []
+
+        return
+
+    # =====================================================
+    # 기존 KST 09:00 기준 일일 변동률
+    # =====================================================
+
+    latest_btc_daily_periods = (
+        build_okx_kst_daily_periods(d1h, price)
+    )
+
+    if latest_btc_daily_periods:
+
+        latest_btc_daily_change = (
+            latest_btc_daily_periods[-1].get("change")
+        )
 
     else:
 
-        latest_btc_daily_periods = (
-            build_okx_kst_daily_periods(d1h, price)
+        latest_btc_daily_change = None
+
+    # =====================================================
+    # 최근 3개 BTC 캔들 패턴 분석
+    # =====================================================
+
+    latest_btc_last_three_patterns = (
+        analyze_okx_btc_candles(
+            d1h,
+            price
         )
+    )
 
-        if latest_btc_daily_periods:
-
-            latest_btc_daily_change = (
-                latest_btc_daily_periods[-1].get("change")
-            )
-
-        else:
-            latest_btc_daily_change = None
+    log.info(
+        "BTC OKX | 가격=%s | 일일변동률=%s | 최근 3개 캔들 분석 완료",
+        price,
+        latest_btc_daily_change
+    )
 
 
 # =========================================================
@@ -2245,19 +2343,33 @@ def pattern_badges_html(row):
 
 def btc_html():
 
+    btc_row = {
+        "last_three_patterns": latest_btc_last_three_patterns
+    }
+
+    three_pattern_html = last_three_pattern_html(
+        btc_row
+    )
+
     return f"""
     <section class="btc-panel">
 
         <div class="btc-top">
+
             <div class="btc-label">
+
                 <span class="status-dot"></span>
+
                 BTCUSDT
+
                 <span class="market-tag">OKX</span>
+
             </div>
 
             <span class="update-time">
                 KST 09:00 기준 · {kst()}
             </span>
+
         </div>
 
         <div class="btc-main">
@@ -2269,6 +2381,16 @@ def btc_html():
             <div class="btc-change">
                 {fmt_change(latest_btc_daily_change)}
             </div>
+
+        </div>
+
+        <div class="btc-candle-section">
+
+            <div class="btc-candle-heading">
+                BTC 최근 3개 봉 · 1시간
+            </div>
+
+            {three_pattern_html}
 
         </div>
 
@@ -3067,6 +3189,33 @@ section {
 
 
 /* =====================================================
+   BTC 최근 3개 캔들
+===================================================== */
+
+.btc-candle-section {
+    margin-top: 10px;
+    padding-top: 9px;
+    border-top: 1px solid #304252;
+}
+
+.btc-candle-heading {
+    color: #aab9c6;
+    font-size: var(--fs-small);
+    font-weight: 800;
+    margin-bottom: 7px;
+}
+
+.btc-candle-section .three-candle-item {
+    background: #101d28;
+    border-color: #304252;
+}
+
+.btc-candle-section .three-candle-label {
+    color: #b8c6d2;
+}
+
+
+/* =====================================================
    SIGNAL 패널
 ===================================================== */
 
@@ -3641,7 +3790,7 @@ def scheduler():
 def startup():
 
     log.info(
-        "START | BTC 가격 표시 | "
+        "START | BTC 가격 및 최근 3개 캔들 표시 | "
         "UPBIT TOP%s | 캔들패턴=%s",
         TOP_N,
         get_timeframe_label(CANDLE_PATTERN_TIMEFRAME)
@@ -3691,6 +3840,18 @@ def startup():
 
     log.info(
         "3연속 이상 장대양봉 및 장대음봉 표시"
+    )
+
+    log.info(
+        "BTC OKX 1시간봉 최근 3개 캔들 패턴 표시"
+    )
+
+    log.info(
+        "BTC 캔들 패턴: 상승장악형, 하락장악형, "
+        "상승관통형, 하락관통형, "
+        "상승망치형, 상승역망치형, "
+        "하락망치형, 하락역망치형, "
+        "장대양봉, 장대음봉, 양수도지, 음수도지"
     )
 
     log.info(
