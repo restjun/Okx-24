@@ -57,11 +57,11 @@ MAX_RETRIES = 20
 
 # SIGNAL 캔들 기준
 # RSI도 이 설정을 자동으로 따라감
-CANDLE_PATTERN_TIMEFRAME = "1d"
+CANDLE_PATTERN_TIMEFRAME = "4h"
 
 # RSI 설정
 RSI_PERIOD = 14
-RSI_THRESHOLD = 60
+RSI_THRESHOLD = 70
 
 # 최근 6개 캔들 중 RSI 조건 확인
 RSI_CHECK_CANDLES = 6
@@ -2011,7 +2011,6 @@ def analyze_okx_btc_candles(df, current_price=None):
             "close": c,
             "change": change,
 
-            # BTC RSI
             "rsi": (
                 float(rsi)
                 if pd.notna(rsi)
@@ -2476,7 +2475,7 @@ def current_pattern_html(pattern, candle=None):
 
 
 # =========================================================
-# 최근 6개 봉 표시 + RSI 강조
+# 최근 6개 봉 표시 + 날짜/시간 두 줄 + RSI 강조
 # =========================================================
 
 def last_three_pattern_html(row):
@@ -2510,13 +2509,42 @@ def last_three_pattern_html(row):
         patterns = item.get("patterns", [])
         raw_label = item.get("label") or "-"
 
-        if i == len(visible_items) - 1 and raw_label != "-":
-            label = (
-                html.escape(raw_label)
-                + '<span class="candle-live">진행</span>'
+        # 날짜와 시간을 두 줄로 분리
+        if raw_label != "-":
+
+            label_parts = raw_label.split(" ", 1)
+
+            date_label = html.escape(label_parts[0])
+
+            time_label = (
+                html.escape(label_parts[1])
+                if len(label_parts) > 1
+                else ""
             )
+
         else:
-            label = html.escape(raw_label)
+
+            date_label = "-"
+            time_label = ""
+
+        # 마지막 캔들 진행 표시
+        live_html = ""
+
+        if i == len(visible_items) - 1 and raw_label != "-":
+            live_html = (
+                '<span class="candle-live">진행</span>'
+            )
+
+        label = f"""
+        <div class="candle-date">
+            {date_label}
+        </div>
+
+        <div class="candle-time">
+            {time_label}
+            {live_html}
+        </div>
+        """
 
         candle_html = current_pattern_html(
             patterns,
@@ -3325,20 +3353,45 @@ section {
 }
 
 .three-candle-label {
-    color: #aab9c6;
+    width: 100%;
+
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+
+    min-height: 27px;
+    margin-bottom: 5px;
+
+    line-height: 1.25;
+    text-align: center;
+    white-space: nowrap;
+}
+
+.candle-date {
+    color: #c2cfda;
+    font-size: var(--fs-tiny);
+    font-weight: 800;
+}
+
+.candle-time {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+
+    margin-top: 2px;
+
+    color: #8295a5;
     font-size: var(--fs-tiny);
     font-weight: 700;
-
-    margin-bottom: 5px;
-    white-space: nowrap;
 }
 
 .candle-live {
     display: inline-block;
-    margin-left: 2px;
 
     color: var(--yellow);
-    font-size: 8px;
+    font-size: 7px;
     font-weight: 800;
 }
 
@@ -3936,8 +3989,16 @@ section {
     }
 
     .three-candle-label {
+        min-height: 25px;
         margin-bottom: 4px;
-        font-size: 8px;
+    }
+
+    .candle-date {
+        font-size: 7px;
+    }
+
+    .candle-time {
+        font-size: 7px;
     }
 
     .three-candle-pattern .pattern-box {
@@ -4031,6 +4092,11 @@ section {
     }
 
     .three-candle-label {
+        min-height: 23px;
+    }
+
+    .candle-date,
+    .candle-time {
         font-size: 6px;
     }
 
@@ -4256,6 +4322,10 @@ def startup():
         "상승망치형, 상승역망치형, "
         "하락망치형, 하락역망치형, "
         "장대양봉, 장대음봉, 양수도지, 음수도지"
+    )
+
+    log.info(
+        "캔들 날짜와 시간 두 줄 표시 적용"
     )
 
     log.info(
