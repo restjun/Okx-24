@@ -1,4 +1,3 @@
-
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
@@ -46,6 +45,9 @@ UPDATE_MINUTES = 1
 # SIGNAL 당일 변동률 기준
 DAILY_CHANGE_MIN = 0.0
 
+# BTC 거래대금보다 높은 종목만 SIGNAL 선정
+USE_BTC_VOLUME_FILTER = "Y"
+
 USE_UPBIT = "Y"
 USE_OKX = "Y"
 
@@ -80,6 +82,9 @@ latest_upbit_daily_update_time = "-"
 latest_upbit_markets = []
 
 latest_signal_data = []
+
+# 업비트 BTC 24시간 거래대금
+latest_upbit_btc_volume_24h = None
 
 latest_btc_okx_price = None
 latest_btc_daily_periods = []
@@ -1381,6 +1386,7 @@ def update_upbit():
     global latest_upbit_update_time
     global latest_upbit_daily_update_time
     global latest_signal_data
+    global latest_upbit_btc_volume_24h
 
     clear_candle_cache()
 
@@ -1388,6 +1394,33 @@ def update_upbit():
 
     if not all_markets:
         return
+
+    # =====================================================
+    # BTC 24시간 거래대금 조회
+    # 업비트 KRW-BTC 기준
+    # =====================================================
+
+    btc_item = next(
+        (
+            item for item in all_markets
+            if item.get("market") == "KRW-BTC"
+        ),
+        None
+    )
+
+    if btc_item is not None:
+
+        latest_upbit_btc_volume_24h = float(
+            btc_item["volume_24h"]
+        )
+
+    else:
+
+        latest_upbit_btc_volume_24h = None
+
+        log.warning(
+            "업비트 KRW-BTC 거래대금 조회 실패"
+        )
 
     all_markets_sorted = sorted(
         all_markets,
@@ -1485,18 +1518,32 @@ def update_upbit():
 
     # =====================================================
     # SIGNAL 조건
-    # 캔들 패턴 조건 완전 제거
-    # 거래대금 조건 없음
-    # 당일 변동률 기준만 적용
+    #
+    # 1. 당일 변동률 0% 초과
+    # 2. BTC 24시간 거래대금 초과
+    # 3. 캔들 패턴 조건 사용 안 함
+    # 4. 거래대금 별도 최소 금액 없음
     # =====================================================
 
-    latest_signal_data = [
-        row for row in rows
-        if (
-            row.get("daily_change") is not None
-            and row.get("daily_change") > DAILY_CHANGE_MIN
-        )
-    ]
+    if (
+        USE_BTC_VOLUME_FILTER == "Y"
+        and latest_upbit_btc_volume_24h is not None
+    ):
+
+        latest_signal_data = [
+            row for row in rows
+            if (
+                row.get("daily_change") is not None
+                and row.get("daily_change") > DAILY_CHANGE_MIN
+                and row.get("volume_24h", 0)
+                > latest_upbit_btc_volume_24h
+            )
+        ]
+
+    else:
+
+        # BTC 거래대금 조회 실패 시 SIGNAL 선정 중단
+        latest_signal_data = []
 
     # 당일 상승률 높은 순으로 정렬
     latest_signal_data.sort(
@@ -1516,10 +1563,15 @@ def update_upbit():
 
     log.info(
         "UPBIT | TOP%s | "
-        "SIGNAL 조건=당일 변동률>%s%% | "
-        "캔들패턴 조건 사용 안 함 | "
-        "상승률 높은 순 | SIGNAL=%s",
+        "BTC 24H 거래대금=%s | "
+        "SIGNAL 조건=당일 변동률>%s%% AND BTC 거래대금 초과 | "
+        "SIGNAL=%s",
         TOP_N,
+        (
+            f"{latest_upbit_btc_volume_24h:,.0f} KRW"
+            if latest_upbit_btc_volume_24h is not None
+            else "조회 실패"
+        ),
         DAILY_CHANGE_MIN,
         len(latest_signal_data)
     )
@@ -2499,13 +2551,14 @@ def signal_section():
             for row in latest_signal_data
         )
 
-    # 캔들 패턴 조건 없이 당일 변동률만 적용
+    # 당일 변동률 + BTC 거래대금 조건
     condition_html = f"""
     <div class="signal-condition">
 
         <span>선정 기준: 당일 변동률</span>
         <span>당일 변동률 {DAILY_CHANGE_MIN:.2f}% 초과</span>
-        <span>거래대금 제한 없음</span>
+        <span>BTC 24H 거래대금 초과</span>
+        <span>BTC 거래대금: {fmt_vol(latest_upbit_btc_volume_24h)}원</span>
         <span>상승률 높은 순 정렬</span>
 
     </div>
@@ -3803,6 +3856,10 @@ def startup():
     log.info(
         "SIGNAL 선정 조건: 당일 변동률 %s%% 초과만 적용",
         DAILY_CHANGE_MIN
+    )
+
+    log.info(
+        "SIGNAL 추가 조건: 업비트 BTC 24H 거래대금 초과"
     )
 
     log.info(
