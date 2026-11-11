@@ -45,8 +45,8 @@ UPDATE_MINUTES = 1
 # SIGNAL 당일 변동률 기준
 DAILY_CHANGE_MIN = 0.0
 
-# BTC 거래대금보다 높은 종목만 SIGNAL 선정
-USE_BTC_VOLUME_FILTER = "Y"
+# BTC 거래대금 비교 조건 삭제
+USE_BTC_VOLUME_FILTER = "N"
 
 USE_UPBIT = "Y"
 USE_OKX = "Y"
@@ -56,7 +56,13 @@ RATE_LIMIT_WAIT = 3
 MAX_RETRIES = 20
 
 # SIGNAL 캔들 기준
+# RSI도 이 설정을 자동으로 따라감
 CANDLE_PATTERN_TIMEFRAME = "4h"
+
+# RSI 설정
+RSI_PERIOD = 14
+RSI_THRESHOLD = 30
+RSI_CHECK_CANDLES = 3
 
 CONSECUTIVE_CANDLE_MIN = 3
 CONSECUTIVE_BULLISH_MIN = 2
@@ -461,6 +467,79 @@ def update_current_candle(df, current_start, price):
     )
 
     return df
+
+
+# =========================================================
+# RSI 계산
+# =========================================================
+
+def calculate_rsi(close_series, period=14):
+
+    """
+    Wilder 방식 RSI 계산.
+
+    최근 종가를 기준으로 계산하며,
+    RSI 계산에 필요한 과거 데이터가 부족하면
+    해당 구간은 NaN으로 처리한다.
+    """
+
+    if close_series is None:
+        return pd.Series(dtype=float)
+
+    close = pd.to_numeric(
+        close_series,
+        errors="coerce"
+    )
+
+    if len(close) <= period:
+        return pd.Series(
+            float("nan"),
+            index=close.index,
+            dtype=float
+        )
+
+    delta = close.diff()
+
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+
+    avg_gain = gain.ewm(
+        alpha=1 / period,
+        min_periods=period,
+        adjust=False
+    ).mean()
+
+    avg_loss = loss.ewm(
+        alpha=1 / period,
+        min_periods=period,
+        adjust=False
+    ).mean()
+
+    rs = avg_gain / avg_loss
+
+    rsi = 100 - (
+        100 / (1 + rs)
+    )
+
+    # 상승만 있는 경우 RSI 100
+    rsi = rsi.mask(
+        (avg_loss == 0) & (avg_gain > 0),
+        100
+    )
+
+    # 가격 변동이 전혀 없는 경우 RSI 50
+    rsi = rsi.mask(
+        (avg_loss == 0) & (avg_gain == 0),
+        50
+    )
+
+    # 하락만 있는 경우 RSI 0
+    rsi = rsi.mask(
+        (avg_gain == 0) & (avg_loss > 0),
+        0
+    )
+
+    return rsi
 
 
 # =========================================================
@@ -1124,7 +1203,7 @@ def analyze_previous_current_pattern(periods):
 
 
 # =========================================================
-# 캔들 패턴 시간봉 분석
+# 캔들 패턴 시간봉 분석 + RSI
 # =========================================================
 
 def analyze_signal_candles(market, price):
@@ -1145,7 +1224,10 @@ def analyze_signal_candles(market, price):
         "current_bullish_engulfing": False,
         "consecutive_bullish": 0,
         "consecutive_bearish": 0,
-        "consecutive_bullish_candles": 0
+        "consecutive_bullish_candles": 0,
+        "rsi_signal": False,
+        "rsi_values": [],
+        "rsi_low_count": 0
     }
 
     timeframe = CANDLE_PATTERN_TIMEFRAME
@@ -1232,9 +1314,77 @@ def analyze_signal_candles(market, price):
     if not periods:
         return empty_result
 
+    # =====================================================
+    # RSI 계산
+    # 전체 원본 캔들 데이터로 계산
+    # =====================================================
+
+    df = (
+        df.sort_values("datetime")
+        .drop_duplicates("datetime")
+        .reset_index(drop=True)
+    )
+
+    rsi_series = calculate_rsi(
+        df["close"],
+        RSI_PERIOD
+    )
+
+    rsi_map = {
+        dt: (
+            float(rsi)
+            if pd.notna(rsi)
+            else None
+        )
+        for dt, rsi in zip(
+            df["datetime"],
+            rsi_series
+        )
+    }
+
+    # 최근 3개 캔들 각각 RSI 연결
+    for period in periods:
+
+        period["rsi"] = rsi_map.get(
+            period["start"]
+        )
+
+    # 최근 3개 캔들 RSI 조건
+    last_rsi_periods = periods[-RSI_CHECK_CANDLES:]
+
+    rsi_values = [
+        period.get("rsi")
+        for period in last_rsi_periods
+    ]
+
+    rsi_low_periods = [
+        value
+        for value in rsi_values
+        if value is not None
+        and value <= RSI_THRESHOLD
+    ]
+
+    # 최근 3개 중 하나라도 RSI 30 이하
+    rsi_signal = bool(rsi_low_periods)
+
+    # =====================================================
+    # 기존 캔들 패턴 분석
+    # =====================================================
+
     pattern_info = analyze_previous_current_pattern(
         periods
     )
+
+    # 패턴 분석 결과의 최근 3개 봉에도 RSI 연결
+    last_three = pattern_info["last_three_patterns"]
+
+    recent_periods = periods[-len(last_three):]
+
+    for item, period in zip(
+        last_three,
+        recent_periods
+    ):
+        item["rsi"] = period.get("rsi")
 
     current_signal = pattern_info[
         "current_bullish_pattern"
@@ -1289,14 +1439,17 @@ def analyze_signal_candles(market, price):
         "signal_reason": reason,
         "previous_pattern": pattern_info["previous_pattern"],
         "current_pattern": pattern_info["current_pattern"],
-        "last_three_patterns": pattern_info["last_three_patterns"],
+        "last_three_patterns": last_three,
         "previous_bullish_engulfing": pattern_info["previous_bullish_engulfing"],
         "current_bullish_engulfing": pattern_info["current_bullish_engulfing"],
         "consecutive_bullish": pattern_info["consecutive_bullish"],
         "consecutive_bearish": pattern_info["consecutive_bearish"],
         "consecutive_bullish_candles": pattern_info[
             "consecutive_bullish_candles"
-        ]
+        ],
+        "rsi_signal": rsi_signal,
+        "rsi_values": rsi_values,
+        "rsi_low_count": len(rsi_low_periods)
     }
 
 
@@ -1372,6 +1525,19 @@ def make_row(
         "current_bullish_engulfing": analysis_pattern["current_bullish_engulfing"],
         "consecutive_bullish_candles": analysis_pattern.get(
             "consecutive_bullish_candles", 0
+        ),
+
+        # RSI 정보
+        "rsi_signal": analysis_pattern.get(
+            "rsi_signal", False
+        ),
+
+        "rsi_values": analysis_pattern.get(
+            "rsi_values", []
+        ),
+
+        "rsi_low_count": analysis_pattern.get(
+            "rsi_low_count", 0
         )
     }
 
@@ -1398,7 +1564,8 @@ def update_upbit():
 
     # =====================================================
     # BTC 24시간 거래대금 조회
-    # 업비트 KRW-BTC 기준
+    # 표시용으로만 유지
+    # SIGNAL 비교에는 사용하지 않음
     # =====================================================
 
     btc_item = next(
@@ -1476,7 +1643,7 @@ def update_upbit():
         except Exception as e:
 
             log.warning(
-                "%s 캔들 패턴 오류: %s",
+                "%s 캔들 패턴 및 RSI 오류: %s",
                 market,
                 e
             )
@@ -1497,7 +1664,10 @@ def update_upbit():
                 "current_bullish_engulfing": False,
                 "consecutive_bullish": 0,
                 "consecutive_bearish": 0,
-                "consecutive_bullish_candles": 0
+                "consecutive_bullish_candles": 0,
+                "rsi_signal": False,
+                "rsi_values": [],
+                "rsi_low_count": 0
             }
 
         rows.append(
@@ -1521,30 +1691,20 @@ def update_upbit():
     # SIGNAL 조건
     #
     # 1. 당일 변동률 0% 초과
-    # 2. BTC 24시간 거래대금 초과
-    # 3. 캔들 패턴 조건 사용 안 함
+    # 2. 최근 3개 캔들 중 RSI 30 이하가 하나 이상
+    # 3. BTC 거래대금 비교 조건 삭제
     # 4. 거래대금 별도 최소 금액 없음
+    # 5. 캔들 패턴 조건 사용 안 함
     # =====================================================
 
-    if (
-        USE_BTC_VOLUME_FILTER == "Y"
-        and latest_upbit_btc_volume_24h is not None
-    ):
-
-        latest_signal_data = [
-            row for row in rows
-            if (
-                row.get("daily_change") is not None
-                and row.get("daily_change") > DAILY_CHANGE_MIN
-                and row.get("volume_24h", 0)
-                > latest_upbit_btc_volume_24h
-            )
-        ]
-
-    else:
-
-        # BTC 거래대금 조회 실패 시 SIGNAL 선정 중단
-        latest_signal_data = []
+    latest_signal_data = [
+        row for row in rows
+        if (
+            row.get("daily_change") is not None
+            and row.get("daily_change") > DAILY_CHANGE_MIN
+            and row.get("rsi_signal") is True
+        )
+    ]
 
     # 당일 상승률 높은 순으로 정렬
     latest_signal_data.sort(
@@ -1564,16 +1724,13 @@ def update_upbit():
 
     log.info(
         "UPBIT | TOP%s | "
-        "BTC 24H 거래대금=%s | "
-        "SIGNAL 조건=당일 변동률>%s%% AND BTC 거래대금 초과 | "
-        "SIGNAL=%s",
+        "SIGNAL 조건=당일 변동률>%s%% AND 최근 %s개 봉 RSI(%s)<=%s | "
+        "BTC 거래대금 비교=사용 안 함 | SIGNAL=%s",
         TOP_N,
-        (
-            f"{latest_upbit_btc_volume_24h:,.0f} KRW"
-            if latest_upbit_btc_volume_24h is not None
-            else "조회 실패"
-        ),
         DAILY_CHANGE_MIN,
+        RSI_CHECK_CANDLES,
+        RSI_PERIOD,
+        RSI_THRESHOLD,
         len(latest_signal_data)
     )
 
@@ -1778,7 +1935,7 @@ def build_okx_kst_daily_periods(df, current_price=None):
 
 # =========================================================
 # OKX BTC 최근 3개 캔들 패턴 분석
-# SIGNAL과 동일한 4시간봉 기준
+# 기존 4시간봉 유지
 # =========================================================
 
 def analyze_okx_btc_candles(df, current_price=None):
@@ -1840,7 +1997,6 @@ def analyze_okx_btc_candles(df, current_price=None):
     if not periods:
         return []
 
-    # 기존 SIGNAL과 동일한 패턴 분석 함수 사용
     pattern_info = analyze_previous_current_pattern(
         periods
     )
@@ -1877,10 +2033,7 @@ def update_okx_btc():
 
         return
 
-    # =====================================================
-    # 기존 KST 09:00 기준 일일 변동률
-    # =====================================================
-
+    # KST 09:00 기준 일일 변동률
     latest_btc_daily_periods = (
         build_okx_kst_daily_periods(d4h, price)
     )
@@ -1895,10 +2048,7 @@ def update_okx_btc():
 
         latest_btc_daily_change = None
 
-    # =====================================================
     # 최근 3개 BTC 4시간봉 패턴 분석
-    # =====================================================
-
     latest_btc_last_three_patterns = (
         analyze_okx_btc_candles(
             d4h,
@@ -2007,6 +2157,44 @@ def fmt_change(v):
         return f'<span class="down">▼ {v:.2f}%</span>'
 
     return '<span class="zero">0.00%</span>'
+
+
+# =========================================================
+# RSI 표시 HTML
+# =========================================================
+
+def rsi_html(value):
+
+    if value is None:
+        return (
+            '<div class="rsi-value rsi-unavailable">'
+            'RSI -'
+            '</div>'
+        )
+
+    try:
+        value = float(value)
+
+    except Exception:
+        return (
+            '<div class="rsi-value rsi-unavailable">'
+            'RSI -'
+            '</div>'
+        )
+
+    if value <= RSI_THRESHOLD:
+
+        return (
+            '<div class="rsi-value rsi-low">'
+            f'RSI {value:.1f} ≤ {RSI_THRESHOLD}'
+            '</div>'
+        )
+
+    return (
+        '<div class="rsi-value">'
+        f'RSI {value:.1f}'
+        '</div>'
+    )
 
 
 # =========================================================
@@ -2251,7 +2439,7 @@ def current_pattern_html(pattern, candle=None):
 
 
 # =========================================================
-# 최근 3개 봉 표시
+# 최근 3개 봉 표시 + RSI 강조
 # =========================================================
 
 def last_three_pattern_html(row):
@@ -2270,7 +2458,8 @@ def last_three_pattern_html(row):
             "open": None,
             "high": None,
             "low": None,
-            "close": None
+            "close": None,
+            "rsi": None
         })
 
     items.extend(last_three)
@@ -2297,9 +2486,25 @@ def last_three_pattern_html(row):
             item
         )
 
+        rsi_value = item.get("rsi")
+
+        try:
+            is_rsi_low = (
+                rsi_value is not None
+                and float(rsi_value) <= RSI_THRESHOLD
+            )
+        except Exception:
+            is_rsi_low = False
+
+        rsi_class = (
+            "rsi-highlight-candle"
+            if is_rsi_low
+            else ""
+        )
+
         boxes.append(
             f"""
-            <div class="three-candle-item">
+            <div class="three-candle-item {rsi_class}">
 
                 <div class="three-candle-label">
                     {label}
@@ -2308,6 +2513,8 @@ def last_three_pattern_html(row):
                 <div class="three-candle-pattern">
                     {candle_html}
                 </div>
+
+                {rsi_html(rsi_value)}
 
             </div>
             """
@@ -2519,7 +2726,10 @@ def signal_card(row):
         <div class="three-candle-section">
 
             <div class="three-candle-heading">
-                최근 3개 봉 · {timeframe_label}
+                최근 3개 봉 · {timeframe_label} · RSI({RSI_PERIOD})
+                <span class="rsi-condition-label">
+                    {RSI_THRESHOLD} 이하 강조
+                </span>
             </div>
 
             {three_pattern_html}
@@ -2555,14 +2765,15 @@ def signal_section():
             for row in latest_signal_data
         )
 
-    # 당일 변동률 + BTC 거래대금 조건
+    # 당일 변동률 + 최근 3개 봉 RSI 조건
     condition_html = f"""
     <div class="signal-condition">
 
         <span>선정 기준: 당일 변동률</span>
         <span>당일 변동률 {DAILY_CHANGE_MIN:.2f}% 초과</span>
-        <span>BTC 24H 거래대금 초과</span>
-        <span>BTC 거래대금: {fmt_vol(latest_upbit_btc_volume_24h)}원</span>
+        <span>최근 {RSI_CHECK_CANDLES}개 봉 중 RSI({RSI_PERIOD}) {RSI_THRESHOLD} 이하</span>
+        <span>RSI 시간봉: {pattern_timeframe_label}</span>
+        <span>BTC 거래대금 비교 없음</span>
         <span>상승률 높은 순 정렬</span>
 
     </div>
@@ -2663,7 +2874,10 @@ def card(row, kind):
         <div class="top-three-candle-section">
 
             <div class="three-candle-heading">
-                최근 3개 봉 · {timeframe_label}
+                최근 3개 봉 · {timeframe_label} · RSI({RSI_PERIOD})
+                <span class="rsi-condition-label">
+                    {RSI_THRESHOLD} 이하 강조
+                </span>
             </div>
 
             {three_pattern_html}
@@ -2700,7 +2914,6 @@ CSS = """
 
     --yellow: #e8c56e;
 
-    /* PC 기본 글자 크기 */
     --fs-main: 17px;
     --fs-section: 13px;
     --fs-coin: 14px;
@@ -2965,6 +3178,65 @@ section {
 .candle-pattern-visual.empty {
     color: var(--muted);
     font-size: var(--fs-value);
+}
+
+
+/* =====================================================
+   RSI 표시
+===================================================== */
+
+.rsi-condition-label {
+    display: inline-block;
+    margin-left: 5px;
+
+    color: var(--yellow);
+    font-size: var(--fs-tiny);
+    font-weight: 800;
+}
+
+.rsi-value {
+    display: inline-block;
+    margin-top: 5px;
+
+    padding: 2px 5px;
+
+    color: #aab9c6;
+    background: #1b2935;
+
+    border: 1px solid #344451;
+    border-radius: 4px;
+
+    font-size: 9px;
+    font-weight: 800;
+
+    white-space: nowrap;
+}
+
+.rsi-value.rsi-low {
+    color: #ffd76a;
+    background: rgba(232,197,110,.13);
+    border: 1px solid #d4a83e;
+
+    box-shadow: 0 0 6px rgba(232,197,110,.15);
+}
+
+.rsi-value.rsi-unavailable {
+    color: #71808c;
+    background: #141e27;
+    border-color: #26343f;
+}
+
+/* RSI 30 이하인 캔들 강조 */
+.three-candle-item.rsi-highlight-candle {
+    background: rgba(232,197,110,.08);
+    border: 1px solid #c99e3d;
+
+    box-shadow:
+        inset 0 0 0 1px rgba(232,197,110,.08);
+}
+
+.three-candle-item.rsi-highlight-candle .three-candle-label {
+    color: #ffd76a;
 }
 
 
@@ -3677,6 +3949,12 @@ section {
     .consecutive-bearish {
         padding: 2px 4px;
     }
+
+    .rsi-value {
+        font-size: 8px;
+        padding: 2px 3px;
+        margin-top: 4px;
+    }
 }
 
 
@@ -3722,6 +4000,10 @@ section {
 
     .signal-card-top {
         gap: 4px;
+    }
+
+    .rsi-value {
+        font-size: 7px;
     }
 }
 """
@@ -3853,12 +4135,24 @@ def startup():
     )
 
     log.info(
-        "SIGNAL 선정 조건: 당일 변동률 %s%% 초과만 적용",
+        "SIGNAL 당일 변동률 조건: %s%% 초과",
         DAILY_CHANGE_MIN
     )
 
     log.info(
-        "SIGNAL 추가 조건: 업비트 BTC 24H 거래대금 초과"
+        "SIGNAL RSI 조건: 최근 %s개 봉 중 RSI(%s) <= %s",
+        RSI_CHECK_CANDLES,
+        RSI_PERIOD,
+        RSI_THRESHOLD
+    )
+
+    log.info(
+        "RSI 시간봉: 캔들 패턴 시간봉 설정 자동 연동 (%s)",
+        get_timeframe_label(CANDLE_PATTERN_TIMEFRAME)
+    )
+
+    log.info(
+        "SIGNAL BTC 거래대금 비교 조건 사용 안 함"
     )
 
     log.info(
@@ -3878,6 +4172,10 @@ def startup():
     )
 
     log.info(
+        "RSI 30 이하인 최근 3개 캔들 개별 강조"
+    )
+
+    log.info(
         "녹색 강조: 상승장악형 및 상승관통형"
     )
 
@@ -3891,7 +4189,7 @@ def startup():
     )
 
     log.info(
-        "최근 3개 봉 캔들패턴 표시"
+        "최근 3개 봉 캔들패턴 및 RSI 표시"
     )
 
     log.info(
