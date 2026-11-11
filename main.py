@@ -1,3 +1,4 @@
+
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
@@ -42,6 +43,7 @@ TOP_N = 100
 SHOW_TOP_LIST = "N"
 UPDATE_MINUTES = 1
 
+# SIGNAL 당일 변동률 기준
 DAILY_CHANGE_MIN = 10.0
 
 USE_UPBIT = "Y"
@@ -1480,15 +1482,15 @@ def update_upbit():
 
     # =====================================================
     # SIGNAL 조건
-    # 거래대금 조건 삭제
-    # 당일 변동률 5% 초과 유지
+    # 캔들 패턴 조건 완전 제거
+    # 거래대금 조건 없음
+    # 당일 변동률 10% 초과만 적용
     # =====================================================
 
     latest_signal_data = [
         row for row in rows
         if (
-            row.get("signal_4h", False)
-            and row.get("daily_change") is not None
+            row.get("daily_change") is not None
             and row.get("daily_change") > DAILY_CHANGE_MIN
         )
     ]
@@ -1510,10 +1512,11 @@ def update_upbit():
         row["signal_rank"] = signal_rank
 
     log.info(
-        "UPBIT | TOP%s | 캔들패턴=%s | "
-        "당일 변동률>%s%% | 상승률 높은 순 | SIGNAL=%s",
+        "UPBIT | TOP%s | "
+        "SIGNAL 조건=당일 변동률>%s%% | "
+        "캔들패턴 조건 사용 안 함 | "
+        "상승률 높은 순 | SIGNAL=%s",
         TOP_N,
-        get_timeframe_label(CANDLE_PATTERN_TIMEFRAME),
         DAILY_CHANGE_MIN,
         len(latest_signal_data)
     )
@@ -2275,7 +2278,6 @@ def btc_html():
 
 # =========================================================
 # SIGNAL 카드
-# 녹색 카드 강조 기능 제거
 # =========================================================
 
 def signal_card(row):
@@ -2375,14 +2377,14 @@ def signal_section():
             for row in latest_signal_data
         )
 
+    # 캔들 패턴 조건 없이 당일 변동률만 적용
     condition_html = f"""
     <div class="signal-condition">
 
-        <span>양봉 · 현재봉 또는 이전봉</span>
-        <span>상승장악형 / 상승관통형</span>
-        <span>장대양봉 녹색 강조</span>
-        <span>2연속 이상 양봉 녹색 강조</span>
+        <span>선정 기준: 당일 변동률</span>
         <span>당일 변동률 {DAILY_CHANGE_MIN:.2f}% 초과</span>
+        <span>거래대금 제한 없음</span>
+        <span>상승률 높은 순 정렬</span>
 
     </div>
     """
@@ -3650,8 +3652,12 @@ def startup():
     )
 
     log.info(
-        "SIGNAL 당일 변동률 최소 기준: %s%% 초과",
+        "SIGNAL 선정 조건: 당일 변동률 %s%% 초과만 적용",
         DAILY_CHANGE_MIN
+    )
+
+    log.info(
+        "SIGNAL 캔들 패턴 조건 사용 안 함"
     )
 
     log.info(
@@ -3663,7 +3669,7 @@ def startup():
     )
 
     log.info(
-        "현재봉 또는 이전봉 양봉 시그널 포함"
+        "캔들 패턴은 SIGNAL 선정과 무관하게 표시"
     )
 
     log.info(
