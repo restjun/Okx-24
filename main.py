@@ -1,3 +1,4 @@
+
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
@@ -97,7 +98,7 @@ latest_btc_okx_price = None
 latest_btc_daily_periods = []
 latest_btc_daily_change = None
 
-# BTC 최근 3개 캔들 패턴
+# BTC 최근 3개 캔들 패턴 및 RSI
 latest_btc_last_three_patterns = []
 
 
@@ -1690,7 +1691,7 @@ def update_upbit():
     # =====================================================
     # SIGNAL 조건
     #
-    # 1. 당일 변동률 0% 초과
+    # 1. 당일 변동률 > DAILY_CHANGE_MIN
     # 2. 최근 3개 캔들 중 RSI 30 이하가 하나 이상
     # 3. BTC 거래대금 비교 조건 삭제
     # 4. 거래대금 별도 최소 금액 없음
@@ -1934,7 +1935,7 @@ def build_okx_kst_daily_periods(df, current_price=None):
 
 
 # =========================================================
-# OKX BTC 최근 3개 캔들 패턴 분석
+# OKX BTC 최근 3개 캔들 패턴 분석 + RSI
 # 기존 4시간봉 유지
 # =========================================================
 
@@ -1966,6 +1967,17 @@ def analyze_okx_btc_candles(df, current_price=None):
         current_price
     )
 
+    # =====================================================
+    # BTC 4시간봉 RSI 계산
+    # =====================================================
+
+    rsi_series = calculate_rsi(
+        df["close"],
+        RSI_PERIOD
+    )
+
+    df["rsi"] = rsi_series
+
     periods = []
 
     for _, row in df.iterrows():
@@ -1982,6 +1994,8 @@ def analyze_okx_btc_candles(df, current_price=None):
             if o else None
         )
 
+        rsi = row["rsi"]
+
         periods.append({
             "start": start,
             "end": start + timedelta(hours=4),
@@ -1991,7 +2005,14 @@ def analyze_okx_btc_candles(df, current_price=None):
             "high": h,
             "low": l,
             "close": c,
-            "change": change
+            "change": change,
+
+            # BTC RSI
+            "rsi": (
+                float(rsi)
+                if pd.notna(rsi)
+                else None
+            )
         })
 
     if not periods:
@@ -2001,7 +2022,18 @@ def analyze_okx_btc_candles(df, current_price=None):
         periods
     )
 
-    return pattern_info["last_three_patterns"]
+    result = pattern_info["last_three_patterns"]
+
+    # 패턴 분석 결과에 해당 캔들의 RSI 연결
+    recent_periods = periods[-len(result):]
+
+    for item, period in zip(
+        result,
+        recent_periods
+    ):
+        item["rsi"] = period.get("rsi")
+
+    return result
 
 
 # =========================================================
@@ -2048,7 +2080,7 @@ def update_okx_btc():
 
         latest_btc_daily_change = None
 
-    # 최근 3개 BTC 4시간봉 패턴 분석
+    # 최근 3개 BTC 4시간봉 패턴 및 RSI 분석
     latest_btc_last_three_patterns = (
         analyze_okx_btc_candles(
             d4h,
@@ -2058,9 +2090,10 @@ def update_okx_btc():
 
     log.info(
         "BTC OKX | 가격=%s | 일일변동률=%s | "
-        "최근 3개 4시간봉 캔들 분석 완료",
+        "최근 3개 4시간봉 캔들 패턴 및 RSI(%s) 분석 완료",
         price,
-        latest_btc_daily_change
+        latest_btc_daily_change,
+        RSI_PERIOD
     )
 
 
@@ -2650,7 +2683,10 @@ def btc_html():
         <div class="btc-candle-section">
 
             <div class="btc-candle-heading">
-                BTC 최근 3개 봉 · 4시간
+                BTC 최근 3개 봉 · 4시간 · RSI({RSI_PERIOD})
+                <span class="rsi-condition-label">
+                    RSI {RSI_THRESHOLD} 이하 강조
+                </span>
             </div>
 
             {three_pattern_html}
@@ -4197,7 +4233,13 @@ def startup():
     )
 
     log.info(
-        "BTC OKX 4시간봉 최근 3개 캔들 패턴 표시"
+        "BTC OKX 4시간봉 최근 3개 캔들 패턴 및 RSI(%s) 표시",
+        RSI_PERIOD
+    )
+
+    log.info(
+        "BTC RSI %s 이하인 캔들 노란색 강조",
+        RSI_THRESHOLD
     )
 
     log.info(
