@@ -1,4 +1,3 @@
-
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
@@ -99,6 +98,7 @@ candle_cache = {}
 
 
 def clear_candle_cache():
+
     with candle_cache_lock:
         candle_cache.clear()
 
@@ -2275,6 +2275,7 @@ def btc_html():
 
 # =========================================================
 # SIGNAL 카드
+# 녹색 카드 강조 기능 제거
 # =========================================================
 
 def signal_card(row):
@@ -2283,69 +2284,12 @@ def signal_card(row):
         CANDLE_PATTERN_TIMEFRAME
     )
 
-    previous_patterns = row.get("previous_pattern") or []
-    current_patterns = row.get("current_pattern") or []
-
-    all_patterns = previous_patterns + current_patterns
-
-    # 기존 상승장악형 / 상승관통형
-    has_bullish_pattern = any(
-        pattern in BULLISH_HIGHLIGHT_PATTERNS
-        for pattern in all_patterns
-    )
-
-    # 최근 3개 봉 중 장대양봉
-    last_three = row.get("last_three_patterns") or []
-
-    has_long_bullish = any(
-        "장대양봉" in (item.get("patterns") or [])
-        for item in last_three
-    )
-
-    # 일반 연속 양봉
-    consecutive_bullish_candles = int(
-        row.get("consecutive_bullish_candles", 0) or 0
-    )
-
-    has_consecutive_bullish = (
-        consecutive_bullish_candles >= CONSECUTIVE_BULLISH_MIN
-    )
-
-    # 녹색 강조 여부
-    has_green_highlight = bool(
-        has_bullish_pattern
-        or has_long_bullish
-        or has_consecutive_bullish
-    )
-
     badge_html = pattern_badges_html(row)
-
-    if has_long_bullish:
-
-        badge_html += (
-            '<span class="signal-type-badge">'
-            '장대양봉'
-            '</span>'
-        )
-
-    if has_consecutive_bullish:
-
-        badge_html += (
-            '<span class="signal-type-badge">'
-            f'{consecutive_bullish_candles}연속 양봉'
-            '</span>'
-        )
 
     three_pattern_html = last_three_pattern_html(row)
 
-    card_class = (
-        "signal-card highlight"
-        if has_green_highlight
-        else "signal-card"
-    )
-
     return f"""
-    <div class="{card_class}">
+    <div class="signal-card">
 
         <div class="signal-card-top">
 
@@ -3264,40 +3208,9 @@ section {
 }
 
 
-/* SIGNAL 녹색 강조 */
-
-.signal-card.highlight {
-    background: #10241c;
-
-    box-shadow:
-        inset 3px 0 0 var(--green),
-        inset 0 0 0 1px rgba(56,217,150,.2);
-}
-
-.signal-card.highlight .signal-card-top {
-    background: #142c22;
-    border-bottom-color: #28533e;
-}
-
-.signal-card.highlight .signal-coin-name {
-    color: var(--green);
-}
-
-.signal-card.highlight .signal-rank {
-    color: var(--yellow);
-}
-
-.signal-card.highlight .signal-data-grid > div {
-    background: rgba(56,217,150,.035);
-}
-
-.signal-card.highlight .three-candle-item {
-    background: #173126;
-    border-color: #315844;
-}
-
-
-/* SIGNAL 없음 */
+/* =====================================================
+   SIGNAL 없음
+===================================================== */
 
 .signal-empty {
     min-height: 65px;
