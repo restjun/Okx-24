@@ -54,6 +54,7 @@ REQUEST_INTERVAL = 0.08
 RATE_LIMIT_WAIT = 3
 MAX_RETRIES = 20
 
+# 시간봉은 여기서 직접 변경
 CANDLE_PATTERN_TIMEFRAME = "1d"
 
 RSI_PERIOD = 14
@@ -61,7 +62,6 @@ RSI_THRESHOLD = 70
 RSI_LOWER_THRESHOLD = 30
 
 RSI_CHECK_CANDLES = 6
-
 DISPLAY_CANDLE_COUNT = 6
 
 CONSECUTIVE_CANDLE_MIN = 3
@@ -73,6 +73,14 @@ TIMEFRAME_LABEL = {
     "1h": "1시간",
     "4h": "4시간",
     "1d": "일봉"
+}
+
+TIMEFRAME_MINUTES = {
+    "5m": 5,
+    "15m": 15,
+    "1h": 60,
+    "4h": 240,
+    "1d": 1440
 }
 
 
@@ -95,7 +103,6 @@ latest_upbit_btc_volume_24h = None
 latest_btc_okx_price = None
 latest_btc_daily_periods = []
 latest_btc_daily_change = None
-
 latest_btc_last_three_patterns = []
 
 
@@ -134,6 +141,7 @@ def get_cached_dataframe(market, timeframe, loader):
         df = pd.DataFrame()
 
     with candle_cache_lock:
+
         if not df.empty:
 
             existing = candle_cache.get(key)
@@ -156,6 +164,73 @@ def kst():
 
 def get_timeframe_label(timeframe):
     return TIMEFRAME_LABEL.get(timeframe, timeframe)
+
+
+# =========================================================
+# 캔들 시작 시간 계산
+#
+# 업비트 기준
+# 일봉: 09:00
+# 4시간봉: 09, 13, 17, 21, 01, 05
+# =========================================================
+
+def get_candle_start(now, timeframe):
+
+    now = now.astimezone(KST)
+
+    if timeframe == "1d":
+
+        start = now.replace(
+            hour=9,
+            minute=0,
+            second=0,
+            microsecond=0
+        )
+
+        if now < start:
+            start -= timedelta(days=1)
+
+        return start
+
+    if timeframe == "4h":
+
+        anchor = now.replace(
+            hour=9,
+            minute=0,
+            second=0,
+            microsecond=0
+        )
+
+        if now < anchor:
+            anchor -= timedelta(days=1)
+
+        elapsed = now - anchor
+
+        periods = int(
+            elapsed.total_seconds() // 14400
+        )
+
+        return anchor + timedelta(hours=periods * 4)
+
+    minutes = TIMEFRAME_MINUTES.get(timeframe)
+
+    if minutes is None:
+        return None
+
+    midnight = now.replace(
+        hour=0,
+        minute=0,
+        second=0,
+        microsecond=0
+    )
+
+    elapsed = now - midnight
+
+    periods = int(
+        elapsed.total_seconds() // (minutes * 60)
+    )
+
+    return midnight + timedelta(minutes=periods * minutes)
 
 
 # =========================================================
@@ -473,14 +548,6 @@ def update_current_candle(df, current_start, price):
 
 def calculate_rsi(close_series, period=14):
 
-    """
-    Wilder 방식 RSI 계산.
-
-    최근 종가를 기준으로 계산하며,
-    RSI 계산에 필요한 과거 데이터가 부족하면
-    해당 구간은 NaN으로 처리한다.
-    """
-
     if close_series is None:
         return pd.Series(dtype=float)
 
@@ -490,6 +557,7 @@ def calculate_rsi(close_series, period=14):
     )
 
     if len(close) <= period:
+
         return pd.Series(
             float("nan"),
             index=close.index,
@@ -538,73 +606,34 @@ def calculate_rsi(close_series, period=14):
 
 
 # =========================================================
-# 시간봉 데이터 조회
+# 업비트 시간봉 데이터 조회
 # =========================================================
 
 def get_timeframe_dataframe(market, timeframe, price=None):
 
-    if timeframe == "5m":
+    loaders = {
+        "5m": lambda: get_upbit_5m_candles(market, 200),
+        "15m": lambda: get_upbit_15m_candles(market, 200),
+        "1h": lambda: get_upbit_1h_candles(market, 200),
+        "4h": lambda: get_upbit_4h_candles(market, 200)
+    }
 
-        df = get_cached_dataframe(
-            market,
-            "5m",
-            lambda: get_upbit_5m_candles(market, 200)
-        )
-
-        minutes = 5
-
-    elif timeframe == "15m":
-
-        df = get_cached_dataframe(
-            market,
-            "15m",
-            lambda: get_upbit_15m_candles(market, 200)
-        )
-
-        minutes = 15
-
-    elif timeframe == "1h":
-
-        df = get_cached_dataframe(
-            market,
-            "1h",
-            lambda: get_upbit_1h_candles(market, 200)
-        )
-
-        minutes = 60
-
-    elif timeframe == "4h":
-
-        df = get_cached_dataframe(
-            market,
-            "4h",
-            lambda: get_upbit_4h_candles(market, 200)
-        )
-
-        minutes = 240
-
-    else:
+    if timeframe not in loaders:
         return pd.DataFrame()
+
+    df = get_cached_dataframe(
+        market,
+        timeframe,
+        loaders[timeframe]
+    )
 
     if df.empty:
         return df
 
-    now = datetime.now(KST)
-
-    current_start = now.replace(
-        minute=(now.minute // minutes) * minutes,
-        second=0,
-        microsecond=0
+    current_start = get_candle_start(
+        datetime.now(KST),
+        timeframe
     )
-
-    if timeframe == "4h":
-
-        current_start = now.replace(
-            hour=(now.hour // 4) * 4,
-            minute=0,
-            second=0,
-            microsecond=0
-        )
 
     return update_current_candle(
         df,
@@ -637,17 +666,10 @@ def build_daily_periods(df, current_price=None):
         .reset_index(drop=True)
     )
 
-    now = datetime.now(KST)
-
-    current_start = now.replace(
-        hour=9,
-        minute=0,
-        second=0,
-        microsecond=0
+    current_start = get_candle_start(
+        datetime.now(KST),
+        "1d"
     )
-
-    if now < current_start:
-        current_start -= timedelta(days=1)
 
     periods = []
 
@@ -920,10 +942,6 @@ def is_bullish_hammer(previous, current):
     )
 
 
-# =========================================================
-# 상승역망치형
-# =========================================================
-
 def is_bullish_inverted_hammer(previous, current):
 
     if previous is None:
@@ -1106,17 +1124,22 @@ def analyze_previous_current_pattern(periods):
 
     last_six = pattern_history[-DISPLAY_CANDLE_COUNT:]
 
+    selected_periods = periods[-len(last_six):]
+
     result["last_three_patterns"] = [
         {
-            "label": periods[-len(last_six) + i]["label"],
+            "label": period["label"],
             "patterns": patterns,
-            "open": periods[-len(last_six) + i]["open"],
-            "high": periods[-len(last_six) + i]["high"],
-            "low": periods[-len(last_six) + i]["low"],
-            "close": periods[-len(last_six) + i]["close"],
-            "change": periods[-len(last_six) + i].get("change")
+            "open": period["open"],
+            "high": period["high"],
+            "low": period["low"],
+            "close": period["close"],
+            "change": period.get("change")
         }
-        for i, patterns in enumerate(last_six)
+        for period, patterns in zip(
+            selected_periods,
+            last_six
+        )
     ]
 
     current_patterns = pattern_history[-1]
@@ -1175,7 +1198,6 @@ def analyze_previous_current_pattern(periods):
     for period in reversed(periods):
 
         try:
-
             o = float(period["open"])
             c = float(period["close"])
 
@@ -1196,7 +1218,70 @@ def analyze_previous_current_pattern(periods):
 
 
 # =========================================================
-# 캔들 패턴 시간봉 분석 + RSI
+# 공통 캔들 기간 생성
+# =========================================================
+
+def build_timeframe_periods(df, timeframe, current_price=None):
+
+    if df is None or df.empty:
+        return []
+
+    df = (
+        df.sort_values("datetime")
+        .drop_duplicates("datetime")
+        .reset_index(drop=True)
+    )
+
+    now = datetime.now(KST)
+
+    current_start = get_candle_start(
+        now,
+        timeframe
+    )
+
+    minutes = TIMEFRAME_MINUTES[timeframe]
+
+    periods = []
+
+    for _, row in df.iterrows():
+
+        start = row["datetime"]
+
+        o = float(row["open"])
+        h = float(row["high"])
+        l = float(row["low"])
+        c = float(row["close"])
+
+        active = start == current_start
+
+        if active and current_price is not None:
+
+            c = float(current_price)
+            h = max(h, c)
+            l = min(l, c)
+
+        change = (
+            (c - o) / o * 100
+            if o else None
+        )
+
+        periods.append({
+            "start": start,
+            "end": start + timedelta(minutes=minutes),
+            "active": active,
+            "label": start.strftime("%m/%d %H:%M"),
+            "open": o,
+            "high": h,
+            "low": l,
+            "close": c,
+            "change": change
+        })
+
+    return periods
+
+
+# =========================================================
+# 업비트 SIGNAL 시간봉 분석 + RSI
 # =========================================================
 
 def analyze_signal_candles(market, price):
@@ -1226,7 +1311,20 @@ def analyze_signal_candles(market, price):
 
     timeframe = CANDLE_PATTERN_TIMEFRAME
 
-    if timeframe in ("5m", "15m", "1h", "4h"):
+    if timeframe == "1d":
+
+        df = get_daily_dataframe(market)
+
+        if df.empty:
+            return empty_result
+
+        df = update_current_candle(
+            df,
+            get_candle_start(datetime.now(KST), "1d"),
+            price
+        )
+
+    elif timeframe in ("5m", "15m", "1h", "4h"):
 
         df = get_timeframe_dataframe(
             market,
@@ -1237,82 +1335,17 @@ def analyze_signal_candles(market, price):
         if df.empty:
             return empty_result
 
-        minutes = {
-            "5m": 5,
-            "15m": 15,
-            "1h": 60,
-            "4h": 240
-        }[timeframe]
-
-        periods = []
-
-        for _, row in df.iterrows():
-
-            start = row["datetime"]
-
-            o = float(row["open"])
-            h = float(row["high"])
-            l = float(row["low"])
-            c = float(row["close"])
-
-            change = (
-                (c - o) / o * 100
-                if o else None
-            )
-
-            periods.append({
-                "start": start,
-                "end": start + timedelta(minutes=minutes),
-                "active": True,
-                "label": start.strftime("%m/%d %H:%M"),
-                "open": o,
-                "high": h,
-                "low": l,
-                "close": c,
-                "change": change
-            })
-
-    elif timeframe == "1d":
-
-        df = get_daily_dataframe(market)
-
-        if df.empty:
-            return empty_result
-
-        now = datetime.now(KST)
-
-        current_start = now.replace(
-            hour=9,
-            minute=0,
-            second=0,
-            microsecond=0
-        )
-
-        if now < current_start:
-            current_start -= timedelta(days=1)
-
-        df = update_current_candle(
-            df,
-            current_start,
-            price
-        )
-
-        periods = build_daily_periods(
-            df,
-            price
-        )
-
     else:
         return empty_result
 
+    periods = build_timeframe_periods(
+        df,
+        timeframe,
+        price
+    )
+
     if not periods:
         return empty_result
-
-    df = (
-        df.sort_values("datetime")
-        .drop_duplicates("datetime")
-        .reset_index(drop=True)
-    )
 
     rsi_series = calculate_rsi(
         df["close"],
@@ -1409,7 +1442,7 @@ def analyze_signal_candles(market, price):
                 reason = pattern
                 break
 
-    current_period = periods[-1] if periods else None
+    current_period = periods[-1]
 
     return {
         "periods": periods[-DISPLAY_CANDLE_COUNT:],
@@ -1419,12 +1452,12 @@ def analyze_signal_candles(market, price):
         "previous_signal": previous_signal,
         "signal_change": (
             current_period.get("change")
-            if signal and current_period is not None
+            if signal
             else None
         ),
         "signal_period": (
             current_period.get("label")
-            if signal and current_period is not None
+            if signal
             else None
         ),
         "signal_reason": reason,
@@ -1518,22 +1551,10 @@ def make_row(
         "consecutive_bullish_candles": analysis_pattern.get(
             "consecutive_bullish_candles", 0
         ),
-
-        "rsi_signal": analysis_pattern.get(
-            "rsi_signal", False
-        ),
-
-        "rsi_values": analysis_pattern.get(
-            "rsi_values", []
-        ),
-
-        "rsi_low_count": analysis_pattern.get(
-            "rsi_low_count", 0
-        ),
-
-        "rsi_high_count": analysis_pattern.get(
-            "rsi_high_count", 0
-        )
+        "rsi_signal": analysis_pattern.get("rsi_signal", False),
+        "rsi_values": analysis_pattern.get("rsi_values", []),
+        "rsi_low_count": analysis_pattern.get("rsi_low_count", 0),
+        "rsi_high_count": analysis_pattern.get("rsi_high_count", 0)
     }
 
 
@@ -1704,22 +1725,27 @@ def update_upbit():
     log.info(
         "UPBIT | TOP%s | "
         "SIGNAL 조건=당일 변동률>%s%% AND 최근 %s개 봉 RSI(%s)>=%s OR <=%s | "
-        "BTC 거래대금 비교=사용 안 함 | SIGNAL=%s",
+        "시간봉=%s | SIGNAL=%s",
         TOP_N,
         DAILY_CHANGE_MIN,
         RSI_CHECK_CANDLES,
         RSI_PERIOD,
         RSI_THRESHOLD,
         RSI_LOWER_THRESHOLD,
+        CANDLE_PATTERN_TIMEFRAME,
         len(latest_signal_data)
     )
 
 
 # =========================================================
-# OKX BTC 캔들
+# OKX 캔들 조회
+#
+# BTC도 업비트와 동일한 KST 캔들 구간으로 재구성
+# 4H는 OKX 1H 원본을 받아 09시 기준으로 집계
+# 일봉도 KST 09시 기준으로 집계
 # =========================================================
 
-def okx_candles(bar, limit=200):
+def okx_candles(bar, limit=300):
 
     r = retry(
         requests.get,
@@ -1818,13 +1844,16 @@ def okx_price():
 
 
 # =========================================================
-# BTC KST 09:00 기준 일봉 생성
+# BTC OKX 원본 데이터를 업비트 시간 구간으로 집계
 # =========================================================
 
-def build_okx_kst_daily_periods(df, current_price=None):
+def resample_okx_to_kst_timeframe(df, timeframe):
 
     if df is None or df.empty:
-        return []
+        return pd.DataFrame()
+
+    if timeframe not in TIMEFRAME_MINUTES:
+        return pd.DataFrame()
 
     df = (
         df.sort_values("datetime")
@@ -1832,36 +1861,36 @@ def build_okx_kst_daily_periods(df, current_price=None):
         .reset_index(drop=True)
     )
 
-    now = datetime.now(KST)
+    minutes = TIMEFRAME_MINUTES[timeframe]
 
-    current_day_start = now.replace(
-        hour=9,
-        minute=0,
-        second=0,
-        microsecond=0
+    anchor = datetime(
+        1970, 1, 1, 9, 0, 0,
+        tzinfo=KST
     )
 
-    if now < current_day_start:
-        current_day_start -= timedelta(days=1)
+    seconds = minutes * 60
 
     rows = []
 
     for _, row in df.iterrows():
 
-        dt = row["datetime"]
+        dt = row["datetime"].astimezone(KST)
 
-        day_start = dt.replace(
-            hour=9,
-            minute=0,
-            second=0,
-            microsecond=0
+        elapsed = (
+            dt - anchor
+        ).total_seconds()
+
+        bucket_number = int(
+            elapsed // seconds
         )
 
-        if dt < day_start:
-            day_start -= timedelta(days=1)
+        bucket_start = (
+            anchor
+            + timedelta(seconds=bucket_number * seconds)
+        )
 
         rows.append({
-            "day_start": day_start,
+            "datetime": bucket_start,
             "open": float(row["open"]),
             "high": float(row["high"]),
             "low": float(row["low"]),
@@ -1869,55 +1898,79 @@ def build_okx_kst_daily_periods(df, current_price=None):
         })
 
     if not rows:
-        return []
+        return pd.DataFrame()
 
     raw = pd.DataFrame(rows)
 
-    periods = []
+    result = []
 
-    for day_start, group in raw.groupby(
-        "day_start",
+    for start, group in raw.groupby(
+        "datetime",
         sort=True
     ):
 
-        o = float(group.iloc[0]["open"])
-        h = float(group["high"].max())
-        l = float(group["low"].min())
-        c = float(group.iloc[-1]["close"])
-
-        active = day_start == current_day_start
-
-        if active and current_price is not None:
-
-            c = float(current_price)
-            h = max(h, c)
-            l = min(l, c)
-
-        change = (
-            (c - o) / o * 100
-            if o else None
-        )
-
-        periods.append({
-            "start": day_start,
-            "end": day_start + timedelta(days=1),
-            "active": active,
-            "label": day_start.strftime("%m/%d 09:00"),
-            "open": o,
-            "high": h,
-            "low": l,
-            "close": c,
-            "change": change
+        result.append({
+            "datetime": start,
+            "open": float(group.iloc[0]["open"]),
+            "high": float(group["high"].max()),
+            "low": float(group["low"].min()),
+            "close": float(group.iloc[-1]["close"])
         })
 
-    return periods[-6:]
+    return (
+        pd.DataFrame(result)
+        .sort_values("datetime")
+        .reset_index(drop=True)
+    )
 
 
 # =========================================================
-# OKX BTC 최근 6개 캔들 패턴 분석 + RSI
+# BTC 선택 시간봉 데이터 조회
 # =========================================================
 
-def analyze_okx_btc_candles(df, current_price=None):
+def get_okx_btc_timeframe(timeframe):
+
+    if timeframe == "5m":
+
+        raw = okx_candles("5m", 300)
+
+    elif timeframe == "15m":
+
+        raw = okx_candles("15m", 300)
+
+    elif timeframe == "1h":
+
+        raw = okx_candles("1H", 300)
+
+    elif timeframe == "4h":
+
+        raw = okx_candles("1H", 300)
+
+    elif timeframe == "1d":
+
+        raw = okx_candles("1H", 300)
+
+    else:
+        return pd.DataFrame()
+
+    if raw.empty:
+        return raw
+
+    if timeframe in ("4h", "1d"):
+
+        raw = resample_okx_to_kst_timeframe(
+            raw,
+            timeframe
+        )
+
+    return raw
+
+
+# =========================================================
+# BTC 선택 시간봉 패턴 및 RSI 분석
+# =========================================================
+
+def analyze_okx_btc_candles(df, timeframe, current_price=None):
 
     if df is None or df.empty:
         return []
@@ -1928,13 +1981,9 @@ def analyze_okx_btc_candles(df, current_price=None):
         .reset_index(drop=True)
     )
 
-    now = datetime.now(KST)
-
-    current_start = now.replace(
-        hour=(now.hour // 4) * 4,
-        minute=0,
-        second=0,
-        microsecond=0
+    current_start = get_candle_start(
+        datetime.now(KST),
+        timeframe
     )
 
     df = update_current_candle(
@@ -1950,40 +1999,22 @@ def analyze_okx_btc_candles(df, current_price=None):
 
     df["rsi"] = rsi_series
 
-    periods = []
+    periods = build_timeframe_periods(
+        df,
+        timeframe,
+        current_price
+    )
 
-    for _, row in df.iterrows():
+    for period, rsi in zip(
+        periods,
+        df["rsi"].tail(len(periods))
+    ):
 
-        start = row["datetime"]
-
-        o = float(row["open"])
-        h = float(row["high"])
-        l = float(row["low"])
-        c = float(row["close"])
-
-        change = (
-            (c - o) / o * 100
-            if o else None
+        period["rsi"] = (
+            float(rsi)
+            if pd.notna(rsi)
+            else None
         )
-
-        rsi = row["rsi"]
-
-        periods.append({
-            "start": start,
-            "end": start + timedelta(hours=4),
-            "active": start == current_start,
-            "label": start.strftime("%m/%d %H:%M"),
-            "open": o,
-            "high": h,
-            "low": l,
-            "close": c,
-            "change": change,
-            "rsi": (
-                float(rsi)
-                if pd.notna(rsi)
-                else None
-            )
-        })
 
     if not periods:
         return []
@@ -2024,9 +2055,11 @@ def update_okx_btc():
     if price is None:
         return
 
-    d4h = okx_candles("4H", 200)
+    timeframe = CANDLE_PATTERN_TIMEFRAME
 
-    if d4h.empty:
+    df = get_okx_btc_timeframe(timeframe)
+
+    if df.empty:
 
         latest_btc_daily_periods = []
         latest_btc_daily_change = None
@@ -2034,33 +2067,40 @@ def update_okx_btc():
 
         return
 
-    latest_btc_daily_periods = (
-        build_okx_kst_daily_periods(d4h, price)
+    df = update_current_candle(
+        df,
+        get_candle_start(datetime.now(KST), timeframe),
+        price
     )
 
-    if latest_btc_daily_periods:
+    periods = build_timeframe_periods(
+        df,
+        timeframe,
+        price
+    )
 
-        latest_btc_daily_change = (
-            latest_btc_daily_periods[-1].get("change")
-        )
+    latest_btc_daily_periods = periods
 
+    if periods:
+        latest_btc_daily_change = periods[-1].get("change")
     else:
-
         latest_btc_daily_change = None
 
     latest_btc_last_three_patterns = (
         analyze_okx_btc_candles(
-            d4h,
+            df,
+            timeframe,
             price
         )
     )
 
     log.info(
-        "BTC OKX | 가격=%s | 일일변동률=%s | "
-        "최근 6개 4시간봉 캔들 패턴 및 RSI(%s) 분석 완료",
+        "BTC OKX | 가격=%s | 시간봉=%s | "
+        "KST 캔들 기준=%s | 변동률=%s",
         price,
-        latest_btc_daily_change,
-        RSI_PERIOD
+        get_timeframe_label(timeframe),
+        get_candle_start(datetime.now(KST), timeframe),
+        latest_btc_daily_change
     )
 
 
@@ -2493,8 +2533,7 @@ def current_pattern_html(pattern, candle=None):
 
 
 # =========================================================
-# 최근 6개 봉 표시 + 날짜/시간 두 줄
-# 패턴 / 변동률 / RSI 4행 고정
+# 최근 6개 봉 표시
 # =========================================================
 
 def last_three_pattern_html(row):
@@ -2569,11 +2608,8 @@ def last_three_pattern_html(row):
             item
         )
 
-        # 캔들별 시가 대비 종가 변동률
-        change_value = item.get("change")
-
         change_display = candle_change_html(
-            change_value
+            item.get("change")
         )
 
         rsi_value = item.get("rsi")
@@ -2725,6 +2761,10 @@ def btc_html():
         btc_row
     )
 
+    timeframe_label = get_timeframe_label(
+        CANDLE_PATTERN_TIMEFRAME
+    )
+
     return f"""
     <section class="btc-panel">
 
@@ -2741,7 +2781,7 @@ def btc_html():
             </div>
 
             <span class="update-time">
-                KST 09:00 기준 · {kst()}
+                KST 기준 · {kst()}
             </span>
 
         </div>
@@ -2761,7 +2801,7 @@ def btc_html():
         <div class="btc-candle-section">
 
             <div class="btc-candle-heading">
-                BTC 최근 6개 봉 · 4시간 · RSI({RSI_PERIOD})
+                BTC 최근 6개 봉 · {timeframe_label} · RSI({RSI_PERIOD})
                 <span class="rsi-condition-label">
                     70 이상 녹색 · 30 이하 적색
                 </span>
@@ -3002,1393 +3042,1010 @@ def card(row, kind):
 
 
 # =========================================================
-# CSS - 컴팩트 트레이딩 터미널
+# CSS
 # =========================================================
 
 CSS = """
 :root {
     color-scheme: dark;
-
-    --bg: #080d13;
-    --panel: #101820;
-    --panel2: #131e28;
-    --panel3: #0d151d;
-    --line: #263542;
-    --line-soft: #1d2a35;
-
-    --text: #e5edf4;
-    --muted: #8495a5;
-
-    --green: #38d996;
-    --green-soft: rgba(56,217,150,.10);
-
-    --red: #ff6575;
-    --red-soft: rgba(255,101,117,.10);
-
-    --yellow: #e8c56e;
-
-    --fs-main: 17px;
-    --fs-section: 13px;
-    --fs-coin: 14px;
-    --fs-value: 12px;
-    --fs-content: 11px;
-    --fs-small: 10px;
-    --fs-tiny: 9px;
+    --bg:#080d13;
+    --panel:#101820;
+    --panel2:#131e28;
+    --panel3:#0d151d;
+    --line:#263542;
+    --line-soft:#1d2a35;
+    --text:#e5edf4;
+    --muted:#8495a5;
+    --green:#38d996;
+    --green-soft:rgba(56,217,150,.10);
+    --red:#ff6575;
+    --red-soft:rgba(255,101,117,.10);
+    --yellow:#e8c56e;
+    --fs-main:17px;
+    --fs-section:13px;
+    --fs-coin:14px;
+    --fs-value:12px;
+    --fs-content:11px;
+    --fs-small:10px;
+    --fs-tiny:9px;
 }
 
-* {
-    box-sizing: border-box;
-}
+* { box-sizing:border-box; }
 
 html {
-    min-height: 100%;
-    background: var(--bg);
-    -webkit-text-size-adjust: 100%;
+    min-height:100%;
+    background:var(--bg);
+    -webkit-text-size-adjust:100%;
 }
 
 body {
-    width: 100%;
-    max-width: 1000px;
-    min-height: 100vh;
-    margin: 0 auto;
-    padding: 12px;
-    background: var(--bg);
-    color: var(--text);
-
-    font-family:
-        -apple-system,
-        BlinkMacSystemFont,
-        "Noto Sans KR",
-        "Malgun Gothic",
-        Arial,
-        sans-serif;
-
-    font-size: var(--fs-content);
-    line-height: 1.4;
-    letter-spacing: -.2px;
+    width:100%;
+    max-width:1000px;
+    min-height:100vh;
+    margin:0 auto;
+    padding:12px;
+    background:var(--bg);
+    color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Noto Sans KR","Malgun Gothic",Arial,sans-serif;
+    font-size:var(--fs-content);
+    line-height:1.4;
+    letter-spacing:-.2px;
 }
 
 h1 {
-    margin: 2px 0 11px;
-    padding: 0 2px 10px;
-
-    font-size: var(--fs-main);
-    font-weight: 900;
-    letter-spacing: -.5px;
-
-    color: #f2f6fa;
-    border-bottom: 1px solid var(--line);
+    margin:2px 0 11px;
+    padding:0 2px 10px;
+    font-size:var(--fs-main);
+    font-weight:900;
+    letter-spacing:-.5px;
+    color:#f2f6fa;
+    border-bottom:1px solid var(--line);
 }
 
-section {
-    margin-bottom: 11px;
-}
+section { margin-bottom:11px; }
 
-.up {
-    color: var(--green) !important;
-    font-weight: 800;
-}
-
-.down {
-    color: var(--red) !important;
-    font-weight: 800;
-}
-
-.zero {
-    color: #8795a2;
-    font-weight: 700;
-}
-
-
-/* =====================================================
-   공통 패턴
-===================================================== */
+.up { color:var(--green)!important; font-weight:800; }
+.down { color:var(--red)!important; font-weight:800; }
+.zero { color:#8795a2; font-weight:700; }
 
 .pattern-box {
-    min-width: 45px;
-
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-
-    line-height: 1.15;
+    min-width:45px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    line-height:1.15;
 }
 
 .pattern-name {
-    display: block;
-    margin-top: 3px;
-
-    color: var(--yellow);
-    font-size: var(--fs-tiny);
-    font-weight: 800;
-
-    white-space: nowrap;
+    display:block;
+    margin-top:3px;
+    color:var(--yellow);
+    font-size:var(--fs-tiny);
+    font-weight:800;
+    white-space:nowrap;
 }
 
-.bullish-pattern .pattern-name {
-    color: var(--green);
-}
-
-.bearish-pattern .pattern-name {
-    color: var(--red);
-}
-
-.neutral-pattern .pattern-name {
-    color: var(--yellow);
-}
-
-.pattern-none .pattern-name {
-    color: var(--muted);
-}
+.bullish-pattern .pattern-name { color:var(--green); }
+.bearish-pattern .pattern-name { color:var(--red); }
+.neutral-pattern .pattern-name { color:var(--yellow); }
+.pattern-none .pattern-name { color:var(--muted); }
 
 .pattern-multi {
-    width: 100%;
-
-    display: flex;
-    align-items: flex-start;
-    justify-content: center;
-    flex-wrap: wrap;
-
-    gap: 5px;
+    width:100%;
+    display:flex;
+    align-items:flex-start;
+    justify-content:center;
+    flex-wrap:wrap;
+    gap:5px;
 }
 
-.pattern-multi .pattern-box {
-    min-width: 43px;
-}
-
-
-/* =====================================================
-   캔들 그림
-===================================================== */
+.pattern-multi .pattern-box { min-width:43px; }
 
 .candle-pattern-visual {
-    height: 28px;
-    min-width: 36px;
-
-    display: flex;
-    align-items: center;
-    justify-content: center;
-
-    gap: 4px;
-    position: relative;
+    height:28px;
+    min-width:36px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:4px;
+    position:relative;
 }
 
 .mini-candle {
-    width: 8px;
-    height: 27px;
-
-    position: relative;
-
-    display: flex;
-    justify-content: center;
-    align-items: center;
+    width:8px;
+    height:27px;
+    position:relative;
+    display:flex;
+    justify-content:center;
+    align-items:center;
 }
 
 .mini-candle .wick {
-    position: absolute;
-
-    width: 1px;
-    height: 27px;
-
-    left: 50%;
-    top: 0;
-
-    transform: translateX(-50%);
-    background: #82909d;
+    position:absolute;
+    width:1px;
+    height:27px;
+    left:50%;
+    top:0;
+    transform:translateX(-50%);
+    background:#82909d;
 }
 
 .mini-candle .body {
-    position: relative;
-    z-index: 2;
-
-    width: 8px;
-    height: 12px;
-
-    border-radius: 1px;
+    position:relative;
+    z-index:2;
+    width:8px;
+    height:12px;
+    border-radius:1px;
 }
 
-.mini-candle.bearish .body {
-    background: var(--red);
-    height: 15px;
-}
-
-.mini-candle.bullish .body {
-    background: var(--green);
-    height: 19px;
-}
+.mini-candle.bearish .body { background:var(--red); height:15px; }
+.mini-candle.bullish .body { background:var(--green); height:19px; }
 
 .mini-candle.bullish.large .body,
 .mini-candle.bearish.large .body {
-    height: 23px;
-    width: 10px;
+    height:23px;
+    width:10px;
 }
 
 .mini-candle.bullish-doji .body {
-    background: var(--green);
-    height: 3px;
-    width: 10px;
+    background:var(--green);
+    height:3px;
+    width:10px;
 }
 
 .mini-candle.bearish-doji .body {
-    background: var(--red);
-    height: 3px;
-    width: 10px;
+    background:var(--red);
+    height:3px;
+    width:10px;
 }
 
 .mini-candle.piercing-candle .body {
-    background: var(--green);
-    height: 18px;
+    background:var(--green);
+    height:18px;
 }
 
 .mini-candle.piercing-bearish .body {
-    background: var(--red);
-    height: 18px;
+    background:var(--red);
+    height:18px;
 }
 
 .mini-candle.bullish.very-large .body {
-    background: var(--green);
-    height: 24px;
-    width: 10px;
+    background:var(--green);
+    height:24px;
+    width:10px;
 }
 
 .mini-candle.bearish.very-large .body {
-    background: var(--red);
-    height: 24px;
-    width: 10px;
+    background:var(--red);
+    height:24px;
+    width:10px;
 }
 
 .mini-candle.hammer .wick,
 .mini-candle.inverted-hammer .wick {
-    height: 27px;
-    top: 0;
+    height:27px;
+    top:0;
 }
 
 .mini-candle.hammer .body {
-    position: absolute;
-    top: 1px;
-    height: 7px;
-    width: 9px;
+    position:absolute;
+    top:1px;
+    height:7px;
+    width:9px;
 }
 
 .mini-candle.bullish.hammer .body,
 .mini-candle.bullish.inverted-hammer .body {
-    background: var(--green);
+    background:var(--green);
 }
 
 .mini-candle.bearish.hammer .body,
 .mini-candle.bearish.inverted-hammer .body {
-    background: var(--red);
+    background:var(--red);
 }
 
 .mini-candle.inverted-hammer .body {
-    position: absolute;
-    bottom: 1px;
-    height: 7px;
-    width: 9px;
+    position:absolute;
+    bottom:1px;
+    height:7px;
+    width:9px;
 }
 
 .candle-pattern-visual.empty {
-    color: var(--muted);
-    font-size: var(--fs-value);
+    color:var(--muted);
+    font-size:var(--fs-value);
 }
 
-
-/* =====================================================
-   RSI 표시
-===================================================== */
-
 .rsi-condition-label {
-    display: inline-block;
-    margin-left: 5px;
-
-    color: var(--yellow);
-    font-size: var(--fs-tiny);
-    font-weight: 800;
+    display:inline-block;
+    margin-left:5px;
+    color:var(--yellow);
+    font-size:var(--fs-tiny);
+    font-weight:800;
 }
 
 .rsi-value {
-    width: 100%;
-    min-height: 18px;
-
-    display: flex;
-    align-items: center;
-    justify-content: center;
-
-    margin: 0;
-    padding: 2px 2px;
-
-    color: #aab9c6;
-    background: #1b2935;
-
-    border: 1px solid #344451;
-    border-radius: 4px;
-
-    font-size: 9px;
-    font-weight: 800;
-
-    white-space: nowrap;
+    width:100%;
+    min-height:18px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    margin:0;
+    padding:2px;
+    color:#aab9c6;
+    background:#1b2935;
+    border:1px solid #344451;
+    border-radius:4px;
+    font-size:9px;
+    font-weight:800;
+    white-space:nowrap;
 }
 
 .rsi-value.rsi-high {
-    color: #38e6a0;
-    background: rgba(56,217,150,.15);
-    border: 1px solid #38d996;
-
-    box-shadow: 0 0 6px rgba(56,217,150,.18);
+    color:#38e6a0;
+    background:rgba(56,217,150,.15);
+    border:1px solid #38d996;
+    box-shadow:0 0 6px rgba(56,217,150,.18);
 }
 
 .rsi-value.rsi-low {
-    color: #ff7584;
-    background: rgba(255,101,117,.15);
-    border: 1px solid #ff6575;
-
-    box-shadow: 0 0 6px rgba(255,101,117,.18);
+    color:#ff7584;
+    background:rgba(255,101,117,.15);
+    border:1px solid #ff6575;
+    box-shadow:0 0 6px rgba(255,101,117,.18);
 }
 
 .rsi-value.rsi-unavailable {
-    color: #71808c;
-    background: #141e27;
-    border-color: #26343f;
+    color:#71808c;
+    background:#141e27;
+    border-color:#26343f;
 }
 
 .three-candle-item.rsi-highlight-high {
-    background: rgba(56,217,150,.07);
-    border: 1px solid rgba(56,217,150,.65);
-
-    box-shadow:
-        inset 0 0 0 1px rgba(56,217,150,.08);
+    background:rgba(56,217,150,.07);
+    border:1px solid rgba(56,217,150,.65);
+    box-shadow:inset 0 0 0 1px rgba(56,217,150,.08);
 }
 
 .three-candle-item.rsi-highlight-low {
-    background: rgba(255,101,117,.07);
-    border: 1px solid rgba(255,101,117,.65);
-
-    box-shadow:
-        inset 0 0 0 1px rgba(255,101,117,.08);
+    background:rgba(255,101,117,.07);
+    border:1px solid rgba(255,101,117,.65);
+    box-shadow:inset 0 0 0 1px rgba(255,101,117,.08);
 }
 
-.three-candle-item.rsi-highlight-high .candle-date {
-    color: var(--green);
-}
-
-.three-candle-item.rsi-highlight-low .candle-date {
-    color: var(--red);
-}
-
-
-/* =====================================================
-   캔들별 변동률 표시
-===================================================== */
+.three-candle-item.rsi-highlight-high .candle-date { color:var(--green); }
+.three-candle-item.rsi-highlight-low .candle-date { color:var(--red); }
 
 .candle-change {
-    width: 100%;
-    height: 17px;
-    min-height: 17px;
-
-    display: flex;
-    align-items: center;
-    justify-content: center;
-
-    font-size: 9px;
-    font-weight: 900;
-    line-height: 1;
-
-    white-space: nowrap;
+    width:100%;
+    height:17px;
+    min-height:17px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:9px;
+    font-weight:900;
+    line-height:1;
+    white-space:nowrap;
 }
 
-.candle-change-up {
-    color: var(--green);
-}
-
-.candle-change-down {
-    color: var(--red);
-}
-
-.candle-change-zero {
-    color: #aab9c6;
-}
-
-.candle-change-none {
-    color: #71808c;
-}
-
-
-/* =====================================================
-   최근 6개 봉
-===================================================== */
+.candle-change-up { color:var(--green); }
+.candle-change-down { color:var(--red); }
+.candle-change-zero { color:#aab9c6; }
+.candle-change-none { color:#71808c; }
 
 .three-candle-section,
 .top-three-candle-section {
-    padding: 8px 9px;
-    background: var(--panel3);
-    border-top: 1px solid var(--line-soft);
+    padding:8px 9px;
+    background:var(--panel3);
+    border-top:1px solid var(--line-soft);
 }
 
 .three-candle-heading {
-    color: #9eafbe;
-    font-size: var(--fs-small);
-    font-weight: 800;
-
-    text-align: left;
-    margin-bottom: 7px;
+    color:#9eafbe;
+    font-size:var(--fs-small);
+    font-weight:800;
+    text-align:left;
+    margin-bottom:7px;
 }
 
 .three-candle-list {
-    display: grid;
-    grid-template-columns: repeat(6, minmax(0, 1fr));
-
-    width: 100%;
-    gap: 5px;
+    display:grid;
+    grid-template-columns:repeat(6,minmax(0,1fr));
+    width:100%;
+    gap:5px;
 }
-
-/*
-    캔들 카드 GRID 4행 고정
-
-    1행: 날짜 / 시간
-    2행: 캔들 패턴
-    3행: 캔들 변동률
-    4행: RSI
-*/
 
 .three-candle-item {
-    min-width: 0;
-    height: 120px;
-    min-height: 120px;
-
-    display: grid;
-
-    grid-template-rows:
-        27px
-        minmax(0, 1fr)
-        17px
-        18px;
-
-    row-gap: 3px;
-
-    align-items: stretch;
-
-    padding: 5px 2px;
-
-    background: #121e28;
-    border: 1px solid #263744;
-    border-radius: 5px;
-
-    overflow: hidden;
+    min-width:0;
+    height:120px;
+    min-height:120px;
+    display:grid;
+    grid-template-rows:27px minmax(0,1fr) 17px 18px;
+    row-gap:3px;
+    align-items:stretch;
+    padding:5px 2px;
+    background:#121e28;
+    border:1px solid #263744;
+    border-radius:5px;
+    overflow:hidden;
 }
 
-/* 날짜 / 시간 영역 */
-
 .three-candle-label {
-    width: 100%;
-    height: 27px;
-    min-height: 0;
-
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-
-    margin: 0;
-    padding: 0;
-
-    line-height: 1.25;
-    text-align: center;
-    white-space: nowrap;
-
-    overflow: hidden;
+    width:100%;
+    height:27px;
+    min-height:0;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    margin:0;
+    padding:0;
+    line-height:1.25;
+    text-align:center;
+    white-space:nowrap;
+    overflow:hidden;
 }
 
 .candle-date {
-    color: #c2cfda;
-    font-size: var(--fs-tiny);
-    font-weight: 800;
+    color:#c2cfda;
+    font-size:var(--fs-tiny);
+    font-weight:800;
 }
 
 .candle-time {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 2px;
-
-    margin-top: 2px;
-
-    color: #8295a5;
-    font-size: var(--fs-tiny);
-    font-weight: 700;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:2px;
+    margin-top:2px;
+    color:#8295a5;
+    font-size:var(--fs-tiny);
+    font-weight:700;
 }
 
 .candle-live {
-    display: inline-block;
-
-    color: var(--yellow);
-    font-size: 7px;
-    font-weight: 800;
+    display:inline-block;
+    color:var(--yellow);
+    font-size:7px;
+    font-weight:800;
 }
 
-/* 패턴 영역 */
-
 .three-candle-pattern {
-    width: 100%;
-    height: 100%;
-    min-width: 0;
-    min-height: 0;
-
-    display: flex;
-    align-items: center;
-    justify-content: center;
-
-    margin: 0;
-    padding: 0;
-
-    overflow: hidden;
+    width:100%;
+    height:100%;
+    min-width:0;
+    min-height:0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    margin:0;
+    padding:0;
+    overflow:hidden;
 }
 
 .three-candle-pattern .pattern-multi {
-    width: 100%;
-    max-width: 100%;
-    max-height: 100%;
-    min-height: 0;
-
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: center;
-
-    gap: 2px;
-
-    overflow: hidden;
+    width:100%;
+    max-width:100%;
+    max-height:100%;
+    min-height:0;
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    justify-content:center;
+    gap:2px;
+    overflow:hidden;
 }
 
 .three-candle-pattern .pattern-box {
-    min-width: 0;
-    max-width: 100%;
-
-    flex: 0 1 auto;
+    min-width:0;
+    max-width:100%;
+    flex:0 1 auto;
 }
 
 .three-candle-pattern .pattern-name {
-    font-size: 7px;
-    line-height: 1.15;
-
-    white-space: normal;
-    overflow-wrap: anywhere;
-    text-align: center;
+    font-size:7px;
+    line-height:1.15;
+    white-space:normal;
+    overflow-wrap:anywhere;
+    text-align:center;
 }
 
-.three-candle-pattern .pattern-none {
-    min-height: 28px;
-}
-
-/* 변동률 영역 */
+.three-candle-pattern .pattern-none { min-height:28px; }
 
 .three-candle-change {
-    width: 100%;
-    height: 17px;
-    min-width: 0;
-    min-height: 0;
-
-    display: flex;
-    align-items: center;
-    justify-content: center;
-
-    margin: 0;
-    padding: 0;
-
-    overflow: hidden;
+    width:100%;
+    height:17px;
+    min-width:0;
+    min-height:0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    margin:0;
+    padding:0;
+    overflow:hidden;
 }
 
 .three-candle-change .candle-change {
-    width: 100%;
-    height: 17px;
-    min-height: 17px;
-
-    margin: 0;
-    padding: 0;
+    width:100%;
+    height:17px;
+    min-height:17px;
+    margin:0;
+    padding:0;
 }
 
-/* RSI 영역: GRID 네 번째 행에 고정 */
-
 .three-candle-rsi {
-    width: 100%;
-    height: 18px;
-    min-width: 0;
-    min-height: 0;
-
-    display: flex;
-    align-items: center;
-    justify-content: center;
-
-    margin: 0;
-    padding: 0;
-
-    overflow: hidden;
+    width:100%;
+    height:18px;
+    min-width:0;
+    min-height:0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    margin:0;
+    padding:0;
+    overflow:hidden;
 }
 
 .three-candle-rsi .rsi-value {
-    width: 100%;
-    height: 18px;
-    min-height: 18px;
-
-    margin: 0;
-    padding: 1px 2px;
-
-    line-height: 1;
+    width:100%;
+    height:18px;
+    min-height:18px;
+    margin:0;
+    padding:1px 2px;
+    line-height:1;
 }
-
-
-/* =====================================================
-   공통 배지
-===================================================== */
 
 .signal-type-list,
 .pattern-badge-list {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 5px;
+    display:flex;
+    align-items:center;
+    flex-wrap:wrap;
+    gap:5px;
 }
 
 .signal-type-badge,
 .bearish-type-badge,
 .consecutive-bullish,
 .consecutive-bearish {
-    display: inline-flex;
-    align-items: center;
-
-    padding: 3px 6px;
-    border-radius: 4px;
-
-    font-size: var(--fs-tiny) !important;
-    font-weight: 800;
-
-    white-space: nowrap;
+    display:inline-flex;
+    align-items:center;
+    padding:3px 6px;
+    border-radius:4px;
+    font-size:var(--fs-tiny)!important;
+    font-weight:800;
+    white-space:nowrap;
 }
 
-.signal-type-badge {
-    color: var(--green) !important;
-    background: var(--green-soft);
-    border: 1px solid rgba(56,217,150,.2);
-}
-
-.bearish-type-badge {
-    color: var(--red) !important;
-    background: var(--red-soft);
-    border: 1px solid rgba(255,101,117,.2);
-}
-
+.signal-type-badge,
 .consecutive-bullish {
-    color: var(--green) !important;
-    background: var(--green-soft);
-    border: 1px solid rgba(56,217,150,.2);
+    color:var(--green)!important;
+    background:var(--green-soft);
+    border:1px solid rgba(56,217,150,.2);
 }
 
+.bearish-type-badge,
 .consecutive-bearish {
-    color: var(--red) !important;
-    background: var(--red-soft);
-    border: 1px solid rgba(255,101,117,.2);
+    color:var(--red)!important;
+    background:var(--red-soft);
+    border:1px solid rgba(255,101,117,.2);
 }
-
-
-/* =====================================================
-   패널 헤더
-===================================================== */
 
 .panel-heading {
-    min-height: 39px;
-    padding: 0 10px;
-
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-
-    gap: 8px;
-
-    background: #121c26;
-    border-bottom: 1px solid var(--line);
+    min-height:39px;
+    padding:0 10px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:8px;
+    background:#121c26;
+    border-bottom:1px solid var(--line);
 }
 
 .heading-title {
-    display: flex;
-    align-items: center;
-    gap: 7px;
-
-    font-size: var(--fs-section);
-    font-weight: 900;
+    display:flex;
+    align-items:center;
+    gap:7px;
+    font-size:var(--fs-section);
+    font-weight:900;
 }
 
 .heading-mark {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    display: inline-block;
+    width:6px;
+    height:6px;
+    border-radius:50%;
+    display:inline-block;
 }
 
 .signal-mark {
-    background: var(--green);
-    box-shadow: 0 0 7px rgba(56,217,150,.6);
+    background:var(--green);
+    box-shadow:0 0 7px rgba(56,217,150,.6);
 }
 
 .heading-count {
-    min-width: 18px;
-    padding: 2px 5px;
-
-    text-align: center;
-
-    color: var(--green);
-    background: var(--green-soft);
-    border-radius: 4px;
-
-    font-size: var(--fs-tiny);
+    min-width:18px;
+    padding:2px 5px;
+    text-align:center;
+    color:var(--green);
+    background:var(--green-soft);
+    border-radius:4px;
+    font-size:var(--fs-tiny);
 }
 
 .update-time {
-    color: var(--muted);
-    font-size: var(--fs-tiny);
-    white-space: nowrap;
+    color:var(--muted);
+    font-size:var(--fs-tiny);
+    white-space:nowrap;
 }
 
-
-/* =====================================================
-   BTC 시황
-===================================================== */
-
 .btc-panel {
-    overflow: hidden;
-
-    padding: 10px 12px;
-
-    background: linear-gradient(
-        110deg,
-        #152432,
-        #0d151e
-    );
-
-    border: 1px solid #304252;
-    border-radius: 7px;
+    overflow:hidden;
+    padding:10px 12px;
+    background:linear-gradient(110deg,#152432,#0d151e);
+    border:1px solid #304252;
+    border-radius:7px;
 }
 
 .btc-top {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-
-    gap: 6px;
-    margin-bottom: 7px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:6px;
+    margin-bottom:7px;
 }
 
 .btc-label {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-
-    color: #e2eaf1;
-    font-size: var(--fs-section);
-    font-weight: 900;
+    display:flex;
+    align-items:center;
+    gap:6px;
+    color:#e2eaf1;
+    font-size:var(--fs-section);
+    font-weight:900;
 }
 
 .status-dot {
-    width: 6px;
-    height: 6px;
-
-    display: inline-block;
-    border-radius: 50%;
-
-    background: var(--green);
+    width:6px;
+    height:6px;
+    display:inline-block;
+    border-radius:50%;
+    background:var(--green);
 }
 
 .market-tag {
-    padding: 2px 5px;
-
-    color: #9fb0bf;
-    background: #1c2c39;
-
-    border-radius: 3px;
-    font-size: 9px;
+    padding:2px 5px;
+    color:#9fb0bf;
+    background:#1c2c39;
+    border-radius:3px;
+    font-size:9px;
 }
 
 .btc-main {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-
-    gap: 10px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:10px;
 }
 
 .btc-price {
-    color: #f1f5f8;
-    font-size: 21px;
-    font-weight: 900;
-    letter-spacing: -.5px;
+    color:#f1f5f8;
+    font-size:21px;
+    font-weight:900;
+    letter-spacing:-.5px;
 }
 
-
-/* =====================================================
-   BTC 최근 6개 캔들
-===================================================== */
-
 .btc-candle-section {
-    margin-top: 10px;
-    padding-top: 9px;
-    border-top: 1px solid #304252;
+    margin-top:10px;
+    padding-top:9px;
+    border-top:1px solid #304252;
 }
 
 .btc-candle-heading {
-    color: #aab9c6;
-    font-size: var(--fs-small);
-    font-weight: 800;
-    margin-bottom: 7px;
+    color:#aab9c6;
+    font-size:var(--fs-small);
+    font-weight:800;
+    margin-bottom:7px;
 }
 
 .btc-candle-section .three-candle-item {
-    background: #101d28;
-    border-color: #304252;
+    background:#101d28;
+    border-color:#304252;
 }
 
 .btc-candle-section .three-candle-label {
-    color: #b8c6d2;
+    color:#b8c6d2;
 }
 
-
-/* =====================================================
-   SIGNAL 패널
-===================================================== */
-
 .signal-panel {
-    overflow: hidden;
-
-    background: var(--panel);
-    border: 1px solid #293844;
-    border-radius: 7px;
+    overflow:hidden;
+    background:var(--panel);
+    border:1px solid #293844;
+    border-radius:7px;
 }
 
 .signal-condition {
-    display: flex;
-    align-items: center;
-
-    gap: 6px;
-    padding: 7px 9px;
-
-    overflow-x: auto;
-    white-space: nowrap;
-
-    background: #111922;
-    border-bottom: 1px solid var(--line-soft);
-
-    scrollbar-width: none;
+    display:flex;
+    align-items:center;
+    gap:6px;
+    padding:7px 9px;
+    overflow-x:auto;
+    white-space:nowrap;
+    background:#111922;
+    border-bottom:1px solid var(--line-soft);
+    scrollbar-width:none;
 }
 
-.signal-condition::-webkit-scrollbar {
-    display: none;
-}
+.signal-condition::-webkit-scrollbar { display:none; }
 
 .signal-condition span {
-    flex: 0 0 auto;
-
-    color: #aab8c4;
-    font-size: var(--fs-tiny);
-    font-weight: 700;
-
-    padding-right: 7px;
-    border-right: 1px solid #35434e;
+    flex:0 0 auto;
+    color:#aab8c4;
+    font-size:var(--fs-tiny);
+    font-weight:700;
+    padding-right:7px;
+    border-right:1px solid #35434e;
 }
 
-.signal-condition span:last-child {
-    border-right: 0;
-}
+.signal-condition span:last-child { border-right:0; }
 
-.signal-list {
-    width: 100%;
-}
+.signal-list { width:100%; }
 
 .signal-card {
-    display: flex;
-    flex-direction: column;
-
-    min-height: 0;
-
-    background: #101820;
-    border-bottom: 1px solid #26343f;
+    display:flex;
+    flex-direction:column;
+    min-height:0;
+    background:#101820;
+    border-bottom:1px solid #26343f;
 }
 
-.signal-card:last-child {
-    border-bottom: 0;
-}
-
-
-/* SIGNAL 상단 */
+.signal-card:last-child { border-bottom:0; }
 
 .signal-card-top {
-    min-height: 39px;
-    padding: 6px 9px;
-
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-
-    gap: 5px;
-
-    background: #121c25;
-    border-bottom: 1px solid #273541;
+    min-height:39px;
+    padding:6px 9px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    flex-wrap:wrap;
+    gap:5px;
+    background:#121c25;
+    border-bottom:1px solid #273541;
 }
 
 .signal-identity {
-    display: flex;
-    align-items: center;
-    gap: 8px;
+    display:flex;
+    align-items:center;
+    gap:8px;
 }
 
 .signal-rank {
-    color: var(--yellow);
-    font-size: var(--fs-small);
-    font-weight: 800;
+    color:var(--yellow);
+    font-size:var(--fs-small);
+    font-weight:800;
 }
 
 .signal-coin-name {
-    color: #e9f0f5;
-    font-size: var(--fs-coin);
-    font-weight: 900;
+    color:#e9f0f5;
+    font-size:var(--fs-coin);
+    font-weight:900;
 }
 
-
-/* SIGNAL 데이터 */
-
 .signal-data-grid {
-    display: grid;
-    grid-template-columns: 1.1fr 1fr .9fr;
-
-    width: 100%;
+    display:grid;
+    grid-template-columns:1.1fr 1fr .9fr;
+    width:100%;
 }
 
 .signal-data-grid > div {
-    min-width: 0;
-    min-height: 48px;
-
-    padding: 6px 3px;
-
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-
-    text-align: center;
+    min-width:0;
+    min-height:48px;
+    padding:6px 3px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    text-align:center;
 }
 
 .signal-data-grid > div + div {
-    border-left: 1px solid #27343f;
+    border-left:1px solid #27343f;
 }
 
 .signal-data-grid span {
-    color: #8798a7;
-    font-size: var(--fs-tiny);
+    color:#8798a7;
+    font-size:var(--fs-tiny);
 }
 
 .signal-data-grid strong {
-    margin-top: 4px;
-
-    color: #e7edf2;
-    font-size: var(--fs-value);
-    font-weight: 800;
-    white-space: nowrap;
+    margin-top:4px;
+    color:#e7edf2;
+    font-size:var(--fs-value);
+    font-weight:800;
+    white-space:nowrap;
 }
-
-
-/* =====================================================
-   SIGNAL 없음
-===================================================== */
 
 .signal-empty {
-    min-height: 65px;
-
-    display: flex;
-    align-items: center;
-    justify-content: center;
-
-    color: #8c9ba8;
-    font-size: var(--fs-content);
-    font-weight: 700;
+    min-height:65px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    color:#8c9ba8;
+    font-size:var(--fs-content);
+    font-weight:700;
 }
 
-
-/* =====================================================
-   TOP 리스트
-===================================================== */
-
 .coin-card {
-    overflow: hidden;
-
-    background: var(--panel);
-    border: 1px solid #293844;
-    border-radius: 7px;
-
-    margin-top: 8px;
+    overflow:hidden;
+    background:var(--panel);
+    border:1px solid #293844;
+    border-radius:7px;
+    margin-top:8px;
 }
 
 .coin-head {
-    min-height: 39px;
-    padding: 6px 9px;
-
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-
-    gap: 5px;
-
-    background: #121c25;
-    border-bottom: 1px solid var(--line);
+    min-height:39px;
+    padding:6px 9px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    flex-wrap:wrap;
+    gap:5px;
+    background:#121c25;
+    border-bottom:1px solid var(--line);
 }
 
 .coin-title {
-    display: flex;
-    align-items: center;
-    gap: 8px;
+    display:flex;
+    align-items:center;
+    gap:8px;
 }
 
 .coin-title b {
-    color: #e9f0f5;
-    font-size: var(--fs-coin);
-    font-weight: 900;
+    color:#e9f0f5;
+    font-size:var(--fs-coin);
+    font-weight:900;
 }
 
 .rank {
-    color: var(--yellow);
-    font-size: var(--fs-small);
-    font-weight: 800;
+    color:var(--yellow);
+    font-size:var(--fs-small);
+    font-weight:800;
 }
 
 .market-summary {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    display:grid;
+    grid-template-columns:repeat(3,minmax(0,1fr));
 }
 
 .market-summary > div {
-    min-width: 0;
-    min-height: 49px;
-
-    padding: 6px 3px;
-
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-
-    text-align: center;
-    background: #101820;
+    min-width:0;
+    min-height:49px;
+    padding:6px 3px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    text-align:center;
+    background:#101820;
 }
 
 .market-summary > div + div {
-    border-left: 1px solid #26343f;
+    border-left:1px solid #26343f;
 }
 
 .market-summary span {
-    color: #8798a7;
-    font-size: var(--fs-tiny);
-    margin-bottom: 4px;
+    color:#8798a7;
+    font-size:var(--fs-tiny);
+    margin-bottom:4px;
 }
 
 .market-summary strong {
-    color: #e6edf2;
-    font-size: var(--fs-value);
-    font-weight: 800;
-    white-space: nowrap;
+    color:#e6edf2;
+    font-size:var(--fs-value);
+    font-weight:800;
+    white-space:nowrap;
 }
 
-
-/* =====================================================
-   PC
-===================================================== */
-
-@media (min-width: 900px) {
-
-    body {
-        padding: 16px;
-    }
-
-    .btc-price {
-        font-size: 23px;
-    }
-
+@media (min-width:900px) {
+    body { padding:16px; }
+    .btc-price { font-size:23px; }
     .three-candle-item {
-        height: 120px;
-        min-height: 120px;
+        height:120px;
+        min-height:120px;
     }
 }
 
-
-/* =====================================================
-   태블릿
-===================================================== */
-
-@media (max-width: 899px) {
-
-    body {
-        padding: 9px;
-    }
+@media (max-width:899px) {
+    body { padding:9px; }
 }
 
-
-/* =====================================================
-   모바일
-===================================================== */
-
-@media (max-width: 600px) {
+@media (max-width:600px) {
 
     :root {
-        --fs-main: 15px;
-        --fs-section: 12px;
-        --fs-coin: 13px;
-        --fs-value: 11px;
-        --fs-content: 10px;
-        --fs-small: 9px;
-        --fs-tiny: 8px;
+        --fs-main:15px;
+        --fs-section:12px;
+        --fs-coin:13px;
+        --fs-value:11px;
+        --fs-content:10px;
+        --fs-small:9px;
+        --fs-tiny:8px;
     }
 
-    body {
-        padding: 6px;
-    }
+    body { padding:6px; }
 
     h1 {
-        margin: 2px 1px 9px;
-        padding-bottom: 8px;
+        margin:2px 1px 9px;
+        padding-bottom:8px;
     }
 
-    section {
-        margin-bottom: 8px;
-    }
+    section { margin-bottom:8px; }
 
     .btc-panel {
-        padding: 9px 10px;
-        border-radius: 6px;
+        padding:9px 10px;
+        border-radius:6px;
     }
 
-    .btc-price {
-        font-size: 19px;
-    }
+    .btc-price { font-size:19px; }
 
     .panel-heading {
-        min-height: 36px;
-        padding: 0 8px;
+        min-height:36px;
+        padding:0 8px;
     }
 
     .signal-condition {
-        padding: 6px 7px;
-        gap: 5px;
+        padding:6px 7px;
+        gap:5px;
     }
 
     .signal-card-top {
-        min-height: 36px;
-        padding: 5px 7px;
+        min-height:36px;
+        padding:5px 7px;
     }
 
     .signal-data-grid > div {
-        min-height: 43px;
-        padding: 5px 2px;
+        min-height:43px;
+        padding:5px 2px;
     }
 
     .three-candle-section,
     .top-three-candle-section {
-        padding: 7px 6px;
+        padding:7px 6px;
     }
 
-    .three-candle-heading {
-        margin-bottom: 5px;
-    }
+    .three-candle-heading { margin-bottom:5px; }
 
     .three-candle-list {
-        grid-template-columns: repeat(6, minmax(0, 1fr));
-        gap: 3px;
+        grid-template-columns:repeat(6,minmax(0,1fr));
+        gap:3px;
     }
 
     .three-candle-item {
-        height: 116px;
-        min-height: 116px;
-
-        grid-template-rows:
-            25px
-            minmax(0, 1fr)
-            16px
-            17px;
-
-        row-gap: 3px;
-
-        padding: 5px 1px;
-        border-radius: 4px;
+        height:116px;
+        min-height:116px;
+        grid-template-rows:25px minmax(0,1fr) 16px 17px;
+        row-gap:3px;
+        padding:5px 1px;
+        border-radius:4px;
     }
 
     .three-candle-label {
-        height: 25px;
-        min-height: 0;
-        margin: 0;
+        height:25px;
+        min-height:0;
+        margin:0;
     }
 
-    .candle-date {
-        font-size: 7px;
-    }
+    .candle-date,
+    .candle-time { font-size:7px; }
 
-    .candle-time {
-        font-size: 7px;
-    }
-
-    .three-candle-pattern .pattern-box {
-        min-width: 0;
-    }
+    .three-candle-pattern .pattern-box { min-width:0; }
 
     .three-candle-pattern .pattern-name {
-        font-size: 7px;
-        white-space: normal;
-        text-align: center;
-        overflow-wrap: anywhere;
+        font-size:7px;
+        white-space:normal;
+        text-align:center;
+        overflow-wrap:anywhere;
     }
 
-    .candle-pattern-visual {
-        transform: scale(.75);
-    }
+    .candle-pattern-visual { transform:scale(.75); }
 
-    .pattern-multi {
-        gap: 2px;
-    }
-
-    .pattern-multi .pattern-box {
-        min-width: 0;
-    }
+    .pattern-multi { gap:2px; }
+    .pattern-multi .pattern-box { min-width:0; }
 
     .coin-card {
-        margin-top: 6px;
-        border-radius: 6px;
+        margin-top:6px;
+        border-radius:6px;
     }
 
     .coin-head {
-        min-height: 36px;
-        padding: 5px 7px;
+        min-height:36px;
+        padding:5px 7px;
     }
 
     .market-summary > div {
-        min-height: 44px;
-        padding: 5px 2px;
+        min-height:44px;
+        padding:5px 2px;
     }
 
-    .signal-empty {
-        min-height: 55px;
-    }
+    .signal-empty { min-height:55px; }
 
     .signal-type-list,
-    .pattern-badge-list {
-        gap: 3px;
-    }
+    .pattern-badge-list { gap:3px; }
 
     .signal-type-badge,
     .bearish-type-badge,
     .consecutive-bullish,
     .consecutive-bearish {
-        padding: 2px 4px;
+        padding:2px 4px;
     }
 
     .rsi-value {
-        height: 17px;
-        min-height: 17px;
-        font-size: 7px;
-        padding: 1px;
+        height:17px;
+        min-height:17px;
+        font-size:7px;
+        padding:1px;
     }
 
     .three-candle-rsi {
-        height: 17px;
-        min-height: 0;
+        height:17px;
+        min-height:0;
     }
 
-    .three-candle-change {
-        height: 16px;
-    }
+    .three-candle-change { height:16px; }
 
     .three-candle-change .candle-change {
-        height: 16px;
-        min-height: 16px;
-        font-size: 8px;
+        height:16px;
+        min-height:16px;
+        font-size:8px;
     }
 }
 
-
-/* =====================================================
-   작은 휴대폰
-===================================================== */
-
-@media (max-width: 380px) {
+@media (max-width:380px) {
 
     :root {
-        --fs-main: 14px;
-        --fs-section: 11px;
-        --fs-coin: 12px;
-        --fs-value: 10px;
-        --fs-content: 9px;
-        --fs-small: 8px;
-        --fs-tiny: 7px;
+        --fs-main:14px;
+        --fs-section:11px;
+        --fs-coin:12px;
+        --fs-value:10px;
+        --fs-content:9px;
+        --fs-small:8px;
+        --fs-tiny:7px;
     }
 
-    body {
-        padding: 5px;
-    }
+    body { padding:5px; }
 
-    .btc-price {
-        font-size: 17px;
-    }
-
-    .update-time {
-        font-size: 7px;
-    }
+    .btc-price { font-size:17px; }
+    .update-time { font-size:7px; }
 
     .three-candle-item {
-        height: 112px;
-        min-height: 112px;
-
-        grid-template-rows:
-            23px
-            minmax(0, 1fr)
-            15px
-            16px;
-
-        row-gap: 3px;
+        height:112px;
+        min-height:112px;
+        grid-template-rows:23px minmax(0,1fr) 15px 16px;
+        row-gap:3px;
     }
 
-    .three-candle-label {
-        height: 23px;
-    }
+    .three-candle-label { height:23px; }
 
     .candle-date,
-    .candle-time {
-        font-size: 6px;
-    }
+    .candle-time { font-size:6px; }
 
-    .three-candle-pattern .pattern-box {
-        min-width: 0;
-    }
+    .three-candle-pattern .pattern-box { min-width:0; }
+    .three-candle-pattern .pattern-name { font-size:6px; }
 
-    .three-candle-pattern .pattern-name {
-        font-size: 6px;
-    }
-
-    .signal-card-top {
-        gap: 4px;
-    }
+    .signal-card-top { gap:4px; }
 
     .rsi-value {
-        height: 16px;
-        min-height: 16px;
-        font-size: 6px;
+        height:16px;
+        min-height:16px;
+        font-size:6px;
     }
 
-    .three-candle-rsi {
-        height: 16px;
-    }
-
-    .three-candle-change {
-        height: 15px;
-    }
+    .three-candle-rsi { height:16px; }
+    .three-candle-change { height:15px; }
 
     .three-candle-change .candle-change {
-        height: 15px;
-        min-height: 15px;
-        font-size: 7px;
+        height:15px;
+        min-height:15px;
+        font-size:7px;
     }
 }
 """
@@ -4509,10 +4166,27 @@ def scheduler():
 def startup():
 
     log.info(
-        "START | BTC 가격 및 최근 6개 4시간봉 표시 | "
+        "START | BTC 가격 및 최근 6개 캔들 표시 | "
         "UPBIT TOP%s | 캔들패턴=%s",
         TOP_N,
         get_timeframe_label(CANDLE_PATTERN_TIMEFRAME)
+    )
+
+    log.info(
+        "BTC / SIGNAL / TOP 시간봉 통일: %s",
+        CANDLE_PATTERN_TIMEFRAME
+    )
+
+    log.info(
+        "4시간봉 KST 기준: 09, 13, 17, 21, 01, 05"
+    )
+
+    log.info(
+        "일봉 KST 기준: 09:00"
+    )
+
+    log.info(
+        "BTC OKX 데이터는 업비트 KST 캔들 경계로 재구성"
     )
 
     log.info(
@@ -4533,24 +4207,11 @@ def startup():
     )
 
     log.info(
-        "RSI 시간봉: 캔들 패턴 시간봉 설정 자동 연동 (%s)",
-        get_timeframe_label(CANDLE_PATTERN_TIMEFRAME)
-    )
-
-    log.info(
         "SIGNAL BTC 거래대금 비교 조건 사용 안 함"
     )
 
     log.info(
-        "SIGNAL 캔들 패턴 조건 사용 안 함"
-    )
-
-    log.info(
         "SIGNAL 정렬 기준: 당일 상승률 높은 순"
-    )
-
-    log.info(
-        "EMA 및 EMA 카운팅 기능 사용 안 함"
     )
 
     log.info(
@@ -4567,10 +4228,6 @@ def startup():
 
     log.info(
         "최근 6개 봉 중 RSI 70 이상 또는 30 이하이면 SIGNAL 포함"
-    )
-
-    log.info(
-        "RSI는 캔들 카드 하단에 고정 표시"
     )
 
     log.info(
@@ -4599,40 +4256,15 @@ def startup():
     )
 
     log.info(
-        "BTC OKX 4시간봉 최근 6개 캔들 패턴 및 RSI(%s) 표시",
-        RSI_PERIOD
-    )
-
-    log.info(
         "BTC RSI 70 이상 녹색, 30 이하 적색 강조"
     )
 
     log.info(
-        "BTC 캔들 패턴: 상승장악형, 하락장악형, "
-        "상승관통형, 하락관통형, "
-        "상승망치형, 상승역망치형, "
-        "하락망치형, 하락역망치형, "
-        "장대양봉, 장대음봉, 양수도지, 음수도지"
-    )
-
-    log.info(
-        "캔들 날짜와 시간 두 줄 표시 적용"
+        "캔들별 변동률: 해당 캔들 시가 대비 종가 기준"
     )
 
     log.info(
         "컴팩트 트레이딩 터미널 디자인 적용"
-    )
-
-    log.info(
-        "캔들 카드 날짜/패턴/변동률/RSI 4행 고정 레이아웃 적용"
-    )
-
-    log.info(
-        "BTC, SIGNAL, TOP 캔들 카드 동일 레이아웃 적용"
-    )
-
-    log.info(
-        "캔들별 변동률: 해당 캔들 시가 대비 종가 기준"
     )
 
     threading.Thread(
