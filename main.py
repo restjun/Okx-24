@@ -1113,7 +1113,8 @@ def analyze_previous_current_pattern(periods):
             "open": periods[-len(last_six) + i]["open"],
             "high": periods[-len(last_six) + i]["high"],
             "low": periods[-len(last_six) + i]["low"],
-            "close": periods[-len(last_six) + i]["close"]
+            "close": periods[-len(last_six) + i]["close"],
+            "change": periods[-len(last_six) + i].get("change")
         }
         for i, patterns in enumerate(last_six)
     ]
@@ -1374,6 +1375,7 @@ def analyze_signal_candles(market, price):
         recent_periods
     ):
         item["rsi"] = period.get("rsi")
+        item["change"] = period.get("change")
 
     current_signal = pattern_info[
         "current_bullish_pattern"
@@ -1999,6 +2001,7 @@ def analyze_okx_btc_candles(df, current_price=None):
         recent_periods
     ):
         item["rsi"] = period.get("rsi")
+        item["change"] = period.get("change")
 
     return result
 
@@ -2154,6 +2157,52 @@ def fmt_change(v):
         return f'<span class="down">▼ {v:.2f}%</span>'
 
     return '<span class="zero">0.00%</span>'
+
+
+# =========================================================
+# 캔들별 변동률 HTML
+# =========================================================
+
+def candle_change_html(value):
+
+    if value is None:
+        return (
+            '<div class="candle-change candle-change-none">'
+            '-'
+            '</div>'
+        )
+
+    try:
+        value = float(value)
+
+    except Exception:
+        return (
+            '<div class="candle-change candle-change-none">'
+            '-'
+            '</div>'
+        )
+
+    if value > 0:
+
+        return (
+            '<div class="candle-change candle-change-up">'
+            f'+{value:.2f}%'
+            '</div>'
+        )
+
+    if value < 0:
+
+        return (
+            '<div class="candle-change candle-change-down">'
+            f'{value:.2f}%'
+            '</div>'
+        )
+
+    return (
+        '<div class="candle-change candle-change-zero">'
+        '0.00%'
+        '</div>'
+    )
 
 
 # =========================================================
@@ -2444,7 +2493,8 @@ def current_pattern_html(pattern, candle=None):
 
 
 # =========================================================
-# 최근 6개 봉 표시 + 날짜/시간 두 줄 + RSI 하단 고정
+# 최근 6개 봉 표시 + 날짜/시간 두 줄
+# 패턴 / 변동률 / RSI 4행 고정
 # =========================================================
 
 def last_three_pattern_html(row):
@@ -2464,6 +2514,7 @@ def last_three_pattern_html(row):
             "high": None,
             "low": None,
             "close": None,
+            "change": None,
             "rsi": None
         })
 
@@ -2518,6 +2569,13 @@ def last_three_pattern_html(row):
             item
         )
 
+        # 캔들별 시가 대비 종가 변동률
+        change_value = item.get("change")
+
+        change_display = candle_change_html(
+            change_value
+        )
+
         rsi_value = item.get("rsi")
 
         try:
@@ -2559,6 +2617,10 @@ def last_three_pattern_html(row):
 
                 <div class="three-candle-pattern">
                     {candle_html}
+                </div>
+
+                <div class="three-candle-change">
+                    {change_display}
                 </div>
 
                 <div class="three-candle-rsi">
@@ -3316,6 +3378,43 @@ section {
 
 
 /* =====================================================
+   캔들별 변동률 표시
+===================================================== */
+
+.candle-change {
+    width: 100%;
+    height: 17px;
+    min-height: 17px;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    font-size: 9px;
+    font-weight: 900;
+    line-height: 1;
+
+    white-space: nowrap;
+}
+
+.candle-change-up {
+    color: var(--green);
+}
+
+.candle-change-down {
+    color: var(--red);
+}
+
+.candle-change-zero {
+    color: #aab9c6;
+}
+
+.candle-change-none {
+    color: #71808c;
+}
+
+
+/* =====================================================
    최근 6개 봉
 ===================================================== */
 
@@ -3344,15 +3443,12 @@ section {
 }
 
 /*
-    수정 핵심:
-    캔들 카드를 GRID 3행으로 고정한다.
+    캔들 카드 GRID 4행 고정
 
     1행: 날짜 / 시간
     2행: 캔들 패턴
-    3행: RSI
-
-    패턴 내용이 길어져도 RSI 행의 위치는
-    절대로 밀리지 않도록 한다.
+    3행: 캔들 변동률
+    4행: RSI
 */
 
 .three-candle-item {
@@ -3365,6 +3461,7 @@ section {
     grid-template-rows:
         27px
         minmax(0, 1fr)
+        17px
         18px;
 
     row-gap: 3px;
@@ -3483,7 +3580,34 @@ section {
     min-height: 28px;
 }
 
-/* RSI 영역: GRID 세 번째 행에 고정 */
+/* 변동률 영역 */
+
+.three-candle-change {
+    width: 100%;
+    height: 17px;
+    min-width: 0;
+    min-height: 0;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    margin: 0;
+    padding: 0;
+
+    overflow: hidden;
+}
+
+.three-candle-change .candle-change {
+    width: 100%;
+    height: 17px;
+    min-height: 17px;
+
+    margin: 0;
+    padding: 0;
+}
+
+/* RSI 영역: GRID 네 번째 행에 고정 */
 
 .three-candle-rsi {
     width: 100%;
@@ -4084,6 +4208,7 @@ section {
         grid-template-rows:
             25px
             minmax(0, 1fr)
+            16px
             17px;
 
         row-gap: 3px;
@@ -4171,6 +4296,16 @@ section {
         height: 17px;
         min-height: 0;
     }
+
+    .three-candle-change {
+        height: 16px;
+    }
+
+    .three-candle-change .candle-change {
+        height: 16px;
+        min-height: 16px;
+        font-size: 8px;
+    }
 }
 
 
@@ -4209,6 +4344,7 @@ section {
         grid-template-rows:
             23px
             minmax(0, 1fr)
+            15px
             16px;
 
         row-gap: 3px;
@@ -4243,6 +4379,16 @@ section {
 
     .three-candle-rsi {
         height: 16px;
+    }
+
+    .three-candle-change {
+        height: 15px;
+    }
+
+    .three-candle-change .candle-change {
+        height: 15px;
+        min-height: 15px;
+        font-size: 7px;
     }
 }
 """
@@ -4478,11 +4624,15 @@ def startup():
     )
 
     log.info(
-        "캔들 카드 날짜/패턴/RSI 3행 고정 레이아웃 적용"
+        "캔들 카드 날짜/패턴/변동률/RSI 4행 고정 레이아웃 적용"
     )
 
     log.info(
         "BTC, SIGNAL, TOP 캔들 카드 동일 레이아웃 적용"
+    )
+
+    log.info(
+        "캔들별 변동률: 해당 캔들 시가 대비 종가 기준"
     )
 
     threading.Thread(
