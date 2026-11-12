@@ -1,3 +1,4 @@
+
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
@@ -42,10 +43,8 @@ TOP_N = 10
 SHOW_TOP_LIST = "N"
 UPDATE_MINUTES = 1
 
-# SIGNAL 당일 변동률 기준
 DAILY_CHANGE_MIN = -100.0
 
-# BTC 거래대금 비교 조건 삭제
 USE_BTC_VOLUME_FILTER = "N"
 
 USE_UPBIT = "Y"
@@ -55,19 +54,14 @@ REQUEST_INTERVAL = 0.08
 RATE_LIMIT_WAIT = 3
 MAX_RETRIES = 20
 
-# SIGNAL 캔들 기준
-# RSI도 이 설정을 자동으로 따라감
 CANDLE_PATTERN_TIMEFRAME = "4h"
 
-# RSI 설정
 RSI_PERIOD = 14
 RSI_THRESHOLD = 70
 RSI_LOWER_THRESHOLD = 30
 
-# 최근 6개 캔들 중 RSI 조건 확인
 RSI_CHECK_CANDLES = 6
 
-# 최근 캔들 표시 개수
 DISPLAY_CANDLE_COUNT = 6
 
 CONSECUTIVE_CANDLE_MIN = 3
@@ -96,14 +90,12 @@ latest_upbit_markets = []
 
 latest_signal_data = []
 
-# 업비트 BTC 24시간 거래대금
 latest_upbit_btc_volume_24h = None
 
 latest_btc_okx_price = None
 latest_btc_daily_periods = []
 latest_btc_daily_change = None
 
-# BTC 최근 6개 캔들 패턴 및 RSI
 latest_btc_last_three_patterns = []
 
 
@@ -527,19 +519,16 @@ def calculate_rsi(close_series, period=14):
         100 / (1 + rs)
     )
 
-    # 상승만 있는 경우 RSI 100
     rsi = rsi.mask(
         (avg_loss == 0) & (avg_gain > 0),
         100
     )
 
-    # 가격 변동이 전혀 없는 경우 RSI 50
     rsi = rsi.mask(
         (avg_loss == 0) & (avg_gain == 0),
         50
     )
 
-    # 하락만 있는 경우 RSI 0
     rsi = rsi.mask(
         (avg_gain == 0) & (avg_loss > 0),
         0
@@ -1157,7 +1146,6 @@ def analyze_previous_current_pattern(periods):
         float(periods[-1]["close"]) > float(periods[-1]["open"])
     )
 
-    # 연속 장대양봉
     bullish_count = 0
 
     for patterns in reversed(pattern_history):
@@ -1168,7 +1156,6 @@ def analyze_previous_current_pattern(periods):
         else:
             break
 
-    # 연속 장대음봉
     bearish_count = 0
 
     for patterns in reversed(pattern_history):
@@ -1182,7 +1169,6 @@ def analyze_previous_current_pattern(periods):
     result["consecutive_bullish"] = bullish_count
     result["consecutive_bearish"] = bearish_count
 
-    # 일반 연속 양봉
     consecutive_bullish_candles = 0
 
     for period in reversed(periods):
@@ -1321,11 +1307,6 @@ def analyze_signal_candles(market, price):
     if not periods:
         return empty_result
 
-    # =====================================================
-    # RSI 계산
-    # 전체 원본 캔들 데이터로 계산
-    # =====================================================
-
     df = (
         df.sort_values("datetime")
         .drop_duplicates("datetime")
@@ -1349,17 +1330,11 @@ def analyze_signal_candles(market, price):
         )
     }
 
-    # 각 캔들에 RSI 연결
     for period in periods:
 
         period["rsi"] = rsi_map.get(
             period["start"]
         )
-
-    # =====================================================
-    # 최근 6개 캔들 RSI 조건
-    # RSI 70 이상 또는 30 이하
-    # =====================================================
 
     last_rsi_periods = periods[-RSI_CHECK_CANDLES:]
 
@@ -1382,20 +1357,14 @@ def analyze_signal_candles(market, price):
         and value <= RSI_LOWER_THRESHOLD
     ]
 
-    # 최근 6개 중 RSI 70 이상 또는 30 이하
     rsi_signal = bool(
         rsi_high_periods or rsi_low_periods
     )
-
-    # =====================================================
-    # 기존 캔들 패턴 분석
-    # =====================================================
 
     pattern_info = analyze_previous_current_pattern(
         periods
     )
 
-    # 패턴 분석 결과의 최근 6개 봉에도 RSI 연결
     last_three = pattern_info["last_three_patterns"]
 
     recent_periods = periods[-len(last_three):]
@@ -1548,7 +1517,6 @@ def make_row(
             "consecutive_bullish_candles", 0
         ),
 
-        # RSI 정보
         "rsi_signal": analysis_pattern.get(
             "rsi_signal", False
         ),
@@ -1586,12 +1554,6 @@ def update_upbit():
 
     if not all_markets:
         return
-
-    # =====================================================
-    # BTC 24시간 거래대금 조회
-    # 표시용으로만 유지
-    # SIGNAL 비교에는 사용하지 않음
-    # =====================================================
 
     btc_item = next(
         (
@@ -1713,16 +1675,6 @@ def update_upbit():
     latest_upbit_daily_update_time = kst()
     latest_upbit_update_time = latest_upbit_daily_update_time
 
-    # =====================================================
-    # SIGNAL 조건
-    #
-    # 1. 당일 변동률 > DAILY_CHANGE_MIN
-    # 2. 최근 6개 캔들 중 RSI 70 이상 또는 30 이하
-    # 3. BTC 거래대금 비교 조건 삭제
-    # 4. 거래대금 별도 최소 금액 없음
-    # 5. 캔들 패턴 조건 사용 안 함
-    # =====================================================
-
     latest_signal_data = [
         row for row in rows
         if (
@@ -1732,7 +1684,6 @@ def update_upbit():
         )
     ]
 
-    # 당일 상승률 높은 순으로 정렬
     latest_signal_data.sort(
         key=lambda x: (
             x.get("daily_change")
@@ -1962,7 +1913,6 @@ def build_okx_kst_daily_periods(df, current_price=None):
 
 # =========================================================
 # OKX BTC 최근 6개 캔들 패턴 분석 + RSI
-# 기존 4시간봉 유지
 # =========================================================
 
 def analyze_okx_btc_candles(df, current_price=None):
@@ -1978,7 +1928,6 @@ def analyze_okx_btc_candles(df, current_price=None):
 
     now = datetime.now(KST)
 
-    # OKX 4시간봉 시작 시각
     current_start = now.replace(
         hour=(now.hour // 4) * 4,
         minute=0,
@@ -1986,16 +1935,11 @@ def analyze_okx_btc_candles(df, current_price=None):
         microsecond=0
     )
 
-    # 현재 진행 중인 4시간봉에 최신 가격 반영
     df = update_current_candle(
         df,
         current_start,
         current_price
     )
-
-    # =====================================================
-    # BTC 4시간봉 RSI 계산
-    # =====================================================
 
     rsi_series = calculate_rsi(
         df["close"],
@@ -2032,7 +1976,6 @@ def analyze_okx_btc_candles(df, current_price=None):
             "low": l,
             "close": c,
             "change": change,
-
             "rsi": (
                 float(rsi)
                 if pd.notna(rsi)
@@ -2049,7 +1992,6 @@ def analyze_okx_btc_candles(df, current_price=None):
 
     result = pattern_info["last_three_patterns"]
 
-    # 패턴 분석 결과에 해당 캔들의 RSI 연결
     recent_periods = periods[-len(result):]
 
     for item, period in zip(
@@ -2079,7 +2021,6 @@ def update_okx_btc():
     if price is None:
         return
 
-    # OKX BTC 4시간봉 조회
     d4h = okx_candles("4H", 200)
 
     if d4h.empty:
@@ -2090,7 +2031,6 @@ def update_okx_btc():
 
         return
 
-    # KST 09:00 기준 일일 변동률
     latest_btc_daily_periods = (
         build_okx_kst_daily_periods(d4h, price)
     )
@@ -2105,7 +2045,6 @@ def update_okx_btc():
 
         latest_btc_daily_change = None
 
-    # 최근 6개 BTC 4시간봉 패턴 및 RSI 분석
     latest_btc_last_three_patterns = (
         analyze_okx_btc_candles(
             d4h,
@@ -2240,7 +2179,6 @@ def rsi_html(value):
             '</div>'
         )
 
-    # RSI 70 이상 녹색
     if value >= RSI_THRESHOLD:
 
         return (
@@ -2249,7 +2187,6 @@ def rsi_html(value):
             '</div>'
         )
 
-    # RSI 30 이하 적색
     if value <= RSI_LOWER_THRESHOLD:
 
         return (
@@ -2541,7 +2478,6 @@ def last_three_pattern_html(row):
         patterns = item.get("patterns", [])
         raw_label = item.get("label") or "-"
 
-        # 날짜와 시간을 두 줄로 분리
         if raw_label != "-":
 
             label_parts = raw_label.split(" ", 1)
@@ -2559,7 +2495,6 @@ def last_three_pattern_html(row):
             date_label = "-"
             time_label = ""
 
-        # 마지막 캔들 진행 표시
         live_html = ""
 
         if i == len(visible_items) - 1 and raw_label != "-":
@@ -2596,13 +2531,11 @@ def last_three_pattern_html(row):
         except Exception:
             rsi_number = None
 
-        # RSI 70 이상 녹색
         is_rsi_high = (
             rsi_number is not None
             and rsi_number >= RSI_THRESHOLD
         )
 
-        # RSI 30 이하 적색
         is_rsi_low = (
             rsi_number is not None
             and rsi_number <= RSI_LOWER_THRESHOLD
@@ -2884,7 +2817,6 @@ def signal_section():
             for row in latest_signal_data
         )
 
-    # 당일 변동률 + 최근 6개 봉 RSI 조건
     condition_html = f"""
     <div class="signal-condition">
 
@@ -3313,7 +3245,6 @@ section {
     font-weight: 800;
 }
 
-/* RSI 공통 */
 .rsi-value {
     width: 100%;
     min-height: 18px;
@@ -3337,7 +3268,6 @@ section {
     white-space: nowrap;
 }
 
-/* RSI 70 이상 녹색 */
 .rsi-value.rsi-high {
     color: #38e6a0;
     background: rgba(56,217,150,.15);
@@ -3346,7 +3276,6 @@ section {
     box-shadow: 0 0 6px rgba(56,217,150,.18);
 }
 
-/* RSI 30 이하 적색 */
 .rsi-value.rsi-low {
     color: #ff7584;
     background: rgba(255,101,117,.15);
@@ -3361,8 +3290,6 @@ section {
     border-color: #26343f;
 }
 
-
-/* RSI 70 이상 캔들 카드 녹색 강조 */
 .three-candle-item.rsi-highlight-high {
     background: rgba(56,217,150,.07);
     border: 1px solid rgba(56,217,150,.65);
@@ -3371,7 +3298,6 @@ section {
         inset 0 0 0 1px rgba(56,217,150,.08);
 }
 
-/* RSI 30 이하 캔들 카드 적색 강조 */
 .three-candle-item.rsi-highlight-low {
     background: rgba(255,101,117,.07);
     border: 1px solid rgba(255,101,117,.65);
@@ -3418,25 +3344,32 @@ section {
 }
 
 /*
-    캔들 카드 높이 고정
+    수정 핵심:
+    캔들 카드를 GRID 3행으로 고정한다.
 
-    위: 날짜 / 시간
-    중간: 캔들 패턴
-    아래: RSI
+    1행: 날짜 / 시간
+    2행: 캔들 패턴
+    3행: RSI
 
-    패턴 설명 길이에 따라 RSI 위치가
-    밀리지 않도록 각 영역을 분리한다.
+    패턴 내용이 길어져도 RSI 행의 위치는
+    절대로 밀리지 않도록 한다.
 */
 
 .three-candle-item {
     min-width: 0;
-    height: 100px;
-    min-height: 100px;
+    height: 120px;
+    min-height: 120px;
 
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: flex-start;
+    display: grid;
+
+    grid-template-rows:
+        27px
+        minmax(0, 1fr)
+        18px;
+
+    row-gap: 3px;
+
+    align-items: stretch;
 
     padding: 5px 2px;
 
@@ -3448,21 +3381,24 @@ section {
 }
 
 /* 날짜 / 시간 영역 */
+
 .three-candle-label {
     width: 100%;
-    flex: 0 0 27px;
+    height: 27px;
+    min-height: 0;
 
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
 
-    min-height: 27px;
-    margin-bottom: 3px;
+    margin: 0;
+    padding: 0;
 
     line-height: 1.25;
     text-align: center;
     white-space: nowrap;
+
     overflow: hidden;
 }
 
@@ -3493,21 +3429,30 @@ section {
     font-weight: 800;
 }
 
-/* 캔들 패턴 영역 */
+/* 패턴 영역 */
+
 .three-candle-pattern {
     width: 100%;
-
-    flex: 1 1 auto;
+    height: 100%;
+    min-width: 0;
     min-height: 0;
 
     display: flex;
     align-items: center;
     justify-content: center;
 
+    margin: 0;
+    padding: 0;
+
     overflow: hidden;
 }
 
 .three-candle-pattern .pattern-multi {
+    width: 100%;
+    max-width: 100%;
+    max-height: 100%;
+    min-height: 0;
+
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -3515,18 +3460,20 @@ section {
 
     gap: 2px;
 
-    max-width: 100%;
-    max-height: 100%;
     overflow: hidden;
 }
 
 .three-candle-pattern .pattern-box {
     min-width: 0;
     max-width: 100%;
+
+    flex: 0 1 auto;
 }
 
 .three-candle-pattern .pattern-name {
     font-size: 7px;
+    line-height: 1.15;
+
     white-space: normal;
     overflow-wrap: anywhere;
     text-align: center;
@@ -3536,16 +3483,33 @@ section {
     min-height: 28px;
 }
 
-/* RSI 영역을 카드 맨 아래에 고정 */
+/* RSI 영역: GRID 세 번째 행에 고정 */
+
 .three-candle-rsi {
     width: 100%;
-    flex: 0 0 18px;
+    height: 18px;
+    min-width: 0;
+    min-height: 0;
 
     display: flex;
     align-items: center;
     justify-content: center;
 
-    margin-top: 3px;
+    margin: 0;
+    padding: 0;
+
+    overflow: hidden;
+}
+
+.three-candle-rsi .rsi-value {
+    width: 100%;
+    height: 18px;
+    min-height: 18px;
+
+    margin: 0;
+    padding: 1px 2px;
+
+    line-height: 1;
 }
 
 
@@ -4023,8 +3987,8 @@ section {
     }
 
     .three-candle-item {
-        height: 100px;
-        min-height: 100px;
+        height: 120px;
+        min-height: 120px;
     }
 }
 
@@ -4114,17 +4078,24 @@ section {
     }
 
     .three-candle-item {
-        height: 94px;
-        min-height: 94px;
+        height: 116px;
+        min-height: 116px;
+
+        grid-template-rows:
+            25px
+            minmax(0, 1fr)
+            17px;
+
+        row-gap: 3px;
 
         padding: 5px 1px;
         border-radius: 4px;
     }
 
     .three-candle-label {
-        flex: 0 0 25px;
-        min-height: 25px;
-        margin-bottom: 3px;
+        height: 25px;
+        min-height: 0;
+        margin: 0;
     }
 
     .candle-date {
@@ -4190,13 +4161,15 @@ section {
     }
 
     .rsi-value {
+        height: 17px;
         min-height: 17px;
         font-size: 7px;
-        padding: 2px 1px;
+        padding: 1px;
     }
 
     .three-candle-rsi {
-        flex-basis: 17px;
+        height: 17px;
+        min-height: 0;
     }
 }
 
@@ -4230,13 +4203,19 @@ section {
     }
 
     .three-candle-item {
-        height: 90px;
-        min-height: 90px;
+        height: 112px;
+        min-height: 112px;
+
+        grid-template-rows:
+            23px
+            minmax(0, 1fr)
+            16px;
+
+        row-gap: 3px;
     }
 
     .three-candle-label {
-        flex-basis: 23px;
-        min-height: 23px;
+        height: 23px;
     }
 
     .candle-date,
@@ -4257,12 +4236,13 @@ section {
     }
 
     .rsi-value {
+        height: 16px;
         min-height: 16px;
         font-size: 6px;
     }
 
     .three-candle-rsi {
-        flex-basis: 16px;
+        height: 16px;
     }
 }
 """
@@ -4495,6 +4475,14 @@ def startup():
 
     log.info(
         "컴팩트 트레이딩 터미널 디자인 적용"
+    )
+
+    log.info(
+        "캔들 카드 날짜/패턴/RSI 3행 고정 레이아웃 적용"
+    )
+
+    log.info(
+        "BTC, SIGNAL, TOP 캔들 카드 동일 레이아웃 적용"
     )
 
     threading.Thread(
