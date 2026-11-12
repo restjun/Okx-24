@@ -61,8 +61,6 @@ CANDLE_PATTERN_TIMEFRAME = "4h"
 
 # RSI 설정
 RSI_PERIOD = 14
-
-# RSI 과매수 / 과매도 기준
 RSI_THRESHOLD = 70
 RSI_LOWER_THRESHOLD = 30
 
@@ -1235,7 +1233,8 @@ def analyze_signal_candles(market, price):
         "consecutive_bullish_candles": 0,
         "rsi_signal": False,
         "rsi_values": [],
-        "rsi_low_count": 0
+        "rsi_low_count": 0,
+        "rsi_high_count": 0
     }
 
     timeframe = CANDLE_PATTERN_TIMEFRAME
@@ -1357,7 +1356,11 @@ def analyze_signal_candles(market, price):
             period["start"]
         )
 
+    # =====================================================
     # 최근 6개 캔들 RSI 조건
+    # RSI 70 이상 또는 30 이하
+    # =====================================================
+
     last_rsi_periods = periods[-RSI_CHECK_CANDLES:]
 
     rsi_values = [
@@ -1365,19 +1368,24 @@ def analyze_signal_candles(market, price):
         for period in last_rsi_periods
     ]
 
-    # RSI 70 이상 또는 30 이하인 캔들 확인
-    rsi_extreme_periods = [
+    rsi_high_periods = [
         value
         for value in rsi_values
         if value is not None
-        and (
-            value >= RSI_THRESHOLD
-            or value <= RSI_LOWER_THRESHOLD
-        )
+        and value >= RSI_THRESHOLD
     ]
 
-    # 최근 6개 중 하나라도 RSI 70 이상 또는 30 이하
-    rsi_signal = bool(rsi_extreme_periods)
+    rsi_low_periods = [
+        value
+        for value in rsi_values
+        if value is not None
+        and value <= RSI_LOWER_THRESHOLD
+    ]
+
+    # 최근 6개 중 RSI 70 이상 또는 30 이하
+    rsi_signal = bool(
+        rsi_high_periods or rsi_low_periods
+    )
 
     # =====================================================
     # 기존 캔들 패턴 분석
@@ -1461,7 +1469,8 @@ def analyze_signal_candles(market, price):
         ],
         "rsi_signal": rsi_signal,
         "rsi_values": rsi_values,
-        "rsi_low_count": len(rsi_extreme_periods)
+        "rsi_low_count": len(rsi_low_periods),
+        "rsi_high_count": len(rsi_high_periods)
     }
 
 
@@ -1550,6 +1559,10 @@ def make_row(
 
         "rsi_low_count": analysis_pattern.get(
             "rsi_low_count", 0
+        ),
+
+        "rsi_high_count": analysis_pattern.get(
+            "rsi_high_count", 0
         )
     }
 
@@ -1679,7 +1692,8 @@ def update_upbit():
                 "consecutive_bullish_candles": 0,
                 "rsi_signal": False,
                 "rsi_values": [],
-                "rsi_low_count": 0
+                "rsi_low_count": 0,
+                "rsi_high_count": 0
             }
 
         rows.append(
@@ -1736,7 +1750,7 @@ def update_upbit():
 
     log.info(
         "UPBIT | TOP%s | "
-        "SIGNAL 조건=당일 변동률>%s%% AND 최근 %s개 봉 RSI(%s)>=%s OR RSI<=%s | "
+        "SIGNAL 조건=당일 변동률>%s%% AND 최근 %s개 봉 RSI(%s)>=%s OR <=%s | "
         "BTC 거래대금 비교=사용 안 함 | SIGNAL=%s",
         TOP_N,
         DAILY_CHANGE_MIN,
@@ -2226,7 +2240,7 @@ def rsi_html(value):
             '</div>'
         )
 
-    # RSI 70 이상: 녹색 강조
+    # RSI 70 이상 녹색
     if value >= RSI_THRESHOLD:
 
         return (
@@ -2235,7 +2249,7 @@ def rsi_html(value):
             '</div>'
         )
 
-    # RSI 30 이하: 적색 강조
+    # RSI 30 이하 적색
     if value <= RSI_LOWER_THRESHOLD:
 
         return (
@@ -2244,7 +2258,6 @@ def rsi_html(value):
             '</div>'
         )
 
-    # RSI 30 초과 ~ 70 미만: 기본 색상
     return (
         '<div class="rsi-value">'
         f'RSI {value:.1f}'
@@ -2494,7 +2507,7 @@ def current_pattern_html(pattern, candle=None):
 
 
 # =========================================================
-# 최근 6개 봉 표시 + 날짜/시간 두 줄 + RSI 강조
+# 최근 6개 봉 표시 + 날짜/시간 두 줄 + RSI 하단 고정
 # =========================================================
 
 def last_three_pattern_html(row):
@@ -2583,16 +2596,25 @@ def last_three_pattern_html(row):
         except Exception:
             rsi_number = None
 
-        # RSI 70 이상 / 30 이하 개별 캔들 강조
+        # RSI 70 이상 녹색
+        is_rsi_high = (
+            rsi_number is not None
+            and rsi_number >= RSI_THRESHOLD
+        )
+
+        # RSI 30 이하 적색
+        is_rsi_low = (
+            rsi_number is not None
+            and rsi_number <= RSI_LOWER_THRESHOLD
+        )
+
         rsi_class = ""
 
-        if rsi_number is not None:
+        if is_rsi_high:
+            rsi_class = "rsi-highlight-high"
 
-            if rsi_number >= RSI_THRESHOLD:
-                rsi_class = "rsi-high-candle"
-
-            elif rsi_number <= RSI_LOWER_THRESHOLD:
-                rsi_class = "rsi-low-candle"
+        elif is_rsi_low:
+            rsi_class = "rsi-highlight-low"
 
         boxes.append(
             f"""
@@ -2606,7 +2628,9 @@ def last_three_pattern_html(row):
                     {candle_html}
                 </div>
 
-                {rsi_html(rsi_value)}
+                <div class="three-candle-rsi">
+                    {rsi_html(rsi_value)}
+                </div>
 
             </div>
             """
@@ -3289,12 +3313,17 @@ section {
     font-weight: 800;
 }
 
-/* 기본 RSI */
+/* RSI 공통 */
 .rsi-value {
-    display: inline-block;
+    width: 100%;
+    min-height: 18px;
 
-    margin-top: auto;
-    padding: 2px 5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    margin: 0;
+    padding: 2px 2px;
 
     color: #aab9c6;
     background: #1b2935;
@@ -3306,57 +3335,56 @@ section {
     font-weight: 800;
 
     white-space: nowrap;
-    text-align: center;
 }
 
-/* RSI 70 이상: 녹색 */
+/* RSI 70 이상 녹색 */
 .rsi-value.rsi-high {
-    color: var(--green);
-    background: rgba(56,217,150,.13);
-    border: 1px solid var(--green);
+    color: #38e6a0;
+    background: rgba(56,217,150,.15);
+    border: 1px solid #38d996;
 
-    box-shadow: 0 0 6px rgba(56,217,150,.16);
+    box-shadow: 0 0 6px rgba(56,217,150,.18);
 }
 
-/* RSI 30 이하: 적색 */
+/* RSI 30 이하 적색 */
 .rsi-value.rsi-low {
-    color: var(--red);
-    background: rgba(255,101,117,.13);
-    border: 1px solid var(--red);
+    color: #ff7584;
+    background: rgba(255,101,117,.15);
+    border: 1px solid #ff6575;
 
-    box-shadow: 0 0 6px rgba(255,101,117,.16);
+    box-shadow: 0 0 6px rgba(255,101,117,.18);
 }
 
-/* RSI 데이터 없음 */
 .rsi-value.rsi-unavailable {
     color: #71808c;
     background: #141e27;
     border-color: #26343f;
 }
 
-/* RSI 70 이상인 캔들 카드 */
-.three-candle-item.rsi-high-candle {
-    background: rgba(56,217,150,.08);
-    border: 1px solid rgba(56,217,150,.75);
+
+/* RSI 70 이상 캔들 카드 녹색 강조 */
+.three-candle-item.rsi-highlight-high {
+    background: rgba(56,217,150,.07);
+    border: 1px solid rgba(56,217,150,.65);
 
     box-shadow:
         inset 0 0 0 1px rgba(56,217,150,.08);
 }
 
-/* RSI 30 이하인 캔들 카드 */
-.three-candle-item.rsi-low-candle {
-    background: rgba(255,101,117,.08);
-    border: 1px solid rgba(255,101,117,.75);
+/* RSI 30 이하 캔들 카드 적색 강조 */
+.three-candle-item.rsi-highlight-low {
+    background: rgba(255,101,117,.07);
+    border: 1px solid rgba(255,101,117,.65);
 
     box-shadow:
         inset 0 0 0 1px rgba(255,101,117,.08);
 }
 
-.three-candle-item.rsi-high-candle .candle-date {
+.three-candle-item.rsi-highlight-high .candle-date {
     color: var(--green);
 }
 
-.three-candle-item.rsi-low-candle .candle-date {
+.three-candle-item.rsi-highlight-low .candle-date {
     color: var(--red);
 }
 
@@ -3390,41 +3418,52 @@ section {
 }
 
 /*
-   모든 캔들 카드 높이 통일.
-   RSI는 margin-top:auto로 카드 맨 아래에 고정.
+    캔들 카드 높이 고정
+
+    위: 날짜 / 시간
+    중간: 캔들 패턴
+    아래: RSI
+
+    패턴 설명 길이에 따라 RSI 위치가
+    밀리지 않도록 각 영역을 분리한다.
 */
+
 .three-candle-item {
     min-width: 0;
-    height: 88px;
-    min-height: 88px;
+    height: 100px;
+    min-height: 100px;
 
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: flex-start;
 
-    padding: 6px 2px;
+    padding: 5px 2px;
 
     background: #121e28;
     border: 1px solid #263744;
     border-radius: 5px;
+
+    overflow: hidden;
 }
 
+/* 날짜 / 시간 영역 */
 .three-candle-label {
     width: 100%;
+    flex: 0 0 27px;
 
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
 
-    flex: 0 0 27px;
     min-height: 27px;
-    margin-bottom: 4px;
+    margin-bottom: 3px;
 
     line-height: 1.25;
     text-align: center;
     white-space: nowrap;
+    overflow: hidden;
 }
 
 .candle-date {
@@ -3454,32 +3493,59 @@ section {
     font-weight: 800;
 }
 
+/* 캔들 패턴 영역 */
 .three-candle-pattern {
     width: 100%;
 
-    display: flex;
     flex: 1 1 auto;
+    min-height: 0;
+
+    display: flex;
     align-items: center;
     justify-content: center;
 
-    min-height: 30px;
     overflow: hidden;
 }
 
 .three-candle-pattern .pattern-multi {
-    gap: 3px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+
+    gap: 2px;
+
+    max-width: 100%;
+    max-height: 100%;
+    overflow: hidden;
 }
 
 .three-candle-pattern .pattern-box {
-    min-width: 32px;
+    min-width: 0;
+    max-width: 100%;
 }
 
 .three-candle-pattern .pattern-name {
-    font-size: 9px;
+    font-size: 7px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    text-align: center;
 }
 
 .three-candle-pattern .pattern-none {
     min-height: 28px;
+}
+
+/* RSI 영역을 카드 맨 아래에 고정 */
+.three-candle-rsi {
+    width: 100%;
+    flex: 0 0 18px;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    margin-top: 3px;
 }
 
 
@@ -3689,16 +3755,6 @@ section {
 .btc-candle-section .three-candle-item {
     background: #101d28;
     border-color: #304252;
-}
-
-.btc-candle-section .three-candle-item.rsi-high-candle {
-    background: rgba(56,217,150,.08);
-    border-color: rgba(56,217,150,.75);
-}
-
-.btc-candle-section .three-candle-item.rsi-low-candle {
-    background: rgba(255,101,117,.08);
-    border-color: rgba(255,101,117,.75);
 }
 
 .btc-candle-section .three-candle-label {
@@ -3967,8 +4023,8 @@ section {
     }
 
     .three-candle-item {
-        height: 88px;
-        min-height: 88px;
+        height: 100px;
+        min-height: 100px;
     }
 }
 
@@ -4058,14 +4114,15 @@ section {
     }
 
     .three-candle-item {
-        height: 82px;
-        min-height: 82px;
+        height: 94px;
+        min-height: 94px;
+
         padding: 5px 1px;
         border-radius: 4px;
     }
 
     .three-candle-label {
-        flex-basis: 25px;
+        flex: 0 0 25px;
         min-height: 25px;
         margin-bottom: 3px;
     }
@@ -4133,8 +4190,13 @@ section {
     }
 
     .rsi-value {
+        min-height: 17px;
         font-size: 7px;
-        padding: 2px 2px;
+        padding: 2px 1px;
+    }
+
+    .three-candle-rsi {
+        flex-basis: 17px;
     }
 }
 
@@ -4168,8 +4230,8 @@ section {
     }
 
     .three-candle-item {
-        height: 78px;
-        min-height: 78px;
+        height: 90px;
+        min-height: 90px;
     }
 
     .three-candle-label {
@@ -4195,7 +4257,12 @@ section {
     }
 
     .rsi-value {
+        min-height: 16px;
         font-size: 6px;
+    }
+
+    .three-candle-rsi {
+        flex-basis: 16px;
     }
 }
 """
@@ -4373,7 +4440,15 @@ def startup():
     )
 
     log.info(
-        "RSI 숫자 캔들 카드 하단 고정 및 높이 정렬"
+        "최근 6개 봉 중 RSI 70 이상 또는 30 이하이면 SIGNAL 포함"
+    )
+
+    log.info(
+        "RSI는 캔들 카드 하단에 고정 표시"
+    )
+
+    log.info(
+        "캔들 날짜와 시간 두 줄 표시 적용"
     )
 
     log.info(
@@ -4403,7 +4478,7 @@ def startup():
     )
 
     log.info(
-        "BTC RSI 70 이상 녹색 / 30 이하 적색 강조",
+        "BTC RSI 70 이상 녹색, 30 이하 적색 강조"
     )
 
     log.info(
