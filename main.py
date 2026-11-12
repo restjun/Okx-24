@@ -1,3 +1,4 @@
+
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
@@ -61,6 +62,8 @@ RSI_THRESHOLD = 70
 RSI_LOWER_THRESHOLD = 30
 
 RSI_CHECK_CANDLES = 12
+
+# 최근 표시 캔들 개수
 DISPLAY_CANDLE_COUNT = 12
 
 CONSECUTIVE_CANDLE_MIN = 3
@@ -1081,7 +1084,7 @@ def get_candle_patterns(previous, current):
 
 
 # =========================================================
-# 최근 6개 봉 패턴 분석
+# 최근 12개 봉 패턴 분석
 # =========================================================
 
 def analyze_previous_current_pattern(periods):
@@ -1706,11 +1709,12 @@ def update_upbit():
         )
     ]
 
+    # SIGNAL 정렬: 업비트 24시간 거래대금 높은 순
     latest_signal_data.sort(
         key=lambda x: (
-            x.get("daily_change")
-            if x.get("daily_change") is not None
-            else float("-inf")
+            x.get("volume_24h")
+            if x.get("volume_24h") is not None
+            else 0
         ),
         reverse=True
     )
@@ -1724,7 +1728,7 @@ def update_upbit():
     log.info(
         "UPBIT | TOP%s | "
         "SIGNAL 조건=당일 변동률>%s%% AND 최근 %s개 봉 RSI(%s)>=%s OR <=%s | "
-        "시간봉=%s | SIGNAL=%s",
+        "시간봉=%s | SIGNAL=%s | 정렬=24H 거래대금 순",
         TOP_N,
         DAILY_CHANGE_MIN,
         RSI_CHECK_CANDLES,
@@ -2603,7 +2607,7 @@ def current_pattern_html(pattern, candle=None):
 
 
 # =========================================================
-# 최근 6개 봉 표시
+# 최근 12개 봉 표시
 # =========================================================
 
 def last_three_pattern_html(row):
@@ -2871,7 +2875,7 @@ def btc_html():
         <div class="btc-candle-section">
 
             <div class="btc-candle-heading">
-                BTC 최근 6개 봉 · {timeframe_label} · RSI({RSI_PERIOD})
+                BTC 최근 12개 봉 · {timeframe_label} · RSI({RSI_PERIOD})
                 <span class="rsi-condition-label">
                     {RSI_THRESHOLD} 이상 녹색 · {RSI_LOWER_THRESHOLD} 이하 적색
                 </span>
@@ -2950,7 +2954,7 @@ def signal_card(row):
         <div class="three-candle-section">
 
             <div class="three-candle-heading">
-                최근 6개 봉 · {timeframe_label} · RSI({RSI_PERIOD})
+                최근 12개 봉 · {timeframe_label} · RSI({RSI_PERIOD})
                 <span class="rsi-condition-label">
                     {RSI_THRESHOLD} 이상 녹색 · {RSI_LOWER_THRESHOLD} 이하 적색
                 </span>
@@ -2997,7 +3001,7 @@ def signal_section():
         <span>최근 {RSI_CHECK_CANDLES}개 봉 중 RSI({RSI_PERIOD}) {RSI_THRESHOLD} 이상 또는 {RSI_LOWER_THRESHOLD} 이하</span>
         <span>RSI 시간봉: {pattern_timeframe_label}</span>
         <span>BTC 거래대금 비교 없음</span>
-        <span>상승률 높은 순 정렬</span>
+        <span>24H 거래대금 높은 순 정렬</span>
 
     </div>
     """
@@ -3097,7 +3101,7 @@ def card(row, kind):
         <div class="top-three-candle-section">
 
             <div class="three-candle-heading">
-                최근 6개 봉 · {timeframe_label} · RSI({RSI_PERIOD})
+                최근 12개 봉 · {timeframe_label} · RSI({RSI_PERIOD})
                 <span class="rsi-condition-label">
                     {RSI_THRESHOLD} 이상 녹색 · {RSI_LOWER_THRESHOLD} 이하 적색
                 </span>
@@ -4231,8 +4235,9 @@ def scheduler():
 def startup():
 
     log.info(
-        "START | BTC 가격 및 최근 6개 캔들 표시 | "
+        "START | BTC 가격 및 최근 %s개 캔들 표시 | "
         "UPBIT TOP%s | 캔들패턴=%s",
+        DISPLAY_CANDLE_COUNT,
         TOP_N,
         get_timeframe_label(CANDLE_PATTERN_TIMEFRAME)
     )
@@ -4276,7 +4281,7 @@ def startup():
     )
 
     log.info(
-        "SIGNAL 정렬 기준: 당일 상승률 높은 순"
+        "SIGNAL 정렬 기준: 업비트 24시간 거래대금 높은 순"
     )
 
     log.info(
@@ -4294,7 +4299,8 @@ def startup():
     )
 
     log.info(
-        "최근 6개 봉 중 RSI %s 이상 또는 %s 이하이면 SIGNAL 포함",
+        "최근 %s개 봉 중 RSI %s 이상 또는 %s 이하이면 SIGNAL 포함",
+        RSI_CHECK_CANDLES,
         RSI_THRESHOLD,
         RSI_LOWER_THRESHOLD
     )
@@ -4308,7 +4314,8 @@ def startup():
     )
 
     log.info(
-        "녹색 강조: 최근 6개 봉 중 장대양봉"
+        "녹색 강조: 최근 %s개 봉 중 장대양봉",
+        DISPLAY_CANDLE_COUNT
     )
 
     log.info(
@@ -4317,7 +4324,8 @@ def startup():
     )
 
     log.info(
-        "최근 6개 봉 캔들패턴 및 RSI 표시"
+        "최근 %s개 봉 캔들패턴 및 RSI 표시",
+        DISPLAY_CANDLE_COUNT
     )
 
     log.info(
