@@ -63,7 +63,6 @@ RSI_LOWER_THRESHOLD = 30
 
 RSI_CHECK_CANDLES = 12
 
-# 최근 표시 캔들 개수
 DISPLAY_CANDLE_COUNT = 12
 
 CONSECUTIVE_CANDLE_MIN = 3
@@ -170,10 +169,6 @@ def get_timeframe_label(timeframe):
 
 # =========================================================
 # 캔들 시작 시간 계산
-#
-# 업비트 기준
-# 일봉: 09:00
-# 4시간봉: 09, 13, 17, 21, 01, 05
 # =========================================================
 
 def get_candle_start(now, timeframe):
@@ -1709,7 +1704,6 @@ def update_upbit():
         )
     ]
 
-    # SIGNAL 정렬: 업비트 24시간 거래대금 높은 순
     latest_signal_data.sort(
         key=lambda x: (
             x.get("volume_24h")
@@ -1742,10 +1736,6 @@ def update_upbit():
 
 # =========================================================
 # OKX 캔들 조회
-#
-# BTC도 업비트와 동일한 KST 캔들 구간으로 재구성
-# 4H는 OKX 1H 원본을 받아 09시 기준으로 집계
-# 일봉도 KST 09시 기준으로 집계
 # =========================================================
 
 def okx_candles(bar, limit=300, history=False, after=None):
@@ -1962,20 +1952,16 @@ def get_okx_btc_timeframe(timeframe):
 
     elif timeframe == "1d":
 
-        # 최근 300개 1시간봉 조회
         raw = okx_candles("1H", 300)
 
         if not raw.empty:
 
             chunks = [raw]
 
-            # 가장 오래된 캔들 시간
             oldest_timestamp = int(
                 raw.iloc[0]["datetime"].timestamp() * 1000
             )
 
-            # 과거 데이터 300개씩 추가 조회
-            # 총 최대 900개 1시간봉 확보
             for _ in range(2):
 
                 older = okx_candles(
@@ -1992,7 +1978,6 @@ def get_okx_btc_timeframe(timeframe):
                     older.iloc[0]["datetime"].timestamp() * 1000
                 )
 
-                # 같은 데이터가 반복되면 중단
                 if new_oldest_timestamp >= oldest_timestamp:
                     break
 
@@ -2073,8 +2058,6 @@ def analyze_okx_btc_candles(df, timeframe, current_price=None):
     if not periods:
         return []
 
-    # 캔들 시작 시간을 기준으로 RSI 연결
-    # 순서에 의존하는 zip 방식 대신 datetime 기준으로 매칭
     rsi_map = {
         dt: (
             float(rsi)
@@ -2112,6 +2095,94 @@ def analyze_okx_btc_candles(df, timeframe, current_price=None):
 
 
 # =========================================================
+# BTC 당일 변동률 계산
+#
+# 업비트와 동일한 KST 09:00 기준
+# 전일 09:00 ~ 당일 09:00
+#
+# BTC 4시간봉 표시와 별개로 일봉 데이터 사용
+# =========================================================
+
+def calculate_btc_daily_change(current_price):
+
+    if current_price is None:
+        return None
+
+    try:
+
+        current_price = float(current_price)
+
+        now = datetime.now(KST)
+
+        daily_start = get_candle_start(
+            now,
+            "1d"
+        )
+
+        # OKX 1시간봉을 받아 KST 09시 기준 일봉 생성
+        daily_df = get_okx_btc_timeframe("1d")
+
+        if daily_df is None or daily_df.empty:
+            log.warning("BTC 당일 변동률 계산 실패: 일봉 데이터 없음")
+            return None
+
+        daily_df = (
+            daily_df.sort_values("datetime")
+            .drop_duplicates("datetime")
+            .reset_index(drop=True)
+        )
+
+        # 현재 진행 중인 일봉의 시작 시가 확인
+        matched = daily_df[
+            daily_df["datetime"] == daily_start
+        ]
+
+        if matched.empty:
+
+            log.warning(
+                "BTC 당일 변동률 계산 실패: "
+                "KST 09시 일봉 없음 | 기준=%s",
+                daily_start
+            )
+
+            return None
+
+        daily_open = float(
+            matched.iloc[-1]["open"]
+        )
+
+        if daily_open <= 0:
+            return None
+
+        # 현재가 기준 당일 변동률
+        daily_change = (
+            (current_price - daily_open)
+            / daily_open
+            * 100
+        )
+
+        log.info(
+            "BTC 당일 변동률 | "
+            "기준시각=%s | 시가=%s | 현재가=%s | 변동률=%.4f%%",
+            daily_start.strftime("%Y-%m-%d %H:%M:%S"),
+            daily_open,
+            current_price,
+            daily_change
+        )
+
+        return daily_change
+
+    except Exception as e:
+
+        log.exception(
+            "BTC 당일 변동률 계산 오류: %s",
+            e
+        )
+
+        return None
+
+
+# =========================================================
 # BTC 업데이트
 # =========================================================
 
@@ -2131,6 +2202,7 @@ def update_okx_btc():
 
     timeframe = CANDLE_PATTERN_TIMEFRAME
 
+    # 기존 선택 시간봉 조회
     df = get_okx_btc_timeframe(timeframe)
 
     if df.empty:
@@ -2141,6 +2213,7 @@ def update_okx_btc():
 
         return
 
+    # 기존 선택 시간봉 현재가 반영
     df = update_current_candle(
         df,
         get_candle_start(datetime.now(KST), timeframe),
@@ -2153,13 +2226,20 @@ def update_okx_btc():
         price
     )
 
+    # 기존 BTC 캔들 표시 데이터 유지
     latest_btc_daily_periods = periods
 
-    if periods:
-        latest_btc_daily_change = periods[-1].get("change")
-    else:
-        latest_btc_daily_change = None
+    # =====================================================
+    # 변경 부분
+    # BTC 변동률은 선택 시간봉과 무관하게
+    # KST 09:00 기준 일봉으로 별도 계산
+    # =====================================================
 
+    latest_btc_daily_change = calculate_btc_daily_change(
+        price
+    )
+
+    # 기존 캔들 패턴 및 RSI 분석 유지
     latest_btc_last_three_patterns = (
         analyze_okx_btc_candles(
             df,
@@ -2169,11 +2249,10 @@ def update_okx_btc():
     )
 
     log.info(
-        "BTC OKX | 가격=%s | 시간봉=%s | "
-        "KST 캔들 기준=%s | 변동률=%s",
+        "BTC OKX | 가격=%s | 캔들시간봉=%s | "
+        "당일 변동률 기준=KST 09:00 | 변동률=%s",
         price,
         get_timeframe_label(timeframe),
-        get_candle_start(datetime.now(KST), timeframe),
         latest_btc_daily_change
     )
 
@@ -4256,7 +4335,11 @@ def startup():
     )
 
     log.info(
-        "BTC OKX 데이터는 업비트 KST 캔들 경계로 재구성"
+        "BTC OKX 캔들 데이터는 업비트 KST 캔들 경계로 재구성"
+    )
+
+    log.info(
+        "BTC 당일 변동률은 KST 09:00 기준 일봉 시가로 계산"
     )
 
     log.info(
