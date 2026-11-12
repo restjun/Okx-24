@@ -2873,7 +2873,7 @@ def btc_html():
             <div class="btc-candle-heading">
                 BTC 최근 6개 봉 · {timeframe_label} · RSI({RSI_PERIOD})
                 <span class="rsi-condition-label">
-                    70 이상 녹색 · 30 이하 적색
+                    {RSI_THRESHOLD} 이상 녹색 · {RSI_LOWER_THRESHOLD} 이하 적색
                 </span>
             </div>
 
@@ -2952,7 +2952,7 @@ def signal_card(row):
             <div class="three-candle-heading">
                 최근 6개 봉 · {timeframe_label} · RSI({RSI_PERIOD})
                 <span class="rsi-condition-label">
-                    70 이상 녹색 · 30 이하 적색
+                    {RSI_THRESHOLD} 이상 녹색 · {RSI_LOWER_THRESHOLD} 이하 적색
                 </span>
             </div>
 
@@ -2994,7 +2994,7 @@ def signal_section():
 
         <span>선정 기준: 당일 변동률</span>
         <span>당일 변동률 {DAILY_CHANGE_MIN:.2f}% 초과</span>
-        <span>최근 {RSI_CHECK_CANDLES}개 봉 중 RSI({RSI_PERIOD}) 70 이상 또는 30 이하</span>
+        <span>최근 {RSI_CHECK_CANDLES}개 봉 중 RSI({RSI_PERIOD}) {RSI_THRESHOLD} 이상 또는 {RSI_LOWER_THRESHOLD} 이하</span>
         <span>RSI 시간봉: {pattern_timeframe_label}</span>
         <span>BTC 거래대금 비교 없음</span>
         <span>상승률 높은 순 정렬</span>
@@ -3099,7 +3099,7 @@ def card(row, kind):
             <div class="three-candle-heading">
                 최근 6개 봉 · {timeframe_label} · RSI({RSI_PERIOD})
                 <span class="rsi-condition-label">
-                    70 이상 녹색 · 30 이하 적색
+                    {RSI_THRESHOLD} 이상 녹색 · {RSI_LOWER_THRESHOLD} 이하 적색
                 </span>
             </div>
 
@@ -3320,11 +3320,6 @@ section { margin-bottom:11px; }
     bottom:1px;
     height:7px;
     width:9px;
-}
-
-.candle-pattern-visual.empty {
-    color:var(--muted);
-    font-size:var(--fs-value);
 }
 
 .rsi-condition-label {
@@ -4289,15 +4284,19 @@ def startup():
     )
 
     log.info(
-        "RSI 70 이상 녹색 강조"
+        "RSI %s 이상 녹색 강조",
+        RSI_THRESHOLD
     )
 
     log.info(
-        "RSI 30 이하 적색 강조"
+        "RSI %s 이하 적색 강조",
+        RSI_LOWER_THRESHOLD
     )
 
     log.info(
-        "최근 6개 봉 중 RSI 70 이상 또는 30 이하이면 SIGNAL 포함"
+        "최근 6개 봉 중 RSI %s 이상 또는 %s 이하이면 SIGNAL 포함",
+        RSI_THRESHOLD,
+        RSI_LOWER_THRESHOLD
     )
 
     log.info(
@@ -4326,7 +4325,9 @@ def startup():
     )
 
     log.info(
-        "BTC RSI 70 이상 녹색, 30 이하 적색 강조"
+        "BTC RSI %s 이상 녹색, %s 이하 적색 강조",
+        RSI_THRESHOLD,
+        RSI_LOWER_THRESHOLD
     )
 
     log.info(
