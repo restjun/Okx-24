@@ -38,7 +38,7 @@ UTC = ZoneInfo("UTC")
 # 사용자 설정
 # =========================================================
 
-TOP_N = 20
+TOP_N = 30
 SHOW_TOP_LIST = "N"
 UPDATE_MINUTES = 1
 
@@ -58,7 +58,7 @@ CANDLE_PATTERN_TIMEFRAME = "1d"
 
 RSI_PERIOD = 14
 RSI_THRESHOLD = 70
-RSI_LOWER_THRESHOLD = 30
+RSI_LOWER_THRESHOLD = 10
 
 RSI_CHECK_CANDLES = 6
 DISPLAY_CANDLE_COUNT = 6
