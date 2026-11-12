@@ -1,4 +1,3 @@
-
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
@@ -1745,16 +1744,27 @@ def update_upbit():
 # 일봉도 KST 09시 기준으로 집계
 # =========================================================
 
-def okx_candles(bar, limit=300):
+def okx_candles(bar, limit=300, history=False, after=None):
+
+    endpoint = (
+        "https://www.okx.com/api/v5/market/history-candles"
+        if history
+        else "https://www.okx.com/api/v5/market/candles"
+    )
+
+    params = {
+        "instId": "BTC-USDT-SWAP",
+        "bar": bar,
+        "limit": str(min(limit, 300))
+    }
+
+    if after is not None:
+        params["after"] = str(after)
 
     r = retry(
         requests.get,
-        "https://www.okx.com/api/v5/market/candles",
-        params={
-            "instId": "BTC-USDT-SWAP",
-            "bar": bar,
-            "limit": str(min(limit, 300))
-        },
+        endpoint,
+        params=params,
         timeout=15
     )
 
@@ -1948,7 +1958,58 @@ def get_okx_btc_timeframe(timeframe):
 
     elif timeframe == "1d":
 
+        # 최근 300개 1시간봉 조회
         raw = okx_candles("1H", 300)
+
+        if not raw.empty:
+
+            chunks = [raw]
+
+            # 가장 오래된 캔들 시간
+            oldest_timestamp = int(
+                raw.iloc[0]["datetime"].timestamp() * 1000
+            )
+
+            # 과거 데이터 300개씩 추가 조회
+            # 총 최대 900개 1시간봉 확보
+            for _ in range(2):
+
+                older = okx_candles(
+                    "1H",
+                    300,
+                    history=True,
+                    after=oldest_timestamp
+                )
+
+                if older.empty:
+                    break
+
+                new_oldest_timestamp = int(
+                    older.iloc[0]["datetime"].timestamp() * 1000
+                )
+
+                # 같은 데이터가 반복되면 중단
+                if new_oldest_timestamp >= oldest_timestamp:
+                    break
+
+                chunks.append(older)
+
+                oldest_timestamp = new_oldest_timestamp
+
+                if len(older) < 300:
+                    break
+
+            raw = (
+                pd.concat(chunks, ignore_index=True)
+                .sort_values("datetime")
+                .drop_duplicates("datetime")
+                .reset_index(drop=True)
+            )
+
+            log.info(
+                "BTC 일봉 RSI 데이터 확보 | 1시간봉=%s개",
+                len(raw)
+            )
 
     else:
         return pd.DataFrame()
@@ -2005,19 +2066,28 @@ def analyze_okx_btc_candles(df, timeframe, current_price=None):
         current_price
     )
 
-    for period, rsi in zip(
-        periods,
-        df["rsi"].tail(len(periods))
-    ):
+    if not periods:
+        return []
 
-        period["rsi"] = (
+    # 캔들 시작 시간을 기준으로 RSI 연결
+    # 순서에 의존하는 zip 방식 대신 datetime 기준으로 매칭
+    rsi_map = {
+        dt: (
             float(rsi)
             if pd.notna(rsi)
             else None
         )
+        for dt, rsi in zip(
+            df["datetime"],
+            df["rsi"]
+        )
+    }
 
-    if not periods:
-        return []
+    for period in periods:
+
+        period["rsi"] = rsi_map.get(
+            period["start"]
+        )
 
     pattern_info = analyze_previous_current_pattern(
         periods
