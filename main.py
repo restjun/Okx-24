@@ -1,4 +1,3 @@
-
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
@@ -67,16 +66,6 @@ RSI_CHECK_CANDLES = 12
 EMA_FAST_PERIOD = 10
 EMA_MIDDLE_PERIOD = 20
 EMA_SLOW_PERIOD = 50
-
-# =========================================================
-# EMA 실시간 돌파 / 접촉 강조 기준선
-#
-# 10 = EMA10
-# 20 = EMA20
-# 50 = EMA50
-# =========================================================
-
-EMA_HIGHLIGHT_PERIOD = 10
 
 DISPLAY_CANDLE_COUNT = 12
 
@@ -636,125 +625,6 @@ def calculate_ema(close_series, period):
         min_periods=period,
         adjust=False
     ).mean()
-
-
-# =========================================================
-# 선택한 EMA 실시간 돌파 / 접촉 검사
-# =========================================================
-
-def check_ema_live_highlight(
-    df,
-    timeframe,
-    current_price=None
-):
-
-    if df is None or df.empty:
-        return False
-
-    if len(df) < EMA_HIGHLIGHT_PERIOD + 1:
-        return False
-
-    if timeframe not in TIMEFRAME_MINUTES and timeframe != "1d":
-        return False
-
-    current_start = get_candle_start(
-        datetime.now(KST),
-        timeframe
-    )
-
-    # 현재 진행 중인 캔들만 검사
-    if df.iloc[-1]["datetime"] != current_start:
-        return False
-
-    try:
-
-        close_series = pd.to_numeric(
-            df["close"],
-            errors="coerce"
-        ).copy()
-
-        # 현재 가격을 마지막 캔들에 반영
-        if current_price is not None:
-            close_series.iloc[-1] = float(current_price)
-
-        ema_series = calculate_ema(
-            close_series,
-            EMA_HIGHLIGHT_PERIOD
-        )
-
-        if len(ema_series) < 2:
-            return False
-
-        previous_ema = ema_series.iloc[-2]
-        current_ema = ema_series.iloc[-1]
-
-        if pd.isna(previous_ema) or pd.isna(current_ema):
-            return False
-
-        previous_close = float(
-            close_series.iloc[-2]
-        )
-
-        current_close = float(
-            close_series.iloc[-1]
-        )
-
-        current_high = float(
-            df.iloc[-1]["high"]
-        )
-
-        current_low = float(
-            df.iloc[-1]["low"]
-        )
-
-        previous_ema = float(previous_ema)
-        current_ema = float(current_ema)
-
-        # =================================================
-        # 상향 돌파
-        # 이전 종가가 EMA 아래 또는 같음
-        # 현재 가격이 EMA 위 또는 같음
-        # =================================================
-
-        bullish_cross = bool(
-            previous_close <= previous_ema
-            and current_close >= current_ema
-        )
-
-        # =================================================
-        # 하향 돌파
-        # 이전 종가가 EMA 위 또는 같음
-        # 현재 가격이 EMA 아래 또는 같음
-        # =================================================
-
-        bearish_cross = bool(
-            previous_close >= previous_ema
-            and current_close <= current_ema
-        )
-
-        # =================================================
-        # 현재 진행 중인 캔들의 고가~저가 범위에
-        # 선택한 EMA가 위치하는지 확인
-        # =================================================
-
-        ema_touch = bool(
-            current_low <= current_ema <= current_high
-        )
-
-        return bool(
-            bullish_cross
-            or bearish_cross
-            or ema_touch
-        )
-
-    except Exception as e:
-
-        log.warning(
-            "EMA 실시간 돌파/접촉 검사 오류: %s",
-            e
-        )
-
-        return False
 
 
 # =========================================================
@@ -1556,7 +1426,7 @@ def analyze_signal_candles(market, price):
     )
 
     # =====================================================
-    # EMA 10 / 20 / 100 계산
+    # EMA 10 / 20 / 50 계산
     # 현재 진행 중인 캔들 가격 반영
     # =====================================================
 
@@ -1604,16 +1474,6 @@ def analyze_signal_candles(market, price):
     )
 
     # =====================================================
-    # 선택한 EMA 실시간 돌파 / 접촉 확인
-    # =====================================================
-
-    ema_highlight = check_ema_live_highlight(
-        df,
-        timeframe,
-        price
-    )
-
-    # =====================================================
     # 캔들 패턴 분석
     # =====================================================
 
@@ -1631,10 +1491,6 @@ def analyze_signal_candles(market, price):
     ):
         item["rsi"] = period.get("rsi")
         item["change"] = period.get("change")
-
-    # 현재 진행 중인 마지막 캔들에 EMA 강조 상태 저장
-    if last_three:
-        last_three[-1]["ema_highlight"] = ema_highlight
 
     current_signal = pattern_info[
         "current_bullish_pattern"
@@ -1945,8 +1801,8 @@ def update_upbit():
     # SIGNAL 선정 조건
     #
     # 1. 당일 변동률 > DAILY_CHANGE_MIN
-    # 2. 최근 RSI_CHECK_CANDLES개 봉 중 RSI 기준 충족
-    # 3. EMA10 > EMA20 > EMA100 정배열
+    # 2. 최근 RSI_CHECK_CANDLES개 봉 중 RSI >=70 또는 <=30
+    # 3. EMA10 > EMA20 > EMA50 정배열
     #
     # 세 가지 조건 모두 충족해야 SIGNAL
     # =====================================================
@@ -2351,19 +2207,6 @@ def analyze_okx_btc_candles(df, timeframe, current_price=None):
     ):
         item["rsi"] = period.get("rsi")
         item["change"] = period.get("change")
-
-    # =====================================================
-    # BTC 선택 EMA 실시간 돌파 / 접촉 확인
-    # =====================================================
-
-    ema_highlight = check_ema_live_highlight(
-        df,
-        timeframe,
-        current_price
-    )
-
-    if result:
-        result[-1]["ema_highlight"] = ema_highlight
 
     return result
 
@@ -2980,8 +2823,7 @@ def last_three_pattern_html(row):
             "low": None,
             "close": None,
             "change": None,
-            "rsi": None,
-            "ema_highlight": False
+            "rsi": None
         })
 
     items.extend(last_three)
@@ -2994,11 +2836,6 @@ def last_three_pattern_html(row):
 
         patterns = item.get("patterns", [])
         raw_label = item.get("label") or "-"
-
-        # EMA 실시간 돌파 / 접촉 강조
-        is_ema_highlight = bool(
-            item.get("ema_highlight", False)
-        )
 
         if raw_label != "-":
 
@@ -3075,16 +2912,9 @@ def last_three_pattern_html(row):
         elif is_rsi_low:
             rsi_class = "rsi-highlight-low"
 
-        # EMA 강조 클래스만 노란색 배경 적용
-        ema_highlight_class = (
-            "ema-highlight"
-            if is_ema_highlight
-            else ""
-        )
-
         boxes.append(
             f"""
-            <div class="three-candle-item {rsi_class} {ema_highlight_class}">
+            <div class="three-candle-item {rsi_class}">
 
                 <div class="three-candle-label">
                     {label}
@@ -3244,9 +3074,6 @@ def btc_html():
                 <span class="rsi-condition-label">
                     {RSI_THRESHOLD} 이상 녹색 · {RSI_LOWER_THRESHOLD} 이하 적색
                 </span>
-                <span class="rsi-condition-label">
-                    EMA{EMA_HIGHLIGHT_PERIOD} 돌파 / 접촉 노란색
-                </span>
             </div>
 
             {three_pattern_html}
@@ -3326,9 +3153,6 @@ def signal_card(row):
                 <span class="rsi-condition-label">
                     {RSI_THRESHOLD} 이상 녹색 · {RSI_LOWER_THRESHOLD} 이하 적색
                 </span>
-                <span class="rsi-condition-label">
-                    EMA{EMA_HIGHLIGHT_PERIOD} 돌파 / 접촉 노란색
-                </span>
             </div>
 
             {three_pattern_html}
@@ -3372,7 +3196,6 @@ def signal_section():
         <span>최근 {RSI_CHECK_CANDLES}개 봉 중 RSI({RSI_PERIOD}) {RSI_THRESHOLD} 이상 또는 {RSI_LOWER_THRESHOLD} 이하</span>
         <span>EMA{EMA_FAST_PERIOD} &gt; EMA{EMA_MIDDLE_PERIOD} &gt; EMA{EMA_SLOW_PERIOD} 정배열</span>
         <span>EMA 및 RSI 시간봉: {pattern_timeframe_label}</span>
-        <span>실시간 강조 기준선: EMA{EMA_HIGHLIGHT_PERIOD}</span>
         <span>BTC 거래대금 비교 없음</span>
         <span>24H 거래대금 높은 순 정렬</span>
 
@@ -3477,9 +3300,6 @@ def card(row, kind):
                 최근 12개 봉 · {timeframe_label} · RSI({RSI_PERIOD})
                 <span class="rsi-condition-label">
                     {RSI_THRESHOLD} 이상 녹색 · {RSI_LOWER_THRESHOLD} 이하 적색
-                </span>
-                <span class="rsi-condition-label">
-                    EMA{EMA_HIGHLIGHT_PERIOD} 돌파 / 접촉 노란색
                 </span>
             </div>
 
@@ -3761,53 +3581,6 @@ section { margin-bottom:11px; }
 
 .three-candle-item.rsi-highlight-high .candle-date { color:var(--green); }
 .three-candle-item.rsi-highlight-low .candle-date { color:var(--red); }
-
-/* 선택한 EMA 돌파 / 접촉 캔들만 노란색 강조 */
-.three-candle-item.ema-highlight {
-    background:#fff0a6 !important;
-    border:2px solid #ffd000 !important;
-    box-shadow:
-        inset 0 0 0 1px rgba(255,190,0,.25),
-        0 0 8px rgba(255,210,0,.25);
-}
-
-.three-candle-item.ema-highlight .candle-date {
-    color:#765000 !important;
-    font-weight:900;
-}
-
-.three-candle-item.ema-highlight .candle-time {
-    color:#8a6500 !important;
-}
-
-.three-candle-item.ema-highlight .candle-live {
-    color:#8a4d00 !important;
-}
-
-.three-candle-item.ema-highlight .pattern-name {
-    color:#684500 !important;
-    font-weight:900;
-}
-
-.three-candle-item.ema-highlight .candle-change-up {
-    color:#087b4d !important;
-}
-
-.three-candle-item.ema-highlight .candle-change-down {
-    color:#bd2638 !important;
-}
-
-.three-candle-item.ema-highlight .candle-change-zero,
-.three-candle-item.ema-highlight .candle-change-none {
-    color:#765000 !important;
-}
-
-.three-candle-item.ema-highlight .rsi-value {
-    color:#684500 !important;
-    background:#ffe078 !important;
-    border:1px solid #d5a900 !important;
-    box-shadow:none !important;
-}
 
 .candle-change {
     width:100%;
@@ -4783,20 +4556,6 @@ def startup():
 
     log.info(
         "캔들별 변동률: 해당 캔들 시가 대비 종가 기준"
-    )
-
-    log.info(
-        "실시간 EMA 강조 기준선: EMA%s",
-        EMA_HIGHLIGHT_PERIOD
-    )
-
-    log.info(
-        "현재 진행 중인 캔들의 EMA%s 상향돌파 / 하향돌파 / 접촉 시 노란색 강조",
-        EMA_HIGHLIGHT_PERIOD
-    )
-
-    log.info(
-        "EMA 실시간 강조 대상: BTC OKX / 업비트 SIGNAL / TOP"
     )
 
     log.info(
