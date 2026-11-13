@@ -1,4 +1,3 @@
-
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
@@ -62,6 +61,11 @@ RSI_THRESHOLD = 70
 RSI_LOWER_THRESHOLD = 0
 
 RSI_CHECK_CANDLES = 18
+
+# EMA 정배열 조건
+EMA_FAST_PERIOD = 10
+EMA_MIDDLE_PERIOD = 20
+EMA_SLOW_PERIOD = 100
 
 DISPLAY_CANDLE_COUNT = 18
 
@@ -600,6 +604,27 @@ def calculate_rsi(close_series, period=14):
     )
 
     return rsi
+
+
+# =========================================================
+# EMA 계산
+# =========================================================
+
+def calculate_ema(close_series, period):
+
+    if close_series is None:
+        return pd.Series(dtype=float)
+
+    close = pd.to_numeric(
+        close_series,
+        errors="coerce"
+    )
+
+    return close.ewm(
+        span=period,
+        min_periods=period,
+        adjust=False
+    ).mean()
 
 
 # =========================================================
@@ -1278,7 +1303,7 @@ def build_timeframe_periods(df, timeframe, current_price=None):
 
 
 # =========================================================
-# 업비트 SIGNAL 시간봉 분석 + RSI
+# 업비트 SIGNAL 시간봉 분석 + RSI + EMA
 # =========================================================
 
 def analyze_signal_candles(market, price):
@@ -1303,7 +1328,11 @@ def analyze_signal_candles(market, price):
         "rsi_signal": False,
         "rsi_values": [],
         "rsi_low_count": 0,
-        "rsi_high_count": 0
+        "rsi_high_count": 0,
+        "ema10": None,
+        "ema20": None,
+        "ema100": None,
+        "ema_alignment": False
     }
 
     timeframe = CANDLE_PATTERN_TIMEFRAME
@@ -1343,6 +1372,10 @@ def analyze_signal_candles(market, price):
 
     if not periods:
         return empty_result
+
+    # =====================================================
+    # RSI 계산
+    # =====================================================
 
     rsi_series = calculate_rsi(
         df["close"],
@@ -1391,6 +1424,58 @@ def analyze_signal_candles(market, price):
     rsi_signal = bool(
         rsi_high_periods or rsi_low_periods
     )
+
+    # =====================================================
+    # EMA 10 / 20 / 100 계산
+    # 현재 진행 중인 캔들 가격 반영
+    # =====================================================
+
+    ema10_series = calculate_ema(
+        df["close"],
+        EMA_FAST_PERIOD
+    )
+
+    ema20_series = calculate_ema(
+        df["close"],
+        EMA_MIDDLE_PERIOD
+    )
+
+    ema100_series = calculate_ema(
+        df["close"],
+        EMA_SLOW_PERIOD
+    )
+
+    ema10 = (
+        float(ema10_series.iloc[-1])
+        if len(ema10_series) > 0
+        and pd.notna(ema10_series.iloc[-1])
+        else None
+    )
+
+    ema20 = (
+        float(ema20_series.iloc[-1])
+        if len(ema20_series) > 0
+        and pd.notna(ema20_series.iloc[-1])
+        else None
+    )
+
+    ema100 = (
+        float(ema100_series.iloc[-1])
+        if len(ema100_series) > 0
+        and pd.notna(ema100_series.iloc[-1])
+        else None
+    )
+
+    ema_alignment = bool(
+        ema10 is not None
+        and ema20 is not None
+        and ema100 is not None
+        and ema10 > ema20 > ema100
+    )
+
+    # =====================================================
+    # 캔들 패턴 분석
+    # =====================================================
 
     pattern_info = analyze_previous_current_pattern(
         periods
@@ -1471,7 +1556,11 @@ def analyze_signal_candles(market, price):
         "rsi_signal": rsi_signal,
         "rsi_values": rsi_values,
         "rsi_low_count": len(rsi_low_periods),
-        "rsi_high_count": len(rsi_high_periods)
+        "rsi_high_count": len(rsi_high_periods),
+        "ema10": ema10,
+        "ema20": ema20,
+        "ema100": ema100,
+        "ema_alignment": ema_alignment
     }
 
 
@@ -1551,7 +1640,16 @@ def make_row(
         "rsi_signal": analysis_pattern.get("rsi_signal", False),
         "rsi_values": analysis_pattern.get("rsi_values", []),
         "rsi_low_count": analysis_pattern.get("rsi_low_count", 0),
-        "rsi_high_count": analysis_pattern.get("rsi_high_count", 0)
+        "rsi_high_count": analysis_pattern.get("rsi_high_count", 0),
+
+        # EMA 정배열 정보
+        "ema10": analysis_pattern.get("ema10"),
+        "ema20": analysis_pattern.get("ema20"),
+        "ema100": analysis_pattern.get("ema100"),
+        "ema_alignment": analysis_pattern.get(
+            "ema_alignment",
+            False
+        )
     }
 
 
@@ -1675,7 +1773,11 @@ def update_upbit():
                 "rsi_signal": False,
                 "rsi_values": [],
                 "rsi_low_count": 0,
-                "rsi_high_count": 0
+                "rsi_high_count": 0,
+                "ema10": None,
+                "ema20": None,
+                "ema100": None,
+                "ema_alignment": False
             }
 
         rows.append(
@@ -1695,12 +1797,23 @@ def update_upbit():
     latest_upbit_daily_update_time = kst()
     latest_upbit_update_time = latest_upbit_daily_update_time
 
+    # =====================================================
+    # SIGNAL 선정 조건
+    #
+    # 1. 당일 변동률 > DAILY_CHANGE_MIN
+    # 2. 최근 RSI_CHECK_CANDLES개 봉 중 RSI 기준 충족
+    # 3. EMA10 > EMA20 > EMA100 정배열
+    #
+    # 세 가지 조건 모두 충족해야 SIGNAL
+    # =====================================================
+
     latest_signal_data = [
         row for row in rows
         if (
             row.get("daily_change") is not None
             and row.get("daily_change") > DAILY_CHANGE_MIN
             and row.get("rsi_signal") is True
+            and row.get("ema_alignment") is True
         )
     ]
 
@@ -1721,7 +1834,8 @@ def update_upbit():
 
     log.info(
         "UPBIT | TOP%s | "
-        "SIGNAL 조건=당일 변동률>%s%% AND 최근 %s개 봉 RSI(%s)>=%s OR <=%s | "
+        "SIGNAL 조건=당일 변동률>%s%% AND 최근 %s개 봉 RSI(%s)>=%s OR <=%s "
+        "AND EMA%s>EMA%s>EMA%s | "
         "시간봉=%s | SIGNAL=%s | 정렬=24H 거래대금 순",
         TOP_N,
         DAILY_CHANGE_MIN,
@@ -1729,6 +1843,9 @@ def update_upbit():
         RSI_PERIOD,
         RSI_THRESHOLD,
         RSI_LOWER_THRESHOLD,
+        EMA_FAST_PERIOD,
+        EMA_MIDDLE_PERIOD,
+        EMA_SLOW_PERIOD,
         CANDLE_PATTERN_TIMEFRAME,
         len(latest_signal_data)
     )
@@ -2230,7 +2347,6 @@ def update_okx_btc():
     latest_btc_daily_periods = periods
 
     # =====================================================
-    # 변경 부분
     # BTC 변동률은 선택 시간봉과 무관하게
     # KST 09:00 기준 일봉으로 별도 계산
     # =====================================================
@@ -3078,7 +3194,8 @@ def signal_section():
         <span>선정 기준: 당일 변동률</span>
         <span>당일 변동률 {DAILY_CHANGE_MIN:.2f}% 초과</span>
         <span>최근 {RSI_CHECK_CANDLES}개 봉 중 RSI({RSI_PERIOD}) {RSI_THRESHOLD} 이상 또는 {RSI_LOWER_THRESHOLD} 이하</span>
-        <span>RSI 시간봉: {pattern_timeframe_label}</span>
+        <span>EMA{EMA_FAST_PERIOD} &gt; EMA{EMA_MIDDLE_PERIOD} &gt; EMA{EMA_SLOW_PERIOD} 정배열</span>
+        <span>EMA 및 RSI 시간봉: {pattern_timeframe_label}</span>
         <span>BTC 거래대금 비교 없음</span>
         <span>24H 거래대금 높은 순 정렬</span>
 
@@ -4360,6 +4477,18 @@ def startup():
     )
 
     log.info(
+        "SIGNAL EMA 조건: EMA%s > EMA%s > EMA%s",
+        EMA_FAST_PERIOD,
+        EMA_MIDDLE_PERIOD,
+        EMA_SLOW_PERIOD
+    )
+
+    log.info(
+        "SIGNAL EMA 및 RSI 계산 시간봉: %s",
+        get_timeframe_label(CANDLE_PATTERN_TIMEFRAME)
+    )
+
+    log.info(
         "SIGNAL BTC 거래대금 비교 조건 사용 안 함"
     )
 
@@ -4382,10 +4511,14 @@ def startup():
     )
 
     log.info(
-        "최근 %s개 봉 중 RSI %s 이상 또는 %s 이하이면 SIGNAL 포함",
+        "최근 %s개 봉 중 RSI %s 이상 또는 %s 이하이면 SIGNAL 후보",
         RSI_CHECK_CANDLES,
         RSI_THRESHOLD,
         RSI_LOWER_THRESHOLD
+    )
+
+    log.info(
+        "EMA 정배열 조건까지 모두 충족해야 최종 SIGNAL"
     )
 
     log.info(
