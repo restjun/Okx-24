@@ -1,3 +1,4 @@
+
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
@@ -2994,13 +2995,7 @@ def last_three_pattern_html(row):
         patterns = item.get("patterns", [])
         raw_label = item.get("label") or "-"
 
-        # 기존 상승장악형 / 상승관통형 강조 유지
-        is_bullish_pattern_highlight = any(
-            pattern in BULLISH_HIGHLIGHT_PATTERNS
-            for pattern in patterns
-        )
-
-        # 선택한 EMA 실시간 돌파 / 접촉 강조
+        # EMA 실시간 돌파 / 접촉 강조
         is_ema_highlight = bool(
             item.get("ema_highlight", False)
         )
@@ -3080,14 +3075,7 @@ def last_three_pattern_html(row):
         elif is_rsi_low:
             rsi_class = "rsi-highlight-low"
 
-        # 기존 상승 패턴 강조 클래스
-        pattern_highlight_class = (
-            "bullish-pattern-highlight"
-            if is_bullish_pattern_highlight
-            else ""
-        )
-
-        # EMA 강조 클래스
+        # EMA 강조 클래스만 노란색 배경 적용
         ema_highlight_class = (
             "ema-highlight"
             if is_ema_highlight
@@ -3096,7 +3084,7 @@ def last_three_pattern_html(row):
 
         boxes.append(
             f"""
-            <div class="three-candle-item {rsi_class} {pattern_highlight_class} {ema_highlight_class}">
+            <div class="three-candle-item {rsi_class} {ema_highlight_class}">
 
                 <div class="three-candle-label">
                     {label}
@@ -3774,75 +3762,7 @@ section { margin-bottom:11px; }
 .three-candle-item.rsi-highlight-high .candle-date { color:var(--green); }
 .three-candle-item.rsi-highlight-low .candle-date { color:var(--red); }
 
-/* 상승장악형 / 상승관통형 카드 전체 노란색 강조 */
-.three-candle-item.bullish-pattern-highlight {
-    background:#fff0a6 !important;
-    border:2px solid #ffd000 !important;
-    box-shadow:
-        inset 0 0 0 1px rgba(255,190,0,.25),
-        0 0 8px rgba(255,210,0,.25);
-}
-
-.three-candle-item.bullish-pattern-highlight .candle-date {
-    color:#765000 !important;
-    font-weight:900;
-}
-
-.three-candle-item.bullish-pattern-highlight .candle-time {
-    color:#8a6500 !important;
-}
-
-.three-candle-item.bullish-pattern-highlight .candle-live {
-    color:#8a4d00 !important;
-}
-
-.three-candle-item.bullish-pattern-highlight .pattern-name {
-    color:#684500 !important;
-    font-weight:900;
-}
-
-.three-candle-item.bullish-pattern-highlight .candle-change-up {
-    color:#087b4d !important;
-}
-
-.three-candle-item.bullish-pattern-highlight .candle-change-down {
-    color:#bd2638 !important;
-}
-
-.three-candle-item.bullish-pattern-highlight .candle-change-zero {
-    color:#765000 !important;
-}
-
-.three-candle-item.bullish-pattern-highlight .candle-change-none {
-    color:#765000 !important;
-}
-
-.three-candle-item.bullish-pattern-highlight .rsi-value {
-    color:#684500 !important;
-    background:#ffe078 !important;
-    border:1px solid #d5a900 !important;
-    box-shadow:none !important;
-}
-
-.three-candle-item.bullish-pattern-highlight .rsi-value.rsi-high {
-    color:#684500 !important;
-    background:#ffe078 !important;
-    border-color:#d5a900 !important;
-}
-
-.three-candle-item.bullish-pattern-highlight .rsi-value.rsi-low {
-    color:#684500 !important;
-    background:#ffe078 !important;
-    border-color:#d5a900 !important;
-}
-
-.three-candle-item.bullish-pattern-highlight .rsi-value.rsi-unavailable {
-    color:#684500 !important;
-    background:#ffe078 !important;
-    border-color:#d5a900 !important;
-}
-
-/* 선택한 EMA 돌파 / 접촉 캔들 강조 */
+/* 선택한 EMA 돌파 / 접촉 캔들만 노란색 강조 */
 .three-candle-item.ema-highlight {
     background:#fff0a6 !important;
     border:2px solid #ffd000 !important;
@@ -4833,7 +4753,7 @@ def startup():
     )
 
     log.info(
-        "녹색 강조: 상승장악형 및 상승관통형"
+        "상승장악형 및 상승관통형 패턴 이름은 기존 녹색 표시 유지"
     )
 
     log.info(
@@ -4842,7 +4762,7 @@ def startup():
     )
 
     log.info(
-        "녹색 강조: %s개 이상 연속 일반 양봉",
+        "%s개 이상 연속 일반 양봉",
         CONSECUTIVE_BULLISH_MIN
     )
 
