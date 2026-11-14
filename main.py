@@ -38,7 +38,7 @@ UTC = ZoneInfo("UTC")
 # 사용자 설정
 # =========================================================
 
-TOP_N = 10
+TOP_N = 20
 SHOW_TOP_LIST = "N"
 UPDATE_MINUTES = 1
 
@@ -63,9 +63,9 @@ RSI_LOWER_THRESHOLD = 30
 RSI_CHECK_CANDLES = 12
 
 # EMA 정배열 조건
-EMA_FAST_PERIOD = 10
-EMA_MIDDLE_PERIOD = 20
-EMA_SLOW_PERIOD = 50
+EMA_FAST_PERIOD = 5
+EMA_MIDDLE_PERIOD = 10
+EMA_SLOW_PERIOD = 20
 
 DISPLAY_CANDLE_COUNT = 12
 
