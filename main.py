@@ -66,6 +66,7 @@ RSI_CHECK_CANDLES = 12
 EMA_FAST_PERIOD = 5
 EMA_MIDDLE_PERIOD = 10
 EMA_SLOW_PERIOD = 20
+EMA_LONG_PERIOD = 50
 
 DISPLAY_CANDLE_COUNT = 12
 
@@ -1329,9 +1330,10 @@ def analyze_signal_candles(market, price):
         "rsi_values": [],
         "rsi_low_count": 0,
         "rsi_high_count": 0,
+        "ema5": None,
         "ema10": None,
         "ema20": None,
-        "ema100": None,
+        "ema50": None,
         "ema_alignment": False
     }
 
@@ -1426,23 +1428,35 @@ def analyze_signal_candles(market, price):
     )
 
     # =====================================================
-    # EMA 10 / 20 / 50 계산
+    # EMA 5 / 10 / 20 / 50 계산
     # 현재 진행 중인 캔들 가격 반영
     # =====================================================
 
-    ema10_series = calculate_ema(
+    ema5_series = calculate_ema(
         df["close"],
         EMA_FAST_PERIOD
     )
 
-    ema20_series = calculate_ema(
+    ema10_series = calculate_ema(
         df["close"],
         EMA_MIDDLE_PERIOD
     )
 
-    ema100_series = calculate_ema(
+    ema20_series = calculate_ema(
         df["close"],
         EMA_SLOW_PERIOD
+    )
+
+    ema50_series = calculate_ema(
+        df["close"],
+        EMA_LONG_PERIOD
+    )
+
+    ema5 = (
+        float(ema5_series.iloc[-1])
+        if len(ema5_series) > 0
+        and pd.notna(ema5_series.iloc[-1])
+        else None
     )
 
     ema10 = (
@@ -1459,18 +1473,23 @@ def analyze_signal_candles(market, price):
         else None
     )
 
-    ema100 = (
-        float(ema100_series.iloc[-1])
-        if len(ema100_series) > 0
-        and pd.notna(ema100_series.iloc[-1])
+    ema50 = (
+        float(ema50_series.iloc[-1])
+        if len(ema50_series) > 0
+        and pd.notna(ema50_series.iloc[-1])
         else None
     )
 
+    # =====================================================
+    # EMA 5 > 10 > 20 > 50 정배열
+    # =====================================================
+
     ema_alignment = bool(
-        ema10 is not None
+        ema5 is not None
+        and ema10 is not None
         and ema20 is not None
-        and ema100 is not None
-        and ema10 > ema20 > ema100
+        and ema50 is not None
+        and ema5 > ema10 > ema20 > ema50
     )
 
     # =====================================================
@@ -1557,9 +1576,10 @@ def analyze_signal_candles(market, price):
         "rsi_values": rsi_values,
         "rsi_low_count": len(rsi_low_periods),
         "rsi_high_count": len(rsi_high_periods),
+        "ema5": ema5,
         "ema10": ema10,
         "ema20": ema20,
-        "ema100": ema100,
+        "ema50": ema50,
         "ema_alignment": ema_alignment
     }
 
@@ -1643,9 +1663,10 @@ def make_row(
         "rsi_high_count": analysis_pattern.get("rsi_high_count", 0),
 
         # EMA 정배열 정보
+        "ema5": analysis_pattern.get("ema5"),
         "ema10": analysis_pattern.get("ema10"),
         "ema20": analysis_pattern.get("ema20"),
-        "ema100": analysis_pattern.get("ema100"),
+        "ema50": analysis_pattern.get("ema50"),
         "ema_alignment": analysis_pattern.get(
             "ema_alignment",
             False
@@ -1774,9 +1795,10 @@ def update_upbit():
                 "rsi_values": [],
                 "rsi_low_count": 0,
                 "rsi_high_count": 0,
+                "ema5": None,
                 "ema10": None,
                 "ema20": None,
-                "ema100": None,
+                "ema50": None,
                 "ema_alignment": False
             }
 
@@ -1802,7 +1824,7 @@ def update_upbit():
     #
     # 1. 당일 변동률 > DAILY_CHANGE_MIN
     # 2. 최근 RSI_CHECK_CANDLES개 봉 중 RSI >=70 또는 <=30
-    # 3. EMA10 > EMA20 > EMA50 정배열
+    # 3. EMA5 > EMA10 > EMA20 > EMA50 정배열
     #
     # 세 가지 조건 모두 충족해야 SIGNAL
     # =====================================================
@@ -1835,7 +1857,7 @@ def update_upbit():
     log.info(
         "UPBIT | TOP%s | "
         "SIGNAL 조건=당일 변동률>%s%% AND 최근 %s개 봉 RSI(%s)>=%s OR <=%s "
-        "AND EMA%s>EMA%s>EMA%s | "
+        "AND EMA%s>EMA%s>EMA%s>EMA%s | "
         "시간봉=%s | SIGNAL=%s | 정렬=24H 거래대금 순",
         TOP_N,
         DAILY_CHANGE_MIN,
@@ -1846,6 +1868,7 @@ def update_upbit():
         EMA_FAST_PERIOD,
         EMA_MIDDLE_PERIOD,
         EMA_SLOW_PERIOD,
+        EMA_LONG_PERIOD,
         CANDLE_PATTERN_TIMEFRAME,
         len(latest_signal_data)
     )
@@ -3194,7 +3217,7 @@ def signal_section():
         <span>선정 기준: 당일 변동률</span>
         <span>당일 변동률 {DAILY_CHANGE_MIN:.2f}% 초과</span>
         <span>최근 {RSI_CHECK_CANDLES}개 봉 중 RSI({RSI_PERIOD}) {RSI_THRESHOLD} 이상 또는 {RSI_LOWER_THRESHOLD} 이하</span>
-        <span>EMA{EMA_FAST_PERIOD} &gt; EMA{EMA_MIDDLE_PERIOD} &gt; EMA{EMA_SLOW_PERIOD} 정배열</span>
+        <span>EMA{EMA_FAST_PERIOD} &gt; EMA{EMA_MIDDLE_PERIOD} &gt; EMA{EMA_SLOW_PERIOD} &gt; EMA{EMA_LONG_PERIOD} 정배열</span>
         <span>EMA 및 RSI 시간봉: {pattern_timeframe_label}</span>
         <span>BTC 거래대금 비교 없음</span>
         <span>24H 거래대금 높은 순 정렬</span>
@@ -4477,10 +4500,11 @@ def startup():
     )
 
     log.info(
-        "SIGNAL EMA 조건: EMA%s > EMA%s > EMA%s",
+        "SIGNAL EMA 조건: EMA%s > EMA%s > EMA%s > EMA%s",
         EMA_FAST_PERIOD,
         EMA_MIDDLE_PERIOD,
-        EMA_SLOW_PERIOD
+        EMA_SLOW_PERIOD,
+        EMA_LONG_PERIOD
     )
 
     log.info(
@@ -4518,7 +4542,7 @@ def startup():
     )
 
     log.info(
-        "EMA 정배열 조건까지 모두 충족해야 최종 SIGNAL"
+        "EMA 5 > EMA 10 > EMA 20 > EMA 50 정배열까지 모두 충족해야 최종 SIGNAL"
     )
 
     log.info(
