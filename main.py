@@ -62,11 +62,23 @@ RSI_LOWER_THRESHOLD = 30
 
 RSI_CHECK_CANDLES = 12
 
-# EMA 정배열 조건
+# =========================================================
+# EMA 설정
+# =========================================================
+
 EMA_FAST_PERIOD = 5
 EMA_MIDDLE_PERIOD = 10
 EMA_SLOW_PERIOD = 20
 EMA_LONG_PERIOD = 50
+
+# 개별 EMA 사용 여부
+# Y = 정배열 비교에 사용
+# N = 정배열 비교에서 제외
+
+USE_EMA_5 = "Y"
+USE_EMA_10 = "Y"
+USE_EMA_20 = "Y"
+USE_EMA_50 = "Y"
 
 DISPLAY_CANDLE_COUNT = 12
 
@@ -88,6 +100,35 @@ TIMEFRAME_MINUTES = {
     "4h": 240,
     "1d": 1440
 }
+
+
+# =========================================================
+# EMA 조건 표시
+# =========================================================
+
+def get_ema_condition_text():
+
+    selected = []
+
+    if USE_EMA_5 == "Y":
+        selected.append(f"EMA{EMA_FAST_PERIOD}")
+
+    if USE_EMA_10 == "Y":
+        selected.append(f"EMA{EMA_MIDDLE_PERIOD}")
+
+    if USE_EMA_20 == "Y":
+        selected.append(f"EMA{EMA_SLOW_PERIOD}")
+
+    if USE_EMA_50 == "Y":
+        selected.append(f"EMA{EMA_LONG_PERIOD}")
+
+    if not selected:
+        return "EMA 조건 사용 안 함"
+
+    if len(selected) == 1:
+        return f"{selected[0]} 단독 사용 (정배열 비교 없음)"
+
+    return " > ".join(selected) + " 정배열"
 
 
 # =========================================================
@@ -1481,16 +1522,41 @@ def analyze_signal_candles(market, price):
     )
 
     # =====================================================
-    # EMA 5 > 10 > 20 > 50 정배열
+    # 선택한 EMA만 정배열 비교
     # =====================================================
 
-    ema_alignment = bool(
-        ema5 is not None
-        and ema10 is not None
-        and ema20 is not None
-        and ema50 is not None
-        and ema5 > ema10 > ema20 > ema50
-    )
+    enabled_emas = []
+
+    if USE_EMA_5 == "Y":
+        enabled_emas.append(("EMA5", ema5))
+
+    if USE_EMA_10 == "Y":
+        enabled_emas.append(("EMA10", ema10))
+
+    if USE_EMA_20 == "Y":
+        enabled_emas.append(("EMA20", ema20))
+
+    if USE_EMA_50 == "Y":
+        enabled_emas.append(("EMA50", ema50))
+
+    if not enabled_emas:
+
+        # 모든 EMA를 사용하지 않으면 EMA 필터 비활성화
+        ema_alignment = True
+
+    elif any(
+        value is None
+        for _, value in enabled_emas
+    ):
+
+        ema_alignment = False
+
+    else:
+
+        ema_alignment = all(
+            enabled_emas[i][1] > enabled_emas[i + 1][1]
+            for i in range(len(enabled_emas) - 1)
+        )
 
     # =====================================================
     # 캔들 패턴 분석
@@ -1824,7 +1890,7 @@ def update_upbit():
     #
     # 1. 당일 변동률 > DAILY_CHANGE_MIN
     # 2. 최근 RSI_CHECK_CANDLES개 봉 중 RSI >=70 또는 <=30
-    # 3. EMA5 > EMA10 > EMA20 > EMA50 정배열
+    # 3. 선택한 EMA만 정배열 비교
     #
     # 세 가지 조건 모두 충족해야 SIGNAL
     # =====================================================
@@ -1857,7 +1923,7 @@ def update_upbit():
     log.info(
         "UPBIT | TOP%s | "
         "SIGNAL 조건=당일 변동률>%s%% AND 최근 %s개 봉 RSI(%s)>=%s OR <=%s "
-        "AND EMA%s>EMA%s>EMA%s>EMA%s | "
+        "AND %s | "
         "시간봉=%s | SIGNAL=%s | 정렬=24H 거래대금 순",
         TOP_N,
         DAILY_CHANGE_MIN,
@@ -1865,10 +1931,7 @@ def update_upbit():
         RSI_PERIOD,
         RSI_THRESHOLD,
         RSI_LOWER_THRESHOLD,
-        EMA_FAST_PERIOD,
-        EMA_MIDDLE_PERIOD,
-        EMA_SLOW_PERIOD,
-        EMA_LONG_PERIOD,
+        get_ema_condition_text(),
         CANDLE_PATTERN_TIMEFRAME,
         len(latest_signal_data)
     )
@@ -3217,7 +3280,7 @@ def signal_section():
         <span>선정 기준: 당일 변동률</span>
         <span>당일 변동률 {DAILY_CHANGE_MIN:.2f}% 초과</span>
         <span>최근 {RSI_CHECK_CANDLES}개 봉 중 RSI({RSI_PERIOD}) {RSI_THRESHOLD} 이상 또는 {RSI_LOWER_THRESHOLD} 이하</span>
-        <span>EMA{EMA_FAST_PERIOD} &gt; EMA{EMA_MIDDLE_PERIOD} &gt; EMA{EMA_SLOW_PERIOD} &gt; EMA{EMA_LONG_PERIOD} 정배열</span>
+        <span>{html.escape(get_ema_condition_text())}</span>
         <span>EMA 및 RSI 시간봉: {pattern_timeframe_label}</span>
         <span>BTC 거래대금 비교 없음</span>
         <span>24H 거래대금 높은 순 정렬</span>
@@ -4500,11 +4563,20 @@ def startup():
     )
 
     log.info(
-        "SIGNAL EMA 조건: EMA%s > EMA%s > EMA%s > EMA%s",
+        "SIGNAL EMA 조건: %s",
+        get_ema_condition_text()
+    )
+
+    log.info(
+        "EMA 개별 사용 설정 | EMA%s=%s | EMA%s=%s | EMA%s=%s | EMA%s=%s",
         EMA_FAST_PERIOD,
+        USE_EMA_5,
         EMA_MIDDLE_PERIOD,
+        USE_EMA_10,
         EMA_SLOW_PERIOD,
-        EMA_LONG_PERIOD
+        USE_EMA_20,
+        EMA_LONG_PERIOD,
+        USE_EMA_50
     )
 
     log.info(
@@ -4542,7 +4614,8 @@ def startup():
     )
 
     log.info(
-        "EMA 5 > EMA 10 > EMA 20 > EMA 50 정배열까지 모두 충족해야 최종 SIGNAL"
+        "선택된 EMA 정배열까지 모두 충족해야 최종 SIGNAL: %s",
+        get_ema_condition_text()
     )
 
     log.info(
