@@ -1880,7 +1880,7 @@ def analyze_signal_candles(market, price):
 
     # =====================================================
     # EMA 정배열 완성 이벤트 감지
-    # 확정봉만 사용
+    # 확정봉 전체를 과거부터 순서대로 검사
     # =====================================================
 
     current_start = get_candle_start(
@@ -1894,39 +1894,42 @@ def analyze_signal_candles(market, price):
         if candle_datetime < current_start
     ]
 
-    if (
-        len(enabled_ema_series) >= 2
-        and len(confirmed_indices) >= 2
-    ):
+    if len(enabled_ema_series) >= 2 and len(confirmed_indices) >= 2:
 
-        previous_index = confirmed_indices[-2]
-        latest_confirmed_index = confirmed_indices[-1]
+        # 과거 확정봉부터 최신 확정봉까지 순서대로 검사한다.
+        # 프로그램 시작 시에도 조회된 과거 데이터에서
+        # 비정배열 → 정배열 전환 지점을 복원한다.
+        for position in range(1, len(confirmed_indices)):
 
-        previous_alignment = get_ema_alignment_at_index(
-            enabled_ema_series,
-            previous_index
-        )
+            previous_index = confirmed_indices[position - 1]
+            current_index = confirmed_indices[position]
 
-        latest_confirmed_alignment = get_ema_alignment_at_index(
-            enabled_ema_series,
-            latest_confirmed_index
-        )
+            previous_alignment = get_ema_alignment_at_index(
+                enabled_ema_series,
+                previous_index
+            )
 
-        latest_confirmed_start = df.iloc[
-            latest_confirmed_index
-        ]["datetime"]
+            current_alignment = get_ema_alignment_at_index(
+                enabled_ema_series,
+                current_index
+            )
 
-        if (
-            previous_alignment is not None
-            and latest_confirmed_alignment is not None
-        ):
+            current_confirmed_start = df.iloc[
+                current_index
+            ]["datetime"]
+
+            if (
+                previous_alignment is None
+                or current_alignment is None
+            ):
+                continue
 
             update_ema_alignment_transition(
                 market,
                 timeframe,
                 previous_alignment,
-                latest_confirmed_alignment,
-                latest_confirmed_start
+                current_alignment,
+                current_confirmed_start
             )
 
     # =====================================================
@@ -1953,7 +1956,7 @@ def analyze_signal_candles(market, price):
         item["active"] = period.get("active", False)
 
         # 각 캔들의 시작 시간으로 이벤트 조회
-        # 진행 중인 캔들도 이벤트가 없으면 노란색 표시되지 않음
+        # 진행 중인 캔들은 확정봉 이벤트가 기록되지 않음
         candle_start = period.get("start")
 
         item["ema_alignment_events"] = (
@@ -5197,6 +5200,15 @@ def startup():
 
     log.info(
         "EMA 정배열 판정에서 진행 중인 캔들 제외"
+    )
+
+    log.info(
+        "프로그램 시작 시 과거 확정봉 EMA 정배열 이벤트 복원"
+    )
+
+    log.info(
+        "과거 확정봉을 처음부터 순서대로 검사하여 "
+        "비정배열에서 정배열로 전환된 캔들 기록"
     )
 
     log.info(
