@@ -116,72 +116,77 @@ ema_alignment_lock = threading.Lock()
 def update_ema_alignment_transition(
     market,
     timeframe,
-    alignment
+    previous_alignment,
+    alignment,
+    candle_start
 ):
+    """
+    확정봉 기준 EMA 정배열 완성 이벤트 기록.
 
-    now = datetime.now(KST)
+    이전 확정봉: 비정배열
+    최신 확정봉: 정배열
 
-    current_start = get_candle_start(
-        now,
-        timeframe
-    )
+    위 조건이 성립할 때만 해당 확정봉에
+    '정배열 완성' 이벤트를 기록한다.
 
-    if current_start is None:
+    정배열 유지 및 정배열 해제는 기록하지 않는다.
+    """
+
+    if candle_start is None:
+        return []
+
+    if previous_alignment is None or alignment is None:
         return []
 
     event_key = (
         market,
         timeframe,
-        current_start
+        candle_start
     )
 
     current_events = []
 
     with ema_alignment_lock:
 
-        previous_alignment = ema_alignment_states.get(
+        ema_alignment_states[
             (market, timeframe)
-        )
+        ] = {
+            "candle_start": candle_start,
+            "alignment": bool(alignment)
+        }
 
-        if previous_alignment is None:
-
-            ema_alignment_states[
-                (market, timeframe)
-            ] = bool(alignment)
-
-        elif previous_alignment != bool(alignment):
-
-            if alignment:
-                event_label = "정배열 시작"
-            else:
-                event_label = "정배열 해제"
+        # 이전 확정봉 비정배열 → 최신 확정봉 정배열
+        if (
+            previous_alignment is False
+            and alignment is True
+        ):
 
             events = ema_alignment_event_history.setdefault(
                 event_key,
                 []
             )
 
-            events.append({
-                "label": event_label,
-                "time": now.strftime("%H:%M:%S")
-            })
-
-            ema_alignment_states[
-                (market, timeframe)
-            ] = bool(alignment)
-
-            log.info(
-                "%s | %s | EMA 정배열 상태 변경: %s",
-                market,
-                get_timeframe_label(timeframe),
-                event_label
+            # 같은 확정봉에 중복 이벤트가 생기지 않도록 방지
+            already_exists = any(
+                event.get("label") == "정배열 완성"
+                for event in events
             )
 
-        else:
+            if not already_exists:
 
-            ema_alignment_states[
-                (market, timeframe)
-            ] = bool(alignment)
+                now = datetime.now(KST)
+
+                events.append({
+                    "label": "정배열 완성",
+                    "time": now.strftime("%H:%M:%S")
+                })
+
+                log.info(
+                    "%s | %s | EMA 정배열 완성 | 확정봉=%s",
+                    market,
+                    get_timeframe_label(timeframe),
+                    candle_start.strftime("%Y-%m-%d %H:%M")
+                )
 
         current_events = list(
             ema_alignment_event_history.get(
@@ -190,7 +195,8 @@ def update_ema_alignment_transition(
             )
         )
 
-        cutoff = current_start - timedelta(
+        # 오래된 이벤트 정리
+        cutoff = candle_start - timedelta(
             minutes=TIMEFRAME_MINUTES[timeframe]
             * DISPLAY_CANDLE_COUNT
         )
@@ -212,6 +218,31 @@ def update_ema_alignment_transition(
             del ema_alignment_event_history[key]
 
     return current_events
+
+
+def get_ema_alignment_events(
+    market,
+    timeframe,
+    candle_start
+):
+    """
+    특정 캔들에 기록된 EMA 이벤트 조회.
+    """
+
+    event_key = (
+        market,
+        timeframe,
+        candle_start
+    )
+
+    with ema_alignment_lock:
+
+        return list(
+            ema_alignment_event_history.get(
+                event_key,
+                []
+            )
+        )
 
 
 # =========================================================
@@ -1304,6 +1335,7 @@ def analyze_previous_current_pattern(periods):
 
     result["last_three_patterns"] = [
         {
+            "start": period.get("start"),
             "label": period["label"],
             "patterns": patterns,
             "open": period["open"],
@@ -1570,6 +1602,44 @@ def calculate_ema_alignment_count(
 
 
 # =========================================================
+# 확정봉 EMA 정배열 판정
+# =========================================================
+
+def get_ema_alignment_at_index(
+    ema_series_list,
+    index
+):
+    """
+    지정한 캔들의 EMA 정배열 여부를 계산한다.
+
+    선택된 EMA가 모두 존재하고
+    빠른 EMA > 느린 EMA 순서여야 정배열이다.
+    """
+
+    if len(ema_series_list) < 2:
+        return None
+
+    values = []
+
+    for series in ema_series_list:
+
+        if index < 0 or index >= len(series):
+            return None
+
+        value = series.iloc[index]
+
+        if pd.isna(value):
+            return None
+
+        values.append(float(value))
+
+    return all(
+        values[i] > values[i + 1]
+        for i in range(len(values) - 1)
+    )
+
+
+# =========================================================
 # 업비트 SIGNAL 시간봉 분석 + RSI + EMA
 # =========================================================
 
@@ -1809,24 +1879,55 @@ def analyze_signal_candles(market, price):
     )
 
     # =====================================================
-    # EMA 정배열 시작 / 해제 이벤트 감지
+    # EMA 정배열 완성 이벤트 감지
+    # 확정봉만 사용
     # =====================================================
 
-    current_ema_events = []
+    current_start = get_candle_start(
+        datetime.now(KST),
+        timeframe
+    )
+
+    confirmed_indices = [
+        index
+        for index, candle_datetime in enumerate(df["datetime"])
+        if candle_datetime < current_start
+    ]
 
     if (
-        len(enabled_emas) >= 2
-        and all(
-            value is not None
-            for _, value in enabled_emas
-        )
+        len(enabled_ema_series) >= 2
+        and len(confirmed_indices) >= 2
     ):
 
-        current_ema_events = update_ema_alignment_transition(
-            market,
-            timeframe,
-            ema_alignment
+        previous_index = confirmed_indices[-2]
+        latest_confirmed_index = confirmed_indices[-1]
+
+        previous_alignment = get_ema_alignment_at_index(
+            enabled_ema_series,
+            previous_index
         )
+
+        latest_confirmed_alignment = get_ema_alignment_at_index(
+            enabled_ema_series,
+            latest_confirmed_index
+        )
+
+        latest_confirmed_start = df.iloc[
+            latest_confirmed_index
+        ]["datetime"]
+
+        if (
+            previous_alignment is not None
+            and latest_confirmed_alignment is not None
+        ):
+
+            update_ema_alignment_transition(
+                market,
+                timeframe,
+                previous_alignment,
+                latest_confirmed_alignment,
+                latest_confirmed_start
+            )
 
     # =====================================================
     # 캔들 패턴 분석
@@ -1851,12 +1952,19 @@ def analyze_signal_candles(market, price):
         item["change"] = period.get("change")
         item["active"] = period.get("active", False)
 
-        if period.get("active") is True:
-            item["ema_alignment_events"] = list(
-                current_ema_events
+        # 각 캔들의 시작 시간으로 이벤트 조회
+        # 진행 중인 캔들도 이벤트가 없으면 노란색 표시되지 않음
+        candle_start = period.get("start")
+
+        item["ema_alignment_events"] = (
+            get_ema_alignment_events(
+                market,
+                timeframe,
+                candle_start
             )
-        else:
-            item["ema_alignment_events"] = []
+            if candle_start is not None
+            else []
+        )
 
     current_signal = pattern_info[
         "current_bullish_pattern"
@@ -5062,7 +5170,7 @@ def startup():
     )
 
     log.info(
-        "EMA 정배열 시작 / 해제 순간 해당 캔들 노란색 강조"
+        "EMA 정배열 완성 시 확정된 해당 캔들만 노란색 강조"
     )
 
     log.info(
@@ -5070,7 +5178,11 @@ def startup():
     )
 
     log.info(
-        "EMA 이벤트는 발생한 캔들에 유지"
+        "EMA 정배열 해제 캔들은 노란색 강조하지 않음"
+    )
+
+    log.info(
+        "EMA 정배열 이벤트는 발생한 확정 캔들에 유지"
     )
 
     log.info(
@@ -5079,8 +5191,12 @@ def startup():
     )
 
     log.info(
-        "EMA 정배열 실시간 확인 주기: %s분",
+        "EMA 정배열 확정봉 확인 주기: %s분",
         UPDATE_MINUTES
+    )
+
+    log.info(
+        "EMA 정배열 판정에서 진행 중인 캔들 제외"
     )
 
     log.info(
