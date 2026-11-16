@@ -62,6 +62,7 @@ RSI_LOWER_THRESHOLD = 50
 
 RSI_CHECK_CANDLES = 12
 
+
 # =========================================================
 # EMA 설정
 # =========================================================
@@ -75,6 +76,10 @@ USE_EMA_5 = "Y"
 USE_EMA_10 = "Y"
 USE_EMA_20 = "N"
 USE_EMA_50 = "N"
+
+# EMA 정배열 연속 카운팅 범위
+EMA_ALIGNMENT_COUNT_MIN = 1
+EMA_ALIGNMENT_COUNT_MAX = 10
 
 DISPLAY_CANDLE_COUNT = 12
 
@@ -1512,6 +1517,59 @@ def apply_rsi_cross_signals(periods):
 
 
 # =========================================================
+# EMA 정배열 연속 카운팅
+# =========================================================
+
+def calculate_ema_alignment_count(
+    ema_series_list,
+    dataframe_length
+):
+
+    if len(ema_series_list) < 2:
+        return 0
+
+    if dataframe_length <= 0:
+        return 0
+
+    count = 0
+
+    # 가장 최근 봉부터 과거 방향으로 검사
+    for index in range(dataframe_length - 1, -1, -1):
+
+        values = []
+
+        for series in ema_series_list:
+
+            if index >= len(series):
+                values = []
+                break
+
+            value = series.iloc[index]
+
+            if pd.isna(value):
+                values = []
+                break
+
+            values.append(float(value))
+
+        if len(values) != len(ema_series_list):
+            break
+
+        # 선택된 EMA가 모두 정배열이어야 카운트
+        aligned = all(
+            values[i] > values[i + 1]
+            for i in range(len(values) - 1)
+        )
+
+        if not aligned:
+            break
+
+        count += 1
+
+    return count
+
+
+# =========================================================
 # 업비트 SIGNAL 시간봉 분석 + RSI + EMA
 # =========================================================
 
@@ -1543,6 +1601,8 @@ def analyze_signal_candles(market, price):
         "ema20": None,
         "ema50": None,
         "ema_alignment": False,
+        "ema_alignment_count": 0,
+        "ema_alignment_count_pass": False,
         "realtime_below_ema5": False
     }
 
@@ -1697,18 +1757,23 @@ def analyze_signal_candles(market, price):
     # =====================================================
 
     enabled_emas = []
+    enabled_ema_series = []
 
     if USE_EMA_5 == "Y":
         enabled_emas.append(("EMA5", ema5))
+        enabled_ema_series.append(ema5_series)
 
     if USE_EMA_10 == "Y":
         enabled_emas.append(("EMA10", ema10))
+        enabled_ema_series.append(ema10_series)
 
     if USE_EMA_20 == "Y":
         enabled_emas.append(("EMA20", ema20))
+        enabled_ema_series.append(ema20_series)
 
     if USE_EMA_50 == "Y":
         enabled_emas.append(("EMA50", ema50))
+        enabled_ema_series.append(ema50_series)
 
     if not enabled_emas:
 
@@ -1727,6 +1792,21 @@ def analyze_signal_candles(market, price):
             enabled_emas[i][1] > enabled_emas[i + 1][1]
             for i in range(len(enabled_emas) - 1)
         )
+
+    # =====================================================
+    # EMA 정배열 연속 카운팅
+    # =====================================================
+
+    ema_alignment_count = calculate_ema_alignment_count(
+        enabled_ema_series,
+        len(df)
+    )
+
+    ema_alignment_count_pass = bool(
+        EMA_ALIGNMENT_COUNT_MIN
+        <= ema_alignment_count
+        <= EMA_ALIGNMENT_COUNT_MAX
+    )
 
     # =====================================================
     # EMA 정배열 시작 / 해제 이벤트 감지
@@ -1854,6 +1934,9 @@ def analyze_signal_candles(market, price):
 
         "ema_alignment": ema_alignment,
 
+        "ema_alignment_count": ema_alignment_count,
+        "ema_alignment_count_pass": ema_alignment_count_pass,
+
         "realtime_below_ema5": False
     }
 
@@ -1953,6 +2036,16 @@ def make_row(
 
         "ema_alignment": analysis_pattern.get(
             "ema_alignment",
+            False
+        ),
+
+        "ema_alignment_count": analysis_pattern.get(
+            "ema_alignment_count",
+            0
+        ),
+
+        "ema_alignment_count_pass": analysis_pattern.get(
+            "ema_alignment_count_pass",
             False
         ),
 
@@ -2088,6 +2181,8 @@ def update_upbit():
                 "ema20": None,
                 "ema50": None,
                 "ema_alignment": False,
+                "ema_alignment_count": 0,
+                "ema_alignment_count_pass": False,
                 "realtime_below_ema5": False
             }
 
@@ -2115,6 +2210,7 @@ def update_upbit():
             and row.get("daily_change") > DAILY_CHANGE_MIN
             and row.get("rsi_signal") is True
             and row.get("ema_alignment") is True
+            and row.get("ema_alignment_count_pass") is True
         )
     ]
 
@@ -2136,12 +2232,15 @@ def update_upbit():
     log.info(
         "UPBIT | TOP%s | "
         "SIGNAL=당일 변동률>%s%% AND 최근 %s개 봉 RSI30 상향돌파+양봉 "
-        "OR RSI70 하향돌파+음봉 AND %s | "
+        "OR RSI70 하향돌파+음봉 AND %s "
+        "AND EMA 정배열 연속 %s~%s개 | "
         "시간봉=%s | SIGNAL=%s | 정렬=24H 거래대금 순",
         TOP_N,
         DAILY_CHANGE_MIN,
         RSI_CHECK_CANDLES,
         get_ema_condition_text(),
+        EMA_ALIGNMENT_COUNT_MIN,
+        EMA_ALIGNMENT_COUNT_MAX,
         CANDLE_PATTERN_TIMEFRAME,
         len(latest_signal_data)
     )
@@ -2823,7 +2922,6 @@ def rsi_html(value, signal_type=None):
             '</div>'
         )
 
-    # 상향 돌파 = 녹색
     if signal_type == "RSI30_UP":
 
         return (
@@ -2832,7 +2930,6 @@ def rsi_html(value, signal_type=None):
             '</div>'
         )
 
-    # 하향 돌파 = 적색
     if signal_type == "RSI70_DOWN":
 
         return (
@@ -3153,10 +3250,6 @@ def last_three_pattern_html(row):
                 '<span class="candle-live">진행</span>'
             )
 
-        # =================================================
-        # EMA 정배열 이벤트 표시
-        # =================================================
-
         ema_events = item.get(
             "ema_alignment_events",
             []
@@ -3220,10 +3313,6 @@ def last_three_pattern_html(row):
         rsi_value = item.get("rsi")
         rsi_signal_type = item.get("rsi_signal_type")
 
-        # RSI 돌파 조건 카드 색상
-        # 상향 돌파 = 녹색
-        # 하향 돌파 = 적색
-
         rsi_class = ""
 
         if rsi_signal_type == "RSI30_UP":
@@ -3232,7 +3321,6 @@ def last_three_pattern_html(row):
         elif rsi_signal_type == "RSI70_DOWN":
             rsi_class = "rsi-cross-down-card"
 
-        # EMA 이벤트가 있는 카드만 노란색
         ema_event_class = ""
 
         if ema_events:
@@ -3525,6 +3613,7 @@ def signal_section():
         <span>당일 변동률 {DAILY_CHANGE_MIN:.2f}% 초과</span>
         <span>최근 {RSI_CHECK_CANDLES}개 봉 RSI30 상향돌파+상승캔들 또는 RSI70 하향돌파+하락캔들</span>
         <span>{html.escape(get_ema_condition_text())}</span>
+        <span>EMA 정배열 연속 {EMA_ALIGNMENT_COUNT_MIN}~{EMA_ALIGNMENT_COUNT_MAX}개</span>
         <span>EMA 및 RSI 시간봉: {pattern_timeframe_label}</span>
         <span>BTC 거래대금 비교 없음</span>
         <span>24H 거래대금 높은 순 정렬</span>
@@ -3895,8 +3984,6 @@ section { margin-bottom:11px; }
     border-color:#26343f;
 }
 
-/* RSI 상향 돌파 카드: 녹색 */
-
 .three-candle-item.rsi-cross-up-card {
     background:rgba(56,217,150,.16);
     border:1px solid var(--green);
@@ -3910,8 +3997,6 @@ section { margin-bottom:11px; }
     color:var(--green);
 }
 
-/* RSI 하향 돌파 카드: 적색 */
-
 .three-candle-item.rsi-cross-down-card {
     background:rgba(255,101,117,.16);
     border:1px solid var(--red);
@@ -3924,10 +4009,6 @@ section { margin-bottom:11px; }
 .three-candle-item.rsi-cross-down-card .candle-time {
     color:var(--red);
 }
-
-/* =====================================================
-   EMA 정배열 시작 / 해제 이벤트 카드
-   ===================================================== */
 
 .three-candle-item.ema-alignment-transition-card {
     background:rgba(232,197,110,.20);
@@ -4937,6 +5018,16 @@ def startup():
     log.info(
         "선택된 EMA 정배열까지 모두 충족해야 최종 SIGNAL: %s",
         get_ema_condition_text()
+    )
+
+    log.info(
+        "EMA 정배열 연속 카운팅 조건: %s개 이상 %s개 이하",
+        EMA_ALIGNMENT_COUNT_MIN,
+        EMA_ALIGNMENT_COUNT_MAX
+    )
+
+    log.info(
+        "EMA 정배열 연속 카운팅은 현재 진행 중인 캔들 포함"
     )
 
     log.info(
