@@ -1,4 +1,3 @@
-
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
@@ -58,7 +57,6 @@ CANDLE_PATTERN_TIMEFRAME = "1h"
 
 RSI_PERIOD = 14
 
-# RSI 돌파 기준
 RSI_THRESHOLD = 70
 RSI_LOWER_THRESHOLD = 30
 
@@ -99,6 +97,134 @@ TIMEFRAME_MINUTES = {
     "4h": 240,
     "1d": 1440
 }
+
+
+# =========================================================
+# EMA 정배열 상태 및 이벤트 기록
+# =========================================================
+
+# 종목별 직전 정배열 상태
+ema_alignment_states = {}
+
+# 종목별 정배열 시작 / 해제 이벤트 기록
+# key = (market, timeframe, candle_start)
+ema_alignment_event_history = {}
+
+ema_alignment_lock = threading.Lock()
+
+
+def update_ema_alignment_transition(
+    market,
+    timeframe,
+    alignment
+):
+    """
+    선택한 EMA 정배열 상태가 변경되는 순간을 기록한다.
+
+    False -> True : 정배열 시작
+    True -> False : 정배열 해제
+
+    최초 조회 시에는 이전 상태가 없으므로 이벤트를 만들지 않는다.
+    이벤트는 발생한 캔들이 끝날 때까지 유지한다.
+    """
+
+    now = datetime.now(KST)
+
+    current_start = get_candle_start(
+        now,
+        timeframe
+    )
+
+    if current_start is None:
+        return []
+
+    event_key = (
+        market,
+        timeframe,
+        current_start
+    )
+
+    current_events = []
+
+    with ema_alignment_lock:
+
+        previous_alignment = ema_alignment_states.get(
+            (market, timeframe)
+        )
+
+        # 최초 조회 시 기준 상태만 설정
+        if previous_alignment is None:
+
+            ema_alignment_states[
+                (market, timeframe)
+            ] = bool(alignment)
+
+        # 이전 상태와 현재 상태가 달라졌을 때만 이벤트 발생
+        elif previous_alignment != bool(alignment):
+
+            if alignment:
+                event_label = "정배열 시작"
+            else:
+                event_label = "정배열 해제"
+
+            events = ema_alignment_event_history.setdefault(
+                event_key,
+                []
+            )
+
+            events.append({
+                "label": event_label,
+                "time": now.strftime("%H:%M:%S")
+            })
+
+            ema_alignment_states[
+                (market, timeframe)
+            ] = bool(alignment)
+
+            log.info(
+                "%s | %s | EMA 정배열 상태 변경: %s",
+                market,
+                get_timeframe_label(timeframe),
+                event_label
+            )
+
+        else:
+
+            ema_alignment_states[
+                (market, timeframe)
+            ] = bool(alignment)
+
+        # 현재 캔들에 발생한 이벤트 가져오기
+        current_events = list(
+            ema_alignment_event_history.get(
+                event_key,
+                []
+            )
+        )
+
+        # 오래된 이벤트 기록 정리
+        cutoff = current_start - timedelta(
+            minutes=TIMEFRAME_MINUTES[timeframe]
+            * DISPLAY_CANDLE_COUNT
+        )
+
+        old_keys = []
+
+        for key in ema_alignment_event_history:
+
+            if key[0] != market:
+                continue
+
+            if key[1] != timeframe:
+                continue
+
+            if key[2] < cutoff:
+                old_keys.append(key)
+
+        for key in old_keys:
+            del ema_alignment_event_history[key]
+
+    return current_events
 
 
 # =========================================================
@@ -1348,11 +1474,6 @@ def build_timeframe_periods(df, timeframe, current_price=None):
 
 # =========================================================
 # RSI 돌파 판정
-#
-# 30 미만 -> 30 이상 + 상승 캔들 = 적색 카드
-# 70 초과 -> 70 이하 + 하락 캔들 = 녹색 카드
-#
-# 단순히 RSI가 30 이하 또는 70 이상인 경우는 제외
 # =========================================================
 
 def apply_rsi_cross_signals(periods):
@@ -1389,7 +1510,6 @@ def apply_rsi_cross_signals(periods):
 
         period["rsi_previous"] = previous_rsi
 
-        # RSI 30 상향 돌파 + 상승 캔들
         if (
             previous_rsi < RSI_LOWER_THRESHOLD
             and current_rsi >= RSI_LOWER_THRESHOLD
@@ -1398,7 +1518,6 @@ def apply_rsi_cross_signals(periods):
 
             period["rsi_signal_type"] = "RSI30_UP"
 
-        # RSI 70 하향 돌파 + 하락 캔들
         elif (
             previous_rsi > RSI_THRESHOLD
             and current_rsi <= RSI_THRESHOLD
@@ -1510,10 +1629,8 @@ def analyze_signal_candles(market, price):
             period["start"]
         )
 
-    # RSI 상향 / 하향 돌파 판정
     periods = apply_rsi_cross_signals(periods)
 
-    # 최근 24개 봉 기준
     last_rsi_periods = periods[-RSI_CHECK_CANDLES:]
 
     rsi_values = [
@@ -1594,23 +1711,6 @@ def analyze_signal_candles(market, price):
     )
 
     # =====================================================
-    # 실시간 현재가격과 EMA5 비교
-    # =====================================================
-
-    realtime_below_ema5 = False
-
-    if price is not None and ema5 is not None:
-
-        try:
-
-            realtime_below_ema5 = (
-                float(price) < float(ema5)
-            )
-
-        except Exception:
-            realtime_below_ema5 = False
-
-    # =====================================================
     # 선택한 EMA만 정배열 비교
     # =====================================================
 
@@ -1647,6 +1747,27 @@ def analyze_signal_candles(market, price):
         )
 
     # =====================================================
+    # EMA 정배열 시작 / 해제 이벤트 감지
+    # =====================================================
+
+    current_ema_events = []
+
+    # 선택한 EMA가 2개 이상일 때만 정배열 이벤트 감지
+    if (
+        len(enabled_emas) >= 2
+        and all(
+            value is not None
+            for _, value in enabled_emas
+        )
+    ):
+
+        current_ema_events = update_ema_alignment_transition(
+            market,
+            timeframe,
+            ema_alignment
+        )
+
+    # =====================================================
     # 캔들 패턴 분석
     # =====================================================
 
@@ -1668,6 +1789,14 @@ def analyze_signal_candles(market, price):
         item["rsi_signal_type"] = period.get("rsi_signal_type")
         item["change"] = period.get("change")
         item["active"] = period.get("active", False)
+
+        # 현재 진행 중인 캔들에만 EMA 이벤트 연결
+        if period.get("active") is True:
+            item["ema_alignment_events"] = list(
+                current_ema_events
+            )
+        else:
+            item["ema_alignment_events"] = []
 
     current_signal = pattern_info[
         "current_bullish_pattern"
@@ -1705,7 +1834,6 @@ def analyze_signal_candles(market, price):
     return {
         "periods": periods[-DISPLAY_CANDLE_COUNT:],
 
-        # RSI 돌파가 최종 SIGNAL 기준
         "signal_pass": rsi_signal,
 
         "pattern_signal": pattern_signal,
@@ -1746,7 +1874,7 @@ def analyze_signal_candles(market, price):
 
         "ema_alignment": ema_alignment,
 
-        "realtime_below_ema5": realtime_below_ema5
+        "realtime_below_ema5": False
     }
 
 
@@ -1848,10 +1976,7 @@ def make_row(
             False
         ),
 
-        "realtime_below_ema5": analysis_pattern.get(
-            "realtime_below_ema5",
-            False
-        )
+        "realtime_below_ema5": False
     }
 
 
@@ -2002,18 +2127,6 @@ def update_upbit():
 
     latest_upbit_daily_update_time = kst()
     latest_upbit_update_time = latest_upbit_daily_update_time
-
-    # =====================================================
-    # SIGNAL 선정 조건
-    #
-    # 1. 당일 변동률 > DAILY_CHANGE_MIN
-    # 2. 최근 24개 봉 안에서 RSI 돌파 발생
-    #    RSI 30 상향 돌파 + 상승 캔들
-    #    또는 RSI 70 하향 돌파 + 하락 캔들
-    # 3. 선택한 EMA 정배열
-    #
-    # 세 가지 조건 모두 충족
-    # =====================================================
 
     latest_signal_data = [
         row for row in rows
@@ -2746,7 +2859,6 @@ def rsi_html(value, signal_type=None):
             '</div>'
         )
 
-    # 단순 과매수·과매도 상태는 색상 강조하지 않음
     return (
         '<div class="rsi-value">'
         f'RSI {value:.1f}'
@@ -3020,7 +3132,8 @@ def last_three_pattern_html(row):
             "rsi": None,
             "rsi_previous": None,
             "rsi_signal_type": None,
-            "active": False
+            "active": False,
+            "ema_alignment_events": []
         })
 
     items.extend(last_three)
@@ -3058,6 +3171,48 @@ def last_three_pattern_html(row):
                 '<span class="candle-live">진행</span>'
             )
 
+        # =================================================
+        # EMA 정배열 이벤트 표시
+        # =================================================
+
+        ema_events = item.get(
+            "ema_alignment_events",
+            []
+        )
+
+        ema_event_html = ""
+
+        if ema_events:
+
+            event_labels = []
+
+            for event in ema_events:
+
+                event_label = html.escape(
+                    str(event.get("label", ""))
+                )
+
+                event_time = html.escape(
+                    str(event.get("time", ""))
+                )
+
+                if event_label:
+
+                    event_labels.append(
+                        f'<span class="ema-event-label">'
+                        f'{event_label}'
+                        f'<small>{event_time}</small>'
+                        f'</span>'
+                    )
+
+            if event_labels:
+
+                ema_event_html = (
+                    '<div class="ema-event-list">'
+                    + "".join(event_labels)
+                    + '</div>'
+                )
+
         label = f"""
         <div class="candle-date">
             {date_label}
@@ -3067,6 +3222,8 @@ def last_three_pattern_html(row):
             {time_label}
             {live_html}
         </div>
+
+        {ema_event_html}
         """
 
         candle_html = current_pattern_html(
@@ -3081,15 +3238,7 @@ def last_three_pattern_html(row):
         rsi_value = item.get("rsi")
         rsi_signal_type = item.get("rsi_signal_type")
 
-        # =================================================
-        # RSI 돌파 조건을 만족한 카드 한 칸만 색상 표시
-        #
-        # RSI30_UP   = 적색
-        # RSI70_DOWN = 녹색
-        #
-        # 단순 RSI 30 이하 / 70 이상은 카드 색상 없음
-        # =================================================
-
+        # RSI 돌파 조건 카드 색상
         rsi_class = ""
 
         if rsi_signal_type == "RSI30_UP":
@@ -3098,21 +3247,14 @@ def last_three_pattern_html(row):
         elif rsi_signal_type == "RSI70_DOWN":
             rsi_class = "rsi-cross-down-card"
 
-        # =================================================
-        # 실시간 EMA5 하회 강조
-        # 현재 진행 중인 캔들 카드만 노란색 표시
-        # =================================================
+        # EMA 이벤트가 있는 카드만 노란색
+        ema_event_class = ""
 
-        ema5_class = ""
-
-        if (
-            item.get("active") is True
-            and row.get("realtime_below_ema5") is True
-        ):
-            ema5_class = "ema5-below-realtime-highlight"
+        if ema_events:
+            ema_event_class = "ema-alignment-transition-card"
 
         card_classes = " ".join(
-            x for x in [rsi_class, ema5_class] if x
+            x for x in [rsi_class, ema_event_class] if x
         )
 
         boxes.append(
@@ -3750,14 +3892,12 @@ section { margin-bottom:11px; }
     white-space:nowrap;
 }
 
-/* RSI 30 상향 돌파 숫자 */
 .rsi-value.rsi-cross-up {
     color:#ff7584;
     background:rgba(255,101,117,.16);
     border:1px solid #ff6575;
 }
 
-/* RSI 70 하향 돌파 숫자 */
 .rsi-value.rsi-cross-down {
     color:#38e6a0;
     background:rgba(56,217,150,.16);
@@ -3769,11 +3909,6 @@ section { margin-bottom:11px; }
     background:#141e27;
     border-color:#26343f;
 }
-
-/* =====================================================
-   RSI30 상향 돌파 + 상승 캔들
-   해당 캔들 카드 한 칸만 적색
-   ===================================================== */
 
 .three-candle-item.rsi-cross-up-card {
     background:rgba(255,101,117,.16);
@@ -3787,11 +3922,6 @@ section { margin-bottom:11px; }
 .three-candle-item.rsi-cross-up-card .candle-time {
     color:var(--red);
 }
-
-/* =====================================================
-   RSI70 하향 돌파 + 하락 캔들
-   해당 캔들 카드 한 칸만 녹색
-   ===================================================== */
 
 .three-candle-item.rsi-cross-down-card {
     background:rgba(56,217,150,.16);
@@ -3807,24 +3937,51 @@ section { margin-bottom:11px; }
 }
 
 /* =====================================================
-   실시간 현재가격 < 공통 EMA5 노란색 강조
-   해당 시간대 카드 한 칸에 적용
+   EMA 정배열 시작 / 해제 이벤트 카드
    ===================================================== */
 
-.three-candle-item.ema5-below-realtime-highlight {
-    background:rgba(232,197,110,.18);
+.three-candle-item.ema-alignment-transition-card {
+    background:rgba(232,197,110,.20);
     border:1px solid var(--yellow);
     box-shadow:
         inset 0 0 0 1px rgba(232,197,110,.18),
-        0 0 7px rgba(232,197,110,.16);
+        0 0 8px rgba(232,197,110,.20);
 }
 
-.three-candle-item.ema5-below-realtime-highlight .candle-date {
+.three-candle-item.ema-alignment-transition-card .candle-date,
+.three-candle-item.ema-alignment-transition-card .candle-time {
     color:var(--yellow);
 }
 
-.three-candle-item.ema5-below-realtime-highlight .candle-time {
-    color:var(--yellow);
+.ema-event-list {
+    width:100%;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:2px;
+    overflow:hidden;
+}
+
+.ema-event-label {
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    gap:2px;
+    padding:1px 3px;
+    color:#17130a;
+    background:var(--yellow);
+    border-radius:3px;
+    font-size:7px;
+    font-weight:900;
+    line-height:1.2;
+    white-space:nowrap;
+}
+
+.ema-event-label small {
+    color:#403619;
+    font-size:6px;
+    font-weight:800;
 }
 
 .candle-change {
@@ -4507,6 +4664,15 @@ section { margin-bottom:11px; }
         min-height:16px;
         font-size:8px;
     }
+
+    .ema-event-label {
+        font-size:6px;
+        padding:1px 2px;
+    }
+
+    .ema-event-label small {
+        font-size:5px;
+    }
 }
 
 @media (max-width:380px) {
@@ -4556,6 +4722,15 @@ section { margin-bottom:11px; }
         height:15px;
         min-height:15px;
         font-size:7px;
+    }
+
+    .ema-event-label {
+        font-size:5px;
+        gap:1px;
+    }
+
+    .ema-event-label small {
+        font-size:5px;
     }
 }
 """
@@ -4807,17 +4982,29 @@ def startup():
     )
 
     log.info(
-        "실시간 현재가격이 공통 시간봉 EMA5 아래이면 현재 진행 카드 노란색 강조"
+        "EMA 정배열 시작 / 해제 순간 해당 캔들 노란색 강조"
     )
 
     log.info(
-        "실시간 EMA5 비교 시간봉: %s",
+        "EMA 정배열 유지 중에는 노란색 강조하지 않음"
+    )
+
+    log.info(
+        "EMA 이벤트는 발생한 캔들에 유지"
+    )
+
+    log.info(
+        "EMA 정배열 이벤트 감지 시간봉: %s",
         get_timeframe_label(CANDLE_PATTERN_TIMEFRAME)
     )
 
     log.info(
-        "실시간 가격 및 EMA5 비교 갱신 주기: %s분",
+        "EMA 정배열 실시간 확인 주기: %s분",
         UPDATE_MINUTES
+    )
+
+    log.info(
+        "기존 현재가 EMA5 하회 노란색 조건 제거"
     )
 
     log.info(
