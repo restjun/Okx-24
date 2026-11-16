@@ -54,14 +54,16 @@ REQUEST_INTERVAL = 0.08
 RATE_LIMIT_WAIT = 3
 MAX_RETRIES = 20
 
-# 시간봉은 여기서 직접 변경
 CANDLE_PATTERN_TIMEFRAME = "1h"
 
 RSI_PERIOD = 14
-RSI_THRESHOLD = 30
+
+# RSI 돌파 기준
+RSI_THRESHOLD = 70
 RSI_LOWER_THRESHOLD = 30
 
 RSI_CHECK_CANDLES = 24
+
 
 # =========================================================
 # EMA 설정
@@ -71,10 +73,6 @@ EMA_FAST_PERIOD = 5
 EMA_MIDDLE_PERIOD = 10
 EMA_SLOW_PERIOD = 20
 EMA_LONG_PERIOD = 50
-
-# 개별 EMA 사용 여부
-# Y = 정배열 비교에 사용
-# N = 정배열 비교에서 제외
 
 USE_EMA_5 = "Y"
 USE_EMA_10 = "N"
@@ -1147,7 +1145,7 @@ def get_candle_patterns(previous, current):
 
 
 # =========================================================
-# 최근 12개 봉 패턴 분석
+# 최근 캔들 패턴 분석
 # =========================================================
 
 def analyze_previous_current_pattern(periods):
@@ -1200,7 +1198,9 @@ def analyze_previous_current_pattern(periods):
             "low": period["low"],
             "close": period["close"],
             "change": period.get("change"),
-            "active": period.get("active", False)
+            "active": period.get("active", False),
+            "rsi": period.get("rsi"),
+            "rsi_signal_type": period.get("rsi_signal_type")
         }
         for period, patterns in zip(
             selected_periods,
@@ -1347,6 +1347,70 @@ def build_timeframe_periods(df, timeframe, current_price=None):
 
 
 # =========================================================
+# RSI 돌파 판정
+#
+# 30 미만 -> 30 이상 + 상승 캔들 = 적색 카드
+# 70 초과 -> 70 이하 + 하락 캔들 = 녹색 카드
+#
+# 단순히 RSI가 30 이하 또는 70 이상인 경우는 제외
+# =========================================================
+
+def apply_rsi_cross_signals(periods):
+
+    if not periods:
+        return periods
+
+    for i, period in enumerate(periods):
+
+        period["rsi_previous"] = None
+        period["rsi_signal_type"] = None
+
+        if i == 0:
+            continue
+
+        previous = periods[i - 1]
+
+        previous_rsi = previous.get("rsi")
+        current_rsi = period.get("rsi")
+
+        if previous_rsi is None or current_rsi is None:
+            continue
+
+        try:
+
+            previous_rsi = float(previous_rsi)
+            current_rsi = float(current_rsi)
+
+            open_price = float(period["open"])
+            close_price = float(period["close"])
+
+        except Exception:
+            continue
+
+        period["rsi_previous"] = previous_rsi
+
+        # RSI 30 상향 돌파 + 상승 캔들
+        if (
+            previous_rsi < RSI_LOWER_THRESHOLD
+            and current_rsi >= RSI_LOWER_THRESHOLD
+            and close_price > open_price
+        ):
+
+            period["rsi_signal_type"] = "RSI30_UP"
+
+        # RSI 70 하향 돌파 + 하락 캔들
+        elif (
+            previous_rsi > RSI_THRESHOLD
+            and current_rsi <= RSI_THRESHOLD
+            and close_price < open_price
+        ):
+
+            period["rsi_signal_type"] = "RSI70_DOWN"
+
+    return periods
+
+
+# =========================================================
 # 업비트 SIGNAL 시간봉 분석 + RSI + EMA
 # =========================================================
 
@@ -1446,6 +1510,10 @@ def analyze_signal_candles(market, price):
             period["start"]
         )
 
+    # RSI 상향 / 하향 돌파 판정
+    periods = apply_rsi_cross_signals(periods)
+
+    # 최근 24개 봉 기준
     last_rsi_periods = periods[-RSI_CHECK_CANDLES:]
 
     rsi_values = [
@@ -1453,27 +1521,28 @@ def analyze_signal_candles(market, price):
         for period in last_rsi_periods
     ]
 
-    rsi_high_periods = [
-        value
-        for value in rsi_values
-        if value is not None
-        and value >= RSI_THRESHOLD
+    rsi_cross_periods = [
+        period
+        for period in last_rsi_periods
+        if period.get("rsi_signal_type") is not None
     ]
 
-    rsi_low_periods = [
-        value
-        for value in rsi_values
-        if value is not None
-        and value <= RSI_LOWER_THRESHOLD
+    rsi_30_up_periods = [
+        period
+        for period in rsi_cross_periods
+        if period["rsi_signal_type"] == "RSI30_UP"
     ]
 
-    rsi_signal = bool(
-        rsi_high_periods or rsi_low_periods
-    )
+    rsi_70_down_periods = [
+        period
+        for period in rsi_cross_periods
+        if period["rsi_signal_type"] == "RSI70_DOWN"
+    ]
+
+    rsi_signal = bool(rsi_cross_periods)
 
     # =====================================================
     # EMA 5 / 10 / 20 / 50 계산
-    # 현재 진행 중인 캔들 가격 반영
     # =====================================================
 
     ema5_series = calculate_ema(
@@ -1525,10 +1594,7 @@ def analyze_signal_candles(market, price):
     )
 
     # =====================================================
-    # 실시간 현재가격과 공통 시간봉 EMA5 비교
-    #
-    # 현재가격이 EMA5 아래이면 True
-    # 현재가격이 EMA5 이상이면 False
+    # 실시간 현재가격과 EMA5 비교
     # =====================================================
 
     realtime_below_ema5 = False
@@ -1564,7 +1630,6 @@ def analyze_signal_candles(market, price):
 
     if not enabled_emas:
 
-        # 모든 EMA를 사용하지 않으면 EMA 필터 비활성화
         ema_alignment = True
 
     elif any(
@@ -1597,7 +1662,10 @@ def analyze_signal_candles(market, price):
         last_three,
         recent_periods
     ):
+
         item["rsi"] = period.get("rsi")
+        item["rsi_previous"] = period.get("rsi_previous")
+        item["rsi_signal_type"] = period.get("rsi_signal_type")
         item["change"] = period.get("change")
         item["active"] = period.get("active", False)
 
@@ -1613,64 +1681,71 @@ def analyze_signal_candles(market, price):
         current_signal or previous_signal
     )
 
-    signal = pattern_signal
+    # =====================================================
+    # RSI SIGNAL 사유 및 발생 캔들
+    # =====================================================
 
-    reason = None
+    signal_reason = None
+    signal_period = None
+    signal_change = None
 
-    if current_signal:
+    if rsi_cross_periods:
 
-        for pattern in pattern_info["current_pattern"]:
+        latest_cross = rsi_cross_periods[-1]
 
-            if pattern in BULLISH_HIGHLIGHT_PATTERNS:
-                reason = pattern
-                break
+        if latest_cross["rsi_signal_type"] == "RSI30_UP":
+            signal_reason = "RSI 30 상향 돌파 + 상승 캔들"
 
-    if reason is None and previous_signal:
+        elif latest_cross["rsi_signal_type"] == "RSI70_DOWN":
+            signal_reason = "RSI 70 하향 돌파 + 하락 캔들"
 
-        for pattern in pattern_info["previous_pattern"]:
-
-            if pattern in BULLISH_HIGHLIGHT_PATTERNS:
-                reason = pattern
-                break
-
-    current_period = periods[-1]
+        signal_period = latest_cross.get("label")
+        signal_change = latest_cross.get("change")
 
     return {
         "periods": periods[-DISPLAY_CANDLE_COUNT:],
-        "signal_pass": signal,
+
+        # RSI 돌파가 최종 SIGNAL 기준
+        "signal_pass": rsi_signal,
+
         "pattern_signal": pattern_signal,
         "current_signal": current_signal,
         "previous_signal": previous_signal,
-        "signal_change": (
-            current_period.get("change")
-            if signal
-            else None
-        ),
-        "signal_period": (
-            current_period.get("label")
-            if signal
-            else None
-        ),
-        "signal_reason": reason,
+
+        "signal_change": signal_change,
+        "signal_period": signal_period,
+        "signal_reason": signal_reason,
+
         "previous_pattern": pattern_info["previous_pattern"],
         "current_pattern": pattern_info["current_pattern"],
         "last_three_patterns": last_three,
+
         "previous_bullish_engulfing": pattern_info["previous_bullish_engulfing"],
         "current_bullish_engulfing": pattern_info["current_bullish_engulfing"],
+
         "consecutive_bullish": pattern_info["consecutive_bullish"],
         "consecutive_bearish": pattern_info["consecutive_bearish"],
+
         "consecutive_bullish_candles": pattern_info[
             "consecutive_bullish_candles"
         ],
+
         "rsi_signal": rsi_signal,
         "rsi_values": rsi_values,
-        "rsi_low_count": len(rsi_low_periods),
-        "rsi_high_count": len(rsi_high_periods),
+
+        "rsi_low_count": len(rsi_30_up_periods),
+        "rsi_high_count": len(rsi_70_down_periods),
+
+        "rsi_30_up_count": len(rsi_30_up_periods),
+        "rsi_70_down_count": len(rsi_70_down_periods),
+
         "ema5": ema5,
         "ema10": ema10,
         "ema20": ema20,
         "ema50": ema50,
+
         "ema_alignment": ema_alignment,
+
         "realtime_below_ema5": realtime_below_ema5
     }
 
@@ -1731,6 +1806,7 @@ def make_row(
         "daily_change": analysis_daily["change"],
         "periods_daily": analysis_daily["periods"],
         "periods_4h": analysis_pattern["periods"],
+
         "signal_4h": analysis_pattern["signal_pass"],
         "signal_4h_pattern": analysis_pattern["pattern_signal"],
         "signal_4h_current": analysis_pattern["current_signal"],
@@ -1738,32 +1814,40 @@ def make_row(
         "signal_4h_change": analysis_pattern["signal_change"],
         "signal_4h_period": analysis_pattern["signal_period"],
         "signal_4h_reason": analysis_pattern["signal_reason"],
+
         "previous_pattern": analysis_pattern["previous_pattern"],
         "current_pattern": analysis_pattern["current_pattern"],
         "last_three_patterns": analysis_pattern["last_three_patterns"],
+
         "consecutive_bullish": analysis_pattern["consecutive_bullish"],
         "consecutive_bearish": analysis_pattern["consecutive_bearish"],
+
         "previous_bullish_engulfing": analysis_pattern["previous_bullish_engulfing"],
         "current_bullish_engulfing": analysis_pattern["current_bullish_engulfing"],
+
         "consecutive_bullish_candles": analysis_pattern.get(
             "consecutive_bullish_candles", 0
         ),
+
         "rsi_signal": analysis_pattern.get("rsi_signal", False),
         "rsi_values": analysis_pattern.get("rsi_values", []),
+
         "rsi_low_count": analysis_pattern.get("rsi_low_count", 0),
         "rsi_high_count": analysis_pattern.get("rsi_high_count", 0),
 
-        # EMA 정배열 정보
+        "rsi_30_up_count": analysis_pattern.get("rsi_30_up_count", 0),
+        "rsi_70_down_count": analysis_pattern.get("rsi_70_down_count", 0),
+
         "ema5": analysis_pattern.get("ema5"),
         "ema10": analysis_pattern.get("ema10"),
         "ema20": analysis_pattern.get("ema20"),
         "ema50": analysis_pattern.get("ema50"),
+
         "ema_alignment": analysis_pattern.get(
             "ema_alignment",
             False
         ),
 
-        # 실시간 현재가격이 EMA5 아래인지 여부
         "realtime_below_ema5": analysis_pattern.get(
             "realtime_below_ema5",
             False
@@ -1892,6 +1976,8 @@ def update_upbit():
                 "rsi_values": [],
                 "rsi_low_count": 0,
                 "rsi_high_count": 0,
+                "rsi_30_up_count": 0,
+                "rsi_70_down_count": 0,
                 "ema5": None,
                 "ema10": None,
                 "ema20": None,
@@ -1921,10 +2007,12 @@ def update_upbit():
     # SIGNAL 선정 조건
     #
     # 1. 당일 변동률 > DAILY_CHANGE_MIN
-    # 2. 최근 RSI_CHECK_CANDLES개 봉 중 RSI >=70 또는 <=30
-    # 3. 선택한 EMA만 정배열 비교
+    # 2. 최근 24개 봉 안에서 RSI 돌파 발생
+    #    RSI 30 상향 돌파 + 상승 캔들
+    #    또는 RSI 70 하향 돌파 + 하락 캔들
+    # 3. 선택한 EMA 정배열
     #
-    # 세 가지 조건 모두 충족해야 SIGNAL
+    # 세 가지 조건 모두 충족
     # =====================================================
 
     latest_signal_data = [
@@ -1954,15 +2042,12 @@ def update_upbit():
 
     log.info(
         "UPBIT | TOP%s | "
-        "SIGNAL 조건=당일 변동률>%s%% AND 최근 %s개 봉 RSI(%s)>=%s OR <=%s "
-        "AND %s | "
+        "SIGNAL=당일 변동률>%s%% AND 최근 %s개 봉 RSI30 상향돌파+양봉 "
+        "OR RSI70 하향돌파+음봉 AND %s | "
         "시간봉=%s | SIGNAL=%s | 정렬=24H 거래대금 순",
         TOP_N,
         DAILY_CHANGE_MIN,
         RSI_CHECK_CANDLES,
-        RSI_PERIOD,
-        RSI_THRESHOLD,
-        RSI_LOWER_THRESHOLD,
         get_ema_condition_text(),
         CANDLE_PATTERN_TIMEFRAME,
         len(latest_signal_data)
@@ -2311,6 +2396,8 @@ def analyze_okx_btc_candles(df, timeframe, current_price=None):
             period["start"]
         )
 
+    periods = apply_rsi_cross_signals(periods)
+
     pattern_info = analyze_previous_current_pattern(
         periods
     )
@@ -2323,7 +2410,10 @@ def analyze_okx_btc_candles(df, timeframe, current_price=None):
         result,
         recent_periods
     ):
+
         item["rsi"] = period.get("rsi")
+        item["rsi_previous"] = period.get("rsi_previous")
+        item["rsi_signal_type"] = period.get("rsi_signal_type")
         item["change"] = period.get("change")
         item["active"] = period.get("active", False)
 
@@ -2332,11 +2422,7 @@ def analyze_okx_btc_candles(df, timeframe, current_price=None):
 
 # =========================================================
 # BTC 당일 변동률 계산
-#
-# 업비트와 동일한 KST 09:00 기준
-# 전일 09:00 ~ 당일 09:00
-#
-# BTC 4시간봉 표시와 별개로 일봉 데이터 사용
+# KST 09:00 기준
 # =========================================================
 
 def calculate_btc_daily_change(current_price):
@@ -2355,7 +2441,6 @@ def calculate_btc_daily_change(current_price):
             "1d"
         )
 
-        # OKX 1시간봉을 받아 KST 09시 기준 일봉 생성
         daily_df = get_okx_btc_timeframe("1d")
 
         if daily_df is None or daily_df.empty:
@@ -2368,7 +2453,6 @@ def calculate_btc_daily_change(current_price):
             .reset_index(drop=True)
         )
 
-        # 현재 진행 중인 일봉의 시작 시가 확인
         matched = daily_df[
             daily_df["datetime"] == daily_start
         ]
@@ -2390,7 +2474,6 @@ def calculate_btc_daily_change(current_price):
         if daily_open <= 0:
             return None
 
-        # 현재가 기준 당일 변동률
         daily_change = (
             (current_price - daily_open)
             / daily_open
@@ -2438,7 +2521,6 @@ def update_okx_btc():
 
     timeframe = CANDLE_PATTERN_TIMEFRAME
 
-    # 기존 선택 시간봉 조회
     df = get_okx_btc_timeframe(timeframe)
 
     if df.empty:
@@ -2449,7 +2531,6 @@ def update_okx_btc():
 
         return
 
-    # 기존 선택 시간봉 현재가 반영
     df = update_current_candle(
         df,
         get_candle_start(datetime.now(KST), timeframe),
@@ -2462,19 +2543,12 @@ def update_okx_btc():
         price
     )
 
-    # 기존 BTC 캔들 표시 데이터 유지
     latest_btc_daily_periods = periods
-
-    # =====================================================
-    # BTC 변동률은 선택 시간봉과 무관하게
-    # KST 09:00 기준 일봉으로 별도 계산
-    # =====================================================
 
     latest_btc_daily_change = calculate_btc_daily_change(
         price
     )
 
-    # 기존 캔들 패턴 및 RSI 분석 유지
     latest_btc_last_three_patterns = (
         analyze_okx_btc_candles(
             df,
@@ -2637,7 +2711,7 @@ def candle_change_html(value):
 # RSI 표시 HTML
 # =========================================================
 
-def rsi_html(value):
+def rsi_html(value, signal_type=None):
 
     if value is None:
         return (
@@ -2656,22 +2730,23 @@ def rsi_html(value):
             '</div>'
         )
 
-    if value >= RSI_THRESHOLD:
+    if signal_type == "RSI30_UP":
 
         return (
-            '<div class="rsi-value rsi-high">'
-            f'RSI {value:.1f}'
+            '<div class="rsi-value rsi-cross-up">'
+            f'RSI {value:.1f} ↑30'
             '</div>'
         )
 
-    if value <= RSI_LOWER_THRESHOLD:
+    if signal_type == "RSI70_DOWN":
 
         return (
-            '<div class="rsi-value rsi-low">'
-            f'RSI {value:.1f}'
+            '<div class="rsi-value rsi-cross-down">'
+            f'RSI {value:.1f} ↓70'
             '</div>'
         )
 
+    # 단순 과매수·과매도 상태는 색상 강조하지 않음
     return (
         '<div class="rsi-value">'
         f'RSI {value:.1f}'
@@ -2921,7 +2996,7 @@ def current_pattern_html(pattern, candle=None):
 
 
 # =========================================================
-# 최근 12개 봉 표시
+# 최근 24개 봉 표시
 # =========================================================
 
 def last_three_pattern_html(row):
@@ -2943,6 +3018,8 @@ def last_three_pattern_html(row):
             "close": None,
             "change": None,
             "rsi": None,
+            "rsi_previous": None,
+            "rsi_signal_type": None,
             "active": False
         })
 
@@ -3002,41 +3079,28 @@ def last_three_pattern_html(row):
         )
 
         rsi_value = item.get("rsi")
+        rsi_signal_type = item.get("rsi_signal_type")
 
-        try:
-
-            rsi_number = (
-                float(rsi_value)
-                if rsi_value is not None
-                else None
-            )
-
-        except Exception:
-            rsi_number = None
-
-        is_rsi_high = (
-            rsi_number is not None
-            and rsi_number >= RSI_THRESHOLD
-        )
-
-        is_rsi_low = (
-            rsi_number is not None
-            and rsi_number <= RSI_LOWER_THRESHOLD
-        )
+        # =================================================
+        # RSI 돌파 조건을 만족한 카드 한 칸만 색상 표시
+        #
+        # RSI30_UP   = 적색
+        # RSI70_DOWN = 녹색
+        #
+        # 단순 RSI 30 이하 / 70 이상은 카드 색상 없음
+        # =================================================
 
         rsi_class = ""
 
-        if is_rsi_high:
-            rsi_class = "rsi-highlight-high"
+        if rsi_signal_type == "RSI30_UP":
+            rsi_class = "rsi-cross-up-card"
 
-        elif is_rsi_low:
-            rsi_class = "rsi-highlight-low"
+        elif rsi_signal_type == "RSI70_DOWN":
+            rsi_class = "rsi-cross-down-card"
 
         # =================================================
         # 실시간 EMA5 하회 강조
-        #
         # 현재 진행 중인 캔들 카드만 노란색 표시
-        # 과거 캔들 카드에는 적용하지 않음
         # =================================================
 
         ema5_class = ""
@@ -3068,7 +3132,7 @@ def last_three_pattern_html(row):
                 </div>
 
                 <div class="three-candle-rsi">
-                    {rsi_html(rsi_value)}
+                    {rsi_html(rsi_value, rsi_signal_type)}
                 </div>
 
             </div>
@@ -3209,9 +3273,9 @@ def btc_html():
         <div class="btc-candle-section">
 
             <div class="btc-candle-heading">
-                BTC 최근 12개 봉 · {timeframe_label} · RSI({RSI_PERIOD})
+                BTC 최근 24개 봉 · {timeframe_label} · RSI({RSI_PERIOD})
                 <span class="rsi-condition-label">
-                    {RSI_THRESHOLD} 이상 녹색 · {RSI_LOWER_THRESHOLD} 이하 적색
+                    RSI30 상향돌파 적색 · RSI70 하향돌파 녹색
                 </span>
             </div>
 
@@ -3288,9 +3352,9 @@ def signal_card(row):
         <div class="three-candle-section">
 
             <div class="three-candle-heading">
-                최근 12개 봉 · {timeframe_label} · RSI({RSI_PERIOD})
+                최근 24개 봉 · {timeframe_label} · RSI({RSI_PERIOD})
                 <span class="rsi-condition-label">
-                    {RSI_THRESHOLD} 이상 녹색 · {RSI_LOWER_THRESHOLD} 이하 적색
+                    RSI30 상향돌파 적색 · RSI70 하향돌파 녹색
                 </span>
             </div>
 
@@ -3332,7 +3396,7 @@ def signal_section():
 
         <span>선정 기준: 당일 변동률</span>
         <span>당일 변동률 {DAILY_CHANGE_MIN:.2f}% 초과</span>
-        <span>최근 {RSI_CHECK_CANDLES}개 봉 중 RSI({RSI_PERIOD}) {RSI_THRESHOLD} 이상 또는 {RSI_LOWER_THRESHOLD} 이하</span>
+        <span>최근 {RSI_CHECK_CANDLES}개 봉 RSI30 상향돌파+상승캔들 또는 RSI70 하향돌파+하락캔들</span>
         <span>{html.escape(get_ema_condition_text())}</span>
         <span>EMA 및 RSI 시간봉: {pattern_timeframe_label}</span>
         <span>BTC 거래대금 비교 없음</span>
@@ -3436,9 +3500,9 @@ def card(row, kind):
         <div class="top-three-candle-section">
 
             <div class="three-candle-heading">
-                최근 12개 봉 · {timeframe_label} · RSI({RSI_PERIOD})
+                최근 24개 봉 · {timeframe_label} · RSI({RSI_PERIOD})
                 <span class="rsi-condition-label">
-                    {RSI_THRESHOLD} 이상 녹색 · {RSI_LOWER_THRESHOLD} 이하 적색
+                    RSI30 상향돌파 적색 · RSI70 하향돌파 녹색
                 </span>
             </div>
 
@@ -3686,18 +3750,18 @@ section { margin-bottom:11px; }
     white-space:nowrap;
 }
 
-.rsi-value.rsi-high {
-    color:#38e6a0;
-    background:rgba(56,217,150,.15);
-    border:1px solid #38d996;
-    box-shadow:0 0 6px rgba(56,217,150,.18);
+/* RSI 30 상향 돌파 숫자 */
+.rsi-value.rsi-cross-up {
+    color:#ff7584;
+    background:rgba(255,101,117,.16);
+    border:1px solid #ff6575;
 }
 
-.rsi-value.rsi-low {
-    color:#ff7584;
-    background:rgba(255,101,117,.15);
-    border:1px solid #ff6575;
-    box-shadow:0 0 6px rgba(255,101,117,.18);
+/* RSI 70 하향 돌파 숫자 */
+.rsi-value.rsi-cross-down {
+    color:#38e6a0;
+    background:rgba(56,217,150,.16);
+    border:1px solid #38d996;
 }
 
 .rsi-value.rsi-unavailable {
@@ -3706,24 +3770,45 @@ section { margin-bottom:11px; }
     border-color:#26343f;
 }
 
-.three-candle-item.rsi-highlight-high {
-    background:rgba(56,217,150,.07);
-    border:1px solid rgba(56,217,150,.65);
-    box-shadow:inset 0 0 0 1px rgba(56,217,150,.08);
+/* =====================================================
+   RSI30 상향 돌파 + 상승 캔들
+   해당 캔들 카드 한 칸만 적색
+   ===================================================== */
+
+.three-candle-item.rsi-cross-up-card {
+    background:rgba(255,101,117,.16);
+    border:1px solid var(--red);
+    box-shadow:
+        inset 0 0 0 1px rgba(255,101,117,.15),
+        0 0 7px rgba(255,101,117,.15);
 }
 
-.three-candle-item.rsi-highlight-low {
-    background:rgba(255,101,117,.07);
-    border:1px solid rgba(255,101,117,.65);
-    box-shadow:inset 0 0 0 1px rgba(255,101,117,.08);
+.three-candle-item.rsi-cross-up-card .candle-date,
+.three-candle-item.rsi-cross-up-card .candle-time {
+    color:var(--red);
 }
 
-.three-candle-item.rsi-highlight-high .candle-date { color:var(--green); }
-.three-candle-item.rsi-highlight-low .candle-date { color:var(--red); }
+/* =====================================================
+   RSI70 하향 돌파 + 하락 캔들
+   해당 캔들 카드 한 칸만 녹색
+   ===================================================== */
+
+.three-candle-item.rsi-cross-down-card {
+    background:rgba(56,217,150,.16);
+    border:1px solid var(--green);
+    box-shadow:
+        inset 0 0 0 1px rgba(56,217,150,.15),
+        0 0 7px rgba(56,217,150,.15);
+}
+
+.three-candle-item.rsi-cross-down-card .candle-date,
+.three-candle-item.rsi-cross-down-card .candle-time {
+    color:var(--green);
+}
 
 /* =====================================================
    실시간 현재가격 < 공통 EMA5 노란색 강조
-   해당 시간대 카드 한 칸 전체에 적용
+   해당 시간대 카드 한 칸에 적용
    ===================================================== */
 
 .three-candle-item.ema5-below-realtime-highlight {
@@ -4629,11 +4714,9 @@ def startup():
     )
 
     log.info(
-        "SIGNAL RSI 조건: 최근 %s개 봉 중 RSI(%s) >= %s 또는 <= %s",
-        RSI_CHECK_CANDLES,
-        RSI_PERIOD,
-        RSI_THRESHOLD,
-        RSI_LOWER_THRESHOLD
+        "SIGNAL RSI 조건: 최근 %s개 봉 중 "
+        "RSI30 상향돌파+상승캔들 또는 RSI70 하향돌파+하락캔들",
+        RSI_CHECK_CANDLES
     )
 
     log.info(
@@ -4667,24 +4750,24 @@ def startup():
     )
 
     log.info(
-        "캔들 패턴은 SIGNAL 선정과 무관하게 표시"
+        "캔들 패턴은 RSI SIGNAL 선정과 무관하게 표시"
     )
 
     log.info(
-        "RSI %s 이상 녹색 강조",
-        RSI_THRESHOLD
+        "RSI30 상향돌파 + 상승캔들: 해당 카드 적색"
     )
 
     log.info(
-        "RSI %s 이하 적색 강조",
-        RSI_LOWER_THRESHOLD
+        "RSI70 하향돌파 + 하락캔들: 해당 카드 녹색"
     )
 
     log.info(
-        "최근 %s개 봉 중 RSI %s 이상 또는 %s 이하이면 SIGNAL 후보",
-        RSI_CHECK_CANDLES,
-        RSI_THRESHOLD,
-        RSI_LOWER_THRESHOLD
+        "RSI 단순 30 이하 및 70 이상 상태는 카드 색상 적용 안 함"
+    )
+
+    log.info(
+        "최근 %s개 봉 중 RSI 돌파 신호 발생 시 SIGNAL 후보",
+        RSI_CHECK_CANDLES
     )
 
     log.info(
@@ -4717,12 +4800,6 @@ def startup():
 
     log.info(
         "3연속 이상 장대양봉 및 장대음봉 표시"
-    )
-
-    log.info(
-        "BTC RSI %s 이상 녹색, %s 이하 적색 강조",
-        RSI_THRESHOLD,
-        RSI_LOWER_THRESHOLD
     )
 
     log.info(
