@@ -1,3 +1,4 @@
+
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
@@ -1198,7 +1199,8 @@ def analyze_previous_current_pattern(periods):
             "high": period["high"],
             "low": period["low"],
             "close": period["close"],
-            "change": period.get("change")
+            "change": period.get("change"),
+            "active": period.get("active", False)
         }
         for period, patterns in zip(
             selected_periods,
@@ -1375,7 +1377,8 @@ def analyze_signal_candles(market, price):
         "ema10": None,
         "ema20": None,
         "ema50": None,
-        "ema_alignment": False
+        "ema_alignment": False,
+        "realtime_below_ema5": False
     }
 
     timeframe = CANDLE_PATTERN_TIMEFRAME
@@ -1522,6 +1525,26 @@ def analyze_signal_candles(market, price):
     )
 
     # =====================================================
+    # 실시간 현재가격과 공통 시간봉 EMA5 비교
+    #
+    # 현재가격이 EMA5 아래이면 True
+    # 현재가격이 EMA5 이상이면 False
+    # =====================================================
+
+    realtime_below_ema5 = False
+
+    if price is not None and ema5 is not None:
+
+        try:
+
+            realtime_below_ema5 = (
+                float(price) < float(ema5)
+            )
+
+        except Exception:
+            realtime_below_ema5 = False
+
+    # =====================================================
     # 선택한 EMA만 정배열 비교
     # =====================================================
 
@@ -1576,6 +1599,7 @@ def analyze_signal_candles(market, price):
     ):
         item["rsi"] = period.get("rsi")
         item["change"] = period.get("change")
+        item["active"] = period.get("active", False)
 
     current_signal = pattern_info[
         "current_bullish_pattern"
@@ -1646,7 +1670,8 @@ def analyze_signal_candles(market, price):
         "ema10": ema10,
         "ema20": ema20,
         "ema50": ema50,
-        "ema_alignment": ema_alignment
+        "ema_alignment": ema_alignment,
+        "realtime_below_ema5": realtime_below_ema5
     }
 
 
@@ -1735,6 +1760,12 @@ def make_row(
         "ema50": analysis_pattern.get("ema50"),
         "ema_alignment": analysis_pattern.get(
             "ema_alignment",
+            False
+        ),
+
+        # 실시간 현재가격이 EMA5 아래인지 여부
+        "realtime_below_ema5": analysis_pattern.get(
+            "realtime_below_ema5",
             False
         )
     }
@@ -1865,7 +1896,8 @@ def update_upbit():
                 "ema10": None,
                 "ema20": None,
                 "ema50": None,
-                "ema_alignment": False
+                "ema_alignment": False,
+                "realtime_below_ema5": False
             }
 
         rows.append(
@@ -2293,6 +2325,7 @@ def analyze_okx_btc_candles(df, timeframe, current_price=None):
     ):
         item["rsi"] = period.get("rsi")
         item["change"] = period.get("change")
+        item["active"] = period.get("active", False)
 
     return result
 
@@ -2909,7 +2942,8 @@ def last_three_pattern_html(row):
             "low": None,
             "close": None,
             "change": None,
-            "rsi": None
+            "rsi": None,
+            "active": False
         })
 
     items.extend(last_three)
@@ -2998,9 +3032,28 @@ def last_three_pattern_html(row):
         elif is_rsi_low:
             rsi_class = "rsi-highlight-low"
 
+        # =================================================
+        # 실시간 EMA5 하회 강조
+        #
+        # 현재 진행 중인 캔들 카드만 노란색 표시
+        # 과거 캔들 카드에는 적용하지 않음
+        # =================================================
+
+        ema5_class = ""
+
+        if (
+            item.get("active") is True
+            and row.get("realtime_below_ema5") is True
+        ):
+            ema5_class = "ema5-below-realtime-highlight"
+
+        card_classes = " ".join(
+            x for x in [rsi_class, ema5_class] if x
+        )
+
         boxes.append(
             f"""
-            <div class="three-candle-item {rsi_class}">
+            <div class="three-candle-item {card_classes}">
 
                 <div class="three-candle-label">
                     {label}
@@ -3667,6 +3720,27 @@ section { margin-bottom:11px; }
 
 .three-candle-item.rsi-highlight-high .candle-date { color:var(--green); }
 .three-candle-item.rsi-highlight-low .candle-date { color:var(--red); }
+
+/* =====================================================
+   실시간 현재가격 < 공통 EMA5 노란색 강조
+   해당 시간대 카드 한 칸 전체에 적용
+   ===================================================== */
+
+.three-candle-item.ema5-below-realtime-highlight {
+    background:rgba(232,197,110,.18);
+    border:1px solid var(--yellow);
+    box-shadow:
+        inset 0 0 0 1px rgba(232,197,110,.18),
+        0 0 7px rgba(232,197,110,.16);
+}
+
+.three-candle-item.ema5-below-realtime-highlight .candle-date {
+    color:var(--yellow);
+}
+
+.three-candle-item.ema5-below-realtime-highlight .candle-time {
+    color:var(--yellow);
+}
 
 .candle-change {
     width:100%;
@@ -4653,6 +4727,20 @@ def startup():
 
     log.info(
         "캔들별 변동률: 해당 캔들 시가 대비 종가 기준"
+    )
+
+    log.info(
+        "실시간 현재가격이 공통 시간봉 EMA5 아래이면 현재 진행 카드 노란색 강조"
+    )
+
+    log.info(
+        "실시간 EMA5 비교 시간봉: %s",
+        get_timeframe_label(CANDLE_PATTERN_TIMEFRAME)
+    )
+
+    log.info(
+        "실시간 가격 및 EMA5 비교 갱신 주기: %s분",
+        UPDATE_MINUTES
     )
 
     log.info(
