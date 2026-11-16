@@ -39,7 +39,7 @@ UTC = ZoneInfo("UTC")
 # 사용자 설정
 # =========================================================
 
-TOP_N = 10
+TOP_N = 20
 SHOW_TOP_LIST = "N"
 UPDATE_MINUTES = 1
 
@@ -58,7 +58,7 @@ MAX_RETRIES = 20
 CANDLE_PATTERN_TIMEFRAME = "1h"
 
 RSI_PERIOD = 14
-RSI_THRESHOLD = 70
+RSI_THRESHOLD = 30
 RSI_LOWER_THRESHOLD = 30
 
 RSI_CHECK_CANDLES = 12
@@ -76,9 +76,9 @@ EMA_LONG_PERIOD = 50
 # Y = 정배열 비교에 사용
 # N = 정배열 비교에서 제외
 
-USE_EMA_5 = "Y"
-USE_EMA_10 = "Y"
-USE_EMA_20 = "Y"
+USE_EMA_5 = "N"
+USE_EMA_10 = "N"
+USE_EMA_20 = "N"
 USE_EMA_50 = "N"
 
 DISPLAY_CANDLE_COUNT = 12
