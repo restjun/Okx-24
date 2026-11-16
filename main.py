@@ -102,11 +102,7 @@ TIMEFRAME_MINUTES = {
 # EMA 정배열 상태 및 이벤트 기록
 # =========================================================
 
-# 종목별 직전 정배열 상태
 ema_alignment_states = {}
-
-# 종목별 정배열 시작 / 해제 이벤트 기록
-# key = (market, timeframe, candle_start)
 ema_alignment_event_history = {}
 
 ema_alignment_lock = threading.Lock()
@@ -117,15 +113,6 @@ def update_ema_alignment_transition(
     timeframe,
     alignment
 ):
-    """
-    선택한 EMA 정배열 상태가 변경되는 순간을 기록한다.
-
-    False -> True : 정배열 시작
-    True -> False : 정배열 해제
-
-    최초 조회 시에는 이전 상태가 없으므로 이벤트를 만들지 않는다.
-    이벤트는 발생한 캔들이 끝날 때까지 유지한다.
-    """
 
     now = datetime.now(KST)
 
@@ -151,14 +138,12 @@ def update_ema_alignment_transition(
             (market, timeframe)
         )
 
-        # 최초 조회 시 기준 상태만 설정
         if previous_alignment is None:
 
             ema_alignment_states[
                 (market, timeframe)
             ] = bool(alignment)
 
-        # 이전 상태와 현재 상태가 달라졌을 때만 이벤트 발생
         elif previous_alignment != bool(alignment):
 
             if alignment:
@@ -193,7 +178,6 @@ def update_ema_alignment_transition(
                 (market, timeframe)
             ] = bool(alignment)
 
-        # 현재 캔들에 발생한 이벤트 가져오기
         current_events = list(
             ema_alignment_event_history.get(
                 event_key,
@@ -201,7 +185,6 @@ def update_ema_alignment_transition(
             )
         )
 
-        # 오래된 이벤트 기록 정리
         cutoff = current_start - timedelta(
             minutes=TIMEFRAME_MINUTES[timeframe]
             * DISPLAY_CANDLE_COUNT
@@ -1751,7 +1734,6 @@ def analyze_signal_candles(market, price):
 
     current_ema_events = []
 
-    # 선택한 EMA가 2개 이상일 때만 정배열 이벤트 감지
     if (
         len(enabled_emas) >= 2
         and all(
@@ -1789,7 +1771,6 @@ def analyze_signal_candles(market, price):
         item["change"] = period.get("change")
         item["active"] = period.get("active", False)
 
-        # 현재 진행 중인 캔들에만 EMA 이벤트 연결
         if period.get("active") is True:
             item["ema_alignment_events"] = list(
                 current_ema_events
@@ -2842,6 +2823,7 @@ def rsi_html(value, signal_type=None):
             '</div>'
         )
 
+    # 상향 돌파 = 녹색
     if signal_type == "RSI30_UP":
 
         return (
@@ -2850,6 +2832,7 @@ def rsi_html(value, signal_type=None):
             '</div>'
         )
 
+    # 하향 돌파 = 적색
     if signal_type == "RSI70_DOWN":
 
         return (
@@ -3238,6 +3221,9 @@ def last_three_pattern_html(row):
         rsi_signal_type = item.get("rsi_signal_type")
 
         # RSI 돌파 조건 카드 색상
+        # 상향 돌파 = 녹색
+        # 하향 돌파 = 적색
+
         rsi_class = ""
 
         if rsi_signal_type == "RSI30_UP":
@@ -3416,7 +3402,7 @@ def btc_html():
             <div class="btc-candle-heading">
                 BTC 최근 24개 봉 · {timeframe_label} · RSI({RSI_PERIOD})
                 <span class="rsi-condition-label">
-                    RSI30 상향돌파 적색 · RSI70 하향돌파 녹색
+                    RSI30 상향돌파 녹색 · RSI70 하향돌파 적색
                 </span>
             </div>
 
@@ -3495,7 +3481,7 @@ def signal_card(row):
             <div class="three-candle-heading">
                 최근 24개 봉 · {timeframe_label} · RSI({RSI_PERIOD})
                 <span class="rsi-condition-label">
-                    RSI30 상향돌파 적색 · RSI70 하향돌파 녹색
+                    RSI30 상향돌파 녹색 · RSI70 하향돌파 적색
                 </span>
             </div>
 
@@ -3643,7 +3629,7 @@ def card(row, kind):
             <div class="three-candle-heading">
                 최근 24개 봉 · {timeframe_label} · RSI({RSI_PERIOD})
                 <span class="rsi-condition-label">
-                    RSI30 상향돌파 적색 · RSI70 하향돌파 녹색
+                    RSI30 상향돌파 녹색 · RSI70 하향돌파 적색
                 </span>
             </div>
 
@@ -3892,15 +3878,15 @@ section { margin-bottom:11px; }
 }
 
 .rsi-value.rsi-cross-up {
-    color:#ff7584;
-    background:rgba(255,101,117,.16);
-    border:1px solid #ff6575;
-}
-
-.rsi-value.rsi-cross-down {
     color:#38e6a0;
     background:rgba(56,217,150,.16);
     border:1px solid #38d996;
+}
+
+.rsi-value.rsi-cross-down {
+    color:#ff7584;
+    background:rgba(255,101,117,.16);
+    border:1px solid #ff6575;
 }
 
 .rsi-value.rsi-unavailable {
@@ -3909,20 +3895,9 @@ section { margin-bottom:11px; }
     border-color:#26343f;
 }
 
+/* RSI 상향 돌파 카드: 녹색 */
+
 .three-candle-item.rsi-cross-up-card {
-    background:rgba(255,101,117,.16);
-    border:1px solid var(--red);
-    box-shadow:
-        inset 0 0 0 1px rgba(255,101,117,.15),
-        0 0 7px rgba(255,101,117,.15);
-}
-
-.three-candle-item.rsi-cross-up-card .candle-date,
-.three-candle-item.rsi-cross-up-card .candle-time {
-    color:var(--red);
-}
-
-.three-candle-item.rsi-cross-down-card {
     background:rgba(56,217,150,.16);
     border:1px solid var(--green);
     box-shadow:
@@ -3930,9 +3905,24 @@ section { margin-bottom:11px; }
         0 0 7px rgba(56,217,150,.15);
 }
 
+.three-candle-item.rsi-cross-up-card .candle-date,
+.three-candle-item.rsi-cross-up-card .candle-time {
+    color:var(--green);
+}
+
+/* RSI 하향 돌파 카드: 적색 */
+
+.three-candle-item.rsi-cross-down-card {
+    background:rgba(255,101,117,.16);
+    border:1px solid var(--red);
+    box-shadow:
+        inset 0 0 0 1px rgba(255,101,117,.15),
+        0 0 7px rgba(255,101,117,.15);
+}
+
 .three-candle-item.rsi-cross-down-card .candle-date,
 .three-candle-item.rsi-cross-down-card .candle-time {
-    color:var(--green);
+    color:var(--red);
 }
 
 /* =====================================================
@@ -4928,11 +4918,11 @@ def startup():
     )
 
     log.info(
-        "RSI30 상향돌파 + 상승캔들: 해당 카드 적색"
+        "RSI30 상향돌파 + 상승캔들: 해당 카드 녹색"
     )
 
     log.info(
-        "RSI70 하향돌파 + 하락캔들: 해당 카드 녹색"
+        "RSI70 하향돌파 + 하락캔들: 해당 카드 적색"
     )
 
     log.info(
