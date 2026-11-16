@@ -75,7 +75,7 @@ EMA_LONG_PERIOD = 50
 USE_EMA_5 = "Y"
 USE_EMA_10 = "Y"
 USE_EMA_20 = "Y"
-USE_EMA_50 = "N"
+USE_EMA_50 = "Y"
 
 # EMA 정배열 연속 카운팅 범위
 EMA_ALIGNMENT_COUNT_MIN = 1
