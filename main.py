@@ -38,7 +38,7 @@ UTC = ZoneInfo("UTC")
 # 사용자 설정
 # =========================================================
 
-TOP_N = 20
+TOP_N = 50
 SHOW_TOP_LIST = "N"
 UPDATE_MINUTES = 1
 
@@ -72,8 +72,8 @@ EMA_SLOW_PERIOD = 20
 EMA_LONG_PERIOD = 50
 
 USE_EMA_5 = "Y"
-USE_EMA_10 = "N"
-USE_EMA_20 = "Y"
+USE_EMA_10 = "Y"
+USE_EMA_20 = "N"
 USE_EMA_50 = "N"
 
 DISPLAY_CANDLE_COUNT = 12
