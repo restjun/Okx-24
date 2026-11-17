@@ -1,3 +1,4 @@
+
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
@@ -78,10 +79,6 @@ USE_EMA_10 = "N"
 USE_EMA_20 = "N"
 USE_EMA_50 = "N"
 
-# EMA 정배열 연속 카운팅 범위
-EMA_ALIGNMENT_COUNT_MIN = 1
-EMA_ALIGNMENT_COUNT_MAX = 12
-
 DISPLAY_CANDLE_COUNT = 12
 
 CONSECUTIVE_CANDLE_MIN = 3
@@ -102,264 +99,6 @@ TIMEFRAME_MINUTES = {
     "4h": 240,
     "1d": 1440
 }
-
-
-# =========================================================
-# EMA 정배열 상태 및 이벤트 기록
-# =========================================================
-
-ema_alignment_states = {}
-ema_alignment_event_history = {}
-
-ema_alignment_lock = threading.Lock()
-
-
-def update_ema_alignment_transition(
-    market,
-    timeframe,
-    previous_alignment,
-    alignment,
-    candle_start
-):
-
-    if candle_start is None:
-        return []
-
-    if previous_alignment is None or alignment is None:
-        return []
-
-    event_key = (
-        market,
-        timeframe,
-        candle_start
-    )
-
-    current_events = []
-
-    with ema_alignment_lock:
-
-        ema_alignment_states[
-            (market, timeframe)
-        ] = {
-            "candle_start": candle_start,
-            "alignment": bool(alignment)
-        }
-
-        events = ema_alignment_event_history.setdefault(
-            event_key,
-            []
-        )
-
-        events[:] = [
-            event
-            for event in events
-            if event.get("label") != "정배열 시작"
-        ]
-
-        if (
-            previous_alignment is False
-            and alignment is True
-        ):
-
-            already_exists = any(
-                event.get("label") == "정배열 완성"
-                for event in events
-            )
-
-            if not already_exists:
-
-                now = datetime.now(KST)
-
-                events.append({
-                    "label": "정배열 완성",
-                    "time": now.strftime("%H:%M:%S")
-                })
-
-                log.info(
-                    "%s | %s | EMA 정배열 완성 | 확정봉=%s",
-                    market,
-                    get_timeframe_label(timeframe),
-                    candle_start.strftime("%Y-%m-%d %H:%M")
-                )
-
-        if not events:
-            ema_alignment_event_history.pop(
-                event_key,
-                None
-            )
-
-        current_events = list(
-            ema_alignment_event_history.get(
-                event_key,
-                []
-            )
-        )
-
-        cutoff = candle_start - timedelta(
-            minutes=TIMEFRAME_MINUTES[timeframe]
-            * DISPLAY_CANDLE_COUNT
-        )
-
-        old_keys = []
-
-        for key in ema_alignment_event_history:
-
-            if key[0] != market:
-                continue
-
-            if key[1] != timeframe:
-                continue
-
-            if key[2] < cutoff:
-                old_keys.append(key)
-
-        for key in old_keys:
-            del ema_alignment_event_history[key]
-
-    return current_events
-
-
-def update_ema_alignment_realtime(
-    market,
-    timeframe,
-    previous_alignment,
-    alignment,
-    candle_start
-):
-
-    if candle_start is None:
-        return []
-
-    if previous_alignment is None or alignment is None:
-        return []
-
-    event_key = (
-        market,
-        timeframe,
-        candle_start
-    )
-
-    current_events = []
-
-    with ema_alignment_lock:
-
-        ema_alignment_states[
-            (market, timeframe)
-        ] = {
-            "candle_start": candle_start,
-            "alignment": bool(alignment)
-        }
-
-        events = ema_alignment_event_history.setdefault(
-            event_key,
-            []
-        )
-
-        if (
-            previous_alignment is False
-            and alignment is True
-        ):
-
-            already_started = any(
-                event.get("label") == "정배열 시작"
-                for event in events
-            )
-
-            already_completed = any(
-                event.get("label") == "정배열 완성"
-                for event in events
-            )
-
-            if not already_started and not already_completed:
-
-                now = datetime.now(KST)
-
-                events.append({
-                    "label": "정배열 시작",
-                    "time": now.strftime("%H:%M:%S")
-                })
-
-                log.info(
-                    "%s | %s | EMA 정배열 실시간 시작 | 진행봉=%s",
-                    market,
-                    get_timeframe_label(timeframe),
-                    candle_start.strftime("%Y-%m-%d %H:%M")
-                )
-
-        else:
-
-            events[:] = [
-                event
-                for event in events
-                if event.get("label") != "정배열 시작"
-            ]
-
-        if not events:
-
-            ema_alignment_event_history.pop(
-                event_key,
-                None
-            )
-
-        current_events = list(
-            ema_alignment_event_history.get(
-                event_key,
-                []
-            )
-        )
-
-    return current_events
-
-
-def get_ema_alignment_events(
-    market,
-    timeframe,
-    candle_start
-):
-
-    event_key = (
-        market,
-        timeframe,
-        candle_start
-    )
-
-    with ema_alignment_lock:
-
-        return list(
-            ema_alignment_event_history.get(
-                event_key,
-                []
-            )
-        )
-
-
-# =========================================================
-# EMA 조건 표시
-# =========================================================
-
-def get_ema_condition_text():
-
-    selected = []
-
-    if USE_EMA_5 == "Y":
-        selected.append(f"EMA{EMA_FAST_PERIOD}")
-
-    if USE_EMA_10 == "Y":
-        selected.append(f"EMA{EMA_MIDDLE_PERIOD}")
-
-    if USE_EMA_20 == "Y":
-        selected.append(f"EMA{EMA_SLOW_PERIOD}")
-
-    if USE_EMA_50 == "Y":
-        selected.append(f"EMA{EMA_LONG_PERIOD}")
-
-    if not selected:
-        return "EMA 조건 사용 안 함"
-
-    if len(selected) == 1:
-        return f"{selected[0]} 단독 사용 (정배열 비교 없음)"
-
-    return " > ".join(selected) + " 정배열"
 
 
 # =========================================================
@@ -1639,57 +1378,6 @@ def apply_rsi_cross_signals(periods):
 
 
 # =========================================================
-# EMA 정배열 연속 카운팅
-# =========================================================
-
-def calculate_ema_alignment_count(
-    ema_series_list,
-    dataframe_length
-):
-
-    if len(ema_series_list) < 2:
-        return 0
-
-    if dataframe_length <= 0:
-        return 0
-
-    count = 0
-
-    for index in range(dataframe_length - 1, -1, -1):
-
-        values = []
-
-        for series in ema_series_list:
-
-            if index >= len(series):
-                values = []
-                break
-
-            value = series.iloc[index]
-
-            if pd.isna(value):
-                values = []
-                break
-
-            values.append(float(value))
-
-        if len(values) != len(ema_series_list):
-            break
-
-        aligned = all(
-            values[i] > values[i + 1]
-            for i in range(len(values) - 1)
-        )
-
-        if not aligned:
-            break
-
-        count += 1
-
-    return count
-
-
-# =========================================================
 # 확정봉 EMA 정배열 판정
 # =========================================================
 
@@ -1754,8 +1442,6 @@ def analyze_signal_candles(market, price):
         "ema20": None,
         "ema50": None,
         "ema_alignment": False,
-        "ema_alignment_count": 0,
-        "ema_alignment_count_pass": False,
         "realtime_below_ema5": False
     }
 
@@ -1970,118 +1656,6 @@ def analyze_signal_candles(market, price):
         )
 
     # =====================================================
-    # EMA 정배열 연속 카운팅
-    # =====================================================
-
-    ema_alignment_count = calculate_ema_alignment_count(
-        enabled_ema_series,
-        len(df)
-    )
-
-    ema_alignment_count_pass = bool(
-        EMA_ALIGNMENT_COUNT_MIN
-        <= ema_alignment_count
-        <= EMA_ALIGNMENT_COUNT_MAX
-    )
-
-    # =====================================================
-    # EMA 정배열 완성 이벤트 감지
-    # =====================================================
-
-    current_start = get_candle_start(
-        datetime.now(KST),
-        timeframe
-    )
-
-    confirmed_indices = [
-        index
-        for index, candle_datetime in enumerate(df["datetime"])
-        if candle_datetime < current_start
-    ]
-
-    if len(enabled_ema_series) >= 2 and len(confirmed_indices) >= 2:
-
-        for position in range(1, len(confirmed_indices)):
-
-            previous_index = confirmed_indices[position - 1]
-            current_index = confirmed_indices[position]
-
-            previous_alignment = get_ema_alignment_at_index(
-                enabled_ema_series,
-                previous_index
-            )
-
-            current_alignment = get_ema_alignment_at_index(
-                enabled_ema_series,
-                current_index
-            )
-
-            current_confirmed_start = df.iloc[
-                current_index
-            ]["datetime"]
-
-            if (
-                previous_alignment is None
-                or current_alignment is None
-            ):
-                continue
-
-            update_ema_alignment_transition(
-                market,
-                timeframe,
-                previous_alignment,
-                current_alignment,
-                current_confirmed_start
-            )
-
-    # =====================================================
-    # 진행 중인 캔들 EMA 정배열 실시간 감지
-    # =====================================================
-
-    if len(enabled_ema_series) >= 2:
-
-        active_indices = [
-            index
-            for index, candle_datetime in enumerate(df["datetime"])
-            if candle_datetime == current_start
-        ]
-
-        if active_indices:
-
-            active_index = active_indices[-1]
-
-            previous_confirmed_index = active_index - 1
-
-            if previous_confirmed_index >= 0:
-
-                previous_confirmed_alignment = (
-                    get_ema_alignment_at_index(
-                        enabled_ema_series,
-                        previous_confirmed_index
-                    )
-                )
-
-                realtime_alignment = (
-                    get_ema_alignment_at_index(
-                        enabled_ema_series,
-                        active_index
-                    )
-                )
-
-                if (
-                    previous_confirmed_alignment is not None
-                    and realtime_alignment is not None
-                ):
-
-                    update_ema_alignment_realtime(
-                        market,
-                        timeframe,
-                        previous_confirmed_alignment,
-                        realtime_alignment,
-                        current_start
-                    )
-
-    # =====================================================
     # 캔들 패턴 분석
     # =====================================================
 
@@ -2103,18 +1677,6 @@ def analyze_signal_candles(market, price):
         item["rsi_signal_type"] = period.get("rsi_signal_type")
         item["change"] = period.get("change")
         item["active"] = period.get("active", False)
-
-        candle_start = period.get("start")
-
-        item["ema_alignment_events"] = (
-            get_ema_alignment_events(
-                market,
-                timeframe,
-                candle_start
-            )
-            if candle_start is not None
-            else []
-        )
 
     current_signal = pattern_info[
         "current_bullish_pattern"
@@ -2199,9 +1761,6 @@ def analyze_signal_candles(market, price):
         "ema50": ema50,
 
         "ema_alignment": ema_alignment,
-
-        "ema_alignment_count": ema_alignment_count,
-        "ema_alignment_count_pass": ema_alignment_count_pass,
 
         "realtime_below_ema5": False
     }
@@ -2307,16 +1866,6 @@ def make_row(
 
         "ema_alignment": analysis_pattern.get(
             "ema_alignment",
-            False
-        ),
-
-        "ema_alignment_count": analysis_pattern.get(
-            "ema_alignment_count",
-            0
-        ),
-
-        "ema_alignment_count_pass": analysis_pattern.get(
-            "ema_alignment_count_pass",
             False
         ),
 
@@ -2453,8 +2002,6 @@ def update_upbit():
                 "ema20": None,
                 "ema50": None,
                 "ema_alignment": False,
-                "ema_alignment_count": 0,
-                "ema_alignment_count_pass": False,
                 "realtime_below_ema5": False
             }
 
@@ -2493,9 +2040,6 @@ def update_upbit():
 
             # EMA 정배열
             and row.get("ema_alignment") is True
-
-            # EMA 정배열 연속 카운팅
-            and row.get("ema_alignment_count_pass") is True
         )
     ]
 
@@ -2517,8 +2061,7 @@ def update_upbit():
     log.info(
         "UPBIT | TOP%s | "
         "SIGNAL=당일 변동률>%s%% AND 최근 %s개 봉 RSI 돌파 "
-        "AND 최신 RSI %s~%s AND %s "
-        "AND EMA 정배열 연속 %s~%s개 | "
+        "AND 최신 RSI %s~%s AND %s | "
         "시간봉=%s | SIGNAL=%s | 정렬=24H 거래대금 순",
         TOP_N,
         DAILY_CHANGE_MIN,
@@ -2526,8 +2069,6 @@ def update_upbit():
         RSI_SIGNAL_MIN,
         RSI_SIGNAL_MAX,
         get_ema_condition_text(),
-        EMA_ALIGNMENT_COUNT_MIN,
-        EMA_ALIGNMENT_COUNT_MAX,
         CANDLE_PATTERN_TIMEFRAME,
         len(latest_signal_data)
     )
@@ -3498,8 +3039,7 @@ def last_three_pattern_html(row):
             "rsi": None,
             "rsi_previous": None,
             "rsi_signal_type": None,
-            "active": False,
-            "ema_alignment_events": []
+            "active": False
         })
 
     items.extend(last_three)
@@ -3537,44 +3077,6 @@ def last_three_pattern_html(row):
                 '<span class="candle-live">진행</span>'
             )
 
-        ema_events = item.get(
-            "ema_alignment_events",
-            []
-        )
-
-        ema_event_html = ""
-
-        if ema_events:
-
-            event_labels = []
-
-            for event in ema_events:
-
-                event_label = html.escape(
-                    str(event.get("label", ""))
-                )
-
-                event_time = html.escape(
-                    str(event.get("time", ""))
-                )
-
-                if event_label:
-
-                    event_labels.append(
-                        f'<span class="ema-event-label">'
-                        f'{event_label}'
-                        f'<small>{event_time}</small>'
-                        f'</span>'
-                    )
-
-            if event_labels:
-
-                ema_event_html = (
-                    '<div class="ema-event-list">'
-                    + "".join(event_labels)
-                    + '</div>'
-                )
-
         label = f"""
         <div class="candle-date">
             {date_label}
@@ -3584,8 +3086,6 @@ def last_three_pattern_html(row):
             {time_label}
             {live_html}
         </div>
-
-        {ema_event_html}
         """
 
         candle_html = current_pattern_html(
@@ -3608,18 +3108,9 @@ def last_three_pattern_html(row):
         elif rsi_signal_type == "RSI70_DOWN":
             rsi_class = "rsi-cross-down-card"
 
-        ema_event_class = ""
-
-        if ema_events:
-            ema_event_class = "ema-alignment-transition-card"
-
-        card_classes = " ".join(
-            x for x in [rsi_class, ema_event_class] if x
-        )
-
         boxes.append(
             f"""
-            <div class="three-candle-item {card_classes}">
+            <div class="three-candle-item {rsi_class}">
 
                 <div class="three-candle-label">
                     {label}
@@ -3901,7 +3392,6 @@ def signal_section():
         <span>최근 {RSI_CHECK_CANDLES}개 봉 RSI{RSI_SIGNAL_MIN} 상향돌파+상승캔들 또는 RSI{RSI_SIGNAL_MAX} 하향돌파+하락캔들</span>
         <span>최신 RSI {RSI_SIGNAL_MIN}~{RSI_SIGNAL_MAX}</span>
         <span>{html.escape(get_ema_condition_text())}</span>
-        <span>EMA 정배열 연속 {EMA_ALIGNMENT_COUNT_MIN}~{EMA_ALIGNMENT_COUNT_MAX}개</span>
         <span>EMA 및 RSI 시간봉: {pattern_timeframe_label}</span>
         <span>BTC 거래대금 비교 없음</span>
         <span>24H 거래대금 높은 순 정렬</span>
@@ -4296,50 +3786,6 @@ section { margin-bottom:11px; }
 .three-candle-item.rsi-cross-down-card .candle-date,
 .three-candle-item.rsi-cross-down-card .candle-time {
     color:var(--red);
-}
-
-.three-candle-item.ema-alignment-transition-card {
-    background:rgba(232,197,110,.20);
-    border:1px solid var(--yellow);
-    box-shadow:
-        inset 0 0 0 1px rgba(232,197,110,.18),
-        0 0 8px rgba(232,197,110,.20);
-}
-
-.three-candle-item.ema-alignment-transition-card .candle-date,
-.three-candle-item.ema-alignment-transition-card .candle-time {
-    color:var(--yellow);
-}
-
-.ema-event-list {
-    width:100%;
-    display:flex;
-    flex-direction:column;
-    align-items:center;
-    justify-content:center;
-    gap:2px;
-    overflow:hidden;
-}
-
-.ema-event-label {
-    display:inline-flex;
-    align-items:center;
-    justify-content:center;
-    gap:2px;
-    padding:1px 3px;
-    color:#17130a;
-    background:var(--yellow);
-    border-radius:3px;
-    font-size:7px;
-    font-weight:900;
-    line-height:1.2;
-    white-space:nowrap;
-}
-
-.ema-event-label small {
-    color:#403619;
-    font-size:6px;
-    font-weight:800;
 }
 
 .candle-change {
@@ -5022,15 +4468,6 @@ section { margin-bottom:11px; }
         min-height:16px;
         font-size:8px;
     }
-
-    .ema-event-label {
-        font-size:6px;
-        padding:1px 2px;
-    }
-
-    .ema-event-label small {
-        font-size:5px;
-    }
 }
 
 @media (max-width:380px) {
@@ -5080,15 +4517,6 @@ section { margin-bottom:11px; }
         height:15px;
         min-height:15px;
         font-size:7px;
-    }
-
-    .ema-event-label {
-        font-size:5px;
-        gap:1px;
-    }
-
-    .ema-event-label small {
-        font-size:5px;
     }
 }
 """
@@ -5323,16 +4751,6 @@ def startup():
     )
 
     log.info(
-        "EMA 정배열 연속 카운팅 조건: %s개 이상 %s개 이하",
-        EMA_ALIGNMENT_COUNT_MIN,
-        EMA_ALIGNMENT_COUNT_MAX
-    )
-
-    log.info(
-        "EMA 정배열 연속 카운팅은 현재 진행 중인 캔들 포함"
-    )
-
-    log.info(
         "캔들 날짜와 시간 두 줄 표시 적용"
     )
 
@@ -5364,46 +4782,15 @@ def startup():
     )
 
     log.info(
-        "EMA 정배열 시작 시 진행 중인 해당 캔들 노란색 실시간 강조"
+        "기존 EMA 정배열 이벤트 감지 및 노란색 카드 표시 기능 삭제"
     )
 
     log.info(
-        "진행 중 EMA 정배열이 해제되면 임시 노란색 강조 제거"
+        "기존 EMA 정배열 연속 카운팅 기능 삭제"
     )
 
     log.info(
-        "EMA 정배열이 캔들 마감까지 유지되면 정배열 완성으로 확정"
-    )
-
-    log.info(
-        "EMA 정배열 완성 이벤트는 해당 확정 캔들에 노란색 유지"
-    )
-
-    log.info(
-        "EMA 정배열 이벤트 감지 시간봉: %s",
-        get_timeframe_label(CANDLE_PATTERN_TIMEFRAME)
-    )
-
-    log.info(
-        "EMA 정배열 확정봉 및 실시간 확인 주기: %s분",
-        UPDATE_MINUTES
-    )
-
-    log.info(
-        "확정봉 EMA 정배열 판정은 진행 중인 캔들을 제외"
-    )
-
-    log.info(
-        "진행봉 EMA 정배열은 현재가 반영 후 실시간 판정"
-    )
-
-    log.info(
-        "프로그램 시작 시 과거 확정봉 EMA 정배열 이벤트 복원"
-    )
-
-    log.info(
-        "과거 확정봉을 처음부터 순서대로 검사하여 "
-        "비정배열에서 정배열로 전환된 캔들 기록"
+        "EMA 정배열은 SIGNAL 선정 조건으로만 사용"
     )
 
     log.info(
