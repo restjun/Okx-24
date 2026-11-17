@@ -102,6 +102,35 @@ TIMEFRAME_MINUTES = {
 
 
 # =========================================================
+# EMA 조건 표시
+# =========================================================
+
+def get_ema_condition_text():
+
+    enabled = []
+
+    if USE_EMA_5 == "Y":
+        enabled.append(f"EMA{EMA_FAST_PERIOD}")
+
+    if USE_EMA_10 == "Y":
+        enabled.append(f"EMA{EMA_MIDDLE_PERIOD}")
+
+    if USE_EMA_20 == "Y":
+        enabled.append(f"EMA{EMA_SLOW_PERIOD}")
+
+    if USE_EMA_50 == "Y":
+        enabled.append(f"EMA{EMA_LONG_PERIOD}")
+
+    if not enabled:
+        return "EMA 정배열 조건 사용 안 함"
+
+    if len(enabled) == 1:
+        return f"{enabled[0]} 단독 사용"
+
+    return " > ".join(enabled) + " 정배열"
+
+
+# =========================================================
 # 전역 데이터
 # =========================================================
 
@@ -1356,16 +1385,16 @@ def apply_rsi_cross_signals(periods):
 
         period["rsi_previous"] = previous_rsi
 
-        # 설정한 RSI 하단값 상향돌파 + 양봉
+        # RSI 50 상향돌파 + 양봉
         if (
             previous_rsi < RSI_SIGNAL_MIN
             and current_rsi >= RSI_SIGNAL_MIN
             and close_price > open_price
         ):
 
-            period["rsi_signal_type"] = "RSI30_UP"
+            period["rsi_signal_type"] = "RSI50_UP"
 
-        # 설정한 RSI 상단값 하향돌파 + 음봉
+        # RSI 70 하향돌파 + 음봉
         elif (
             previous_rsi > RSI_SIGNAL_MAX
             and current_rsi <= RSI_SIGNAL_MAX
@@ -1525,10 +1554,10 @@ def analyze_signal_candles(market, price):
         if period.get("rsi_signal_type") is not None
     ]
 
-    rsi_30_up_periods = [
+    rsi_50_up_periods = [
         period
         for period in rsi_cross_periods
-        if period["rsi_signal_type"] == "RSI30_UP"
+        if period["rsi_signal_type"] == "RSI50_UP"
     ]
 
     rsi_70_down_periods = [
@@ -1702,7 +1731,7 @@ def analyze_signal_candles(market, price):
 
         latest_cross = rsi_cross_periods[-1]
 
-        if latest_cross["rsi_signal_type"] == "RSI30_UP":
+        if latest_cross["rsi_signal_type"] == "RSI50_UP":
 
             signal_reason = (
                 f"RSI {RSI_SIGNAL_MIN} 상향돌파 + 상승 캔들"
@@ -1747,10 +1776,10 @@ def analyze_signal_candles(market, price):
         "rsi_signal": rsi_signal,
         "rsi_values": rsi_values,
 
-        "rsi_low_count": len(rsi_30_up_periods),
+        "rsi_low_count": len(rsi_50_up_periods),
         "rsi_high_count": len(rsi_70_down_periods),
 
-        "rsi_30_up_count": len(rsi_30_up_periods),
+        "rsi_50_up_count": len(rsi_50_up_periods),
         "rsi_70_down_count": len(rsi_70_down_periods),
 
         "rsi_range_pass": rsi_range_pass,
@@ -1851,7 +1880,7 @@ def make_row(
         "rsi_low_count": analysis_pattern.get("rsi_low_count", 0),
         "rsi_high_count": analysis_pattern.get("rsi_high_count", 0),
 
-        "rsi_30_up_count": analysis_pattern.get("rsi_30_up_count", 0),
+        "rsi_50_up_count": analysis_pattern.get("rsi_50_up_count", 0),
         "rsi_70_down_count": analysis_pattern.get("rsi_70_down_count", 0),
 
         "rsi_range_pass": analysis_pattern.get(
@@ -1994,7 +2023,7 @@ def update_upbit():
                 "rsi_values": [],
                 "rsi_low_count": 0,
                 "rsi_high_count": 0,
-                "rsi_30_up_count": 0,
+                "rsi_50_up_count": 0,
                 "rsi_70_down_count": 0,
                 "rsi_range_pass": False,
                 "ema5": None,
@@ -2750,7 +2779,7 @@ def rsi_html(value, signal_type=None):
             '</div>'
         )
 
-    if signal_type == "RSI30_UP":
+    if signal_type == "RSI50_UP":
 
         return (
             '<div class="rsi-value rsi-cross-up">'
@@ -3102,7 +3131,7 @@ def last_three_pattern_html(row):
 
         rsi_class = ""
 
-        if rsi_signal_type == "RSI30_UP":
+        if rsi_signal_type == "RSI50_UP":
             rsi_class = "rsi-cross-up-card"
 
         elif rsi_signal_type == "RSI70_DOWN":
@@ -4723,11 +4752,11 @@ def startup():
     )
 
     log.info(
-        "RSI 상향돌파 + 상승캔들: 해당 카드 녹색 강조 유지"
+        "RSI 50 상향돌파 + 상승캔들: 해당 카드 녹색 강조 유지"
     )
 
     log.info(
-        "RSI 하향돌파 + 하락캔들: 해당 카드 적색 강조 유지"
+        "RSI 70 하향돌파 + 하락캔들: 해당 카드 적색 강조 유지"
     )
 
     log.info(
