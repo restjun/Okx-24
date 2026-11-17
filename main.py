@@ -3542,4 +3542,1321 @@ def card(row, kind):
         </div>
 
     </article>
+    """# =========================================================
+# CSS
+# =========================================================
+
+CSS = """
+:root {
+    color-scheme: dark;
+    --bg:#080d13;
+    --panel:#101820;
+    --panel2:#131e28;
+    --panel3:#0d151d;
+    --line:#263542;
+    --line-soft:#1d2a35;
+    --text:#e5edf4;
+    --muted:#8495a5;
+    --green:#38d996;
+    --green-soft:rgba(56,217,150,.10);
+    --red:#ff6575;
+    --red-soft:rgba(255,101,117,.10);
+    --yellow:#e8c56e;
+    --fs-main:17px;
+    --fs-section:13px;
+    --fs-coin:14px;
+    --fs-value:12px;
+    --fs-content:11px;
+    --fs-small:10px;
+    --fs-tiny:9px;
+}
+
+* { box-sizing:border-box; }
+
+html {
+    min-height:100%;
+    background:var(--bg);
+    -webkit-text-size-adjust:100%;
+}
+
+body {
+    width:100%;
+    max-width:1000px;
+    min-height:100vh;
+    margin:0 auto;
+    padding:12px;
+    background:var(--bg);
+    color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Noto Sans KR","Malgun Gothic",Arial,sans-serif;
+    font-size:var(--fs-content);
+    line-height:1.4;
+    letter-spacing:-.2px;
+}
+
+h1 {
+    margin:2px 0 11px;
+    padding:0 2px 10px;
+    font-size:var(--fs-main);
+    font-weight:900;
+    letter-spacing:-.5px;
+    color:#f2f6fa;
+    border-bottom:1px solid var(--line);
+}
+
+section { margin-bottom:11px; }
+
+.up { color:var(--green)!important; font-weight:800; }
+.down { color:var(--red)!important; font-weight:800; }
+.zero { color:#8795a2; font-weight:700; }
+
+.pattern-box {
+    min-width:45px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    line-height:1.15;
+}
+
+.pattern-name {
+    display:block;
+    margin-top:3px;
+    color:var(--yellow);
+    font-size:var(--fs-tiny);
+    font-weight:800;
+    white-space:nowrap;
+}
+
+.bullish-pattern .pattern-name { color:var(--green); }
+.bearish-pattern .pattern-name { color:var(--red); }
+.neutral-pattern .pattern-name { color:var(--yellow); }
+.pattern-none .pattern-name { color:var(--muted); }
+
+.pattern-multi {
+    width:100%;
+    display:flex;
+    align-items:flex-start;
+    justify-content:center;
+    flex-wrap:wrap;
+    gap:5px;
+}
+
+.pattern-multi .pattern-box { min-width:43px; }
+
+.candle-pattern-visual {
+    height:28px;
+    min-width:36px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:4px;
+    position:relative;
+}
+
+.mini-candle {
+    width:8px;
+    height:27px;
+    position:relative;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+}
+
+.mini-candle .wick {
+    position:absolute;
+    width:1px;
+    height:27px;
+    left:50%;
+    top:0;
+    transform:translateX(-50%);
+    background:#82909d;
+}
+
+.mini-candle .body {
+    position:relative;
+    z-index:2;
+    width:8px;
+    height:12px;
+    border-radius:1px;
+}
+
+.mini-candle.bearish .body { background:var(--red); height:15px; }
+.mini-candle.bullish .body { background:var(--green); height:19px; }
+
+.mini-candle.bullish.large .body,
+.mini-candle.bearish.large .body {
+    height:23px;
+    width:10px;
+}
+
+.mini-candle.bullish-doji .body {
+    background:var(--green);
+    height:3px;
+    width:10px;
+}
+
+.mini-candle.bearish-doji .body {
+    background:var(--red);
+    height:3px;
+    width:10px;
+}
+
+.mini-candle.piercing-candle .body {
+    background:var(--green);
+    height:18px;
+}
+
+.mini-candle.piercing-bearish .body {
+    background:var(--red);
+    height:18px;
+}
+
+.mini-candle.bullish.very-large .body {
+    background:var(--green);
+    height:24px;
+    width:10px;
+}
+
+.mini-candle.bearish.very-large .body {
+    background:var(--red);
+    height:24px;
+    width:10px;
+}
+
+.mini-candle.hammer .wick,
+.mini-candle.inverted-hammer .wick {
+    height:27px;
+    top:0;
+}
+
+.mini-candle.hammer .body {
+    position:absolute;
+    top:1px;
+    height:7px;
+    width:9px;
+}
+
+.mini-candle.bullish.hammer .body,
+.mini-candle.bullish.inverted-hammer .body {
+    background:var(--green);
+}
+
+.mini-candle.bearish.hammer .body,
+.mini-candle.bearish.inverted-hammer .body {
+    background:var(--red);
+}
+
+.mini-candle.inverted-hammer .body {
+    position:absolute;
+    bottom:1px;
+    height:7px;
+    width:9px;
+}
+
+.rsi-condition-label {
+    display:inline-block;
+    margin-left:5px;
+    color:var(--yellow);
+    font-size:var(--fs-tiny);
+    font-weight:800;
+}
+
+.rsi-value {
+    width:100%;
+    min-height:18px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    margin:0;
+    padding:2px;
+    color:#aab9c6;
+    background:#1b2935;
+    border:1px solid #344451;
+    border-radius:4px;
+    font-size:9px;
+    font-weight:800;
+    white-space:nowrap;
+}
+
+.rsi-value.rsi-cross-up {
+    color:#38e6a0;
+    background:rgba(56,217,150,.16);
+    border:1px solid #38d996;
+}
+
+.rsi-value.rsi-cross-down {
+    color:#ff7584;
+    background:rgba(255,101,117,.16);
+    border:1px solid #ff6575;
+}
+
+.rsi-value.rsi-unavailable {
+    color:#71808c;
+    background:#141e27;
+    border-color:#26343f;
+}
+
+.three-candle-item.rsi-cross-up-card {
+    background:rgba(56,217,150,.16);
+    border:1px solid var(--green);
+    box-shadow:
+        inset 0 0 0 1px rgba(56,217,150,.15),
+        0 0 7px rgba(56,217,150,.15);
+}
+
+.three-candle-item.rsi-cross-up-card .candle-date,
+.three-candle-item.rsi-cross-up-card .candle-time {
+    color:var(--green);
+}
+
+.three-candle-item.rsi-cross-down-card {
+    background:rgba(255,101,117,.16);
+    border:1px solid var(--red);
+    box-shadow:
+        inset 0 0 0 1px rgba(255,101,117,.15),
+        0 0 7px rgba(255,101,117,.15);
+}
+
+.three-candle-item.rsi-cross-down-card .candle-date,
+.three-candle-item.rsi-cross-down-card .candle-time {
+    color:var(--red);
+}
+
+.candle-change {
+    width:100%;
+    height:17px;
+    min-height:17px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:9px;
+    font-weight:900;
+    line-height:1;
+    white-space:nowrap;
+}
+
+.candle-change-up { color:var(--green); }
+.candle-change-down { color:var(--red); }
+.candle-change-zero { color:#aab9c6; }
+.candle-change-none { color:#71808c; }
+
+.three-candle-section,
+.top-three-candle-section {
+    padding:8px 9px;
+    background:var(--panel3);
+    border-top:1px solid var(--line-soft);
+}
+
+.three-candle-heading {
+    color:#9eafbe;
+    font-size:var(--fs-small);
+    font-weight:800;
+    text-align:left;
+    margin-bottom:7px;
+}
+
+.three-candle-list {
+    display:grid;
+    grid-template-columns:repeat(6,minmax(0,1fr));
+    width:100%;
+    gap:5px;
+}
+
+.three-candle-item {
+    min-width:0;
+    height:120px;
+    min-height:120px;
+    display:grid;
+    grid-template-rows:27px minmax(0,1fr) 17px 18px;
+    row-gap:3px;
+    align-items:stretch;
+    padding:5px 2px;
+    background:#121e28;
+    border:1px solid #263744;
+    border-radius:5px;
+    overflow:hidden;
+}
+
+.three-candle-label {
+    width:100%;
+    height:27px;
+    min-height:0;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    margin:0;
+    padding:0;
+    line-height:1.25;
+    text-align:center;
+    white-space:nowrap;
+    overflow:hidden;
+}
+
+.candle-date {
+    color:#c2cfda;
+    font-size:var(--fs-tiny);
+    font-weight:800;
+}
+
+.candle-time {
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:2px;
+    margin-top:2px;
+    color:#8295a5;
+    font-size:var(--fs-tiny);
+    font-weight:700;
+}
+
+.candle-live {
+    display:inline-block;
+    color:var(--yellow);
+    font-size:7px;
+    font-weight:800;
+}
+
+.three-candle-pattern {
+    width:100%;
+    height:100%;
+    min-width:0;
+    min-height:0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    margin:0;
+    padding:0;
+    overflow:hidden;
+}
+
+.three-candle-pattern .pattern-multi {
+    width:100%;
+    max-width:100%;
+    max-height:100%;
+    min-height:0;
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    justify-content:center;
+    gap:2px;
+    overflow:hidden;
+}
+
+.three-candle-pattern .pattern-box {
+    min-width:0;
+    max-width:100%;
+    flex:0 1 auto;
+}
+
+.three-candle-pattern .pattern-name {
+    font-size:7px;
+    line-height:1.15;
+    white-space:normal;
+    overflow-wrap:anywhere;
+    text-align:center;
+}
+
+.three-candle-pattern .pattern-none { min-height:28px; }
+
+.three-candle-change {
+    width:100%;
+    height:17px;
+    min-width:0;
+    min-height:0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    margin:0;
+    padding:0;
+    overflow:hidden;
+}
+
+.three-candle-change .candle-change {
+    width:100%;
+    height:17px;
+    min-height:17px;
+    margin:0;
+    padding:0;
+}
+
+.three-candle-rsi {
+    width:100%;
+    height:18px;
+    min-width:0;
+    min-height:0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    margin:0;
+    padding:0;
+    overflow:hidden;
+}
+
+.three-candle-rsi .rsi-value {
+    width:100%;
+    height:18px;
+    min-height:18px;
+    margin:0;
+    padding:1px 2px;
+    line-height:1;
+}
+
+.signal-type-list,
+.pattern-badge-list {
+    display:flex;
+    align-items:center;
+    flex-wrap:wrap;
+    gap:5px;
+}
+
+.signal-type-badge,
+.bearish-type-badge,
+.consecutive-bullish,
+.consecutive-bearish {
+    display:inline-flex;
+    align-items:center;
+    padding:3px 6px;
+    border-radius:4px;
+    font-size:var(--fs-tiny)!important;
+    font-weight:800;
+    white-space:nowrap;
+}
+
+.signal-type-badge,
+.consecutive-bullish {
+    color:var(--green)!important;
+    background:var(--green-soft);
+    border:1px solid rgba(56,217,150,.2);
+}
+
+.bearish-type-badge,
+.consecutive-bearish {
+    color:var(--red)!important;
+    background:var(--red-soft);
+    border:1px solid rgba(255,101,117,.2);
+}
+
+.panel-heading {
+    min-height:39px;
+    padding:0 10px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:8px;
+    background:#121c26;
+    border-bottom:1px solid var(--line);
+}
+
+.heading-title {
+    display:flex;
+    align-items:center;
+    gap:7px;
+    font-size:var(--fs-section);
+    font-weight:900;
+}
+
+.heading-mark {
+    width:6px;
+    height:6px;
+    border-radius:50%;
+    display:inline-block;
+}
+
+.signal-mark {
+    background:var(--green);
+    box-shadow:0 0 7px rgba(56,217,150,.6);
+}
+
+.heading-count {
+    min-width:18px;
+    padding:2px 5px;
+    text-align:center;
+    color:var(--green);
+    background:var(--green-soft);
+    border-radius:4px;
+    font-size:var(--fs-tiny);
+}
+
+.update-time {
+    color:var(--muted);
+    font-size:var(--fs-tiny);
+    white-space:nowrap;
+}
+
+.btc-panel {
+    overflow:hidden;
+    padding:10px 12px;
+    background:linear-gradient(110deg,#152432,#0d151e);
+    border:1px solid #304252;
+    border-radius:7px;
+}
+
+.btc-top {
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:6px;
+    margin-bottom:7px;
+}
+
+.btc-label {
+    display:flex;
+    align-items:center;
+    gap:6px;
+    color:#e2eaf1;
+    font-size:var(--fs-section);
+    font-weight:900;
+}
+
+.status-dot {
+    width:6px;
+    height:6px;
+    display:inline-block;
+    border-radius:50%;
+    background:var(--green);
+}
+
+.market-tag {
+    padding:2px 5px;
+    color:#9fb0bf;
+    background:#1c2c39;
+    border-radius:3px;
+    font-size:9px;
+}
+
+.btc-main {
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:10px;
+}
+
+.btc-price {
+    color:#f1f5f8;
+    font-size:21px;
+    font-weight:900;
+    letter-spacing:-.5px;
+}
+
+.btc-candle-section {
+    margin-top:10px;
+    padding-top:9px;
+    border-top:1px solid #304252;
+}
+
+.btc-candle-heading {
+    color:#aab9c6;
+    font-size:var(--fs-small);
+    font-weight:800;
+    margin-bottom:7px;
+}
+
+.btc-candle-section .three-candle-item {
+    background:#101d28;
+    border-color:#304252;
+}
+
+.btc-candle-section .three-candle-label {
+    color:#b8c6d2;
+}
+
+.signal-panel {
+    overflow:hidden;
+    background:var(--panel);
+    border:1px solid #293844;
+    border-radius:7px;
+}
+
+.signal-condition {
+    display:flex;
+    align-items:center;
+    gap:6px;
+    padding:7px 9px;
+    overflow-x:auto;
+    white-space:nowrap;
+    background:#111922;
+    border-bottom:1px solid var(--line-soft);
+    scrollbar-width:none;
+}
+
+.signal-condition::-webkit-scrollbar { display:none; }
+
+.signal-condition span {
+    flex:0 0 auto;
+    color:#aab8c4;
+    font-size:var(--fs-tiny);
+    font-weight:700;
+    padding-right:7px;
+    border-right:1px solid #35434e;
+}
+
+.signal-condition span:last-child { border-right:0; }
+
+.signal-list { width:100%; }
+
+.signal-card {
+    display:flex;
+    flex-direction:column;
+    min-height:0;
+    background:#101820;
+    border-bottom:1px solid #26343f;
+}
+
+.signal-card:last-child { border-bottom:0; }
+
+.signal-card-top {
+    min-height:39px;
+    padding:6px 9px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    flex-wrap:wrap;
+    gap:5px;
+    background:#121c25;
+    border-bottom:1px solid #273541;
+}
+
+.signal-identity {
+    display:flex;
+    align-items:center;
+    gap:8px;
+}
+
+.signal-rank {
+    color:var(--yellow);
+    font-size:var(--fs-small);
+    font-weight:800;
+}
+
+.signal-coin-name {
+    color:#e9f0f5;
+    font-size:var(--fs-coin);
+    font-weight:900;
+}
+
+.signal-data-grid {
+    display:grid;
+    grid-template-columns:1.1fr 1fr .9fr;
+    width:100%;
+}
+
+.signal-data-grid > div {
+    min-width:0;
+    min-height:48px;
+    padding:6px 3px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    text-align:center;
+}
+
+.signal-data-grid > div + div {
+    border-left:1px solid #27343f;
+}
+
+.signal-data-grid span {
+    color:#8798a7;
+    font-size:var(--fs-tiny);
+}
+
+.signal-data-grid strong {
+    margin-top:4px;
+    color:#e7edf2;
+    font-size:var(--fs-value);
+    font-weight:800;
+    white-space:nowrap;
+}
+
+.signal-empty {
+    min-height:65px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    color:#8c9ba8;
+    font-size:var(--fs-content);
+    font-weight:700;
+}
+
+.coin-card {
+    overflow:hidden;
+    background:var(--panel);
+    border:1px solid #293844;
+    border-radius:7px;
+    margin-top:8px;
+}
+
+.coin-head {
+    min-height:39px;
+    padding:6px 9px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    flex-wrap:wrap;
+    gap:5px;
+    background:#121c25;
+    border-bottom:1px solid var(--line);
+}
+
+.coin-title {
+    display:flex;
+    align-items:center;
+    gap:8px;
+}
+
+.coin-title b {
+    color:#e9f0f5;
+    font-size:var(--fs-coin);
+    font-weight:900;
+}
+
+.rank {
+    color:var(--yellow);
+    font-size:var(--fs-small);
+    font-weight:800;
+}
+
+.market-summary {
+    display:grid;
+    grid-template-columns:repeat(3,minmax(0,1fr));
+}
+
+.market-summary > div {
+    min-width:0;
+    min-height:49px;
+    padding:6px 3px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    text-align:center;
+    background:#101820;
+}
+
+.market-summary > div + div {
+    border-left:1px solid #26343f;
+}
+
+.market-summary span {
+    color:#8798a7;
+    font-size:var(--fs-tiny);
+    margin-bottom:4px;
+}
+
+.market-summary strong {
+    color:#e6edf2;
+    font-size:var(--fs-value);
+    font-weight:800;
+    white-space:nowrap;
+}
+
+@media (min-width:900px) {
+    body { padding:16px; }
+    .btc-price { font-size:23px; }
+    .three-candle-item {
+        height:120px;
+        min-height:120px;
+    }
+}
+
+@media (max-width:899px) {
+    body { padding:9px; }
+}
+
+@media (max-width:600px) {
+
+    :root {
+        --fs-main:15px;
+        --fs-section:12px;
+        --fs-coin:13px;
+        --fs-value:11px;
+        --fs-content:10px;
+        --fs-small:9px;
+        --fs-tiny:8px;
+    }
+
+    body { padding:6px; }
+
+    h1 {
+        margin:2px 1px 9px;
+        padding-bottom:8px;
+    }
+
+    section { margin-bottom:8px; }
+
+    .btc-panel {
+        padding:9px 10px;
+        border-radius:6px;
+    }
+
+    .btc-price { font-size:19px; }
+
+    .panel-heading {
+        min-height:36px;
+        padding:0 8px;
+    }
+
+    .signal-condition {
+        padding:6px 7px;
+        gap:5px;
+    }
+
+    .signal-card-top {
+        min-height:36px;
+        padding:5px 7px;
+    }
+
+    .signal-data-grid > div {
+        min-height:43px;
+        padding:5px 2px;
+    }
+
+    .three-candle-section,
+    .top-three-candle-section {
+        padding:7px 6px;
+    }
+
+    .three-candle-heading { margin-bottom:5px; }
+
+    .three-candle-list {
+        grid-template-columns:repeat(6,minmax(0,1fr));
+        gap:3px;
+    }
+
+    .three-candle-item {
+        height:116px;
+        min-height:116px;
+        grid-template-rows:25px minmax(0,1fr) 16px 17px;
+        row-gap:3px;
+        padding:5px 1px;
+        border-radius:4px;
+    }
+
+    .three-candle-label {
+        height:25px;
+        min-height:0;
+        margin:0;
+    }
+
+    .candle-date,
+    .candle-time { font-size:7px; }
+
+    .three-candle-pattern .pattern-box { min-width:0; }
+
+    .three-candle-pattern .pattern-name {
+        font-size:7px;
+        white-space:normal;
+        text-align:center;
+        overflow-wrap:anywhere;
+    }
+
+    .candle-pattern-visual { transform:scale(.75); }
+
+    .pattern-multi { gap:2px; }
+    .pattern-multi .pattern-box { min-width:0; }
+
+    .coin-card {
+        margin-top:6px;
+        border-radius:6px;
+    }
+
+    .coin-head {
+        min-height:36px;
+        padding:5px 7px;
+    }
+
+    .market-summary > div {
+        min-height:44px;
+        padding:5px 2px;
+    }
+
+    .signal-empty { min-height:55px; }
+
+    .signal-type-list,
+    .pattern-badge-list { gap:3px; }
+
+    .signal-type-badge,
+    .bearish-type-badge,
+    .consecutive-bullish,
+    .consecutive-bearish {
+        padding:2px 4px;
+    }
+
+    .rsi-value {
+        height:17px;
+        min-height:17px;
+        font-size:7px;
+        padding:1px;
+    }
+
+    .three-candle-rsi {
+        height:17px;
+        min-height:0;
+    }
+
+    .three-candle-change { height:16px; }
+
+    .three-candle-change .candle-change {
+        height:16px;
+        min-height:16px;
+        font-size:8px;
+    }
+}
+
+@media (max-width:380px) {
+
+    :root {
+        --fs-main:14px;
+        --fs-section:11px;
+        --fs-coin:12px;
+        --fs-value:10px;
+        --fs-content:9px;
+        --fs-small:8px;
+        --fs-tiny:7px;
+    }
+
+    body { padding:5px; }
+
+    .btc-price { font-size:17px; }
+    .update-time { font-size:7px; }
+
+    .three-candle-item {
+        height:112px;
+        min-height:112px;
+        grid-template-rows:23px minmax(0,1fr) 15px 16px;
+        row-gap:3px;
+    }
+
+    .three-candle-label { height:23px; }
+
+    .candle-date,
+    .candle-time { font-size:6px; }
+
+    .three-candle-pattern .pattern-box { min-width:0; }
+    .three-candle-pattern .pattern-name { font-size:6px; }
+
+    .signal-card-top { gap:4px; }
+
+    .rsi-value {
+        height:16px;
+        min-height:16px;
+        font-size:6px;
+    }
+
+    .three-candle-rsi { height:16px; }
+    .three-candle-change { height:15px; }
+
+    .three-candle-change .candle-change {
+        height:15px;
+        min-height:15px;
+        font-size:7px;
+    }
+}
+"""
+
+
+# =========================================================
+# DASHBOARD
+# =========================================================
+
+@app.get("/", response_class=HTMLResponse)
+def dashboard():
+
+    s = btc_html()
+
+    if USE_UPBIT == "Y":
+
+        s += signal_section()
+
+        if SHOW_TOP_LIST == "Y":
+
+            if latest_upbit_data:
+
+                top_cards = "".join(
+                    card(row, "top")
+                    for row in latest_upbit_data
+                )
+
+            else:
+
+                top_cards = (
+                    '<div class="signal-empty">'
+                    f'현재 거래대금 TOP{TOP_N} 데이터 없음'
+                    '</div>'
+                )
+
+            s += f"""
+            <section class="ranking-panel">
+
+                <div class="panel-heading">
+
+                    <div class="heading-title">
+                        <span class="heading-mark"
+                              style="background:#e8c56e"></span>
+                        RANKING
+                        <span>TOP{TOP_N}</span>
+                    </div>
+
+                    <span class="update-time">
+                        업비트 거래대금 순
+                    </span>
+
+                </div>
+
+                {top_cards}
+
+            </section>
+            """
+
+    return f"""
+    <!doctype html>
+    <html lang="ko">
+
+    <head>
+
+        <meta charset="utf-8">
+
+        <meta name="viewport"
+              content="width=device-width, initial-scale=1">
+
+        <meta http-equiv="refresh" content="60">
+
+        <title>TRADING SIGNAL CENTER</title>
+
+        <style>
+            {CSS}
+        </style>
+
+    </head>
+
+    <body>
+
+        <h1>TRADING SIGNAL CENTER</h1>
+
+        {s}
+
+    </body>
+
+    </html>
     """
+
+
+# =========================================================
+# 스케줄러
+# =========================================================
+
+def scheduler():
+
+    while True:
+
+        try:
+            schedule.run_pending()
+
+        except Exception as e:
+
+            log.exception(
+                "scheduler: %s",
+                e
+            )
+
+        time.sleep(1)
+
+
+# =========================================================
+# STARTUP
+# =========================================================
+
+@app.on_event("startup")
+def startup():
+
+    log.info(
+        "START | BTC 가격 및 최근 %s개 캔들 표시 | "
+        "UPBIT TOP%s | 캔들패턴=%s",
+        DISPLAY_CANDLE_COUNT,
+        TOP_N,
+        get_timeframe_label(CANDLE_PATTERN_TIMEFRAME)
+    )
+
+    log.info(
+        "BTC / SIGNAL / TOP 시간봉 통일: %s",
+        CANDLE_PATTERN_TIMEFRAME
+    )
+
+    log.info(
+        "4시간봉 KST 기준: 09, 13, 17, 21, 01, 05"
+    )
+
+    log.info(
+        "일봉 KST 기준: 09:00"
+    )
+
+    log.info(
+        "BTC OKX 캔들 데이터는 업비트 KST 캔들 경계로 재구성"
+    )
+
+    log.info(
+        "BTC 당일 변동률은 KST 09:00 기준 일봉 시가로 계산"
+    )
+
+    log.info(
+        "SIGNAL 거래대금 최소 조건 사용 안 함"
+    )
+
+    log.info(
+        "SIGNAL 당일 변동률 조건: %s%% 초과",
+        DAILY_CHANGE_MIN
+    )
+
+    log.info(
+        "SIGNAL RSI 돌파 조건: 최근 %s개 봉 중 "
+        "RSI70 상향돌파+상승캔들 또는 RSI70 하향돌파+하락캔들",
+        RSI_CHECK_CANDLES
+    )
+
+    log.info(
+        "SIGNAL 최신 RSI 허용 범위: %s~%s",
+        RSI_RANGE_MIN,
+        RSI_RANGE_MAX
+    )
+
+    log.info(
+        "SIGNAL EMA 조건: %s",
+        get_ema_condition_text()
+    )
+
+    log.info(
+        "EMA 개별 사용 설정 | EMA%s=%s | EMA%s=%s | EMA%s=%s | EMA%s=%s",
+        EMA_FAST_PERIOD,
+        USE_EMA_5,
+        EMA_MIDDLE_PERIOD,
+        USE_EMA_10,
+        EMA_SLOW_PERIOD,
+        USE_EMA_20,
+        EMA_LONG_PERIOD,
+        USE_EMA_50
+    )
+
+    log.info(
+        "SIGNAL EMA 및 RSI 계산 시간봉: %s",
+        get_timeframe_label(CANDLE_PATTERN_TIMEFRAME)
+    )
+
+    log.info(
+        "SIGNAL BTC 거래대금 비교 조건 사용 안 함"
+    )
+
+    log.info(
+        "SIGNAL 정렬 기준: 업비트 24시간 거래대금 높은 순"
+    )
+
+    log.info(
+        "캔들 패턴은 RSI SIGNAL 선정과 무관하게 표시"
+    )
+
+    log.info(
+        "RSI 70 상향돌파 + 상승캔들: 해당 카드 녹색 강조 유지"
+    )
+
+    log.info(
+        "RSI 70 하향돌파 + 하락캔들: 해당 카드 적색 강조 유지"
+    )
+
+    log.info(
+        "RSI 단순 기준 상태는 돌파 카드 강조 조건과 별도"
+    )
+
+    log.info(
+        "최근 %s개 봉 중 RSI 70 돌파 신호 발생 시 SIGNAL 후보",
+        RSI_CHECK_CANDLES
+    )
+
+    log.info(
+        "최신 RSI가 %s~%s 범위에 있어야 최종 SIGNAL",
+        RSI_RANGE_MIN,
+        RSI_RANGE_MAX
+    )
+
+    log.info(
+        "선택된 EMA 정배열까지 모두 충족해야 최종 SIGNAL: %s",
+        get_ema_condition_text()
+    )
+
+    log.info(
+        "캔들 날짜와 시간 두 줄 표시 적용"
+    )
+
+    log.info(
+        "상승장악형 및 상승관통형 패턴 이름은 기존 녹색 표시 유지"
+    )
+
+    log.info(
+        "녹색 강조: 최근 %s개 봉 중 장대양봉",
+        DISPLAY_CANDLE_COUNT
+    )
+
+    log.info(
+        "%s개 이상 연속 일반 양봉",
+        CONSECUTIVE_BULLISH_MIN
+    )
+
+    log.info(
+        "최근 %s개 봉 캔들패턴 및 RSI 표시",
+        DISPLAY_CANDLE_COUNT
+    )
+
+    log.info(
+        "3연속 이상 장대양봉 및 장대음봉 표시"
+    )
+
+    log.info(
+        "캔들별 변동률: 해당 캔들 시가 대비 종가 기준"
+    )
+
+    log.info(
+        "기존 EMA 정배열 이벤트 감지 및 노란색 카드 표시 기능 삭제"
+    )
+
+    log.info(
+        "기존 EMA 정배열 연속 카운팅 기능 삭제"
+    )
+
+    log.info(
+        "EMA 정배열은 SIGNAL 선정 조건으로만 사용"
+    )
+
+    log.info(
+        "기존 현재가 EMA5 하회 노란색 조건 제거"
+    )
+
+    log.info(
+        "컴팩트 트레이딩 터미널 디자인 적용"
+    )
+
+    threading.Thread(
+        target=update_dashboard,
+        daemon=True
+    ).start()
+
+    schedule.every(UPDATE_MINUTES).minutes.do(
+        update_dashboard
+    )
+
+    threading.Thread(
+        target=scheduler,
+        daemon=True
+    ).start()
+
+
+# =========================================================
+# 실행
+# =========================================================
+
+if __name__ == "__main__":
+
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=8000
+    )
+    
