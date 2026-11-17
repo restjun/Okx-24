@@ -55,7 +55,7 @@ MAX_RETRIES = 20
 
 CANDLE_PATTERN_TIMEFRAME = "1h"
 
-RSI_PERIOD = 6
+RSI_PERIOD = 12
 
 # =========================================================
 # RSI 설정
@@ -70,7 +70,7 @@ RSI_RANGE_MIN = 50
 RSI_RANGE_MAX = 70
 
 # 최근 돌파 확인 캔들 수
-RSI_CHECK_CANDLES = 6
+RSI_CHECK_CANDLES = 12
 
 
 # =========================================================
@@ -87,7 +87,7 @@ USE_EMA_10 = "N"
 USE_EMA_20 = "N"
 USE_EMA_50 = "N"
 
-DISPLAY_CANDLE_COUNT = 6
+DISPLAY_CANDLE_COUNT = 12
 
 CONSECUTIVE_CANDLE_MIN = 3
 CONSECUTIVE_BULLISH_MIN = 2
