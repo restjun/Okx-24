@@ -38,7 +38,7 @@ UTC = ZoneInfo("UTC")
 # 사용자 설정
 # =========================================================
 
-TOP_N = 30
+TOP_N = 10
 SHOW_TOP_LIST = "N"
 UPDATE_MINUTES = 1
 
@@ -63,7 +63,7 @@ RSI_PERIOD = 14
 # =========================================================
 
 RSI_SIGNAL_MIN = 70
-RSI_SIGNAL_MAX = 70
+RSI_SIGNAL_MAX = 100
 
 RSI_RANGE_MIN = 50
 RSI_RANGE_MAX = 70
