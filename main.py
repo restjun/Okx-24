@@ -57,6 +57,7 @@ CANDLE_PATTERN_TIMEFRAME = "1h"
 
 RSI_PERIOD = 14
 
+
 # =========================================================
 # RSI 설정
 # =========================================================
@@ -684,9 +685,15 @@ def calculate_ema(close_series, period):
 
 
 # =========================================================
-# EMA 1 / 3 데드크로스 판정
+# EMA 1 / 3 데드크로스 및 역배열 유지 판정
+#
 # 시가(open) 기준
-# EMA 1이 EMA 3을 상향에서 하향으로 교차한 캔들만 표시
+#
+# 1. EMA 1이 EMA 3을 하향 돌파하면 역배열 상태 시작
+# 2. EMA 1이 EMA 3 아래에 있는 동안 상태 유지
+# 3. 역배열 상태에서 양봉이면 노란색 표시 대상
+# 4. EMA 1이 EMA 3 위로 올라가면 상태 종료
+# 5. 진행 중인 캔들도 동일하게 판정
 # =========================================================
 
 def apply_ema_dead_cross_signals(periods, open_series):
@@ -704,43 +711,90 @@ def apply_ema_dead_cross_signals(periods, open_series):
         EMA_CROSS_SLOW_PERIOD
     )
 
+    bearish_state = False
+
     for i, period in enumerate(periods):
 
         period["ema_dead_cross"] = False
         period["ema_dead_cross_progress"] = False
-
-        if i == 0:
-            continue
+        period["ema_bearish_alignment"] = False
 
         if i >= len(ema_fast) or i >= len(ema_slow):
             continue
-
-        previous_fast = ema_fast.iloc[i - 1]
-        previous_slow = ema_slow.iloc[i - 1]
 
         current_fast = ema_fast.iloc[i]
         current_slow = ema_slow.iloc[i]
 
         if (
-            pd.isna(previous_fast)
-            or pd.isna(previous_slow)
-            or pd.isna(current_fast)
+            pd.isna(current_fast)
             or pd.isna(current_slow)
         ):
+            bearish_state = False
             continue
 
-        # EMA 1이 EMA 3 위에 있다가 아래로 하향 돌파
+        current_fast = float(current_fast)
+        current_slow = float(current_slow)
+
+        # 첫 번째 캔들은 이전 EMA 값이 없으므로 교차 판정 불가
+        if i == 0:
+            continue
+
+        previous_fast = ema_fast.iloc[i - 1]
+        previous_slow = ema_slow.iloc[i - 1]
+
         if (
-            float(previous_fast) >= float(previous_slow)
-            and float(current_fast) < float(current_slow)
+            pd.isna(previous_fast)
+            or pd.isna(previous_slow)
+        ):
+            bearish_state = False
+            continue
+
+        previous_fast = float(previous_fast)
+        previous_slow = float(previous_slow)
+
+        # ---------------------------------------------
+        # 데드크로스 발생
+        # EMA 1이 EMA 3 위에 있다가 아래로 하향 돌파
+        # ---------------------------------------------
+
+        if (
+            previous_fast >= previous_slow
+            and current_fast < current_slow
+        ):
+
+            bearish_state = True
+
+        # ---------------------------------------------
+        # 골든크로스 발생 또는 역배열 해소
+        # EMA 1이 EMA 3 위로 올라가면 상태 종료
+        # ---------------------------------------------
+
+        elif current_fast >= current_slow:
+
+            bearish_state = False
+
+        # ---------------------------------------------
+        # 역배열 유지 상태
+        # ---------------------------------------------
+
+        if (
+            bearish_state
+            and current_fast < current_slow
         ):
 
             period["ema_dead_cross"] = True
+            period["ema_bearish_alignment"] = True
 
             # 현재 진행 중인 캔들인지 구분
             period["ema_dead_cross_progress"] = bool(
                 period.get("active", False)
             )
+
+        else:
+
+            period["ema_dead_cross"] = False
+            period["ema_bearish_alignment"] = False
+            period["ema_dead_cross_progress"] = False
 
     return periods
 
@@ -1283,6 +1337,10 @@ def analyze_previous_current_pattern(periods):
             "ema_dead_cross_progress": period.get(
                 "ema_dead_cross_progress",
                 False
+            ),
+            "ema_bearish_alignment": period.get(
+                "ema_bearish_alignment",
+                False
             )
         }
         for period, patterns in zip(
@@ -1593,8 +1651,7 @@ def analyze_signal_candles(market, price):
         return empty_result
 
     # =====================================================
-    # EMA 1 / 3 데드크로스
-    # 시가(open) 기준
+    # EMA 1 / 3 데드크로스 및 역배열 유지 상태
     # =====================================================
 
     periods = apply_ema_dead_cross_signals(
@@ -1804,6 +1861,11 @@ def analyze_signal_candles(market, price):
 
         item["ema_dead_cross_progress"] = period.get(
             "ema_dead_cross_progress",
+            False
+        )
+
+        item["ema_bearish_alignment"] = period.get(
+            "ema_bearish_alignment",
             False
         )
 
@@ -2521,7 +2583,7 @@ def analyze_okx_btc_candles(df, timeframe, current_price=None):
     if not periods:
         return []
 
-    # EMA 1 / 3 데드크로스도 업비트와 동일하게 시가 기준 계산
+    # EMA 1 / 3 역배열 유지 상태 분석
     periods = apply_ema_dead_cross_signals(
         periods,
         df["open"]
@@ -2573,6 +2635,11 @@ def analyze_okx_btc_candles(df, timeframe, current_price=None):
 
         item["ema_dead_cross_progress"] = period.get(
             "ema_dead_cross_progress",
+            False
+        )
+
+        item["ema_bearish_alignment"] = period.get(
+            "ema_bearish_alignment",
             False
         )
 
@@ -3180,6 +3247,7 @@ def last_three_pattern_html(row):
             "rsi_signal_type": None,
             "ema_dead_cross": False,
             "ema_dead_cross_progress": False,
+            "ema_bearish_alignment": False,
             "active": False
         })
 
@@ -3251,8 +3319,7 @@ def last_three_pattern_html(row):
             card_classes.append("rsi-cross-down-card")
 
         # =================================================
-        # EMA 1 / 3 데드크로스 노란색 강조
-        # 데드크로스 + 양봉(close > open)일 때만 표시
+        # EMA 1 / 3 역배열 유지 중 양봉 노란색 강조
         # =================================================
 
         try:
@@ -3266,20 +3333,22 @@ def last_three_pattern_html(row):
             is_positive_candle = False
 
         if (
-            item.get("ema_dead_cross", False)
+            item.get("ema_bearish_alignment", False)
             and is_positive_candle
         ):
+
             card_classes.append("ema-dead-cross-card")
 
         # =================================================
-        # 진행 중인 EMA 데드크로스
-        # 진행 중인 캔들도 양봉일 때만 표시
+        # 진행 중인 EMA 역배열 구간 양봉
         # =================================================
 
         if (
             item.get("ema_dead_cross_progress", False)
+            and item.get("ema_bearish_alignment", False)
             and is_positive_candle
         ):
+
             card_classes.append("ema-dead-cross-progress")
 
         card_class = " ".join(card_classes)
@@ -3444,7 +3513,7 @@ def btc_html():
             <div class="btc-candle-heading">
                 BTC 최근 {DISPLAY_CANDLE_COUNT}개 봉 · {timeframe_label} · RSI({RSI_PERIOD})
                 <span class="rsi-condition-label">
-                    RSI70 상향돌파 녹색 · RSI70 하향돌파 적색 · EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 데드크로스 양봉 노란색
+                    RSI70 상향돌파 녹색 · RSI70 하향돌파 적색 · EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 역배열 유지 중 양봉 노란색
                 </span>
             </div>
 
@@ -3523,7 +3592,7 @@ def signal_card(row):
             <div class="three-candle-heading">
                 최근 {DISPLAY_CANDLE_COUNT}개 봉 · {timeframe_label} · RSI({RSI_PERIOD})
                 <span class="rsi-condition-label">
-                    RSI70 상향돌파 녹색 · RSI70 하향돌파 적색 · EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 데드크로스 양봉 노란색
+                    RSI70 상향돌파 녹색 · RSI70 하향돌파 적색 · EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 역배열 유지 중 양봉 노란색
                 </span>
             </div>
 
@@ -3569,7 +3638,7 @@ def signal_section():
         <span>최신 RSI {RSI_RANGE_MIN}~{RSI_RANGE_MAX}</span>
         <span>{html.escape(get_ema_condition_text())}</span>
         <span>EMA 및 RSI 시간봉: {pattern_timeframe_label}</span>
-        <span>EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 시가 기준 데드크로스 + 양봉만 노란색 표시</span>
+        <span>EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 데드크로스 이후 역배열 유지 중 양봉 노란색</span>
         <span>BTC 거래대금 비교 없음</span>
         <span>24H 거래대금 높은 순 정렬</span>
 
@@ -3673,7 +3742,7 @@ def card(row, kind):
             <div class="three-candle-heading">
                 최근 {DISPLAY_CANDLE_COUNT}개 봉 · {timeframe_label} · RSI({RSI_PERIOD})
                 <span class="rsi-condition-label">
-                    RSI70 상향돌파 녹색 · RSI70 하향돌파 적색 · EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 데드크로스 양봉 노란색
+                    RSI70 상향돌파 녹색 · RSI70 하향돌파 적색 · EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 역배열 유지 중 양봉 노란색
                 </span>
             </div>
 
@@ -3965,7 +4034,7 @@ section { margin-bottom:11px; }
     color:var(--red);
 }
 
-/* EMA 1 / 3 데드크로스 노란색 카드 */
+/* EMA 1 / 3 역배열 유지 중 양봉 노란색 카드 */
 .three-candle-item.ema-dead-cross-card {
     background:rgba(232,197,110,.22);
     border:1px solid var(--yellow);
@@ -3979,7 +4048,7 @@ section { margin-bottom:11px; }
     color:var(--yellow);
 }
 
-/* 진행 중인 데드크로스 */
+/* 진행 중인 역배열 양봉 */
 .three-candle-item.ema-dead-cross-progress {
     border-width:2px;
     box-shadow:
@@ -4914,15 +4983,19 @@ def startup():
     )
 
     log.info(
-        "EMA 1이 EMA 3을 하향돌파한 양봉만 노란색 강조"
+        "EMA 1/3 데드크로스 이후 역배열 유지 상태의 모든 양봉 노란색 강조"
     )
 
     log.info(
-        "EMA 데드크로스 진행 캔들도 양봉일 때만 노란색 강조"
+        "EMA 1/3 역배열이 해소되면 노란색 강조 종료"
     )
 
     log.info(
-        "EMA 데드크로스 확정 캔들도 양봉일 때만 노란색 표시"
+        "EMA 1/3 역배열 진행 중인 캔들도 양봉이면 노란색 강조"
+    )
+
+    log.info(
+        "EMA 데드크로스 계산은 시가(open) 기준"
     )
 
     log.info(
@@ -4999,10 +5072,6 @@ def startup():
 
     log.info(
         "캔들별 변동률: 해당 캔들 시가 대비 종가 기준"
-    )
-
-    log.info(
-        "기존 EMA 정배열 이벤트 감지 및 노란색 카드 표시 기능 삭제 상태 유지"
     )
 
     log.info(
