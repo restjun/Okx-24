@@ -55,7 +55,7 @@ MAX_RETRIES = 20
 
 CANDLE_PATTERN_TIMEFRAME = "1h"
 
-RSI_PERIOD = 14
+RSI_PERIOD = 7
 
 # =========================================================
 # RSI 설정
