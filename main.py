@@ -686,14 +686,6 @@ def calculate_ema(close_series, period):
 
 # =========================================================
 # EMA 1 / 3 데드크로스 및 역배열 유지 판정
-#
-# 시가(open) 기준
-#
-# 1. EMA 1이 EMA 3을 하향 돌파하면 역배열 상태 시작
-# 2. EMA 1이 EMA 3 아래에 있는 동안 상태 유지
-# 3. 역배열 상태에서 양봉이면 노란색 표시 대상
-# 4. EMA 1이 EMA 3 위로 올라가면 상태 종료
-# 5. 진행 중인 캔들도 동일하게 판정
 # =========================================================
 
 def apply_ema_dead_cross_signals(periods, open_series):
@@ -735,7 +727,6 @@ def apply_ema_dead_cross_signals(periods, open_series):
         current_fast = float(current_fast)
         current_slow = float(current_slow)
 
-        # 첫 번째 캔들은 이전 EMA 값이 없으므로 교차 판정 불가
         if i == 0:
             continue
 
@@ -752,11 +743,6 @@ def apply_ema_dead_cross_signals(periods, open_series):
         previous_fast = float(previous_fast)
         previous_slow = float(previous_slow)
 
-        # ---------------------------------------------
-        # 데드크로스 발생
-        # EMA 1이 EMA 3 위에 있다가 아래로 하향 돌파
-        # ---------------------------------------------
-
         if (
             previous_fast >= previous_slow
             and current_fast < current_slow
@@ -764,18 +750,9 @@ def apply_ema_dead_cross_signals(periods, open_series):
 
             bearish_state = True
 
-        # ---------------------------------------------
-        # 골든크로스 발생 또는 역배열 해소
-        # EMA 1이 EMA 3 위로 올라가면 상태 종료
-        # ---------------------------------------------
-
         elif current_fast >= current_slow:
 
             bearish_state = False
-
-        # ---------------------------------------------
-        # 역배열 유지 상태
-        # ---------------------------------------------
 
         if (
             bearish_state
@@ -785,7 +762,6 @@ def apply_ema_dead_cross_signals(periods, open_series):
             period["ema_dead_cross"] = True
             period["ema_bearish_alignment"] = True
 
-            # 현재 진행 중인 캔들인지 구분
             period["ema_dead_cross_progress"] = bool(
                 period.get("active", False)
             )
@@ -1489,6 +1465,7 @@ def build_timeframe_periods(df, timeframe, current_price=None):
 
 # =========================================================
 # RSI 돌파 판정
+# 카드 표시용으로 유지
 # =========================================================
 
 def apply_rsi_cross_signals(periods):
@@ -1717,6 +1694,7 @@ def analyze_signal_candles(market, price):
 
     # =====================================================
     # 최신 RSI 범위 확인
+    # SIGNAL 선정 조건으로 유지
     # =====================================================
 
     latest_rsi = periods[-1].get("rsi")
@@ -1883,6 +1861,7 @@ def analyze_signal_candles(market, price):
 
     # =====================================================
     # RSI SIGNAL 사유 및 발생 캔들
+    # 카드 표시용으로 유지
     # =====================================================
 
     signal_reason = None
@@ -2215,6 +2194,12 @@ def update_upbit():
 
     # =====================================================
     # 최종 SIGNAL 선정
+    #
+    # 1. 당일 변동률 조건
+    # 2. 최신 RSI 50~70 범위
+    # 3. 선택 EMA 정배열
+    #
+    # RSI 70 상향/하향 돌파는 카드 표시 전용
     # =====================================================
 
     latest_signal_data = [
@@ -2222,7 +2207,6 @@ def update_upbit():
         if (
             row.get("daily_change") is not None
             and row.get("daily_change") > DAILY_CHANGE_MIN
-            and row.get("rsi_signal") is True
             and row.get("rsi_range_pass") is True
             and row.get("ema_alignment") is True
         )
@@ -2245,12 +2229,10 @@ def update_upbit():
 
     log.info(
         "UPBIT | TOP%s | "
-        "SIGNAL=당일 변동률>%s%% AND 최근 %s개 봉 RSI70 돌파 "
-        "AND 최신 RSI %s~%s AND %s | "
+        "SIGNAL=당일 변동률>%s%% AND 최신 RSI %s~%s AND %s | "
         "시간봉=%s | SIGNAL=%s | 정렬=24H 거래대금 순",
         TOP_N,
         DAILY_CHANGE_MIN,
-        RSI_CHECK_CANDLES,
         RSI_RANGE_MIN,
         RSI_RANGE_MAX,
         get_ema_condition_text(),
@@ -2583,7 +2565,6 @@ def analyze_okx_btc_candles(df, timeframe, current_price=None):
     if not periods:
         return []
 
-    # EMA 1 / 3 역배열 유지 상태 분석
     periods = apply_ema_dead_cross_signals(
         periods,
         df["open"]
@@ -3309,7 +3290,6 @@ def last_three_pattern_html(row):
         rsi_value = item.get("rsi")
         rsi_signal_type = item.get("rsi_signal_type")
 
-        # 기존 RSI 강조 유지
         card_classes = []
 
         if rsi_signal_type == "RSI70_UP":
@@ -3317,10 +3297,6 @@ def last_three_pattern_html(row):
 
         elif rsi_signal_type == "RSI70_DOWN":
             card_classes.append("rsi-cross-down-card")
-
-        # =================================================
-        # EMA 1 / 3 역배열 유지 중 양봉 노란색 강조
-        # =================================================
 
         try:
 
@@ -3338,10 +3314,6 @@ def last_three_pattern_html(row):
         ):
 
             card_classes.append("ema-dead-cross-card")
-
-        # =================================================
-        # 진행 중인 EMA 역배열 구간 양봉
-        # =================================================
 
         if (
             item.get("ema_dead_cross_progress", False)
@@ -3634,10 +3606,10 @@ def signal_section():
 
         <span>선정 기준: 당일 변동률</span>
         <span>당일 변동률 {DAILY_CHANGE_MIN:.2f}% 초과</span>
-        <span>최근 {RSI_CHECK_CANDLES}개 봉 RSI70 상향돌파+상승캔들 또는 RSI70 하향돌파+하락캔들</span>
         <span>최신 RSI {RSI_RANGE_MIN}~{RSI_RANGE_MAX}</span>
         <span>{html.escape(get_ema_condition_text())}</span>
         <span>EMA 및 RSI 시간봉: {pattern_timeframe_label}</span>
+        <span>RSI70 상향·하향돌파는 카드 표시 전용</span>
         <span>EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 데드크로스 이후 역배열 유지 중 양봉 노란색</span>
         <span>BTC 거래대금 비교 없음</span>
         <span>24H 거래대금 높은 순 정렬</span>
@@ -4943,12 +4915,6 @@ def startup():
     )
 
     log.info(
-        "SIGNAL RSI 돌파 조건: 최근 %s개 봉 중 "
-        "RSI70 상향돌파+상승캔들 또는 RSI70 하향돌파+하락캔들",
-        RSI_CHECK_CANDLES
-    )
-
-    log.info(
         "SIGNAL 최신 RSI 허용 범위: %s~%s",
         RSI_RANGE_MIN,
         RSI_RANGE_MAX
@@ -5024,12 +4990,7 @@ def startup():
     )
 
     log.info(
-        "RSI 단순 기준 상태는 돌파 카드 강조 조건과 별도"
-    )
-
-    log.info(
-        "최근 %s개 봉 중 RSI 70 돌파 신호 발생 시 SIGNAL 후보",
-        RSI_CHECK_CANDLES
+        "RSI 70 상향/하향돌파는 카드 표시 전용이며 SIGNAL 선정 조건에서 제외"
     )
 
     log.info(
