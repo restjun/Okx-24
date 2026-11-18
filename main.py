@@ -82,8 +82,8 @@ EMA_LONG_PERIOD = 50
 
 USE_EMA_5 = "Y"
 USE_EMA_10 = "Y"
-USE_EMA_20 = "Y"
-USE_EMA_50 = "Y"
+USE_EMA_20 = "N"
+USE_EMA_50 = "N"
 
 
 # =========================================================
