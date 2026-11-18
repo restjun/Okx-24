@@ -3250,12 +3250,36 @@ def last_three_pattern_html(row):
         elif rsi_signal_type == "RSI70_DOWN":
             card_classes.append("rsi-cross-down-card")
 
+        # =================================================
         # EMA 1 / 3 데드크로스 노란색 강조
-        if item.get("ema_dead_cross", False):
+        # 데드크로스 + 양봉(close > open)일 때만 표시
+        # =================================================
+
+        try:
+
+            is_positive_candle = (
+                float(item.get("close", 0))
+                > float(item.get("open", 0))
+            )
+
+        except (TypeError, ValueError):
+            is_positive_candle = False
+
+        if (
+            item.get("ema_dead_cross", False)
+            and is_positive_candle
+        ):
             card_classes.append("ema-dead-cross-card")
 
-        # 진행 중인 EMA 데드크로스 표시
-        if item.get("ema_dead_cross_progress", False):
+        # =================================================
+        # 진행 중인 EMA 데드크로스
+        # 진행 중인 캔들도 양봉일 때만 표시
+        # =================================================
+
+        if (
+            item.get("ema_dead_cross_progress", False)
+            and is_positive_candle
+        ):
             card_classes.append("ema-dead-cross-progress")
 
         card_class = " ".join(card_classes)
@@ -3420,7 +3444,7 @@ def btc_html():
             <div class="btc-candle-heading">
                 BTC 최근 {DISPLAY_CANDLE_COUNT}개 봉 · {timeframe_label} · RSI({RSI_PERIOD})
                 <span class="rsi-condition-label">
-                    RSI70 상향돌파 녹색 · RSI70 하향돌파 적색 · EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 데드크로스 노란색
+                    RSI70 상향돌파 녹색 · RSI70 하향돌파 적색 · EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 데드크로스 양봉 노란색
                 </span>
             </div>
 
@@ -3499,7 +3523,7 @@ def signal_card(row):
             <div class="three-candle-heading">
                 최근 {DISPLAY_CANDLE_COUNT}개 봉 · {timeframe_label} · RSI({RSI_PERIOD})
                 <span class="rsi-condition-label">
-                    RSI70 상향돌파 녹색 · RSI70 하향돌파 적색 · EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 데드크로스 노란색
+                    RSI70 상향돌파 녹색 · RSI70 하향돌파 적색 · EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 데드크로스 양봉 노란색
                 </span>
             </div>
 
@@ -3545,7 +3569,7 @@ def signal_section():
         <span>최신 RSI {RSI_RANGE_MIN}~{RSI_RANGE_MAX}</span>
         <span>{html.escape(get_ema_condition_text())}</span>
         <span>EMA 및 RSI 시간봉: {pattern_timeframe_label}</span>
-        <span>EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 시가 기준 데드크로스 노란색 표시</span>
+        <span>EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 시가 기준 데드크로스 + 양봉만 노란색 표시</span>
         <span>BTC 거래대금 비교 없음</span>
         <span>24H 거래대금 높은 순 정렬</span>
 
@@ -3649,7 +3673,7 @@ def card(row, kind):
             <div class="three-candle-heading">
                 최근 {DISPLAY_CANDLE_COUNT}개 봉 · {timeframe_label} · RSI({RSI_PERIOD})
                 <span class="rsi-condition-label">
-                    RSI70 상향돌파 녹색 · RSI70 하향돌파 적색 · EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 데드크로스 노란색
+                    RSI70 상향돌파 녹색 · RSI70 하향돌파 적색 · EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 데드크로스 양봉 노란색
                 </span>
             </div>
 
@@ -4890,15 +4914,15 @@ def startup():
     )
 
     log.info(
-        "EMA 1이 EMA 3을 하향돌파한 캔들만 노란색 강조"
+        "EMA 1이 EMA 3을 하향돌파한 양봉만 노란색 강조"
     )
 
     log.info(
-        "EMA 데드크로스 진행 캔들은 진행 표시 및 노란색 강조"
+        "EMA 데드크로스 진행 캔들도 양봉일 때만 노란색 강조"
     )
 
     log.info(
-        "EMA 데드크로스 확정 캔들은 과거 캔들에도 노란색 유지"
+        "EMA 데드크로스 확정 캔들도 양봉일 때만 노란색 표시"
     )
 
     log.info(
