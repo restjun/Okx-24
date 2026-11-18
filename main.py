@@ -68,7 +68,7 @@ RSI_SIGNAL_MAX = 70
 RSI_RANGE_MIN = 50
 RSI_RANGE_MAX = 70
 
-RSI_CHECK_CANDLES = 6
+RSI_CHECK_CANDLES = 14
 
 
 # =========================================================
