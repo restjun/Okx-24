@@ -55,22 +55,19 @@ MAX_RETRIES = 20
 
 CANDLE_PATTERN_TIMEFRAME = "1h"
 
-RSI_PERIOD = 12
+RSI_PERIOD = 6
 
 # =========================================================
 # RSI 설정
 # =========================================================
 
-# RSI 상향돌파 및 하향돌파 기준
 RSI_SIGNAL_MIN = 70
 RSI_SIGNAL_MAX = 70
 
-# 최종 SIGNAL 최신 RSI 허용 범위
 RSI_RANGE_MIN = 50
 RSI_RANGE_MAX = 70
 
-# 최근 돌파 확인 캔들 수
-RSI_CHECK_CANDLES = 12
+RSI_CHECK_CANDLES = 6
 
 
 # =========================================================
@@ -87,7 +84,17 @@ USE_EMA_10 = "N"
 USE_EMA_20 = "N"
 USE_EMA_50 = "N"
 
-DISPLAY_CANDLE_COUNT = 12
+
+# =========================================================
+# EMA 1 / 3 데드크로스 설정
+# 기존 EMA 5 / 10 / 20 / 50과 별도
+# 선택한 캔들 시간대의 시가(open) 기준
+# =========================================================
+
+EMA_CROSS_FAST_PERIOD = 1
+EMA_CROSS_SLOW_PERIOD = 3
+
+DISPLAY_CANDLE_COUNT = 6
 
 CONSECUTIVE_CANDLE_MIN = 3
 CONSECUTIVE_BULLISH_MIN = 2
@@ -677,6 +684,68 @@ def calculate_ema(close_series, period):
 
 
 # =========================================================
+# EMA 1 / 3 데드크로스 판정
+# 시가(open) 기준
+# EMA 1이 EMA 3을 상향에서 하향으로 교차한 캔들만 표시
+# =========================================================
+
+def apply_ema_dead_cross_signals(periods, open_series):
+
+    if not periods or open_series is None:
+        return periods
+
+    ema_fast = calculate_ema(
+        open_series,
+        EMA_CROSS_FAST_PERIOD
+    )
+
+    ema_slow = calculate_ema(
+        open_series,
+        EMA_CROSS_SLOW_PERIOD
+    )
+
+    for i, period in enumerate(periods):
+
+        period["ema_dead_cross"] = False
+        period["ema_dead_cross_progress"] = False
+
+        if i == 0:
+            continue
+
+        if i >= len(ema_fast) or i >= len(ema_slow):
+            continue
+
+        previous_fast = ema_fast.iloc[i - 1]
+        previous_slow = ema_slow.iloc[i - 1]
+
+        current_fast = ema_fast.iloc[i]
+        current_slow = ema_slow.iloc[i]
+
+        if (
+            pd.isna(previous_fast)
+            or pd.isna(previous_slow)
+            or pd.isna(current_fast)
+            or pd.isna(current_slow)
+        ):
+            continue
+
+        # EMA 1이 EMA 3 위에 있다가 아래로 하향 돌파
+        if (
+            float(previous_fast) >= float(previous_slow)
+            and float(current_fast) < float(current_slow)
+        ):
+
+            period["ema_dead_cross"] = True
+
+            # 현재 진행 중인 캔들인지 구분
+            period["ema_dead_cross_progress"] = bool(
+                period.get("active", False)
+            )
+
+    return periods
+
+
+# =========================================================
 # 업비트 시간봉 데이터 조회
 # =========================================================
 
@@ -1209,7 +1278,12 @@ def analyze_previous_current_pattern(periods):
             "change": period.get("change"),
             "active": period.get("active", False),
             "rsi": period.get("rsi"),
-            "rsi_signal_type": period.get("rsi_signal_type")
+            "rsi_signal_type": period.get("rsi_signal_type"),
+            "ema_dead_cross": period.get("ema_dead_cross", False),
+            "ema_dead_cross_progress": period.get(
+                "ema_dead_cross_progress",
+                False
+            )
         }
         for period, patterns in zip(
             selected_periods,
@@ -1393,7 +1467,6 @@ def apply_rsi_cross_signals(periods):
 
         period["rsi_previous"] = previous_rsi
 
-        # RSI 70 상향돌파 + 양봉
         if (
             previous_rsi < RSI_SIGNAL_MIN
             and current_rsi >= RSI_SIGNAL_MIN
@@ -1402,7 +1475,6 @@ def apply_rsi_cross_signals(periods):
 
             period["rsi_signal_type"] = "RSI70_UP"
 
-        # RSI 70 하향돌파 + 음봉
         elif (
             previous_rsi > RSI_SIGNAL_MAX
             and current_rsi <= RSI_SIGNAL_MAX
@@ -1519,6 +1591,16 @@ def analyze_signal_candles(market, price):
 
     if not periods:
         return empty_result
+
+    # =====================================================
+    # EMA 1 / 3 데드크로스
+    # 시가(open) 기준
+    # =====================================================
+
+    periods = apply_ema_dead_cross_signals(
+        periods,
+        df["open"]
+    )
 
     # =====================================================
     # RSI 계산
@@ -1714,6 +1796,16 @@ def analyze_signal_candles(market, price):
         item["rsi_signal_type"] = period.get("rsi_signal_type")
         item["change"] = period.get("change")
         item["active"] = period.get("active", False)
+
+        item["ema_dead_cross"] = period.get(
+            "ema_dead_cross",
+            False
+        )
+
+        item["ema_dead_cross_progress"] = period.get(
+            "ema_dead_cross_progress",
+            False
+        )
 
     current_signal = pattern_info[
         "current_bullish_pattern"
@@ -2068,14 +2160,8 @@ def update_upbit():
         if (
             row.get("daily_change") is not None
             and row.get("daily_change") > DAILY_CHANGE_MIN
-
-            # 최근 RSI 돌파 신호 발생
             and row.get("rsi_signal") is True
-
-            # 최신 RSI가 50~70 범위 안에 있어야 함
             and row.get("rsi_range_pass") is True
-
-            # EMA 정배열
             and row.get("ema_alignment") is True
         )
     ]
@@ -2435,6 +2521,12 @@ def analyze_okx_btc_candles(df, timeframe, current_price=None):
     if not periods:
         return []
 
+    # EMA 1 / 3 데드크로스도 업비트와 동일하게 시가 기준 계산
+    periods = apply_ema_dead_cross_signals(
+        periods,
+        df["open"]
+    )
+
     rsi_map = {
         dt: (
             float(rsi)
@@ -2473,6 +2565,16 @@ def analyze_okx_btc_candles(df, timeframe, current_price=None):
         item["rsi_signal_type"] = period.get("rsi_signal_type")
         item["change"] = period.get("change")
         item["active"] = period.get("active", False)
+
+        item["ema_dead_cross"] = period.get(
+            "ema_dead_cross",
+            False
+        )
+
+        item["ema_dead_cross_progress"] = period.get(
+            "ema_dead_cross_progress",
+            False
+        )
 
     return result
 
@@ -3052,7 +3154,7 @@ def current_pattern_html(pattern, candle=None):
 
 
 # =========================================================
-# 최근 24개 봉 표시
+# 최근 캔들 표시
 # =========================================================
 
 def last_three_pattern_html(row):
@@ -3076,6 +3178,8 @@ def last_three_pattern_html(row):
             "rsi": None,
             "rsi_previous": None,
             "rsi_signal_type": None,
+            "ema_dead_cross": False,
+            "ema_dead_cross_progress": False,
             "active": False
         })
 
@@ -3137,17 +3241,28 @@ def last_three_pattern_html(row):
         rsi_value = item.get("rsi")
         rsi_signal_type = item.get("rsi_signal_type")
 
-        rsi_class = ""
+        # 기존 RSI 강조 유지
+        card_classes = []
 
         if rsi_signal_type == "RSI70_UP":
-            rsi_class = "rsi-cross-up-card"
+            card_classes.append("rsi-cross-up-card")
 
         elif rsi_signal_type == "RSI70_DOWN":
-            rsi_class = "rsi-cross-down-card"
+            card_classes.append("rsi-cross-down-card")
+
+        # EMA 1 / 3 데드크로스 노란색 강조
+        if item.get("ema_dead_cross", False):
+            card_classes.append("ema-dead-cross-card")
+
+        # 진행 중인 EMA 데드크로스 표시
+        if item.get("ema_dead_cross_progress", False):
+            card_classes.append("ema-dead-cross-progress")
+
+        card_class = " ".join(card_classes)
 
         boxes.append(
             f"""
-            <div class="three-candle-item {rsi_class}">
+            <div class="three-candle-item {card_class}">
 
                 <div class="three-candle-label">
                     {label}
@@ -3303,9 +3418,9 @@ def btc_html():
         <div class="btc-candle-section">
 
             <div class="btc-candle-heading">
-                BTC 최근 24개 봉 · {timeframe_label} · RSI({RSI_PERIOD})
+                BTC 최근 {DISPLAY_CANDLE_COUNT}개 봉 · {timeframe_label} · RSI({RSI_PERIOD})
                 <span class="rsi-condition-label">
-                    RSI70 상향돌파 녹색 · RSI70 하향돌파 적색
+                    RSI70 상향돌파 녹색 · RSI70 하향돌파 적색 · EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 데드크로스 노란색
                 </span>
             </div>
 
@@ -3382,9 +3497,9 @@ def signal_card(row):
         <div class="three-candle-section">
 
             <div class="three-candle-heading">
-                최근 24개 봉 · {timeframe_label} · RSI({RSI_PERIOD})
+                최근 {DISPLAY_CANDLE_COUNT}개 봉 · {timeframe_label} · RSI({RSI_PERIOD})
                 <span class="rsi-condition-label">
-                    RSI70 상향돌파 녹색 · RSI70 하향돌파 적색
+                    RSI70 상향돌파 녹색 · RSI70 하향돌파 적색 · EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 데드크로스 노란색
                 </span>
             </div>
 
@@ -3430,6 +3545,7 @@ def signal_section():
         <span>최신 RSI {RSI_RANGE_MIN}~{RSI_RANGE_MAX}</span>
         <span>{html.escape(get_ema_condition_text())}</span>
         <span>EMA 및 RSI 시간봉: {pattern_timeframe_label}</span>
+        <span>EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 시가 기준 데드크로스 노란색 표시</span>
         <span>BTC 거래대금 비교 없음</span>
         <span>24H 거래대금 높은 순 정렬</span>
 
@@ -3531,9 +3647,9 @@ def card(row, kind):
         <div class="top-three-candle-section">
 
             <div class="three-candle-heading">
-                최근 24개 봉 · {timeframe_label} · RSI({RSI_PERIOD})
+                최근 {DISPLAY_CANDLE_COUNT}개 봉 · {timeframe_label} · RSI({RSI_PERIOD})
                 <span class="rsi-condition-label">
-                    RSI70 상향돌파 녹색 · RSI70 하향돌파 적색
+                    RSI70 상향돌파 녹색 · RSI70 하향돌파 적색 · EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 데드크로스 노란색
                 </span>
             </div>
 
@@ -3542,7 +3658,10 @@ def card(row, kind):
         </div>
 
     </article>
-    """# =========================================================
+    """
+
+
+# =========================================================
 # CSS
 # =========================================================
 
@@ -3820,6 +3939,28 @@ section { margin-bottom:11px; }
 .three-candle-item.rsi-cross-down-card .candle-date,
 .three-candle-item.rsi-cross-down-card .candle-time {
     color:var(--red);
+}
+
+/* EMA 1 / 3 데드크로스 노란색 카드 */
+.three-candle-item.ema-dead-cross-card {
+    background:rgba(232,197,110,.22);
+    border:1px solid var(--yellow);
+    box-shadow:
+        inset 0 0 0 1px rgba(232,197,110,.20),
+        0 0 8px rgba(232,197,110,.22);
+}
+
+.three-candle-item.ema-dead-cross-card .candle-date,
+.three-candle-item.ema-dead-cross-card .candle-time {
+    color:var(--yellow);
+}
+
+/* 진행 중인 데드크로스 */
+.three-candle-item.ema-dead-cross-progress {
+    border-width:2px;
+    box-shadow:
+        inset 0 0 0 1px rgba(232,197,110,.28),
+        0 0 10px rgba(232,197,110,.30);
 }
 
 .candle-change {
@@ -4738,6 +4879,29 @@ def startup():
     )
 
     log.info(
+        "별도 EMA 데드크로스 설정 | EMA%s / EMA%s | 시가(open) 기준",
+        EMA_CROSS_FAST_PERIOD,
+        EMA_CROSS_SLOW_PERIOD
+    )
+
+    log.info(
+        "EMA 데드크로스 시간봉: %s",
+        get_timeframe_label(CANDLE_PATTERN_TIMEFRAME)
+    )
+
+    log.info(
+        "EMA 1이 EMA 3을 하향돌파한 캔들만 노란색 강조"
+    )
+
+    log.info(
+        "EMA 데드크로스 진행 캔들은 진행 표시 및 노란색 강조"
+    )
+
+    log.info(
+        "EMA 데드크로스 확정 캔들은 과거 캔들에도 노란색 유지"
+    )
+
+    log.info(
         "SIGNAL EMA 및 RSI 계산 시간봉: %s",
         get_timeframe_label(CANDLE_PATTERN_TIMEFRAME)
     )
@@ -4814,11 +4978,11 @@ def startup():
     )
 
     log.info(
-        "기존 EMA 정배열 이벤트 감지 및 노란색 카드 표시 기능 삭제"
+        "기존 EMA 정배열 이벤트 감지 및 노란색 카드 표시 기능 삭제 상태 유지"
     )
 
     log.info(
-        "기존 EMA 정배열 연속 카운팅 기능 삭제"
+        "기존 EMA 정배열 연속 카운팅 기능 삭제 상태 유지"
     )
 
     log.info(
@@ -4826,7 +4990,7 @@ def startup():
     )
 
     log.info(
-        "기존 현재가 EMA5 하회 노란색 조건 제거"
+        "기존 현재가 EMA5 하회 노란색 조건 제거 상태 유지"
     )
 
     log.info(
@@ -4859,4 +5023,3 @@ if __name__ == "__main__":
         host="0.0.0.0",
         port=8000
     )
-    
