@@ -2198,6 +2198,7 @@ def update_upbit():
     # 1. 당일 변동률 조건
     # 2. 최신 RSI 50~70 범위
     # 3. 선택 EMA 정배열
+    # 4. 최근 표시 캔들 중 노란색 강조 양봉 최소 1개
     #
     # RSI 70 상향/하향 돌파는 카드 표시 전용
     # =====================================================
@@ -2209,6 +2210,12 @@ def update_upbit():
             and row.get("daily_change") > DAILY_CHANGE_MIN
             and row.get("rsi_range_pass") is True
             and row.get("ema_alignment") is True
+            and any(
+                item.get("ema_bearish_alignment", False)
+                and float(item.get("close", 0))
+                > float(item.get("open", 0))
+                for item in row.get("last_three_patterns", [])
+            )
         )
     ]
 
@@ -2229,13 +2236,15 @@ def update_upbit():
 
     log.info(
         "UPBIT | TOP%s | "
-        "SIGNAL=당일 변동률>%s%% AND 최신 RSI %s~%s AND %s | "
+        "SIGNAL=당일 변동률>%s%% AND 최신 RSI %s~%s AND %s "
+        "AND 최근 %s개 표시 캔들 중 EMA1/3 역배열 유지 양봉(노란색) 1개 이상 | "
         "시간봉=%s | SIGNAL=%s | 정렬=24H 거래대금 순",
         TOP_N,
         DAILY_CHANGE_MIN,
         RSI_RANGE_MIN,
         RSI_RANGE_MAX,
         get_ema_condition_text(),
+        DISPLAY_CANDLE_COUNT,
         CANDLE_PATTERN_TIMEFRAME,
         len(latest_signal_data)
     )
@@ -3608,6 +3617,7 @@ def signal_section():
         <span>당일 변동률 {DAILY_CHANGE_MIN:.2f}% 초과</span>
         <span>최신 RSI {RSI_RANGE_MIN}~{RSI_RANGE_MAX}</span>
         <span>{html.escape(get_ema_condition_text())}</span>
+        <span>최근 {DISPLAY_CANDLE_COUNT}개 봉 중 노란색 강조 양봉 1개 이상</span>
         <span>EMA 및 RSI 시간봉: {pattern_timeframe_label}</span>
         <span>RSI70 상향·하향돌파는 카드 표시 전용</span>
         <span>EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 데드크로스 이후 역배열 유지 중 양봉 노란색</span>
@@ -5002,6 +5012,11 @@ def startup():
     log.info(
         "선택된 EMA 정배열까지 모두 충족해야 최종 SIGNAL: %s",
         get_ema_condition_text()
+    )
+
+    log.info(
+        "최근 %s개 표시 캔들 중 EMA1/3 역배열 유지 양봉(노란색)이 최소 1개 있어야 최종 SIGNAL",
+        DISPLAY_CANDLE_COUNT
     )
 
     log.info(
