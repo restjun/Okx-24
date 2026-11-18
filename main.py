@@ -55,7 +55,7 @@ MAX_RETRIES = 20
 
 CANDLE_PATTERN_TIMEFRAME = "1h"
 
-RSI_PERIOD = 6
+RSI_PERIOD = 14
 
 # =========================================================
 # RSI 설정
@@ -67,7 +67,7 @@ RSI_SIGNAL_MAX = 70
 RSI_RANGE_MIN = 50
 RSI_RANGE_MAX = 70
 
-RSI_CHECK_CANDLES = 6
+RSI_CHECK_CANDLES = 12
 
 
 # =========================================================
@@ -94,7 +94,7 @@ USE_EMA_50 = "N"
 EMA_CROSS_FAST_PERIOD = 1
 EMA_CROSS_SLOW_PERIOD = 3
 
-DISPLAY_CANDLE_COUNT = 6
+DISPLAY_CANDLE_COUNT = 12
 
 CONSECUTIVE_CANDLE_MIN = 3
 CONSECUTIVE_BULLISH_MIN = 2
