@@ -88,8 +88,6 @@ USE_EMA_50 = "Y"
 
 # =========================================================
 # EMA 1 / 3 데드크로스 설정
-# 기존 EMA 5 / 10 / 20 / 50과 별도
-# 선택한 캔들 시간대의 시가(open) 기준
 # =========================================================
 
 EMA_CROSS_FAST_PERIOD = 1
@@ -2044,6 +2042,265 @@ def make_row(
 
 
 # =========================================================
+# SIGNAL 조건 공통 판정
+#
+# 반환값:
+# True  = 조건 통과
+# False = 조건 미통과
+# None  = 데이터 부족 또는 확인 불가
+#
+# SIGNAL 선정과 화면 체크리스트가
+# 반드시 이 함수를 함께 사용하도록 구성
+# =========================================================
+
+def get_signal_condition_checks(row):
+
+    checks = {}
+
+    # -----------------------------------------------------
+    # 1. 당일 변동률
+    # -----------------------------------------------------
+
+    daily_change = row.get("daily_change")
+
+    if daily_change is None:
+
+        checks["daily_change"] = None
+
+    else:
+
+        try:
+
+            daily_change = float(daily_change)
+
+            checks["daily_change"] = (
+                daily_change > DAILY_CHANGE_MIN
+            )
+
+        except (TypeError, ValueError):
+
+            checks["daily_change"] = None
+
+    # -----------------------------------------------------
+    # 2. 최신 RSI 범위
+    # -----------------------------------------------------
+
+    rsi_values = row.get("rsi_values") or []
+
+    latest_rsi = None
+
+    if rsi_values:
+
+        try:
+
+            candidate = rsi_values[-1]
+
+            if candidate is not None:
+                candidate = float(candidate)
+
+                if pd.notna(candidate):
+                    latest_rsi = candidate
+
+        except (TypeError, ValueError):
+            latest_rsi = None
+
+    if latest_rsi is None:
+
+        checks["rsi_range"] = None
+
+    else:
+
+        checks["rsi_range"] = bool(
+            RSI_RANGE_MIN
+            <= latest_rsi
+            <= RSI_RANGE_MAX
+        )
+
+    # -----------------------------------------------------
+    # 3. 선택 EMA 정배열
+    # -----------------------------------------------------
+
+    enabled_ema_values = []
+
+    if USE_EMA_5 == "Y":
+        enabled_ema_values.append(row.get("ema5"))
+
+    if USE_EMA_10 == "Y":
+        enabled_ema_values.append(row.get("ema10"))
+
+    if USE_EMA_20 == "Y":
+        enabled_ema_values.append(row.get("ema20"))
+
+    if USE_EMA_50 == "Y":
+        enabled_ema_values.append(row.get("ema50"))
+
+    if not enabled_ema_values:
+
+        # 원래 SIGNAL 로직과 동일하게
+        # EMA 조건을 모두 끈 경우 정배열 통과
+        checks["ema_alignment"] = True
+
+    elif any(value is None for value in enabled_ema_values):
+
+        checks["ema_alignment"] = None
+
+    else:
+
+        try:
+
+            ema_values = [
+                float(value)
+                for value in enabled_ema_values
+            ]
+
+            checks["ema_alignment"] = all(
+                ema_values[i] > ema_values[i + 1]
+                for i in range(len(ema_values) - 1)
+            )
+
+        except (TypeError, ValueError):
+
+            checks["ema_alignment"] = None
+
+    # -----------------------------------------------------
+    # 4. 최근 표시 캔들 중 EMA 1/3 역배열 유지 양봉
+    # -----------------------------------------------------
+
+    candles = row.get("last_three_patterns")
+
+    if not candles:
+
+        checks["ema_bearish_bullish_candle"] = None
+
+    else:
+
+        found = False
+        valid_candle_count = 0
+
+        for candle in candles:
+
+            try:
+
+                open_price = float(candle["open"])
+                close_price = float(candle["close"])
+
+                bearish_alignment = candle.get(
+                    "ema_bearish_alignment"
+                )
+
+                if bearish_alignment is None:
+                    continue
+
+                valid_candle_count += 1
+
+                if (
+                    bearish_alignment is True
+                    and close_price > open_price
+                ):
+
+                    found = True
+                    break
+
+            except (KeyError, TypeError, ValueError):
+                continue
+
+        if found:
+
+            checks["ema_bearish_bullish_candle"] = True
+
+        elif valid_candle_count > 0:
+
+            checks["ema_bearish_bullish_candle"] = False
+
+        else:
+
+            checks["ema_bearish_bullish_candle"] = None
+
+    return checks
+
+
+# =========================================================
+# 체크리스트 HTML
+# =========================================================
+
+def signal_checklist_html(row):
+
+    checks = get_signal_condition_checks(row)
+
+    checklist_items = [
+        (
+            "daily_change",
+            f"당일 변동률 > {DAILY_CHANGE_MIN:.2f}%"
+        ),
+        (
+            "rsi_range",
+            f"최신 RSI {RSI_RANGE_MIN}~{RSI_RANGE_MAX}"
+        ),
+        (
+            "ema_alignment",
+            get_ema_condition_text()
+        ),
+        (
+            "ema_bearish_bullish_candle",
+            f"최근 {DISPLAY_CANDLE_COUNT}개 봉 중 EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 역배열 양봉"
+        )
+    ]
+
+    items_html = []
+
+    for key, label in checklist_items:
+
+        passed = checks.get(key)
+
+        if passed is True:
+
+            symbol = "✓"
+            status_class = "check-pass"
+            status_text = "통과"
+
+        elif passed is False:
+
+            symbol = "✕"
+            status_class = "check-fail"
+            status_text = "미통과"
+
+        else:
+
+            symbol = "-"
+            status_class = "check-unknown"
+            status_text = "확인불가"
+
+        items_html.append(
+            f"""
+            <div class="checklist-item">
+
+                <span class="checklist-symbol {status_class}">
+                    {symbol}
+                </span>
+
+                <span class="checklist-label">
+                    {html.escape(label)}
+                </span>
+
+                <span class="checklist-status {status_class}">
+                    {status_text}
+                </span>
+
+            </div>
+            """
+        )
+
+    return (
+        '<div class="signal-checklist">'
+        '<div class="checklist-heading">조건 체크리스트</div>'
+        '<div class="checklist-grid">'
+        + "".join(items_html)
+        + '</div>'
+        '</div>'
+    )
+
+
+# =========================================================
 # 업비트 업데이트
 # =========================================================
 
@@ -2195,29 +2452,27 @@ def update_upbit():
     # =====================================================
     # 최종 SIGNAL 선정
     #
-    # 1. 당일 변동률 조건
-    # 2. 최신 RSI 50~70 범위
-    # 3. 선택 EMA 정배열
-    # 4. 최근 표시 캔들 중 노란색 강조 양봉 최소 1개
-    #
-    # RSI 70 상향/하향 돌파는 카드 표시 전용
+    # 공통 체크리스트 판정 함수를 사용
+    # 4개 조건이 모두 True인 경우에만 SIGNAL 선정
     # =====================================================
 
-    latest_signal_data = [
-        row for row in rows
-        if (
-            row.get("daily_change") is not None
-            and row.get("daily_change") > DAILY_CHANGE_MIN
-            and row.get("rsi_range_pass") is True
-            and row.get("ema_alignment") is True
-            and any(
-                item.get("ema_bearish_alignment", False)
-                and float(item.get("close", 0))
-                > float(item.get("open", 0))
-                for item in row.get("last_three_patterns", [])
+    latest_signal_data = []
+
+    for row in rows:
+
+        checks = get_signal_condition_checks(row)
+
+        if all(
+            checks.get(key) is True
+            for key in (
+                "daily_change",
+                "rsi_range",
+                "ema_alignment",
+                "ema_bearish_bullish_candle"
             )
-        )
-    ]
+        ):
+
+            latest_signal_data.append(row)
 
     latest_signal_data.sort(
         key=lambda x: (
@@ -2925,11 +3180,6 @@ def candle_change_html(value):
 
 # =========================================================
 # RSI 표시 HTML
-# RSI 수치 기준으로만 색상 적용
-# 50 이하: 빨강
-# 50 초과 70 미만: 녹색
-# 70 이상: 노랑
-# RSI 돌파 텍스트는 기존대로 유지
 # =========================================================
 
 def rsi_html(value, signal_type=None):
@@ -3526,6 +3776,8 @@ def signal_card(row):
 
     three_pattern_html = last_three_pattern_html(row)
 
+    checklist_html = signal_checklist_html(row)
+
     return f"""
     <div class="signal-card">
 
@@ -3574,6 +3826,8 @@ def signal_card(row):
 
         </div>
 
+        {checklist_html}
+
         <div class="three-candle-section">
 
             <div class="three-candle-heading">
@@ -3619,16 +3873,12 @@ def signal_section():
     condition_html = f"""
     <div class="signal-condition">
 
-        <span>선정 기준: 당일 변동률</span>
+        <span>체크리스트 4개 조건 모두 통과 시 SIGNAL 선정</span>
         <span>당일 변동률 {DAILY_CHANGE_MIN:.2f}% 초과</span>
         <span>최신 RSI {RSI_RANGE_MIN}~{RSI_RANGE_MAX}</span>
         <span>{html.escape(get_ema_condition_text())}</span>
-        <span>최근 {DISPLAY_CANDLE_COUNT}개 봉 중 노란색 강조 양봉 1개 이상</span>
-        <span>EMA 및 RSI 시간봉: {pattern_timeframe_label}</span>
-        <span>RSI70 상향·하향돌파는 카드 표시 전용</span>
-        <span>EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 데드크로스 이후 역배열 유지 중 양봉 노란색</span>
-        <span>BTC 거래대금 비교 없음</span>
-        <span>24H 거래대금 높은 순 정렬</span>
+        <span>최근 {DISPLAY_CANDLE_COUNT}개 봉 중 EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 역배열 양봉 1개 이상</span>
+        <span>시간봉: {pattern_timeframe_label}</span>
 
     </div>
     """
@@ -3679,6 +3929,8 @@ def card(row, kind):
 
     three_pattern_html = last_three_pattern_html(row)
 
+    checklist_html = signal_checklist_html(row)
+
     return f"""
     <article class="coin-card">
 
@@ -3724,6 +3976,8 @@ def card(row, kind):
             </div>
 
         </div>
+
+        {checklist_html}
 
         <div class="top-three-candle-section">
 
@@ -3963,7 +4217,6 @@ section { margin-bottom:11px; }
 
 /* =====================================================
    RSI 수치 색상
-   RSI 값에만 적용
    ===================================================== */
 
 .rsi-value {
@@ -3983,28 +4236,24 @@ section { margin-bottom:11px; }
     white-space:nowrap;
 }
 
-/* RSI 50 이하: 빨강 */
 .rsi-value.rsi-low {
     color:#ff6575;
     background:rgba(255,101,117,.16);
     border:1px solid #ff6575;
 }
 
-/* RSI 50 초과 70 미만: 녹색 */
 .rsi-value.rsi-middle {
     color:#38d996;
     background:rgba(56,217,150,.16);
     border:1px solid #38d996;
 }
 
-/* RSI 70 이상: 노랑 */
 .rsi-value.rsi-high {
     color:#e8c56e;
     background:rgba(232,197,110,.16);
     border:1px solid #e8c56e;
 }
 
-/* RSI 데이터 없음 */
 .rsi-value.rsi-unavailable {
     color:#71808c;
     background:#141e27;
@@ -4012,7 +4261,7 @@ section { margin-bottom:11px; }
 }
 
 /* =====================================================
-   기존 RSI 돌파 카드 강조 유지
+   RSI 돌파 카드 강조
    ===================================================== */
 
 .three-candle-item.rsi-cross-up-card {
@@ -4055,7 +4304,6 @@ section { margin-bottom:11px; }
     color:var(--yellow);
 }
 
-/* 진행 중인 역배열 양봉 */
 .three-candle-item.ema-dead-cross-progress {
     border-width:2px;
     box-shadow:
@@ -4241,6 +4489,100 @@ section { margin-bottom:11px; }
     margin:0;
     padding:1px 2px;
     line-height:1;
+}
+
+/* =====================================================
+   조건 체크리스트
+   SIGNAL 카드와 TOP 카드 공통 적용
+   ===================================================== */
+
+.signal-checklist {
+    padding:8px 10px;
+    background:#0d161e;
+    border-top:1px solid #26343f;
+    border-bottom:1px solid #26343f;
+}
+
+.checklist-heading {
+    margin-bottom:7px;
+    color:#b7c5d0;
+    font-size:var(--fs-small);
+    font-weight:900;
+}
+
+.checklist-grid {
+    display:grid;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:5px 8px;
+}
+
+.checklist-item {
+    min-width:0;
+    min-height:27px;
+    display:flex;
+    align-items:center;
+    gap:6px;
+    padding:4px 6px;
+    background:#131f29;
+    border:1px solid #263744;
+    border-radius:4px;
+}
+
+.checklist-symbol {
+    width:17px;
+    min-width:17px;
+    height:17px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    border-radius:4px;
+    font-size:12px;
+    font-weight:1000;
+    line-height:1;
+}
+
+.checklist-label {
+    min-width:0;
+    flex:1;
+    color:#bdc9d3;
+    font-size:var(--fs-tiny);
+    font-weight:700;
+    line-height:1.3;
+    overflow-wrap:anywhere;
+}
+
+.checklist-status {
+    flex:0 0 auto;
+    font-size:var(--fs-tiny);
+    font-weight:800;
+    white-space:nowrap;
+}
+
+.check-pass {
+    color:var(--green);
+}
+
+.check-fail {
+    color:var(--red);
+}
+
+.check-unknown {
+    color:#83919c;
+}
+
+.checklist-symbol.check-pass {
+    background:rgba(56,217,150,.13);
+    border:1px solid rgba(56,217,150,.35);
+}
+
+.checklist-symbol.check-fail {
+    background:rgba(255,101,117,.13);
+    border:1px solid rgba(255,101,117,.35);
+}
+
+.checklist-symbol.check-unknown {
+    background:rgba(131,145,156,.12);
+    border:1px solid rgba(131,145,156,.3);
 }
 
 .signal-type-list,
@@ -4743,6 +5085,21 @@ section { margin-bottom:11px; }
         min-height:16px;
         font-size:8px;
     }
+
+    /* 모바일 체크리스트 */
+    .signal-checklist {
+        padding:7px 7px;
+    }
+
+    .checklist-grid {
+        grid-template-columns:1fr;
+        gap:4px;
+    }
+
+    .checklist-item {
+        min-height:25px;
+        padding:4px 5px;
+    }
 }
 
 @media (max-width:380px) {
@@ -5050,6 +5407,18 @@ def startup():
     log.info(
         "최근 %s개 표시 캔들 중 EMA1/3 역배열 유지 양봉(노란색)이 최소 1개 있어야 최종 SIGNAL",
         DISPLAY_CANDLE_COUNT
+    )
+
+    log.info(
+        "SIGNAL 및 TOP 리스트에 4개 조건 체크리스트 표시"
+    )
+
+    log.info(
+        "체크리스트와 SIGNAL 선정은 동일한 공통 판정 함수 사용"
+    )
+
+    log.info(
+        "체크리스트 통과=초록색 ✓ / 미통과=빨간색 ✕ / 데이터 부족=회색 -"
     )
 
     log.info(
