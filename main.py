@@ -1,4 +1,3 @@
-
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
@@ -40,7 +39,7 @@ UTC = ZoneInfo("UTC")
 # =========================================================
 
 TOP_N = 20
-SHOW_TOP_LIST = "N"
+SHOW_TOP_LIST = "Y"
 UPDATE_MINUTES = 1
 
 DAILY_CHANGE_MIN = 0.0
@@ -63,8 +62,8 @@ RSI_PERIOD = 14
 # RSI 설정
 # =========================================================
 
-RSI_SIGNAL_MIN = 50
-RSI_SIGNAL_MAX = 50
+RSI_SIGNAL_MIN = 70
+RSI_SIGNAL_MAX = 70
 
 RSI_RANGE_MIN = 50
 RSI_RANGE_MAX = 100
@@ -81,10 +80,10 @@ EMA_MIDDLE_PERIOD = 10
 EMA_SLOW_PERIOD = 20
 EMA_LONG_PERIOD = 50
 
-USE_EMA_5 = "N"
-USE_EMA_10 = "N"
-USE_EMA_20 = "N"
-USE_EMA_50 = "N"
+USE_EMA_5 = "Y"
+USE_EMA_10 = "Y"
+USE_EMA_20 = "Y"
+USE_EMA_50 = "Y"
 
 
 # =========================================================
@@ -165,14 +164,6 @@ latest_btc_okx_price = None
 latest_btc_daily_periods = []
 latest_btc_daily_change = None
 latest_btc_last_three_patterns = []
-
-# BTC 체크리스트 데이터
-latest_btc_rsi_values = []
-
-latest_btc_ema5 = None
-latest_btc_ema10 = None
-latest_btc_ema20 = None
-latest_btc_ema50 = None
 
 
 # =========================================================
@@ -2058,8 +2049,8 @@ def make_row(
 # False = 조건 미통과
 # None  = 데이터 부족 또는 확인 불가
 #
-# SIGNAL 선정과 BTC 체크리스트가
-# 동일한 함수를 사용
+# SIGNAL 선정과 화면 체크리스트가
+# 반드시 이 함수를 함께 사용하도록 구성
 # =========================================================
 
 def get_signal_condition_checks(row):
@@ -2145,6 +2136,8 @@ def get_signal_condition_checks(row):
 
     if not enabled_ema_values:
 
+        # 원래 SIGNAL 로직과 동일하게
+        # EMA 조건을 모두 끈 경우 정배열 통과
         checks["ema_alignment"] = True
 
     elif any(value is None for value in enabled_ema_values):
@@ -2223,68 +2216,6 @@ def get_signal_condition_checks(row):
 
             checks["ema_bearish_bullish_candle"] = None
 
-    # -----------------------------------------------------
-    # 5. 최근 표시 캔들 중 RSI 70 상향 돌파 캔들
-    #
-    # 이전 봉 RSI < 70
-    # 현재 봉 RSI >= 70
-    #
-    # 양봉 / 음봉 여부와 관계없이 RSI 상향 돌파만 판정
-    # -----------------------------------------------------
-
-    if not candles:
-
-        checks["rsi_70_up_candle"] = None
-
-    else:
-
-        found = False
-        valid_rsi_candle_count = 0
-
-        for candle in candles:
-
-            previous_rsi = candle.get("rsi_previous")
-            current_rsi = candle.get("rsi")
-
-            if previous_rsi is None or current_rsi is None:
-                continue
-
-            try:
-
-                previous_rsi = float(previous_rsi)
-                current_rsi = float(current_rsi)
-
-                if (
-                    not pd.notna(previous_rsi)
-                    or not pd.notna(current_rsi)
-                ):
-                    continue
-
-                valid_rsi_candle_count += 1
-
-                if (
-                    previous_rsi < RSI_SIGNAL_MIN
-                    and current_rsi >= RSI_SIGNAL_MIN
-                ):
-
-                    found = True
-                    break
-
-            except (TypeError, ValueError):
-                continue
-
-        if found:
-
-            checks["rsi_70_up_candle"] = True
-
-        elif valid_rsi_candle_count > 0:
-
-            checks["rsi_70_up_candle"] = False
-
-        else:
-
-            checks["rsi_70_up_candle"] = None
-
     return checks
 
 
@@ -2312,10 +2243,6 @@ def signal_checklist_html(row):
         (
             "ema_bearish_bullish_candle",
             f"최근 {DISPLAY_CANDLE_COUNT}개 봉 중 EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 역배열 양봉"
-        ),
-        (
-            "rsi_70_up_candle",
-            f"최근 {DISPLAY_CANDLE_COUNT}개 봉 중 RSI {RSI_SIGNAL_MIN} 상향 돌파 캔들"
         )
     ]
 
@@ -2526,7 +2453,7 @@ def update_upbit():
     # 최종 SIGNAL 선정
     #
     # 공통 체크리스트 판정 함수를 사용
-    # 5개 조건이 모두 True인 경우에만 SIGNAL 선정
+    # 4개 조건이 모두 True인 경우에만 SIGNAL 선정
     # =====================================================
 
     latest_signal_data = []
@@ -2541,8 +2468,7 @@ def update_upbit():
                 "daily_change",
                 "rsi_range",
                 "ema_alignment",
-                "ema_bearish_bullish_candle",
-                "rsi_70_up_candle"
+                "ema_bearish_bullish_candle"
             )
         ):
 
@@ -2566,15 +2492,13 @@ def update_upbit():
     log.info(
         "UPBIT | TOP%s | "
         "SIGNAL=당일 변동률>%s%% AND 최신 RSI %s~%s AND %s "
-        "AND 최근 %s개 표시 캔들 중 EMA1/3 역배열 유지 양봉 1개 이상 "
-        "AND 최근 %s개 표시 캔들 중 RSI70 상향 돌파 캔들 1개 이상 | "
+        "AND 최근 %s개 표시 캔들 중 EMA1/3 역배열 유지 양봉(노란색) 1개 이상 | "
         "시간봉=%s | SIGNAL=%s | 정렬=24H 거래대금 순",
         TOP_N,
         DAILY_CHANGE_MIN,
         RSI_RANGE_MIN,
         RSI_RANGE_MAX,
         get_ema_condition_text(),
-        DISPLAY_CANDLE_COUNT,
         DISPLAY_CANDLE_COUNT,
         CANDLE_PATTERN_TIMEFRAME,
         len(latest_signal_data)
@@ -3059,13 +2983,6 @@ def update_okx_btc():
     global latest_btc_daily_change
     global latest_btc_last_three_patterns
 
-    global latest_btc_rsi_values
-
-    global latest_btc_ema5
-    global latest_btc_ema10
-    global latest_btc_ema20
-    global latest_btc_ema50
-
     price = okx_price()
 
     latest_btc_okx_price = price
@@ -3083,28 +3000,13 @@ def update_okx_btc():
         latest_btc_daily_change = None
         latest_btc_last_three_patterns = []
 
-        latest_btc_rsi_values = []
-
-        latest_btc_ema5 = None
-        latest_btc_ema10 = None
-        latest_btc_ema20 = None
-        latest_btc_ema50 = None
-
         return
-
-    # =====================================================
-    # 현재 BTC 가격 반영
-    # =====================================================
 
     df = update_current_candle(
         df,
         get_candle_start(datetime.now(KST), timeframe),
         price
     )
-
-    # =====================================================
-    # BTC 최근 캔들 기간
-    # =====================================================
 
     periods = build_timeframe_periods(
         df,
@@ -3114,115 +3016,9 @@ def update_okx_btc():
 
     latest_btc_daily_periods = periods
 
-    # =====================================================
-    # BTC 당일 변동률
-    # 거래대금 사용 안 함
-    # =====================================================
-
     latest_btc_daily_change = calculate_btc_daily_change(
         price
     )
-
-    # =====================================================
-    # BTC RSI 계산
-    # =====================================================
-
-    rsi_series = calculate_rsi(
-        df["close"],
-        RSI_PERIOD
-    )
-
-    rsi_periods = periods[-RSI_CHECK_CANDLES:]
-
-    latest_btc_rsi_values = []
-
-    for i, period in enumerate(periods):
-
-        if i < len(rsi_series):
-
-            value = rsi_series.iloc[i]
-
-            period["rsi"] = (
-                float(value)
-                if pd.notna(value)
-                else None
-            )
-
-        else:
-
-            period["rsi"] = None
-
-    rsi_periods = periods[-RSI_CHECK_CANDLES:]
-
-    latest_btc_rsi_values = [
-        period.get("rsi")
-        for period in rsi_periods
-    ]
-
-    # =====================================================
-    # BTC EMA 계산
-    # =====================================================
-
-    ema5_series = calculate_ema(
-        df["close"],
-        EMA_FAST_PERIOD
-    )
-
-    ema10_series = calculate_ema(
-        df["close"],
-        EMA_MIDDLE_PERIOD
-    )
-
-    ema20_series = calculate_ema(
-        df["close"],
-        EMA_SLOW_PERIOD
-    )
-
-    ema50_series = calculate_ema(
-        df["close"],
-        EMA_LONG_PERIOD
-    )
-
-    def get_latest_ema(series):
-
-        if len(series) == 0:
-            return None
-
-        value = series.iloc[-1]
-
-        if pd.isna(value):
-            return None
-
-        return float(value)
-
-    latest_btc_ema5 = get_latest_ema(
-        ema5_series
-    )
-
-    latest_btc_ema10 = get_latest_ema(
-        ema10_series
-    )
-
-    latest_btc_ema20 = get_latest_ema(
-        ema20_series
-    )
-
-    latest_btc_ema50 = get_latest_ema(
-        ema50_series
-    )
-
-    # =====================================================
-    # BTC EMA1 / 3 역배열 상태 계산
-    # =====================================================
-
-    btc_pattern_periods = apply_ema_dead_cross_signals(
-        periods,
-        df["open"]
-    )
-
-    # =====================================================
-    # BTC 최근 캔들 패턴 분석
-    # =====================================================
 
     latest_btc_last_three_patterns = (
         analyze_okx_btc_candles(
@@ -3234,16 +3030,10 @@ def update_okx_btc():
 
     log.info(
         "BTC OKX | 가격=%s | 캔들시간봉=%s | "
-        "당일 변동률=%s | RSI=%s | "
-        "EMA5=%s | EMA10=%s | EMA20=%s | EMA50=%s",
+        "당일 변동률 기준=KST 09:00 | 변동률=%s",
         price,
         get_timeframe_label(timeframe),
-        latest_btc_daily_change,
-        latest_btc_rsi_values[-1] if latest_btc_rsi_values else None,
-        latest_btc_ema5,
-        latest_btc_ema10,
-        latest_btc_ema20,
-        latest_btc_ema50
+        latest_btc_daily_change
     )
 
 
@@ -3911,29 +3701,10 @@ def pattern_badges_html(row):
 def btc_html():
 
     btc_row = {
-        "daily_change": latest_btc_daily_change,
-        "rsi_values": latest_btc_rsi_values,
-
-        "ema5": latest_btc_ema5,
-        "ema10": latest_btc_ema10,
-        "ema20": latest_btc_ema20,
-        "ema50": latest_btc_ema50,
-
         "last_three_patterns": latest_btc_last_three_patterns
     }
 
     three_pattern_html = last_three_pattern_html(
-        btc_row
-    )
-
-    # =====================================================
-    # BTC 전용 체크리스트
-    #
-    # 업비트 SIGNAL과 동일한 5개 조건
-    # 거래대금 조건은 포함하지 않음
-    # =====================================================
-
-    btc_checklist_html = signal_checklist_html(
         btc_row
     )
 
@@ -3971,17 +3742,6 @@ def btc_html():
             <div class="btc-change">
                 {fmt_change(latest_btc_daily_change)}
             </div>
-
-        </div>
-
-        <div class="btc-checklist-section">
-
-            <div class="btc-checklist-heading">
-                BTC 시황 체크리스트
-                <span>거래대금 조건 제외</span>
-            </div>
-
-            {btc_checklist_html}
 
         </div>
 
@@ -4113,12 +3873,11 @@ def signal_section():
     condition_html = f"""
     <div class="signal-condition">
 
-        <span>체크리스트 5개 조건 모두 통과 시 SIGNAL 선정</span>
+        <span>체크리스트 4개 조건 모두 통과 시 SIGNAL 선정</span>
         <span>당일 변동률 {DAILY_CHANGE_MIN:.2f}% 초과</span>
         <span>최신 RSI {RSI_RANGE_MIN}~{RSI_RANGE_MAX}</span>
         <span>{html.escape(get_ema_condition_text())}</span>
         <span>최근 {DISPLAY_CANDLE_COUNT}개 봉 중 EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 역배열 양봉 1개 이상</span>
-        <span>최근 {DISPLAY_CANDLE_COUNT}개 봉 중 RSI {RSI_SIGNAL_MIN} 상향 돌파 캔들 1개 이상</span>
         <span>시간봉: {pattern_timeframe_label}</span>
 
     </div>
@@ -4824,53 +4583,6 @@ section { margin-bottom:11px; }
 .checklist-symbol.check-unknown {
     background:rgba(131,145,156,.12);
     border:1px solid rgba(131,145,156,.3);
-}
-
-/* =====================================================
-   BTC 체크리스트 전용 디자인
-   ===================================================== */
-
-.btc-checklist-section {
-    margin-top:10px;
-    padding-top:9px;
-    border-top:1px solid #304252;
-}
-
-.btc-checklist-heading {
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    gap:6px;
-    margin-bottom:7px;
-    color:#e2eaf1;
-    font-size:var(--fs-small);
-    font-weight:900;
-}
-
-.btc-checklist-heading > span {
-    color:var(--yellow);
-    font-size:var(--fs-tiny);
-    font-weight:800;
-}
-
-.btc-checklist-section .signal-checklist {
-    padding:0;
-    background:transparent;
-    border-top:0;
-    border-bottom:0;
-}
-
-.btc-checklist-section .checklist-heading {
-    display:none;
-}
-
-.btc-checklist-section .checklist-item {
-    background:rgba(12,23,32,.8);
-    border-color:#304252;
-}
-
-.btc-checklist-section .checklist-label {
-    color:#c5d1db;
 }
 
 .signal-type-list,
@@ -5670,7 +5382,7 @@ def startup():
     )
 
     log.info(
-        "RSI 70 상향/하향돌파 카드 색상 조건은 기존 방식 유지"
+        "RSI 70 상향/하향돌파는 카드 표시 전용이며 SIGNAL 선정 조건에서 제외"
     )
 
     log.info(
@@ -5698,43 +5410,11 @@ def startup():
     )
 
     log.info(
-        "최근 %s개 표시 캔들 중 이전 RSI < %s, 현재 RSI >= %s인 상향 돌파 캔들이 최소 1개 있어야 최종 SIGNAL",
-        DISPLAY_CANDLE_COUNT,
-        RSI_SIGNAL_MIN,
-        RSI_SIGNAL_MIN
+        "SIGNAL 및 TOP 리스트에 4개 조건 체크리스트 표시"
     )
 
     log.info(
-        "RSI 70 상향 돌파 조건은 캔들의 양봉/음봉 여부와 무관하게 판정"
-    )
-
-    log.info(
-        "SIGNAL 및 TOP 리스트에 5개 조건 체크리스트 표시"
-    )
-
-    log.info(
-        "BTC 시황에도 동일한 5개 체크리스트 표시"
-    )
-
-    log.info(
-        "BTC 체크리스트는 OKX BTC 데이터 기준"
-    )
-
-    log.info(
-        "BTC 체크리스트 거래대금 조건 제외"
-    )
-
-    log.info(
-        "BTC 체크리스트 당일 변동률은 KST 09:00 기준"
-    )
-
-    log.info(
-        "BTC 체크리스트 RSI 및 EMA는 %s 기준",
-        get_timeframe_label(CANDLE_PATTERN_TIMEFRAME)
-    )
-
-    log.info(
-        "BTC 체크리스트 판정은 업비트 SIGNAL 공통 판정 함수 사용"
+        "체크리스트와 SIGNAL 선정은 동일한 공통 판정 함수 사용"
     )
 
     log.info(
