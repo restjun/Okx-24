@@ -2223,6 +2223,68 @@ def get_signal_condition_checks(row):
 
             checks["ema_bearish_bullish_candle"] = None
 
+    # -----------------------------------------------------
+    # 5. 최근 표시 캔들 중 RSI 70 상향 돌파 캔들
+    #
+    # 이전 봉 RSI < 70
+    # 현재 봉 RSI >= 70
+    #
+    # 양봉 / 음봉 여부와 관계없이 RSI 상향 돌파만 판정
+    # -----------------------------------------------------
+
+    if not candles:
+
+        checks["rsi_70_up_candle"] = None
+
+    else:
+
+        found = False
+        valid_rsi_candle_count = 0
+
+        for candle in candles:
+
+            previous_rsi = candle.get("rsi_previous")
+            current_rsi = candle.get("rsi")
+
+            if previous_rsi is None or current_rsi is None:
+                continue
+
+            try:
+
+                previous_rsi = float(previous_rsi)
+                current_rsi = float(current_rsi)
+
+                if (
+                    not pd.notna(previous_rsi)
+                    or not pd.notna(current_rsi)
+                ):
+                    continue
+
+                valid_rsi_candle_count += 1
+
+                if (
+                    previous_rsi < RSI_SIGNAL_MIN
+                    and current_rsi >= RSI_SIGNAL_MIN
+                ):
+
+                    found = True
+                    break
+
+            except (TypeError, ValueError):
+                continue
+
+        if found:
+
+            checks["rsi_70_up_candle"] = True
+
+        elif valid_rsi_candle_count > 0:
+
+            checks["rsi_70_up_candle"] = False
+
+        else:
+
+            checks["rsi_70_up_candle"] = None
+
     return checks
 
 
@@ -2250,6 +2312,10 @@ def signal_checklist_html(row):
         (
             "ema_bearish_bullish_candle",
             f"최근 {DISPLAY_CANDLE_COUNT}개 봉 중 EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 역배열 양봉"
+        ),
+        (
+            "rsi_70_up_candle",
+            f"최근 {DISPLAY_CANDLE_COUNT}개 봉 중 RSI {RSI_SIGNAL_MIN} 상향 돌파 캔들"
         )
     ]
 
@@ -2460,7 +2526,7 @@ def update_upbit():
     # 최종 SIGNAL 선정
     #
     # 공통 체크리스트 판정 함수를 사용
-    # 4개 조건이 모두 True인 경우에만 SIGNAL 선정
+    # 5개 조건이 모두 True인 경우에만 SIGNAL 선정
     # =====================================================
 
     latest_signal_data = []
@@ -2475,7 +2541,8 @@ def update_upbit():
                 "daily_change",
                 "rsi_range",
                 "ema_alignment",
-                "ema_bearish_bullish_candle"
+                "ema_bearish_bullish_candle",
+                "rsi_70_up_candle"
             )
         ):
 
@@ -2499,13 +2566,15 @@ def update_upbit():
     log.info(
         "UPBIT | TOP%s | "
         "SIGNAL=당일 변동률>%s%% AND 최신 RSI %s~%s AND %s "
-        "AND 최근 %s개 표시 캔들 중 EMA1/3 역배열 유지 양봉(노란색) 1개 이상 | "
+        "AND 최근 %s개 표시 캔들 중 EMA1/3 역배열 유지 양봉 1개 이상 "
+        "AND 최근 %s개 표시 캔들 중 RSI70 상향 돌파 캔들 1개 이상 | "
         "시간봉=%s | SIGNAL=%s | 정렬=24H 거래대금 순",
         TOP_N,
         DAILY_CHANGE_MIN,
         RSI_RANGE_MIN,
         RSI_RANGE_MAX,
         get_ema_condition_text(),
+        DISPLAY_CANDLE_COUNT,
         DISPLAY_CANDLE_COUNT,
         CANDLE_PATTERN_TIMEFRAME,
         len(latest_signal_data)
@@ -3860,7 +3929,7 @@ def btc_html():
     # =====================================================
     # BTC 전용 체크리스트
     #
-    # 업비트 SIGNAL과 동일한 4개 조건
+    # 업비트 SIGNAL과 동일한 5개 조건
     # 거래대금 조건은 포함하지 않음
     # =====================================================
 
@@ -4044,11 +4113,12 @@ def signal_section():
     condition_html = f"""
     <div class="signal-condition">
 
-        <span>체크리스트 4개 조건 모두 통과 시 SIGNAL 선정</span>
+        <span>체크리스트 5개 조건 모두 통과 시 SIGNAL 선정</span>
         <span>당일 변동률 {DAILY_CHANGE_MIN:.2f}% 초과</span>
         <span>최신 RSI {RSI_RANGE_MIN}~{RSI_RANGE_MAX}</span>
         <span>{html.escape(get_ema_condition_text())}</span>
         <span>최근 {DISPLAY_CANDLE_COUNT}개 봉 중 EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 역배열 양봉 1개 이상</span>
+        <span>최근 {DISPLAY_CANDLE_COUNT}개 봉 중 RSI {RSI_SIGNAL_MIN} 상향 돌파 캔들 1개 이상</span>
         <span>시간봉: {pattern_timeframe_label}</span>
 
     </div>
@@ -5600,7 +5670,7 @@ def startup():
     )
 
     log.info(
-        "RSI 70 상향/하향돌파는 카드 표시 전용이며 SIGNAL 선정 조건에서 제외"
+        "RSI 70 상향/하향돌파 카드 색상 조건은 기존 방식 유지"
     )
 
     log.info(
@@ -5628,11 +5698,22 @@ def startup():
     )
 
     log.info(
-        "SIGNAL 및 TOP 리스트에 4개 조건 체크리스트 표시"
+        "최근 %s개 표시 캔들 중 이전 RSI < %s, 현재 RSI >= %s인 상향 돌파 캔들이 최소 1개 있어야 최종 SIGNAL",
+        DISPLAY_CANDLE_COUNT,
+        RSI_SIGNAL_MIN,
+        RSI_SIGNAL_MIN
     )
 
     log.info(
-        "BTC 시황에도 동일한 4개 체크리스트 표시"
+        "RSI 70 상향 돌파 조건은 캔들의 양봉/음봉 여부와 무관하게 판정"
+    )
+
+    log.info(
+        "SIGNAL 및 TOP 리스트에 5개 조건 체크리스트 표시"
+    )
+
+    log.info(
+        "BTC 시황에도 동일한 5개 체크리스트 표시"
     )
 
     log.info(
