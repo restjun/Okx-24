@@ -2227,6 +2227,7 @@ def get_signal_condition_checks(row):
 
 # =========================================================
 # 체크리스트 HTML
+# EMA 사용 시에만 EMA 정배열 항목 표시
 # =========================================================
 
 def signal_checklist_html(row):
@@ -2241,16 +2242,40 @@ def signal_checklist_html(row):
         (
             "rsi_range",
             f"최신 RSI {RSI_RANGE_MIN}~{RSI_RANGE_MAX}"
-        ),
-        (
-            "ema_alignment",
-            get_ema_condition_text()
-        ),
+        )
+    ]
+
+    # -----------------------------------------------------
+    # EMA 설정 중 하나라도 Y인 경우에만
+    # EMA 정배열 판정 항목을 체크리스트에 표시
+    # -----------------------------------------------------
+
+    ema_enabled = any([
+        USE_EMA_5 == "Y",
+        USE_EMA_10 == "Y",
+        USE_EMA_20 == "Y",
+        USE_EMA_50 == "Y"
+    ])
+
+    if ema_enabled:
+
+        checklist_items.append(
+            (
+                "ema_alignment",
+                get_ema_condition_text()
+            )
+        )
+
+    # -----------------------------------------------------
+    # EMA 1/3 역배열 양봉 조건은 기존처럼 항상 표시
+    # -----------------------------------------------------
+
+    checklist_items.append(
         (
             "ema_bearish_bullish_candle",
             f"최근 {DISPLAY_CANDLE_COUNT}개 봉 중 EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 역배열 양봉"
         )
-    ]
+    )
 
     items_html = []
 
@@ -4375,14 +4400,6 @@ section { margin-bottom:11px; }
     bottom:1px;
     height:7px;
     width:9px;
-}
-
-.rsi-condition-label {
-    display:inline-block;
-    margin-left:5px;
-    color:var(--yellow);
-    font-size:var(--fs-tiny);
-    font-weight:800;
 }
 
 /* =====================================================
