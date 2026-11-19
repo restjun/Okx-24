@@ -53,7 +53,7 @@ REQUEST_INTERVAL = 0.08
 RATE_LIMIT_WAIT = 3
 MAX_RETRIES = 20
 
-CANDLE_PATTERN_TIMEFRAME = "4h"
+CANDLE_PATTERN_TIMEFRAME = "1d"
 
 RSI_PERIOD = 14
 
@@ -90,13 +90,13 @@ USE_EMA_50 = "N"
 # SIGNAL 체크리스트 개별 사용 설정
 # =========================================================
 
-USE_SIGNAL_DAILY_CHANGE = "Y"          # 당일 변동률
-USE_SIGNAL_RSI_RANGE = "N"             # 최신 RSI 범위
-USE_SIGNAL_RSI_CROSS = "N"             # RSI 돌파
-USE_SIGNAL_EMA_ALIGNMENT = "N"         # EMA 정배열
-USE_SIGNAL_EMA_BEARISH_BULLISH = "Y"   # EMA 역배열 중 양봉
+USE_SIGNAL_DAILY_CHANGE = "Y"
+USE_SIGNAL_RSI_RANGE = "Y"
+USE_SIGNAL_RSI_CROSS = "N"
+USE_SIGNAL_EMA_ALIGNMENT = "N"
+USE_SIGNAL_EMA_BEARISH_BULLISH = "Y"
 
-SHOW_SIGNAL_CHECKLIST = "Y"            # 체크리스트 화면 표시
+SHOW_SIGNAL_CHECKLIST = "Y"
 
 
 # =========================================================
@@ -104,9 +104,9 @@ SHOW_SIGNAL_CHECKLIST = "Y"            # 체크리스트 화면 표시
 # =========================================================
 
 EMA_CROSS_FAST_PERIOD = 1
-EMA_CROSS_SLOW_PERIOD = 2
+EMA_CROSS_SLOW_PERIOD = 3
 
-DISPLAY_CANDLE_COUNT = 2
+DISPLAY_CANDLE_COUNT = 6
 
 CONSECUTIVE_CANDLE_MIN = 3
 CONSECUTIVE_BULLISH_MIN = 2
@@ -177,8 +177,6 @@ latest_btc_okx_price = None
 latest_btc_daily_periods = []
 latest_btc_daily_change = None
 latest_btc_last_three_patterns = []
-
-# BTC 체크리스트 데이터
 
 latest_btc_rsi_values = []
 
@@ -1485,11 +1483,6 @@ def build_timeframe_periods(df, timeframe, current_price=None):
 
 # =========================================================
 # RSI 돌파 판정
-# 카드 표시용으로 유지
-#
-# RSI50 상향돌파 + 양봉 = RSI70_UP
-# RSI70 하향돌파 + 음봉 = RSI70_DOWN
-# 내부 식별자는 기존 이름 그대로 유지
 # =========================================================
 
 def apply_rsi_cross_signals(periods):
@@ -1651,18 +1644,10 @@ def analyze_signal_candles(market, price):
     if not periods:
         return empty_result
 
-    # =====================================================
-    # EMA 1 / 3 데드크로스 및 역배열 유지 상태
-    # =====================================================
-
     periods = apply_ema_dead_cross_signals(
         periods,
         df["open"]
     )
-
-    # =====================================================
-    # RSI 계산
-    # =====================================================
 
     rsi_series = calculate_rsi(
         df["close"],
@@ -1688,10 +1673,6 @@ def analyze_signal_candles(market, price):
         )
 
     periods = apply_rsi_cross_signals(periods)
-
-    # =====================================================
-    # 최근 화면 표시 캔들 RSI 돌파 검사
-    # =====================================================
 
     last_rsi_periods = periods[-DISPLAY_CANDLE_COUNT:]
 
@@ -1720,10 +1701,6 @@ def analyze_signal_candles(market, price):
 
     rsi_signal = bool(rsi_cross_periods)
 
-    # =====================================================
-    # 최신 RSI 범위 확인
-    # =====================================================
-
     latest_rsi = periods[-1].get("rsi")
 
     rsi_range_pass = False
@@ -1742,10 +1719,6 @@ def analyze_signal_candles(market, price):
 
         except Exception:
             rsi_range_pass = False
-
-    # =====================================================
-    # EMA 5 / 10 / 20 / 50 계산
-    # =====================================================
 
     ema5_series = calculate_ema(
         df["close"],
@@ -1795,10 +1768,6 @@ def analyze_signal_candles(market, price):
         else None
     )
 
-    # =====================================================
-    # 선택한 EMA만 정배열 비교
-    # =====================================================
-
     enabled_emas = []
     enabled_ema_series = []
 
@@ -1835,10 +1804,6 @@ def analyze_signal_candles(market, price):
             enabled_emas[i][1] > enabled_emas[i + 1][1]
             for i in range(len(enabled_emas) - 1)
         )
-
-    # =====================================================
-    # 캔들 패턴 분석
-    # =====================================================
 
     pattern_info = analyze_previous_current_pattern(
         periods
@@ -1885,10 +1850,6 @@ def analyze_signal_candles(market, price):
     pattern_signal = bool(
         current_signal or previous_signal
     )
-
-    # =====================================================
-    # RSI SIGNAL 사유 및 발생 캔들
-    # =====================================================
 
     signal_reason = None
     signal_period = None
@@ -2071,23 +2032,11 @@ def make_row(
 
 # =========================================================
 # SIGNAL 조건 공통 판정
-#
-# 반환값:
-# True  = 조건 통과
-# False = 조건 미통과
-# None  = 데이터 부족 또는 확인 불가
-#
-# SIGNAL 선정과 BTC 체크리스트가
-# 동일한 함수를 사용
 # =========================================================
 
 def get_signal_condition_checks(row):
 
     checks = {}
-
-    # -----------------------------------------------------
-    # 1. 당일 변동률
-    # -----------------------------------------------------
 
     daily_change = row.get("daily_change")
 
@@ -2108,10 +2057,6 @@ def get_signal_condition_checks(row):
         except (TypeError, ValueError):
 
             checks["daily_change"] = None
-
-    # -----------------------------------------------------
-    # 2. 최신 RSI 범위
-    # -----------------------------------------------------
 
     rsi_values = row.get("rsi_values") or []
 
@@ -2143,10 +2088,6 @@ def get_signal_condition_checks(row):
             <= latest_rsi
             <= RSI_RANGE_MAX
         )
-
-    # -----------------------------------------------------
-    # 3. 선택 EMA 정배열
-    # -----------------------------------------------------
 
     enabled_ema_values = []
 
@@ -2187,10 +2128,6 @@ def get_signal_condition_checks(row):
         except (TypeError, ValueError):
 
             checks["ema_alignment"] = None
-
-    # -----------------------------------------------------
-    # 4. 최근 표시 캔들 중 EMA 1/3 역배열 유지 양봉
-    # -----------------------------------------------------
 
     candles = row.get("last_three_patterns")
 
@@ -2241,13 +2178,6 @@ def get_signal_condition_checks(row):
         else:
 
             checks["ema_bearish_bullish_candle"] = None
-
-    # -----------------------------------------------------
-    # 5. 최근 표시 캔들 중 RSI 돌파 발생 여부
-    #
-    # RSI50 상향돌파 + 양봉
-    # RSI70 하향돌파 + 음봉
-    # -----------------------------------------------------
 
     candles = row.get("last_three_patterns") or []
 
@@ -2304,13 +2234,6 @@ def get_signal_condition_checks(row):
 
 # =========================================================
 # 체크리스트 HTML
-#
-# 개별 조건 ON/OFF 및 전체 표시 ON/OFF
-#
-# 수정:
-# 1. N 조건은 HTML 생성 대상에서 제외
-# 2. Y 조건만 표시
-# 3. 표시할 조건이 없으면 체크리스트 전체 숨김
 # =========================================================
 
 def signal_checklist_html(row):
@@ -2338,11 +2261,6 @@ def signal_checklist_html(row):
         )
     ]
 
-    # -----------------------------------------------------
-    # EMA 설정 중 하나라도 Y인 경우에만
-    # EMA 정배열 항목을 체크리스트에 표시
-    # -----------------------------------------------------
-
     ema_enabled = any([
         USE_EMA_5 == "Y",
         USE_EMA_10 == "Y",
@@ -2360,10 +2278,6 @@ def signal_checklist_html(row):
             )
         )
 
-    # -----------------------------------------------------
-    # EMA 역배열 중 양봉 조건
-    # -----------------------------------------------------
-
     checklist_items.append(
         (
             "ema_bearish_bullish_candle",
@@ -2372,21 +2286,11 @@ def signal_checklist_html(row):
         )
     )
 
-    # -----------------------------------------------------
-    # 수정 핵심:
-    # 설정값이 Y인 항목만 남김
-    # -----------------------------------------------------
-
     checklist_items = [
         item
         for item in checklist_items
         if item[2] == "Y"
     ]
-
-    # -----------------------------------------------------
-    # 표시할 항목이 하나도 없으면
-    # 체크리스트 전체를 숨김
-    # -----------------------------------------------------
 
     if not checklist_items:
         return ""
@@ -2593,13 +2497,6 @@ def update_upbit():
 
     latest_upbit_daily_update_time = kst()
     latest_upbit_update_time = latest_upbit_daily_update_time
-
-    # =====================================================
-    # 최종 SIGNAL 선정
-    #
-    # 개별 ON 설정된 조건만 SIGNAL 선정에 적용
-    # 모든 활성화 조건이 True인 경우 SIGNAL 선정
-    # =====================================================
 
     latest_signal_data = []
 
@@ -3204,19 +3101,11 @@ def update_okx_btc():
 
         return
 
-    # =====================================================
-    # 현재 BTC 가격 반영
-    # =====================================================
-
     df = update_current_candle(
         df,
         get_candle_start(datetime.now(KST), timeframe),
         price
     )
-
-    # =====================================================
-    # BTC 최근 캔들 기간
-    # =====================================================
 
     periods = build_timeframe_periods(
         df,
@@ -3226,18 +3115,9 @@ def update_okx_btc():
 
     latest_btc_daily_periods = periods
 
-    # =====================================================
-    # BTC 당일 변동률
-    # 거래대금 사용 안 함
-    # =====================================================
-
     latest_btc_daily_change = calculate_btc_daily_change(
         price
     )
-
-    # =====================================================
-    # BTC RSI 계산
-    # =====================================================
 
     rsi_series = calculate_rsi(
         df["close"],
@@ -3268,10 +3148,6 @@ def update_okx_btc():
         period.get("rsi")
         for period in rsi_periods
     ]
-
-    # =====================================================
-    # BTC EMA 계산
-    # =====================================================
 
     ema5_series = calculate_ema(
         df["close"],
@@ -3321,18 +3197,10 @@ def update_okx_btc():
         ema50_series
     )
 
-    # =====================================================
-    # BTC EMA1 / 3 역배열 상태 계산
-    # =====================================================
-
     btc_pattern_periods = apply_ema_dead_cross_signals(
         periods,
         df["open"]
     )
-
-    # =====================================================
-    # BTC 최근 캔들 패턴 분석
-    # =====================================================
 
     latest_btc_last_three_patterns = (
         analyze_okx_btc_candles(
@@ -3794,34 +3662,17 @@ def last_three_pattern_html(row):
 
     last_three = row.get("last_three_patterns") or []
 
-    missing = max(0, DISPLAY_CANDLE_COUNT - len(last_three))
+    # 실제 데이터가 있는 캔들만 표시
+    visible_items = last_three[-DISPLAY_CANDLE_COUNT:]
 
-    items = []
-
-    for _ in range(missing):
-
-        items.append({
-            "label": "",
-            "patterns": [],
-            "open": None,
-            "high": None,
-            "low": None,
-            "close": None,
-            "change": None,
-            "rsi": None,
-            "rsi_previous": None,
-            "rsi_signal_type": None,
-            "ema_dead_cross": False,
-            "ema_dead_cross_progress": False,
-            "ema_bearish_alignment": False,
-            "active": False
-        })
-
-    items.extend(last_three)
+    if not visible_items:
+        return (
+            '<div class="three-candle-list" '
+            'style="grid-template-columns:repeat(1,minmax(0,1fr));">'
+            '</div>'
+        )
 
     boxes = []
-
-    visible_items = items[-DISPLAY_CANDLE_COUNT:]
 
     for i, item in enumerate(visible_items):
 
@@ -3934,8 +3785,12 @@ def last_three_pattern_html(row):
             """
         )
 
+    # 실제 표시 캔들 수에 맞춰 열 개수를 자동 조정
+    candle_count = max(1, len(visible_items))
+
     return (
-        '<div class="three-candle-list">'
+        f'<div class="three-candle-list" '
+        f'style="grid-template-columns:repeat({candle_count},minmax(0,1fr));">'
         + "".join(boxes)
         + '</div>'
     )
@@ -4036,22 +3891,9 @@ def btc_html():
         btc_row
     )
 
-    # =====================================================
-    # BTC 전용 체크리스트
-    #
-    # 업비트 SIGNAL과 동일한 체크리스트 표시 설정
-    # 거래대금 조건은 포함하지 않음
-    # =====================================================
-
     btc_checklist_html = signal_checklist_html(
         btc_row
     )
-
-    # =====================================================
-    # 수정:
-    # 체크리스트 HTML이 없으면
-    # BTC 체크리스트 제목과 영역도 표시하지 않음
-    # =====================================================
 
     if btc_checklist_html:
 
@@ -4235,10 +4077,6 @@ def signal_section():
             signal_card(row)
             for row in latest_signal_data
         )
-
-    # -----------------------------------------------------
-    # 활성화된 조건만 화면에 표시
-    # -----------------------------------------------------
 
     active_conditions = []
 
@@ -4900,7 +4738,6 @@ line-height:1;
 
 /* =====================================================
 조건 체크리스트
-SIGNAL 카드와 TOP 카드 공통 적용
 ===================================================== */
 
 .signal-checklist {
@@ -5187,6 +5024,11 @@ color:#aab9c6;
 font-size:var(--fs-small);
 font-weight:800;
 margin-bottom:7px;
+}
+
+/* BTC 캔들 제목 아래 설명 문구만 숨김 */
+.btc-candle-heading .rsi-condition-label {
+display:none;
 }
 
 .btc-candle-section .three-candle-item {
