@@ -87,6 +87,19 @@ USE_EMA_50 = "N"
 
 
 # =========================================================
+# SIGNAL 체크리스트 개별 사용 설정
+# =========================================================
+
+USE_SIGNAL_DAILY_CHANGE = "Y"          # 당일 변동률
+USE_SIGNAL_RSI_RANGE = "Y"             # 최신 RSI 범위
+USE_SIGNAL_RSI_CROSS = "Y"             # RSI 돌파
+USE_SIGNAL_EMA_ALIGNMENT = "Y"         # EMA 정배열
+USE_SIGNAL_EMA_BEARISH_BULLISH = "Y"   # EMA 역배열 중 양봉
+
+SHOW_SIGNAL_CHECKLIST = "Y"            # 체크리스트 화면 표시
+
+
+# =========================================================
 # EMA 1 / 3 데드크로스 설정
 # =========================================================
 
@@ -1677,7 +1690,7 @@ def analyze_signal_candles(market, price):
     periods = apply_rsi_cross_signals(periods)
 
     # =====================================================
-    # 최근 화면 표시 12개 캔들만 RSI 돌파 검사
+    # 최근 화면 표시 캔들 RSI 돌파 검사
     # =====================================================
 
     last_rsi_periods = periods[-DISPLAY_CANDLE_COUNT:]
@@ -1709,7 +1722,6 @@ def analyze_signal_candles(market, price):
 
     # =====================================================
     # 최신 RSI 범위 확인
-    # SIGNAL 선정 조건으로 유지
     # =====================================================
 
     latest_rsi = periods[-1].get("rsi")
@@ -1876,7 +1888,6 @@ def analyze_signal_candles(market, price):
 
     # =====================================================
     # RSI SIGNAL 사유 및 발생 캔들
-    # 카드 표시용으로 유지
     # =====================================================
 
     signal_reason = None
@@ -2232,7 +2243,7 @@ def get_signal_condition_checks(row):
             checks["ema_bearish_bullish_candle"] = None
 
     # -----------------------------------------------------
-    # 5. 최근 표시 12개 캔들 중 RSI 돌파 발생 여부
+    # 5. 최근 표시 캔들 중 RSI 돌파 발생 여부
     #
     # RSI50 상향돌파 + 양봉
     # RSI70 하향돌파 + 음봉
@@ -2293,31 +2304,37 @@ def get_signal_condition_checks(row):
 
 # =========================================================
 # 체크리스트 HTML
-# EMA 사용 시에만 EMA 정배열 항목 표시
+# 개별 조건 ON/OFF 및 전체 표시 ON/OFF
 # =========================================================
 
 def signal_checklist_html(row):
+
+    if SHOW_SIGNAL_CHECKLIST != "Y":
+        return ""
 
     checks = get_signal_condition_checks(row)
 
     checklist_items = [
         (
             "daily_change",
-            f"당일 변동률 > {DAILY_CHANGE_MIN:.2f}%"
+            f"당일 변동률 > {DAILY_CHANGE_MIN:.2f}%",
+            USE_SIGNAL_DAILY_CHANGE
         ),
         (
             "rsi_range",
-            f"최신 RSI {RSI_RANGE_MIN}~{RSI_RANGE_MAX}"
+            f"최신 RSI {RSI_RANGE_MIN}~{RSI_RANGE_MAX}",
+            USE_SIGNAL_RSI_RANGE
         ),
         (
             "rsi_cross_signal",
-            f"최근 표시 {DISPLAY_CANDLE_COUNT}개 봉 중 RSI {RSI_SIGNAL_MIN} 상향 또는 RSI {RSI_SIGNAL_MAX} 하향돌파"
+            f"최근 표시 {DISPLAY_CANDLE_COUNT}개 봉 중 RSI {RSI_SIGNAL_MIN} 상향 또는 RSI {RSI_SIGNAL_MAX} 하향돌파",
+            USE_SIGNAL_RSI_CROSS
         )
     ]
 
     # -----------------------------------------------------
     # EMA 설정 중 하나라도 Y인 경우에만
-    # EMA 정배열 판정 항목을 체크리스트에 표시
+    # EMA 정배열 항목을 체크리스트에 표시
     # -----------------------------------------------------
 
     ema_enabled = any([
@@ -2332,44 +2349,58 @@ def signal_checklist_html(row):
         checklist_items.append(
             (
                 "ema_alignment",
-                get_ema_condition_text()
+                get_ema_condition_text(),
+                USE_SIGNAL_EMA_ALIGNMENT
             )
         )
 
     # -----------------------------------------------------
-    # EMA 1/3 역배열 양봉 조건은 기존처럼 항상 표시
+    # EMA 역배열 중 양봉 조건
     # -----------------------------------------------------
 
     checklist_items.append(
         (
             "ema_bearish_bullish_candle",
-            f"최근 {DISPLAY_CANDLE_COUNT}개 봉 중 EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 역배열 양봉"
+            f"최근 {DISPLAY_CANDLE_COUNT}개 봉 중 EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 역배열 양봉",
+            USE_SIGNAL_EMA_BEARISH_BULLISH
         )
     )
 
     items_html = []
 
-    for key, label in checklist_items:
+    for key, label, enabled in checklist_items:
 
-        passed = checks.get(key)
+        # -------------------------------------------------
+        # 미사용 조건
+        # -------------------------------------------------
 
-        if passed is True:
+        if enabled != "Y":
 
-            symbol = "✓"
-            status_class = "check-pass"
-            status_text = "통과"
-
-        elif passed is False:
-
-            symbol = "✕"
-            status_class = "check-fail"
-            status_text = "미통과"
+            symbol = "—"
+            status_class = "check-unknown"
+            status_text = "미사용"
 
         else:
 
-            symbol = "-"
-            status_class = "check-unknown"
-            status_text = "확인불가"
+            passed = checks.get(key)
+
+            if passed is True:
+
+                symbol = "✓"
+                status_class = "check-pass"
+                status_text = "통과"
+
+            elif passed is False:
+
+                symbol = "✕"
+                status_class = "check-fail"
+                status_text = "미통과"
+
+            else:
+
+                symbol = "-"
+                status_class = "check-unknown"
+                status_text = "확인불가"
 
         items_html.append(
             f"""
@@ -2553,11 +2584,28 @@ def update_upbit():
     # =====================================================
     # 최종 SIGNAL 선정
     #
-    # 공통 체크리스트 판정 함수를 사용
-    # 5개 조건이 모두 True인 경우에만 SIGNAL 선정
+    # 개별 ON 설정된 조건만 SIGNAL 선정에 적용
+    # 모든 활성화 조건이 True인 경우 SIGNAL 선정
     # =====================================================
 
     latest_signal_data = []
+
+    signal_condition_keys = []
+
+    if USE_SIGNAL_DAILY_CHANGE == "Y":
+        signal_condition_keys.append("daily_change")
+
+    if USE_SIGNAL_RSI_RANGE == "Y":
+        signal_condition_keys.append("rsi_range")
+
+    if USE_SIGNAL_EMA_ALIGNMENT == "Y":
+        signal_condition_keys.append("ema_alignment")
+
+    if USE_SIGNAL_EMA_BEARISH_BULLISH == "Y":
+        signal_condition_keys.append("ema_bearish_bullish_candle")
+
+    if USE_SIGNAL_RSI_CROSS == "Y":
+        signal_condition_keys.append("rsi_cross_signal")
 
     for row in rows:
 
@@ -2565,13 +2613,7 @@ def update_upbit():
 
         if all(
             checks.get(key) is True
-            for key in (
-                "daily_change",
-                "rsi_range",
-                "ema_alignment",
-                "ema_bearish_bullish_candle",
-                "rsi_cross_signal"
-            )
+            for key in signal_condition_keys
         ):
 
             latest_signal_data.append(row)
@@ -2591,19 +2633,48 @@ def update_upbit():
     ):
         row["signal_rank"] = signal_rank
 
+    active_condition_names = []
+
+    if USE_SIGNAL_DAILY_CHANGE == "Y":
+        active_condition_names.append(
+            f"당일 변동률>{DAILY_CHANGE_MIN}%"
+        )
+
+    if USE_SIGNAL_RSI_RANGE == "Y":
+        active_condition_names.append(
+            f"최신 RSI {RSI_RANGE_MIN}~{RSI_RANGE_MAX}"
+        )
+
+    if USE_SIGNAL_EMA_ALIGNMENT == "Y":
+        active_condition_names.append(
+            get_ema_condition_text()
+        )
+
+    if USE_SIGNAL_EMA_BEARISH_BULLISH == "Y":
+        active_condition_names.append(
+            f"최근 {DISPLAY_CANDLE_COUNT}개 봉 중 EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 역배열 양봉"
+        )
+
+    if USE_SIGNAL_RSI_CROSS == "Y":
+        active_condition_names.append(
+            f"최근 {DISPLAY_CANDLE_COUNT}개 봉 중 RSI{RSI_SIGNAL_MIN} 상향 또는 RSI{RSI_SIGNAL_MAX} 하향돌파"
+        )
+
+    if active_condition_names:
+
+        signal_condition_log = " AND ".join(
+            active_condition_names
+        )
+
+    else:
+
+        signal_condition_log = "활성화된 SIGNAL 조건 없음 (TOP 종목 전체 선정)"
+
     log.info(
-        "UPBIT | TOP%s | "
-        "SIGNAL=당일 변동률>%s%% AND 최신 RSI %s~%s AND %s "
-        "AND 최근 %s개 표시 캔들 중 EMA1/3 역배열 유지 양봉 1개 이상 "
-        "AND 최근 %s개 표시 캔들 중 RSI50 상향 또는 RSI70 하향돌파 | "
+        "UPBIT | TOP%s | SIGNAL 조건=%s | "
         "시간봉=%s | SIGNAL=%s | 정렬=24H 거래대금 순",
         TOP_N,
-        DAILY_CHANGE_MIN,
-        RSI_RANGE_MIN,
-        RSI_RANGE_MAX,
-        get_ema_condition_text(),
-        DISPLAY_CANDLE_COUNT,
-        DISPLAY_CANDLE_COUNT,
+        signal_condition_log,
         CANDLE_PATTERN_TIMEFRAME,
         len(latest_signal_data)
     )
@@ -3153,7 +3224,6 @@ def update_okx_btc():
 
     # =====================================================
     # BTC RSI 계산
-    # 최근 표시 12개 캔들 기준
     # =====================================================
 
     rsi_series = calculate_rsi(
@@ -3956,7 +4026,7 @@ def btc_html():
     # =====================================================
     # BTC 전용 체크리스트
     #
-    # 업비트 SIGNAL과 동일한 조건
+    # 업비트 SIGNAL과 동일한 체크리스트 표시 설정
     # 거래대금 조건은 포함하지 않음
     # =====================================================
 
@@ -4137,19 +4207,66 @@ def signal_section():
             for row in latest_signal_data
         )
 
-    condition_html = f"""
-    <div class="signal-condition">
+    # -----------------------------------------------------
+    # 활성화된 조건만 화면에 표시
+    # -----------------------------------------------------
 
-        <span>체크리스트 5개 조건 모두 통과 시 SIGNAL 선정</span>
-        <span>당일 변동률 {DAILY_CHANGE_MIN:.2f}% 초과</span>
-        <span>최신 RSI {RSI_RANGE_MIN}~{RSI_RANGE_MAX}</span>
-        <span>{html.escape(get_ema_condition_text())}</span>
-        <span>최근 {DISPLAY_CANDLE_COUNT}개 봉 중 EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 역배열 양봉 1개 이상</span>
-        <span>최근 {DISPLAY_CANDLE_COUNT}개 봉 중 RSI50 상향 또는 RSI70 하향돌파</span>
-        <span>시간봉: {pattern_timeframe_label}</span>
+    active_conditions = []
 
-    </div>
-    """
+    if USE_SIGNAL_DAILY_CHANGE == "Y":
+        active_conditions.append(
+            f"당일 변동률 {DAILY_CHANGE_MIN:.2f}% 초과"
+        )
+
+    if USE_SIGNAL_RSI_RANGE == "Y":
+        active_conditions.append(
+            f"최신 RSI {RSI_RANGE_MIN}~{RSI_RANGE_MAX}"
+        )
+
+    if USE_SIGNAL_EMA_ALIGNMENT == "Y":
+        active_conditions.append(
+            get_ema_condition_text()
+        )
+
+    if USE_SIGNAL_EMA_BEARISH_BULLISH == "Y":
+        active_conditions.append(
+            f"최근 {DISPLAY_CANDLE_COUNT}개 봉 중 EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 역배열 양봉 1개 이상"
+        )
+
+    if USE_SIGNAL_RSI_CROSS == "Y":
+        active_conditions.append(
+            f"최근 {DISPLAY_CANDLE_COUNT}개 봉 중 RSI{RSI_SIGNAL_MIN} 상향 또는 RSI{RSI_SIGNAL_MAX} 하향돌파"
+        )
+
+    condition_items = []
+
+    if active_conditions:
+
+        condition_items.append(
+            "<span>활성화된 조건 모두 통과 시 SIGNAL 선정</span>"
+        )
+
+        for condition in active_conditions:
+
+            condition_items.append(
+                f"<span>{html.escape(condition)}</span>"
+            )
+
+    else:
+
+        condition_items.append(
+            "<span>활성화된 SIGNAL 조건 없음 (TOP 종목 전체 선정)</span>"
+        )
+
+    condition_items.append(
+        f"<span>시간봉: {pattern_timeframe_label}</span>"
+    )
+
+    condition_html = (
+        '<div class="signal-condition">'
+        + "".join(condition_items)
+        + '</div>'
+    )
 
     return f"""
     <section class="signal-panel">
@@ -5613,19 +5730,37 @@ def startup():
     )
 
     log.info(
-        "SIGNAL 당일 변동률 조건: %s%% 초과",
+        "SIGNAL 당일 변동률 조건 사용 여부=%s | 기준=%s%% 초과",
+        USE_SIGNAL_DAILY_CHANGE,
         DAILY_CHANGE_MIN
     )
 
     log.info(
-        "SIGNAL 최신 RSI 허용 범위: %s~%s",
+        "SIGNAL 최신 RSI 범위 조건 사용 여부=%s | 범위=%s~%s",
+        USE_SIGNAL_RSI_RANGE,
         RSI_RANGE_MIN,
         RSI_RANGE_MAX
     )
 
     log.info(
-        "SIGNAL EMA 조건: %s",
+        "SIGNAL EMA 정배열 조건 사용 여부=%s | 조건=%s",
+        USE_SIGNAL_EMA_ALIGNMENT,
         get_ema_condition_text()
+    )
+
+    log.info(
+        "SIGNAL EMA 역배열 중 양봉 조건 사용 여부=%s",
+        USE_SIGNAL_EMA_BEARISH_BULLISH
+    )
+
+    log.info(
+        "SIGNAL RSI 돌파 조건 사용 여부=%s",
+        USE_SIGNAL_RSI_CROSS
+    )
+
+    log.info(
+        "SIGNAL 체크리스트 화면 표시 여부=%s",
+        SHOW_SIGNAL_CHECKLIST
     )
 
     log.info(
@@ -5706,32 +5841,26 @@ def startup():
     )
 
     log.info(
-        "최신 RSI가 %s~%s 범위에 있어야 최종 SIGNAL",
-        RSI_RANGE_MIN,
-        RSI_RANGE_MAX
+        "SIGNAL 선정은 개별 활성화된 조건만 적용"
     )
 
     log.info(
-        "선택된 EMA 정배열까지 모두 충족해야 최종 SIGNAL: %s",
-        get_ema_condition_text()
-    )
-
-    log.info(
-        "최근 %s개 표시 캔들 중 EMA1/3 역배열 유지 양봉(노란색)이 최소 1개 있어야 최종 SIGNAL",
+        "최근 %s개 표시 캔들 중 EMA1/3 역배열 유지 양봉 조건은 설정에 따라 적용",
         DISPLAY_CANDLE_COUNT
     )
 
     log.info(
-        "최근 %s개 표시 캔들 중 RSI50 상향 또는 RSI70 하향돌파가 있어야 최종 SIGNAL",
+        "최근 %s개 표시 캔들 중 RSI50 상향 또는 RSI70 하향돌파 조건은 설정에 따라 적용",
         DISPLAY_CANDLE_COUNT
     )
 
     log.info(
-        "SIGNAL 및 TOP 리스트에 5개 조건 체크리스트 표시",
+        "SIGNAL 및 TOP 리스트 체크리스트 화면 표시 설정=%s",
+        SHOW_SIGNAL_CHECKLIST
     )
 
     log.info(
-        "BTC 시황에도 동일한 체크리스트 표시"
+        "BTC 시황에도 동일한 체크리스트 표시 설정 적용"
     )
 
     log.info(
@@ -5756,7 +5885,7 @@ def startup():
     )
 
     log.info(
-        "체크리스트 통과=초록색 ✓ / 미통과=빨간색 ✕ / 데이터 부족=회색 -"
+        "체크리스트 통과=초록색 ✓ / 미통과=빨간색 ✕ / 데이터 부족=회색 - / 미사용=—"
     )
 
     log.info(
