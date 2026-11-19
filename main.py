@@ -91,7 +91,7 @@ USE_EMA_50 = "N"
 # =========================================================
 
 USE_SIGNAL_DAILY_CHANGE = "Y"
-USE_SIGNAL_RSI_RANGE = "Y"
+USE_SIGNAL_RSI_RANGE = "N"
 USE_SIGNAL_RSI_CROSS = "N"
 USE_SIGNAL_EMA_ALIGNMENT = "N"
 USE_SIGNAL_EMA_BEARISH_BULLISH = "Y"
