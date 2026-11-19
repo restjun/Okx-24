@@ -2925,6 +2925,11 @@ def candle_change_html(value):
 
 # =========================================================
 # RSI 표시 HTML
+# RSI 수치 기준으로만 색상 적용
+# 50 이하: 빨강
+# 50 초과 70 미만: 녹색
+# 70 이상: 노랑
+# RSI 돌파 텍스트는 기존대로 유지
 # =========================================================
 
 def rsi_html(value, signal_type=None):
@@ -2946,25 +2951,26 @@ def rsi_html(value, signal_type=None):
             '</div>'
         )
 
+    if value <= 50:
+        color_class = "rsi-low"
+
+    elif value < 70:
+        color_class = "rsi-middle"
+
+    else:
+        color_class = "rsi-high"
+
+    signal_text = ""
+
     if signal_type == "RSI70_UP":
+        signal_text = " ↑70"
 
-        return (
-            '<div class="rsi-value rsi-cross-up">'
-            f'RSI {value:.1f} ↑70'
-            '</div>'
-        )
-
-    if signal_type == "RSI70_DOWN":
-
-        return (
-            '<div class="rsi-value rsi-cross-down">'
-            f'RSI {value:.1f} ↓70'
-            '</div>'
-        )
+    elif signal_type == "RSI70_DOWN":
+        signal_text = " ↓70"
 
     return (
-        '<div class="rsi-value">'
-        f'RSI {value:.1f}'
+        f'<div class="rsi-value {color_class}">'
+        f'RSI {value:.1f}{signal_text}'
         '</div>'
     )
 
@@ -3955,6 +3961,11 @@ section { margin-bottom:11px; }
     font-weight:800;
 }
 
+/* =====================================================
+   RSI 수치 색상
+   RSI 값에만 적용
+   ===================================================== */
+
 .rsi-value {
     width:100%;
     min-height:18px;
@@ -3972,23 +3983,37 @@ section { margin-bottom:11px; }
     white-space:nowrap;
 }
 
-.rsi-value.rsi-cross-up {
-    color:#38e6a0;
-    background:rgba(56,217,150,.16);
-    border:1px solid #38d996;
-}
-
-.rsi-value.rsi-cross-down {
-    color:#ff7584;
+/* RSI 50 이하: 빨강 */
+.rsi-value.rsi-low {
+    color:#ff6575;
     background:rgba(255,101,117,.16);
     border:1px solid #ff6575;
 }
 
+/* RSI 50 초과 70 미만: 녹색 */
+.rsi-value.rsi-middle {
+    color:#38d996;
+    background:rgba(56,217,150,.16);
+    border:1px solid #38d996;
+}
+
+/* RSI 70 이상: 노랑 */
+.rsi-value.rsi-high {
+    color:#e8c56e;
+    background:rgba(232,197,110,.16);
+    border:1px solid #e8c56e;
+}
+
+/* RSI 데이터 없음 */
 .rsi-value.rsi-unavailable {
     color:#71808c;
     background:#141e27;
     border-color:#26343f;
 }
+
+/* =====================================================
+   기존 RSI 돌파 카드 강조 유지
+   ===================================================== */
 
 .three-candle-item.rsi-cross-up-card {
     background:rgba(56,217,150,.16);
@@ -5001,6 +5026,14 @@ def startup():
 
     log.info(
         "RSI 70 상향/하향돌파는 카드 표시 전용이며 SIGNAL 선정 조건에서 제외"
+    )
+
+    log.info(
+        "RSI 수치 색상: 50 이하 빨강 / 50 초과 70 미만 녹색 / 70 이상 노랑"
+    )
+
+    log.info(
+        "RSI 수치 색상은 RSI 표시 칸에만 적용"
     )
 
     log.info(
