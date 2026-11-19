@@ -1,3 +1,4 @@
+
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
@@ -164,6 +165,14 @@ latest_btc_okx_price = None
 latest_btc_daily_periods = []
 latest_btc_daily_change = None
 latest_btc_last_three_patterns = []
+
+# BTC 체크리스트 데이터
+latest_btc_rsi_values = []
+
+latest_btc_ema5 = None
+latest_btc_ema10 = None
+latest_btc_ema20 = None
+latest_btc_ema50 = None
 
 
 # =========================================================
@@ -2049,8 +2058,8 @@ def make_row(
 # False = 조건 미통과
 # None  = 데이터 부족 또는 확인 불가
 #
-# SIGNAL 선정과 화면 체크리스트가
-# 반드시 이 함수를 함께 사용하도록 구성
+# SIGNAL 선정과 BTC 체크리스트가
+# 동일한 함수를 사용
 # =========================================================
 
 def get_signal_condition_checks(row):
@@ -2136,8 +2145,6 @@ def get_signal_condition_checks(row):
 
     if not enabled_ema_values:
 
-        # 원래 SIGNAL 로직과 동일하게
-        # EMA 조건을 모두 끈 경우 정배열 통과
         checks["ema_alignment"] = True
 
     elif any(value is None for value in enabled_ema_values):
@@ -2983,6 +2990,13 @@ def update_okx_btc():
     global latest_btc_daily_change
     global latest_btc_last_three_patterns
 
+    global latest_btc_rsi_values
+
+    global latest_btc_ema5
+    global latest_btc_ema10
+    global latest_btc_ema20
+    global latest_btc_ema50
+
     price = okx_price()
 
     latest_btc_okx_price = price
@@ -3000,13 +3014,28 @@ def update_okx_btc():
         latest_btc_daily_change = None
         latest_btc_last_three_patterns = []
 
+        latest_btc_rsi_values = []
+
+        latest_btc_ema5 = None
+        latest_btc_ema10 = None
+        latest_btc_ema20 = None
+        latest_btc_ema50 = None
+
         return
+
+    # =====================================================
+    # 현재 BTC 가격 반영
+    # =====================================================
 
     df = update_current_candle(
         df,
         get_candle_start(datetime.now(KST), timeframe),
         price
     )
+
+    # =====================================================
+    # BTC 최근 캔들 기간
+    # =====================================================
 
     periods = build_timeframe_periods(
         df,
@@ -3016,9 +3045,115 @@ def update_okx_btc():
 
     latest_btc_daily_periods = periods
 
+    # =====================================================
+    # BTC 당일 변동률
+    # 거래대금 사용 안 함
+    # =====================================================
+
     latest_btc_daily_change = calculate_btc_daily_change(
         price
     )
+
+    # =====================================================
+    # BTC RSI 계산
+    # =====================================================
+
+    rsi_series = calculate_rsi(
+        df["close"],
+        RSI_PERIOD
+    )
+
+    rsi_periods = periods[-RSI_CHECK_CANDLES:]
+
+    latest_btc_rsi_values = []
+
+    for i, period in enumerate(periods):
+
+        if i < len(rsi_series):
+
+            value = rsi_series.iloc[i]
+
+            period["rsi"] = (
+                float(value)
+                if pd.notna(value)
+                else None
+            )
+
+        else:
+
+            period["rsi"] = None
+
+    rsi_periods = periods[-RSI_CHECK_CANDLES:]
+
+    latest_btc_rsi_values = [
+        period.get("rsi")
+        for period in rsi_periods
+    ]
+
+    # =====================================================
+    # BTC EMA 계산
+    # =====================================================
+
+    ema5_series = calculate_ema(
+        df["close"],
+        EMA_FAST_PERIOD
+    )
+
+    ema10_series = calculate_ema(
+        df["close"],
+        EMA_MIDDLE_PERIOD
+    )
+
+    ema20_series = calculate_ema(
+        df["close"],
+        EMA_SLOW_PERIOD
+    )
+
+    ema50_series = calculate_ema(
+        df["close"],
+        EMA_LONG_PERIOD
+    )
+
+    def get_latest_ema(series):
+
+        if len(series) == 0:
+            return None
+
+        value = series.iloc[-1]
+
+        if pd.isna(value):
+            return None
+
+        return float(value)
+
+    latest_btc_ema5 = get_latest_ema(
+        ema5_series
+    )
+
+    latest_btc_ema10 = get_latest_ema(
+        ema10_series
+    )
+
+    latest_btc_ema20 = get_latest_ema(
+        ema20_series
+    )
+
+    latest_btc_ema50 = get_latest_ema(
+        ema50_series
+    )
+
+    # =====================================================
+    # BTC EMA1 / 3 역배열 상태 계산
+    # =====================================================
+
+    btc_pattern_periods = apply_ema_dead_cross_signals(
+        periods,
+        df["open"]
+    )
+
+    # =====================================================
+    # BTC 최근 캔들 패턴 분석
+    # =====================================================
 
     latest_btc_last_three_patterns = (
         analyze_okx_btc_candles(
@@ -3030,10 +3165,16 @@ def update_okx_btc():
 
     log.info(
         "BTC OKX | 가격=%s | 캔들시간봉=%s | "
-        "당일 변동률 기준=KST 09:00 | 변동률=%s",
+        "당일 변동률=%s | RSI=%s | "
+        "EMA5=%s | EMA10=%s | EMA20=%s | EMA50=%s",
         price,
         get_timeframe_label(timeframe),
-        latest_btc_daily_change
+        latest_btc_daily_change,
+        latest_btc_rsi_values[-1] if latest_btc_rsi_values else None,
+        latest_btc_ema5,
+        latest_btc_ema10,
+        latest_btc_ema20,
+        latest_btc_ema50
     )
 
 
@@ -3701,10 +3842,29 @@ def pattern_badges_html(row):
 def btc_html():
 
     btc_row = {
+        "daily_change": latest_btc_daily_change,
+        "rsi_values": latest_btc_rsi_values,
+
+        "ema5": latest_btc_ema5,
+        "ema10": latest_btc_ema10,
+        "ema20": latest_btc_ema20,
+        "ema50": latest_btc_ema50,
+
         "last_three_patterns": latest_btc_last_three_patterns
     }
 
     three_pattern_html = last_three_pattern_html(
+        btc_row
+    )
+
+    # =====================================================
+    # BTC 전용 체크리스트
+    #
+    # 업비트 SIGNAL과 동일한 4개 조건
+    # 거래대금 조건은 포함하지 않음
+    # =====================================================
+
+    btc_checklist_html = signal_checklist_html(
         btc_row
     )
 
@@ -3742,6 +3902,17 @@ def btc_html():
             <div class="btc-change">
                 {fmt_change(latest_btc_daily_change)}
             </div>
+
+        </div>
+
+        <div class="btc-checklist-section">
+
+            <div class="btc-checklist-heading">
+                BTC 시황 체크리스트
+                <span>거래대금 조건 제외</span>
+            </div>
+
+            {btc_checklist_html}
 
         </div>
 
@@ -4585,6 +4756,53 @@ section { margin-bottom:11px; }
     border:1px solid rgba(131,145,156,.3);
 }
 
+/* =====================================================
+   BTC 체크리스트 전용 디자인
+   ===================================================== */
+
+.btc-checklist-section {
+    margin-top:10px;
+    padding-top:9px;
+    border-top:1px solid #304252;
+}
+
+.btc-checklist-heading {
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:6px;
+    margin-bottom:7px;
+    color:#e2eaf1;
+    font-size:var(--fs-small);
+    font-weight:900;
+}
+
+.btc-checklist-heading > span {
+    color:var(--yellow);
+    font-size:var(--fs-tiny);
+    font-weight:800;
+}
+
+.btc-checklist-section .signal-checklist {
+    padding:0;
+    background:transparent;
+    border-top:0;
+    border-bottom:0;
+}
+
+.btc-checklist-section .checklist-heading {
+    display:none;
+}
+
+.btc-checklist-section .checklist-item {
+    background:rgba(12,23,32,.8);
+    border-color:#304252;
+}
+
+.btc-checklist-section .checklist-label {
+    color:#c5d1db;
+}
+
 .signal-type-list,
 .pattern-badge-list {
     display:flex;
@@ -5414,7 +5632,28 @@ def startup():
     )
 
     log.info(
-        "체크리스트와 SIGNAL 선정은 동일한 공통 판정 함수 사용"
+        "BTC 시황에도 동일한 4개 체크리스트 표시"
+    )
+
+    log.info(
+        "BTC 체크리스트는 OKX BTC 데이터 기준"
+    )
+
+    log.info(
+        "BTC 체크리스트 거래대금 조건 제외"
+    )
+
+    log.info(
+        "BTC 체크리스트 당일 변동률은 KST 09:00 기준"
+    )
+
+    log.info(
+        "BTC 체크리스트 RSI 및 EMA는 %s 기준",
+        get_timeframe_label(CANDLE_PATTERN_TIMEFRAME)
+    )
+
+    log.info(
+        "BTC 체크리스트 판정은 업비트 SIGNAL 공통 판정 함수 사용"
     )
 
     log.info(
