@@ -92,8 +92,8 @@ USE_EMA_50 = "N"
 
 USE_SIGNAL_DAILY_CHANGE = "Y"          # 당일 변동률
 USE_SIGNAL_RSI_RANGE = "Y"             # 최신 RSI 범위
-USE_SIGNAL_RSI_CROSS = "Y"             # RSI 돌파
-USE_SIGNAL_EMA_ALIGNMENT = "Y"         # EMA 정배열
+USE_SIGNAL_RSI_CROSS = "N"             # RSI 돌파
+USE_SIGNAL_EMA_ALIGNMENT = "N"         # EMA 정배열
 USE_SIGNAL_EMA_BEARISH_BULLISH = "Y"   # EMA 역배열 중 양봉
 
 SHOW_SIGNAL_CHECKLIST = "Y"            # 체크리스트 화면 표시
