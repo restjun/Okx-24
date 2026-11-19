@@ -2304,7 +2304,13 @@ def get_signal_condition_checks(row):
 
 # =========================================================
 # 체크리스트 HTML
+#
 # 개별 조건 ON/OFF 및 전체 표시 ON/OFF
+#
+# 수정:
+# 1. N 조건은 HTML 생성 대상에서 제외
+# 2. Y 조건만 표시
+# 3. 표시할 조건이 없으면 체크리스트 전체 숨김
 # =========================================================
 
 def signal_checklist_html(row):
@@ -2366,41 +2372,48 @@ def signal_checklist_html(row):
         )
     )
 
+    # -----------------------------------------------------
+    # 수정 핵심:
+    # 설정값이 Y인 항목만 남김
+    # -----------------------------------------------------
+
+    checklist_items = [
+        item
+        for item in checklist_items
+        if item[2] == "Y"
+    ]
+
+    # -----------------------------------------------------
+    # 표시할 항목이 하나도 없으면
+    # 체크리스트 전체를 숨김
+    # -----------------------------------------------------
+
+    if not checklist_items:
+        return ""
+
     items_html = []
 
     for key, label, enabled in checklist_items:
 
-        # -------------------------------------------------
-        # 미사용 조건
-        # -------------------------------------------------
+        passed = checks.get(key)
 
-        if enabled != "Y":
+        if passed is True:
 
-            symbol = "—"
-            status_class = "check-unknown"
-            status_text = "미사용"
+            symbol = "✓"
+            status_class = "check-pass"
+            status_text = "통과"
+
+        elif passed is False:
+
+            symbol = "✕"
+            status_class = "check-fail"
+            status_text = "미통과"
 
         else:
 
-            passed = checks.get(key)
-
-            if passed is True:
-
-                symbol = "✓"
-                status_class = "check-pass"
-                status_text = "통과"
-
-            elif passed is False:
-
-                symbol = "✕"
-                status_class = "check-fail"
-                status_text = "미통과"
-
-            else:
-
-                symbol = "-"
-                status_class = "check-unknown"
-                status_text = "확인불가"
+            symbol = "-"
+            status_class = "check-unknown"
+            status_text = "확인불가"
 
         items_html.append(
             f"""
@@ -4034,6 +4047,31 @@ def btc_html():
         btc_row
     )
 
+    # =====================================================
+    # 수정:
+    # 체크리스트 HTML이 없으면
+    # BTC 체크리스트 제목과 영역도 표시하지 않음
+    # =====================================================
+
+    if btc_checklist_html:
+
+        btc_checklist_section_html = f"""
+        <div class="btc-checklist-section">
+
+            <div class="btc-checklist-heading">
+                BTC 시황 체크리스트
+                <span>거래대금 조건 제외</span>
+            </div>
+
+            {btc_checklist_html}
+
+        </div>
+        """
+
+    else:
+
+        btc_checklist_section_html = ""
+
     timeframe_label = get_timeframe_label(
         CANDLE_PATTERN_TIMEFRAME
     )
@@ -4071,16 +4109,7 @@ def btc_html():
 
         </div>
 
-        <div class="btc-checklist-section">
-
-            <div class="btc-checklist-heading">
-                BTC 시황 체크리스트
-                <span>거래대금 조건 제외</span>
-            </div>
-
-            {btc_checklist_html}
-
-        </div>
+        {btc_checklist_section_html}
 
         <div class="btc-candle-section">
 
@@ -5885,7 +5914,11 @@ def startup():
     )
 
     log.info(
-        "체크리스트 통과=초록색 ✓ / 미통과=빨간색 ✕ / 데이터 부족=회색 - / 미사용=—"
+        "체크리스트는 Y로 설정된 조건만 표시하며, 표시할 조건이 없으면 영역 전체 숨김"
+    )
+
+    log.info(
+        "체크리스트 통과=초록색 ✓ / 미통과=빨간색 ✕ / 데이터 부족=회색 -"
     )
 
     log.info(
