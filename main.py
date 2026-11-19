@@ -63,8 +63,8 @@ RSI_PERIOD = 14
 # RSI 설정
 # =========================================================
 
-RSI_SIGNAL_MIN = 70
-RSI_SIGNAL_MAX = 70
+RSI_SIGNAL_MIN = 50
+RSI_SIGNAL_MAX = 50
 
 RSI_RANGE_MIN = 50
 RSI_RANGE_MAX = 100
@@ -84,7 +84,7 @@ EMA_LONG_PERIOD = 50
 USE_EMA_5 = "Y"
 USE_EMA_10 = "Y"
 USE_EMA_20 = "Y"
-USE_EMA_50 = "Y"
+USE_EMA_50 = "N"
 
 
 # =========================================================
