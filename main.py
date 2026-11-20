@@ -38,7 +38,7 @@ UTC = ZoneInfo("UTC")
 # 사용자 설정
 # =========================================================
 
-TOP_N = 10
+TOP_N = 20
 SHOW_TOP_LIST = "N"
 UPDATE_MINUTES = 1
 
@@ -53,7 +53,7 @@ REQUEST_INTERVAL = 0.08
 RATE_LIMIT_WAIT = 3
 MAX_RETRIES = 20
 
-CANDLE_PATTERN_TIMEFRAME = "1h"
+CANDLE_PATTERN_TIMEFRAME = "1d"
 
 RSI_PERIOD = 14
 
@@ -62,11 +62,11 @@ RSI_PERIOD = 14
 # RSI 설정
 # =========================================================
 
-RSI_SIGNAL_MIN = 50
+RSI_SIGNAL_MIN = 30
 RSI_SIGNAL_MAX = 70
 
-RSI_RANGE_MIN = 50
-RSI_RANGE_MAX = 100
+RSI_RANGE_MIN = 30
+RSI_RANGE_MAX = 70
 
 RSI_CHECK_CANDLES = 14
 
@@ -87,13 +87,26 @@ USE_EMA_50 = "N"
 
 
 # =========================================================
+# SIGNAL 체크리스트 개별 사용 설정
+# =========================================================
+
+USE_SIGNAL_DAILY_CHANGE = "Y"
+USE_SIGNAL_RSI_RANGE = "Y"
+USE_SIGNAL_RSI_CROSS = "N"
+USE_SIGNAL_EMA_ALIGNMENT = "N"
+USE_SIGNAL_EMA_BEARISH_BULLISH = "Y"
+
+SHOW_SIGNAL_CHECKLIST = "Y"
+
+
+# =========================================================
 # EMA 1 / 3 데드크로스 설정
 # =========================================================
 
 EMA_CROSS_FAST_PERIOD = 1
 EMA_CROSS_SLOW_PERIOD = 3
 
-DISPLAY_CANDLE_COUNT = 12
+DISPLAY_CANDLE_COUNT = 6
 
 CONSECUTIVE_CANDLE_MIN = 3
 CONSECUTIVE_BULLISH_MIN = 2
@@ -165,7 +178,6 @@ latest_btc_daily_periods = []
 latest_btc_daily_change = None
 latest_btc_last_three_patterns = []
 
-# BTC 체크리스트 데이터
 latest_btc_rsi_values = []
 
 latest_btc_ema5 = None
@@ -200,8 +212,8 @@ def get_cached_dataframe(market, timeframe, loader):
     with candle_cache_lock:
         cached = candle_cache.get(key)
 
-        if cached is not None:
-            return cached.copy(deep=True)
+    if cached is not None:
+        return cached.copy(deep=True)
 
     df = loader()
 
@@ -1471,7 +1483,6 @@ def build_timeframe_periods(df, timeframe, current_price=None):
 
 # =========================================================
 # RSI 돌파 판정
-# 카드 표시용으로 유지
 # =========================================================
 
 def apply_rsi_cross_signals(periods):
@@ -1633,18 +1644,10 @@ def analyze_signal_candles(market, price):
     if not periods:
         return empty_result
 
-    # =====================================================
-    # EMA 1 / 3 데드크로스 및 역배열 유지 상태
-    # =====================================================
-
     periods = apply_ema_dead_cross_signals(
         periods,
         df["open"]
     )
-
-    # =====================================================
-    # RSI 계산
-    # =====================================================
 
     rsi_series = calculate_rsi(
         df["close"],
@@ -1671,7 +1674,7 @@ def analyze_signal_candles(market, price):
 
     periods = apply_rsi_cross_signals(periods)
 
-    last_rsi_periods = periods[-RSI_CHECK_CANDLES:]
+    last_rsi_periods = periods[-DISPLAY_CANDLE_COUNT:]
 
     rsi_values = [
         period.get("rsi")
@@ -1698,11 +1701,6 @@ def analyze_signal_candles(market, price):
 
     rsi_signal = bool(rsi_cross_periods)
 
-    # =====================================================
-    # 최신 RSI 범위 확인
-    # SIGNAL 선정 조건으로 유지
-    # =====================================================
-
     latest_rsi = periods[-1].get("rsi")
 
     rsi_range_pass = False
@@ -1721,10 +1719,6 @@ def analyze_signal_candles(market, price):
 
         except Exception:
             rsi_range_pass = False
-
-    # =====================================================
-    # EMA 5 / 10 / 20 / 50 계산
-    # =====================================================
 
     ema5_series = calculate_ema(
         df["close"],
@@ -1774,10 +1768,6 @@ def analyze_signal_candles(market, price):
         else None
     )
 
-    # =====================================================
-    # 선택한 EMA만 정배열 비교
-    # =====================================================
-
     enabled_emas = []
     enabled_ema_series = []
 
@@ -1814,10 +1804,6 @@ def analyze_signal_candles(market, price):
             enabled_emas[i][1] > enabled_emas[i + 1][1]
             for i in range(len(enabled_emas) - 1)
         )
-
-    # =====================================================
-    # 캔들 패턴 분석
-    # =====================================================
 
     pattern_info = analyze_previous_current_pattern(
         periods
@@ -1864,11 +1850,6 @@ def analyze_signal_candles(market, price):
     pattern_signal = bool(
         current_signal or previous_signal
     )
-
-    # =====================================================
-    # RSI SIGNAL 사유 및 발생 캔들
-    # 카드 표시용으로 유지
-    # =====================================================
 
     signal_reason = None
     signal_period = None
@@ -2051,23 +2032,11 @@ def make_row(
 
 # =========================================================
 # SIGNAL 조건 공통 판정
-#
-# 반환값:
-# True  = 조건 통과
-# False = 조건 미통과
-# None  = 데이터 부족 또는 확인 불가
-#
-# SIGNAL 선정과 BTC 체크리스트가
-# 동일한 함수를 사용
 # =========================================================
 
 def get_signal_condition_checks(row):
 
     checks = {}
-
-    # -----------------------------------------------------
-    # 1. 당일 변동률
-    # -----------------------------------------------------
 
     daily_change = row.get("daily_change")
 
@@ -2088,10 +2057,6 @@ def get_signal_condition_checks(row):
         except (TypeError, ValueError):
 
             checks["daily_change"] = None
-
-    # -----------------------------------------------------
-    # 2. 최신 RSI 범위
-    # -----------------------------------------------------
 
     rsi_values = row.get("rsi_values") or []
 
@@ -2123,10 +2088,6 @@ def get_signal_condition_checks(row):
             <= latest_rsi
             <= RSI_RANGE_MAX
         )
-
-    # -----------------------------------------------------
-    # 3. 선택 EMA 정배열
-    # -----------------------------------------------------
 
     enabled_ema_values = []
 
@@ -2167,10 +2128,6 @@ def get_signal_condition_checks(row):
         except (TypeError, ValueError):
 
             checks["ema_alignment"] = None
-
-    # -----------------------------------------------------
-    # 4. 최근 표시 캔들 중 EMA 1/3 역배열 유지 양봉
-    # -----------------------------------------------------
 
     candles = row.get("last_three_patterns")
 
@@ -2222,33 +2179,87 @@ def get_signal_condition_checks(row):
 
             checks["ema_bearish_bullish_candle"] = None
 
+    candles = row.get("last_three_patterns") or []
+
+    if not candles:
+
+        checks["rsi_cross_signal"] = None
+
+    else:
+
+        valid_rsi_count = 0
+        found_rsi_cross = False
+
+        for candle in candles[-DISPLAY_CANDLE_COUNT:]:
+
+            current_rsi = candle.get("rsi")
+
+            if current_rsi is None:
+                continue
+
+            try:
+
+                current_rsi = float(current_rsi)
+
+                if not pd.notna(current_rsi):
+                    continue
+
+            except (TypeError, ValueError):
+                continue
+
+            valid_rsi_count += 1
+
+            if candle.get("rsi_signal_type") in (
+                "RSI70_UP",
+                "RSI70_DOWN"
+            ):
+
+                found_rsi_cross = True
+                break
+
+        if found_rsi_cross:
+
+            checks["rsi_cross_signal"] = True
+
+        elif valid_rsi_count > 0:
+
+            checks["rsi_cross_signal"] = False
+
+        else:
+
+            checks["rsi_cross_signal"] = None
+
     return checks
 
 
 # =========================================================
 # 체크리스트 HTML
-# EMA 사용 시에만 EMA 정배열 항목 표시
 # =========================================================
 
 def signal_checklist_html(row):
+
+    if SHOW_SIGNAL_CHECKLIST != "Y":
+        return ""
 
     checks = get_signal_condition_checks(row)
 
     checklist_items = [
         (
             "daily_change",
-            f"당일 변동률 > {DAILY_CHANGE_MIN:.2f}%"
+            f"당일 변동률 > {DAILY_CHANGE_MIN:.2f}%",
+            USE_SIGNAL_DAILY_CHANGE
         ),
         (
             "rsi_range",
-            f"최신 RSI {RSI_RANGE_MIN}~{RSI_RANGE_MAX}"
+            f"최신 RSI {RSI_RANGE_MIN}~{RSI_RANGE_MAX}",
+            USE_SIGNAL_RSI_RANGE
+        ),
+        (
+            "rsi_cross_signal",
+            f"최근 표시 {DISPLAY_CANDLE_COUNT}개 봉 중 RSI {RSI_SIGNAL_MIN} 상향 또는 RSI {RSI_SIGNAL_MAX} 하향돌파",
+            USE_SIGNAL_RSI_CROSS
         )
     ]
-
-    # -----------------------------------------------------
-    # EMA 설정 중 하나라도 Y인 경우에만
-    # EMA 정배열 판정 항목을 체크리스트에 표시
-    # -----------------------------------------------------
 
     ema_enabled = any([
         USE_EMA_5 == "Y",
@@ -2262,24 +2273,31 @@ def signal_checklist_html(row):
         checklist_items.append(
             (
                 "ema_alignment",
-                get_ema_condition_text()
+                get_ema_condition_text(),
+                USE_SIGNAL_EMA_ALIGNMENT
             )
         )
-
-    # -----------------------------------------------------
-    # EMA 1/3 역배열 양봉 조건은 기존처럼 항상 표시
-    # -----------------------------------------------------
 
     checklist_items.append(
         (
             "ema_bearish_bullish_candle",
-            f"최근 {DISPLAY_CANDLE_COUNT}개 봉 중 EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 역배열 양봉"
+            f"최근 {DISPLAY_CANDLE_COUNT}개 봉 중 EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 역배열 양봉",
+            USE_SIGNAL_EMA_BEARISH_BULLISH
         )
     )
 
+    checklist_items = [
+        item
+        for item in checklist_items
+        if item[2] == "Y"
+    ]
+
+    if not checklist_items:
+        return ""
+
     items_html = []
 
-    for key, label in checklist_items:
+    for key, label, enabled in checklist_items:
 
         passed = checks.get(key)
 
@@ -2480,14 +2498,24 @@ def update_upbit():
     latest_upbit_daily_update_time = kst()
     latest_upbit_update_time = latest_upbit_daily_update_time
 
-    # =====================================================
-    # 최종 SIGNAL 선정
-    #
-    # 공통 체크리스트 판정 함수를 사용
-    # 4개 조건이 모두 True인 경우에만 SIGNAL 선정
-    # =====================================================
-
     latest_signal_data = []
+
+    signal_condition_keys = []
+
+    if USE_SIGNAL_DAILY_CHANGE == "Y":
+        signal_condition_keys.append("daily_change")
+
+    if USE_SIGNAL_RSI_RANGE == "Y":
+        signal_condition_keys.append("rsi_range")
+
+    if USE_SIGNAL_EMA_ALIGNMENT == "Y":
+        signal_condition_keys.append("ema_alignment")
+
+    if USE_SIGNAL_EMA_BEARISH_BULLISH == "Y":
+        signal_condition_keys.append("ema_bearish_bullish_candle")
+
+    if USE_SIGNAL_RSI_CROSS == "Y":
+        signal_condition_keys.append("rsi_cross_signal")
 
     for row in rows:
 
@@ -2495,12 +2523,7 @@ def update_upbit():
 
         if all(
             checks.get(key) is True
-            for key in (
-                "daily_change",
-                "rsi_range",
-                "ema_alignment",
-                "ema_bearish_bullish_candle"
-            )
+            for key in signal_condition_keys
         ):
 
             latest_signal_data.append(row)
@@ -2520,17 +2543,48 @@ def update_upbit():
     ):
         row["signal_rank"] = signal_rank
 
+    active_condition_names = []
+
+    if USE_SIGNAL_DAILY_CHANGE == "Y":
+        active_condition_names.append(
+            f"당일 변동률>{DAILY_CHANGE_MIN}%"
+        )
+
+    if USE_SIGNAL_RSI_RANGE == "Y":
+        active_condition_names.append(
+            f"최신 RSI {RSI_RANGE_MIN}~{RSI_RANGE_MAX}"
+        )
+
+    if USE_SIGNAL_EMA_ALIGNMENT == "Y":
+        active_condition_names.append(
+            get_ema_condition_text()
+        )
+
+    if USE_SIGNAL_EMA_BEARISH_BULLISH == "Y":
+        active_condition_names.append(
+            f"최근 {DISPLAY_CANDLE_COUNT}개 봉 중 EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 역배열 양봉"
+        )
+
+    if USE_SIGNAL_RSI_CROSS == "Y":
+        active_condition_names.append(
+            f"최근 {DISPLAY_CANDLE_COUNT}개 봉 중 RSI{RSI_SIGNAL_MIN} 상향 또는 RSI{RSI_SIGNAL_MAX} 하향돌파"
+        )
+
+    if active_condition_names:
+
+        signal_condition_log = " AND ".join(
+            active_condition_names
+        )
+
+    else:
+
+        signal_condition_log = "활성화된 SIGNAL 조건 없음 (TOP 종목 전체 선정)"
+
     log.info(
-        "UPBIT | TOP%s | "
-        "SIGNAL=당일 변동률>%s%% AND 최신 RSI %s~%s AND %s "
-        "AND 최근 %s개 표시 캔들 중 EMA1/3 역배열 유지 양봉 1개 이상 | "
+        "UPBIT | TOP%s | SIGNAL 조건=%s | "
         "시간봉=%s | SIGNAL=%s | 정렬=24H 거래대금 순",
         TOP_N,
-        DAILY_CHANGE_MIN,
-        RSI_RANGE_MIN,
-        RSI_RANGE_MAX,
-        get_ema_condition_text(),
-        DISPLAY_CANDLE_COUNT,
+        signal_condition_log,
         CANDLE_PATTERN_TIMEFRAME,
         len(latest_signal_data)
     )
@@ -3047,19 +3101,11 @@ def update_okx_btc():
 
         return
 
-    # =====================================================
-    # 현재 BTC 가격 반영
-    # =====================================================
-
     df = update_current_candle(
         df,
         get_candle_start(datetime.now(KST), timeframe),
         price
     )
-
-    # =====================================================
-    # BTC 최근 캔들 기간
-    # =====================================================
 
     periods = build_timeframe_periods(
         df,
@@ -3069,27 +3115,14 @@ def update_okx_btc():
 
     latest_btc_daily_periods = periods
 
-    # =====================================================
-    # BTC 당일 변동률
-    # 거래대금 사용 안 함
-    # =====================================================
-
     latest_btc_daily_change = calculate_btc_daily_change(
         price
     )
-
-    # =====================================================
-    # BTC RSI 계산
-    # =====================================================
 
     rsi_series = calculate_rsi(
         df["close"],
         RSI_PERIOD
     )
-
-    rsi_periods = periods[-RSI_CHECK_CANDLES:]
-
-    latest_btc_rsi_values = []
 
     for i, period in enumerate(periods):
 
@@ -3107,16 +3140,14 @@ def update_okx_btc():
 
             period["rsi"] = None
 
-    rsi_periods = periods[-RSI_CHECK_CANDLES:]
+    periods = apply_rsi_cross_signals(periods)
+
+    rsi_periods = periods[-DISPLAY_CANDLE_COUNT:]
 
     latest_btc_rsi_values = [
         period.get("rsi")
         for period in rsi_periods
     ]
-
-    # =====================================================
-    # BTC EMA 계산
-    # =====================================================
 
     ema5_series = calculate_ema(
         df["close"],
@@ -3166,18 +3197,10 @@ def update_okx_btc():
         ema50_series
     )
 
-    # =====================================================
-    # BTC EMA1 / 3 역배열 상태 계산
-    # =====================================================
-
     btc_pattern_periods = apply_ema_dead_cross_signals(
         periods,
         df["open"]
     )
-
-    # =====================================================
-    # BTC 최근 캔들 패턴 분석
-    # =====================================================
 
     latest_btc_last_three_patterns = (
         analyze_okx_btc_candles(
@@ -3378,7 +3401,7 @@ def rsi_html(value, signal_type=None):
     signal_text = ""
 
     if signal_type == "RSI70_UP":
-        signal_text = " ↑70"
+        signal_text = " ↑50"
 
     elif signal_type == "RSI70_DOWN":
         signal_text = " ↓70"
@@ -3639,34 +3662,17 @@ def last_three_pattern_html(row):
 
     last_three = row.get("last_three_patterns") or []
 
-    missing = max(0, DISPLAY_CANDLE_COUNT - len(last_three))
+    # 실제 데이터가 있는 캔들만 표시
+    visible_items = last_three[-DISPLAY_CANDLE_COUNT:]
 
-    items = []
-
-    for _ in range(missing):
-
-        items.append({
-            "label": "",
-            "patterns": [],
-            "open": None,
-            "high": None,
-            "low": None,
-            "close": None,
-            "change": None,
-            "rsi": None,
-            "rsi_previous": None,
-            "rsi_signal_type": None,
-            "ema_dead_cross": False,
-            "ema_dead_cross_progress": False,
-            "ema_bearish_alignment": False,
-            "active": False
-        })
-
-    items.extend(last_three)
+    if not visible_items:
+        return (
+            '<div class="three-candle-list" '
+            'style="grid-template-columns:repeat(1,minmax(0,1fr));">'
+            '</div>'
+        )
 
     boxes = []
-
-    visible_items = items[-DISPLAY_CANDLE_COUNT:]
 
     for i, item in enumerate(visible_items):
 
@@ -3779,8 +3785,12 @@ def last_three_pattern_html(row):
             """
         )
 
+    # 실제 표시 캔들 수에 맞춰 열 개수를 자동 조정
+    candle_count = max(1, len(visible_items))
+
     return (
-        '<div class="three-candle-list">'
+        f'<div class="three-candle-list" '
+        f'style="grid-template-columns:repeat({candle_count},minmax(0,1fr));">'
         + "".join(boxes)
         + '</div>'
     )
@@ -3881,16 +3891,28 @@ def btc_html():
         btc_row
     )
 
-    # =====================================================
-    # BTC 전용 체크리스트
-    #
-    # 업비트 SIGNAL과 동일한 4개 조건
-    # 거래대금 조건은 포함하지 않음
-    # =====================================================
-
     btc_checklist_html = signal_checklist_html(
         btc_row
     )
+
+    if btc_checklist_html:
+
+        btc_checklist_section_html = f"""
+        <div class="btc-checklist-section">
+
+            <div class="btc-checklist-heading">
+                BTC 시황 체크리스트
+                <span>거래대금 조건 제외</span>
+            </div>
+
+            {btc_checklist_html}
+
+        </div>
+        """
+
+    else:
+
+        btc_checklist_section_html = ""
 
     timeframe_label = get_timeframe_label(
         CANDLE_PATTERN_TIMEFRAME
@@ -3929,23 +3951,14 @@ def btc_html():
 
         </div>
 
-        <div class="btc-checklist-section">
-
-            <div class="btc-checklist-heading">
-                BTC 시황 체크리스트
-                <span>거래대금 조건 제외</span>
-            </div>
-
-            {btc_checklist_html}
-
-        </div>
+        {btc_checklist_section_html}
 
         <div class="btc-candle-section">
 
             <div class="btc-candle-heading">
                 BTC 최근 {DISPLAY_CANDLE_COUNT}개 봉 · {timeframe_label} · RSI({RSI_PERIOD})
                 <span class="rsi-condition-label">
-                    RSI70 상향돌파 녹색 · RSI70 하향돌파 적색 · EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 역배열 유지 중 양봉 노란색
+                    RSI50 상향돌파 녹색 · RSI70 하향돌파 적색 · EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 역배열 유지 중 양봉 노란색
                 </span>
             </div>
 
@@ -4028,7 +4041,7 @@ def signal_card(row):
             <div class="three-candle-heading">
                 최근 {DISPLAY_CANDLE_COUNT}개 봉 · {timeframe_label} · RSI({RSI_PERIOD})
                 <span class="rsi-condition-label">
-                    RSI70 상향돌파 녹색 · RSI70 하향돌파 적색 · EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 역배열 유지 중 양봉 노란색
+                    RSI50 상향돌파 녹색 · RSI70 하향돌파 적색 · EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 역배열 유지 중 양봉 노란색
                 </span>
             </div>
 
@@ -4065,18 +4078,62 @@ def signal_section():
             for row in latest_signal_data
         )
 
-    condition_html = f"""
-    <div class="signal-condition">
+    active_conditions = []
 
-        <span>체크리스트 4개 조건 모두 통과 시 SIGNAL 선정</span>
-        <span>당일 변동률 {DAILY_CHANGE_MIN:.2f}% 초과</span>
-        <span>최신 RSI {RSI_RANGE_MIN}~{RSI_RANGE_MAX}</span>
-        <span>{html.escape(get_ema_condition_text())}</span>
-        <span>최근 {DISPLAY_CANDLE_COUNT}개 봉 중 EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 역배열 양봉 1개 이상</span>
-        <span>시간봉: {pattern_timeframe_label}</span>
+    if USE_SIGNAL_DAILY_CHANGE == "Y":
+        active_conditions.append(
+            f"당일 변동률 {DAILY_CHANGE_MIN:.2f}% 초과"
+        )
 
-    </div>
-    """
+    if USE_SIGNAL_RSI_RANGE == "Y":
+        active_conditions.append(
+            f"최신 RSI {RSI_RANGE_MIN}~{RSI_RANGE_MAX}"
+        )
+
+    if USE_SIGNAL_EMA_ALIGNMENT == "Y":
+        active_conditions.append(
+            get_ema_condition_text()
+        )
+
+    if USE_SIGNAL_EMA_BEARISH_BULLISH == "Y":
+        active_conditions.append(
+            f"최근 {DISPLAY_CANDLE_COUNT}개 봉 중 EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 역배열 양봉 1개 이상"
+        )
+
+    if USE_SIGNAL_RSI_CROSS == "Y":
+        active_conditions.append(
+            f"최근 {DISPLAY_CANDLE_COUNT}개 봉 중 RSI{RSI_SIGNAL_MIN} 상향 또는 RSI{RSI_SIGNAL_MAX} 하향돌파"
+        )
+
+    condition_items = []
+
+    if active_conditions:
+
+        condition_items.append(
+            "<span>활성화된 조건 모두 통과 시 SIGNAL 선정</span>"
+        )
+
+        for condition in active_conditions:
+
+            condition_items.append(
+                f"<span>{html.escape(condition)}</span>"
+            )
+
+    else:
+
+        condition_items.append(
+            "<span>활성화된 SIGNAL 조건 없음 (TOP 종목 전체 선정)</span>"
+        )
+
+    condition_items.append(
+        f"<span>시간봉: {pattern_timeframe_label}</span>"
+    )
+
+    condition_html = (
+        '<div class="signal-condition">'
+        + "".join(condition_items)
+        + '</div>'
+    )
 
     return f"""
     <section class="signal-panel">
@@ -4179,7 +4236,7 @@ def card(row, kind):
             <div class="three-candle-heading">
                 최근 {DISPLAY_CANDLE_COUNT}개 봉 · {timeframe_label} · RSI({RSI_PERIOD})
                 <span class="rsi-condition-label">
-                    RSI70 상향돌파 녹색 · RSI70 하향돌파 적색 · EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 역배열 유지 중 양봉 노란색
+                    RSI50 상향돌파 녹색 · RSI70 하향돌파 적색 · EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 역배열 유지 중 양봉 노란색
                 </span>
             </div>
 
@@ -4197,59 +4254,59 @@ def card(row, kind):
 
 CSS = """
 :root {
-    color-scheme: dark;
-    --bg:#080d13;
-    --panel:#101820;
-    --panel2:#131e28;
-    --panel3:#0d151d;
-    --line:#263542;
-    --line-soft:#1d2a35;
-    --text:#e5edf4;
-    --muted:#8495a5;
-    --green:#38d996;
-    --green-soft:rgba(56,217,150,.10);
-    --red:#ff6575;
-    --red-soft:rgba(255,101,117,.10);
-    --yellow:#e8c56e;
-    --fs-main:17px;
-    --fs-section:13px;
-    --fs-coin:14px;
-    --fs-value:12px;
-    --fs-content:11px;
-    --fs-small:10px;
-    --fs-tiny:9px;
+color-scheme: dark;
+--bg:#080d13;
+--panel:#101820;
+--panel2:#131e28;
+--panel3:#0d151d;
+--line:#263542;
+--line-soft:#1d2a35;
+--text:#e5edf4;
+--muted:#8495a5;
+--green:#38d996;
+--green-soft:rgba(56,217,150,.10);
+--red:#ff6575;
+--red-soft:rgba(255,101,117,.10);
+--yellow:#e8c56e;
+--fs-main:17px;
+--fs-section:13px;
+--fs-coin:14px;
+--fs-value:12px;
+--fs-content:11px;
+--fs-small:10px;
+--fs-tiny:9px;
 }
 
 * { box-sizing:border-box; }
 
 html {
-    min-height:100%;
-    background:var(--bg);
-    -webkit-text-size-adjust:100%;
+min-height:100%;
+background:var(--bg);
+-webkit-text-size-adjust:100%;
 }
 
 body {
-    width:100%;
-    max-width:1000px;
-    min-height:100vh;
-    margin:0 auto;
-    padding:12px;
-    background:var(--bg);
-    color:var(--text);
-    font-family:-apple-system,BlinkMacSystemFont,"Noto Sans KR","Malgun Gothic",Arial,sans-serif;
-    font-size:var(--fs-content);
-    line-height:1.4;
-    letter-spacing:-.2px;
+width:100%;
+max-width:1000px;
+min-height:100vh;
+margin:0 auto;
+padding:12px;
+background:var(--bg);
+color:var(--text);
+font-family:-apple-system,BlinkMacSystemFont,"Noto Sans KR","Malgun Gothic",Arial,sans-serif;
+font-size:var(--fs-content);
+line-height:1.4;
+letter-spacing:-.2px;
 }
 
 h1 {
-    margin:2px 0 11px;
-    padding:0 2px 10px;
-    font-size:var(--fs-main);
-    font-weight:900;
-    letter-spacing:-.5px;
-    color:#f2f6fa;
-    border-bottom:1px solid var(--line);
+margin:2px 0 11px;
+padding:0 2px 10px;
+font-size:var(--fs-main);
+font-weight:900;
+letter-spacing:-.5px;
+color:#f2f6fa;
+border-bottom:1px solid var(--line);
 }
 
 section { margin-bottom:11px; }
@@ -4259,21 +4316,21 @@ section { margin-bottom:11px; }
 .zero { color:#8795a2; font-weight:700; }
 
 .pattern-box {
-    min-width:45px;
-    display:flex;
-    flex-direction:column;
-    align-items:center;
-    justify-content:center;
-    line-height:1.15;
+min-width:45px;
+display:flex;
+flex-direction:column;
+align-items:center;
+justify-content:center;
+line-height:1.15;
 }
 
 .pattern-name {
-    display:block;
-    margin-top:3px;
-    color:var(--yellow);
-    font-size:var(--fs-tiny);
-    font-weight:800;
-    white-space:nowrap;
+display:block;
+margin-top:3px;
+color:var(--yellow);
+font-size:var(--fs-tiny);
+font-weight:800;
+white-space:nowrap;
 }
 
 .bullish-pattern .pattern-name { color:var(--green); }
@@ -4282,51 +4339,51 @@ section { margin-bottom:11px; }
 .pattern-none .pattern-name { color:var(--muted); }
 
 .pattern-multi {
-    width:100%;
-    display:flex;
-    align-items:flex-start;
-    justify-content:center;
-    flex-wrap:wrap;
-    gap:5px;
+width:100%;
+display:flex;
+align-items:flex-start;
+justify-content:center;
+flex-wrap:wrap;
+gap:5px;
 }
 
 .pattern-multi .pattern-box { min-width:43px; }
 
 .candle-pattern-visual {
-    height:28px;
-    min-width:36px;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    gap:4px;
-    position:relative;
+height:28px;
+min-width:36px;
+display:flex;
+align-items:center;
+justify-content:center;
+gap:4px;
+position:relative;
 }
 
 .mini-candle {
-    width:8px;
-    height:27px;
-    position:relative;
-    display:flex;
-    justify-content:center;
-    align-items:center;
+width:8px;
+height:27px;
+position:relative;
+display:flex;
+justify-content:center;
+align-items:center;
 }
 
 .mini-candle .wick {
-    position:absolute;
-    width:1px;
-    height:27px;
-    left:50%;
-    top:0;
-    transform:translateX(-50%);
-    background:#82909d;
+position:absolute;
+width:1px;
+height:27px;
+left:50%;
+top:0;
+transform:translateX(-50%);
+background:#82909d;
 }
 
 .mini-candle .body {
-    position:relative;
-    z-index:2;
-    width:8px;
-    height:12px;
-    border-radius:1px;
+position:relative;
+z-index:2;
+width:8px;
+height:12px;
+border-radius:1px;
 }
 
 .mini-candle.bearish .body { background:var(--red); height:15px; }
@@ -4334,181 +4391,182 @@ section { margin-bottom:11px; }
 
 .mini-candle.bullish.large .body,
 .mini-candle.bearish.large .body {
-    height:23px;
-    width:10px;
+height:23px;
+width:10px;
 }
 
 .mini-candle.bullish-doji .body {
-    background:var(--green);
-    height:3px;
-    width:10px;
+background:var(--green);
+height:3px;
+width:10px;
 }
 
 .mini-candle.bearish-doji .body {
-    background:var(--red);
-    height:3px;
-    width:10px;
+background:var(--red);
+height:3px;
+width:10px;
 }
 
 .mini-candle.piercing-candle .body {
-    background:var(--green);
-    height:18px;
+background:var(--green);
+height:18px;
 }
 
 .mini-candle.piercing-bearish .body {
-    background:var(--red);
-    height:18px;
+background:var(--red);
+height:18px;
 }
 
 .mini-candle.bullish.very-large .body {
-    background:var(--green);
-    height:24px;
-    width:10px;
+background:var(--green);
+height:24px;
+width:10px;
 }
 
 .mini-candle.bearish.very-large .body {
-    background:var(--red);
-    height:24px;
-    width:10px;
+background:var(--red);
+height:24px;
+width:10px;
 }
 
 .mini-candle.hammer .wick,
 .mini-candle.inverted-hammer .wick {
-    height:27px;
-    top:0;
+height:27px;
+top:0;
 }
 
 .mini-candle.hammer .body {
-    position:absolute;
-    top:1px;
-    height:7px;
-    width:9px;
+position:absolute;
+top:1px;
+height:7px;
+width:9px;
 }
 
 .mini-candle.bullish.hammer .body,
 .mini-candle.bullish.inverted-hammer .body {
-    background:var(--green);
+background:var(--green);
 }
 
 .mini-candle.bearish.hammer .body,
 .mini-candle.bearish.inverted-hammer .body {
-    background:var(--red);
+background:var(--red);
 }
 
 .mini-candle.inverted-hammer .body {
-    position:absolute;
-    bottom:1px;
-    height:7px;
-    width:9px;
+position:absolute;
+bottom:1px;
+height:7px;
+width:9px;
 }
 
 /* =====================================================
-   RSI 수치 색상
-   ===================================================== */
+RSI 수치 색상
+===================================================== */
 
 .rsi-value {
-    width:100%;
-    min-height:18px;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    margin:0;
-    padding:2px;
-    color:#aab9c6;
-    background:#1b2935;
-    border:1px solid #344451;
-    border-radius:4px;
-    font-size:9px;
-    font-weight:800;
-    white-space:nowrap;
+width:100%;
+min-height:18px;
+display:flex;
+align-items:center;
+justify-content:center;
+margin:0;
+padding:2px;
+color:#aab9c6;
+background:#1b2935;
+border:1px solid #344451;
+border-radius:4px;
+font-size:9px;
+font-weight:800;
+white-space:nowrap;
 }
 
 .rsi-value.rsi-low {
-    color:#ff6575;
-    background:rgba(255,101,117,.16);
-    border:1px solid #ff6575;
+color:#ff6575;
+background:rgba(255,101,117,.16);
+border:1px solid #ff6575;
 }
 
 .rsi-value.rsi-middle {
-    color:#38d996;
-    background:rgba(56,217,150,.16);
-    border:1px solid #38d996;
+color:#38d996;
+background:rgba(56,217,150,.16);
+border:1px solid #38d996;
 }
 
 .rsi-value.rsi-high {
-    color:#e8c56e;
-    background:rgba(232,197,110,.16);
-    border:1px solid #e8c56e;
+color:#e8c56e;
+background:rgba(232,197,110,.16);
+border:1px solid #e8c56e;
 }
 
 .rsi-value.rsi-unavailable {
-    color:#71808c;
-    background:#141e27;
-    border-color:#26343f;
+color:#71808c;
+background:#141e27;
+border-color:#26343f;
 }
 
 /* =====================================================
-   RSI 돌파 카드 강조
-   ===================================================== */
+RSI 돌파 카드 강조
+===================================================== */
 
 .three-candle-item.rsi-cross-up-card {
-    background:rgba(56,217,150,.16);
-    border:1px solid var(--green);
-    box-shadow:
-        inset 0 0 0 1px rgba(56,217,150,.15),
-        0 0 7px rgba(56,217,150,.15);
+background:rgba(56,217,150,.16);
+border:1px solid var(--green);
+box-shadow:
+inset 0 0 0 1px rgba(56,217,150,.15),
+0 0 7px rgba(56,217,150,.15);
 }
 
 .three-candle-item.rsi-cross-up-card .candle-date,
 .three-candle-item.rsi-cross-up-card .candle-time {
-    color:var(--green);
+color:var(--green);
 }
 
 .three-candle-item.rsi-cross-down-card {
-    background:rgba(255,101,117,.16);
-    border:1px solid var(--red);
-    box-shadow:
-        inset 0 0 0 1px rgba(255,101,117,.15),
-        0 0 7px rgba(255,101,117,.15);
+background:rgba(255,101,117,.16);
+border:1px solid var(--red);
+box-shadow:
+inset 0 0 0 1px rgba(255,101,117,.15),
+0 0 7px rgba(255,101,117,.15);
 }
 
 .three-candle-item.rsi-cross-down-card .candle-date,
 .three-candle-item.rsi-cross-down-card .candle-time {
-    color:var(--red);
+color:var(--red);
 }
 
 /* EMA 1 / 3 역배열 유지 중 양봉 노란색 카드 */
+
 .three-candle-item.ema-dead-cross-card {
-    background:rgba(232,197,110,.22);
-    border:1px solid var(--yellow);
-    box-shadow:
-        inset 0 0 0 1px rgba(232,197,110,.20),
-        0 0 8px rgba(232,197,110,.22);
+background:rgba(232,197,110,.22);
+border:1px solid var(--yellow);
+box-shadow:
+inset 0 0 0 1px rgba(232,197,110,.20),
+0 0 8px rgba(232,197,110,.22);
 }
 
 .three-candle-item.ema-dead-cross-card .candle-date,
 .three-candle-item.ema-dead-cross-card .candle-time {
-    color:var(--yellow);
+color:var(--yellow);
 }
 
 .three-candle-item.ema-dead-cross-progress {
-    border-width:2px;
-    box-shadow:
-        inset 0 0 0 1px rgba(232,197,110,.28),
-        0 0 10px rgba(232,197,110,.30);
+border-width:2px;
+box-shadow:
+inset 0 0 0 1px rgba(232,197,110,.28),
+0 0 10px rgba(232,197,110,.30);
 }
 
 .candle-change {
-    width:100%;
-    height:17px;
-    min-height:17px;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    font-size:9px;
-    font-weight:900;
-    line-height:1;
-    white-space:nowrap;
+width:100%;
+height:17px;
+min-height:17px;
+display:flex;
+align-items:center;
+justify-content:center;
+font-size:9px;
+font-weight:900;
+line-height:1;
+white-space:nowrap;
 }
 
 .candle-change-up { color:var(--green); }
@@ -4518,494 +4576,498 @@ section { margin-bottom:11px; }
 
 .three-candle-section,
 .top-three-candle-section {
-    padding:8px 9px;
-    background:var(--panel3);
-    border-top:1px solid var(--line-soft);
+padding:8px 9px;
+background:var(--panel3);
+border-top:1px solid var(--line-soft);
 }
 
 .three-candle-heading {
-    color:#9eafbe;
-    font-size:var(--fs-small);
-    font-weight:800;
-    text-align:left;
-    margin-bottom:7px;
+color:#9eafbe;
+font-size:var(--fs-small);
+font-weight:800;
+text-align:left;
+margin-bottom:7px;
 }
 
 .three-candle-list {
-    display:grid;
-    grid-template-columns:repeat(6,minmax(0,1fr));
-    width:100%;
-    gap:5px;
+display:grid;
+grid-template-columns:repeat(6,minmax(0,1fr));
+width:100%;
+gap:5px;
 }
 
 .three-candle-item {
-    min-width:0;
-    height:120px;
-    min-height:120px;
-    display:grid;
-    grid-template-rows:27px minmax(0,1fr) 17px 18px;
-    row-gap:3px;
-    align-items:stretch;
-    padding:5px 2px;
-    background:#121e28;
-    border:1px solid #263744;
-    border-radius:5px;
-    overflow:hidden;
+min-width:0;
+height:120px;
+min-height:120px;
+display:grid;
+grid-template-rows:27px minmax(0,1fr) 17px 18px;
+row-gap:3px;
+align-items:stretch;
+padding:5px 2px;
+background:#121e28;
+border:1px solid #263744;
+border-radius:5px;
+overflow:hidden;
 }
 
 .three-candle-label {
-    width:100%;
-    height:27px;
-    min-height:0;
-    display:flex;
-    flex-direction:column;
-    align-items:center;
-    justify-content:center;
-    margin:0;
-    padding:0;
-    line-height:1.25;
-    text-align:center;
-    white-space:nowrap;
-    overflow:hidden;
+width:100%;
+height:27px;
+min-height:0;
+display:flex;
+flex-direction:column;
+align-items:center;
+justify-content:center;
+margin:0;
+padding:0;
+line-height:1.25;
+text-align:center;
+white-space:nowrap;
+overflow:hidden;
 }
 
 .candle-date {
-    color:#c2cfda;
-    font-size:var(--fs-tiny);
-    font-weight:800;
+color:#c2cfda;
+font-size:var(--fs-tiny);
+font-weight:800;
 }
 
 .candle-time {
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    gap:2px;
-    margin-top:2px;
-    color:#8295a5;
-    font-size:var(--fs-tiny);
-    font-weight:700;
+display:flex;
+align-items:center;
+justify-content:center;
+gap:2px;
+margin-top:2px;
+color:#8295a5;
+font-size:var(--fs-tiny);
+font-weight:700;
 }
 
 .candle-live {
-    display:inline-block;
-    color:var(--yellow);
-    font-size:7px;
-    font-weight:800;
+display:inline-block;
+color:var(--yellow);
+font-size:7px;
+font-weight:800;
 }
 
 .three-candle-pattern {
-    width:100%;
-    height:100%;
-    min-width:0;
-    min-height:0;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    margin:0;
-    padding:0;
-    overflow:hidden;
+width:100%;
+height:100%;
+min-width:0;
+min-height:0;
+display:flex;
+align-items:center;
+justify-content:center;
+margin:0;
+padding:0;
+overflow:hidden;
 }
 
 .three-candle-pattern .pattern-multi {
-    width:100%;
-    max-width:100%;
-    max-height:100%;
-    min-height:0;
-    display:flex;
-    flex-wrap:wrap;
-    align-items:center;
-    justify-content:center;
-    gap:2px;
-    overflow:hidden;
+width:100%;
+max-width:100%;
+max-height:100%;
+min-height:0;
+display:flex;
+flex-wrap:wrap;
+align-items:center;
+justify-content:center;
+gap:2px;
+overflow:hidden;
 }
 
 .three-candle-pattern .pattern-box {
-    min-width:0;
-    max-width:100%;
-    flex:0 1 auto;
+min-width:0;
+max-width:100%;
+flex:0 1 auto;
 }
 
 .three-candle-pattern .pattern-name {
-    font-size:7px;
-    line-height:1.15;
-    white-space:normal;
-    overflow-wrap:anywhere;
-    text-align:center;
+font-size:7px;
+line-height:1.15;
+white-space:normal;
+overflow-wrap:anywhere;
+text-align:center;
 }
 
 .three-candle-pattern .pattern-none { min-height:28px; }
 
 .three-candle-change {
-    width:100%;
-    height:17px;
-    min-width:0;
-    min-height:0;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    margin:0;
-    padding:0;
-    overflow:hidden;
+width:100%;
+height:17px;
+min-width:0;
+min-height:0;
+display:flex;
+align-items:center;
+justify-content:center;
+margin:0;
+padding:0;
+overflow:hidden;
 }
 
 .three-candle-change .candle-change {
-    width:100%;
-    height:17px;
-    min-height:17px;
-    margin:0;
-    padding:0;
+width:100%;
+height:17px;
+min-height:17px;
+margin:0;
+padding:0;
 }
 
 .three-candle-rsi {
-    width:100%;
-    height:18px;
-    min-width:0;
-    min-height:0;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    margin:0;
-    padding:0;
-    overflow:hidden;
+width:100%;
+height:18px;
+min-width:0;
+min-height:0;
+display:flex;
+align-items:center;
+justify-content:center;
+margin:0;
+padding:0;
+overflow:hidden;
 }
 
 .three-candle-rsi .rsi-value {
-    width:100%;
-    height:18px;
-    min-height:18px;
-    margin:0;
-    padding:1px 2px;
-    line-height:1;
+width:100%;
+height:18px;
+min-height:18px;
+margin:0;
+padding:1px 2px;
+line-height:1;
 }
 
 /* =====================================================
-   조건 체크리스트
-   SIGNAL 카드와 TOP 카드 공통 적용
-   ===================================================== */
+조건 체크리스트
+===================================================== */
 
 .signal-checklist {
-    padding:8px 10px;
-    background:#0d161e;
-    border-top:1px solid #26343f;
-    border-bottom:1px solid #26343f;
+padding:8px 10px;
+background:#0d161e;
+border-top:1px solid #26343f;
+border-bottom:1px solid #26343f;
 }
 
 .checklist-heading {
-    margin-bottom:7px;
-    color:#b7c5d0;
-    font-size:var(--fs-small);
-    font-weight:900;
+margin-bottom:7px;
+color:#b7c5d0;
+font-size:var(--fs-small);
+font-weight:900;
 }
 
 .checklist-grid {
-    display:grid;
-    grid-template-columns:repeat(2,minmax(0,1fr));
-    gap:5px 8px;
+display:grid;
+grid-template-columns:repeat(2,minmax(0,1fr));
+gap:5px 8px;
 }
 
 .checklist-item {
-    min-width:0;
-    min-height:27px;
-    display:flex;
-    align-items:center;
-    gap:6px;
-    padding:4px 6px;
-    background:#131f29;
-    border:1px solid #263744;
-    border-radius:4px;
+min-width:0;
+min-height:27px;
+display:flex;
+align-items:center;
+gap:6px;
+padding:4px 6px;
+background:#131f29;
+border:1px solid #263744;
+border-radius:4px;
 }
 
 .checklist-symbol {
-    width:17px;
-    min-width:17px;
-    height:17px;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    border-radius:4px;
-    font-size:12px;
-    font-weight:1000;
-    line-height:1;
+width:17px;
+min-width:17px;
+height:17px;
+display:flex;
+align-items:center;
+justify-content:center;
+border-radius:4px;
+font-size:12px;
+font-weight:1000;
+line-height:1;
 }
 
 .checklist-label {
-    min-width:0;
-    flex:1;
-    color:#bdc9d3;
-    font-size:var(--fs-tiny);
-    font-weight:700;
-    line-height:1.3;
-    overflow-wrap:anywhere;
+min-width:0;
+flex:1;
+color:#bdc9d3;
+font-size:var(--fs-tiny);
+font-weight:700;
+line-height:1.3;
+overflow-wrap:anywhere;
 }
 
 .checklist-status {
-    flex:0 0 auto;
-    font-size:var(--fs-tiny);
-    font-weight:800;
-    white-space:nowrap;
+flex:0 0 auto;
+font-size:var(--fs-tiny);
+font-weight:800;
+white-space:nowrap;
 }
 
 .check-pass {
-    color:var(--green);
+color:var(--green);
 }
 
 .check-fail {
-    color:var(--red);
+color:var(--red);
 }
 
 .check-unknown {
-    color:#83919c;
+color:#83919c;
 }
 
 .checklist-symbol.check-pass {
-    background:rgba(56,217,150,.13);
-    border:1px solid rgba(56,217,150,.35);
+background:rgba(56,217,150,.13);
+border:1px solid rgba(56,217,150,.35);
 }
 
 .checklist-symbol.check-fail {
-    background:rgba(255,101,117,.13);
-    border:1px solid rgba(255,101,117,.35);
+background:rgba(255,101,117,.13);
+border:1px solid rgba(255,101,117,.35);
 }
 
 .checklist-symbol.check-unknown {
-    background:rgba(131,145,156,.12);
-    border:1px solid rgba(131,145,156,.3);
+background:rgba(131,145,156,.12);
+border:1px solid rgba(131,145,156,.3);
 }
 
 /* =====================================================
-   BTC 체크리스트 전용 디자인
-   ===================================================== */
+BTC 체크리스트 전용 디자인
+===================================================== */
 
 .btc-checklist-section {
-    margin-top:10px;
-    padding-top:9px;
-    border-top:1px solid #304252;
+margin-top:10px;
+padding-top:9px;
+border-top:1px solid #304252;
 }
 
 .btc-checklist-heading {
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    gap:6px;
-    margin-bottom:7px;
-    color:#e2eaf1;
-    font-size:var(--fs-small);
-    font-weight:900;
+display:flex;
+align-items:center;
+justify-content:space-between;
+gap:6px;
+margin-bottom:7px;
+color:#e2eaf1;
+font-size:var(--fs-small);
+font-weight:900;
 }
 
 .btc-checklist-heading > span {
-    color:var(--yellow);
-    font-size:var(--fs-tiny);
-    font-weight:800;
+color:var(--yellow);
+font-size:var(--fs-tiny);
+font-weight:800;
 }
 
 .btc-checklist-section .signal-checklist {
-    padding:0;
-    background:transparent;
-    border-top:0;
-    border-bottom:0;
+padding:0;
+background:transparent;
+border-top:0;
+border-bottom:0;
 }
 
 .btc-checklist-section .checklist-heading {
-    display:none;
+display:none;
 }
 
 .btc-checklist-section .checklist-item {
-    background:rgba(12,23,32,.8);
-    border-color:#304252;
+background:rgba(12,23,32,.8);
+border-color:#304252;
 }
 
 .btc-checklist-section .checklist-label {
-    color:#c5d1db;
+color:#c5d1db;
 }
 
 .signal-type-list,
 .pattern-badge-list {
-    display:flex;
-    align-items:center;
-    flex-wrap:wrap;
-    gap:5px;
+display:flex;
+align-items:center;
+flex-wrap:wrap;
+gap:5px;
 }
 
 .signal-type-badge,
 .bearish-type-badge,
 .consecutive-bullish,
 .consecutive-bearish {
-    display:inline-flex;
-    align-items:center;
-    padding:3px 6px;
-    border-radius:4px;
-    font-size:var(--fs-tiny)!important;
-    font-weight:800;
-    white-space:nowrap;
+display:inline-flex;
+align-items:center;
+padding:3px 6px;
+border-radius:4px;
+font-size:var(--fs-tiny)!important;
+font-weight:800;
+white-space:nowrap;
 }
 
 .signal-type-badge,
 .consecutive-bullish {
-    color:var(--green)!important;
-    background:var(--green-soft);
-    border:1px solid rgba(56,217,150,.2);
+color:var(--green)!important;
+background:var(--green-soft);
+border:1px solid rgba(56,217,150,.2);
 }
 
 .bearish-type-badge,
 .consecutive-bearish {
-    color:var(--red)!important;
-    background:var(--red-soft);
-    border:1px solid rgba(255,101,117,.2);
+color:var(--red)!important;
+background:var(--red-soft);
+border:1px solid rgba(255,101,117,.2);
 }
 
 .panel-heading {
-    min-height:39px;
-    padding:0 10px;
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    gap:8px;
-    background:#121c26;
-    border-bottom:1px solid var(--line);
+min-height:39px;
+padding:0 10px;
+display:flex;
+align-items:center;
+justify-content:space-between;
+gap:8px;
+background:#121c26;
+border-bottom:1px solid var(--line);
 }
 
 .heading-title {
-    display:flex;
-    align-items:center;
-    gap:7px;
-    font-size:var(--fs-section);
-    font-weight:900;
+display:flex;
+align-items:center;
+gap:7px;
+font-size:var(--fs-section);
+font-weight:900;
 }
 
 .heading-mark {
-    width:6px;
-    height:6px;
-    border-radius:50%;
-    display:inline-block;
+width:6px;
+height:6px;
+border-radius:50%;
+display:inline-block;
 }
 
 .signal-mark {
-    background:var(--green);
-    box-shadow:0 0 7px rgba(56,217,150,.6);
+background:var(--green);
+box-shadow:0 0 7px rgba(56,217,150,.6);
 }
 
 .heading-count {
-    min-width:18px;
-    padding:2px 5px;
-    text-align:center;
-    color:var(--green);
-    background:var(--green-soft);
-    border-radius:4px;
-    font-size:var(--fs-tiny);
+min-width:18px;
+padding:2px 5px;
+text-align:center;
+color:var(--green);
+background:var(--green-soft);
+border-radius:4px;
+font-size:var(--fs-tiny);
 }
 
 .update-time {
-    color:var(--muted);
-    font-size:var(--fs-tiny);
-    white-space:nowrap;
+color:var(--muted);
+font-size:var(--fs-tiny);
+white-space:nowrap;
 }
 
 .btc-panel {
-    overflow:hidden;
-    padding:10px 12px;
-    background:linear-gradient(110deg,#152432,#0d151e);
-    border:1px solid #304252;
-    border-radius:7px;
+overflow:hidden;
+padding:10px 12px;
+background:linear-gradient(110deg,#152432,#0d151e);
+border:1px solid #304252;
+border-radius:7px;
 }
 
 .btc-top {
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    gap:6px;
-    margin-bottom:7px;
+display:flex;
+align-items:center;
+justify-content:space-between;
+gap:6px;
+margin-bottom:7px;
 }
 
 .btc-label {
-    display:flex;
-    align-items:center;
-    gap:6px;
-    color:#e2eaf1;
-    font-size:var(--fs-section);
-    font-weight:900;
+display:flex;
+align-items:center;
+gap:6px;
+color:#e2eaf1;
+font-size:var(--fs-section);
+font-weight:900;
 }
 
 .status-dot {
-    width:6px;
-    height:6px;
-    display:inline-block;
-    border-radius:50%;
-    background:var(--green);
+width:6px;
+height:6px;
+display:inline-block;
+border-radius:50%;
+background:var(--green);
 }
 
 .market-tag {
-    padding:2px 5px;
-    color:#9fb0bf;
-    background:#1c2c39;
-    border-radius:3px;
-    font-size:9px;
+padding:2px 5px;
+color:#9fb0bf;
+background:#1c2c39;
+border-radius:3px;
+font-size:9px;
 }
 
 .btc-main {
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    gap:10px;
+display:flex;
+align-items:center;
+justify-content:space-between;
+gap:10px;
 }
 
 .btc-price {
-    color:#f1f5f8;
-    font-size:21px;
-    font-weight:900;
-    letter-spacing:-.5px;
+color:#f1f5f8;
+font-size:21px;
+font-weight:900;
+letter-spacing:-.5px;
 }
 
 .btc-candle-section {
-    margin-top:10px;
-    padding-top:9px;
-    border-top:1px solid #304252;
+margin-top:10px;
+padding-top:9px;
+border-top:1px solid #304252;
 }
 
 .btc-candle-heading {
-    color:#aab9c6;
-    font-size:var(--fs-small);
-    font-weight:800;
-    margin-bottom:7px;
+color:#aab9c6;
+font-size:var(--fs-small);
+font-weight:800;
+margin-bottom:7px;
+}
+
+/* BTC 캔들 제목 아래 설명 문구만 숨김 */
+.btc-candle-heading .rsi-condition-label {
+display:none;
 }
 
 .btc-candle-section .three-candle-item {
-    background:#101d28;
-    border-color:#304252;
+background:#101d28;
+border-color:#304252;
 }
 
 .btc-candle-section .three-candle-label {
-    color:#b8c6d2;
+color:#b8c6d2;
 }
 
 .signal-panel {
-    overflow:hidden;
-    background:var(--panel);
-    border:1px solid #293844;
-    border-radius:7px;
+overflow:hidden;
+background:var(--panel);
+border:1px solid #293844;
+border-radius:7px;
 }
 
 .signal-condition {
-    display:flex;
-    align-items:center;
-    gap:6px;
-    padding:7px 9px;
-    overflow-x:auto;
-    white-space:nowrap;
-    background:#111922;
-    border-bottom:1px solid var(--line-soft);
-    scrollbar-width:none;
+display:flex;
+align-items:center;
+gap:6px;
+padding:7px 9px;
+overflow-x:auto;
+white-space:nowrap;
+background:#111922;
+border-bottom:1px solid var(--line-soft);
+scrollbar-width:none;
 }
 
 .signal-condition::-webkit-scrollbar { display:none; }
 
 .signal-condition span {
-    flex:0 0 auto;
-    color:#aab8c4;
-    font-size:var(--fs-tiny);
-    font-weight:700;
-    padding-right:7px;
-    border-right:1px solid #35434e;
+flex:0 0 auto;
+color:#aab8c4;
+font-size:var(--fs-tiny);
+font-weight:700;
+padding-right:7px;
+border-right:1px solid #35434e;
 }
 
 .signal-condition span:last-child { border-right:0; }
@@ -5013,377 +5075,380 @@ section { margin-bottom:11px; }
 .signal-list { width:100%; }
 
 .signal-card {
-    display:flex;
-    flex-direction:column;
-    min-height:0;
-    background:#101820;
-    border-bottom:1px solid #26343f;
+display:flex;
+flex-direction:column;
+min-height:0;
+background:#101820;
+border-bottom:1px solid #26343f;
 }
 
 .signal-card:last-child { border-bottom:0; }
 
 .signal-card-top {
-    min-height:39px;
-    padding:6px 9px;
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    flex-wrap:wrap;
-    gap:5px;
-    background:#121c25;
-    border-bottom:1px solid #273541;
+min-height:39px;
+padding:6px 9px;
+display:flex;
+align-items:center;
+justify-content:space-between;
+flex-wrap:wrap;
+gap:5px;
+background:#121c25;
+border-bottom:1px solid #273541;
 }
 
 .signal-identity {
-    display:flex;
-    align-items:center;
-    gap:8px;
+display:flex;
+align-items:center;
+gap:8px;
 }
 
 .signal-rank {
-    color:var(--yellow);
-    font-size:var(--fs-small);
-    font-weight:800;
+color:var(--yellow);
+font-size:var(--fs-small);
+font-weight:800;
 }
 
 .signal-coin-name {
-    color:#e9f0f5;
-    font-size:var(--fs-coin);
-    font-weight:900;
+color:#e9f0f5;
+font-size:var(--fs-coin);
+font-weight:900;
 }
 
 .signal-data-grid {
-    display:grid;
-    grid-template-columns:1.1fr 1fr .9fr;
-    width:100%;
+display:grid;
+grid-template-columns:1.1fr 1fr .9fr;
+width:100%;
 }
 
 .signal-data-grid > div {
-    min-width:0;
-    min-height:48px;
-    padding:6px 3px;
-    display:flex;
-    flex-direction:column;
-    align-items:center;
-    justify-content:center;
-    text-align:center;
+min-width:0;
+min-height:48px;
+padding:6px 3px;
+display:flex;
+flex-direction:column;
+align-items:center;
+justify-content:center;
+text-align:center;
 }
 
 .signal-data-grid > div + div {
-    border-left:1px solid #27343f;
+border-left:1px solid #27343f;
 }
 
 .signal-data-grid span {
-    color:#8798a7;
-    font-size:var(--fs-tiny);
+color:#8798a7;
+font-size:var(--fs-tiny);
 }
 
 .signal-data-grid strong {
-    margin-top:4px;
-    color:#e7edf2;
-    font-size:var(--fs-value);
-    font-weight:800;
-    white-space:nowrap;
+margin-top:4px;
+color:#e7edf2;
+font-size:var(--fs-value);
+font-weight:800;
+white-space:nowrap;
 }
 
 .signal-empty {
-    min-height:65px;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    color:#8c9ba8;
-    font-size:var(--fs-content);
-    font-weight:700;
+min-height:65px;
+display:flex;
+align-items:center;
+justify-content:center;
+color:#8c9ba8;
+font-size:var(--fs-content);
+font-weight:700;
 }
 
 .coin-card {
-    overflow:hidden;
-    background:var(--panel);
-    border:1px solid #293844;
-    border-radius:7px;
-    margin-top:8px;
+overflow:hidden;
+background:var(--panel);
+border:1px solid #293844;
+border-radius:7px;
+margin-top:8px;
 }
 
 .coin-head {
-    min-height:39px;
-    padding:6px 9px;
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    flex-wrap:wrap;
-    gap:5px;
-    background:#121c25;
-    border-bottom:1px solid var(--line);
+min-height:39px;
+padding:6px 9px;
+display:flex;
+align-items:center;
+justify-content:space-between;
+flex-wrap:wrap;
+gap:5px;
+background:#121c25;
+border-bottom:1px solid var(--line);
 }
 
 .coin-title {
-    display:flex;
-    align-items:center;
-    gap:8px;
+display:flex;
+align-items:center;
+gap:8px;
 }
 
 .coin-title b {
-    color:#e9f0f5;
-    font-size:var(--fs-coin);
-    font-weight:900;
+color:#e9f0f5;
+font-size:var(--fs-coin);
+font-weight:900;
 }
 
 .rank {
-    color:var(--yellow);
-    font-size:var(--fs-small);
-    font-weight:800;
+color:var(--yellow);
+font-size:var(--fs-small);
+font-weight:800;
 }
 
 .market-summary {
-    display:grid;
-    grid-template-columns:repeat(3,minmax(0,1fr));
+display:grid;
+grid-template-columns:repeat(3,minmax(0,1fr));
 }
 
 .market-summary > div {
-    min-width:0;
-    min-height:49px;
-    padding:6px 3px;
-    display:flex;
-    flex-direction:column;
-    align-items:center;
-    justify-content:center;
-    text-align:center;
-    background:#101820;
+min-width:0;
+min-height:49px;
+padding:6px 3px;
+display:flex;
+flex-direction:column;
+align-items:center;
+justify-content:center;
+text-align:center;
+background:#101820;
 }
 
 .market-summary > div + div {
-    border-left:1px solid #26343f;
+border-left:1px solid #26343f;
 }
 
 .market-summary span {
-    color:#8798a7;
-    font-size:var(--fs-tiny);
-    margin-bottom:4px;
+color:#8798a7;
+font-size:var(--fs-tiny);
+margin-bottom:4px;
 }
 
 .market-summary strong {
-    color:#e6edf2;
-    font-size:var(--fs-value);
-    font-weight:800;
-    white-space:nowrap;
+color:#e6edf2;
+font-size:var(--fs-value);
+font-weight:800;
+white-space:nowrap;
 }
 
 @media (min-width:900px) {
-    body { padding:16px; }
-    .btc-price { font-size:23px; }
-    .three-candle-item {
-        height:120px;
-        min-height:120px;
-    }
+body { padding:16px; }
+.btc-price { font-size:23px; }
+.three-candle-item {
+height:120px;
+min-height:120px;
+}
 }
 
 @media (max-width:899px) {
-    body { padding:9px; }
+body { padding:9px; }
 }
 
 @media (max-width:600px) {
 
-    :root {
-        --fs-main:15px;
-        --fs-section:12px;
-        --fs-coin:13px;
-        --fs-value:11px;
-        --fs-content:10px;
-        --fs-small:9px;
-        --fs-tiny:8px;
-    }
+:root {
+    --fs-main:15px;
+    --fs-section:12px;
+    --fs-coin:13px;
+    --fs-value:11px;
+    --fs-content:10px;
+    --fs-small:9px;
+    --fs-tiny:8px;
+}
 
-    body { padding:6px; }
+body { padding:6px; }
 
-    h1 {
-        margin:2px 1px 9px;
-        padding-bottom:8px;
-    }
+h1 {
+    margin:2px 1px 9px;
+    padding-bottom:8px;
+}
 
-    section { margin-bottom:8px; }
+section { margin-bottom:8px; }
 
-    .btc-panel {
-        padding:9px 10px;
-        border-radius:6px;
-    }
+.btc-panel {
+    padding:9px 10px;
+    border-radius:6px;
+}
 
-    .btc-price { font-size:19px; }
+.btc-price { font-size:19px; }
 
-    .panel-heading {
-        min-height:36px;
-        padding:0 8px;
-    }
+.panel-heading {
+    min-height:36px;
+    padding:0 8px;
+}
 
-    .signal-condition {
-        padding:6px 7px;
-        gap:5px;
-    }
+.signal-condition {
+    padding:6px 7px;
+    gap:5px;
+}
 
-    .signal-card-top {
-        min-height:36px;
-        padding:5px 7px;
-    }
+.signal-card-top {
+    min-height:36px;
+    padding:5px 7px;
+}
 
-    .signal-data-grid > div {
-        min-height:43px;
-        padding:5px 2px;
-    }
+.signal-data-grid > div {
+    min-height:43px;
+    padding:5px 2px;
+}
 
-    .three-candle-section,
-    .top-three-candle-section {
-        padding:7px 6px;
-    }
+.three-candle-section,
+.top-three-candle-section {
+    padding:7px 6px;
+}
 
-    .three-candle-heading { margin-bottom:5px; }
+.three-candle-heading { margin-bottom:5px; }
 
-    .three-candle-list {
-        grid-template-columns:repeat(6,minmax(0,1fr));
-        gap:3px;
-    }
+.three-candle-list {
+    grid-template-columns:repeat(6,minmax(0,1fr));
+    gap:3px;
+}
 
-    .three-candle-item {
-        height:116px;
-        min-height:116px;
-        grid-template-rows:25px minmax(0,1fr) 16px 17px;
-        row-gap:3px;
-        padding:5px 1px;
-        border-radius:4px;
-    }
+.three-candle-item {
+    height:116px;
+    min-height:116px;
+    grid-template-rows:25px minmax(0,1fr) 16px 17px;
+    row-gap:3px;
+    padding:5px 1px;
+    border-radius:4px;
+}
 
-    .three-candle-label {
-        height:25px;
-        min-height:0;
-        margin:0;
-    }
+.three-candle-label {
+    height:25px;
+    min-height:0;
+    margin:0;
+}
 
-    .candle-date,
-    .candle-time { font-size:7px; }
+.candle-date,
+.candle-time { font-size:7px; }
 
-    .three-candle-pattern .pattern-box { min-width:0; }
+.three-candle-pattern .pattern-box { min-width:0; }
 
-    .three-candle-pattern .pattern-name {
-        font-size:7px;
-        white-space:normal;
-        text-align:center;
-        overflow-wrap:anywhere;
-    }
+.three-candle-pattern .pattern-name {
+    font-size:7px;
+    white-space:normal;
+    text-align:center;
+    overflow-wrap:anywhere;
+}
 
-    .candle-pattern-visual { transform:scale(.75); }
+.candle-pattern-visual { transform:scale(.75); }
 
-    .pattern-multi { gap:2px; }
-    .pattern-multi .pattern-box { min-width:0; }
+.pattern-multi { gap:2px; }
+.pattern-multi .pattern-box { min-width:0; }
 
-    .coin-card {
-        margin-top:6px;
-        border-radius:6px;
-    }
+.coin-card {
+    margin-top:6px;
+    border-radius:6px;
+}
 
-    .coin-head {
-        min-height:36px;
-        padding:5px 7px;
-    }
+.coin-head {
+    min-height:36px;
+    padding:5px 7px;
+}
 
-    .market-summary > div {
-        min-height:44px;
-        padding:5px 2px;
-    }
+.market-summary > div {
+    min-height:44px;
+    padding:5px 2px;
+}
 
-    .signal-empty { min-height:55px; }
+.signal-empty { min-height:55px; }
 
-    .signal-type-list,
-    .pattern-badge-list { gap:3px; }
+.signal-type-list,
+.pattern-badge-list { gap:3px; }
 
-    .signal-type-badge,
-    .bearish-type-badge,
-    .consecutive-bullish,
-    .consecutive-bearish {
-        padding:2px 4px;
-    }
+.signal-type-badge,
+.bearish-type-badge,
+.consecutive-bullish,
+.consecutive-bearish {
+    padding:2px 4px;
+}
 
-    .rsi-value {
-        height:17px;
-        min-height:17px;
-        font-size:7px;
-        padding:1px;
-    }
+.rsi-value {
+    height:17px;
+    min-height:17px;
+    font-size:7px;
+    padding:1px;
+}
 
-    .three-candle-rsi {
-        height:17px;
-        min-height:0;
-    }
+.three-candle-rsi {
+    height:17px;
+    min-height:0;
+}
 
-    .three-candle-change { height:16px; }
+.three-candle-change { height:16px; }
 
-    .three-candle-change .candle-change {
-        height:16px;
-        min-height:16px;
-        font-size:8px;
-    }
+.three-candle-change .candle-change {
+    height:16px;
+    min-height:16px;
+    font-size:8px;
+}
 
-    /* 모바일 체크리스트 */
-    .signal-checklist {
-        padding:7px 7px;
-    }
+/* 모바일 체크리스트 */
 
-    .checklist-grid {
-        grid-template-columns:1fr;
-        gap:4px;
-    }
+.signal-checklist {
+    padding:7px 7px;
+}
 
-    .checklist-item {
-        min-height:25px;
-        padding:4px 5px;
-    }
+.checklist-grid {
+    grid-template-columns:1fr;
+    gap:4px;
+}
+
+.checklist-item {
+    min-height:25px;
+    padding:4px 5px;
+}
+
 }
 
 @media (max-width:380px) {
 
-    :root {
-        --fs-main:14px;
-        --fs-section:11px;
-        --fs-coin:12px;
-        --fs-value:10px;
-        --fs-content:9px;
-        --fs-small:8px;
-        --fs-tiny:7px;
-    }
+:root {
+    --fs-main:14px;
+    --fs-section:11px;
+    --fs-coin:12px;
+    --fs-value:10px;
+    --fs-content:9px;
+    --fs-small:8px;
+    --fs-tiny:7px;
+}
 
-    body { padding:5px; }
+body { padding:5px; }
 
-    .btc-price { font-size:17px; }
-    .update-time { font-size:7px; }
+.btc-price { font-size:17px; }
+.update-time { font-size:7px; }
 
-    .three-candle-item {
-        height:112px;
-        min-height:112px;
-        grid-template-rows:23px minmax(0,1fr) 15px 16px;
-        row-gap:3px;
-    }
+.three-candle-item {
+    height:112px;
+    min-height:112px;
+    grid-template-rows:23px minmax(0,1fr) 15px 16px;
+    row-gap:3px;
+}
 
-    .three-candle-label { height:23px; }
+.three-candle-label { height:23px; }
 
-    .candle-date,
-    .candle-time { font-size:6px; }
+.candle-date,
+.candle-time { font-size:6px; }
 
-    .three-candle-pattern .pattern-box { min-width:0; }
-    .three-candle-pattern .pattern-name { font-size:6px; }
+.three-candle-pattern .pattern-box { min-width:0; }
+.three-candle-pattern .pattern-name { font-size:6px; }
 
-    .signal-card-top { gap:4px; }
+.signal-card-top { gap:4px; }
 
-    .rsi-value {
-        height:16px;
-        min-height:16px;
-        font-size:6px;
-    }
+.rsi-value {
+    height:16px;
+    min-height:16px;
+    font-size:6px;
+}
 
-    .three-candle-rsi { height:16px; }
-    .three-candle-change { height:15px; }
+.three-candle-rsi { height:16px; }
+.three-candle-change { height:15px; }
 
-    .three-candle-change .candle-change {
-        height:15px;
-        min-height:15px;
-        font-size:7px;
-    }
+.three-candle-change .candle-change {
+    height:15px;
+    min-height:15px;
+    font-size:7px;
+}
+
 }
 """
 
@@ -5536,19 +5601,37 @@ def startup():
     )
 
     log.info(
-        "SIGNAL 당일 변동률 조건: %s%% 초과",
+        "SIGNAL 당일 변동률 조건 사용 여부=%s | 기준=%s%% 초과",
+        USE_SIGNAL_DAILY_CHANGE,
         DAILY_CHANGE_MIN
     )
 
     log.info(
-        "SIGNAL 최신 RSI 허용 범위: %s~%s",
+        "SIGNAL 최신 RSI 범위 조건 사용 여부=%s | 범위=%s~%s",
+        USE_SIGNAL_RSI_RANGE,
         RSI_RANGE_MIN,
         RSI_RANGE_MAX
     )
 
     log.info(
-        "SIGNAL EMA 조건: %s",
+        "SIGNAL EMA 정배열 조건 사용 여부=%s | 조건=%s",
+        USE_SIGNAL_EMA_ALIGNMENT,
         get_ema_condition_text()
+    )
+
+    log.info(
+        "SIGNAL EMA 역배열 중 양봉 조건 사용 여부=%s",
+        USE_SIGNAL_EMA_BEARISH_BULLISH
+    )
+
+    log.info(
+        "SIGNAL RSI 돌파 조건 사용 여부=%s",
+        USE_SIGNAL_RSI_CROSS
+    )
+
+    log.info(
+        "SIGNAL 체크리스트 화면 표시 여부=%s",
+        SHOW_SIGNAL_CHECKLIST
     )
 
     log.info(
@@ -5608,7 +5691,7 @@ def startup():
     )
 
     log.info(
-        "RSI 70 상향돌파 + 상승캔들: 해당 카드 녹색 강조 유지"
+        "RSI 50 상향돌파 + 상승캔들: 해당 카드 녹색 강조 유지"
     )
 
     log.info(
@@ -5616,7 +5699,8 @@ def startup():
     )
 
     log.info(
-        "RSI 70 상향/하향돌파 카드 색상 조건은 기존 방식 유지"
+        "RSI 50 상향/70 하향돌파 검사 범위: 최근 표시 %s개 캔들",
+        DISPLAY_CANDLE_COUNT
     )
 
     log.info(
@@ -5628,27 +5712,26 @@ def startup():
     )
 
     log.info(
-        "최신 RSI가 %s~%s 범위에 있어야 최종 SIGNAL",
-        RSI_RANGE_MIN,
-        RSI_RANGE_MAX
+        "SIGNAL 선정은 개별 활성화된 조건만 적용"
     )
 
     log.info(
-        "선택된 EMA 정배열까지 모두 충족해야 최종 SIGNAL: %s",
-        get_ema_condition_text()
-    )
-
-    log.info(
-        "최근 %s개 표시 캔들 중 EMA1/3 역배열 유지 양봉(노란색)이 최소 1개 있어야 최종 SIGNAL",
+        "최근 %s개 표시 캔들 중 EMA1/3 역배열 유지 양봉 조건은 설정에 따라 적용",
         DISPLAY_CANDLE_COUNT
     )
 
     log.info(
-        "SIGNAL 및 TOP 리스트에 4개 조건 체크리스트 표시"
+        "최근 %s개 표시 캔들 중 RSI50 상향 또는 RSI70 하향돌파 조건은 설정에 따라 적용",
+        DISPLAY_CANDLE_COUNT
     )
 
     log.info(
-        "BTC 시황에도 동일한 4개 체크리스트 표시"
+        "SIGNAL 및 TOP 리스트 체크리스트 화면 표시 설정=%s",
+        SHOW_SIGNAL_CHECKLIST
+    )
+
+    log.info(
+        "BTC 시황에도 동일한 체크리스트 표시 설정 적용"
     )
 
     log.info(
@@ -5670,6 +5753,10 @@ def startup():
 
     log.info(
         "BTC 체크리스트 판정은 업비트 SIGNAL 공통 판정 함수 사용"
+    )
+
+    log.info(
+        "체크리스트는 Y로 설정된 조건만 표시하며, 표시할 조건이 없으면 영역 전체 숨김"
     )
 
     log.info(
