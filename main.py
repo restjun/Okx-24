@@ -92,7 +92,7 @@ USE_EMA_50 = "Y"
 # Y / Y : 정배열 또는 역배열 중 하나만 완성되어도 통과
 # N / N : EMA 배열 조건 사용 안 함
 
-USE_EMA_BULLISH_ALIGNMENT = "Y"
+USE_EMA_BULLISH_ALIGNMENT = "N"
 USE_EMA_BEARISH_ALIGNMENT = "Y"
 
 
