@@ -62,8 +62,8 @@ RSI_PERIOD = 14
 # RSI 설정
 # =========================================================
 
-RSI_SIGNAL_MIN = 30
-RSI_SIGNAL_MAX = 70
+RSI_SIGNAL_MIN = 70
+RSI_SIGNAL_MAX = 30
 
 RSI_RANGE_MIN = 0
 RSI_RANGE_MAX = 100
