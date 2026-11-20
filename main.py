@@ -171,6 +171,9 @@ latest_upbit_markets = []
 
 latest_signal_data = []
 
+# 반대 SIGNAL 전용 데이터
+latest_reverse_signal_data = []
+
 latest_upbit_btc_volume_24h = None
 
 latest_btc_okx_price = None
@@ -2360,6 +2363,7 @@ def update_upbit():
     global latest_upbit_update_time
     global latest_upbit_daily_update_time
     global latest_signal_data
+    global latest_reverse_signal_data
     global latest_upbit_btc_volume_24h
 
     clear_candle_cache()
@@ -2498,7 +2502,12 @@ def update_upbit():
     latest_upbit_daily_update_time = kst()
     latest_upbit_update_time = latest_upbit_daily_update_time
 
+    # =====================================================
+    # SIGNAL 및 REVERSE SIGNAL 조건 구성
+    # =====================================================
+
     latest_signal_data = []
+    latest_reverse_signal_data = []
 
     signal_condition_keys = []
 
@@ -2521,6 +2530,7 @@ def update_upbit():
 
         checks = get_signal_condition_checks(row)
 
+        # 기존 SIGNAL 조건: 활성화된 조건 모두 통과
         if all(
             checks.get(key) is True
             for key in signal_condition_keys
@@ -2528,6 +2538,60 @@ def update_upbit():
 
             latest_signal_data.append(row)
 
+        # REVERSE SIGNAL:
+        # 활성화된 조건 중 하나 이상 확실하게 미통과
+        elif (
+            signal_condition_keys
+            and any(
+                checks.get(key) is False
+                for key in signal_condition_keys
+            )
+        ):
+
+            reverse_row = dict(row)
+
+            reverse_reasons = []
+
+            for key in signal_condition_keys:
+
+                if checks.get(key) is not False:
+                    continue
+
+                if key == "daily_change":
+
+                    reverse_reasons.append(
+                        f"당일 변동률 {DAILY_CHANGE_MIN:.2f}% 이하"
+                    )
+
+                elif key == "rsi_range":
+
+                    reverse_reasons.append(
+                        f"RSI {RSI_RANGE_MIN}~{RSI_RANGE_MAX} 범위 이탈"
+                    )
+
+                elif key == "ema_alignment":
+
+                    reverse_reasons.append(
+                        "EMA 정배열 미충족"
+                    )
+
+                elif key == "ema_bearish_bullish_candle":
+
+                    reverse_reasons.append(
+                        "EMA 역배열 양봉 조건 미충족"
+                    )
+
+                elif key == "rsi_cross_signal":
+
+                    reverse_reasons.append(
+                        "RSI 돌파 조건 미충족"
+                    )
+
+            reverse_row["reverse_reasons"] = reverse_reasons
+
+            latest_reverse_signal_data.append(reverse_row)
+
+    # 기존 SIGNAL 거래대금 순 정렬
     latest_signal_data.sort(
         key=lambda x: (
             x.get("volume_24h")
@@ -2542,6 +2606,22 @@ def update_upbit():
         1
     ):
         row["signal_rank"] = signal_rank
+
+    # REVERSE SIGNAL 거래대금 순 정렬
+    latest_reverse_signal_data.sort(
+        key=lambda x: (
+            x.get("volume_24h")
+            if x.get("volume_24h") is not None
+            else 0
+        ),
+        reverse=True
+    )
+
+    for reverse_rank, row in enumerate(
+        latest_reverse_signal_data,
+        1
+    ):
+        row["reverse_rank"] = reverse_rank
 
     active_condition_names = []
 
@@ -2582,11 +2662,12 @@ def update_upbit():
 
     log.info(
         "UPBIT | TOP%s | SIGNAL 조건=%s | "
-        "시간봉=%s | SIGNAL=%s | 정렬=24H 거래대금 순",
+        "시간봉=%s | SIGNAL=%s | REVERSE SIGNAL=%s | 정렬=24H 거래대금 순",
         TOP_N,
         signal_condition_log,
         CANDLE_PATTERN_TIMEFRAME,
-        len(latest_signal_data)
+        len(latest_signal_data),
+        len(latest_reverse_signal_data)
     )
 
 
@@ -4165,6 +4246,124 @@ def signal_section():
 
 
 # =========================================================
+# REVERSE SIGNAL 카드
+# =========================================================
+
+def reverse_signal_card(row):
+
+    reasons = row.get("reverse_reasons", [])
+
+    reason_html = "".join(
+        f'<span class="reverse-reason">{html.escape(reason)}</span>'
+        for reason in reasons
+    )
+
+    return f"""
+    <div class="reverse-signal-card">
+
+        <div class="reverse-card-top">
+
+            <div class="signal-identity">
+
+                <span class="reverse-rank">
+                    #{row.get("volume_rank", "-")}
+                </span>
+
+                <b class="signal-coin-name">
+                    {html.escape(row["name"])}
+                </b>
+
+            </div>
+
+            <div class="reverse-reason-list">
+                {reason_html}
+            </div>
+
+        </div>
+
+        <div class="signal-data-grid">
+
+            <div>
+                <span>현재가</span>
+                <strong>
+                    {fmt_price(row.get("current_price"))}
+                </strong>
+            </div>
+
+            <div>
+                <span>거래대금</span>
+                <strong>
+                    {fmt_vol(row.get("volume_24h"))}
+                </strong>
+            </div>
+
+            <div>
+                <span>변동률</span>
+                <strong>
+                    {fmt_change(row.get("daily_change"))}
+                </strong>
+            </div>
+
+        </div>
+
+    </div>
+    """
+
+
+# =========================================================
+# REVERSE SIGNAL 영역
+# =========================================================
+
+def reverse_signal_section():
+
+    if not latest_reverse_signal_data:
+
+        body = """
+        <div class="reverse-signal-empty">
+            현재 반대 SIGNAL 조건에 해당하는 종목 없음
+        </div>
+        """
+
+    else:
+
+        body = "".join(
+            reverse_signal_card(row)
+            for row in latest_reverse_signal_data
+        )
+
+    return f"""
+    <section class="reverse-signal-panel">
+
+        <div class="panel-heading">
+
+            <div class="heading-title">
+                <span class="heading-mark reverse-mark"></span>
+                REVERSE SIGNAL
+                <span class="reverse-heading-count">
+                    {len(latest_reverse_signal_data)}
+                </span>
+            </div>
+
+            <span class="update-time">
+                반대 조건 · 거래대금 순
+            </span>
+
+        </div>
+
+        <div class="reverse-description">
+            기존 SIGNAL 조건 중 하나 이상 미통과한 종목
+            <span>참고용 표시 · 매매 대상 제외</span>
+        </div>
+
+        <div class="signal-list">
+            {body}
+        </div>
+
+    </section>
+    """
+
+
+# =========================================================
 # TOP 카드
 # =========================================================
 
@@ -5158,6 +5357,103 @@ font-size:var(--fs-content);
 font-weight:700;
 }
 
+/* =====================================================
+REVERSE SIGNAL
+===================================================== */
+
+.reverse-signal-panel {
+overflow:hidden;
+background:var(--panel);
+border:1px solid #49333a;
+border-radius:7px;
+}
+
+.reverse-mark {
+background:var(--red);
+box-shadow:0 0 7px rgba(255,101,117,.5);
+}
+
+.reverse-heading-count {
+min-width:18px;
+padding:2px 5px;
+text-align:center;
+color:var(--red);
+background:var(--red-soft);
+border-radius:4px;
+font-size:var(--fs-tiny);
+}
+
+.reverse-description {
+padding:7px 9px;
+color:#aab8c4;
+background:#17171e;
+border-bottom:1px solid #382b32;
+font-size:var(--fs-tiny);
+font-weight:700;
+}
+
+.reverse-description span {
+margin-left:5px;
+color:var(--red);
+}
+
+.reverse-signal-card {
+display:flex;
+flex-direction:column;
+background:#151820;
+border-bottom:1px solid #382b32;
+}
+
+.reverse-signal-card:last-child {
+border-bottom:0;
+}
+
+.reverse-card-top {
+min-height:39px;
+padding:6px 9px;
+display:flex;
+align-items:center;
+justify-content:space-between;
+flex-wrap:wrap;
+gap:5px;
+background:#1b1b24;
+border-bottom:1px solid #382b32;
+}
+
+.reverse-rank {
+color:var(--red);
+font-size:var(--fs-small);
+font-weight:800;
+}
+
+.reverse-reason-list {
+display:flex;
+align-items:center;
+flex-wrap:wrap;
+gap:4px;
+}
+
+.reverse-reason {
+display:inline-flex;
+padding:3px 6px;
+color:#ff8995;
+background:rgba(255,101,117,.10);
+border:1px solid rgba(255,101,117,.25);
+border-radius:4px;
+font-size:var(--fs-tiny);
+font-weight:800;
+}
+
+.reverse-signal-empty {
+min-height:55px;
+display:flex;
+align-items:center;
+justify-content:center;
+color:#8c9ba8;
+font-size:var(--fs-content);
+font-weight:700;
+}
+
 .coin-card {
 overflow:hidden;
 background:var(--panel);
@@ -5398,6 +5694,20 @@ section { margin-bottom:8px; }
     padding:4px 5px;
 }
 
+/* 모바일 REVERSE SIGNAL */
+
+.reverse-card-top {
+    padding:5px 7px;
+}
+
+.reverse-reason-list {
+    gap:3px;
+}
+
+.reverse-reason {
+    padding:2px 4px;
+}
+
 }
 
 @media (max-width:380px) {
@@ -5464,7 +5774,11 @@ def dashboard():
 
     if USE_UPBIT == "Y":
 
+        # 기존 SIGNAL
         s += signal_section()
+
+        # SIGNAL 바로 아래 REVERSE SIGNAL
+        s += reverse_signal_section()
 
         if SHOW_TOP_LIST == "Y":
 
@@ -5808,6 +6122,22 @@ def startup():
 
     log.info(
         "컴팩트 트레이딩 터미널 디자인 적용"
+    )
+
+    log.info(
+        "REVERSE SIGNAL 별도 표시 사용"
+    )
+
+    log.info(
+        "REVERSE SIGNAL은 활성화된 SIGNAL 조건 중 하나 이상 미통과한 종목"
+    )
+
+    log.info(
+        "REVERSE SIGNAL은 표시 전용이며 매매 대상에서 제외"
+    )
+
+    log.info(
+        "REVERSE SIGNAL은 데이터 부족(None)만으로 선정하지 않음"
     )
 
     threading.Thread(
