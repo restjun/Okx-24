@@ -113,8 +113,8 @@ SHOW_SIGNAL_CHECKLIST = "Y"
 # EMA 1 / 3 데드크로스 설정
 # =========================================================
 
-EMA_CROSS_FAST_PERIOD = 1
-EMA_CROSS_SLOW_PERIOD = 2
+EMA_CROSS_FAST_PERIOD = 50
+EMA_CROSS_SLOW_PERIOD = 1
 
 DISPLAY_CANDLE_COUNT = 6
 
