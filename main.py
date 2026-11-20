@@ -85,6 +85,16 @@ USE_EMA_10 = "Y"
 USE_EMA_20 = "Y"
 USE_EMA_50 = "Y"
 
+# EMA 배열 방향 사용 설정
+#
+# Y / N : 정배열만 사용
+# N / Y : 역배열만 사용
+# Y / Y : 정배열 또는 역배열 중 하나만 완성되어도 통과
+# N / N : EMA 배열 조건 사용 안 함
+
+USE_EMA_BULLISH_ALIGNMENT = "Y"
+USE_EMA_BEARISH_ALIGNMENT = "Y"
+
 
 # =========================================================
 # SIGNAL 체크리스트 개별 사용 설정
@@ -154,12 +164,24 @@ def get_ema_condition_text():
     if len(enabled) == 1:
         return f"{enabled[0]} 단독 사용"
 
-    ema_text = " > ".join(enabled)
+    conditions = []
 
-    return (
-        f"{ema_text} 정배열 "
-        f"또는 역배열"
-    )
+    if USE_EMA_BULLISH_ALIGNMENT == "Y":
+
+        conditions.append(
+            f"{' > '.join(enabled)} 정배열"
+        )
+
+    if USE_EMA_BEARISH_ALIGNMENT == "Y":
+
+        conditions.append(
+            f"{' < '.join(enabled)} 역배열"
+        )
+
+    if not conditions:
+        return "EMA 배열 조건 사용 안 함"
+
+    return " 또는 ".join(conditions)
 
 
 # =========================================================
@@ -705,6 +727,59 @@ def calculate_ema(close_series, period):
         min_periods=period,
         adjust=False
     ).mean()
+
+
+# =========================================================
+# EMA 배열 방향 판정 공통 함수
+# =========================================================
+
+def check_ema_alignment_values(values):
+
+    if USE_EMA_BULLISH_ALIGNMENT != "Y" and USE_EMA_BEARISH_ALIGNMENT != "Y":
+        return True
+
+    if values is None or len(values) < 2:
+        return True
+
+    try:
+
+        numeric_values = [
+            float(value)
+            for value in values
+        ]
+
+    except (TypeError, ValueError):
+        return False
+
+    if any(
+        pd.isna(value)
+        for value in numeric_values
+    ):
+        return False
+
+    bullish_alignment = all(
+        numeric_values[i] > numeric_values[i + 1]
+        for i in range(len(numeric_values) - 1)
+    )
+
+    bearish_alignment = all(
+        numeric_values[i] < numeric_values[i + 1]
+        for i in range(len(numeric_values) - 1)
+    )
+
+    allowed_bullish = (
+        USE_EMA_BULLISH_ALIGNMENT == "Y"
+        and bullish_alignment
+    )
+
+    allowed_bearish = (
+        USE_EMA_BEARISH_ALIGNMENT == "Y"
+        and bearish_alignment
+    )
+
+    return bool(
+        allowed_bullish or allowed_bearish
+    )
 
 
 # =========================================================
@@ -1552,8 +1627,11 @@ def get_ema_alignment_at_index(
     index
 ):
 
+    if USE_EMA_BULLISH_ALIGNMENT != "Y" and USE_EMA_BEARISH_ALIGNMENT != "Y":
+        return True
+
     if len(ema_series_list) < 2:
-        return None
+        return True
 
     values = []
 
@@ -1569,19 +1647,7 @@ def get_ema_alignment_at_index(
 
         values.append(float(value))
 
-    bullish_alignment = all(
-        values[i] > values[i + 1]
-        for i in range(len(values) - 1)
-    )
-
-    bearish_alignment = all(
-        values[i] < values[i + 1]
-        for i in range(len(values) - 1)
-    )
-
-    return bool(
-        bullish_alignment or bearish_alignment
-    )
+    return check_ema_alignment_values(values)
 
 
 # =========================================================
@@ -1783,54 +1849,41 @@ def analyze_signal_candles(market, price):
     )
 
     enabled_emas = []
-    enabled_ema_series = []
 
     if USE_EMA_5 == "Y":
-        enabled_emas.append(("EMA5", ema5))
-        enabled_ema_series.append(ema5_series)
+        enabled_emas.append(ema5)
 
     if USE_EMA_10 == "Y":
-        enabled_emas.append(("EMA10", ema10))
-        enabled_ema_series.append(ema10_series)
+        enabled_emas.append(ema10)
 
     if USE_EMA_20 == "Y":
-        enabled_emas.append(("EMA20", ema20))
-        enabled_ema_series.append(ema20_series)
+        enabled_emas.append(ema20)
 
     if USE_EMA_50 == "Y":
-        enabled_emas.append(("EMA50", ema50))
-        enabled_ema_series.append(ema50_series)
+        enabled_emas.append(ema50)
 
-    if not enabled_emas:
+    if (
+        USE_EMA_BULLISH_ALIGNMENT != "Y"
+        and USE_EMA_BEARISH_ALIGNMENT != "Y"
+    ):
+
+        ema_alignment = True
+
+    elif len(enabled_emas) < 2:
 
         ema_alignment = True
 
     elif any(
         value is None
-        for _, value in enabled_emas
+        for value in enabled_emas
     ):
 
         ema_alignment = False
 
     else:
 
-        ema_values = [
-            float(value)
-            for _, value in enabled_emas
-        ]
-
-        bullish_alignment = all(
-            ema_values[i] > ema_values[i + 1]
-            for i in range(len(ema_values) - 1)
-        )
-
-        bearish_alignment = all(
-            ema_values[i] < ema_values[i + 1]
-            for i in range(len(ema_values) - 1)
-        )
-
-        ema_alignment = bool(
-            bullish_alignment or bearish_alignment
+        ema_alignment = check_ema_alignment_values(
+            enabled_emas
         )
 
     pattern_info = analyze_previous_current_pattern(
@@ -2131,7 +2184,14 @@ def get_signal_condition_checks(row):
     if USE_EMA_50 == "Y":
         enabled_ema_values.append(row.get("ema50"))
 
-    if not enabled_ema_values:
+    if (
+        USE_EMA_BULLISH_ALIGNMENT != "Y"
+        and USE_EMA_BEARISH_ALIGNMENT != "Y"
+    ):
+
+        checks["ema_alignment"] = True
+
+    elif len(enabled_ema_values) < 2:
 
         checks["ema_alignment"] = True
 
@@ -2143,23 +2203,8 @@ def get_signal_condition_checks(row):
 
         try:
 
-            ema_values = [
-                float(value)
-                for value in enabled_ema_values
-            ]
-
-            bullish_alignment = all(
-                ema_values[i] > ema_values[i + 1]
-                for i in range(len(ema_values) - 1)
-            )
-
-            bearish_alignment = all(
-                ema_values[i] < ema_values[i + 1]
-                for i in range(len(ema_values) - 1)
-            )
-
-            checks["ema_alignment"] = bool(
-                bullish_alignment or bearish_alignment
+            checks["ema_alignment"] = check_ema_alignment_values(
+                enabled_ema_values
             )
 
         except (TypeError, ValueError):
@@ -5651,8 +5696,10 @@ def startup():
     )
 
     log.info(
-        "SIGNAL EMA 정배열 또는 역배열 조건 사용 여부=%s | 조건=%s",
+        "SIGNAL EMA 배열 조건 사용 여부=%s | 방향 설정 정배열=%s 역배열=%s | 조건=%s",
         USE_SIGNAL_EMA_ALIGNMENT,
+        USE_EMA_BULLISH_ALIGNMENT,
+        USE_EMA_BEARISH_ALIGNMENT,
         get_ema_condition_text()
     )
 
@@ -5681,6 +5728,12 @@ def startup():
         USE_EMA_20,
         EMA_LONG_PERIOD,
         USE_EMA_50
+    )
+
+    log.info(
+        "EMA 배열 방향 설정 | 정배열=%s | 역배열=%s",
+        USE_EMA_BULLISH_ALIGNMENT,
+        USE_EMA_BEARISH_ALIGNMENT
     )
 
     log.info(
@@ -5836,7 +5889,11 @@ def startup():
     )
 
     log.info(
-        "EMA 배열 조건은 정배열 또는 역배열 중 하나가 완성되면 SIGNAL 통과"
+        "EMA 배열 방향 설정에 따라 선택된 정배열/역배열 조건만 SIGNAL 통과"
+    )
+
+    log.info(
+        "정배열과 역배열 설정이 모두 N이면 EMA 배열 조건 자동 통과"
     )
 
     log.info(
