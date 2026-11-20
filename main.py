@@ -149,12 +149,17 @@ def get_ema_condition_text():
         enabled.append(f"EMA{EMA_LONG_PERIOD}")
 
     if not enabled:
-        return "EMA 정배열 조건 사용 안 함"
+        return "EMA 배열 조건 사용 안 함"
 
     if len(enabled) == 1:
         return f"{enabled[0]} 단독 사용"
 
-    return " > ".join(enabled) + " 정배열"
+    ema_text = " > ".join(enabled)
+
+    return (
+        f"{ema_text} 정배열 "
+        f"또는 역배열"
+    )
 
 
 # =========================================================
@@ -1539,7 +1544,7 @@ def apply_rsi_cross_signals(periods):
 
 
 # =========================================================
-# 확정봉 EMA 정배열 판정
+# 확정봉 EMA 정배열 또는 역배열 판정
 # =========================================================
 
 def get_ema_alignment_at_index(
@@ -1564,9 +1569,18 @@ def get_ema_alignment_at_index(
 
         values.append(float(value))
 
-    return all(
+    bullish_alignment = all(
         values[i] > values[i + 1]
         for i in range(len(values) - 1)
+    )
+
+    bearish_alignment = all(
+        values[i] < values[i + 1]
+        for i in range(len(values) - 1)
+    )
+
+    return bool(
+        bullish_alignment or bearish_alignment
     )
 
 
@@ -1800,9 +1814,23 @@ def analyze_signal_candles(market, price):
 
     else:
 
-        ema_alignment = all(
-            enabled_emas[i][1] > enabled_emas[i + 1][1]
-            for i in range(len(enabled_emas) - 1)
+        ema_values = [
+            float(value)
+            for _, value in enabled_emas
+        ]
+
+        bullish_alignment = all(
+            ema_values[i] > ema_values[i + 1]
+            for i in range(len(ema_values) - 1)
+        )
+
+        bearish_alignment = all(
+            ema_values[i] < ema_values[i + 1]
+            for i in range(len(ema_values) - 1)
+        )
+
+        ema_alignment = bool(
+            bullish_alignment or bearish_alignment
         )
 
     pattern_info = analyze_previous_current_pattern(
@@ -2120,9 +2148,18 @@ def get_signal_condition_checks(row):
                 for value in enabled_ema_values
             ]
 
-            checks["ema_alignment"] = all(
+            bullish_alignment = all(
                 ema_values[i] > ema_values[i + 1]
                 for i in range(len(ema_values) - 1)
+            )
+
+            bearish_alignment = all(
+                ema_values[i] < ema_values[i + 1]
+                for i in range(len(ema_values) - 1)
+            )
+
+            checks["ema_alignment"] = bool(
+                bullish_alignment or bearish_alignment
             )
 
         except (TypeError, ValueError):
@@ -5614,7 +5651,7 @@ def startup():
     )
 
     log.info(
-        "SIGNAL EMA 정배열 조건 사용 여부=%s | 조건=%s",
+        "SIGNAL EMA 정배열 또는 역배열 조건 사용 여부=%s | 조건=%s",
         USE_SIGNAL_EMA_ALIGNMENT,
         get_ema_condition_text()
     )
@@ -5799,7 +5836,7 @@ def startup():
     )
 
     log.info(
-        "EMA 정배열은 SIGNAL 선정 조건으로만 사용"
+        "EMA 배열 조건은 정배열 또는 역배열 중 하나가 완성되면 SIGNAL 통과"
     )
 
     log.info(
