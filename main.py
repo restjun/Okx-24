@@ -106,7 +106,7 @@ USE_SIGNAL_RSI_CROSS = "N"
 USE_SIGNAL_EMA_ALIGNMENT = "Y"
 USE_SIGNAL_EMA_BEARISH_BULLISH = "Y"
 
-SHOW_SIGNAL_CHECKLIST = "Y"
+SHOW_SIGNAL_CHECKLIST = "N"
 
 
 # =========================================================
