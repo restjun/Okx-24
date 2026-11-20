@@ -185,6 +185,93 @@ def get_ema_condition_text():
 
 
 # =========================================================
+# SIGNAL 카드 EMA 배열 방향 배지
+# =========================================================
+
+def get_ema_alignment_badge(row):
+
+    # SIGNAL EMA 배열 조건이 활성화된 경우에만 표시
+    if USE_SIGNAL_EMA_ALIGNMENT != "Y":
+        return ""
+
+    # 정배열과 역배열이 모두 비활성화된 경우 표시하지 않음
+    if (
+        USE_EMA_BULLISH_ALIGNMENT != "Y"
+        and USE_EMA_BEARISH_ALIGNMENT != "Y"
+    ):
+        return ""
+
+    enabled_ema_values = []
+
+    if USE_EMA_5 == "Y":
+        enabled_ema_values.append(row.get("ema5"))
+
+    if USE_EMA_10 == "Y":
+        enabled_ema_values.append(row.get("ema10"))
+
+    if USE_EMA_20 == "Y":
+        enabled_ema_values.append(row.get("ema20"))
+
+    if USE_EMA_50 == "Y":
+        enabled_ema_values.append(row.get("ema50"))
+
+    # 배열을 판단할 EMA가 2개 미만이면 표시하지 않음
+    if len(enabled_ema_values) < 2:
+        return ""
+
+    # EMA 데이터가 부족하면 표시하지 않음
+    if any(value is None for value in enabled_ema_values):
+        return ""
+
+    try:
+
+        values = [
+            float(value)
+            for value in enabled_ema_values
+        ]
+
+    except (TypeError, ValueError):
+        return ""
+
+    if any(pd.isna(value) for value in values):
+        return ""
+
+    bullish_alignment = all(
+        values[i] > values[i + 1]
+        for i in range(len(values) - 1)
+    )
+
+    bearish_alignment = all(
+        values[i] < values[i + 1]
+        for i in range(len(values) - 1)
+    )
+
+    if (
+        USE_EMA_BULLISH_ALIGNMENT == "Y"
+        and bullish_alignment
+    ):
+
+        return (
+            '<span class="ema-alignment-badge ema-bullish-badge">'
+            '정배열 통과'
+            '</span>'
+        )
+
+    if (
+        USE_EMA_BEARISH_ALIGNMENT == "Y"
+        and bearish_alignment
+    ):
+
+        return (
+            '<span class="ema-alignment-badge ema-bearish-badge">'
+            '역배열 통과'
+            '</span>'
+        )
+
+    return ""
+
+
+# =========================================================
 # 전역 데이터
 # =========================================================
 
@@ -4068,6 +4155,9 @@ def signal_card(row):
 
     checklist_html = signal_checklist_html(row)
 
+    # 코인명 오른쪽 EMA 배열 방향 표시
+    ema_alignment_badge = get_ema_alignment_badge(row)
+
     return f"""
     <div class="signal-card">
 
@@ -4082,6 +4172,8 @@ def signal_card(row):
                 <b class="signal-coin-name">
                     {html.escape(row["name"])}
                 </b>
+
+                {ema_alignment_badge}
 
             </div>
 
@@ -4993,6 +5085,41 @@ background:var(--red-soft);
 border:1px solid rgba(255,101,117,.2);
 }
 
+/* =====================================================
+SIGNAL 코인명 옆 EMA 배열 방향 배지
+===================================================== */
+
+.signal-identity {
+display:flex;
+align-items:center;
+gap:8px;
+flex-wrap:wrap;
+}
+
+.ema-alignment-badge {
+display:inline-flex;
+align-items:center;
+justify-content:center;
+padding:3px 6px;
+border-radius:4px;
+font-size:var(--fs-tiny);
+font-weight:900;
+line-height:1.2;
+white-space:nowrap;
+}
+
+.ema-bullish-badge {
+color:var(--green);
+background:rgba(56,217,150,.12);
+border:1px solid rgba(56,217,150,.45);
+}
+
+.ema-bearish-badge {
+color:var(--red);
+background:rgba(255,101,117,.12);
+border:1px solid rgba(255,101,117,.45);
+}
+
 .panel-heading {
 min-height:39px;
 padding:0 10px;
@@ -5480,6 +5607,17 @@ section { margin-bottom:8px; }
     padding:4px 5px;
 }
 
+/* 모바일 EMA 배열 배지 */
+
+.signal-identity {
+    gap:6px;
+}
+
+.ema-alignment-badge {
+    padding:2px 5px;
+    font-size:7px;
+}
+
 }
 
 @media (max-width:380px) {
@@ -5898,6 +6036,14 @@ def startup():
 
     log.info(
         "기존 현재가 EMA5 하회 노란색 조건 제거 상태 유지"
+    )
+
+    log.info(
+        "SIGNAL 코인명 오른쪽에 정배열 통과 또는 역배열 통과 배지 표시"
+    )
+
+    log.info(
+        "EMA 배열 배지는 SIGNAL EMA 배열 조건이 활성화된 경우에만 표시"
     )
 
     log.info(
