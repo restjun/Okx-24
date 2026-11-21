@@ -141,7 +141,7 @@ USE_SIGNAL_RSI_RANGE = "Y"
 USE_SIGNAL_EMA_ALIGNMENT = "Y"
 USE_SIGNAL_EMA_BEARISH_BULLISH = "Y"
 
-SHOW_SIGNAL_CHECKLIST = "N"
+SHOW_SIGNAL_CHECKLIST = "Y"
 
 
 # =========================================================
