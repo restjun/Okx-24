@@ -1863,6 +1863,7 @@ def analyze_daily_change(market, price):
         "periods": periods
     }
 
+
 # =========================================================
 # Row 생성
 # =========================================================
@@ -3010,6 +3011,7 @@ def update_dashboard():
     finally:
         update_lock.release()
 
+
 # =========================================================
 # 전체 업데이트
 # =========================================================
@@ -3751,6 +3753,7 @@ def btc_html():
 
 # =========================================================
 # SIGNAL 카드
+# 조건을 통과한 시간봉만 표시
 # =========================================================
 
 def signal_card(row):
@@ -3769,7 +3772,8 @@ def signal_card(row):
 
     timeframe_sections = []
 
-    for timeframe in get_active_timeframes():
+    # 통과한 시간봉만 표시
+    for timeframe in passed_timeframes:
 
         analysis = (
             row.get("timeframe_analyses", {}).get(timeframe)
@@ -5522,7 +5526,7 @@ def startup():
     )
 
     log.info(
-        "SIGNAL 코인에 통과한 시간봉을 모두 표시"
+        "SIGNAL 코인에 통과한 시간봉만 표시"
     )
 
     log.info(
@@ -5555,4 +5559,3 @@ if __name__ == "__main__":
         host="0.0.0.0",
         port=8000
     )
-
