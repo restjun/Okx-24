@@ -60,10 +60,10 @@ MAX_RETRIES = 20
 # N = 분석 및 화면 표시 제외
 # =========================================================
 
-USE_TIMEFRAME_15M = "Y"
+USE_TIMEFRAME_15M = "N"
 USE_TIMEFRAME_1H = "Y"
-USE_TIMEFRAME_4H = "Y"
-USE_TIMEFRAME_1D = "Y"
+USE_TIMEFRAME_4H = "N"
+USE_TIMEFRAME_1D = "N"
 
 
 TIMEFRAME_LABEL = {
