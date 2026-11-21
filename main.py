@@ -1,4 +1,3 @@
-
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
@@ -820,21 +819,23 @@ def check_ema_alignment_values(values):
 
 
 # =========================================================
-# EMA1 / EMA50 실제 골든크로스 및 정배열 유지 판정
+# EMA1 / EMA50 골든크로스 및 정배열 유지 판정
+# 종가(close) 기준
+# 실제 상향 크로스가 발생한 캔들만 골든크로스로 판정
 # =========================================================
 
-def apply_ema_bullish_cross_signals(periods, open_series):
+def apply_ema_bullish_cross_signals(periods, close_series):
 
-    if not periods or open_series is None:
+    if not periods or close_series is None:
         return periods
 
     ema_fast = calculate_ema(
-        open_series,
+        close_series,
         EMA_CROSS_FAST_PERIOD
     )
 
     ema_slow = calculate_ema(
-        open_series,
+        close_series,
         EMA_CROSS_SLOW_PERIOD
     )
 
@@ -872,31 +873,33 @@ def apply_ema_bullish_cross_signals(periods, open_series):
         previous_fast = float(previous_fast)
         previous_slow = float(previous_slow)
 
-        # 실제 EMA1 / EMA50 상향 돌파 지점만 골든크로스
+        # 종가 기준 EMA1이 EMA50을 상향 돌파한 순간
         golden_cross = bool(
             previous_fast <= previous_slow
             and current_fast > current_slow
         )
 
-        # EMA1이 EMA50을 상향 돌파하면 정배열 시작
         if golden_cross:
+
             bullish_state = True
+
+            # 실제 크로스가 발생한 캔들에만 True
+            period["ema_golden_cross"] = True
 
         # EMA1이 EMA50 이하로 내려오면 정배열 해제
         elif current_fast <= current_slow:
+
             bullish_state = False
 
-        # 실제 크로스 발생 캔들에만 True
-        period["ema_golden_cross"] = golden_cross
-
-        # 정배열 상태는 크로스 이후에도 계속 유지
+        # 정배열 상태는 별도로 유지
         if bullish_state and current_fast > current_slow:
 
             period["ema_bullish_alignment"] = True
 
-            # 기존 진행 중 캔들 표시 기능 유지
+            # 진행 중인 캔들이 실제 크로스 캔들인 경우에만 표시
             period["ema_golden_cross_progress"] = bool(
                 period.get("active", False)
+                and golden_cross
             )
 
     return periods
@@ -1579,9 +1582,10 @@ def analyze_signal_candles(market, price, timeframe):
     if not periods:
         return empty_result
 
+    # EMA1 / EMA50 크로스는 종가 기준
     periods = apply_ema_bullish_cross_signals(
         periods,
-        df["open"]
+        df["close"]
     )
 
     rsi_series = calculate_rsi(
@@ -1883,22 +1887,21 @@ def get_signal_condition_checks(row, analysis=None):
         except (TypeError, ValueError):
             checks["ema_alignment"] = None
 
-    # 최근 DISPLAY_CANDLE_COUNT개 캔들 중
-    # 실제 EMA1 / EMA50 상향 크로스가 발생한 캔들이 있는지 확인
-    # 양봉 / 음봉 여부는 검사하지 않음
+    # 최근 DISPLAY_CANDLE_COUNT개 봉 중 실제 EMA 크로스 발생 여부
     candles = analysis.get("last_three_patterns")
 
     if not candles:
+
         checks["ema_bullish_candle"] = None
 
     else:
 
-        cross_found = any(
+        found = any(
             candle.get("ema_golden_cross") is True
             for candle in candles
         )
 
-        checks["ema_bullish_candle"] = bool(cross_found)
+        checks["ema_bullish_candle"] = bool(found)
 
     return checks
 
@@ -2018,7 +2021,7 @@ def signal_checklist_html(row, timeframe, analysis):
     checklist_items.append(
         (
             "ema_bullish_candle",
-            f"최근 {DISPLAY_CANDLE_COUNT}개 봉 중 EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 정배열 크로스 발생",
+            f"최근 {DISPLAY_CANDLE_COUNT}개 봉 중 EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 실제 상향 크로스",
             USE_SIGNAL_EMA_BEARISH_BULLISH
         )
     )
@@ -2273,7 +2276,9 @@ def update_upbit():
 
     if USE_SIGNAL_EMA_BEARISH_BULLISH == "Y":
         active_condition_names.append(
-            f"최근 {DISPLAY_CANDLE_COUNT}개 봉 중 EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 정배열 크로스 발생"
+            f"최근 {DISPLAY_CANDLE_COUNT}개 봉 중 "
+            f"EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} "
+            "실제 상향 크로스"
         )
 
     signal_condition_log = (
@@ -2589,9 +2594,10 @@ def analyze_okx_btc_timeframe(df, timeframe, current_price=None):
     if not periods:
         return empty_result
 
+    # EMA1 / EMA50 크로스는 종가 기준
     periods = apply_ema_bullish_cross_signals(
         periods,
-        df["open"]
+        df["close"]
     )
 
     rsi_series = calculate_rsi(
@@ -3687,7 +3693,7 @@ def signal_section():
         active_conditions.append(
             f"최근 {DISPLAY_CANDLE_COUNT}개 봉 중 "
             f"EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} "
-            "정배열 크로스 발생 1회 이상"
+            "실제 상향 크로스 1회 이상"
         )
 
     condition_items = []
@@ -5222,7 +5228,7 @@ def startup():
     )
 
     log.info(
-        "SIGNAL EMA 정배열 크로스 발생 조건 사용 여부=%s",
+        "SIGNAL EMA 실제 상향 크로스 조건 사용 여부=%s",
         USE_SIGNAL_EMA_BEARISH_BULLISH
     )
 
@@ -5244,7 +5250,7 @@ def startup():
     )
 
     log.info(
-        "별도 EMA 골든크로스 설정 | EMA%s / EMA%s | 시가(open) 기준",
+        "별도 EMA 골든크로스 설정 | EMA%s / EMA%s | 종가(close) 기준",
         EMA_CROSS_FAST_PERIOD,
         EMA_CROSS_SLOW_PERIOD
     )
@@ -5258,7 +5264,7 @@ def startup():
     )
 
     log.info(
-        "EMA1 / EMA50 정배열 유지 중 양봉: 기존 노란색 강조 유지"
+        "EMA1 / EMA50 정배열 유지 중 양봉: 노란색 강조"
     )
 
     log.info(
