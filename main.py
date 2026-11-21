@@ -1,3 +1,4 @@
+
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
@@ -819,7 +820,7 @@ def check_ema_alignment_values(values):
 
 
 # =========================================================
-# EMA1 / EMA50 골든크로스 및 정배열 유지 판정
+# EMA1 / EMA50 실제 골든크로스 및 정배열 유지 판정
 # =========================================================
 
 def apply_ema_bullish_cross_signals(periods, open_series):
@@ -871,23 +872,29 @@ def apply_ema_bullish_cross_signals(periods, open_series):
         previous_fast = float(previous_fast)
         previous_slow = float(previous_slow)
 
-        # EMA1이 EMA50을 상향 돌파하면 정배열 시작
-        if (
+        # 실제 EMA1 / EMA50 상향 돌파 지점만 골든크로스
+        golden_cross = bool(
             previous_fast <= previous_slow
             and current_fast > current_slow
-        ):
+        )
+
+        # EMA1이 EMA50을 상향 돌파하면 정배열 시작
+        if golden_cross:
             bullish_state = True
 
         # EMA1이 EMA50 이하로 내려오면 정배열 해제
         elif current_fast <= current_slow:
             bullish_state = False
 
-        # 정배열 유지 중인 캔들 표시
+        # 실제 크로스 발생 캔들에만 True
+        period["ema_golden_cross"] = golden_cross
+
+        # 정배열 상태는 크로스 이후에도 계속 유지
         if bullish_state and current_fast > current_slow:
 
-            period["ema_golden_cross"] = True
             period["ema_bullish_alignment"] = True
 
+            # 기존 진행 중 캔들 표시 기능 유지
             period["ema_golden_cross_progress"] = bool(
                 period.get("active", False)
             )
@@ -1876,6 +1883,9 @@ def get_signal_condition_checks(row, analysis=None):
         except (TypeError, ValueError):
             checks["ema_alignment"] = None
 
+    # 최근 DISPLAY_CANDLE_COUNT개 캔들 중
+    # 실제 EMA1 / EMA50 상향 크로스가 발생한 캔들이 있는지 확인
+    # 양봉 / 음봉 여부는 검사하지 않음
     candles = analysis.get("last_three_patterns")
 
     if not candles:
@@ -1883,43 +1893,12 @@ def get_signal_condition_checks(row, analysis=None):
 
     else:
 
-        found = False
-        valid_candle_count = 0
+        cross_found = any(
+            candle.get("ema_golden_cross") is True
+            for candle in candles
+        )
 
-        for candle in candles:
-
-            try:
-
-                open_price = float(candle["open"])
-                close_price = float(candle["close"])
-
-                bullish_alignment = candle.get(
-                    "ema_bullish_alignment"
-                )
-
-                if bullish_alignment is None:
-                    continue
-
-                valid_candle_count += 1
-
-                if (
-                    bullish_alignment is True
-                    and close_price > open_price
-                ):
-                    found = True
-                    break
-
-            except (KeyError, TypeError, ValueError):
-                continue
-
-        if found:
-            checks["ema_bullish_candle"] = True
-
-        elif valid_candle_count > 0:
-            checks["ema_bullish_candle"] = False
-
-        else:
-            checks["ema_bullish_candle"] = None
+        checks["ema_bullish_candle"] = bool(cross_found)
 
     return checks
 
@@ -2039,7 +2018,7 @@ def signal_checklist_html(row, timeframe, analysis):
     checklist_items.append(
         (
             "ema_bullish_candle",
-            f"최근 {DISPLAY_CANDLE_COUNT}개 봉 중 EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 정배열 양봉",
+            f"최근 {DISPLAY_CANDLE_COUNT}개 봉 중 EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 정배열 크로스 발생",
             USE_SIGNAL_EMA_BEARISH_BULLISH
         )
     )
@@ -2294,7 +2273,7 @@ def update_upbit():
 
     if USE_SIGNAL_EMA_BEARISH_BULLISH == "Y":
         active_condition_names.append(
-            f"최근 {DISPLAY_CANDLE_COUNT}개 봉 중 EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 정배열 양봉"
+            f"최근 {DISPLAY_CANDLE_COUNT}개 봉 중 EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 정배열 크로스 발생"
         )
 
     signal_condition_log = (
@@ -3708,7 +3687,7 @@ def signal_section():
         active_conditions.append(
             f"최근 {DISPLAY_CANDLE_COUNT}개 봉 중 "
             f"EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} "
-            "정배열 양봉 1개 이상"
+            "정배열 크로스 발생 1회 이상"
         )
 
     condition_items = []
@@ -5243,7 +5222,7 @@ def startup():
     )
 
     log.info(
-        "SIGNAL EMA 정배열 중 양봉 조건 사용 여부=%s",
+        "SIGNAL EMA 정배열 크로스 발생 조건 사용 여부=%s",
         USE_SIGNAL_EMA_BEARISH_BULLISH
     )
 
@@ -5279,7 +5258,7 @@ def startup():
     )
 
     log.info(
-        "EMA1 / EMA50 정배열 유지 중 양봉: 노란색 강조"
+        "EMA1 / EMA50 정배열 유지 중 양봉: 기존 노란색 강조 유지"
     )
 
     log.info(
