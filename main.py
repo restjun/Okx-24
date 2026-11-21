@@ -80,6 +80,7 @@ TIMEFRAME_MINUTES = {
     "1d": 1440
 }
 
+
 def get_active_timeframes():
 
     result = []
@@ -100,14 +101,12 @@ def get_active_timeframes():
 
     return result
 
+
 # =========================================================
 # RSI 설정
 # =========================================================
 
 RSI_PERIOD = 14
-
-RSI_SIGNAL_MIN = 0
-RSI_SIGNAL_MAX = 100
 
 RSI_RANGE_MIN = 50
 RSI_RANGE_MAX = 100
@@ -139,7 +138,6 @@ USE_EMA_BEARISH_ALIGNMENT = "Y"
 
 USE_SIGNAL_DAILY_CHANGE = "Y"
 USE_SIGNAL_RSI_RANGE = "Y"
-USE_SIGNAL_RSI_CROSS = "N"
 USE_SIGNAL_EMA_ALIGNMENT = "Y"
 USE_SIGNAL_EMA_BEARISH_BULLISH = "Y"
 
@@ -147,11 +145,11 @@ SHOW_SIGNAL_CHECKLIST = "N"
 
 
 # =========================================================
-# EMA 1 / 3 데드크로스 설정
+# EMA1 / EMA50 정배열 크로스 설정
 # =========================================================
 
-EMA_CROSS_FAST_PERIOD = 50
-EMA_CROSS_SLOW_PERIOD = 1
+EMA_CROSS_FAST_PERIOD = 1
+EMA_CROSS_SLOW_PERIOD = 50
 
 DISPLAY_CANDLE_COUNT = 6
 
@@ -821,10 +819,10 @@ def check_ema_alignment_values(values):
 
 
 # =========================================================
-# EMA 1 / 3 데드크로스 및 역배열 유지 판정
+# EMA1 / EMA50 골든크로스 및 정배열 유지 판정
 # =========================================================
 
-def apply_ema_dead_cross_signals(periods, open_series):
+def apply_ema_bullish_cross_signals(periods, open_series):
 
     if not periods or open_series is None:
         return periods
@@ -839,13 +837,13 @@ def apply_ema_dead_cross_signals(periods, open_series):
         EMA_CROSS_SLOW_PERIOD
     )
 
-    bearish_state = False
+    bullish_state = False
 
     for i, period in enumerate(periods):
 
-        period["ema_dead_cross"] = False
-        period["ema_dead_cross_progress"] = False
-        period["ema_bearish_alignment"] = False
+        period["ema_golden_cross"] = False
+        period["ema_golden_cross_progress"] = False
+        period["ema_bullish_alignment"] = False
 
         if i >= len(ema_fast) or i >= len(ema_slow):
             continue
@@ -854,7 +852,7 @@ def apply_ema_dead_cross_signals(periods, open_series):
         current_slow = ema_slow.iloc[i]
 
         if pd.isna(current_fast) or pd.isna(current_slow):
-            bearish_state = False
+            bullish_state = False
             continue
 
         current_fast = float(current_fast)
@@ -867,27 +865,30 @@ def apply_ema_dead_cross_signals(periods, open_series):
         previous_slow = ema_slow.iloc[i - 1]
 
         if pd.isna(previous_fast) or pd.isna(previous_slow):
-            bearish_state = False
+            bullish_state = False
             continue
 
         previous_fast = float(previous_fast)
         previous_slow = float(previous_slow)
 
+        # EMA1이 EMA50을 상향 돌파하면 정배열 시작
         if (
-            previous_fast >= previous_slow
-            and current_fast < current_slow
+            previous_fast <= previous_slow
+            and current_fast > current_slow
         ):
-            bearish_state = True
+            bullish_state = True
 
-        elif current_fast >= current_slow:
-            bearish_state = False
+        # EMA1이 EMA50 이하로 내려오면 정배열 해제
+        elif current_fast <= current_slow:
+            bullish_state = False
 
-        if bearish_state and current_fast < current_slow:
+        # 정배열 유지 중인 캔들 표시
+        if bullish_state and current_fast > current_slow:
 
-            period["ema_dead_cross"] = True
-            period["ema_bearish_alignment"] = True
+            period["ema_golden_cross"] = True
+            period["ema_bullish_alignment"] = True
 
-            period["ema_dead_cross_progress"] = bool(
+            period["ema_golden_cross_progress"] = bool(
                 period.get("active", False)
             )
 
@@ -1381,13 +1382,12 @@ def analyze_previous_current_pattern(periods):
             "change": period.get("change"),
             "active": period.get("active", False),
             "rsi": period.get("rsi"),
-            "rsi_signal_type": period.get("rsi_signal_type"),
-            "ema_dead_cross": period.get("ema_dead_cross", False),
-            "ema_dead_cross_progress": period.get(
-                "ema_dead_cross_progress", False
+            "ema_golden_cross": period.get("ema_golden_cross", False),
+            "ema_golden_cross_progress": period.get(
+                "ema_golden_cross_progress", False
             ),
-            "ema_bearish_alignment": period.get(
-                "ema_bearish_alignment", False
+            "ema_bullish_alignment": period.get(
+                "ema_bullish_alignment", False
             )
         }
         for period, patterns in zip(selected_periods, last_six)
@@ -1521,58 +1521,6 @@ def build_timeframe_periods(df, timeframe, current_price=None):
 
 
 # =========================================================
-# RSI 돌파 판정
-# =========================================================
-
-def apply_rsi_cross_signals(periods):
-
-    if not periods:
-        return periods
-
-    for i, period in enumerate(periods):
-
-        period["rsi_previous"] = None
-        period["rsi_signal_type"] = None
-
-        if i == 0:
-            continue
-
-        previous = periods[i - 1]
-
-        previous_rsi = previous.get("rsi")
-        current_rsi = period.get("rsi")
-
-        if previous_rsi is None or current_rsi is None:
-            continue
-
-        try:
-            previous_rsi = float(previous_rsi)
-            current_rsi = float(current_rsi)
-            open_price = float(period["open"])
-            close_price = float(period["close"])
-        except Exception:
-            continue
-
-        period["rsi_previous"] = previous_rsi
-
-        if (
-            previous_rsi < RSI_SIGNAL_MIN
-            and current_rsi >= RSI_SIGNAL_MIN
-            and close_price > open_price
-        ):
-            period["rsi_signal_type"] = "RSI70_UP"
-
-        elif (
-            previous_rsi > RSI_SIGNAL_MAX
-            and current_rsi <= RSI_SIGNAL_MAX
-            and close_price < open_price
-        ):
-            period["rsi_signal_type"] = "RSI70_DOWN"
-
-    return periods
-
-
-# =========================================================
 # 업비트 시간봉별 RSI + EMA + 패턴 분석
 # =========================================================
 
@@ -1596,12 +1544,7 @@ def analyze_signal_candles(market, price, timeframe):
         "consecutive_bullish": 0,
         "consecutive_bearish": 0,
         "consecutive_bullish_candles": 0,
-        "rsi_signal": False,
         "rsi_values": [],
-        "rsi_low_count": 0,
-        "rsi_high_count": 0,
-        "rsi_50_up_count": 0,
-        "rsi_70_down_count": 0,
         "rsi_range_pass": False,
         "ema5": None,
         "ema10": None,
@@ -1629,7 +1572,7 @@ def analyze_signal_candles(market, price, timeframe):
     if not periods:
         return empty_result
 
-    periods = apply_ema_dead_cross_signals(
+    periods = apply_ema_bullish_cross_signals(
         periods,
         df["open"]
     )
@@ -1647,32 +1590,12 @@ def analyze_signal_candles(market, price, timeframe):
     for period in periods:
         period["rsi"] = rsi_map.get(period["start"])
 
-    periods = apply_rsi_cross_signals(periods)
-
     last_rsi_periods = periods[-DISPLAY_CANDLE_COUNT:]
 
     rsi_values = [
         period.get("rsi")
         for period in last_rsi_periods
     ]
-
-    rsi_cross_periods = [
-        period
-        for period in last_rsi_periods
-        if period.get("rsi_signal_type") is not None
-    ]
-
-    rsi_50_up_periods = [
-        period for period in rsi_cross_periods
-        if period["rsi_signal_type"] == "RSI70_UP"
-    ]
-
-    rsi_70_down_periods = [
-        period for period in rsi_cross_periods
-        if period["rsi_signal_type"] == "RSI70_DOWN"
-    ]
-
-    rsi_signal = bool(rsi_cross_periods)
 
     latest_rsi = periods[-1].get("rsi")
     rsi_range_pass = False
@@ -1747,21 +1670,19 @@ def analyze_signal_candles(market, price, timeframe):
     for item, period in zip(last_three, recent_periods):
 
         item["rsi"] = period.get("rsi")
-        item["rsi_previous"] = period.get("rsi_previous")
-        item["rsi_signal_type"] = period.get("rsi_signal_type")
         item["change"] = period.get("change")
         item["active"] = period.get("active", False)
 
-        item["ema_dead_cross"] = period.get(
-            "ema_dead_cross", False
+        item["ema_golden_cross"] = period.get(
+            "ema_golden_cross", False
         )
 
-        item["ema_dead_cross_progress"] = period.get(
-            "ema_dead_cross_progress", False
+        item["ema_golden_cross_progress"] = period.get(
+            "ema_golden_cross_progress", False
         )
 
-        item["ema_bearish_alignment"] = period.get(
-            "ema_bearish_alignment", False
+        item["ema_bullish_alignment"] = period.get(
+            "ema_bullish_alignment", False
         )
 
     current_signal = pattern_info["current_bullish_pattern"]
@@ -1769,40 +1690,19 @@ def analyze_signal_candles(market, price, timeframe):
 
     pattern_signal = bool(current_signal or previous_signal)
 
-    signal_reason = None
-    signal_period = None
-    signal_change = None
-
-    if rsi_cross_periods:
-
-        latest_cross = rsi_cross_periods[-1]
-
-        if latest_cross["rsi_signal_type"] == "RSI70_UP":
-            signal_reason = (
-                f"RSI {RSI_SIGNAL_MIN} 상향돌파 + 상승 캔들"
-            )
-
-        elif latest_cross["rsi_signal_type"] == "RSI70_DOWN":
-            signal_reason = (
-                f"RSI {RSI_SIGNAL_MAX} 하향돌파 + 하락 캔들"
-            )
-
-        signal_period = latest_cross.get("label")
-        signal_change = latest_cross.get("change")
-
     return {
         "timeframe": timeframe,
         "periods": periods[-DISPLAY_CANDLE_COUNT:],
 
-        "signal_pass": rsi_signal,
+        "signal_pass": False,
 
         "pattern_signal": pattern_signal,
         "current_signal": current_signal,
         "previous_signal": previous_signal,
 
-        "signal_change": signal_change,
-        "signal_period": signal_period,
-        "signal_reason": signal_reason,
+        "signal_change": None,
+        "signal_period": None,
+        "signal_reason": None,
 
         "previous_pattern": pattern_info["previous_pattern"],
         "current_pattern": pattern_info["current_pattern"],
@@ -1821,14 +1721,7 @@ def analyze_signal_candles(market, price, timeframe):
             "consecutive_bullish_candles"
         ],
 
-        "rsi_signal": rsi_signal,
         "rsi_values": rsi_values,
-
-        "rsi_low_count": len(rsi_50_up_periods),
-        "rsi_high_count": len(rsi_70_down_periods),
-
-        "rsi_50_up_count": len(rsi_50_up_periods),
-        "rsi_70_down_count": len(rsi_70_down_periods),
 
         "rsi_range_pass": rsi_range_pass,
 
@@ -1986,7 +1879,7 @@ def get_signal_condition_checks(row, analysis=None):
     candles = analysis.get("last_three_patterns")
 
     if not candles:
-        checks["ema_bearish_bullish_candle"] = None
+        checks["ema_bullish_candle"] = None
 
     else:
 
@@ -2000,17 +1893,17 @@ def get_signal_condition_checks(row, analysis=None):
                 open_price = float(candle["open"])
                 close_price = float(candle["close"])
 
-                bearish_alignment = candle.get(
-                    "ema_bearish_alignment"
+                bullish_alignment = candle.get(
+                    "ema_bullish_alignment"
                 )
 
-                if bearish_alignment is None:
+                if bullish_alignment is None:
                     continue
 
                 valid_candle_count += 1
 
                 if (
-                    bearish_alignment is True
+                    bullish_alignment is True
                     and close_price > open_price
                 ):
                     found = True
@@ -2020,57 +1913,13 @@ def get_signal_condition_checks(row, analysis=None):
                 continue
 
         if found:
-            checks["ema_bearish_bullish_candle"] = True
+            checks["ema_bullish_candle"] = True
 
         elif valid_candle_count > 0:
-            checks["ema_bearish_bullish_candle"] = False
+            checks["ema_bullish_candle"] = False
 
         else:
-            checks["ema_bearish_bullish_candle"] = None
-
-    candles = analysis.get("last_three_patterns") or []
-
-    if not candles:
-        checks["rsi_cross_signal"] = None
-
-    else:
-
-        valid_rsi_count = 0
-        found_rsi_cross = False
-
-        for candle in candles[-DISPLAY_CANDLE_COUNT:]:
-
-            current_rsi = candle.get("rsi")
-
-            if current_rsi is None:
-                continue
-
-            try:
-                current_rsi = float(current_rsi)
-
-                if not pd.notna(current_rsi):
-                    continue
-
-            except (TypeError, ValueError):
-                continue
-
-            valid_rsi_count += 1
-
-            if candle.get("rsi_signal_type") in (
-                "RSI70_UP",
-                "RSI70_DOWN"
-            ):
-                found_rsi_cross = True
-                break
-
-        if found_rsi_cross:
-            checks["rsi_cross_signal"] = True
-
-        elif valid_rsi_count > 0:
-            checks["rsi_cross_signal"] = False
-
-        else:
-            checks["rsi_cross_signal"] = None
+            checks["ema_bullish_candle"] = None
 
     return checks
 
@@ -2093,10 +1942,7 @@ def get_signal_condition_keys():
         keys.append("ema_alignment")
 
     if USE_SIGNAL_EMA_BEARISH_BULLISH == "Y":
-        keys.append("ema_bearish_bullish_candle")
-
-    if USE_SIGNAL_RSI_CROSS == "Y":
-        keys.append("rsi_cross_signal")
+        keys.append("ema_bullish_candle")
 
     return keys
 
@@ -2171,11 +2017,6 @@ def signal_checklist_html(row, timeframe, analysis):
             "rsi_range",
             f"최신 RSI {RSI_RANGE_MIN}~{RSI_RANGE_MAX}",
             USE_SIGNAL_RSI_RANGE
-        ),
-        (
-            "rsi_cross_signal",
-            f"최근 표시 {DISPLAY_CANDLE_COUNT}개 봉 중 RSI {RSI_SIGNAL_MIN} 상향 또는 RSI {RSI_SIGNAL_MAX} 하향돌파",
-            USE_SIGNAL_RSI_CROSS
         )
     ]
 
@@ -2197,8 +2038,8 @@ def signal_checklist_html(row, timeframe, analysis):
 
     checklist_items.append(
         (
-            "ema_bearish_bullish_candle",
-            f"최근 {DISPLAY_CANDLE_COUNT}개 봉 중 EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 역배열 양봉",
+            "ema_bullish_candle",
+            f"최근 {DISPLAY_CANDLE_COUNT}개 봉 중 EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 정배열 양봉",
             USE_SIGNAL_EMA_BEARISH_BULLISH
         )
     )
@@ -2388,12 +2229,7 @@ def update_upbit():
                     "consecutive_bullish": 0,
                     "consecutive_bearish": 0,
                     "consecutive_bullish_candles": 0,
-                    "rsi_signal": False,
                     "rsi_values": [],
-                    "rsi_low_count": 0,
-                    "rsi_high_count": 0,
-                    "rsi_50_up_count": 0,
-                    "rsi_70_down_count": 0,
                     "rsi_range_pass": False,
                     "ema5": None,
                     "ema10": None,
@@ -2458,12 +2294,7 @@ def update_upbit():
 
     if USE_SIGNAL_EMA_BEARISH_BULLISH == "Y":
         active_condition_names.append(
-            f"최근 {DISPLAY_CANDLE_COUNT}개 봉 중 EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 역배열 양봉"
-        )
-
-    if USE_SIGNAL_RSI_CROSS == "Y":
-        active_condition_names.append(
-            f"최근 {DISPLAY_CANDLE_COUNT}개 봉 중 RSI{RSI_SIGNAL_MIN} 상향 또는 RSI{RSI_SIGNAL_MAX} 하향돌파"
+            f"최근 {DISPLAY_CANDLE_COUNT}개 봉 중 EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 정배열 양봉"
         )
 
     signal_condition_log = (
@@ -2779,7 +2610,7 @@ def analyze_okx_btc_timeframe(df, timeframe, current_price=None):
     if not periods:
         return empty_result
 
-    periods = apply_ema_dead_cross_signals(
+    periods = apply_ema_bullish_cross_signals(
         periods,
         df["open"]
     )
@@ -2797,8 +2628,6 @@ def analyze_okx_btc_timeframe(df, timeframe, current_price=None):
     for period in periods:
         period["rsi"] = rsi_map.get(period["start"])
 
-    periods = apply_rsi_cross_signals(periods)
-
     pattern_info = analyze_previous_current_pattern(periods)
 
     last_patterns = pattern_info["last_three_patterns"]
@@ -2807,21 +2636,19 @@ def analyze_okx_btc_timeframe(df, timeframe, current_price=None):
     for item, period in zip(last_patterns, recent_periods):
 
         item["rsi"] = period.get("rsi")
-        item["rsi_previous"] = period.get("rsi_previous")
-        item["rsi_signal_type"] = period.get("rsi_signal_type")
         item["change"] = period.get("change")
         item["active"] = period.get("active", False)
 
-        item["ema_dead_cross"] = period.get(
-            "ema_dead_cross", False
+        item["ema_golden_cross"] = period.get(
+            "ema_golden_cross", False
         )
 
-        item["ema_dead_cross_progress"] = period.get(
-            "ema_dead_cross_progress", False
+        item["ema_golden_cross_progress"] = period.get(
+            "ema_golden_cross_progress", False
         )
 
-        item["ema_bearish_alignment"] = period.get(
-            "ema_bearish_alignment", False
+        item["ema_bullish_alignment"] = period.get(
+            "ema_bullish_alignment", False
         )
 
     def latest_ema(period):
@@ -3115,7 +2942,7 @@ def candle_change_html(value):
 # RSI 표시 HTML
 # =========================================================
 
-def rsi_html(value, signal_type=None):
+def rsi_html(value):
 
     if value is None:
         return (
@@ -3136,16 +2963,9 @@ def rsi_html(value, signal_type=None):
     else:
         color_class = "rsi-high"
 
-    signal_text = ""
-
-    if signal_type == "RSI70_UP":
-        signal_text = " ↑50"
-    elif signal_type == "RSI70_DOWN":
-        signal_text = " ↓70"
-
     return (
         f'<div class="rsi-value {color_class}">'
-        f'RSI {value:.1f}{signal_text}'
+        f'RSI {value:.1f}'
         '</div>'
     )
 
@@ -3432,15 +3252,8 @@ def last_three_pattern_html(row):
         )
 
         rsi_value = item.get("rsi")
-        rsi_signal_type = item.get("rsi_signal_type")
 
         card_classes = []
-
-        if rsi_signal_type == "RSI70_UP":
-            card_classes.append("rsi-cross-up-card")
-
-        elif rsi_signal_type == "RSI70_DOWN":
-            card_classes.append("rsi-cross-down-card")
 
         try:
             is_positive_candle = (
@@ -3451,17 +3264,17 @@ def last_three_pattern_html(row):
             is_positive_candle = False
 
         if (
-            item.get("ema_bearish_alignment", False)
+            item.get("ema_bullish_alignment", False)
             and is_positive_candle
         ):
-            card_classes.append("ema-dead-cross-card")
+            card_classes.append("ema-golden-cross-card")
 
         if (
-            item.get("ema_dead_cross_progress", False)
-            and item.get("ema_bearish_alignment", False)
+            item.get("ema_golden_cross_progress", False)
+            and item.get("ema_bullish_alignment", False)
             and is_positive_candle
         ):
-            card_classes.append("ema-dead-cross-progress")
+            card_classes.append("ema-golden-cross-progress")
 
         card_class = " ".join(card_classes)
 
@@ -3481,7 +3294,7 @@ def last_three_pattern_html(row):
                 </div>
 
                 <div class="three-candle-rsi">
-                    {rsi_html(rsi_value, rsi_signal_type)}
+                    {rsi_html(rsi_value)}
                 </div>
             </div>
             """
@@ -3656,11 +3469,6 @@ def timeframe_candle_section(row, timeframe, analysis):
 
             <div class="three-candle-heading">
                 최근 {DISPLAY_CANDLE_COUNT}개 봉 · {label} · RSI({RSI_PERIOD})
-                <span class="rsi-condition-label">
-                    RSI50 상향돌파 녹색 · RSI70 하향돌파 적색 ·
-                    EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD}
-                    역배열 유지 중 양봉 노란색
-                </span>
             </div>
 
             {candle_html}
@@ -3900,13 +3708,7 @@ def signal_section():
         active_conditions.append(
             f"최근 {DISPLAY_CANDLE_COUNT}개 봉 중 "
             f"EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} "
-            "역배열 양봉 1개 이상"
-        )
-
-    if USE_SIGNAL_RSI_CROSS == "Y":
-        active_conditions.append(
-            f"최근 {DISPLAY_CANDLE_COUNT}개 봉 중 "
-            f"RSI{RSI_SIGNAL_MIN} 상향 또는 RSI{RSI_SIGNAL_MAX} 하향돌파"
+            "정배열 양봉 1개 이상"
         )
 
     condition_items = []
@@ -4294,44 +4096,20 @@ background:#141e27;
 border-color:#26343f;
 }
 
-/* RSI 돌파 강조 */
+/* EMA1 / EMA50 정배열 양봉 강조 */
 
-.three-candle-item.rsi-cross-up-card {
-background:rgba(56,217,150,.16);
-border:1px solid var(--green);
-box-shadow:inset 0 0 0 1px rgba(56,217,150,.15),0 0 7px rgba(56,217,150,.15);
-}
-
-.three-candle-item.rsi-cross-up-card .candle-date,
-.three-candle-item.rsi-cross-up-card .candle-time {
-color:var(--green);
-}
-
-.three-candle-item.rsi-cross-down-card {
-background:rgba(255,101,117,.16);
-border:1px solid var(--red);
-box-shadow:inset 0 0 0 1px rgba(255,101,117,.15),0 0 7px rgba(255,101,117,.15);
-}
-
-.three-candle-item.rsi-cross-down-card .candle-date,
-.three-candle-item.rsi-cross-down-card .candle-time {
-color:var(--red);
-}
-
-/* EMA 역배열 양봉 강조 */
-
-.three-candle-item.ema-dead-cross-card {
+.three-candle-item.ema-golden-cross-card {
 background:rgba(232,197,110,.22);
 border:1px solid var(--yellow);
 box-shadow:inset 0 0 0 1px rgba(232,197,110,.20),0 0 8px rgba(232,197,110,.22);
 }
 
-.three-candle-item.ema-dead-cross-card .candle-date,
-.three-candle-item.ema-dead-cross-card .candle-time {
+.three-candle-item.ema-golden-cross-card .candle-date,
+.three-candle-item.ema-golden-cross-card .candle-time {
 color:var(--yellow);
 }
 
-.three-candle-item.ema-dead-cross-progress {
+.three-candle-item.ema-golden-cross-progress {
 border-width:2px;
 box-shadow:inset 0 0 0 1px rgba(232,197,110,.28),0 0 10px rgba(232,197,110,.30);
 }
@@ -5465,13 +5243,8 @@ def startup():
     )
 
     log.info(
-        "SIGNAL EMA 역배열 중 양봉 조건 사용 여부=%s",
+        "SIGNAL EMA 정배열 중 양봉 조건 사용 여부=%s",
         USE_SIGNAL_EMA_BEARISH_BULLISH
-    )
-
-    log.info(
-        "SIGNAL RSI 돌파 조건 사용 여부=%s",
-        USE_SIGNAL_RSI_CROSS
     )
 
     log.info(
@@ -5492,7 +5265,7 @@ def startup():
     )
 
     log.info(
-        "별도 EMA 데드크로스 설정 | EMA%s / EMA%s | 시가(open) 기준",
+        "별도 EMA 골든크로스 설정 | EMA%s / EMA%s | 시가(open) 기준",
         EMA_CROSS_FAST_PERIOD,
         EMA_CROSS_SLOW_PERIOD
     )
@@ -5506,15 +5279,7 @@ def startup():
     )
 
     log.info(
-        "RSI 50 상향돌파 + 상승캔들: 녹색 강조"
-    )
-
-    log.info(
-        "RSI 70 하향돌파 + 하락캔들: 적색 강조"
-    )
-
-    log.info(
-        "EMA 1/3 역배열 유지 중 양봉: 노란색 강조"
+        "EMA1 / EMA50 정배열 유지 중 양봉: 노란색 강조"
     )
 
     log.info(
