@@ -80,25 +80,25 @@ TIMEFRAME_MINUTES = {
     "1d": 1440
 }
 
-
 def get_active_timeframes():
 
     result = []
 
-    if USE_TIMEFRAME_15M == "Y":
-        result.append("15m")
-
-    if USE_TIMEFRAME_1H == "Y":
-        result.append("1h")
-
-    if USE_TIMEFRAME_4H == "Y":
-        result.append("4h")
+    # 대시보드 표시 순서: 일봉 → 4시간 → 1시간 → 15분
 
     if USE_TIMEFRAME_1D == "Y":
         result.append("1d")
 
-    return result
+    if USE_TIMEFRAME_4H == "Y":
+        result.append("4h")
 
+    if USE_TIMEFRAME_1H == "Y":
+        result.append("1h")
+
+    if USE_TIMEFRAME_15M == "Y":
+        result.append("15m")
+
+    return result
 
 # =========================================================
 # RSI 설정
