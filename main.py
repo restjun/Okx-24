@@ -108,7 +108,7 @@ def get_active_timeframes():
 
 RSI_PERIOD = 14
 
-RSI_RANGE_MIN = 50
+RSI_RANGE_MIN = 30
 RSI_RANGE_MAX = 100
 
 RSI_CHECK_CANDLES = 14
@@ -149,7 +149,7 @@ SHOW_SIGNAL_CHECKLIST = "N"
 # =========================================================
 
 EMA_CROSS_FAST_PERIOD = 1
-EMA_CROSS_SLOW_PERIOD = 50
+EMA_CROSS_SLOW_PERIOD = 100
 
 DISPLAY_CANDLE_COUNT = 6
 
