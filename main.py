@@ -149,7 +149,7 @@ SHOW_SIGNAL_CHECKLIST = "N"
 # =========================================================
 
 EMA_CROSS_FAST_PERIOD = 1
-EMA_CROSS_SLOW_PERIOD = 50
+EMA_CROSS_SLOW_PERIOD = 100
 
 DISPLAY_CANDLE_COUNT = 6
 
