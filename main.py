@@ -38,7 +38,7 @@ UTC = ZoneInfo("UTC")
 # 사용자 설정
 # =========================================================
 
-TOP_N = 50
+TOP_N = 20
 SHOW_TOP_LIST = "N"
 UPDATE_MINUTES = 1
 
@@ -61,7 +61,7 @@ MAX_RETRIES = 20
 # =========================================================
 
 USE_TIMEFRAME_15M = "N"
-USE_TIMEFRAME_1H = "N"
+USE_TIMEFRAME_1H = "Y"
 USE_TIMEFRAME_4H = "Y"
 USE_TIMEFRAME_1D = "N"
 
@@ -141,7 +141,7 @@ USE_SIGNAL_RSI_RANGE = "Y"
 USE_SIGNAL_EMA_ALIGNMENT = "Y"
 USE_SIGNAL_EMA_BEARISH_BULLISH = "Y"
 
-SHOW_SIGNAL_CHECKLIST = "Y"
+SHOW_SIGNAL_CHECKLIST = "N"
 
 
 # =========================================================
