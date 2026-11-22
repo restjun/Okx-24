@@ -38,7 +38,7 @@ UTC = ZoneInfo("UTC")
 # 사용자 설정
 # =========================================================
 
-TOP_N = 20
+TOP_N = 50
 SHOW_TOP_LIST = "N"
 UPDATE_MINUTES = 1
 
@@ -61,8 +61,8 @@ MAX_RETRIES = 20
 # =========================================================
 
 USE_TIMEFRAME_15M = "N"
-USE_TIMEFRAME_1H = "N"
-USE_TIMEFRAME_4H = "Y"
+USE_TIMEFRAME_1H = "Y"
+USE_TIMEFRAME_4H = "N"
 USE_TIMEFRAME_1D = "N"
 
 
@@ -121,7 +121,7 @@ RSI_CHECK_CANDLES = 14
 EMA_FAST_PERIOD = 10
 EMA_MIDDLE_PERIOD = 20
 EMA_SLOW_PERIOD = 50
-EMA_LONG_PERIOD = 200
+EMA_LONG_PERIOD = 100
 
 USE_EMA_5 = "N"
 USE_EMA_10 = "N"
@@ -133,40 +133,28 @@ USE_EMA_BEARISH_ALIGNMENT = "Y"
 
 
 # =========================================================
-# EMA1 / EMA50 / EMA100 / EMA200 크로스 설정
+# SIGNAL 체크리스트 개별 사용 설정
+# =========================================================
+
+USE_SIGNAL_DAILY_CHANGE = "Y"
+USE_SIGNAL_RSI_RANGE = "Y"
+USE_SIGNAL_EMA_ALIGNMENT = "Y"
+USE_SIGNAL_EMA_BEARISH_BULLISH = "Y"
+
+SHOW_SIGNAL_CHECKLIST = "Y"
+
+
+# =========================================================
+# EMA1 / EMA50 정배열 크로스 설정
 # =========================================================
 
 EMA_CROSS_FAST_PERIOD = 1
-
-EMA_CROSS_SLOW_PERIODS = [50, 100, 200]
-
-# 기존 변수 호환 유지
 EMA_CROSS_SLOW_PERIOD = 50
 
 DISPLAY_CANDLE_COUNT = 6
 
 CONSECUTIVE_CANDLE_MIN = 3
 CONSECUTIVE_BULLISH_MIN = 2
-
-
-# =========================================================
-# 캔들 조회 개수
-# EMA200 크로스 계산을 위해 400개 확보
-# =========================================================
-
-CANDLE_HISTORY_COUNT = 400
-
-
-# =========================================================
-# SIGNAL 체크리스트 개별 사용 설정
-# =========================================================
-
-USE_SIGNAL_DAILY_CHANGE = "Y"
-USE_SIGNAL_RSI_RANGE = "N"
-USE_SIGNAL_EMA_ALIGNMENT = "Y"
-USE_SIGNAL_EMA_BEARISH_BULLISH = "Y"
-
-SHOW_SIGNAL_CHECKLIST = "Y"
 
 
 # =========================================================
@@ -538,91 +526,58 @@ def get_upbit_markets():
 
 # =========================================================
 # 업비트 분봉 조회
-# 최대 400개 캔들
 # =========================================================
 
-def get_upbit_minute_candles(market, unit, count=CANDLE_HISTORY_COUNT):
+def get_upbit_minute_candles(market, unit, count=200):
 
     endpoint = f"https://api.upbit.com/v1/candles/minutes/{unit}"
+    target_count = min(max(int(count), 1), 200)
 
-    target_count = min(max(int(count), 1), 400)
+    r = retry(
+        requests.get,
+        endpoint,
+        params={"market": market, "count": target_count},
+        timeout=15
+    )
+
+    if r is None:
+        return pd.DataFrame()
+
+    try:
+        data = r.json()
+    except Exception:
+        return pd.DataFrame()
+
+    if not isinstance(data, list) or not data:
+        return pd.DataFrame()
 
     rows = []
-    to = None
 
-    while len(rows) < target_count:
-
-        batch_count = min(
-            target_count - len(rows),
-            200
-        )
-
-        params = {
-            "market": market,
-            "count": batch_count
-        }
-
-        if to is not None:
-            params["to"] = to
-
-        r = retry(
-            requests.get,
-            endpoint,
-            params=params,
-            timeout=15
-        )
-
-        if r is None:
-            break
+    for x in data:
 
         try:
-            data = r.json()
+
+            dt_utc = datetime.strptime(
+                x["candle_date_time_utc"],
+                "%Y-%m-%dT%H:%M:%S"
+            ).replace(tzinfo=UTC)
+
+            dt_kst = datetime.strptime(
+                x["candle_date_time_kst"],
+                "%Y-%m-%dT%H:%M:%S"
+            ).replace(tzinfo=KST)
+
+            rows.append({
+                "datetime": dt_kst,
+                "datetime_utc": dt_utc,
+                "open": float(x["opening_price"]),
+                "high": float(x["high_price"]),
+                "low": float(x["low_price"]),
+                "close": float(x["trade_price"])
+            })
+
         except Exception:
-            break
-
-        if not isinstance(data, list) or not data:
-            break
-
-        for x in data:
-
-            try:
-
-                dt_utc = datetime.strptime(
-                    x["candle_date_time_utc"],
-                    "%Y-%m-%dT%H:%M:%S"
-                ).replace(tzinfo=UTC)
-
-                dt_kst = datetime.strptime(
-                    x["candle_date_time_kst"],
-                    "%Y-%m-%dT%H:%M:%S"
-                ).replace(tzinfo=KST)
-
-                rows.append({
-                    "datetime": dt_kst,
-                    "datetime_utc": dt_utc,
-                    "open": float(x["opening_price"]),
-                    "high": float(x["high_price"]),
-                    "low": float(x["low_price"]),
-                    "close": float(x["trade_price"])
-                })
-
-            except Exception:
-                pass
-
-        if len(data) < batch_count:
-            break
-
-        oldest = min(
-            x["candle_date_time_utc"]
-            for x in data
-        )
-
-        next_to = oldest + "Z"
-
-        if next_to == to:
-            break
-
-        to = next_to
+            pass
 
     if not rows:
         return pd.DataFrame()
@@ -636,98 +591,65 @@ def get_upbit_minute_candles(market, unit, count=CANDLE_HISTORY_COUNT):
     )
 
 
-def get_upbit_15m_candles(market, count=CANDLE_HISTORY_COUNT):
+def get_upbit_15m_candles(market, count=200):
     return get_upbit_minute_candles(market, 15, count)
 
 
-def get_upbit_1h_candles(market, count=CANDLE_HISTORY_COUNT):
+def get_upbit_1h_candles(market, count=200):
     return get_upbit_minute_candles(market, 60, count)
 
 
-def get_upbit_4h_candles(market, count=CANDLE_HISTORY_COUNT):
+def get_upbit_4h_candles(market, count=200):
     return get_upbit_minute_candles(market, 240, count)
 
 
 # =========================================================
 # 업비트 일봉 조회
-# 최대 400개 캔들
 # =========================================================
 
-def get_upbit_daily_candles(market, count=CANDLE_HISTORY_COUNT):
+def get_upbit_daily_candles(market, count=200):
 
-    endpoint = "https://api.upbit.com/v1/candles/days"
+    r = retry(
+        requests.get,
+        "https://api.upbit.com/v1/candles/days",
+        params={
+            "market": market,
+            "count": min(int(count), 200)
+        },
+        timeout=15
+    )
 
-    target_count = min(max(int(count), 1), 400)
+    if r is None:
+        return pd.DataFrame()
+
+    try:
+        data = r.json()
+    except Exception:
+        return pd.DataFrame()
+
+    if not isinstance(data, list):
+        return pd.DataFrame()
 
     rows = []
-    to = None
 
-    while len(rows) < target_count:
-
-        batch_count = min(
-            target_count - len(rows),
-            200
-        )
-
-        params = {
-            "market": market,
-            "count": batch_count
-        }
-
-        if to is not None:
-            params["to"] = to
-
-        r = retry(
-            requests.get,
-            endpoint,
-            params=params,
-            timeout=15
-        )
-
-        if r is None:
-            break
+    for x in data:
 
         try:
-            data = r.json()
+
+            rows.append({
+                "datetime": datetime.strptime(
+                    x["candle_date_time_kst"],
+                    "%Y-%m-%dT%H:%M:%S"
+                ).replace(tzinfo=KST),
+
+                "open": float(x["opening_price"]),
+                "high": float(x["high_price"]),
+                "low": float(x["low_price"]),
+                "close": float(x["trade_price"])
+            })
+
         except Exception:
-            break
-
-        if not isinstance(data, list) or not data:
-            break
-
-        for x in data:
-
-            try:
-
-                rows.append({
-                    "datetime": datetime.strptime(
-                        x["candle_date_time_kst"],
-                        "%Y-%m-%dT%H:%M:%S"
-                    ).replace(tzinfo=KST),
-
-                    "open": float(x["opening_price"]),
-                    "high": float(x["high_price"]),
-                    "low": float(x["low_price"]),
-                    "close": float(x["trade_price"])
-                })
-
-            except Exception:
-                pass
-
-        if len(data) < batch_count:
-            break
-
-        oldest = min(
-            x["candle_date_time_utc"]
-            for x in data
-        )
-
-        next_to = oldest + "Z"
-
-        if next_to == to:
-            break
-
-        to = next_to
+            pass
 
     if not rows:
         return pd.DataFrame()
@@ -736,7 +658,6 @@ def get_upbit_daily_candles(market, count=CANDLE_HISTORY_COUNT):
         pd.DataFrame(rows)
         .sort_values("datetime")
         .drop_duplicates("datetime")
-        .tail(target_count)
         .reset_index(drop=True)
     )
 
@@ -898,9 +819,7 @@ def check_ema_alignment_values(values):
 
 
 # =========================================================
-# EMA1 / EMA50 / EMA100 / EMA200
-# 골든크로스 및 정배열 유지 판정
-#
+# EMA1 / EMA50 골든크로스 및 정배열 유지 판정
 # 종가(close) 기준
 # 실제 상향 크로스가 발생한 캔들만 골든크로스로 판정
 # =========================================================
@@ -915,100 +834,73 @@ def apply_ema_bullish_cross_signals(periods, close_series):
         EMA_CROSS_FAST_PERIOD
     )
 
-    for slow_period in EMA_CROSS_SLOW_PERIODS:
+    ema_slow = calculate_ema(
+        close_series,
+        EMA_CROSS_SLOW_PERIOD
+    )
 
-        ema_slow = calculate_ema(
-            close_series,
-            slow_period
+    bullish_state = False
+
+    for i, period in enumerate(periods):
+
+        period["ema_golden_cross"] = False
+        period["ema_golden_cross_progress"] = False
+        period["ema_bullish_alignment"] = False
+
+        if i >= len(ema_fast) or i >= len(ema_slow):
+            continue
+
+        current_fast = ema_fast.iloc[i]
+        current_slow = ema_slow.iloc[i]
+
+        if pd.isna(current_fast) or pd.isna(current_slow):
+            bullish_state = False
+            continue
+
+        current_fast = float(current_fast)
+        current_slow = float(current_slow)
+
+        if i == 0:
+            continue
+
+        previous_fast = ema_fast.iloc[i - 1]
+        previous_slow = ema_slow.iloc[i - 1]
+
+        if pd.isna(previous_fast) or pd.isna(previous_slow):
+            bullish_state = False
+            continue
+
+        previous_fast = float(previous_fast)
+        previous_slow = float(previous_slow)
+
+        # 종가 기준 EMA1이 EMA50을 상향 돌파한 순간
+        golden_cross = bool(
+            previous_fast <= previous_slow
+            and current_fast > current_slow
         )
 
-        bullish_state = False
+        if golden_cross:
 
-        for i, period in enumerate(periods):
+            bullish_state = True
 
-            cross_key = f"ema_golden_cross_{slow_period}"
+            # 실제 크로스가 발생한 캔들에만 True
+            period["ema_golden_cross"] = True
 
-            progress_key = (
-                f"ema_golden_cross_progress_{slow_period}"
+        # EMA1이 EMA50 이하로 내려오면 정배열 해제
+        elif current_fast <= current_slow:
+
+            bullish_state = False
+
+        # 정배열 상태는 별도로 유지
+        if bullish_state and current_fast > current_slow:
+
+            period["ema_bullish_alignment"] = True
+
+            # 진행 중인 캔들이 실제 크로스 캔들인 경우에만 표시
+            period["ema_golden_cross_progress"] = bool(
+                period.get("active", False)
+                and golden_cross
             )
-
-            alignment_key = (
-                f"ema_bullish_alignment_{slow_period}"
-            )
-
-            period[cross_key] = False
-            period[progress_key] = False
-            period[alignment_key] = False
-
-            if i >= len(ema_fast) or i >= len(ema_slow):
-                continue
-
-            current_fast = ema_fast.iloc[i]
-            current_slow = ema_slow.iloc[i]
-
-            if pd.isna(current_fast) or pd.isna(current_slow):
-                bullish_state = False
-                continue
-
-            current_fast = float(current_fast)
-            current_slow = float(current_slow)
-
-            if i == 0:
-                continue
-
-            previous_fast = ema_fast.iloc[i - 1]
-            previous_slow = ema_slow.iloc[i - 1]
-
-            if pd.isna(previous_fast) or pd.isna(previous_slow):
-                bullish_state = False
-                continue
-
-            previous_fast = float(previous_fast)
-            previous_slow = float(previous_slow)
-
-            # 실제 상향 크로스
-            golden_cross = bool(
-                previous_fast <= previous_slow
-                and current_fast > current_slow
-            )
-
-            if golden_cross:
-
-                bullish_state = True
-
-                period[cross_key] = True
-
-            # EMA1이 해당 EMA 이하로 내려가면 정배열 해제
-            elif current_fast <= current_slow:
-
-                bullish_state = False
-
-            # 정배열 유지
-            if bullish_state and current_fast > current_slow:
-
-                period[alignment_key] = True
-
-                period[progress_key] = bool(
-                    period.get("active", False)
-                    and golden_cross
-                )
-
-        # 기존 EMA1/EMA50 키 호환 유지
-        if slow_period == 50:
-
-            for period in periods:
-
-                period["ema_golden_cross"] = period[
-                    "ema_golden_cross_50"
-                ]
-
-                period["ema_golden_cross_progress"] = period[
-                    "ema_golden_cross_progress_50"
-                ]
-
-                period["ema_bullish_alignment"] = period[
-                    "ema_bullish_alignment_50"
-                ]
 
     return periods
 
@@ -1020,31 +912,16 @@ def apply_ema_bullish_cross_signals(periods, close_series):
 def get_timeframe_dataframe(market, timeframe, price=None):
 
     loaders = {
-        "15m": lambda: get_upbit_15m_candles(
-            market,
-            CANDLE_HISTORY_COUNT
-        ),
-
-        "1h": lambda: get_upbit_1h_candles(
-            market,
-            CANDLE_HISTORY_COUNT
-        ),
-
-        "4h": lambda: get_upbit_4h_candles(
-            market,
-            CANDLE_HISTORY_COUNT
-        )
+        "15m": lambda: get_upbit_15m_candles(market, 200),
+        "1h": lambda: get_upbit_1h_candles(market, 200),
+        "4h": lambda: get_upbit_4h_candles(market, 200)
     }
 
     if timeframe == "1d":
-
         df = get_cached_dataframe(
             market,
             "1d",
-            lambda: get_upbit_daily_candles(
-                market,
-                CANDLE_HISTORY_COUNT
-            )
+            lambda: get_upbit_daily_candles(market, 200)
         )
 
     elif timeframe in loaders:
@@ -1073,10 +950,7 @@ def get_daily_dataframe(market):
     return get_cached_dataframe(
         market,
         "1d",
-        lambda: get_upbit_daily_candles(
-            market,
-            CANDLE_HISTORY_COUNT
-        )
+        lambda: get_upbit_daily_candles(market, 200)
     )
 
 
@@ -1518,60 +1392,18 @@ def analyze_previous_current_pattern(periods):
             "change": period.get("change"),
             "active": period.get("active", False),
             "rsi": period.get("rsi"),
-
-            # EMA1/EMA50 기존 호환
-            "ema_golden_cross": period.get(
-                "ema_golden_cross", False
-            ),
-
+            "ema_golden_cross": period.get("ema_golden_cross", False),
             "ema_golden_cross_progress": period.get(
                 "ema_golden_cross_progress", False
             ),
-
             "ema_bullish_alignment": period.get(
                 "ema_bullish_alignment", False
-            ),
-
-            # EMA1/EMA50
-            "ema_golden_cross_50": period.get(
-                "ema_golden_cross_50", False
-            ),
-
-            "ema_bullish_alignment_50": period.get(
-                "ema_bullish_alignment_50", False
-            ),
-
-            # EMA1/EMA100
-            "ema_golden_cross_100": period.get(
-                "ema_golden_cross_100", False
-            ),
-
-            "ema_golden_cross_progress_100": period.get(
-                "ema_golden_cross_progress_100", False
-            ),
-
-            "ema_bullish_alignment_100": period.get(
-                "ema_bullish_alignment_100", False
-            ),
-
-            # EMA1/EMA200
-            "ema_golden_cross_200": period.get(
-                "ema_golden_cross_200", False
-            ),
-
-            "ema_golden_cross_progress_200": period.get(
-                "ema_golden_cross_progress_200", False
-            ),
-
-            "ema_bullish_alignment_200": period.get(
-                "ema_bullish_alignment_200", False
             )
         }
         for period, patterns in zip(selected_periods, last_six)
     ]
 
     current_patterns = pattern_history[-1]
-
     previous_patterns = (
         pattern_history[-2] if len(pattern_history) >= 2 else []
     )
@@ -1750,8 +1582,7 @@ def analyze_signal_candles(market, price, timeframe):
     if not periods:
         return empty_result
 
-    # EMA1 / EMA50 / EMA100 / EMA200
-    # 모두 종가 기준 실제 크로스 계산
+    # EMA1 / EMA50 크로스는 종가 기준
     periods = apply_ema_bullish_cross_signals(
         periods,
         df["close"]
@@ -1852,18 +1683,6 @@ def analyze_signal_candles(market, price, timeframe):
         item["rsi"] = period.get("rsi")
         item["change"] = period.get("change")
         item["active"] = period.get("active", False)
-
-        for slow_period in EMA_CROSS_SLOW_PERIODS:
-
-            for prefix in (
-                "ema_golden_cross",
-                "ema_golden_cross_progress",
-                "ema_bullish_alignment"
-            ):
-
-                key = f"{prefix}_{slow_period}"
-
-                item[key] = period.get(key, False)
 
         item["ema_golden_cross"] = period.get(
             "ema_golden_cross", False
@@ -1986,6 +1805,7 @@ def make_row(
 
 # =========================================================
 # SIGNAL 조건 공통 판정
+# 시간봉별 분석 결과를 전달받아 독립적으로 판정
 # =========================================================
 
 def get_signal_condition_checks(row, analysis=None):
@@ -2067,38 +1887,21 @@ def get_signal_condition_checks(row, analysis=None):
         except (TypeError, ValueError):
             checks["ema_alignment"] = None
 
-    # =====================================================
-    # EMA1 / EMA50 / EMA100 / EMA200 개별 크로스 판정
-    # 최근 6개 봉에서 각 EMA의 실제 상향 크로스를 독립 확인
-    # =====================================================
-
+    # 최근 DISPLAY_CANDLE_COUNT개 봉 중 실제 EMA 크로스 발생 여부
     candles = analysis.get("last_three_patterns")
 
-    for period in EMA_CROSS_SLOW_PERIODS:
-
-        check_key = f"ema_cross_{period}"
-        cross_key = f"ema_golden_cross_{period}"
-
-        if not candles:
-            checks[check_key] = None
-
-        else:
-            checks[check_key] = any(
-                candle.get(cross_key) is True
-                for candle in candles
-            )
-
-    # 기존 SIGNAL 판정 방식 유지
-    # EMA1/50, EMA1/100, EMA1/200 중 하나라도 발생하면 통과
-
     if not candles:
+
         checks["ema_bullish_candle"] = None
 
     else:
-        checks["ema_bullish_candle"] = any(
-            checks.get(f"ema_cross_{period}") is True
-            for period in EMA_CROSS_SLOW_PERIODS
+
+        found = any(
+            candle.get("ema_golden_cross") is True
+            for candle in candles
         )
+
+        checks["ema_bullish_candle"] = bool(found)
 
     return checks
 
@@ -2155,6 +1958,7 @@ def evaluate_row_signal(row):
 
         timeframe_checks[timeframe] = checks
 
+        # 활성 조건이 하나도 없으면 임의로 통과시키지 않음
         if not condition_keys:
             continue
 
@@ -2214,19 +2018,13 @@ def signal_checklist_html(row, timeframe, analysis):
             )
         )
 
-    # EMA1/50, EMA1/100, EMA1/200을 각각 독립 표시
-    for period in EMA_CROSS_SLOW_PERIODS:
-
-        checklist_items.append(
-            (
-                f"ema_cross_{period}",
-                (
-                    f"최근 {DISPLAY_CANDLE_COUNT}개 봉 "
-                    f"EMA1 → EMA{period} 상향 크로스"
-                ),
-                USE_SIGNAL_EMA_BEARISH_BULLISH
-            )
+    checklist_items.append(
+        (
+            "ema_bullish_candle",
+            f"최근 {DISPLAY_CANDLE_COUNT}개 봉 중 EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} 실제 상향 크로스",
+            USE_SIGNAL_EMA_BEARISH_BULLISH
         )
+    )
 
     checklist_items = [
         item for item in checklist_items
@@ -2479,7 +2277,8 @@ def update_upbit():
     if USE_SIGNAL_EMA_BEARISH_BULLISH == "Y":
         active_condition_names.append(
             f"최근 {DISPLAY_CANDLE_COUNT}개 봉 중 "
-            "EMA1/50·100·200 실제 상향 크로스"
+            f"EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} "
+            "실제 상향 크로스"
         )
 
     signal_condition_log = (
@@ -2682,7 +2481,6 @@ def resample_okx_to_kst_timeframe(df, timeframe):
 
 # =========================================================
 # BTC 시간봉 데이터 조회
-# EMA200 계산을 위한 과거 데이터 확보
 # =========================================================
 
 def get_okx_btc_timeframe(timeframe):
@@ -2705,11 +2503,8 @@ def get_okx_btc_timeframe(timeframe):
                 raw.iloc[0]["datetime"].timestamp() * 1000
             )
 
-            # 4시간봉은 3회 이내의 1시간봉 이력으로 확보
-            # 일봉은 EMA200 계산을 위해 더 많은 이력 확보
-            max_history_rounds = (
-                18 if timeframe == "1d" else 2
-            )
+            # 일봉 EMA 및 RSI 계산에 필요한 과거 데이터 확보
+            max_history_rounds = 5 if timeframe == "1d" else 2
 
             for _ in range(max_history_rounds):
 
@@ -2799,7 +2594,7 @@ def analyze_okx_btc_timeframe(df, timeframe, current_price=None):
     if not periods:
         return empty_result
 
-    # EMA1 / EMA50 / EMA100 / EMA200
+    # EMA1 / EMA50 크로스는 종가 기준
     periods = apply_ema_bullish_cross_signals(
         periods,
         df["close"]
@@ -2828,18 +2623,6 @@ def analyze_okx_btc_timeframe(df, timeframe, current_price=None):
         item["rsi"] = period.get("rsi")
         item["change"] = period.get("change")
         item["active"] = period.get("active", False)
-
-        for slow_period in EMA_CROSS_SLOW_PERIODS:
-
-            for prefix in (
-                "ema_golden_cross",
-                "ema_golden_cross_progress",
-                "ema_bullish_alignment"
-            ):
-
-                key = f"{prefix}_{slow_period}"
-
-                item[key] = period.get(key, False)
 
         item["ema_golden_cross"] = period.get(
             "ema_golden_cross", False
@@ -3042,7 +2825,7 @@ def update_dashboard():
 
 
 # =========================================================
-# 가격 및 거래대금 표시
+# 전체 업데이트
 # =========================================================
 
 def fmt_price(v):
@@ -3396,26 +3179,6 @@ def current_pattern_html(pattern, candle=None):
 
 
 # =========================================================
-# EMA 크로스 배지 HTML
-# =========================================================
-
-def ema_cross_badges_html(item):
-
-    badges = []
-
-    for period in EMA_CROSS_SLOW_PERIODS:
-
-        if item.get(f"ema_golden_cross_{period}") is True:
-
-            badges.append(
-                f'<span class="ema-cross-badge">'
-                f'EMA1/{period} GC</span>'
-            )
-
-    return "".join(badges)
-
-
-# =========================================================
 # 최근 캔들 표시
 # =========================================================
 
@@ -3469,8 +3232,6 @@ def last_three_pattern_html(row):
 
         candle_html = current_pattern_html(patterns, item)
 
-        cross_badges = ema_cross_badges_html(item)
-
         change_display = candle_change_html(
             item.get("change")
         )
@@ -3487,27 +3248,17 @@ def last_three_pattern_html(row):
         except (TypeError, ValueError):
             is_positive_candle = False
 
-        # 세 가지 EMA 중 하나라도 정배열 유지 중이면 강조
-        ema_alignment_active = any(
-            item.get(
-                f"ema_bullish_alignment_{period}",
-                False
-            )
-            for period in EMA_CROSS_SLOW_PERIODS
-        )
-
-        ema_progress_active = any(
-            item.get(
-                f"ema_golden_cross_progress_{period}",
-                False
-            )
-            for period in EMA_CROSS_SLOW_PERIODS
-        )
-
-        if ema_alignment_active and is_positive_candle:
+        if (
+            item.get("ema_bullish_alignment", False)
+            and is_positive_candle
+        ):
             card_classes.append("ema-golden-cross-card")
 
-        if ema_progress_active and is_positive_candle:
+        if (
+            item.get("ema_golden_cross_progress", False)
+            and item.get("ema_bullish_alignment", False)
+            and is_positive_candle
+        ):
             card_classes.append("ema-golden-cross-progress")
 
         card_class = " ".join(card_classes)
@@ -3521,7 +3272,6 @@ def last_three_pattern_html(row):
 
                 <div class="three-candle-pattern">
                     {candle_html}
-                    {cross_badges}
                 </div>
 
                 <div class="three-candle-change">
@@ -3815,6 +3565,7 @@ def signal_card(row):
 
     timeframe_sections = []
 
+    # 통과한 시간봉만 표시
     for timeframe in passed_timeframes:
 
         analysis = (
@@ -3941,7 +3692,8 @@ def signal_section():
     if USE_SIGNAL_EMA_BEARISH_BULLISH == "Y":
         active_conditions.append(
             f"최근 {DISPLAY_CANDLE_COUNT}개 봉 중 "
-            "EMA1/50·100·200 실제 상향 크로스 1회 이상"
+            f"EMA{EMA_CROSS_FAST_PERIOD}/{EMA_CROSS_SLOW_PERIOD} "
+            "실제 상향 크로스 1회 이상"
         )
 
     condition_items = []
@@ -4329,7 +4081,7 @@ background:#141e27;
 border-color:#26343f;
 }
 
-/* EMA1 / EMA50 / EMA100 / EMA200 정배열 양봉 강조 */
+/* EMA1 / EMA50 정배열 양봉 강조 */
 
 .three-candle-item.ema-golden-cross-card {
 background:rgba(232,197,110,.22);
@@ -4345,24 +4097,6 @@ color:var(--yellow);
 .three-candle-item.ema-golden-cross-progress {
 border-width:2px;
 box-shadow:inset 0 0 0 1px rgba(232,197,110,.28),0 0 10px rgba(232,197,110,.30);
-}
-
-/* EMA 크로스 배지 */
-
-.ema-cross-badge {
-display:inline-flex;
-align-items:center;
-justify-content:center;
-margin:2px 1px;
-padding:2px 3px;
-color:var(--yellow);
-background:rgba(232,197,110,.15);
-border:1px solid rgba(232,197,110,.55);
-border-radius:3px;
-font-size:7px;
-font-weight:900;
-line-height:1.2;
-white-space:nowrap;
 }
 
 /* 캔들 변동률 */
@@ -4470,7 +4204,6 @@ height:100%;
 min-width:0;
 min-height:0;
 display:flex;
-flex-direction:column;
 align-items:center;
 justify-content:center;
 margin:0;
@@ -5454,11 +5187,6 @@ def startup():
     )
 
     log.info(
-        "EMA 크로스 분석용 캔들 이력=%s개",
-        CANDLE_HISTORY_COUNT
-    )
-
-    log.info(
         "일봉 KST 기준: 09:00"
     )
 
@@ -5522,16 +5250,9 @@ def startup():
     )
 
     log.info(
-        "별도 EMA 골든크로스 설정 | EMA1/50, EMA1/100, EMA1/200 | 종가(close) 기준"
-    )
-
-    log.info(
-        "EMA 크로스 판정은 최근 %s개 봉 중 실제 상향 크로스 발생 여부",
-        DISPLAY_CANDLE_COUNT
-    )
-
-    log.info(
-        "EMA 정배열 유지 여부는 EMA1이 각 EMA보다 높은 상태로 독립 판정"
+        "별도 EMA 골든크로스 설정 | EMA%s / EMA%s | 종가(close) 기준",
+        EMA_CROSS_FAST_PERIOD,
+        EMA_CROSS_SLOW_PERIOD
     )
 
     log.info(
@@ -5543,11 +5264,7 @@ def startup():
     )
 
     log.info(
-        "EMA1 / EMA50 / EMA100 / EMA200 정배열 유지 중 양봉: 노란색 강조"
-    )
-
-    log.info(
-        "실제 EMA 골든크로스 발생 캔들에는 EMA 크로스 배지 표시"
+        "EMA1 / EMA50 정배열 유지 중 양봉: 노란색 강조"
     )
 
     log.info(
