@@ -1,4 +1,3 @@
-
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
@@ -2068,27 +2067,38 @@ def get_signal_condition_checks(row, analysis=None):
         except (TypeError, ValueError):
             checks["ema_alignment"] = None
 
-    # 최근 6개 봉 중 EMA1/50, EMA1/100, EMA1/200
-    # 실제 상향 크로스 발생 여부
+    # =====================================================
+    # EMA1 / EMA50 / EMA100 / EMA200 개별 크로스 판정
+    # 최근 6개 봉에서 각 EMA의 실제 상향 크로스를 독립 확인
+    # =====================================================
+
     candles = analysis.get("last_three_patterns")
 
-    if not candles:
+    for period in EMA_CROSS_SLOW_PERIODS:
 
+        check_key = f"ema_cross_{period}"
+        cross_key = f"ema_golden_cross_{period}"
+
+        if not candles:
+            checks[check_key] = None
+
+        else:
+            checks[check_key] = any(
+                candle.get(cross_key) is True
+                for candle in candles
+            )
+
+    # 기존 SIGNAL 판정 방식 유지
+    # EMA1/50, EMA1/100, EMA1/200 중 하나라도 발생하면 통과
+
+    if not candles:
         checks["ema_bullish_candle"] = None
 
     else:
-
-        found = any(
-            candle.get(
-                f"ema_golden_cross_{period}"
-            ) is True
-
-            for candle in candles
-
+        checks["ema_bullish_candle"] = any(
+            checks.get(f"ema_cross_{period}") is True
             for period in EMA_CROSS_SLOW_PERIODS
         )
-
-        checks["ema_bullish_candle"] = bool(found)
 
     return checks
 
@@ -2204,16 +2214,19 @@ def signal_checklist_html(row, timeframe, analysis):
             )
         )
 
-    checklist_items.append(
-        (
-            "ema_bullish_candle",
+    # EMA1/50, EMA1/100, EMA1/200을 각각 독립 표시
+    for period in EMA_CROSS_SLOW_PERIODS:
+
+        checklist_items.append(
             (
-                f"최근 {DISPLAY_CANDLE_COUNT}개 봉 중 "
-                "EMA1/50·100·200 실제 상향 크로스"
-            ),
-            USE_SIGNAL_EMA_BEARISH_BULLISH
+                f"ema_cross_{period}",
+                (
+                    f"최근 {DISPLAY_CANDLE_COUNT}개 봉 "
+                    f"EMA1 → EMA{period} 상향 크로스"
+                ),
+                USE_SIGNAL_EMA_BEARISH_BULLISH
+            )
         )
-    )
 
     checklist_items = [
         item for item in checklist_items
