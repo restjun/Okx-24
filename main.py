@@ -61,7 +61,7 @@ MAX_RETRIES = 20
 # =========================================================
 
 USE_TIMEFRAME_15M = "N"
-USE_TIMEFRAME_1H = "Y"
+USE_TIMEFRAME_1H = "N"
 USE_TIMEFRAME_4H = "Y"
 USE_TIMEFRAME_1D = "N"
 
@@ -149,7 +149,7 @@ SHOW_SIGNAL_CHECKLIST = "N"
 # =========================================================
 
 EMA_CROSS_FAST_PERIOD = 1
-EMA_CROSS_SLOW_PERIOD = 100
+EMA_CROSS_SLOW_PERIOD = 50
 
 DISPLAY_CANDLE_COUNT = 6
 
