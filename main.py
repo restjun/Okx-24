@@ -60,9 +60,9 @@ MAX_RETRIES = 20
 # N = 분석 및 화면 표시 제외
 # =========================================================
 
-USE_TIMEFRAME_15M = "N"
+USE_TIMEFRAME_15M = "Y"
 USE_TIMEFRAME_1H = "N"
-USE_TIMEFRAME_4H = "Y"
+USE_TIMEFRAME_4H = "N"
 USE_TIMEFRAME_1D = "N"
 
 
@@ -138,7 +138,7 @@ USE_EMA_BEARISH_ALIGNMENT = "Y"
 
 EMA_CROSS_FAST_PERIOD = 1
 
-EMA_CROSS_SLOW_PERIODS = [50,100]
+EMA_CROSS_SLOW_PERIODS = [50]
 
 # 기존 변수 호환 유지
 EMA_CROSS_SLOW_PERIOD = 50
