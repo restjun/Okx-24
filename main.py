@@ -3479,35 +3479,32 @@ def last_three_pattern_html(row):
 
         card_classes = []
 
-        try:
-            is_positive_candle = (
-                float(item.get("close", 0))
-                > float(item.get("open", 0))
-            )
-        except (TypeError, ValueError):
-            is_positive_candle = False
-
-        # 세 가지 EMA 중 하나라도 정배열 유지 중이면 강조
-        ema_alignment_active = any(
+        # 실제 EMA 상향 크로스 발생 여부
+        # 정배열 유지 여부와 양봉/음봉 여부는 확인하지 않음
+        ema_cross_active = any(
             item.get(
-                f"ema_bullish_alignment_{period}",
+                f"ema_golden_cross_{period}",
                 False
-            )
+            ) is True
             for period in EMA_CROSS_SLOW_PERIODS
         )
 
+        # 현재 진행 중인 캔들에서 발생한 크로스 여부
         ema_progress_active = any(
             item.get(
                 f"ema_golden_cross_progress_{period}",
                 False
-            )
+            ) is True
             for period in EMA_CROSS_SLOW_PERIODS
         )
 
-        if ema_alignment_active and is_positive_candle:
+        # 실제 크로스가 발생한 캔들만 노란색 표시
+        # 진행 중인 캔들과 완성된 캔들 모두 포함
+        if ema_cross_active:
             card_classes.append("ema-golden-cross-card")
 
-        if ema_progress_active and is_positive_candle:
+        # 진행 중인 크로스는 추가 강조
+        if ema_progress_active:
             card_classes.append("ema-golden-cross-progress")
 
         card_class = " ".join(card_classes)
@@ -4329,7 +4326,7 @@ background:#141e27;
 border-color:#26343f;
 }
 
-/* EMA1 / EMA50 / EMA100 / EMA200 정배열 양봉 강조 */
+/* 실제 EMA 골든크로스 발생 캔들만 노란색 강조 */
 
 .three-candle-item.ema-golden-cross-card {
 background:rgba(232,197,110,.22);
@@ -5543,7 +5540,7 @@ def startup():
     )
 
     log.info(
-        "EMA1 / EMA50 / EMA100 / EMA200 정배열 유지 중 양봉: 노란색 강조"
+        "실제 EMA 골든크로스 발생(진행 및 완성) 캔들만 노란색 강조"
     )
 
     log.info(
