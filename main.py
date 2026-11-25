@@ -61,8 +61,8 @@ MAX_RETRIES = 20
 # =========================================================
 
 USE_TIMEFRAME_15M = "N"
-USE_TIMEFRAME_1H = "Y"
-USE_TIMEFRAME_4H = "N"
+USE_TIMEFRAME_1H = "N"
+USE_TIMEFRAME_4H = "Y"
 USE_TIMEFRAME_1D = "N"
 
 
