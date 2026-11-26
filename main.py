@@ -39,7 +39,7 @@ UTC = ZoneInfo("UTC")
 # =========================================================
 
 TOP_N = 30
-SHOW_TOP_LIST = "Y"
+SHOW_TOP_LIST = "N"
 UPDATE_MINUTES = 1
 
 DAILY_CHANGE_MIN = 0.0
