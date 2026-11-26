@@ -160,7 +160,7 @@ USE_SIGNAL_RSI_RANGE = "N"
 USE_SIGNAL_EMA_ALIGNMENT = "N"
 USE_SIGNAL_EMA_BEARISH_BULLISH = "Y"
 
-SHOW_SIGNAL_CHECKLIST = "N"
+SHOW_SIGNAL_CHECKLIST = "Y"
 
 
 # =========================================================
@@ -531,6 +531,7 @@ def get_upbit_markets():
 
 # =========================================================
 # 업비트 분봉 조회
+# 캔들별 거래대금 candle_acc_trade_price 저장
 # =========================================================
 
 def get_upbit_minute_candles(market, unit, count=CANDLE_HISTORY_COUNT):
@@ -589,13 +590,22 @@ def get_upbit_minute_candles(market, unit, count=CANDLE_HISTORY_COUNT):
                     "%Y-%m-%dT%H:%M:%S"
                 ).replace(tzinfo=KST)
 
+                trade_value = x.get("candle_acc_trade_price")
+
                 rows.append({
                     "datetime": dt_kst,
                     "datetime_utc": dt_utc,
                     "open": float(x["opening_price"]),
                     "high": float(x["high_price"]),
                     "low": float(x["low_price"]),
-                    "close": float(x["trade_price"])
+                    "close": float(x["trade_price"]),
+
+                    # 해당 시간봉 자체의 거래대금(KRW)
+                    "trade_value": (
+                        float(trade_value)
+                        if trade_value is not None
+                        else None
+                    )
                 })
 
             except Exception:
@@ -642,7 +652,7 @@ def get_upbit_4h_candles(market, count=CANDLE_HISTORY_COUNT):
 
 # =========================================================
 # 업비트 일봉 조회
-# 거래대금(candle_acc_trade_price) 추가 저장
+# 거래대금(candle_acc_trade_price) 저장
 # =========================================================
 
 def get_upbit_daily_candles(market, count=CANDLE_HISTORY_COUNT):
@@ -706,6 +716,13 @@ def get_upbit_daily_candles(market, count=CANDLE_HISTORY_COUNT):
 
                     # 일봉 거래대금
                     "trade_price": (
+                        float(trade_price)
+                        if trade_price is not None
+                        else None
+                    ),
+
+                    # 공통 캔들 분석용 거래대금
+                    "trade_value": (
                         float(trade_price)
                         if trade_price is not None
                         else None
@@ -1112,6 +1129,20 @@ def build_daily_periods(df, current_price=None):
 
         change = ((c - o) / o * 100) if o else None
 
+        trade_value = row.get(
+            "trade_value",
+            row.get("trade_price")
+        )
+
+        try:
+            trade_value = (
+                float(trade_value)
+                if trade_value is not None and pd.notna(trade_value)
+                else None
+            )
+        except (TypeError, ValueError):
+            trade_value = None
+
         periods.append({
             "start": start,
             "end": start + timedelta(days=1),
@@ -1121,7 +1152,10 @@ def build_daily_periods(df, current_price=None):
             "high": h,
             "low": l,
             "close": c,
-            "change": change
+            "change": change,
+
+            # 해당 일봉의 거래대금
+            "trade_value": trade_value
         })
 
     return periods[-6:]
@@ -1512,6 +1546,9 @@ def analyze_previous_current_pattern(periods):
             "active": period.get("active", False),
             "rsi": period.get("rsi"),
 
+            # 해당 캔들의 거래대금 전달
+            "trade_value": period.get("trade_value"),
+
             "ema_golden_cross": period.get(
                 "ema_golden_cross", False
             ),
@@ -1672,6 +1709,18 @@ def build_timeframe_periods(df, timeframe, current_price=None):
             label = start.strftime("%m/%d %H:%M")
             end = start + timedelta(minutes=minutes)
 
+        # 시간봉별 거래대금
+        trade_value = row.get("trade_value")
+
+        try:
+            trade_value = (
+                float(trade_value)
+                if trade_value is not None and pd.notna(trade_value)
+                else None
+            )
+        except (TypeError, ValueError):
+            trade_value = None
+
         periods.append({
             "start": start,
             "end": end,
@@ -1681,7 +1730,10 @@ def build_timeframe_periods(df, timeframe, current_price=None):
             "high": h,
             "low": l,
             "close": c,
-            "change": change
+            "change": change,
+
+            # 개별 시간봉 거래대금
+            "trade_value": trade_value
         })
 
     return periods
@@ -1839,6 +1891,9 @@ def analyze_signal_candles(market, price, timeframe):
         item["rsi"] = period.get("rsi")
         item["change"] = period.get("change")
         item["active"] = period.get("active", False)
+
+        # 거래대금도 개별 캔들에 전달
+        item["trade_value"] = period.get("trade_value")
 
         for slow_period in EMA_CROSS_SLOW_PERIODS:
 
@@ -2532,6 +2587,7 @@ def update_upbit():
 
 # =========================================================
 # OKX 캔들 조회
+# 캔들별 거래대금 volCcyQuote 저장
 # =========================================================
 
 def okx_candles(bar, limit=300, history=False, after=None):
@@ -2584,6 +2640,19 @@ def okx_candles(bar, limit=300, history=False, after=None):
 
         try:
 
+            # OKX 캔들 배열:
+            # x[0] timestamp
+            # x[1] open
+            # x[2] high
+            # x[3] low
+            # x[4] close
+            # x[7] quote currency 거래량
+            trade_value = (
+                float(x[7])
+                if len(x) > 7 and x[7] not in (None, "")
+                else None
+            )
+
             rows.append({
                 "datetime": pd.to_datetime(
                     int(x[0]),
@@ -2593,7 +2662,10 @@ def okx_candles(bar, limit=300, history=False, after=None):
                 "open": float(x[1]),
                 "high": float(x[2]),
                 "low": float(x[3]),
-                "close": float(x[4])
+                "close": float(x[4]),
+
+                # OKX BTC-USDT-SWAP 거래대금(USDT)
+                "trade_value": trade_value
             })
 
         except Exception:
@@ -2641,6 +2713,7 @@ def okx_price():
 
 # =========================================================
 # BTC OKX 원본 데이터를 업비트 시간 구간으로 집계
+# 거래대금은 해당 시간 구간의 합계로 계산
 # =========================================================
 
 def resample_okx_to_kst_timeframe(df, timeframe):
@@ -2680,12 +2753,24 @@ def resample_okx_to_kst_timeframe(df, timeframe):
             + timedelta(seconds=bucket_number * seconds)
         )
 
+        trade_value = row.get("trade_value")
+
+        try:
+            trade_value = (
+                float(trade_value)
+                if trade_value is not None and pd.notna(trade_value)
+                else 0.0
+            )
+        except (TypeError, ValueError):
+            trade_value = 0.0
+
         rows.append({
             "datetime": bucket_start,
             "open": float(row["open"]),
             "high": float(row["high"]),
             "low": float(row["low"]),
-            "close": float(row["close"])
+            "close": float(row["close"]),
+            "trade_value": trade_value
         })
 
     if not rows:
@@ -2701,7 +2786,10 @@ def resample_okx_to_kst_timeframe(df, timeframe):
             "open": float(group.iloc[0]["open"]),
             "high": float(group["high"].max()),
             "low": float(group["low"].min()),
-            "close": float(group.iloc[-1]["close"])
+            "close": float(group.iloc[-1]["close"]),
+
+            # 1시간봉 거래대금을 해당 4시간/일봉 구간별 합산
+            "trade_value": float(group["trade_value"].sum())
         })
 
     return (
@@ -2855,6 +2943,9 @@ def analyze_okx_btc_timeframe(df, timeframe, current_price=None):
         item["rsi"] = period.get("rsi")
         item["change"] = period.get("change")
         item["active"] = period.get("active", False)
+
+        # BTC 캔들별 거래대금 전달
+        item["trade_value"] = period.get("trade_value")
 
         for slow_period in EMA_CROSS_SLOW_PERIODS:
 
@@ -3202,6 +3293,42 @@ def rsi_html(value):
 
 
 # =========================================================
+# 캔들별 거래대금 HTML
+# =========================================================
+
+def candle_trade_value_html(value, currency="원"):
+
+    if value is None:
+        return (
+            '<div class="candle-trade-value">'
+            '거래대금 -'
+            '</div>'
+        )
+
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return (
+            '<div class="candle-trade-value">'
+            '거래대금 -'
+            '</div>'
+        )
+
+    if pd.isna(value):
+        return (
+            '<div class="candle-trade-value">'
+            '거래대금 -'
+            '</div>'
+        )
+
+    return (
+        '<div class="candle-trade-value">'
+        f'거래대금 {fmt_vol(value)} {currency}'
+        '</div>'
+    )
+
+
+# =========================================================
 # 캔들 그림
 # =========================================================
 
@@ -3446,9 +3573,10 @@ def ema_cross_badges_html(item):
 
 # =========================================================
 # 최근 캔들 표시
+# RSI 바로 아래에 해당 캔들의 거래대금 표시
 # =========================================================
 
-def last_three_pattern_html(row):
+def last_three_pattern_html(row, trade_currency="원"):
 
     last_three = row.get("last_three_patterns") or []
     visible_items = last_three[-DISPLAY_CANDLE_COUNT:]
@@ -3506,6 +3634,12 @@ def last_three_pattern_html(row):
 
         rsi_value = item.get("rsi")
 
+        # 해당 캔들의 개별 거래대금
+        trade_value_display = candle_trade_value_html(
+            item.get("trade_value"),
+            trade_currency
+        )
+
         card_classes = []
 
         ema_cross_active = any(
@@ -3550,6 +3684,10 @@ def last_three_pattern_html(row):
 
                 <div class="three-candle-rsi">
                     {rsi_html(rsi_value)}
+                </div>
+
+                <div class="three-candle-volume">
+                    {trade_value_display}
                 </div>
             </div>
             """
@@ -3678,7 +3816,10 @@ def timeframe_candle_section(row, timeframe, analysis):
 
     badge_html = pattern_badges_html(display_row)
 
-    candle_html = last_three_pattern_html(display_row)
+    candle_html = last_three_pattern_html(
+        display_row,
+        "원"
+    )
 
     checklist_html = signal_checklist_html(
         row,
@@ -3757,7 +3898,11 @@ def btc_html():
             )
         }
 
-        candle_html = last_three_pattern_html(btc_row)
+        # BTC 거래대금은 OKX 기준 USDT
+        candle_html = last_three_pattern_html(
+            btc_row,
+            "USDT"
+        )
 
         timeframe_sections.append(
             f"""
@@ -4376,6 +4521,23 @@ background:#141e27;
 border-color:#26343f;
 }
 
+/* 캔들별 거래대금 */
+
+.candle-trade-value {
+width:100%;
+height:15px;
+min-height:15px;
+display:flex;
+align-items:center;
+justify-content:center;
+color:var(--yellow);
+font-size:8px;
+font-weight:900;
+line-height:1;
+white-space:nowrap;
+overflow:hidden;
+}
+
 /* 실제 EMA 골든크로스 발생 캔들만 노란색 강조 */
 
 .three-candle-item.ema-golden-cross-card {
@@ -4461,7 +4623,7 @@ min-width:0;
 height:120px;
 min-height:120px;
 display:grid;
-grid-template-rows:27px minmax(0,1fr) 17px 18px;
+grid-template-rows:27px minmax(0,1fr) 17px 18px 15px;
 row-gap:3px;
 align-items:stretch;
 padding:5px 2px;
@@ -4595,6 +4757,19 @@ min-height:18px;
 margin:0;
 padding:1px 2px;
 line-height:1;
+}
+
+.three-candle-volume {
+width:100%;
+height:15px;
+min-width:0;
+min-height:0;
+display:flex;
+align-items:center;
+justify-content:center;
+margin:0;
+padding:0;
+overflow:hidden;
 }
 
 /* 체크리스트 */
@@ -5292,7 +5467,7 @@ gap:3px;
 .three-candle-item {
 height:116px;
 min-height:116px;
-grid-template-rows:25px minmax(0,1fr) 16px 17px;
+grid-template-rows:25px minmax(0,1fr) 16px 17px 14px;
 row-gap:3px;
 padding:5px 1px;
 border-radius:4px;
@@ -5373,6 +5548,16 @@ min-height:16px;
 font-size:8px;
 }
 
+.candle-trade-value {
+height:14px;
+min-height:14px;
+font-size:6px;
+}
+
+.three-candle-volume {
+height:14px;
+}
+
 .signal-checklist {padding:7px;}
 
 .checklist-grid {
@@ -5414,7 +5599,7 @@ body {padding:5px;}
 .three-candle-item {
 height:112px;
 min-height:112px;
-grid-template-rows:23px minmax(0,1fr) 15px 16px;
+grid-template-rows:23px minmax(0,1fr) 15px 16px 13px;
 row-gap:3px;
 }
 
@@ -5442,6 +5627,14 @@ height:15px;
 min-height:15px;
 font-size:7px;
 }
+
+.candle-trade-value {
+height:13px;
+min-height:13px;
+font-size:5px;
+}
+
+.three-candle-volume {height:13px;}
 
 }
 """
@@ -5711,6 +5904,18 @@ def startup():
 
     log.info(
         "전일 및 당일 거래대금은 업비트 일봉 candle_acc_trade_price 기준"
+    )
+
+    log.info(
+        "각 캔들별 거래대금은 해당 시간봉 candle_acc_trade_price 기준"
+    )
+
+    log.info(
+        "BTC 캔들별 거래대금은 OKX volCcyQuote 기준"
+    )
+
+    log.info(
+        "BTC 4시간봉 및 일봉 거래대금은 해당 시간 구간의 1시간봉 거래대금 합산"
     )
 
     threading.Thread(
