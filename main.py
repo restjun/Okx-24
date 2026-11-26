@@ -603,8 +603,6 @@ def get_upbit_minute_candles(market, unit, count=CANDLE_HISTORY_COUNT):
                     "high": float(x["high_price"]),
                     "low": float(x["low_price"]),
                     "close": float(x["trade_price"]),
-
-                    # 해당 시간봉 자체의 거래대금(KRW)
                     "trade_value": (
                         float(trade_value)
                         if trade_value is not None
@@ -657,14 +655,21 @@ def get_upbit_4h_candles(market, count=CANDLE_HISTORY_COUNT):
 # =========================================================
 # 거래대금 전용 1시간봉 조회
 # 현재 진행 중인 1시간봉 + 이전 72시간
+#
+# [수정] 거래대금 전용 캐시 적용
+# 기존 분석용 1시간봉 캐시("1h")와 분리
 # =========================================================
 
 def get_upbit_volume_1h_candles(market):
 
-    return get_upbit_minute_candles(
+    return get_cached_dataframe(
         market,
-        60,
-        VOLUME_CANDLE_COUNT
+        "volume_1h_73",
+        lambda: get_upbit_minute_candles(
+            market,
+            60,
+            VOLUME_CANDLE_COUNT
+        )
     )
 
 
@@ -698,7 +703,6 @@ def calculate_volume_from_1h_candles(market):
         .reset_index(drop=True)
     )
 
-    # 현재 시각의 분·초를 제거해 1시간 정각으로 맞춤
     now = datetime.now(KST)
 
     current_hour = now.replace(
@@ -707,7 +711,6 @@ def calculate_volume_from_1h_candles(market):
         microsecond=0
     )
 
-    # 시간봉 시작 시각 기준으로 정확히 24시간 구간 설정
     period_24h_start = current_hour - timedelta(hours=24)
     period_24h_end = current_hour
 
@@ -717,7 +720,6 @@ def calculate_volume_from_1h_candles(market):
     period_2d_start = current_hour - timedelta(hours=72)
     period_2d_end = current_hour - timedelta(hours=48)
 
-    # 시간봉 시작 시각을 KST로 통일
     df["datetime"] = pd.to_datetime(
         df["datetime"]
     )
@@ -729,8 +731,6 @@ def calculate_volume_from_1h_candles(market):
 
     df["trade_value"] = values
 
-    # 거래대금 구간별 집계
-    # 시작 시각은 포함, 종료 시각은 제외
     def sum_period(start, end):
 
         selected = df[
@@ -831,14 +831,12 @@ def get_upbit_daily_candles(market, count=CANDLE_HISTORY_COUNT):
                     "low": float(x["low_price"]),
                     "close": float(x["trade_price"]),
 
-                    # 일봉 거래대금
                     "trade_price": (
                         float(trade_price)
                         if trade_price is not None
                         else None
                     ),
 
-                    # 공통 캔들 분석용 거래대금
                     "trade_value": (
                         float(trade_price)
                         if trade_price is not None
@@ -1270,8 +1268,6 @@ def build_daily_periods(df, current_price=None):
             "low": l,
             "close": c,
             "change": change,
-
-            # 해당 일봉의 거래대금
             "trade_value": trade_value
         })
 
@@ -1662,50 +1658,37 @@ def analyze_previous_current_pattern(periods):
             "change": period.get("change"),
             "active": period.get("active", False),
             "rsi": period.get("rsi"),
-
-            # 해당 캔들의 거래대금 전달
             "trade_value": period.get("trade_value"),
-
             "ema_golden_cross": period.get(
                 "ema_golden_cross", False
             ),
-
             "ema_golden_cross_progress": period.get(
                 "ema_golden_cross_progress", False
             ),
-
             "ema_bullish_alignment": period.get(
                 "ema_bullish_alignment", False
             ),
-
             "ema_golden_cross_50": period.get(
                 "ema_golden_cross_50", False
             ),
-
             "ema_bullish_alignment_50": period.get(
                 "ema_bullish_alignment_50", False
             ),
-
             "ema_golden_cross_100": period.get(
                 "ema_golden_cross_100", False
             ),
-
             "ema_golden_cross_progress_100": period.get(
                 "ema_golden_cross_progress_100", False
             ),
-
             "ema_bullish_alignment_100": period.get(
                 "ema_bullish_alignment_100", False
             ),
-
             "ema_golden_cross_200": period.get(
                 "ema_golden_cross_200", False
             ),
-
             "ema_golden_cross_progress_200": period.get(
                 "ema_golden_cross_progress_200", False
             ),
-
             "ema_bullish_alignment_200": period.get(
                 "ema_bullish_alignment_200", False
             )
@@ -1826,7 +1809,6 @@ def build_timeframe_periods(df, timeframe, current_price=None):
             label = start.strftime("%m/%d %H:%M")
             end = start + timedelta(minutes=minutes)
 
-        # 시간봉별 거래대금
         trade_value = row.get("trade_value")
 
         try:
@@ -1848,8 +1830,6 @@ def build_timeframe_periods(df, timeframe, current_price=None):
             "low": l,
             "close": c,
             "change": change,
-
-            # 개별 시간봉 거래대금
             "trade_value": trade_value
         })
 
@@ -2008,8 +1988,6 @@ def analyze_signal_candles(market, price, timeframe):
         item["rsi"] = period.get("rsi")
         item["change"] = period.get("change")
         item["active"] = period.get("active", False)
-
-        # 거래대금도 개별 캔들에 전달
         item["trade_value"] = period.get("trade_value")
 
         for slow_period in EMA_CROSS_SLOW_PERIODS:
@@ -2044,43 +2022,33 @@ def analyze_signal_candles(market, price, timeframe):
     return {
         "timeframe": timeframe,
         "periods": periods[-DISPLAY_CANDLE_COUNT:],
-
         "signal_pass": False,
-
         "pattern_signal": pattern_signal,
         "current_signal": current_signal,
         "previous_signal": previous_signal,
-
         "signal_change": None,
         "signal_period": None,
         "signal_reason": None,
-
         "previous_pattern": pattern_info["previous_pattern"],
         "current_pattern": pattern_info["current_pattern"],
         "last_three_patterns": last_three,
-
         "previous_bullish_engulfing": pattern_info[
             "previous_bullish_engulfing"
         ],
         "current_bullish_engulfing": pattern_info[
             "current_bullish_engulfing"
         ],
-
         "consecutive_bullish": pattern_info["consecutive_bullish"],
         "consecutive_bearish": pattern_info["consecutive_bearish"],
         "consecutive_bullish_candles": pattern_info[
             "consecutive_bullish_candles"
         ],
-
         "rsi_values": rsi_values,
-
         "rsi_range_pass": rsi_range_pass,
-
         "ema5": ema5,
         "ema10": ema10,
         "ema20": ema20,
         "ema50": ema50,
-
         "ema_alignment": ema_alignment,
         "realtime_below_ema5": False
     }
@@ -2163,27 +2131,18 @@ def make_row(
         "rank": rank,
         "name": coin,
         "market": market,
-
-        # 현재 기준 최근 24시간 거래대금
-        # 계산이 불가능한 경우 기존 ticker 24시간 값 사용
         "volume_24h": (
             analysis_daily.get("volume_24h")
             if analysis_daily.get("volume_24h") is not None
             else item["volume_24h"]
         ),
-
-        # 현재 기준 직전 24시간 / 그 이전 24시간
         "volume_prev_day": analysis_daily.get("volume_prev_day"),
         "volume_today": analysis_daily.get("volume_today"),
-
         "current_price": item["current_price"],
         "volume_rank": volume_rank,
-
         "daily_change": analysis_daily["change"],
         "periods_daily": analysis_daily["periods"],
-
         "timeframe_analyses": timeframe_analyses,
-
         "signal_timeframes": [],
         "signal_pass": False
     }
@@ -2755,13 +2714,6 @@ def okx_candles(bar, limit=300, history=False, after=None):
 
         try:
 
-            # OKX 캔들 배열:
-            # x[0] timestamp
-            # x[1] open
-            # x[2] high
-            # x[3] low
-            # x[4] close
-            # x[7] quote currency 거래량
             trade_value = (
                 float(x[7])
                 if len(x) > 7 and x[7] not in (None, "")
@@ -2778,8 +2730,6 @@ def okx_candles(bar, limit=300, history=False, after=None):
                 "high": float(x[2]),
                 "low": float(x[3]),
                 "close": float(x[4]),
-
-                # OKX BTC-USDT-SWAP 거래대금(USDT)
                 "trade_value": trade_value
             })
 
@@ -2902,8 +2852,6 @@ def resample_okx_to_kst_timeframe(df, timeframe):
             "high": float(group["high"].max()),
             "low": float(group["low"].min()),
             "close": float(group.iloc[-1]["close"]),
-
-            # 1시간봉 거래대금을 해당 4시간/일봉 구간별 합산
             "trade_value": float(group["trade_value"].sum())
         })
 
@@ -3058,8 +3006,6 @@ def analyze_okx_btc_timeframe(df, timeframe, current_price=None):
         item["rsi"] = period.get("rsi")
         item["change"] = period.get("change")
         item["active"] = period.get("active", False)
-
-        # BTC 캔들별 거래대금 전달
         item["trade_value"] = period.get("trade_value")
 
         for slow_period in EMA_CROSS_SLOW_PERIODS:
@@ -3114,9 +3060,12 @@ def analyze_okx_btc_timeframe(df, timeframe, current_price=None):
 
 # =========================================================
 # BTC 당일 변동률 계산
+#
+# [수정] daily_df를 전달받으면 일봉 API 재조회하지 않음
+# daily_df가 없을 때만 별도 조회
 # =========================================================
 
-def calculate_btc_daily_change(current_price):
+def calculate_btc_daily_change(current_price, daily_df=None):
 
     if current_price is None:
         return None
@@ -3126,7 +3075,9 @@ def calculate_btc_daily_change(current_price):
         current_price = float(current_price)
         daily_start = get_candle_start(datetime.now(KST), "1d")
 
-        daily_df = get_okx_btc_timeframe("1d")
+        # 이미 update_okx_btc()에서 조회한 일봉 데이터 재사용
+        if daily_df is None:
+            daily_df = get_okx_btc_timeframe("1d")
 
         if daily_df is None or daily_df.empty:
             log.warning("BTC 당일 변동률 계산 실패: 일봉 데이터 없음")
@@ -3184,6 +3135,9 @@ def calculate_btc_daily_change(current_price):
 
 # =========================================================
 # BTC 업데이트
+#
+# [수정] 활성 시간봉 중 1d 데이터를 보관하고
+# calculate_btc_daily_change()에 전달
 # =========================================================
 
 def update_okx_btc():
@@ -3202,11 +3156,18 @@ def update_okx_btc():
 
     latest_btc_timeframe_data = {}
 
+    # 이번 업데이트에서 조회한 BTC 일봉 데이터 보관
+    daily_df = None
+
     for timeframe in active_timeframes:
 
         try:
 
             df = get_okx_btc_timeframe(timeframe)
+
+            # 일봉이 활성화되어 있으면 조회한 데이터를 보관
+            if timeframe == "1d":
+                daily_df = df.copy(deep=True)
 
             latest_btc_timeframe_data[timeframe] = (
                 analyze_okx_btc_timeframe(
@@ -3235,8 +3196,11 @@ def update_okx_btc():
                 "ema50": None
             }
 
+    # 일봉이 활성화되어 있으면 기존 조회 데이터 재사용
+    # 일봉이 비활성화되어 있으면 함수 내부에서 1회 조회
     latest_btc_daily_change = calculate_btc_daily_change(
-        price
+        price,
+        daily_df
     )
 
     log.info(
@@ -3749,7 +3713,6 @@ def last_three_pattern_html(row, trade_currency="원"):
 
         rsi_value = item.get("rsi")
 
-        # 해당 캔들의 개별 거래대금
         trade_value_display = candle_trade_value_html(
             item.get("trade_value"),
             trade_currency
@@ -4013,7 +3976,6 @@ def btc_html():
             )
         }
 
-        # BTC 거래대금은 OKX 기준 USDT
         candle_html = last_three_pattern_html(
             btc_row,
             "USDT"
@@ -6055,6 +6017,15 @@ def startup():
 
     log.info(
         "BTC 4시간봉 및 일봉 거래대금은 해당 시간 구간의 1시간봉 거래대금 합산"
+    )
+
+    # 캐시 수정 사항 로그
+    log.info(
+        "업비트 거래대금 전용 1시간봉 73개 캐시 적용"
+    )
+
+    log.info(
+        "BTC 일봉 조회 데이터는 당일 변동률 계산에 재사용"
     )
 
     threading.Thread(
