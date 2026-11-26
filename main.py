@@ -38,7 +38,7 @@ UTC = ZoneInfo("UTC")
 # 사용자 설정
 # =========================================================
 
-TOP_N = 20
+TOP_N = 50
 SHOW_TOP_LIST = "N"
 UPDATE_MINUTES = 1
 
