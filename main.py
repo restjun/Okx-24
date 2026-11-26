@@ -152,6 +152,8 @@ CANDLE_HISTORY_COUNT = 400
 
 # 거래대금 계산 전용 1시간봉 개수
 # 현재 진행 중인 1시간봉 1개 + 이전 72시간
+# 24H는 업비트 ticker에서 직접 가져오므로
+# 1시간봉은 -1일, -2일 계산에만 사용
 VOLUME_CANDLE_COUNT = 73
 
 
@@ -521,6 +523,8 @@ def get_upbit_markets():
                 result.append({
                     "market": x["market"],
                     "current_price": float(x["trade_price"]),
+
+                    # 업비트 ticker에서 제공하는 최근 24시간 거래대금
                     "volume_24h": float(x["acc_trade_price_24h"])
                 })
             except Exception:
@@ -656,8 +660,11 @@ def get_upbit_4h_candles(market, count=CANDLE_HISTORY_COUNT):
 # 거래대금 전용 1시간봉 조회
 # 현재 진행 중인 1시간봉 + 이전 72시간
 #
-# [수정] 거래대금 전용 캐시 적용
+# 거래대금 전용 캐시 적용
 # 기존 분석용 1시간봉 캐시("1h")와 분리
+#
+# 24H는 업비트 ticker 사용
+# 이 데이터는 -1일, -2일 계산에만 사용
 # =========================================================
 
 def get_upbit_volume_1h_candles(market):
@@ -674,11 +681,11 @@ def get_upbit_volume_1h_candles(market):
 
 
 # =========================================================
-# 1시간봉으로 현재 시각 기준 24시간 구간별 거래대금 계산
+# 1시간봉으로 -1일, -2일 거래대금 계산
 #
-# 24H  : 현재 시간 정각 기준 이전 24시간
-# -1일 : 그 이전 24시간
-# -2일 : 그 이전 24시간
+# 24H  : 업비트 ticker acc_trade_price_24h 사용
+# -1일 : 24H 구간 바로 이전 24시간
+# -2일 : -1일 구간 바로 이전 24시간
 #
 # 각 구간의 1시간봉 거래대금 24개 합산
 # 현재 진행 중인 1시간봉은 제외
@@ -711,12 +718,11 @@ def calculate_volume_from_1h_candles(market):
         microsecond=0
     )
 
-    period_24h_start = current_hour - timedelta(hours=24)
-    period_24h_end = current_hour
-
+    # -1일: 현재 시간 정각 기준 24~48시간 전
     period_1d_start = current_hour - timedelta(hours=48)
     period_1d_end = current_hour - timedelta(hours=24)
 
+    # -2일: 현재 시간 정각 기준 48~72시간 전
     period_2d_start = current_hour - timedelta(hours=72)
     period_2d_end = current_hour - timedelta(hours=48)
 
@@ -745,23 +751,22 @@ def calculate_volume_from_1h_candles(market):
             selected["trade_value"].fillna(0).sum()
         )
 
-    volume_24h = sum_period(
-        period_24h_start,
-        period_24h_end
-    )
-
+    # -1일 거래대금
     volume_prev_day = sum_period(
         period_1d_start,
         period_1d_end
     )
 
+    # -2일 거래대금
     volume_today = sum_period(
         period_2d_start,
         period_2d_end
     )
 
     return {
-        "volume_24h": volume_24h,
+        # 24H는 ticker에서 사용하므로 여기서는 계산하지 않음
+        "volume_24h": None,
+
         "volume_prev_day": volume_prev_day,
         "volume_today": volume_today
     }
@@ -2056,7 +2061,9 @@ def analyze_signal_candles(market, price, timeframe):
 
 # =========================================================
 # 일봉 변동률 및 거래대금
-# 거래대금은 별도 1시간봉으로 계산
+#
+# 24H 거래대금은 업비트 ticker 값 사용
+# -1일, -2일 거래대금만 별도 1시간봉으로 계산
 # =========================================================
 
 def analyze_daily_change(market, price):
@@ -2106,7 +2113,10 @@ def analyze_daily_change(market, price):
     return {
         "change": periods[-1].get("change"),
         "periods": periods,
-        "volume_24h": volume_data.get("volume_24h"),
+
+        # 24H는 make_row에서 업비트 ticker 값으로 사용
+        "volume_24h": None,
+
         "volume_prev_day": volume_data.get("volume_prev_day"),
         "volume_today": volume_data.get("volume_today")
     }
@@ -2131,13 +2141,14 @@ def make_row(
         "rank": rank,
         "name": coin,
         "market": market,
-        "volume_24h": (
-            analysis_daily.get("volume_24h")
-            if analysis_daily.get("volume_24h") is not None
-            else item["volume_24h"]
-        ),
+
+        # 24H: 업비트 ticker에서 제공하는 acc_trade_price_24h
+        "volume_24h": item["volume_24h"],
+
+        # -1일, -2일: 기존 1시간봉 합산 결과 유지
         "volume_prev_day": analysis_daily.get("volume_prev_day"),
         "volume_today": analysis_daily.get("volume_today"),
+
         "current_price": item["current_price"],
         "volume_rank": volume_rank,
         "daily_change": analysis_daily["change"],
@@ -2449,7 +2460,7 @@ def signal_checklist_html(row, timeframe, analysis):
         '<div class="checklist-grid">'
         + "".join(items_html)
         + '</div>'
-        '</div>'
+        + '</div>'
     )
 
 
@@ -3061,7 +3072,7 @@ def analyze_okx_btc_timeframe(df, timeframe, current_price=None):
 # =========================================================
 # BTC 당일 변동률 계산
 #
-# [수정] daily_df를 전달받으면 일봉 API 재조회하지 않음
+# daily_df를 전달받으면 일봉 API 재조회하지 않음
 # daily_df가 없을 때만 별도 조회
 # =========================================================
 
@@ -3136,7 +3147,7 @@ def calculate_btc_daily_change(current_price, daily_df=None):
 # =========================================================
 # BTC 업데이트
 #
-# [수정] 활성 시간봉 중 1d 데이터를 보관하고
+# 활성 시간봉 중 1d 데이터를 보관하고
 # calculate_btc_daily_change()에 전달
 # =========================================================
 
@@ -5980,19 +5991,15 @@ def startup():
     )
 
     log.info(
-        "업비트 거래대금은 별도 1시간봉 73개를 조회하여 계산"
+        "24H 거래대금은 업비트 ticker acc_trade_price_24h 사용"
     )
 
     log.info(
-        "24H 거래대금은 현재 시간 정각 기준 이전 24시간의 1시간봉 거래대금 합산"
+        "-1일 거래대금은 현재 시간 정각 기준 24~48시간 전의 1시간봉 합산"
     )
 
     log.info(
-        "-1일 거래대금은 24H 구간 바로 이전 24시간의 1시간봉 거래대금 합산"
-    )
-
-    log.info(
-        "-2일 거래대금은 -1일 구간 바로 이전 24시간의 1시간봉 거래대금 합산"
+        "-2일 거래대금은 현재 시간 정각 기준 48~72시간 전의 1시간봉 합산"
     )
 
     log.info(
@@ -6000,7 +6007,7 @@ def startup():
     )
 
     log.info(
-        "현재 진행 중인 1시간봉은 24시간 거래대금 구간에서 제외"
+        "현재 진행 중인 1시간봉은 -1일, -2일 거래대금 계산에서 제외"
     )
 
     log.info(
@@ -6022,6 +6029,10 @@ def startup():
     # 캐시 수정 사항 로그
     log.info(
         "업비트 거래대금 전용 1시간봉 73개 캐시 적용"
+    )
+
+    log.info(
+        "24H 거래대금은 1시간봉 합산 없이 업비트 ticker 값 사용"
     )
 
     log.info(
