@@ -132,7 +132,7 @@ USE_EMA_BEARISH_ALIGNMENT = "Y"
 # EMA1 / EMA50 / EMA100 / EMA200 크로스 설정
 # =========================================================
 
-EMA_CROSS_FAST_PERIOD = 1
+EMA_CROSS_FAST_PERIOD = 2
 
 EMA_CROSS_SLOW_PERIODS = [50]
 
