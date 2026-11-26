@@ -150,6 +150,10 @@ CONSECUTIVE_BULLISH_MIN = 2
 
 CANDLE_HISTORY_COUNT = 400
 
+# 거래대금 계산 전용 1시간봉 개수
+# 최근 24시간 + 전일 24시간 + 당일 24시간
+VOLUME_CANDLE_COUNT = 72
+
 
 # =========================================================
 # SIGNAL 체크리스트 개별 사용 설정
@@ -648,6 +652,84 @@ def get_upbit_1h_candles(market, count=CANDLE_HISTORY_COUNT):
 
 def get_upbit_4h_candles(market, count=CANDLE_HISTORY_COUNT):
     return get_upbit_minute_candles(market, 240, count)
+
+
+# =========================================================
+# 거래대금 전용 1시간봉 조회
+# 최근 72개 1시간봉만 요청
+# 기존 시간봉 분석용 캔들 조회와 분리
+# =========================================================
+
+def get_upbit_volume_1h_candles(market):
+
+    return get_upbit_minute_candles(
+        market,
+        60,
+        VOLUME_CANDLE_COUNT
+    )
+
+
+# =========================================================
+# 1시간봉 72개로 거래대금 계산
+#
+# 최근 24시간 = 최근 1시간봉 24개
+# 전일 24시간 = 그 이전 1시간봉 24개
+# 당일 24시간 = 그 이전 1시간봉 24개
+# =========================================================
+
+def calculate_volume_from_1h_candles(market):
+
+    df = get_upbit_volume_1h_candles(market)
+
+    if df is None or df.empty:
+        return {
+            "volume_24h": None,
+            "volume_prev_day": None,
+            "volume_today": None
+        }
+
+    df = (
+        df.sort_values("datetime")
+        .drop_duplicates("datetime")
+        .reset_index(drop=True)
+    )
+
+    if len(df) < VOLUME_CANDLE_COUNT:
+
+        log.warning(
+            "%s 거래대금 계산용 1시간봉 부족 | 조회=%s | 필요=%s",
+            market,
+            len(df),
+            VOLUME_CANDLE_COUNT
+        )
+
+        return {
+            "volume_24h": None,
+            "volume_prev_day": None,
+            "volume_today": None
+        }
+
+    values = pd.to_numeric(
+        df["trade_value"],
+        errors="coerce"
+    )
+
+    values = values.fillna(0)
+
+    # 최근 24시간
+    volume_24h = values.iloc[-24:].sum()
+
+    # 현재 기준 24~48시간 전
+    volume_prev_day = values.iloc[-48:-24].sum()
+
+    # 현재 기준 48~72시간 전
+    volume_today = values.iloc[-72:-48].sum()
+
+    return {
+        "volume_24h": float(volume_24h),
+        "volume_prev_day": float(volume_prev_day),
+        "volume_today": float(volume_today)
+    }
 
 
 # =========================================================
@@ -1970,8 +2052,8 @@ def analyze_signal_candles(market, price, timeframe):
 
 
 # =========================================================
-# 일봉 변동률 및 전일/당일 거래대금
-# KST 09:00 기준
+# 일봉 변동률 및 거래대금
+# 거래대금은 별도 1시간봉 72개로 계산
 # =========================================================
 
 def analyze_daily_change(market, price):
@@ -1982,6 +2064,7 @@ def analyze_daily_change(market, price):
         return {
             "change": None,
             "periods": [],
+            "volume_24h": None,
             "volume_prev_day": None,
             "volume_today": None
         }
@@ -1992,47 +2075,37 @@ def analyze_daily_change(market, price):
         return {
             "change": None,
             "periods": [],
+            "volume_24h": None,
             "volume_prev_day": None,
             "volume_today": None
         }
 
-    current_start = get_candle_start(
-        datetime.now(KST),
-        "1d"
-    )
+    volume_data = {
+        "volume_24h": None,
+        "volume_prev_day": None,
+        "volume_today": None
+    }
 
-    previous_start = current_start - timedelta(days=1)
+    try:
 
-    current_rows = df[
-        df["datetime"] == current_start
-    ]
+        volume_data = calculate_volume_from_1h_candles(
+            market
+        )
 
-    previous_rows = df[
-        df["datetime"] == previous_start
-    ]
+    except Exception as e:
 
-    volume_today = None
-    volume_prev_day = None
-
-    if not current_rows.empty:
-
-        value = current_rows.iloc[-1].get("trade_price")
-
-        if value is not None and pd.notna(value):
-            volume_today = float(value)
-
-    if not previous_rows.empty:
-
-        value = previous_rows.iloc[-1].get("trade_price")
-
-        if value is not None and pd.notna(value):
-            volume_prev_day = float(value)
+        log.warning(
+            "%s 1시간봉 거래대금 계산 오류: %s",
+            market,
+            e
+        )
 
     return {
         "change": periods[-1].get("change"),
         "periods": periods,
-        "volume_prev_day": volume_prev_day,
-        "volume_today": volume_today
+        "volume_24h": volume_data.get("volume_24h"),
+        "volume_prev_day": volume_data.get("volume_prev_day"),
+        "volume_today": volume_data.get("volume_today")
     }
 
 
@@ -2056,9 +2129,15 @@ def make_row(
         "name": coin,
         "market": market,
 
-        "volume_24h": item["volume_24h"],
+        # 1시간봉 24개 합산값
+        # 계산이 불가능한 경우 기존 ticker 24시간 값 사용
+        "volume_24h": (
+            analysis_daily.get("volume_24h")
+            if analysis_daily.get("volume_24h") is not None
+            else item["volume_24h"]
+        ),
 
-        # 추가: 전일 및 당일 거래대금
+        # 과거 24~48시간 / 48~72시간
         "volume_prev_day": analysis_daily.get("volume_prev_day"),
         "volume_today": analysis_daily.get("volume_today"),
 
@@ -2454,6 +2533,7 @@ def update_upbit():
             analysis_daily = {
                 "change": None,
                 "periods": [],
+                "volume_24h": None,
                 "volume_prev_day": None,
                 "volume_today": None
             }
@@ -5903,7 +5983,23 @@ def startup():
     )
 
     log.info(
-        "전일 및 당일 거래대금은 업비트 일봉 candle_acc_trade_price 기준"
+        "업비트 거래대금은 별도 1시간봉 72개를 조회하여 계산"
+    )
+
+    log.info(
+        "최근 24시간 거래대금은 최근 1시간봉 24개 합산"
+    )
+
+    log.info(
+        "전일 거래대금은 이전 1시간봉 24개 합산"
+    )
+
+    log.info(
+        "당일 거래대금은 그 이전 1시간봉 24개 합산"
+    )
+
+    log.info(
+        "기존 시간봉 분석용 캔들 조회와 거래대금 계산용 1시간봉 조회는 분리"
     )
 
     log.info(
