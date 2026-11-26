@@ -151,8 +151,8 @@ CONSECUTIVE_BULLISH_MIN = 2
 CANDLE_HISTORY_COUNT = 400
 
 # 거래대금 계산 전용 1시간봉 개수
-# 최근 24시간 + 전일 24시간 + 당일 24시간
-VOLUME_CANDLE_COUNT = 72
+# 현재 진행 중인 1시간봉 1개 + 이전 72시간
+VOLUME_CANDLE_COUNT = 73
 
 
 # =========================================================
@@ -656,8 +656,7 @@ def get_upbit_4h_candles(market, count=CANDLE_HISTORY_COUNT):
 
 # =========================================================
 # 거래대금 전용 1시간봉 조회
-# 최근 72개 1시간봉만 요청
-# 기존 시간봉 분석용 캔들 조회와 분리
+# 현재 진행 중인 1시간봉 + 이전 72시간
 # =========================================================
 
 def get_upbit_volume_1h_candles(market):
@@ -670,23 +669,28 @@ def get_upbit_volume_1h_candles(market):
 
 
 # =========================================================
-# 1시간봉 72개로 거래대금 계산
+# 1시간봉으로 현재 시각 기준 24시간 구간별 거래대금 계산
 #
-# 최근 24시간 = 최근 1시간봉 24개
-# 전일 24시간 = 그 이전 1시간봉 24개
-# 당일 24시간 = 그 이전 1시간봉 24개
+# 24H  : 현재 시간 정각 기준 이전 24시간
+# -1일 : 그 이전 24시간
+# -2일 : 그 이전 24시간
+#
+# 각 구간의 1시간봉 거래대금 24개 합산
+# 현재 진행 중인 1시간봉은 제외
 # =========================================================
 
 def calculate_volume_from_1h_candles(market):
 
+    empty_result = {
+        "volume_24h": None,
+        "volume_prev_day": None,
+        "volume_today": None
+    }
+
     df = get_upbit_volume_1h_candles(market)
 
     if df is None or df.empty:
-        return {
-            "volume_24h": None,
-            "volume_prev_day": None,
-            "volume_today": None
-        }
+        return empty_result
 
     df = (
         df.sort_values("datetime")
@@ -694,41 +698,72 @@ def calculate_volume_from_1h_candles(market):
         .reset_index(drop=True)
     )
 
-    if len(df) < VOLUME_CANDLE_COUNT:
+    # 현재 시각의 분·초를 제거해 1시간 정각으로 맞춤
+    now = datetime.now(KST)
 
-        log.warning(
-            "%s 거래대금 계산용 1시간봉 부족 | 조회=%s | 필요=%s",
-            market,
-            len(df),
-            VOLUME_CANDLE_COUNT
-        )
+    current_hour = now.replace(
+        minute=0,
+        second=0,
+        microsecond=0
+    )
 
-        return {
-            "volume_24h": None,
-            "volume_prev_day": None,
-            "volume_today": None
-        }
+    # 시간봉 시작 시각 기준으로 정확히 24시간 구간 설정
+    period_24h_start = current_hour - timedelta(hours=24)
+    period_24h_end = current_hour
+
+    period_1d_start = current_hour - timedelta(hours=48)
+    period_1d_end = current_hour - timedelta(hours=24)
+
+    period_2d_start = current_hour - timedelta(hours=72)
+    period_2d_end = current_hour - timedelta(hours=48)
+
+    # 시간봉 시작 시각을 KST로 통일
+    df["datetime"] = pd.to_datetime(
+        df["datetime"]
+    )
 
     values = pd.to_numeric(
         df["trade_value"],
         errors="coerce"
     )
 
-    values = values.fillna(0)
+    df["trade_value"] = values
 
-    # 최근 24시간
-    volume_24h = values.iloc[-24:].sum()
+    # 거래대금 구간별 집계
+    # 시작 시각은 포함, 종료 시각은 제외
+    def sum_period(start, end):
 
-    # 현재 기준 24~48시간 전
-    volume_prev_day = values.iloc[-48:-24].sum()
+        selected = df[
+            (df["datetime"] >= start)
+            & (df["datetime"] < end)
+        ]
 
-    # 현재 기준 48~72시간 전
-    volume_today = values.iloc[-72:-48].sum()
+        if selected.empty:
+            return None
+
+        return float(
+            selected["trade_value"].fillna(0).sum()
+        )
+
+    volume_24h = sum_period(
+        period_24h_start,
+        period_24h_end
+    )
+
+    volume_prev_day = sum_period(
+        period_1d_start,
+        period_1d_end
+    )
+
+    volume_today = sum_period(
+        period_2d_start,
+        period_2d_end
+    )
 
     return {
-        "volume_24h": float(volume_24h),
-        "volume_prev_day": float(volume_prev_day),
-        "volume_today": float(volume_today)
+        "volume_24h": volume_24h,
+        "volume_prev_day": volume_prev_day,
+        "volume_today": volume_today
     }
 
 
@@ -2053,7 +2088,7 @@ def analyze_signal_candles(market, price, timeframe):
 
 # =========================================================
 # 일봉 변동률 및 거래대금
-# 거래대금은 별도 1시간봉 72개로 계산
+# 거래대금은 별도 1시간봉으로 계산
 # =========================================================
 
 def analyze_daily_change(market, price):
@@ -2129,7 +2164,7 @@ def make_row(
         "name": coin,
         "market": market,
 
-        # 1시간봉 24개 합산값
+        # 현재 기준 최근 24시간 거래대금
         # 계산이 불가능한 경우 기존 ticker 24시간 값 사용
         "volume_24h": (
             analysis_daily.get("volume_24h")
@@ -2137,7 +2172,7 @@ def make_row(
             else item["volume_24h"]
         ),
 
-        # 과거 24~48시간 / 48~72시간
+        # 현재 기준 직전 24시간 / 그 이전 24시간
         "volume_prev_day": analysis_daily.get("volume_prev_day"),
         "volume_today": analysis_daily.get("volume_today"),
 
@@ -4116,17 +4151,17 @@ def signal_card(row):
         <div class="signal-volume-grid">
 
             <div>
-                <span>24시간 거래대금</span>
+                <span>24H</span>
                 <strong>{fmt_vol(row.get("volume_24h"))}</strong>
             </div>
 
             <div>
-                <span>전일 거래대금</span>
+                <span>-1일</span>
                 <strong>{fmt_vol(row.get("volume_prev_day"))}</strong>
             </div>
 
             <div>
-                <span>당일 거래대금</span>
+                <span>-2일</span>
                 <strong>{fmt_vol(row.get("volume_today"))}</strong>
             </div>
 
@@ -4325,17 +4360,17 @@ def card(row, kind):
         <div class="volume-summary">
 
             <div>
-                <span>24시간 거래대금</span>
+                <span>24H</span>
                 <strong>{fmt_vol(row.get("volume_24h"))}</strong>
             </div>
 
             <div>
-                <span>전일 거래대금</span>
+                <span>-1일</span>
                 <strong>{fmt_vol(row.get("volume_prev_day"))}</strong>
             </div>
 
             <div>
-                <span>당일 거래대금</span>
+                <span>-2일</span>
                 <strong>{fmt_vol(row.get("volume_today"))}</strong>
             </div>
 
@@ -5979,23 +6014,31 @@ def startup():
     )
 
     log.info(
-        "거래대금 표시: 24시간 / 전일 / 당일"
+        "거래대금 표시: 24H / -1일 / -2일"
     )
 
     log.info(
-        "업비트 거래대금은 별도 1시간봉 72개를 조회하여 계산"
+        "업비트 거래대금은 별도 1시간봉 73개를 조회하여 계산"
     )
 
     log.info(
-        "최근 24시간 거래대금은 최근 1시간봉 24개 합산"
+        "24H 거래대금은 현재 시간 정각 기준 이전 24시간의 1시간봉 거래대금 합산"
     )
 
     log.info(
-        "전일 거래대금은 이전 1시간봉 24개 합산"
+        "-1일 거래대금은 24H 구간 바로 이전 24시간의 1시간봉 거래대금 합산"
     )
 
     log.info(
-        "당일 거래대금은 그 이전 1시간봉 24개 합산"
+        "-2일 거래대금은 -1일 구간 바로 이전 24시간의 1시간봉 거래대금 합산"
+    )
+
+    log.info(
+        "거래대금 구간은 시작 시각 포함, 종료 시각 제외 방식으로 계산"
+    )
+
+    log.info(
+        "현재 진행 중인 1시간봉은 24시간 거래대금 구간에서 제외"
     )
 
     log.info(
