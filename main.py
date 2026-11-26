@@ -56,8 +56,6 @@ MAX_RETRIES = 20
 
 # =========================================================
 # 시간봉별 사용 설정
-# Y = 분석 및 화면 표시
-# N = 분석 및 화면 표시 제외
 # =========================================================
 
 USE_TIMEFRAME_15M = "N"
@@ -84,8 +82,6 @@ TIMEFRAME_MINUTES = {
 def get_active_timeframes():
 
     result = []
-
-    # 대시보드 표시 순서: 일봉 → 4시간 → 1시간 → 15분
 
     if USE_TIMEFRAME_1D == "Y":
         result.append("1d")
@@ -140,7 +136,6 @@ EMA_CROSS_FAST_PERIOD = 1
 
 EMA_CROSS_SLOW_PERIODS = [50]
 
-# 기존 변수 호환 유지
 EMA_CROSS_SLOW_PERIOD = 50
 
 DISPLAY_CANDLE_COUNT = 6
@@ -151,7 +146,6 @@ CONSECUTIVE_BULLISH_MIN = 2
 
 # =========================================================
 # 캔들 조회 개수
-# EMA200 크로스 계산을 위해 400개 확보
 # =========================================================
 
 CANDLE_HISTORY_COUNT = 400
@@ -292,7 +286,6 @@ latest_upbit_btc_volume_24h = None
 latest_btc_okx_price = None
 latest_btc_daily_change = None
 
-# BTC 시간봉별 분석 결과
 latest_btc_timeframe_data = {}
 
 
@@ -538,7 +531,6 @@ def get_upbit_markets():
 
 # =========================================================
 # 업비트 분봉 조회
-# 최대 400개 캔들
 # =========================================================
 
 def get_upbit_minute_candles(market, unit, count=CANDLE_HISTORY_COUNT):
@@ -650,7 +642,7 @@ def get_upbit_4h_candles(market, count=CANDLE_HISTORY_COUNT):
 
 # =========================================================
 # 업비트 일봉 조회
-# 최대 400개 캔들
+# 거래대금(candle_acc_trade_price) 추가 저장
 # =========================================================
 
 def get_upbit_daily_candles(market, count=CANDLE_HISTORY_COUNT):
@@ -699,6 +691,8 @@ def get_upbit_daily_candles(market, count=CANDLE_HISTORY_COUNT):
 
             try:
 
+                trade_price = x.get("candle_acc_trade_price")
+
                 rows.append({
                     "datetime": datetime.strptime(
                         x["candle_date_time_kst"],
@@ -708,7 +702,14 @@ def get_upbit_daily_candles(market, count=CANDLE_HISTORY_COUNT):
                     "open": float(x["opening_price"]),
                     "high": float(x["high_price"]),
                     "low": float(x["low_price"]),
-                    "close": float(x["trade_price"])
+                    "close": float(x["trade_price"]),
+
+                    # 일봉 거래대금
+                    "trade_price": (
+                        float(trade_price)
+                        if trade_price is not None
+                        else None
+                    )
                 })
 
             except Exception:
@@ -899,10 +900,6 @@ def check_ema_alignment_values(values):
 
 # =========================================================
 # EMA1 / EMA50 / EMA100 / EMA200
-# 골든크로스 및 정배열 유지 판정
-#
-# 종가(close) 기준
-# 실제 상향 크로스가 발생한 캔들만 골든크로스로 판정
 # =========================================================
 
 def apply_ema_bullish_cross_signals(periods, close_series):
@@ -966,7 +963,6 @@ def apply_ema_bullish_cross_signals(periods, close_series):
             previous_fast = float(previous_fast)
             previous_slow = float(previous_slow)
 
-            # 실제 상향 크로스
             golden_cross = bool(
                 previous_fast <= previous_slow
                 and current_fast > current_slow
@@ -978,12 +974,10 @@ def apply_ema_bullish_cross_signals(periods, close_series):
 
                 period[cross_key] = True
 
-            # EMA1이 해당 EMA 이하로 내려가면 정배열 해제
             elif current_fast <= current_slow:
 
                 bullish_state = False
 
-            # 정배열 유지
             if bullish_state and current_fast > current_slow:
 
                 period[alignment_key] = True
@@ -993,7 +987,6 @@ def apply_ema_bullish_cross_signals(periods, close_series):
                     and golden_cross
                 )
 
-        # 기존 EMA1/EMA50 키 호환 유지
         if slow_period == 50:
 
             for period in periods:
@@ -1519,7 +1512,6 @@ def analyze_previous_current_pattern(periods):
             "active": period.get("active", False),
             "rsi": period.get("rsi"),
 
-            # EMA1/EMA50 기존 호환
             "ema_golden_cross": period.get(
                 "ema_golden_cross", False
             ),
@@ -1532,7 +1524,6 @@ def analyze_previous_current_pattern(periods):
                 "ema_bullish_alignment", False
             ),
 
-            # EMA1/EMA50
             "ema_golden_cross_50": period.get(
                 "ema_golden_cross_50", False
             ),
@@ -1541,7 +1532,6 @@ def analyze_previous_current_pattern(periods):
                 "ema_bullish_alignment_50", False
             ),
 
-            # EMA1/EMA100
             "ema_golden_cross_100": period.get(
                 "ema_golden_cross_100", False
             ),
@@ -1554,7 +1544,6 @@ def analyze_previous_current_pattern(periods):
                 "ema_bullish_alignment_100", False
             ),
 
-            # EMA1/EMA200
             "ema_golden_cross_200": period.get(
                 "ema_golden_cross_200", False
             ),
@@ -1750,8 +1739,6 @@ def analyze_signal_candles(market, price, timeframe):
     if not periods:
         return empty_result
 
-    # EMA1 / EMA50 / EMA100 / EMA200
-    # 모두 종가 기준 실제 크로스 계산
     periods = apply_ema_bullish_cross_signals(
         periods,
         df["close"]
@@ -1928,7 +1915,8 @@ def analyze_signal_candles(market, price, timeframe):
 
 
 # =========================================================
-# 일봉 변동률
+# 일봉 변동률 및 전일/당일 거래대금
+# KST 09:00 기준
 # =========================================================
 
 def analyze_daily_change(market, price):
@@ -1936,16 +1924,60 @@ def analyze_daily_change(market, price):
     df = get_daily_dataframe(market)
 
     if df.empty:
-        return {"change": None, "periods": []}
+        return {
+            "change": None,
+            "periods": [],
+            "volume_prev_day": None,
+            "volume_today": None
+        }
 
     periods = build_daily_periods(df, price)
 
     if not periods:
-        return {"change": None, "periods": []}
+        return {
+            "change": None,
+            "periods": [],
+            "volume_prev_day": None,
+            "volume_today": None
+        }
+
+    current_start = get_candle_start(
+        datetime.now(KST),
+        "1d"
+    )
+
+    previous_start = current_start - timedelta(days=1)
+
+    current_rows = df[
+        df["datetime"] == current_start
+    ]
+
+    previous_rows = df[
+        df["datetime"] == previous_start
+    ]
+
+    volume_today = None
+    volume_prev_day = None
+
+    if not current_rows.empty:
+
+        value = current_rows.iloc[-1].get("trade_price")
+
+        if value is not None and pd.notna(value):
+            volume_today = float(value)
+
+    if not previous_rows.empty:
+
+        value = previous_rows.iloc[-1].get("trade_price")
+
+        if value is not None and pd.notna(value):
+            volume_prev_day = float(value)
 
     return {
         "change": periods[-1].get("change"),
-        "periods": periods
+        "periods": periods,
+        "volume_prev_day": volume_prev_day,
+        "volume_today": volume_today
     }
 
 
@@ -1968,7 +2000,13 @@ def make_row(
         "rank": rank,
         "name": coin,
         "market": market,
+
         "volume_24h": item["volume_24h"],
+
+        # 추가: 전일 및 당일 거래대금
+        "volume_prev_day": analysis_daily.get("volume_prev_day"),
+        "volume_today": analysis_daily.get("volume_today"),
+
         "current_price": item["current_price"],
         "volume_rank": volume_rank,
 
@@ -2067,11 +2105,6 @@ def get_signal_condition_checks(row, analysis=None):
         except (TypeError, ValueError):
             checks["ema_alignment"] = None
 
-    # =====================================================
-    # EMA1 / EMA50 / EMA100 / EMA200 개별 크로스 판정
-    # 최근 6개 봉에서 각 EMA의 실제 상향 크로스를 독립 확인
-    # =====================================================
-
     candles = analysis.get("last_three_patterns")
 
     for period in EMA_CROSS_SLOW_PERIODS:
@@ -2087,9 +2120,6 @@ def get_signal_condition_checks(row, analysis=None):
                 candle.get(cross_key) is True
                 for candle in candles
             )
-
-    # 기존 SIGNAL 판정 방식 유지
-    # EMA1/50, EMA1/100, EMA1/200 중 하나라도 발생하면 통과
 
     if not candles:
         checks["ema_bullish_candle"] = None
@@ -2214,7 +2244,6 @@ def signal_checklist_html(row, timeframe, analysis):
             )
         )
 
-    # EMA1/50, EMA1/100, EMA1/200을 각각 독립 표시
     for period in EMA_CROSS_SLOW_PERIODS:
 
         checklist_items.append(
@@ -2369,7 +2398,9 @@ def update_upbit():
 
             analysis_daily = {
                 "change": None,
-                "periods": []
+                "periods": [],
+                "volume_prev_day": None,
+                "volume_today": None
             }
 
         timeframe_analyses = {}
@@ -2682,7 +2713,6 @@ def resample_okx_to_kst_timeframe(df, timeframe):
 
 # =========================================================
 # BTC 시간봉 데이터 조회
-# EMA200 계산을 위한 과거 데이터 확보
 # =========================================================
 
 def get_okx_btc_timeframe(timeframe):
@@ -2705,8 +2735,6 @@ def get_okx_btc_timeframe(timeframe):
                 raw.iloc[0]["datetime"].timestamp() * 1000
             )
 
-            # 4시간봉은 3회 이내의 1시간봉 이력으로 확보
-            # 일봉은 EMA200 계산을 위해 더 많은 이력 확보
             max_history_rounds = (
                 18 if timeframe == "1d" else 2
             )
@@ -2799,7 +2827,6 @@ def analyze_okx_btc_timeframe(df, timeframe, current_price=None):
     if not periods:
         return empty_result
 
-    # EMA1 / EMA50 / EMA100 / EMA200
     periods = apply_ema_bullish_cross_signals(
         periods,
         df["close"]
@@ -2881,7 +2908,6 @@ def analyze_okx_btc_timeframe(df, timeframe, current_price=None):
 
 # =========================================================
 # BTC 당일 변동률 계산
-# KST 09:00 기준
 # =========================================================
 
 def calculate_btc_daily_change(current_price):
@@ -3072,6 +3098,9 @@ def fmt_vol(v):
     try:
         v = float(v)
     except Exception:
+        return "-"
+
+    if pd.isna(v):
         return "-"
 
     if v >= 1e12:
@@ -3479,8 +3508,6 @@ def last_three_pattern_html(row):
 
         card_classes = []
 
-        # 실제 EMA 상향 크로스 발생 여부
-        # 정배열 유지 여부와 양봉/음봉 여부는 확인하지 않음
         ema_cross_active = any(
             item.get(
                 f"ema_golden_cross_{period}",
@@ -3489,7 +3516,6 @@ def last_three_pattern_html(row):
             for period in EMA_CROSS_SLOW_PERIODS
         )
 
-        # 현재 진행 중인 캔들에서 발생한 크로스 여부
         ema_progress_active = any(
             item.get(
                 f"ema_golden_cross_progress_{period}",
@@ -3498,12 +3524,9 @@ def last_three_pattern_html(row):
             for period in EMA_CROSS_SLOW_PERIODS
         )
 
-        # 실제 크로스가 발생한 캔들만 노란색 표시
-        # 진행 중인 캔들과 완성된 캔들 모두 포함
         if ema_cross_active:
             card_classes.append("ema-golden-cross-card")
 
-        # 진행 중인 크로스는 추가 강조
         if ema_progress_active:
             card_classes.append("ema-golden-cross-progress")
 
@@ -3793,7 +3816,6 @@ def btc_html():
 
 # =========================================================
 # SIGNAL 카드
-# 조건을 통과한 시간봉만 표시
 # =========================================================
 
 def signal_card(row):
@@ -3860,13 +3882,27 @@ def signal_card(row):
             </div>
 
             <div>
-                <span>거래대금</span>
+                <span>당일 변동률</span>
+                <strong>{fmt_change(row.get("daily_change"))}</strong>
+            </div>
+
+        </div>
+
+        <div class="signal-volume-grid">
+
+            <div>
+                <span>24시간 거래대금</span>
                 <strong>{fmt_vol(row.get("volume_24h"))}</strong>
             </div>
 
             <div>
-                <span>당일 변동률</span>
-                <strong>{fmt_change(row.get("daily_change"))}</strong>
+                <span>전일 거래대금</span>
+                <strong>{fmt_vol(row.get("volume_prev_day"))}</strong>
+            </div>
+
+            <div>
+                <span>당일 거래대금</span>
+                <strong>{fmt_vol(row.get("volume_today"))}</strong>
             </div>
 
         </div>
@@ -4055,13 +4091,27 @@ def card(row, kind):
             </div>
 
             <div>
-                <span>24H 거래대금</span>
-                <strong>{fmt_vol(row["volume_24h"])}</strong>
+                <span>당일 변동률</span>
+                <strong>{fmt_change(row.get("daily_change"))}</strong>
+            </div>
+
+        </div>
+
+        <div class="volume-summary">
+
+            <div>
+                <span>24시간 거래대금</span>
+                <strong>{fmt_vol(row.get("volume_24h"))}</strong>
             </div>
 
             <div>
-                <span>당일 변동률</span>
-                <strong>{fmt_change(row.get("daily_change"))}</strong>
+                <span>전일 거래대금</span>
+                <strong>{fmt_vol(row.get("volume_prev_day"))}</strong>
+            </div>
+
+            <div>
+                <span>당일 거래대금</span>
+                <strong>{fmt_vol(row.get("volume_today"))}</strong>
             </div>
 
         </div>
@@ -4962,15 +5012,17 @@ font-size:var(--fs-coin);
 font-weight:900;
 }
 
+/* SIGNAL 현재가 / 당일 변동률 */
+
 .signal-data-grid {
 display:grid;
-grid-template-columns:1.1fr 1fr .9fr;
+grid-template-columns:repeat(2,minmax(0,1fr));
 width:100%;
 }
 
 .signal-data-grid > div {
 min-width:0;
-min-height:48px;
+min-height:44px;
 padding:6px 3px;
 display:flex;
 flex-direction:column;
@@ -4989,6 +5041,45 @@ font-size:var(--fs-tiny);
 }
 
 .signal-data-grid strong {
+margin-top:4px;
+color:#e7edf2;
+font-size:var(--fs-value);
+font-weight:800;
+white-space:nowrap;
+}
+
+/* SIGNAL 거래대금 3열 */
+
+.signal-volume-grid {
+display:grid;
+grid-template-columns:repeat(3,minmax(0,1fr));
+width:100%;
+border-top:1px solid #27343f;
+border-bottom:1px solid #27343f;
+background:#0d151d;
+}
+
+.signal-volume-grid > div {
+min-width:0;
+min-height:48px;
+padding:6px 3px;
+display:flex;
+flex-direction:column;
+align-items:center;
+justify-content:center;
+text-align:center;
+}
+
+.signal-volume-grid > div + div {
+border-left:1px solid #27343f;
+}
+
+.signal-volume-grid span {
+color:#8798a7;
+font-size:var(--fs-tiny);
+}
+
+.signal-volume-grid strong {
 margin-top:4px;
 color:#e7edf2;
 font-size:var(--fs-value);
@@ -5048,14 +5139,16 @@ font-size:var(--fs-small);
 font-weight:800;
 }
 
+/* TOP 현재가 / 당일 변동률 */
+
 .market-summary {
 display:grid;
-grid-template-columns:repeat(3,minmax(0,1fr));
+grid-template-columns:repeat(2,minmax(0,1fr));
 }
 
 .market-summary > div {
 min-width:0;
-min-height:49px;
+min-height:44px;
 padding:6px 3px;
 display:flex;
 flex-direction:column;
@@ -5076,6 +5169,45 @@ margin-bottom:4px;
 }
 
 .market-summary strong {
+color:#e6edf2;
+font-size:var(--fs-value);
+font-weight:800;
+white-space:nowrap;
+}
+
+/* TOP 거래대금 3열 */
+
+.volume-summary {
+display:grid;
+grid-template-columns:repeat(3,minmax(0,1fr));
+width:100%;
+background:#0d151d;
+border-top:1px solid #26343f;
+border-bottom:1px solid #26343f;
+}
+
+.volume-summary > div {
+min-width:0;
+min-height:48px;
+padding:6px 3px;
+display:flex;
+flex-direction:column;
+align-items:center;
+justify-content:center;
+text-align:center;
+}
+
+.volume-summary > div + div {
+border-left:1px solid #26343f;
+}
+
+.volume-summary span {
+color:#8798a7;
+font-size:var(--fs-tiny);
+margin-bottom:4px;
+}
+
+.volume-summary strong {
 color:#e6edf2;
 font-size:var(--fs-value);
 font-weight:800;
@@ -5136,7 +5268,12 @@ padding:5px 7px;
 }
 
 .signal-data-grid > div {
-min-height:43px;
+min-height:40px;
+padding:5px 2px;
+}
+
+.signal-volume-grid > div {
+min-height:44px;
 padding:5px 2px;
 }
 
@@ -5195,6 +5332,11 @@ padding:5px 7px;
 }
 
 .market-summary > div {
+min-height:40px;
+padding:5px 2px;
+}
+
+.volume-summary > div {
 min-height:44px;
 padding:5px 2px;
 }
@@ -5561,6 +5703,14 @@ def startup():
 
     log.info(
         "모든 시간봉이 N이면 SIGNAL 선정하지 않음"
+    )
+
+    log.info(
+        "거래대금 표시: 24시간 / 전일 / 당일"
+    )
+
+    log.info(
+        "전일 및 당일 거래대금은 업비트 일봉 candle_acc_trade_price 기준"
     )
 
     threading.Thread(
