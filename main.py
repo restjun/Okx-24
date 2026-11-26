@@ -3301,7 +3301,7 @@ def candle_trade_value_html(value, currency="원"):
     if value is None:
         return (
             '<div class="candle-trade-value">'
-            '거래대금 -'
+            '-'
             '</div>'
         )
 
@@ -3310,20 +3310,20 @@ def candle_trade_value_html(value, currency="원"):
     except (TypeError, ValueError):
         return (
             '<div class="candle-trade-value">'
-            '거래대금 -'
+            '-'
             '</div>'
         )
 
     if pd.isna(value):
         return (
             '<div class="candle-trade-value">'
-            '거래대금 -'
+            '-'
             '</div>'
         )
 
     return (
         '<div class="candle-trade-value">'
-        f'거래대금 {fmt_vol(value)} {currency}'
+        f'{fmt_vol(value)} {currency}'
         '</div>'
     )
 
