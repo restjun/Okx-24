@@ -4151,8 +4151,8 @@ def signal_card(row):
         <div class="signal-volume-grid">
 
             <div>
-                <span>24H</span>
-                <strong>{fmt_vol(row.get("volume_24h"))}</strong>
+                <span>-2일</span>
+                <strong>{fmt_vol(row.get("volume_today"))}</strong>
             </div>
 
             <div>
@@ -4161,8 +4161,8 @@ def signal_card(row):
             </div>
 
             <div>
-                <span>-2일</span>
-                <strong>{fmt_vol(row.get("volume_today"))}</strong>
+                <span>24H</span>
+                <strong>{fmt_vol(row.get("volume_24h"))}</strong>
             </div>
 
         </div>
@@ -4360,8 +4360,8 @@ def card(row, kind):
         <div class="volume-summary">
 
             <div>
-                <span>24H</span>
-                <strong>{fmt_vol(row.get("volume_24h"))}</strong>
+                <span>-2일</span>
+                <strong>{fmt_vol(row.get("volume_today"))}</strong>
             </div>
 
             <div>
@@ -4370,8 +4370,8 @@ def card(row, kind):
             </div>
 
             <div>
-                <span>-2일</span>
-                <strong>{fmt_vol(row.get("volume_today"))}</strong>
+                <span>24H</span>
+                <strong>{fmt_vol(row.get("volume_24h"))}</strong>
             </div>
 
         </div>
