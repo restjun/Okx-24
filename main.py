@@ -3978,7 +3978,7 @@ def btc_html():
 
         candle_html = last_three_pattern_html(
             btc_row,
-            "USDT"
+            "💲"
         )
 
         timeframe_sections.append(
