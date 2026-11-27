@@ -1331,38 +1331,9 @@ def build_daily_periods(df, current_price=None):
 
 
 # =========================================================
-# 캔들 패턴 함수
+# 개별 캔들 모양 판정
+# 두 캔들 조합은 사용하지 않음
 # =========================================================
-
-def is_bullish_engulfing(previous, current):
-
-    try:
-        po = float(previous["open"])
-        pc = float(previous["close"])
-        co = float(current["open"])
-        cc = float(current["close"])
-    except Exception:
-        return False
-
-    return bool(
-        pc < po and cc > co and co <= pc and cc >= po
-    )
-
-
-def is_bearish_engulfing(previous, current):
-
-    try:
-        po = float(previous["open"])
-        pc = float(previous["close"])
-        co = float(current["open"])
-        cc = float(current["close"])
-    except Exception:
-        return False
-
-    return bool(
-        pc > po and cc < co and co >= pc and cc <= po
-    )
-
 
 def is_positive_doji(current):
 
@@ -1404,38 +1375,6 @@ def is_negative_doji(current):
         and abs(c - o) / candle_range <= 0.10
         and c < o
     )
-
-
-def is_bullish_piercing(previous, current):
-
-    try:
-        po = float(previous["open"])
-        pc = float(previous["close"])
-        co = float(current["open"])
-        cc = float(current["close"])
-    except Exception:
-        return False
-
-    if pc >= po or cc <= co:
-        return False
-
-    return bool(cc > (po + pc) / 2 and cc < po)
-
-
-def is_bearish_piercing(previous, current):
-
-    try:
-        po = float(previous["open"])
-        pc = float(previous["close"])
-        co = float(current["open"])
-        cc = float(current["close"])
-    except Exception:
-        return False
-
-    if pc <= po or cc >= co:
-        return False
-
-    return bool(cc < (po + pc) / 2 and cc > po)
 
 
 def is_long_bullish(current):
@@ -1512,16 +1451,7 @@ def get_hammer_parts(current):
     }
 
 
-def is_bullish_hammer(previous, current):
-
-    if previous is None:
-        return False
-
-    try:
-        if float(previous["close"]) >= float(previous["open"]):
-            return False
-    except Exception:
-        return False
+def is_hammer_shape(current):
 
     parts = get_hammer_parts(current)
 
@@ -1532,60 +1462,7 @@ def is_bullish_hammer(previous, current):
     )
 
 
-def is_bullish_inverted_hammer(previous, current):
-
-    if previous is None:
-        return False
-
-    try:
-        if float(previous["close"]) >= float(previous["open"]):
-            return False
-
-        if float(current["close"]) <= float(current["open"]):
-            return False
-    except Exception:
-        return False
-
-    parts = get_hammer_parts(current)
-
-    return bool(
-        parts is not None
-        and parts["upper_wick"] > parts["body"]
-        and parts["upper_wick"] < parts["body"] * 2
-        and parts["lower_wick"] <= parts["body"]
-    )
-
-
-def is_bearish_hammer(previous, current):
-
-    if previous is None:
-        return False
-
-    try:
-        if float(previous["close"]) <= float(previous["open"]):
-            return False
-    except Exception:
-        return False
-
-    parts = get_hammer_parts(current)
-
-    return bool(
-        parts is not None
-        and parts["lower_wick"] >= parts["body"] * 2
-        and parts["upper_wick"] <= parts["body"]
-    )
-
-
-def is_bearish_inverted_hammer(previous, current):
-
-    if previous is None:
-        return False
-
-    try:
-        if float(previous["close"]) <= float(previous["open"]):
-            return False
-    except Exception:
-        return False
+def is_inverted_hammer_shape(current):
 
     parts = get_hammer_parts(current)
 
@@ -1597,26 +1474,7 @@ def is_bearish_inverted_hammer(previous, current):
 
 
 # =========================================================
-# 상승 / 하락 패턴 대상
-# =========================================================
-
-BULLISH_HIGHLIGHT_PATTERNS = [
-    "상승장악형",
-    "상승관통형"
-]
-
-BEARISH_HIGHLIGHT_PATTERNS = [
-    "하락장악형",
-    "하락관통형",
-    "장대음봉",
-    "음수도지",
-    "하락망치형",
-    "하락역망치형"
-]
-
-
-# =========================================================
-# 캔들 패턴 분석
+# 개별 캔들 모양 분석
 # =========================================================
 
 def get_candle_patterns(previous, current):
@@ -1626,45 +1484,43 @@ def get_candle_patterns(previous, current):
 
     patterns = []
 
-    if previous is not None:
+    # 도지형
+    if is_positive_doji(current):
+        patterns.append("양수도지")
 
-        if is_bullish_engulfing(previous, current):
-            patterns.append("상승장악형")
+    elif is_negative_doji(current):
+        patterns.append("음수도지")
 
-        if is_bearish_engulfing(previous, current):
-            patterns.append("하락장악형")
+    # 망치형 / 역망치형
+    # 이전 캔들 색상이나 이전 캔들과의 조합은 확인하지 않음
+    if is_hammer_shape(current):
+        patterns.append("망치형")
 
-        if is_bullish_piercing(previous, current):
-            patterns.append("상승관통형")
+    elif is_inverted_hammer_shape(current):
+        patterns.append("역망치형")
 
-        if is_bearish_piercing(previous, current):
-            patterns.append("하락관통형")
-
-        if is_bullish_hammer(previous, current):
-            patterns.append("상승망치형")
-
-        if is_bullish_inverted_hammer(previous, current):
-            patterns.append("상승역망치형")
-
-        if is_bearish_hammer(previous, current):
-            patterns.append("하락망치형")
-
-        if is_bearish_inverted_hammer(previous, current):
-            patterns.append("하락역망치형")
-
+    # 장대양봉 / 장대음봉
     if is_long_bullish(current):
         patterns.append("장대양봉")
 
     if is_long_bearish(current):
         patterns.append("장대음봉")
 
-    if is_positive_doji(current):
-        patterns.append("양수도지")
-
-    if is_negative_doji(current):
-        patterns.append("음수도지")
-
     return patterns
+
+
+# =========================================================
+# 상승 / 하락 패턴 대상
+# =========================================================
+
+BULLISH_HIGHLIGHT_PATTERNS = [
+    "장대양봉"
+]
+
+BEARISH_HIGHLIGHT_PATTERNS = [
+    "장대음봉",
+    "음수도지"
+]
 
 
 # =========================================================
@@ -1764,13 +1620,8 @@ def analyze_previous_current_pattern(periods):
     result["current_pattern"] = current_patterns
     result["previous_pattern"] = previous_patterns
 
-    result["current_bullish_engulfing"] = (
-        "상승장악형" in current_patterns
-    )
-
-    result["previous_bullish_engulfing"] = (
-        "상승장악형" in previous_patterns
-    )
+    result["current_bullish_engulfing"] = False
+    result["previous_bullish_engulfing"] = False
 
     result["previous_bullish_pattern"] = bool(
         len(periods) >= 2
@@ -2096,12 +1947,8 @@ def analyze_signal_candles(market, price, timeframe):
         "previous_pattern": pattern_info["previous_pattern"],
         "current_pattern": pattern_info["current_pattern"],
         "last_three_patterns": last_three,
-        "previous_bullish_engulfing": pattern_info[
-            "previous_bullish_engulfing"
-        ],
-        "current_bullish_engulfing": pattern_info[
-            "current_bullish_engulfing"
-        ],
+        "previous_bullish_engulfing": False,
+        "current_bullish_engulfing": False,
         "consecutive_bullish": pattern_info["consecutive_bullish"],
         "consecutive_bearish": pattern_info["consecutive_bearish"],
         "consecutive_bullish_candles": pattern_info[
@@ -3727,7 +3574,6 @@ def candle_icon_html(pattern=None, candle=None):
     if h < l:
         return '<div class="candle-pattern-visual empty">—</div>'
 
-    # OHLC 값의 범위가 잘못된 경우 표시하지 않음
     if h < max(o, c) or l > min(o, c):
         return '<div class="candle-pattern-visual empty">—</div>'
 
@@ -3740,7 +3586,6 @@ def candle_icon_html(pattern=None, candle=None):
     else:
         candle_class = "neutral"
 
-    # 고가와 저가가 같은 경우
     if candle_range == 0:
 
         body_top = 12
@@ -3748,8 +3593,6 @@ def candle_icon_html(pattern=None, candle=None):
 
     else:
 
-        # 캔들 전체 높이는 27px
-        # 고가는 위쪽 0px, 저가는 아래쪽 27px
         body_top = (
             (h - max(o, c)) / candle_range
         ) * 27
@@ -3760,7 +3603,6 @@ def candle_icon_html(pattern=None, candle=None):
 
         body_height = body_bottom - body_top
 
-        # 도지처럼 시가와 종가가 같은 경우에도 몸통이 보이도록 처리
         if body_height < 1:
             body_height = 1
 
@@ -3784,87 +3626,23 @@ def candle_icon_html(pattern=None, candle=None):
 
 
 # =========================================================
-# 캔들 패턴 HTML
+# 개별 캔들 모양 HTML
+# 조합 패턴 이름이나 조합 배지는 표시하지 않음
 # =========================================================
 
 def current_pattern_html(pattern, candle=None):
 
-    if isinstance(pattern, str):
-        patterns = [pattern] if pattern else []
-    elif isinstance(pattern, (list, tuple, set)):
-        patterns = list(pattern)
-    else:
-        patterns = []
-
-    # OHLC 실제 캔들 모양은 패턴 개수와 관계없이 한 번만 표시
-    actual_candle = candle_icon_html(candle=candle)
-
-    if not patterns:
-
-        if candle is not None:
-
-            try:
-
-                o = float(candle["open"])
-                c = float(candle["close"])
-
-                if c > o:
-                    ordinary_name = "양봉"
-
-                elif c < o:
-                    ordinary_name = "음봉"
-
-                else:
-                    ordinary_name = "보합"
-
-                return (
-                    '<div class="pattern-box neutral-pattern">'
-                    + actual_candle
-                    + '<span class="pattern-name">'
-                    + ordinary_name
-                    + '</span></div>'
-                )
-
-            except Exception:
-                pass
-
+    if candle is None:
         return (
             '<div class="pattern-box pattern-none">'
-            + actual_candle
-            + '<span class="pattern-name">-</span></div>'
-        )
-
-    pattern_names = []
-
-    for item in patterns:
-
-        escaped_pattern = html.escape(str(item))
-
-        if (
-            item in BULLISH_HIGHLIGHT_PATTERNS
-            or item == "장대양봉"
-        ):
-            css_class = "bullish-pattern"
-
-        elif item in BEARISH_HIGHLIGHT_PATTERNS:
-            css_class = "bearish-pattern"
-
-        else:
-            css_class = "neutral-pattern"
-
-        pattern_names.append(
-            f'<span class="pattern-name {css_class}">{escaped_pattern}</span>'
+            '<div class="candle-pattern-visual empty">—</div>'
+            '</div>'
         )
 
     return (
-        '<div class="pattern-multi actual-pattern-multi">'
-        '<div class="pattern-box">'
-        + actual_candle
+        '<div class="pattern-box actual-single-candle">'
+        + candle_icon_html(candle=candle)
         + '</div>'
-        '<div class="actual-pattern-names">'
-        + "".join(pattern_names)
-        + '</div>'
-        '</div>'
     )
 
 
@@ -3923,7 +3701,6 @@ def last_three_pattern_html(row, trade_currency="원"):
 
     for i, item in enumerate(visible_items):
 
-        patterns = item.get("patterns", [])
         raw_label = item.get("label") or "-"
 
         if raw_label != "-":
@@ -3955,8 +3732,13 @@ def last_three_pattern_html(row, trade_currency="원"):
         </div>
         """
 
-        candle_html = current_pattern_html(patterns, item)
+        # 개별 캔들의 실제 OHLC 모양만 표시
+        candle_html = current_pattern_html(
+            item.get("patterns", []),
+            item
+        )
 
+        # EMA 크로스 표시 기능은 기존대로 유지
         cross_candle = ema_cross_candle_html(item)
 
         change_display = candle_change_html(
@@ -4082,42 +3864,22 @@ def make_display_row(row, analysis):
 
 # =========================================================
 # 연속 장대봉 배지
+# 기존 연속 패턴 텍스트는 화면에 표시하지 않음
 # =========================================================
 
 def consecutive_candle_badges_html(row):
 
-    bullish_count = int(
-        row.get("consecutive_bullish", 0) or 0
-    )
-
-    bearish_count = int(
-        row.get("consecutive_bearish", 0) or 0
-    )
-
-    badges = []
-
-    if bullish_count >= CONSECUTIVE_CANDLE_MIN:
-        badges.append(
-            '<span class="consecutive-bullish">'
-            f'{bullish_count}연속 장대양봉</span>'
-        )
-
-    if bearish_count >= CONSECUTIVE_CANDLE_MIN:
-        badges.append(
-            '<span class="consecutive-bearish">'
-            f'{bearish_count}연속 장대음봉</span>'
-        )
-
-    return "".join(badges)
+    return ""
 
 
 # =========================================================
 # 패턴 배지
+# 개별 캔들 모양만 표시하므로 패턴 배지는 표시하지 않음
 # =========================================================
 
 def pattern_badges_html(row):
 
-    return consecutive_candle_badges_html(row)
+    return ""
 
 
 # =========================================================
@@ -4301,7 +4063,6 @@ def btc_html():
 
 # =========================================================
 # SIGNAL 카드
-# 카드 상단 중복 통과 배지 제거 반영
 # =========================================================
 
 def signal_card(row):
@@ -4677,7 +4438,7 @@ white-space:nowrap;
 .pattern-multi {
 width:100%;
 display:flex;
-align-items:flex-start;
+align-items:center;
 justify-content:center;
 flex-wrap:wrap;
 gap:5px;
@@ -5758,12 +5519,7 @@ border-color:#304252;
 color:#b8c6d2;
 }
 
-/* =========================================================
-   BTC 시황 전용 EMA 크로스 카드 색상
-   BTC 기본 카드 CSS보다 아래에 배치하여 색상 덮어쓰기 방지
-   ========================================================= */
-
-/* BTC EMA1/50 골든크로스: 노란색 카드 */
+/* BTC EMA 골든크로스: 노란색 카드 */
 
 .btc-candle-section .three-candle-item.ema-golden-cross-card {
 background:rgba(232,197,110,.22);
@@ -5778,7 +5534,7 @@ box-shadow:
 color:var(--yellow);
 }
 
-/* BTC EMA1/50 데드크로스: 빨간색 카드 */
+/* BTC EMA 데드크로스: 빨간색 카드 */
 
 .btc-candle-section .three-candle-item.ema-death-cross-card {
 background:rgba(255,101,117,.24);
@@ -6403,7 +6159,7 @@ def startup():
     )
 
     log.info(
-        "시간봉별 분석은 RSI, EMA, 캔들 패턴을 독립적으로 계산"
+        "시간봉별 분석은 RSI, EMA, 개별 캔들 모양을 독립적으로 계산"
     )
 
     log.info(
@@ -6502,7 +6258,11 @@ def startup():
     )
 
     log.info(
-        "캔들 패턴은 SIGNAL 선정과 무관하게 표시"
+        "캔들 모양은 개별 캔들의 OHLC만으로 판정하며 두 캔들 조합은 사용하지 않음"
+    )
+
+    log.info(
+        "개별 캔들 모양은 실제 OHLC 미니 캔들로 표시하고 패턴 이름 배지는 표시하지 않음"
     )
 
     log.info(
