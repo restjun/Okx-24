@@ -4115,34 +4115,7 @@ def consecutive_candle_badges_html(row):
 
 def pattern_badges_html(row):
 
-    previous_patterns = row.get("previous_pattern") or []
-    current_patterns = row.get("current_pattern") or []
-
-    all_patterns = previous_patterns + current_patterns
-
-    badges = []
-
-    if any(
-        p in BULLISH_HIGHLIGHT_PATTERNS
-        for p in all_patterns
-    ):
-        badges.append(
-            '<span class="signal-type-badge">상승패턴</span>'
-        )
-
-    if any(
-        p in BEARISH_HIGHLIGHT_PATTERNS
-        for p in all_patterns
-    ):
-        badges.append(
-            '<span class="bearish-type-badge">하락패턴</span>'
-        )
-
-    badges.append(
-        consecutive_candle_badges_html(row)
-    )
-
-    return "".join(badges)
+    return consecutive_candle_badges_html(row)
 
 
 # =========================================================
