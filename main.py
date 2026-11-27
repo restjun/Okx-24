@@ -1069,7 +1069,7 @@ def check_ema_alignment_values(values):
 
 
 # =========================================================
-# EMA1 / EMA50 / EMA100 / EMA200
+# EMA1 / EMA50 / EMA100 / EMA200 골든크로스 + 데드크로스
 # =========================================================
 
 def apply_ema_bullish_cross_signals(periods, close_series):
@@ -1095,6 +1095,8 @@ def apply_ema_bullish_cross_signals(periods, close_series):
 
             cross_key = f"ema_golden_cross_{slow_period}"
 
+            death_cross_key = f"ema_death_cross_{slow_period}"
+
             progress_key = (
                 f"ema_golden_cross_progress_{slow_period}"
             )
@@ -1104,6 +1106,7 @@ def apply_ema_bullish_cross_signals(periods, close_series):
             )
 
             period[cross_key] = False
+            period[death_cross_key] = False
             period[progress_key] = False
             period[alignment_key] = False
 
@@ -1138,11 +1141,22 @@ def apply_ema_bullish_cross_signals(periods, close_series):
                 and current_fast > current_slow
             )
 
+            death_cross = bool(
+                previous_fast >= previous_slow
+                and current_fast < current_slow
+            )
+
             if golden_cross:
 
                 bullish_state = True
 
                 period[cross_key] = True
+
+            elif death_cross:
+
+                bullish_state = False
+
+                period[death_cross_key] = True
 
             elif current_fast <= current_slow:
 
@@ -1163,6 +1177,10 @@ def apply_ema_bullish_cross_signals(periods, close_series):
 
                 period["ema_golden_cross"] = period[
                     "ema_golden_cross_50"
+                ]
+
+                period["ema_death_cross"] = period[
+                    "ema_death_cross_50"
                 ]
 
                 period["ema_golden_cross_progress"] = period[
@@ -1709,6 +1727,9 @@ def analyze_previous_current_pattern(periods):
             "ema_golden_cross_50": period.get(
                 "ema_golden_cross_50", False
             ),
+            "ema_death_cross_50": period.get(
+                "ema_death_cross_50", False
+            ),
             "ema_bullish_alignment_50": period.get(
                 "ema_bullish_alignment_50", False
             ),
@@ -2032,6 +2053,7 @@ def analyze_signal_candles(market, price, timeframe):
 
             for prefix in (
                 "ema_golden_cross",
+                "ema_death_cross",
                 "ema_golden_cross_progress",
                 "ema_bullish_alignment"
             ):
@@ -2042,6 +2064,10 @@ def analyze_signal_candles(market, price, timeframe):
 
         item["ema_golden_cross"] = period.get(
             "ema_golden_cross", False
+        )
+
+        item["ema_death_cross"] = period.get(
+            "ema_death_cross", False
         )
 
         item["ema_golden_cross_progress"] = period.get(
@@ -3206,6 +3232,7 @@ def analyze_okx_btc_timeframe(df, timeframe, current_price=None):
 
             for prefix in (
                 "ema_golden_cross",
+                "ema_death_cross",
                 "ema_golden_cross_progress",
                 "ema_bullish_alignment"
             ):
@@ -3216,6 +3243,10 @@ def analyze_okx_btc_timeframe(df, timeframe, current_price=None):
 
         item["ema_golden_cross"] = period.get(
             "ema_golden_cross", False
+        )
+
+        item["ema_death_cross"] = period.get(
+            "ema_death_cross", False
         )
 
         item["ema_golden_cross_progress"] = period.get(
@@ -3895,7 +3926,7 @@ def current_pattern_html(pattern, candle=None):
 
 
 # =========================================================
-# EMA 크로스 배지 HTML
+# EMA 골든크로스 / 데드크로스 배지 HTML
 # =========================================================
 
 def ema_cross_badges_html(item):
@@ -3907,8 +3938,15 @@ def ema_cross_badges_html(item):
         if item.get(f"ema_golden_cross_{period}") is True:
 
             badges.append(
-                f'<span class="ema-cross-badge">'
+                f'<span class="ema-cross-badge ema-golden-cross-badge">'
                 f'EMA1/{period} GC</span>'
+            )
+
+        if item.get(f"ema_death_cross_{period}") is True:
+
+            badges.append(
+                f'<span class="ema-cross-badge ema-death-cross-badge">'
+                f'EMA1/{period} DC</span>'
             )
 
     return "".join(badges)
@@ -3991,6 +4029,14 @@ def last_three_pattern_html(row, trade_currency="원"):
             for period in EMA_CROSS_SLOW_PERIODS
         )
 
+        ema_death_cross_active = any(
+            item.get(
+                f"ema_death_cross_{period}",
+                False
+            ) is True
+            for period in EMA_CROSS_SLOW_PERIODS
+        )
+
         ema_progress_active = any(
             item.get(
                 f"ema_golden_cross_progress_{period}",
@@ -4001,6 +4047,9 @@ def last_three_pattern_html(row, trade_currency="원"):
 
         if ema_cross_active:
             card_classes.append("ema-golden-cross-card")
+
+        if ema_death_cross_active:
+            card_classes.append("ema-death-cross-card")
 
         if ema_progress_active:
             card_classes.append("ema-golden-cross-progress")
@@ -4866,6 +4915,19 @@ box-shadow:inset 0 0 0 1px rgba(232,197,110,.20),0 0 8px rgba(232,197,110,.22);
 color:var(--yellow);
 }
 
+/* 실제 EMA 데드크로스 발생 캔들만 적색 강조 */
+
+.three-candle-item.ema-death-cross-card {
+background:rgba(255,101,117,.24);
+border:1px solid var(--red);
+box-shadow:inset 0 0 0 1px rgba(255,101,117,.22),0 0 8px rgba(255,101,117,.24);
+}
+
+.three-candle-item.ema-death-cross-card .candle-date,
+.three-candle-item.ema-death-cross-card .candle-time {
+color:var(--red);
+}
+
 .three-candle-item.ema-golden-cross-progress {
 border-width:2px;
 box-shadow:inset 0 0 0 1px rgba(232,197,110,.28),0 0 10px rgba(232,197,110,.30);
@@ -4887,6 +4949,18 @@ font-size:7px;
 font-weight:900;
 line-height:1.2;
 white-space:nowrap;
+}
+
+.ema-golden-cross-badge {
+color:var(--yellow);
+background:rgba(232,197,110,.15);
+border-color:rgba(232,197,110,.55);
+}
+
+.ema-death-cross-badge {
+color:#ff8793;
+background:rgba(255,101,117,.16);
+border-color:rgba(255,101,117,.65);
 }
 
 /* 캔들 변동률 */
@@ -6321,11 +6395,11 @@ def startup():
     )
 
     log.info(
-        "별도 EMA 골든크로스 설정 | EMA1/50, EMA1/100, EMA1/200 | 종가(close) 기준"
+        "별도 EMA 크로스 설정 | EMA1/50 GC·DC | 종가(close) 기준"
     )
 
     log.info(
-        "EMA 크로스 판정은 최근 %s개 봉 중 실제 상향 크로스 발생 여부",
+        "EMA 크로스 판정은 최근 %s개 봉 중 실제 상향·하향 크로스 발생 여부",
         DISPLAY_CANDLE_COUNT
     )
 
@@ -6342,11 +6416,11 @@ def startup():
     )
 
     log.info(
-        "실제 EMA 골든크로스 발생(진행 및 완성) 캔들만 노란색 강조"
+        "실제 EMA 골든크로스 발생 캔들은 노란색, 데드크로스 발생 캔들은 적색 강조"
     )
 
     log.info(
-        "실제 EMA 골든크로스 발생 캔들에는 EMA 크로스 배지 표시"
+        "실제 EMA 골든크로스는 GC, 데드크로스는 DC 배지 표시"
     )
 
     log.info(
