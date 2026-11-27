@@ -1,3 +1,4 @@
+
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
@@ -293,6 +294,13 @@ latest_btc_okx_price = None
 latest_btc_daily_change = None
 
 latest_btc_timeframe_data = {}
+
+# BTC OKX 거래대금
+latest_btc_volume_data = {
+    "volume_today": None,       # -2일
+    "volume_prev_day": None,    # -1일
+    "volume_24h": None          # 최근 24H
+}
 
 
 # =========================================================
@@ -2759,6 +2767,138 @@ def okx_candles(bar, limit=300, history=False, after=None):
 
 
 # =========================================================
+# BTC OKX 거래대금 계산
+#
+# OKX BTC-USDT-SWAP 1시간봉 volCcyQuote 사용
+# 현재 진행 중인 1시간봉 제외
+#
+# -2일 : 72~48시간 전
+# -1일 : 48~24시간 전
+# 24H  : 최근 완료된 24시간
+#
+# 각 구간 1시간봉 24개 합산
+# =========================================================
+
+def calculate_okx_btc_volume():
+
+    empty_result = {
+        "volume_today": None,
+        "volume_prev_day": None,
+        "volume_24h": None
+    }
+
+    try:
+
+        # 최근 100개 1시간봉 조회
+        # 72시간 구간 계산에 충분한 데이터 확보
+        df = okx_candles("1H", limit=100)
+
+        if df is None or df.empty:
+            log.warning(
+                "BTC 거래대금 계산 실패: OKX 1시간봉 데이터 없음"
+            )
+            return empty_result
+
+        df = (
+            df.sort_values("datetime")
+            .drop_duplicates("datetime")
+            .reset_index(drop=True)
+        )
+
+        df["datetime"] = pd.to_datetime(df["datetime"])
+
+        df["trade_value"] = pd.to_numeric(
+            df["trade_value"],
+            errors="coerce"
+        )
+
+        current_hour = datetime.now(KST).replace(
+            minute=0,
+            second=0,
+            microsecond=0
+        )
+
+        # 최근 완료된 24시간
+        period_24h_start = current_hour - timedelta(hours=24)
+        period_24h_end = current_hour
+
+        # -1일: 24~48시간 전
+        period_1d_start = current_hour - timedelta(hours=48)
+        period_1d_end = current_hour - timedelta(hours=24)
+
+        # -2일: 48~72시간 전
+        period_2d_start = current_hour - timedelta(hours=72)
+        period_2d_end = current_hour - timedelta(hours=48)
+
+        def sum_period(start, end):
+
+            selected = df[
+                (df["datetime"] >= start)
+                & (df["datetime"] < end)
+            ]
+
+            # 정확히 24개 캔들이 확보된 경우에만 합산
+            if len(selected) != 24:
+
+                log.warning(
+                    "BTC 거래대금 데이터 부족 | "
+                    "%s ~ %s | 조회=%s개",
+                    start,
+                    end,
+                    len(selected)
+                )
+
+                return None
+
+            if selected["trade_value"].isna().any():
+                log.warning(
+                    "BTC 거래대금 데이터 누락 | %s ~ %s",
+                    start,
+                    end
+                )
+                return None
+
+            return float(
+                selected["trade_value"].sum()
+            )
+
+        result = {
+            "volume_today": sum_period(
+                period_2d_start,
+                period_2d_end
+            ),
+
+            "volume_prev_day": sum_period(
+                period_1d_start,
+                period_1d_end
+            ),
+
+            "volume_24h": sum_period(
+                period_24h_start,
+                period_24h_end
+            )
+        }
+
+        log.info(
+            "BTC 거래대금 | -2일=%s USDT | -1일=%s USDT | 24H=%s USDT",
+            result["volume_today"],
+            result["volume_prev_day"],
+            result["volume_24h"]
+        )
+
+        return result
+
+    except Exception as e:
+
+        log.exception(
+            "BTC 거래대금 계산 오류: %s",
+            e
+        )
+
+        return empty_result
+
+
+# =========================================================
 # OKX BTC 가격
 # =========================================================
 
@@ -3149,6 +3289,8 @@ def calculate_btc_daily_change(current_price, daily_df=None):
 #
 # 활성 시간봉 중 1d 데이터를 보관하고
 # calculate_btc_daily_change()에 전달
+#
+# BTC 거래대금은 분석 시간봉 설정과 별도로 조회
 # =========================================================
 
 def update_okx_btc():
@@ -3156,12 +3298,16 @@ def update_okx_btc():
     global latest_btc_okx_price
     global latest_btc_daily_change
     global latest_btc_timeframe_data
+    global latest_btc_volume_data
 
     price = okx_price()
     latest_btc_okx_price = price
 
     if price is None:
         return
+
+    # BTC 거래대금 별도 업데이트
+    latest_btc_volume_data = calculate_okx_btc_volume()
 
     active_timeframes = get_active_timeframes()
 
@@ -4037,6 +4183,31 @@ def btc_html():
 
             <div class="btc-change">
                 {fmt_change(latest_btc_daily_change)}
+            </div>
+
+        </div>
+
+        <div class="btc-volume-grid">
+
+            <div>
+                <span>-2일 거래대금</span>
+                <strong>
+                    {fmt_vol(latest_btc_volume_data.get("volume_today"))} USDT
+                </strong>
+            </div>
+
+            <div>
+                <span>-1일 거래대금</span>
+                <strong>
+                    {fmt_vol(latest_btc_volume_data.get("volume_prev_day"))} USDT
+                </strong>
+            </div>
+
+            <div>
+                <span>24H 거래대금</span>
+                <strong>
+                    {fmt_vol(latest_btc_volume_data.get("volume_24h"))} USDT
+                </strong>
             </div>
 
         </div>
@@ -5183,6 +5354,46 @@ font-weight:900;
 letter-spacing:-.5px;
 }
 
+/* BTC 거래대금 3열 */
+
+.btc-volume-grid {
+display:grid;
+grid-template-columns:repeat(3,minmax(0,1fr));
+width:100%;
+margin-top:9px;
+background:#0d151d;
+border:1px solid #304252;
+border-radius:5px;
+}
+
+.btc-volume-grid > div {
+min-width:0;
+min-height:48px;
+padding:6px 3px;
+display:flex;
+flex-direction:column;
+align-items:center;
+justify-content:center;
+text-align:center;
+}
+
+.btc-volume-grid > div + div {
+border-left:1px solid #304252;
+}
+
+.btc-volume-grid span {
+color:#8798a7;
+font-size:var(--fs-tiny);
+}
+
+.btc-volume-grid strong {
+margin-top:4px;
+color:#e8c56e;
+font-size:var(--fs-value);
+font-weight:800;
+white-space:nowrap;
+}
+
 .btc-candle-section {
 margin-top:10px;
 padding-top:9px;
@@ -6037,6 +6248,31 @@ def startup():
 
     log.info(
         "BTC 일봉 조회 데이터는 당일 변동률 계산에 재사용"
+    )
+
+    # BTC 거래대금 로그
+    log.info(
+        "BTC 거래대금은 OKX BTC-USDT-SWAP 1시간봉 volCcyQuote 기준"
+    )
+
+    log.info(
+        "BTC -2일 거래대금은 현재 시간 정각 기준 48~72시간 전 1시간봉 24개 합산"
+    )
+
+    log.info(
+        "BTC -1일 거래대금은 현재 시간 정각 기준 24~48시간 전 1시간봉 24개 합산"
+    )
+
+    log.info(
+        "BTC 24H 거래대금은 최근 완료된 24개 1시간봉 합산"
+    )
+
+    log.info(
+        "BTC 거래대금은 진행 중인 1시간봉 제외"
+    )
+
+    log.info(
+        "BTC 거래대금 표시 단위: USDT"
     )
 
     threading.Thread(
