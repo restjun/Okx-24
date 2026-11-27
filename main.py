@@ -474,15 +474,6 @@ def retry(func, *args, **kwargs):
 
 # =========================================================
 # 업비트 시장 상태 판정
-#
-# warning=True:
-#   유의 종목
-#
-# caution:
-#   시장경보 관련 세부 유형
-#
-# 주의 / 경고 / 위험 단계는 API에서 구분할 수 없으므로
-# 임의로 단계명을 붙이지 않고 '시장경보'로 표시
 # =========================================================
 
 def get_upbit_market_status(market_info):
@@ -587,15 +578,8 @@ def get_upbit_markets():
                 result.append({
                     "market": market,
                     "current_price": float(x["trade_price"]),
-
-                    "volume_24h": float(
-                        x["acc_trade_price_24h"]
-                    ),
-
-                    # 추가: 업비트 시장 상태
-                    "market_status": get_upbit_market_status(
-                        market_info
-                    )
+                    "volume_24h": float(x["acc_trade_price_24h"]),
+                    "market_status": get_upbit_market_status(market_info)
                 })
 
             except Exception:
@@ -610,7 +594,6 @@ def get_upbit_markets():
 
 # =========================================================
 # 업비트 분봉 조회
-# 캔들별 거래대금 candle_acc_trade_price 저장
 # =========================================================
 
 def get_upbit_minute_candles(market, unit, count=CANDLE_HISTORY_COUNT):
@@ -2199,7 +2182,6 @@ def make_row(
         "signal_timeframes": [],
         "signal_pass": False,
 
-        # 추가: 유의 및 시장경보 상태
         "market_status": item.get("market_status", [])
     }
 
@@ -3510,7 +3492,6 @@ def fmt_change(v):
 
 # =========================================================
 # 코인명 아래 현재가 / 변동률 / 시장 상태 표시
-# SIGNAL 및 TOP 공통 사용
 # =========================================================
 
 def coin_subline_html(row):
@@ -3545,7 +3526,6 @@ def coin_subline_html(row):
 
     status_display = "".join(status_html)
 
-    # 실제 4시간 SIGNAL 통과 여부 확인
     four_hour_html = ""
 
     if "4h" in row.get("signal_timeframes", []):
@@ -4346,25 +4326,14 @@ def btc_html():
 
 # =========================================================
 # SIGNAL 카드
+# 카드 상단 중복 통과 배지 제거 반영
 # =========================================================
 
 def signal_card(row):
 
-    passed_timeframes = row.get("signal_timeframes", [])
-
-    passed_labels = [
-        get_timeframe_label(x)
-        for x in passed_timeframes
-    ]
-
-    passed_badges = "".join(
-        f'<span class="timeframe-pass">{html.escape(x)} 통과</span>'
-        for x in passed_labels
-    )
-
     timeframe_sections = []
 
-    for timeframe in passed_timeframes:
+    for timeframe in row.get("signal_timeframes", []):
 
         analysis = (
             row.get("timeframe_analyses", {}).get(timeframe)
@@ -4402,10 +4371,6 @@ def signal_card(row):
 
                 </div>
 
-            </div>
-
-            <div class="signal-type-list">
-                {passed_badges}
             </div>
 
         </div>
@@ -5383,7 +5348,7 @@ font-size:14px;
 font-weight:1000;
 }
 
-/* 수정: 상승 녹색 / 하락 빨간색 */
+/* 상승 녹색 / 하락 빨간색 */
 
 .coin-sub-change .up {
 color:var(--green)!important;
@@ -5441,7 +5406,7 @@ border:1px solid #ffdf8a;
 box-shadow:0 0 7px rgba(232,197,110,.30);
 }
 
-/* 추가: 실제 4시간 SIGNAL 통과 배지 */
+/* 실제 4시간 SIGNAL 통과 배지 */
 
 .four-hour-pass-badge {
 display:inline-flex;
@@ -6503,7 +6468,6 @@ def startup():
         "BTC 거래대금 표시 단위: USDT"
     )
 
-    # 추가: 시장 상태 표시 로그
     log.info(
         "업비트 마켓 상세정보 isDetails=true 사용"
     )
