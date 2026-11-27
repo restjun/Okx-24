@@ -3533,7 +3533,7 @@ def coin_subline_html(row):
 
             status_html.append(
                 '<span class="market-status-badge market-status-warning">'
-                '유의</span>'
+                '유의 종목</span>'
             )
 
         elif status == "시장경보":
@@ -3543,30 +3543,34 @@ def coin_subline_html(row):
                 '시장경보</span>'
             )
 
-    status_display = (
-        "".join(status_html)
-        if status_html
-        else '<span class="market-status-normal">정상</span>'
-    )
+    status_display = "".join(status_html)
+
+    status_section = ""
+
+    if status_display:
+
+        status_section = f"""
+            <span class="coin-sub-divider">|</span>
+
+            <span class="coin-sub-status">
+                {status_display}
+            </span>
+        """
 
     return f"""
     <div class="coin-subline">
 
         <span class="coin-sub-price">
-            현재가 {html.escape(current_price)}
+            현재가 <strong>{html.escape(current_price)}</strong>
         </span>
 
         <span class="coin-sub-divider">|</span>
 
         <span class="coin-sub-change">
-            변동률 {daily_change}
+            변동률 <strong>{daily_change}</strong>
         </span>
 
-        <span class="coin-sub-divider">|</span>
-
-        <span class="coin-sub-status">
-            {status_display}
-        </span>
+        {status_section}
 
     </div>
     """
@@ -5327,68 +5331,100 @@ gap:3px;
 display:flex;
 align-items:center;
 flex-wrap:wrap;
-gap:5px;
+gap:6px;
 min-width:0;
 color:#aab8c4;
-font-size:var(--fs-tiny);
-font-weight:700;
-line-height:1.35;
+font-size:var(--fs-small);
+font-weight:800;
+line-height:1.45;
 }
 
 .coin-sub-price {
-color:#c5d1db;
+display:inline-flex;
+align-items:center;
+gap:4px;
+color:#dce6ee;
+font-size:var(--fs-small);
+font-weight:800;
 white-space:nowrap;
+}
+
+.coin-sub-price strong {
+color:#ffffff;
+font-size:14px;
+font-weight:1000;
+letter-spacing:-.3px;
 }
 
 .coin-sub-change {
+display:inline-flex;
+align-items:center;
+gap:4px;
 white-space:nowrap;
+color:#cbd6df;
+font-size:var(--fs-small);
+font-weight:900;
 }
 
-.coin-sub-change .up,
-.coin-sub-change .down,
+.coin-sub-change strong {
+font-size:14px;
+font-weight:1000;
+}
+
+.coin-sub-change .up {
+color:#ff4d5f!important;
+font-size:14px;
+font-weight:1000;
+}
+
+.coin-sub-change .down {
+color:#438dff!important;
+font-size:14px;
+font-weight:1000;
+}
+
 .coin-sub-change .zero {
-font-size:inherit;
+color:#c3ced8!important;
+font-size:14px;
+font-weight:1000;
 }
 
 .coin-sub-divider {
 color:#536371;
-font-size:8px;
+font-size:9px;
+font-weight:700;
 }
 
 .coin-sub-status {
 display:inline-flex;
 align-items:center;
-gap:3px;
+gap:5px;
 }
 
 .market-status-badge {
 display:inline-flex;
 align-items:center;
 justify-content:center;
-padding:2px 5px;
-border-radius:3px;
-font-size:var(--fs-tiny);
-font-weight:900;
-line-height:1.2;
+padding:3px 7px;
+border-radius:4px;
+font-size:var(--fs-small);
+font-weight:1000;
+line-height:1.3;
 white-space:nowrap;
 }
 
 .market-status-warning {
-color:#ff6575;
-background:rgba(255,101,117,.14);
-border:1px solid rgba(255,101,117,.55);
+color:#ffffff;
+background:#c92d43;
+border:1px solid #ff6575;
+box-shadow:0 0 7px rgba(255,101,117,.35);
 }
 
 .market-status-caution {
-color:#e8c56e;
-background:rgba(232,197,110,.13);
-border:1px solid rgba(232,197,110,.5);
-}
-
-.market-status-normal {
-color:#71808c;
-font-size:var(--fs-tiny);
-font-weight:700;
+color:#17130a;
+background:#e8c56e;
+border:1px solid #ffdf8a;
+box-shadow:0 0 7px rgba(232,197,110,.30);
 }
 
 /* 배지 */
@@ -5979,12 +6015,23 @@ font-size:7px;
 
 .coin-subline {
 gap:4px;
-font-size:7px;
+font-size:8px;
+}
+
+.coin-sub-price strong {
+font-size:13px;
+}
+
+.coin-sub-change strong,
+.coin-sub-change .up,
+.coin-sub-change .down,
+.coin-sub-change .zero {
+font-size:13px;
 }
 
 .market-status-badge {
-padding:2px 4px;
-font-size:7px;
+padding:3px 5px;
+font-size:8px;
 }
 
 .coin-name-block {
@@ -6052,12 +6099,23 @@ font-size:5px;
 
 .coin-subline {
 gap:3px;
-font-size:6px;
+font-size:7px;
+}
+
+.coin-sub-price strong {
+font-size:12px;
+}
+
+.coin-sub-change strong,
+.coin-sub-change .up,
+.coin-sub-change .down,
+.coin-sub-change .zero {
+font-size:12px;
 }
 
 .market-status-badge {
-padding:1px 3px;
-font-size:6px;
+padding:2px 4px;
+font-size:7px;
 }
 
 }
