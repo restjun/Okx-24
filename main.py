@@ -5676,6 +5676,41 @@ border-color:#304252;
 color:#b8c6d2;
 }
 
+/* =========================================================
+   BTC 시황 전용 EMA 크로스 카드 색상
+   BTC 기본 카드 CSS보다 아래에 배치하여 색상 덮어쓰기 방지
+   ========================================================= */
+
+/* BTC EMA1/50 골든크로스: 노란색 카드 */
+
+.btc-candle-section .three-candle-item.ema-golden-cross-card {
+background:rgba(232,197,110,.22);
+border:1px solid var(--yellow);
+box-shadow:
+    inset 0 0 0 1px rgba(232,197,110,.20),
+    0 0 8px rgba(232,197,110,.22);
+}
+
+.btc-candle-section .three-candle-item.ema-golden-cross-card .candle-date,
+.btc-candle-section .three-candle-item.ema-golden-cross-card .candle-time {
+color:var(--yellow);
+}
+
+/* BTC EMA1/50 데드크로스: 빨간색 카드 */
+
+.btc-candle-section .three-candle-item.ema-death-cross-card {
+background:rgba(255,101,117,.24);
+border:1px solid var(--red);
+box-shadow:
+    inset 0 0 0 1px rgba(255,101,117,.22),
+    0 0 8px rgba(255,101,117,.24);
+}
+
+.btc-candle-section .three-candle-item.ema-death-cross-card .candle-date,
+.btc-candle-section .three-candle-item.ema-death-cross-card .candle-time {
+color:var(--red);
+}
+
 /* SIGNAL */
 
 .signal-panel {
