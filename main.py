@@ -3926,30 +3926,38 @@ def current_pattern_html(pattern, candle=None):
 
 
 # =========================================================
-# EMA 골든크로스 / 데드크로스 배지 HTML
+# EMA 골든크로스 / 데드크로스 미니 캔들 HTML
 # =========================================================
 
-def ema_cross_badges_html(item):
+def ema_cross_candle_html(item):
 
-    badges = []
+    golden_cross = any(
+        item.get(f"ema_golden_cross_{period}") is True
+        for period in EMA_CROSS_SLOW_PERIODS
+    )
 
-    for period in EMA_CROSS_SLOW_PERIODS:
+    death_cross = any(
+        item.get(f"ema_death_cross_{period}") is True
+        for period in EMA_CROSS_SLOW_PERIODS
+    )
 
-        if item.get(f"ema_golden_cross_{period}") is True:
+    if golden_cross:
 
-            badges.append(
-                f'<span class="ema-cross-badge ema-golden-cross-badge">'
-                f'EMA1/{period} GC</span>'
-            )
+        return (
+            '<div class="ema-cross-candle ema-golden-cross-candle">'
+            + candle_icon_html("일반양봉")
+            + '</div>'
+        )
 
-        if item.get(f"ema_death_cross_{period}") is True:
+    if death_cross:
 
-            badges.append(
-                f'<span class="ema-cross-badge ema-death-cross-badge">'
-                f'EMA1/{period} DC</span>'
-            )
+        return (
+            '<div class="ema-cross-candle ema-death-cross-candle">'
+            + candle_icon_html("일반음봉")
+            + '</div>'
+        )
 
-    return "".join(badges)
+    return ""
 
 
 # =========================================================
@@ -4006,7 +4014,7 @@ def last_three_pattern_html(row, trade_currency="원"):
 
         candle_html = current_pattern_html(patterns, item)
 
-        cross_badges = ema_cross_badges_html(item)
+        cross_candle = ema_cross_candle_html(item)
 
         change_display = candle_change_html(
             item.get("change")
@@ -4064,8 +4072,10 @@ def last_three_pattern_html(row, trade_currency="원"):
                 </div>
 
                 <div class="three-candle-pattern">
-                    {candle_html}
-                    {cross_badges}
+                    <div class="candle-display-row">
+                        {candle_html}
+                        {cross_candle}
+                    </div>
                 </div>
 
                 <div class="three-candle-change">
@@ -4933,34 +4943,64 @@ border-width:2px;
 box-shadow:inset 0 0 0 1px rgba(232,197,110,.28),0 0 10px rgba(232,197,110,.30);
 }
 
-/* EMA 크로스 배지 */
+/* EMA 크로스 미니 캔들 */
 
-.ema-cross-badge {
-display:inline-flex;
+.candle-display-row {
+width:100%;
+height:100%;
+min-width:0;
+min-height:0;
+display:flex;
 align-items:center;
 justify-content:center;
-margin:2px 1px;
-padding:2px 3px;
-color:var(--yellow);
-background:rgba(232,197,110,.15);
-border:1px solid rgba(232,197,110,.55);
-border-radius:3px;
-font-size:7px;
-font-weight:900;
-line-height:1.2;
-white-space:nowrap;
+gap:3px;
 }
 
-.ema-golden-cross-badge {
-color:var(--yellow);
-background:rgba(232,197,110,.15);
-border-color:rgba(232,197,110,.55);
+.candle-display-row > .pattern-multi {
+width:auto;
+min-width:0;
+max-width:100%;
+flex:1 1 auto;
 }
 
-.ema-death-cross-badge {
-color:#ff8793;
-background:rgba(255,101,117,.16);
-border-color:rgba(255,101,117,.65);
+.candle-display-row > .pattern-box {
+min-width:0;
+flex:1 1 auto;
+}
+
+.ema-cross-candle {
+width:23px;
+min-width:23px;
+height:28px;
+display:flex;
+align-items:center;
+justify-content:center;
+flex:0 0 23px;
+overflow:hidden;
+}
+
+.ema-cross-candle .candle-pattern-visual {
+width:23px;
+min-width:23px;
+height:28px;
+transform:scale(.8);
+}
+
+.ema-cross-candle .mini-candle {
+width:8px;
+height:27px;
+}
+
+.ema-cross-candle .pattern-name {
+display:none;
+}
+
+.ema-golden-cross-candle {
+border-left:1px solid rgba(232,197,110,.5);
+}
+
+.ema-death-cross-candle {
+border-left:1px solid rgba(255,101,117,.5);
 }
 
 /* 캔들 변동률 */
@@ -6455,7 +6495,7 @@ def startup():
     )
 
     log.info(
-        "실제 EMA 골든크로스는 GC, 데드크로스는 DC 배지 표시"
+        "실제 EMA 골든크로스 및 데드크로스는 기존 미니 캔들 모양으로 표시"
     )
 
     log.info(
