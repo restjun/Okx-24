@@ -150,10 +150,6 @@ CONSECUTIVE_BULLISH_MIN = 2
 
 CANDLE_HISTORY_COUNT = 400
 
-# 거래대금 계산 전용 1시간봉 개수
-# 현재 진행 중인 1시간봉 1개 + 이전 72시간
-# 24H는 업비트 ticker에서 직접 가져오므로
-# 1시간봉은 -1일, -2일 계산에만 사용
 VOLUME_CANDLE_COUNT = 73
 
 
@@ -166,7 +162,6 @@ USE_SIGNAL_RSI_RANGE = "N"
 USE_SIGNAL_EMA_ALIGNMENT = "Y"
 USE_SIGNAL_EMA_BEARISH_BULLISH = "Y"
 
-# 최근 24시간 거래대금 > 직전 24시간 거래대금
 USE_SIGNAL_VOLUME_COMPARE = "Y"
 
 SHOW_SIGNAL_CHECKLIST = "N"
@@ -297,11 +292,10 @@ latest_btc_daily_change = None
 
 latest_btc_timeframe_data = {}
 
-# BTC OKX 거래대금
 latest_btc_volume_data = {
-    "volume_today": None,       # -2일
-    "volume_prev_day": None,    # -1일
-    "volume_24h": None          # 최근 24H
+    "volume_today": None,
+    "volume_prev_day": None,
+    "volume_24h": None
 }
 
 
@@ -479,6 +473,52 @@ def retry(func, *args, **kwargs):
 
 
 # =========================================================
+# 업비트 시장 상태 판정
+#
+# warning=True:
+#   유의 종목
+#
+# caution:
+#   시장경보 관련 세부 유형
+#
+# 주의 / 경고 / 위험 단계는 API에서 구분할 수 없으므로
+# 임의로 단계명을 붙이지 않고 '시장경보'로 표시
+# =========================================================
+
+def get_upbit_market_status(market_info):
+
+    market_event = market_info.get("market_event") or {}
+
+    if not isinstance(market_event, dict):
+        return []
+
+    statuses = []
+
+    if market_event.get("warning") is True:
+        statuses.append("유의")
+
+    caution = market_event.get("caution")
+
+    caution_active = False
+
+    if isinstance(caution, dict):
+
+        caution_active = any(
+            value is True
+            for value in caution.values()
+        )
+
+    elif caution is True:
+
+        caution_active = True
+
+    if caution_active:
+        statuses.append("시장경보")
+
+    return statuses
+
+
+# =========================================================
 # 업비트 마켓 조회
 # =========================================================
 
@@ -489,7 +529,7 @@ def get_upbit_markets():
     r = retry(
         requests.get,
         "https://api.upbit.com/v1/market/all",
-        params={"isDetails": "false"},
+        params={"isDetails": "true"},
         timeout=15
     )
 
@@ -497,22 +537,32 @@ def get_upbit_markets():
         return []
 
     try:
-        markets = [
-            x["market"]
-            for x in r.json()
+
+        market_details = r.json()
+
+        market_info_map = {
+            x["market"]: x
+            for x in market_details
             if x.get("market", "").startswith("KRW-")
-        ]
-    except Exception:
+        }
+
+        markets = list(market_info_map.keys())
+
+    except Exception as e:
+
+        log.warning("업비트 마켓 상세정보 조회 오류: %s", e)
         return []
 
     result = []
 
     for i in range(0, len(markets), 100):
 
+        batch_markets = markets[i:i + 100]
+
         rr = retry(
             requests.get,
             "https://api.upbit.com/v1/ticker",
-            params={"markets": ",".join(markets[i:i + 100])},
+            params={"markets": ",".join(batch_markets)},
             timeout=15
         )
 
@@ -530,13 +580,24 @@ def get_upbit_markets():
         for x in data:
 
             try:
+
+                market = x["market"]
+                market_info = market_info_map.get(market, {})
+
                 result.append({
-                    "market": x["market"],
+                    "market": market,
                     "current_price": float(x["trade_price"]),
 
-                    # 업비트 ticker에서 제공하는 최근 24시간 거래대금
-                    "volume_24h": float(x["acc_trade_price_24h"])
+                    "volume_24h": float(
+                        x["acc_trade_price_24h"]
+                    ),
+
+                    # 추가: 업비트 시장 상태
+                    "market_status": get_upbit_market_status(
+                        market_info
+                    )
                 })
+
             except Exception:
                 pass
 
@@ -668,13 +729,6 @@ def get_upbit_4h_candles(market, count=CANDLE_HISTORY_COUNT):
 
 # =========================================================
 # 거래대금 전용 1시간봉 조회
-# 현재 진행 중인 1시간봉 + 이전 72시간
-#
-# 거래대금 전용 캐시 적용
-# 기존 분석용 1시간봉 캐시("1h")와 분리
-#
-# 24H는 업비트 ticker 사용
-# 이 데이터는 -1일, -2일 계산에만 사용
 # =========================================================
 
 def get_upbit_volume_1h_candles(market):
@@ -692,13 +746,6 @@ def get_upbit_volume_1h_candles(market):
 
 # =========================================================
 # 1시간봉으로 -1일, -2일 거래대금 계산
-#
-# 24H  : 업비트 ticker acc_trade_price_24h 사용
-# -1일 : 24H 구간 바로 이전 24시간
-# -2일 : -1일 구간 바로 이전 24시간
-#
-# 각 구간의 1시간봉 거래대금 24개 합산
-# 현재 진행 중인 1시간봉은 제외
 # =========================================================
 
 def calculate_volume_from_1h_candles(market):
@@ -728,11 +775,9 @@ def calculate_volume_from_1h_candles(market):
         microsecond=0
     )
 
-    # -1일: 현재 시간 정각 기준 24~48시간 전
     period_1d_start = current_hour - timedelta(hours=48)
     period_1d_end = current_hour - timedelta(hours=24)
 
-    # -2일: 현재 시간 정각 기준 48~72시간 전
     period_2d_start = current_hour - timedelta(hours=72)
     period_2d_end = current_hour - timedelta(hours=48)
 
@@ -761,22 +806,18 @@ def calculate_volume_from_1h_candles(market):
             selected["trade_value"].fillna(0).sum()
         )
 
-    # -1일 거래대금
     volume_prev_day = sum_period(
         period_1d_start,
         period_1d_end
     )
 
-    # -2일 거래대금
     volume_today = sum_period(
         period_2d_start,
         period_2d_end
     )
 
     return {
-        # 24H는 ticker에서 사용하므로 여기서는 계산하지 않음
         "volume_24h": None,
-
         "volume_prev_day": volume_prev_day,
         "volume_today": volume_today
     }
@@ -784,7 +825,6 @@ def calculate_volume_from_1h_candles(market):
 
 # =========================================================
 # 업비트 일봉 조회
-# 거래대금(candle_acc_trade_price) 저장
 # =========================================================
 
 def get_upbit_daily_candles(market, count=CANDLE_HISTORY_COUNT):
@@ -2071,9 +2111,6 @@ def analyze_signal_candles(market, price, timeframe):
 
 # =========================================================
 # 일봉 변동률 및 거래대금
-#
-# 24H 거래대금은 업비트 ticker 값 사용
-# -1일, -2일 거래대금만 별도 1시간봉으로 계산
 # =========================================================
 
 def analyze_daily_change(market, price):
@@ -2123,10 +2160,7 @@ def analyze_daily_change(market, price):
     return {
         "change": periods[-1].get("change"),
         "periods": periods,
-
-        # 24H는 make_row에서 업비트 ticker 값으로 사용
         "volume_24h": None,
-
         "volume_prev_day": volume_data.get("volume_prev_day"),
         "volume_today": volume_data.get("volume_today")
     }
@@ -2152,10 +2186,8 @@ def make_row(
         "name": coin,
         "market": market,
 
-        # 24H: 업비트 ticker에서 제공하는 acc_trade_price_24h
         "volume_24h": item["volume_24h"],
 
-        # -1일, -2일: 기존 1시간봉 합산 결과 유지
         "volume_prev_day": analysis_daily.get("volume_prev_day"),
         "volume_today": analysis_daily.get("volume_today"),
 
@@ -2165,7 +2197,10 @@ def make_row(
         "periods_daily": analysis_daily["periods"],
         "timeframe_analyses": timeframe_analyses,
         "signal_timeframes": [],
-        "signal_pass": False
+        "signal_pass": False,
+
+        # 추가: 유의 및 시장경보 상태
+        "market_status": item.get("market_status", [])
     }
 
     return row
@@ -2194,16 +2229,6 @@ def get_signal_condition_checks(row, analysis=None):
             )
         except (TypeError, ValueError):
             checks["daily_change"] = None
-
-    # -----------------------------------------------------
-    # 최근 24시간 거래대금 > 직전 24시간 거래대금
-    #
-    # 24H 거래대금: 업비트 ticker acc_trade_price_24h
-    # -1일 거래대금: 현재 시간 정각 기준 24~48시간 전 합산
-    #
-    # 각 코인 자신의 거래대금끼리 비교
-    # 값이 없거나 숫자가 아니면 확인불가(None)
-    # -----------------------------------------------------
 
     volume_24h = row.get("volume_24h")
     volume_prev_day = row.get("volume_prev_day")
@@ -2733,7 +2758,6 @@ def update_upbit():
 
 # =========================================================
 # OKX 캔들 조회
-# 캔들별 거래대금 volCcyQuote 저장
 # =========================================================
 
 def okx_candles(bar, limit=300, history=False, after=None):
@@ -2821,15 +2845,6 @@ def okx_candles(bar, limit=300, history=False, after=None):
 
 # =========================================================
 # BTC OKX 거래대금 계산
-#
-# OKX BTC-USDT-SWAP 1시간봉 volCcyQuote 사용
-# 현재 진행 중인 1시간봉 제외
-#
-# -2일 : 72~48시간 전
-# -1일 : 48~24시간 전
-# 24H  : 최근 완료된 24시간
-#
-# 각 구간 1시간봉 24개 합산
 # =========================================================
 
 def calculate_okx_btc_volume():
@@ -2842,8 +2857,6 @@ def calculate_okx_btc_volume():
 
     try:
 
-        # 최근 100개 1시간봉 조회
-        # 72시간 구간 계산에 충분한 데이터 확보
         df = okx_candles("1H", limit=100)
 
         if df is None or df.empty:
@@ -2871,15 +2884,12 @@ def calculate_okx_btc_volume():
             microsecond=0
         )
 
-        # 최근 완료된 24시간
         period_24h_start = current_hour - timedelta(hours=24)
         period_24h_end = current_hour
 
-        # -1일: 24~48시간 전
         period_1d_start = current_hour - timedelta(hours=48)
         period_1d_end = current_hour - timedelta(hours=24)
 
-        # -2일: 48~72시간 전
         period_2d_start = current_hour - timedelta(hours=72)
         period_2d_end = current_hour - timedelta(hours=48)
 
@@ -2890,7 +2900,6 @@ def calculate_okx_btc_volume():
                 & (df["datetime"] < end)
             ]
 
-            # 정확히 24개 캔들이 확보된 경우에만 합산
             if len(selected) != 24:
 
                 log.warning(
@@ -2982,7 +2991,6 @@ def okx_price():
 
 # =========================================================
 # BTC OKX 원본 데이터를 업비트 시간 구간으로 집계
-# 거래대금은 해당 시간 구간의 합계로 계산
 # =========================================================
 
 def resample_okx_to_kst_timeframe(df, timeframe):
@@ -3264,9 +3272,6 @@ def analyze_okx_btc_timeframe(df, timeframe, current_price=None):
 
 # =========================================================
 # BTC 당일 변동률 계산
-#
-# daily_df를 전달받으면 일봉 API 재조회하지 않음
-# daily_df가 없을 때만 별도 조회
 # =========================================================
 
 def calculate_btc_daily_change(current_price, daily_df=None):
@@ -3279,7 +3284,6 @@ def calculate_btc_daily_change(current_price, daily_df=None):
         current_price = float(current_price)
         daily_start = get_candle_start(datetime.now(KST), "1d")
 
-        # 이미 update_okx_btc()에서 조회한 일봉 데이터 재사용
         if daily_df is None:
             daily_df = get_okx_btc_timeframe("1d")
 
@@ -3339,11 +3343,6 @@ def calculate_btc_daily_change(current_price, daily_df=None):
 
 # =========================================================
 # BTC 업데이트
-#
-# 활성 시간봉 중 1d 데이터를 보관하고
-# calculate_btc_daily_change()에 전달
-#
-# BTC 거래대금은 분석 시간봉 설정과 별도로 조회
 # =========================================================
 
 def update_okx_btc():
@@ -3359,14 +3358,12 @@ def update_okx_btc():
     if price is None:
         return
 
-    # BTC 거래대금 별도 업데이트
     latest_btc_volume_data = calculate_okx_btc_volume()
 
     active_timeframes = get_active_timeframes()
 
     latest_btc_timeframe_data = {}
 
-    # 이번 업데이트에서 조회한 BTC 일봉 데이터 보관
     daily_df = None
 
     for timeframe in active_timeframes:
@@ -3375,7 +3372,6 @@ def update_okx_btc():
 
             df = get_okx_btc_timeframe(timeframe)
 
-            # 일봉이 활성화되어 있으면 조회한 데이터를 보관
             if timeframe == "1d":
                 daily_df = df.copy(deep=True)
 
@@ -3406,8 +3402,6 @@ def update_okx_btc():
                 "ema50": None
             }
 
-    # 일봉이 활성화되어 있으면 기존 조회 데이터 재사용
-    # 일봉이 비활성화되어 있으면 함수 내부에서 1회 조회
     latest_btc_daily_change = calculate_btc_daily_change(
         price,
         daily_df
@@ -3512,6 +3506,70 @@ def fmt_change(v):
         return f'<span class="down">▼ {v:.2f}%</span>'
 
     return '<span class="zero">0.00%</span>'
+
+
+# =========================================================
+# 코인명 아래 현재가 / 변동률 / 시장 상태 표시
+# SIGNAL 및 TOP 공통 사용
+# =========================================================
+
+def coin_subline_html(row):
+
+    current_price = fmt_price(
+        row.get("current_price")
+    )
+
+    daily_change = fmt_change(
+        row.get("daily_change")
+    )
+
+    market_status = row.get("market_status") or []
+
+    status_html = []
+
+    for status in market_status:
+
+        if status == "유의":
+
+            status_html.append(
+                '<span class="market-status-badge market-status-warning">'
+                '유의</span>'
+            )
+
+        elif status == "시장경보":
+
+            status_html.append(
+                '<span class="market-status-badge market-status-caution">'
+                '시장경보</span>'
+            )
+
+    status_display = (
+        "".join(status_html)
+        if status_html
+        else '<span class="market-status-normal">정상</span>'
+    )
+
+    return f"""
+    <div class="coin-subline">
+
+        <span class="coin-sub-price">
+            현재가 {html.escape(current_price)}
+        </span>
+
+        <span class="coin-sub-divider">|</span>
+
+        <span class="coin-sub-change">
+            변동률 {daily_change}
+        </span>
+
+        <span class="coin-sub-divider">|</span>
+
+        <span class="coin-sub-status">
+            {status_display}
+        </span>
+
+    </div>
+    """
 
 
 # =========================================================
@@ -3862,7 +3920,6 @@ def ema_cross_badges_html(item):
 
 # =========================================================
 # 최근 캔들 표시
-# RSI 바로 아래에 해당 캔들의 거래대금 표시
 # =========================================================
 
 def last_three_pattern_html(row, trade_currency="원"):
@@ -4319,28 +4376,20 @@ def signal_card(row):
                     #{row.get("volume_rank", "-")}
                 </span>
 
-                <b class="signal-coin-name">
-                    {html.escape(row["name"])}
-                </b>
+                <div class="coin-name-block">
+
+                    <b class="signal-coin-name">
+                        {html.escape(row["name"])}
+                    </b>
+
+                    {coin_subline_html(row)}
+
+                </div>
 
             </div>
 
             <div class="signal-type-list">
                 {passed_badges}
-            </div>
-
-        </div>
-
-        <div class="signal-data-grid">
-
-            <div>
-                <span>현재가</span>
-                <strong>{fmt_price(row.get("current_price"))}</strong>
-            </div>
-
-            <div>
-                <span>당일 변동률</span>
-                <strong>{fmt_change(row.get("daily_change"))}</strong>
             </div>
 
         </div>
@@ -4539,22 +4588,17 @@ def card(row, kind):
         <div class="coin-head">
 
             <div class="coin-title">
+
                 <span class="rank">#{row["rank"]}</span>
-                <b>{html.escape(row["name"])}</b>
-            </div>
 
-        </div>
+                <div class="coin-name-block">
 
-        <div class="market-summary">
+                    <b>{html.escape(row["name"])}</b>
 
-            <div>
-                <span>현재가</span>
-                <strong>{fmt_price(row["current_price"])}</strong>
-            </div>
+                    {coin_subline_html(row)}
 
-            <div>
-                <span>당일 변동률</span>
-                <strong>{fmt_change(row.get("daily_change"))}</strong>
+                </div>
+
             </div>
 
         </div>
@@ -5269,6 +5313,84 @@ background:rgba(255,101,117,.12);
 border:1px solid rgba(255,101,117,.45);
 }
 
+/* 코인명 아래 현재가 / 변동률 / 상태 */
+
+.coin-name-block {
+min-width:0;
+display:flex;
+flex-direction:column;
+align-items:flex-start;
+gap:3px;
+}
+
+.coin-subline {
+display:flex;
+align-items:center;
+flex-wrap:wrap;
+gap:5px;
+min-width:0;
+color:#aab8c4;
+font-size:var(--fs-tiny);
+font-weight:700;
+line-height:1.35;
+}
+
+.coin-sub-price {
+color:#c5d1db;
+white-space:nowrap;
+}
+
+.coin-sub-change {
+white-space:nowrap;
+}
+
+.coin-sub-change .up,
+.coin-sub-change .down,
+.coin-sub-change .zero {
+font-size:inherit;
+}
+
+.coin-sub-divider {
+color:#536371;
+font-size:8px;
+}
+
+.coin-sub-status {
+display:inline-flex;
+align-items:center;
+gap:3px;
+}
+
+.market-status-badge {
+display:inline-flex;
+align-items:center;
+justify-content:center;
+padding:2px 5px;
+border-radius:3px;
+font-size:var(--fs-tiny);
+font-weight:900;
+line-height:1.2;
+white-space:nowrap;
+}
+
+.market-status-warning {
+color:#ff6575;
+background:rgba(255,101,117,.14);
+border:1px solid rgba(255,101,117,.55);
+}
+
+.market-status-caution {
+color:#e8c56e;
+background:rgba(232,197,110,.13);
+border:1px solid rgba(232,197,110,.5);
+}
+
+.market-status-normal {
+color:#71808c;
+font-size:var(--fs-tiny);
+font-weight:700;
+}
+
 /* 배지 */
 
 .signal-type-list,
@@ -5544,42 +5666,6 @@ font-size:var(--fs-coin);
 font-weight:900;
 }
 
-/* SIGNAL 현재가 / 당일 변동률 */
-
-.signal-data-grid {
-display:grid;
-grid-template-columns:repeat(2,minmax(0,1fr));
-width:100%;
-}
-
-.signal-data-grid > div {
-min-width:0;
-min-height:44px;
-padding:6px 3px;
-display:flex;
-flex-direction:column;
-align-items:center;
-justify-content:center;
-text-align:center;
-}
-
-.signal-data-grid > div + div {
-border-left:1px solid #27343f;
-}
-
-.signal-data-grid span {
-color:#8798a7;
-font-size:var(--fs-tiny);
-}
-
-.signal-data-grid strong {
-margin-top:4px;
-color:#e7edf2;
-font-size:var(--fs-value);
-font-weight:800;
-white-space:nowrap;
-}
-
 /* SIGNAL 거래대금 3열 */
 
 .signal-volume-grid {
@@ -5655,7 +5741,7 @@ border-bottom:1px solid var(--line);
 
 .coin-title {
 display:flex;
-align-items:center;
+align-items:flex-start;
 gap:8px;
 }
 
@@ -5669,42 +5755,7 @@ font-weight:900;
 color:var(--yellow);
 font-size:var(--fs-small);
 font-weight:800;
-}
-
-/* TOP 현재가 / 당일 변동률 */
-
-.market-summary {
-display:grid;
-grid-template-columns:repeat(2,minmax(0,1fr));
-}
-
-.market-summary > div {
-min-width:0;
-min-height:44px;
-padding:6px 3px;
-display:flex;
-flex-direction:column;
-align-items:center;
-justify-content:center;
-text-align:center;
-background:#101820;
-}
-
-.market-summary > div + div {
-border-left:1px solid #26343f;
-}
-
-.market-summary span {
-color:#8798a7;
-font-size:var(--fs-tiny);
-margin-bottom:4px;
-}
-
-.market-summary strong {
-color:#e6edf2;
-font-size:var(--fs-value);
-font-weight:800;
-white-space:nowrap;
+padding-top:1px;
 }
 
 /* TOP 거래대금 3열 */
@@ -5799,11 +5850,6 @@ min-height:36px;
 padding:5px 7px;
 }
 
-.signal-data-grid > div {
-min-height:40px;
-padding:5px 2px;
-}
-
 .signal-volume-grid > div {
 min-height:44px;
 padding:5px 2px;
@@ -5861,11 +5907,6 @@ border-radius:6px;
 .coin-head {
 min-height:36px;
 padding:5px 7px;
-}
-
-.market-summary > div {
-min-height:40px;
-padding:5px 2px;
 }
 
 .volume-summary > div {
@@ -5934,6 +5975,22 @@ padding:2px 5px;
 font-size:7px;
 }
 
+/* 모바일 코인 정보 줄 */
+
+.coin-subline {
+gap:4px;
+font-size:7px;
+}
+
+.market-status-badge {
+padding:2px 4px;
+font-size:7px;
+}
+
+.coin-name-block {
+gap:2px;
+}
+
 }
 
 @media (max-width:380px) {
@@ -5992,6 +6049,16 @@ font-size:5px;
 }
 
 .three-candle-volume {height:13px;}
+
+.coin-subline {
+gap:3px;
+font-size:6px;
+}
+
+.market-status-badge {
+padding:1px 3px;
+font-size:6px;
+}
 
 }
 """
@@ -6300,7 +6367,6 @@ def startup():
         "BTC 4시간봉 및 일봉 거래대금은 해당 시간 구간의 1시간봉 거래대금 합산"
     )
 
-    # 캐시 수정 사항 로그
     log.info(
         "업비트 거래대금 전용 1시간봉 73개 캐시 적용"
     )
@@ -6313,7 +6379,6 @@ def startup():
         "BTC 일봉 조회 데이터는 당일 변동률 계산에 재사용"
     )
 
-    # BTC 거래대금 로그
     log.info(
         "BTC 거래대금은 OKX BTC-USDT-SWAP 1시간봉 volCcyQuote 기준"
     )
@@ -6336,6 +6401,19 @@ def startup():
 
     log.info(
         "BTC 거래대금 표시 단위: USDT"
+    )
+
+    # 추가: 시장 상태 표시 로그
+    log.info(
+        "업비트 마켓 상세정보 isDetails=true 사용"
+    )
+
+    log.info(
+        "코인명 아래 현재가 / 당일 변동률 / 유의 및 시장경보 상태 표시"
+    )
+
+    log.info(
+        "업비트 API caution은 주의·경고·위험 단계 구분이 불가능하므로 시장경보로 표시"
     )
 
     threading.Thread(
