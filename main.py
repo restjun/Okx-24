@@ -3703,146 +3703,84 @@ def candle_trade_value_html(value, currency="원"):
 
 
 # =========================================================
-# 캔들 그림
+# 실제 OHLC 캔들 그림
 # =========================================================
 
-def candle_icon_html(pattern):
+def candle_icon_html(pattern=None, candle=None):
 
-    if pattern == "상승장악형":
-        return """
-        <div class="candle-pattern-visual">
-            <div class="mini-candle bearish">
-                <span class="wick"></span><span class="body"></span>
-            </div>
-            <div class="mini-candle bullish large">
-                <span class="wick"></span><span class="body"></span>
-            </div>
+    if candle is None:
+        return '<div class="candle-pattern-visual empty">—</div>'
+
+    try:
+
+        o = float(candle["open"])
+        h = float(candle["high"])
+        l = float(candle["low"])
+        c = float(candle["close"])
+
+    except (KeyError, TypeError, ValueError):
+        return '<div class="candle-pattern-visual empty">—</div>'
+
+    if any(pd.isna(v) for v in (o, h, l, c)):
+        return '<div class="candle-pattern-visual empty">—</div>'
+
+    if h < l:
+        return '<div class="candle-pattern-visual empty">—</div>'
+
+    # OHLC 값의 범위가 잘못된 경우 표시하지 않음
+    if h < max(o, c) or l > min(o, c):
+        return '<div class="candle-pattern-visual empty">—</div>'
+
+    candle_range = h - l
+
+    if c > o:
+        candle_class = "bullish"
+    elif c < o:
+        candle_class = "bearish"
+    else:
+        candle_class = "neutral"
+
+    # 고가와 저가가 같은 경우
+    if candle_range == 0:
+
+        body_top = 12
+        body_height = 3
+
+    else:
+
+        # 캔들 전체 높이는 27px
+        # 고가는 위쪽 0px, 저가는 아래쪽 27px
+        body_top = (
+            (h - max(o, c)) / candle_range
+        ) * 27
+
+        body_bottom = (
+            (h - min(o, c)) / candle_range
+        ) * 27
+
+        body_height = body_bottom - body_top
+
+        # 도지처럼 시가와 종가가 같은 경우에도 몸통이 보이도록 처리
+        if body_height < 1:
+            body_height = 1
+
+    body_top = max(0, min(27, body_top))
+    body_height = max(1, min(27 - body_top, body_height))
+
+    body_top_css = f"{body_top:.2f}px"
+    body_height_css = f"{body_height:.2f}px"
+
+    return f"""
+    <div class="candle-pattern-visual actual-candle">
+        <div class="mini-candle {candle_class}">
+            <span class="wick"></span>
+            <span
+                class="body"
+                style="top:{body_top_css};height:{body_height_css};"
+            ></span>
         </div>
-        """
-
-    if pattern == "하락장악형":
-        return """
-        <div class="candle-pattern-visual">
-            <div class="mini-candle bullish">
-                <span class="wick"></span><span class="body"></span>
-            </div>
-            <div class="mini-candle bearish large">
-                <span class="wick"></span><span class="body"></span>
-            </div>
-        </div>
-        """
-
-    if pattern == "양수도지":
-        return """
-        <div class="candle-pattern-visual">
-            <div class="mini-candle bullish-doji">
-                <span class="wick"></span><span class="body"></span>
-            </div>
-        </div>
-        """
-
-    if pattern == "음수도지":
-        return """
-        <div class="candle-pattern-visual">
-            <div class="mini-candle bearish-doji">
-                <span class="wick"></span><span class="body"></span>
-            </div>
-        </div>
-        """
-
-    if pattern == "상승관통형":
-        return """
-        <div class="candle-pattern-visual">
-            <div class="mini-candle bearish">
-                <span class="wick"></span><span class="body"></span>
-            </div>
-            <div class="mini-candle bullish piercing-candle">
-                <span class="wick"></span><span class="body"></span>
-            </div>
-        </div>
-        """
-
-    if pattern == "하락관통형":
-        return """
-        <div class="candle-pattern-visual">
-            <div class="mini-candle bullish">
-                <span class="wick"></span><span class="body"></span>
-            </div>
-            <div class="mini-candle bearish piercing-bearish">
-                <span class="wick"></span><span class="body"></span>
-            </div>
-        </div>
-        """
-
-    if pattern == "장대양봉":
-        return """
-        <div class="candle-pattern-visual">
-            <div class="mini-candle bullish very-large">
-                <span class="wick"></span><span class="body"></span>
-            </div>
-        </div>
-        """
-
-    if pattern == "장대음봉":
-        return """
-        <div class="candle-pattern-visual">
-            <div class="mini-candle bearish very-large">
-                <span class="wick"></span><span class="body"></span>
-            </div>
-        </div>
-        """
-
-    if pattern == "일반양봉":
-        return """
-        <div class="candle-pattern-visual">
-            <div class="mini-candle bullish">
-                <span class="wick"></span><span class="body"></span>
-            </div>
-        </div>
-        """
-
-    if pattern == "일반음봉":
-        return """
-        <div class="candle-pattern-visual">
-            <div class="mini-candle bearish">
-                <span class="wick"></span><span class="body"></span>
-            </div>
-        </div>
-        """
-
-    if pattern in ("상승망치형", "하락망치형"):
-
-        candle_class = (
-            "bullish hammer"
-            if pattern == "상승망치형"
-            else "bearish hammer"
-        )
-
-        return f"""
-        <div class="candle-pattern-visual">
-            <div class="mini-candle {candle_class}">
-                <span class="wick"></span><span class="body"></span>
-            </div>
-        </div>
-        """
-
-    if pattern in ("상승역망치형", "하락역망치형"):
-
-        candle_class = (
-            "bullish inverted-hammer"
-            if pattern == "상승역망치형"
-            else "bearish inverted-hammer"
-        )
-
-        return f"""
-        <div class="candle-pattern-visual">
-            <div class="mini-candle {candle_class}">
-                <span class="wick"></span><span class="body"></span>
-            </div>
-        </div>
-        """
-
-    return '<div class="candle-pattern-visual empty">—</div>'
+    </div>
+    """
 
 
 # =========================================================
@@ -3858,6 +3796,9 @@ def current_pattern_html(pattern, candle=None):
     else:
         patterns = []
 
+    # OHLC 실제 캔들 모양은 패턴 개수와 관계없이 한 번만 표시
+    actual_candle = candle_icon_html(candle=candle)
+
     if not patterns:
 
         if candle is not None:
@@ -3868,20 +3809,17 @@ def current_pattern_html(pattern, candle=None):
                 c = float(candle["close"])
 
                 if c > o:
-                    ordinary_pattern = "일반양봉"
                     ordinary_name = "양봉"
 
                 elif c < o:
-                    ordinary_pattern = "일반음봉"
                     ordinary_name = "음봉"
 
                 else:
-                    ordinary_pattern = "일반양봉"
                     ordinary_name = "보합"
 
                 return (
                     '<div class="pattern-box neutral-pattern">'
-                    + candle_icon_html(ordinary_pattern)
+                    + actual_candle
                     + '<span class="pattern-name">'
                     + ordinary_name
                     + '</span></div>'
@@ -3892,11 +3830,11 @@ def current_pattern_html(pattern, candle=None):
 
         return (
             '<div class="pattern-box pattern-none">'
-            + candle_icon_html(None)
+            + actual_candle
             + '<span class="pattern-name">-</span></div>'
         )
 
-    boxes = []
+    pattern_names = []
 
     for item in patterns:
 
@@ -3914,15 +3852,20 @@ def current_pattern_html(pattern, candle=None):
         else:
             css_class = "neutral-pattern"
 
-        boxes.append(
-            f'<div class="pattern-box {css_class}">'
-            + candle_icon_html(item)
-            + '<span class="pattern-name">'
-            + escaped_pattern
-            + '</span></div>'
+        pattern_names.append(
+            f'<span class="pattern-name {css_class}">{escaped_pattern}</span>'
         )
 
-    return '<div class="pattern-multi">' + "".join(boxes) + '</div>'
+    return (
+        '<div class="pattern-multi actual-pattern-multi">'
+        '<div class="pattern-box">'
+        + actual_candle
+        + '</div>'
+        '<div class="actual-pattern-names">'
+        + "".join(pattern_names)
+        + '</div>'
+        '</div>'
+    )
 
 
 # =========================================================
@@ -3945,7 +3888,7 @@ def ema_cross_candle_html(item):
 
         return (
             '<div class="ema-cross-candle ema-golden-cross-candle">'
-            + candle_icon_html("일반양봉")
+            + candle_icon_html(candle=item)
             + '</div>'
         )
 
@@ -3953,7 +3896,7 @@ def ema_cross_candle_html(item):
 
         return (
             '<div class="ema-cross-candle ema-death-cross-candle">'
-            + candle_icon_html("일반음봉")
+            + candle_icon_html(candle=item)
             + '</div>'
         )
 
@@ -4852,6 +4795,95 @@ height:7px;
 width:9px;
 }
 
+/* 실제 OHLC 캔들 표시 */
+
+.actual-candle {
+width:36px;
+min-width:36px;
+height:28px;
+display:flex;
+align-items:center;
+justify-content:center;
+}
+
+.actual-candle .mini-candle {
+width:10px;
+height:27px;
+display:block;
+position:relative;
+}
+
+.actual-candle .mini-candle .wick {
+position:absolute;
+top:0;
+left:50%;
+width:1px;
+height:27px;
+transform:translateX(-50%);
+background:#aab6c1;
+z-index:1;
+}
+
+.actual-candle .mini-candle .body {
+position:absolute;
+left:1px;
+top:0;
+width:8px;
+height:1px;
+min-height:1px;
+z-index:2;
+border-radius:1px;
+}
+
+.actual-candle .mini-candle.bullish .body {
+background:var(--green);
+}
+
+.actual-candle .mini-candle.bearish .body {
+background:var(--red);
+}
+
+.actual-candle .mini-candle.neutral .body {
+background:#aab6c1;
+}
+
+.actual-pattern-multi {
+width:100%;
+height:100%;
+min-width:0;
+display:flex;
+align-items:center;
+justify-content:center;
+gap:2px;
+flex-wrap:nowrap;
+}
+
+.actual-pattern-multi > .pattern-box {
+min-width:36px;
+flex:0 0 36px;
+}
+
+.actual-pattern-names {
+min-width:0;
+max-width:100%;
+display:flex;
+flex-direction:column;
+align-items:flex-start;
+justify-content:center;
+gap:2px;
+overflow:hidden;
+}
+
+.actual-pattern-names .pattern-name {
+max-width:100%;
+margin:0;
+font-size:7px;
+line-height:1.15;
+white-space:normal;
+overflow-wrap:anywhere;
+text-align:left;
+}
+
 /* RSI */
 
 .rsi-value {
@@ -4993,6 +5025,16 @@ height:27px;
 
 .ema-cross-candle .pattern-name {
 display:none;
+}
+
+.ema-cross-candle .actual-candle {
+width:23px;
+min-width:23px;
+}
+
+.ema-cross-candle .actual-candle .mini-candle {
+width:10px;
+height:27px;
 }
 
 .ema-golden-cross-candle {
@@ -6053,33 +6095,6 @@ overflow-wrap:anywhere;
 
 .pattern-multi {gap:2px;}
 .pattern-multi .pattern-box {min-width:0;}
-
-.coin-card {
-margin-top:6px;
-border-radius:6px;
-}
-
-.coin-head {
-min-height:36px;
-padding:5px 7px;
-}
-
-.volume-summary > div {
-min-height:44px;
-padding:5px 2px;
-}
-
-.signal-empty {min-height:55px;}
-
-.signal-type-list,
-.pattern-badge-list {gap:3px;}
-
-.signal-type-badge,
-.bearish-type-badge,
-.consecutive-bullish,
-.consecutive-bearish {
-padding:2px 4px;
-}
 
 .rsi-value {
 height:17px;
