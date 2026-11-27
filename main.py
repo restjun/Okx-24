@@ -38,8 +38,8 @@ UTC = ZoneInfo("UTC")
 # 사용자 설정
 # =========================================================
 
-TOP_N = 30
-SHOW_TOP_LIST = "Y"
+TOP_N = 50
+SHOW_TOP_LIST = "N"
 UPDATE_MINUTES = 1
 
 DAILY_CHANGE_MIN = 0.0
