@@ -1,4 +1,3 @@
-
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
@@ -166,6 +165,9 @@ USE_SIGNAL_DAILY_CHANGE = "Y"
 USE_SIGNAL_RSI_RANGE = "N"
 USE_SIGNAL_EMA_ALIGNMENT = "Y"
 USE_SIGNAL_EMA_BEARISH_BULLISH = "Y"
+
+# 최근 24시간 거래대금 > 직전 24시간 거래대금
+USE_SIGNAL_VOLUME_COMPARE = "Y"
 
 SHOW_SIGNAL_CHECKLIST = "N"
 
@@ -2193,6 +2195,44 @@ def get_signal_condition_checks(row, analysis=None):
         except (TypeError, ValueError):
             checks["daily_change"] = None
 
+    # -----------------------------------------------------
+    # 최근 24시간 거래대금 > 직전 24시간 거래대금
+    #
+    # 24H 거래대금: 업비트 ticker acc_trade_price_24h
+    # -1일 거래대금: 현재 시간 정각 기준 24~48시간 전 합산
+    #
+    # 각 코인 자신의 거래대금끼리 비교
+    # 값이 없거나 숫자가 아니면 확인불가(None)
+    # -----------------------------------------------------
+
+    volume_24h = row.get("volume_24h")
+    volume_prev_day = row.get("volume_prev_day")
+
+    if volume_24h is None or volume_prev_day is None:
+
+        checks["volume_compare"] = None
+
+    else:
+
+        try:
+
+            volume_24h = float(volume_24h)
+            volume_prev_day = float(volume_prev_day)
+
+            if (
+                pd.isna(volume_24h)
+                or pd.isna(volume_prev_day)
+            ):
+                checks["volume_compare"] = None
+
+            else:
+                checks["volume_compare"] = bool(
+                    volume_24h > volume_prev_day
+                )
+
+        except (TypeError, ValueError):
+            checks["volume_compare"] = None
+
     rsi_values = analysis.get("rsi_values") or []
     latest_rsi = None
 
@@ -2300,6 +2340,9 @@ def get_signal_condition_keys():
     if USE_SIGNAL_EMA_BEARISH_BULLISH == "Y":
         keys.append("ema_bullish_candle")
 
+    if USE_SIGNAL_VOLUME_COMPARE == "Y":
+        keys.append("volume_compare")
+
     return keys
 
 
@@ -2372,6 +2415,11 @@ def signal_checklist_html(row, timeframe, analysis):
             "rsi_range",
             f"최신 RSI {RSI_RANGE_MIN}~{RSI_RANGE_MAX}",
             USE_SIGNAL_RSI_RANGE
+        ),
+        (
+            "volume_compare",
+            "24H 거래대금 > -1일 거래대금",
+            USE_SIGNAL_VOLUME_COMPARE
         )
     ]
 
@@ -2659,6 +2707,11 @@ def update_upbit():
         active_condition_names.append(
             f"최근 {DISPLAY_CANDLE_COUNT}개 봉 중 "
             "EMA1/50·100·200 실제 상향 크로스"
+        )
+
+    if USE_SIGNAL_VOLUME_COMPARE == "Y":
+        active_condition_names.append(
+            "24H 거래대금 > -1일 거래대금"
         )
 
     signal_condition_log = (
@@ -4379,6 +4432,11 @@ def signal_section():
         active_conditions.append(
             f"최근 {DISPLAY_CANDLE_COUNT}개 봉 중 "
             "EMA1/50·100·200 실제 상향 크로스 1회 이상"
+        )
+
+    if USE_SIGNAL_VOLUME_COMPARE == "Y":
+        active_conditions.append(
+            "24H 거래대금 > -1일 거래대금"
         )
 
     condition_items = []
@@ -6133,6 +6191,11 @@ def startup():
     log.info(
         "SIGNAL EMA 실제 상향 크로스 조건 사용 여부=%s",
         USE_SIGNAL_EMA_BEARISH_BULLISH
+    )
+
+    log.info(
+        "SIGNAL 최근 24시간 거래대금 > 직전 24시간 거래대금 조건 사용 여부=%s",
+        USE_SIGNAL_VOLUME_COMPARE
     )
 
     log.info(
