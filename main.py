@@ -4298,21 +4298,21 @@ def btc_html():
             <div>
                 <span>-2일 거래대금</span>
                 <strong>
-                    {fmt_vol(latest_btc_volume_data.get("volume_today"))} USDT
+                    {fmt_vol(latest_btc_volume_data.get("volume_today"))} 💲
                 </strong>
             </div>
 
             <div>
                 <span>-1일 거래대금</span>
                 <strong>
-                    {fmt_vol(latest_btc_volume_data.get("volume_prev_day"))} USDT
+                    {fmt_vol(latest_btc_volume_data.get("volume_prev_day"))} 💲
                 </strong>
             </div>
 
             <div>
                 <span>24H 거래대금</span>
                 <strong>
-                    {fmt_vol(latest_btc_volume_data.get("volume_24h"))} USDT
+                    {fmt_vol(latest_btc_volume_data.get("volume_24h"))} 💲
                 </strong>
             </div>
 
