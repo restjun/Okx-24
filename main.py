@@ -3545,15 +3545,27 @@ def coin_subline_html(row):
 
     status_display = "".join(status_html)
 
+    # 실제 4시간 SIGNAL 통과 여부 확인
+    four_hour_html = ""
+
+    if "4h" in row.get("signal_timeframes", []):
+
+        four_hour_html = (
+            '<span class="four-hour-pass-badge">'
+            '4시간 통과'
+            '</span>'
+        )
+
     status_section = ""
 
-    if status_display:
+    if status_display or four_hour_html:
 
         status_section = f"""
             <span class="coin-sub-divider">|</span>
 
             <span class="coin-sub-status">
                 {status_display}
+                {four_hour_html}
             </span>
         """
 
@@ -5371,14 +5383,16 @@ font-size:14px;
 font-weight:1000;
 }
 
+/* 수정: 상승 녹색 / 하락 빨간색 */
+
 .coin-sub-change .up {
-color:#ff4d5f!important;
+color:var(--green)!important;
 font-size:14px;
 font-weight:1000;
 }
 
 .coin-sub-change .down {
-color:#438dff!important;
+color:var(--red)!important;
 font-size:14px;
 font-weight:1000;
 }
@@ -5425,6 +5439,24 @@ color:#17130a;
 background:#e8c56e;
 border:1px solid #ffdf8a;
 box-shadow:0 0 7px rgba(232,197,110,.30);
+}
+
+/* 추가: 실제 4시간 SIGNAL 통과 배지 */
+
+.four-hour-pass-badge {
+display:inline-flex;
+align-items:center;
+justify-content:center;
+margin-left:4px;
+padding:3px 7px;
+border-radius:4px;
+color:var(--green);
+background:rgba(56,217,150,.12);
+border:1px solid rgba(56,217,150,.4);
+font-size:var(--fs-small);
+font-weight:1000;
+line-height:1.3;
+white-space:nowrap;
 }
 
 /* 배지 */
@@ -6034,6 +6066,11 @@ padding:3px 5px;
 font-size:8px;
 }
 
+.four-hour-pass-badge {
+padding:3px 5px;
+font-size:8px;
+}
+
 .coin-name-block {
 gap:2px;
 }
@@ -6114,6 +6151,11 @@ font-size:12px;
 }
 
 .market-status-badge {
+padding:2px 4px;
+font-size:7px;
+}
+
+.four-hour-pass-badge {
 padding:2px 4px;
 font-size:7px;
 }
