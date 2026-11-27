@@ -1,3 +1,4 @@
+
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
@@ -3649,34 +3650,19 @@ def current_pattern_html(pattern, candle=None):
 # =========================================================
 # EMA 골든크로스 / 데드크로스 미니 캔들 HTML
 # =========================================================
+#
+# 수정:
+# 기존에는 EMA 크로스 발생 시 동일한 OHLC 캔들을
+# 별도의 미니 캔들로 한 번 더 생성했습니다.
+#
+# 실제 캔들은 current_pattern_html()에서 이미 표시하므로
+# 여기서는 두 번째 캔들을 생성하지 않습니다.
+#
+# 골든크로스 / 데드크로스의 노란색·빨간색 강조는
+# last_three_pattern_html()의 카드 클래스에서 유지됩니다.
+# =========================================================
 
 def ema_cross_candle_html(item):
-
-    golden_cross = any(
-        item.get(f"ema_golden_cross_{period}") is True
-        for period in EMA_CROSS_SLOW_PERIODS
-    )
-
-    death_cross = any(
-        item.get(f"ema_death_cross_{period}") is True
-        for period in EMA_CROSS_SLOW_PERIODS
-    )
-
-    if golden_cross:
-
-        return (
-            '<div class="ema-cross-candle ema-golden-cross-candle">'
-            + candle_icon_html(candle=item)
-            + '</div>'
-        )
-
-    if death_cross:
-
-        return (
-            '<div class="ema-cross-candle ema-death-cross-candle">'
-            + candle_icon_html(candle=item)
-            + '</div>'
-        )
 
     return ""
 
@@ -3733,12 +3719,14 @@ def last_three_pattern_html(row, trade_currency="원"):
         """
 
         # 개별 캔들의 실제 OHLC 모양만 표시
+        # 캔들 HTML은 이 위치에서 한 번만 생성
         candle_html = current_pattern_html(
             item.get("patterns", []),
             item
         )
 
-        # EMA 크로스 표시 기능은 기존대로 유지
+        # EMA 크로스는 별도 캔들을 생성하지 않음
+        # 카드 배경색 강조는 아래 card_classes에서 유지
         cross_candle = ema_cross_candle_html(item)
 
         change_display = candle_change_html(
